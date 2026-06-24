@@ -161,6 +161,41 @@ def _receipt_boundary_authorized(receipt: "WriteReceipt") -> bool:
     return receipt.divergence_explained
 
 
+class ObservationPromotedToAuthorityError(AssertionError):
+    """A role=="observation" finding entered the apply-path authority source set.
+
+    EV-04: observations explain authority; they never become authority by
+    existing. The apply-path authority source set is the BLOCKING findings only.
+    A role=="observation" finding is structurally non-blocking, so this should be
+    unreachable — it is asserted loudly so a future refactor that lets an
+    observation gate authority fails fast instead of silently promoting evidence.
+    """
+
+
+def _apply_authority_relevant_findings(
+    findings: "Sequence[Finding]",
+) -> tuple["Finding", ...]:
+    """Return the authority-relevant (blocking) findings; reject observation promotion.
+
+    EV-04 closure: the apply-path authority source set is exactly the BLOCKING
+    findings. Any ``role == "observation"`` finding that is also blocking is an
+    observation-promoted-to-authority defect and fails loud.
+    """
+    relevant: list["Finding"] = []
+    for finding in findings:
+        if not finding.blocking:
+            continue
+        if getattr(finding, "role", "") == "observation":
+            raise ObservationPromotedToAuthorityError(
+                "a role=='observation' finding "
+                f"({finding.kind!r}) is blocking and would enter the apply-path "
+                "authority source set; observations explain authority, they do not "
+                "become authority (EV-04)"
+            )
+        relevant.append(finding)
+    return tuple(relevant)
+
+
 def aggregate_replay_authority(
     *,
     write_receipts: Sequence["WriteReceipt"],
@@ -212,9 +247,16 @@ def aggregate_replay_authority(
     every_receipt_explained = all(
         _receipt_boundary_authorized(receipt) for receipt in write_receipts
     )
+    # EV-04 (observation-not-authority): the authority source set is exactly the
+    # BLOCKING findings. A role=="observation" finding may never gate authority by
+    # existing; it explains, it does not authorize. The conjunction below is
+    # guarded by .blocking, and a role=="observation" finding is structurally
+    # non-blocking (the registry forbids a blocking observation), so it can never
+    # enter the authority set. Assert it loudly rather than rely on that invariant.
+    authority_relevant = _apply_authority_relevant_findings(findings)
     no_boundary_violation = not any(
-        finding.kind == APPLY_BOUNDARY_VIOLATION_FINDING_CODE and finding.blocking
-        for finding in findings
+        finding.kind == APPLY_BOUNDARY_VIOLATION_FINDING_CODE
+        for finding in authority_relevant
     )
     replay_authorized = every_receipt_explained and no_boundary_violation
     return mint_apply_replay_authority(replay_authorized=replay_authorized)

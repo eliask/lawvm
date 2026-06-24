@@ -144,7 +144,6 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_backfill_finlex_consolidated_versions.py",
         "test_fi_by_name.py",
         "test_fi_build_publication_db.py",
-        "test_fi_closure.py",
         "test_fi_corpus_archive_guard.py",
         "test_fi_corpus_graph.py",
         "test_fi_corpus_lints.py",
@@ -350,6 +349,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_statute_proof_algebra.py",
         "test_strict_payload_confidence.py",
         "test_fi_version_drift.py",
+        "test_ev_residual_ledger_and_self_evidencing.py",
     ),
     "evidence_reports": (
         "test_fi_explain_facade.py",
@@ -379,6 +379,38 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_dual_registration_completeness.py",
         "test_authority_boundary_ratchet.py",
         "test_source_witness_liveness_ratchet.py",
+        # Audit-invariant registry program (lanes L2a/L2b/L3/L5): control-flow,
+        # determinism-spine, typed-carrier, identity-leak, and replay-determinism gates.
+        "test_fail_loud_ratchet.py",
+        "test_confidence_control_ratchet.py",
+        "test_determinism_spine_ratchet.py",
+        "test_typed_carrier_boundary_ratchet.py",
+        "test_waist_contract_ratchet.py",
+        # Static-ratchet completers wave (CONTRACT-01/02, VOCAB-02, FW-07/FW-08):
+        # waist field/type contract, namespaced-status/confidence, classifier-WRAP
+        # mandate, frozen-residue structural sensors.
+        "test_waist_field_contract_ratchet.py",
+        "test_vocab_namespaced_status_ratchet.py",
+        "test_classifier_wrap_ratchet.py",
+        "test_frozen_residue_sensors_ratchet.py",
+        "test_identity_intrinsic_audit.py",
+        "test_synthetic_label_leak.py",
+        "test_replay_determinism.py",
+        # Audit-invariant registry program (PROJECTION plane): row PROJ-01
+        # (projection re-derivability from committed matter) + row PROJ-02
+        # (tree-wide no-author-set-replay_authorized-at-projection sweep).
+        "test_projection_rederivability.py",
+        "test_projection_author_set_authority.py",
+        "test_explicit_address_level.py",
+        "test_guard_liveness_totality.py",
+        # Audit-invariant registry program (CROSS-JURISDICTION, §2.3): row
+        # XJUR-02 — no hidden replay kernel in a frontend (static boundary audit;
+        # monotone ratchet over a discovered-debt baseline).
+        "test_hidden_replay_kernel_ratchet.py",
+        # Audit-invariant registry program (PROMOTION-CHAIN integrity, §0):
+        # rows PROMOTE-02 (authorization scope-match), CHAIN-01/02 (completeness +
+        # monotonicity), PROMOTE-01 (retraction down-chain propagation).
+        "test_promotion_chain_integrity.py",
     ),
     "core_ir_contracts": (
         "test_fi_address_parse.py",
@@ -392,6 +424,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_canonical_intent_kinds.py",
         "test_fi_canonical_op_stage.py",
         "test_fi_canonical_op_stage_carrier.py",
+        "test_fi_op_coverage_totality.py",
         "test_fi_clause_ast.py",
         "test_fi_coordination_parser.py",
         "test_core_locator.py",
@@ -451,6 +484,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_text_amend.py",
         "test_tree_ops_ambiguity.py",
         "test_tree_ops_stage.py",
+        "test_tree_ops_roman_labels.py",
     ),
     "core_compile_projection": (
         "test_fi_effect_lifecycle_projection.py",
@@ -501,11 +535,9 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_composite_interaction_reference_model.py",
         "test_fi_abstraction_modules.py",
         "test_fi_actor_modal.py",
-        "test_fi_affordances.py",
         "test_fi_anaphora.py",
         "test_fi_annotation_independence.py",
         "test_fi_cross_lens_passes.py",
-        "test_fi_def_scope_lints.py",
         "test_fi_defined_terms.py",
         "test_fi_definition_graph.py",
         "test_fi_definition_lint_precision.py",
@@ -566,6 +598,8 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_semantic_*.py",
         "test_fi_semantic_*.py",
         "test_solver_slot_assignment.py",
+        "test_fi_sched_window_totality.py",
+        "test_fi_scope_lattice_totality.py",
         "test_fi_surface_*.py",
         "test_table_*.py",
         "test_fi_table_*.py",

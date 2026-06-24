@@ -316,3 +316,107 @@ class TestLineageDagAcyclicity:
             migration_events=(e1, e2),
         )
         assert plan.migration_events == (e1, e2)
+# ---------------------------------------------------------------------------
+# LS-11: lineage/migration DAG acyclicity
+# ---------------------------------------------------------------------------
+
+
+def _renumber_event(from_label: str, to_label: str, *, event_id: str = "") -> MigrationEvent:
+    return MigrationEvent(
+        event_id=event_id or f"mig:test:{from_label}->{to_label}",
+        kind="renumber",
+        from_address=_address(from_label),
+        to_address=_address(to_label),
+        effective="2024-01-01",
+    )
+
+
+def test_check_lineage_acyclic_empty_is_acyclic() -> None:
+    from lawvm.core.timeline_lineage import check_lineage_acyclic
+
+    result = check_lineage_acyclic(())
+    assert result.acyclic is True
+    assert result.cycle == ()
+
+
+def test_check_lineage_acyclic_linear_chain_is_acyclic() -> None:
+    from lawvm.core.timeline_lineage import check_lineage_acyclic
+
+    events = (
+        _renumber_event("1", "2"),
+        _renumber_event("2", "3"),
+        _renumber_event("3", "4"),
+    )
+    assert check_lineage_acyclic(events).acyclic is True
+
+
+def test_check_lineage_acyclic_self_edge_is_not_a_cycle() -> None:
+    from lawvm.core.timeline_lineage import check_lineage_acyclic
+
+    # from == to is an identity no-op the resolvers skip, not a cycle.
+    assert check_lineage_acyclic((_renumber_event("1", "1"),)).acyclic is True
+
+
+def test_check_lineage_acyclic_detects_two_node_cycle() -> None:
+    from lawvm.core.timeline_lineage import check_lineage_acyclic
+
+    events = (
+        _renumber_event("1", "2"),
+        _renumber_event("2", "1"),
+    )
+    result = check_lineage_acyclic(events)
+    assert result.acyclic is False
+    # Cycle witness is a closed loop of addresses.
+    assert result.cycle[0] == result.cycle[-1]
+    assert {str(a) for a in result.cycle} == {str(_address("1")), str(_address("2"))}
+
+
+def test_check_lineage_acyclic_detects_three_node_cycle() -> None:
+    from lawvm.core.timeline_lineage import check_lineage_acyclic
+
+    events = (
+        _renumber_event("1", "2"),
+        _renumber_event("2", "3"),
+        _renumber_event("3", "1"),
+    )
+    result = check_lineage_acyclic(events)
+    assert result.acyclic is False
+    assert result.cycle[0] == result.cycle[-1]
+
+
+def test_check_lineage_acyclic_is_deterministic() -> None:
+    from lawvm.core.timeline_lineage import check_lineage_acyclic
+
+    events = (
+        _renumber_event("2", "1"),
+        _renumber_event("1", "2"),
+    )
+    first = check_lineage_acyclic(events)
+    second = check_lineage_acyclic(events)
+    assert first.cycle == second.cycle
+
+
+def test_assert_acyclic_passes_on_dag() -> None:
+    from lawvm.core.timeline_lineage import assert_acyclic
+
+    assert_acyclic((_renumber_event("1", "2"), _renumber_event("2", "3")))
+
+
+def test_assert_acyclic_raises_lineage_cycle_error_on_cycle() -> None:
+    from lawvm.core.timeline_lineage import LineageCycleError, assert_acyclic
+
+    events = (
+        _renumber_event("1", "2"),
+        _renumber_event("2", "1"),
+    )
+    with pytest.raises(LineageCycleError, match="LINEAGE.CYCLE"):
+        assert_acyclic(events)
+
+
+def test_lineage_acyclicity_result_rejects_inconsistent_state() -> None:
+    from lawvm.core.timeline_lineage import LineageAcyclicityResult
+
+    with pytest.raises(ValueError):
+        LineageAcyclicityResult(acyclic=True, cycle=(_address("1"),))
+    with pytest.raises(ValueError):
+        LineageAcyclicityResult(acyclic=False, cycle=())

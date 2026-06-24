@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Current, one stale ref. Kind: Normative (high-level model; defers term definitions to LAWVM_PIPELINE_CONTRACT). Drift: §3 cites `core/payload_surface.py` for `ElaboratedGroup`, but it now lives in `finland/elaborated_group.py`. `PhaseResult` (current carrier) vs the contract's target `StageResult` is the intended current-vs-target distinction, not drift. No PEG3/§1.13 refs.
+
 # LawVM Constitution
 
 Status: normative, implementation-near, and allowed to lead the code.

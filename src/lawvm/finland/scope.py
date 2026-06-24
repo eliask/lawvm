@@ -733,6 +733,71 @@ def infer_letter_suffix_section_chapter_from_stem_host(
     return stem_chapter
 
 
+def _letter_suffix_insert_live_stem_wrapper(
+    master: "ReplayState",
+    section_label: str,
+    *,
+    part_label: str | None = None,
+) -> tuple[bool, bool] | None:
+    """Locate the live stem of a letter-suffix section and report its wrapper.
+
+    Returns ``(stem_unchaptered, stem_unparted)`` when the stem exists live, or
+    ``None`` when it cannot be located. The op may carry a stale part wrapper
+    that the stem does not actually live under, so the stem is looked up first
+    with the op's part and then unparted — a stem found only at body level is
+    both unchaptered and unparted, and the suffix insert's stale part wrapper
+    must be dropped along with the chapter.
+    """
+    section_norm = _norm_num_token(section_label)
+    stem_match = re.fullmatch(r"(\d+)([a-z])", section_norm, flags=re.I)
+    if stem_match is None:
+        return None
+    find_section_path = getattr(master, "find_section_path", None)
+    if not callable(find_section_path):
+        return None
+    live_path = None
+    if part_label is not None:
+        live_path = find_section_path(stem_match.group(1), None, part_label)
+    if live_path is None:
+        live_path = find_section_path(stem_match.group(1), None, None)
+    if live_path is None:
+        return None
+    stem_unchaptered = not any(kind == "chapter" for kind, _label in live_path)
+    stem_unparted = not any(kind == "part" for kind, _label in live_path)
+    return stem_unchaptered, stem_unparted
+
+
+def _source_body_places_letter_suffix_with_unchaptered_stem_wrapper(
+    source_model: object | None,
+    *,
+    section_label: str,
+    chapter_label: str,
+    part_label: str | None,
+) -> bool:
+    if source_model is None:
+        return False
+    section_norm = _norm_num_token(section_label)
+    match = re.fullmatch(r"(?P<stem>\d+)[a-z]", section_norm, flags=re.I)
+    if match is None:
+        return False
+    body_section_scope = getattr(source_model, "body_section_scope", None)
+    if not callable(body_section_scope):
+        return False
+    section_scope = body_section_scope(section_norm)
+    stem_scope = body_section_scope(match.group("stem"))
+    if section_scope is None or stem_scope is None:
+        return False
+    _section_part, section_chapter = section_scope
+    _stem_part, stem_chapter = stem_scope
+    chapter_norm = _norm_num_token(chapter_label)
+    return (
+        section_chapter is not None
+        and _norm_num_token(section_chapter) == chapter_norm
+        and stem_chapter is not None
+        and _norm_num_token(stem_chapter) == chapter_norm
+    )
+
+
 def _unique_base_section_chapter(
     master: "ReplayState",
     section_label: str,
@@ -759,6 +824,65 @@ def _unique_base_section_chapter(
     if len(chapters) != 1:
         return None
     return next(iter(chapters))
+
+
+def _chapter_chunk_mentions_section_label(chunk: str, section_label: str) -> bool:
+    norm = _norm_num_token(section_label)
+    m = re.fullmatch(r"(\d+)([a-z]?)", norm, flags=re.I)
+    if not m:
+        return re.search(rf"\b{re.escape(section_label)}\s*§", chunk, flags=re.I) is not None
+
+    base, suffix = m.groups()
+
+    def _genitive_reference_is_whole_section(match: re.Match[str]) -> bool:
+        tail = chunk[match.end() : match.end() + 40]
+        return not re.match(
+            r"\s+\d+(?:\s+ja\s+\d+)?\s+(?:moment\w*|kohta\b)",
+            tail,
+            flags=re.I,
+        )
+
+    # Whole-section carry-forward must not latch onto subsection-qualified
+    # mentions like ``1 §:n 4 momentti`` when choosing the governing chapter
+    # chunk for a later plain ``1 §`` op.
+    direct_pat = (
+        rf"\b{re.escape(base)}\s*{re.escape(suffix)}\s*§(?!\s*:n?\b)"
+        if suffix
+        else rf"\b{re.escape(base)}\s*§(?!\s*:n?\b)"
+    )
+    if re.search(direct_pat, chunk, flags=re.I):
+        return True
+    genitive_pat = (
+        rf"\b{re.escape(base)}\s*{re.escape(suffix)}\s*§:n?\b"
+        if suffix
+        else rf"\b{re.escape(base)}\s*§:n?\b"
+    )
+    for match in re.finditer(genitive_pat, chunk, flags=re.I):
+        if _genitive_reference_is_whole_section(match):
+            return True
+
+    if suffix:
+        # Handles chains like "5 a ja 8-10 §" where only the terminal label
+        # carries the section sign.
+        if re.search(
+            rf"\b{re.escape(base)}\s*{re.escape(suffix)}\b(?=[^§]{{0,40}}§)",
+            chunk,
+            flags=re.I,
+        ):
+            return True
+        return False
+
+    wanted = int(base)
+    for a, b, c in re.findall(r"(\d+)\s*[–-]\s*(\d+)(?:\s+ja\s+(\d+))?\s*§", chunk, flags=re.I):
+        lo_, hi = sorted((int(a), int(b)))
+        if lo_ <= wanted <= hi:
+            return True
+        if c and wanted == int(c):
+            return True
+    for a, b in re.findall(r"(\d+)\s+ja\s+(\d+)\s*§", chunk, flags=re.I):
+        if wanted in {int(a), int(b)}:
+            return True
+    return False
 
 
 def _chapter_chunk_mentions_lo(chunk: str, lo: _LegalOperation) -> bool:
@@ -803,64 +927,6 @@ def _chapter_chunk_mentions_lo(chunk: str, lo: _LegalOperation) -> bool:
                     return True
         return False
 
-    def _section_in_chunk(target: str) -> bool:
-        norm = _norm_num_token(target)
-        m = re.fullmatch(r"(\d+)([a-z]?)", norm, flags=re.I)
-        if not m:
-            return re.search(rf"\b{re.escape(target)}\s*§", chunk, flags=re.I) is not None
-
-        base, suffix = m.groups()
-
-        def _genitive_reference_is_whole_section(match: re.Match[str]) -> bool:
-            tail = chunk[match.end() : match.end() + 40]
-            return not re.match(
-                r"\s+\d+(?:\s+ja\s+\d+)?\s+(?:moment\w*|kohta\b)",
-                tail,
-                flags=re.I,
-            )
-
-        # Whole-section carry-forward must not latch onto subsection-qualified
-        # mentions like ``1 §:n 4 momentti`` when choosing the governing chapter
-        # chunk for a later plain ``1 §`` op.
-        direct_pat = (
-            rf"\b{re.escape(base)}\s*{re.escape(suffix)}\s*§(?!\s*:n?\b)"
-            if suffix
-            else rf"\b{re.escape(base)}\s*§(?!\s*:n?\b)"
-        )
-        if re.search(direct_pat, chunk, flags=re.I):
-            return True
-        genitive_pat = (
-            rf"\b{re.escape(base)}\s*{re.escape(suffix)}\s*§:n?\b"
-            if suffix
-            else rf"\b{re.escape(base)}\s*§:n?\b"
-        )
-        for match in re.finditer(genitive_pat, chunk, flags=re.I):
-            if _genitive_reference_is_whole_section(match):
-                return True
-
-        if suffix:
-            # Handles chains like "5 a ja 8-10 §" where only the terminal label
-            # carries the section sign.
-            if re.search(
-                rf"\b{re.escape(base)}\s*{re.escape(suffix)}\b(?=[^§]{{0,40}}§)",
-                chunk,
-                flags=re.I,
-            ):
-                return True
-            return False
-
-        wanted = int(base)
-        for a, b, c in re.findall(r"(\d+)\s*[–-]\s*(\d+)(?:\s+ja\s+(\d+))?\s*§", chunk, flags=re.I):
-            lo_, hi = sorted((int(a), int(b)))
-            if lo_ <= wanted <= hi:
-                return True
-            if c and wanted == int(c):
-                return True
-        for a, b in re.findall(r"(\d+)\s+ja\s+(\d+)\s*§", chunk, flags=re.I):
-            if wanted in {int(a), int(b)}:
-                return True
-        return False
-
     if special == "heading":
         return re.search(rf"\b{sec}\s*§:n?\s+otsikko\b", chunk, flags=re.I) is not None
     if special == "intro":
@@ -881,7 +947,7 @@ def _chapter_chunk_mentions_lo(chunk: str, lo: _LegalOperation) -> bool:
         if re.search(rf"\b{sec}\s*§", chunk, flags=re.I) and _moment_in_chunk(int(subsec)):
             return True
         return re.search(rf"\b{sec}\s*§:n?\s+{subsec}(?:\s+ja\s+\d+)?\s+moment", chunk, flags=re.I) is not None
-    return _section_in_chunk(sec_label)
+    return _chapter_chunk_mentions_section_label(chunk, sec_label)
 
 
 # --- shared source-plane descendant-scope recognizer (scope.py owner) ---------
@@ -1102,6 +1168,7 @@ def strip_unjustified_chapter_scope_from_unique_sections(
     los: List[_LegalOperation],
     johto: str,
     master: "ReplayState",
+    source_model: object | None = None,
 ) -> List[_LegalOperation]:
     explicit_scope_notes = {
         "renumber_clause",
@@ -1253,6 +1320,43 @@ def strip_unjustified_chapter_scope_from_unique_sections(
             result.append(lo)
             continue
         if lo.action is StructuralAction.INSERT:
+            live_stem_wrapper = _letter_suffix_insert_live_stem_wrapper(
+                master,
+                str(section),
+                part_label=str(part) if part else None,
+            )
+            if (
+                not (
+                    pd.get("subsection")
+                    or pd.get("item")
+                    or pd.get("paragraph")
+                    or facet in {"intro", "heading"}
+                )
+                and live_stem_wrapper is not None
+                and live_stem_wrapper[0]
+                and not _johtolause_explicitly_mentions_chaptered_section_target(
+                    johto,
+                    str(chapter),
+                    str(section),
+                )
+                and _source_body_places_letter_suffix_with_unchaptered_stem_wrapper(
+                    source_model,
+                    section_label=str(section),
+                    chapter_label=str(chapter),
+                    part_label=str(part) if part else None,
+                )
+            ):
+                # Drop the stale chapter wrapper, and the stale part wrapper too
+                # when the live stem itself sits at body level (unparted) — the
+                # suffix must follow its stem's placement.
+                stem_unparted = live_stem_wrapper[1]
+                lo_new = (
+                    _lo_with_path_update(lo, chapter=None, part=None)
+                    if stem_unparted
+                    else _lo_with_path_update(lo, chapter=None)
+                )
+                result.append(lo_with_added_scope_tag(lo_new, "chapter_scope_stripped_stale_stem_body_wrapper"))
+                continue
             # If the section doesn't yet exist in the op's stated chapter, this
             # INSERT is genuinely creating a new section there. A section that
             # happens to live in a *different* chapter (e.g. a VÄLIAIKAINEN
@@ -1408,6 +1512,28 @@ def assign_chapter_scope_from_johtolause(
                             )
                         ):
                             continue
+                    insert_live_stem_wrapper = _letter_suffix_insert_live_stem_wrapper(
+                        master,
+                        section_label,
+                        part_label=part_label,
+                    )
+                    if (
+                        lo.action is StructuralAction.INSERT
+                        and not (
+                            pd.get("subsection")
+                            or pd.get("item")
+                            or pd.get("paragraph")
+                            or facet in {"intro", "heading"}
+                        )
+                        and insert_live_stem_wrapper is not None
+                        and insert_live_stem_wrapper[0]
+                        and not _johtolause_explicitly_mentions_chaptered_section_target(
+                            johto,
+                            chapter_label,
+                            section_label,
+                        )
+                    ):
+                        continue
                     if (
                         lo.action is not StructuralAction.INSERT
                         and not _master_has_section_in_chapter(

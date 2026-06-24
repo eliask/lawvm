@@ -197,17 +197,22 @@ def _accepted_route_should_use_vts_side_repeal_only(
     parent_title: str,
     source_title: str,
     johto: str,
+    amendment_edge_kind: str,
     source_model: AmendmentSourceModel,
     strict_profile: StrictProfile | None,
 ) -> bool:
     """Detect accepted routes whose only parent effect is a VTS side repeal."""
-    if not _single_target_title_names_other_statute(source_title, parent_title):
-        return False
     try:
         source_year = int(str(amendment_id).split("/", 1)[0])
     except (TypeError, ValueError, IndexError):
         return False
-    if johtolause_cited_target_ids(johto, source_year):
+    cited_ids = tuple(johtolause_cited_target_ids(johto, source_year))
+    if amendment_edge_kind == "source_vts_explicit":
+        if parent_id in cited_ids:
+            return False
+    elif not _single_target_title_names_other_statute(source_title, parent_title):
+        return False
+    elif cited_ids:
         return False
     return bool(
         source_model.extract_vts_cross_statute_repeals(
@@ -243,6 +248,7 @@ def process_muutoslaki_resolved(
     """
 
     amendment_id = process_call.amendment_id
+    amendment_edge_kind = process_call.amendment_edge_kind
     state = process_call.state
     ctx = process_call.ctx
     replay_mode = process_call.replay_mode
@@ -409,6 +415,7 @@ def process_muutoslaki_resolved(
             parent_title=ctx.title,
             source_title=source_title,
             johto=johto,
+            amendment_edge_kind=amendment_edge_kind,
             source_model=source_model,
             strict_profile=strict_profile,
         ):
@@ -720,6 +727,7 @@ def process_muutoslaki_resolved(
                 compiled_ops_out=compiled_ops_out,
                 amendment_temporal_events=amendment_temporal_events,
                 commencement_expiry_override_notes=commencement_expiry_override_notes,
+                process_findings=process_findings,
                 record_finding=record_process_finding,
                 replay_print=_replay_print,
                 section_expiry_overrides=amendment_tree_metadata.section_expiry_overrides,

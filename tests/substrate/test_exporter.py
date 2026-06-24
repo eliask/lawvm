@@ -647,6 +647,185 @@ def test_pack_with_pathologies_still_valid_clean(
 
 
 # --------------------------------------------------------------------------- #
+# Per-transition amending-act attribution                                       #
+# --------------------------------------------------------------------------- #
+
+
+class _FakeOpSource:
+    """Minimal stand-in for ``OperationSource`` (the amending-act provenance).
+
+    Carries exactly the fields the substrate exporter reads off ``op.source``:
+    the amending act's ``statute_id`` (engine 'year/num'), ``title``, ``enacted``,
+    ``effective``, ``expires``.
+    """
+
+    def __init__(
+        self,
+        statute_id: str,
+        *,
+        title: str = "",
+        enacted: str = "",
+        effective: str = "",
+        expires: str = "",
+    ) -> None:
+        self.statute_id = statute_id
+        self.title = title
+        self.enacted = enacted
+        self.effective = effective
+        self.expires = expires
+
+
+class _FakeOp:
+    """Minimal stand-in for a resolved L2 ``LegalOperation`` (target + source)."""
+
+    def __init__(self, target: str, source: _FakeOpSource) -> None:
+        self.target = target
+        self.source = source
+
+
+class _AmendmentAdapter(_FakeAdapter):
+    """A fake adapter whose replay bundle carries amending-act L2 ops.
+
+    The ops attribute the 2005 change of ``section:2`` to amending act
+    ``2005/581`` and the 2010 insert of ``section:3`` to act ``2010/700``;
+    ``section:1`` is constant (no op → never attributed); a genesis transition at
+    commencement (2000-01-01) is base-attributed.
+    """
+
+    def __init__(self, ops: list[Any]) -> None:
+        super().__init__()
+        self._ops = ops
+
+    def replay_runner(self, _engine_id: str, *, profile: Any) -> Any:
+        import dataclasses as _dc
+
+        return _dc.replace(
+            super().replay_runner(_engine_id, profile=profile),
+            lo_ops=self._ops,
+        )
+
+
+def _amendment_ops() -> list[Any]:
+    return [
+        _FakeOp(
+            "section:2",
+            _FakeOpSource(
+                "2005/581",
+                title="Laki testilain muuttamisesta",
+                enacted="2005-07-01",
+                effective="2005-01-01",
+            ),
+        ),
+        _FakeOp(
+            "section:3",
+            _FakeOpSource(
+                "2010/700",
+                title="Laki testilain 3 §:n muuttamisesta",
+                enacted="2010-06-01",
+                effective="2010-01-01",
+            ),
+        ),
+    ]
+
+
+def test_amendment_transition_attributes_to_amending_act(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A change made by an amending act names THAT act, not the base work."""
+    out = tmp_path / "attrib"
+    _export_with_adapter(_AmendmentAdapter(_amendment_ops()), out, monkeypatch)
+    trace = _read_layer(out / "trace" / "trace.jsonl")
+    transitions = {
+        (t["object"]["effective_date"], t["object"]["target_address"]): t["object"][
+            "source_refs"
+        ]
+        for t in trace
+        if t["object"].get("schema") == "lawvm.certified_tree_transition.v1"
+    }
+    # section:2's 2005 amendment attributes to act 2005/581 (NOT the base work).
+    assert transitions[("2005-01-01", "section:2")] == ["farchive:fi:work:581/2005"]
+    assert "farchive:fi:work:1/2000" not in transitions[("2005-01-01", "section:2")]
+
+
+def test_genesis_transition_attributes_to_base_work(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The commencement (genesis) transition attributes to the base/initial work."""
+    out = tmp_path / "genesis"
+    _export_with_adapter(_AmendmentAdapter(_amendment_ops()), out, monkeypatch)
+    trace = _read_layer(out / "trace" / "trace.jsonl")
+    transitions = {
+        (t["object"]["effective_date"], t["object"]["target_address"]): t["object"][
+            "source_refs"
+        ]
+        for t in trace
+        if t["object"].get("schema") == "lawvm.certified_tree_transition.v1"
+    }
+    # section:1 first appears at commencement (2000-01-01), no amending op → base.
+    assert transitions[("2000-01-01", "section:1")] == ["farchive:fi:work:1/2000"]
+
+
+def test_distinct_amending_acts_distinct_source_artifacts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each distinct amending act → one source_artifact object with canonical id."""
+    out = tmp_path / "arts"
+    _export_with_adapter(_AmendmentAdapter(_amendment_ops()), out, monkeypatch)
+    base_rows = _read_layer(out / "base" / "base.jsonl")
+    arts = [
+        r["object"]
+        for r in base_rows
+        if r["object"].get("schema") == "lawvm.source_artifact.v1"
+    ]
+    by_id = {a["canonical_id"]: a for a in arts}
+    # The base statute + the two distinct amending acts (canonical num/year ids).
+    assert by_id["1/2000"]["kind"] == "statute"
+    assert by_id["581/2005"]["kind"] == "amendment"
+    assert by_id["700/2010"]["kind"] == "amendment"
+    # Titles carried from the amending op's source provenance (not fabricated).
+    assert by_id["581/2005"]["title"] == "Laki testilain muuttamisesta"
+    assert by_id["581/2005"]["date"] == "2005-07-01"
+    # Distinct acts → distinct content-addressed objects.
+    hashes = {r["object_hash"] for r in base_rows if r["object"].get("schema") == "lawvm.source_artifact.v1"}
+    assert len(hashes) == 3
+
+
+def test_unknown_act_transition_attributes_honestly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A change with NO identifiable amending op attributes to base — no fabrication.
+
+    With NO ops at all, every transition (including the 2005 section:2 change and
+    the 2010 section:3 insert) attributes honestly to the base work, never to a
+    fabricated act; and only the base statute source_artifact is emitted.
+    """
+    out = tmp_path / "honest"
+    _export_with_adapter(_AmendmentAdapter([]), out, monkeypatch)
+    trace = _read_layer(out / "trace" / "trace.jsonl")
+    for t in trace:
+        ob = t["object"]
+        if ob.get("schema") != "lawvm.certified_tree_transition.v1":
+            continue
+        assert ob["source_refs"] == ["farchive:fi:work:1/2000"], ob
+    base_rows = _read_layer(out / "base" / "base.jsonl")
+    arts = [r["object"] for r in base_rows if r["object"].get("schema") == "lawvm.source_artifact.v1"]
+    assert len(arts) == 1 and arts[0]["kind"] == "statute"
+
+
+def test_attributed_pack_still_valid_clean(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A pack with real per-transition attribution still passes check-pack VALID."""
+    out = tmp_path / "valid"
+    _export_with_adapter(_AmendmentAdapter(_amendment_ops()), out, monkeypatch)
+    verdict = check_pack(load_pack_for_check(out), mode=CheckMode.AUDIT)
+    assert verdict.integrity is IntegrityVerdict.VALID, [
+        v.to_canonical_dict() for v in verdict.violations
+    ]
+    assert verdict.top_line_verdict is TopLineVerdict.VALID_CLEAN, verdict.to_canonical_dict()
+
+
+# --------------------------------------------------------------------------- #
 # Helpers                                                                      #
 # --------------------------------------------------------------------------- #
 

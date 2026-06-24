@@ -1687,13 +1687,8 @@ def _subsection_is_intro_only_open_list_host(subsection: IRNode, parent_path: Tu
         return False
     if _node_has_descendant_kind(subsection, IRNodeKind.TABLE):
         return False
-    parent_has_container_numbering = any(
-        segment.startswith(("part:", "chapter:")) for segment in parent_path
-    )
-    if parent_has_container_numbering:
-        return False
     text = irnode_to_text(subsection).strip()
-    return bool(text) and not text.endswith((".", "!", "?", ":"))
+    return bool(text) and not text.endswith((".", "!", "?"))
 
 
 def _subsection_paragraph_item_run(subsection: IRNode) -> list[IRNode]:
@@ -1705,6 +1700,45 @@ def _subsection_paragraph_item_run(subsection: IRNode) -> list[IRNode]:
     if any(child.kind not in {IRNodeKind.NUM, IRNodeKind.PARAGRAPH} for child in subsection.children):
         return []
     return paragraphs if _paragraph_labels_are_consecutive(paragraphs) else []
+
+
+def _subsection_item_num_paragraph_run(subsection: IRNode) -> tuple[list[IRNode], list[IRNode]]:
+    """Return paragraphs from a ``1)`` carrier plus section-local omissions."""
+    if subsection.kind != IRNodeKind.SUBSECTION or _item_num_value(subsection) != 1:
+        return [], []
+    paragraphs: list[IRNode] = []
+    omissions: list[IRNode] = []
+    for child in subsection.children:
+        if child.kind == IRNodeKind.OMISSION:
+            omissions.append(child)
+            continue
+        if child.kind == IRNodeKind.NUM:
+            continue
+        if child.kind == IRNodeKind.INTRO:
+            num_child = next((candidate for candidate in subsection.children if candidate.kind == IRNodeKind.NUM), None)
+            if num_child is None:
+                return [], []
+            paragraphs.append(
+                IRNode(
+                    kind=IRNodeKind.PARAGRAPH,
+                    label="1",
+                    attrs=subsection.attrs,
+                    children=(
+                        num_child,
+                        IRNode(kind=IRNodeKind.CONTENT, text=child.text, attrs=child.attrs, children=child.children),
+                    ),
+                )
+            )
+            continue
+        numbered_value = _numbered_paragraph_value(child)
+        if numbered_value is not None:
+            paragraphs.append(child)
+            continue
+        if irnode_to_text(child).strip():
+            return [], []
+    if len(paragraphs) < 2 or not _paragraph_labels_are_consecutive(paragraphs):
+        return [], []
+    return paragraphs, omissions
 
 
 def _fold_intro_only_subsection_item_list_wrapper(
@@ -1731,6 +1765,9 @@ def _fold_intro_only_subsection_item_list_wrapper(
             i += 1
             continue
         folded_paragraphs = _subsection_paragraph_item_run(children[i + 1])
+        folded_omissions: list[IRNode] = []
+        if not folded_paragraphs:
+            folded_paragraphs, folded_omissions = _subsection_item_num_paragraph_run(children[i + 1])
         if not folded_paragraphs:
             rewritten.append(child)
             i += 1
@@ -1745,6 +1782,7 @@ def _fold_intro_only_subsection_item_list_wrapper(
                 children=tuple(child.children) + tuple(folded_paragraphs),
             )
         )
+        rewritten.extend(folded_omissions)
 
         next_label = (_numeric_label_value(child.label) or 0) + 1
         relabelled: list[str] = []

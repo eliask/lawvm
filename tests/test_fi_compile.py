@@ -2898,6 +2898,22 @@ def test_compile_fi_2009_1698_keeps_source_body_chapter_for_56a_insert() -> None
     assert len(inserts) == 1
 
 
+@pytest.mark.slow
+def test_compile_fi_1993_1501_keeps_source_body_chapter_for_209b_replace() -> None:
+    facade = compile_fi_facade("1993/1501", replay_mode="legal_pit")
+
+    replacements = [
+        op
+        for op in facade.bundle.structural_ops
+        if op.action is StructuralAction.REPLACE
+        and str(op.target).endswith("chapter:22/section:209b")
+        and op.source is not None
+        and op.source.statute_id == "2012/399"
+    ]
+
+    assert len(replacements) == 1
+
+
 def test_normalize_and_compile_ops_2007_473_repairs_split_muutetaan_verb() -> None:
     before = replay_xml("1984/603", stop_before="2007/473", mode="legal_pit", quiet=True, build_full_products=False)
     corpus = get_corpus_store()

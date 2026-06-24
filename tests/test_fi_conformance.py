@@ -497,7 +497,7 @@ class TestElaborationSnapshotVocabulary:
         note = Path(__file__).resolve().parents[1] / "notes" / "CONFORMANCE_CORPUS.md"
         text = note.read_text(encoding="utf-8")
 
-        assert "### 2.6 Finland replay-regression micro-suite proposal" in text
+        assert "Finland replay-regression micro-suite proposal" in text
         for sid in ("2000/252", "1981/555", "2006/766", "2014/1429"):
             assert sid in text
         for sid in ("2013/492", "1994/1217"):

@@ -43,6 +43,48 @@ def _op() -> LegalOperation:
     )
 
 
+def test_known_source_effect_empty_excerpt_is_canonicalized_from_operation_source() -> None:
+    source = OperationSource(
+        statute_id="2020/1",
+        title="Amending act",
+        effective="2020-01-01",
+        raw_text="lisätään lakiin uusi 4 a §",
+    )
+    op = LegalOperation(
+        op_id="op-1",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "4 a"),)),
+        source=source,
+    )
+    instrument = SourceInstrumentRef.from_operation_source(source)
+    known_effect = EffectRef(
+        effect_id="fi-effect:2020/1:op-1",
+        source_instrument=instrument,
+        target_statute="1990/1",
+        target_address=op.target,
+        source_provision=SourceProvisionRef(
+            instrument=instrument,
+            path=("op-1",),
+            span_id="op-1",
+            text_excerpt="",
+            rule_id="fi.legal_operation.effect_declaration",
+        ),
+    )
+
+    canonicalized = elp._canonicalized_known_source_effects((known_effect,), (op,))
+
+    assert canonicalized[0].source_provision is not None
+    assert canonicalized[0].source_provision.text_excerpt == source.raw_text
+    source_effects, _relations, _lifecycle_events = build_finland_effect_lifecycle(
+        target_statute="1990/1",
+        canonical_ops=(op,),
+        temporal_events=(),
+        known_source_effects=(known_effect,),
+    )
+    assert source_effects == ()
+
+
 def test_finland_temporal_event_projects_to_effect_lifecycle_event() -> None:
     temporal = TemporalEvent(
         event_id="fi-temporary:2020/1:op-1:expire",

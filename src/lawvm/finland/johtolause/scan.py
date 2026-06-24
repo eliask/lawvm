@@ -1168,10 +1168,17 @@ def _extract_renumber_pairs_from_jolloin_tokens(
         text = (tok.text or "").lower()
         return tok.cat == "MOMENTTI" or text.startswith("moment")
 
-    # Find the movement verb (siirtyy/siirtyvät/siirretään)
+    # Find the movement/change verb (siirtyy/siirtyvät/siirretään, muuttuu/muuttuvat).
     verb_idx = -1
     for i, t in enumerate(span):
-        if t.text.lower() in ("siirtyvät", "siirtyy", "siirtyvat", "siirretään"):
+        if t.text.lower() in (
+            "muuttuu",
+            "muuttuvat",
+            "siirtyvät",
+            "siirtyy",
+            "siirtyvat",
+            "siirretään",
+        ):
             verb_idx = i
             break
     if verb_idx < 0:

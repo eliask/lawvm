@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Current-with-noted-drift. Kind: Normative (spec-first, spec_version 0.4.1). Schema is authoritative; the only implementation is the EXPERIMENTAL `lawvm certificate-bundle` fixture writer ('NOT a checked certificate') and NO certificate checker exists yet — the doc says so. Cross-refs to SEAM_SPEC §5.1 + companion trace spec resolve.
+
 ---
 title: LawVM Certificate Schema v0 — Temporal Dossier and Checker Contract
 schema: lawvm.certificate.v0

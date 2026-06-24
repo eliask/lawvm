@@ -746,7 +746,10 @@ def _apply_intent_section_level(
                             source_labels.get("part"),
                         )
                     )
-                sec_path = None
+                if descendant_scoped_target:
+                    sec_path = migration_rebased_target_path
+                else:
+                    sec_path = None
 
     whole_pathology_cursor = len(source_pathologies_out) if source_pathologies_out is not None else 0
     whole_result = None

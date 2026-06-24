@@ -405,7 +405,14 @@ def _apply_legacy_dispatch(
                         source_labels.get("part"),
                     )
                 )
-            sec_path = None
+            if (
+                structure_view.target_paragraph is not None
+                or structure_view.target_item is not None
+                or structure_view.target_special is not None
+            ):
+                sec_path = migration_rebased_target_path
+            else:
+                sec_path = None
     if not blocked_scoped_whole_section_replace_recovery:
         whole_result = _apply_whole_section_op(
             state,

@@ -276,6 +276,20 @@ def test_temporary_section_expiry_overrides_collect_multiple_clauses() -> None:
     )
 
 
+def test_temporary_section_expiry_overrides_parse_heading_chained_tail() -> None:
+    tree = _tree(
+        "Tämä laki tulee voimaan 1 päivänä tammikuuta 2010. "
+        "Lain 69 c § ja sen edellä oleva väliotsikko ovat voimassa "
+        "31 päivään joulukuuta 2012 ja 69 d § ja sen edellä oleva "
+        "väliotsikko 31 päivään joulukuuta 2010."
+    )
+
+    overrides = _temporary_section_expiry_overrides(tree, "2009/887")
+
+    assert ("2009/887", {"69c"}, dt.date(2012, 12, 31)) in overrides
+    assert ("2009/887", {"69d"}, dt.date(2010, 12, 31)) in overrides
+
+
 def test_temporary_section_expiry_overrides_parse_added_sections() -> None:
     tree = _tree(
         "Tämä laki tulee voimaan 1 päivänä tammikuuta 2009. "
@@ -332,6 +346,14 @@ def test_infer_expiry_date_from_temporary_payload_text_singular_tax_year() -> No
     )
     assert expiry is not None
     assert expiry.isoformat() == "1984-12-31"
+
+
+def test_infer_expiry_date_from_temporary_payload_text_current_tax_year() -> None:
+    expiry = _infer_expiry_date_from_temporary_payload_text(
+        "Vuoden 2000 verotuksessa myönnetään kuorma-autoille vapautus."
+    )
+    assert expiry is not None
+    assert expiry.isoformat() == "2000-12-31"
 
 
 def test_temporary_section_expiry_override_infers_tax_year_window_from_payload() -> None:

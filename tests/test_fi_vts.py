@@ -13,6 +13,7 @@ from lawvm.finland.vts import (
     _expand_section_range_vts,
     _parent_title_variants,
     _vts_extract_after_citation,
+    _vts_parent_citation_re,
     extract_voimaantulo_repeals,
 )
 
@@ -106,6 +107,37 @@ def test_vts_extract_after_citation_returns_empty_when_no_match() -> None:
     cit = _cit_re(100, "2020")
     result = _vts_extract_after_citation(text, cit)
     assert result == ""
+
+
+def test_vts_parent_citation_accepts_suffixed_finnish_canonical_id() -> None:
+    cit = _vts_parent_citation_re("1901/15-001")
+    assert cit is not None
+    assert cit.search("(15/1901)")
+    assert cit.search("(15/01)")
+
+
+def test_vts_repeal_accepts_suffixed_parent_id_with_title_reference() -> None:
+    xml = """
+    <body xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+      <hcontainer name="entryIntoForce" eId="entryIntoForce">
+        <content>
+          <p>2. Kumottavat säännökset. Tällä lailla kumotaan avioliittolain
+          voimaanpanosta 13 päivänä kesäkuuta 1929 annetun lain (235/29) 10,
+          11 ja 15§, rikoslain 19 luvun 6 § sekä kuolleeksi julistamisesta
+          23 päivänä huhtikuuta 1901 annetun lain 15 §, sellaisena kuin se on
+          23 päivänä toukokuuta 1975 annetussa laissa (351/75).</p>
+        </content>
+      </hcontainer>
+    </body>
+    """.encode()
+
+    ops = extract_voimaantulo_repeals(
+        xml,
+        "1901/15-001",
+        parent_title="Laki kuolleeksi julistamisesta",
+    )
+
+    assert [op.description() for op in ops] == ["REPEAL 15 §"]
 
 
 def test_vts_extract_after_citation_truncates_at_comma_statute_transition() -> None:

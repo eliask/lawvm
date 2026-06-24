@@ -70,6 +70,11 @@ RECOVERY_AUTHORIZATION_RULES: dict[str, FinlandRecoveryAuthorizationRule] = {
         owner_phase="typed_elaboration",
         family="sparse_payload_elaboration_recovery",
     ),
+    "ELAB.SPLIT_FINAL_LIST_ITEM_TRAILING_SUBSECTION": FinlandRecoveryAuthorizationRule(
+        kind="ELAB.SPLIT_FINAL_LIST_ITEM_TRAILING_SUBSECTION",
+        owner_phase="typed_elaboration",
+        family="payload_source_shape_recovery",
+    ),
     "ELAB.FOLD_SINGLE_INSERT_SUBSECTION_LIST_TAIL": FinlandRecoveryAuthorizationRule(
         kind="ELAB.FOLD_SINGLE_INSERT_SUBSECTION_LIST_TAIL",
         owner_phase="typed_elaboration",
@@ -95,6 +100,11 @@ RECOVERY_AUTHORIZATION_RULES: dict[str, FinlandRecoveryAuthorizationRule] = {
         owner_phase="typed_elaboration",
         family="payload_ownership_recovery",
     ),
+    # NOTE: report-only metadata. This authorization registry is not wired into a
+    # runtime blocking decision; ELAB.SPARSE_PAYLOAD_LEFTOVER is registered
+    # warn/obligation (non-blocking) in observation_registry, which governs actual
+    # enforcement. The "block" disposition here is an inconsistent metadata note,
+    # not a live gate — left as-is (behaviour unchanged) pending a metadata audit.
     "ELAB.SPARSE_PAYLOAD_LEFTOVER": FinlandRecoveryAuthorizationRule(
         kind="ELAB.SPARSE_PAYLOAD_LEFTOVER",
         owner_phase="typed_elaboration",

@@ -107,6 +107,7 @@ from lawvm.finland.apply_typed_dispatch import (
     _materialization_root_move_allowances,
     _whole_section_move_rebind_allowances,
 )
+from lawvm.finland.compile_group_elaboration import _source_complete_container_replacement_witness
 from lawvm.finland.migration_ledger import MigrationLedger
 from lawvm.finland.apply_ir_ops import (
     _rebuild_subsection_with_items_ir,
@@ -2492,6 +2493,197 @@ def test_emit_section_snapshot_skips_payload_child_that_same_group_explicitly_re
     )
 
 
+def test_emit_section_snapshot_keeps_replacement_section_child_after_old_child_repeal() -> None:
+    """A replacement whole-section insert may reuse the old subsection label.
+
+    Real shape: 1991/714 / 1973/692 repeals old 21 § 1 mom and inserts a new
+    21 § in its place. The new section's 1 mom is fresh payload, not stale
+    carried text to prune because the repealed old subsection had the same
+    label.
+    """
+    base_section = _sec(
+        "21",
+        IRNode(kind=IRNodeKind.NUM, text="21 §"),
+        _sub("1", _content("old vacation compensation text")),
+    )
+    replacement_section = _sec(
+        "21",
+        IRNode(kind=IRNodeKind.NUM, text="21 §"),
+        _sub("1", _content("new transfer vacation text")),
+    )
+    state = _make_state(_body(base_section))
+    lo_ops: list[LegalOperation] = []
+
+    repeal_rop = ResolvedOp.from_amendment_op(
+        AmendmentOp(
+            op_id="repeal_old_21_1",
+            op_type="REPEAL",
+            target_section="21",
+            target_unit_kind="section",
+            target_paragraph=1,
+            source_statute="1991/714",
+            source_issue_date=_DATE,
+        ),
+        muutos_ir=None,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="21",
+        target_chapter=None,
+        target_address=LegalAddress(path=(("section", "21"), ("subsection", "1"))),
+    )
+    insert_rop = ResolvedOp.from_amendment_op(
+        AmendmentOp(
+            op_id="insert_new_21",
+            op_type="INSERT",
+            target_section="21",
+            target_unit_kind="section",
+            source_statute="1991/714",
+            source_issue_date=_DATE,
+        ),
+        muutos_ir=replacement_section,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="21",
+        target_chapter=None,
+        target_address=LegalAddress(path=(("section", "21"),)),
+        payload_completeness=PayloadCompletenessWitness(
+            kind="complete",
+            reasons=("synthetic_whole_section_replacement",),
+            tail_policy="replace_if_target_scope_requires",
+        ),
+    )
+
+    _emit_section_snapshot(
+        state=state,
+        target_unit_kind="section",
+        target_norm="21",
+        target_chapter=None,
+        target_part=None,
+        group_rops=[repeal_rop, insert_rop],
+        lo_ops_out=lo_ops,
+        amendment_id="1991/714",
+        source_title="Repealed section replacement",
+        source_issue_date=_DATE,
+        source_effective_date=_DATE,
+        base_ir=_body(base_section),
+    )
+
+    assert any(
+        op.target.path == (("section", "21"), ("subsection", "1"))
+        and op.action is not StructuralAction.REPEAL
+        and op.payload is not None
+        and "new transfer vacation text" in irnode_to_text(op.payload)
+        for op in lo_ops
+    )
+    assert not any(
+        op.target.path == (("section", "21"), ("subsection", "1"))
+        and op.action is StructuralAction.REPEAL
+        for op in lo_ops
+    )
+
+
+def test_emit_section_snapshot_skips_shifted_child_that_same_group_repeals() -> None:
+    """A repealed old subsection must not be carried forward under a shifted
+    label after an earlier same-group insert.
+
+    Real shape: 1991/1081 / 1958/438 §32 adds a new 2 mom, moves old 2 mom to
+    3 mom, and repeals old 3 mom. Snapshot emission must not preserve old 3 mom
+    as a synthetic 4 mom merely because insert-at-2 shifted the live tree.
+    """
+    base_section = _sec(
+        "32",
+        IRNode(kind=IRNodeKind.NUM, text="32 §"),
+        _sub("1", _content("old first")),
+        _sub("2", _content("old second to move")),
+        _sub("3", _content("old third to repeal")),
+    )
+    final_section = _sec(
+        "32",
+        IRNode(kind=IRNodeKind.NUM, text="32 §"),
+        _sub("1", _content("changed first")),
+        _sub("2", _content("new second")),
+        _sub("3", _content("old second to move")),
+        _sub("4", _content("old third to repeal")),
+    )
+    state = _make_state(_body(final_section))
+    lo_ops: list[LegalOperation] = []
+
+    insert2 = ResolvedOp.from_amendment_op(
+        _op(op_type="INSERT", target_section="32", target_paragraph=2),
+        muutos_ir=_sub("2", _content("new second")),
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="32",
+        target_chapter=None,
+        target_address=LegalAddress(path=(("section", "32"), ("subsection", "2"))),
+    )
+    renumber2 = ResolvedOp.from_amendment_op(
+        dc_replace(
+            _op(op_type="RENUMBER", target_section="32", target_paragraph=2),
+            op_id="renumber_2_to_3",
+            lo=LegalOperation(
+                op_id="renumber_2_to_3",
+                sequence=0,
+                action=StructuralAction.RENUMBER,
+                target=LegalAddress(path=(("section", "32"), ("subsection", "2"))),
+                destination=LegalAddress(path=(("section", "32"), ("subsection", "3"))),
+            ),
+        ),
+        muutos_ir=None,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="32",
+        target_chapter=None,
+    )
+    repeal3 = ResolvedOp.from_amendment_op(
+        _op(op_type="REPEAL", target_section="32", target_paragraph=3),
+        muutos_ir=None,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="32",
+        target_chapter=None,
+        target_address=LegalAddress(path=(("section", "32"), ("subsection", "3"))),
+    )
+    replace_section = ResolvedOp.from_amendment_op(
+        _op(op_type="REPLACE", target_section="32"),
+        muutos_ir=final_section,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="32",
+        target_chapter=None,
+        target_address=LegalAddress(path=(("section", "32"),)),
+    )
+
+    _emit_section_snapshot(
+        state=state,
+        target_unit_kind="section",
+        target_norm="32",
+        target_chapter=None,
+        target_part=None,
+        group_rops=[insert2, renumber2, repeal3, replace_section],
+        lo_ops_out=lo_ops,
+        amendment_id="1991/1081",
+        source_title="Mixed insert move repeal",
+        source_issue_date=_DATE,
+        source_effective_date=_DATE,
+        base_ir=_body(base_section),
+    )
+
+    assert not any(
+        op.target.path == (("section", "32"), ("subsection", "4"))
+        and op.action is not StructuralAction.REPEAL
+        for op in lo_ops
+    )
+    sub3 = next(
+        op
+        for op in lo_ops
+        if op.target.path == (("section", "32"), ("subsection", "3"))
+    )
+    assert sub3.action is not StructuralAction.REPEAL
+    assert sub3.payload is not None
+    assert "old second to move" in irnode_to_text(sub3.payload)
+
+
 def test_emit_section_snapshot_sparse_chapter_replace_skips_missing_child_repeals() -> None:
     base_ir = _body(
         IRNode(
@@ -2571,6 +2763,119 @@ def test_emit_section_snapshot_sparse_chapter_replace_skips_missing_child_repeal
     assert [p.detail["recovery_kind"] for p in pathologies] == [
         "container_snapshot_sparse_missing_child_repeal_skip"
     ]
+
+
+def test_source_complete_part_replacement_witness_records_chapter_labels() -> None:
+    payload = IRNode(
+        kind=IRNodeKind.PART,
+        label="1",
+        children=(
+            IRNode(kind=IRNodeKind.CHAPTER, label="1", children=(_sec("1", _content("new 1")),)),
+            IRNode(kind=IRNodeKind.CHAPTER, label="2", children=(_sec("4", _content("new 4")),)),
+        ),
+    )
+
+    witness = _source_complete_container_replacement_witness(
+        raw_muutos_ir=payload,
+        group_ops=[
+            AmendmentOp(
+                op_id="replace_part_1",
+                op_type="REPLACE",
+                target_section="1",
+                target_unit_kind="part",
+                source_statute="1987/411",
+                source_issue_date=_DATE,
+            )
+        ],
+        target_unit_kind="part",
+        target_norm="1",
+    )
+
+    assert witness is not None
+    assert witness.kind == "complete"
+    assert witness.tail_policy == "replace_if_target_scope_requires"
+    assert witness.detail["source_child_labels"] == ("1", "2")
+
+
+def test_emit_section_snapshot_complete_part_replace_repeals_missing_chapters() -> None:
+    base_ir = _body(
+        IRNode(
+            kind=IRNodeKind.PART,
+            label="1",
+            children=(
+                IRNode(kind=IRNodeKind.CHAPTER, label="1", children=(_sec("1", _content("old 1")),)),
+                IRNode(kind=IRNodeKind.CHAPTER, label="2", children=(_sec("4", _content("old stale 4")),)),
+            ),
+        )
+    )
+    payload = IRNode(
+        kind=IRNodeKind.PART,
+        label="1",
+        children=(
+            IRNode(kind=IRNodeKind.CHAPTER, label="1", children=(_sec("1", _content("new 1")),)),
+        ),
+    )
+    state = _make_state(
+        _body(
+            IRNode(
+                kind=IRNodeKind.PART,
+                label="1",
+                children=(
+                    IRNode(kind=IRNodeKind.CHAPTER, label="1", children=(_sec("1", _content("new 1")),)),
+                    IRNode(kind=IRNodeKind.CHAPTER, label="2", children=(_sec("4", _content("old stale 4")),)),
+                ),
+            )
+        )
+    )
+    rop = ResolvedOp.from_amendment_op(
+        AmendmentOp(
+            op_id="replace_part_1",
+            op_type="REPLACE",
+            target_section="1",
+            target_unit_kind="part",
+            source_statute="1987/411",
+            source_issue_date=_DATE,
+        ),
+        muutos_ir=payload,
+        cross_ir=None,
+        target_unit_kind="part",
+        target_norm="1",
+        target_chapter=None,
+        target_address=LegalAddress(path=(("part", "1"),)),
+        payload_completeness=PayloadCompletenessWitness(
+            kind="complete",
+            reasons=("source_complete_container_replacement",),
+            tail_policy="replace_if_target_scope_requires",
+            detail={"source_child_labels": ("1",)},
+        ),
+    )
+    lo_ops: list[LegalOperation] = []
+
+    _emit_section_snapshot(
+        state=state,
+        target_unit_kind="part",
+        target_norm="1",
+        target_chapter=None,
+        target_part=None,
+        group_rops=[rop],
+        lo_ops_out=lo_ops,
+        amendment_id="1987/411",
+        source_title="Avioliittolain kokonaisuudistus",
+        source_issue_date=_DATE,
+        source_effective_date=_DATE,
+        base_ir=base_ir,
+    )
+
+    part_snapshot = next(op for op in lo_ops if op.op_id == "snapshot_part_1")
+    assert part_snapshot.payload is not None
+    assert part_snapshot.payload.attrs["lawvm_tail_policy"] == "replace_if_target_scope_requires"
+    assert part_snapshot.payload.attrs["lawvm_payload_completeness_kind"] == "complete"
+    assert any(
+        op.action is StructuralAction.REPEAL
+        and op.op_id == "snapshot_repeal_missing_chapter_2_from_part_1"
+        and op.target.path == (("part", "1"), ("chapter", "2"))
+        for op in lo_ops
+    )
 
 
 def test_subsection_repeal_does_not_copy_whole_section_heading_from_muutos_ir() -> None:

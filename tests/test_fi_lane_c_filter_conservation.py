@@ -304,3 +304,34 @@ def test_seed_skip_no_match_returns_all_accepted() -> None:
     # No observation emitted when nothing is dropped.
     ctx.prepare()
     assert elaboration == []
+
+
+def test_restructure_preseed_keeps_only_relabel_ops() -> None:
+    renumber = AmendmentOp(
+        op_id="renumber_1",
+        op_type="RENUMBER",
+        target_section="1",
+        target_unit_kind="section",
+    )
+    stale_insert = AmendmentOp(
+        op_id="insert_2",
+        op_type="INSERT",
+        target_section="2",
+        target_chapter="9",
+        target_unit_kind="section",
+    )
+    ctx = ProcessStructuralPrepareContext(
+        amendment_id="2003/3",
+        target_statute="2000/1",
+        ops=[renumber, stale_insert],
+        chapter_seed_skip=None,
+        restructure_plans=[],
+        elaboration_observations=[],
+        replay_print=lambda _msg: None,
+    )
+
+    kept = ctx.prepare()
+
+    assert [op.op_id for op in kept] == ["renumber_1", "insert_2"]
+    assert len(ctx.restructure_plans) == 1
+    assert [op.target for op in ctx.restructure_plans[0].ops] == ["section:1"]

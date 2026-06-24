@@ -1201,6 +1201,7 @@ def materialize_pit_ex(
     selection_states: List[_MaterializationSelectionState] = []
     selection_issues: List[TimelineIssue] = []
     inactive_expiry_by_address: Dict[LegalAddress, str] = {}
+    inactive_temporary_expiry_by_address: Dict[LegalAddress, str] = {}
     if timelines:
         _validate_selection_query(
             as_of=as_of,
@@ -1274,6 +1275,13 @@ def materialize_pit_ex(
                 )
             )
             inactive_expiry_by_address[address] = max(v.expires or "" for v in expired_versions)
+            expired_temporary_versions = [
+                v for v in expired_versions if v.variant_kind == "temporary"
+            ]
+            if expired_temporary_versions and len(expired_temporary_versions) == len(expired_versions):
+                inactive_temporary_expiry_by_address[address] = max(
+                    v.expires or "" for v in expired_temporary_versions
+                )
 
     active, active_versions, ambiguous_address_tuple = _project_materialization_selection_states(
         selection_states,
@@ -1281,6 +1289,7 @@ def materialize_pit_ex(
         as_of=as_of,
     )
     inactive_expiry_by_projected_address: Dict[LegalAddress, str] = {}
+    inactive_temporary_expiry_by_projected_address: Dict[LegalAddress, str] = {}
     for address, expiry in inactive_expiry_by_address.items():
         projected_address = (
             _current_address_from_migration_events(
@@ -1295,6 +1304,22 @@ def materialize_pit_ex(
         current_expiry = inactive_expiry_by_projected_address.get(projected_address, "")
         if expiry > current_expiry:
             inactive_expiry_by_projected_address[projected_address] = expiry
+    for address, expiry in inactive_temporary_expiry_by_address.items():
+        projected_address = (
+            _current_address_from_migration_events(
+                address,
+                migration_events,
+                as_of_date=as_of,
+                address_prefix_matches=_address_prefix_matches,
+            )
+            if migration_events
+            else address
+        )
+        current_expiry = inactive_temporary_expiry_by_projected_address.get(
+            projected_address, ""
+        )
+        if expiry > current_expiry:
+            inactive_temporary_expiry_by_projected_address[projected_address] = expiry
     title_address = statute_title_address()
     title = base.title if base else ""
     title_content = active.pop(title_address, None)
@@ -1324,6 +1349,8 @@ def materialize_pit_ex(
         content: IRNode,
         parent_addr: LegalAddress,
         child_addr: LegalAddress,
+        *,
+        active_descendant: bool = False,
     ) -> bool:
         if content.attrs.get(STRUCTURAL_RENUMBER_SNAPSHOT_ATTR) == "1":
             return False
@@ -1353,6 +1380,11 @@ def materialize_pit_ex(
                 return parent_addr in base_addresses
         if parent_leaf in {"chapter", "part"} and not has_structural_children:
             return parent_addr in base_addresses
+        if active_descendant and parent_leaf in {"chapter", "part"}:
+            return (
+                content.attrs.get("lawvm_tail_policy") == "replace_if_target_scope_requires"
+                and content.attrs.get("lawvm_payload_completeness_kind") == "complete"
+            )
 
         node = content
         for kind_name, label in relative_path:
@@ -1421,6 +1453,22 @@ def materialize_pit_ex(
                 ):
                     superseded.add(addr)
                     break
+                temporary_expiry = inactive_temporary_expiry_by_projected_address.get(addr, "")
+                if (
+                    temporary_expiry
+                    and parent_addr.leaf_kind() in {"section", "chapter", "part"}
+                    and parent_v
+                    and parent_v.variant_kind == "permanent"
+                    and parent_v.content is not None
+                    and parent_v.effective < temporary_expiry
+                    and _parent_content_masks_child(
+                        parent_v.content,
+                        parent_addr,
+                        addr,
+                    )
+                ):
+                    superseded.add(addr)
+                    break
                 continue
             if not parent_v or not child_v:
                 continue
@@ -1439,11 +1487,21 @@ def materialize_pit_ex(
                 continue
             if (
                 (
-                    _parent_content_masks_child(parent_v.content, parent_addr, addr)
+                    _parent_content_masks_child(
+                        parent_v.content,
+                        parent_addr,
+                        addr,
+                        active_descendant=True,
+                    )
                     and parent_v.effective > child_v.effective
                 )
                 or (
-                    _parent_content_masks_child(parent_v.content, parent_addr, addr)
+                    _parent_content_masks_child(
+                        parent_v.content,
+                        parent_addr,
+                        addr,
+                        active_descendant=True,
+                    )
                     and parent_v.effective == child_v.effective
                     and parent_v.enacted > child_v.enacted
                 )

@@ -152,6 +152,118 @@ def default_label_sort_key(label: Optional[str]) -> Tuple[int, str, int]:
     return _default_sort_key(label)
 
 
+_ROMAN_GLYPHS: FrozenSet[str] = frozenset("ivxlcdm")
+_LOWER_ALPHA_LABEL_RE = re.compile(r"^[a-z]*$")
+
+
+def _split_roman_suffix(normalized: str) -> Optional[Tuple[str, str]]:
+    """Split a normalized label into (leading-roman-run, lowercase-letter-suffix).
+
+    Consumes the maximal leading run of Roman glyphs, then requires the
+    remainder to be lowercase letters.  Returns ``None`` when there is no leading
+    Roman glyph or the remainder is not all lowercase letters.  This is a linear
+    scan rather than an ``[ivxlcdm]+[a-z]*`` regex: those adjacent variable
+    repeats overlap (the roman glyphs are a subset of ``[a-z]``) and are a
+    catastrophic-backtracking hazard the regex perf gate rejects.
+    """
+    i = 0
+    n = len(normalized)
+    while i < n and normalized[i] in _ROMAN_GLYPHS:
+        i += 1
+    if i == 0:
+        return None
+    suffix = normalized[i:]
+    if not _LOWER_ALPHA_LABEL_RE.fullmatch(suffix):
+        return None
+    return (normalized[:i], suffix)
+
+
+def _roman_run_ordinals(labels: Sequence[Optional[str]]) -> Optional[Dict[str, Tuple[int, str]]]:
+    """Classify a sibling *run* of labels as a Roman-numeral sequence.
+
+    ``_default_sort_key`` only ever sees one label at a time, so it cannot tell a
+    single glyph such as ``i``/``v``/``x`` apart from an alphabetic item label,
+    NOR a multi-letter roman-matching token such as ``dc``/``dl`` apart from an
+    alphabetic continuation label (``da``/``db``/.../``dm``) in a list that ran
+    past ``z``.  Disambiguation is fundamentally impossible per-label and MUST
+    NOT be attempted there.
+
+    A *run*, however, is disambiguating: an alphabetic continuation list
+    (``a``..``f``, ``da``..``dm``) always contains members such as ``a``/``b``/
+    ``e``/``f`` (or ``da``/``db``) that are NOT valid Roman numerals, which
+    immediately disqualifies the run.  A genuine Roman list is the only shape in
+    which *every* member parses as a Roman numeral.  We additionally require at
+    least one multi-letter Roman token (``ii``/``iii``/``iv``/...) as the
+    unambiguous positive signal — a single-glyph-only run (``i`` alone, or a
+    bare ``a, b, c`` which is not roman anyway) is never promoted.  This mirrors
+    the multi-letter-only roman heuristic already used by ``_fs_label_family``
+    and ``_label_sequence_family_and_ordinal``, lifted to run scope so the
+    single-glyph members of a genuine Roman list also sort/compare numerically.
+
+    Letter-suffixed Roman labels (amendment inserts such as ``iia``/``iiia``)
+    are part of the same sequence and key by ``(roman_ordinal, suffix)`` so they
+    sort right after their base (``ii`` < ``iia`` < ``iib`` < ``iii``).
+
+    Returns a mapping ``normalized_label -> (roman_ordinal, letter_suffix)`` when
+    *every* non-empty label in the run is a (optionally suffixed) valid Roman
+    numeral AND at least one label is a multi-letter Roman token; returns
+    ``None`` otherwise — callers then fall back to ``_default_sort_key`` rather
+    than guessing.
+    """
+    present = [n for n in (_norm(label) for label in labels if label) if n]
+    if len(present) < 2:
+        return None
+    has_multichar_roman = False
+    mapping: Dict[str, Tuple[int, str]] = {}
+    for n in present:
+        split = _split_roman_suffix(n)
+        if split is None:
+            return None
+        roman_part, suffix = split
+        ordinal = _roman_ordinal(roman_part)
+        if ordinal <= 0:
+            return None
+        if len(roman_part) > 1:
+            has_multichar_roman = True
+        mapping[n] = (ordinal, suffix)
+    if not has_multichar_roman:
+        return None
+    return mapping
+
+
+def _run_aware_sort_key_fn(
+    labels: Sequence[Optional[str]],
+    base_sort_key_fn: Callable[[Optional[str]], Tuple[int, str, int]],
+) -> Callable[[Optional[str]], Tuple[int, str, int]]:
+    """Return a sort key fn specialised for a sibling run.
+
+    When the run is a genuine Roman-numeral sequence (see ``_roman_run_ordinals``)
+    every member — including ambiguous single glyphs — is keyed by its Roman
+    ordinal so the run sorts numerically (``ix`` after ``viii``).  Otherwise the
+    supplied ``base_sort_key_fn`` is returned unchanged.
+
+    Run-aware Roman promotion only applies to the shared default sort key.
+    Jurisdiction frontends that inject their own key (e.g. Norway's litra-vs-
+    roman ``_no_sort_key`` with its own witnessed single-glyph disambiguation)
+    own that decision and are left untouched.
+    """
+    if base_sort_key_fn is not _default_sort_key:
+        return base_sort_key_fn
+    roman = _roman_run_ordinals(labels)
+    if roman is None:
+        return base_sort_key_fn
+
+    def _key(label: Optional[str]) -> Tuple[int, str, int]:
+        if label is not None:
+            entry = roman.get(_norm(label))
+            if entry is not None:
+                ordinal, suffix = entry
+                return (ordinal, suffix, 0)
+        return base_sort_key_fn(label)
+
+    return _key
+
+
 def _insert_child_sorted(
     parent: IRNode,
     content: IRNode,
@@ -1343,7 +1455,8 @@ def resort_children(
             labels = [str(n.label or "") for n in nodes]
             if _preserve_source_order_for_mixed_labels(ck, labels):
                 continue
-            sorted_nodes = sorted(nodes, key=lambda n: sort_key_fn(n.label))
+            run_key_fn = _run_aware_sort_key_fn(labels, sort_key_fn)
+            sorted_nodes = sorted(nodes, key=lambda n, _k=run_key_fn: _k(n.label))
             if any(orig is not repl for orig, repl in zip(nodes, sorted_nodes, strict=True)):
                 any_changed = True
                 for idx, repl_node in zip(indices, sorted_nodes, strict=True):
@@ -1659,7 +1772,8 @@ def _iter_duplicate_order_tree_invariant_violations(
             if kind in _ORDERED_INVARIANT_KINDS:
                 if _preserve_source_order_for_mixed_labels(kind, labels):
                     continue
-                keys = [sort_key(label) for label in labels]
+                run_key = _run_aware_sort_key_fn(labels, sort_key)
+                keys = [run_key(label) for label in labels]
                 for i, (left_key, right_key) in enumerate(pairwise(keys)):
                     if left_key > right_key:
                         yield TreeInvariantViolation(
@@ -1746,7 +1860,8 @@ def iter_tree_invariant_violations(
                 if kind in _ORDERED_INVARIANT_KINDS:
                     if _preserve_source_order_for_mixed_labels(kind, labels):
                         continue
-                    keys = [_sort_key(label) for label in labels]
+                    run_key = _run_aware_sort_key_fn(labels, _sort_key)
+                    keys = [run_key(label) for label in labels]
                     for i, (left_key, right_key) in enumerate(pairwise(keys)):
                         if left_key > right_key:
                             yield TreeInvariantViolation(
@@ -2262,6 +2377,36 @@ def _label_sequence_family_and_ordinal(label: str) -> tuple[str, int] | None:
     return None
 
 
+_ROMAN_RENDER_TABLE: tuple[tuple[int, str], ...] = (
+    (1000, "m"),
+    (900, "cm"),
+    (500, "d"),
+    (400, "cd"),
+    (100, "c"),
+    (90, "xc"),
+    (50, "l"),
+    (40, "xl"),
+    (10, "x"),
+    (9, "ix"),
+    (5, "v"),
+    (4, "iv"),
+    (1, "i"),
+)
+
+
+def _render_roman(ordinal: int) -> str:
+    """Render a positive ordinal as a lowercase Roman numeral (inverse of ``_roman_ordinal``)."""
+    if ordinal <= 0:
+        return str(ordinal)
+    chars: list[str] = []
+    remaining = ordinal
+    for value, glyphs in _ROMAN_RENDER_TABLE:
+        while remaining >= value:
+            chars.append(glyphs)
+            remaining -= value
+    return "".join(chars)
+
+
 def _render_sequence_label(family: str, ordinal: int) -> str:
     if family == "digit":
         return str(ordinal)
@@ -2273,6 +2418,8 @@ def _render_sequence_label(family: str, ordinal: int) -> str:
             chars.append(chr(ord("a") + (n % 26)))
             n //= 26
         return "".join(reversed(chars))
+    if family == "roman":
+        return _render_roman(ordinal)
     return str(ordinal)
 
 

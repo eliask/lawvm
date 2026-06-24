@@ -321,7 +321,7 @@ def _canonicalized_known_source_effects(
     known_source_effects: Sequence[EffectRef],
     canonical_ops: Sequence[LegalOperation],
 ) -> tuple[EffectRef, ...]:
-    operation_rule_by_key: dict[tuple[str, str, LegalAddress | None], str] = {}
+    operation_source_by_key: dict[tuple[str, str, LegalAddress | None], tuple[str, str]] = {}
     duplicated_op_keys = _duplicated_operation_effect_keys(canonical_ops)
     operation_effect_ids = _disambiguate_colliding_effect_ids(
         tuple(
@@ -341,33 +341,49 @@ def _canonicalized_known_source_effects(
     for op, effect_id in zip(canonical_ops, operation_effect_ids, strict=True):
         if effect_id is None or op.source is None or not op.source.statute_id:
             continue
-        operation_rule_by_key[(op.source.statute_id, effect_id, op.target)] = (
-            _operation_effect_rule_id(op)
+        operation_source_by_key[(op.source.statute_id, effect_id, op.target)] = (
+            _operation_effect_rule_id(op),
+            op.source.raw_text,
         )
 
     canonicalized: list[EffectRef] = []
     for effect in known_source_effects:
         source_provision = effect.source_provision
-        rule_id = operation_rule_by_key.get(
+        operation_source = operation_source_by_key.get(
             (
                 effect.source_instrument.instrument_id,
                 effect.effect_id,
                 effect.target_address,
             )
         )
+        rule_id = operation_source[0] if operation_source is not None else None
+        source_raw_text = operation_source[1] if operation_source is not None else ""
         if (
             rule_id is None
             or source_provision is None
-            or source_provision.rule_id == rule_id
-            or source_provision.rule_id
-            not in {"fi.legal_operation.effect_declaration", "fi.legal_operation.repeal_effect_declaration"}
+            or (
+                source_provision.rule_id == rule_id
+                and (source_provision.text_excerpt or not source_raw_text)
+            )
+            or source_provision.rule_id not in {
+                "fi.legal_operation.effect_declaration",
+                "fi.legal_operation.repeal_effect_declaration",
+            }
         ):
             canonicalized.append(effect)
             continue
+        replacement_provision = source_provision
+        if source_provision.rule_id != rule_id:
+            replacement_provision = replace(replacement_provision, rule_id=rule_id)
+        if not replacement_provision.text_excerpt and source_raw_text:
+            replacement_provision = replace(
+                replacement_provision,
+                text_excerpt=source_raw_text,
+            )
         canonicalized.append(
             replace(
                 effect,
-                source_provision=replace(source_provision, rule_id=rule_id),
+                source_provision=replacement_provision,
             )
         )
     return tuple(canonicalized)

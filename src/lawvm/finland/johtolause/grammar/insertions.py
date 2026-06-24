@@ -1790,7 +1790,7 @@ def _try_section_ill_sub_target(
     # its skipped provenance) and ``uusi`` (old _insertion line 2421).
     _skip_optional_comma_nain_kuuluva(scan)
     had_uusi = _consume_uusi(scan)
-    if not had_uusi and not (verb == SourceVerb.LISATA and _at(scan, "OTSIKKO")):
+    if not had_uusi and verb != SourceVerb.LISATA:
         scan.goto(saved)
         return None
     sec_nums = [n + sf for n, sf in (*nums, *repeated_nums)]

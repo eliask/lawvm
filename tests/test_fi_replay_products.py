@@ -948,6 +948,25 @@ def test_replay_xml_2016_258_section_3_matches_oracle_version_anchor() -> None:
     assert text.count("Valtion maksuperustelain 6 §:n 1 momentissa") == 1
 
 
+def test_replay_xml_2016_769_keeps_replacements_after_same_wave_chapter_migration() -> None:
+    replay = pinned_replay(
+        "2016/769",
+        oracle_version="20180012",
+        mode="official_consolidation",
+        quiet=True,
+        build_full_products=True,
+    )
+    sections = extract_ir_sections(replay.materialized_state.ir)
+
+    section_14 = " ".join(irnode_to_text(sections["chapter:2a/section:14"]).split())
+    section_16 = " ".join(irnode_to_text(sections["chapter:2a/section:16"]).split())
+
+    assert "seuraavat tiedot 4 §:ssä tarkoitetuista veroista" in section_14
+    assert "7 §:ssä tarkoitettuja veroja koskevat tiedot" not in section_14
+    assert "eikä 34 §:stä muuta johdu" in section_16
+    assert "4 §:ssä tarkoitettuja veroja" in section_16
+
+
 def test_replay_xml_2022_213_keeps_future_repeal_at_oracle_cutoff() -> None:
     replay = pinned_replay("2022/213", mode="official_consolidation", quiet=True)
 
@@ -1176,6 +1195,59 @@ def test_pure_kumotaan_subsection_injection_skips_unscoped_duplicate_sections() 
     }
 
 
+def test_pure_kumotaan_subsection_injection_skips_label_reused_by_same_group_snapshot() -> None:
+    section_path = (("chapter", "5"), ("section", "32"))
+    lo_ops: list[LegalOperation] = [
+        LegalOperation(
+            op_id="snapshot_section_32",
+            sequence=0,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=section_path),
+            payload=IRNode(
+                kind=IRNodeKind.SECTION,
+                label="32",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="32 §"),
+                    IRNode(kind=IRNodeKind.SUBSECTION, label="3", text="moved old 2 mom"),
+                ),
+            ),
+            source=OperationSource(statute_id="1991/1081"),
+        )
+    ]
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="5",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="32",
+                        children=(IRNode(kind=IRNodeKind.SUBSECTION, label="3"),),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    result = _inject_pure_kumotaan_subsection_repeal_ops(
+        lo_ops,
+        amendment_id="1991/1081",
+        source_title="",
+        kumotaan_subsection_map={"32": ["3"]},
+        amendment_effective_date=dt.date(1991, 9, 1),
+        state=ReplayState(ir=body),
+        source_raw_text=(
+            "kumotaan 32 §:n 3 momentti, lisätään 32 §:ään uusi 2 momentti, "
+            "jolloin nykyinen 2 momentti siirtyy 3 momentiksi"
+        ),
+    )
+
+    assert result.injected_count == 0
+    assert [op.op_id for op in lo_ops] == ["snapshot_section_32"]
+
+
 def test_replay_xml_1998_132_sparse_osalta_omission_repeals_branch_row() -> None:
     replay_meta: dict[str, object] = {}
     replay = replay_xml_for_test("1998/132", mode="legal_pit", quiet=True, replay_meta_out=replay_meta)
@@ -1229,6 +1301,34 @@ def test_replay_xml_1968_360_handles_temporary_tax_year_window_without_crashing(
     text = " ".join(irnode_to_text(section).split()).lower()
     assert "vuodelta 1982 toimitettavassa verotuksessa" in text
     assert "vuodelta 1983 toimitettavassa verotuksessa" in text
+
+
+@pytest.mark.slow
+def test_replay_xml_1966_722_expires_temporary_current_tax_year_section() -> None:
+    replay = pinned_replay("1966/722", mode="official_consolidation", quiet=True)
+    addr = LegalAddress(path=(("section", "9a"),))
+
+    assert replay.timelines is not None
+    timeline = replay.timelines[addr]
+    version = timeline.versions[-1]
+    assert version.variant_kind == "temporary"
+    assert version.source is not None
+    assert version.source.statute_id == "2000/877"
+    assert version.source.expires == "2001-01-01"
+    assert select_active_version(timeline, "2000-12-31") is not None
+    assert select_active_version(timeline, "2001-01-01") is None
+
+
+@pytest.mark.slow
+def test_replay_xml_1998_806_preserves_split_section_8_item_payload() -> None:
+    replay = pinned_replay("1998/806", mode="official_consolidation", quiet=True)
+    section = replay.materialized_state.find_node("section", "8", "chapter", "1")
+    assert section is not None
+
+    text = " ".join(irnode_to_text(section).split())
+    assert "musiikkialan perustutkintoon johtavassa koulutuksessa 35 prosenttia" in text
+    assert "elintarvikealan perustutkintoon johtavassa meijerialan koulutusohjelmassa" in text
+    assert "kaikilla aloilla erityisopetuksessa 47 prosenttia" in text
 
 
 def test_replay_xml_1987_322_repeals_sections_10a_to_10f_after_2023_741() -> None:
@@ -1306,6 +1406,16 @@ def test_build_amendment_bundle_1992_552_keeps_heading_and_subsection_scope_sepa
     assert "REPLACE 8 § otsikko" in group8["ops_final"]
 
 
+def test_build_amendment_bundle_1973_692_1979_229_keeps_valiotsake_subsection_insert() -> None:
+    bundle = build_amendment_bundle("1973/692", "1979/229", "legal_pit")
+    group19 = next(group for group in bundle["groups"] if group["target_norm"] == "19")
+
+    assert "INSERT 19 § 2 mom" in bundle["compiled_ops"]
+    assert "INSERT 19 § 2 mom" in group19["ops_final"]
+    assert "RENUMBER 19 § 2 mom" in group19["ops_final"]
+    assert "RENUMBER 19 § 3 mom" in group19["ops_final"]
+
+
 def test_replay_xml_1992_552_preserves_section_8_subsection_4(
     replay_1992_552_finlex_oracle: ReplayResult,
 ) -> None:
@@ -1360,6 +1470,34 @@ def test_build_amendment_bundle_2022_972_2024_70_parses_plural_section_marker() 
     }
     assert final_ops_by_target["34a"] == ["INSERT 5 luku 34a §"]
     assert final_ops_by_target["40a"] == ["INSERT 6 luku 40a §"]
+
+
+def test_replay_xml_1960_282_1965_667_materializes_bare_lisataan_momentti_inserts() -> None:
+    replay = replay_xml_for_test("1960/282", mode="official_consolidation", quiet=True)
+    section_by_label = {
+        child.label: child
+        for child in replay.materialized_state.ir.children
+        if child.kind is IRNodeKind.SECTION
+    }
+
+    section_17_subsections = {
+        child.label: " ".join(irnode_to_text(child).split())
+        for child in section_by_label["17"].children
+        if child.kind is IRNodeKind.SUBSECTION
+    }
+    assert set(section_17_subsections) >= {"1", "2", "3", "4", "5"}
+    assert "Maata älköön 1 momentissa tarkoitetuin tavoin" in section_17_subsections["2"]
+    assert "Aikaisemmassa maanmittaustoimituksessa erotettu yhteinen tiealue" in section_17_subsections["4"]
+    assert "Uusjaossa voidaan aikaisemmassa maanmittaustoimituksessa erotetun muun yhteisen alueen" in section_17_subsections["5"]
+
+    section_44_subsections = {
+        child.label: " ".join(irnode_to_text(child).split())
+        for child in section_by_label["44"].children
+        if child.kind is IRNodeKind.SUBSECTION
+    }
+    assert set(section_44_subsections) == {"1", "2"}
+    assert "alle tuhat markkaa" in section_44_subsections["1"]
+    assert "Rajakaistan käyttöoikeuden menetyksestä" in section_44_subsections["2"]
 
 
 def test_replay_xml_2000_755_applies_2018_945_to_cited_pending_version_paths() -> None:
@@ -1851,6 +1989,41 @@ def test_replay_xml_1966_657_section_3_keeps_distinct_tail_moments() -> None:
     assert "maidon viitemäärien ostamiseen" in fourth_text
     assert "Valtioneuvosto voi vastikkeetta luovuttaa" in fifth_text
     assert third_text != fourth_text
+
+
+def test_replay_xml_1973_692_splits_cross_paragraph_sparse_item_payload() -> None:
+    replay = replay_xml_for_test(
+        "1973/692",
+        mode="official_consolidation",
+        quiet=True,
+        build_full_products=False,
+    )
+
+    section = replay.materialized_state.find_section("3")
+    assert section is not None
+
+    subsections = {
+        child.label: child
+        for child in section.children
+        if child.kind is IRNodeKind.SUBSECTION and child.label
+    }
+    second = subsections["2"]
+    third = subsections["3"]
+
+    second_item_labels = {
+        child.label
+        for child in second.children
+        if child.kind is IRNodeKind.PARAGRAPH and child.label
+    }
+    third_item_labels = {
+        child.label
+        for child in third.children
+        if child.kind is IRNodeKind.PARAGRAPH and child.label
+    }
+
+    assert "6" not in second_item_labels
+    assert "10" not in second_item_labels
+    assert {"6", "10"} <= third_item_labels
 
 
 def test_replay_xml_recovers_1935_419_full_section_replace_for_1922_312_section_8() -> None:
@@ -2722,6 +2895,35 @@ def test_cleanup_sourceless_base_merge_conflicts_keeps_base_and_stronger_later_l
     assert cleaned[0].source is None
     assert cleaned[1].source is not None
     assert cleaned[1].source.statute_id == "2002/1"
+
+
+def test_cleanup_sourceless_base_merge_conflicts_preserves_later_tombstone() -> None:
+    tombstone_source = OperationSource(statute_id="2016/773", effective="2017-01-01")
+    versions = [
+        ProvisionVersion(
+            effective="0000-00-00",
+            enacted="1993-12-30",
+            content=IRNode(kind=IRNodeKind.SECTION, label="218", text="218 § Base text"),
+            source=None,
+        ),
+        ProvisionVersion(
+            effective="2013-12-01",
+            enacted="2013-11-08",
+            content=IRNode(kind=IRNodeKind.SECTION, label="218", text="218 § Later text"),
+            source=OperationSource(statute_id="2013/785", effective="2013-12-01"),
+        ),
+        ProvisionVersion(
+            effective="2017-01-01",
+            enacted="2016-09-09",
+            content=None,
+            source=tombstone_source,
+        ),
+    ]
+
+    cleaned = _cleanup_sourceless_base_merge_conflicts(versions)
+
+    assert cleaned[-1].content is None
+    assert cleaned[-1].source == tombstone_source
 
 
 def test_cleanup_sourceless_base_merge_conflicts_is_noop_without_sourceless_base() -> None:
@@ -3994,6 +4196,42 @@ def test_replay_xml_repealed_1974_258_section_15_stays_absent() -> None:
     replay = pinned_replay("1974/258", mode="official_consolidation", quiet=True)
 
     assert replay.materialized_state.find_section("15") is None
+
+
+def test_replay_xml_1901_15_applies_1987_411_source_vts_side_repeal() -> None:
+    """A source-VTS side repeal must not compile the amendment's main target ops."""
+    replay = pinned_replay("1901/15-001", mode="official_consolidation", quiet=True)
+
+    section = replay.materialized_state.find_section("15")
+    assert section is not None
+    assert section.attrs.get("lawvm_repeal_placeholder") == "1"
+    assert "oikeus ratkaiskoon" not in irnode_to_text(section).lower()
+
+
+def test_replay_xml_1951_83_ignores_self_relabel_bridge_from_1982_601() -> None:
+    """A restructure self-relabel must not revive stale pre-3a-luku section 19."""
+    replay = replay_xml_for_test(
+        "1951/83",
+        mode="legal_pit",
+        quiet=True,
+        as_of="1999-04-22",
+    )
+
+    assert replay.materialized_state.find_section("19", "3") is None
+    section_3a_19 = replay.materialized_state.find_section("19", "3a")
+    assert section_3a_19 is not None
+    section_3a_19_text = irnode_to_text(section_3a_19)
+    assert "Vaikka asiakirja ei ole julkinen" in section_3a_19_text
+    assert "viranomaiselle antamansa tai lähettämänsä asiakirjan takaisin" not in section_3a_19_text
+
+    relabel_skips = [
+        finding
+        for finding in replay.findings
+        if finding.kind == "APPLY.RELABEL_SKIP"
+        and finding.source_statute == "1982/601"
+        and finding.detail.get("reason_code") == "self_relabel_noop"
+    ]
+    assert relabel_skips
 
 
 def test_replay_xml_recycle_rename_kumotaan_muutetaan_preserves_new_section_2010_128() -> None:
@@ -6877,6 +7115,24 @@ def test_replay_xml_2017_571_inserts_second_subsection_into_2002_1244_section_1(
     assert "2" in sub_labels, "subsection 2 must be inserted by 2017/571"
 
 
+def test_replay_xml_1993_1495_1994_931_keeps_infinitive_item_insert() -> None:
+    """1994/931 says ``sekä lisätä 1 §:ään uuden 7 kohdan``.
+
+    The infinitive ``lisätä`` must compile as an insertion verb; otherwise the
+    old item 7 remains at slot 7 and the source-owned hunting-law item is absent.
+    """
+    replay = replay_xml_for_test("1993/1495", mode="official_consolidation", quiet=True)
+    sec1 = replay.materialized_state.find_section("1")
+    assert sec1 is not None, "section 1 must be present in replay"
+    text = " ".join(irnode_to_text(sec1).split())
+
+    assert "metsästyslain (615/93) 19 §:ssä" in text
+    assert "sekä metsästysasetuksen (666/93)" in text
+    assert "7) metsästyslain" in text
+    assert "8) valtion varoista myönnettävää avustusta" in text
+    assert "9) ministeriölle kuuluvat yleiset ohjaus-" in text
+
+
 def test_replay_xml_1998_986_inserts_provenance_qualified_plural_subsections_into_section_22() -> None:
     """Plural `uusi N ja M momentti` must survive partial PEG success on mixed clauses.
 
@@ -7119,6 +7375,31 @@ def test_replay_xml_1999_1352_places_inserted_section_headings_after_num() -> No
         )
         heading = next(child for child in section.children if child.kind is IRNodeKind.HEADING)
         assert irnode_to_text(heading).strip() == heading_text
+
+
+def test_replay_xml_1994_1575_subsection_insert_preserves_shifted_live_siblings() -> None:
+    """A new inserted momentti must shift later live momentit in timeline export.
+
+    1998/492 inserts a new 4 § 2 mom and says the old 2 and 3 mom become 3 and 4.
+    The live replay fold already performs that shift; the section-snapshot export
+    must mirror it instead of merging the new payload over old label 2 and leaving
+    old label 3 at 3.
+    """
+    replay = replay_xml_for_test("1994/1575", mode="legal_pit", quiet=True)
+
+    section = replay.materialized_state.find_section("4")
+    assert section is not None
+    subsections = [child for child in section.children if child.kind is IRNodeKind.SUBSECTION]
+    texts_by_label = {
+        str(subsection.label): " ".join(irnode_to_text(subsection).split())
+        for subsection in subsections
+        if subsection.label
+    }
+
+    assert "3" in texts_by_label
+    assert "4" in texts_by_label
+    assert "kirjaimet FIN" in texts_by_label["3"]
+    assert "kirjaimet KAL" in texts_by_label["4"]
 
 
 @pytest.mark.slow

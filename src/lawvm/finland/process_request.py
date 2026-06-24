@@ -31,3 +31,4 @@ class ProcessAmendmentRequest:
     future_repeals: Optional[Set[RepealTargetRef]] = None
     prior_migration_events: tuple[MigrationEvent, ...] = ()
     processed_amendment_titles: Optional[Dict[str, str]] = None
+    amendment_edge_kind: str = "oracle_amendedBy"

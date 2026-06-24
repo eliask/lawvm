@@ -25,13 +25,13 @@ import re
 from dataclasses import dataclass, replace as dc_replace
 from datetime import date
 from difflib import SequenceMatcher
-from typing import TYPE_CHECKING, FrozenSet, List, Optional
+from typing import TYPE_CHECKING, FrozenSet, List, Optional, Sequence
 
 import lxml.etree as etree
 
 _SECTION_LABEL_ORDER_RE = re.compile(r"(\d+)([a-z]?)", flags=re.I)
 _DIGITS_RE = re.compile(r"\d+")
-_LETTER_SUFFIX_SECTION_RE = re.compile(r"\d+[a-z]", flags=re.I)
+_LETTER_SUFFIX_SECTION_RE = re.compile(r"(?P<stem>\d+)[a-z]", flags=re.I)
 _LETTER_SUFFIX_CONTINUATION_PREVIOUS_RE = re.compile(r"(\d+)([a-z]?)", flags=re.I)
 _LETTER_SUFFIX_CONTINUATION_CURRENT_RE = re.compile(r"(\d+)([a-z])", flags=re.I)
 
@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     from lawvm.core.provenance import SourceAnchor
     from lawvm.finland.johtolause import ClauseParseResult
     from lawvm.finland.source_model import AmendmentSourceModel
+    from lawvm.finland.statute import ReplayState
 
 from lawvm.core.ir import IRNode, LegalOperation, OperationSource
 from lawvm.core.ir_helpers import irnode_to_text
@@ -73,12 +74,14 @@ from lawvm.finland.johtolause_supplements import (
     _tag_numbered_table_target_clause_ops,
     _supplement_mixed_explicit_clause_ops,
     _supplement_item_and_moment_clause_ops,
+    _supplement_jolloin_moment_renumber_ops,
     _supplement_missing_repeals_after_item_shift_clause,
     _supplement_named_table_row_mixed_clause_ops,
     _supplement_sparse_osalta_row_omission_repeals,
     _tag_named_table_row_single_clause_ops,
 )
 from lawvm.finland.scope import (
+    _johtolause_explicitly_mentions_chaptered_section_target,
     _same_label_move_sections_for_chapter,
     _unique_section_chapter,
     infer_letter_suffix_section_chapter_from_stem_host,
@@ -1083,6 +1086,14 @@ def _body_chapter_scope_for_section_op(
 
     if op.target_chapter and chapter_label == op.target_chapter:
         return None
+    if _body_chapter_scope_conflicts_with_unchaptered_live_target(
+        op=op,
+        master=master,
+        source_model=source_model,
+        chapter_label=chapter_label,
+        johto=johto,
+    ):
+        return None
     if master.find_chapter(chapter_label) is None:
         if not (
             op.target_chapter
@@ -1093,6 +1104,69 @@ def _body_chapter_scope_for_section_op(
             return None
 
     return chapter_label
+
+
+def _live_section_path_is_unchaptered(
+    *,
+    master: "ReplayState",
+    section_norm: str,
+    target_part: str | None,
+) -> bool:
+    live_path = master.find_section_path(section_norm, None, target_part)
+    if live_path is None and target_part is not None:
+        live_path = master.find_section_path(section_norm, None, None)
+    if live_path is None or section_norm in master.duplicate_section_labels:
+        return False
+    return not any(kind == "chapter" for kind, _label in live_path)
+
+
+def _body_chapter_scope_conflicts_with_unchaptered_live_target(
+    *,
+    op: AmendmentOp,
+    master: "ReplayState",
+    source_model: "AmendmentSourceModel | None",
+    chapter_label: str,
+    johto: str,
+) -> bool:
+    """Reject stale source-body chapter wrappers over root-level live sections."""
+    section_norm = _norm_num_token(op.target_section or "")
+    if (
+        op.target_paragraph is not None
+        or op.target_item is not None
+        or op.target_special is not None
+        or _johtolause_explicitly_mentions_chaptered_section_target(
+            johto,
+            chapter_label,
+            section_norm,
+        )
+    ):
+        return False
+    if (
+        op.op_type in {"REPLACE", "REPEAL"}
+        and _live_section_path_is_unchaptered(
+            master=master,
+            section_norm=section_norm,
+            target_part=op.target_part,
+        )
+    ):
+        return True
+    if source_model is None or not _is_whole_section_insert(op):
+        return False
+    suffix_match = _LETTER_SUFFIX_SECTION_RE.fullmatch(section_norm)
+    if suffix_match is None:
+        return False
+    stem_norm = suffix_match.group("stem")
+    if not _live_section_path_is_unchaptered(
+        master=master,
+        section_norm=stem_norm,
+        target_part=op.target_part,
+    ):
+        return False
+    stem_body_scope = source_model.body_section_scope(stem_norm)
+    if stem_body_scope is None:
+        return False
+    _stem_body_part, stem_body_chapter = stem_body_scope
+    return stem_body_chapter == chapter_label
 
 
 def _is_whole_section_insert(op: AmendmentOp) -> bool:
@@ -2007,6 +2081,137 @@ def _infer_letter_suffix_insert_chapter_from_stem_host(
     return inferred_chapter
 
 
+def _infer_corroborated_body_scope_for_live_stem_insert(
+    *,
+    op: AmendmentOp,
+    ops: List[AmendmentOp],
+    master: "ReplayState",
+    source_model: "AmendmentSourceModel | None",
+) -> tuple[str | None, str] | None:
+    """Prefer a witnessed source-body chapter over a live-stem guess.
+
+    A bare ``130 a §`` insert can be initially scoped to the live host of
+    ``130 §``.  When the amendment body itself places the new section under an
+    existing chapter and the same amendment also edits existing sections in
+    that chapter, the source-body chapter is stronger evidence than the stem.
+    """
+    if source_model is None or not _is_whole_section_insert(op):
+        return None
+    scope_witness = projection_scope_confidence(
+        scope_confidence=op.scope_confidence,
+        scope_provenance_tags=op.scope_provenance_tags,
+        resolved_chapter=op.target_chapter,
+    )
+    if scope_witness is None or scope_witness.source is not ScopeResolutionSource.LIVE_STEM_HOST:
+        return None
+    section_label = _norm_num_token(op.target_section or "")
+    body_scope = source_model.body_section_scope(section_label)
+    if body_scope is None:
+        return None
+    body_part, body_chapter = body_scope
+    if not body_chapter or (body_part == op.target_part and body_chapter == op.target_chapter):
+        return None
+    if not source_model.body_has_section(
+        section_label,
+        target_chapter=body_chapter,
+        target_part=body_part,
+    ):
+        return None
+    if not _container_path_exists_in_master(
+        master=master,
+        part=body_part,
+        chapter=body_chapter,
+    ):
+        return None
+
+    def _section_stem(label: str) -> int | None:
+        match = _SECTION_LABEL_ORDER_RE.fullmatch(_norm_num_token(label))
+        if match is None:
+            return None
+        return int(match.group(1))
+
+    def _payload_text_mentions_section(text: str, label: str) -> bool:
+        if "§" not in text and "pykäl" not in text.lower():
+            return False
+        from lawvm.finland.references.freetext_addresses import scan_legal_addresses
+
+        label_norm = _norm_num_token(label)
+        return any(_norm_num_token(address.section) == label_norm for address in scan_legal_addresses(text))
+
+    target_stem = _section_stem(section_label)
+    if target_stem is None:
+        return None
+
+    corroborating_labels: set[str] = set()
+    for other in ops:
+        if other is op or other.target_unit_kind != "section" or not other.target_section:
+            continue
+        if other.op_type == "INSERT" and _is_whole_section_insert(other):
+            continue
+        other_chapter = _norm_num_token(other.target_chapter or "")
+        if other_chapter != _norm_num_token(body_chapter):
+            continue
+        other_part = _norm_num_token(other.target_part or "") if other.target_part else None
+        body_part_norm = _norm_num_token(body_part or "") if body_part else None
+        if other_part != body_part_norm:
+            continue
+        other_label = _norm_num_token(other.target_section)
+        if other_label == section_label:
+            continue
+        if source_model.body_has_section(
+            other_label,
+            target_chapter=body_chapter,
+            target_part=body_part,
+        ):
+            other_stem = _section_stem(other_label)
+            if other_stem is not None and abs(other_stem - target_stem) <= 1:
+                corroborating_labels.add(other_label)
+
+    if not corroborating_labels:
+        return None
+
+    has_internal_reference_witness = False
+    for other in ops:
+        if other is op or other.target_unit_kind != "section" or not other.target_section:
+            continue
+        other_label = _norm_num_token(other.target_section)
+        if other_label == section_label:
+            continue
+        if not source_model.body_has_section(
+            other_label,
+            target_chapter=body_chapter,
+            target_part=body_part,
+        ):
+            continue
+        payload_text = source_model.lookup_section_payload_text(
+            other_label,
+            target_chapter=body_chapter,
+            target_part=body_part,
+        ).text
+        if payload_text and _payload_text_mentions_section(payload_text, section_label):
+            has_internal_reference_witness = True
+            break
+    if not has_internal_reference_witness:
+        return None
+
+    source_labels = [
+        _norm_num_token(label)
+        for label in source_model.body_real_chapter_section_labels(body_chapter)
+    ]
+    try:
+        idx = source_labels.index(section_label)
+    except ValueError:
+        return None
+    adjacent = {
+        source_labels[pos]
+        for pos in (idx - 1, idx + 1)
+        if 0 <= pos < len(source_labels)
+    }
+    if adjacent & corroborating_labels:
+        return body_part, body_chapter
+    return None
+
+
 def _add_inferred_section_chapter_scope(
     op: AmendmentOp,
     *,
@@ -2036,6 +2241,141 @@ def _add_inferred_section_chapter_scope(
         lo=scoped_lo,
         witness_rule_id=rule_id,
     )
+
+
+def _retarget_letter_suffix_inserts_from_same_amendment_stem_scope(
+    ops: list[AmendmentOp],
+    *,
+    source_model: "AmendmentSourceModel | None",
+    master: "ReplayState | None" = None,
+) -> list[AmendmentOp]:
+    if source_model is None:
+        return ops
+
+    stem_scopes: dict[str, tuple[str | None, str, ScopeConfidence]] = {}
+    conflicted_stems: set[str] = set()
+    for op in ops:
+        if op.target_unit_kind != "section" or not op.target_section or not op.target_chapter:
+            continue
+        section_label = _norm_num_token(op.target_section)
+        if not section_label.isdigit():
+            continue
+        witness = projection_scope_confidence(
+            scope_confidence=op.scope_confidence,
+            scope_provenance_tags=op.scope_provenance_tags,
+            resolved_chapter=op.target_chapter,
+        )
+        if witness is None or witness.source in {
+            ScopeResolutionSource.LIVE_STEM_HOST,
+            ScopeResolutionSource.CARRY_FORWARD,
+        }:
+            continue
+        candidate = (op.target_part, op.target_chapter, witness)
+        existing = stem_scopes.get(section_label)
+        if existing is not None and existing[:2] != candidate[:2]:
+            conflicted_stems.add(section_label)
+            stem_scopes.pop(section_label, None)
+            continue
+        if section_label not in conflicted_stems:
+            stem_scopes[section_label] = candidate
+
+    if not stem_scopes:
+        return ops
+
+    retargeted: list[AmendmentOp] = []
+    for op in ops:
+        section_label = _norm_num_token(op.target_section or "")
+        match = _LETTER_SUFFIX_SECTION_RE.fullmatch(section_label)
+        if (
+            match is None
+            or not _is_whole_section_insert(op)
+            or not source_model.body_has_section(match.group("stem"))
+            or not source_model.body_has_section(section_label)
+        ):
+            retargeted.append(op)
+            continue
+        stem_scope = stem_scopes.get(match.group("stem"))
+        if stem_scope is None:
+            retargeted.append(op)
+            continue
+        stem_part, stem_chapter, _stem_witness = stem_scope
+        if master is not None:
+            find_section_path = getattr(master, "find_section_path", None)
+            stem_live_path = (
+                find_section_path(match.group("stem"), None, stem_part)
+                if callable(find_section_path)
+                else None
+            )
+            if stem_live_path is None and stem_part is not None and callable(find_section_path):
+                stem_live_path = find_section_path(match.group("stem"), None, None)
+            stem_live_is_unchaptered = stem_live_path is not None and not any(
+                kind == "chapter" for kind, _label in stem_live_path
+            )
+            if stem_live_is_unchaptered and stem_chapter is not None:
+                retargeted.append(op)
+                continue
+        current_witness = projection_scope_confidence(
+            scope_confidence=op.scope_confidence,
+            scope_provenance_tags=op.scope_provenance_tags,
+            resolved_chapter=op.target_chapter,
+        )
+        if current_witness is None and op.target_chapter is not None:
+            retargeted.append(op)
+            continue
+        if current_witness is not None and current_witness.source not in {
+            ScopeResolutionSource.LIVE_STEM_HOST,
+            ScopeResolutionSource.CARRY_FORWARD,
+        }:
+            retargeted.append(op)
+            continue
+        if (
+            op.target_part == stem_part
+            and op.target_chapter == stem_chapter
+            and (
+                current_witness is None
+                or current_witness.source is not ScopeResolutionSource.LIVE_STEM_HOST
+            )
+        ):
+            retargeted.append(op)
+            continue
+        scoped_lo = _lo_with_path_update(op.lo, part=stem_part, chapter=stem_chapter) if op.lo is not None else op.lo
+        if scoped_lo is not None:
+            scoped_lo = dc_replace(
+                scoped_lo,
+                provenance_tags=tuple(
+                    dict.fromkeys(
+                        (
+                            *scoped_lo.provenance_tags,
+                            "chapter_scope_from_same_amendment_stem",
+                        )
+                    )
+                ),
+                witness_rule_id="fi_same_amendment_stem_scope_for_letter_suffix_insert",
+            )
+        tags = tuple(
+            dict.fromkeys(
+                (
+                    *op.scope_provenance_tags,
+                    "chapter_scope_from_same_amendment_stem",
+                )
+            )
+        )
+        retargeted.append(
+            dc_replace(
+                op,
+                target_part=stem_part,
+                target_chapter=stem_chapter,
+                scope_provenance_tags=tags,
+                scope_confidence=ScopeConfidence(
+                    tag="chapter_scope_from_same_amendment_stem",
+                    source=ScopeResolutionSource.EXPLICIT_SCOPE_REWRITE,
+                    confidence=ScopeResolutionConfidence.INFERRED,
+                    resolved_chapter=stem_chapter,
+                ),
+                lo=scoped_lo,
+            )
+        )
+    return retargeted
 
 
 def _body_scope_for_section_label(
@@ -2172,40 +2512,76 @@ def _master_has_any_chapter(master: "ReplayState") -> bool:
 def _strip_impossible_chapter_scope_for_bare_body_section_op(
     *,
     op: AmendmentOp,
+    sibling_ops: Sequence[AmendmentOp] = (),
     muutos_tree: "etree._Element",
     master: "ReplayState",
+    johto: str = "",
     source_model: "AmendmentSourceModel | None" = None,
 ) -> AmendmentOp | None:
-    """Clear chapter scope when a no-chapter statute body proves a bare section target.
+    """Clear chapter scope when the live statute proves a bare section target.
 
     This guards against parent-title leakage like ``rikoslain 1 luvun 7 §`` being
-    misread as chapter scope for the amended statute itself. We only clear the
-    chapter when the live parent statute has no chapters at all and the
-    amendment body uniquely places the target section as a bare top-level
-    section.
+    misread as chapter scope for the amended statute itself, and stale source
+    body wrappers that place an already-live root section under an unrelated
+    chapter. We only clear the chapter when the amendment body or live target
+    path proves a bare top-level section.
     """
     if op.target_unit_kind != "section" or not op.target_section or not op.target_chapter:
-        return None
-    if _master_has_any_chapter(master):
         return None
     body_scope = _body_scope_for_section_label(
         muutos_tree=muutos_tree,
         section_label=op.target_section,
         source_model=source_model,
     )
-    if body_scope != (None, None):
+    section_norm = _norm_num_token(op.target_section)
+    has_descendant_target = (
+        op.target_paragraph is not None
+        or op.target_item is not None
+        or op.target_special is not None
+    )
+    scoped_path = master.find_section_path(section_norm, op.target_chapter, op.target_part)
+    live_path = master.find_section_path(section_norm, None, op.target_part)
+    if live_path is None and op.target_part is not None:
+        live_path = master.find_section_path(section_norm, None, None)
+    live_chapter = (
+        next((label for kind, label in live_path if kind == "chapter"), None)
+        if live_path is not None
+        else None
+    )
+    live_path_proves_unchaptered = (
+        live_path is not None
+        and live_chapter is None
+        and scoped_path is None
+        and section_norm not in master.duplicate_section_labels
+        and not has_descendant_target
+        and op.op_type in {"REPLACE", "REPEAL"}
+        and not any(
+            sibling.target_unit_kind == "chapter"
+            and _norm_num_token(sibling.target_section or "") == _norm_num_token(op.target_chapter)
+            for sibling in sibling_ops
+        )
+    )
+    body_proves_unchaptered = not _master_has_any_chapter(master) and body_scope == (None, None)
+    if not body_proves_unchaptered and not (
+        live_path_proves_unchaptered
+        and not _johtolause_explicitly_mentions_chaptered_section_target(
+            johto,
+            op.target_chapter,
+            op.target_section,
+        )
+    ):
         return None
     retained_scope_tags = tuple(
         tag for tag in op.scope_provenance_tags if tag != "chapter_scope_carry_forward"
     )
     retained_lo = op.lo
     if retained_lo is not None:
-        retained_lo = dc_replace(
-            _lo_with_path_update(retained_lo, chapter=None),
-            provenance_tags=tuple(
-                tag for tag in retained_lo.provenance_tags if tag != "chapter_scope_carry_forward"
-            ),
-        )
+            retained_lo = dc_replace(
+                _lo_with_path_update(retained_lo, chapter=None),
+                provenance_tags=tuple(
+                    tag for tag in retained_lo.provenance_tags if tag != "chapter_scope_carry_forward"
+                ),
+            )
     return dc_replace(
         op,
         target_chapter=None,
@@ -2421,8 +2797,10 @@ def _enrich_ops_from_amendment_tree(
         if master is not None:
             stripped_op = _strip_impossible_chapter_scope_for_bare_body_section_op(
                 op=scoped_op,
+                sibling_ops=ops,
                 muutos_tree=muutos_tree,
                 master=master,
+                johto=johto,
                 source_model=source_model,
             )
             if stripped_op is not None:
@@ -2484,7 +2862,11 @@ def _enrich_ops_from_amendment_tree(
                 and scoped_op.target_special is None
                 and scope_witness is not None
                 and scope_witness.source
-                in {ScopeResolutionSource.CARRY_FORWARD, ScopeResolutionSource.EXPLICIT_CHUNK}
+                in {
+                    ScopeResolutionSource.CARRY_FORWARD,
+                    ScopeResolutionSource.EXPLICIT_CHUNK,
+                    ScopeResolutionSource.LIVE_STEM_HOST,
+                }
             ):
                 reinstated_scope = _infer_flat_reinstated_section_scope_from_base(
                     op=scoped_op,
@@ -2499,6 +2881,16 @@ def _enrich_ops_from_amendment_tree(
                 if reinstated_scope is not None:
                     inferred_part, inferred_chapter = reinstated_scope
                     inferred_rule_id = "fi_reinstated_section_scope_from_prior_repeal_address"
+                if inferred_chapter is None:
+                    corroborated_body_scope = _infer_corroborated_body_scope_for_live_stem_insert(
+                        op=scoped_op,
+                        ops=ops,
+                        master=master,
+                        source_model=source_model,
+                    )
+                    if corroborated_body_scope is not None:
+                        inferred_part, inferred_chapter = corroborated_body_scope
+                        inferred_rule_id = "fi_live_stem_scope_overridden_by_corroborated_source_body"
                 if inferred_chapter is None:
                     inferred_chapter = _infer_letter_suffix_insert_chapter_from_stem_host(
                         op=scoped_op,
@@ -3976,7 +4368,12 @@ def normalize_and_compile_ops(
 
     if legal_ops:
         # LO normalization operates on LegalOperation (Phase 4.5 step 4)
-        legal_ops = _strip_unjustified_chapter_scope_from_unique_sections(legal_ops, johto, master)
+        legal_ops = _strip_unjustified_chapter_scope_from_unique_sections(
+            legal_ops,
+            johto,
+            master,
+            source_model=source_model,
+        )
         legal_ops = _assign_chapter_scope_from_johtolause(legal_ops, johto, master)
         legal_ops = _assign_scope_from_renumber_destinations(legal_ops)
         ops: List[AmendmentOp] = []
@@ -4009,6 +4406,7 @@ def normalize_and_compile_ops(
         ops = _tag_numbered_table_target_clause_ops(ops, johto)
         ops = _supplement_item_and_moment_clause_ops(ops, johto)
         ops = _supplement_mixed_explicit_clause_ops(ops, johto)
+        ops = _supplement_jolloin_moment_renumber_ops(ops, johto)
     else:
         ops = []
     ops, osalta_findings = _supplement_sparse_osalta_row_omission_repeals(
@@ -4074,6 +4472,11 @@ def normalize_and_compile_ops(
         parent_id=parent_id or "",
         metadata=tree_metadata,
         source_model=source_model,
+    )
+    ops = _retarget_letter_suffix_inserts_from_same_amendment_stem_scope(
+        ops,
+        source_model=source_model,
+        master=master,
     )
     ops, historical_kohta_findings = _normalize_historical_top_level_kohta_subsection_ops(
         ops,

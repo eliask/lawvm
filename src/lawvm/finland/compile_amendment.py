@@ -117,15 +117,56 @@ def build_canonical_op_stage(
         violation=rejected,
         totality_claimed=True,
     )
+    residuals = [carrier.residual for carrier in carriers]
+    # XP-03 — op-coverage totality (runtime parity arm). Every candidate operation
+    # MUST lower to exactly one canonical op (``owned``) OR a typed candidate-effect
+    # residual (``violation``); none may be silently dropped. That is exactly
+    # ``coverage.is_partition()``. It holds BY CONSTRUCTION here (``total`` is
+    # computed as ``emitted + rejected``), so the guard below is a defensive
+    # runtime PIN: were a future producer to recompute the partition some other
+    # way and leave an op unaccounted, the gap surfaces as a typed (non-blocking)
+    # ``CANONICAL_OP.OP_COVERAGE_GAP`` residual rather than vanishing silently.
+    if not coverage.is_partition():
+        residuals.append(
+            _op_coverage_gap_residual(
+                owned=emitted, violation=rejected, total=coverage.total
+            )
+        )
     stage = StageResult(
         value=resolved,
         evidence=EMPTY_EVIDENCE,
-        residuals=tuple(carrier.residual for carrier in carriers),
+        residuals=tuple(residuals),
         findings=tuple(observations),
         coverage=coverage,
         authority=NEUTRAL_AUTHORITY,
     )
     return stage, tuple(carriers)
+
+
+#: The XP-03 op-coverage-gap residual kind (also the registry code surfaced when
+#: the candidate-op partition fails — see observation_registry).
+OP_COVERAGE_GAP_RESIDUAL_KIND = "CANONICAL_OP.OP_COVERAGE_GAP"
+
+
+def _op_coverage_gap_residual(*, owned: int, violation: int, total: int) -> Residual:
+    """The XP-03 typed residual for a candidate op left unaccounted at lowering.
+
+    Self-evidencing per the diagnostics rule: the reason embeds the offending
+    partition counts so a reader sees WHY totality failed without re-deriving it.
+    Non-blocking (``blocking=False``): a real uncovered op should be SURFACED for
+    triage, never silently drop the whole amendment.
+    """
+    return Residual(
+        kind=OP_COVERAGE_GAP_RESIDUAL_KIND,
+        reason=(
+            "candidate-op coverage is not a partition at the canonical-op lowering "
+            f"waist: owned={owned} + violation={violation} != total={total} "
+            "(a candidate operation neither lowered to a canonical op nor "
+            "residualized)"
+        ),
+        scope="candidate_ops",
+        blocking=False,
+    )
 
 
 def _is_numbered_table_proxy_op(op: AmendmentOp) -> bool:

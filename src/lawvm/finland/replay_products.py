@@ -31,6 +31,7 @@ from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.core.temporal import FIXED_DATE_KIND, ActivationRule, TemporalEvent, TemporalScope
 from lawvm.core.timeline_lineage import (
     MaterializationLineageBridgeClassification,
+    assert_acyclic as _assert_lineage_acyclic,
     classify_materialization_lineage_bridge,
     choose_materialization_lineage_decision,
     rekey_timelines_with_migration_events as _core_rekey_timelines_with_migration_events,
@@ -56,6 +57,7 @@ from lawvm.core.tree_ops import (
     resort_children as _resort_children,
 )
 from lawvm.replay_adjudication import SourceAdjudication
+from lawvm.finland.apply_tree_closure import assert_tree_authority_closure
 from lawvm.finland.apply_ir_ops import (
     _strip_redundant_paragraph_label_prefixes_ir,
     _strip_standalone_subsection_item_prefixes_ir,
@@ -229,6 +231,11 @@ class ReplayProducts:
             raise TypeError("ReplayProducts.temporal_events must contain TemporalEvent records")
         if not all(isinstance(event, MigrationEvent) for event in migration_events):
             raise TypeError("ReplayProducts.migration_events must contain MigrationEvent records")
+        # LS-11: the sealed migration ledger must form a DAG. A cycle (an eId
+        # migrating into its own ancestry) is a non-terminating-materialization /
+        # repeated-PIT-hash-drift hazard, so fail loud at ledger build rather than
+        # let the address resolvers silently truncate the walk at the visited guard.
+        _assert_lineage_acyclic(migration_events)
         if not all(isinstance(effect, EffectRef) for effect in source_effects):
             raise TypeError("ReplayProducts.source_effects must contain EffectRef records")
         if not all(isinstance(relation, EffectRelation) for relation in effect_relations):
@@ -254,6 +261,15 @@ class ReplayProducts:
         self.source_effects = source_effects
         self.effect_relations = effect_relations
         self.effect_lifecycle_events = effect_lifecycle_events
+        # FW-01 / OV-01 / OV-02 (wave-2 apply-authority whole-tree closure): over
+        # the finished materialized replay tree, assert no surface-origin node
+        # mints replay authority and no overlay-origin node is replay-authorized
+        # without a complete typed promotion witness. No-op on the FI corpus (the
+        # replay tree carries no surface/overlay provenance markers); fails loud
+        # the day a provider/overlay node reaches the replay tree.
+        materialized_ir = getattr(self.materialized_state, "ir", None)
+        if isinstance(materialized_ir, IRNode):
+            assert_tree_authority_closure(materialized_ir)
 
     @property
     def identity_ledger(self) -> IdentityLedger:
@@ -1826,6 +1842,10 @@ def _cleanup_sourceless_base_merge_conflicts(
         existing_version
         for existing_version in versions
         if existing_version.source is None
+        or (
+            existing_version.content is None
+            and existing_version.effective > base_effective
+        )
         or (
             existing_version.content is not None
             and (

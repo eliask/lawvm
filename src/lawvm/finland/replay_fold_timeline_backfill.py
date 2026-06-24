@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Iterator, cast
 
 from lawvm.core.ir import IRNode, IRStatute, LegalAddress, LegalOperation, OperationSource, ProvisionTimeline
+from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.provenance import MigrationEvent
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.core.temporal import TemporalEvent
@@ -68,6 +69,36 @@ def _content_is_repeal_placeholder(node: IRNode) -> bool:
     return node.attrs.get("lawvm_repeal_placeholder") == "1"
 
 
+def _normalized_node_text(node: IRNode) -> str:
+    return " ".join(irnode_to_text(node).split())
+
+
+def _section_outline(node: IRNode) -> tuple[tuple[str, str], ...]:
+    outline: list[tuple[str, str]] = []
+
+    def visit(current: IRNode) -> None:
+        if current.kind in {
+            IRNodeKind.SUBSECTION,
+            IRNodeKind.PARAGRAPH,
+            IRNodeKind.ITEM,
+            IRNodeKind.SUBPARAGRAPH,
+            IRNodeKind.HEADING,
+        }:
+            outline.append((current.kind.value, current.label or ""))
+        for child in current.children:
+            visit(child)
+
+    visit(node)
+    return tuple(outline)
+
+
+def _node_content_matches(left: IRNode, right: IRNode) -> bool:
+    return (
+        _normalized_node_text(left) == _normalized_node_text(right)
+        and _section_outline(left) == _section_outline(right)
+    )
+
+
 def _provision_roots(ir: IRNode) -> tuple[IRNode, ...]:
     if (
         len(ir.children) == 1
@@ -123,6 +154,14 @@ def _migration_source_for_address(
         return "", ""
     latest = max(candidates, key=lambda event: (event.effective, event.event_id))
     return latest.source_statute, latest.effective
+
+
+def _address_has_migration_authority(
+    address: LegalAddress,
+    migration_events: tuple[MigrationEvent, ...],
+) -> bool:
+    source_statute, effective = _migration_source_for_address(address, migration_events)
+    return bool(source_statute and effective)
 
 
 def _active_timeline_content(
@@ -333,7 +372,18 @@ def append_fold_timeline_backfill_ops(
         if _content_is_repeal_placeholder(node):
             continue
         address = LegalAddress(path=path)
-        if _has_timeline_authority(
+        timeline_content = _active_timeline_content(
+            preview.rekeyed_timelines,
+            address,
+            as_of=as_of,
+            cache=active_content_cache,
+        )
+        stale_migration_authority = (
+            timeline_content is not None
+            and not _node_content_matches(timeline_content, node)
+            and _address_has_migration_authority(address, migration_events)
+        )
+        if not stale_migration_authority and _has_timeline_authority(
             preview.rekeyed_timelines,
             address,
             as_of=as_of,

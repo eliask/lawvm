@@ -1150,6 +1150,295 @@ def write_ratchet_baseline(repo_root: Path | None = None) -> Path:
     return out_path
 
 
+# ===========================================================================
+# FW-08: frozen-residue structural sensors (registry row FW-08)
+# ===========================================================================
+#
+# FW-08 wires four LONG-KNOWN structural smell categories (the §45 enforcement
+# gate (2) "frozen residue" sensors) as a monotone ratchet over the scanned
+# (semantic-plane) Finland/core files. These are the recurring per-op-parse smell
+# shapes the parser-smell inventory has flagged as prose for a while; FW-08 freezes
+# the current count at a committed baseline that may only fall. All four are
+# AST-based (so comments / docstrings never mis-count) and intentionally narrow —
+# each is a STRUCTURAL sensor (a shape), not a semantic proof.
+#
+# The four categories (all over the SAME scanned-file set as the regex ratchet —
+# post-parse semantic-plane core/finland files, source/lexer/owning-parser/
+# diagnostic preclears excluded):
+#
+#   per_op_fstring_regex     — an f-string (JoinedStr) used as the PATTERN argument
+#                              of re.compile/re.search/.../finditer. A per-op
+#                              f-string-built regex bakes a value into the pattern
+#                              at call time (the classic per-op recompile smell);
+#                              the pattern should be a module constant or built via
+#                              compile_classifier_regex.
+#   multi_finditer_same_src  — two or more `<X>.finditer(<same-name>)` /
+#                              `re.finditer(_, <same-name>)` calls over the SAME
+#                              searched-string name within one function scope (a
+#                              multi-pass scan over one source — span-ownership smell).
+#   span_overlap_dedup       — a function that both computes a span/interval overlap
+#                              (`*.start`/`*.end`/`.span()` compared) AND maintains a
+#                              dedup/seen set (`seen`/`used`/`_dedup` membership) —
+#                              the ad-hoc span-overlap-dedup shape that should be a
+#                              typed partition/coverage account.
+#   clause_boundary_dup      — rule-of-three clause-boundary duplication: three or
+#                              more near-identical clause-boundary literal patterns
+#                              (a repeated boundary token like a §/subsection/clause
+#                              splitter) within one file — the missing-abstraction
+#                              signal (CLAUDE.md rule-of-three).
+
+_FW08_SCAN_ROOTS = (
+    Path("src/lawvm/core"),
+    Path("src/lawvm/finland"),
+)
+
+_FW08_REGEX_PATTERN_METHODS = frozenset(
+    {"compile", "search", "finditer", "findall", "match", "sub", "subn", "split"}
+)
+_FW08_BOUNDARY_TOKEN_RE = re.compile(
+    r"(?:§|pykäl|momentt|subsection|paragraph|clause|kohdan|kohta)",
+    re.IGNORECASE,
+)
+
+
+def _fw08_iter_scanned_files(repo_root: Path) -> list[str]:
+    """Scanned (non-precleared) post-parse core/finland files — the regex-ratchet
+    scan set, so FW-08 sensors share the semantic-plane scope."""
+    root = repo_root.resolve()
+    scanned: list[str] = []
+    for scan_root in _FW08_SCAN_ROOTS:
+        base = root / scan_root
+        if not base.exists():
+            continue
+        for pyfile in sorted(base.rglob("*.py")):
+            rel = _rel_posix(pyfile, root)
+            if "/tests/" in f"/{rel}" or pyfile.name.startswith("test_"):
+                continue
+            if rel in CATEGORY_MAP:
+                continue
+            scanned.append(rel)
+    return scanned
+
+
+def _fw08_is_regex_call(call: ast.Call) -> tuple[bool, str | None]:
+    """(is_regex_call, first_pattern_arg_is_fstring? marker). Recognises
+    ``re.<m>(...)`` and ``<CONST>.<m>(...)`` for the targeted methods."""
+    func = call.func
+    if not isinstance(func, ast.Attribute):
+        return False, None
+    if func.attr not in _FW08_REGEX_PATTERN_METHODS:
+        return False, None
+    receiver = func.value
+    is_re_module = isinstance(receiver, ast.Name) and receiver.id == "re"
+    is_const = isinstance(receiver, ast.Name) and bool(
+        re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*(?:_RE|_PATTERN|_re|_pattern)", receiver.id)
+    )
+    if not (is_re_module or is_const):
+        return False, None
+    return True, None
+
+
+def _searched_name(call: ast.Call) -> str | None:
+    """For a `.finditer(x)` / `re.finditer(pat, x)` call, the bare NAME of the
+    searched string argument (the last positional arg for re.* calls, the first
+    for `<CONST>.finditer(x)`). None if not a bare name."""
+    func = call.func
+    if not isinstance(func, ast.Attribute):
+        return None
+    args = call.args
+    if not args:
+        return None
+    is_re_module = isinstance(func.value, ast.Name) and func.value.id == "re"
+    arg = args[-1] if is_re_module else args[0]
+    return arg.id if isinstance(arg, ast.Name) else None
+
+
+def _fw08_per_op_fstring_regex(tree: ast.AST) -> list[int]:
+    """Lines where an f-string (JoinedStr) is the PATTERN arg of a regex call."""
+    hits: list[int] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        ok, _ = _fw08_is_regex_call(node)
+        if not ok:
+            continue
+        func = node.func
+        assert isinstance(func, ast.Attribute)
+        is_re_module = isinstance(func.value, ast.Name) and func.value.id == "re"
+        # Pattern arg: first positional for re.compile/re.search(...); for a
+        # `<CONST>.finditer(text)` the receiver is the compiled pattern, so a
+        # JoinedStr pattern only arises on the re-module form.
+        if not is_re_module or not node.args:
+            continue
+        if isinstance(node.args[0], ast.JoinedStr):
+            hits.append(getattr(node, "lineno", 0))
+    return hits
+
+
+def _fw08_multi_finditer_same_source(tree: ast.AST) -> list[int]:
+    """Lines of the 2nd+ finditer call over the SAME searched-string name within a
+    function scope (a multi-pass scan over one source)."""
+    hits: list[int] = []
+    for scope in ast.walk(tree):
+        if not isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        seen_names: dict[str, int] = {}
+        for node in ast.walk(scope):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            if not isinstance(func, ast.Attribute) or func.attr != "finditer":
+                continue
+            name = _searched_name(node)
+            if name is None:
+                continue
+            if name in seen_names:
+                hits.append(getattr(node, "lineno", 0))
+            else:
+                seen_names[name] = getattr(node, "lineno", 0)
+    return sorted(hits)
+
+
+def _fw08_span_overlap_dedup(tree: ast.AST) -> list[int]:
+    """Function-def lines where the body BOTH compares span endpoints AND keeps a
+    dedup/seen membership set (the ad-hoc span-overlap-dedup shape)."""
+    hits: list[int] = []
+    for scope in ast.walk(tree):
+        if not isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        has_span = False
+        has_dedup = False
+        for node in ast.walk(scope):
+            if isinstance(node, ast.Attribute) and node.attr in {"start", "end", "span"}:
+                has_span = True
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+                # seen.add(...) / used.add(...)
+                recv = node.func.value
+                if (
+                    node.func.attr == "add"
+                    and isinstance(recv, ast.Name)
+                    and any(tok in recv.id.lower() for tok in ("seen", "used", "dedup", "emitted"))
+                ):
+                    has_dedup = True
+            if isinstance(node, ast.Compare):
+                # membership test `x in seen`
+                for op, comp in zip(node.ops, node.comparators, strict=False):
+                    if isinstance(op, ast.In) and isinstance(comp, ast.Name):
+                        if any(tok in comp.id.lower() for tok in ("seen", "used", "dedup", "emitted")):
+                            has_dedup = True
+        if has_span and has_dedup:
+            hits.append(getattr(scope, "lineno", 0))
+    return hits
+
+
+def _fw08_clause_boundary_dup(text: str) -> list[int]:
+    """File-level rule-of-three: a clause-boundary regex literal (a string that
+    BOTH names a clause-boundary token AND looks like a regex) that is REPEATED
+    verbatim 3+ times in one file. Returns the lines of the 3rd+ occurrence of each
+    such repeated literal (the over-threshold duplication debt).
+
+    NARROW by design: it flags genuine COPY duplication of the SAME boundary
+    pattern (the missing-abstraction signal), not merely the presence of many
+    distinct boundary patterns. A near-duplicate (differing by a char) is NOT
+    caught — a verbatim-repeat sensor, not a fuzzy-similarity proof."""
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return []
+    by_literal: dict[str, list[int]] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            v = node.value
+            # Looks like a regex (has a metachar) AND names a clause boundary token.
+            if _FW08_BOUNDARY_TOKEN_RE.search(v) and re.search(r"[\\\[\](){}|+*?^$]", v):
+                by_literal.setdefault(v, []).append(getattr(node, "lineno", 0))
+    over: list[int] = []
+    for lines in by_literal.values():
+        if len(lines) >= 3:
+            over.extend(sorted(lines)[2:])
+    return sorted(over)
+
+
+def scan_frozen_residue_sensors(repo_root: Path | None = None) -> dict[str, Any]:
+    """FW-08 structural-sensor scan over the scanned semantic-plane file set.
+
+    Returns ``{"category_counts": {cat: {rel: count}}, "totals": {cat: int},
+    "grand_total": int}``. Each category's per-file count is a monotone ratchet
+    quantity (may only fall).
+    """
+    root = (repo_root or _DEFAULT_REPO_ROOT).resolve()
+    category_counts: dict[str, dict[str, int]] = {
+        "per_op_fstring_regex": {},
+        "multi_finditer_same_src": {},
+        "span_overlap_dedup": {},
+        "clause_boundary_dup": {},
+    }
+    for rel in _fw08_iter_scanned_files(root):
+        path = root / rel
+        try:
+            text = path.read_text(encoding="utf-8")
+            tree = ast.parse(text)
+        except (OSError, SyntaxError):
+            continue
+        per_op = len(_fw08_per_op_fstring_regex(tree))
+        multi = len(_fw08_multi_finditer_same_source(tree))
+        span = len(_fw08_span_overlap_dedup(tree))
+        clause = len(_fw08_clause_boundary_dup(text))
+        if per_op:
+            category_counts["per_op_fstring_regex"][rel] = per_op
+        if multi:
+            category_counts["multi_finditer_same_src"][rel] = multi
+        if span:
+            category_counts["span_overlap_dedup"][rel] = span
+        if clause:
+            category_counts["clause_boundary_dup"][rel] = clause
+    totals = {cat: sum(files.values()) for cat, files in category_counts.items()}
+    return {
+        "category_counts": {
+            cat: dict(sorted(files.items()))
+            for cat, files in category_counts.items()
+        },
+        "totals": dict(sorted(totals.items())),
+        "grand_total": sum(totals.values()),
+    }
+
+
+FROZEN_RESIDUE_SENSOR_BASELINE_PATH = Path(
+    "tests/data/frozen_residue_sensor_baseline.json"
+)
+
+
+def frozen_residue_baseline_snapshot(repo_root: Path | None = None) -> dict[str, Any]:
+    state = scan_frozen_residue_sensors(repo_root)
+    return {
+        "_doc": (
+            "Monotone FW-08 frozen-residue structural-sensor baseline. Four "
+            "AST-based categories (per_op_fstring_regex, multi_finditer_same_src, "
+            "span_overlap_dedup, clause_boundary_dup) over the scanned semantic-"
+            "plane core/finland files (the regex-ratchet scan set). Each per-file "
+            "count may only FALL; a fall must be committed. Regenerate with "
+            "`uv run python scripts/inventory_parser_smells.py "
+            "--update-frozen-residue-baseline`. See "
+            "tests/test_frozen_residue_sensors_ratchet.py and registry row FW-08."
+        ),
+        "category_counts": state["category_counts"],
+        "totals": state["totals"],
+        "grand_total": state["grand_total"],
+    }
+
+
+def write_frozen_residue_baseline(repo_root: Path | None = None) -> Path:
+    root = (repo_root or _DEFAULT_REPO_ROOT).resolve()
+    out_path = root / FROZEN_RESIDUE_SENSOR_BASELINE_PATH
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    snapshot = frozen_residue_baseline_snapshot(root)
+    out_path.write_text(
+        json.dumps(snapshot, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    return out_path
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Generate parser smell inventory from known heuristic patterns."
@@ -1161,6 +1450,15 @@ def build_parser() -> argparse.ArgumentParser:
             "Regenerate tests/data/regex_ratchet_baseline.json from the current "
             "tree (the regex ratchet baseline). Only ever commit a baseline whose "
             "counts are <= the committed one."
+        ),
+    )
+    parser.add_argument(
+        "--update-frozen-residue-baseline",
+        action="store_true",
+        help=(
+            "Regenerate tests/data/frozen_residue_sensor_baseline.json (FW-08) "
+            "from the current tree. Only ever commit a baseline whose per-category "
+            "counts are <= the committed one (the ratchet only tightens)."
         ),
     )
     parser.add_argument(
@@ -1213,6 +1511,14 @@ def main(argv: list[str] | None = None) -> int:
             f"(total_unwaived={snapshot['total_unwaived']}, "
             f"legacy_escape_hatch_ceiling="
             f"{snapshot['legacy_escape_hatch_unwaived_ceiling']})"
+        )
+        return 0
+    if args.update_frozen_residue_baseline:
+        out_path = write_frozen_residue_baseline()
+        snapshot = json.loads(out_path.read_text(encoding="utf-8"))
+        print(
+            f"wrote {out_path} (grand_total={snapshot['grand_total']}, "
+            f"totals={snapshot['totals']})"
         )
         return 0
     categories = None if args.category is None else {category.strip() for category in args.category}

@@ -32,7 +32,9 @@ if TYPE_CHECKING:
 import Levenshtein
 from lxml import etree
 
+from lawvm.core.ir import LegalAddress
 from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.timeline import select_active_version
 
 from lawvm.finland.oracle_comparison import (
     is_old_code_reference_marker,
@@ -249,6 +251,10 @@ _SECTION_HEADING_RE = re.compile(
     r"^\d{1,4}(?:[a-zäöå]|\s[a-zäöå])?\s{0,10}§\s{0,20}([^\n]{0,240}?)(?:\s{2,}|\n|$)",
     re.IGNORECASE,
 )
+_LEADING_SECTION_NUM_RE = re.compile(
+    r"^\s*\d{1,4}(?:\s*[a-zäöå])?\s*§\s*",
+    re.IGNORECASE,
+)
 
 
 def _section_heading_alpha(text: str) -> str:
@@ -257,6 +263,53 @@ def _section_heading_alpha(text: str) -> str:
     if not match:
         return ""
     return re.sub(r"[^a-z0-9äöå]", "", match.group(1).lower())
+
+
+def _compact_alnum_offsets(text: str) -> tuple[str, list[int]]:
+    chars: list[str] = []
+    offsets: list[int] = []
+    for idx, char in enumerate(text):
+        if char.isalnum():
+            chars.append(char.lower())
+            offsets.append(idx)
+    return "".join(chars), offsets
+
+
+def _replay_reduces_to_oracle_by_dropping_leading_heading(
+    replay_text: str,
+    oracle_text: str,
+) -> bool:
+    """Detect replay-only section headings omitted from Finlex comparison text."""
+    replay_body = _LEADING_SECTION_NUM_RE.sub("", replay_text, count=1).strip()
+    oracle_body = _LEADING_SECTION_NUM_RE.sub("", oracle_text, count=1).strip()
+    if not replay_body or not oracle_body:
+        return False
+
+    replay_compact, replay_offsets = _compact_alnum_offsets(replay_body)
+    oracle_compact, _ = _compact_alnum_offsets(oracle_body)
+    if not replay_compact or not oracle_compact:
+        return False
+    if not replay_compact.endswith(oracle_compact):
+        return False
+
+    prefix_len = len(replay_compact) - len(oracle_compact)
+    if prefix_len < 4 or prefix_len > 120 or prefix_len > len(replay_offsets):
+        return False
+    prefix_end = (
+        replay_offsets[prefix_len]
+        if prefix_len < len(replay_offsets)
+        else replay_offsets[prefix_len - 1] + 1
+    )
+    dropped_prefix = replay_body[:prefix_end].strip(" \t\r\n-–—")
+    if not dropped_prefix:
+        return False
+    if any(mark in dropped_prefix for mark in ".;:!?"):
+        return False
+    if len(dropped_prefix.split()) > 12:
+        return False
+
+    remaining = replay_body[prefix_end:].strip()
+    return Levenshtein.ratio(_clean(remaining), _clean(oracle_body)) >= 0.999
 
 
 def _recodification_blame_frame_diagnosis(
@@ -409,6 +462,57 @@ def _raw_master_source_lacks_section(
         if norm_section_label(" ".join(str(num_el.xpath("string(.)")).split())) == target_label:
             return False
     return True
+
+
+def _raw_master_source_section_matches_replay_but_not_oracle(
+    statute_id: str,
+    section_key: str,
+    replay_text: str,
+    oracle_text: str,
+) -> bool:
+    """True when replay faithfully mirrors a truncated raw master section.
+
+    This is a source-footing classifier, not replay authority. It catches base
+    XML witnesses that carry the section shell but omit descendant content that
+    appears in the consolidated oracle, with no amendment blame for that section.
+    """
+    source_clean = _raw_master_source_section_clean_text(statute_id, section_key)
+    replay_clean = _clean(replay_text)
+    oracle_clean = _clean(oracle_text)
+    if not source_clean or not replay_clean or not oracle_clean:
+        return False
+    if len(oracle_clean) <= int(len(source_clean) * 1.2):
+        return False
+    return (
+        Levenshtein.ratio(source_clean, replay_clean) >= 0.995
+        and Levenshtein.ratio(source_clean, oracle_clean) < 0.95
+    )
+
+
+def _raw_master_source_section_clean_text(
+    statute_id: str,
+    section_key: str,
+) -> str:
+    year, _, number = statute_id.partition("/")
+    if not year or not number:
+        return ""
+    xml_bytes = get_corpus().read_locator(f"finlex://sd/{year}/{number}/fin/main.xml")
+    if xml_bytes is None:
+        return ""
+    try:
+        source_tree = etree.fromstring(xml_bytes)
+    except etree.XMLSyntaxError:
+        return ""
+
+    target_label = norm_section_label(_section_label_text_from_key(section_key))
+    section_els = cast(list[etree._Element], source_tree.xpath('.//*[local-name()="section"]'))
+    for section_el in section_els:
+        num_el = section_el.find("{*}num")
+        if num_el is None:
+            continue
+        if norm_section_label(" ".join(str(num_el.xpath("string(.)")).split())) == target_label:
+            return _clean(_el_text(section_el))
+    return ""
 
 
 def _extract_attachment_info(root: etree._Element) -> tuple[int, list[str]]:
@@ -842,6 +946,9 @@ def _diagnose(
     if Levenshtein.ratio(_clean(r_stripped), _clean(o_stripped)) >= 0.999:
         return "EDITORIAL_CONVENTION"
 
+    if _replay_reduces_to_oracle_by_dropping_leading_heading(r_text, o_text):
+        return "EDITORIAL_CONVENTION"
+
     if is_old_code_reference_marker(o_text):
         replay_marker = re.sub(
             r"^\s*\d+\s*[a-zäöå]?\s*§\s*",
@@ -918,6 +1025,52 @@ def _diagnose(
     if c_diff < -40:
         return "REPLAY_MISSING"
     return "UNKNOWN"
+
+
+def _section_key_to_legal_address(section_key: str) -> LegalAddress | None:
+    parts: list[tuple[str, str]] = []
+    for raw_part in section_key.split("/"):
+        if ":" not in raw_part:
+            return None
+        kind, label = raw_part.split(":", 1)
+        if not kind or not label:
+            return None
+        parts.append((kind, label))
+    if not parts:
+        return None
+    return LegalAddress(path=tuple(parts))
+
+
+def _replay_has_active_tombstoned_ancestor(master: object, section_key: str) -> bool:
+    """Return True when replay has actively repealed an ancestor of ``section_key``.
+
+    Oracle section extraction can expose stale descendant sections even after
+    replay has a later chapter/container tombstone. That is oracle topology
+    staleness, not a missing replay descendant.
+    """
+    address = _section_key_to_legal_address(section_key)
+    if address is None or len(address.path) < 2:
+        return False
+    products = getattr(master, "products", None)
+    timelines = getattr(products, "timelines", None)
+    if not timelines:
+        return False
+    spec = getattr(products, "materialization_spec", None)
+    as_of = str(getattr(spec, "as_of", "") or "")
+    if not as_of:
+        return False
+    query_type = getattr(spec, "query_type", "governing")
+    if query_type not in {"governing", "in_force"}:
+        query_type = "governing"
+    for depth in range(1, len(address.path)):
+        ancestor = LegalAddress(path=address.path[:depth])
+        timeline = timelines.get(ancestor)
+        if timeline is None:
+            continue
+        selected = select_active_version(timeline, as_of, query_type=query_type)
+        if selected is not None and selected.content is None:
+            return True
+    return False
 
 
 def _batch_pre_blame_sections(
@@ -1182,6 +1335,8 @@ def _classify_statute(
                             str(blame_op.get("source_title", ""))
                         ):
                             diag = "ORACLE_STALE"
+                        elif _replay_has_active_tombstoned_ancestor(master, key):
+                            diag = "ORACLE_STALE"
                 else:
                     diag = "EXTRA"
                     if future_version:
@@ -1414,9 +1569,12 @@ def _classify_statute(
                     sec["oracle_version"] = oracle_version or ""
                     continue
                 if (
-                    sec["diagnosis"] == "REPLAY_MISSING"
+                    sec["diagnosis"] in ("MISSING", "REPLAY_MISSING")
                     and blame_action == "repeal"
-                    and "kumottu" in replay_text.lower()
+                    and (
+                        sec["diagnosis"] == "MISSING"
+                        or "kumottu" in replay_text.lower()
+                    )
                     and oracle_section_duplicates_adjacent_section(
                         sec["section"],
                         oracle_text,
@@ -1503,6 +1661,7 @@ def _classify_statute(
                 )
         empty_body_origin_cache: dict[tuple[str, str], bool] = {}
         raw_master_missing_cache: dict[str, bool] = {}
+        raw_master_truncated_cache: dict[str, bool] = {}
         pre_blame_absent_cache: dict[tuple[str, str], bool] = {}
         for sec in section_results:
             if sec["diagnosis"] not in (
@@ -1539,6 +1698,21 @@ def _classify_statute(
             if empty_body_origin_cache[cache_key]:
                 sec["diagnosis"] = "SOURCE_INCOMPLETE"
                 continue
+
+            if not blame_source and sec["diagnosis"] in ("REPLAY_MISSING", "UNKNOWN"):
+                section_key = str(sec["section"])
+                if section_key not in raw_master_truncated_cache:
+                    raw_master_truncated_cache[section_key] = (
+                        _raw_master_source_section_matches_replay_but_not_oracle(
+                            sid,
+                            section_key,
+                            str(sec.get("replay_text") or ""),
+                            str(sec.get("oracle_text") or ""),
+                        )
+                    )
+                if raw_master_truncated_cache[section_key]:
+                    sec["diagnosis"] = "SOURCE_INCOMPLETE"
+                    continue
 
             if sec["diagnosis"] not in ("MISSING", "REPLAY_MISSING", "UNKNOWN", "EXTRA"):
                 continue

@@ -1278,6 +1278,34 @@ def test_container_payload_prunes_dense_foreign_standalone_bridge_without_new_co
     ]
 
 
+def test_container_payload_prunes_foreign_scoped_standalone_inserts_from_new_container() -> None:
+    ctx = _mock_ctx("chapter", "3b", live_node=None)
+    muutos_ir = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="3b",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="3 b luku"),
+            IRNode(kind=IRNodeKind.SECTION, label="19f"),
+            IRNode(kind=IRNodeKind.SECTION, label="22a"),
+            IRNode(kind=IRNodeKind.SECTION, label="22b"),
+        ),
+    )
+
+    got, changed, pruned = _prune_container_payload_sections_shadowed_by_standalone_targets(
+        ctx,
+        "chapter",
+        "3b",
+        muutos_ir,
+        {"22a", "22b"},
+        foreign_scoped_standalone_section_targets={"22a", "22b"},
+    )
+
+    assert changed is True
+    assert isinstance(got, IRNode)
+    assert pruned == ["22a", "22b"]
+    assert [c.label for c in got.children if c.kind == IRNodeKind.SECTION] == ["19f"]
+
+
 def test_payload_normalize_aligns_sparse_omission_subsections_to_live() -> None:
     live_sec = IRNode(
         kind=IRNodeKind.SECTION,
@@ -4248,6 +4276,56 @@ def test_assign_subsection_slots_reserves_johd_slot_for_intro_op() -> None:
     assert got.unassigned_payload_slots == ()
 
 
+def test_assign_subsection_slots_does_not_positional_fallback_item_to_intro_slot() -> None:
+    """Item targets need item-local evidence, not a positional subsection fallback.
+
+    Mirrors 1970/179 §103 / 1998/134: the source payload carries an intro-like
+    subsection, an omission marker, and a later body fragment for an item.  The
+    item op must not consume the intro slot merely because it is the first
+    unused subsection.
+    """
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="103",
+        children=(
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CONTENT,
+                        text="Edellä 102 §:ssä mainituissa kokouksissa on käsiteltävä seuraavat asiat:",
+                    ),
+                ),
+            ),
+            IRNode(kind=IRNodeKind.OMISSION),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="2",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CONTENT,
+                        text="kolmannessa vahvistetaan talousarvio ja valitaan tilintarkastajat.",
+                    ),
+                ),
+            ),
+        ),
+    )
+    op_item = AmendmentOp(
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_section="103",
+        target_paragraph=1,
+        target_item="3",
+    )
+
+    got = _build_subsection_slot_assignment(muutos_ir, [op_item])
+
+    assert got.for_op(op_item) is None
+    assert got.sparse_slot_bindings == ()
+    assert got.unassigned_payload_slots == ("1:1", "2:2")
+
+
 def test_assign_subsection_slots_keeps_insert_unbound_across_explicit_gap() -> None:
     """Do not force a plain subsection op across an explicit numeric gap.
 
@@ -4391,6 +4469,61 @@ def test_assign_subsection_slots_binds_lone_sparse_insert_to_trailing_slot() -> 
     assert got.sparse_slot_bindings[0].payload_slot_index == 3
     assert got.sparse_slot_bindings[0].payload_slot_label == "4"
     assert got.unassigned_payload_slots == ("1:1", "2:2")
+
+
+def test_prepare_payload_surface_keeps_single_sparse_insert_source_payload() -> None:
+    """A single sparse INSERT owns its one source subsection, not carried live text.
+
+    Mirrors 2018/11 §43 under 2023/662: the amendment source prints an omission
+    marker and one new subsection for ``uusi 5 momentti``.  Expanding the
+    omission against a live/expired slot 5 before slot assignment lets exact
+    label binding pick stale carried text.
+    """
+    live_sec = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="43",
+        children=(
+            IRNode(kind=IRNodeKind.SUBSECTION, label="1", children=(IRNode(kind=IRNodeKind.CONTENT, text="old 1"),)),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="2", children=(IRNode(kind=IRNodeKind.CONTENT, text="old 2"),)),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="3", children=(IRNode(kind=IRNodeKind.CONTENT, text="old 3"),)),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="4", children=(IRNode(kind=IRNodeKind.CONTENT, text="old 4"),)),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="5",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="expired temporary fifth"),),
+            ),
+        ),
+    )
+    ctx = _mock_ctx("section", "43", live_node=live_sec)
+    op_insert = AmendmentOp(
+        op_type="INSERT",
+        target_kind=TargetKind.SECTION,
+        target_section="43",
+        target_paragraph=5,
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="43",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="43 §"),
+            IRNode(kind=IRNodeKind.HEADING, text="Maksujärjestelyn edellytykset"),
+            IRNode(kind=IRNodeKind.OMISSION),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="new automatic decision payload"),),
+            ),
+        ),
+    )
+
+    prepared = prepare_payload_surface(ctx, [op_insert], muutos_ir, _replay_profile_stub(), None)
+    got = elaborate_payload_against_live(ctx, [op_insert], prepared, set())
+
+    mapped = got.subsec_map.for_op(op_insert)
+    assert mapped is not None
+    assert mapped.label == "5"
+    assert "new automatic decision payload" in irnode_to_text(mapped)
+    assert "expired temporary fifth" not in irnode_to_text(mapped)
 
 
 def test_prepare_payload_surface_does_not_merge_new_subsection_insert_inner_omission() -> None:
@@ -5329,6 +5462,210 @@ def test_normalize_group_payload_folds_split_target_subsection_intro_list_tail()
     assert _completeness(got).kind == "sparse_certified"
 
 
+def test_normalize_group_payload_folds_multi_target_subsection_list_wrapups() -> None:
+    """Multiple changed moments may each carry a detached wrap-up slot.
+
+    Mirrors `1995/1557 <- 2001/1264` section 11: the source preamble replaces
+    moments 3 and 4 and repeals moment 5, while the XML serializes each changed
+    list moment as intro/items plus a content-only sibling wrap-up.
+    """
+    live_sec = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="11",
+        children=(
+            IRNode(kind=IRNodeKind.SUBSECTION, label="1", children=(IRNode(kind=IRNodeKind.CONTENT, text="Old 1."),)),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="2", children=(IRNode(kind=IRNodeKind.CONTENT, text="Old 2."),)),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="3",
+                children=(
+                    IRNode(kind=IRNodeKind.INTRO, text="Old municipality intro:"),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="1", children=(IRNode(kind=IRNodeKind.CONTENT, text="old a;"),)),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="2", children=(IRNode(kind=IRNodeKind.CONTENT, text="old b;"),)),
+                    IRNode(kind=IRNodeKind.WRAP_UP, text="old municipality wrap-up."),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="4",
+                children=(
+                    IRNode(kind=IRNodeKind.INTRO, text="Old parish intro:"),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="1", children=(IRNode(kind=IRNodeKind.CONTENT, text="old c;"),)),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="2", children=(IRNode(kind=IRNodeKind.CONTENT, text="old d;"),)),
+                    IRNode(kind=IRNodeKind.WRAP_UP, text="old parish wrap-up."),
+                ),
+            ),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="5", children=(IRNode(kind=IRNodeKind.CONTENT, text="Old 5."),)),
+        ),
+    )
+    ctx = _mock_ctx("section", "11", target_chapter="4", live_node=live_sec)
+    op_repeal_5 = AmendmentOp(
+        op_type="REPEAL",
+        target_kind=TargetKind.SECTION,
+        target_chapter="4",
+        target_section="11",
+        target_paragraph=5,
+    )
+    op_replace_4 = AmendmentOp(
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_chapter="4",
+        target_section="11",
+        target_paragraph=4,
+    )
+    op_replace_3 = AmendmentOp(
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_chapter="4",
+        target_section="11",
+        target_paragraph=3,
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="11",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="11 §"),
+            IRNode(kind=IRNodeKind.HEADING, text="Veronsaajakustannukset"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="2",
+                children=(
+                    IRNode(kind=IRNodeKind.INTRO, text="New municipality intro:"),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="1", children=(IRNode(kind=IRNodeKind.CONTENT, text="new a;"),)),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="2", children=(IRNode(kind=IRNodeKind.CONTENT, text="new b"),)),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="3",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="sekä kerrotaan kunnan jako-osuudella."),),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="4",
+                children=(
+                    IRNode(kind=IRNodeKind.INTRO, text="New parish intro:"),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="1", children=(IRNode(kind=IRNodeKind.CONTENT, text="new c;"),)),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="2", children=(IRNode(kind=IRNodeKind.CONTENT, text="new d"),)),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="5",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="sekä kerrotaan seurakunnan jako-osuudella."),),
+            ),
+        ),
+    )
+
+    got = elaborate_payload_against_live(ctx, [op_repeal_5, op_replace_4, op_replace_3], muutos_ir, set())
+
+    assignment = _slot_assignment_result(got)
+    mapped_3 = assignment.for_op(op_replace_3)
+    mapped_4 = assignment.for_op(op_replace_4)
+    assert mapped_3 is not None
+    assert mapped_4 is not None
+    assert mapped_3.label == "3"
+    assert mapped_4.label == "4"
+    assert assignment.unassigned_payload_slots == ()
+    assert "New municipality intro:" in irnode_to_text(mapped_3)
+    assert "sekä kerrotaan kunnan jako-osuudella." in irnode_to_text(mapped_3)
+    assert "New parish intro:" in irnode_to_text(mapped_4)
+    assert "sekä kerrotaan seurakunnan jako-osuudella." in irnode_to_text(mapped_4)
+    assert _slot_ir_has_item(mapped_3, "1")
+    assert _slot_ir_has_item(mapped_3, "2")
+    assert _slot_ir_has_item(mapped_4, "1")
+    assert _slot_ir_has_item(mapped_4, "2")
+    observations = _observations(got)
+    assert [obs.kind for obs in observations] == ["ELAB.FOLD_MULTI_TARGET_SUBSECTION_LIST_WRAPUPS"]
+    detail = observations[0].detail
+    assert detail is not None
+    assert detail["target_paragraphs"] == [3, 4]
+    assert detail["prefix_payload_slot_labels"] == ["2", "4"]
+    assert detail["tail_payload_slot_labels"] == ["3", "5"]
+    assert _completeness(got).kind == "sparse_certified"
+
+
+def test_normalize_group_payload_splits_final_list_item_detached_moment() -> None:
+    """A whole-section payload may glue the next moment into the final list item.
+
+    Mirrors `1994/1143 <- 1994/1477 / 17 §`: the last item of moment 1 ends at
+    ``lääkintätarkoituksiin.``, and the following ``Erityismyynti ...`` sentence
+    is the real second moment, before the permit-granting third moment.
+    """
+    ctx = _mock_ctx("section", "17", target_chapter="4", live_node=None)
+    op = AmendmentOp(
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_section="17",
+        target_chapter="4",
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="17",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="17 §"),
+            IRNode(kind=IRNodeKind.HEADING, text="Erityismyynti ja käyttölupa"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(
+                    IRNode(kind=IRNodeKind.INTRO, text="Tukkumyyjä saa myydä:"),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="1",
+                        children=(
+                            IRNode(kind=IRNodeKind.NUM, text="1)"),
+                            IRNode(kind=IRNodeKind.CONTENT, text="etikan valmistukseen;"),
+                        ),
+                    ),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="2",
+                        children=(
+                            IRNode(kind=IRNodeKind.NUM, text="2)"),
+                            IRNode(
+                                kind=IRNodeKind.CONTENT,
+                                text=(
+                                    "apteekeille lääkintätarkoituksiin. "
+                                    "Erityismyynti 1 momentin 1 kohdassa tarkoitettuun "
+                                    "tarkoitukseen on sallittu käyttöluvalla."
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="2",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CONTENT,
+                        text="Tuotevalvontakeskus voi myöntää käyttöluvan luotettavalle hakijalle.",
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    got = elaborate_payload_against_live(ctx, [op], muutos_ir, set())
+
+    normalized = _muutos_ir(got)
+    subsections = [child for child in normalized.children if child.kind is IRNodeKind.SUBSECTION]
+    assert [child.label for child in subsections] == ["1", "2", "3"]
+    assert "apteekeille lääkintätarkoituksiin." in irnode_to_text(subsections[0])
+    assert "Erityismyynti 1 momentin" not in irnode_to_text(subsections[0])
+    assert "Erityismyynti 1 momentin" in irnode_to_text(subsections[1])
+    assert "Tuotevalvontakeskus voi myöntää" in irnode_to_text(subsections[2])
+    observations = _observations(got)
+    assert [obs.kind for obs in observations] == ["ELAB.SPLIT_FINAL_LIST_ITEM_TRAILING_SUBSECTION"]
+    detail = observations[0].detail
+    assert detail is not None
+    assert detail["inserted_subsection_label"] == "2"
+    assert detail["shifted_subsection_count"] == 1
+    assert _completeness(got).kind == "complete"
+
+
 def test_group_payload_normalization_result_defaults_unassigned_sparse_payload_slots() -> None:
     assignment = SubsectionSlotAssignmentResult(
         subsec_map=SubsectionSlotMap(),
@@ -6021,6 +6358,114 @@ def test_normalize_group_payload_emits_source_pathology_for_suspicious_partial_w
     pathologies = _pathologies(got)
     assert [p.code for p in pathologies] == ["PARTIAL_WHOLE_SECTION_PAYLOAD"]
     assert pathologies[0].source_statute == "2010/1399"
+
+
+def test_normalize_group_payload_keeps_multi_subsection_whole_section_replace() -> None:
+    """Do not treat a legitimate multi-moment replacement as an empty tiny fragment."""
+    live_sec = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="4",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="4 §"),
+            IRNode(kind=IRNodeKind.HEADING, text="Määritelmiä"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(
+                    IRNode(kind=IRNodeKind.INTRO, text="Tässä asetuksessa tarkoitetaan:"),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="1",
+                        children=(IRNode(kind=IRNodeKind.CONTENT, text="vanha määritelmä 1"),),
+                    ),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="2",
+                        children=(IRNode(kind=IRNodeKind.CONTENT, text="vanha määritelmä 2"),),
+                    ),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="3",
+                        children=(IRNode(kind=IRNodeKind.CONTENT, text="vanha määritelmä 3"),),
+                    ),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="4",
+                        children=(IRNode(kind=IRNodeKind.CONTENT, text="vanha määritelmä 4"),),
+                    ),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="5",
+                        children=(IRNode(kind=IRNodeKind.CONTENT, text="vanha määritelmä 5"),),
+                    ),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="6",
+                        children=(IRNode(kind=IRNodeKind.CONTENT, text="vanha määritelmä 6"),),
+                    ),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="7",
+                        children=(IRNode(kind=IRNodeKind.CONTENT, text="vanha määritelmä 7"),),
+                    ),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="8",
+                        children=(IRNode(kind=IRNodeKind.CONTENT, text="vanha määritelmä 8"),),
+                    ),
+                ),
+            ),
+        ),
+    )
+    ctx = _mock_ctx("section", "4", target_chapter="1", live_node=live_sec)
+    op = AmendmentOp(
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_section="4",
+        target_chapter="1",
+        source_statute="2005/484",
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="4",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="4 §"),
+            IRNode(kind=IRNodeKind.HEADING, text="Määritelmiä"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CONTENT,
+                        text="Tässä asetuksessa noudatetaan kemikaaliturvallisuuslain mukaisia määritelmiä.",
+                    ),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="2",
+                children=(
+                    IRNode(kind=IRNodeKind.INTRO, text="Lisäksi tässä asetuksessa tarkoitetaan:"),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="1",
+                        children=(IRNode(kind=IRNodeKind.CONTENT, text="jakeluasemalla uutta määritelmää"),),
+                    ),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="2",
+                        children=(IRNode(kind=IRNodeKind.CONTENT, text="tarkastuslaitoksella uutta määritelmää"),),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    got = elaborate_payload_against_live(ctx, [op], muutos_ir, set())
+
+    assert tuple(got.group_ops) == (op,)
+    assert got.rejected_ops == ()
+    assert _pathologies(got) == ()
 
 
 def test_normalize_group_payload_drops_stale_whole_section_shell_for_subsection_target() -> None:
@@ -7942,6 +8387,75 @@ def test_assign_subsection_slots_binds_carried_renumber_destination_payload_slot
     ) == 2
 
 
+def test_assign_subsection_slots_keeps_intro_replacement_from_stealing_insert_body() -> None:
+    """Sparse intro+omission+insert payloads must not bind the intro fragment
+    as the inserted moment body.
+
+    Real shape: 1991/1081 / 1958/438 §32 changes 1 mom johdantokappale, adds
+    new 2 mom, moves old 2 mom to 3 mom, and repeals old 3 mom. The amendment
+    body carries the changed intro as the first sparse subsection and the new
+    inserted moment as the second sparse subsection.
+    """
+    intro_fragment = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="1",
+        text="Changed 1 mom intro:",
+    )
+    inserted_body = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="2",
+        text="New inserted 2 mom body.",
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="32",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="32 §"),
+            intro_fragment,
+            IRNode(kind=IRNodeKind.HCONTAINER, attrs={"name": "omission"}),
+            inserted_body,
+            IRNode(kind=IRNodeKind.HCONTAINER, attrs={"name": "omission"}),
+        ),
+    )
+    intro_op = AmendmentOp(
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_section="32",
+        target_paragraph=1,
+        target_special="johd",
+    )
+    insert2 = AmendmentOp(
+        op_type="INSERT",
+        target_kind=TargetKind.SECTION,
+        target_section="32",
+        target_paragraph=2,
+    )
+    renumber2 = AmendmentOp(
+        op_id="renumber_2_to_3",
+        op_type="RENUMBER",
+        target_kind=TargetKind.SECTION,
+        target_section="32",
+        target_paragraph=2,
+        lo=LegalOperation(
+            op_id="renumber_2_to_3",
+            sequence=0,
+            action=StructuralAction.RENUMBER,
+            target=LegalAddress(path=(("section", "32"), ("subsection", "2"))),
+            destination=LegalAddress(path=(("section", "32"), ("subsection", "3"))),
+        ),
+    )
+
+    slot_inputs = _collect_subsection_slot_inputs(muutos_ir, [renumber2, intro_op, insert2])
+    assert slot_inputs is not None
+
+    assignment = _assign_subsection_slots(slot_inputs)
+
+    assert assignment.for_op(intro_op) is intro_fragment
+    assert assignment.for_op(insert2) is inserted_body
+    assert assignment.for_op(renumber2) is None
+    assert assignment.unassigned_payload_slots == ()
+
+
 def test_assign_subsection_slots_binds_same_target_insert_before_moved_replace() -> None:
     muutos_ir = IRNode(
         kind=IRNodeKind.SECTION,
@@ -8020,3 +8534,162 @@ def test_assign_subsection_slots_binds_same_target_insert_before_moved_replace()
         ):
             found_binding_observation = True
     assert found_binding_observation
+
+
+def test_assign_subsection_slots_binds_same_target_insert_before_moved_renumber() -> None:
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="7b",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="7 b §"),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="New inserted third moment."),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="3", text="Carried old third moment."),
+        ),
+    )
+    insert3 = AmendmentOp(
+        op_type="INSERT",
+        target_kind=TargetKind.SECTION,
+        target_section="7b",
+        target_paragraph=3,
+    )
+    renumber3 = AmendmentOp(
+        op_id="renumber_3_to_4",
+        op_type="RENUMBER",
+        target_kind=TargetKind.SECTION,
+        target_section="7b",
+        target_paragraph=3,
+        lo=LegalOperation(
+            op_id="renumber_3_to_4",
+            sequence=0,
+            action=StructuralAction.RENUMBER,
+            target=LegalAddress(path=(("section", "7b"), ("subsection", "3"))),
+            destination=LegalAddress(path=(("section", "7b"), ("subsection", "4"))),
+        ),
+    )
+
+    slot_inputs = _collect_subsection_slot_inputs(muutos_ir, [renumber3, insert3])
+    assert slot_inputs is not None
+
+    assignment = _assign_subsection_slots(slot_inputs)
+    insert3_slot = assignment.for_op(insert3)
+    renumber3_slot = assignment.for_op(renumber3)
+
+    assert insert3_slot is not None
+    assert renumber3_slot is not None
+    assert insert3_slot.label == "2"
+    assert renumber3_slot.label == "3"
+    assert assignment.unassigned_payload_slots == ()
+    assert any(
+        obs.kind == "ELAB.INSERT_BEFORE_MOVED_SAME_TARGET_SLOT"
+        and obs.detail is not None
+        and obs.detail["target_paragraph"] == 3
+        and obs.detail["insert_payload_slot_label"] == "2"
+        and obs.detail["replace_payload_slot_label"] == "3"
+        and obs.detail["renumber_destination"] == 4
+        for obs in assignment.binding_observations
+    )
+
+
+def test_assign_subsection_slots_does_not_bind_renumber_insert_before_replaced_target() -> None:
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="1",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="1 §"),
+            IRNode(kind=IRNodeKind.OMISSION),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="Replacement second moment."),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="3", text="New inserted third moment."),
+            IRNode(kind=IRNodeKind.OMISSION),
+        ),
+    )
+    renumber3 = AmendmentOp(
+        op_id="renumber_3_to_4",
+        op_type="RENUMBER",
+        target_kind=TargetKind.SECTION,
+        target_section="1",
+        target_paragraph=3,
+        lo=LegalOperation(
+            op_id="renumber_3_to_4",
+            sequence=0,
+            action=StructuralAction.RENUMBER,
+            target=LegalAddress(path=(("section", "1"), ("subsection", "3"))),
+            destination=LegalAddress(path=(("section", "1"), ("subsection", "4"))),
+        ),
+    )
+    replace2 = AmendmentOp(
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_section="1",
+        target_paragraph=2,
+    )
+    insert3 = AmendmentOp(
+        op_type="INSERT",
+        target_kind=TargetKind.SECTION,
+        target_section="1",
+        target_paragraph=3,
+    )
+
+    slot_inputs = _collect_subsection_slot_inputs(muutos_ir, [renumber3, replace2, insert3])
+    assert slot_inputs is not None
+
+    assignment = _assign_subsection_slots(slot_inputs)
+
+    replace2_slot = assignment.for_op(replace2)
+    insert3_slot = assignment.for_op(insert3)
+    assert replace2_slot is not None
+    assert insert3_slot is not None
+    assert replace2_slot.label == "2"
+    assert "Replacement second moment" in irnode_to_text(replace2_slot)
+    assert insert3_slot.label == "3"
+    assert "New inserted third moment" in irnode_to_text(insert3_slot)
+
+
+def test_assign_subsection_slots_does_not_move_insert_off_in_place_merge_slot() -> None:
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="23",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="23 §"),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Carried live first moment."),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="2",
+                attrs={"lawvm_in_place_merge": "1"},
+                text="New inserted second moment.",
+            ),
+        ),
+    )
+    insert2 = AmendmentOp(
+        op_type="INSERT",
+        target_kind=TargetKind.SECTION,
+        target_section="23",
+        target_paragraph=2,
+    )
+    renumber2 = AmendmentOp(
+        op_id="renumber_2_to_3",
+        op_type="RENUMBER",
+        target_kind=TargetKind.SECTION,
+        target_section="23",
+        target_paragraph=2,
+        lo=LegalOperation(
+            op_id="renumber_2_to_3",
+            sequence=0,
+            action=StructuralAction.RENUMBER,
+            target=LegalAddress(path=(("section", "23"), ("subsection", "2"))),
+            destination=LegalAddress(path=(("section", "23"), ("subsection", "3"))),
+        ),
+    )
+
+    slot_inputs = _collect_subsection_slot_inputs(muutos_ir, [renumber2, insert2])
+    assert slot_inputs is not None
+
+    assignment = _assign_subsection_slots(slot_inputs)
+    insert2_slot = assignment.for_op(insert2)
+
+    assert insert2_slot is not None
+    assert insert2_slot.label == "2"
+    assert "New inserted second moment" in irnode_to_text(insert2_slot)
+    assert not any(
+        obs.kind == "ELAB.INSERT_BEFORE_MOVED_SAME_TARGET_SLOT"
+        for obs in assignment.binding_observations
+    )

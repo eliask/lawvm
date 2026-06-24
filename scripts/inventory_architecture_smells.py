@@ -41,6 +41,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import re
 from collections import Counter
 from collections.abc import Iterable
 from pathlib import Path
@@ -502,6 +503,209 @@ def scope_source_baseline_snapshot(repo_root: Path | None = None) -> dict[str, A
 
 
 # ===========================================================================
+# Ratchet — author-set replay authority at projection (audit row PROJ-02)
+# ===========================================================================
+#
+# PROJECTION plane invariant (LAWVM_AUDIT_INVARIANT_REGISTRY.md §7 / §3.E,
+# core/stage_result.py AuthoritySurface): a projection row is NON-AUTHORITATIVE by
+# construction. ``replay_authorized`` (the legal-state replay-authority field) may
+# be granted ONLY by an explicit, granting ``ExecutionAuthorization`` carrier — it
+# may NEVER be author-set to True on any other row / dataclass / dict at projection
+# time. The fi_refs deterministic export was the canonical violation (it stamped
+# ``replay_authorized: True`` on every deterministic extraction row via
+# ``_DETERMINISTIC_ROW_EXTRAS``; fixed in 2f7f30e6 to ``False`` + a positive
+# ``deterministic_extraction`` surface fact). This scan GENERALIZES that fix
+# tree-wide: it finds every site that author-sets ``replay_authorized`` to a TRUTHY
+# literal and classifies it as
+#   * ALLOWED   — the assignment is a keyword inside an ``ExecutionAuthorization(...)``
+#                 construction (the sole legitimate authority-grant carrier), or
+#   * VIOLATION — a truthy ``replay_authorized`` set ANYWHERE else (a dataclass
+#                 default, a dict literal, a kwarg to a non-ExecutionAuthorization
+#                 constructor) — an author-set authority on a projection row.
+# Comparisons (``replay_authorized == True``), reads, and ``False``/falsy literals
+# are NOT flagged; only a truthy AUTHOR-SET is. The committed baseline is 0
+# violations (the firewall is type-enforced by the FrontierWorkItem validator + the
+# legal_surface_graph assembler today); the scan fences any NEW author-set truthy
+# ``replay_authorized`` crossing under ``src/lawvm`` so the firewall cannot regress.
+_REPLAY_AUTHORITY_FIELD = "replay_authorized"
+_AUTHORITY_GRANT_CARRIER = "ExecutionAuthorization"
+_PROJECTION_AUTHORITY_SCAN_ROOTS = ("src/lawvm",)
+
+
+def _is_truthy_literal(node: ast.expr) -> bool:
+    """True for an author-set TRUTHY constant (``True`` / ``1``).
+
+    A ``False`` / ``0`` / ``None`` literal is the surface-truthful default and is
+    NOT an author-set authority claim, so it is not flagged. A non-literal value
+    (a derived expression / name) is also not flagged here — the firewall is about
+    a hard-coded author-set authority, not a derived one (a derived True must come
+    through an ``ExecutionAuthorization`` carrier, which this scan allows).
+    """
+    if not isinstance(node, ast.Constant):
+        return False
+    value = node.value
+    if value is True:
+        return True
+    return isinstance(value, int) and not isinstance(value, bool) and value != 0
+
+
+def _call_is_authority_grant_carrier(node: ast.Call) -> bool:
+    """True if ``node`` constructs an ``ExecutionAuthorization`` (the grant carrier)."""
+    func = node.func
+    if isinstance(func, ast.Name):
+        return func.id == _AUTHORITY_GRANT_CARRIER
+    if isinstance(func, ast.Attribute):
+        return func.attr == _AUTHORITY_GRANT_CARRIER
+    return False
+
+
+def scan_file_projection_authority(rel_path: str, text: str) -> list[dict[str, Any]]:
+    """Find every author-set ``replay_authorized=<truthy>`` site in one file.
+
+    Two author-set shapes are caught:
+      (1) a keyword ``replay_authorized=True`` in a CALL (constructor / factory);
+      (2) a dict entry ``"replay_authorized": True`` in a dict literal.
+    A class-body / module default ``replay_authorized: bool = True`` (AnnAssign /
+    Assign to a truthy literal) is also caught (it author-sets the default).
+
+    Each keyword (1) site is classified ALLOWED iff its enclosing call constructs
+    an ``ExecutionAuthorization`` (the legitimate grant carrier). Dict-literal and
+    default sites are ALWAYS violations when truthy — a projection row's dict /
+    default authority is never the grant carrier.
+    """
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return []
+    records: list[dict[str, Any]] = []
+
+    # (1) keyword in a call: classify by the enclosing call's callee.
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        allowed = _call_is_authority_grant_carrier(node)
+        for kw in node.keywords:
+            if (
+                kw.arg == _REPLAY_AUTHORITY_FIELD
+                and _is_truthy_literal(kw.value)
+                and not allowed
+            ):
+                records.append(
+                    {
+                        "file": rel_path,
+                        "line": getattr(kw.value, "lineno", node.lineno),
+                        "kind": "keyword_non_grant_carrier",
+                    }
+                )
+
+    # (2) dict literal entry "replay_authorized": True.
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Dict):
+            continue
+        for key, value in zip(node.keys, node.values, strict=False):
+            if (
+                isinstance(key, ast.Constant)
+                and key.value == _REPLAY_AUTHORITY_FIELD
+                and _is_truthy_literal(value)
+            ):
+                records.append(
+                    {
+                        "file": rel_path,
+                        "line": getattr(value, "lineno", node.lineno),
+                        "kind": "dict_literal",
+                    }
+                )
+
+    # (3) class-body / module default: replay_authorized[: bool] = True.
+    for node in ast.walk(tree):
+        if isinstance(node, ast.AnnAssign):
+            target = node.target
+            if (
+                isinstance(target, ast.Name)
+                and target.id == _REPLAY_AUTHORITY_FIELD
+                and node.value is not None
+                and _is_truthy_literal(node.value)
+            ):
+                records.append(
+                    {
+                        "file": rel_path,
+                        "line": node.lineno,
+                        "kind": "default_assignment",
+                    }
+                )
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                if (
+                    isinstance(target, ast.Name)
+                    and target.id == _REPLAY_AUTHORITY_FIELD
+                    and _is_truthy_literal(node.value)
+                ):
+                    records.append(
+                        {
+                            "file": rel_path,
+                            "line": node.lineno,
+                            "kind": "default_assignment",
+                        }
+                    )
+    return records
+
+
+def scan_projection_authority_ratchet(repo_root: Path | None = None) -> dict[str, Any]:
+    """Compute the author-set-replay-authority-at-projection ratchet state.
+
+    Returns per-file VIOLATION counts (the monotone quantity, baseline 0), the
+    total, and every record. A violation is a truthy ``replay_authorized`` set
+    outside an ``ExecutionAuthorization`` grant carrier.
+    """
+    root = (repo_root or _DEFAULT_REPO_ROOT).resolve()
+    records: list[dict[str, Any]] = []
+    for rel in _iter_python_files(root, *_PROJECTION_AUTHORITY_SCAN_ROOTS):
+        path = root / rel
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        records.extend(scan_file_projection_authority(rel, text))
+
+    violation_counts: Counter[str] = Counter()
+    for rec in records:
+        violation_counts[rec["file"]] += 1
+
+    return {
+        "violation_counts": dict(sorted(violation_counts.items())),
+        "total_violations": sum(violation_counts.values()),
+        "records": records,
+    }
+
+
+PROJECTION_AUTHORITY_BASELINE_PATH = Path(
+    "tests/data/projection_authority_ratchet_baseline.json"
+)
+
+
+def projection_authority_baseline_snapshot(
+    repo_root: Path | None = None,
+) -> dict[str, Any]:
+    state = scan_projection_authority_ratchet(repo_root)
+    return {
+        "_doc": (
+            "Monotone author-set-replay-authority-at-projection ratchet baseline "
+            "(audit row PROJ-02). Counts truthy `replay_authorized` author-set "
+            "OUTSIDE an ExecutionAuthorization grant carrier (a dict literal, a "
+            "non-grant constructor kwarg, or a class/module default) — a projection "
+            "row claiming legal-state replay authority it cannot hold. The firewall "
+            "is type-enforced today (FrontierWorkItem validator + legal_surface_graph "
+            "assembler both raise), so the baseline is 0 and may only stay 0; a new "
+            "crossing fails CI. Regenerate with `uv run python "
+            "scripts/inventory_architecture_smells.py --ratchet projection "
+            "--update-baseline`. See tests/test_projection_author_set_authority.py."
+        ),
+        "total_violations": state["total_violations"],
+        "violation_counts": state["violation_counts"],
+    }
+
+
+# ===========================================================================
 # Ratchet — source-witness liveness (StageResult WAIST #1)
 # ===========================================================================
 #
@@ -602,8 +806,343 @@ def witness_liveness_baseline_snapshot(repo_root: Path | None = None) -> dict[st
 
 
 # ===========================================================================
+# Ratchet — no hidden replay kernel in a frontend (audit row XJUR-02, §2.3)
+# ===========================================================================
+#
+# §2.3 boundary invariant: core owns the proven-shared primitives — legal-state
+# IR mutation (``core/tree_ops``), PIT-materialization + timeline + lineage
+# (``core/timeline*``), and op-effect semantics. A FRONTEND must not grow its own
+# replay kernel for a problem core owns: it may CALL core (a thin adapter is
+# fine), but it must not (a) carry a mutable IRNode-shadow node that it edits in
+# place, nor (b) re-derive a point-in-time / timeline / lineage by rebuilding a
+# date-filtered tree itself instead of routing through ``core/timeline``. Two
+# replay engines drift; that drift is the §2.3 risk this audit makes visible.
+#
+# This is a STATIC §2.3 boundary audit (no production sink — the gate IS the
+# enforcement). It is intentionally HONEST-DISCOVERY: this row had ZERO prior
+# coverage, so the baseline records the ACTUAL current state — a real frontend
+# replay kernel is recorded as existing debt with a stated per-entry reason and
+# surfaced for a future refactor wave, NOT failed/refactored here. The gate is
+# monotone: no NEW hidden-kernel signal may appear in any frontend.
+#
+# Two orthogonal, precisely-detectable signals (chosen to fire on a genuine
+# kernel and stay silent on a disciplined adapter / a thin parse builder):
+#
+#   (1) ``parallel_mutable_ir_shadow`` — a frontend defines a NON-frozen
+#       ``@dataclass`` that mirrors core ``IRNode``: a ``children: list[...]``
+#       field PLUS an ``attrs`` or ``text`` field. Core IR is frozen by design
+#       (``core/ir.py``); a frontend-local MUTABLE mirror is the substrate of a
+#       hidden replay/edit kernel (UK ``UKMutableNode``) — or, more benignly, a
+#       parse-time scratch builder (SE ``_SEMutableNode``). BOTH are recorded;
+#       the baseline states which is a live replay kernel vs a parse builder.
+#
+#   (2) ``frontend_pit_materialization`` — a frontend defines a function shaped
+#       like core PIT/timeline materialization (name ``materialize_*`` /
+#       ``*_to_pit`` / ``compile_timelines`` / ``fold_timeline``) that REBUILDS a
+#       legal-state tree by HAND — it constructs an ``IRNode(...)`` / ``IRStatute
+#       (...)`` directly in its own body — AND does NOT delegate to core (no call
+#       to a core PIT/timeline entry ``materialize_pit`` / ``compile_timelines``
+#       nor a core ``tree_ops`` mutator ``replace_at`` / ``remove_at`` /
+#       ``insert_sorted`` …). The direct-construction clause is what separates a
+#       genuine hand-rolled PIT re-derivation (SE ``_materialize_irnode_as_of`` /
+#       ``materialize_se_statute_as_of`` — it date-filters nodes and rebuilds the
+#       IR) from a disciplined ORCHESTRATOR that merely NAMES "materialize" but
+#       routes the real work through a core/products builder helper (FI/UK
+#       transition-graph render, NZ/US dry-run oracle document materialization,
+#       NO ``replay_no_to_pit`` which routes op-effects through core ``tree_ops``
+#       via ``apply_no_ops``, EE ``replay_ee_to_pit`` which calls core
+#       ``materialize_pit``) — none of those construct IR in their own body.
+#
+# A function/method that is itself the DEFINITION of a core mutator (i.e. it lives
+# under ``src/lawvm/core``) is never scanned — only the frontend roots are.
+_HIDDEN_KERNEL_FRONTEND_ROOTS: tuple[str, ...] = (
+    "src/lawvm/finland",
+    "src/lawvm/uk_legislation",
+    "src/lawvm/new_zealand",
+    "src/lawvm/estonia",
+    "src/lawvm/us_federal",
+    "src/lawvm/norway",
+    "src/lawvm/sweden",
+    "src/lawvm/eu",
+    "src/lawvm/eu_lex",
+    "src/lawvm/open_law",
+    "src/lawvm/jurisdictions",
+)
+
+# Core PIT/timeline entries a frontend may CALL but must not re-derive.
+_CORE_TIMELINE_ENTRIES = frozenset({"materialize_pit", "compile_timelines"})
+# Core legal-state IR mutators a frontend may CALL (an op-effect applier that
+# routes through these is a disciplined adapter, not a kernel).
+_CORE_TREE_OPS_MUTATORS = frozenset(
+    {
+        "replace_at",
+        "replace_at_required",
+        "replace_at_witnessed",
+        "replace_at_staged",
+        "remove_at",
+        "remove_at_required",
+        "remove_at_witnessed",
+        "remove_at_staged",
+        "insert_sorted",
+        "insert_sorted_required",
+        "insert_sorted_witnessed",
+        "insert_sorted_staged",
+    }
+)
+_CORE_DELEGATION_NAMES = _CORE_TIMELINE_ENTRIES | _CORE_TREE_OPS_MUTATORS
+
+# A frontend PIT-materialization-shaped function name (stripped of leading ``_``).
+_PIT_NAME_RE = re.compile(
+    r"^(?:materialize_\w+|\w+_to_pit|compile_timelines?|fold_timelines?)$"
+)
+
+
+def _is_dataclass_decorated(node: ast.ClassDef) -> tuple[bool, bool]:
+    """Return (is_dataclass, is_frozen) for a class def.
+
+    Recognizes ``@dataclass`` / ``@dataclass(...)`` / ``@x.dataclass``. ``frozen``
+    is True only if an explicit ``frozen=True`` keyword is present.
+    """
+    is_dc = False
+    frozen = False
+    for deco in node.decorator_list:
+        target = deco
+        if isinstance(deco, ast.Call):
+            target = deco.func
+            for kw in deco.keywords:
+                if (
+                    kw.arg == "frozen"
+                    and isinstance(kw.value, ast.Constant)
+                    and kw.value.value is True
+                ):
+                    frozen = True
+        name = ""
+        if isinstance(target, ast.Name):
+            name = target.id
+        elif isinstance(target, ast.Attribute):
+            name = target.attr
+        if name == "dataclass":
+            is_dc = True
+    return is_dc, frozen
+
+
+def _dataclass_field_names(node: ast.ClassDef) -> set[str]:
+    names: set[str] = set()
+    for stmt in node.body:
+        if isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
+            names.add(stmt.target.id)
+    return names
+
+
+def _func_delegates_to_core(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """True if the function body calls any core PIT/timeline entry or tree_ops
+    mutator (by call-name, attribute or bare) — the mark of a disciplined adapter
+    rather than a hand-rolled kernel."""
+    for child in ast.walk(node):
+        if not isinstance(child, ast.Call):
+            continue
+        func = child.func
+        name = ""
+        if isinstance(func, ast.Name):
+            name = func.id
+        elif isinstance(func, ast.Attribute):
+            name = func.attr
+        if name in _CORE_DELEGATION_NAMES:
+            return True
+    return False
+
+
+# Direct legal-state IR constructors a hand-rolled PIT rebuild calls in its body.
+_IR_CONSTRUCTORS = frozenset({"IRNode", "IRStatute"})
+
+
+def _func_constructs_ir(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """True if the function body directly constructs an ``IRNode``/``IRStatute``.
+
+    This is the load-bearing discriminator for ``frontend_pit_materialization``:
+    a function that REBUILDS the legal-state tree by hand (vs an orchestrator that
+    merely names "materialize" but routes the real work through a builder helper /
+    core entry and constructs no IR itself).
+    """
+    for child in ast.walk(node):
+        if isinstance(child, ast.Call):
+            func = child.func
+            if isinstance(func, ast.Name) and func.id in _IR_CONSTRUCTORS:
+                return True
+            if isinstance(func, ast.Attribute) and func.attr in _IR_CONSTRUCTORS:
+                return True
+    return False
+
+
+def scan_file_hidden_replay_kernel(rel_path: str, text: str) -> list[dict[str, Any]]:
+    """Find every hidden-replay-kernel signal in one frontend file.
+
+    Each record: {file, line, kind, name} where ``kind`` is one of
+    ``parallel_mutable_ir_shadow`` / ``frontend_pit_materialization``.
+    """
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return []
+    records: list[dict[str, Any]] = []
+
+    # (1) parallel_mutable_ir_shadow — a non-frozen dataclass mirroring IRNode.
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        is_dc, frozen = _is_dataclass_decorated(node)
+        if not is_dc or frozen:
+            continue
+        fields = _dataclass_field_names(node)
+        if "children" in fields and ("attrs" in fields or "text" in fields):
+            records.append(
+                {
+                    "file": rel_path,
+                    "line": node.lineno,
+                    "kind": "parallel_mutable_ir_shadow",
+                    "name": node.name,
+                }
+            )
+
+    # (2) frontend_pit_materialization — a PIT/timeline-shaped function that does
+    #     not delegate to a core PIT/timeline entry or tree_ops mutator.
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        base_name = node.name.lstrip("_")
+        if not _PIT_NAME_RE.match(base_name):
+            continue
+        # A genuine hand-rolled PIT rebuild constructs IR in its own body AND
+        # does not delegate to core. An orchestrator that names "materialize" but
+        # routes the work through a builder/core entry (constructing no IR itself)
+        # is a disciplined adapter, not a kernel.
+        if not _func_constructs_ir(node):
+            continue
+        if _func_delegates_to_core(node):
+            continue
+        records.append(
+            {
+                "file": rel_path,
+                "line": node.lineno,
+                "kind": "frontend_pit_materialization",
+                "name": node.name,
+            }
+        )
+    return records
+
+
+def scan_hidden_replay_kernel(repo_root: Path | None = None) -> dict[str, Any]:
+    """Compute the hidden-replay-kernel-in-a-frontend ratchet state.
+
+    Returns per-file signal counts (the monotone quantity), the total, a
+    breakdown by signal kind, and every record. Scans only the frontend roots —
+    core is the sanctioned home of these primitives and is never flagged.
+    """
+    root = (repo_root or _DEFAULT_REPO_ROOT).resolve()
+    records: list[dict[str, Any]] = []
+    for rel in _iter_python_files(root, *_HIDDEN_KERNEL_FRONTEND_ROOTS):
+        path = root / rel
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        records.extend(scan_file_hidden_replay_kernel(rel, text))
+
+    signal_counts: Counter[str] = Counter()
+    kind_counts: Counter[str] = Counter()
+    for rec in records:
+        signal_counts[rec["file"]] += 1
+        kind_counts[rec["kind"]] += 1
+
+    return {
+        "signal_counts": dict(sorted(signal_counts.items())),
+        "total_signals": sum(signal_counts.values()),
+        "kind_counts": dict(sorted(kind_counts.items())),
+        "records": records,
+    }
+
+
+HIDDEN_REPLAY_KERNEL_BASELINE_PATH = Path(
+    "tests/data/hidden_replay_kernel_ratchet_baseline.json"
+)
+
+
+def hidden_replay_kernel_baseline_snapshot(
+    repo_root: Path | None = None,
+) -> dict[str, Any]:
+    state = scan_hidden_replay_kernel(repo_root)
+    return {
+        "_doc": (
+            "Monotone hidden-replay-kernel-in-a-frontend ratchet baseline (audit "
+            "row XJUR-02, §2.3 boundary). Counts, per frontend file, two signals "
+            "that a frontend grew a replay kernel for a problem core owns: "
+            "(1) parallel_mutable_ir_shadow — a non-frozen @dataclass mirroring "
+            "core IRNode (children + attrs/text), the substrate of an in-place "
+            "edit kernel; (2) frontend_pit_materialization — a "
+            "materialize_*/*_to_pit/compile_timelines/fold_timeline function that "
+            "does NOT delegate to a core PIT/timeline entry (materialize_pit / "
+            "compile_timelines) nor a core tree_ops mutator (replace_at / "
+            "remove_at / insert_sorted …). The baseline is the ACTUAL current "
+            "state (this row had zero prior coverage): existing debt is recorded "
+            "per-file with a reason in `_findings`, NOT failed/refactored — the "
+            "gate makes the §2.3 boundary visible and prevents NEW kernels. "
+            "Per-file counts may only fall, never rise; a fall must be committed "
+            "(regenerate with `uv run python "
+            "scripts/inventory_architecture_smells.py --ratchet hidden_kernel "
+            "--update-baseline`). See tests/test_hidden_replay_kernel_ratchet.py."
+        ),
+        "total_signals": state["total_signals"],
+        "kind_counts": state["kind_counts"],
+        "signal_counts": state["signal_counts"],
+        "_findings": {
+            "src/lawvm/uk_legislation/mutable_ir.py": (
+                "REAL HIDDEN REPLAY KERNEL (high-value finding for a future "
+                "refactor wave). UKMutableNode/UKMutableStatute are a parallel "
+                "MUTABLE IR mirroring frozen core IRNode; ~26 uk_legislation "
+                "modules (replay_executor, replay_{repeal,replace,insert,renumber,"
+                "text,table,schedule_list}_apply, uk_grafter, …) drive op-effect / "
+                "amendment-replay semantics over it in place (e.g. "
+                "`statute.body.children = []`, uk_replace_children, "
+                "uk_insert_node_sorted) instead of routing through core/tree_ops. "
+                "The module docstring already concedes this ('must not become a "
+                "new shared contract … TODO(arch): replace this mutable mirror … "
+                "once the UK replay executor is fully migrated off in-place tree "
+                "edits'). Recorded as existing debt; do NOT refactor in this audit "
+                "wave."
+            ),
+            "src/lawvm/sweden/grafter.py": (
+                "TWO signals, distinct severities. "
+                "(a) parallel_mutable_ir_shadow `_SEMutableNode`: a parse-time "
+                "scratch builder used ONLY during forward source parsing "
+                "(parse_se_statute builds a fresh tree then .to_irnode()); it does "
+                "NOT replay LegalOperations over itself, so it is a thin parse "
+                "builder, the more benign end of the shadow signal. "
+                "(b) frontend_pit_materialization `_materialize_irnode_as_of` / "
+                "`materialize_se_statute_as_of`: a GENUINE frontend-local PIT "
+                "re-derivation — it date-filters nodes (`_is_node_active_on`) and "
+                "rebuilds the tree, stamping `materialized_as_of`, instead of "
+                "routing through core/timeline.materialize_pit. A real (small) "
+                "hidden kernel; recorded as existing debt for a future wave."
+            ),
+        },
+    }
+
+
+# ===========================================================================
 # CLI
 # ===========================================================================
+
+
+def write_hidden_replay_kernel_baseline(repo_root: Path | None = None) -> Path:
+    root = (repo_root or _DEFAULT_REPO_ROOT).resolve()
+    out_path = root / HIDDEN_REPLAY_KERNEL_BASELINE_PATH
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    snapshot = hidden_replay_kernel_baseline_snapshot(root)
+    out_path.write_text(
+        json.dumps(snapshot, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    return out_path
 
 
 def write_witness_liveness_baseline(repo_root: Path | None = None) -> Path:
@@ -642,13 +1181,25 @@ def write_scope_source_baseline(repo_root: Path | None = None) -> Path:
     return out_path
 
 
+def write_projection_authority_baseline(repo_root: Path | None = None) -> Path:
+    root = (repo_root or _DEFAULT_REPO_ROOT).resolve()
+    out_path = root / PROJECTION_AUTHORITY_BASELINE_PATH
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    snapshot = projection_authority_baseline_snapshot(root)
+    out_path.write_text(
+        json.dumps(snapshot, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    return out_path
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Generate architecture-coherence smell inventories / ratchets."
     )
     parser.add_argument(
         "--ratchet",
-        choices=("authority", "scope", "witness", "all"),
+        choices=("authority", "scope", "witness", "projection", "hidden_kernel", "all"),
         default="all",
         help="Which ratchet to scan / update.",
     )
@@ -687,6 +1238,14 @@ def main(argv: list[str] | None = None) -> int:
             out = write_witness_liveness_baseline()
             snap = json.loads(out.read_text(encoding="utf-8"))
             print(f"wrote {out} (total_nontest_callers={snap['total_nontest_callers']})")
+        if args.ratchet in {"projection", "all"}:
+            out = write_projection_authority_baseline()
+            snap = json.loads(out.read_text(encoding="utf-8"))
+            print(f"wrote {out} (total_violations={snap['total_violations']})")
+        if args.ratchet in {"hidden_kernel", "all"}:
+            out = write_hidden_replay_kernel_baseline()
+            snap = json.loads(out.read_text(encoding="utf-8"))
+            print(f"wrote {out} (total_signals={snap['total_signals']})")
         return 0
 
     payload: dict[str, Any] = {}
@@ -696,6 +1255,10 @@ def main(argv: list[str] | None = None) -> int:
         payload["scope_source"] = scan_scope_source_ratchet()
     if args.ratchet in {"witness", "all"}:
         payload["witness_liveness"] = scan_witness_liveness_ratchet()
+    if args.ratchet in {"projection", "all"}:
+        payload["projection_authority"] = scan_projection_authority_ratchet()
+    if args.ratchet in {"hidden_kernel", "all"}:
+        payload["hidden_replay_kernel"] = scan_hidden_replay_kernel()
     print(json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False))
     return 0
 

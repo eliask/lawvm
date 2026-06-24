@@ -16,14 +16,16 @@ import pytest
 from lawvm.core.clause_ast import ClauseAST
 from lawvm.core.semantic_types import FacetKind, MetaClauseKind, StructuralAction
 from lawvm.finland.johtolause import extract_legal_ops
-from lawvm.finland.johtolause.compat import ClauseParseResult, parse_clause
+from lawvm.finland.johtolause.api import ClauseParseResult, parse_clause
 from lawvm.finland.ops import lo_scope_confidence
 from lawvm.finland.johtolause.surface_model import (
     ScopeKind,
+    SurfaceRenumberTail,
     TargetKind,
     SurfaceTargetRef,
     SurfaceScopeBlock,
     SurfaceDescendantCoordination,
+    VerbKind,
 )
 from tests.fixtures.fi_curated_cases import CURATED_CASES
 
@@ -1928,6 +1930,36 @@ def test_jolloin_section_renumber_emits_native_siirtaa_vg():
     assert tail.new_label == "6"
 
 
+def test_siirtaa_current_section_renumber_tail_keeps_explicit_pairs() -> None:
+    text = (
+        "siirretään 8 luvun otsikko uuden 67 §:n edelle sekä nykyinen 63 § "
+        "uudeksi 69 §:ksi ja nykyinen 64 § uudeksi 70 §:ksi"
+    )
+    result = parse_clause(text)
+    sc = result.surface_clause
+    assert sc is not None
+
+    assert sc.verb_groups[0].verb == VerbKind.SIIRTAA
+    pairs: list[tuple[str, str, str]] = []
+    nodes = sc.verb_groups[0].nodes
+    for idx, node in enumerate(nodes[:-1]):
+        tail = nodes[idx + 1]
+        if isinstance(node, SurfaceTargetRef) and isinstance(tail, SurfaceRenumberTail):
+            pairs.append((node.chapter, node.label, tail.new_label))
+
+    assert pairs == [("8", "63", "69"), ("8", "64", "70")]
+    assert [op.code() for op in result.parsed_ops if op.renumber_dest] == [
+        "S L 8 o",
+        "S P L:8 63",
+        "S P L:8 64",
+    ]
+    assert [op.renumber_dest for op in result.parsed_ops if op.renumber_dest] == [
+        "8",
+        "69",
+        "70",
+    ]
+
+
 def test_jolloin_renumber_followed_by_main_verb_group():
     """Jolloin renumber prepended SIIRTAA vg is followed by the main amendment vg.
 
@@ -2503,6 +2535,25 @@ def test_parse_clause_lisata_otsikko_without_uusi_after_target():
     assert heading_ops[0].number == "8"
 
 
+def test_parse_clause_target_first_valiotsake_then_subsection_insert() -> None:
+    """``N §:n edelle uusi väliotsake`` must not drop the next insert arm."""
+    text = (
+        "lisätään asetuksen 19 §:n edelle uusi väliotsake ja 19 §:ään, "
+        "sellaisen kuin se on muutettuna 21 päivänä huhtikuuta 1978 annetussa "
+        "asetuksessa (282/78), uusi 2 momentti, jolloin nykyiset 2 ja 3 momentti "
+        "siirtyvät 3 ja 4 momenteiksi seuraavasti:"
+    )
+    ops = parse_clause(text, statute_id="1973/692").parsed_ops
+
+    assert [op.code() for op in ops] == ["S P 19 2", "S P 19 3", "L P 19 o", "L P 19 2"]
+    assert ops[0].renumber_dest == "3"
+    assert ops[1].renumber_dest == "4"
+    assert ops[2].witness is not None
+    assert ops[2].witness.rule_id == "fi.heading_edelle_otsikko_target_list"
+    assert ops[3].witness is not None
+    assert ops[3].witness.rule_id == "fi.insertion_sub_target"
+
+
 def test_parse_clause_skips_temporal_modifier_before_insert_targets() -> None:
     """Leading ``väliaikaisesti`` must not swallow the real insert targets.
 
@@ -2648,6 +2699,30 @@ def test_parse_clause_compound_replace_then_insert_item_via_seka_lisataan() -> N
     assert "M P 9 1 4" in codes, f"Expected 'M P 9 1 4' in {codes}"
     assert "L P 9 1 5" in codes, f"Expected 'L P 9 1 5' in {codes}"
     assert not result.is_failed
+
+
+def test_parse_clause_compound_replace_then_infinitive_insert_item() -> None:
+    """Coordinated infinitive ``lisätä`` is a real amendment verb.
+
+    Regression for 1993/1495 <- 1994/931: the lexer classified ``lisätä`` as a
+    WORD, so the grammar-owned parser declined and the legacy fallback dropped
+    the ``1 §:ään uuden 7 kohdan`` insert.
+    """
+    text = (
+        "muuttaa maa- ja metsätalousministeriön suoritteista perittävistä "
+        "maksuista 23 päivänä joulukuuta 1993 antamansa päätöksen (1495/93) "
+        "2 §:n 2 momentin 1 kohdan ja liitteenä olevan maksutaulukon sekä "
+        "lisätä 1 §:ään uuden 7 kohdan jolloin nykyiset 7 ja 8 kohta siirtyvät "
+        "8 ja 9 kohdaksi seuraavasti:"
+    )
+
+    result = parse_clause(text, statute_id="1993/1495")
+    codes = [op.code() for op in result.parsed_ops]
+
+    assert result.parser_lane == "grammar_owned"
+    assert result.grammar_decline_reason is None
+    assert "M P 2 2 1" in codes
+    assert "L P 1 1 7" in codes
 
 
 def test_tokenize_restores_ocr_lost_dash_in_section_range() -> None:

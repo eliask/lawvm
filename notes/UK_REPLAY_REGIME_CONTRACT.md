@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Current. Kind: Descriptive (UK replay-regime axis contract). All §6/§7 CLI flags (--metadata-backfill, --oracle-alignment, --source-first-candidate) and regime fields (source_purity_lane, source_semantics_clean, source_first_candidate[_reasons]) verified live in uk_replay_regime.py / evidence.py. Self-label 'draft' understates currency — §6 features are implemented.
+
 # UK Replay Regime Contract
 
 Status: draft contract.  

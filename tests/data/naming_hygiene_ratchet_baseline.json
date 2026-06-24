@@ -19,6 +19,7 @@
     "src/lawvm/core/ownership_closure.py": 1,
     "src/lawvm/core/payload_elaboration.py": 1,
     "src/lawvm/core/potential_operation.py": 1,
+    "src/lawvm/core/reference_mention.py": 1,
     "src/lawvm/core/regex_recognition_coverage.py": 1,
     "src/lawvm/core/resolver_binding.py": 1,
     "src/lawvm/core/source_acquisition.py": 1,
@@ -54,6 +55,7 @@
     "src/lawvm/finland/references/defined_terms.py": 1,
     "src/lawvm/finland/references/delegation.py": 1,
     "src/lawvm/finland/references/elliptical_resolve.py": 1,
+    "src/lawvm/finland/references/eu_transposition.py": 1,
     "src/lawvm/finland/references/exception_condition.py": 1,
     "src/lawvm/finland/references/procedure.py": 1,
     "src/lawvm/finland/references/registries/eu_nickname.py": 1,
@@ -78,6 +80,7 @@
     "src/lawvm/substrate/corpus.py": 1,
     "src/lawvm/substrate/corpus_totality.py": 3,
     "src/lawvm/substrate/locus.py": 1,
+    "src/lawvm/substrate/relation_edge.py": 2,
     "src/lawvm/substrate/selection.py": 4,
     "src/lawvm/substrate/signature_attestation.py": 2,
     "src/lawvm/sweden/fetch.py": 1,
@@ -138,8 +141,9 @@
     "src/lawvm/us_federal/dry_run.py": 2,
     "src/lawvm/us_federal/nonpositive.py": 3
   },
-  "certified_symbol_count": 66,
+  "certified_symbol_count": 67,
   "certified_symbols": [
+    "CERTIFICATE_ROOT_PROFILE",
     "CERTIFICATE_SCHEMA",
     "CERTIFICATE_SPEC_VERSION",
     "CertificateProductionResult",
@@ -207,8 +211,9 @@
     "sparse_slot_candidate_certificate",
     "sparse_slot_candidate_certificates"
   ],
-  "public_schema_count": 135,
+  "public_schema_count": 141,
   "public_schemas": [
+    "lawvm.address_id.v1",
     "lawvm.address_node.v1",
     "lawvm.agreement_surface_report.v1",
     "lawvm.annotated_token_view.v1",
@@ -234,8 +239,10 @@
     "lawvm.coverage.v0",
     "lawvm.coverage_row.v1",
     "lawvm.diagnostic_registry.v0",
+    "lawvm.disposition_matrix.v0",
     "lawvm.dsse.v1",
     "lawvm.dump.v1",
+    "lawvm.eu_enumeration_snapshot.v0",
     "lawvm.execution_authorization_report.v1",
     "lawvm.extraction_correction_assertion.v1",
     "lawvm.facade.v0",
@@ -264,6 +271,7 @@
     "lawvm.initial_state_event.v1",
     "lawvm.interpretation_policy.v0",
     "lawvm.keeper_correction_event.v1",
+    "lawvm.legal_relation_edge.v0",
     "lawvm.legal_surface_graph.v0",
     "lawvm.manual_claim_authorization_report.v1",
     "lawvm.materialization_checkpoint.v1",
@@ -278,6 +286,7 @@
     "lawvm.payload_elaboration_report.v1",
     "lawvm.phase_local_replay_gate.v1",
     "lawvm.phase_witness.v1",
+    "lawvm.policy_bindings.v0",
     "lawvm.potential_operation_coverage.v0",
     "lawvm.potential_operation_coverage.v1",
     "lawvm.projection_payload.v0",
@@ -298,6 +307,7 @@
     "lawvm.selection_universe.v1",
     "lawvm.signature_attestation.v1",
     "lawvm.source_artifact.v0",
+    "lawvm.source_artifact.v1",
     "lawvm.source_artifact_index.v0",
     "lawvm.source_bundle.v0",
     "lawvm.source_bundle_evidence_report.v1",
@@ -345,5 +355,5 @@
     "lawvm.work.v1",
     "lawvm.work_inventory_row.v0"
   ],
-  "total_bare_status": 356
+  "total_bare_status": 360
 }

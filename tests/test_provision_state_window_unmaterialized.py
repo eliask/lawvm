@@ -20,6 +20,9 @@ from lawvm.core.phase_result import Finding
 from lawvm.core.provenance import OperationSource
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.core.temporal_scheduler import materialize_temporal_write_windows
+from lawvm.finland.process_temporal_postprocessing import (
+    _temporal_occupancy_reconciliation_findings,
+)
 from lawvm.core.ir import LegalOperation
 from lawvm.tools.provision_state import build_provision_state_response
 from lawvm.tools.timeline_integrity import (
@@ -89,30 +92,83 @@ def _temporary_window_op() -> LegalOperation:
     )
 
 
+def _permanent_occupant_op(
+    *,
+    source_statute: str = "2020/901",
+    effective: str = "2021-01-01",
+) -> LegalOperation:
+    address = LegalAddress(path=(("chapter", "1"), ("section", "1")))
+    content = IRNode(kind=IRNodeKind.SECTION, label="1", text="Permanent provision duty.")
+    return LegalOperation(
+        op_id="op_perm",
+        sequence=11,
+        action=StructuralAction.INSERT,
+        target=address,
+        payload=content,
+        source=OperationSource(
+            statute_id=source_statute,
+            title="Permanent Amending Act",
+            enacted="2020-12-01",
+            effective=effective,
+            raw_text="Section 1 is inserted permanently.",
+        ),
+    )
+
+
 def _disjoint_finding(
     *,
     target_label: str = "1",
     incoming_effective: str = "2021-01-01",
     incoming_expires: str = "2021-07-01",
     source_statute: str = "2020/900",
+    target_chapter: str = "",
     occupant_effective: str = "2021-07-01",
     occupant_source_statute: str = "2020/901",
+    reconciles: bool = False,
 ) -> Finding:
+    detail = {
+        "ctx_label": f"[{source_statute}] INSERT {target_label} §",
+        "op_id": "op_0",
+        "legacy_action": "INSERT",
+        "target_label": target_label,
+        "target_chapter": target_chapter,
+        "incoming_effective": incoming_effective,
+        "incoming_expires": incoming_expires,
+        "occupant_effective": occupant_effective,
+        "occupant_source_statute": occupant_source_statute,
+        "rule_id": "temporally_disjoint_twin_insert",
+    }
+    if reconciles:
+        detail["reconciles_finding"] = "APPLY.OCCUPANCY_POLICY_VIOLATION"
     return Finding(
         kind="APPLY.OCCUPANCY_TEMPORALLY_DISJOINT_INSERT",
         role="observation",
         stage="apply",
         source_statute=source_statute,
+        detail=detail,
+        blocking=False,
+    )
+
+
+def _occupancy_violation_finding(
+    *,
+    target_label: str = "1",
+    source_statute: str = "2020/900",
+) -> Finding:
+    return Finding(
+        kind="APPLY.OCCUPANCY_POLICY_VIOLATION",
+        role="observation",
+        stage="apply",
+        source_statute=source_statute,
         detail={
-            "ctx_label": f"[{source_statute}] INSERT {target_label} §",
-            "op_id": "op_0",
+            "ctx_label": f"[{source_statute}] INSERT 1 luku {target_label} §",
             "legacy_action": "INSERT",
             "target_label": target_label,
-            "incoming_effective": incoming_effective,
-            "incoming_expires": incoming_expires,
-            "occupant_effective": occupant_effective,
-            "occupant_source_statute": occupant_source_statute,
-            "rule_id": "temporally_disjoint_twin_insert",
+            "target_chapter": "1",
+            "current_occupancy": "substantive",
+            "allowed_from": ("absent", "scaffold", "tombstone"),
+            "primary_expected_from": ("absent",),
+            "strict_disposition": "record",
         },
         blocking=False,
     )
@@ -176,6 +232,34 @@ def test_attach_effective_dates_preserves_window_start() -> None:
     )
     # The window start is already seeded as effective; lineage must not stomp it.
     assert breaks[0].effective == "2021-01-01"
+
+
+def test_reconciled_window_finding_consumes_matching_occupancy_break() -> None:
+    breaks = timeline_breaks_from_findings(
+        [
+            _occupancy_violation_finding(),
+            _disjoint_finding(target_chapter="1", reconciles=True),
+        ]
+    )
+    assert [item.scope for item in breaks] == ["window"]
+    assert breaks[0].diagnostic_code == WINDOW_UNMATERIALIZED_CODE
+
+
+def test_post_temporal_reconciliation_emits_bounded_window_observation() -> None:
+    findings = [_occupancy_violation_finding()]
+    notes = _temporal_occupancy_reconciliation_findings(
+        [_permanent_occupant_op(), _temporary_window_op()],
+        findings,
+        amendment_id="2020/900",
+    )
+    assert len(notes) == 1
+    assert notes[0].kind == "APPLY.OCCUPANCY_TEMPORALLY_DISJOINT_INSERT"
+    assert notes[0].detail["target_label"] == "1"
+    assert notes[0].detail["incoming_effective"] == "2021-01-01"
+    assert notes[0].detail["incoming_expires"] == "2021-07-01"
+    assert notes[0].detail["occupant_source_statute"] == "2020/901"
+    assert notes[0].detail["rule_id"] == "temporally_bounded_overlay_insert"
+    assert notes[0].detail["reconciles_finding"] == "APPLY.OCCUPANCY_POLICY_VIOLATION"
 
 
 # --- seam blocking ---------------------------------------------------------

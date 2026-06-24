@@ -42,7 +42,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 1,1988/893,suspect,oracle_suspect,2001/1233 eff 2002-01-01 > cutoff 2001-12-12,
 1,1989/382,suspect,oracle_suspect,1999/623 eff 1999-12-01 > cutoff 1999-05-21,
 1,1989/383,suspect,oracle_suspect,1997/506 eff 1997-06-04 > cutoff 1997-05-30,
-1,1989/573,core,,,OK
+1,1989/573,suspect,source_pathology,consolidated oracle text is truncated/corrupted in sections 11/13/14,
 1,1989/626,suspect,oracle_suspect,2001/495 eff 2001-07-01 > cutoff 2001-06-13,
 1,1990/1013,suspect,oracle_suspect,1991/1169 eff 1991-09-01 > cutoff 1991-08-22,
 1,1990/1207,suspect,oracle_suspect,1992/1639 eff 1993-01-01 > cutoff 1992-12-23,
@@ -1385,7 +1385,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 2,2015/1377,suspect,oracle_suspect,2024/313 eff 2024-06-30 > cutoff 2024-06-13,
 2,2015/1385,suspect,oracle_suspect,2021/1148 eff 2022-03-01 > cutoff 2021-12-16,
 2,2015/1466,suspect,oracle_suspect,base_oracle_only despite amendment 2017/379 eff 2017-07-01 <= cutoff 2019-01-31,OK
-2,2015/1480,core,,,OK
+2,2015/1480,suspect,source_pathology,2021/1209 has empty operative XML body and only PDF attachment; replay emits EMPTY_OPERATIVE_BODY,OK
 2,2015/1494,suspect,oracle_suspect,2020/659 eff 2020-10-01 > cutoff 2020-09-08,
 2,2015/1750,suspect,oracle_suspect,base_oracle_only despite amendment 2016/345 eff 2016-05-15 <= cutoff 2017-06-26,OK
 2,2015/326,suspect,oracle_suspect,2020/413 eff 2021-01-01 > cutoff 2020-05-20,
@@ -1804,7 +1804,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 3,2015/180,suspect,oracle_suspect,2023/551 eff 2023-09-01 > cutoff 2023-03-23,
 3,2015/315,suspect,oracle_suspect,2022/359 eff 2022-06-01 > cutoff 2022-05-20,
 3,2015/351,core,,,OK
-3,2015/364,core,,,OK
+3,2015/364,suspect,oracle_suspect,2017/1153 repeals 13 § but consolidated oracle duplicates 12 § text at 13 §,OK
 3,2015/487,suspect,oracle_suspect,2020/337 eff 2020-06-01 > cutoff 2020-05-08,
 3,2015/550,suspect,oracle_suspect,2025/1171 eff 2026-01-01 > cutoff 2025-12-11,
 3,2015/551,suspect,oracle_suspect,base_oracle_only despite amendment 2019/1088 eff 2020-01-01 <= cutoff 2022-06-30,OK
@@ -1819,7 +1819,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 3,2016/264,suspect,oracle_suspect,base_oracle_only despite amendment 2021/1241 eff 2022-01-01 <= cutoff 2022-08-04,OK
 3,2016/276,core,,,OK
 3,2016/471,suspect,oracle_suspect,2022/793 eff 2023-01-01 > cutoff 2022-08-26,
-3,2016/591,core,,,OK
+3,2016/591,suspect,source_pathology,oracle-check classifies divergences as ORACLE_STALE/SOURCE_INCOMPLETE,OK
 3,2016/730,suspect,oracle_suspect,2021/86 eff 2021-03-01 > cutoff 2021-01-15,
 3,2016/770,suspect,oracle_suspect,base_oracle_only despite amendment 2018/35 eff 2019-11-01 <= cutoff 2022-12-20,OK
 3,2016/853,suspect,oracle_suspect,2020/882 eff 2020-12-01 > cutoff 2020-11-27,
@@ -2308,7 +2308,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 5,2010/1171,core,,,OK
 5,2010/1316,core,,,OK
 5,2010/298,notruth,no_truth_from_run,,NO_TRUTH
-5,2010/373,core,,,OK
+5,2010/373,suspect,oracle_suspect,oracle-check classifies sole divergence as ORACLE_STALE,OK
 5,2010/633,core,,,OK
 5,2010/668,suspect,oracle_suspect,2014/1349 eff 2015-01-01 > cutoff 2014-12-30,
 5,2010/934,suspect,oracle_suspect,2025/711 eff 2026-01-01 > cutoff 2025-06-27,
@@ -2604,7 +2604,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 7,2005/1015,suspect,oracle_suspect,2025/763 eff 2026-01-01 > cutoff 2025-06-27,
 7,2005/1171,suspect,oracle_suspect,2024/205 eff 2024-08-01 > cutoff 2024-04-18,
 7,2005/200,suspect,oracle_suspect,2023/768 eff 2025-01-01 > cutoff 2024-12-19,
-7,2005/347,core,,,OK
+7,2005/347,suspect,source_pathology,base source XML section 2 omits descendant a-g subitems present in consolidated oracle,OK
 7,2005/937,core,,,OK
 7,2006/1022,suspect,oracle_suspect,2016/1090 eff 2016-12-22 > cutoff 2016-12-08,
 7,2006/128,suspect,oracle_suspect,2015/53 eff 2015-02-01 > cutoff 2015-01-29,
@@ -2789,7 +2789,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 9,1989/819,suspect,oracle_suspect,1999/1129 eff 2000-01-01 > cutoff 1999-12-03,
 9,1990/1271,suspect,oracle_suspect,2000/387 eff 2000-05-01 > cutoff 2000-04-20,
 9,1990/725,suspect,oracle_suspect,2018/614 eff 2018-08-15 > cutoff 2018-08-10,
-9,1991/1707,core,,,OK
+9,1991/1707,suspect,oracle_suspect,oracle-check classifies all divergences as ORACLE_STALE,OK
 9,1991/626,core,,,OK
 9,1991/758,suspect,oracle_suspect,2019/1131 eff 2020-01-01 > cutoff 2019-11-29,
 9,1992/1336,suspect,oracle_suspect,2010/211 eff 2010-04-01 > cutoff 2010-03-30,
@@ -3204,7 +3204,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 18,1982/672,core,,,OK
 18,1987/21,suspect,oracle_suspect,2025/548 eff 2026-01-01 > cutoff 2025-06-27,
 18,1987/449,suspect,oracle_suspect,2013/771 eff 2013-12-01 > cutoff 2013-11-08,
-18,1990/1295,core,,,OK
+18,1990/1295,suspect,source_pathology,abridged base XML omits chapters 7-10; journaled source-acquisition frontier,OK
 18,1991/305,suspect,oracle_suspect,2024/591 eff 2024-11-13 > cutoff 2024-11-08,
 18,1992/1330,suspect,oracle_suspect,2023/26 eff 2023-06-01 > cutoff 2023-01-05,
 18,1993/477,suspect,oracle_suspect,2024/341 eff 2024-07-01 > cutoff 2024-06-13,
@@ -3234,7 +3234,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 19,1993/1608,suspect,oracle_suspect,2008/884 eff 2009-01-01 > cutoff 2008-12-19,
 19,1998/852,core,,,OK
 19,1999/895,suspect,oracle_suspect,2018/518 eff 2018-08-01 > cutoff 2018-06-27,
-19,2000/812,core,,,OK
+19,2000/812,suspect,oracle_suspect,oracle-check classifies all divergences as ORACLE_STALE,OK
 19,2001/1383,core,,,OK
 19,2001/1501,suspect,oracle_suspect,2023/593 eff 2023-06-01 > cutoff 2023-03-23,
 19,2001/1559,suspect,oracle_suspect,2024/916 eff 2025-01-01 > cutoff 2024-12-19,
@@ -3356,12 +3356,12 @@ amendments,statute_id,bucket,reason,detail,last_status
 25,2015/234,suspect,oracle_suspect,base_oracle_only despite amendment 2015/1437 eff 2015-12-14 <= cutoff 2023-05-25,OK
 25,2016/768,core,,,OK
 26,1967/550,suspect,oracle_suspect,2016/717 eff 2017-01-01 > cutoff 2016-08-25,
-26,1982/182,core,,,OK
+26,1982/182,suspect,source_pathology,base chapter 4 absent plus traffic-sign image/catalog payload frontier; journaled source-acquisition lane,OK
 26,1988/423,suspect,oracle_suspect,2024/757 eff 2025-01-01 > cutoff 2024-12-05,
 26,1990/1341,core,,,OK
 26,1992/110,core,,,OK
 26,1992/147,suspect,oracle_suspect,1997/556 eff 1997-07-01 > cutoff 1997-06-11,
-26,1992/785,core,,,OK
+26,1992/785,suspect,oracle_suspect,oracle-check classifies divergences as ORACLE_STALE/EDITORIAL_CONVENTION,OK
 26,1995/1598,suspect,oracle_suspect,2007/684 eff 2007-06-25 > cutoff 2007-06-14,
 26,1996/158,suspect,oracle_suspect,2020/640 eff 2020-09-01 > cutoff 2020-08-20,
 26,2005/768,suspect,oracle_suspect,2026/116 eff 2026-09-01 > cutoff 2026-02-05,
@@ -3543,4 +3543,4 @@ amendments,statute_id,bucket,reason,detail,last_status
 166,2002/1290,core,,,OK
 169,1963/364,suspect,oracle_suspect,2004/639 eff 2005-01-01 > cutoff 2004-07-09,
 198,1734/4-000,suspect,oracle_suspect,2025/560 eff 2026-01-01 > cutoff 2025-06-27,
-238,1992/1535,core,,,OK
+238,1992/1535,suspect,oracle_suspect,large tax-law comparison/adjudication surface journaled; current oracle-check mostly editorial/oracle-stale,OK

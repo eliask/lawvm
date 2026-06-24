@@ -1,3 +1,5 @@
+> **Status (2026-06-22):** Current. Kind: Normative (Open Law frontend claim-boundary contract) + dated corpus snapshot. All src/lawvm/open_law/ surfaces and findings (replace-or-insert, expire lifecycle, metadata-history projection) verified live; OPEN_LAW_REGIME.md companion present. Verify the §6 `lawvm open-law audit --path-prefix` smoke command vs current CLI (registered subcommands are `open-law ops`/`open-law replay`); §6 corpus counts are a 2026-05-11 clone snapshot.
+
 # Open Law Frontend Spec
 
 Status: draft spike spec.

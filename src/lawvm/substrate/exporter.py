@@ -104,6 +104,7 @@ SCHEMA_FINDING = "lawvm.finding.v1"
 SCHEMA_RESIDUAL = "lawvm.residual.v1"
 SCHEMA_COVERAGE = "lawvm.coverage_row.v1"
 SCHEMA_CERTIFICATE = "lawvm.certificate.v0"
+SCHEMA_SOURCE_ARTIFACT = "lawvm.source_artifact.v1"
 
 # Leaf-hash domains (one per object family; never reused across kinds).
 _DOMAIN_WORK = "work"
@@ -115,6 +116,7 @@ _DOMAIN_TRANSITION = "certified_tree_transition"
 _DOMAIN_FINDING = "finding"
 _DOMAIN_RESIDUAL = "residual"
 _DOMAIN_COVERAGE = "coverage_row"
+_DOMAIN_SOURCE_ARTIFACT = "source_artifact"
 
 # v0 single-branch / single-account / single-profile selection axis.
 _BRANCH_ID = "actual"
@@ -357,6 +359,67 @@ def _without(body: dict[str, JsonValue], key: str) -> dict[str, JsonValue]:
     return {k: v for k, v in body.items() if k != key}
 
 
+def _work_source_ref(jurisdiction: str, canonical_id: str) -> str:
+    """The opaque farchive locator string for a work/amending-act canonical id.
+
+    Same shape the genesis source_ref uses (``farchive:<jur>:work:<canon>``) so a
+    transition attributing to an amending act and one attributing to the base work
+    carry locators of one form; the canonical id distinguishes which act.
+    """
+    return f"farchive:{jurisdiction}:work:{canonical_id}"
+
+
+def _op_source_for_act(lo_ops: list[Any], profile: Any, canonical_id: str) -> Any:
+    """Return the first ``op.source`` whose canonical statute id == ``canonical_id``.
+
+    Used to recover the amending act's metadata (title/enacted/effective) once an
+    act has been attributed. Returns ``None`` when no op carries it (the caller
+    then emits typed-absent metadata — honest, never fabricated).
+    """
+    for op in lo_ops:
+        src = op.source
+        if src is None or not src.statute_id:
+            continue
+        if profile.canonical_statute_id(src.statute_id) == canonical_id:
+            return src
+    return None
+
+
+def _source_artifact_body(
+    *,
+    source_id: str,
+    kind: str,
+    title: str,
+    url: str,
+    content_hash: str,
+    date: str,
+) -> dict[str, JsonValue]:
+    """``lawvm.source_artifact.v1`` — one amending act / base statute (map: mirrors
+    the old ``source_artifacts`` table).
+
+    Fields mirror the dense exporter's ``SourceArtifactRow`` (``source_id`` =
+    canonical global id, ``kind`` ∈ {statute, amendment}, ``title``, ``url``,
+    ``content_hash``, ``date``). HONEST ABSENCE: a missing title/url/hash is the
+    empty string the engine actually provided — never a fabricated value. The
+    object is content-addressed: two distinct acts (distinct ``source_id``) yield
+    distinct objects; the same act referenced from many transitions emits ONE.
+    """
+    body: dict[str, JsonValue] = {
+        "schema": SCHEMA_SOURCE_ARTIFACT,
+        "source_id": source_id,
+        "kind": kind,
+        "canonical_id": source_id,
+        "title": nfc(title),
+        "url": url,
+        "content_hash": content_hash,
+        "date": date,
+    }
+    body["source_artifact_id"] = leaf_hash(
+        _DOMAIN_SOURCE_ARTIFACT, _without(body, "source_artifact_id")
+    )
+    return body
+
+
 def _residual_body(
     kind: str,
     blocking: bool,
@@ -512,6 +575,7 @@ class ExporterResult:
     n_checkpoints: int
     n_address_nodes: int
     n_residuals: int
+    n_source_artifacts: int
     leaf_dedup_attempts: int
 
 
@@ -536,6 +600,9 @@ def export_work_pack(
     of the dense SQLite db.
     """
     from lawvm.tools.export_transition_graph import (
+        _index_ops_by_date,
+        _index_ops_by_expiry_date,
+        _ops_for_covering,
         covering_units,
         reproducible_tree_hash,
         resolve_commencement_date,
@@ -566,6 +633,39 @@ def export_work_pack(
             f"{len(bundle.timelines)} timelines",
             flush=True,
         )
+
+    # Per-transition amending-act attribution (the same engine signal the dense
+    # ``export_transition_graph`` uses for ``source_artifacts``): each L2 op
+    # carries its amending act on ``op.source.statute_id`` + the effective/expiry
+    # date it lands on. We index the ops by effective date and by expiry date, then
+    # — for each L3 transition (date, covering address) — find the op(s) whose
+    # resolved target covers that address (``_ops_for_covering``). Their canonical
+    # source ids ARE the amending acts that made the change. Genesis/commencement
+    # transitions correctly attribute to the base work (no amending op there).
+    ops_by_date = _index_ops_by_date(bundle.lo_ops)
+    expiry_ops_by_date = _index_ops_by_expiry_date(bundle.lo_ops)
+
+    def _attributed_acts(date: str, addr: str) -> list[str]:
+        """Distinct canonical amending-act ids attributing this (date, addr) change.
+
+        Reuses the dense exporter's covering-attribution. Returns the sorted
+        distinct canonical statute ids of every op (effective OR fixed-term expiry
+        on ``date``) whose resolved target covers ``addr``, EXCLUDING the base work
+        itself (a base-work-internal op is the original enactment, not an
+        amendment). Empty when no amending act is identifiable — the caller then
+        attributes honestly to the base work / genesis, never fabricating an act.
+        """
+        ops = _ops_for_covering(ops_by_date.get(date, []), addr)
+        expiring = _ops_for_covering(expiry_ops_by_date.get(date, []), addr)
+        acts: set[str] = set()
+        for op in (*ops, *expiring):
+            src = op.source
+            if src is None or not src.statute_id:
+                continue
+            canon = profile.canonical_statute_id(src.statute_id)
+            if canon and canon != canonical_id:
+                acts.add(canon)
+        return sorted(acts)
 
     # ``corpus_version`` is a HASHED manifest member and flows into every
     # selection-row/fact ``account_interval`` + the ``account_boundary_root``, so
@@ -674,6 +774,11 @@ def export_work_pack(
     # the universe commits to — used so the universe object is well-formed).
     all_addresses: set[str] = set()
     all_effect_dates: set[str] = set()
+
+    # Distinct amending acts attributed across all transitions (canonical id ->
+    # the OperationSource we first saw for it, carrying title/enacted/effective).
+    # Drives the ``lawvm.source_artifact.v1`` objects emitted below.
+    attributed_act_sources: dict[str, Any] = {}
 
     def _ensure_content_leaf(node: IRNode) -> str:
         """Emit a content leaf (text-only) if unseen; return its object_hash."""
@@ -820,8 +925,23 @@ def export_work_pack(
             else:
                 action = "set_subtree"
             payload_hash = post if action == "set_subtree" else ""
+
+            # Attribute this transition to the REAL amending act(s) that made the
+            # change. A genesis/commencement transition (or any change with no
+            # identifiable amending op) attributes honestly to the base work via
+            # ``source_ref``; amendments attribute to their amending act's locator.
+            acts = _attributed_acts(date, addr)
+            if acts:
+                tx_source_refs = [_work_source_ref(jurisdiction, a) for a in acts]
+                for canon in acts:
+                    if canon not in attributed_act_sources:
+                        attributed_act_sources[canon] = _op_source_for_act(
+                            bundle.lo_ops, profile, canon
+                        )
+            else:
+                tx_source_refs = [source_ref]
             trace_w.write(
-                _transition_body(seq, date, action, addr, pre, post, payload_hash, [source_ref])
+                _transition_body(seq, date, action, addr, pre, post, payload_hash, tx_source_refs)
             )
             n_transitions += 1
 
@@ -848,6 +968,48 @@ def export_work_pack(
     # Close any still-open spans at the open end (None = +infinity).
     for addr in list(open_versions.keys()):
         _close_span(addr, open_versions.pop(addr), _OPEN_END)
+
+    # -- source_artifact objects (the amending-act metadata) ------------------ #
+    # One ``lawvm.source_artifact.v1`` per distinct act a transition attributes to,
+    # mirroring the dense exporter's ``source_artifacts`` table: the base statute
+    # (kind=statute) plus every distinct amending act (kind=amendment) referenced
+    # by a transition's ``source_refs``. The viewer reads these to show act titles
+    # ("§X amended by act Y on date D"). The base statute's locator
+    # (``farchive:<jur>:work:<canonical>``) is exactly the genesis/base ``source_ref``
+    # the genesis-attributed transitions carry, so each transition's ``source_refs``
+    # resolve to a source_artifact object. Emitted into the base layer (SetRoot —
+    # the same act referenced N times is ONE content-addressed object).
+    statute_url = profile.statute_url(canonical_id, engine_id) if hasattr(profile, "statute_url") else ""
+    base_w.write(
+        _source_artifact_body(
+            source_id=canonical_id,
+            kind="statute",
+            title=bundle.title,
+            url=statute_url,
+            content_hash="",
+            date="",
+        )
+    )
+    n_source_artifacts = 1
+    for canon in sorted(attributed_act_sources):
+        src = attributed_act_sources[canon]
+        title = (getattr(src, "title", "") or "") if src is not None else ""
+        date = ""
+        if src is not None:
+            date = getattr(src, "enacted", "") or getattr(src, "effective", "") or ""
+        engine_amd = profile.engine_statute_id(canon)
+        url = profile.amendment_url(canon, engine_amd) if hasattr(profile, "amendment_url") else ""
+        base_w.write(
+            _source_artifact_body(
+                source_id=canon,
+                kind="amendment",
+                title=title,
+                url=url,
+                content_hash="",
+                date=date,
+            )
+        )
+        n_source_artifacts += 1
 
     # -- residuals / coverage (proof layer) ----------------------------------- #
     # Each residual carries the source object's FULL distinguishing identity
@@ -942,6 +1104,19 @@ def export_work_pack(
         edge_bodies = _build_fi_relation_edges(
             engine_id=engine_id,
             corpus_version=corpus_version,
+        )
+        # Additive EU directive mini-vertical (design §25.8): where the act's own
+        # prose CLAIMS to transpose an EU directive, also emit the deterministic,
+        # verifiable edges — claimed-transposition + timeliness (deadline seed vs
+        # this work's commencement) + an honest "conformance not assessed"
+        # residual. A work with NO transposition claim emits nothing new. NEVER a
+        # substantive conformance / direct-effect / breach conclusion.
+        edge_bodies.extend(
+            _build_fi_transposition_edges(
+                engine_id=engine_id,
+                corpus_version=corpus_version,
+                commencement_date=commencement,
+            )
         )
     edges_layer: PackLayer | None = None
     if edge_bodies:
@@ -1041,6 +1216,7 @@ def export_work_pack(
         "applicability_fact": "lawvm.applicability_fact.v1",
         "certified_tree_transition": SCHEMA_TRANSITION,
         "checkpoint": SCHEMA_CHECKPOINT,
+        "source_artifact": SCHEMA_SOURCE_ARTIFACT,
     }
     if edges_layer is not None:
         schemas["relation_edge"] = SCHEMA_RELATION_EDGE
@@ -1093,6 +1269,7 @@ def export_work_pack(
         n_checkpoints=n_checkpoints,
         n_address_nodes=n_address_nodes,
         n_residuals=n_residuals,
+        n_source_artifacts=n_source_artifacts,
         leaf_dedup_attempts=leaf_dedup_attempts,
     )
 
@@ -1119,7 +1296,7 @@ def _build_fi_relation_edges(
     construction (the extractor is Finland's); the caller guards on jurisdiction.
     """
     from lawvm.finland.corpus import get_corpus_store
-    from lawvm.finland.ref_mention_extractor import extract_all_reference_mentions
+    from lawvm.finland.references.ref_mention_extractor import extract_all_reference_mentions
     from lawvm.finland.references.reference_sets import fold_reference_set
     from lawvm.substrate.relation_edge_bridge import reference_set_to_relation_edge
 
@@ -1173,6 +1350,61 @@ def _build_fi_relation_edges(
             reference_set_to_relation_edge(
                 expression=folded.expression,
                 resolution=folded.resolution,
+                corpus_version=corpus_version,
+                branch_id=_BRANCH_ID,
+            )
+        )
+    return edges
+
+
+def _build_fi_transposition_edges(
+    *,
+    engine_id: str,
+    corpus_version: str,
+    commencement_date: str,
+) -> list[dict[str, JsonValue]]:
+    """Extract FI EU-directive transposition claims → relation-edge bodies (§25.8).
+
+    Reuses the FI consolidated oracle text READ-ONLY (the same bytes
+    :func:`_build_fi_relation_edges` reads) and the deterministic transposition
+    extractor (``recognize_transposition_claims``), then bridges each claim to
+    its EU directive edges (``transposition_claim_to_edges`` —
+    ``source_claimed_transposition`` + ``timeliness_fact`` + a "conformance not
+    assessed" residual). The timeliness edge compares the curated demo deadline
+    seed against THIS work's ``commencement_date`` (from the work's replayed
+    timeline, supplied by the caller).
+
+    Returns the edge bodies (possibly empty — an act with no explicit
+    transposition claim emits NONE, never a fabricated one). FI-specific by
+    construction; the caller guards on jurisdiction. A substantive conformance /
+    direct-effect / breach conclusion is NEVER emitted — only the deterministic
+    evidentiary edges + the honest "not assessed" residual.
+    """
+    from lawvm.finland.corpus import get_corpus_store
+    from lawvm.finland.references.eu_transposition import (
+        recognize_transposition_claims,
+    )
+    from lawvm.substrate.eu_transposition_bridge import (
+        transposition_claim_to_edges,
+    )
+
+    store = get_corpus_store()
+    try:
+        xml_bytes = store.read_oracle(engine_id)
+    except Exception:
+        # No consolidated oracle text → no prose to scan. Honest absence.
+        return []
+    if not xml_bytes:
+        return []
+
+    text = xml_bytes.decode("utf-8", "replace")
+    claims = recognize_transposition_claims(text, citing_engine_id=engine_id)
+    edges: list[dict[str, JsonValue]] = []
+    for claim in claims:
+        edges.extend(
+            transposition_claim_to_edges(
+                claim,
+                commencement_date=commencement_date,
                 corpus_version=corpus_version,
                 branch_id=_BRANCH_ID,
             )
@@ -1494,6 +1726,7 @@ _KNOWN_SCHEMAS = frozenset(
         SCHEMA_RESIDUAL,
         SCHEMA_COVERAGE,
         SCHEMA_CERTIFICATE,
+        SCHEMA_SOURCE_ARTIFACT,
         # The relation-edge schema is a KNOWN schema: the checker's L0.8
         # ``_check_relation_edge_authority`` validates every such row (identity +
         # §25.3 authority-legality matrix), so the ``edges`` layer is genuinely

@@ -5,11 +5,15 @@ from __future__ import annotations
 from lawvm.core.identity_ledger import IdentityLedger
 from lawvm.core.ir import LegalAddress
 from lawvm.core.provenance import MigrationEvent
-from lawvm.finland.identity_ledger import (
-    current_address_with_prefix_migrations,
-    identity_ledger_from_migration_ledger,
+from lawvm.finland.migration_ledger import (
+    MigrationLedger,
+    current_address_with_prefix_migrations_from_events,
 )
-from lawvm.finland.migration_ledger import MigrationLedger
+
+
+def identity_ledger_from_migration_ledger(ledger: MigrationLedger) -> IdentityLedger:
+    """Snapshot a mutable replay ledger into a frozen IdentityLedger."""
+    return IdentityLedger.from_events(ledger.events)
 
 
 def _addr(*segments: tuple[str, str]) -> LegalAddress:
@@ -52,9 +56,9 @@ def test_finland_prefix_migration_on_identity_ledger() -> None:
         source_statute="2019/50",
     )
     identity = identity_ledger_from_migration_ledger(ledger)
-    resolved = current_address_with_prefix_migrations(
-        identity,
+    resolved = current_address_with_prefix_migrations_from_events(
         _addr(("part", "III"), ("chapter", "2"), ("section", "10")),
-        as_of_date="2020-01-01",
+        identity.events,
+        "2020-01-01",
     )
     assert resolved.path[0] == ("part", "4")

@@ -3762,7 +3762,9 @@ def _leading_move_destination_chapter(s: Stream) -> str:
     return nums[0][0] + nums[0][1]
 
 
-def _skip_heading_residue(s: Stream) -> bool:
+def _skip_heading_residue(
+    s: Stream, *, allow_section_destination_residue: bool = False
+) -> bool:
     """Consume a bare heading-placement residue left after provenance tagging."""
     saved = s.save()
     if not ((t := s.peek()) and t.cat == "UUSI"):
@@ -3783,6 +3785,18 @@ def _skip_heading_residue(s: Stream) -> bool:
         s.pos += 1  # consume NUM
         if (t := s.peek()) and t.cat == "LETTER":
             s.pos += 1
+        if (
+            allow_section_destination_residue
+            and (t := s.peek())
+            and t.cat == "PYKALA"
+            and t.case == "GEN"
+        ):
+            s.pos += 1
+            if (t := s.peek()) and t.cat == "EDELLA":
+                s.pos += 1
+                return True
+            s.restore(saved)
+            return False
         if (t := s.peek()) and t.cat == "LUKU" and t.case == "GEN":
             s.pos += 1
             if (t := s.peek()) and t.cat == "OTSIKKO":
@@ -4217,6 +4231,81 @@ def _parse_anaphoric_determiner_insert(
     return None
 
 
+def _current_section_renumber_tail(
+    s: Stream,
+    verb: SourceVerb,
+    chapter: str,
+    part: str = "",
+) -> Optional[list[SurfaceNode]]:
+    """Parse SIIRTAA ``nykyinen N § uudeksi M §:ksi`` section relabel tails."""
+    if verb != SourceVerb.SIIRTAA:
+        return None
+    saved = s.save()
+    start = s.pos
+
+    current_word = s.peek()
+    if not (
+        current_word
+        and current_word.cat == "WORD"
+        and (current_word.lemma or current_word.text).lower() in {"nykyinen", "nykyiset"}
+    ):
+        return None
+    s.pos += 1
+
+    source_labels = _number_list(s)
+    if not source_labels:
+        s.restore(saved)
+        return None
+    if not ((source_pykala := s.peek()) and source_pykala.cat == "PYKALA"):
+        s.restore(saved)
+        return None
+    s.pos += 1
+
+    new_word = s.peek()
+    if not (
+        new_word
+        and new_word.cat == "WORD"
+        and (new_word.lemma or new_word.text).lower() in {"uudeksi", "uusiksi"}
+    ):
+        s.restore(saved)
+        return None
+    s.pos += 1
+
+    destination_labels = _number_list(s)
+    if not destination_labels:
+        s.restore(saved)
+        return None
+    if not ((dest_pykala := s.peek()) and dest_pykala.cat == "PYKALA"):
+        s.restore(saved)
+        return None
+    s.pos += 1
+
+    if len(source_labels) != len(destination_labels):
+        s.restore(saved)
+        return None
+
+    witness = _make_witness("fi.current_section_renumber_tail", start, s.pos)
+    nodes: list[SurfaceNode] = []
+    for source_label, destination_label in zip(source_labels, destination_labels, strict=True):
+        nodes.append(
+            SurfaceTargetRef(
+                kind=TargetKind.SECTION,
+                label=source_label[0] + source_label[1],
+                chapter=chapter,
+                part=part,
+                notes=("renumber_clause",),
+                witness=witness,
+            )
+        )
+        nodes.append(
+            SurfaceRenumberTail(
+                new_label=destination_label[0] + destination_label[1],
+                witness=witness,
+            )
+        )
+    return nodes
+
+
 def _target_list(
     s: Stream,
     verb: SourceVerb,
@@ -4261,6 +4350,10 @@ def _target_list(
                 nodes = chapter_nodes
             else:
                 s.restore(saved_backref)
+        if not nodes:
+            renumber_tail_nodes = _current_section_renumber_tail(s, verb, chapter, part)
+            if renumber_tail_nodes:
+                nodes = renumber_tail_nodes
         # Try skipping a leading heading insertion
         _leading_heading = seq(
             _uusi,
@@ -4327,6 +4420,10 @@ def _target_list(
                 chapter = _extract_chapter_from_nodes(nodes, chapter, verb)
                 part = _extract_part_from_nodes(nodes, part)
                 continue
+            if _skip_heading_residue(
+                s, allow_section_destination_residue=verb == SourceVerb.SIIRTAA
+            ):
+                continue
             if allow_named_row_continuation and s.pos == saved:
                 _pre_span = s.pos
                 nodes = _target(s, verb, chapter, part=part)
@@ -4367,7 +4464,9 @@ def _target_list(
                 if _skip_named_row_residue(s):
                     s.skip_sentinels()
                     continue
-                if _skip_heading_residue(s):
+                if _skip_heading_residue(
+                    s, allow_section_destination_residue=verb == SourceVerb.SIIRTAA
+                ):
                     continue
                 _pre_span = s.pos
                 nodes = _target(s, verb, chapter, part=part)
@@ -4409,6 +4508,21 @@ def _target_list(
                 pass
             continue
         if not nodes:
+            saved_after_target_attempt = s.save()
+            s.restore(_pre_t)
+            renumber_tail_nodes = _current_section_renumber_tail(s, verb, chapter, part)
+            if renumber_tail_nodes:
+                renumber_tail_nodes = _normalize_intrabatch_explicit_part_scope(
+                    renumber_tail_nodes, part
+                )
+                all_nodes.extend(renumber_tail_nodes)
+                last_batch_nodes = list(renumber_tail_nodes)
+                chapter = _extract_chapter_from_nodes(renumber_tail_nodes, chapter, verb)
+                part = _extract_part_from_nodes(renumber_tail_nodes, part)
+                while _skip_inline_move_clause_tail(s, all_nodes, last_batch_nodes):
+                    pass
+                continue
+            s.restore(saved_after_target_attempt)
             # Anaphoric determiner insert arm: "sanottuun/mainittuun/samaan
             # pykälään|momenttiin uusi ..." / "saman pykälän N momenttiin uusi
             # ..." / "sanottuun lakiin uusi N §".  Resolved against the last

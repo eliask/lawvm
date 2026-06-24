@@ -188,12 +188,13 @@ class ProcessStructuralPrepareContext:
         # path and the restructure executor. Coverage-aware plans may still be
         # added later during uncovered-body analysis; exact duplicates are
         # suppressed there.
-        if not ops:
+        preseed_ops = [op for op in ops if op.op_type == "RENUMBER"]
+        if not preseed_ops:
             return
         early_plan = build_restructure_plan(
             self.target_statute,
             self.amendment_id,
-            ops=list(ops),
+            ops=preseed_ops,
             uncov_ratio=0.0,
             total_units=0,
             body_unit_ids_by_chapter=None,

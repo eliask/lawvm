@@ -221,7 +221,6 @@ def _resolve_section_path_with_fallbacks(
         Typed resolution result. ``reason_code`` is populated when resolution
         fell back to a live-unique match after the scoped lookup failed.
     """
-    del muutos_ir
     lookup_scope = rop.resolved_section_lookup_scope_view
     target_norm = lookup_scope.target_norm
     _target_chapter = lookup_scope.target_chapter
@@ -288,6 +287,9 @@ def _resolve_section_path_with_fallbacks(
                         rung_id=RUNG_MIGRATION_LEDGER_FOLLOW,
                     )
 
+    target_address_has_descendant = target_address is not None and any(
+        kind in {"subsection", "item"} for kind, _label in target_address.path
+    )
     if (
         sec_path is not None
         and not _target_chapter
@@ -346,9 +348,6 @@ def _resolve_section_path_with_fallbacks(
             and target_address is not None
             and any(kind in {"subsection", "item"} for kind, _label in target_address.path)
         )
-    )
-    target_address_has_descendant = target_address is not None and any(
-        kind in {"subsection", "item"} for kind, _label in target_address.path
     )
     scope_confidence = runtime_scope_confidence_for_op(rop)
     scope_is_explicit = scope_confidence is None or scope_confidence.is_explicit
@@ -740,14 +739,28 @@ def _check_occupancy_policy(
             and incoming.effective
             and incoming.expires
             and occupant is not None
-            and incoming.effective < occupant[0]
-            and incoming.expires <= occupant[0]
+            and (
+                (
+                    incoming.effective < occupant[0]
+                    and incoming.expires <= occupant[0]
+                )
+                or (
+                    incoming.effective == occupant[0]
+                    and incoming.expires > incoming.effective
+                )
+            )
         ):
             occupant_effective, occupant_statute = occupant
+            rule_id = (
+                "temporally_bounded_overlay_insert"
+                if incoming.effective == occupant_effective
+                else "temporally_disjoint_twin_insert"
+            )
             logger.debug(
-                "  %s → temporally disjoint twin insert: window %s..%s precedes "
+                "  %s → %s: window %s..%s coexists with "
                 "occupant %s effective %s",
                 ctx_label,
+                rule_id,
                 incoming.effective,
                 incoming.expires,
                 occupant_statute,
@@ -769,7 +782,7 @@ def _check_occupancy_policy(
                             "incoming_expires": incoming.expires,
                             "occupant_effective": occupant_effective,
                             "occupant_source_statute": occupant_statute,
-                            "rule_id": "temporally_disjoint_twin_insert",
+                            "rule_id": rule_id,
                         },
                         blocking=False,
                     )
