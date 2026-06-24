@@ -37,7 +37,7 @@ from lawvm.core.phase_result import Finding, PhaseResult
 from lawvm.finland.apply_ops_executor import _apply_ops_to_tree_typed
 from lawvm.finland.compile_amendment import compile_amendment_ops as _real_compile_amendment_ops
 from lawvm.finland.frontend_compile import normalize_and_compile_ops
-from lawvm.finland.ops import AmendmentOp, ResolvedOp
+from lawvm.finland.ops import OpType, AmendmentOp, ResolvedOp
 from lawvm.finland.process_pipeline import process_muutoslaki
 from lawvm.finland.post_process import post_process_tree
 from lawvm.finland.apply_ops_boundary import ApplyOpsRequest, ApplyOpsSinks
@@ -1036,7 +1036,7 @@ class TestNormalizeAndCompileOps:
         )
         op = AmendmentOp(
             op_id="fallback-op",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="1",
             target_unit_kind="section",
             source_statute="2010/400",
@@ -1196,8 +1196,8 @@ class TestNormalizeAndCompileOps:
         assert "extraction_title_fallback" in ops[0].extraction_provenance_tags
 
     def test_amendment_op_target_kind_projection_is_read_only(self) -> None:
-        op = AmendmentOp(op_id="read-only-target-kind", op_type="REPLACE", target_unit_kind="chapter", target_section="5")
-        seeded = AmendmentOp(op_id="seeded-target-kind", op_type="REPLACE", target_kind=TargetKind.CHAPTER, target_section="5")
+        op = AmendmentOp(op_id="read-only-target-kind", op_type=OpType.REPLACE, target_unit_kind="chapter", target_section="5")
+        seeded = AmendmentOp(op_id="seeded-target-kind", op_type=OpType.REPLACE, target_kind=TargetKind.CHAPTER, target_section="5")
 
         assert op.target_kind == TargetKind.CHAPTER
         assert seeded.target_unit_kind == "chapter"
@@ -1205,7 +1205,7 @@ class TestNormalizeAndCompileOps:
         with pytest.raises(TypeError, match="must be TargetKind"):
             cast(Any, AmendmentOp)(
                 op_id="string-seed",
-                op_type="REPLACE",
+                op_type=OpType.REPLACE,
                 target_kind="L",
                 target_section="5",
             )
@@ -1270,7 +1270,7 @@ class TestNormalizeAndCompileOps:
         group_ops = [
             AmendmentOp(
                 op_id="body_root_4",
-                op_type="REPLACE",
+                op_type=OpType.REPLACE,
                 target_kind=TargetKind.SECTION,
                 target_section="4",
                 body_root_replace_fallback=True,
@@ -1331,7 +1331,7 @@ class TestNormalizeAndCompileOps:
         group_ops = [
             AmendmentOp(
                 op_id="body_root_4",
-                op_type="REPLACE",
+                op_type=OpType.REPLACE,
                 target_kind=TargetKind.SECTION,
                 target_section="4",
             )
@@ -1642,7 +1642,7 @@ class TestCompileAmendmentOps:
         ops = [
             AmendmentOp(
                 op_id="op0",
-                op_type="REPLACE",
+                op_type=OpType.REPLACE,
                 target_kind=TargetKind.SECTION,
                 target_section="3",
                 target_paragraph=1,
@@ -1674,7 +1674,7 @@ class TestCompileAmendmentOps:
         ops = [
             AmendmentOp(
                 op_id="op0",
-                op_type="REPLACE",
+                op_type=OpType.REPLACE,
                 target_kind=TargetKind.SECTION,
                 target_section="3",
                 target_paragraph=1,
@@ -1693,7 +1693,7 @@ class TestCompileAmendmentOps:
     def test_resolved_op_binds_slot_assignment_payload_at_construction(self) -> None:
         op = AmendmentOp(
             op_id="op0",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_kind=TargetKind.SECTION,
             target_section="3",
             target_paragraph=1,
@@ -1735,7 +1735,7 @@ class TestCompileAmendmentOps:
         )
         op = AmendmentOp(
             op_id="op0",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_kind=TargetKind.SECTION,
             target_section="3",
             target_paragraph=1,
@@ -1774,7 +1774,7 @@ class TestCompileAmendmentOps:
     def test_resolved_op_from_amendment_op_binds_synthesized_target_address_once(self) -> None:
         op = AmendmentOp(
             op_id="op_addr",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_kind=TargetKind.SECTION,
             target_section="3",
             target_paragraph=1,
@@ -1803,7 +1803,7 @@ class TestCompileAmendmentOps:
     def test_resolved_op_scope_without_address_keeps_only_structural_norm(self) -> None:
         op = AmendmentOp(
             op_id="op_scope",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_kind=TargetKind.SECTION,
             target_section="3",
             target_paragraph=2,
@@ -1863,7 +1863,7 @@ class TestCompileAmendmentOps:
         )
         op = AmendmentOp(
             op_id="op_dest",
-            op_type="RENUMBER",
+            op_type=OpType.RENUMBER,
             target_kind=TargetKind.SECTION,
             target_section="60",
             target_chapter="7",
@@ -1894,7 +1894,7 @@ class TestCompileAmendmentOps:
         )
         op = AmendmentOp(
             op_id="op1",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_kind=TargetKind.SECTION,
             target_section="40",
             target_paragraph=3,
@@ -1926,7 +1926,7 @@ class TestCompileAmendmentOps:
     def test_resolved_op_from_amendment_op_binds_typed_intent_by_default(self) -> None:
         op = AmendmentOp(
             op_id="op2",
-            op_type="REPEAL",
+            op_type=OpType.REPEAL,
             target_kind=TargetKind.SECTION,
             target_section="50",
             source_statute="2010/700",
@@ -1951,7 +1951,7 @@ class TestCompileAmendmentOps:
         ops = [
             AmendmentOp(
                 op_id="op0",
-                op_type="REPLACE",
+                op_type=OpType.REPLACE,
                 target_kind=TargetKind.SECTION,
                 target_section="3",
                 target_paragraph=1,
@@ -1959,7 +1959,7 @@ class TestCompileAmendmentOps:
             ),
             AmendmentOp(
                 op_id="op1",
-                op_type="REPLACE",
+                op_type=OpType.REPLACE,
                 target_kind=TargetKind.SECTION,
                 target_section="3",
                 target_paragraph=2,
@@ -1992,7 +1992,7 @@ class TestCompileAmendmentOps:
         ops = [
             AmendmentOp(
                 op_id="op0",
-                op_type="REPLACE",
+                op_type=OpType.REPLACE,
                 target_kind=TargetKind.SECTION,
                 target_section="3",
                 target_paragraph=1,
@@ -2000,7 +2000,7 @@ class TestCompileAmendmentOps:
             ),
             AmendmentOp(
                 op_id="op1",
-                op_type="REPLACE",
+                op_type=OpType.REPLACE,
                 target_kind=TargetKind.SECTION,
                 target_section="5",
                 target_paragraph=1,
@@ -2026,7 +2026,7 @@ class TestCompileAmendmentOps:
         ops = [
             AmendmentOp(
                 op_id="op0",
-                op_type="REPLACE",
+                op_type=OpType.REPLACE,
                 target_kind=TargetKind.SECTION,
                 target_section="7",
                 source_statute="2010/100",
@@ -2043,7 +2043,7 @@ class TestCompileAmendmentOps:
     def test_part_resolved_group_key_falls_back_to_neutral_part_scope(self) -> None:
         op = AmendmentOp(
             op_id="op0",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_kind=TargetKind.PART,
             target_section="IV",
             source_statute="2010/100",
@@ -2063,7 +2063,7 @@ class TestCompileAmendmentOps:
     def test_resolved_target_scope_drives_lookup_scope_while_group_key_stays_neutral(self) -> None:
         op = AmendmentOp(
             op_id="op0",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_kind=TargetKind.SECTION,
             target_section="3",
             target_chapter="2",
@@ -2092,7 +2092,7 @@ class TestCompileAmendmentOps:
         ops = [
             AmendmentOp(
                 op_id="op0",
-                op_type="REPEAL",
+                op_type=OpType.REPEAL,
                 target_kind=TargetKind.SECTION,
                 target_section="9",
                 source_statute="2010/100",
@@ -2114,7 +2114,7 @@ class TestCompileAmendmentOps:
         ops = [
             AmendmentOp(
                 op_id="op0",
-                op_type="REPLACE",
+                op_type=OpType.REPLACE,
                 target_kind=TargetKind.SECTION,
                 target_section="3",
                 target_paragraph=1,
@@ -2158,7 +2158,7 @@ class TestCompileAmendmentOps:
         ops = [
             AmendmentOp(
                 op_id="op0",
-                op_type="REPLACE",
+                op_type=OpType.REPLACE,
                 target_kind=TargetKind.SECTION,
                 target_section="3",
                 source_statute="2010/100",
@@ -2213,7 +2213,7 @@ class TestCompileAmendmentOps:
         ops = [
             AmendmentOp(
                 op_id="op0",
-                op_type="REPLACE",
+                op_type=OpType.REPLACE,
                 target_kind=TargetKind.SECTION,
                 target_section="3",
                 target_paragraph=1,
@@ -2263,7 +2263,7 @@ class TestCompileAmendmentOps:
         ops = [
             AmendmentOp(
                 op_id="op0",
-                op_type="REPLACE",
+                op_type=OpType.REPLACE,
                 target_kind=TargetKind.SECTION,
                 target_section="3",
                 target_paragraph=1,
@@ -2327,7 +2327,7 @@ class TestCompileAmendmentOps:
         ops = [
             AmendmentOp(
                 op_id="op0",
-                op_type="REPLACE",
+                op_type=OpType.REPLACE,
                 target_kind=TargetKind.SECTION,
                 target_section="3",
                 target_paragraph=1,
@@ -2380,7 +2380,7 @@ class TestCompileAmendmentOps:
         ops = [
             AmendmentOp(
                 op_id="op0",
-                op_type="REPLACE",
+                op_type=OpType.REPLACE,
                 target_kind=TargetKind.SECTION,
                 target_section="3",
                 target_paragraph=1,
@@ -2649,7 +2649,7 @@ class TestApplyOpsToTree:
             ops=[
                 AmendmentOp(
                     op_id="replace_3",
-                    op_type="REPLACE",
+                    op_type=OpType.REPLACE,
                     target_kind=TargetKind.SECTION,
                     target_section="3",
                 )
@@ -2691,7 +2691,7 @@ class TestApplyOpsToTree:
             ops=[
                 AmendmentOp(
                     op_id="repeal_5",
-                    op_type="REPEAL",
+                    op_type=OpType.REPEAL,
                     target_kind=TargetKind.SECTION,
                     target_section="5",
                 )
@@ -2826,7 +2826,7 @@ class TestApplyOpsToTree:
         ops = [
             AmendmentOp(
                 op_id="op0",
-                op_type="REPLACE",
+                op_type=OpType.REPLACE,
                 target_kind=TargetKind.SECTION,
                 target_section="99",
                 target_paragraph=1,
@@ -3094,19 +3094,19 @@ class TestSortGroupOpsInsertWithOtsikko:
         group_ops = [
             AmendmentOp(
                 op_id="otsikko",
-                op_type="REPLACE",
+                op_type=OpType.REPLACE,
                 target_kind=TargetKind.SECTION,
                 target_section="1",
                 target_special="otsikko",
             ),
             AmendmentOp(
-                op_id="ins3", op_type="INSERT", target_kind=TargetKind.SECTION, target_section="1", target_paragraph=3
+                op_id="ins3", op_type=OpType.INSERT, target_kind=TargetKind.SECTION, target_section="1", target_paragraph=3
             ),
             AmendmentOp(
-                op_id="ins4", op_type="INSERT", target_kind=TargetKind.SECTION, target_section="1", target_paragraph=4
+                op_id="ins4", op_type=OpType.INSERT, target_kind=TargetKind.SECTION, target_section="1", target_paragraph=4
             ),
             AmendmentOp(
-                op_id="ins5", op_type="INSERT", target_kind=TargetKind.SECTION, target_section="1", target_paragraph=5
+                op_id="ins5", op_type=OpType.INSERT, target_kind=TargetKind.SECTION, target_section="1", target_paragraph=5
             ),
         ]
         result = sort_group_ops_for_apply(target_ctx, group_ops)
@@ -3129,13 +3129,13 @@ class TestSortGroupOpsInsertWithOtsikko:
         )
         group_ops = [
             AmendmentOp(
-                op_id="ins3", op_type="INSERT", target_kind=TargetKind.SECTION, target_section="1", target_paragraph=3
+                op_id="ins3", op_type=OpType.INSERT, target_kind=TargetKind.SECTION, target_section="1", target_paragraph=3
             ),
             AmendmentOp(
-                op_id="ins5", op_type="INSERT", target_kind=TargetKind.SECTION, target_section="1", target_paragraph=5
+                op_id="ins5", op_type=OpType.INSERT, target_kind=TargetKind.SECTION, target_section="1", target_paragraph=5
             ),
             AmendmentOp(
-                op_id="ins4", op_type="INSERT", target_kind=TargetKind.SECTION, target_section="1", target_paragraph=4
+                op_id="ins4", op_type=OpType.INSERT, target_kind=TargetKind.SECTION, target_section="1", target_paragraph=4
             ),
         ]
         result = sort_group_ops_for_apply(target_ctx, group_ops)
@@ -3156,10 +3156,10 @@ class TestSortGroupOpsInsertWithOtsikko:
         )
         group_ops = [
             AmendmentOp(
-                op_id="rep4", op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="14", target_paragraph=4
+                op_id="rep4", op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="14", target_paragraph=4
             ),
             AmendmentOp(
-                op_id="rep3", op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="14", target_paragraph=3
+                op_id="rep3", op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="14", target_paragraph=3
             ),
         ]
         result = sort_group_ops_for_apply(target_ctx, group_ops)
@@ -3181,7 +3181,7 @@ class TestSortGroupOpsInsertWithOtsikko:
         group_ops = [
             AmendmentOp(
                 op_id="ins10",
-                op_type="INSERT",
+                op_type=OpType.INSERT,
                 target_kind=TargetKind.SECTION,
                 target_section="1",
                 target_paragraph=1,
@@ -3189,7 +3189,7 @@ class TestSortGroupOpsInsertWithOtsikko:
             ),
             AmendmentOp(
                 op_id="ins5b",
-                op_type="INSERT",
+                op_type=OpType.INSERT,
                 target_kind=TargetKind.SECTION,
                 target_section="1",
                 target_paragraph=1,
@@ -3197,7 +3197,7 @@ class TestSortGroupOpsInsertWithOtsikko:
             ),
             AmendmentOp(
                 op_id="ins9",
-                op_type="INSERT",
+                op_type=OpType.INSERT,
                 target_kind=TargetKind.SECTION,
                 target_section="1",
                 target_paragraph=1,
@@ -3205,7 +3205,7 @@ class TestSortGroupOpsInsertWithOtsikko:
             ),
             AmendmentOp(
                 op_id="ins5a",
-                op_type="INSERT",
+                op_type=OpType.INSERT,
                 target_kind=TargetKind.SECTION,
                 target_section="1",
                 target_paragraph=1,

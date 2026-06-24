@@ -219,19 +219,19 @@ def test_build_standalone_section_targets_does_not_let_unscoped_replace_shadow_n
     """Unscoped REPLACE is too weak to strip same-label children from a fresh chapter."""
     unscoped_replace = AmendmentOp(
         op_id="replace_2",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="2",
     )
     unscoped_insert = AmendmentOp(
         op_id="insert_3",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="3",
     )
     scoped_replace = AmendmentOp(
         op_id="replace_ch5_2",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_part="5",
         target_chapter="5",
@@ -284,7 +284,7 @@ def _ctx(base_ir: IRNode | None = None) -> StatuteContext:
 
 
 def _op(
-    op_type: OpType = "REPLACE",
+    op_type: OpType = OpType.REPLACE,
     target_section: str = "1",
     target_chapter: Optional[str] = None,
     target_part: Optional[str] = None,
@@ -346,7 +346,7 @@ def _unchanged(state: ReplayState, result: Optional[ReplayState]) -> bool:
 
 def test_apply_op_requires_typed_intent_for_replace_family() -> None:
     state = _make_state(_body(_sec("1", _content("old"))))
-    op = _op(op_type="REPLACE", target_section="1")
+    op = _op(op_type=OpType.REPLACE, target_section="1")
     rop = ResolvedOp.from_amendment_op(
         op,
         muutos_ir=_sec("1", _content("new")),
@@ -369,7 +369,7 @@ def test_apply_op_requires_typed_intent_for_replace_family() -> None:
 
 def test_apply_op_requires_typed_intent_for_renumber_without_destination() -> None:
     state = _make_state(_body(_sec("1", _content("old"))))
-    op = _op(op_type="RENUMBER", target_section="1")
+    op = _op(op_type=OpType.RENUMBER, target_section="1")
     rop = ResolvedOp.from_amendment_op(
         op,
         muutos_ir=None,
@@ -405,7 +405,7 @@ def test_apply_op_binds_typed_intent_for_renumber_when_destination_exists() -> N
     )
     op = AmendmentOp(
         op_id="renumber_1_to_2",
-        op_type="RENUMBER",
+        op_type=OpType.RENUMBER,
         target_section="1",
         target_unit_kind="section",
         source_statute="2020/1",
@@ -524,7 +524,7 @@ def test_apply_op_typed_section_relabel_relabels_and_resorts_within_chapter() ->
     )
     op = AmendmentOp(
         op_id="renumber_73_to_61",
-        op_type="RENUMBER",
+        op_type=OpType.RENUMBER,
         target_section="73",
         target_unit_kind="section",
         target_chapter="7",
@@ -647,7 +647,7 @@ def test_apply_op_typed_section_relabel_keeps_part_scoped_parent_when_multiple_p
     )
     op = AmendmentOp(
         op_id="renumber_p2_c1_8_to_10",
-        op_type="RENUMBER",
+        op_type=OpType.RENUMBER,
         target_section="8",
         target_unit_kind="section",
         target_chapter="1",
@@ -713,7 +713,7 @@ def test_apply_op_typed_section_relabel_missing_source_emits_target_address() ->
     )
     op = AmendmentOp(
         op_id="renumber_73_to_61_missing",
-        op_type="RENUMBER",
+        op_type=OpType.RENUMBER,
         target_section="73",
         target_unit_kind="section",
         target_chapter="7",
@@ -800,7 +800,7 @@ def test_apply_op_typed_subsection_relabel_relabels_and_resorts_within_section()
     )
     op = AmendmentOp(
         op_id="renumber_3_3_to_2",
-        op_type="RENUMBER",
+        op_type=OpType.RENUMBER,
         target_section="3",
         target_unit_kind="section",
         target_chapter="3",
@@ -908,7 +908,7 @@ def test_apply_op_typed_item_relabel_relabels_and_resorts_within_subsection() ->
     )
     op = AmendmentOp(
         op_id="renumber_item_4_to_9",
-        op_type="RENUMBER",
+        op_type=OpType.RENUMBER,
         target_section="9",
         target_unit_kind="section",
         target_chapter="2",
@@ -1013,7 +1013,7 @@ def test_apply_op_typed_chapter_insert_emits_resolved_target_path_from_rop() -> 
     )
     op = AmendmentOp(
         op_id="insert_chapter_3a",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="chapter",
         target_section="3a",
         source_statute="2003/1310",
@@ -1077,7 +1077,7 @@ def test_apply_materialization_prefers_rop_scope_over_legacy_op_scope() -> None:
     payload = _sec("73", IRNode(kind=IRNodeKind.NUM, text="73 §"), _content("materialized"))
     op = AmendmentOp(
         op_id="materialize_73",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="73",
         target_unit_kind="section",
         target_chapter=None,
@@ -1118,7 +1118,7 @@ def test_apply_materialization_prefers_typed_action_over_mutated_legacy_shell_ac
     payload = _sec("73", IRNode(kind=IRNodeKind.NUM, text="73 §"), _content("materialized"))
     op = AmendmentOp(
         op_id="materialize_73_typed_action",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="73",
         target_unit_kind="section",
         target_chapter=None,
@@ -1146,7 +1146,7 @@ def test_apply_materialization_prefers_typed_action_over_mutated_legacy_shell_ac
         target_norm="73",
         target_chapter="7",
     )
-    rop.op.op_type = "RENUMBER"
+    rop.op.op_type = OpType.RENUMBER
 
     result = _apply_materialization(state, rop, payload, "test")
 
@@ -1171,7 +1171,7 @@ def test_apply_materialization_root_move_emits_pathology() -> None:
             _sec("23", _content("root-level section")),
         )
     )
-    op = _op(op_type="REPLACE", target_section="23", target_chapter="6")
+    op = _op(op_type=OpType.REPLACE, target_section="23", target_chapter="6")
     rop = ResolvedOp.from_amendment_op(
         op,
         muutos_ir=_sec("23", _content("new root-level section")),
@@ -1253,7 +1253,7 @@ def test_apply_materialization_keeps_chapter_scoped_section_inside_chapter_when_
     payload = _sec("2", _sub("6", _content("materialized")))
     op = AmendmentOp(
         op_id="materialize_2_6",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="2",
         target_unit_kind="section",
         target_chapter="2",
@@ -1323,7 +1323,7 @@ def test_apply_materialization_skips_subsection_insert_when_section_exists_in_di
     payload = _sec("51d", _sub("2", _content("new subsection 2")))
     op = AmendmentOp(
         op_id="subsec_insert_51d_2",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_section="51d",
         target_unit_kind="section",
         target_chapter="1",
@@ -1361,7 +1361,7 @@ def test_apply_materialization_skips_unscoped_subsection_op_when_section_exists_
     payload = _sec("20", _sub("3", _content("new subsection 3")))
     op = AmendmentOp(
         op_id="subsec_replace_20_3",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="20",
         target_unit_kind="section",
         target_paragraph=3,
@@ -1391,7 +1391,7 @@ def test_apply_materialization_skips_unscoped_missing_subsection_op_in_chaptered
     payload = _sec("20", _sub("3", _content("new subsection 3")))
     op = AmendmentOp(
         op_id="subsec_replace_missing_20_3",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="20",
         target_unit_kind="section",
         target_paragraph=3,
@@ -1420,7 +1420,7 @@ def test_apply_materialization_skips_unscoped_whole_section_replace() -> None:
     payload = _sec("14", IRNode(kind=IRNodeKind.NUM, text="14 §"), _content("new top-level text"))
     op = AmendmentOp(
         op_id="materialize_14",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="14",
         target_unit_kind="section",
         source_statute="2006/395",
@@ -1447,7 +1447,7 @@ def test_apply_whole_section_replace_skips_unscoped_missing_section_in_chaptered
         )
     )
     payload = _sec("15", _content("replacement section"))
-    op = _op(op_type="REPLACE", target_section="15")
+    op = _op(op_type=OpType.REPLACE, target_section="15")
 
     result = _apply_whole_section_op(
         state,
@@ -1477,7 +1477,7 @@ def test_apply_whole_section_replace_skips_unscoped_base_root_parent_in_chaptere
         )
     )
     payload = _sec("15", _content("replacement section"))
-    op = _op(op_type="REPLACE", target_section="15")
+    op = _op(op_type=OpType.REPLACE, target_section="15")
 
     result = _apply_whole_section_op(
         state,
@@ -1503,7 +1503,7 @@ def test_apply_op_rejects_contradictory_typed_intent_action_family() -> None:
     from lawvm.core.ir import LegalAddress
 
     state = _make_state(_body(_sec("1", _content("old"))))
-    op = _op(op_type="REPLACE", target_section="1")
+    op = _op(op_type=OpType.REPLACE, target_section="1")
     rop = ResolvedOp.from_amendment_op(
         op,
         muutos_ir=None,
@@ -1534,7 +1534,7 @@ def test_apply_op_rejects_contradictory_typed_intent_action_family() -> None:
 
 def test_legacy_dispatch_shell_for_rop_prefers_late_waist_fields() -> None:
     op = _op(
-        op_type="REPEAL",
+        op_type=OpType.REPEAL,
         target_section="9",
         target_paragraph=99,
         named_row_targets=("alpha", "beta"),
@@ -1608,7 +1608,7 @@ def test_legacy_dispatch_shell_for_rop_prefers_late_waist_fields() -> None:
 
 def test_resolvedop_resolved_amend_sub_ir_uses_stable_slot_lookup() -> None:
     amend_sub = _sub("2", _content("assigned via slot"))
-    op = _op(op_type="REPLACE", target_section="1", target_paragraph=99)
+    op = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=99)
     slots = SubsectionSlotMap()
     slots.assign(
         AmendmentOp(
@@ -1641,7 +1641,7 @@ def test_resolvedop_resolved_amend_sub_ir_uses_stable_slot_lookup() -> None:
 
 
 def test_resolvedop_resolved_amend_sub_ir_does_not_singleton_fallback_from_muutos_ir() -> None:
-    op = _op(op_type="REPLACE", target_section="1", target_paragraph=1)
+    op = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=1)
     amend_sub = _sub("1", _content("single subsection payload"))
     rop = ResolvedOp.from_amendment_op(
         op,
@@ -1662,7 +1662,7 @@ def test_resolvedop_resolved_amend_sub_ir_does_not_singleton_fallback_from_muuto
 
 
 def test_resolvedop_binds_identity_slot_lookup_only_at_construction() -> None:
-    op = _op(op_type="REPLACE", target_section="1", target_paragraph=2)
+    op = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=2)
     op.op_id = ""
     amend_sub = _sub("2", _content("assigned by legacy identity"))
     slots = SubsectionSlotMap()
@@ -1688,8 +1688,8 @@ def test_resolvedop_binds_identity_slot_lookup_only_at_construction() -> None:
 
 
 def test_resolvedop_does_not_identity_rescue_nonblank_id_miss() -> None:
-    op = _op(op_type="REPLACE", target_section="1", target_paragraph=2)
-    blank_assigned_op = _op(op_type="REPLACE", target_section="1", target_paragraph=2)
+    op = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=2)
+    blank_assigned_op = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=2)
     blank_assigned_op.op_id = ""
     amend_sub = _sub("2", _content("assigned by identity"))
     slots = SubsectionSlotMap()
@@ -1714,7 +1714,7 @@ def test_resolvedop_does_not_identity_rescue_nonblank_id_miss() -> None:
 
 
 def test_resolvedop_slot_assignment_uses_stable_op_id_and_reports_presence() -> None:
-    op = _op(op_type="REPLACE", target_section="1", target_paragraph=2)
+    op = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=2)
     op.op_id = "slot_presence"
     amend_sub = _sub("2", _content("assigned by stable id"))
     slots = SubsectionSlotMap()
@@ -1739,7 +1739,7 @@ def test_resolvedop_slot_assignment_uses_stable_op_id_and_reports_presence() -> 
 
 
 def test_normalize_subsection_target_hint_rebinds_resolved_target_address() -> None:
-    op = _op(op_type="REPLACE", target_section="1", target_paragraph=2)
+    op = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=2)
     rop = ResolvedOp.from_amendment_op(
         op,
         muutos_ir=None,
@@ -1763,7 +1763,7 @@ def test_normalize_subsection_target_hint_rebinds_resolved_target_address() -> N
 
 
 def test_normalize_subsection_target_hint_keeps_real_inserted_moment_on_subsection_lane() -> None:
-    op = _op(op_type="INSERT", target_section="6", target_paragraph=2)
+    op = _op(op_type=OpType.INSERT, target_section="6", target_paragraph=2)
     master_subsecs = [
         _sub(
             "1",
@@ -1814,7 +1814,7 @@ def test_resolvedop_from_lo_canonicalizes_roman_part_scope_on_replay_address() -
 
 def test_build_subsection_slot_assignment_wrapper_exposes_typed_result() -> None:
     muutos_ir = _sec("14", _sub("1"), _sub("2"))
-    op = _op(op_type="REPLACE", target_section="14", target_paragraph=2)
+    op = _op(op_type=OpType.REPLACE, target_section="14", target_paragraph=2)
 
     got = _build_subsection_slot_assignment(muutos_ir, [op])
 
@@ -1863,7 +1863,7 @@ def test_emit_section_snapshot_preserves_base_address_for_removed_section_repeal
             ResolvedOp.from_amendment_op(
                 AmendmentOp(
                     op_id="repeal_4",
-                    op_type="REPEAL",
+                    op_type=OpType.REPEAL,
                     target_section="4",
                     target_unit_kind="section",
                     target_chapter="13",
@@ -1909,7 +1909,7 @@ def test_emit_section_snapshot_uses_typed_sec1_fallback_for_absent_whole_section
             ResolvedOp.from_amendment_op(
                 AmendmentOp(
                     op_id="repeal_1",
-                    op_type="REPEAL",
+                    op_type=OpType.REPEAL,
                     target_section="1",
                     target_unit_kind="section",
                     sec1_body_johto_fallback=True,
@@ -1950,7 +1950,7 @@ def test_emit_section_snapshot_does_not_import_muutos_payload_for_absent_repeal(
             ResolvedOp.from_amendment_op(
                 AmendmentOp(
                     op_id="repeal_13_11",
-                    op_type="REPEAL",
+                    op_type=OpType.REPEAL,
                     target_section="11",
                     target_unit_kind="section",
                     target_chapter="13",
@@ -1999,7 +1999,7 @@ def test_emit_section_snapshot_records_pathology_for_payloadless_container_repla
             ResolvedOp.from_amendment_op(
                 AmendmentOp(
                     op_id="replace_ch_7",
-                    op_type="REPLACE",
+                    op_type=OpType.REPLACE,
                     target_section="7",
                     target_unit_kind="chapter",
                     source_statute="2099/7",
@@ -2040,7 +2040,7 @@ def test_emit_section_snapshot_emits_subsection_snapshots_for_whole_section_payl
     rop = ResolvedOp.from_amendment_op(
         AmendmentOp(
             op_id="replace_3",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="3",
             target_unit_kind="section",
             source_statute="2019/1223",
@@ -2102,7 +2102,7 @@ def test_emit_section_snapshot_preserves_live_fold_for_sparse_item_scoped_muutos
     rop = ResolvedOp.from_amendment_op(
         AmendmentOp(
             op_id="replace_2_item_h",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="2",
             target_unit_kind="section",
             target_paragraph=1,
@@ -2160,7 +2160,7 @@ def test_emit_section_snapshot_inserts_new_subsection_addresses_not_in_base() ->
     rop = ResolvedOp.from_amendment_op(
         AmendmentOp(
             op_id="replace_3",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="3",
             target_unit_kind="section",
             source_statute="2019/1223",
@@ -2225,7 +2225,7 @@ def test_emit_section_snapshot_prefers_typed_body_chapter_move_from_over_lo_prov
     rop = ResolvedOp.from_amendment_op(
         AmendmentOp(
             op_id="move_23",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_section="23",
             target_unit_kind="section",
             target_chapter="6",
@@ -2298,7 +2298,7 @@ def test_emit_section_snapshot_does_not_use_lo_provenance_tag_without_typed_body
     rop = ResolvedOp.from_amendment_op(
         AmendmentOp(
             op_id="move_23_untyped",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_section="23",
             target_unit_kind="section",
             target_chapter="6",
@@ -2354,7 +2354,7 @@ def test_emit_section_snapshot_exports_missing_repealed_subsection_child() -> No
     repeal_rop = ResolvedOp.from_amendment_op(
         AmendmentOp(
             op_id="repeal_3_1",
-            op_type="REPEAL",
+            op_type=OpType.REPEAL,
             target_section="3",
             target_unit_kind="section",
             target_paragraph=1,
@@ -2371,7 +2371,7 @@ def test_emit_section_snapshot_exports_missing_repealed_subsection_child() -> No
     replace_rop = ResolvedOp.from_amendment_op(
         AmendmentOp(
             op_id="replace_3_3",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="3",
             target_unit_kind="section",
             target_paragraph=3,
@@ -2425,7 +2425,7 @@ def test_emit_section_snapshot_skips_payload_child_that_same_group_explicitly_re
     repeal_rop = ResolvedOp.from_amendment_op(
         AmendmentOp(
             op_id="repeal_1_2",
-            op_type="REPEAL",
+            op_type=OpType.REPEAL,
             target_section="1",
             target_unit_kind="section",
             target_paragraph=2,
@@ -2442,7 +2442,7 @@ def test_emit_section_snapshot_skips_payload_child_that_same_group_explicitly_re
     replace_rop = ResolvedOp.from_amendment_op(
         AmendmentOp(
             op_id="replace_1",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="1",
             target_unit_kind="section",
             source_statute="2009/1688",
@@ -2516,7 +2516,7 @@ def test_emit_section_snapshot_keeps_replacement_section_child_after_old_child_r
     repeal_rop = ResolvedOp.from_amendment_op(
         AmendmentOp(
             op_id="repeal_old_21_1",
-            op_type="REPEAL",
+            op_type=OpType.REPEAL,
             target_section="21",
             target_unit_kind="section",
             target_paragraph=1,
@@ -2533,7 +2533,7 @@ def test_emit_section_snapshot_keeps_replacement_section_child_after_old_child_r
     insert_rop = ResolvedOp.from_amendment_op(
         AmendmentOp(
             op_id="insert_new_21",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_section="21",
             target_unit_kind="section",
             source_statute="1991/714",
@@ -2608,7 +2608,7 @@ def test_emit_section_snapshot_skips_shifted_child_that_same_group_repeals() -> 
     lo_ops: list[LegalOperation] = []
 
     insert2 = ResolvedOp.from_amendment_op(
-        _op(op_type="INSERT", target_section="32", target_paragraph=2),
+        _op(op_type=OpType.INSERT, target_section="32", target_paragraph=2),
         muutos_ir=_sub("2", _content("new second")),
         cross_ir=None,
         target_unit_kind="section",
@@ -2618,7 +2618,7 @@ def test_emit_section_snapshot_skips_shifted_child_that_same_group_repeals() -> 
     )
     renumber2 = ResolvedOp.from_amendment_op(
         dc_replace(
-            _op(op_type="RENUMBER", target_section="32", target_paragraph=2),
+            _op(op_type=OpType.RENUMBER, target_section="32", target_paragraph=2),
             op_id="renumber_2_to_3",
             lo=LegalOperation(
                 op_id="renumber_2_to_3",
@@ -2635,7 +2635,7 @@ def test_emit_section_snapshot_skips_shifted_child_that_same_group_repeals() -> 
         target_chapter=None,
     )
     repeal3 = ResolvedOp.from_amendment_op(
-        _op(op_type="REPEAL", target_section="32", target_paragraph=3),
+        _op(op_type=OpType.REPEAL, target_section="32", target_paragraph=3),
         muutos_ir=None,
         cross_ir=None,
         target_unit_kind="section",
@@ -2644,7 +2644,7 @@ def test_emit_section_snapshot_skips_shifted_child_that_same_group_repeals() -> 
         target_address=LegalAddress(path=(("section", "32"), ("subsection", "3"))),
     )
     replace_section = ResolvedOp.from_amendment_op(
-        _op(op_type="REPLACE", target_section="32"),
+        _op(op_type=OpType.REPLACE, target_section="32"),
         muutos_ir=final_section,
         cross_ir=None,
         target_unit_kind="section",
@@ -2726,7 +2726,7 @@ def test_emit_section_snapshot_sparse_chapter_replace_skips_missing_child_repeal
     rop = ResolvedOp.from_amendment_op(
         AmendmentOp(
             op_id="replace_1_chapter",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="1",
             target_unit_kind="chapter",
             source_statute="2021/669",
@@ -2779,7 +2779,7 @@ def test_source_complete_part_replacement_witness_records_chapter_labels() -> No
         group_ops=[
             AmendmentOp(
                 op_id="replace_part_1",
-                op_type="REPLACE",
+                op_type=OpType.REPLACE,
                 target_section="1",
                 target_unit_kind="part",
                 source_statute="1987/411",
@@ -2829,7 +2829,7 @@ def test_emit_section_snapshot_complete_part_replace_repeals_missing_chapters() 
     rop = ResolvedOp.from_amendment_op(
         AmendmentOp(
             op_id="replace_part_1",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="1",
             target_unit_kind="part",
             source_statute="1987/411",
@@ -2903,7 +2903,7 @@ def test_subsection_repeal_does_not_copy_whole_section_heading_from_muutos_ir() 
 
     result = _apply_deterministic_subsection_op(
         state,
-        _op(op_type="REPEAL", target_section="8", target_paragraph=3),
+        _op(op_type=OpType.REPEAL, target_section="8", target_paragraph=3),
         (("chapter", "2"), ("section", "8")),
         muutos_ir,
         None,
@@ -2914,7 +2914,7 @@ def test_subsection_repeal_does_not_copy_whole_section_heading_from_muutos_ir() 
         rop=ResolvedOp.from_amendment_op(
             AmendmentOp(
                 op_id="vts_repeal_P_8_m3",
-                op_type="REPEAL",
+                op_type=OpType.REPEAL,
                 target_section="8",
                 target_unit_kind="section",
                 target_paragraph=3,
@@ -2955,7 +2955,7 @@ def test_emit_section_snapshot_skips_container_child_snapshots_for_heading_only_
     rop = ResolvedOp.from_amendment_op(
         AmendmentOp(
             op_id="replace_5_heading",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="5",
             target_unit_kind="chapter",
             target_special="otsikko",
@@ -3022,7 +3022,7 @@ def test_emit_section_snapshot_repeals_prior_chapter_address_without_move_clause
     rop = ResolvedOp.from_amendment_op(
         AmendmentOp(
             op_id="replace_23",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="23",
             target_unit_kind="section",
             target_chapter="6",
@@ -3076,7 +3076,7 @@ def test_emit_section_snapshot_keeps_chapter_scoped_address_when_only_root_homon
     rop = ResolvedOp.from_amendment_op(
         AmendmentOp(
             op_id="insert_22_heading",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_section="22",
             target_unit_kind="section",
             target_chapter="4",
@@ -3159,7 +3159,7 @@ def test_emit_section_snapshot_reuses_replay_owned_subsection_lineage_without_ba
     rop = ResolvedOp.from_amendment_op(
         AmendmentOp(
             op_id="replace_12_1",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="1",
             target_unit_kind="section",
             target_chapter="12",
@@ -3224,7 +3224,7 @@ def test_emit_section_snapshot_prefers_prior_scoped_timeline_path_over_global_ho
     source_section = _sec("2", replacement_subsection)
     op = AmendmentOp(
         op_id="replace_5_2_1",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="2",
         target_unit_kind="section",
         target_chapter="5",
@@ -3296,7 +3296,7 @@ def test_emit_section_snapshot_prefers_complete_source_payload_over_stale_fold()
     rop = ResolvedOp.from_amendment_op(
         AmendmentOp(
             op_id="replace_8_51",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="51",
             target_unit_kind="section",
             target_chapter="8",
@@ -3378,7 +3378,7 @@ def test_emit_section_snapshot_skips_same_source_children_after_heading_body_spl
     rop = ResolvedOp.from_amendment_op(
         AmendmentOp(
             op_id="replace_8_51",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="51",
             target_unit_kind="section",
             target_chapter="8",
@@ -3447,7 +3447,7 @@ def test_emit_section_snapshot_repeals_subsections_absent_from_complete_section_
     rop = ResolvedOp.from_amendment_op(
         AmendmentOp(
             op_id="replace_3_7",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="7",
             target_unit_kind="section",
             target_chapter="3",
@@ -3509,7 +3509,7 @@ def test_emit_section_snapshot_sparse_whole_section_replace_does_not_repeal_abse
     pathologies: list[SourcePathology] = []
     lo_ops: list[LegalOperation] = []
     rop = ResolvedOp.from_amendment_op(
-        _op(op_type="REPLACE", target_section="7"),
+        _op(op_type=OpType.REPLACE, target_section="7"),
         muutos_ir=sparse_source_section,
         cross_ir=None,
         target_unit_kind="section",
@@ -3563,7 +3563,7 @@ def test_emit_section_snapshot_temporary_complete_replace_does_not_repeal_base_o
     pathologies: list[SourcePathology] = []
     lo_ops: list[LegalOperation] = []
     rop = ResolvedOp.from_amendment_op(
-        _op(op_type="REPLACE", target_section="15", is_temporary=True),
+        _op(op_type=OpType.REPLACE, target_section="15", is_temporary=True),
         muutos_ir=source_section,
         cross_ir=None,
         target_unit_kind="section",
@@ -3653,7 +3653,7 @@ def test_emit_section_snapshot_does_not_prune_complete_child_from_prior_sparse_c
     lo_ops: list[LegalOperation] = []
 
     sparse_rop = ResolvedOp.from_amendment_op(
-        _op(op_type="REPLACE", target_section="1", target_paragraph=1, target_item="29"),
+        _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=1, target_item="29"),
         muutos_ir=sparse_section,
         cross_ir=None,
         target_unit_kind="section",
@@ -3685,7 +3685,7 @@ def test_emit_section_snapshot_does_not_prune_complete_child_from_prior_sparse_c
     assert sparse_child.payload.attrs["lawvm_tail_policy"] == "preserve_unstated_tail"
 
     complete_rop = ResolvedOp.from_amendment_op(
-        _op(op_type="REPLACE", target_section="1"),
+        _op(op_type=OpType.REPLACE, target_section="1"),
         muutos_ir=complete_section,
         cross_ir=None,
         target_unit_kind="section",
@@ -3774,7 +3774,7 @@ def test_emit_section_snapshot_rebases_sparse_item_replace_and_repeal_group() ->
         )
     ]
     replace_rop = ResolvedOp.from_amendment_op(
-        _op(op_type="REPLACE", target_section="1", target_paragraph=1, target_item="13"),
+        _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=1, target_item="13"),
         muutos_ir=sparse_state_section,
         cross_ir=None,
         target_unit_kind="section",
@@ -3788,7 +3788,7 @@ def test_emit_section_snapshot_rebases_sparse_item_replace_and_repeal_group() ->
         ),
     )
     repeal_rop = ResolvedOp.from_amendment_op(
-        _op(op_type="REPEAL", target_section="1", target_paragraph=1, target_item="14"),
+        _op(op_type=OpType.REPEAL, target_section="1", target_paragraph=1, target_item="14"),
         muutos_ir=None,
         cross_ir=None,
         target_unit_kind="section",
@@ -3859,7 +3859,7 @@ def test_emit_section_snapshot_does_not_double_shift_rebased_subsection_replace(
             source=OperationSource(statute_id="2022/1029"),
         )
         op = dc_replace(
-            _op(op_type="RENUMBER", target_section="32", target_paragraph=int(source_label)),
+            _op(op_type=OpType.RENUMBER, target_section="32", target_paragraph=int(source_label)),
             op_id=f"renumber_{source_label}_to_{destination_label}",
             lo=lo,
         )
@@ -3873,7 +3873,7 @@ def test_emit_section_snapshot_does_not_double_shift_rebased_subsection_replace(
         )
 
     insert_op = dc_replace(
-        _op(op_type="INSERT", target_section="32", target_paragraph=1),
+        _op(op_type=OpType.INSERT, target_section="32", target_paragraph=1),
         op_id="insert_new_1",
         lo=LegalOperation(
             op_id="insert_new_1",
@@ -3893,7 +3893,7 @@ def test_emit_section_snapshot_does_not_double_shift_rebased_subsection_replace(
     )
     replace_op = dc_replace(
         _op(
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="32",
             target_paragraph=2,
             target_guessing_provenance_tags=("rebase_duplicate_target_shifted_replace",),
@@ -3983,7 +3983,7 @@ def test_expired_temporary_subsection_slot_can_be_consumed_skips_carried_snapsho
     ]
     op = AmendmentOp(
         op_id="insert_11_3",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_section="11",
         target_unit_kind="section",
         target_paragraph=3,
@@ -4058,7 +4058,7 @@ def test_emit_section_snapshot_drops_shifted_expired_temporary_subsection() -> N
     rop = ResolvedOp.from_amendment_op(
         AmendmentOp(
             op_id="insert_11_3",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_section="11",
             target_unit_kind="section",
             target_chapter="2",
@@ -4156,7 +4156,7 @@ def test_emit_section_snapshot_uses_insert_for_scoped_commencement_on_replay_own
     rop = ResolvedOp.from_amendment_op(
         AmendmentOp(
             op_id="replace_12_1",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="1",
             target_unit_kind="section",
             target_chapter="12",
@@ -4228,7 +4228,7 @@ def test_emit_section_snapshot_does_not_repeal_prior_chapter_address_for_pure_in
     rop = ResolvedOp.from_amendment_op(
         AmendmentOp(
             op_id="insert_8a",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_section="8a",
             target_unit_kind="section",
             target_chapter="5",
@@ -4335,7 +4335,7 @@ def test_emit_section_snapshot_does_not_repeal_other_live_same_label_section() -
     rop = ResolvedOp.from_amendment_op(
         AmendmentOp(
             op_id="replace_1",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="1",
             target_unit_kind="section",
             target_chapter="3",
@@ -4402,7 +4402,7 @@ def test_emit_section_snapshot_skips_container_child_for_cross_chapter_standalon
     rop = ResolvedOp.from_amendment_op(
         AmendmentOp(
             op_id="replace_5_chapter",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="5",
             target_unit_kind="chapter",
             source_statute="1997/1251",
@@ -4468,7 +4468,7 @@ def test_emit_section_snapshot_skips_container_child_when_label_belongs_to_other
     rop = ResolvedOp.from_amendment_op(
         AmendmentOp(
             op_id="insert_3",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_section="3",
             target_unit_kind="chapter",
             source_statute="2004/543",
@@ -4554,7 +4554,7 @@ def test_emit_section_snapshot_container_replace_repeals_missing_base_sections_u
     rop = ResolvedOp.from_amendment_op(
         AmendmentOp(
             op_id="replace_6_chapter",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="6",
             target_unit_kind="chapter",
             source_statute="2016/519",
@@ -4691,7 +4691,7 @@ def test_emit_section_snapshot_keeps_historic_container_replace_as_replace_and_r
     rop = ResolvedOp.from_amendment_op(
         AmendmentOp(
             op_id="replace_7a_chapter",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="7a",
             target_unit_kind="chapter",
             source_statute="2024/1116",
@@ -4775,7 +4775,7 @@ def test_emit_section_snapshot_keeps_container_child_when_same_label_exists_in_o
     rop = ResolvedOp.from_amendment_op(
         AmendmentOp(
             op_id="replace_6_chapter_keep_1",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="6",
             target_unit_kind="chapter",
             source_statute="2016/519",
@@ -4851,7 +4851,7 @@ def test_emit_section_snapshot_keeps_part_wrapped_container_child_when_timeline_
     rop = ResolvedOp.from_amendment_op(
         AmendmentOp(
             op_id="replace_part_wrapped_6_chapter_keep_1",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="6",
             target_unit_kind="chapter",
             target_part="3",
@@ -4921,7 +4921,7 @@ def test_emit_section_snapshot_anchors_unscoped_subsection_insert_to_prior_timel
     ]
     op = AmendmentOp(
         op_id="insert_145f_sub2",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_section="145f",
         target_unit_kind="section",
         target_paragraph=2,
@@ -5004,7 +5004,7 @@ def test_emit_section_snapshot_prefers_unique_substantive_section_over_repeal_pl
     rop = ResolvedOp.from_amendment_op(
         AmendmentOp(
             op_id="replace_unscoped_8",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="8",
             target_unit_kind="section",
             source_statute="2018/1313",
@@ -5131,7 +5131,7 @@ def test_expired_temporary_section_merge_base_keeps_current_live_section_after_f
         ),
     ]
     op = ResolvedOp.from_amendment_op(
-        _op(op_type="REPLACE", target_section="3", target_paragraph=1),
+        _op(op_type=OpType.REPLACE, target_section="3", target_paragraph=1),
         muutos_ir=None,
         cross_ir=None,
         target_unit_kind="section",
@@ -5232,7 +5232,7 @@ def test_expired_temporary_section_merge_base_case_b_suppressed_when_current_wav
     # Third op in same amendment group (sub:1 item:1 REPLACE) — previous ops
     # already legitimately modified current_live
     op = ResolvedOp.from_amendment_op(
-        _op(op_type="REPLACE", target_section="24", target_paragraph=1, target_item="1"),
+        _op(op_type=OpType.REPLACE, target_section="24", target_paragraph=1, target_item="1"),
         muutos_ir=None,
         cross_ir=None,
         target_unit_kind="section",
@@ -5316,7 +5316,7 @@ def test_expired_temporary_section_merge_base_case_b_fires_when_live_is_temp_sta
         ),
     ]
     op = ResolvedOp.from_amendment_op(
-        _op(op_type="REPLACE", target_section="24", target_paragraph=1, target_item="1"),
+        _op(op_type=OpType.REPLACE, target_section="24", target_paragraph=1, target_item="1"),
         muutos_ir=None,
         cross_ir=None,
         target_unit_kind="section",
@@ -5398,7 +5398,7 @@ def test_apply_whole_section_heading_only_replace_uses_rebased_merge_base() -> N
     # Confirm the rebase fires and disagrees with the live fold (BITE precondition).
     merge_base = _expired_temporary_section_merge_base(
         op=ResolvedOp.from_amendment_op(
-            _op(op_type="REPLACE", target_section="24"),
+            _op(op_type=OpType.REPLACE, target_section="24"),
             muutos_ir=None,
             cross_ir=None,
             target_unit_kind="section",
@@ -5422,7 +5422,7 @@ def test_apply_whole_section_heading_only_replace_uses_rebased_merge_base() -> N
     # Heading-only mixed-sparse REPLACE: 1 subsection each side + a new heading.
     muutos_ir = _sec("24", heading_new, _sub("1", _content("perm body")))
     op = ResolvedOp.from_amendment_op(
-        _op(op_type="REPLACE", target_section="24"),
+        _op(op_type=OpType.REPLACE, target_section="24"),
         muutos_ir=muutos_ir,
         cross_ir=None,
         target_unit_kind="section",
@@ -5508,7 +5508,7 @@ def test_apply_whole_section_replace_emits_temporary_section_rebase_pathology() 
     ]
     muutos_ir = _sec("3", _sub("1", _content("replacement 1")), _sub("2", _content("replacement 2")))
     op = ResolvedOp.from_amendment_op(
-        _op(op_type="REPLACE", target_section="3"),
+        _op(op_type=OpType.REPLACE, target_section="3"),
         muutos_ir=muutos_ir,
         cross_ir=None,
         target_unit_kind="section",
@@ -5572,7 +5572,7 @@ def test_apply_whole_section_insert_consumes_expired_temporary_section_slot() ->
         ),
     ]
     op = ResolvedOp.from_amendment_op(
-        _op(op_type="INSERT", target_section="27", target_chapter="4"),
+        _op(op_type=OpType.INSERT, target_section="27", target_chapter="4"),
         muutos_ir=replacement,
         cross_ir=None,
         target_unit_kind="section",
@@ -5627,7 +5627,7 @@ def test_apply_whole_section_op_declines_item_repeal() -> None:
     )
     state = _make_state(_body(section))
     op = _op(
-        op_type="REPEAL",
+        op_type=OpType.REPEAL,
         target_section="1",
         target_item="2",
         witness_rule_id="fi.repeal_vts_voimaantulo",
@@ -5676,7 +5676,7 @@ def test_apply_whole_section_op_witnesses_suspicious_partial_replace_decline() -
     )
     state = _make_state(_body(master))
     op = ResolvedOp.from_amendment_op(
-        _op(op_type="REPLACE", target_section="5"),
+        _op(op_type=OpType.REPLACE, target_section="5"),
         muutos_ir=amend,
         cross_ir=None,
         target_unit_kind="section",
@@ -5722,7 +5722,7 @@ def test_apply_whole_section_op_clean_replace_stays_quiet() -> None:
     amend = _sec("5", _sub("1", _content("complete new section body text")))
     state = _make_state(_body(master))
     op = ResolvedOp.from_amendment_op(
-        _op(op_type="REPLACE", target_section="5"),
+        _op(op_type=OpType.REPLACE, target_section="5"),
         muutos_ir=amend,
         cross_ir=None,
         target_unit_kind="section",
@@ -5771,7 +5771,7 @@ def test_apply_whole_section_op_crossheading_carrier_does_not_carry_old_heading(
     cross = IRNode(kind=IRNodeKind.CROSS_HEADING, text="Ylijohtajan sijainen")
     state = _make_state(_body(master))
     op = ResolvedOp.from_amendment_op(
-        _op(op_type="REPLACE", target_section="11"),
+        _op(op_type=OpType.REPLACE, target_section="11"),
         muutos_ir=amend,
         cross_ir=None,
         target_unit_kind="section",
@@ -5962,7 +5962,7 @@ class TestResolveSubsectionIndex:
         amend_sub = _sub("3", _content("Lisäksi on soveltuvin osin noudatettava, mitä rikoslain 10 luvussa säädetään."))
         op = AmendmentOp(
             op_id="test_sparse_tail_fragment_replace",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="73",
             target_unit_kind="section",
             target_paragraph=3,
@@ -6019,7 +6019,7 @@ class TestResolveSubsectionIndex:
         amend_sub = _sub("3", _content("Lisäksi on soveltuvin osin noudatettava, mitä rikoslain 10 luvussa säädetään."))
         op = AmendmentOp(
             op_id="test_sparse_tail_fragment_replace_strict",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="73",
             target_unit_kind="section",
             target_paragraph=3,
@@ -6070,7 +6070,7 @@ class TestApplyContainerInsert:
         )
         op = AmendmentOp(
             op_id="insert_chapter_19a_under_new_part",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_unit_kind="chapter",
             target_section="19a",
             source_statute="2019/209",
@@ -6124,7 +6124,7 @@ class TestApplyContainerInsert:
         base_ir = _body()
         op = AmendmentOp(
             op_id="insert_chapter_3a",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_unit_kind="chapter",
             target_section="3a",
             source_statute="2003/1310",
@@ -6199,7 +6199,7 @@ class TestApplyContainerInsert:
         base_ir = state.ir
         op = AmendmentOp(
             op_id="insert_part5_chapter2",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_unit_kind="chapter",
             target_section="2",
             target_part="5",
@@ -6280,7 +6280,7 @@ class TestApplyContainerInsert:
         state = self._dup_chapter_label_state()
         op = AmendmentOp(
             op_id="insert_part5_chapter2",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_unit_kind="chapter",
             target_section="2",
             target_part="5",
@@ -6327,7 +6327,7 @@ class TestApplyContainerInsert:
         state = self._dup_chapter_label_state()
         op = AmendmentOp(
             op_id="insert_part5_chapter2",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_unit_kind="chapter",
             target_section="2",
             target_part="5",
@@ -6381,7 +6381,7 @@ class TestApplyContainerInsert:
         state = self._dup_chapter_label_state()
         op = AmendmentOp(
             op_id="insert_part4_chapter2",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_unit_kind="chapter",
             target_section="2",
             target_part="4",
@@ -6430,7 +6430,7 @@ class TestApplyContainerInsert:
         state = self._dup_chapter_label_state()
         op = AmendmentOp(
             op_id="insert_part5_chapter2",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_unit_kind="chapter",
             target_section="2",
             target_part="5",
@@ -6495,7 +6495,7 @@ class TestApplyContainerInsert:
         )
         op = AmendmentOp(
             op_id="insert_chapter_19a_under_new_part",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_unit_kind="chapter",
             target_section="19a",
             source_statute="2019/209",
@@ -6551,7 +6551,7 @@ class TestApplyContainerInsert:
         base_ir = state.ir
         op = AmendmentOp(
             op_id="insert_part4_chapter2",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_unit_kind="chapter",
             target_section="2",
             target_part="4",
@@ -6647,7 +6647,7 @@ class TestApplyContainerInsert:
         )
         op = AmendmentOp(
             op_id="insert_part5_chapter2",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_unit_kind="chapter",
             target_section="2",
             target_part="5",
@@ -6702,7 +6702,7 @@ class TestApplyContainerInsert:
         )
         op = AmendmentOp(
             op_id="replace_part_2a_chapter_1_heading_fragment",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_unit_kind="chapter",
             target_section="1",
             # Exercise canonical normalization of source-surface Roman+suffix labels.
@@ -6788,7 +6788,7 @@ class TestApplyContainerInsert:
         pathologies: list[SourcePathology] = []
         op = AmendmentOp(
             op_id="insert_chapter_3a_merge",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_unit_kind="chapter",
             target_section="3a",
             source_statute="2003/1310",
@@ -6845,7 +6845,7 @@ class TestApplyContainerInsert:
         pathologies: list[SourcePathology] = []
         op = AmendmentOp(
             op_id="insert_chapter_3a_duplicate_merge",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_unit_kind="chapter",
             target_section="3a",
             source_statute="2003/1310",
@@ -6908,7 +6908,7 @@ class TestApplyContainerInsert:
         pathologies: list[SourcePathology] = []
         op = AmendmentOp(
             op_id="replace_chapter_1_duplicate_fragment",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_unit_kind="chapter",
             target_section="1",
             source_statute="2018/984",
@@ -6973,7 +6973,7 @@ def test_replay_1977_53_section_6_keeps_bank_of_finland_tail() -> None:
     )
     op = AmendmentOp(
         op_id="test_1977_53_section_6_preserve_tail",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="6",
         target_unit_kind="section",
         target_paragraph=1,
@@ -7015,7 +7015,7 @@ def test_apply_container_whole_chapter_replace_keeps_cross_chapter_same_labeled_
     )
     op = AmendmentOp(
         op_id="replace_5_chapter",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="chapter",
         target_section="5",
         source_statute="1997/1251",
@@ -7097,7 +7097,7 @@ class TestContainerPartRomanRepeal:
         )
         return _make_state(_body(part1, part3, part5))
 
-    def _part_op(self, section: str, op_type: OpType = "REPEAL") -> AmendmentOp:
+    def _part_op(self, section: str, op_type: OpType = OpType.REPEAL) -> AmendmentOp:
         return AmendmentOp(
             op_id="test_part_op",
             op_type=op_type,
@@ -7199,7 +7199,7 @@ class TestSameEffectiveContainerRepealShadow:
     def _chapter_repeal_op(self) -> AmendmentOp:
         return AmendmentOp(
             op_id="repeal_chapter_9",
-            op_type="REPEAL",
+            op_type=OpType.REPEAL,
             target_section="9",
             target_unit_kind="chapter",
             source_statute="2013/479",
@@ -7286,7 +7286,7 @@ class TestSameEffectiveContainerRepealShadow:
                 ops=[
                     AmendmentOp(
                         op_id="repeal_chapter_9",
-                        op_type="REPEAL",
+                        op_type=OpType.REPEAL,
                         target_section="9",
                         target_unit_kind="chapter",
                         source_statute="2013/479",
@@ -7316,7 +7316,7 @@ class TestGroupPlanRomanNormalization:
 
         op = AmendmentOp(
             op_id="test",
-            op_type="REPEAL",
+            op_type=OpType.REPEAL,
             target_section="III",
             target_unit_kind="part",
             source_statute="1987/411",
@@ -7333,7 +7333,7 @@ class TestGroupPlanRomanNormalization:
 
         op = AmendmentOp(
             op_id="test",
-            op_type="REPEAL",
+            op_type=OpType.REPEAL,
             target_section="V",
             target_unit_kind="part",
             source_statute="1987/411",
@@ -7347,7 +7347,7 @@ class TestGroupPlanRomanNormalization:
 
         op = AmendmentOp(
             op_id="test",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="3",
             target_unit_kind="part",
             source_statute="1987/411",
@@ -7362,7 +7362,7 @@ class TestGroupPlanRomanNormalization:
 
         op = AmendmentOp(
             op_id="test",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="III",
             target_unit_kind="chapter",
             source_statute="2020/1",
@@ -7379,7 +7379,7 @@ class TestGroupPlanRomanNormalization:
 
         op = AmendmentOp(
             op_id="test",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_section="2",
             target_part="V",
             target_unit_kind="chapter",
@@ -7407,7 +7407,7 @@ def test_apply_part_insert_cross_heading_marker_creates_part_scaffold() -> None:
     )
     op = AmendmentOp(
         op_id="insert_part_5",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_section="V",
         target_unit_kind="part",
         source_statute="2001/1226",
@@ -7451,7 +7451,7 @@ class TestApplySubsectionRepeal:
 
     def test_repeal_synthesizes_placeholder(self):
         state, sec_path, sec = self._make_sec_and_path()
-        op = _op(op_type="REPEAL", target_section="1", target_paragraph=1)
+        op = _op(op_type=OpType.REPEAL, target_section="1", target_paragraph=1)
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
         result = _apply_subsection_repeal(state, op, sec_path, sec, subsecs, _FINLEX_ORACLE, "1 § 1 mom")
         result = _modified(state, result)
@@ -7461,7 +7461,7 @@ class TestApplySubsectionRepeal:
 
     def test_repeal_removes_without_placeholder(self):
         state, sec_path, sec = self._make_sec_and_path()
-        op = _op(op_type="REPEAL", target_section="1", target_paragraph=1)
+        op = _op(op_type=OpType.REPEAL, target_section="1", target_paragraph=1)
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
         result = _apply_subsection_repeal(state, op, sec_path, sec, subsecs, _LEGAL_PIT, "1 § 1 mom")
         result = _modified(state, result)
@@ -7470,14 +7470,14 @@ class TestApplySubsectionRepeal:
 
     def test_repeal_out_of_range_returns_state(self):
         state, sec_path, sec = self._make_sec_and_path()
-        op = _op(op_type="REPEAL", target_section="1", target_paragraph=99)
+        op = _op(op_type=OpType.REPEAL, target_section="1", target_paragraph=99)
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
         result = _apply_subsection_repeal(state, op, sec_path, sec, subsecs, _FINLEX_ORACLE, "1 § 99 mom")
         assert _unchanged(state, result)
 
     def test_not_applicable_for_item_op(self):
         state, sec_path, sec = self._make_sec_and_path()
-        op = _op(op_type="REPEAL", target_section="1", target_paragraph=1, target_item="2")
+        op = _op(op_type=OpType.REPEAL, target_section="1", target_paragraph=1, target_item="2")
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
         result = _apply_subsection_repeal(state, op, sec_path, sec, subsecs, _FINLEX_ORACLE, "1 § 1 mom 2 k")
         assert result is None
@@ -7498,7 +7498,7 @@ class TestApplySubsectionReplace:
 
     def test_replace_subsection(self):
         state, sec_path, sec = self._make_sec_and_path()
-        op = _op(op_type="REPLACE", target_section="1", target_paragraph=1)
+        op = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=1)
         amend_sub = _sub("1", _content("replacement text"))
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
         result = _apply_subsection_replace(
@@ -7536,7 +7536,7 @@ class TestApplySubsectionReplace:
             _sub("1", _intro("New opening:")),
             _sub("2", _para("1", "first item"), _para("2", "second item")),
         )
-        op = _op(op_type="REPLACE", target_section="1", target_paragraph=1)
+        op = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=1)
 
         result = _apply_subsection_replace(
             state,
@@ -7574,7 +7574,7 @@ class TestApplySubsectionReplace:
         sec = state.ir.children[0]
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
         amend_sub = _sub("2", _content("replacement text"))
-        op = _op(op_type="REPLACE", target_section="1", target_paragraph=2)
+        op = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=2)
         pathologies: list[SourcePathology] = []
 
         result = _apply_subsection_replace(
@@ -7621,7 +7621,7 @@ class TestApplySubsectionReplace:
             _sub("3", _content("payload subsection")),
             IRNode(kind=IRNodeKind.OMISSION),
         )
-        op = _op(op_type="REPLACE", target_section="10", target_paragraph=3)
+        op = _op(op_type=OpType.REPLACE, target_section="10", target_paragraph=3)
         pathologies: list[SourcePathology] = []
 
         result = _apply_subsection_replace(
@@ -7685,7 +7685,7 @@ class TestApplySubsectionReplace:
             IRNode(kind=IRNodeKind.OMISSION),
         )
         muutos_ir = _sec("11", amend_sub)
-        op = _op(op_type="REPLACE", target_section="11", target_paragraph=2)
+        op = _op(op_type=OpType.REPLACE, target_section="11", target_paragraph=2)
 
         result = _apply_subsection_replace(
             state,
@@ -7743,7 +7743,7 @@ class TestApplySubsectionReplace:
         )
         muutos_ir = _sec("1a", amend_sub)
         op = _op(
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="1a",
             target_paragraph=2,
             has_exact_bound_payload=True,
@@ -7775,7 +7775,7 @@ class TestApplySubsectionReplace:
 
     def test_not_applicable_for_item_op(self):
         state, sec_path, sec = self._make_sec_and_path()
-        op = _op(op_type="REPLACE", target_section="1", target_paragraph=1, target_item="2")
+        op = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=1, target_item="2")
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
         result = _apply_subsection_replace(
             state, op, sec_path, sec, subsecs, None, None, _FINLEX_ORACLE, "1 § 1 mom 2 k"
@@ -7809,7 +7809,7 @@ def test_apply_op_insert_new_section_declares_part_qualified_event_path() -> Non
         ),
     )
     state = _make_state(_body(part))
-    op = _op(op_type="INSERT", target_section="69a", target_chapter="2")
+    op = _op(op_type=OpType.INSERT, target_section="69a", target_chapter="2")
     mutation_events: List[ApplyMutationEvent] = []
 
     result = apply_op(
@@ -7840,7 +7840,7 @@ def test_apply_op_insert_new_section_declares_part_qualified_event_path() -> Non
 
 def test_apply_op_section_repeal_removes_non_base_insert_even_in_finlex_oracle() -> None:
     state = _make_state(_body(_sec("2a", _sub("1", _content("inserted later")))))
-    op = _op(op_type="REPEAL", target_section="2a")
+    op = _op(op_type=OpType.REPEAL, target_section="2a")
     ctx = _ctx(_body())
     mutation_events: List[ApplyMutationEvent] = []
 
@@ -7885,7 +7885,7 @@ def test_apply_whole_section_replace_moves_unique_same_label_section_into_target
             ),
         )
     )
-    op = _op(op_type="REPLACE", target_section="33", target_chapter="5")
+    op = _op(op_type=OpType.REPLACE, target_section="33", target_chapter="5")
     muutos_ir = _sec("33", _content("new chapter five text"))
     pathologies: list[SourcePathology] = []
 
@@ -7925,7 +7925,7 @@ def test_apply_whole_section_replace_moves_unique_root_section_into_target_chapt
             _sec("22", _content("root chapterless 22")),
         )
     )
-    op = _op(op_type="REPLACE", target_section="22", target_chapter="3")
+    op = _op(op_type=OpType.REPLACE, target_section="22", target_chapter="3")
     muutos_ir = _sec("22", _content("new chapter three text"))
     pathologies: list[SourcePathology] = []
 
@@ -7973,7 +7973,7 @@ def test_scoped_section_replace_consumes_stale_unscoped_root_duplicate() -> None
     )
     state = _make_state(_body(wrapper))
     op = _op(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="15",
         target_chapter="3",
     )
@@ -8056,7 +8056,7 @@ def test_scoped_section_replace_keeps_unscoped_duplicate_when_source_targets_sam
     )
     state = _make_state(_body(wrapper))
     op = _op(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="15",
         target_chapter="3",
     )
@@ -8136,7 +8136,7 @@ def test_scoped_section_replace_keeps_headed_unscoped_same_label_section() -> No
     )
     state = _make_state(_body(wrapper))
     op = _op(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="4",
         target_chapter="6",
     )
@@ -8205,7 +8205,7 @@ def test_apply_whole_section_replace_materializes_inside_existing_chapter_for_mi
             ),
         )
     )
-    op = _op(op_type="REPLACE", target_section="33", target_chapter="5")
+    op = _op(op_type=OpType.REPLACE, target_section="33", target_chapter="5")
     ctx = _ctx(state.ir)
     mutation_events: list[ApplyMutationEvent] = []
 
@@ -8305,7 +8305,7 @@ def test_apply_whole_section_replace_uses_unique_part_wrapped_chapter_scope_with
             )
         )
     )
-    op = _op(op_type="REPLACE", target_section="7", target_chapter="6")
+    op = _op(op_type=OpType.REPLACE, target_section="7", target_chapter="6")
     mutation_events: list[ApplyMutationEvent] = []
 
     result = apply_op(
@@ -8358,7 +8358,7 @@ def test_apply_whole_section_replace_bootstrap_respects_target_part_scope() -> N
             ),
         )
     )
-    op = _op(op_type="REPLACE", target_section="3a", target_chapter="2", target_part="4")
+    op = _op(op_type=OpType.REPLACE, target_section="3a", target_chapter="2", target_part="4")
     muutos_ir = _sec("3a", _content("part 4 chapter 2 replacement"))
     pathologies: list[SourcePathology] = []
 
@@ -8403,7 +8403,7 @@ def test_apply_whole_section_replace_records_missing_bootstrap_parent() -> None:
             ),
         )
     )
-    op = _op(op_type="REPLACE", target_section="3a", target_chapter="2", target_part="4")
+    op = _op(op_type=OpType.REPLACE, target_section="3a", target_chapter="2", target_part="4")
     pathologies: list[SourcePathology] = []
 
     result = _apply_whole_section_op(
@@ -8467,7 +8467,7 @@ def test_apply_whole_section_replace_scaffolds_parent_from_exact_cited_snapshot(
         )
     ]
     op = _op(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="131",
         target_version_statute_id="2014/41",
     )
@@ -8508,7 +8508,7 @@ def test_apply_whole_section_replace_refuses_cited_parent_scaffold_without_exact
         )
     )
     op = _op(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="131",
         target_version_statute_id="2014/41",
     )
@@ -8553,7 +8553,7 @@ def test_apply_whole_section_replace_does_not_synthesize_root_insert_for_missing
             ),
         )
     )
-    op = _op(op_type="REPLACE", target_section="14")
+    op = _op(op_type=OpType.REPLACE, target_section="14")
     ctx = _ctx(state.ir)
     mutation_events: list[ApplyMutationEvent] = []
 
@@ -8604,7 +8604,7 @@ def test_apply_whole_section_insert_moves_unique_same_label_placeholder_into_tar
             ),
         )
     )
-    op = _op(op_type="INSERT", target_section="33", target_chapter="5")
+    op = _op(op_type=OpType.INSERT, target_section="33", target_chapter="5")
     muutos_ir = _sec("33", _content("new chapter five text"))
     pathologies: list[SourcePathology] = []
 
@@ -8644,7 +8644,7 @@ def test_apply_whole_section_insert_moves_unique_root_section_into_target_chapte
             _sec("22", _content("root chapterless 22")),
         )
     )
-    op = _op(op_type="INSERT", target_section="22", target_chapter="3")
+    op = _op(op_type=OpType.INSERT, target_section="22", target_chapter="3")
     muutos_ir = _sec("22", IRNode(kind=IRNodeKind.NUM, text="22 §"), _content("new chapter three text"))
     pathologies: list[SourcePathology] = []
 
@@ -8708,7 +8708,7 @@ def test_apply_whole_section_insert_does_not_rebind_unique_same_label_across_par
             ),
         )
     )
-    op = _op(op_type="INSERT", target_section="2a", target_chapter="1", target_part="6")
+    op = _op(op_type=OpType.INSERT, target_section="2a", target_chapter="1", target_part="6")
     muutos_ir = _sec("2a", _content("part 6 chapter 1 insert"))
 
     result = _apply_whole_section_op(
@@ -8755,7 +8755,7 @@ def test_apply_whole_section_insert_does_not_move_live_unique_section_into_targe
             ),
         )
     )
-    op = _op(op_type="INSERT", target_section="33", target_chapter="5")
+    op = _op(op_type=OpType.INSERT, target_section="33", target_chapter="5")
     muutos_ir = _sec("33", _content("new chapter five text"))
 
     result = _apply_whole_section_op(
@@ -8798,7 +8798,7 @@ def test_apply_whole_section_insert_moves_unique_parent_section_into_letter_suff
         )
     )
     op = _op(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_section="55",
         target_chapter="7c",
         body_chapter_move_from="7",
@@ -8845,7 +8845,7 @@ def test_apply_whole_section_insert_does_not_move_parent_section_without_declare
             ),
         )
     )
-    op = _op(op_type="INSERT", target_section="2a", target_chapter="6b")
+    op = _op(op_type=OpType.INSERT, target_section="2a", target_chapter="6b")
     muutos_ir = _sec("2a", _content("chapter six b native text"))
     pathologies: list[SourcePathology] = []
 
@@ -8887,7 +8887,7 @@ def test_apply_whole_section_insert_into_existing_chapter_emits_pathology() -> N
             )
         )
     )
-    op = _op(op_type="INSERT", target_section="33", target_chapter="5")
+    op = _op(op_type=OpType.INSERT, target_section="33", target_chapter="5")
     muutos_ir = _sec("33", _content("new chapter five text"))
     pathologies: list[SourcePathology] = []
 
@@ -8914,7 +8914,7 @@ def test_apply_whole_section_insert_into_existing_chapter_emits_pathology() -> N
 def test_apply_whole_section_insert_consumes_non_base_root_scaffold_emits_pathology() -> None:
     base_state = _make_state(_body())
     live_state = _make_state(_body(_sec("14", _content("scaffold 14 live text"))))
-    op = _op(op_type="INSERT", target_section="14")
+    op = _op(op_type=OpType.INSERT, target_section="14")
     muutos_ir = _sec("14", _content("new scaffold text"))
     pathologies: list[SourcePathology] = []
 
@@ -8954,7 +8954,7 @@ def test_apply_whole_section_insert_into_new_letter_suffix_chapter_absorbs_trail
         ),
     )
     state = _make_state(_body(wrapper))
-    op = _op(op_type="INSERT", target_section="72d", target_chapter="8a")
+    op = _op(op_type=OpType.INSERT, target_section="72d", target_chapter="8a")
     muutos_ir = _sec("72d", _content("new 72d text"))
     pathologies: list[SourcePathology] = []
 
@@ -8986,7 +8986,7 @@ def test_apply_whole_section_insert_into_new_letter_suffix_chapter_absorbs_trail
 
 def test_apply_whole_section_insert_omission_merge_failure_blocks_raw_replace(monkeypatch: pytest.MonkeyPatch) -> None:
     state = _make_state(_body(_sec("33", _sub("1", _content("live first moment")))))
-    op = _op(op_type="INSERT", target_section="33")
+    op = _op(op_type=OpType.INSERT, target_section="33")
     muutos_ir = _sec(
         "33",
         _sub("1", _content("replacement first moment")),
@@ -9021,7 +9021,7 @@ def test_apply_whole_section_insert_omission_merge_failure_blocks_raw_replace(mo
 
 def test_apply_whole_section_insert_omission_merge_emits_pathology() -> None:
     state = _make_state(_body(_sec("33", _sub("1", _content("live first moment")))))
-    op = _op(op_type="INSERT", target_section="33")
+    op = _op(op_type=OpType.INSERT, target_section="33")
     muutos_ir = _sec(
         "33",
         _sub("1", _content("replacement first moment")),
@@ -9061,7 +9061,7 @@ def test_apply_whole_section_replace_preserves_unstated_live_subsection_tail() -
             )
         )
     )
-    op = _op(op_type="REPLACE", target_section="20")
+    op = _op(op_type=OpType.REPLACE, target_section="20")
     muutos_ir = _sec(
         "20",
         IRNode(kind=IRNodeKind.HEADING, text="Uusi otsikko"),
@@ -9127,7 +9127,7 @@ def test_apply_whole_section_insert_same_label_replace_stamps_exact_tail_policy(
         _sub("1", _content("new subsection 1")),
         _sub("2", _content("new subsection 2")),
     )
-    op = _op(op_type="INSERT", target_section="163", target_chapter="12")
+    op = _op(op_type=OpType.INSERT, target_section="163", target_chapter="12")
     rop = ResolvedOp.from_amendment_op(
         op,
         muutos_ir=payload,
@@ -9177,9 +9177,9 @@ def test_apply_whole_section_replace_relabels_fragmentary_subsections_from_slot_
         _sub("1", _content("new first moment")),
         _sub("2", _intro("new third intro"), _para("2", "new third item 2")),
     )
-    whole = _op(op_type="REPLACE", target_section="9")
-    replace1 = _op(op_type="REPLACE", target_section="9", target_paragraph=1)
-    replace3 = _op(op_type="REPLACE", target_section="9", target_paragraph=3)
+    whole = _op(op_type=OpType.REPLACE, target_section="9")
+    replace1 = _op(op_type=OpType.REPLACE, target_section="9", target_paragraph=1)
+    replace3 = _op(op_type=OpType.REPLACE, target_section="9", target_paragraph=3)
     assignment = SubsectionSlotAssignmentResult(
         subsec_map=SubsectionSlotMap({}),
         sparse_slot_bindings=(
@@ -9259,7 +9259,7 @@ def test_apply_whole_section_replace_preserves_unstated_live_subsections_by_labe
         _sub("1", _content("new first moment")),
         _sub("3", _content("new third moment")),
     )
-    op = _op(op_type="REPLACE", target_section="20")
+    op = _op(op_type=OpType.REPLACE, target_section="20")
     rop = ResolvedOp.from_amendment_op(
         op,
         muutos_ir=payload,
@@ -9316,7 +9316,7 @@ def test_apply_op_skips_unique_global_chapter_fallback_for_move_clause_target() 
             ),
         )
     )
-    op = _op(op_type="REPLACE", target_section="33", target_chapter="5", move_clause_target_unit_kind="chapter")
+    op = _op(op_type=OpType.REPLACE, target_section="33", target_chapter="5", move_clause_target_unit_kind="chapter")
     ctx = _ctx(state.ir)
 
     result = apply_op(
@@ -9348,7 +9348,7 @@ def test_resolve_section_path_with_fallbacks_does_not_rewrite_section_suffix_tar
             )
         )
     )
-    op = _op(op_type="REPEAL", target_section="33a")
+    op = _op(op_type=OpType.REPEAL, target_section="33a")
     rop = ResolvedOp.from_amendment_op(
         op,
         muutos_ir=None,
@@ -9386,7 +9386,7 @@ def test_resolve_section_path_with_fallbacks_typed_path_does_not_reinterpret_sec
             )
         )
     )
-    op = _op(op_type="REPEAL", target_section="33a")
+    op = _op(op_type=OpType.REPEAL, target_section="33a")
     rop = ResolvedOp.from_amendment_op(
         op,
         muutos_ir=None,
@@ -9413,7 +9413,7 @@ def test_resolve_section_path_with_fallbacks_typed_path_does_not_reinterpret_sec
 
 def test_resolve_section_path_with_fallbacks_does_not_reinterpret_real_letter_section_payload() -> None:
     state = _make_state(_body(_sec("33", _sub("1", _para("a", "first item")))))
-    op = _op(op_type="INSERT", target_section="33a")
+    op = _op(op_type=OpType.INSERT, target_section="33a")
     rop = ResolvedOp.from_amendment_op(
         op,
         muutos_ir=None,
@@ -9451,7 +9451,7 @@ def test_resolve_section_path_with_fallbacks_rejects_unique_global_section_in_wr
             )
         )
     )
-    op = _op(op_type="REPLACE", target_section="23", target_chapter="6")
+    op = _op(op_type=OpType.REPLACE, target_section="23", target_chapter="6")
     rop = ResolvedOp.from_amendment_op(
         op,
         muutos_ir=_sec("23", _content("new chapter 6 content")),
@@ -9475,7 +9475,7 @@ def test_resolve_section_path_with_fallbacks_rejects_unique_global_section_in_wr
 
 def test_resolve_section_path_with_fallbacks_rejects_root_level_unique_global_fallback_for_carry_forward_scope() -> None:
     state = _make_state(_body(_sec("23", _sub("1", _content("root-level section")))))
-    op = _op(op_type="REPLACE", target_section="23", target_chapter="6")
+    op = _op(op_type=OpType.REPLACE, target_section="23", target_chapter="6")
     op.scope_provenance_tags = ("chapter_scope_carry_forward",)
     rop = ResolvedOp.from_amendment_op(
         op,
@@ -9524,7 +9524,7 @@ def test_resolve_section_path_with_fallbacks_prefers_unique_substantive_over_rep
             ),
         )
     )
-    op = _op(op_type="REPLACE", target_section="8")
+    op = _op(op_type=OpType.REPLACE, target_section="8")
     rop = ResolvedOp.from_amendment_op(
         op,
         muutos_ir=_sec("8", _content("replacement section payload")),
@@ -9550,7 +9550,7 @@ def test_section_ladder_rung_provenance_scoped_find_and_binding() -> None:
     from lawvm.finland.apply_policy import section_resolver_binding
 
     state = _make_state(_body(_sec("4", _sub("1", _content("plain section")))))
-    op = _op(op_type="REPLACE", target_section="4")
+    op = _op(op_type=OpType.REPLACE, target_section="4")
     rop = ResolvedOp.from_amendment_op(
         op,
         muutos_ir=_sec("4", _content("replacement")),
@@ -9580,7 +9580,7 @@ def test_section_ladder_rung_provenance_not_found_binding() -> None:
     from lawvm.finland.apply_policy import section_resolver_binding
 
     state = _make_state(_body(_sec("4", _sub("1", _content("plain section")))))
-    op = _op(op_type="REPEAL", target_section="99")
+    op = _op(op_type=OpType.REPEAL, target_section="99")
     rop = ResolvedOp.from_amendment_op(
         op,
         muutos_ir=None,
@@ -9627,7 +9627,7 @@ def test_section_ladder_rung_provenance_placeholder_shadow_is_named_widening_fal
             ),
         )
     )
-    op = _op(op_type="REPLACE", target_section="8")
+    op = _op(op_type=OpType.REPLACE, target_section="8")
     rop = ResolvedOp.from_amendment_op(
         op,
         muutos_ir=_sec("8", _content("replacement section payload")),
@@ -9692,7 +9692,7 @@ def test_section_ladder_uncovered_ambiguity_maps_to_ambiguous_binding() -> None:
     from lawvm.finland.apply_policy import section_resolver_binding
     from lawvm.finland.ops import SectionPathResolution
 
-    op = _op(op_type="REPLACE", target_section="7")
+    op = _op(op_type=OpType.REPLACE, target_section="7")
     rop = ResolvedOp.from_amendment_op(
         op,
         muutos_ir=None,
@@ -9725,7 +9725,7 @@ def test_resolve_section_path_with_fallbacks_follows_same_wave_section_migration
             )
         )
     )
-    op = _op(op_type="REPLACE", target_section="6", target_chapter="12", target_paragraph=1)
+    op = _op(op_type=OpType.REPLACE, target_section="6", target_chapter="12", target_paragraph=1)
     rop = ResolvedOp.from_amendment_op(
         op,
         muutos_ir=_sub("1", _content("replacement payload")),
@@ -9789,7 +9789,7 @@ def test_resolve_section_path_with_fallbacks_does_not_pick_one_when_multiple_sub
             ),
         )
     )
-    op = _op(op_type="REPLACE", target_section="8")
+    op = _op(op_type=OpType.REPLACE, target_section="8")
     rop = ResolvedOp.from_amendment_op(
         op,
         muutos_ir=_sec("8", _content("replacement section payload")),
@@ -9829,7 +9829,7 @@ def test_resolve_section_path_with_fallbacks_rejects_unique_global_section_in_wr
             )
         )
     )
-    op = _op(op_type="REPLACE", target_section="23", target_chapter="5")
+    op = _op(op_type=OpType.REPLACE, target_section="23", target_chapter="5")
     op.target_part = "II"
     rop = ResolvedOp.from_amendment_op(
         op,
@@ -9853,7 +9853,7 @@ def test_resolve_section_path_with_fallbacks_rejects_unique_global_section_in_wr
 
 
 def test_resolved_op_exposes_unified_scope_confidence() -> None:
-    op = _op(op_type="REPLACE", target_section="23", target_chapter="6")
+    op = _op(op_type=OpType.REPLACE, target_section="23", target_chapter="6")
     op.scope_provenance_tags = ("chapter_scope_carry_forward",)
     rop = ResolvedOp.from_amendment_op(
         op,
@@ -9872,7 +9872,7 @@ def test_resolved_op_exposes_unified_scope_confidence() -> None:
 
 
 def test_resolved_op_exposes_grouped_part_scope_confidence() -> None:
-    op = _op(op_type="REPLACE", target_section="23", target_chapter="6")
+    op = _op(op_type=OpType.REPLACE, target_section="23", target_chapter="6")
     op.target_part = "III"
     op.scope_provenance_tags = ("grouped_part_scope",)
     rop = ResolvedOp.from_amendment_op(
@@ -9892,7 +9892,7 @@ def test_resolved_op_exposes_grouped_part_scope_confidence() -> None:
 
 
 def test_amendment_op_resolved_scope_confidence_prefers_stored_carrier_over_tags() -> None:
-    op = _op(op_type="REPLACE", target_section="23", target_chapter="7")
+    op = _op(op_type=OpType.REPLACE, target_section="23", target_chapter="7")
     op.scope_provenance_tags = ("chapter_scope_carry_forward",)
     op.scope_confidence = ScopeConfidence(
         tag="chapter_scope_from_explicit_chunk",
@@ -9911,7 +9911,7 @@ def test_amendment_op_resolved_scope_confidence_prefers_stored_carrier_over_tags
 
 
 def test_resolved_op_resolved_scope_confidence_prefers_stored_carrier_over_tags() -> None:
-    op = _op(op_type="REPLACE", target_section="23", target_chapter="6")
+    op = _op(op_type=OpType.REPLACE, target_section="23", target_chapter="6")
     op.scope_provenance_tags = ("chapter_scope_carry_forward",)
     op.scope_confidence = ScopeConfidence(
         tag="chapter_scope_from_explicit_chunk",
@@ -9938,7 +9938,7 @@ def test_resolved_op_resolved_scope_confidence_prefers_stored_carrier_over_tags(
 
 
 def test_resolved_op_stores_projection_scope_confidence_over_runtime_tag_rail() -> None:
-    op = _op(op_type="REPLACE", target_section="23", target_chapter="6")
+    op = _op(op_type=OpType.REPLACE, target_section="23", target_chapter="6")
     op.scope_provenance_tags = ("chapter_scope_carry_forward",)
     op.scope_confidence = ScopeConfidence(
         tag="chapter_scope_from_explicit_chunk",
@@ -9963,7 +9963,7 @@ def test_resolved_op_stores_projection_scope_confidence_over_runtime_tag_rail() 
 
 
 def test_runtime_scope_confidence_for_op_prefers_stored_carrier_for_both_shells() -> None:
-    op = _op(op_type="REPLACE", target_section="23", target_chapter="7")
+    op = _op(op_type=OpType.REPLACE, target_section="23", target_chapter="7")
     op.scope_provenance_tags = ("chapter_scope_carry_forward",)
     op.scope_confidence = ScopeConfidence(
         tag="chapter_scope_from_explicit_chunk",
@@ -9997,7 +9997,7 @@ def test_runtime_scope_confidence_for_op_prefers_stored_carrier_for_both_shells(
 
 
 def test_scope_authority_parity_for_op_reports_runtime_projection_disagreement() -> None:
-    op = _op(op_type="REPLACE", target_section="23", target_chapter="7")
+    op = _op(op_type=OpType.REPLACE, target_section="23", target_chapter="7")
     op.scope_provenance_tags = ("chapter_scope_carry_forward",)
     op.scope_confidence = ScopeConfidence(
         tag="chapter_scope_from_explicit_chunk",
@@ -10034,7 +10034,7 @@ def test_resolve_section_path_with_fallbacks_rejects_unique_global_section_in_wr
             )
         )
     )
-    op = _op(op_type="REPLACE", target_section="23", target_chapter="5")
+    op = _op(op_type=OpType.REPLACE, target_section="23", target_chapter="5")
     op.target_part = "II"
     op.scope_provenance_tags = ("grouped_part_scope",)
     rop = ResolvedOp.from_amendment_op(
@@ -10063,7 +10063,7 @@ def test_apply_op_does_not_rehome_root_level_unique_global_section_for_carry_for
     from lawvm.core.ir import LegalAddress
 
     state = _make_state(_body(_sec("23", _content("root-level section"))))
-    op = _op(op_type="REPLACE", target_section="23", target_chapter="6")
+    op = _op(op_type=OpType.REPLACE, target_section="23", target_chapter="6")
     op.scope_provenance_tags = ("chapter_scope_carry_forward",)
     intent = Replace(
         kind=IntentKind.REPLACE,
@@ -10108,7 +10108,7 @@ def test_resolve_section_path_with_fallbacks_allows_unique_global_descendant_ins
             )
         )
     )
-    op = _op(op_type="INSERT", target_section="159", target_chapter="1", target_paragraph=4)
+    op = _op(op_type=OpType.INSERT, target_section="159", target_chapter="1", target_paragraph=4)
     rop = ResolvedOp.from_amendment_op(
         op,
         muutos_ir=_sub("4", _content("new fourth")),
@@ -10136,7 +10136,7 @@ def test_apply_op_uses_apply_fallback_tag_not_source_pathology_for_live_unique_s
     from lawvm.finland.ops import SectionPathResolution, SectionPathResolutionReason
 
     state = _make_state(_body(_sec("23", _content("old section"))))
-    op = _op(op_type="REPLACE", target_section="23", target_chapter="6")
+    op = _op(op_type=OpType.REPLACE, target_section="23", target_chapter="6")
     op.scope_provenance_tags = ("chapter_scope_carry_forward",)
     intent = Replace(
         kind=IntentKind.REPLACE,
@@ -10188,7 +10188,7 @@ def test_apply_op_emits_event_when_section_resolver_binding_contract_breaks(monk
     from lawvm.core.ir import LegalAddress
 
     state = _make_state(_body(_sec("23", _content("old section"))))
-    op = _op(op_type="REPLACE", target_section="23")
+    op = _op(op_type=OpType.REPLACE, target_section="23")
     intent = Replace(
         kind=IntentKind.REPLACE,
         target=NodeTarget(address=LegalAddress(path=(("section", "23"),))),
@@ -10254,7 +10254,7 @@ def test_apply_op_does_not_rehome_unique_global_section_across_part_for_grouped_
             )
         )
     )
-    op = _op(op_type="REPLACE", target_section="23", target_chapter="5")
+    op = _op(op_type=OpType.REPLACE, target_section="23", target_chapter="5")
     op.target_part = "II"
     op.scope_provenance_tags = ("grouped_part_scope",)
     rop = ResolvedOp.from_amendment_op(
@@ -10326,7 +10326,7 @@ def test_apply_op_emits_shape_loss_pathology_for_sparse_alakohta_replace_merge()
     muutos_ir = _sec("2", amend_sub)
     op = AmendmentOp(
         op_id="test_sparse_alakohta_replace",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="2",
         target_unit_kind="section",
         target_paragraph=1,
@@ -10392,7 +10392,7 @@ def test_apply_op_strict_blocks_sparse_alakohta_replace_merge() -> None:
     muutos_ir = _sec("2", amend_sub)
     op = AmendmentOp(
         op_id="test_sparse_alakohta_replace_strict",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="2",
         target_unit_kind="section",
         target_paragraph=1,
@@ -10420,7 +10420,7 @@ def test_apply_op_strict_blocks_sparse_alakohta_replace_merge() -> None:
 
 def test_apply_op_prefers_slot_assignment_when_amend_sub_ir_is_absent() -> None:
     state = _make_state(_body(_sec("1", _sub("1", _content("original")))))
-    op = _op(op_type="REPLACE", target_section="1", target_paragraph=1)
+    op = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=1)
     amend_sub = _sub("1", _content("replacement via slot assignment"))
     assignment = SubsectionSlotAssignmentResult(
         subsec_map=SubsectionSlotMap({id(op): amend_sub}),
@@ -10457,7 +10457,7 @@ def test_apply_op_prefers_slot_assignment_when_amend_sub_ir_is_absent() -> None:
 
 def test_apply_deterministic_subsection_op_does_not_singleton_fallback_missing_amend_sub_ir() -> None:
     state = _make_state(_body(_sec("1", _sub("1", _content("original")))))
-    op = _op(op_type="REPLACE", target_section="1", target_paragraph=1)
+    op = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=1)
     muutos_ir = _sec("1", _sub("9", _content("under-specified singleton payload")))
 
     result = _apply_deterministic_subsection_op(
@@ -10475,7 +10475,7 @@ def test_apply_deterministic_subsection_op_does_not_singleton_fallback_missing_a
 
 
 def test_classify_subsection_dispatch_failure_item_target_exists() -> None:
-    op = _op(op_type="REPLACE", target_section="1", target_paragraph=1, target_item="2")
+    op = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=1, target_item="2")
     sec = _sec("1", _sub("1", _para("1", "first"), _para("2", "second")))
 
     reason = classify_subsection_dispatch_failure(op, sec)
@@ -10485,7 +10485,7 @@ def test_classify_subsection_dispatch_failure_item_target_exists() -> None:
 
 
 def test_classify_subsection_dispatch_failure_item_label_gap() -> None:
-    op = _op(op_type="REPLACE", target_section="1", target_paragraph=1, target_item="4")
+    op = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=1, target_item="4")
     sec = _sec("1", _sub("1", _para("1", "first"), _para("2", "second")))
 
     reason = classify_subsection_dispatch_failure(op, sec)
@@ -10495,7 +10495,7 @@ def test_classify_subsection_dispatch_failure_item_label_gap() -> None:
 
 
 def test_classify_subsection_dispatch_failure_subsection_target_exists() -> None:
-    op = _op(op_type="REPLACE", target_section="1", target_paragraph=2)
+    op = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=2)
     sec = _sec("1", _sub("1", _content("first")), _sub("2", _content("second")))
 
     reason = classify_subsection_dispatch_failure(op, sec)
@@ -10509,7 +10509,7 @@ def test_normalize_subsection_dispatch_inputs_blocks_singleton_item_rebound_in_s
         _sub("1", _para("1", "first item"), _para("2", "second item")),
     ]
     amend_sub = _sub("3", _para("3", "new third item"))
-    op = _op(op_type="REPLACE", target_section="1", target_paragraph=3)
+    op = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=3)
     rop = _make_rop(op, _make_replace_intent("1", amend_sub), muutos_ir=_sec("1", amend_sub))
     pathologies: list[SourcePathology] = []
 
@@ -10537,7 +10537,7 @@ def test_normalize_subsection_dispatch_inputs_rebounds_unique_bare_item_target()
         _sub("2", _para("2", "second item"), _para("3", "third item")),
     ]
     op = _op(
-        op_type="REPEAL",
+        op_type=OpType.REPEAL,
         target_section="1",
         target_item="2",
         witness_rule_id="fi.repeal_vts_voimaantulo",
@@ -10568,7 +10568,7 @@ def test_normalize_subsection_dispatch_inputs_blocks_unique_bare_item_rebound_in
         _sub("2", _para("2", "second item"), _para("3", "third item")),
     ]
     op = _op(
-        op_type="REPEAL",
+        op_type=OpType.REPEAL,
         target_section="1",
         target_item="2",
         witness_rule_id="fi.repeal_vts_voimaantulo",
@@ -10597,7 +10597,7 @@ def test_normalize_subsection_dispatch_inputs_does_not_rebound_non_repeal_bare_i
         _sub("1", _para("1", "first item")),
         _sub("2", _para("2", "second item"), _para("3", "third item")),
     ]
-    op = _op(op_type="REPLACE", target_section="1", target_item="2")
+    op = _op(op_type=OpType.REPLACE, target_section="1", target_item="2")
     pathologies: list[SourcePathology] = []
 
     normalized_dispatch_op, normalized_rop = _normalize_subsection_dispatch_inputs(
@@ -10620,7 +10620,7 @@ def test_normalize_subsection_dispatch_inputs_does_not_rebound_generic_bare_item
         _sub("1", _para("1", "first item")),
         _sub("2", _para("2", "second item"), _para("3", "third item")),
     ]
-    op = _op(op_type="REPEAL", target_section="1", target_item="2", witness_rule_id="fi.section_ref")
+    op = _op(op_type=OpType.REPEAL, target_section="1", target_item="2", witness_rule_id="fi.section_ref")
     pathologies: list[SourcePathology] = []
 
     normalized_dispatch_op, normalized_rop = _normalize_subsection_dispatch_inputs(
@@ -10643,7 +10643,7 @@ def test_normalize_subsection_dispatch_inputs_does_not_rebound_ambiguous_bare_it
         _sub("1", _para("2", "first subsection item")),
         _sub("2", _para("2", "second subsection item")),
     ]
-    op = _op(op_type="REPEAL", target_section="1", target_item="2")
+    op = _op(op_type=OpType.REPEAL, target_section="1", target_item="2")
     pathologies: list[SourcePathology] = []
 
     normalized_dispatch_op, normalized_rop = _normalize_subsection_dispatch_inputs(
@@ -10672,7 +10672,7 @@ def test_apply_op_typed_strict_blocks_singleton_item_rebound() -> None:
     )
     amend_sub = _sub("3", _para("3", "new third item"))
     payload = _sec("1", amend_sub)
-    op = _op(op_type="REPLACE", target_section="1", target_paragraph=3)
+    op = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=3)
     rop = _make_rop(op, _make_replace_intent("1", payload), muutos_ir=payload)
     pathologies: list[SourcePathology] = []
     failed_ops: list[FailedOp] = []
@@ -10717,7 +10717,7 @@ def test_replay_preserves_letter_i_item_target_through_migration_following() -> 
 
 def test_apply_op_prefers_slot_assignment_over_stale_amend_sub_ir() -> None:
     state = _make_state(_body(_sec("1", _sub("1", _content("original")))))
-    op = _op(op_type="REPLACE", target_section="1", target_paragraph=1)
+    op = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=1)
     stale_amend_sub = _sub("1", _content("stale fallback payload"))
     assigned_amend_sub = _sub("1", _content("authoritative slot assignment payload"))
     assignment = SubsectionSlotAssignmentResult(
@@ -10765,7 +10765,7 @@ def test_apply_op_handles_sparse_omission_payload_via_slot_assignment_without_ap
             )
         )
     )
-    op = _op(op_type="REPLACE", target_section="1", target_paragraph=2)
+    op = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=2)
     assigned_amend_sub = _sub("2", _content("replacement via slot assignment"))
     muutos_ir = _sec(
         "1",
@@ -10843,7 +10843,7 @@ def test_apply_op_emits_shape_loss_pathology_for_content_only_row_merge() -> Non
     muutos_ir = _sec("9", amend_sub)
     op = AmendmentOp(
         op_id="test_content_only_row_merge",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="9",
         target_unit_kind="section",
         target_paragraph=1,
@@ -10908,7 +10908,7 @@ def test_apply_op_strict_blocks_content_only_row_merge() -> None:
     muutos_ir = _sec("9", amend_sub)
     op = AmendmentOp(
         op_id="test_content_only_row_merge_strict",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="9",
         target_unit_kind="section",
         target_paragraph=1,
@@ -10960,7 +10960,7 @@ def test_apply_op_emits_item_target_absent_for_unmatched_content_only_row_merge(
     muutos_ir = _sec("9", amend_sub)
     op = AmendmentOp(
         op_id="test_content_only_row_merge_absent",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="9",
         target_unit_kind="section",
         target_paragraph=1,
@@ -11044,7 +11044,7 @@ def test_apply_op_sanitizes_shared_tail_from_sparse_item_replace_payload() -> No
     )
     op = AmendmentOp(
         op_id="test_shared_tail_item_replace",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="10",
         target_unit_kind="section",
         target_paragraph=1,
@@ -11145,7 +11145,7 @@ def test_apply_op_strict_blocks_shared_tail_item_replace_sanitize() -> None:
     )
     op = AmendmentOp(
         op_id="test_shared_tail_item_replace_strict",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="10",
         target_unit_kind="section",
         target_paragraph=1,
@@ -11173,7 +11173,7 @@ def test_apply_op_strict_blocks_shared_tail_item_replace_sanitize() -> None:
 
 def test_apply_op_emits_failed_mutation_event_for_missing_section() -> None:
     state = _make_state(_body())
-    op = _op(op_type="REPEAL", target_section="999")
+    op = _op(op_type=OpType.REPEAL, target_section="999")
     mutation_events: List[ApplyMutationEvent] = []
 
     result = apply_op(
@@ -11193,14 +11193,14 @@ def test_apply_op_emits_failed_mutation_event_for_missing_section() -> None:
 
     def test_not_applicable_for_repeal(self):
         state, sec_path, sec = self._make_sec_and_path()
-        op = _op(op_type="REPEAL", target_section="1", target_paragraph=1)
+        op = _op(op_type=OpType.REPEAL, target_section="1", target_paragraph=1)
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
         result = _apply_subsection_replace(state, op, sec_path, sec, subsecs, None, None, _FINLEX_ORACLE, "1 § 1 mom")
         assert result is None
 
     def test_no_amend_sub_returns_none(self):
         state, sec_path, sec = self._make_sec_and_path()
-        op = _op(op_type="REPLACE", target_section="1", target_paragraph=1)
+        op = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=1)
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
         result = _apply_subsection_replace(state, op, sec_path, sec, subsecs, None, None, _FINLEX_ORACLE, "1 § 1 mom")
         assert result is None
@@ -11217,7 +11217,7 @@ class TestApplySubsectionInsert:
         body = _body(sec)
         state = _make_state(body)
         sec_path = [("section", "1")]
-        op = _op(op_type="INSERT", target_section="1", target_paragraph=2)
+        op = _op(op_type=OpType.INSERT, target_section="1", target_paragraph=2)
         amend_sub = _sub("2", _content("new subsection"))
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
         result = _apply_subsection_insert(state, op, sec_path, sec, subsecs, amend_sub, "1 § ins 2 mom")
@@ -11233,7 +11233,7 @@ class TestApplySubsectionInsert:
         body = _body(sec)
         state = _make_state(body)
         sec_path = [("section", "4")]
-        op = _op(op_type="INSERT", target_section="4", target_paragraph=1)
+        op = _op(op_type=OpType.INSERT, target_section="4", target_paragraph=1)
         amend_sub = _sub("1", _content("new first"))
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
         pathologies: list[SourcePathology] = []
@@ -11264,7 +11264,7 @@ class TestApplySubsectionInsert:
         body = _body(sec)
         state = _make_state(body)
         sec_path = [("section", "4")]
-        op = _op(op_type="INSERT", target_section="4", target_paragraph=1)
+        op = _op(op_type=OpType.INSERT, target_section="4", target_paragraph=1)
         amend_sub = _sub("1", _content("same text"))
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
 
@@ -11286,7 +11286,7 @@ class TestApplySubsectionInsert:
         body = _body(sec)
         state = _make_state(body)
         sec_path = [("section", "3")]
-        op = _op(op_type="INSERT", target_section="3", target_paragraph=2)
+        op = _op(op_type=OpType.INSERT, target_section="3", target_paragraph=2)
         op.op_id = "routed_duplicate_slot"
         amend_sub = _sub("2", _content("shared text"))
         slots = SubsectionSlotMap()
@@ -11329,7 +11329,7 @@ class TestApplySubsectionInsert:
         body = _body(sec)
         state = _make_state(body)
         sec_path = [("section", "1")]
-        op = _op(op_type="INSERT", target_section="1", target_paragraph=2)
+        op = _op(op_type=OpType.INSERT, target_section="1", target_paragraph=2)
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
         result = _apply_subsection_insert(state, op, sec_path, sec, subsecs, None, "1 § ins 2 mom")
         assert result is None
@@ -11339,7 +11339,7 @@ class TestApplySubsectionInsert:
         body = _body(sec)
         state = _make_state(body)
         sec_path = [("section", "1")]
-        op = _op(op_type="INSERT", target_section="1", target_paragraph=1, target_item="3")
+        op = _op(op_type=OpType.INSERT, target_section="1", target_paragraph=1, target_item="3")
         amend_sub = _sub("1", _para("3", "new item"))
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
         result = _apply_subsection_insert(state, op, sec_path, sec, subsecs, amend_sub, "1 § ins 1 mom 3 k")
@@ -11369,7 +11369,7 @@ class TestApplySubsectionInsert:
         state = _make_state(body)
         sec_path = [("section", "1")]
         # Mark the op as temporary — dedup guard only applies to temporary ops
-        op = _op(op_type="INSERT", target_section="1", target_paragraph=3, is_temporary=True)
+        op = _op(op_type=OpType.INSERT, target_section="1", target_paragraph=3, is_temporary=True)
         # Second amendment provides new content for subsection 3
         amend_sub = _sub("3", _content("updated temporary text"))
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
@@ -11413,7 +11413,7 @@ class TestApplySubsectionInsert:
         body = _body(sec)
         state = _make_state(body)
         sec_path = [("section", "1")]
-        op = _op(op_type="INSERT", target_section="1", target_paragraph=3, is_temporary=True)
+        op = _op(op_type=OpType.INSERT, target_section="1", target_paragraph=3, is_temporary=True)
         amend_sub = _sub("3", _content("updated temporary text"))
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
         pathologies: list[SourcePathology] = []
@@ -11445,7 +11445,7 @@ class TestApplySubsectionInsert:
         body = _body(sec)
         state = _make_state(body)
         sec_path = [("section", "51")]
-        op = _op(op_type="INSERT", target_section="51", target_paragraph=3)
+        op = _op(op_type=OpType.INSERT, target_section="51", target_paragraph=3)
         amend_sub = _sub("3", _content("new third"))
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
         pathologies: list[SourcePathology] = []
@@ -11491,7 +11491,7 @@ class TestApplySubsectionInsert:
         body = _body(sec)
         state = _make_state(body)
         sec_path = [("section", "1")]
-        op = _op(op_type="INSERT", target_section="1", target_paragraph=1)
+        op = _op(op_type=OpType.INSERT, target_section="1", target_paragraph=1)
         # The merged subsection carries the lawvm_in_place_merge marker — this
         # is what _merge_section_inner_subsection_omission_ir sets when called
         # from the _is_single_subsection_insert_item_shell_ir path.
@@ -11539,7 +11539,7 @@ class TestSubsectionMigrationRebinding:
         state = _make_state(_body(sec))
         sec_path = (("section", "36"),)
         amend_sub = _sub("4", _content("replacement for moved fourth"))
-        op = _op(op_type="REPLACE", target_section="36", target_paragraph=4)
+        op = _op(op_type=OpType.REPLACE, target_section="36", target_paragraph=4)
         op.op_id = "replace_migrated_4"
         slots = SubsectionSlotMap()
         slots.assign(op, amend_sub)
@@ -11596,7 +11596,7 @@ class TestSubsectionMigrationRebinding:
         state = _make_state(_body(sec))
         sec_path = (("section", "36"),)
         amend_sub = _sub("3", _content("new third"))
-        op = _op(op_type="INSERT", target_section="36", target_paragraph=3)
+        op = _op(op_type=OpType.INSERT, target_section="36", target_paragraph=3)
         op.op_id = "insert_new_3"
         slots = SubsectionSlotMap()
         slots.assign(op, amend_sub)
@@ -11641,7 +11641,7 @@ class TestSubsectionMigrationRebinding:
         assert [c.label for c in new_subsecs] == ["1", "2", "3", "4", "5"]
 
     def test_shifted_replace_rebase_does_not_follow_same_wave_migration(self):
-        op = _op(op_type="REPLACE", target_section="53", target_paragraph=6)
+        op = _op(op_type=OpType.REPLACE, target_section="53", target_paragraph=6)
         op.op_id = "shifted_replace_6"
         op = dc_replace(
             op,
@@ -11681,7 +11681,7 @@ class TestSubsectionMigrationRebinding:
         assert "follow_same_wave_migration" not in got.target_guessing_provenance_tags
 
     def test_replaced_renumber_source_rebase_does_not_follow_same_wave_migration(self):
-        op = _op(op_type="REPLACE", target_section="3", target_paragraph=5)
+        op = _op(op_type=OpType.REPLACE, target_section="3", target_paragraph=5)
         op.op_id = "replace_rebased_5"
         op = dc_replace(
             op,
@@ -11740,7 +11740,7 @@ class TestApplyItemRepeal:
 
     def test_repeal_item(self):
         state, sec_path, sec = self._make_sec_with_items()
-        op = _op(op_type="REPEAL", target_section="1", target_paragraph=2, target_item="1")
+        op = _op(op_type=OpType.REPEAL, target_section="1", target_paragraph=2, target_item="1")
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
         result = _apply_item_repeal(state, op, sec_path, sec, subsecs, _LEGAL_PIT, "1 § 2 mom 1 k")
         result = _modified(state, result)
@@ -11753,7 +11753,7 @@ class TestApplyItemRepeal:
 
     def test_repeal_item_not_found_returns_state(self):
         state, sec_path, sec = self._make_sec_with_items()
-        op = _op(op_type="REPEAL", target_section="1", target_paragraph=2, target_item="99")
+        op = _op(op_type=OpType.REPEAL, target_section="1", target_paragraph=2, target_item="99")
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
         result = _apply_item_repeal(state, op, sec_path, sec, subsecs, _LEGAL_PIT, "1 § 2 mom 99 k")
         assert _unchanged(state, result)
@@ -11765,7 +11765,7 @@ class TestApplyItemRepeal:
         (EXIT_REAUDIT_2 V4)
         """
         state, sec_path, sec = self._make_sec_with_items()
-        op = _op(op_type="REPEAL", target_section="1", target_paragraph=2, target_item="99")
+        op = _op(op_type=OpType.REPEAL, target_section="1", target_paragraph=2, target_item="99")
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
         pathologies: list = []
         result = _apply_item_repeal(
@@ -11790,7 +11790,7 @@ class TestApplyItemRepeal:
         absent-anchor witness on the production ledger. (EXIT_REAUDIT_2 V4)
         """
         state, sec_path, sec = self._make_sec_with_items()
-        op = _op(op_type="REPEAL", target_section="1", target_paragraph=2, target_item="1")
+        op = _op(op_type=OpType.REPEAL, target_section="1", target_paragraph=2, target_item="1")
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
         pathologies: list = []
         _apply_item_repeal(
@@ -11807,7 +11807,7 @@ class TestApplyItemRepeal:
 
     def test_not_applicable_for_subsection_repeal(self):
         state, sec_path, sec = self._make_sec_with_items()
-        op = _op(op_type="REPEAL", target_section="1", target_paragraph=2)
+        op = _op(op_type=OpType.REPEAL, target_section="1", target_paragraph=2)
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
         result = _apply_item_repeal(state, op, sec_path, sec, subsecs, _LEGAL_PIT, "1 § 2 mom")
         assert result is None
@@ -11826,7 +11826,7 @@ class TestApplyItemRepeal:
         body = _body(sec)
         state = _make_state(body)
         sec_path = [("section", "2")]
-        op = _op(op_type="REPEAL", target_section="2", target_paragraph=1, target_item="d")
+        op = _op(op_type=OpType.REPEAL, target_section="2", target_paragraph=1, target_item="d")
         op.post_repeal_item_shift_label = "d"
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
 
@@ -11853,7 +11853,7 @@ class TestApplyItemRepeal:
         body = _body(sec)
         state = _make_state(body)
         sec_path = [("section", "10")]
-        op = _op(op_type="REPEAL", target_section="10", target_paragraph=1, target_item="2")
+        op = _op(op_type=OpType.REPEAL, target_section="10", target_paragraph=1, target_item="2")
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
 
         result = _apply_item_repeal(state, op, sec_path, sec, subsecs, _FINLEX_ORACLE, "10 § 1 mom 2 k")
@@ -11891,7 +11891,7 @@ class TestApplyItemRepeal:
         # Step 1: repeal item 15 in official_consolidation mode.
         state = _make_state(body)
         sec_path = [("section", "5")]
-        repeal_op = _op(op_type="REPEAL", target_section="5", target_paragraph=1, target_item="15")
+        repeal_op = _op(op_type=OpType.REPEAL, target_section="5", target_paragraph=1, target_item="15")
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
         state_after_repeal = _apply_item_repeal(state, repeal_op, sec_path, sec, subsecs, _FINLEX_ORACLE, "5 § 1 mom 15 k")
         state_after_repeal = _modified(state, state_after_repeal)
@@ -11908,7 +11908,7 @@ class TestApplyItemRepeal:
         amend_para16 = _para("16", "item 16 text")
         amend_sub = _sub("1", amend_para16)
         muutos_ir = IRNode(kind=IRNodeKind.SECTION, label="5", children=(amend_sub,))
-        insert_op = _op(op_type="INSERT", target_section="5", target_paragraph=1, target_item="16")
+        insert_op = _op(op_type=OpType.INSERT, target_section="5", target_paragraph=1, target_item="16")
 
         # Re-extract the current section state.
         sec2 = next(c for c in state_after_repeal.ir.children if c.kind == IRNodeKind.SECTION)
@@ -11964,7 +11964,7 @@ class TestApplyItemRepeal:
 
         # Step 1: repeal item 16.
         state = _make_state(body)
-        repeal16_op = _op(op_type="REPEAL", target_section="5", target_paragraph=1, target_item="16")
+        repeal16_op = _op(op_type=OpType.REPEAL, target_section="5", target_paragraph=1, target_item="16")
         sec_node = next(c for c in state.ir.children if c.kind == IRNodeKind.SECTION)
         subsecs = [c for c in sec_node.children if c.kind == IRNodeKind.SUBSECTION]
         state = _modified(state, _apply_item_repeal(
@@ -11972,7 +11972,7 @@ class TestApplyItemRepeal:
         ))
 
         # Step 2: repeal item 15.
-        repeal15_op = _op(op_type="REPEAL", target_section="5", target_paragraph=1, target_item="15")
+        repeal15_op = _op(op_type=OpType.REPEAL, target_section="5", target_paragraph=1, target_item="15")
         sec_node = next(c for c in state.ir.children if c.kind == IRNodeKind.SECTION)
         subsecs = [c for c in sec_node.children if c.kind == IRNodeKind.SUBSECTION]
         state = _modified(state, _apply_item_repeal(
@@ -11992,7 +11992,7 @@ class TestApplyItemRepeal:
         amend_para16_new = _para("16", "item 16 new text")
         amend_sub = _sub("1", amend_para16_new)
         muutos_ir = IRNode(kind=IRNodeKind.SECTION, label="5", children=(amend_sub,))
-        insert16_op = _op(op_type="INSERT", target_section="5", target_paragraph=1, target_item="16")
+        insert16_op = _op(op_type=OpType.INSERT, target_section="5", target_paragraph=1, target_item="16")
 
         sec_node = next(c for c in state.ir.children if c.kind == IRNodeKind.SECTION)
         subsecs = [c for c in sec_node.children if c.kind == IRNodeKind.SUBSECTION]
@@ -12048,7 +12048,7 @@ class TestApplyItemReplace:
 
     def test_replace_item(self):
         state, sec_path, sec = self._make_sec_with_items()
-        op = _op(op_type="REPLACE", target_section="1", target_paragraph=1, target_item="2")
+        op = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=1, target_item="2")
         amend_sub = _sub("1", _para("2", "updated second item"))
         muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
@@ -12081,7 +12081,7 @@ class TestApplyItemReplace:
         amend_sub = _sub("1", unlabelled_payload)
         muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
-        op = _op(op_type="REPLACE", target_section="1", target_paragraph=1, target_item="7")
+        op = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=1, target_item="7")
 
         result = _apply_item_replace(state, op, sec_path, sec, subsecs, amend_sub, muutos_ir, "1 § 1 mom 7 k")
         result = _modified(state, result)
@@ -12115,7 +12115,7 @@ class TestApplyItemReplace:
         sec_path = (("section", "1"),)
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
 
-        op_a = _op(op_type="REPLACE", target_section="1", target_paragraph=1, target_item="a")
+        op_a = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=1, target_item="a")
         amend_a = _sub("1", _para("a", "updated first item"))
         muutos_a = IRNode(kind=IRNodeKind.SECTION, children=(amend_a,))
         result = _apply_item_replace(state, op_a, sec_path, sec, subsecs, amend_a, muutos_a, "1 § 1 mom a k")
@@ -12131,7 +12131,7 @@ class TestApplyItemReplace:
         assert "updated first item" in irnode_to_text(para1)
 
         # 'e' → digit 5 on the same digit-labelled list.
-        op_e = _op(op_type="REPLACE", target_section="1", target_paragraph=1, target_item="e")
+        op_e = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=1, target_item="e")
         amend_e = _sub("1", _para("e", "updated fifth item"))
         muutos_e = IRNode(kind=IRNodeKind.SECTION, children=(amend_e,))
         result_e = _apply_item_replace(state, op_e, sec_path, sec, subsecs, amend_e, muutos_e, "1 § 1 mom e k")
@@ -12162,7 +12162,7 @@ class TestApplyItemReplace:
         sec_path = (("section", "1"),)
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
 
-        op_e = _op(op_type="REPLACE", target_section="1", target_paragraph=1, target_item="e")
+        op_e = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=1, target_item="e")
         amend_e = _sub("1", _para("e", "updated fifth item"))
         muutos_e = IRNode(kind=IRNodeKind.SECTION, children=(amend_e,))
         pathologies: list = []
@@ -12190,7 +12190,7 @@ class TestApplyItemReplace:
         NOT emit a positional-rebind witness. (EXIT_REAUDIT_2 V5)
         """
         state, sec_path, sec = self._make_sec_with_items()
-        op = _op(op_type="REPLACE", target_section="1", target_paragraph=1, target_item="2")
+        op = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=1, target_item="2")
         amend_sub = _sub("1", _para("2", "updated second item"))
         muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
@@ -12225,7 +12225,7 @@ class TestApplyItemReplace:
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
 
         # Target 'b' (ordinal 2) must NOT silently rebind onto digit '2'.
-        op = _op(op_type="REPLACE", target_section="1", target_paragraph=1, target_item="b")
+        op = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=1, target_item="b")
         amend_sub = _sub("1", _para("b", "should not land on digit 2"))
         muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
         result = _apply_item_replace(state, op, sec_path, sec, subsecs, amend_sub, muutos_ir, "1 § 1 mom b k")
@@ -12244,7 +12244,7 @@ class TestApplyItemReplace:
         state = _make_state(_body(sec))
         sec_path = (("section", "1"),)
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
-        op = _op(op_type="REPLACE", target_section="1", target_paragraph=1, target_item="e")
+        op = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=1, target_item="e")
         amend_sub = _sub("1", _para("e", "fifth"))
         muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
         result = _apply_item_replace(state, op, sec_path, sec, subsecs, amend_sub, muutos_ir, "1 § 1 mom e k")
@@ -12258,7 +12258,7 @@ class TestApplyItemReplace:
         )
         state = _make_state(_body(sec))
         sec_path = (("section", "1"),)
-        op = _op(op_type="REPLACE", target_section="1", target_paragraph=1, target_item="3")
+        op = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=1, target_item="3")
         amend_sub = _sub("1", _para("3", "updated third item"))
         muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
@@ -12293,7 +12293,7 @@ class TestApplyItemReplace:
         body = _body(sec)
         state = _make_state(body)
         sec_path = (("section", "1"),)
-        op = _op(op_type="REPLACE", target_section="1", target_paragraph=1, target_item="2")
+        op = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=1, target_item="2")
         amend_sub = _sub("1", _para("2", "replacement should not jump"))
         muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
@@ -12321,7 +12321,7 @@ class TestApplyItemReplace:
         body = _body(sec)
         state = _make_state(body)
         sec_path = (("section", "1"),)
-        op = _op(op_type="REPLACE", target_section="1", target_paragraph=1, target_item="2")
+        op = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=1, target_item="2")
         amend_sub = _sub("1", _para("2", "updated nominal target item"))
         muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
@@ -12346,7 +12346,7 @@ class TestApplyItemReplace:
         body = _body(sec)
         state = _make_state(body)
         sec_path = (("section", "1"),)
-        op = _op(op_type="REPLACE", target_section="1", target_paragraph=1, target_item="2")
+        op = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=1, target_item="2")
         amend_sub = _sub("1", _para("2", "inserted local item two"))
         muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
@@ -12367,14 +12367,14 @@ class TestApplyItemReplace:
 
     def test_not_applicable_for_subsection_op(self):
         state, sec_path, sec = self._make_sec_with_items()
-        op = _op(op_type="REPLACE", target_section="1", target_paragraph=1)
+        op = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=1)
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
         result = _apply_item_replace(state, op, sec_path, sec, subsecs, None, None, "1 § 1 mom")
         assert result is None
 
     def test_not_applicable_for_repeal(self):
         state, sec_path, sec = self._make_sec_with_items()
-        op = _op(op_type="REPEAL", target_section="1", target_paragraph=1, target_item="1")
+        op = _op(op_type=OpType.REPEAL, target_section="1", target_paragraph=1, target_item="1")
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
         result = _apply_item_replace(state, op, sec_path, sec, subsecs, None, None, "1 § 1 mom 1 k")
         assert result is None
@@ -12410,7 +12410,7 @@ class TestApplyItemReplace:
         state = _make_state(body)
         sec_path = [("section", "2")]
 
-        op = _op(op_type="REPLACE", target_section="2", target_paragraph=1, target_item="4")
+        op = _op(op_type=OpType.REPLACE, target_section="2", target_paragraph=1, target_item="4")
         muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
         pathologies: list[SourcePathology] = []
@@ -12468,7 +12468,7 @@ class TestApplyItemReplace:
         state = _make_state(body)
         sec_path = [("section", "2")]
 
-        op = _op(op_type="REPLACE", target_section="2", target_paragraph=1, target_item="4")
+        op = _op(op_type=OpType.REPLACE, target_section="2", target_paragraph=1, target_item="4")
         muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
         pathologies: list[SourcePathology] = []
@@ -12519,7 +12519,7 @@ class TestApplyItemReplace:
         state = _make_state(body)
         sec_path = [("section", "5")]
 
-        op = _op(op_type="REPLACE", target_section="5", target_paragraph=1, target_item="3")
+        op = _op(op_type=OpType.REPLACE, target_section="5", target_paragraph=1, target_item="3")
         muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
 
@@ -12559,7 +12559,7 @@ class TestApplyItemReplace:
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
         pathologies: list[SourcePathology] = []
 
-        op = _op(op_type="REPLACE", target_section="1", target_paragraph=1, target_item="2h")
+        op = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=1, target_item="2h")
         result = _apply_item_replace(
             state,
             op,
@@ -12620,7 +12620,7 @@ class TestApplyItemReplace:
         muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
 
-        op = _op(op_type="REPLACE", target_section="2", target_paragraph=1, target_item="1")
+        op = _op(op_type=OpType.REPLACE, target_section="2", target_paragraph=1, target_item="1")
         result = _apply_item_replace(state, op, sec_path, sec, subsecs, amend_sub, muutos_ir, "2 § 1 mom 1 k")
         result = _modified(state, result)
 
@@ -12654,7 +12654,7 @@ class TestApplyItemReplace:
         )
         amend_sub = IRNode(kind=IRNodeKind.SUBSECTION, label="1", children=(amend_para1,))
         muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
-        op = _op(op_type="REPLACE", target_section="2", target_paragraph=1, target_item="1")
+        op = _op(op_type=OpType.REPLACE, target_section="2", target_paragraph=1, target_item="1")
         pathologies: list[SourcePathology] = []
 
         result = _apply_item_replace(
@@ -12694,7 +12694,7 @@ class TestApplyItemReplace:
         )
         amend_sub = IRNode(kind=IRNodeKind.SUBSECTION, label="1", children=(amend_para1,))
         muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
-        op = _op(op_type="REPLACE", target_section="2", target_paragraph=1, target_item="1", target_special="johd")
+        op = _op(op_type=OpType.REPLACE, target_section="2", target_paragraph=1, target_item="1", target_special="johd")
         pathologies: list[SourcePathology] = []
 
         result = _apply_item_replace(
@@ -12730,7 +12730,7 @@ class TestApplyItemReplace:
         amend_para1 = _para("1", "new item one")
         amend_sub = _sub("1", amend_para1)
         muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
-        op = _op(op_type="REPLACE", target_section="20", target_paragraph=1, target_item="1")
+        op = _op(op_type=OpType.REPLACE, target_section="20", target_paragraph=1, target_item="1")
         pathologies: list[SourcePathology] = []
 
         result = _apply_item_replace(
@@ -12767,7 +12767,7 @@ class TestApplyItemReplace:
         amend_para1 = _para("1", "new item one")
         amend_sub = _sub("1", amend_para1)
         muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
-        op = _op(op_type="REPLACE", target_section="20", target_paragraph=1, target_item="1")
+        op = _op(op_type=OpType.REPLACE, target_section="20", target_paragraph=1, target_item="1")
         pathologies: list[SourcePathology] = []
 
         result = _apply_item_replace(
@@ -12801,7 +12801,7 @@ class TestApplyItemReplace:
         amend_para1 = _para("1", "new item one")
         amend_sub = _sub("1", amend_para1)
         muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
-        op = _op(op_type="INSERT", target_section="20", target_paragraph=1, target_item="1")
+        op = _op(op_type=OpType.INSERT, target_section="20", target_paragraph=1, target_item="1")
         pathologies: list[SourcePathology] = []
 
         result = _apply_item_insert(
@@ -12835,7 +12835,7 @@ class TestApplyItemReplace:
         amend_para1 = _para("1", "new item one")
         amend_sub = _sub("1", amend_para1)
         muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
-        op = _op(op_type="INSERT", target_section="20", target_paragraph=1, target_item="1")
+        op = _op(op_type=OpType.INSERT, target_section="20", target_paragraph=1, target_item="1")
         pathologies: list[SourcePathology] = []
 
         result = _apply_item_insert(
@@ -12866,7 +12866,7 @@ class TestApplyItemReplace:
         state = _make_state(body)
         sec_path = [("section", "20")]
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
-        op = _op(op_type="REPEAL", target_section="20", target_paragraph=1, target_item="1")
+        op = _op(op_type=OpType.REPEAL, target_section="20", target_paragraph=1, target_item="1")
         pathologies: list[SourcePathology] = []
 
         result = _apply_item_repeal(
@@ -12925,7 +12925,7 @@ class TestApplyItemReplace:
         muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
 
-        op = _op(op_type="REPLACE", target_section="2", target_paragraph=1, target_item="4")
+        op = _op(op_type=OpType.REPLACE, target_section="2", target_paragraph=1, target_item="4")
         result = _apply_item_replace(state, op, sec_path, sec, subsecs, amend_sub, muutos_ir, "2 § 1 mom 4 k")
         result = _modified(state, result)
 
@@ -12978,7 +12978,7 @@ class TestApplyItemReplace:
         muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
 
-        op = _op(op_type="REPLACE", target_section="15", target_paragraph=1, target_item="7")
+        op = _op(op_type=OpType.REPLACE, target_section="15", target_paragraph=1, target_item="7")
         result = _apply_item_replace(state, op, sec_path, sec, subsecs, amend_sub, muutos_ir, "15 § 1 mom 7 k")
         result = _modified(state, result)
 
@@ -13098,7 +13098,7 @@ class TestApplyItemReplace:
         state = _make_state(_body(master))
         sec = next(c for c in state.ir.children if c.kind == IRNodeKind.SECTION and c.label == "21")
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
-        op = _op(op_type="INSERT", target_section="21", target_paragraph=1, target_item="7")
+        op = _op(op_type=OpType.INSERT, target_section="21", target_paragraph=1, target_item="7")
         pathologies: list[SourcePathology] = []
 
         result = _apply_item_insert(
@@ -13161,7 +13161,7 @@ class TestApplyItemReplace:
         state = _make_state(_body(master))
         sec = next(c for c in state.ir.children if c.kind == IRNodeKind.SECTION and c.label == "21")
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
-        op = _op(op_type="INSERT", target_section="21", target_paragraph=1, target_item="3")
+        op = _op(op_type=OpType.INSERT, target_section="21", target_paragraph=1, target_item="3")
         pathologies: list[SourcePathology] = []
 
         result = _apply_item_insert(
@@ -13216,7 +13216,7 @@ class TestApplyItemReplace:
         muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
 
-        op = _op(op_type="REPLACE", target_section="21", target_paragraph=1, target_item="7")
+        op = _op(op_type=OpType.REPLACE, target_section="21", target_paragraph=1, target_item="7")
         result = _apply_item_replace(state, op, sec_path, sec, subsecs, amend_sub, muutos_ir, "21 § 1 mom 7 k")
         result = _modified(state, result)
 
@@ -13275,7 +13275,7 @@ class TestApplyItemReplace:
         )
         muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub, standalone_tail, IRNode(kind=IRNodeKind.OMISSION)))
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
-        op = _op(op_type="REPLACE", target_section="87", target_paragraph=1, target_item="4")
+        op = _op(op_type=OpType.REPLACE, target_section="87", target_paragraph=1, target_item="4")
         pathologies: list[SourcePathology] = []
 
         result = _apply_item_replace(
@@ -13336,7 +13336,7 @@ class TestApplyItemReplace:
 
         result = _apply_item_replace(
             state,
-            _op(op_type="REPLACE", target_section="87", target_paragraph=1, target_item="4"),
+            _op(op_type=OpType.REPLACE, target_section="87", target_paragraph=1, target_item="4"),
             [("section", "87")],
             sec,
             [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION],
@@ -13397,7 +13397,7 @@ class TestApplyItemReplace:
 
         result = _apply_item_replace(
             state,
-            _op(op_type="REPLACE", target_section="3", target_paragraph=1, target_item="2"),
+            _op(op_type=OpType.REPLACE, target_section="3", target_paragraph=1, target_item="2"),
             [("section", "3")],
             sec,
             [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION],
@@ -13454,7 +13454,7 @@ class TestApplyItemReplace:
 
         result = _apply_item_replace(
             state,
-            _op(op_type="REPLACE", target_section="21", target_paragraph=1, target_item="7"),
+            _op(op_type=OpType.REPLACE, target_section="21", target_paragraph=1, target_item="7"),
             [("section", "21")],
             sec,
             [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION],
@@ -13502,7 +13502,7 @@ class TestApplyItemReplace:
 
         result = _apply_item_replace(
             state,
-            _op(op_type="REPLACE", target_section="21", target_paragraph=1, target_item="7"),
+            _op(op_type=OpType.REPLACE, target_section="21", target_paragraph=1, target_item="7"),
             [("section", "21")],
             sec,
             [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION],
@@ -13552,7 +13552,7 @@ class TestApplyItemReplace:
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
 
         op = _op(
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="2",
             target_paragraph=1,
             target_item="1",
@@ -13599,7 +13599,7 @@ class TestApplyItemReplace:
         amend_sub = _sub("1", IRNode(kind=IRNodeKind.INTRO, text="new subsection intro:"), amend_para1, IRNode(kind=IRNodeKind.OMISSION))
         muutos_ir = _sec("2", amend_sub)
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
-        op = _op(op_type="REPLACE", target_section="2", target_paragraph=1, target_item="1", target_special="johd")
+        op = _op(op_type=OpType.REPLACE, target_section="2", target_paragraph=1, target_item="1", target_special="johd")
         pathologies: list[SourcePathology] = []
 
         result = _apply_item_replace(
@@ -13652,7 +13652,7 @@ class TestApplyItemReplace:
         amend_sub = _sub("1", IRNode(kind=IRNodeKind.INTRO, text="new subsection intro:"), amend_para1, IRNode(kind=IRNodeKind.OMISSION))
         muutos_ir = _sec("2", amend_sub)
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
-        op = _op(op_type="REPLACE", target_section="2", target_paragraph=1, target_item="1", target_special="johd")
+        op = _op(op_type=OpType.REPLACE, target_section="2", target_paragraph=1, target_item="1", target_special="johd")
 
         result = _apply_item_replace(
             state,
@@ -13699,7 +13699,7 @@ class TestApplyItemReplace:
         amend_sub = _sub("1", IRNode(kind=IRNodeKind.INTRO, text="new subsection intro:"), amend_para1, IRNode(kind=IRNodeKind.OMISSION))
         muutos_ir = _sec("2", amend_sub)
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
-        op = _op(op_type="REPLACE", target_section="2", target_paragraph=1, target_item="1", target_special="johd")
+        op = _op(op_type=OpType.REPLACE, target_section="2", target_paragraph=1, target_item="1", target_special="johd")
 
         result = _apply_item_replace(
             state,
@@ -13864,7 +13864,7 @@ class TestApplyItemInsert:
         body = _body(sec)
         state = _make_state(body)
         sec_path = [("section", "1")]
-        op = _op(op_type="INSERT", target_section="1", target_paragraph=1, target_item="3")
+        op = _op(op_type=OpType.INSERT, target_section="1", target_paragraph=1, target_item="3")
         new_para = _para("3", "new third item")
         amend_sub = _sub("1", new_para)
         muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
@@ -13913,7 +13913,7 @@ class TestApplyItemInsert:
 
         result = _apply_item_insert(
             state,
-            _op(op_type="INSERT", target_section="75", target_paragraph=1, target_item="8"),
+            _op(op_type=OpType.INSERT, target_section="75", target_paragraph=1, target_item="8"),
             [("section", "75")],
             sec,
             [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION],
@@ -13960,7 +13960,7 @@ class TestApplyItemInsert:
 
         result = _apply_item_insert(
             state,
-            _op(op_type="INSERT", target_section="75", target_paragraph=1, target_item="8"),
+            _op(op_type=OpType.INSERT, target_section="75", target_paragraph=1, target_item="8"),
             [("section", "75")],
             sec,
             [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION],
@@ -14014,7 +14014,7 @@ class TestApplyItemInsert:
         )
         muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
-        op = _op(op_type="INSERT", target_section="21", target_paragraph=1, target_item="7")
+        op = _op(op_type=OpType.INSERT, target_section="21", target_paragraph=1, target_item="7")
         pathologies: list[SourcePathology] = []
 
         result = _apply_item_insert(
@@ -14044,7 +14044,7 @@ class TestApplyItemInsert:
         body = _body(sec)
         state = _make_state(body)
         sec_path = [("section", "1")]
-        op = _op(op_type="INSERT", target_section="1", target_paragraph=1, target_item="3")
+        op = _op(op_type=OpType.INSERT, target_section="1", target_paragraph=1, target_item="3")
         amend_sub = _sub("1", _para("3", "new third item"))
         muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
@@ -14079,7 +14079,7 @@ class TestApplyItemInsert:
         body = _body(sec)
         state = _make_state(body)
         sec_path = [("section", "1")]
-        op = _op(op_type="INSERT", target_section="1", target_paragraph=1, target_item="3")
+        op = _op(op_type=OpType.INSERT, target_section="1", target_paragraph=1, target_item="3")
         amend_sub = _sub("1", _para("3", "new third item"))
         muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
@@ -14111,7 +14111,7 @@ class TestApplyItemInsert:
         body = _body(sec)
         state = _make_state(body)
         sec_path = [("section", "1")]
-        op = _op(op_type="INSERT", target_section="1", target_paragraph=1, target_item="2")
+        op = _op(op_type=OpType.INSERT, target_section="1", target_paragraph=1, target_item="2")
         amend_para = _para("2", "inserted second item")
         amend_sub = _sub("1", amend_para)
         muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
@@ -14149,7 +14149,7 @@ class TestApplyItemInsert:
         body = _body(sec)
         state = _make_state(body)
         sec_path = [("section", "1")]
-        op = _op(op_type="INSERT", target_section="1", target_paragraph=1, target_item="2")
+        op = _op(op_type=OpType.INSERT, target_section="1", target_paragraph=1, target_item="2")
         amend_para = _para("2", "inserted second item")
         amend_sub = _sub("1", amend_para)
         muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
@@ -14187,7 +14187,7 @@ class TestApplyItemInsert:
         body = _body(sec)
         state = _make_state(body)
         sec_path = [("section", "2")]
-        op = _op(op_type="INSERT", target_section="2", target_paragraph=1, target_item="4b")
+        op = _op(op_type=OpType.INSERT, target_section="2", target_paragraph=1, target_item="4b")
         amend_para4 = IRNode(
             kind=IRNodeKind.PARAGRAPH,
             label="4",
@@ -14236,7 +14236,7 @@ class TestApplyItemInsert:
         body = _body(sec)
         state = _make_state(body)
         sec_path = [("section", "4")]
-        op = _op(op_type="INSERT", target_section="4", target_paragraph=1, target_item="2h")
+        op = _op(op_type=OpType.INSERT, target_section="4", target_paragraph=1, target_item="2h")
         amend_sub = _sub(
             "1",
             _para("2", "item two:"),
@@ -14281,7 +14281,7 @@ class TestApplyItemInsert:
         body = _body(sec)
         state = _make_state(body)
         sec_path = [("section", "2")]
-        op = _op(op_type="INSERT", target_section="2", target_paragraph=1, target_item="4b")
+        op = _op(op_type=OpType.INSERT, target_section="2", target_paragraph=1, target_item="4b")
         amend_para4 = IRNode(
             kind=IRNodeKind.PARAGRAPH,
             label="4",
@@ -14318,7 +14318,7 @@ class TestApplyItemInsert:
         body = _body(sec)
         state = _make_state(body)
         sec_path = [("section", "1")]
-        op = _op(op_type="INSERT", target_section="1", target_paragraph=2)
+        op = _op(op_type=OpType.INSERT, target_section="1", target_paragraph=2)
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
         result = _apply_item_insert(state, op, sec_path, sec, subsecs, None, None, "1 § ins 2 mom")
         assert result is None
@@ -14337,7 +14337,7 @@ class TestApplyItemInsert:
             IRNode(kind=IRNodeKind.OMISSION),
         )
         muutos_ir = _sec("21", amend_sub)
-        raw_op = _op(op_type="INSERT", target_section="21", target_paragraph=1, target_item="2")
+        raw_op = _op(op_type=OpType.INSERT, target_section="21", target_paragraph=1, target_item="2")
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
         result = _apply_item_insert(state, raw_op, sec_path, sec, subsecs, amend_sub, muutos_ir, "21 § 1 mom 2 k")
         result = _modified(state, result)
@@ -14362,7 +14362,7 @@ class TestApplySpecialTargets:
         body = _body(sec)
         state = _make_state(body)
         sec_path = [("section", "1")]
-        op = _op(op_type="REPLACE", target_section="1", target_special="otsikko")
+        op = _op(op_type=OpType.REPLACE, target_section="1", target_special="otsikko")
         new_heading = IRNode(kind=IRNodeKind.HEADING, text="New heading")
         muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(new_heading,))
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
@@ -14380,7 +14380,7 @@ class TestApplySpecialTargets:
         body = _body(sec)
         state = _make_state(body)
         sec_path = [("section", "1")]
-        op = _op(op_type="REPEAL", target_section="1", target_special="otsikko")
+        op = _op(op_type=OpType.REPEAL, target_section="1", target_special="otsikko")
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
         result = _apply_special_targets(state, op, sec_path, sec, subsecs, None, None, "1 § otsikko")
         result = _modified(state, result)
@@ -14392,7 +14392,7 @@ class TestApplySpecialTargets:
         body = _body(sec)
         state = _make_state(body)
         sec_path = [("section", "1")]
-        op = _op(op_type="REPEAL", target_section="1", target_special="otsikko")
+        op = _op(op_type=OpType.REPEAL, target_section="1", target_special="otsikko")
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
         result = _apply_special_targets(state, op, sec_path, sec, subsecs, None, None, "1 § otsikko")
         assert _unchanged(state, result)
@@ -14406,7 +14406,7 @@ class TestApplySpecialTargets:
         body = _body(sec)
         state = _make_state(body)
         sec_path = [("section", "1")]
-        op = _op(op_type="REPEAL", target_section="1", target_special="otsikko")
+        op = _op(op_type=OpType.REPEAL, target_section="1", target_special="otsikko")
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
         pathologies: list = []
         result = _apply_special_targets(
@@ -14430,7 +14430,7 @@ class TestApplySpecialTargets:
         body = _body(sec)
         state = _make_state(body)
         sec_path = [("section", "1")]
-        op = _op(op_type="REPEAL", target_section="1", target_special="otsikko")
+        op = _op(op_type=OpType.REPEAL, target_section="1", target_special="otsikko")
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
         pathologies: list = []
         _apply_special_targets(
@@ -14448,7 +14448,7 @@ class TestApplySpecialTargets:
         body = _body(sec)
         state = _make_state(body)
         sec_path = [("section", "1")]
-        op = _op(op_type="REPEAL", target_section="1", target_special="johd")
+        op = _op(op_type=OpType.REPEAL, target_section="1", target_special="johd")
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
         pathologies: list = []
         result = _apply_special_targets(
@@ -14470,7 +14470,7 @@ class TestApplySpecialTargets:
         body = _body(sec)
         state = _make_state(body)
         sec_path = [("section", "1")]
-        op = _op(op_type="REPEAL", target_section="1", target_special="johd")
+        op = _op(op_type=OpType.REPEAL, target_section="1", target_special="johd")
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
         pathologies: list = []
         _apply_special_targets(
@@ -14489,7 +14489,7 @@ class TestApplySpecialTargets:
         body = _body(sec)
         state = _make_state(body)
         sec_path = [("section", "1")]
-        op = _op(op_type="REPEAL", target_section="1", target_paragraph=1, target_special="johd")
+        op = _op(op_type=OpType.REPEAL, target_section="1", target_paragraph=1, target_special="johd")
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
         pathologies: list = []
         result = _apply_special_targets(
@@ -14517,7 +14517,7 @@ class TestApplySpecialTargets:
         body = _body(sec)
         state = _make_state(body)
         sec_path = [("section", "1")]
-        op = _op(op_type="REPEAL", target_section="1", target_paragraph=1, target_special="johd")
+        op = _op(op_type=OpType.REPEAL, target_section="1", target_paragraph=1, target_special="johd")
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
         pathologies: list = []
         _apply_special_targets(
@@ -14537,7 +14537,7 @@ class TestApplySpecialTargets:
         body = _body(sec)
         state = _make_state(body)
         sec_path = [("section", "1")]
-        op = _op(op_type="REPEAL", target_section="1", target_paragraph=1, target_special="johd")
+        op = _op(op_type=OpType.REPEAL, target_section="1", target_paragraph=1, target_special="johd")
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
 
         result = _apply_special_targets(state, op, sec_path, sec, subsecs, None, None, "1 § 1 mom johd")
@@ -14559,7 +14559,7 @@ class TestApplySpecialTargets:
         body = _body(sec)
         state = _make_state(body)
         sec_path = [("section", "1")]
-        op = _op(op_type="REPEAL", target_section="1", target_special="johd")
+        op = _op(op_type=OpType.REPEAL, target_section="1", target_special="johd")
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
 
         result = _apply_special_targets(state, op, sec_path, sec, subsecs, None, None, "1 § johd")
@@ -14577,7 +14577,7 @@ class TestApplySpecialTargets:
         body = _body(sec)
         state = _make_state(body)
         sec_path = [("section", "1")]
-        op = _op(op_type="INSERT", target_section="1", target_special="otsikko")
+        op = _op(op_type=OpType.INSERT, target_section="1", target_special="otsikko")
         new_heading = IRNode(kind=IRNodeKind.HEADING, text="Voimaantulo")
         muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(new_heading,))
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
@@ -14600,7 +14600,7 @@ class TestApplySpecialTargets:
         body = _body(sec)
         state = _make_state(body)
         sec_path = [("section", "1")]
-        op = _op(op_type="INSERT", target_section="1", target_special="otsikko")
+        op = _op(op_type=OpType.INSERT, target_section="1", target_special="otsikko")
         new_heading = IRNode(kind=IRNodeKind.HEADING, text="New")
         muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(new_heading,))
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
@@ -14618,7 +14618,7 @@ class TestApplySpecialTargets:
         body = _body(sec)
         state = _make_state(body)
         sec_path = [("section", "1")]
-        op = _op(op_type="REPLACE", target_section="1", target_special="otsikko")
+        op = _op(op_type=OpType.REPLACE, target_section="1", target_special="otsikko")
         new_heading = IRNode(kind=IRNodeKind.HEADING, text="Voimaantulo")
         muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(new_heading,))
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
@@ -14634,7 +14634,7 @@ class TestApplySpecialTargets:
         body = _body(sec)
         state = _make_state(body)
         sec_path = [("section", "1")]
-        op = _op(op_type="REPLACE", target_section="1", target_paragraph=1)
+        op = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=1)
         subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
         result = _apply_special_targets(state, op, sec_path, sec, subsecs, None, None, "1 § 1 mom")
         assert result is None
@@ -14653,7 +14653,7 @@ class TestDispatchIntegration:
         body = _body(sec)
         state = _make_state(body)
         sec_path = (("section", "1"),)
-        op = _op(op_type="REPEAL", target_section="1", target_paragraph=2)
+        op = _op(op_type=OpType.REPEAL, target_section="1", target_paragraph=2)
         result = _apply_deterministic_subsection_op(state, op, sec_path, None, None, None, _LEGAL_PIT, "1 § 2 mom")
         result = _modified(state, result)
         new_sec = next(c for c in result.ir.children if c.kind == IRNodeKind.SECTION)
@@ -14672,7 +14672,7 @@ class TestDispatchIntegration:
         body = _body(sec)
         state = _make_state(body)
         sec_path = (("section", "1"),)
-        op = _op(op_type="REPEAL", target_section="1", target_paragraph=1, target_special="johd")
+        op = _op(op_type=OpType.REPEAL, target_section="1", target_paragraph=1, target_special="johd")
 
         result = _apply_deterministic_subsection_op(state, op, sec_path, None, None, None, _LEGAL_PIT, "1 § 1 mom johd")
         result = _modified(state, result)
@@ -14688,7 +14688,7 @@ class TestDispatchIntegration:
         body = _body(sec)
         state = _make_state(body)
         sec_path = (("section", "1"),)
-        op = _op(op_type="REPLACE", target_section="1", target_paragraph=1)
+        op = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=1)
         amend_sub = _sub("1", _content("replacement"))
         result = _apply_deterministic_subsection_op(state, op, sec_path, None, amend_sub, None, _LEGAL_PIT, "1 § 1 mom")
         result = _modified(state, result)
@@ -14705,7 +14705,7 @@ class TestDispatchIntegration:
         )
         state = _make_state(_body(sec))
         sec_path = (("section", "6"),)
-        op = _op(op_type="INSERT", target_section="6", target_paragraph=2)
+        op = _op(op_type=OpType.INSERT, target_section="6", target_paragraph=2)
         amend_sub = _sub("1", _content("inserted second moment"))
         muutos_ir = _sec(
             "6",
@@ -14742,7 +14742,7 @@ class TestDispatchIntegration:
             ),
         )
         state = _make_state(_body(chapter, sec))
-        op = _op(op_type="INSERT", target_section="22", target_chapter="4", target_special="otsikko")
+        op = _op(op_type=OpType.INSERT, target_section="22", target_chapter="4", target_special="otsikko")
         rop = ResolvedOp.from_amendment_op(
             op,
             muutos_ir=_sec("22", IRNode(kind=IRNodeKind.HEADING, text="Voimaantulo")),
@@ -14766,7 +14766,7 @@ class TestDispatchIntegration:
     def test_typed_chapter_scoped_heading_relabel_rejects_root_level_unique_global_fallback(self):
         sec = _sec("22", _sub("1", _content("Tämä laki tulee voimaan.")))
         state = _make_state(_body(sec))
-        op = _op(op_type="INSERT", target_section="22", target_chapter="4", target_special="otsikko")
+        op = _op(op_type=OpType.INSERT, target_section="22", target_chapter="4", target_special="otsikko")
         op.scope_provenance_tags = ("chapter_scope_carry_forward",)
         rop = ResolvedOp.from_amendment_op(
             op,
@@ -14801,7 +14801,7 @@ class TestDispatchIntegration:
         sec = _sec("22", _sub("1", _content("Tämä laki tulee voimaan.")))
         state = _make_state(_body(chapter, sec))
         sec_path = (("section", "22"),)
-        op = _op(op_type="INSERT", target_section="22", target_chapter="4", target_special="otsikko")
+        op = _op(op_type=OpType.INSERT, target_section="22", target_chapter="4", target_special="otsikko")
         muutos_ir = _sec("22", IRNode(kind=IRNodeKind.HEADING, text="Voimaantulo"))
 
         result = _apply_deterministic_subsection_op(
@@ -14839,7 +14839,7 @@ class TestDispatchIntegration:
         body = _body(sec)
         state = _make_state(body)
         sec_path = (("section", "1"),)
-        op = _op(op_type="INSERT", target_section="1", target_paragraph=1, target_item="3")
+        op = _op(op_type=OpType.INSERT, target_section="1", target_paragraph=1, target_item="3")
         new_para = _para("3", "third")
         amend_sub = _sub("1", new_para)
         result = _apply_deterministic_subsection_op(
@@ -14864,7 +14864,7 @@ class TestDispatchIntegration:
         )
         state = _make_state(_body(sec))
         sec_path = (("section", "2"),)
-        op = _op(op_type="REPLACE", target_section="2", target_paragraph=1, target_item="13")
+        op = _op(op_type=OpType.REPLACE, target_section="2", target_paragraph=1, target_item="13")
         sparse_payload = _sub("2", _content("13) new item 13"))
 
         result = _apply_deterministic_subsection_op(
@@ -14940,7 +14940,7 @@ class TestDispatchIntegration:
             ),
         ]
         op = _op(
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="3",
             target_special="otsikko",
         )
@@ -14976,7 +14976,7 @@ class TestDispatchIntegration:
         body = _body(sec)
         state = _make_state(body)
         sec_path = (("section", "1"),)
-        op = _op(op_type="REPLACE", target_section="1", target_paragraph=1)
+        op = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=1)
         amend_sub = _sub("1", _content("replacement from slot assignment"))
         assignment = SubsectionSlotAssignmentResult(
             subsec_map=SubsectionSlotMap({id(op): amend_sub}),
@@ -15016,7 +15016,7 @@ class TestDispatchIntegration:
         body = _body(sec)
         state = _make_state(body)
         sec_path = (("section", "1"),)
-        op = _op(op_type="REPEAL", target_section="1", target_paragraph=99)
+        op = _op(op_type=OpType.REPEAL, target_section="1", target_paragraph=99)
         target_address = LegalAddress(path=(("section", "1"), ("subsection", "2")))
         intent = Repeal(
             kind=IntentKind.REPEAL,
@@ -15050,7 +15050,7 @@ class TestDispatchIntegration:
         body = _body(sec)
         state = _make_state(body)
         sec_path = (("section", "1"),)
-        raw_op = _op(op_type="REPEAL", target_section="1", target_paragraph=2)
+        raw_op = _op(op_type=OpType.REPEAL, target_section="1", target_paragraph=2)
         normalized_op = dc_replace(raw_op, target_paragraph=1, target_item="2")
 
         result = _apply_deterministic_subsection_op(
@@ -15071,7 +15071,7 @@ class TestDispatchIntegration:
         body = _body(sec)
         state = _make_state(body)
         sec_path = (("section", "44"),)
-        op = _op(op_type="REPLACE", target_section="44", target_paragraph=1)
+        op = _op(op_type=OpType.REPLACE, target_section="44", target_paragraph=1)
         amend_sub = _sub("1", _content("replacement"))
         heading_new = IRNode(kind=IRNodeKind.HEADING, text="Loma ja vanhempainvapaa")
         muutos_ir = _sec("44", heading_new, _sub("1", _content("replacement")))
@@ -15091,7 +15091,7 @@ class TestDispatchIntegration:
         body = _body(sec)
         state = _make_state(body)
         sec_path = (("section", "1"),)
-        op = _op(op_type="REPLACE", target_section="1", target_paragraph=1)
+        op = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=1)
         amend_sub = _sub("1", _content("replacement"))
         muutos_ir = _sec("1", IRNode(kind=IRNodeKind.HEADING, text="Same heading"), amend_sub)
         result = _apply_deterministic_subsection_op(
@@ -15108,7 +15108,7 @@ class TestDispatchIntegration:
         body = _body(sec)
         state = _make_state(body)
         sec_path = (("section", "1"),)
-        op = _op(op_type="REPLACE", target_section="1", target_paragraph=1)
+        op = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=1)
         amend_sub = _sub("1", _content("replacement"))
         heading_new = IRNode(kind=IRNodeKind.HEADING, text="New heading")
         muutos_ir = _sec("1", heading_new, amend_sub)
@@ -15128,7 +15128,7 @@ class TestDispatchIntegration:
         body = _body(sec)
         state = _make_state(body)
         sec_path = (("section", "1"),)
-        op = _op(op_type="REPLACE", target_section="1", target_paragraph=1)
+        op = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=1)
         amend_sub = _sub("1", _content("replacement"))
         result = _apply_deterministic_subsection_op(state, op, sec_path, None, amend_sub, None, _LEGAL_PIT, "1 § 1 mom")
         result = _modified(state, result)
@@ -15143,7 +15143,7 @@ class TestDispatchIntegration:
         body = _body(sec)
         state = _make_state(body)
         sec_path = (("section", "4"),)
-        op = _op(op_type="REPLACE", target_section="4", target_paragraph=1)
+        op = _op(op_type=OpType.REPLACE, target_section="4", target_paragraph=1)
         amend_sub = _sub("1", _content("replacement"))
         cross_heading = IRNode(kind=IRNodeKind.CROSS_HEADING, text="Kustannusten ja toiminnan seuraaminen")
 
@@ -15171,7 +15171,7 @@ class TestDispatchIntegration:
         body = _body(sec)
         state = _make_state(body)
         sec_path = (("section", "31"),)
-        op = _op(op_type="REPLACE", target_section="31", target_paragraph=2)
+        op = _op(op_type=OpType.REPLACE, target_section="31", target_paragraph=2)
         amend_sub = _sub("2", _content("new 2"))
         muutos_ir = _sec(
             "31",
@@ -15264,7 +15264,7 @@ def test_valid_target_path_hint_prefers_rop_scope_over_legacy_op_scope() -> None
         )
     )
     path = (("chapter", "7"), ("section", "73"))
-    op = _op(op_type="REPLACE", target_section="73", target_chapter="8")
+    op = _op(op_type=OpType.REPLACE, target_section="73", target_chapter="8")
     rop = ResolvedOp.from_amendment_op(
         op,
         muutos_ir=None,
@@ -15543,7 +15543,7 @@ def test_typed_insert_subsection_with_carried_section_shell_uses_descendant_disp
         IRNode(kind=IRNodeKind.HEADING, text="Tiedot tiivistelmästä"),
         _sub("1", _content("inserted second moment")),
     )
-    op = _op(op_type="INSERT", target_section="6", target_paragraph=2)
+    op = _op(op_type=OpType.INSERT, target_section="6", target_paragraph=2)
     slot_map = SubsectionSlotMap()
     mapped_payload = next(c for c in payload.children if c.kind == IRNodeKind.SUBSECTION)
     slot_map.assign(op, mapped_payload)
@@ -15614,7 +15614,7 @@ def test_typed_insert_subsection_uses_unique_live_section_path_in_nested_tree() 
         )
     )
     payload = _sec("145f", _sub("2", _content("inserted second moment")))
-    op = _op(op_type="INSERT", target_section="145f", target_paragraph=2)
+    op = _op(op_type=OpType.INSERT, target_section="145f", target_paragraph=2)
     slot_map = SubsectionSlotMap()
     mapped_payload = next(c for c in payload.children if c.kind == IRNodeKind.SUBSECTION)
     slot_map.assign(op, mapped_payload)
@@ -15672,7 +15672,7 @@ def test_resolved_op_preserves_subsection_scope_when_lo_target_names_only_sectio
         payload=None,
         source=OperationSource(statute_id="1973/791"),
     )
-    op = _op(op_type="INSERT", target_section="145f", target_paragraph=2)
+    op = _op(op_type=OpType.INSERT, target_section="145f", target_paragraph=2)
     op.lo = lo
 
     rop = ResolvedOp.from_amendment_op(
@@ -15694,7 +15694,7 @@ def test_resolved_op_preserves_subsection_scope_when_lo_target_names_only_sectio
 def test_typed_repeal_section_emits_mutation_event() -> None:
     """Typed Repeal(NodeTarget/section) path must emit a mutation event."""
     state = _make_state(_body(_sec("5", _sub("1", _content("old text")))))
-    op = _op(op_type="REPEAL", target_section="5")
+    op = _op(op_type=OpType.REPEAL, target_section="5")
     intent = _make_repeal_intent("5")
     rop = _make_rop(op, intent)
     ctx = _ctx(_body())
@@ -15722,7 +15722,7 @@ def test_typed_replace_section_emits_mutation_event() -> None:
     """Typed Replace(NodeTarget/section) path must emit a mutation event."""
     state = _make_state(_body(_sec("3", _sub("1", _content("old")))))
     payload = _sec("3", _sub("1", _content("new")))
-    op = _op(op_type="REPLACE", target_section="3")
+    op = _op(op_type=OpType.REPLACE, target_section="3")
     intent = _make_replace_intent("3", payload)
     rop = _make_rop(op, intent, muutos_ir=payload)
     ctx = _ctx(_body())
@@ -15748,7 +15748,7 @@ def test_typed_replace_section_emits_mutation_event() -> None:
 def test_uncovered_body_replace_declares_recovery_allowance_on_mutation_event() -> None:
     state = _make_state(_body(_sec("3", _sub("1", _content("old")))))
     payload = _sec("3", _sub("1", _content("new")))
-    op = dc_replace(_op(op_type="REPLACE", target_section="3"), uncovered_body_recovery=True)
+    op = dc_replace(_op(op_type=OpType.REPLACE, target_section="3"), uncovered_body_recovery=True)
     intent = _make_replace_intent("3", payload)
     rop = _make_rop(op, intent, muutos_ir=payload)
     ctx = _ctx(_body())
@@ -15800,7 +15800,7 @@ def test_typed_replace_missing_section_materialization_event_uses_target_address
     )
     payload = _sec("73", IRNode(kind=IRNodeKind.NUM, text="73 §"), _content("new text"))
     target_address = LegalAddress(path=(("chapter", "7"), ("section", "73")))
-    op = _op(op_type="REPLACE", target_section="73", target_chapter="7")
+    op = _op(op_type=OpType.REPLACE, target_section="73", target_chapter="7")
     intent = Replace(
         kind=IntentKind.REPLACE,
         target=NodeTarget(address=target_address),
@@ -15854,7 +15854,7 @@ def test_materialization_root_move_declares_recovery_path_allowance() -> None:
         )
     )
     payload = _sec("23", _content("new root-level section"))
-    op = _op(op_type="REPLACE", target_section="23", target_chapter="6")
+    op = _op(op_type=OpType.REPLACE, target_section="23", target_chapter="6")
     intent = _make_replace_intent("23", payload)
     rop = _make_rop(op, intent, muutos_ir=payload)
     allowances = _materialization_root_move_allowances(state, rop, payload, None)
@@ -15891,7 +15891,7 @@ def test_whole_section_move_replace_event_reports_allowed_non_target_touch() -> 
             _sec("23", _content("root-level section")),
         )
     )
-    op = _op(op_type="REPLACE", target_section="23", target_chapter="6")
+    op = _op(op_type=OpType.REPLACE, target_section="23", target_chapter="6")
     rop = ResolvedOp.from_amendment_op(
         op,
         muutos_ir=_sec("23", _content("new root-level section")),
@@ -15973,7 +15973,7 @@ def test_whole_section_move_insert_declares_recovery_path_allowance() -> None:
         )
     )
     payload = _sec("33", _content("new chapter five text"))
-    op = _op(op_type="INSERT", target_section="33", target_chapter="5")
+    op = _op(op_type=OpType.INSERT, target_section="33", target_chapter="5")
     intent = _make_insert_intent("33", payload)
     rop = _make_rop(op, intent, muutos_ir=payload)
 
@@ -16329,7 +16329,7 @@ def test_apply_mutation_accounting_flags_skipped_tree_touch() -> None:
 def test_typed_repeal_missing_section_emits_failed_mutation_event() -> None:
     """Typed Repeal on a missing section emits a failed mutation event."""
     state = _make_state(_body())
-    op = _op(op_type="REPEAL", target_section="999")
+    op = _op(op_type=OpType.REPEAL, target_section="999")
     intent = _make_repeal_intent("999")
     rop = _make_rop(op, intent)
     ctx = _ctx(_body())
@@ -16365,7 +16365,7 @@ def test_typed_repeal_missing_parent_section_emits_skipped_event_with_target_add
 
     state = _make_state(_body())
     target_address = LegalAddress(path=(("section", "5"), ("subsection", "1")))
-    op = _op(op_type="REPEAL", target_section="5", target_paragraph=1)
+    op = _op(op_type=OpType.REPEAL, target_section="5", target_paragraph=1)
     intent = Repeal(
         kind=IntentKind.REPEAL,
         target=NodeTarget(address=target_address),
@@ -16413,7 +16413,7 @@ def test_typed_subsection_repeal_prefers_rop_over_stale_legacy_granularity() -> 
 
     state = _make_state(_body(_sec("5", _sub("1", _content("old text")))))
     target_address = LegalAddress(path=(("section", "5"), ("subsection", "1")))
-    op = _op(op_type="REPEAL", target_section="5", target_paragraph=99)
+    op = _op(op_type=OpType.REPEAL, target_section="5", target_paragraph=99)
     intent = Repeal(
         kind=IntentKind.REPEAL,
         target=NodeTarget(address=target_address),
@@ -16454,7 +16454,7 @@ def test_typed_subsection_repeal_prefers_rop_over_stale_legacy_granularity() -> 
 
 def test_legacy_subsection_replace_event_records_primary_target_touch() -> None:
     state = _make_state(_body(_sec("1", _sub("1", _content("old text")))))
-    op = _op(op_type="REPLACE", target_section="1", target_paragraph=1)
+    op = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=1)
     amend_sub = _sub("1", _content("new text"))
     mutation_events: List[ApplyMutationEvent] = []
 
@@ -16630,7 +16630,7 @@ def test_typed_dispatch_unknown_intent_emits_failed_event() -> None:
         kind: Literal["unknown"] = "unknown"
 
     state = _make_state(_body(_sec("1", _sub("1", _content("text")))))
-    op = _op(op_type="REPLACE", target_section="1")
+    op = _op(op_type=OpType.REPLACE, target_section="1")
     unknown_intent = _UnknownIntent()
     rop = _make_rop(op, cast(Any, unknown_intent))
     ctx = _ctx(_body())
@@ -16670,7 +16670,7 @@ def test_typed_replace_unsupported_target_stops_without_legacy_dispatch() -> Non
 
     state = _make_state(_body(_sec("1", _sub("1", _content("text")))))
     payload = _sec("1", _sub("1", _content("new text")))
-    op = _op(op_type="REPLACE", target_section="1")
+    op = _op(op_type=OpType.REPLACE, target_section="1")
     intent = Replace(
         kind=IntentKind.REPLACE,
         target=NodeTarget(
@@ -16722,7 +16722,7 @@ def test_typed_insert_unsupported_target_stops_without_legacy_dispatch() -> None
 
     state = _make_state(_body(_sec("1", _sub("1", _content("text")))))
     payload = _sec("2", _sub("1", _content("new text")))
-    op = _op(op_type="INSERT", target_section="2")
+    op = _op(op_type=OpType.INSERT, target_section="2")
     intent = Insert(
         kind=IntentKind.INSERT,
         target=NodeTarget(
@@ -16775,7 +16775,7 @@ def test_typed_repeal_unsupported_target_stops_without_legacy_dispatch() -> None
     from lawvm.core.ir import LegalAddress
 
     state = _make_state(_body(_sec("1", _sub("1", _content("text")))))
-    op = _op(op_type="REPEAL", target_section="1")
+    op = _op(op_type=OpType.REPEAL, target_section="1")
     intent = Repeal(
         kind=IntentKind.REPEAL,
         target=NodeTarget(
@@ -16829,7 +16829,7 @@ def test_typed_move_stops_without_legacy_dispatch() -> None:
             IRNode(kind=IRNodeKind.CHAPTER, label="2"),
         )
     )
-    op = _op(op_type="RENUMBER", target_section="1")
+    op = _op(op_type=OpType.RENUMBER, target_section="1")
     intent = Move(
         kind=IntentKind.MOVE,
         source=NodeTarget(
@@ -16891,7 +16891,7 @@ def test_apply_op_fails_loud_when_op_reaches_apply_without_canonical_intent() ->
     # to silently route to legacy dispatch; it must now fail loud so the
     # invariant "every op that reaches apply has a typed intent" is explicit.
     state = _make_state(_body(_sec("1", _sub("1", _content("text")))))
-    op = _op(op_type="REPLACE", target_section="1")
+    op = _op(op_type=OpType.REPLACE, target_section="1")
     rop = ResolvedOp.from_amendment_op(
         op,
         muutos_ir=None,
@@ -16926,7 +16926,7 @@ def test_typed_relabel_unhandled_target_keeps_target_address() -> None:
     from lawvm.core.ir import LegalAddress
 
     state = _make_state(_body(_sec("1", _sub("1", _content("text")))))
-    op = _op(op_type="RENUMBER", target_section="1")
+    op = _op(op_type=OpType.RENUMBER, target_section="1")
     intent = Relabel(
         kind=IntentKind.RELABEL,
         source=NodeTarget(address=LegalAddress(path=(("annex", "1"),))),
@@ -16988,7 +16988,7 @@ def test_typed_container_relabel_prefers_scoped_target_address() -> None:
             ),
         )
     )
-    op = _op(op_type="RENUMBER", target_section="2")
+    op = _op(op_type=OpType.RENUMBER, target_section="2")
     op.target_unit_kind = "chapter"
     intent = Relabel(
         kind=IntentKind.RELABEL,
@@ -17060,7 +17060,7 @@ def test_typed_part_relabel_emits_receipt_derived_migration_allowance() -> None:
             ),
         )
     )
-    op = _op(op_type="RENUMBER", target_section="II")
+    op = _op(op_type=OpType.RENUMBER, target_section="II")
     op.target_unit_kind = "part"
     intent = Relabel(
         kind=IntentKind.RELABEL,
@@ -17120,7 +17120,7 @@ def test_typed_container_dispatch_none_emits_skipped_event_with_target_address()
     payload = IRNode(kind=IRNodeKind.CHAPTER, label="3", children=(IRNode(kind=IRNodeKind.NUM, text="3 luku"),))
     op = AmendmentOp(
         op_id="container_mismatch",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="3",
         target_unit_kind="section",
         source_statute="2020/1",
@@ -17180,7 +17180,7 @@ def test_typed_section_suffix_marker_does_not_authorize_apply_rewrite() -> None:
             )
         )
     )
-    op = _op(op_type="REPEAL", target_section="33a")
+    op = _op(op_type=OpType.REPEAL, target_section="33a")
     intent = _make_repeal_intent("33a")
     rop = _make_rop(op, intent)
     ctx = _ctx(_body())
@@ -17221,7 +17221,7 @@ def test_partial_section_replace_diagnostics_use_typed_uncovered_body_carrier() 
             _para("2", "item 2"),
         ),
     )
-    op = _op(op_type="REPLACE", target_section="1")
+    op = _op(op_type=OpType.REPLACE, target_section="1")
 
     diag = _partial_section_replace_diagnostics_ir(op, master_sec, amend_sec)
 
@@ -17252,7 +17252,7 @@ def test_apply_sparse_item_replace_merge_keeps_hint_empty_and_emits_pathology() 
             )
         )
     )
-    op = _op(op_type="REPLACE", target_section="1")
+    op = _op(op_type=OpType.REPLACE, target_section="1")
     muutos_ir = _sec(
         "1",
         _sub(
@@ -17297,7 +17297,7 @@ def test_container_replace_missing_target_emits_pathology() -> None:
     )
     op = AmendmentOp(
         op_id="replace_missing_chapter",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="chapter",
         target_section="5",
         target_paragraph=2,
@@ -17334,7 +17334,7 @@ def test_container_replace_missing_target_without_child_scope_fails_closed() -> 
     )
     op = AmendmentOp(
         op_id="replace_missing_chapter_body",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="chapter",
         target_section="5",
     )
@@ -17377,7 +17377,7 @@ def test_apply_suspicious_partial_replace_drop_keeps_hint_empty() -> None:
             )
         )
     )
-    op = _op(op_type="REPLACE", target_section="1")
+    op = _op(op_type=OpType.REPLACE, target_section="1")
     muutos_ir = _sec(
         "1",
         _sub(
@@ -17437,7 +17437,7 @@ def test_subsection_repeal_and_replace_target_same_node_in_intro_list_shape() ->
 
     # REPEAL subsection 2 — uses _resolve_subsection_index (already did before fix)
     repeal_state = _make_state(body)
-    repeal_op = _op(op_type="REPEAL", target_section="5", target_paragraph=2)
+    repeal_op = _op(op_type=OpType.REPEAL, target_section="5", target_paragraph=2)
     repeal_result = _apply_subsection_repeal(
         repeal_state, repeal_op, sec_path, sec, subsecs, _FINLEX_ORACLE, "[test] REPEAL 5 § 2 mom"
     )
@@ -17449,7 +17449,7 @@ def test_subsection_repeal_and_replace_target_same_node_in_intro_list_shape() ->
     # REPLACE subsection 2 — now also uses _resolve_subsection_index (the fix)
     replace_sub = _sub("2", _content("Replaced moment"))
     replace_state = _make_state(body)
-    replace_op = _op(op_type="REPLACE", target_section="5", target_paragraph=2)
+    replace_op = _op(op_type=OpType.REPLACE, target_section="5", target_paragraph=2)
     replace_result = _apply_subsection_replace(
         replace_state, replace_op, sec_path, sec, subsecs, replace_sub, None, _FINLEX_ORACLE, "[test] REPLACE 5 § 2 mom"
     )
@@ -17537,7 +17537,7 @@ def test_subsection_repeal_strict_blocks_missing_exact_subsection_label_rebound(
 
     result = _apply_subsection_repeal(
         state,
-        _op(op_type="REPEAL", target_section="20", target_paragraph=1),
+        _op(op_type=OpType.REPEAL, target_section="20", target_paragraph=1),
         sec_path,
         sec,
         subsecs,
@@ -17609,7 +17609,7 @@ def test_subsection_replace_missing_momentti_label_matched_appends() -> None:
     # returns True and the n >= len(subsecs) guard fires, returning None.
     replace_sub = _sub("2", _content("Kalastuskiintiorekisteria pitavat maa- ja metsatalousministerio."))
     state = _make_state(body)
-    op = _op(op_type="REPLACE", target_section="30", target_paragraph=2)
+    op = _op(op_type=OpType.REPLACE, target_section="30", target_paragraph=2)
     result = _apply_subsection_replace(
         state,
         op,
@@ -17653,7 +17653,7 @@ def test_subsection_replace_strict_blocks_append_recovery() -> None:
 
     replace_sub = _sub("2", _content("Kalastuskiintiorekisteria pitavat maa- ja metsatalousministerio."))
     state = _make_state(body)
-    op = _op(op_type="REPLACE", target_section="30", target_paragraph=2)
+    op = _op(op_type=OpType.REPLACE, target_section="30", target_paragraph=2)
     result = _apply_subsection_replace(
         state,
         op,
@@ -17700,7 +17700,7 @@ def test_subsection_replace_missing_sparse_local_label_appends_next_live_moment(
         ),
     )
     state = _make_state(body)
-    op = _op(op_type="REPLACE", target_section="2", target_paragraph=5)
+    op = _op(op_type=OpType.REPLACE, target_section="2", target_paragraph=5)
     result = _apply_subsection_replace(
         state, op, sec_path, sec, subsecs, replace_sub, None, _FINLEX_ORACLE, "2 § 5 mom"
     )
@@ -17752,7 +17752,7 @@ def test_subsection_replace_extracts_predecessor_tail_into_inserted_new_moment()
         IRNode(kind=IRNodeKind.OMISSION),
     )
     state = _make_state(body)
-    op = _op(op_type="REPLACE", target_section="12", target_paragraph=4)
+    op = _op(op_type=OpType.REPLACE, target_section="12", target_paragraph=4)
 
     result = _apply_subsection_replace(
         state,
@@ -17808,7 +17808,7 @@ def test_subsection_replace_does_not_extract_predecessor_tail_duplicate_of_targe
         IRNode(kind=IRNodeKind.OMISSION),
     )
     state = _make_state(body)
-    op = _op(op_type="REPLACE", target_section="10", target_paragraph=2)
+    op = _op(op_type=OpType.REPLACE, target_section="10", target_paragraph=2)
 
     result = _apply_subsection_replace(
         state,
@@ -17853,7 +17853,7 @@ def test_subsection_replace_missing_target_does_not_gap_fill_before_higher_label
 
     replace_sub = _sub("5", _content("Momentti 5."))
     state = _make_state(body)
-    op = _op(op_type="REPLACE", target_section="13", target_paragraph=5)
+    op = _op(op_type=OpType.REPLACE, target_section="13", target_paragraph=5)
 
     result = _apply_subsection_replace(
         state,
@@ -17886,7 +17886,7 @@ def test_subsection_replace_owned_sparse_payload_can_fill_gap_before_higher_labe
 
     replace_sub = _sub("3", _content("Source-owned momentti 3."))
     state = _make_state(body)
-    op = _op(op_type="REPLACE", target_section="31", target_paragraph=3)
+    op = _op(op_type=OpType.REPLACE, target_section="31", target_paragraph=3)
     slot_map = SubsectionSlotMap()
     slot_map.assign(op, replace_sub)
     assignment = SubsectionSlotAssignmentResult(
@@ -17964,7 +17964,7 @@ def test_subsection_replace_owned_sparse_payload_can_fill_gap_before_higher_labe
 
         replace_sub = _sub("2", _content("Momentti 2."))
         state = _make_state(body)
-        op = _op(op_type="REPLACE", target_section="13", target_paragraph=2)
+        op = _op(op_type=OpType.REPLACE, target_section="13", target_paragraph=2)
 
         result = _apply_subsection_replace(
             state,
@@ -17997,7 +17997,7 @@ def test_subsection_replace_reports_absent_target_when_gap_append_is_blocked_by_
 
     replace_sub = _sub("6", _content("Momentti 6."))
     state = _make_state(body)
-    op = _op(op_type="REPLACE", target_section="13", target_paragraph=6)
+    op = _op(op_type=OpType.REPLACE, target_section="13", target_paragraph=6)
 
     result = _apply_subsection_replace(
         state,
@@ -18031,7 +18031,7 @@ def test_subsection_replace_reports_absent_target_when_gap_label_mismatch_blocks
 
     replace_sub = _sub("5", _content("Momentti 5."))
     state = _make_state(body)
-    op = _op(op_type="REPLACE", target_section="13", target_paragraph=6)
+    op = _op(op_type=OpType.REPLACE, target_section="13", target_paragraph=6)
 
     result = _apply_subsection_replace(
         state,
@@ -18064,7 +18064,7 @@ def test_subsection_replace_forced_append_emits_pathology() -> None:
 
     replace_sub = _sub("6", _content("Momentti 6."))
     state = _make_state(body)
-    op = _op(op_type="REPLACE", target_section="13", target_paragraph=6)
+    op = _op(op_type=OpType.REPLACE, target_section="13", target_paragraph=6)
 
     result = _apply_subsection_replace(
         state,
@@ -18104,7 +18104,7 @@ def test_subsection_replace_strict_blocks_forced_append() -> None:
 
     replace_sub = _sub("6", _content("Momentti 6."))
     state = _make_state(body)
-    op = _op(op_type="REPLACE", target_section="13", target_paragraph=6)
+    op = _op(op_type=OpType.REPLACE, target_section="13", target_paragraph=6)
 
     result = _apply_subsection_replace(
         state,
@@ -18134,7 +18134,7 @@ def test_subsection_replace_single_moment_content_only_emits_pathology() -> None
 
     replace_sub = _sub("1", _content("Kalastusluvat myontaa elinvoimakeskus edelleen."))
     state = _make_state(body)
-    op = _op(op_type="REPLACE", target_section="30", target_paragraph=1)
+    op = _op(op_type=OpType.REPLACE, target_section="30", target_paragraph=1)
     result = _apply_subsection_replace(
         state,
         op,
@@ -18170,7 +18170,7 @@ def test_subsection_replace_strict_blocks_standalone_tail_append() -> None:
 
     replace_sub = _sub("1", _content("Kalastusluvat myontaa elinvoimakeskus edelleen."))
     state = _make_state(body)
-    op = _op(op_type="REPLACE", target_section="30", target_paragraph=1)
+    op = _op(op_type=OpType.REPLACE, target_section="30", target_paragraph=1)
     result = _apply_subsection_replace(
         state,
         op,
@@ -18204,7 +18204,7 @@ def test_subsection_replace_prunes_standalone_tail_successor_with_text_witness()
 
     replace_sub = _sub("1", _content("Uusi ensimmäinen virke. Yhteinen jatkolause."))
     state = _make_state(body)
-    op = _op(op_type="REPLACE", target_section="30", target_paragraph=1)
+    op = _op(op_type=OpType.REPLACE, target_section="30", target_paragraph=1)
     result = _apply_subsection_replace(
         state,
         op,
@@ -18242,7 +18242,7 @@ def test_subsection_replace_strict_blocks_standalone_tail_successor_prune() -> N
 
     replace_sub = _sub("1", _content("Uusi ensimmäinen virke. Yhteinen jatkolause."))
     state = _make_state(body)
-    op = _op(op_type="REPLACE", target_section="30", target_paragraph=1)
+    op = _op(op_type=OpType.REPLACE, target_section="30", target_paragraph=1)
     result = _apply_subsection_replace(
         state,
         op,
@@ -18278,7 +18278,7 @@ def test_subsection_replace_emits_pathology_when_omission_merge_falls_back_to_ra
         IRNode(kind=IRNodeKind.OMISSION),
     )
     state = _make_state(body)
-    op = _op(op_type="REPLACE", target_section="30", target_paragraph=1)
+    op = _op(op_type=OpType.REPLACE, target_section="30", target_paragraph=1)
 
     monkeypatch.setattr("lawvm.finland.apply_subsection_ops._merge_intro_only_subsection_replace", lambda *a, **k: None)
     monkeypatch.setattr(
@@ -18332,7 +18332,7 @@ def test_subsection_replace_strict_blocks_omission_merge_fallback(
         IRNode(kind=IRNodeKind.OMISSION),
     )
     state = _make_state(body)
-    op = _op(op_type="REPLACE", target_section="30", target_paragraph=1)
+    op = _op(op_type=OpType.REPLACE, target_section="30", target_paragraph=1)
 
     monkeypatch.setattr("lawvm.finland.apply_subsection_ops._merge_intro_only_subsection_replace", lambda *a, **k: None)
     monkeypatch.setattr(
@@ -18385,7 +18385,7 @@ def test_subsection_replace_promotes_content_only_intro_and_preserves_items() ->
     subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
     replace_sub = _sub("1", _content("Lupaviranomainen voi viran puolesta muuttaa lupapäätöstä, jos:"))
     state = _make_state(body)
-    op = _op(op_type="REPLACE", target_section="20", target_paragraph=2, target_special="johd")
+    op = _op(op_type=OpType.REPLACE, target_section="20", target_paragraph=2, target_special="johd")
     pathologies: list[SourcePathology] = []
 
     result = _apply_special_targets(
@@ -18438,7 +18438,7 @@ def test_johd_replace_replaces_whole_contiguous_prelist_leadin() -> None:
         ),
     )
     state = _make_state(body)
-    op = _op(op_type="REPLACE", target_section="34", target_paragraph=1, target_special="johd")
+    op = _op(op_type=OpType.REPLACE, target_section="34", target_paragraph=1, target_special="johd")
 
     result = _apply_special_targets(
         state,
@@ -18477,7 +18477,7 @@ def test_johd_replace_does_not_fallback_to_section_intro_for_missing_subsection_
     subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
     amend_sub = _sub("1", IRNode(kind=IRNodeKind.INTRO, text="Uusi kohdekohtainen johdanto:"))
     state = _make_state(body)
-    op = _op(op_type="REPLACE", target_section="20", target_paragraph=2, target_special="johd")
+    op = _op(op_type=OpType.REPLACE, target_section="20", target_paragraph=2, target_special="johd")
 
     result = _apply_special_targets(
         state, op, sec_path, sec, subsecs, amend_sub, _sec("20", amend_sub), "20 § 2 mom johd"
@@ -18496,7 +18496,7 @@ def test_johd_replace_without_subsection_target_does_not_widen_to_section_intro(
     subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
     amend_sub = _sub("1", IRNode(kind=IRNodeKind.INTRO, text="Uusi pykälän johdanto."))
     state = _make_state(body)
-    op = _op(op_type="REPLACE", target_section="20", target_special="johd")
+    op = _op(op_type=OpType.REPLACE, target_section="20", target_special="johd")
 
     result = _apply_special_targets(
         state, op, sec_path, sec, subsecs, amend_sub, _sec("20", amend_sub), "20 § johd"
@@ -18516,7 +18516,7 @@ def test_johd_replace_reports_intro_list_shape_rebound_when_carrier_subsection_i
     subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
     amend_sub = _sub("1", IRNode(kind=IRNodeKind.INTRO, text="Uusi kohdekohtainen johdanto:"))
     state = _make_state(body)
-    op = _op(op_type="REPLACE", target_section="20", target_paragraph=1, target_special="johd")
+    op = _op(op_type=OpType.REPLACE, target_section="20", target_paragraph=1, target_special="johd")
     pathologies: list[SourcePathology] = []
 
     result = _apply_special_targets(
@@ -18559,7 +18559,7 @@ def test_johd_replace_rejects_intro_list_shape_rebound_in_strict_mode() -> None:
     subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
     amend_sub = _sub("1", IRNode(kind=IRNodeKind.INTRO, text="Uusi kohdekohtainen johdanto:"))
     state = _make_state(body)
-    op = _op(op_type="REPLACE", target_section="20", target_paragraph=1, target_special="johd")
+    op = _op(op_type=OpType.REPLACE, target_section="20", target_paragraph=1, target_special="johd")
     pathologies: list[SourcePathology] = []
 
     result = _apply_special_targets(
@@ -18591,7 +18591,7 @@ def test_johd_replace_reports_missing_exact_subsection_label_rebound_when_intro_
     subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
     amend_sub = _sub("1", IRNode(kind=IRNodeKind.INTRO, text="Uusi kohdekohtainen johdanto:"))
     state = _make_state(body)
-    op = _op(op_type="REPLACE", target_section="20", target_paragraph=1, target_special="johd")
+    op = _op(op_type=OpType.REPLACE, target_section="20", target_paragraph=1, target_special="johd")
     pathologies: list[SourcePathology] = []
 
     result = _apply_special_targets(
@@ -18621,7 +18621,7 @@ def test_johd_replace_reports_absent_target_when_amend_intro_missing() -> None:
     subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
     amend_sub = _sub("2", _para("1", "plain body only"))
     state = _make_state(body)
-    op = _op(op_type="REPLACE", target_section="20", target_paragraph=2, target_special="johd")
+    op = _op(op_type=OpType.REPLACE, target_section="20", target_paragraph=2, target_special="johd")
     pathologies: list[SourcePathology] = []
 
     result = _apply_special_targets(
@@ -18652,7 +18652,7 @@ def test_johd_replace_accepts_content_carrier_as_live_intro_host() -> None:
     subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
     amend_sub = _sub("2", _intro("Uusi kohdekohtainen johdanto:"))
     state = _make_state(body)
-    op = _op(op_type="REPLACE", target_section="20", target_paragraph=2, target_special="johd")
+    op = _op(op_type=OpType.REPLACE, target_section="20", target_paragraph=2, target_special="johd")
     pathologies: list[SourcePathology] = []
 
     result = _apply_special_targets(
@@ -18692,7 +18692,7 @@ def test_subsection_replace_missing_target_four_does_not_insert_before_existing_
 
     replace_sub = _sub("4", _content("Momentti 4."))
     state = _make_state(body)
-    op = _op(op_type="REPLACE", target_section="13", target_paragraph=4)
+    op = _op(op_type=OpType.REPLACE, target_section="13", target_paragraph=4)
 
     result = _apply_subsection_replace(
         state, op, sec_path, sec, subsecs, replace_sub, None, _FINLEX_ORACLE, "13 § 4 mom"
@@ -18731,7 +18731,7 @@ def test_subsection_replace_exact_bound_payload_drops_stale_unmatched_item_tail(
         IRNode(kind=IRNodeKind.WRAP_UP, text="new wrap-up"),
     )
     state = _make_state(body)
-    op = _op(op_type="REPLACE", target_section="18", target_paragraph=2)
+    op = _op(op_type=OpType.REPLACE, target_section="18", target_paragraph=2)
     op.has_exact_bound_payload = True
 
     result = _apply_subsection_replace(
@@ -18778,7 +18778,7 @@ def test_subsection_replace_without_wrapup_keeps_unmatched_item_tail() -> None:
         _para("5", "new item 5"),
     )
     state = _make_state(body)
-    op = _op(op_type="REPLACE", target_section="18", target_paragraph=2)
+    op = _op(op_type=OpType.REPLACE, target_section="18", target_paragraph=2)
 
     result = _apply_subsection_replace(
         state, op, sec_path, sec, subsecs, amend_sub, _sec("18", amend_sub), _FINLEX_ORACLE, "18 § 2 mom"
@@ -18833,7 +18833,7 @@ class TestKohtaSubsectionFallbackNoDuplicate:
         # amend_sub has label "1" (amendment XML artifact) but targets mom=2
         amend_sub = self._make_content_only_amend_sub("1", "replaced second moment")
         muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
-        op = _op(op_type="REPLACE", target_section="5", target_paragraph=2, target_item="1")
+        op = _op(op_type=OpType.REPLACE, target_section="5", target_paragraph=2, target_item="1")
 
         result = _apply_special_targets(state, op, sec_path, sec, subsecs, amend_sub, muutos_ir, "5 § 2 mom 1 k")
         assert result is None
@@ -18865,7 +18865,7 @@ class TestKohtaSubsectionFallbackNoDuplicate:
         # amend_sub: content-only (no paragraphs), label "1" = same as target
         amend_sub = self._make_content_only_amend_sub("1", "new content-only moment")
         muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
-        op = _op(op_type="INSERT", target_section="3", target_paragraph=1, target_item="3")
+        op = _op(op_type=OpType.INSERT, target_section="3", target_paragraph=1, target_item="3")
 
         result = _apply_special_targets(state, op, sec_path, sec, subsecs, amend_sub, muutos_ir, "3 § 1 mom ins 3 k")
         assert result is None
@@ -18891,7 +18891,7 @@ class TestKohtaSubsectionFallbackNoDuplicate:
         # amend_sub label "1" — wrong label for the mom=2 target
         amend_sub = self._make_content_only_amend_sub("1", "corrected second moment")
         muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
-        op = _op(op_type="REPLACE", target_section="7", target_paragraph=2, target_item="1")
+        op = _op(op_type=OpType.REPLACE, target_section="7", target_paragraph=2, target_item="1")
 
         result = _apply_special_targets(state, op, sec_path, sec, subsecs, amend_sub, muutos_ir, "7 § 2 mom 1 k")
         assert result is None
@@ -18921,7 +18921,7 @@ class TestKohtaSubsectionFallbackNoDuplicate:
         # amend_sub label "2" — different from target subsection "1"
         amend_sub = self._make_content_only_amend_sub("2", "new second moment")
         muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
-        op = _op(op_type="INSERT", target_section="4", target_paragraph=1, target_item="3")
+        op = _op(op_type=OpType.INSERT, target_section="4", target_paragraph=1, target_item="3")
 
         result = _apply_special_targets(state, op, sec_path, sec, subsecs, amend_sub, muutos_ir, "4 § 1 mom ins 3 k")
         assert result is None
@@ -18933,7 +18933,7 @@ def test_item_repeal_does_not_delete_content_only_subsection_when_item_structure
     state = _make_state(body)
     sec_path = [("section", "5")]
     subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
-    op = _op(op_type="REPEAL", target_section="5", target_paragraph=1, target_item="1")
+    op = _op(op_type=OpType.REPEAL, target_section="5", target_paragraph=1, target_item="1")
 
     result = _apply_item_repeal(state, op, sec_path, sec, subsecs, _FINLEX_ORACLE, "5 § 1 mom 1 k repeal")
 
@@ -18949,7 +18949,7 @@ def test_item_replace_does_not_widen_into_content_only_subsection_replace() -> N
     amend_para = _para("1", "New item text")
     amend_sub = _sub("1", _content("Intro."), amend_para)
     muutos_ir = _sec("5", amend_sub)
-    op = _op(op_type="REPLACE", target_section="5", target_paragraph=1, target_item="1")
+    op = _op(op_type=OpType.REPLACE, target_section="5", target_paragraph=1, target_item="1")
 
     result = _apply_item_replace(state, op, sec_path, sec, subsecs, amend_sub, muutos_ir, "5 § 1 mom 1 k replace")
 
@@ -18965,7 +18965,7 @@ def test_item_replace_does_not_append_new_subsection_for_oor_item_target() -> No
     amend_para = _para("1", "Replacement item")
     amend_sub = _sub("2", amend_para)
     muutos_ir = _sec("5", amend_sub)
-    op = _op(op_type="REPLACE", target_section="5", target_paragraph=2, target_item="1")
+    op = _op(op_type=OpType.REPLACE, target_section="5", target_paragraph=2, target_item="1")
 
     result = _apply_item_replace(state, op, sec_path, sec, subsecs, amend_sub, muutos_ir, "5 § 2 mom 1 k replace")
 
@@ -18981,7 +18981,7 @@ def test_item_replace_reports_missing_numeric_anchor_when_exact_recovery_falls_t
     amend_para = _para("3", "Replacement item three")
     amend_sub = _sub("1", amend_para)
     muutos_ir = _sec("5", amend_sub)
-    op = _op(op_type="REPLACE", target_section="5", target_paragraph=1, target_item="3")
+    op = _op(op_type=OpType.REPLACE, target_section="5", target_paragraph=1, target_item="3")
     pathologies: list[SourcePathology] = []
 
     result = _apply_item_replace(
@@ -19009,7 +19009,7 @@ def test_item_insert_does_not_upsert_occupied_letter_suffix_slot() -> None:
     amend_para = _para("1a", "Inserted slot text")
     amend_sub = _sub("1", amend_para)
     muutos_ir = _sec("5", amend_sub)
-    op = _op(op_type="INSERT", target_section="5", target_paragraph=1, target_item="1a")
+    op = _op(op_type=OpType.INSERT, target_section="5", target_paragraph=1, target_item="1a")
     pathologies: list[SourcePathology] = []
 
     result = _apply_item_insert(
@@ -19039,7 +19039,7 @@ def test_item_insert_compound_insert_emits_pathology() -> None:
     amend_sp = IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="a", children=(_content("Inserted subslot text"),))
     amend_sub = _sub("1", amend_para, amend_sp)
     muutos_ir = _sec("5", amend_sub)
-    op = _op(op_type="INSERT", target_section="5", target_paragraph=1, target_item="1a")
+    op = _op(op_type=OpType.INSERT, target_section="5", target_paragraph=1, target_item="1a")
     pathologies: list[SourcePathology] = []
 
     result = _apply_item_insert(
@@ -19073,7 +19073,7 @@ def test_item_insert_compound_insert_reports_absent_target_when_letter_missing()
     )
     amend_sub = _sub("1", amend_para)
     muutos_ir = _sec("5", amend_sub)
-    op = _op(op_type="INSERT", target_section="5", target_paragraph=1, target_item="1b")
+    op = _op(op_type=OpType.INSERT, target_section="5", target_paragraph=1, target_item="1b")
     pathologies: list[SourcePathology] = []
 
     result = _apply_item_insert(
@@ -19142,7 +19142,7 @@ def test_subsection_replace_merges_section_level_sparse_omission_item_rows() -> 
     )
     sec = _sec("9", live_first, _sub("2", _content("old second moment")))
     state = _make_state(_body(sec))
-    op = _op(op_type="REPLACE", target_section="9", target_paragraph=1)
+    op = _op(op_type=OpType.REPLACE, target_section="9", target_paragraph=1)
     muutos_ir = _sec(
         "9",
         IRNode(kind=IRNodeKind.OMISSION),
@@ -19203,7 +19203,7 @@ def test_subsection_replace_merges_single_unlabeled_sparse_table_row_by_intro_an
     )
     sec = _sec("5", live_first)
     state = _make_state(_body(sec))
-    op = _op(op_type="REPLACE", target_section="5", target_paragraph=1)
+    op = _op(op_type=OpType.REPLACE, target_section="5", target_paragraph=1)
     muutos_ir = _sec(
         "5",
         _sub(
@@ -19262,7 +19262,7 @@ def test_subsection_replace_single_unlabeled_sparse_table_row_strict_blocks_reco
     )
     sec = _sec("5", live_first)
     state = _make_state(_body(sec))
-    op = _op(op_type="REPLACE", target_section="5", target_paragraph=1)
+    op = _op(op_type=OpType.REPLACE, target_section="5", target_paragraph=1)
     muutos_ir = _sec(
         "5",
         _sub(
@@ -19308,7 +19308,7 @@ def test_subsection_replace_sparse_omission_item_rows_strict_blocks_recovery() -
     )
     sec = _sec("9", live_first)
     state = _make_state(_body(sec))
-    op = _op(op_type="REPLACE", target_section="9", target_paragraph=1)
+    op = _op(op_type=OpType.REPLACE, target_section="9", target_paragraph=1)
     muutos_ir = _sec(
         "9",
         IRNode(kind=IRNodeKind.OMISSION),
@@ -19340,7 +19340,7 @@ def _otsikko_container_op(
     *,
     target_unit_kind: TargetUnitKind,
     target_section: str,
-    op_type: OpType = "REPLACE",
+    op_type: OpType = OpType.REPLACE,
 ) -> AmendmentOp:
     return AmendmentOp(
         op_id="container_otsikko_op",
@@ -19518,7 +19518,7 @@ def test_apply_section_insert_missing_scoped_parent_is_witnessed() -> None:
     op = ResolvedOp.from_amendment_op(
         AmendmentOp(
             op_id="insert_145a",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_section="145a",
             target_unit_kind="section",
             target_chapter="16a",

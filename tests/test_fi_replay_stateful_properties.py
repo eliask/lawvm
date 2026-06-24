@@ -269,7 +269,7 @@ class ReplaySubsectionSequenceMachine(RuleBasedStateMachine):
         if not sm.model:
             return
         target_label = data.draw(st.sampled_from([int(label) for label, _ in sm.model]))
-        self._apply_and_sync(op_type="REPLACE", target_label=target_label, amend_text=text)
+        self._apply_and_sync(op_type=OpType.REPLACE, target_label=target_label, amend_text=text)
         sm.model = _model_replace(sm.model, target_label, text)
 
     @rule(data=st.data(), text=SHORT_TEXT)
@@ -278,7 +278,7 @@ class ReplaySubsectionSequenceMachine(RuleBasedStateMachine):
         if not sm.model:
             return
         target_label = data.draw(st.integers(min_value=1, max_value=len(sm.model) + 1))
-        self._apply_and_sync(op_type="INSERT", target_label=target_label, amend_text=text)
+        self._apply_and_sync(op_type=OpType.INSERT, target_label=target_label, amend_text=text)
         sm.model = _model_insert(sm.model, target_label, text)
 
     @rule(data=st.data())
@@ -287,7 +287,7 @@ class ReplaySubsectionSequenceMachine(RuleBasedStateMachine):
         if not sm.model:
             return
         target_label = data.draw(st.sampled_from([int(label) for label, _ in sm.model]))
-        self._apply_and_sync(op_type="REPEAL", target_label=target_label, amend_text=None)
+        self._apply_and_sync(op_type=OpType.REPEAL, target_label=target_label, amend_text=None)
         sm.model = _model_repeal(sm.model, target_label)
 
     @rule(data=st.data(), text=SHORT_TEXT)
@@ -298,7 +298,7 @@ class ReplaySubsectionSequenceMachine(RuleBasedStateMachine):
         if not sm.model:
             return
         target_label = data.draw(st.sampled_from([int(label) for label, _ in sm.model]))
-        self._apply_and_sync(op_type="INSERT", target_label=target_label, amend_text=text)
+        self._apply_and_sync(op_type=OpType.INSERT, target_label=target_label, amend_text=text)
         sm.model = _model_insert(sm.model, target_label, text)
 
     @invariant()

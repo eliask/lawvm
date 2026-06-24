@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import datetime as dt
 from collections import Counter
-from typing import Literal, cast
+from typing import cast
 
 from lxml import etree
 import pytest
@@ -49,7 +49,7 @@ from lawvm.finland.body_pairing import (
 )
 from lawvm.finland.frontend_compile import normalize_and_compile_ops
 from lawvm.finland.corpus import get_corpus
-from lawvm.finland.ops import AmendmentOp
+from lawvm.finland.ops import OpType, AmendmentOp
 from lawvm.finland.migration_ledger import MigrationLedger
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.statute import ReplayResult
@@ -64,7 +64,7 @@ from tests.corpus_pin_helpers import pinned_replay
 
 
 def _make_op(
-    op_type: Literal["REPLACE", "REPEAL", "INSERT", "RENUMBER"],
+    op_type: OpType,
     kind: TargetKind,
     section: str,
     chapter: str = "",
@@ -202,31 +202,31 @@ class TestDetectRestructureSignals:
         assert signals == ()
 
     def test_no_signals_low_uncovered(self) -> None:
-        ops = [_make_op("INSERT", TargetKind.CHAPTER, "3")]
+        ops = [_make_op(OpType.INSERT, TargetKind.CHAPTER, "3")]
         signals = detect_restructure_signals(ops=ops, uncov_ratio=0.2, total_units=20)
         # Chapter insert but low uncov ratio: CHAPTER_INSERT signal only, no HIGH_UNCOVERED
         assert RestructureSignal.CHAPTER_INSERT in signals
         assert RestructureSignal.HIGH_UNCOVERED_BODY not in signals
 
     def test_chapter_insert_and_high_uncovered(self) -> None:
-        ops = [_make_op("INSERT", TargetKind.CHAPTER, "3")]
+        ops = [_make_op(OpType.INSERT, TargetKind.CHAPTER, "3")]
         signals = detect_restructure_signals(ops=ops, uncov_ratio=0.7, total_units=20)
         assert RestructureSignal.CHAPTER_INSERT in signals
         assert RestructureSignal.HIGH_UNCOVERED_BODY in signals
 
     def test_part_insert_detected(self) -> None:
-        ops = [_make_op("INSERT", TargetKind.PART, "II")]
+        ops = [_make_op(OpType.INSERT, TargetKind.PART, "II")]
         signals = detect_restructure_signals(ops=ops, uncov_ratio=0.0, total_units=0)
         assert RestructureSignal.PART_INSERT in signals
 
     def test_renumber_detected_as_relabel(self) -> None:
-        ops = [_make_op("RENUMBER", TargetKind.SECTION, "5")]
+        ops = [_make_op(OpType.RENUMBER, TargetKind.SECTION, "5")]
         signals = detect_restructure_signals(ops=ops, uncov_ratio=0.0, total_units=0)
         assert RestructureSignal.RELABEL in signals
 
     def test_descendant_renumber_still_counts_as_relabel_signal(self) -> None:
         op = AmendmentOp(
-            op_type="RENUMBER",
+            op_type=OpType.RENUMBER,
             target_kind=TargetKind.SECTION,
             target_section="32",
             target_paragraph=1,
@@ -235,15 +235,15 @@ class TestDetectRestructureSignals:
         assert RestructureSignal.RELABEL in signals
 
     def test_high_uncovered_threshold_requires_enough_units(self) -> None:
-        ops = [_make_op("INSERT", TargetKind.CHAPTER, "2")]
+        ops = [_make_op(OpType.INSERT, TargetKind.CHAPTER, "2")]
         # Only 5 total units — below threshold
         signals = detect_restructure_signals(ops=ops, uncov_ratio=0.9, total_units=5)
         assert RestructureSignal.HIGH_UNCOVERED_BODY not in signals
 
     def test_replace_and_repeal_only_no_signal(self) -> None:
         ops = [
-            _make_op("REPLACE", TargetKind.SECTION, "3"),
-            _make_op("REPEAL", TargetKind.SECTION, "5"),
+            _make_op(OpType.REPLACE, TargetKind.SECTION, "3"),
+            _make_op(OpType.REPEAL, TargetKind.SECTION, "5"),
         ]
         signals = detect_restructure_signals(ops=ops, uncov_ratio=0.1, total_units=10)
         assert signals == ()
@@ -256,7 +256,7 @@ class TestDetectRestructureSignals:
 
 class TestBuildRestructurePlan:
     def test_returns_none_when_no_signals(self) -> None:
-        ops = [_make_op("REPLACE", TargetKind.SECTION, "3")]
+        ops = [_make_op(OpType.REPLACE, TargetKind.SECTION, "3")]
         plan = _build_plan(
             "1994/1280",
             "2000/172",
@@ -268,9 +268,9 @@ class TestBuildRestructurePlan:
 
     def test_builds_plan_on_chapter_insert_high_uncovered(self) -> None:
         ops = [
-            _make_op("INSERT", TargetKind.CHAPTER, "3"),
-            _make_op("REPLACE", TargetKind.SECTION, "20", chapter="3"),
-            _make_op("REPEAL", TargetKind.SECTION, "5"),
+            _make_op(OpType.INSERT, TargetKind.CHAPTER, "3"),
+            _make_op(OpType.REPLACE, TargetKind.SECTION, "20", chapter="3"),
+            _make_op(OpType.REPEAL, TargetKind.SECTION, "5"),
         ]
         plan = _build_plan(
             "1994/1280",
@@ -290,9 +290,9 @@ class TestBuildRestructurePlan:
     def test_ops_ordered_correctly(self) -> None:
         """INSERT_SUBTREE ops must come before REPLACE_LEAF, which must come before REPEAL_NODE."""
         ops = [
-            _make_op("INSERT", TargetKind.CHAPTER, "3"),
-            _make_op("REPEAL", TargetKind.SECTION, "5"),
-            _make_op("REPLACE", TargetKind.SECTION, "20", chapter="3"),
+            _make_op(OpType.INSERT, TargetKind.CHAPTER, "3"),
+            _make_op(OpType.REPEAL, TargetKind.SECTION, "5"),
+            _make_op(OpType.REPLACE, TargetKind.SECTION, "20", chapter="3"),
         ]
         plan = _build_plan(
             "1994/1280",
@@ -318,7 +318,7 @@ class TestBuildRestructurePlan:
 
     def test_chapter_insert_carries_subtree_payload_claims(self) -> None:
         """Chapter INSERT op should carry body unit IDs of child sections."""
-        ops = [_make_op("INSERT", TargetKind.CHAPTER, "3")]
+        ops = [_make_op(OpType.INSERT, TargetKind.CHAPTER, "3")]
         body_unit_ids_by_chapter = {
             ("", "3"): ["section:3/20", "section:3/21", "section:3/22"]
         }
@@ -340,7 +340,7 @@ class TestBuildRestructurePlan:
     def test_chapter_insert_keeps_part_scope_and_distinct_same_label_payloads(self) -> None:
         ops = [
             AmendmentOp(
-                op_type="INSERT",
+                op_type=OpType.INSERT,
                 target_kind=TargetKind.CHAPTER,
                 target_section="2",
                 target_part="V",
@@ -375,8 +375,8 @@ class TestBuildRestructurePlan:
 
     def test_plan_has_unexecuted_ops_when_relabel_present(self) -> None:
         ops = [
-            _make_op("RENUMBER", TargetKind.SECTION, "5"),
-            _make_op("INSERT", TargetKind.CHAPTER, "3"),
+            _make_op(OpType.RENUMBER, TargetKind.SECTION, "5"),
+            _make_op(OpType.INSERT, TargetKind.CHAPTER, "3"),
         ]
         plan = _build_plan(
             "1994/1280",
@@ -390,7 +390,7 @@ class TestBuildRestructurePlan:
 
     def test_plan_skips_descendant_section_renumber_ops(self) -> None:
         op = AmendmentOp(
-            op_type="RENUMBER",
+            op_type=OpType.RENUMBER,
             target_kind=TargetKind.SECTION,
             target_section="32",
             target_paragraph=1,
@@ -407,7 +407,7 @@ class TestBuildRestructurePlan:
 
     def test_plan_keeps_part_scope_for_section_relabel_targets(self) -> None:
         op = AmendmentOp(
-            op_type="RENUMBER",
+            op_type=OpType.RENUMBER,
             target_kind=TargetKind.SECTION,
             target_section="5",
             target_chapter="2",
@@ -442,7 +442,7 @@ class TestBuildRestructurePlan:
 
     def test_plan_keeps_part_scope_for_chapter_relabel_targets(self) -> None:
         op = AmendmentOp(
-            op_type="RENUMBER",
+            op_type=OpType.RENUMBER,
             target_kind=TargetKind.CHAPTER,
             target_section="2",
             target_part="IV",
@@ -476,8 +476,8 @@ class TestBuildRestructurePlan:
 
     def test_plan_no_unexecuted_ops_without_relabel(self) -> None:
         ops = [
-            _make_op("INSERT", TargetKind.CHAPTER, "3"),
-            _make_op("REPLACE", TargetKind.SECTION, "20"),
+            _make_op(OpType.INSERT, TargetKind.CHAPTER, "3"),
+            _make_op(OpType.REPLACE, TargetKind.SECTION, "20"),
         ]
         plan = _build_plan(
             "1994/1280",
@@ -491,8 +491,8 @@ class TestBuildRestructurePlan:
 
     def test_plan_to_dict_is_serializable(self) -> None:
         ops = [
-            _make_op("INSERT", TargetKind.CHAPTER, "3"),
-            _make_op("REPEAL", TargetKind.SECTION, "5"),
+            _make_op(OpType.INSERT, TargetKind.CHAPTER, "3"),
+            _make_op(OpType.REPEAL, TargetKind.SECTION, "5"),
         ]
         plan = _build_plan(
             "1994/1280",
@@ -517,11 +517,11 @@ class TestBuildRestructurePlan:
     def test_duplicate_section_replacements_coalesce_exact_plan_ops(self) -> None:
         """Repeated section-level REPLACE ops for one target should not duplicate plan entries."""
         ops = [
-            _make_op("INSERT", TargetKind.CHAPTER, "3"),
-            _make_op("REPLACE", TargetKind.SECTION, "3", chapter="18"),
-            _make_op("REPLACE", TargetKind.SECTION, "3", chapter="18"),
-            _make_op("REPLACE", TargetKind.SECTION, "5", chapter="18"),
-            _make_op("REPLACE", TargetKind.SECTION, "5", chapter="18"),
+            _make_op(OpType.INSERT, TargetKind.CHAPTER, "3"),
+            _make_op(OpType.REPLACE, TargetKind.SECTION, "3", chapter="18"),
+            _make_op(OpType.REPLACE, TargetKind.SECTION, "3", chapter="18"),
+            _make_op(OpType.REPLACE, TargetKind.SECTION, "5", chapter="18"),
+            _make_op(OpType.REPLACE, TargetKind.SECTION, "5", chapter="18"),
         ]
         plan = _build_plan(
             "1979/1062",
@@ -543,11 +543,11 @@ class TestBuildRestructurePlan:
     def test_duplicate_insert_targets_coalesce_exact_plan_ops(self) -> None:
         """Repeated section-level INSERT ops for one target should not duplicate plan entries."""
         ops = [
-            _make_op("INSERT", TargetKind.CHAPTER, "15a"),
-            _make_op("INSERT", TargetKind.SECTION, "4", chapter="18"),
-            _make_op("INSERT", TargetKind.SECTION, "4", chapter="18"),
-            _make_op("INSERT", TargetKind.SECTION, "5", chapter="18"),
-            _make_op("INSERT", TargetKind.SECTION, "5", chapter="18"),
+            _make_op(OpType.INSERT, TargetKind.CHAPTER, "15a"),
+            _make_op(OpType.INSERT, TargetKind.SECTION, "4", chapter="18"),
+            _make_op(OpType.INSERT, TargetKind.SECTION, "4", chapter="18"),
+            _make_op(OpType.INSERT, TargetKind.SECTION, "5", chapter="18"),
+            _make_op(OpType.INSERT, TargetKind.SECTION, "5", chapter="18"),
         ]
         plan = _build_plan(
             "1979/1062",

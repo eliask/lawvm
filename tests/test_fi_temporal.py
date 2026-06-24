@@ -292,11 +292,11 @@ def test_finland_temporal_lowering_exports_only_live_helpers() -> None:
 
 def test_finland_ops_temporary_signal_is_coarse_and_live() -> None:
     from lawvm.finland import ops as finland_ops
-    from lawvm.finland.ops import AmendmentOp, temporary_signal_for_op
+    from lawvm.finland.ops import OpType, AmendmentOp, temporary_signal_for_op
 
     op = AmendmentOp(
         op_id="tmp-op",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="5",
         is_temporary=True,

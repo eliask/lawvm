@@ -19,7 +19,7 @@ from lawvm.finland.apply_intent_facade import (
     apply_intent_lane_summary,
     classify_apply_dispatch_lane,
 )
-from lawvm.finland.ops import AmendmentOp, ResolvedOp
+from lawvm.finland.ops import OpType, AmendmentOp, ResolvedOp
 
 
 def _sec(label: str, text: str = "body") -> IRNode:
@@ -87,7 +87,7 @@ def test_classify_apply_dispatch_lane_legacy_for_move_without_intent() -> None:
 
 
 def test_classify_apply_dispatch_lane_blocks_required_without_intent() -> None:
-    assert classify_apply_dispatch_lane(_rop(op_type="REPLACE", intent=None)) is None
+    assert classify_apply_dispatch_lane(_rop(op_type=OpType.REPLACE, intent=None)) is None
 
 
 def test_classify_apply_dispatch_lane_legacy_when_no_rop() -> None:

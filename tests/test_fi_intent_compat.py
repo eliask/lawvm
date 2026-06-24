@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import Any, Literal, Optional, cast
+from typing import Any, Optional, cast
 
 import pytest
 
@@ -41,6 +41,7 @@ from lawvm.core.payload_surface import TargetUnitKind
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.finland.target_kind import TargetKind
 from lawvm.finland.ops import (
+    OpType,
     AmendmentOp,
     ResolvedOp,
     _assert_intent_compat,
@@ -115,7 +116,7 @@ def _insert_contract() -> ExecutionContract:
 
 
 def _op(
-    op_type: Literal["REPLACE", "REPEAL", "INSERT", "RENUMBER"] = "REPLACE",
+    op_type: OpType = OpType.REPLACE,
     target_unit_kind: TargetUnitKind | None = None,
     target_kind: TargetKind | None = None,
     target_special: Optional[str] = None,
@@ -186,7 +187,7 @@ def _rop(op: AmendmentOp) -> ResolvedOp:
 
 
 def test_amendment_op_projects_legacy_target_kind_from_explicit_unit_kind() -> None:
-    op = AmendmentOp(op_type="REPLACE", target_unit_kind="chapter", target_section="5")
+    op = AmendmentOp(op_type=OpType.REPLACE, target_unit_kind="chapter", target_section="5")
 
     assert op.target_unit_kind == "chapter"
 
@@ -194,7 +195,7 @@ def test_amendment_op_projects_legacy_target_kind_from_explicit_unit_kind() -> N
 def test_amendment_op_rejects_conflicting_legacy_target_kind_seed() -> None:
     with pytest.raises(ValueError, match="target_kind seed disagrees"):
         AmendmentOp(
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_unit_kind="chapter",
             target_kind=TargetKind.SECTION,
             target_section="5",
@@ -203,7 +204,7 @@ def test_amendment_op_rejects_conflicting_legacy_target_kind_seed() -> None:
 
 def test_matching_replace_section_no_warning(caplog) -> None:
     """REPLACE op + Replace(NodeTarget section) → no warning."""
-    op = _op(op_type="REPLACE", target_unit_kind="section")
+    op = _op(op_type=OpType.REPLACE, target_unit_kind="section")
     rop = _rop(op)
     intent = Replace(
         kind=IntentKind.REPLACE,
@@ -224,7 +225,7 @@ def test_matching_replace_section_no_warning(caplog) -> None:
 
 def test_matching_insert_section_no_warning(caplog) -> None:
     """INSERT op + Insert(NodeTarget section) → no warning."""
-    op = _op(op_type="INSERT", target_unit_kind="section")
+    op = _op(op_type=OpType.INSERT, target_unit_kind="section")
     rop = _rop(op)
     intent = Insert(
         kind=IntentKind.INSERT,
@@ -244,7 +245,7 @@ def test_matching_insert_section_no_warning(caplog) -> None:
 
 def test_matching_repeal_section_no_warning(caplog) -> None:
     """REPEAL op + Repeal(NodeTarget section) → no warning."""
-    op = _op(op_type="REPEAL", target_unit_kind="section")
+    op = _op(op_type=OpType.REPEAL, target_unit_kind="section")
     rop = _rop(op)
     intent = Repeal(
         kind=IntentKind.REPEAL,
@@ -263,7 +264,7 @@ def test_matching_repeal_section_no_warning(caplog) -> None:
 
 def test_matching_replace_chapter_no_warning(caplog) -> None:
     """REPLACE op + Replace(NodeTarget chapter) with target_kind=L → no warning."""
-    op = _op(op_type="REPLACE", target_unit_kind="chapter")
+    op = _op(op_type=OpType.REPLACE, target_unit_kind="chapter")
     rop = _rop(op)
     intent = Replace(
         kind=IntentKind.REPLACE,
@@ -283,7 +284,7 @@ def test_matching_replace_chapter_no_warning(caplog) -> None:
 
 def test_matching_replace_heading_facet_no_warning(caplog) -> None:
     """REPLACE op with target_special=otsikko + Replace(FacetTarget heading) → no warning."""
-    op = _op(op_type="REPLACE", target_unit_kind="section", target_special="otsikko")
+    op = _op(op_type=OpType.REPLACE, target_unit_kind="section", target_special="otsikko")
     rop = _rop(op)
     intent = Replace(
         kind=IntentKind.REPLACE,
@@ -303,7 +304,7 @@ def test_matching_replace_heading_facet_no_warning(caplog) -> None:
 
 def test_matching_replace_intro_facet_no_warning(caplog) -> None:
     """REPLACE op with target_special=johd + Replace(FacetTarget intro) → no warning."""
-    op = _op(op_type="REPLACE", target_unit_kind="section", target_special="johd")
+    op = _op(op_type=OpType.REPLACE, target_unit_kind="section", target_special="johd")
     rop = _rop(op)
     intent = Replace(
         kind=IntentKind.REPLACE,
@@ -323,7 +324,7 @@ def test_matching_replace_intro_facet_no_warning(caplog) -> None:
 
 def test_insert_heading_facet_replace_carveout_no_warning(caplog) -> None:
     """INSERT otsikko lowered as Replace(FacetTarget) should not warn."""
-    op = _op(op_type="INSERT", target_unit_kind="section", target_special="otsikko")
+    op = _op(op_type=OpType.INSERT, target_unit_kind="section", target_special="otsikko")
     rop = _rop(op)
     intent = Replace(
         kind=IntentKind.REPLACE,
@@ -345,7 +346,7 @@ def test_insert_heading_facet_replace_carveout_no_warning(caplog) -> None:
 
 def test_insert_intro_facet_replace_carveout_no_warning(caplog) -> None:
     """INSERT johd lowered as Replace(FacetTarget) should not warn."""
-    op = _op(op_type="INSERT", target_unit_kind="section", target_special="johd")
+    op = _op(op_type=OpType.INSERT, target_unit_kind="section", target_special="johd")
     rop = _rop(op)
     intent = Replace(
         kind=IntentKind.REPLACE,
@@ -367,7 +368,7 @@ def test_insert_intro_facet_replace_carveout_no_warning(caplog) -> None:
 
 def test_matching_subsection_target_kind_p_no_warning(caplog) -> None:
     """NodeTarget subsection with target_kind=P → no warning (P is correct for subsections)."""
-    op = _op(op_type="REPLACE", target_unit_kind="section")
+    op = _op(op_type=OpType.REPLACE, target_unit_kind="section")
     rop = _rop(op)
     intent = Replace(
         kind=IntentKind.REPLACE,
@@ -387,7 +388,7 @@ def test_matching_subsection_target_kind_p_no_warning(caplog) -> None:
 
 def test_matching_item_target_kind_p_no_warning(caplog) -> None:
     """NodeTarget item with target_kind=P → no warning (items live under sections)."""
-    op = _op(op_type="REPLACE", target_unit_kind="section")
+    op = _op(op_type=OpType.REPLACE, target_unit_kind="section")
     rop = _rop(op)
     intent = Replace(
         kind=IntentKind.REPLACE,
@@ -406,7 +407,7 @@ def test_matching_item_target_kind_p_no_warning(caplog) -> None:
 
 def test_intent_compat_reads_resolvedop_mirrors_not_legacy_op(caplog) -> None:
     """Resolved late-waist target identity should govern compatibility checks."""
-    op = _op(op_type="REPLACE", target_unit_kind="chapter", target_special="otsikko")
+    op = _op(op_type=OpType.REPLACE, target_unit_kind="chapter", target_special="otsikko")
     rop = _rop(op)
     rop.target_unit_kind = "section"
     rop._target_address_override = LegalAddress(path=(("section", "1"),), special=FacetKind.INTRO)
@@ -434,7 +435,7 @@ def test_intent_compat_reads_resolvedop_mirrors_not_legacy_op(caplog) -> None:
 
 def test_action_family_mismatch_produces_warning(caplog) -> None:
     """op_type=REPEAL but intent.kind=replace → INTENT_COMPAT_MISMATCH action_family warning."""
-    op = _op(op_type="REPEAL", target_unit_kind="section")
+    op = _op(op_type=OpType.REPEAL, target_unit_kind="section")
     rop = _rop(op)
     # Wrong: using Replace intent when op says REPEAL
     intent = Replace(
@@ -459,7 +460,7 @@ def test_action_family_mismatch_produces_warning(caplog) -> None:
 
 
 def test_action_family_mismatch_emits_finding() -> None:
-    op = _op(op_type="REPEAL", target_unit_kind="section")
+    op = _op(op_type=OpType.REPEAL, target_unit_kind="section")
     rop = _rop(op)
     intent = Replace(
         kind=IntentKind.REPLACE,
@@ -488,7 +489,7 @@ def test_action_family_mismatch_emits_finding() -> None:
 
 def test_action_family_mismatch_insert_vs_replace(caplog) -> None:
     """op_type=INSERT but intent.kind=replace → action_family warning."""
-    op = _op(op_type="INSERT", target_unit_kind="section")
+    op = _op(op_type=OpType.INSERT, target_unit_kind="section")
     rop = _rop(op)
     intent = Replace(
         kind=IntentKind.REPLACE,
@@ -506,7 +507,7 @@ def test_action_family_mismatch_insert_vs_replace(caplog) -> None:
 
 def test_unit_kind_mismatch_chapter_vs_p_produces_warning(caplog) -> None:
     """NodeTarget chapter with rop.target_unit_kind=section → unit_kind mismatch warning."""
-    op = _op(op_type="REPLACE", target_unit_kind="section")
+    op = _op(op_type=OpType.REPLACE, target_unit_kind="section")
     rop = _rop(op)
     # Wrong: intent says chapter but op says section (P)
     intent = Replace(
@@ -530,7 +531,7 @@ def test_unit_kind_mismatch_chapter_vs_p_produces_warning(caplog) -> None:
 
 
 def test_unit_kind_mismatch_emits_finding() -> None:
-    op = _op(op_type="REPLACE", target_unit_kind="section")
+    op = _op(op_type=OpType.REPLACE, target_unit_kind="section")
     rop = _rop(op)
     intent = Replace(
         kind=IntentKind.REPLACE,
@@ -552,7 +553,7 @@ def test_unit_kind_mismatch_emits_finding() -> None:
 
 def test_unit_kind_mismatch_section_vs_l_produces_warning(caplog) -> None:
     """NodeTarget section with rop.target_unit_kind=chapter → unit_kind mismatch warning."""
-    op = _op(op_type="REPLACE", target_unit_kind="chapter")
+    op = _op(op_type=OpType.REPLACE, target_unit_kind="chapter")
     rop = _rop(op)
     # Wrong: intent says section but op says chapter (L)
     intent = Replace(
@@ -573,7 +574,7 @@ def test_unit_kind_mismatch_section_vs_l_produces_warning(caplog) -> None:
 
 def test_facet_mismatch_intro_vs_otsikko_produces_warning(caplog) -> None:
     """FacetTarget intro with op.target_special=otsikko → facet mismatch warning."""
-    op = _op(op_type="REPLACE", target_unit_kind="section", target_special="otsikko")
+    op = _op(op_type=OpType.REPLACE, target_unit_kind="section", target_special="otsikko")
     rop = _rop(op)
     # Wrong: intent says intro but op says otsikko (heading)
     intent = Replace(
@@ -597,7 +598,7 @@ def test_facet_mismatch_intro_vs_otsikko_produces_warning(caplog) -> None:
 
 
 def test_facet_mismatch_emits_finding() -> None:
-    op = _op(op_type="REPLACE", target_unit_kind="section", target_special="otsikko")
+    op = _op(op_type=OpType.REPLACE, target_unit_kind="section", target_special="otsikko")
     rop = _rop(op)
     intent = Replace(
         kind=IntentKind.REPLACE,
@@ -619,7 +620,7 @@ def test_facet_mismatch_emits_finding() -> None:
 
 def test_facet_unknown_target_special_produces_warning(caplog) -> None:
     """FacetTarget with op.target_special not in known mapping → advisory facet warning."""
-    op = _op(op_type="REPLACE", target_unit_kind="section", target_special="unknown_special")
+    op = _op(op_type=OpType.REPLACE, target_unit_kind="section", target_special="unknown_special")
     rop = _rop(op)
     intent = Replace(
         kind=IntentKind.REPLACE,
@@ -642,7 +643,7 @@ def test_facet_unknown_target_special_produces_warning(caplog) -> None:
 def test_occupancy_policy_violation_emits_finding() -> None:
     from lawvm.core.occupancy import OccupancyClass
 
-    op = _op(op_type="REPLACE", target_unit_kind="section")
+    op = _op(op_type=OpType.REPLACE, target_unit_kind="section")
     rop = _rop(op)
     intent = Replace(
         kind=IntentKind.REPLACE,
@@ -688,7 +689,7 @@ def test_occupancy_policy_violation_quiet_replay_suppresses_warning(caplog) -> N
     from lawvm.core.occupancy import OccupancyClass
     from lawvm.finland.replay_notices import reset_replay_verbose, set_replay_verbose
 
-    op = _op(op_type="REPLACE", target_unit_kind="section")
+    op = _op(op_type=OpType.REPLACE, target_unit_kind="section")
     rop = _rop(op)
     intent = Replace(
         kind=IntentKind.REPLACE,
@@ -733,7 +734,7 @@ def test_multiple_mismatches_accumulate_in_stats(caplog) -> None:
     before_total = intent_compat_stats.total
 
     # Mismatch 1: action family
-    op1 = _op(op_type="REPEAL", target_unit_kind="section")
+    op1 = _op(op_type=OpType.REPEAL, target_unit_kind="section")
     rop1 = _rop(op1)
     intent1 = Replace(
         kind=IntentKind.REPLACE,
@@ -743,7 +744,7 @@ def test_multiple_mismatches_accumulate_in_stats(caplog) -> None:
     )
 
     # Mismatch 2: unit_kind
-    op2 = _op(op_type="REPLACE", target_unit_kind="section")
+    op2 = _op(op_type=OpType.REPLACE, target_unit_kind="section")
     rop2 = _rop(op2)
     intent2 = Replace(
         kind=IntentKind.REPLACE,
@@ -766,7 +767,7 @@ def test_multiple_mismatches_accumulate_in_stats(caplog) -> None:
 
 def test_assert_intent_compat_returns_none_on_mismatch() -> None:
     """_assert_intent_compat must return None (never raises) even with mismatch."""
-    op = _op(op_type="REPEAL", target_unit_kind="chapter")
+    op = _op(op_type=OpType.REPEAL, target_unit_kind="chapter")
     rop = _rop(op)
     intent = Replace(
         kind=IntentKind.REPLACE,
@@ -781,7 +782,7 @@ def test_assert_intent_compat_returns_none_on_mismatch() -> None:
 
 def test_assert_intent_compat_returns_none_on_match() -> None:
     """_assert_intent_compat returns None even when everything matches."""
-    op = _op(op_type="REPLACE", target_unit_kind="section")
+    op = _op(op_type=OpType.REPLACE, target_unit_kind="section")
     rop = _rop(op)
     intent = Replace(
         kind=IntentKind.REPLACE,
@@ -968,7 +969,7 @@ def test_production_lane_move_rider_replace_evaluates_origin_occupancy() -> None
 
     op = AmendmentOp(
         op_id="prod",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="29e",
         target_chapter="5b",
@@ -1028,7 +1029,7 @@ def test_production_lane_move_rider_replace_without_origin_still_violates() -> N
 
     op = AmendmentOp(
         op_id="prod",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="29e",
         target_chapter="5b",
@@ -1087,7 +1088,7 @@ def test_production_lane_temporally_disjoint_twin_insert_is_not_a_violation() ->
 
     op = AmendmentOp(
         op_id="twin",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="78c",
         target_chapter="8",
@@ -1174,7 +1175,7 @@ def test_production_lane_same_effective_temporary_insert_is_window_observation()
 
     op = AmendmentOp(
         op_id="temporary_overlay",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="69d",
         target_chapter="5",
@@ -1257,7 +1258,7 @@ def test_production_lane_overlapping_twin_insert_still_violates() -> None:
 
     op = AmendmentOp(
         op_id="twin",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="78c",
         target_chapter="8",

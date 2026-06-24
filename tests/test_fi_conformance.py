@@ -950,7 +950,7 @@ class TestReplayOccupancyModel:
     def test_repeal_placeholder_attrs_set(self):
         """A tombstone from repeal must carry lawvm_repeal_placeholder attribute."""
         from lawvm.finland.apply import apply_op
-        from lawvm.finland.ops import AmendmentOp
+        from lawvm.finland.ops import OpType, AmendmentOp
         from lawvm.finland.statute import ReplayState
         import datetime as dt
 
@@ -961,7 +961,7 @@ class TestReplayOccupancyModel:
         state = ReplayState(ir=body)
         op = AmendmentOp(
             op_id="repeal_5",
-            op_type="REPEAL",
+            op_type=OpType.REPEAL,
             target_section="5",
             target_kind=TargetKind.SECTION,
             source_statute="2020/1",
@@ -995,7 +995,7 @@ class TestReplayOccupancyModel:
         from lawvm.finland.statute import ReplayState
         import datetime as dt
 
-        from lawvm.finland.ops import ResolvedOp, _build_canonical_intent
+        from lawvm.finland.ops import OpType, ResolvedOp, _build_canonical_intent
         from lawvm.core.ir import LegalAddress
 
         # Section 5a was inserted (not in base) — repeal should remove it
@@ -1004,7 +1004,7 @@ class TestReplayOccupancyModel:
         state = ReplayState(ir=body)
         op = AmendmentOp(
             op_id="repeal_5a",
-            op_type="REPEAL",
+            op_type=OpType.REPEAL,
             target_section="5a",
             target_kind=TargetKind.SECTION,
             source_statute="2021/1",

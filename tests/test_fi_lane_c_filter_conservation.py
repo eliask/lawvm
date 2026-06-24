@@ -20,7 +20,7 @@ from lawvm.finland.body_coverage import (
     collect_coverage_claims,
     collect_coverage_claims_partition,
 )
-from lawvm.finland.ops import AmendmentOp
+from lawvm.finland.ops import OpType, AmendmentOp
 from lawvm.finland.process_structural_prepare import (
     FI_CHAPTER_SEED_SKIP_RULE_ID,
     ProcessStructuralPrepareContext,
@@ -39,14 +39,14 @@ from lawvm.finland.vts import (
 
 def _section_op(op_id: str, section: str) -> AmendmentOp:
     return AmendmentOp(
-        op_id=op_id, op_type="REPEAL", target_section=section, target_unit_kind="section"
+        op_id=op_id, op_type=OpType.REPEAL, target_section=section, target_unit_kind="section"
     )
 
 
 def test_coverage_claims_partition_conserves_rejected() -> None:
     good = _section_op("good", "1")
     no_target = AmendmentOp(
-        op_id="no_target", op_type="REPEAL", target_section="", target_unit_kind="section"
+        op_id="no_target", op_type=OpType.REPEAL, target_section="", target_unit_kind="section"
     )
 
     partition = collect_coverage_claims_partition([good, no_target])
@@ -68,7 +68,7 @@ def test_coverage_claims_partition_conserves_rejected() -> None:
 def test_coverage_claims_shim_drains_into_out_param() -> None:
     good = _section_op("good", "1")
     no_target = AmendmentOp(
-        op_id="no_target", op_type="REPEAL", target_section="", target_unit_kind="section"
+        op_id="no_target", op_type=OpType.REPEAL, target_section="", target_unit_kind="section"
     )
     rejected_out: list = []
     claims = collect_coverage_claims([good, no_target], rejected_claims_out=rejected_out)
@@ -248,7 +248,7 @@ def test_seed_skip_partition_conserves_dropped_ops() -> None:
 
     chapter_op = AmendmentOp(
         op_id="chap2",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="2",
         target_unit_kind="chapter",
     )
@@ -309,13 +309,13 @@ def test_seed_skip_no_match_returns_all_accepted() -> None:
 def test_restructure_preseed_keeps_only_relabel_ops() -> None:
     renumber = AmendmentOp(
         op_id="renumber_1",
-        op_type="RENUMBER",
+        op_type=OpType.RENUMBER,
         target_section="1",
         target_unit_kind="section",
     )
     stale_insert = AmendmentOp(
         op_id="insert_2",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_section="2",
         target_chapter="9",
         target_unit_kind="section",

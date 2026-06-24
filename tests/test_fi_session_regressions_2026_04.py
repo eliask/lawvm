@@ -38,7 +38,7 @@ from lawvm.core.canonical_intent import Relabel
 from lawvm.core.ir import LegalAddress, LegalOperation, OperationSource
 
 import datetime as dt
-from typing import List, Literal, Optional, Set, Tuple
+from typing import List, Optional, Set, Tuple
 
 import pytest
 
@@ -54,7 +54,7 @@ from lawvm.finland.apply_runtime_support import (
 )
 from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector
 from lawvm.finland.johtolause.api import parse_clause
-from lawvm.finland.ops import AmendmentOp, ResolvedOp, get_replay_profile
+from lawvm.finland.ops import OpType, AmendmentOp, ResolvedOp, get_replay_profile
 from lawvm.finland.replay_entrypoint import replay_xml
 from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
 from lawvm.finland.standalone_targets import StandaloneSectionTarget
@@ -100,7 +100,7 @@ def _make_state(body_ir: IRNode) -> ReplayState:
 
 
 def _op(
-    op_type: Literal["REPLACE", "REPEAL", "INSERT", "RENUMBER"] = "REPLACE",
+    op_type: OpType = OpType.REPLACE,
     target_section: str = "1",
     target_kind: TargetKind = TargetKind.SECTION,
     target_chapter: Optional[str] = None,
@@ -260,7 +260,7 @@ class TestChapterQualifiedDualRunGuards:
         ops = [
             AmendmentOp(
                 op_id="peg_ch2_s1",
-                op_type="REPLACE",
+                op_type=OpType.REPLACE,
                 target_section="1",
                 target_kind=TargetKind.SECTION,
                 target_chapter="2",
@@ -300,7 +300,7 @@ class TestChapterQualifiedDualRunGuards:
         ops = [
             AmendmentOp(
                 op_id="peg_unscoped_s1",
-                op_type="REPLACE",
+                op_type=OpType.REPLACE,
                 target_section="1",
                 target_kind=TargetKind.SECTION,
                 target_chapter=None,  # unscoped
@@ -326,7 +326,7 @@ class TestChapterQualifiedDualRunGuards:
         ops = [
             AmendmentOp(
                 op_id="peg_ch2_s1",
-                op_type="REPLACE",
+                op_type=OpType.REPLACE,
                 target_section="1",
                 target_kind=TargetKind.SECTION,
                 target_chapter="2",
@@ -399,7 +399,7 @@ class TestContainerInsertSectionDedup:
 
         op = AmendmentOp(
             op_id="insert_ch7",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_section="7",
             target_kind=TargetKind.CHAPTER,
             source_statute="2024/200",
@@ -450,7 +450,7 @@ class TestContainerInsertSectionDedup:
 
         op = AmendmentOp(
             op_id="insert_ch3",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_section="3",
             target_kind=TargetKind.CHAPTER,
             source_statute="2024/300",
@@ -666,7 +666,7 @@ class TestRepealSnapshotExpiryStripping:
 
         op = AmendmentOp(
             op_id="repeal_7",
-            op_type="REPEAL",
+            op_type=OpType.REPEAL,
             target_section="7",
             target_kind=TargetKind.SECTION,
             source_statute="2022/100",
@@ -735,7 +735,7 @@ class TestRepealSnapshotExpiryStripping:
 
         op = AmendmentOp(
             op_id="replace_3",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="3",
             target_kind=TargetKind.SECTION,
             source_statute="2023/50",
@@ -801,7 +801,7 @@ class TestRepealSnapshotExpiryStripping:
 
         op = AmendmentOp(
             op_id="repeal_5",
-            op_type="REPEAL",
+            op_type=OpType.REPEAL,
             target_section="5",
             target_kind=TargetKind.SECTION,
             source_statute="2021/80",
@@ -911,7 +911,7 @@ class TestRepealSnapshotExpiryStripping:
         replace_rop = ResolvedOp.from_amendment_op(
             op=AmendmentOp(
                 op_id="replace_10_2",
-                op_type="REPLACE",
+                op_type=OpType.REPLACE,
                 target_section="10",
                 target_kind=TargetKind.SECTION,
                 target_paragraph=2,
@@ -934,7 +934,7 @@ class TestRepealSnapshotExpiryStripping:
         repeal_rop = ResolvedOp.from_amendment_op(
             op=AmendmentOp(
                 op_id="repeal_10_5",
-                op_type="REPEAL",
+                op_type=OpType.REPEAL,
                 target_section="10",
                 target_kind=TargetKind.SECTION,
                 target_paragraph=5,
@@ -1016,7 +1016,7 @@ class TestRepealSnapshotExpiryStripping:
 
         op = AmendmentOp(
             op_id="repeal_l_2",
-            op_type="REPEAL",
+            op_type=OpType.REPEAL,
             target_section="2",
             target_kind=TargetKind.CHAPTER,
             source_statute="2024/1",
@@ -1059,7 +1059,7 @@ class TestRepealSnapshotExpiryStripping:
 
         op = AmendmentOp(
             op_id="renumber_18a",
-            op_type="RENUMBER",
+            op_type=OpType.RENUMBER,
             target_section="18a",
             target_kind=TargetKind.SECTION,
             source_statute="1998/303",
@@ -1106,7 +1106,7 @@ class TestRepealSnapshotExpiryStripping:
 
         op = AmendmentOp(
             op_id="renumber_73",
-            op_type="RENUMBER",
+            op_type=OpType.RENUMBER,
             target_section="73",
             target_kind=TargetKind.SECTION,
             target_chapter="7",
@@ -1150,7 +1150,7 @@ class TestRepealSnapshotExpiryStripping:
 
         op = AmendmentOp(
             op_id="replace_part_v",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="v",
             target_kind=TargetKind.PART,
             source_statute="2003/1275",
@@ -1192,9 +1192,9 @@ class TestRepealSnapshotExpiryStripping:
         state = _make_state(_body())
         lo_ops: List[LegalOperation] = []
         rops = [
-            _rop(_op(op_type="REPEAL", target_section="72e", target_paragraph=1)),
-            _rop(_op(op_type="REPEAL", target_section="72e", target_paragraph=2)),
-            _rop(_op(op_type="REPEAL", target_section="72e", target_paragraph=3)),
+            _rop(_op(op_type=OpType.REPEAL, target_section="72e", target_paragraph=1)),
+            _rop(_op(op_type=OpType.REPEAL, target_section="72e", target_paragraph=2)),
+            _rop(_op(op_type=OpType.REPEAL, target_section="72e", target_paragraph=3)),
         ]
 
         _emit_section_snapshot(
@@ -1222,7 +1222,7 @@ class TestRepealSnapshotExpiryStripping:
         """A pure container insert with no payload should not emit a fake replace snapshot."""
         state = _make_state(_body())
         lo_ops: List[LegalOperation] = []
-        rop = _rop(_op(op_type="INSERT", target_section="14a", target_kind=TargetKind.CHAPTER))
+        rop = _rop(_op(op_type=OpType.INSERT, target_section="14a", target_kind=TargetKind.CHAPTER))
 
         _emit_section_snapshot(
             state=state,
@@ -2472,7 +2472,7 @@ def test_letter_suffix_insert_uses_live_stem_host_over_stale_explicit_chunk_scop
         """
     )
     op = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="16a",
         target_chapter="7",
@@ -2520,7 +2520,7 @@ def test_letter_suffix_insert_inherits_same_amendment_stem_scope() -> None:
     )
     stem = AmendmentOp(
         op_id="replace_10",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="10",
         target_chapter="3",
@@ -2540,7 +2540,7 @@ def test_letter_suffix_insert_inherits_same_amendment_stem_scope() -> None:
     )
     suffix = AmendmentOp(
         op_id="insert_10a",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="10a",
         target_chapter="2",
@@ -2597,7 +2597,7 @@ def test_whole_section_replace_strips_stale_body_chapter_when_live_section_is_ro
     master = _make_state(_body(_sec("106"), _chapter("10", _sec("81"))))
     op = AmendmentOp(
         op_id="replace_106",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="106",
         target_chapter="10",
@@ -2661,13 +2661,13 @@ def test_body_scope_does_not_promote_suffix_from_same_stale_stem_wrapper() -> No
 
     stale = AmendmentOp(
         op_id="insert_106a",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="106a",
     )
     owned = AmendmentOp(
         op_id="insert_106b",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="106b",
     )
@@ -2726,13 +2726,13 @@ def test_compile_group_scope_recovery_does_not_promote_stale_stem_wrapper() -> N
 
     stale = AmendmentOp(
         op_id="insert_106a",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="106a",
     )
     owned = AmendmentOp(
         op_id="insert_106b",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="106b",
     )
@@ -2794,7 +2794,7 @@ def test_letter_suffix_insert_does_not_inherit_chaptered_stem_scope_when_live_st
     master = _make_state(_body(_sec("106")))
     stem = AmendmentOp(
         op_id="replace_106",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="106",
         target_part="5",
@@ -2815,7 +2815,7 @@ def test_letter_suffix_insert_does_not_inherit_chaptered_stem_scope_when_live_st
     )
     suffix = AmendmentOp(
         op_id="insert_106a",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="106a",
         target_part="5",
@@ -2869,7 +2869,7 @@ def test_letter_suffix_insert_same_amendment_stem_scope_preserves_explicit_suffi
     )
     stem = AmendmentOp(
         op_id="replace_10",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="10",
         target_chapter="2",
@@ -2889,7 +2889,7 @@ def test_letter_suffix_insert_same_amendment_stem_scope_preserves_explicit_suffi
     )
     explicit_suffix = AmendmentOp(
         op_id="insert_10a_ch9",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="10a",
         target_chapter="9",
@@ -2944,7 +2944,7 @@ def test_letter_suffix_insert_keeps_explicit_chapter_scope() -> None:
         """
     )
     op = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="16a",
         target_chapter="7",
@@ -2989,7 +2989,7 @@ def test_body_chapter_scope_allows_source_declared_unborn_chapter_wave() -> None
         """
     )
     op = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="17a",
         target_chapter="2",
@@ -3038,7 +3038,7 @@ def test_letter_suffix_insert_skips_multi_unborn_chapter_batch() -> None:
         """
     )
     op = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="44b",
         target_chapter="8",
@@ -3087,7 +3087,7 @@ def test_letter_suffix_insert_skips_large_single_chapter_recodification_batch() 
         """
     )
     op = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="71a",
         target_chapter="4a",
@@ -3173,7 +3173,7 @@ def _make_chapter_relabel_rop(src_label: str, dst_label: str) -> "ResolvedOp":
     """Build a chapter-level RELABEL ResolvedOp for testing _stabilize_chapter_relabel_order."""
     op = AmendmentOp(
         op_id=f"test_relabel_{src_label}_{dst_label}",
-        op_type="RENUMBER",
+        op_type=OpType.RENUMBER,
         target_section=src_label,
         target_unit_kind="chapter",
         source_statute="1997/1162",
@@ -3201,7 +3201,7 @@ def _make_chapter_insert_rop(label: str) -> "ResolvedOp":
     chapter_ir = IRNode(kind=IRNodeKind.CHAPTER, label=label)
     op = AmendmentOp(
         op_id=f"test_insert_{label}",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_section=label,
         target_unit_kind="chapter",
         source_statute="1997/1162",
@@ -3223,7 +3223,7 @@ def _make_subsection_relabel_rop(src_label: str, dst_label: str) -> "ResolvedOp"
     """Build a subsection-level RELABEL ResolvedOp for relabel-chain tests."""
     op = AmendmentOp(
         op_id=f"test_subsection_relabel_{src_label}_{dst_label}",
-        op_type="RENUMBER",
+        op_type=OpType.RENUMBER,
         target_section="3",
         target_unit_kind="section",
         target_chapter="1",
@@ -3409,7 +3409,7 @@ class TestValiaikainenChapterScaffoldReplace:
 
         op = AmendmentOp(
             op_id="insert_ch3a_2003_1310",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_section="3a",
             target_kind=TargetKind.CHAPTER,
             source_statute="2003/1310",
@@ -3484,7 +3484,7 @@ class TestValiaikainenChapterScaffoldReplace:
 
         op = AmendmentOp(
             op_id="insert_ch3_mergecase",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_section="3",
             target_kind=TargetKind.CHAPTER,
             source_statute="2010/100",

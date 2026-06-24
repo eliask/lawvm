@@ -627,14 +627,14 @@ def test_collect_claims_prefers_target_unit_kind_over_target_kind() -> None:
     ops = [
         _CoverageOpShim(
             op_id="op_chapter",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="2",
             target_unit_kind="chapter",
             target_kind=TargetKind.SECTION,
         ),
         _CoverageOpShim(
             op_id="op_part",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="III",
             target_unit_kind="part",
             target_kind=TargetKind.SECTION,
@@ -685,14 +685,14 @@ def test_collect_coverage_claims_records_rejected_claims() -> None:
             [
                 _CoverageOpShim(
                     op_id="no_target",
-                    op_type="REPLACE",
+                    op_type=OpType.REPLACE,
                     target_section="",
                     target_unit_kind="section",
                     target_kind=TargetKind.SECTION,
                 ),
                 _CoverageOpShim(
                     op_id="unsupported_target_kind",
-                    op_type="REPLACE",
+                    op_type=OpType.REPLACE,
                     target_section="3",
                     target_unit_kind="item",
                     target_kind=TargetKind.SECTION,

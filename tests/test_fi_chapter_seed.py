@@ -19,7 +19,7 @@ from lawvm.finland.chapter_seed import (
     seed_missing_chapters,
 )
 from lawvm.finland.chapter_seed_targets import ChapterSeedSkip
-from lawvm.finland.ops import AmendmentOp
+from lawvm.finland.ops import OpType, AmendmentOp
 
 # ---------------------------------------------------------------------------
 # IRNode fixture helpers
@@ -289,24 +289,24 @@ def test_rebuild_at_path_leaves_siblings_unchanged() -> None:
 
 
 def test_op_targets_chapter_true_for_chapter_level_op() -> None:
-    op = AmendmentOp(op_id="", op_type="REPLACE", target_kind=TargetKind.CHAPTER, target_section="3")
+    op = AmendmentOp(op_id="", op_type=OpType.REPLACE, target_kind=TargetKind.CHAPTER, target_section="3")
     assert _op_targets_chapter(op, {"3", "4"}) is True
 
 
 def test_op_targets_chapter_true_for_section_scoped_to_chapter() -> None:
     op = AmendmentOp(
-        op_id="", op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="12", target_chapter="3"
+        op_id="", op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="12", target_chapter="3"
     )
     assert _op_targets_chapter(op, {"3", "4"}) is True
 
 
 def test_op_targets_chapter_false_when_chapter_not_in_set() -> None:
-    op = AmendmentOp(op_id="", op_type="REPLACE", target_kind=TargetKind.CHAPTER, target_section="9")
+    op = AmendmentOp(op_id="", op_type=OpType.REPLACE, target_kind=TargetKind.CHAPTER, target_section="9")
     assert _op_targets_chapter(op, {"3", "4"}) is False
 
 
 def test_op_targets_chapter_false_for_unscoped_section_op() -> None:
-    op = AmendmentOp(op_id="", op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="5")
+    op = AmendmentOp(op_id="", op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="5")
     assert _op_targets_chapter(op, {"3", "4", "5"}) is False
 
 

@@ -66,7 +66,7 @@ from lawvm.finland.compile_group_surface import BuildGroupSurfaceRequest, build_
 from lawvm.finland.corpus import get_corpus_store
 from lawvm.finland.frontend_compile import normalize_and_compile_ops
 from lawvm.finland.metadata import get_johtolause
-from lawvm.finland.ops import AmendmentOp
+from lawvm.finland.ops import OpType, AmendmentOp
 from lawvm.finland.payload_normalize import elaborate_payload_against_live
 from lawvm.finland.replay_pipeline import (
     ReplayPlan,
@@ -277,7 +277,7 @@ def _drill_strict_rebound_apply(
     amend_sub = _sub("3", _content("Lisäksi on soveltuvin osin noudatettava, mitä rikoslain 10 luvussa säädetään."))
     op = _AmendmentOp(
         op_id="guard_liveness_strict_rebound",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="73",
         target_unit_kind="section",
         target_paragraph=3,
@@ -399,7 +399,7 @@ def drill_leading_subsection_heading_payload_elaboration() -> None:
         ),
     )
     op = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="11a",
         target_chapter="1",
@@ -503,7 +503,7 @@ def drill_fold_single_insert_subsection_list_tail_payload_elaboration() -> None:
     )
     # Single "lisätään uusi 3 momentti": target == len(live_subsections) + 1.
     op = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="12",
         target_paragraph=3,
@@ -684,7 +684,7 @@ def drill_fold_multi_target_subsection_list_wrapups_payload_elaboration() -> Non
 
     def _replace_moment(paragraph: int) -> AmendmentOp:
         return AmendmentOp(
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_kind=TargetKind.SECTION,
             target_section="5",
             target_paragraph=paragraph,
@@ -815,7 +815,7 @@ def drill_body_chapter_descendant_scope_correction_compile_group_recovery() -> N
     )
     replace_intro_op = AmendmentOp(
         op_id="replace_10b_intro",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="10b",
         target_chapter="2",
@@ -933,7 +933,7 @@ def drill_restore_heading_for_explicit_facet_group_elaboration() -> None:
 
     body_op = AmendmentOp(
         op_id="replace_5_2",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="5",
         target_paragraph=2,
@@ -941,7 +941,7 @@ def drill_restore_heading_for_explicit_facet_group_elaboration() -> None:
     )
     heading_facet_op = AmendmentOp(
         op_id="replace_5_otsikko",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="5",
         target_special="otsikko",
@@ -1014,7 +1014,7 @@ def drill_sparse_omission_tail_claim_group_surface() -> None:
     model = AmendmentSourceModel.from_tree(tree, source_ref="2099/1")
     carrier = AmendmentOp(
         op_id="replace_29",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="29",
         target_chapter="4",
@@ -1022,7 +1022,7 @@ def drill_sparse_omission_tail_claim_group_surface() -> None:
     )
     descendant = AmendmentOp(
         op_id="replace_31_3",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="31",
         target_chapter="4",
@@ -1149,7 +1149,7 @@ def drill_sparse_plain_subsection_shell_continuation_merge_payload_elaboration()
         ),
     )
     heading_op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="31a",
         target_chapter="6",
@@ -1157,7 +1157,7 @@ def drill_sparse_plain_subsection_shell_continuation_merge_payload_elaboration()
         source_statute="2019/271",
     )
     intro_op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="31a",
         target_chapter="6",
@@ -1166,7 +1166,7 @@ def drill_sparse_plain_subsection_shell_continuation_merge_payload_elaboration()
         source_statute="2019/271",
     )
     subsection_op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="31a",
         target_chapter="6",
@@ -1460,7 +1460,7 @@ def _drill_renumber_rop():
     )
     op = AmendmentOp(
         op_id="renumber_73_to_61",
-        op_type="RENUMBER",
+        op_type=OpType.RENUMBER,
         target_section="73",
         target_unit_kind="section",
         target_chapter="7",
@@ -1886,7 +1886,7 @@ def drill_occupancy_policy_violation_finland_production() -> None:
 
     op = AmendmentOp(
         op_id="guard-liveness/occupancy",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="1",
         source_statute="1991/1",
@@ -1969,7 +1969,7 @@ def drill_occupancy_temporally_disjoint_insert_finland_production() -> None:
 
     op = AmendmentOp(
         op_id="guard-liveness/occupancy-disjoint",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="78c",
         target_chapter="8",
@@ -3097,7 +3097,7 @@ def drill_verb_conversion_unwitnessed_at_op_apply_lane() -> None:
     # Parsed action REPEAL (via lo) but resolved op_type REPLACE, no witness tag.
     rop = _closure_rop(
         op_id="op_ls06",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_address=LegalAddress(path=(("section", "1"),)),
         with_lo=True,
         lo_action=StructuralAction.REPEAL,
@@ -3117,7 +3117,7 @@ def drill_verb_conversion_unwitnessed_at_op_apply_lane() -> None:
     # Negative (clean) case: the same conversion WITH a named witness tag does not fire.
     witnessed = _closure_rop(
         op_id="op_ls06_clean",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_address=LegalAddress(path=(("section", "1"),)),
         extraction_provenance_tags=("semantic_collapse_move_renumber",),
         with_lo=True,

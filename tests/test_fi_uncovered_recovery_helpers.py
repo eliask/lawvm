@@ -44,7 +44,7 @@ from lawvm.finland.uncovered_recovery_state import (
 )
 from lawvm.finland.uncovered_recovery_context import build_uncovered_recovery_context
 from lawvm.finland.uncovered_recovery_iteration import peg_owned_section_targets
-from lawvm.finland.ops import AmendmentOp
+from lawvm.finland.ops import OpType, AmendmentOp
 
 
 def _section_with_heading(text: str) -> IRNode:
@@ -86,7 +86,7 @@ def test_part_label_from_path_finds_part() -> None:
 def test_peg_owned_section_targets_do_not_treat_relabel_source_as_payload_owner() -> None:
     op = AmendmentOp(
         op_id="renumber_64_to_70",
-        op_type="RENUMBER",
+        op_type=OpType.RENUMBER,
         lo=LegalOperation(
             op_id="renumber_64_to_70",
             sequence=1,
@@ -134,7 +134,7 @@ def test_part_label_from_path_none_when_absent() -> None:
 
 def test_uncovered_recovery_context_records_relabel_destinations() -> None:
     op = SimpleNamespace(
-        op_type="RENUMBER",
+        op_type=OpType.RENUMBER,
         target_unit_kind="section",
         target_paragraph=None,
         target_item=None,
@@ -400,7 +400,7 @@ def test_uncovered_recovery_context_collects_johto_moment_targets() -> None:
 
 def test_uncovered_recovery_context_collects_part_insert_labels() -> None:
     op = SimpleNamespace(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="part",
         target_section="5",
         target_part=None,

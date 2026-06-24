@@ -13,7 +13,7 @@ from lawvm.finland.amendment_payload_lookup import _find_muutos_ir
 from lawvm.finland.body_coverage import BodyCoveragePayloadRef, extract_body_coverage
 from lawvm.finland.body_pairing import build_observed_body_inventory
 from lawvm.finland.corpus import get_corpus_store
-from lawvm.finland.ops import AmendmentOp
+from lawvm.finland.ops import OpType, AmendmentOp
 from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.statute import ReplayState
 
@@ -559,7 +559,7 @@ def test_source_model_owns_op_enrichment_xml_adapter() -> None:
     model = AmendmentSourceModel.from_tree(tree, source_ref="2000/9")
     op = AmendmentOp(
         op_id="replace_5",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="5",
     )
@@ -1060,7 +1060,7 @@ def test_source_model_builds_uncovered_recovery_context() -> None:
     model = AmendmentSourceModel.from_tree(tree, source_ref="2000/7")
     op = AmendmentOp(
         op_id="insert_4",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="4",
     )

@@ -38,7 +38,7 @@ from lawvm.finland.body_pairing import (
     enforce_pairing_invariants,
     should_use_body_section,
 )
-from lawvm.finland.ops import AmendmentOp
+from lawvm.finland.ops import OpType, AmendmentOp
 from lawvm.finland.johtolause.types import ParsedOp
 from typing import Optional
 
@@ -322,16 +322,16 @@ class TestBuildClauseClaimsFromOps:
 
     def test_amendment_op_claim_uses_neutral_target_unit_kind(self) -> None:
         ops = [
-            AmendmentOp(op_id="op_1", op_type="REPLACE", target_section="5", target_unit_kind="section", target_chapter="2"),
+            AmendmentOp(op_id="op_1", op_type=OpType.REPLACE, target_section="5", target_unit_kind="section", target_chapter="2"),
             AmendmentOp(
                 op_id="op_2",
-                op_type="REPLACE",
+                op_type=OpType.REPLACE,
                 target_section="3",
                 target_kind=TargetKind.CHAPTER,
             ),
             AmendmentOp(
                 op_id="op_3",
-                op_type="REPLACE",
+                op_type=OpType.REPLACE,
                 target_section="I",
                 target_kind=TargetKind.PART,
             ),
@@ -957,7 +957,7 @@ class TestClauseAstFromAmendmentOps:
 
     def test_single_replace_section(self) -> None:
         op = AmendmentOp(
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="5",
             target_kind=TargetKind.SECTION,
         )
@@ -973,7 +973,7 @@ class TestClauseAstFromAmendmentOps:
 
     def test_repeal_with_chapter(self) -> None:
         op = AmendmentOp(
-            op_type="REPEAL",
+            op_type=OpType.REPEAL,
             target_section="3",
             target_kind=TargetKind.SECTION,
             target_chapter="2",
@@ -988,7 +988,7 @@ class TestClauseAstFromAmendmentOps:
 
     def test_chapter_level_op(self) -> None:
         op = AmendmentOp(
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="3",
             target_kind=TargetKind.CHAPTER,
         )
@@ -999,9 +999,9 @@ class TestClauseAstFromAmendmentOps:
 
     def test_multi_verb_groups(self) -> None:
         ops = [
-            AmendmentOp(op_type="REPLACE", target_section="1", target_kind=TargetKind.SECTION),
-            AmendmentOp(op_type="REPEAL", target_section="2", target_kind=TargetKind.SECTION),
-            AmendmentOp(op_type="INSERT", target_section="3", target_kind=TargetKind.SECTION),
+            AmendmentOp(op_type=OpType.REPLACE, target_section="1", target_kind=TargetKind.SECTION),
+            AmendmentOp(op_type=OpType.REPEAL, target_section="2", target_kind=TargetKind.SECTION),
+            AmendmentOp(op_type=OpType.INSERT, target_section="3", target_kind=TargetKind.SECTION),
         ]
         ast = clause_ast_from_amendment_ops(ops)
         assert len(ast.verb_groups) == 3
@@ -1011,7 +1011,7 @@ class TestClauseAstFromAmendmentOps:
 
     def test_renumber_produces_label_amend(self) -> None:
         op = AmendmentOp(
-            op_type="RENUMBER",
+            op_type=OpType.RENUMBER,
             target_section="5",
             target_kind=TargetKind.SECTION,
             lo=LegalOperation(
@@ -1038,9 +1038,9 @@ class TestClauseAstFromAmendmentOps:
 
         # Build equivalent AmendmentOps
         am_ops = [
-            AmendmentOp(op_type="REPLACE", target_section="1", target_kind=TargetKind.SECTION),
-            AmendmentOp(op_type="REPEAL", target_section="2", target_kind=TargetKind.SECTION),
-            AmendmentOp(op_type="REPLACE", target_section="3", target_kind=TargetKind.SECTION, target_chapter="5"),
+            AmendmentOp(op_type=OpType.REPLACE, target_section="1", target_kind=TargetKind.SECTION),
+            AmendmentOp(op_type=OpType.REPEAL, target_section="2", target_kind=TargetKind.SECTION),
+            AmendmentOp(op_type=OpType.REPLACE, target_section="3", target_kind=TargetKind.SECTION, target_chapter="5"),
         ]
         ast = clause_ast_from_amendment_ops(am_ops)
         ast_claims = build_clause_claims(ast, "1994/1280")
@@ -1502,7 +1502,7 @@ class TestTilalleRangeInsertParentAdoption:
         ops = [
             AmendmentOp(
                 op_id=f"insert_{s}",
-                op_type="INSERT",
+                op_type=OpType.INSERT,
                 target_section=s,
                 target_kind=TargetKind.SECTION,
                 target_chapter="25",
@@ -1544,7 +1544,7 @@ class TestTilalleRangeInsertParentAdoption:
         ops = [
             AmendmentOp(
                 op_id=f"replace_{s}",
-                op_type="REPLACE",
+                op_type=OpType.REPLACE,
                 target_section=s,
                 target_kind=TargetKind.SECTION,
                 target_chapter="3",
@@ -1573,12 +1573,12 @@ class TestTilalleRangeInsertParentAdoption:
         inventory = build_observed_body_inventory(xml)
 
         ops = [
-            AmendmentOp(op_id="r1", op_type="REPLACE", target_section="1", target_kind=TargetKind.SECTION, target_chapter="1", source_statute="2015/303"),
-            AmendmentOp(op_id="r2", op_type="REPLACE", target_section="2", target_kind=TargetKind.SECTION, target_chapter="1", source_statute="2015/303"),
+            AmendmentOp(op_id="r1", op_type=OpType.REPLACE, target_section="1", target_kind=TargetKind.SECTION, target_chapter="1", source_statute="2015/303"),
+            AmendmentOp(op_id="r2", op_type=OpType.REPLACE, target_section="2", target_kind=TargetKind.SECTION, target_chapter="1", source_statute="2015/303"),
         ]
         for sec in ["4", "5", "6", "7", "8"]:
-            ops.append(AmendmentOp(op_id=f"i{sec}", op_type="INSERT", target_section=sec, target_kind=TargetKind.SECTION, target_chapter="25", source_statute="2015/303"))
-        ops.append(AmendmentOp(op_id="r10", op_type="REPLACE", target_section="10", target_kind=TargetKind.SECTION, target_chapter="30", source_statute="2015/303"))
+            ops.append(AmendmentOp(op_id=f"i{sec}", op_type=OpType.INSERT, target_section=sec, target_kind=TargetKind.SECTION, target_chapter="25", source_statute="2015/303"))
+        ops.append(AmendmentOp(op_id="r10", op_type=OpType.REPLACE, target_section="10", target_kind=TargetKind.SECTION, target_chapter="30", source_statute="2015/303"))
 
         ast = clause_ast_from_amendment_ops(ops)
         claims = build_clause_claims(ast, "2008/521")

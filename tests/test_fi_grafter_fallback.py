@@ -101,7 +101,7 @@ from lawvm.finland.normalize import (
     parse_ops_fallback_heuristic,
     parse_ops_fallback_heuristic_with_coverage,
 )
-from lawvm.finland.ops import AmendmentOp, FailedOp, ResolvedOp, _build_canonical_intent
+from lawvm.finland.ops import OpType, AmendmentOp, FailedOp, ResolvedOp, _build_canonical_intent
 from lawvm.finland.ops import _lo_with_path_update
 from lawvm.finland.ops import get_replay_profile
 from lawvm.finland.ops import ScopeConfidence, ScopeResolutionConfidence, ScopeResolutionSource
@@ -859,7 +859,7 @@ def test_apply_ops_to_tree_preserves_uncovered_candidate_audits(monkeypatch: pyt
     ops = [
         AmendmentOp(
             op_id="phase2_replace_7",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="7",
             target_unit_kind="section",
             source_statute="1996/1261",
@@ -937,7 +937,7 @@ def test_apply_ops_to_tree_records_resolved_op_apply_audit(monkeypatch: pytest.M
     )
     op = AmendmentOp(
         op_id="replace_7",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="7",
         target_unit_kind="section",
         source_statute="1996/1261",
@@ -1198,7 +1198,7 @@ def test_process_muutoslaki_observes_chapter_seed_skip(monkeypatch) -> None:
     ctx = _statute_context(state.ir)
     skipped_op = AmendmentOp(
         op_id="replace_ch_7",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="7",
         target_unit_kind="chapter",
         source_statute="1996/1261",
@@ -1298,7 +1298,7 @@ def test_process_muutoslaki_preserves_source_pathologies_from_uncovered_apply(mo
     recovered_rop = ResolvedOp.from_amendment_op(
         AmendmentOp(
             op_id="uncovered_replace_7",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="7",
             target_unit_kind="section",
             source_statute="1996/1261",
@@ -1312,7 +1312,7 @@ def test_process_muutoslaki_preserves_source_pathologies_from_uncovered_apply(mo
     )
     phase2_op = AmendmentOp(
         op_id="phase2_replace_7",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="7",
         target_unit_kind="section",
         source_statute="1996/1261",
@@ -2291,7 +2291,7 @@ def test_build_group_surface_does_not_use_unscoped_unique_section_for_carry_forw
     )
     op = AmendmentOp(
         op_id="insert_159_4",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_section="159",
         target_unit_kind="section",
         target_chapter="2",
@@ -2347,7 +2347,7 @@ def test_build_group_surface_does_not_drop_part_for_grouped_part_scope() -> None
     )
     op = AmendmentOp(
         op_id="insert_159_4",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_section="159",
         target_unit_kind="section",
         target_chapter="2",
@@ -2374,7 +2374,7 @@ def test_build_group_surface_does_not_drop_part_for_grouped_part_scope() -> None
 def test_allow_unscoped_live_section_retarget_requires_carry_forward_scope() -> None:
     explicit_scoped = AmendmentOp(
         op_id="replace_159",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="159",
         target_unit_kind="section",
         target_chapter="2",
@@ -2383,7 +2383,7 @@ def test_allow_unscoped_live_section_retarget_requires_carry_forward_scope() -> 
     )
     carry_forward_scoped = AmendmentOp(
         op_id="replace_159_cf",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="159",
         target_unit_kind="section",
         target_chapter="2",
@@ -2392,7 +2392,7 @@ def test_allow_unscoped_live_section_retarget_requires_carry_forward_scope() -> 
     )
     carry_forward_tag_with_explicit_carrier = AmendmentOp(
         op_id="replace_159_cf_explicit",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="159",
         target_unit_kind="section",
         target_chapter="2",
@@ -2449,7 +2449,7 @@ def test_compile_group_emits_carry_forward_live_section_retarget_witness() -> No
     )
     op = AmendmentOp(
         op_id="replace_159_cf",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="159",
         target_unit_kind="section",
         target_chapter="2",
@@ -2627,7 +2627,7 @@ def test_compile_group_retargets_duplicate_section_label_from_close_live_sibling
     )
     op = AmendmentOp(
         op_id="replace_18_explicit",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="18",
         target_unit_kind="section",
         target_chapter="3",
@@ -2869,7 +2869,7 @@ def test_compile_group_uses_unscoped_body_surface_for_carry_forward_section_scop
     group_ops = [
         AmendmentOp(
             op_id="replace_87_1",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="87",
             target_unit_kind="section",
             target_part="5",
@@ -2880,7 +2880,7 @@ def test_compile_group_uses_unscoped_body_surface_for_carry_forward_section_scop
         ),
         AmendmentOp(
             op_id="insert_87_6",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_section="87",
             target_unit_kind="section",
             target_part="5",
@@ -2958,7 +2958,7 @@ def test_compile_group_uses_stale_body_chapter_surface_for_carry_forward_section
     group_ops = [
         AmendmentOp(
             op_id="replace_87_1",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="87",
             target_unit_kind="section",
             target_part="5",
@@ -2969,7 +2969,7 @@ def test_compile_group_uses_stale_body_chapter_surface_for_carry_forward_section
         ),
         AmendmentOp(
             op_id="insert_87_6",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_section="87",
             target_unit_kind="section",
             target_part="5",
@@ -3044,7 +3044,7 @@ def test_compile_group_pure_insert_keeps_explicit_chapter_over_sibling_consensus
     )
     op = AmendmentOp(
         op_id="insert_8a_explicit",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_section="8a",
         target_unit_kind="section",
         target_chapter="5",
@@ -3116,7 +3116,7 @@ def test_compile_group_reports_pure_insert_body_chapter_scope_correction() -> No
     )
     op = AmendmentOp(
         op_id="insert_53a_carry_forward",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_section="53a",
         target_unit_kind="section",
         target_chapter="7",
@@ -3205,7 +3205,7 @@ def test_compile_group_strict_profile_blocks_carry_forward_live_section_retarget
     )
     op = AmendmentOp(
         op_id="replace_159_cf",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="159",
         target_unit_kind="section",
         target_chapter="2",
@@ -3276,7 +3276,7 @@ def test_compile_group_reports_body_chapter_replace_to_insert_move_recovery() ->
     )
     op = AmendmentOp(
         op_id="replace55",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="55",
         target_unit_kind="section",
         target_chapter="7",
@@ -3348,7 +3348,7 @@ def test_compile_group_preserves_declared_body_chapter_move_as_replace() -> None
     )
     op = AmendmentOp(
         op_id="replace25",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="25",
         target_unit_kind="section",
         target_chapter="6",
@@ -3420,7 +3420,7 @@ def test_compile_group_strict_rejects_body_chapter_replace_to_insert_move_recove
     )
     op = AmendmentOp(
         op_id="replace55",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="55",
         target_unit_kind="section",
         target_chapter="7",
@@ -3482,7 +3482,7 @@ def test_compile_group_does_not_report_body_chapter_move_for_same_chapter_replac
     )
     op = AmendmentOp(
         op_id="replace55",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="55",
         target_unit_kind="section",
         target_chapter="7",
@@ -3543,7 +3543,7 @@ def test_compile_group_retargets_explicit_scope_rewrite_live_section_to_unique_c
     )
     op = AmendmentOp(
         op_id="replace_15_rewrite",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="15",
         target_unit_kind="section",
         target_chapter="2",
@@ -3630,7 +3630,7 @@ def test_compile_group_retargets_explicit_chunk_section_to_body_backed_live_part
     )
     op = AmendmentOp(
         op_id="replace_84_explicit_chunk",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="84",
         target_unit_kind="section",
         target_part="3",
@@ -3729,7 +3729,7 @@ def test_compile_group_retargets_explicit_chunk_section_from_stale_part_only_sco
     )
     op = AmendmentOp(
         op_id="replace_93_part_only_scope",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="93",
         target_unit_kind="section",
         target_part="3",
@@ -3823,7 +3823,7 @@ def test_compile_group_strict_profile_blocks_explicit_chunk_body_backed_live_sec
     )
     op = AmendmentOp(
         op_id="replace_84_explicit_chunk",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="84",
         target_unit_kind="section",
         target_part="3",
@@ -3909,7 +3909,7 @@ def test_compile_group_retargets_explicit_chunk_section_to_unique_live_path_when
     )
     op = AmendmentOp(
         op_id="replace_75e_explicit_chunk",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="75e",
         target_unit_kind="section",
         target_part="3",
@@ -3966,7 +3966,7 @@ def test_build_group_surface_uses_renumber_destination_payload_when_source_label
     )
     renumber = AmendmentOp(
         op_id="renumber_5_159",
-        op_type="RENUMBER",
+        op_type=OpType.RENUMBER,
         target_section="5",
         target_unit_kind="section",
         target_chapter="2",
@@ -3982,7 +3982,7 @@ def test_build_group_surface_uses_renumber_destination_payload_when_source_label
     )
     heading_replace = AmendmentOp(
         op_id="replace_159_heading",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="5",
         target_unit_kind="section",
         target_chapter="2",
@@ -4011,7 +4011,7 @@ def test_elaborate_group_phase1_constraint_filter_records_rejected_op_obligation
     muutos_tree = etree.fromstring('<body xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0" />')
     op = AmendmentOp(
         op_id="replace_5",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="5",
         target_unit_kind="section",
         source_statute="2099/1",
@@ -4241,7 +4241,7 @@ def test_container_pruning_heading_only_accepts_plain_container_replace_group() 
     assert _container_pruning_is_expected_heading_only(
         [
             AmendmentOp(
-                op_type="REPLACE",
+                op_type=OpType.REPLACE,
                 target_kind=TargetKind.CHAPTER,
                 target_section="9a",
             )
@@ -4456,18 +4456,18 @@ def test_prune_container_payload_sections_prunes_foreign_insert_when_payload_is_
 
 def test_group_shadow_pruning_foreign_scoped_section_targets_ignores_foreign_replaces() -> None:
     chapter_insert = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="chapter",
         target_section="3a",
     )
     foreign_replace_20 = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="20",
         target_chapter="4",
     )
     foreign_replace_21 = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="21",
         target_chapter="4",
@@ -4486,19 +4486,19 @@ def test_group_shadow_pruning_foreign_scoped_section_targets_ignores_foreign_rep
 
 def test_group_shadow_pruning_foreign_scoped_replace_section_targets_keeps_foreign_replaces() -> None:
     chapter_replace = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="chapter",
         target_section="7",
     )
     foreign_replace_51 = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="51",
         target_chapter="8",
         target_paragraph=1,
     )
     foreign_replace_61 = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="61",
         target_chapter="8",
@@ -4518,19 +4518,19 @@ def test_group_shadow_pruning_foreign_scoped_replace_section_targets_keeps_forei
 
 def test_group_shadow_pruning_foreign_scoped_replace_section_target_scopes_preserves_scope() -> None:
     chapter_replace = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="chapter",
         target_section="7",
     )
     foreign_replace_51 = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="51",
         target_chapter="8",
         target_paragraph=1,
     )
     local_replace_52 = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="52",
         target_chapter="7",
@@ -4551,18 +4551,18 @@ def test_group_shadow_pruning_foreign_scoped_replace_section_target_scopes_prese
 
 def test_group_shadow_pruning_foreign_scoped_section_targets_keeps_foreign_inserts() -> None:
     chapter_insert = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="chapter",
         target_section="5c",
     )
     foreign_insert_20a = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="20a",
         target_chapter="6",
     )
     foreign_insert_20h = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="20h",
         target_chapter="6",
@@ -4581,18 +4581,18 @@ def test_group_shadow_pruning_foreign_scoped_section_targets_keeps_foreign_inser
 
 def test_group_shadow_pruning_foreign_scoped_descendant_section_targets_keeps_only_child_inserts() -> None:
     chapter_insert = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="chapter",
         target_section="6a",
     )
     foreign_section_insert = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="18a",
         target_chapter="7",
     )
     foreign_subsection_insert = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="26",
         target_chapter="9",
@@ -4612,12 +4612,12 @@ def test_group_shadow_pruning_foreign_scoped_descendant_section_targets_keeps_on
 
 def test_group_shadow_pruning_foreign_scoped_section_targets_ignores_carry_forward_inserts() -> None:
     chapter_insert = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="chapter",
         target_section="3a",
     )
     foreign_insert_16a = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="16a",
         target_chapter="5",
@@ -4630,7 +4630,7 @@ def test_group_shadow_pruning_foreign_scoped_section_targets_ignores_carry_forwa
         scope_provenance_tags=("chapter_scope_carry_forward",),
     )
     foreign_insert_16b = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="16b",
         target_chapter="5",
@@ -4656,13 +4656,13 @@ def test_group_shadow_pruning_foreign_scoped_section_targets_ignores_carry_forwa
 
 def test_build_standalone_section_targets_ignores_descendant_only_section_ops() -> None:
     section_insert = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="1",
         target_chapter="11a",
     )
     subsection_insert = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="1",
         target_chapter=None,
@@ -4706,7 +4706,7 @@ def test_retarget_stale_body_scope_skips_whole_section_insert_when_body_matches_
         """
     )
     op = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="1a",
         target_chapter="25",
@@ -4758,7 +4758,7 @@ def test_compile_group_keeps_explicit_chunk_insert_under_matching_body_chapter()
     )
     op = AmendmentOp(
         op_id="insert_2a_explicit_chunk",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_section="2a",
         target_unit_kind="section",
         target_chapter="2",
@@ -4853,7 +4853,7 @@ def test_compile_group_retargets_inferred_body_wrapper_scope_from_live_stem() ->
     )
     op = AmendmentOp(
         op_id="insert_62a_inferred_wrapper",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_section="62a",
         target_unit_kind="section",
         target_chapter="1",
@@ -4950,7 +4950,7 @@ def test_compile_group_does_not_undo_live_stem_host_scope_with_body_wrapper_chap
     )
     op = AmendmentOp(
         op_id="insert_62a_inferred_home_chapter",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_section="62a",
         target_unit_kind="section",
         target_chapter="9",
@@ -5054,7 +5054,7 @@ def test_compile_group_does_not_undo_live_scope_with_mixed_real_body_wrapper() -
     )
     heading_op = AmendmentOp(
         op_id="replace_12_heading",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="12",
         target_unit_kind="section",
         target_chapter="3",
@@ -5070,7 +5070,7 @@ def test_compile_group_does_not_undo_live_scope_with_mixed_real_body_wrapper() -
     )
     subsection_op = AmendmentOp(
         op_id="insert_12_2",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_section="12",
         target_unit_kind="section",
         target_chapter="3",
@@ -5148,7 +5148,7 @@ def test_compile_group_prefers_live_body_chapter_over_live_stem_host_scope() -> 
     )
     op = AmendmentOp(
         op_id="insert_37a_inferred_home_chapter",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_section="37a",
         target_unit_kind="section",
         target_chapter="5",
@@ -5234,7 +5234,7 @@ def test_compile_group_retargets_descendant_insert_from_body_wrapper_to_live_sec
     )
     op = AmendmentOp(
         op_id="insert_43_3_inferred_wrapper",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_section="43",
         target_unit_kind="section",
         target_chapter="1",
@@ -5323,7 +5323,7 @@ def test_compile_group_keeps_scoped_descendant_insert_under_matching_body_chapte
     )
     op = AmendmentOp(
         op_id="insert_14_2mom_scoped",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_section="14",
         target_unit_kind="section",
         target_chapter="4",
@@ -5400,7 +5400,7 @@ def test_compile_group_prefers_scoped_body_chapter_for_repeated_explicit_chunk_i
     )
     op = AmendmentOp(
         op_id="insert_3a_explicit_chunk",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_section="3a",
         target_unit_kind="section",
         target_chapter="6",
@@ -5497,7 +5497,7 @@ def test_compile_group_keeps_carry_forward_insert_scope_when_body_chapter_is_new
     )
     op = AmendmentOp(
         op_id="insert_16a_carry_forward",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="16a",
         target_chapter="5",
@@ -5593,7 +5593,7 @@ def test_retarget_stale_body_scope_does_not_hijack_explicit_same_label_move_dest
         """
     )
     op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="29e",
         target_chapter="5b",
@@ -6260,7 +6260,7 @@ def test_extract_johtolause_legal_ops_direct_relabel_accepts_plain_source_sectio
 def test_drop_payloadless_source_replace_shadowed_by_same_group_relabel() -> None:
     replace_op = AmendmentOp(
         op_id="replace_73",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="73",
         target_unit_kind="section",
         target_chapter="7",
@@ -6268,7 +6268,7 @@ def test_drop_payloadless_source_replace_shadowed_by_same_group_relabel() -> Non
     )
     renumber_op = AmendmentOp(
         op_id="renumber_73_61",
-        op_type="RENUMBER",
+        op_type=OpType.RENUMBER,
         target_section="73",
         target_unit_kind="section",
         target_chapter="7",
@@ -6300,7 +6300,7 @@ def test_drop_payloadless_source_replace_shadowed_by_same_group_relabel() -> Non
 def test_drop_payloadless_source_replace_shadowed_by_same_group_relabel_keeps_replace_when_payload_exists() -> None:
     replace_op = AmendmentOp(
         op_id="replace_73",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="73",
         target_unit_kind="section",
         target_chapter="7",
@@ -6308,7 +6308,7 @@ def test_drop_payloadless_source_replace_shadowed_by_same_group_relabel_keeps_re
     )
     renumber_op = AmendmentOp(
         op_id="renumber_73_61",
-        op_type="RENUMBER",
+        op_type=OpType.RENUMBER,
         target_section="73",
         target_unit_kind="section",
         target_chapter="7",
@@ -6332,7 +6332,7 @@ def test_drop_payloadless_source_replace_shadowed_by_same_group_relabel_keeps_re
 def test_false_positive_reference_constraint_keeps_payloadless_relabel() -> None:
     relabel_op = AmendmentOp(
         op_id="renumber_27h_27i",
-        op_type="RENUMBER",
+        op_type=OpType.RENUMBER,
         target_section="27h",
         target_unit_kind="section",
         target_chapter="6a",
@@ -6364,7 +6364,7 @@ def test_false_positive_reference_constraint_keeps_payloadless_relabel() -> None
 def test_unsupported_payload_rejection_does_not_reject_relabel() -> None:
     relabel_op = AmendmentOp(
         op_id="renumber_27i_27j",
-        op_type="RENUMBER",
+        op_type=OpType.RENUMBER,
         target_section="27i",
         target_unit_kind="section",
         target_chapter="6a",
@@ -6372,7 +6372,7 @@ def test_unsupported_payload_rejection_does_not_reject_relabel() -> None:
     )
     replace_op = AmendmentOp(
         op_id="replace_27i",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="27i",
         target_unit_kind="section",
         target_chapter="6a",
@@ -6742,10 +6742,10 @@ def test_lo_with_path_update_keeps_targets_in_sync() -> None:
 
 def test_dedupe_fallback_ops_considers_exact_duplicate_targets() -> None:
     ops = [
-        AmendmentOp(op_id="", op_type="REPEAL", target_kind=TargetKind.CHAPTER, target_section="3"),
-        AmendmentOp(op_id="", op_type="REPEAL", target_kind=TargetKind.CHAPTER, target_section="3"),
-        AmendmentOp(op_id="", op_type="REPEAL", target_kind=TargetKind.SECTION, target_section="47", target_paragraph=7),
-        AmendmentOp(op_id="", op_type="REPEAL", target_kind=TargetKind.SECTION, target_section="47", target_paragraph=7),
+        AmendmentOp(op_id="", op_type=OpType.REPEAL, target_kind=TargetKind.CHAPTER, target_section="3"),
+        AmendmentOp(op_id="", op_type=OpType.REPEAL, target_kind=TargetKind.CHAPTER, target_section="3"),
+        AmendmentOp(op_id="", op_type=OpType.REPEAL, target_kind=TargetKind.SECTION, target_section="47", target_paragraph=7),
+        AmendmentOp(op_id="", op_type=OpType.REPEAL, target_kind=TargetKind.SECTION, target_section="47", target_paragraph=7),
     ]
 
     deduped = _dedupe_fallback_ops_ir(ops)
@@ -6769,8 +6769,8 @@ def test_dedupe_fallback_ops_preserves_same_section_in_distinct_parts() -> None:
         destination=LegalAddress(path=(("section", "159"),)),
     )
     ops = [
-        AmendmentOp(op_id="renum_ii", op_type="RENUMBER", lo=lo_part_ii),
-        AmendmentOp(op_id="renum_iii", op_type="RENUMBER", lo=lo_part_iii),
+        AmendmentOp(op_id="renum_ii", op_type=OpType.RENUMBER, lo=lo_part_ii),
+        AmendmentOp(op_id="renum_iii", op_type=OpType.RENUMBER, lo=lo_part_iii),
     ]
 
     deduped = _dedupe_fallback_ops_ir(ops)
@@ -6804,7 +6804,7 @@ def test_apply_ops_to_tree_does_not_use_unique_global_snapshot_hint_for_scoped_s
     ctx = _statute_context(state.ir)
     op = AmendmentOp(
         op_id="replace_wrong_part_23",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="23",
         target_unit_kind="section",
         target_chapter="5",
@@ -6890,7 +6890,7 @@ def test_apply_ops_to_tree_uses_cross_chapter_global_fallback_for_root_level_sec
     ctx = _statute_context(state.ir)
     op = AmendmentOp(
         op_id="replace_ch5_45b",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="45b",
         target_unit_kind="section",
         target_chapter="5",
@@ -7462,7 +7462,7 @@ def test_apply_uncovered_kumotaan_retries_covered_container_when_still_present()
     )
     state = _replay_state(ir)
     ctx = _statute_context(ir)
-    ops = [AmendmentOp(op_id="", op_type="REPEAL", target_kind=TargetKind.CHAPTER, target_section="2a")]
+    ops = [AmendmentOp(op_id="", op_type=OpType.REPEAL, target_kind=TargetKind.CHAPTER, target_section="2a")]
     johto = "Tällä asetuksella kumotaan mielenterveysasetuksen 2 a luku."
 
     result = _apply_uncovered_kumotaan_typed(
@@ -7491,7 +7491,7 @@ def test_apply_uncovered_kumotaan_applies_vts_repeal_without_kumotaan_johtolause
     ops = [
         AmendmentOp(
             op_id="vts_24a",
-            op_type="REPEAL",
+            op_type=OpType.REPEAL,
             target_kind=TargetKind.SECTION,
             target_section="24a",
             voimaantulo_repeal=True,
@@ -7765,7 +7765,7 @@ def test_apply_uncovered_kumotaan_does_not_promote_granular_vts_repeal_to_sectio
     ops = [
         AmendmentOp(
             op_id="vts_8_m3",
-            op_type="REPEAL",
+            op_type=OpType.REPEAL,
             target_kind=TargetKind.SECTION,
             target_section="8",
             target_chapter="2",
@@ -7914,13 +7914,13 @@ def test_fallback_recovers_shifted_subsection_insert_and_retargeted_replace() ->
 def test_stabilize_insert_order_prefers_insert_first_when_replace_target_only_exists_after_shift() -> None:
     ops = [
         AmendmentOp(
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_kind=TargetKind.SECTION,
             target_section="26",
             target_paragraph=3,
         ),
         AmendmentOp(
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_kind=TargetKind.SECTION,
             target_section="26",
             target_paragraph=2,
@@ -7944,19 +7944,19 @@ def test_stabilize_insert_order_prefers_insert_first_when_replace_target_only_ex
 def test_stabilize_insert_order_keeps_replace_first_when_live_target_exists() -> None:
     ops = [
         AmendmentOp(
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_kind=TargetKind.SECTION,
             target_section="26",
             target_paragraph=3,
         ),
         AmendmentOp(
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_kind=TargetKind.SECTION,
             target_section="26",
             target_paragraph=3,
         ),
         AmendmentOp(
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_kind=TargetKind.SECTION,
             target_section="26",
             target_paragraph=5,
@@ -7978,20 +7978,20 @@ def test_stabilize_insert_order_keeps_replace_first_when_live_target_exists() ->
 def test_stabilize_insert_order_moves_same_wave_subsection_renumber_after_rebased_replace_family() -> None:
     ops = [
         AmendmentOp(
-            op_type="RENUMBER",
+            op_type=OpType.RENUMBER,
             target_kind=TargetKind.SECTION,
             target_section="8",
             target_paragraph=2,
         ),
         AmendmentOp(
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_kind=TargetKind.SECTION,
             target_section="8",
             target_paragraph=3,
             target_guessing_provenance_tags=("rebase_duplicate_target_shifted_replace",),
         ),
         AmendmentOp(
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_kind=TargetKind.SECTION,
             target_section="8",
             target_paragraph=2,
@@ -8409,8 +8409,8 @@ def test_fallback_preserves_explicit_subsection_and_section_inserts_in_mixed_cla
 def test_repeal_reenact_normalization_uses_typed_provenance_without_hint() -> None:
     got = normalize_group_ops_for_repeal_reenact(
         [
-            AmendmentOp(op_id="rep", op_type="REPEAL", target_kind=TargetKind.SECTION, target_section="4"),
-            AmendmentOp(op_id="ins", op_type="INSERT", target_kind=TargetKind.SECTION, target_section="4"),
+            AmendmentOp(op_id="rep", op_type=OpType.REPEAL, target_kind=TargetKind.SECTION, target_section="4"),
+            AmendmentOp(op_id="ins", op_type=OpType.INSERT, target_kind=TargetKind.SECTION, target_section="4"),
         ]
     )
 
@@ -8423,11 +8423,11 @@ def test_repeal_reenact_normalization_leaves_multiple_repeals_unchanged() -> Non
     # Bug regression: amendment with kumotaan ... 2a, 4-7 § sekä muutetaan 2, 3 §
     # must NOT convert any repeal to replace — all repeals are pure repeals.
     ops = [
-        AmendmentOp(op_id="rep_2a", op_type="REPEAL", target_kind=TargetKind.SECTION, target_section="2a"),
-        AmendmentOp(op_id="rep_4", op_type="REPEAL", target_kind=TargetKind.SECTION, target_section="4"),
-        AmendmentOp(op_id="rep_5", op_type="REPEAL", target_kind=TargetKind.SECTION, target_section="5"),
-        AmendmentOp(op_id="repl_2", op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="2"),
-        AmendmentOp(op_id="repl_3", op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="3"),
+        AmendmentOp(op_id="rep_2a", op_type=OpType.REPEAL, target_kind=TargetKind.SECTION, target_section="2a"),
+        AmendmentOp(op_id="rep_4", op_type=OpType.REPEAL, target_kind=TargetKind.SECTION, target_section="4"),
+        AmendmentOp(op_id="rep_5", op_type=OpType.REPEAL, target_kind=TargetKind.SECTION, target_section="5"),
+        AmendmentOp(op_id="repl_2", op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="2"),
+        AmendmentOp(op_id="repl_3", op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="3"),
     ]
     got = normalize_group_ops_for_repeal_reenact(ops)
 
@@ -8442,8 +8442,8 @@ def test_repeal_reenact_normalization_leaves_single_repeal_with_different_sectio
     # Single repeal of section "7" + replace of section "2" — different sections,
     # no re-enactment content for 7, so no conversion should happen.
     ops = [
-        AmendmentOp(op_id="rep_7", op_type="REPEAL", target_kind=TargetKind.SECTION, target_section="7"),
-        AmendmentOp(op_id="repl_2", op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="2"),
+        AmendmentOp(op_id="rep_7", op_type=OpType.REPEAL, target_kind=TargetKind.SECTION, target_section="7"),
+        AmendmentOp(op_id="repl_2", op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="2"),
     ]
     got = normalize_group_ops_for_repeal_reenact(ops)
 
@@ -8455,7 +8455,7 @@ def test_repeal_reenact_normalization_leaves_single_repeal_with_different_sectio
 def test_append_compiled_group_ops_omits_resolution_hint_field() -> None:
     compiled_ops = []
 
-    op = AmendmentOp(op_id="op0", op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="4")
+    op = AmendmentOp(op_id="op0", op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="4")
     rop = ResolvedOp.from_amendment_op(
         op,
         muutos_ir=None,
@@ -8478,7 +8478,7 @@ def test_append_compiled_group_ops_serializes_resolved_scope_confidence() -> Non
 
     op = AmendmentOp(
         op_id="op0",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="4",
         target_chapter="5",
@@ -8524,7 +8524,7 @@ def test_append_compiled_group_ops_prefers_stored_scope_confidence_over_sidecar_
 
     op = AmendmentOp(
         op_id="op0",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="4",
         target_chapter="5",
@@ -8554,11 +8554,11 @@ def test_append_compiled_group_ops_prefers_stored_scope_confidence_over_sidecar_
 
 def test_duplicate_frontend_target_observations_flags_exact_duplicate_targets() -> None:
     ops = [
-        AmendmentOp(op_id="", op_type="REPLACE", target_section="33", target_kind=TargetKind.SECTION),
-        AmendmentOp(op_id="", op_type="REPLACE", target_section="33", target_kind=TargetKind.SECTION),
+        AmendmentOp(op_id="", op_type=OpType.REPLACE, target_section="33", target_kind=TargetKind.SECTION),
+        AmendmentOp(op_id="", op_type=OpType.REPLACE, target_section="33", target_kind=TargetKind.SECTION),
         AmendmentOp(
             op_id="",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_section="98",
             target_kind=TargetKind.SECTION,
             target_chapter="12",
@@ -8566,13 +8566,13 @@ def test_duplicate_frontend_target_observations_flags_exact_duplicate_targets() 
         ),
         AmendmentOp(
             op_id="",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_section="98",
             target_kind=TargetKind.SECTION,
             target_chapter="12",
             target_paragraph=3,
         ),
-        AmendmentOp(op_id="", op_type="REPLACE", target_section="33", target_kind=TargetKind.SECTION, target_paragraph=1),
+        AmendmentOp(op_id="", op_type=OpType.REPLACE, target_section="33", target_kind=TargetKind.SECTION, target_paragraph=1),
     ]
 
     got = _duplicate_frontend_target_observations(ops, "2020/766")
@@ -8617,12 +8617,12 @@ def test_duplicate_frontend_target_observations_flags_exact_duplicate_targets() 
 
 def test_semantic_collapse_move_or_renumber_observations_flag_duplicate_move_clause_targets() -> None:
     ops = [
-        AmendmentOp(op_id="", op_type="REPLACE", target_section="31", target_kind=TargetKind.SECTION),
-        AmendmentOp(op_id="", op_type="REPLACE", target_section="32", target_kind=TargetKind.SECTION),
-        AmendmentOp(op_id="", op_type="REPLACE", target_section="33", target_kind=TargetKind.SECTION),
-        AmendmentOp(op_id="", op_type="REPLACE", target_section="34", target_kind=TargetKind.SECTION),
-        AmendmentOp(op_id="", op_type="REPLACE", target_section="33", target_kind=TargetKind.SECTION),
-        AmendmentOp(op_id="", op_type="REPLACE", target_section="34", target_kind=TargetKind.SECTION),
+        AmendmentOp(op_id="", op_type=OpType.REPLACE, target_section="31", target_kind=TargetKind.SECTION),
+        AmendmentOp(op_id="", op_type=OpType.REPLACE, target_section="32", target_kind=TargetKind.SECTION),
+        AmendmentOp(op_id="", op_type=OpType.REPLACE, target_section="33", target_kind=TargetKind.SECTION),
+        AmendmentOp(op_id="", op_type=OpType.REPLACE, target_section="34", target_kind=TargetKind.SECTION),
+        AmendmentOp(op_id="", op_type=OpType.REPLACE, target_section="33", target_kind=TargetKind.SECTION),
+        AmendmentOp(op_id="", op_type=OpType.REPLACE, target_section="34", target_kind=TargetKind.SECTION),
     ]
     johto = "muutetaan 31–34 §, joista 33 ja 34 § samalla siirretään 5 lukuun"
 
@@ -8694,7 +8694,7 @@ def test_enrich_ops_mints_deterministic_ids_for_blank_fallback_ops() -> None:
     ops = [
         AmendmentOp(
             op_id="",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_section="2",
             target_unit_kind="section",
         )
@@ -8711,7 +8711,7 @@ def test_enrich_ops_preserves_johtolause_source_witness_on_legal_operation() -> 
     johto = "kumotaan lain 2 § seuraavasti:"
     op = AmendmentOp(
         op_id="repeal-2",
-        op_type="REPEAL",
+        op_type=OpType.REPEAL,
         target_section="2",
         target_unit_kind="section",
         lo=LegalOperation(
@@ -8736,7 +8736,7 @@ def test_enrich_ops_preserves_johtolause_source_witness_on_legal_operation() -> 
 
 
 def test_stamp_fallback_op_ids_mints_deterministic_ids_for_blank_ops() -> None:
-    op = AmendmentOp(op_id="", op_type="INSERT", target_section="2", target_unit_kind="section")
+    op = AmendmentOp(op_id="", op_type=OpType.INSERT, target_section="2", target_unit_kind="section")
 
     got = stamp_fallback_op_ids([op], "verify/1")
 
@@ -8902,14 +8902,14 @@ def test_semantic_collapse_move_or_renumber_observations_flag_renumber_backref_c
     ops = [
         AmendmentOp(
             op_id="",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="2",
             target_kind=TargetKind.SECTION,
             target_chapter="1",
         ),
         AmendmentOp(
             op_id="",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="2",
             target_kind=TargetKind.SECTION,
             target_chapter="1",
@@ -8917,14 +8917,14 @@ def test_semantic_collapse_move_or_renumber_observations_flag_renumber_backref_c
         ),
         AmendmentOp(
             op_id="",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="3",
             target_kind=TargetKind.SECTION,
             target_chapter="1",
         ),
         AmendmentOp(
             op_id="",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="3",
             target_kind=TargetKind.SECTION,
             target_chapter="1",
@@ -8979,7 +8979,7 @@ def test_scope_anchor_dependence_observations_flag_heuristic_scope_tags() -> Non
     ops = [
         AmendmentOp(
             op_id="",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="33",
             target_kind=TargetKind.SECTION,
             target_chapter="5",
@@ -8987,7 +8987,7 @@ def test_scope_anchor_dependence_observations_flag_heuristic_scope_tags() -> Non
         ),
         AmendmentOp(
             op_id="",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="34",
             target_kind=TargetKind.SECTION,
             target_chapter="5",
@@ -8995,7 +8995,7 @@ def test_scope_anchor_dependence_observations_flag_heuristic_scope_tags() -> Non
         ),
         AmendmentOp(
             op_id="",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="34",
             target_kind=TargetKind.SECTION,
             target_chapter="5",
@@ -9382,7 +9382,7 @@ def test_uncovered_body_skips_sections_owned_by_whole_chapter_insert() -> None:
         )
     )
     ctx = _statute_context(state.ir)
-    ops = [AmendmentOp(op_id="", op_type="INSERT", target_kind=TargetKind.CHAPTER, target_section="7a")]
+    ops = [AmendmentOp(op_id="", op_type=OpType.INSERT, target_kind=TargetKind.CHAPTER, target_section="7a")]
     muutos_tree = etree.fromstring(
         """
         <akn xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
@@ -9559,7 +9559,7 @@ def test_uncovered_body_surfaces_coverage_ignored_and_rejected_witnesses() -> No
     ops = [
         AmendmentOp(
             op_id="missing_target",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="",
             target_unit_kind="section",
             source_statute="2021/1215",
@@ -9672,7 +9672,7 @@ def test_uncovered_body_records_peg_owned_label_collision_skip_finding() -> None
     ops = [
         AmendmentOp(
             op_id="replace_55a_1mom",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="55a",
             target_chapter="6",
             target_paragraph=1,
@@ -9747,7 +9747,7 @@ def test_uncovered_body_skips_section_candidate_owned_by_descendant_op() -> None
     ops = [
         AmendmentOp(
             op_id="insert_13_4_141a",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_section="13",
             target_chapter="3",
             target_paragraph=4,
@@ -9810,7 +9810,7 @@ def test_uncovered_body_omission_merge_requires_scoped_target_witness() -> None:
     ops = [
         AmendmentOp(
             op_id="unrelated_replace_99",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="99",
             target_unit_kind="section",
             source_statute="2010/625",
@@ -9933,7 +9933,7 @@ def test_uncovered_body_omission_merge_allows_explicit_section_johto_witness() -
     ops = [
         AmendmentOp(
             op_id="unrelated_replace_99",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="99",
             target_unit_kind="section",
             source_statute="2010/625",
@@ -10124,7 +10124,7 @@ def test_uncovered_body_chapter_payload_ownership_requires_subtree_claim(monkeyp
         )
     )
     ctx = _statute_context(state.ir)
-    ops = [AmendmentOp(op_id="ch5_insert", op_type="INSERT", target_kind=TargetKind.CHAPTER, target_section="5luku")]
+    ops = [AmendmentOp(op_id="ch5_insert", op_type=OpType.INSERT, target_kind=TargetKind.CHAPTER, target_section="5luku")]
     muutos_tree = etree.fromstring(
         """
         <akn xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
@@ -10207,7 +10207,7 @@ def test_uncovered_body_records_same_wave_relabel_destination_owned_skip() -> No
     ops = [
         AmendmentOp(
             op_id="renumber_73_61",
-            op_type="RENUMBER",
+            op_type=OpType.RENUMBER,
             target_section="73",
             target_kind=TargetKind.SECTION,
             target_chapter="7",
@@ -10215,7 +10215,7 @@ def test_uncovered_body_records_same_wave_relabel_destination_owned_skip() -> No
         ),
         AmendmentOp(
             op_id="replace_ch7_heading",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="7",
             target_kind=TargetKind.CHAPTER,
         ),
@@ -10291,7 +10291,7 @@ def test_uncovered_body_records_same_wave_relabel_destination_owned_skip_for_lea
     ops = [
         AmendmentOp(
             op_id="renumber_4_123",
-            op_type="RENUMBER",
+            op_type=OpType.RENUMBER,
             target_section="4",
             target_kind=TargetKind.SECTION,
             target_chapter="12",
@@ -10299,7 +10299,7 @@ def test_uncovered_body_records_same_wave_relabel_destination_owned_skip_for_lea
         ),
         AmendmentOp(
             op_id="replace_ch12_heading",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="12",
             target_kind=TargetKind.CHAPTER,
         ),
@@ -10731,7 +10731,7 @@ def test_uncovered_body_records_cross_chapter_existing_target_skip_finding() -> 
     ops = [
         AmendmentOp(
             op_id="replace_99",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="99",
             target_unit_kind="section",
             source_statute="2020/1207",
@@ -10836,7 +10836,7 @@ def test_uncovered_body_adopts_sections_into_new_chapter_when_chapter_insert_lef
     ctx = _statute_context(state.ir)
 
     # PEG produced a chapter INSERT op for chapter 5 (whole-chapter claim)
-    ops = [AmendmentOp(op_id="ch5_insert", op_type="INSERT", target_kind=TargetKind.CHAPTER, target_section="5luku")]
+    ops = [AmendmentOp(op_id="ch5_insert", op_type=OpType.INSERT, target_kind=TargetKind.CHAPTER, target_section="5luku")]
 
     muutos_tree = etree.fromstring(
         """
@@ -10959,7 +10959,7 @@ def test_uncovered_body_adopts_sections_into_part_scoped_new_chapter_with_same_l
     ops = [
         AmendmentOp(
             op_id="part5_ch2_insert",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_kind=TargetKind.CHAPTER,
             target_part="V",
             target_section="2luku",
@@ -11040,7 +11040,7 @@ def test_uncovered_body_reports_mixed_chapter_payload_ownership() -> None:
         )
     )
     ctx = _statute_context(state.ir)
-    ops = [AmendmentOp(op_id="ch5_insert", op_type="INSERT", target_kind=TargetKind.CHAPTER, target_section="5luku")]
+    ops = [AmendmentOp(op_id="ch5_insert", op_type=OpType.INSERT, target_kind=TargetKind.CHAPTER, target_section="5luku")]
     muutos_tree = etree.fromstring(
         """
         <akn xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
@@ -11261,7 +11261,7 @@ def test_retarget_stale_body_chapter_scope_ignores_typed_scope_confidence_tags()
     )
     op = AmendmentOp(
         op_id="insert_32a",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_section="32",
         target_kind=TargetKind.SECTION,
         target_chapter="4d",
@@ -11312,7 +11312,7 @@ def test_retarget_stale_body_chapter_scope_respects_stored_scope_confidence_carr
     )
     op = AmendmentOp(
         op_id="insert_32a",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_section="32",
         target_kind=TargetKind.SECTION,
         target_chapter="4d",
@@ -11370,7 +11370,7 @@ def test_retarget_stale_body_chapter_scope_keeps_explicit_chunk_whole_section_in
     )
     op = AmendmentOp(
         op_id="insert_5_explicit_chunk",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_section="5",
         target_kind=TargetKind.SECTION,
         target_chapter="2",
@@ -11425,7 +11425,7 @@ def test_retarget_stale_body_chapter_scope_allows_explicit_scope_rewrite_carrier
     )
     op = AmendmentOp(
         op_id="insert_32a",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_section="32",
         target_kind=TargetKind.SECTION,
         target_chapter="4d",
@@ -11473,7 +11473,7 @@ def test_body_chapter_scope_for_section_op_respects_part_scope() -> None:
     )
     op = AmendmentOp(
         op_id="insert_subsection",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="1",
         target_paragraph=3,
@@ -11519,7 +11519,7 @@ def test_body_chapter_scope_for_section_op_keeps_ambiguous_same_part_unscoped() 
     )
     op = AmendmentOp(
         op_id="insert_subsection",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="1",
         target_paragraph=3,
@@ -11565,7 +11565,7 @@ def test_body_chapter_scope_for_section_op_overrides_carry_forward_with_unique_e
         """
     )
     op = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="37a",
         target_chapter="5",
@@ -11612,7 +11612,7 @@ def test_enrich_ops_prefers_live_body_chapter_before_letter_suffix_stem_host_for
     )
     op = AmendmentOp(
         op_id="insert_37a",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="37a",
     )
@@ -11655,7 +11655,7 @@ def test_enrich_ops_prefers_letter_suffix_stem_host_before_unborn_body_wrapper_f
     )
     op = AmendmentOp(
         op_id="insert_37a",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="37a",
     )
@@ -11704,7 +11704,7 @@ def test_enrich_ops_overrides_live_stem_host_with_corroborated_source_body_chapt
     )
     insert_op = AmendmentOp(
         op_id="insert_130a",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="130a",
         target_chapter="16",
@@ -11724,7 +11724,7 @@ def test_enrich_ops_overrides_live_stem_host_with_corroborated_source_body_chapt
     )
     replace_op = AmendmentOp(
         op_id="replace_131",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="131",
         target_chapter="17",
@@ -11737,7 +11737,7 @@ def test_enrich_ops_overrides_live_stem_host_with_corroborated_source_body_chapt
     )
     insert_subsection_op = AmendmentOp(
         op_id="insert_136_5",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="136",
         target_chapter="17",
@@ -11803,7 +11803,7 @@ def test_enrich_ops_keeps_live_stem_host_without_existing_section_corroboration(
     )
     insert_op = AmendmentOp(
         op_id="insert_130a",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="130a",
         target_chapter="16",
@@ -11823,7 +11823,7 @@ def test_enrich_ops_keeps_live_stem_host_without_existing_section_corroboration(
     )
     sibling_insert_op = AmendmentOp(
         op_id="insert_135b",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="135b",
         target_chapter="17",
@@ -11874,7 +11874,7 @@ def test_enrich_ops_keeps_live_stem_host_without_internal_reference_witness() ->
     )
     insert_op = AmendmentOp(
         op_id="insert_6a",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="6a",
         target_chapter="2",
@@ -11894,7 +11894,7 @@ def test_enrich_ops_keeps_live_stem_host_without_internal_reference_witness() ->
     )
     replace_op = AmendmentOp(
         op_id="replace_7",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="7",
         target_chapter="3",
@@ -11952,7 +11952,7 @@ def test_enrich_ops_keeps_live_stem_host_when_source_body_corroborator_is_distan
     )
     insert_op = AmendmentOp(
         op_id="insert_10c",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="10c",
         target_chapter="2",
@@ -11972,7 +11972,7 @@ def test_enrich_ops_keeps_live_stem_host_when_source_body_corroborator_is_distan
     )
     replace_op = AmendmentOp(
         op_id="replace_18",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="18",
         target_chapter="3",
@@ -12035,7 +12035,7 @@ def test_enrich_ops_uses_vacated_live_scope_for_recodification_insert_under_mixe
     )
     renumber = AmendmentOp(
         op_id="renumber_27f",
-        op_type="RENUMBER",
+        op_type=OpType.RENUMBER,
         target_unit_kind="section",
         target_section="27f",
         lo=LegalOperation(
@@ -12048,7 +12048,7 @@ def test_enrich_ops_uses_vacated_live_scope_for_recodification_insert_under_mixe
     )
     insert = AmendmentOp(
         op_id="insert_27f",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="27f",
     )
@@ -12103,7 +12103,7 @@ def test_flat_body_insert_chapter_scope_uses_bracketing_live_siblings() -> None:
         """
     )
     op = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="149",
     )
@@ -12142,7 +12142,7 @@ def test_flat_body_insert_chapter_scope_rejects_one_sided_live_sibling() -> None
         """
     )
     op = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="149",
     )
@@ -12190,7 +12190,7 @@ def test_flat_body_replace_scope_uses_letter_suffix_bracketing_live_siblings() -
         """
     )
     op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="20a",
     )
@@ -12237,7 +12237,7 @@ def test_flat_body_replace_scope_rejects_letter_suffix_disagreeing_brackets() ->
         """
     )
     op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="20a",
     )
@@ -12283,7 +12283,7 @@ def test_enrich_ops_keeps_live_carry_forward_subsection_scope_over_stale_body_ch
     )
     op = AmendmentOp(
         op_id="insert_8a_2",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="8a",
         target_chapter="3",
@@ -12338,7 +12338,7 @@ def test_enrich_ops_still_rewrites_deep_carry_forward_when_live_host_is_absent()
     )
     op = AmendmentOp(
         op_id="insert_37a_2",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="37a",
         target_chapter="5",
@@ -12379,14 +12379,14 @@ def test_coalesce_same_target_mixed_scope_section_groups_tags_bare_ops_on_merge(
     )
     bare = AmendmentOp(
         op_id="bare",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="8",
         target_paragraph=2,
     )
     scoped = AmendmentOp(
         op_id="scoped",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="8",
         target_chapter="2",
@@ -12456,7 +12456,7 @@ def test_coalesce_same_target_mixed_scope_section_groups_drops_covered_bare_dupl
     )
     scoped_replace = AmendmentOp(
         op_id="scoped_replace",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="4",
         target_chapter="1",
@@ -12464,7 +12464,7 @@ def test_coalesce_same_target_mixed_scope_section_groups_drops_covered_bare_dupl
     )
     scoped_insert = AmendmentOp(
         op_id="scoped_insert",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="4",
         target_chapter="1",
@@ -12472,7 +12472,7 @@ def test_coalesce_same_target_mixed_scope_section_groups_drops_covered_bare_dupl
     )
     bare_insert = AmendmentOp(
         op_id="bare_insert",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="4",
         target_paragraph=7,
@@ -12519,7 +12519,7 @@ def test_coalesce_same_target_mixed_scope_section_groups_does_not_alias_roman_it
     )
     scoped_insert = AmendmentOp(
         op_id="scoped_insert_4",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="4",
         target_chapter="1",
@@ -12528,7 +12528,7 @@ def test_coalesce_same_target_mixed_scope_section_groups_does_not_alias_roman_it
     )
     bare_insert = AmendmentOp(
         op_id="bare_insert_iv",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="4",
         target_paragraph=1,
@@ -12849,7 +12849,7 @@ def test_restrict_sec1_fallback_drops_foreign_sentence_before_parent_repeal() ->
 def test_snapshot_source_falls_back_to_amendment_dates_for_supplement_ops() -> None:
     aop = AmendmentOp(
         op_id="",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_section="1a",
         target_unit_kind="section",
         source_statute="2020/1133",
@@ -12922,7 +12922,7 @@ def test_skip_suspicious_partial_fallback_whole_section_replace() -> None:
         ),
     )
 
-    op = AmendmentOp(op_id="", op_type="REPLACE", target_section="1", target_kind=TargetKind.SECTION)
+    op = AmendmentOp(op_id="", op_type=OpType.REPLACE, target_section="1", target_kind=TargetKind.SECTION)
 
     assert _is_suspicious_partial_section_replace_ir(op, master, amend) is True
 
@@ -13068,28 +13068,28 @@ def test_replay_xml_2004_699_exact_section_replaces_do_not_keep_stale_subsection
 def test_group_shadow_pruning_section_targets_ignores_duplicate_same_scope_labels() -> None:
     ops = [
         AmendmentOp(
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_kind=TargetKind.SECTION,
             target_section="1",
             target_chapter="5c",
             target_part="",
         ),
         AmendmentOp(
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_kind=TargetKind.SECTION,
             target_section="20a",
             target_chapter="6",
             target_part="",
         ),
         AmendmentOp(
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_kind=TargetKind.SECTION,
             target_section="20h",
             target_chapter=None,
             target_part="",
         ),
         AmendmentOp(
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_kind=TargetKind.SECTION,
             target_section="2",
             target_chapter="7",
@@ -13252,7 +13252,7 @@ def test_tag_explicit_item_shift_after_repeal_hints_marks_matching_repeal_op() -
     ops = [
         AmendmentOp(
             op_id="repeal_d",
-            op_type="REPEAL",
+            op_type=OpType.REPEAL,
             target_section="2",
             target_kind=TargetKind.SECTION,
             target_paragraph=1,
@@ -13260,7 +13260,7 @@ def test_tag_explicit_item_shift_after_repeal_hints_marks_matching_repeal_op() -
         ),
         AmendmentOp(
             op_id="replace_c",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="2",
             target_kind=TargetKind.SECTION,
             target_paragraph=1,
@@ -13281,7 +13281,7 @@ def test_supplement_missing_repeals_after_item_shift_clause_adds_lost_moment_rep
     ops = [
         AmendmentOp(
             op_id="repeal_d",
-            op_type="REPEAL",
+            op_type=OpType.REPEAL,
             target_section="2",
             target_kind=TargetKind.SECTION,
             target_paragraph=1,
@@ -13289,7 +13289,7 @@ def test_supplement_missing_repeals_after_item_shift_clause_adds_lost_moment_rep
         ),
         AmendmentOp(
             op_id="replace_c",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="2",
             target_kind=TargetKind.SECTION,
             target_paragraph=1,
@@ -13330,7 +13330,7 @@ def test_johtolause_supplements_item_shift_delegates_to_canonical_clause_surface
     ops = [
         AmendmentOp(
             op_id="repeal_d",
-            op_type="REPEAL",
+            op_type=OpType.REPEAL,
             target_section="2",
             target_kind=TargetKind.SECTION,
             target_paragraph=1,
@@ -13348,7 +13348,7 @@ def test_supplement_named_table_row_mixed_clause_ops_adds_missing_replace_and_ta
     ops = [
         AmendmentOp(
             op_id="op0",
-            op_type="REPEAL",
+            op_type=OpType.REPEAL,
             target_section="1",
             target_kind=TargetKind.SECTION,
         )
@@ -13372,7 +13372,7 @@ def test_supplement_named_table_row_mixed_clause_ops_handles_osalta_wording() ->
     ops = [
         AmendmentOp(
             op_id="op0",
-            op_type="REPEAL",
+            op_type=OpType.REPEAL,
             target_section="1",
             target_kind=TargetKind.SECTION,
         )
@@ -13395,7 +13395,7 @@ def test_tag_named_table_row_single_clause_ops_tags_single_replace_clause() -> N
     ops = [
         AmendmentOp(
             op_id="op0",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="1",
             target_kind=TargetKind.SECTION,
         )
@@ -13414,7 +13414,7 @@ def test_supplement_item_and_moment_clause_ops_recovers_item_targets() -> None:
     ops = [
         AmendmentOp(
             op_id="op0",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_section="",
             target_kind=TargetKind.SECTION,
             target_paragraph=1,
@@ -13444,7 +13444,7 @@ def test_supplement_jolloin_moment_renumber_ops_recovers_insert_continuation_shi
     ops = [
         AmendmentOp(
             op_id="insert_15_2",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_section="15",
             target_kind=TargetKind.SECTION,
             target_paragraph=2,
@@ -13491,21 +13491,21 @@ def test_supplement_mixed_explicit_clause_ops_recovers_skipped_targets() -> None
     ops = [
         AmendmentOp(
             op_id="op0",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="13",
             target_kind=TargetKind.SECTION,
             numbered_table_targets=("4",),
         ),
         AmendmentOp(
             op_id="op1",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="26",
             target_kind=TargetKind.SECTION,
             numbered_table_targets=("8",),
         ),
         AmendmentOp(
             op_id="op2",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="33",
             target_kind=TargetKind.SECTION,
             numbered_table_targets=("11",),
@@ -13542,13 +13542,13 @@ def test_supplement_mixed_explicit_clause_ops_recovers_terminal_section_list_and
     ops = [
         AmendmentOp(
             op_id="replace_18",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="18",
             target_kind=TargetKind.SECTION,
         ),
         AmendmentOp(
             op_id="replace_23",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="23",
             target_kind=TargetKind.SECTION,
         ),
@@ -13589,7 +13589,7 @@ def test_supplement_mixed_explicit_clause_ops_does_not_add_moment_for_section_wi
     ops = [
         AmendmentOp(
             op_id="replace_7_1",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="7",
             target_kind=TargetKind.SECTION,
             target_paragraph=1,
@@ -13616,7 +13616,7 @@ def test_supplement_mixed_explicit_clause_ops_does_not_add_bare_section_for_mome
     ops = [
         AmendmentOp(
             op_id="replace_8_2_13",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="8",
             target_kind=TargetKind.SECTION,
             target_paragraph=2,
@@ -13642,7 +13642,7 @@ def test_supplement_mixed_explicit_clause_ops_preserves_explicit_chapter_for_mom
     ops = [
         AmendmentOp(
             op_id="replace_chapter_2_section_3_heading",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="3",
             target_kind=TargetKind.SECTION,
             target_chapter="2",
@@ -13677,7 +13677,7 @@ def test_supplement_mixed_explicit_clause_ops_does_not_treat_repeal_body_section
     ops = [
         AmendmentOp(
             op_id="repeal_9",
-            op_type="REPEAL",
+            op_type=OpType.REPEAL,
             target_section="9",
             target_kind=TargetKind.SECTION,
         )
@@ -13698,7 +13698,7 @@ def test_supplement_mixed_explicit_clause_ops_keeps_possessive_moment_refs_child
     ops = [
         AmendmentOp(
             op_id="replace_2_2",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="2",
             target_kind=TargetKind.SECTION,
             target_paragraph=2,
@@ -13724,20 +13724,20 @@ def test_supplement_mixed_explicit_clause_ops_does_not_convert_chapter_heading_p
     ops = [
         AmendmentOp(
             op_id="replace_chapter_12",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_kind=TargetKind.CHAPTER,
             target_section="12",
         ),
         AmendmentOp(
             op_id="insert_9_12",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_kind=TargetKind.SECTION,
             target_chapter="9",
             target_section="12",
         ),
         AmendmentOp(
             op_id="insert_9_13",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_kind=TargetKind.SECTION,
             target_chapter="9",
             target_section="13",
@@ -13777,14 +13777,14 @@ def test_parse_ops_fallback_recovers_colonless_moment_target_list() -> None:
 def test_numbered_table_proxy_splits_from_child_targets_before_group_compile() -> None:
     table_proxy = AmendmentOp(
         op_id="table_proxy",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="33",
         target_kind=TargetKind.SECTION,
         numbered_table_targets=("11",),
     )
     moment_replace = AmendmentOp(
         op_id="moment_replace",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="33",
         target_kind=TargetKind.SECTION,
         target_paragraph=2,
@@ -13837,7 +13837,7 @@ def test_tag_named_table_row_single_clause_ops_recovers_regional_table_sections(
     ops = [
         AmendmentOp(
             op_id="op0",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="13",
             target_kind=TargetKind.SECTION,
         )
@@ -14141,7 +14141,7 @@ def test_subsection_replace_uses_label_not_position_current_apply_path() -> None
     state = _make_state(body)
     subsecs = [c for c in sec.children if c.kind is IRNodeKind.SUBSECTION]
     replace_sub = _sub("2", _content("Second moment REPLACED"))
-    op = _op(op_type="REPLACE", target_section="5", target_paragraph=2)
+    op = _op(op_type=OpType.REPLACE, target_section="5", target_paragraph=2)
 
     result = _apply_subsection_replace(
         state, op, sec_path, sec, subsecs, replace_sub, None, _FINLEX_ORACLE, "[test] REPLACE 5 § 2 mom"
@@ -15155,7 +15155,7 @@ def test_recover_uncovered_body_ops_emits_high_uncovered_observation() -> None:
     muutos_tree = etree.fromstring(_make_many_section_muutos_xml(n_sections))
 
     # One chapter INSERT op (covers the chapter structurally, but no per-section ops)
-    ops = [AmendmentOp(op_id="", op_type="INSERT", target_kind=TargetKind.CHAPTER, target_section="3")]
+    ops = [AmendmentOp(op_id="", op_type=OpType.INSERT, target_kind=TargetKind.CHAPTER, target_section="3")]
 
     observations_out: list[dict[str, Any]] = []
     restructure_plans_out: list[StructuralTransformPlan] = []
@@ -15210,7 +15210,7 @@ def test_recover_uncovered_body_ops_quiet_replay_suppresses_high_uncovered_warni
     ops = [
         AmendmentOp(
             op_id="",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_kind=TargetKind.CHAPTER,
             target_section="3",
         )
@@ -15253,7 +15253,7 @@ def test_recover_uncovered_body_ops_deduplicates_identical_restructure_plan_outp
     state = ReplayState(ir=IRNode(kind=IRNodeKind.BODY, children=()))
     ctx = _statute_context(state.ir)
     muutos_tree = etree.fromstring(_make_many_section_muutos_xml(12))
-    ops = [AmendmentOp(op_id="", op_type="INSERT", target_kind=TargetKind.CHAPTER, target_section="3")]
+    ops = [AmendmentOp(op_id="", op_type=OpType.INSERT, target_kind=TargetKind.CHAPTER, target_section="3")]
 
     restructure_plans_out: list[StructuralTransformPlan] = []
 
@@ -15287,7 +15287,7 @@ def test_resolved_op_restructure_plan_helper_uses_typed_target_fields() -> None:
     destination = LegalAddress(path=(("chapter", "5"), ("section", "34")))
     op = AmendmentOp(
         op_id="relabel-1",
-        op_type="RENUMBER",
+        op_type=OpType.RENUMBER,
         target_section="33",
         target_unit_kind="section",
         target_chapter="9",
@@ -15327,7 +15327,7 @@ def test_resolved_op_restructure_plan_helper_accepts_exact_owned_signature() -> 
     destination = LegalAddress(path=(("chapter", "5"), ("section", "34")))
     op = AmendmentOp(
         op_id="relabel-1",
-        op_type="RENUMBER",
+        op_type=OpType.RENUMBER,
         target_section="33",
         target_unit_kind="section",
         target_chapter="9",
@@ -15361,7 +15361,7 @@ def test_resolved_op_restructure_plan_helper_rejects_same_leaf_labels_in_differe
     destination = LegalAddress(path=(("chapter", "5"), ("section", "34")))
     op = AmendmentOp(
         op_id="relabel-1",
-        op_type="RENUMBER",
+        op_type=OpType.RENUMBER,
         target_section="33",
         target_unit_kind="section",
         target_chapter="9",
@@ -15405,7 +15405,7 @@ def test_resolved_op_canonical_intent_uses_typed_move_clause_destination_fields(
     """
     op = AmendmentOp(
         op_id="move-typed-1",
-        op_type="RENUMBER",
+        op_type=OpType.RENUMBER,
         target_section="33",
         target_unit_kind="section",
         target_chapter="9",
@@ -15439,7 +15439,7 @@ def test_resolved_op_canonical_intent_payload_bearing_move_rider_stays_replace()
     """
     op = AmendmentOp(
         op_id="move-typed-2",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="33",
         target_unit_kind="section",
         target_chapter="9",
@@ -15465,7 +15465,7 @@ def test_recover_uncovered_body_ops_no_observation_when_observations_out_is_none
     state = ReplayState(ir=IRNode(kind=IRNodeKind.BODY, children=()))
     ctx = _statute_context(state.ir)
     muutos_tree = etree.fromstring(_make_many_section_muutos_xml(12))
-    ops = [AmendmentOp(op_id="", op_type="INSERT", target_kind=TargetKind.CHAPTER, target_section="3")]
+    ops = [AmendmentOp(op_id="", op_type=OpType.INSERT, target_kind=TargetKind.CHAPTER, target_section="3")]
 
     # Should not raise even when observations_out is None
     _recover_uncovered_body_ops(
@@ -15489,7 +15489,7 @@ def test_recover_uncovered_body_ops_no_observation_when_ratio_low() -> None:
     ctx = _statute_context(state.ir)
     # Only 3 sections — below _CHAPTER_INSERT_TOTAL_UNITS_THRESHOLD (10)
     muutos_tree = etree.fromstring(_make_many_section_muutos_xml(3))
-    ops = [AmendmentOp(op_id="", op_type="INSERT", target_kind=TargetKind.CHAPTER, target_section="3")]
+    ops = [AmendmentOp(op_id="", op_type=OpType.INSERT, target_kind=TargetKind.CHAPTER, target_section="3")]
 
     observations_out: list[dict[str, Any]] = []
     _recover_uncovered_body_ops(
@@ -15611,7 +15611,7 @@ def test_merge_section_with_omission_ir_preserves_trailing_subsection_for_sparse
         amend_sec,
         group_ops=[
             AmendmentOp(
-                op_type="REPLACE",
+                op_type=OpType.REPLACE,
                 target_kind=TargetKind.SECTION,
                 target_section="12",
                 target_paragraph=4,
@@ -15855,10 +15855,10 @@ def test_uncovered_heading_replace_does_not_authorize_repeal_clause_body_payload
         ).encode()
     )
     ops = [
-        AmendmentOp(op_id="", op_type="REPEAL", target_section="48", target_unit_kind="section"),
+        AmendmentOp(op_id="", op_type=OpType.REPEAL, target_section="48", target_unit_kind="section"),
         AmendmentOp(
             op_id="",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="48",
             target_unit_kind="section",
             target_special="otsikko",
@@ -16958,7 +16958,7 @@ def test_ambiguous_unscoped_additive_fallback_insert_observation() -> None:
     existing_ops = [
         AmendmentOp(
             op_id="c1",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_kind=TargetKind.SECTION,
             target_section="4",
             target_paragraph=1,
@@ -16966,7 +16966,7 @@ def test_ambiguous_unscoped_additive_fallback_insert_observation() -> None:
         ),
         AmendmentOp(
             op_id="c2",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_kind=TargetKind.SECTION,
             target_section="4",
             target_paragraph=1,
@@ -16975,7 +16975,7 @@ def test_ambiguous_unscoped_additive_fallback_insert_observation() -> None:
     ]
     fallback_insert = AmendmentOp(
         op_id="fb",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="4",
         target_paragraph=1,
@@ -16998,7 +16998,7 @@ def test_ambiguous_unscoped_additive_fallback_insert_observation_keeps_unique_sc
     existing_ops = [
         AmendmentOp(
             op_id="c1",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_kind=TargetKind.SECTION,
             target_section="4",
             target_paragraph=1,
@@ -17007,7 +17007,7 @@ def test_ambiguous_unscoped_additive_fallback_insert_observation_keeps_unique_sc
     ]
     fallback_insert = AmendmentOp(
         op_id="fb",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="4",
         target_paragraph=1,
@@ -17032,9 +17032,9 @@ def test_attach_target_version_selectors_binds_matching_section_ops_only() -> No
         )
     )
     ops = [
-        AmendmentOp(op_type="REPLACE", target_section="23", target_unit_kind="section"),
-        AmendmentOp(op_type="REPLACE", target_section="24c", target_unit_kind="section", target_paragraph=3),
-        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.CHAPTER, target_section="7"),
+        AmendmentOp(op_type=OpType.REPLACE, target_section="23", target_unit_kind="section"),
+        AmendmentOp(op_type=OpType.REPLACE, target_section="24c", target_unit_kind="section", target_paragraph=3),
+        AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.CHAPTER, target_section="7"),
     ]
 
     patched, findings = _attach_target_version_selectors(
@@ -17056,7 +17056,7 @@ def test_attach_target_version_selectors_reports_ambiguous_label() -> None:
             SimpleNamespace(target_labels=("24c",), cited_statute_id="2019/10"),
         )
     )
-    op = AmendmentOp(op_type="REPLACE", target_section="24c", target_unit_kind="section")
+    op = AmendmentOp(op_type=OpType.REPLACE, target_section="24c", target_unit_kind="section")
 
     patched, findings = _attach_target_version_selectors(
         [op],
@@ -17075,8 +17075,8 @@ def test_attach_target_version_selectors_reports_ambiguous_label() -> None:
 
 def test_restore_heading_facet_for_mixed_scope_section_replaces_rewrites_plain_section_replace() -> None:
     parse_result = parse_clause("muutetaan 8 §:n otsikko ja 3 momentti")
-    heading_op = AmendmentOp(op_type="REPLACE", target_unit_kind="section", target_section="8")
-    child_op = AmendmentOp(op_type="REPLACE", target_unit_kind="section", target_section="8", target_paragraph=3)
+    heading_op = AmendmentOp(op_type=OpType.REPLACE, target_unit_kind="section", target_section="8")
+    child_op = AmendmentOp(op_type=OpType.REPLACE, target_unit_kind="section", target_section="8", target_paragraph=3)
 
     patched, findings = _restore_heading_facet_for_mixed_scope_section_replaces(
         [heading_op, child_op],
@@ -17175,7 +17175,7 @@ def test_rewrite_compiled_op_activation_rule_effective_for_addresses_limits_to_e
 def test_reject_overbroad_section_repeal_for_deep_target() -> None:
     child_repeal = AmendmentOp(
         op_id="parsed_child",
-        op_type="REPEAL",
+        op_type=OpType.REPEAL,
         target_kind=TargetKind.SECTION,
         target_section="1",
         target_paragraph=3,
@@ -17183,7 +17183,7 @@ def test_reject_overbroad_section_repeal_for_deep_target() -> None:
     )
     repeal = AmendmentOp(
         op_id="fb",
-        op_type="REPEAL",
+        op_type=OpType.REPEAL,
         target_kind=TargetKind.SECTION,
         target_section="1",
     )
@@ -17202,7 +17202,7 @@ def test_reject_overbroad_section_repeal_for_deep_target() -> None:
 def test_reject_overbroad_section_repeal_for_deep_target_keeps_plain_section_repeal() -> None:
     repeal = AmendmentOp(
         op_id="fb",
-        op_type="REPEAL",
+        op_type=OpType.REPEAL,
         target_kind=TargetKind.SECTION,
         target_section="1",
     )
@@ -17220,7 +17220,7 @@ def test_reject_overbroad_section_repeal_for_deep_target_keeps_plain_section_rep
 def test_reject_overbroad_section_repeal_for_deep_target_keeps_other_section_repeal() -> None:
     child_repeal = AmendmentOp(
         op_id="parsed_child",
-        op_type="REPEAL",
+        op_type=OpType.REPEAL,
         target_kind=TargetKind.SECTION,
         target_section="12",
         target_paragraph=1,
@@ -17228,13 +17228,13 @@ def test_reject_overbroad_section_repeal_for_deep_target_keeps_other_section_rep
     )
     repeal_deep_host = AmendmentOp(
         op_id="fb1",
-        op_type="REPEAL",
+        op_type=OpType.REPEAL,
         target_kind=TargetKind.SECTION,
         target_section="12",
     )
     repeal_other_section = AmendmentOp(
         op_id="fb2",
-        op_type="REPEAL",
+        op_type=OpType.REPEAL,
         target_kind=TargetKind.SECTION,
         target_section="12f",
     )

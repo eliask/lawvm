@@ -27,7 +27,7 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.apply import apply_op
 from lawvm.finland.apply_events import ApplyMutationEvent
 from lawvm.finland.migration_ledger import MigrationLedger
-from lawvm.finland.ops import AmendmentOp, ResolvedOp
+from lawvm.finland.ops import OpType, AmendmentOp, ResolvedOp
 from lawvm.finland.statute import ReplayState, StatuteContext
 
 
@@ -626,7 +626,7 @@ def _make_relabel_rop(
 
     op = AmendmentOp(
         op_id="relabel_test",
-        op_type="RENUMBER",
+        op_type=OpType.RENUMBER,
         target_section=target_section,
         target_unit_kind=target_unit_kind,
         target_chapter=target_chapter,
@@ -746,7 +746,7 @@ class TestMigrationLedgerIntegration:
 
         op = AmendmentOp(
             op_id="ch_relabel",
-            op_type="RENUMBER",
+            op_type=OpType.RENUMBER,
             target_section="3",
             target_unit_kind="chapter",
             source_statute="2021/10",
@@ -820,7 +820,7 @@ class TestMigrationLedgerIntegration:
         )
         op2 = AmendmentOp(
             op_id="relabel_2",
-            op_type="RENUMBER",
+            op_type=OpType.RENUMBER,
             target_section="5a",
             target_unit_kind="section",
             source_statute="2022/300",

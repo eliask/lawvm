@@ -59,7 +59,7 @@ from lawvm.finland.merge import (
     _merge_section_with_omission_ir,
     _merge_subsection_with_omission_ir,
 )
-from lawvm.finland.ops import AmendmentOp, get_replay_profile
+from lawvm.finland.ops import OpType, AmendmentOp, get_replay_profile
 
 
 # ---------------------------------------------------------------------------
@@ -1256,7 +1256,7 @@ def test_item_replace_does_not_promote_content_only_target_subsection() -> None:
     )
     muutos_ir = IRNode(kind=IRNodeKind.SECTION, label="8", children=(amend_sub,))
     op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="8",
         target_kind=TargetKind.SECTION,
         target_paragraph=4,

@@ -9,7 +9,7 @@ from lawvm.finland.compile_group_surface import BuildGroupSurfaceRequest, build_
 from lawvm.finland.corpus import get_corpus_store
 from lawvm.finland.frontend_compile import normalize_and_compile_ops
 from lawvm.finland.metadata import get_johtolause
-from lawvm.finland.ops import AmendmentOp
+from lawvm.finland.ops import OpType, AmendmentOp
 from lawvm.finland.replay_entrypoint import replay_xml
 from lawvm.finland.replay_request import ReplayXmlRequest
 from lawvm.finland.source_model import AmendmentSourceModel
@@ -45,7 +45,7 @@ def test_sparse_omission_tail_claim_synthesizes_missing_descendant_payload() -> 
     model = AmendmentSourceModel.from_tree(tree, source_ref="2099/1")
     carrier = AmendmentOp(
         op_id="replace_29",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="29",
         target_chapter="4",
@@ -53,7 +53,7 @@ def test_sparse_omission_tail_claim_synthesizes_missing_descendant_payload() -> 
     )
     descendant = AmendmentOp(
         op_id="replace_31_3",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="31",
         target_chapter="4",

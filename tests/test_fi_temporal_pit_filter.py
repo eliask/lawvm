@@ -1156,7 +1156,7 @@ class TestProseInclusiveExpiryBoundary:
         import lxml.etree as etree
 
         from lawvm.finland.frontend_compile import _enrich_ops_from_amendment_tree
-        from lawvm.finland.ops import AmendmentOp
+        from lawvm.finland.ops import OpType, AmendmentOp
 
         tree = etree.fromstring(
             "<doc>Tämä laki tulee voimaan 1 päivänä tammikuuta 2023 ja on "
@@ -1164,7 +1164,7 @@ class TestProseInclusiveExpiryBoundary:
         )
         op = AmendmentOp(
             op_id="temp-insert",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_section="78c",
             target_unit_kind="section",
             lo=LegalOperation(
@@ -1191,7 +1191,7 @@ class TestProseInclusiveExpiryBoundary:
         import lxml.etree as etree
 
         from lawvm.finland.frontend_compile import _enrich_ops_from_amendment_tree
-        from lawvm.finland.ops import AmendmentOp
+        from lawvm.finland.ops import AmendmentOp, OpType
 
         tree = etree.fromstring(
             "<doc>Tämä laki tulee voimaan 1 päivänä tammikuuta 2023. "
@@ -1199,7 +1199,7 @@ class TestProseInclusiveExpiryBoundary:
         )
         op = AmendmentOp(
             op_id="temp-insert",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_section="78c",
             target_unit_kind="section",
             lo=LegalOperation(

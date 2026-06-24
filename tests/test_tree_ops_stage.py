@@ -282,7 +282,7 @@ def test_apply_container_consumer_runs_staged_read_clean_on_well_formed_insert()
     # decline — proving the staged read is on the live write path AND that the
     # green case is 0-delta.
     from lawvm.finland.apply_structure_ops import _apply_container_op
-    from lawvm.finland.ops import AmendmentOp, get_replay_profile
+    from lawvm.finland.ops import OpType, AmendmentOp, get_replay_profile
     from lawvm.finland.statute import ReplayState
     from lawvm.core.write_receipt import WriteReceipt as _WR
 
@@ -300,7 +300,7 @@ def test_apply_container_consumer_runs_staged_read_clean_on_well_formed_insert()
     )
     op = AmendmentOp(
         op_id="insert_chapter_2",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="chapter",
         target_section="2",
         source_statute="2020/1",
@@ -351,7 +351,7 @@ def _strict_container_insert(
     must, under a strict profile, become a blocking Finding on ``findings_out``.
     """
     from lawvm.finland.apply_structure_ops import _apply_container_op
-    from lawvm.finland.ops import AmendmentOp as _AmendmentOp, get_replay_profile
+    from lawvm.finland.ops import AmendmentOp as _AmendmentOp, OpType, get_replay_profile
     from lawvm.finland.statute import ReplayState as _ReplayState
     from lawvm.core.compile_result import StrictProfile
 
@@ -379,7 +379,7 @@ def _strict_container_insert(
     )
     op = _AmendmentOp(
         op_id="insert_chapter_2",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="chapter",
         target_section="2",
         source_statute="2020/1",

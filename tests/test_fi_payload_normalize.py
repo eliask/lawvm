@@ -21,7 +21,7 @@ from lawvm.finland.helpers import _norm_row_anchor_text
 from lawvm.finland.johtolause_supplements import _tag_numbered_table_target_clause_ops
 from lawvm.finland.johto_scope_mentions import collect_johto_numbered_table_targets_by_section
 from lawvm.finland.payload_normalize import SubsectionSlotMap
-from lawvm.finland.ops import AmendmentOp, ReplayProfile, get_replay_profile
+from lawvm.finland.ops import OpType, AmendmentOp, ReplayProfile, get_replay_profile
 from lawvm.finland.payload_normalize import (
     PayloadCompletenessWitness,
     ElaborationObservation,
@@ -164,12 +164,12 @@ def test_numbered_table_target_supplement_tags_and_adds_ops() -> None:
     )
     ops = [
         AmendmentOp(
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_kind=TargetKind.SECTION,
             target_section="13",
         ),
         AmendmentOp(
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_kind=TargetKind.SECTION,
             target_section="33",
             target_paragraph=2,
@@ -296,7 +296,7 @@ def test_prepare_payload_surface_merges_numbered_table_target_without_whole_sect
     )
     ctx = _mock_ctx("section", "13", live_node=live)
     op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="13",
         numbered_table_targets=("4",),
@@ -335,7 +335,7 @@ def test_sparse_slot_binding_excludes_numbered_table_payload_from_child_moment()
     )
     op = AmendmentOp(
         op_id="insert_26_3",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="26",
         target_paragraph=3,
@@ -366,7 +366,7 @@ def test_sparse_slot_binding_maps_numbered_table_xml_offset_to_following_subsect
     )
     op = AmendmentOp(
         op_id="replace_33_2",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="33",
         target_paragraph=2,
@@ -389,7 +389,7 @@ def test_sparse_slot_binding_maps_numbered_table_xml_offset_to_following_subsect
 def test_rebase_numbered_table_offset_targets_to_structural_subsection_label() -> None:
     op = AmendmentOp(
         op_id="replace_33_2",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="33",
         target_paragraph=2,
@@ -432,7 +432,7 @@ def test_payload_elaboration_projection_from_group_result_records_slot_bindings(
         sparse_slot_bindings=(
             SparsePayloadSlotBinding(
                 op_description="REPLACE P 5 1",
-                op_type="REPLACE",
+                op_type=OpType.REPLACE,
                 target_paragraph=1,
                 target_item=None,
                 target_special=None,
@@ -565,7 +565,7 @@ def test_payload_normalize_item_like_target_rewrites_flat_item_as_subsection_ite
     )
     ctx = _mock_ctx("section", "2", live_node=live_sec)
     op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="2",
         target_paragraph=10,
@@ -606,7 +606,7 @@ def test_elaborate_payload_against_live_observes_item_like_target_rewrite() -> N
     )
     ctx = _mock_ctx("section", "2", live_node=live_sec)
     op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="2",
         target_paragraph=10,
@@ -735,7 +735,7 @@ def test_build_payload_elaboration_context_indexes_item_children() -> None:
 def test_slot_assignment_resolve_apply_subsection_ir_does_not_singleton_fallback_from_muutos_ir() -> None:
     op = AmendmentOp(
         op_id="op0",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="14",
         target_paragraph=1,
@@ -789,7 +789,7 @@ def test_payload_normalize_item_like_target_preserves_sparse_real_subsections() 
     )
     ctx = _mock_ctx("section", "5", live_node=live_sec)
     op = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="5",
         target_paragraph=3,
@@ -845,7 +845,7 @@ def test_payload_normalize_item_like_target_preserves_labelled_sparse_insert_sub
     )
     ctx = _mock_ctx("section", "9", live_node=live_sec)
     op = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="9",
         target_paragraph=2,
@@ -900,14 +900,14 @@ def test_payload_normalize_item_like_target_keeps_real_subsection_when_group_has
     )
     ctx = _mock_ctx("section", "123", live_node=live_sec)
     item_op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="123",
         target_paragraph=1,
         target_item="8",
     )
     insert_op = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="123",
         target_paragraph=2,
@@ -961,13 +961,13 @@ def test_align_sparse_omission_subsections_to_live_uses_mixed_group_logical_targ
     )
     ops = [
         AmendmentOp(
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_kind=TargetKind.SECTION,
             target_section="70",
             target_paragraph=2,
         ),
         AmendmentOp(
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_kind=TargetKind.SECTION,
             target_section="70",
             target_paragraph=3,
@@ -1357,10 +1357,10 @@ def test_payload_normalize_aligns_sparse_omission_subsections_with_duplicate_tar
         ),
     )
     ops = [
-        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="11a", target_paragraph=3),
-        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="11a", target_paragraph=4),
-        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="11a", target_paragraph=5),
-        AmendmentOp(op_type="INSERT", target_kind=TargetKind.SECTION, target_section="11a", target_paragraph=5),
+        AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="11a", target_paragraph=3),
+        AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="11a", target_paragraph=4),
+        AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="11a", target_paragraph=5),
+        AmendmentOp(op_type=OpType.INSERT, target_kind=TargetKind.SECTION, target_section="11a", target_paragraph=5),
     ]
 
     got, changed = _align_sparse_omission_subsections_to_live(ctx, "section", "11a", None, muutos_ir, ops)
@@ -1398,8 +1398,8 @@ def test_payload_normalize_aligns_sparse_middle_block_to_explicit_targets() -> N
         ),
     )
     ops = [
-        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="5", target_paragraph=3),
-        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="5", target_paragraph=4),
+        AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="5", target_paragraph=3),
+        AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="5", target_paragraph=4),
     ]
 
     got, changed = _align_sparse_omission_subsections_to_live(ctx, "section", "5", None, muutos_ir, ops)
@@ -1426,7 +1426,7 @@ def test_payload_normalize_aligns_explicit_sparse_omission_target_without_live_s
     )
     ops = [
         AmendmentOp(
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_kind=TargetKind.SECTION,
             target_section="20",
             target_paragraph=2,
@@ -1466,7 +1466,7 @@ def test_payload_normalize_does_not_relabel_item_only_sparse_omission_payload() 
     )
     ops = [
         AmendmentOp(
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_kind=TargetKind.SECTION,
             target_section="13",
             target_paragraph=1,
@@ -1509,21 +1509,21 @@ def test_build_subsection_slot_assignment_shares_in_place_intro_item_slot() -> N
     )
     ops = [
         AmendmentOp(
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_kind=TargetKind.SECTION,
             target_section="1",
             target_paragraph=1,
             target_special="johd",
         ),
         AmendmentOp(
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_kind=TargetKind.SECTION,
             target_section="1",
             target_paragraph=1,
             target_item="2",
         ),
         AmendmentOp(
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_kind=TargetKind.SECTION,
             target_section="1",
             target_paragraph=1,
@@ -1640,7 +1640,7 @@ def test_fold_intro_list_continuation_merges_terminal_continuation_for_single_ta
             IRNode(kind=IRNodeKind.OMISSION),
         ),
     )
-    ops = [AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="48", target_paragraph=1)]
+    ops = [AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="48", target_paragraph=1)]
 
     got = _fold_intro_list_continuation_subsection_before_omission("section", ops, muutos_ir)
 
@@ -1690,9 +1690,9 @@ def test_fold_intro_list_continuation_skips_fold_when_continuation_is_explicit_t
         ),
     )
     ops = [
-        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="156", target_paragraph=1),
-        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="156", target_paragraph=2),
-        AmendmentOp(op_type="INSERT", target_kind=TargetKind.SECTION, target_section="156", target_paragraph=4),
+        AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="156", target_paragraph=1),
+        AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="156", target_paragraph=2),
+        AmendmentOp(op_type=OpType.INSERT, target_kind=TargetKind.SECTION, target_section="156", target_paragraph=4),
     ]
 
     got = _fold_intro_list_continuation_subsection_before_omission("section", ops, muutos_ir)
@@ -1727,9 +1727,9 @@ def test_fold_intro_list_continuation_preserves_multiple_explicit_sparse_targets
     )
     ctx = _mock_ctx("section", "9", live_node=live_sec)
     ops = [
-        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="9", target_paragraph=3),
-        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="9", target_paragraph=5),
-        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="9", target_paragraph=14),
+        AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="9", target_paragraph=3),
+        AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="9", target_paragraph=5),
+        AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="9", target_paragraph=14),
     ]
     muutos_ir = IRNode(
         kind=IRNodeKind.SECTION,
@@ -1811,7 +1811,7 @@ def test_fold_intro_list_continuation_still_folds_when_continuation_is_not_a_tar
         ),
     )
     ops = [
-        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="48", target_paragraph=1),
+        AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="48", target_paragraph=1),
         # No op for target_paragraph=2 — sub 2 is a continuation artifact, not a real target
     ]
 
@@ -1856,10 +1856,10 @@ def test_fold_intro_list_continuation_preserves_mixed_item_and_later_plain_targe
         ),
     )
     ops = [
-        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="149", target_paragraph=1, target_item="1"),
-        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="149", target_paragraph=1, target_item="2"),
-        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="149", target_paragraph=1, target_item="3"),
-        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="149", target_paragraph=4),
+        AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="149", target_paragraph=1, target_item="1"),
+        AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="149", target_paragraph=1, target_item="2"),
+        AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="149", target_paragraph=1, target_item="3"),
+        AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="149", target_paragraph=4),
     ]
 
     got = _fold_intro_list_continuation_subsection_before_omission("section", ops, muutos_ir)
@@ -1905,8 +1905,8 @@ def test_fold_intro_list_continuation_folds_lowercase_tail_artifact_with_later_r
         ),
     )
     ops = [
-        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="3", target_paragraph=1, target_item="1"),
-        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="3", target_paragraph=2),
+        AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="3", target_paragraph=1, target_item="1"),
+        AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="3", target_paragraph=2),
     ]
 
     got = _fold_intro_list_continuation_subsection_before_omission("section", ops, muutos_ir)
@@ -1964,7 +1964,7 @@ def test_fold_intro_list_continuation_folds_single_nonfirst_item_tail() -> None:
     )
     ops = [
         AmendmentOp(
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_kind=TargetKind.SECTION,
             target_section="1",
             target_paragraph=1,
@@ -2001,14 +2001,14 @@ def test_elaborate_payload_rebinds_plain_moment_after_lowercase_tail_fold() -> N
     )
     ctx = _mock_ctx("section", "3", live_node=live_sec)
     op_item = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="3",
         target_paragraph=1,
         target_item="1",
     )
     op_plain = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="3",
         target_paragraph=2,
@@ -2087,8 +2087,8 @@ def test_normalize_group_payload_splits_sparse_single_subsection_across_consecut
     )
     ctx = _mock_ctx("section", "6", live_node=live_sec)
     group_ops = [
-        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="6", target_paragraph=2),
-        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="6", target_paragraph=3),
+        AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="6", target_paragraph=2),
+        AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="6", target_paragraph=3),
     ]
     muutos_ir = IRNode(
         kind=IRNodeKind.SECTION,
@@ -2176,7 +2176,7 @@ def test_normalize_group_payload_splits_single_target_carried_live_tail() -> Non
     )
     ctx = _mock_ctx("section", "6", live_node=live_sec)
     group_ops = [
-        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="6", target_paragraph=1),
+        AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="6", target_paragraph=1),
     ]
     carried_second = irnode_to_text(live_sec.children[1])
     muutos_ir = IRNode(
@@ -2250,8 +2250,8 @@ def test_normalize_group_payload_splits_sparse_replaces_on_changed_live_sentence
     )
     ctx = _mock_ctx("section", "7", live_node=live_sec)
     group_ops = [
-        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="7", target_paragraph=1),
-        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="7", target_paragraph=2),
+        AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="7", target_paragraph=1),
+        AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="7", target_paragraph=2),
     ]
     muutos_ir = IRNode(
         kind=IRNodeKind.SECTION,
@@ -2301,7 +2301,7 @@ def test_normalize_group_payload_does_not_split_multi_subsection_target_payload(
     )
     ctx = _mock_ctx("section", "10", live_node=live_sec)
     group_ops = [
-        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="10", target_paragraph=1),
+        AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="10", target_paragraph=1),
     ]
     muutos_ir = IRNode(
         kind=IRNodeKind.SECTION,
@@ -2341,8 +2341,8 @@ def test_normalize_group_payload_splits_fused_restarted_subsection_across_consec
     )
     ctx = _mock_ctx("section", "51", live_node=live_sec)
     ops = [
-        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="51", target_paragraph=1),
-        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="51", target_paragraph=2),
+        AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="51", target_paragraph=1),
+        AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="51", target_paragraph=2),
     ]
     muutos_ir = IRNode(
         kind=IRNodeKind.SECTION,
@@ -2510,7 +2510,7 @@ def test_normalize_group_payload_rewrites_partial_table_section_to_row_replaces(
     )
     ctx = _mock_ctx("section", "1", live_node=live_sec)
     op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="1",
         source_statute="1995/1145",
@@ -2553,7 +2553,7 @@ def test_text_table_row_subsections_fold_into_single_targeted_moment() -> None:
         children=(IRNode(kind=IRNodeKind.SUBSECTION, label="1"),),
     )
     ctx = _mock_ctx("section", "6", live_node=live_sec)
-    op = AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="6", target_paragraph=1)
+    op = AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="6", target_paragraph=1)
     muutos_ir = IRNode(
         kind=IRNodeKind.SECTION,
         label="6",
@@ -2597,8 +2597,8 @@ def test_text_table_row_subsections_do_not_fold_with_multiple_moment_targets() -
         children=(IRNode(kind=IRNodeKind.SUBSECTION, label="1"), IRNode(kind=IRNodeKind.SUBSECTION, label="2")),
     )
     ctx = _mock_ctx("section", "6", live_node=live_sec)
-    op1 = AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="6", target_paragraph=1)
-    op2 = AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="6", target_paragraph=2)
+    op1 = AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="6", target_paragraph=1)
+    op2 = AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="6", target_paragraph=2)
     muutos_ir = IRNode(
         kind=IRNodeKind.SECTION,
         label="6",
@@ -2632,7 +2632,7 @@ def test_numbered_table_prefix_does_not_absorb_explicit_moment_payload() -> None
     ctx = _mock_ctx("section", "33", target_chapter="6", live_node=live_sec)
     op = AmendmentOp(
         op_id="replace_33_2",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="33",
         target_chapter="6",
@@ -2707,7 +2707,7 @@ def test_normalize_group_payload_rewrites_named_row_repeal_with_fuzzy_anchor_mat
     )
     ctx = _mock_ctx("section", "1", live_node=live_sec)
     op = AmendmentOp(
-        op_type="REPEAL",
+        op_type=OpType.REPEAL,
         target_kind=TargetKind.SECTION,
         target_section="1",
         source_statute="2006/148",
@@ -2745,7 +2745,7 @@ def test_normalize_group_payload_rewrites_named_row_repeal_at_0_80_similarity_th
     )
     ctx = _mock_ctx("section", "1", live_node=live_sec)
     op = AmendmentOp(
-        op_type="REPEAL",
+        op_type=OpType.REPEAL,
         target_kind=TargetKind.SECTION,
         target_section="1",
         source_statute="2000/78",
@@ -2790,7 +2790,7 @@ def test_normalize_group_payload_rewrites_named_row_repeals_with_genitive_candid
     ctx = _mock_ctx("section", "1", live_node=live_sec)
     ops = [
         AmendmentOp(
-            op_type="REPEAL",
+            op_type=OpType.REPEAL,
             target_kind=TargetKind.SECTION,
             target_section="1",
             source_statute="2003/558",
@@ -2870,7 +2870,7 @@ def test_normalize_group_payload_merges_named_row_province_table_blocks() -> Non
     )
     ctx = _mock_ctx("section", "13", live_node=live_sec)
     op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="13",
         source_statute="1992/1009",
@@ -2946,7 +2946,7 @@ def test_normalize_group_payload_rewrites_named_row_replace_with_live_anchor_mat
         ),
     )
     op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="1",
         source_statute="2006/148",
@@ -2999,7 +2999,7 @@ def test_normalize_group_payload_rewrites_named_row_replace_from_content_only_se
         ),
     )
     op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="1",
         source_statute="2000/1040",
@@ -3050,7 +3050,7 @@ def test_prepare_group_payload_collapses_intro_list_subsections_inside_section_r
             ),
         ),
     )
-    ops = [AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="3")]
+    ops = [AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="3")]
 
     got = _collapse_intro_list_subsections_inside_section_ir("section", ops, muutos_ir)
 
@@ -3091,7 +3091,7 @@ def test_prepare_group_payload_collapses_first_moment_intro_list_with_lettered_s
     )
     ops = [
         AmendmentOp(
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_kind=TargetKind.SECTION,
             target_section="4",
             target_paragraph=1,
@@ -3153,7 +3153,7 @@ def test_flattened_first_moment_collapse_ignores_already_structured_trailing_omi
     )
     ops = [
         AmendmentOp(
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_kind=TargetKind.SECTION,
             target_section="1",
             target_paragraph=1,
@@ -3211,16 +3211,16 @@ def test_prepare_group_payload_prunes_carried_subsections_outside_single_target_
         ),
     )
     ops = [
-        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="149", target_paragraph=1),
+        AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="149", target_paragraph=1),
         AmendmentOp(
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_kind=TargetKind.SECTION,
             target_section="149",
             target_paragraph=1,
             target_item="4",
         ),
         AmendmentOp(
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_kind=TargetKind.SECTION,
             target_section="149",
             target_paragraph=1,
@@ -3259,15 +3259,15 @@ def test_prepare_group_payload_keeps_real_later_targeted_subsections() -> None:
         ),
     )
     ops = [
-        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="149", target_paragraph=1),
+        AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="149", target_paragraph=1),
         AmendmentOp(
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_kind=TargetKind.SECTION,
             target_section="149",
             target_paragraph=1,
             target_item="2",
         ),
-        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="149", target_paragraph=2),
+        AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="149", target_paragraph=2),
     ]
 
     got, removed = _prune_carried_subsections_outside_single_target_moment_ir("section", ops, muutos_ir)
@@ -3308,9 +3308,9 @@ def test_elaborate_payload_against_live_observes_pruned_carried_subsections() ->
         ),
     )
     ops = [
-        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="149", target_paragraph=1),
+        AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="149", target_paragraph=1),
         AmendmentOp(
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_kind=TargetKind.SECTION,
             target_section="149",
             target_paragraph=1,
@@ -3365,7 +3365,7 @@ def test_prepare_group_payload_folds_split_omission_prefix_into_following_intro_
 
     got = prepare_payload_surface(
         ctx,
-        [AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="12", target_paragraph=2)],
+        [AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="12", target_paragraph=2)],
         muutos_ir,
         _replay_profile_stub(),
         None,
@@ -3393,7 +3393,7 @@ def test_normalize_group_payload_preserves_real_intro_list_subsection_after_spli
     )
     ctx = _mock_ctx("section", "12", live_node=live_sec)
     op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="12",
         target_paragraph=2,
@@ -3455,20 +3455,20 @@ def test_prepare_group_payload_keeps_split_prefix_when_item_ops_target_later_mom
     )
     ctx = _mock_ctx("section", "2", live_node=live_sec)
     op_plain = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="2",
         target_paragraph=2,
     )
     op_item_1 = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="2",
         target_paragraph=3,
         target_item="1",
     )
     op_item_2 = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="2",
         target_paragraph=3,
@@ -3585,8 +3585,8 @@ def test_prepare_group_payload_folds_intro_list_continuation_before_omission() -
     got = prepare_payload_surface(
         ctx,
         [
-            AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="3", target_paragraph=1),
-            AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="3", target_paragraph=3),
+            AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="3", target_paragraph=1),
+            AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="3", target_paragraph=3),
         ],
         muutos_ir,
         _replay_profile_stub(),
@@ -3615,8 +3615,8 @@ def test_prepare_group_payload_preserves_real_post_omission_subsection_pair() ->
     )
     ctx = _mock_ctx("section", "4", live_node=live_sec)
     ops = [
-        AmendmentOp(op_type="INSERT", target_kind=TargetKind.SECTION, target_section="4", target_paragraph=5),
-        AmendmentOp(op_type="INSERT", target_kind=TargetKind.SECTION, target_section="4", target_paragraph=6),
+        AmendmentOp(op_type=OpType.INSERT, target_kind=TargetKind.SECTION, target_section="4", target_paragraph=5),
+        AmendmentOp(op_type=OpType.INSERT, target_kind=TargetKind.SECTION, target_section="4", target_paragraph=6),
     ]
     muutos_ir = IRNode(
         kind=IRNodeKind.SECTION,
@@ -3676,8 +3676,8 @@ def test_normalize_group_payload_keeps_shifted_sparse_replace_bound_to_trailing_
         ),
     )
     ctx = _mock_ctx("section", "3", live_node=live_sec)
-    op1 = AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="3", target_paragraph=1)
-    op3 = AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="3", target_paragraph=3)
+    op1 = AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="3", target_paragraph=1)
+    op3 = AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="3", target_paragraph=3)
     muutos_ir = IRNode(
         kind=IRNodeKind.SECTION,
         label="3",
@@ -3736,9 +3736,9 @@ def test_build_subsection_override_map_prefers_exact_subsection_label_match() ->
             IRNode(kind=IRNodeKind.SUBSECTION, label="3"),
         ),
     )
-    op1 = AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="14b", target_paragraph=1)
-    op2 = AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="14b", target_paragraph=2)
-    op3 = AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="14b", target_paragraph=3)
+    op1 = AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="14b", target_paragraph=1)
+    op2 = AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="14b", target_paragraph=2)
+    op3 = AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="14b", target_paragraph=3)
 
     got = _build_subsection_override_map(muutos_ir, [op1, op2, op3])
 
@@ -3758,12 +3758,12 @@ def test_build_subsection_override_map_shifts_replace_after_same_target_insert()
             IRNode(kind=IRNodeKind.SUBSECTION, label="6"),
         ),
     )
-    op3 = AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="11a", target_paragraph=3)
-    op4 = AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="11a", target_paragraph=4)
+    op3 = AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="11a", target_paragraph=3)
+    op4 = AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="11a", target_paragraph=4)
     op5_replace = AmendmentOp(
-        op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="11a", target_paragraph=5
+        op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="11a", target_paragraph=5
     )
-    op5_insert = AmendmentOp(op_type="INSERT", target_kind=TargetKind.SECTION, target_section="11a", target_paragraph=5)
+    op5_insert = AmendmentOp(op_type=OpType.INSERT, target_kind=TargetKind.SECTION, target_section="11a", target_paragraph=5)
 
     got = _build_subsection_override_map(muutos_ir, [op3, op4, op5_replace, op5_insert])
 
@@ -3792,14 +3792,14 @@ def test_build_subsection_override_map_uses_constant_offset_for_sparse_suffix_re
         ),
     )
     op1_item4 = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="3",
         target_paragraph=1,
         target_item="4",
     )
-    op3 = AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="3", target_paragraph=3)
-    op4 = AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="3", target_paragraph=4)
+    op3 = AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="3", target_paragraph=3)
+    op4 = AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="3", target_paragraph=4)
 
     got = _build_subsection_override_map(muutos_ir, [op1_item4, op3, op4])
 
@@ -3824,9 +3824,9 @@ def test_build_subsection_override_map_keeps_monotone_suffix_order_after_leading
             ),
         ),
     )
-    op1 = AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="13", target_paragraph=1)
-    op3 = AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="13", target_paragraph=3)
-    op4 = AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="13", target_paragraph=4)
+    op1 = AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="13", target_paragraph=1)
+    op3 = AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="13", target_paragraph=3)
+    op4 = AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="13", target_paragraph=4)
 
     got = _build_subsection_override_map(muutos_ir, [op1, op3, op4])
 
@@ -3859,28 +3859,28 @@ def test_build_subsection_override_map_shares_subsection_slot_with_intro_replace
         ),
     )
     op1_intro = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="14",
         target_paragraph=1,
         target_special="johd",
     )
     op1_item = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="14",
         target_paragraph=1,
         target_item="1",
     )
     op2_intro = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="14",
         target_paragraph=2,
         target_special="johd",
     )
     op2_item = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="14",
         target_paragraph=2,
@@ -3905,7 +3905,7 @@ def test_build_subsection_override_map_maps_lone_intro_replace_by_exact_label() 
         ),
     )
     op2_intro = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="14",
         target_paragraph=2,
@@ -3927,7 +3927,7 @@ def test_build_subsection_slot_assignment_exposes_typed_result() -> None:
         ),
     )
     op2_intro = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="14",
         target_paragraph=2,
@@ -3966,14 +3966,14 @@ def test_build_subsection_slot_assignment_binds_dense_local_intro_slots_by_sourc
         ),
     )
     op2_intro = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="20",
         target_paragraph=2,
         target_special="johd",
     )
     op3_intro = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="20",
         target_paragraph=3,
@@ -4015,14 +4015,14 @@ def test_build_subsection_slot_assignment_binds_mixed_intro_and_plain_by_source_
         ),
     )
     op2_intro = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="25",
         target_paragraph=2,
         target_special="johd",
     )
     op4_plain = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="25",
         target_paragraph=4,
@@ -4059,13 +4059,13 @@ def test_build_subsection_slot_assignment_prefers_exact_intro_label_when_moments
         ),
     )
     op1_plain = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="17",
         target_paragraph=1,
     )
     op2_intro = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="17",
         target_paragraph=2,
@@ -4107,20 +4107,20 @@ def test_build_subsection_slot_assignment_shares_plain_and_item_ops_on_same_mome
         ),
     )
     op_plain = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="3",
         target_paragraph=1,
     )
     op_item = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="3",
         target_paragraph=1,
         target_item="4",
     )
     op_tail = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="3",
         target_paragraph=3,
@@ -4144,7 +4144,7 @@ def test_assign_subsection_slots_tracks_unassigned_payload_slots() -> None:
             IRNode(kind=IRNodeKind.SUBSECTION),
         ),
     )
-    op1 = AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="14", target_paragraph=1)
+    op1 = AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="14", target_paragraph=1)
     slot_inputs = _collect_subsection_slot_inputs(muutos_ir, [op1])
 
     assert slot_inputs is not None
@@ -4189,10 +4189,10 @@ def test_assign_subsection_slots_lone_paragraph_not_reused_by_trailing_insert() 
         ),
     )
     op_replace = AmendmentOp(
-        op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="14", target_paragraph=2
+        op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="14", target_paragraph=2
     )
     op_insert = AmendmentOp(
-        op_type="INSERT", target_kind=TargetKind.SECTION, target_section="14", target_paragraph=3
+        op_type=OpType.INSERT, target_kind=TargetKind.SECTION, target_section="14", target_paragraph=3
     )
 
     got = _build_subsection_slot_assignment(muutos_ir, [op_replace, op_insert])
@@ -4241,21 +4241,21 @@ def test_assign_subsection_slots_reserves_johd_slot_for_intro_op() -> None:
         children=(item_sub, johd_sub, insert_sub),
     )
     op_item = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="82a",
         target_paragraph=1,
         target_item="2",
     )
     op_johd = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="82a",
         target_paragraph=2,
         target_special="johd",
     )
     op_insert = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="82a",
         target_paragraph=5,
@@ -4312,7 +4312,7 @@ def test_assign_subsection_slots_does_not_positional_fallback_item_to_intro_slot
         ),
     )
     op_item = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="103",
         target_paragraph=1,
@@ -4352,7 +4352,7 @@ def test_assign_subsection_slots_keeps_insert_unbound_across_explicit_gap() -> N
         ),
     )
     op_insert = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="40",
         target_paragraph=3,
@@ -4397,13 +4397,13 @@ def test_assign_subsection_slots_keeps_plain_ops_unbound_on_far_numeric_domain()
         ),
     )
     op_replace = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="21",
         target_paragraph=3,
     )
     op_insert = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="21",
         target_paragraph=3,
@@ -4450,7 +4450,7 @@ def test_assign_subsection_slots_binds_lone_sparse_insert_to_trailing_slot() -> 
         ),
     )
     op_insert = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="2",
         target_paragraph=5,
@@ -4496,7 +4496,7 @@ def test_prepare_payload_surface_keeps_single_sparse_insert_source_payload() -> 
     )
     ctx = _mock_ctx("section", "43", live_node=live_sec)
     op_insert = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="43",
         target_paragraph=5,
@@ -4569,7 +4569,7 @@ def test_prepare_payload_surface_does_not_merge_new_subsection_insert_inner_omis
         ),
     )
     op_insert = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="3",
         target_paragraph=3,
@@ -4612,7 +4612,7 @@ def test_assign_subsection_slots_marks_singleton_higher_moment_local_dense_bindi
         ),
     )
     op_replace = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="21b",
         target_paragraph=2,
@@ -4651,13 +4651,13 @@ def test_assign_subsection_slots_keeps_exact_first_target_and_owned_trailing_ins
         ),
     )
     op_replace = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="87",
         target_paragraph=1,
     )
     op_insert = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="87",
         target_paragraph=6,
@@ -4695,7 +4695,7 @@ def test_payload_normalize_rebases_duplicate_target_shifted_replace_after_renumb
     )
     ctx = _mock_ctx("section", "20j", target_chapter="6a", live_node=live_sec)
     renumber = AmendmentOp(
-        op_type="RENUMBER",
+        op_type=OpType.RENUMBER,
         target_kind=TargetKind.SECTION,
         target_section="20j",
         target_chapter="6a",
@@ -4703,7 +4703,7 @@ def test_payload_normalize_rebases_duplicate_target_shifted_replace_after_renumb
         source_statute="2017/169",
     )
     replace2 = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="20j",
         target_chapter="6a",
@@ -4711,7 +4711,7 @@ def test_payload_normalize_rebases_duplicate_target_shifted_replace_after_renumb
         source_statute="2017/169",
     )
     replace3 = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="20j",
         target_chapter="6a",
@@ -4719,7 +4719,7 @@ def test_payload_normalize_rebases_duplicate_target_shifted_replace_after_renumb
         source_statute="2017/169",
     )
     insert3 = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="20j",
         target_chapter="6a",
@@ -4727,7 +4727,7 @@ def test_payload_normalize_rebases_duplicate_target_shifted_replace_after_renumb
         source_statute="2017/169",
     )
     insert5 = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="20j",
         target_chapter="6a",
@@ -4779,7 +4779,7 @@ def test_payload_normalize_rebases_shifted_replace_to_explicit_renumber_destinat
         )
         return AmendmentOp(
             op_id=lo.op_id,
-            op_type="RENUMBER",
+            op_type=OpType.RENUMBER,
             target_kind=TargetKind.SECTION,
             target_chapter="4",
             target_section="12",
@@ -4790,21 +4790,21 @@ def test_payload_normalize_rebases_shifted_replace_to_explicit_renumber_destinat
     renumber11 = _renumber("11", "13")
     renumber12 = _renumber("12", "14")
     replace12 = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="12",
         target_chapter="4",
         target_paragraph=12,
     )
     insert11 = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="12",
         target_chapter="4",
         target_paragraph=11,
     )
     insert12 = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="12",
         target_chapter="4",
@@ -4863,7 +4863,7 @@ def test_payload_normalize_rebases_changed_renumber_sources_to_destinations() ->
     def _renumber(source: str, destination: str) -> AmendmentOp:
         return AmendmentOp(
             op_id=f"renumber_{source}_to_{destination}",
-            op_type="RENUMBER",
+            op_type=OpType.RENUMBER,
             target_kind=TargetKind.SECTION,
             target_chapter="4",
             target_section="12",
@@ -4881,11 +4881,11 @@ def test_payload_normalize_rebases_changed_renumber_sources_to_destinations() ->
         _renumber("14", "16"),
         _renumber("9", "11"),
         _renumber("4", "6"),
-        AmendmentOp(op_type="INSERT", target_kind=TargetKind.SECTION, target_chapter="4", target_section="12", target_paragraph=3),
-        AmendmentOp(op_type="INSERT", target_kind=TargetKind.SECTION, target_chapter="4", target_section="12", target_paragraph=4),
-        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_chapter="4", target_section="12", target_paragraph=4),
-        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_chapter="4", target_section="12", target_paragraph=9),
-        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_chapter="4", target_section="12", target_paragraph=14),
+        AmendmentOp(op_type=OpType.INSERT, target_kind=TargetKind.SECTION, target_chapter="4", target_section="12", target_paragraph=3),
+        AmendmentOp(op_type=OpType.INSERT, target_kind=TargetKind.SECTION, target_chapter="4", target_section="12", target_paragraph=4),
+        AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_chapter="4", target_section="12", target_paragraph=4),
+        AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_chapter="4", target_section="12", target_paragraph=9),
+        AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_chapter="4", target_section="12", target_paragraph=14),
     ]
     muutos_ir = IRNode(
         kind=IRNodeKind.SECTION,
@@ -4929,7 +4929,7 @@ def test_payload_normalize_does_not_rebase_duplicate_target_shifted_replace_with
     )
     ctx = _mock_ctx("section", "20j", target_chapter="6a", live_node=live_sec)
     replace2 = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="20j",
         target_chapter="6a",
@@ -4937,7 +4937,7 @@ def test_payload_normalize_does_not_rebase_duplicate_target_shifted_replace_with
         source_statute="2017/169",
     )
     replace3 = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="20j",
         target_chapter="6a",
@@ -4945,7 +4945,7 @@ def test_payload_normalize_does_not_rebase_duplicate_target_shifted_replace_with
         source_statute="2017/169",
     )
     insert3 = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="20j",
         target_chapter="6a",
@@ -4953,7 +4953,7 @@ def test_payload_normalize_does_not_rebase_duplicate_target_shifted_replace_with
         source_statute="2017/169",
     )
     insert5 = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="20j",
         target_chapter="6a",
@@ -5024,7 +5024,7 @@ def test_payload_normalize_rebases_sparse_replace_from_stale_predecessor_slot() 
     )
     ctx = _mock_ctx("section", "3", live_node=live_sec)
     op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="3",
         target_paragraph=4,
@@ -5112,7 +5112,7 @@ def test_payload_normalize_keeps_sparse_replace_on_nominal_target_when_live_slot
     )
     ctx = _mock_ctx("section", "8", live_node=live_sec)
     op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="8",
         target_paragraph=5,
@@ -5147,7 +5147,7 @@ def test_payload_normalize_keeps_sparse_replace_on_nominal_target_when_live_slot
 
 
 def test_subsection_slot_map_supports_op_identity_lookup() -> None:
-    op = AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="14", target_paragraph=2)
+    op = AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="14", target_paragraph=2)
     sub = IRNode(kind=IRNodeKind.SUBSECTION, label="2")
     slots = SubsectionSlotMap()
 
@@ -5159,7 +5159,7 @@ def test_subsection_slot_map_supports_op_identity_lookup() -> None:
 
 
 def test_subsection_slot_assignment_result_supports_op_lookup() -> None:
-    op = AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="14", target_paragraph=1)
+    op = AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="14", target_paragraph=1)
     sub = IRNode(kind=IRNodeKind.SUBSECTION, label="1")
     assignment = SubsectionSlotAssignmentResult(
         subsec_map=SubsectionSlotMap({id(op): sub}),
@@ -5175,7 +5175,7 @@ def test_subsection_slot_assignment_result_supports_op_lookup() -> None:
 def test_subsection_slot_assignment_result_supports_normalized_compat_lookup() -> None:
     op = AmendmentOp(
         op_id="bridge_slot",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="14",
         target_paragraph=1,
@@ -5198,7 +5198,7 @@ def test_subsection_slot_assignment_result_supports_normalized_compat_lookup() -
 def test_subsection_slot_assignment_result_supports_stable_op_id_lookup() -> None:
     op = AmendmentOp(
         op_id="stable_slot",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="14",
         target_paragraph=1,
@@ -5221,14 +5221,14 @@ def test_subsection_slot_assignment_result_supports_stable_op_id_lookup() -> Non
 def test_subsection_slot_assignment_result_binding_prefers_stable_id_then_blank_identity_then_fallback() -> None:
     blank_op = AmendmentOp(
         op_id="",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="14",
         target_paragraph=1,
     )
     minted_op = AmendmentOp(
         op_id="binding_slot",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="14",
         target_paragraph=1,
@@ -5293,14 +5293,14 @@ def test_assign_item_matched_slot_ops_allows_sharing_single_slot() -> None:
         children=(shared_sub,),
     )
     op_replace = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="2",
         target_paragraph=1,
         target_item="28",
     )
     op_insert = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="2",
         target_paragraph=1,
@@ -5321,7 +5321,7 @@ def test_assign_item_matched_slot_ops_allows_sharing_single_slot() -> None:
 
 
 def test_subsection_slot_assignment_result_summary_surfaces_binding_and_leftover_labels() -> None:
-    op = AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="14", target_paragraph=1)
+    op = AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="14", target_paragraph=1)
     assignment = SubsectionSlotAssignmentResult(
         subsec_map=SubsectionSlotMap(),
         sparse_slot_bindings=(
@@ -5375,7 +5375,7 @@ def test_normalize_group_payload_surfaces_unassigned_sparse_payload_slots() -> N
         ),
     )
     ctx = _mock_ctx("section", "14", live_node=live_sec)
-    op1 = AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="14", target_paragraph=1)
+    op1 = AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="14", target_paragraph=1)
     muutos_ir = IRNode(
         kind=IRNodeKind.SECTION,
         label="14",
@@ -5440,7 +5440,7 @@ def test_internal_ordered_list_payload_rewrites_broad_replace_to_item_inserts() 
             raw_text="muutetaan 1 §:ssä olevaa listan luetteloa I seuraavasti:",
         ),
     )
-    op = AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="1", lo=lo)
+    op = AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="1", lo=lo)
     muutos_ir = IRNode(
         kind=IRNodeKind.SECTION,
         label="1",
@@ -5501,7 +5501,7 @@ def test_internal_ordered_list_insert_inference_ignores_leading_stereochemical_p
             raw_text="muutetaan 1 §:ssä olevaa listan luetteloa I seuraavasti:",
         ),
     )
-    op = AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="1", lo=lo)
+    op = AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="1", lo=lo)
     muutos_ir = IRNode(
         kind=IRNodeKind.SECTION,
         label="1",
@@ -5561,7 +5561,7 @@ def test_normalize_group_payload_folds_split_target_subsection_intro_list_tail()
     )
     ctx = _mock_ctx("section", "34", live_node=live_sec)
     op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="34",
         target_paragraph=1,
@@ -5661,21 +5661,21 @@ def test_normalize_group_payload_folds_multi_target_subsection_list_wrapups() ->
     )
     ctx = _mock_ctx("section", "11", target_chapter="4", live_node=live_sec)
     op_repeal_5 = AmendmentOp(
-        op_type="REPEAL",
+        op_type=OpType.REPEAL,
         target_kind=TargetKind.SECTION,
         target_chapter="4",
         target_section="11",
         target_paragraph=5,
     )
     op_replace_4 = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_chapter="4",
         target_section="11",
         target_paragraph=4,
     )
     op_replace_3 = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_chapter="4",
         target_section="11",
@@ -5755,7 +5755,7 @@ def test_normalize_group_payload_splits_final_list_item_detached_moment() -> Non
     """
     ctx = _mock_ctx("section", "17", target_chapter="4", live_node=None)
     op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="17",
         target_chapter="4",
@@ -5870,7 +5870,7 @@ def test_sparse_subsection_elaboration_result_defaults_unassigned_sparse_payload
 
 def test_rebase_item_targets_to_sparse_slot_labels_preserves_explicit_source_paragraph() -> None:
     op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="149",
         target_paragraph=1,
@@ -5881,7 +5881,7 @@ def test_rebase_item_targets_to_sparse_slot_labels_preserves_explicit_source_par
         sparse_slot_bindings=(
             SparsePayloadSlotBinding(
                 op_description="REPLACE 149 § 4 mom",
-                op_type="REPLACE",
+                op_type=OpType.REPLACE,
                 target_paragraph=4,
                 target_item=None,
                 target_special=None,
@@ -5890,7 +5890,7 @@ def test_rebase_item_targets_to_sparse_slot_labels_preserves_explicit_source_par
             ),
             SparsePayloadSlotBinding(
                 op_description=op.description(),
-                op_type="REPLACE",
+                op_type=OpType.REPLACE,
                 target_paragraph=1,
                 target_item="1",
                 target_special=None,
@@ -5965,7 +5965,7 @@ def test_normalize_group_payload_keeps_item_level_replace_under_partial_section_
     )
     ctx = _mock_ctx("section", "2", live_node=live_sec)
     op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="2",
         target_paragraph=1,
@@ -6013,14 +6013,14 @@ def test_normalize_group_payload_drops_sparse_item_replace_without_amendment_bod
     )
     ctx = _mock_ctx("section", "2", live_node=live_sec)
     op_missing = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="2",
         target_paragraph=1,
         target_item="4",
     )
     op_present = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="2",
         target_paragraph=1,
@@ -6070,7 +6070,7 @@ def test_normalize_group_payload_drops_sparse_item_replace_without_amendment_bod
 
 def test_normalize_group_payload_keeps_tail_omission_on_typed_slot_assignment() -> None:
     op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="2",
         target_paragraph=2,
@@ -6116,13 +6116,13 @@ def test_normalize_group_payload_keeps_tail_omission_on_typed_slot_assignment() 
 
 def test_normalize_group_payload_drops_redundant_item_op_when_plain_sparse_slot_already_carries_item() -> None:
     op_plain = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="20",
         target_paragraph=2,
     )
     op_item = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="20",
         target_paragraph=2,
@@ -6190,13 +6190,13 @@ def test_normalize_group_payload_drops_redundant_item_op_when_plain_sparse_slot_
 
 def test_normalize_group_payload_drops_redundant_item_op_even_after_omission_is_resolved_away() -> None:
     op_plain = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="27",
         target_paragraph=2,
     )
     op_item = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="27",
         target_paragraph=2,
@@ -6249,41 +6249,41 @@ def test_normalize_group_payload_drops_redundant_item_op_even_after_omission_is_
 
 def test_normalize_group_payload_keeps_sparse_item_inserts_when_only_johd_and_item_replace_share_slot() -> None:
     op_intro = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="42",
         target_paragraph=1,
         target_special="johd",
     )
     op_item3 = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="42",
         target_paragraph=1,
         target_item="3",
     )
     op_item4 = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="42",
         target_paragraph=1,
         target_item="4",
     )
     op_item5 = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="42",
         target_paragraph=1,
         target_item="5",
     )
     op_para2 = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="42",
         target_paragraph=2,
     )
     op_para5 = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="42",
         target_paragraph=5,
@@ -6345,28 +6345,28 @@ def test_normalize_group_payload_observes_mixed_sparse_slot_cross_paragraph() ->
     when they share a slot with a plain op at a different paragraph.
     """
     op_replace_8 = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="4",
         target_paragraph=1,
         target_item="8",
     )
     op_replace_9 = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="4",
         target_paragraph=1,
         target_item="9",
     )
     op_insert_10 = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="4",
         target_paragraph=1,
         target_item="10",
     )
     op_insert_2 = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="4",
         target_paragraph=2,
@@ -6486,7 +6486,7 @@ def test_normalize_group_payload_emits_source_pathology_for_suspicious_partial_w
     )
     ctx = _mock_ctx("section", "2", live_node=live_sec)
     op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="2",
         source_statute="2010/1399",
@@ -6580,7 +6580,7 @@ def test_normalize_group_payload_keeps_multi_subsection_whole_section_replace() 
     )
     ctx = _mock_ctx("section", "4", target_chapter="1", live_node=live_sec)
     op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="4",
         target_chapter="1",
@@ -6651,7 +6651,7 @@ def test_normalize_group_payload_drops_stale_whole_section_shell_for_subsection_
     )
     ctx = _mock_ctx("section", "1", target_chapter="13", live_node=live_sec)
     op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="1",
         target_chapter="13",
@@ -6706,7 +6706,7 @@ def test_normalize_group_payload_keeps_explicit_heading_and_subsection_replace_s
     )
     ctx = _mock_ctx("section", "8", target_chapter="3", live_node=live_sec)
     heading_op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="8",
         target_chapter="3",
@@ -6714,7 +6714,7 @@ def test_normalize_group_payload_keeps_explicit_heading_and_subsection_replace_s
         source_statute="2023/1132",
     )
     subsection_op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="8",
         target_chapter="3",
@@ -6783,7 +6783,7 @@ def test_normalize_group_payload_merges_plain_subsection_shell_continuation_slot
     )
     ctx = _mock_ctx("section", "31a", target_chapter="6", live_node=live_sec)
     heading_op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="31a",
         target_chapter="6",
@@ -6791,7 +6791,7 @@ def test_normalize_group_payload_merges_plain_subsection_shell_continuation_slot
         source_statute="2019/271",
     )
     intro_op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="31a",
         target_chapter="6",
@@ -6800,7 +6800,7 @@ def test_normalize_group_payload_merges_plain_subsection_shell_continuation_slot
         source_statute="2019/271",
     )
     subsection_op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="31a",
         target_chapter="6",
@@ -6867,7 +6867,7 @@ def test_normalize_group_payload_merges_plain_subsection_shell_continuation_slot
 def test_normalize_group_payload_promotes_leading_subsection_heading_for_whole_section_insert() -> None:
     ctx = _mock_ctx("section", "11a", target_chapter="1", live_node=None)
     op = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="11a",
         target_chapter="1",
@@ -6916,7 +6916,7 @@ def test_normalize_group_payload_promotes_leading_subsection_heading_for_whole_s
 def test_normalize_group_payload_does_not_promote_sentence_like_first_subsection() -> None:
     ctx = _mock_ctx("section", "11a", target_chapter="1", live_node=None)
     op = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="11a",
         target_chapter="1",
@@ -6957,7 +6957,7 @@ def test_normalize_group_payload_does_not_promote_sentence_like_first_subsection
 def test_normalize_group_payload_does_not_promote_inline_styled_first_subsection() -> None:
     ctx = _mock_ctx("section", "7a", live_node=None)
     op = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="7a",
         source_statute="2024/870",
@@ -7021,7 +7021,7 @@ def test_normalize_group_payload_drops_intro_only_heading_and_subsection_shell()
     )
     ctx = _mock_ctx("section", "2", target_chapter="2", live_node=live_sec)
     heading_op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="2",
         target_chapter="2",
@@ -7029,7 +7029,7 @@ def test_normalize_group_payload_drops_intro_only_heading_and_subsection_shell()
         source_statute="2015/1328",
     )
     subsection_op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="2",
         target_chapter="2",
@@ -7088,7 +7088,7 @@ def test_prepare_payload_surface_keeps_section_omission_subsection_replace_and_p
     )
     ctx = _mock_ctx("section", "3", live_node=live_sec)
     op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="3",
         target_paragraph=1,
@@ -7143,7 +7143,7 @@ def test_prepare_payload_surface_does_not_merge_stale_subsection_shell_without_s
     )
     ctx = _mock_ctx("section", "3", live_node=live_sec)
     op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="3",
         target_paragraph=1,
@@ -7203,7 +7203,7 @@ def test_normalize_group_payload_keeps_targeted_replace_with_inner_omission_sect
     )
     ctx = _mock_ctx("section", "6", live_node=live_sec)
     op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="6",
         target_paragraph=1,
@@ -7260,14 +7260,14 @@ def test_elaborate_payload_marks_same_group_single_subsection_shell_fragmentary(
     )
     ctx = _mock_ctx("section", "15", target_chapter="2", live_node=live_sec)
     whole_section = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="15",
         target_chapter="2",
         source_statute="2016/533",
     )
     scoped_intro = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="15",
         target_chapter="2",
@@ -7355,7 +7355,7 @@ def test_normalize_group_payload_emits_malformed_broad_replace_body_subcase() ->
     )
     ctx = _mock_ctx("section", "2", live_node=live_sec)
     op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="2",
         source_statute="2010/1399",
@@ -7400,7 +7400,7 @@ def test_normalize_group_payload_no_mismatch_for_new_standalone_sections() -> No
     )
     ctx = _mock_ctx("chapter", "3", live_node=live_container)
     op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.CHAPTER,
         target_section="3",
         source_statute="1995/1599",
@@ -7433,7 +7433,7 @@ def test_normalize_group_payload_treats_heading_only_container_prune_as_expected
     )
     ctx = _mock_ctx("chapter", "4", live_node=live_container)
     op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.CHAPTER,
         target_section="4",
         target_special="otsikko",
@@ -7465,7 +7465,7 @@ def test_normalize_group_payload_treats_heading_only_container_prune_as_expected
 def test_normalize_group_payload_treats_new_container_prune_as_expected_split() -> None:
     ctx = _mock_ctx("chapter", "5c", live_node=None)
     op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.CHAPTER,
         target_section="5c",
         source_statute="2001/999",
@@ -7507,7 +7507,7 @@ def test_normalize_group_payload_treats_new_container_prune_as_expected_split() 
 def test_normalize_group_payload_prunes_foreign_descendant_insert_from_new_container() -> None:
     ctx = _mock_ctx("chapter", "6a", live_node=None)
     op = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.CHAPTER,
         target_section="6a",
         source_statute="2014/1020",
@@ -7546,7 +7546,7 @@ def test_normalize_group_payload_prunes_foreign_descendant_insert_from_new_conta
 def test_normalize_group_payload_keeps_new_container_members_shadowed_only_by_foreign_replaces() -> None:
     ctx = _mock_ctx("chapter", "5a", live_node=None)
     op = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.CHAPTER,
         target_section="5a",
         source_statute="2019/581",
@@ -7584,7 +7584,7 @@ def test_normalize_group_payload_keeps_new_container_members_shadowed_only_by_fo
 def test_normalize_group_payload_prunes_new_container_members_in_dense_foreign_replace_bridge() -> None:
     ctx = _mock_ctx("chapter", "7a", live_node=None)
     op = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.CHAPTER,
         target_section="7a",
         source_statute="2013/1194",
@@ -7623,7 +7623,7 @@ def test_normalize_group_payload_prunes_new_container_members_in_dense_foreign_r
 def test_normalize_group_payload_prunes_new_container_members_in_broad_foreign_replace_run() -> None:
     ctx = _mock_ctx("chapter", "5", live_node=None)
     op = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.CHAPTER,
         target_section="5",
         source_statute="1999/527",
@@ -7669,7 +7669,7 @@ def test_normalize_group_payload_prunes_new_container_members_in_broad_foreign_r
 def test_normalize_group_payload_prunes_part_scoped_suffixed_container_when_foreign_base_lacks_part_scope() -> None:
     ctx = _mock_ctx("chapter", "9a", target_part="2", live_node=None)
     op = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.CHAPTER,
         target_section="9a",
         target_part="2",
@@ -7707,7 +7707,7 @@ def test_normalize_group_payload_prunes_part_scoped_suffixed_container_when_fore
 def test_normalize_group_payload_prunes_base_scope_overlap_in_recodification_transfer_context() -> None:
     ctx = _mock_ctx("chapter", "9a", live_node=None)
     op = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.CHAPTER,
         target_section="9a",
         source_statute="1993/1158",
@@ -7745,7 +7745,7 @@ def test_normalize_group_payload_prunes_base_scope_overlap_in_recodification_tra
 def test_normalize_group_payload_prunes_plain_foreign_replaces_from_suffixed_new_container_payload() -> None:
     ctx = _mock_ctx("chapter", "7a", live_node=None)
     op = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.CHAPTER,
         target_section="7a",
         source_statute="2013/1194",
@@ -7786,7 +7786,7 @@ def test_normalize_group_payload_expands_single_tail_insert_across_post_omission
     ctx = _mock_ctx("section", "1", live_node=live_sec)
     op = AmendmentOp(
         op_id="insert_1_2",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="1",
         target_paragraph=2,
@@ -7831,7 +7831,7 @@ def test_normalize_group_payload_folds_single_insert_list_tail_subsection() -> N
     ctx = _mock_ctx("section", "16", live_node=live_sec)
     op = AmendmentOp(
         op_id="insert_16_2",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="16",
         target_paragraph=2,
@@ -7896,7 +7896,7 @@ def test_normalize_group_payload_splits_flattened_insert_subsection_tail() -> No
     ops = [
         AmendmentOp(
             op_id="insert_15h_2",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_kind=TargetKind.SECTION,
             target_section="15h",
             target_chapter="2",
@@ -7910,7 +7910,7 @@ def test_normalize_group_payload_splits_flattened_insert_subsection_tail() -> No
         ),
         AmendmentOp(
             op_id="insert_15h_3",
-            op_type="INSERT",
+            op_type=OpType.INSERT,
             target_kind=TargetKind.SECTION,
             target_section="15h",
             target_chapter="2",
@@ -7979,7 +7979,7 @@ def test_normalize_group_payload_expands_single_tail_insert_across_post_omission
     ctx = _mock_ctx("section", "22", live_node=live_sec)
     replace_op = AmendmentOp(
         op_id="replace_22_1",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="22",
         target_paragraph=1,
@@ -7992,7 +7992,7 @@ def test_normalize_group_payload_expands_single_tail_insert_across_post_omission
     )
     insert_op = AmendmentOp(
         op_id="insert_22_5",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="22",
         target_paragraph=5,
@@ -8043,7 +8043,7 @@ def test_payload_completeness_fragmentary_for_unassigned_sparse_slots() -> None:
         ),
     )
     ctx = _mock_ctx("section", "14", live_node=live_sec)
-    op1 = AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="14", target_paragraph=1)
+    op1 = AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="14", target_paragraph=1)
     muutos_ir = IRNode(
         kind=IRNodeKind.SECTION,
         label="14",
@@ -8068,7 +8068,7 @@ def test_payload_completeness_fragmentary_for_unassigned_sparse_slots() -> None:
 
 def test_payload_completeness_sparse_certified_for_tail_omission_binding() -> None:
     op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="2",
         target_paragraph=2,
@@ -8131,7 +8131,7 @@ def test_item_targeted_sparse_slot_label_mismatch_is_not_ambiguous_binding() -> 
     )
     ctx = _mock_ctx("section", "73", live_node=live_sec)
     op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="73",
         target_paragraph=2,
@@ -8183,10 +8183,10 @@ def test_payload_completeness_inline_enum_candidate_for_missing_item_body() -> N
     )
     ctx = _mock_ctx("section", "2", live_node=live_sec)
     op_missing = AmendmentOp(
-        op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="2", target_paragraph=1, target_item="4"
+        op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="2", target_paragraph=1, target_item="4"
     )
     op_present = AmendmentOp(
-        op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="2", target_paragraph=1, target_item="12"
+        op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="2", target_paragraph=1, target_item="12"
     )
     muutos_ir = IRNode(
         kind=IRNodeKind.SECTION,
@@ -8221,7 +8221,7 @@ def test_payload_completeness_complete_for_plain_whole_payload() -> None:
         children=(IRNode(kind=IRNodeKind.CONTENT, text="vanha"),),
     )
     ctx = _mock_ctx("section", "3", live_node=live_sec)
-    op = AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="3")
+    op = AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="3")
     muutos_ir = IRNode(
         kind=IRNodeKind.SECTION,
         label="3",
@@ -8243,7 +8243,7 @@ def test_payload_completeness_unsupported_missing_payload_ir_emits_rejected_op()
     )
     ctx = _mock_ctx("section", "3", live_node=live_sec)
     op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="3",
         target_paragraph=1,
@@ -8269,7 +8269,7 @@ def test_payload_completeness_allows_payloadless_repeal_group() -> None:
     )
     ctx = _mock_ctx("section", "3", live_node=live_sec)
     op = AmendmentOp(
-        op_type="REPEAL",
+        op_type=OpType.REPEAL,
         target_kind=TargetKind.SECTION,
         target_section="3",
         source_statute="2024/1049",
@@ -8297,14 +8297,14 @@ def test_payload_completeness_unsupported_shape_pathology_emits_rejected_op() ->
     )
     ctx = _mock_ctx("section", "3", live_node=live_sec)
     op1 = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="3",
         target_paragraph=1,
         source_statute="2010/1399",
     )
     op3 = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="3",
         target_paragraph=3,
@@ -8371,14 +8371,14 @@ def test_drop_redundant_case3_keeps_insert_when_lettered_item_not_in_live() -> N
     suppressing the INSERT.  Only suppress when the item already exists in live.
     """
     op_replace3 = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="11",
         target_paragraph=1,
         target_item="3",
     )
     op_insert3a = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="11",
         target_paragraph=1,
@@ -8452,14 +8452,14 @@ def test_drop_redundant_case3_drops_insert_when_lettered_item_exists_in_live() -
     because omission resolution happens before _drop_redundant_item_ops_claimed_by_sparse_slot.
     """
     op_replace3 = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="11",
         target_paragraph=1,
         target_item="3",
     )
     op_insert3a = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="11",
         target_paragraph=1,
@@ -8558,11 +8558,11 @@ def test_assign_subsection_slots_binds_item_ops_by_momentti_not_item_number() ->
         children=(IRNode(kind=IRNodeKind.NUM, text="26 §"), amend_sub_4mom, amend_sub_5mom),
     )
     group_ops = [
-        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="26", target_paragraph=4, target_item="3"),
-        AmendmentOp(op_type="INSERT", target_kind=TargetKind.SECTION, target_section="26", target_paragraph=4, target_item="4"),
-        AmendmentOp(op_type="REPLACE", target_kind=TargetKind.SECTION, target_section="26", target_paragraph=5, target_item="3"),
-        AmendmentOp(op_type="INSERT", target_kind=TargetKind.SECTION, target_section="26", target_paragraph=5, target_item="4"),
-        AmendmentOp(op_type="INSERT", target_kind=TargetKind.SECTION, target_section="26", target_paragraph=5, target_item="5"),
+        AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="26", target_paragraph=4, target_item="3"),
+        AmendmentOp(op_type=OpType.INSERT, target_kind=TargetKind.SECTION, target_section="26", target_paragraph=4, target_item="4"),
+        AmendmentOp(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_section="26", target_paragraph=5, target_item="3"),
+        AmendmentOp(op_type=OpType.INSERT, target_kind=TargetKind.SECTION, target_section="26", target_paragraph=5, target_item="4"),
+        AmendmentOp(op_type=OpType.INSERT, target_kind=TargetKind.SECTION, target_section="26", target_paragraph=5, target_item="5"),
     ]
 
     slot_inputs = _collect_subsection_slot_inputs(muutos_ir, group_ops)
@@ -8593,13 +8593,13 @@ def test_assign_subsection_slots_binds_carried_renumber_destination_payload_slot
         ),
     )
     insert2 = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="12",
         target_paragraph=2,
     )
     replace3 = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="12",
         target_paragraph=3,
@@ -8615,7 +8615,7 @@ def test_assign_subsection_slots_binds_carried_renumber_destination_payload_slot
         )
         return AmendmentOp(
             op_id=lo.op_id,
-            op_type="RENUMBER",
+            op_type=OpType.RENUMBER,
             target_kind=TargetKind.SECTION,
             target_section="12",
             target_paragraph=int(source),
@@ -8681,21 +8681,21 @@ def test_assign_subsection_slots_keeps_intro_replacement_from_stealing_insert_bo
         ),
     )
     intro_op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="32",
         target_paragraph=1,
         target_special="johd",
     )
     insert2 = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="32",
         target_paragraph=2,
     )
     renumber2 = AmendmentOp(
         op_id="renumber_2_to_3",
-        op_type="RENUMBER",
+        op_type=OpType.RENUMBER,
         target_kind=TargetKind.SECTION,
         target_section="32",
         target_paragraph=2,
@@ -8732,27 +8732,27 @@ def test_assign_subsection_slots_binds_same_target_insert_before_moved_replace()
         ),
     )
     replace_item = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="45",
         target_paragraph=1,
         target_item="4",
     )
     insert3 = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="45",
         target_paragraph=3,
     )
     replace3 = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="45",
         target_paragraph=3,
     )
     renumber3 = AmendmentOp(
         op_id="renumber_3_to_4",
-        op_type="RENUMBER",
+        op_type=OpType.RENUMBER,
         target_kind=TargetKind.SECTION,
         target_section="45",
         target_paragraph=3,
@@ -8810,14 +8810,14 @@ def test_assign_subsection_slots_binds_same_target_insert_before_moved_renumber(
         ),
     )
     insert3 = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="7b",
         target_paragraph=3,
     )
     renumber3 = AmendmentOp(
         op_id="renumber_3_to_4",
-        op_type="RENUMBER",
+        op_type=OpType.RENUMBER,
         target_kind=TargetKind.SECTION,
         target_section="7b",
         target_paragraph=3,
@@ -8867,7 +8867,7 @@ def test_assign_subsection_slots_does_not_bind_renumber_insert_before_replaced_t
     )
     renumber3 = AmendmentOp(
         op_id="renumber_3_to_4",
-        op_type="RENUMBER",
+        op_type=OpType.RENUMBER,
         target_kind=TargetKind.SECTION,
         target_section="1",
         target_paragraph=3,
@@ -8880,13 +8880,13 @@ def test_assign_subsection_slots_does_not_bind_renumber_insert_before_replaced_t
         ),
     )
     replace2 = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="1",
         target_paragraph=2,
     )
     insert3 = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="1",
         target_paragraph=3,
@@ -8923,14 +8923,14 @@ def test_assign_subsection_slots_does_not_move_insert_off_in_place_merge_slot() 
         ),
     )
     insert2 = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="23",
         target_paragraph=2,
     )
     renumber2 = AmendmentOp(
         op_id="renumber_2_to_3",
-        op_type="RENUMBER",
+        op_type=OpType.RENUMBER,
         target_kind=TargetKind.SECTION,
         target_section="23",
         target_paragraph=2,

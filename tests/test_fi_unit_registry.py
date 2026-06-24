@@ -292,7 +292,7 @@ def test_build_canonical_intent_valid_replace_no_warning(caplog):
     """_build_canonical_intent for a standard REPLACE emits no validation warning."""
     from lawvm.finland.ops import _build_canonical_intent
 
-    rop = _make_minimal_rop(op_type="REPLACE", target_kind=TargetKind.SECTION, target_norm="5")
+    rop = _make_minimal_rop(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_norm="5")
     with caplog.at_level(logging.WARNING, logger="lawvm.core.unit_registry"):
         intent = _build_canonical_intent(rop)
 
@@ -310,7 +310,7 @@ def test_build_canonical_intent_payloadless_replace_returns_none() -> None:
     """Payloadless REPLACE ops should degrade explicitly instead of building invalid core intent."""
     from lawvm.finland.ops import _build_canonical_intent
 
-    rop = _make_minimal_rop(op_type="REPLACE", target_kind=TargetKind.SECTION, target_norm="5")
+    rop = _make_minimal_rop(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_norm="5")
     rop.muutos_ir = None
 
     assert _build_canonical_intent(rop) is None
@@ -321,7 +321,7 @@ def test_build_canonical_intent_heading_replace_no_warning(caplog):
     from lawvm.finland.ops import _build_canonical_intent
 
     rop = _make_minimal_rop(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_norm="5",
         target_special="otsikko",
@@ -343,7 +343,7 @@ def test_build_canonical_intent_intro_replace_no_warning(caplog):
     from lawvm.finland.ops import _build_canonical_intent
 
     rop = _make_minimal_rop(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_norm="3",
         target_special="johd",
@@ -363,7 +363,7 @@ def test_build_canonical_intent_subsection_intro_replace_no_warning(caplog):
     from lawvm.finland.ops import _build_canonical_intent
 
     rop = _make_minimal_rop(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_norm="13",
         target_paragraph=1,
@@ -395,7 +395,7 @@ def test_build_canonical_intent_uses_resolvedop_addresses_without_lo() -> None:
 
     op = AmendmentOp(
         op_id="renumber_without_lo",
-        op_type="RENUMBER",
+        op_type=OpType.RENUMBER,
         target_kind=TargetKind.SECTION,
         target_section="73",
     )
@@ -435,7 +435,7 @@ def test_build_canonical_intent_without_target_address_gracefully_returns_none()
 
     op = AmendmentOp(
         op_id="missing_target_address",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="5",
     )

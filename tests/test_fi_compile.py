@@ -48,7 +48,7 @@ from lawvm.core.observation_registry import (
     strict_fail_codes_by_family,
 )
 from lawvm.core.semantic_types import IRNodeKind, TextPatchKindEnum
-from lawvm.finland.ops import AmendmentOp, FailedOp, classify_legal_operation_conversion_skip
+from lawvm.finland.ops import OpType, AmendmentOp, FailedOp, classify_legal_operation_conversion_skip
 from lawvm.finland.effect_lifecycle_projection import build_finland_effect_lifecycle
 from lawvm.finland.replay_products import ReplayProducts
 from lawvm.tools.section_keys import extract_ir_sections
@@ -128,7 +128,7 @@ def test_amendment_op_with_lo_derives_target_unit_without_section_default() -> N
         target=LegalAddress(path=(("part", "II"), ("chapter", "2"), ("section", "5"))),
     )
 
-    op = AmendmentOp(op_id="part-scoped-section", op_type="RENUMBER", lo=lo)
+    op = AmendmentOp(op_id="part-scoped-section", op_type=OpType.RENUMBER, lo=lo)
 
     assert op.target_unit_kind == "section"
     assert op.target_part == "II"
@@ -145,7 +145,7 @@ def test_amendment_op_with_unsupported_lo_target_does_not_default_to_section() -
     )
 
     with pytest.raises(ValueError, match="no Finland-supported primary unit"):
-        AmendmentOp(op_id="descendant-only", op_type="REPEAL", lo=lo)
+        AmendmentOp(op_id="descendant-only", op_type=OpType.REPEAL, lo=lo)
 
 
 def get_johtolause(*args: Any, **kwargs: Any) -> Any:
@@ -3950,7 +3950,7 @@ def test_normalize_and_compile_ops_strictly_rejects_late_fallback_chains(
 
     op = AmendmentOp(
         op_id="fallback-op",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="1",
         target_unit_kind="section",
         source_statute="2020/1",
@@ -4066,7 +4066,7 @@ def test_strip_impossible_chapter_scope_for_bare_body_section_op_clears_no_chapt
 
     op = AmendmentOp(
         op_id="ins-21",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="1",
         target_paragraph=1,
@@ -4099,7 +4099,7 @@ def test_strip_impossible_chapter_scope_for_bare_body_section_op_keeps_real_chap
 
     op = AmendmentOp(
         op_id="ins-21",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="1",
         target_paragraph=1,
@@ -4180,7 +4180,7 @@ def test_duplicate_section_scope_from_source_heading_binds_unique_live_duplicate
     )
     op = AmendmentOp(
         op_id="replace-17",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="17",
     )
@@ -5302,7 +5302,7 @@ def test_group_surface_uses_single_mislabeled_body_section_for_explicit_replace(
     )
     op = AmendmentOp(
         op_id="explicit-54",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="54",
         target_chapter="11",
         target_unit_kind="section",
@@ -5356,7 +5356,7 @@ def test_group_surface_does_not_reuse_payload_claimed_by_another_section_op() ->
     )
     current = AmendmentOp(
         op_id="explicit-2",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="2",
         target_unit_kind="section",
         source_statute="2000/464",
@@ -5364,7 +5364,7 @@ def test_group_surface_does_not_reuse_payload_claimed_by_another_section_op() ->
     )
     claimed = AmendmentOp(
         op_id="explicit-6",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="6",
         target_unit_kind="section",
         source_statute="2000/464",

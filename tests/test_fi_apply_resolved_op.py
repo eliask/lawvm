@@ -12,7 +12,7 @@ from lawvm.finland.apply_resolved_op import (
     ApplyResolvedOpSinks,
     apply_resolved_op_with_audit,
 )
-from lawvm.finland.ops import AmendmentOp, ResolvedOp
+from lawvm.finland.ops import OpType, AmendmentOp, ResolvedOp
 from lawvm.finland.statute import ReplayState, StatuteContext
 from lawvm.finland.target_kind import TargetKind
 from lawvm.core.ir import IRNode
@@ -387,7 +387,7 @@ def test_ls01_in_boundary_write_is_clean() -> None:
 
 def test_ls03_invalid_occupancy_transition_strict_blocks() -> None:
     """LS-03: REPLACE on an ABSENT slot (no valid transition) strict-blocks."""
-    rop = _rop(op_type="REPLACE", muutos_ir=IRNode(kind=IRNodeKind.SECTION, label="1"))
+    rop = _rop(op_type=OpType.REPLACE, muutos_ir=IRNode(kind=IRNodeKind.SECTION, label="1"))
     # prev_state is an empty BODY: section 1 is ABSENT, so REPLACE has no valid
     # occupancy transition. The landed write installs section 1.
     landed = IRNode(
@@ -405,7 +405,7 @@ def test_ls03_invalid_occupancy_transition_strict_blocks() -> None:
 
 def test_ls03_invalid_occupancy_transition_quirks_does_not_block() -> None:
     """LS-03: the same invalid transition under quirks does not emit the strict block."""
-    rop = _rop(op_type="REPLACE", muutos_ir=IRNode(kind=IRNodeKind.SECTION, label="1"))
+    rop = _rop(op_type=OpType.REPLACE, muutos_ir=IRNode(kind=IRNodeKind.SECTION, label="1"))
     landed = IRNode(
         kind=IRNodeKind.BODY,
         children=(IRNode(kind=IRNodeKind.SECTION, label="1"),),
