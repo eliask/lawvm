@@ -1079,6 +1079,120 @@ def drill_sparse_omission_tail_pruned_from_carrier_compile_surface() -> None:
     assert SPARSE_OMISSION_TAIL_PRUNE_RULE in finding_kinds
 
 
+def drill_sparse_plain_subsection_shell_continuation_merge_payload_elaboration() -> None:
+    """ELAB.SPARSE_PLAIN_SUBSECTION_SHELL_CONTINUATION_MERGE reaches elaboration.
+
+    Production lane: ``elaborate_payload_against_live`` receives a sparse section
+    payload where the source XML split an explicitly targeted previous intro
+    and following plain subsection across three adjacent subsection slots.
+    """
+    live_sec = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="31a",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="31 a §"),
+            IRNode(kind=IRNodeKind.HEADING, text="Old heading"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="Old first moment."),),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="2",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="Old second moment."),),
+            ),
+        ),
+    )
+    ctx = PayloadElaborationContext(
+        target_unit_kind="section",
+        target_norm="31a",
+        target_chapter="6",
+        target_part=None,
+        live_node=live_sec,
+        parent_node=None,
+        subsection_slots=(),
+        live_subsections=tuple(child for child in live_sec.children if child.kind is IRNodeKind.SUBSECTION),
+        subsection_by_label={
+            str(child.label): child
+            for child in live_sec.children
+            if child.kind is IRNodeKind.SUBSECTION and child.label
+        },
+        item_index={},
+        row_anchor_index={},
+        container_member_labels=None,
+        lookups=ReplayLookups(
+            snapshot_rev=0,
+            unique_section_paths={},
+            chapter_members={},
+            part_members={},
+            all_section_labels=frozenset({"31a"}),
+        ),
+    )
+    heading_op = AmendmentOp(
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_section="31a",
+        target_chapter="6",
+        target_special="otsikko",
+        source_statute="2019/271",
+    )
+    intro_op = AmendmentOp(
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_section="31a",
+        target_chapter="6",
+        target_paragraph=1,
+        target_special="johd",
+        source_statute="2019/271",
+    )
+    subsection_op = AmendmentOp(
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_section="31a",
+        target_chapter="6",
+        target_paragraph=2,
+        source_statute="2019/271",
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="31a",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="31 a §"),
+            IRNode(kind=IRNodeKind.HEADING, text="New heading"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="New first moment."),),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="2",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="This training shall consist of:"),),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="3",
+                children=(
+                    IRNode(kind=IRNodeKind.CONTENT, text="Personnel are divided into categories."),
+                    IRNode(kind=IRNodeKind.TABLE, children=(IRNode(kind=IRNodeKind.ROW, text="Category"),)),
+                ),
+            ),
+        ),
+    )
+
+    result = elaborate_payload_against_live(
+        ctx,
+        [heading_op, intro_op, subsection_op],
+        muutos_ir,
+        set(),
+    )
+
+    kinds = {obs.kind for obs in result.elaboration_observations or ()}
+    assert "ELAB.SPARSE_PLAIN_SUBSECTION_SHELL_CONTINUATION_MERGE" in kinds
+    assert result.unassigned_sparse_payload_slots == ()
+
+
 def drill_rebase_replaced_renumber_source_inspect_bundle() -> None:
     """ELAB.REBASE_REPLACED_RENUMBER_SOURCE reaches the inspect-amendment surface.
 
@@ -3434,6 +3548,9 @@ FIRE_DRILLS: Dict[str, Callable[[], None]] = {
     "ELAB.RESTORE_HEADING_FOR_EXPLICIT_FACET": drill_restore_heading_for_explicit_facet_group_elaboration,
     "ELAB.SPARSE_OMISSION_TAIL_CLAIM": drill_sparse_omission_tail_claim_group_surface,
     "ELAB.SPARSE_OMISSION_TAIL_PRUNED_FROM_CARRIER": drill_sparse_omission_tail_pruned_from_carrier_compile_surface,
+    "ELAB.SPARSE_PLAIN_SUBSECTION_SHELL_CONTINUATION_MERGE": (
+        drill_sparse_plain_subsection_shell_continuation_merge_payload_elaboration
+    ),
     "ELAB.REBASE_REPLACED_RENUMBER_SOURCE": drill_rebase_replaced_renumber_source_inspect_bundle,
     "PARSE.FRONTEND_INTERNAL_ERROR": drill_frontend_internal_error_parse_surface,
     "REPLAY_UNKNOWN_MUTATION_OUTCOME": drill_replay_unknown_mutation_outcome_apply_lane,

@@ -6762,6 +6762,108 @@ def test_normalize_group_payload_keeps_explicit_heading_and_subsection_replace_s
     assert "New first moment" in " ".join(irnode_to_text(mapped).split())
 
 
+def test_normalize_group_payload_merges_plain_subsection_shell_continuation_slot() -> None:
+    live_sec = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="31a",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="31 a §"),
+            IRNode(kind=IRNodeKind.HEADING, text="Old heading"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="Old first moment."),),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="2",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="Old second moment."),),
+            ),
+        ),
+    )
+    ctx = _mock_ctx("section", "31a", target_chapter="6", live_node=live_sec)
+    heading_op = AmendmentOp(
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_section="31a",
+        target_chapter="6",
+        target_special="otsikko",
+        source_statute="2019/271",
+    )
+    intro_op = AmendmentOp(
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_section="31a",
+        target_chapter="6",
+        target_paragraph=1,
+        target_special="johd",
+        source_statute="2019/271",
+    )
+    subsection_op = AmendmentOp(
+        op_type="REPLACE",
+        target_kind=TargetKind.SECTION,
+        target_section="31a",
+        target_chapter="6",
+        target_paragraph=2,
+        source_statute="2019/271",
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="31a",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="31 a §"),
+            IRNode(kind=IRNodeKind.HEADING, text="New heading"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="New first moment."),),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="2",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="This training shall consist of:"),),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="3",
+                children=(
+                    IRNode(kind=IRNodeKind.CONTENT, text="Personnel are divided into the following categories."),
+                    IRNode(
+                        kind=IRNodeKind.TABLE,
+                        children=(
+                            IRNode(kind=IRNodeKind.ROW, text="Category | Description"),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    got = elaborate_payload_against_live(ctx, [heading_op, intro_op, subsection_op], muutos_ir, set())
+
+    assert got.rejected_ops == ()
+    assert got.unassigned_sparse_payload_slots == ()
+    mapped_intro = got.subsec_map.for_op(intro_op)
+    assert mapped_intro is not None
+    intro_text = " ".join(irnode_to_text(mapped_intro).split())
+    assert "New first moment." in intro_text
+    assert "This training shall consist of:" in intro_text
+    mapped = got.subsec_map.for_op(subsection_op)
+    assert mapped is not None
+    mapped_text = " ".join(irnode_to_text(mapped).split())
+    assert "This training shall consist of:" not in mapped_text
+    assert "Personnel are divided" in mapped_text
+    assert mapped.label == "2"
+    assert any(child.kind is IRNodeKind.TABLE for child in mapped.children)
+    shell_merge_observations = [
+        obs for obs in _observations(got) if obs.kind == "ELAB.SPARSE_PLAIN_SUBSECTION_SHELL_CONTINUATION_MERGE"
+    ]
+    assert len(shell_merge_observations) == 1
+    shell_merge_detail = shell_merge_observations[0].detail
+    assert shell_merge_detail is not None
+    assert shell_merge_detail["rebound_payload_slot"] == "3:3"
+
+
 def test_normalize_group_payload_promotes_leading_subsection_heading_for_whole_section_insert() -> None:
     ctx = _mock_ctx("section", "11a", target_chapter="1", live_node=None)
     op = AmendmentOp(

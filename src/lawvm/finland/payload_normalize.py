@@ -70,6 +70,9 @@ if TYPE_CHECKING:
 
 _NUMBERED_TABLE_XML_SUBSECTION_OFFSET_RULE = "ELAB.NUMBERED_TABLE_XML_SUBSECTION_OFFSET"
 _INTERNAL_ORDERED_LIST_INSERT_RULE = "ELAB.INTERNAL_ORDERED_LIST_INSERT_REWRITE"
+_SPARSE_PLAIN_SUBSECTION_SHELL_CONTINUATION_MERGE_RULE = (
+    "ELAB.SPARSE_PLAIN_SUBSECTION_SHELL_CONTINUATION_MERGE"
+)
 _PRESERVE_IMPLICIT_PARAGRAPH_NUMBER_ATTR = "lawvm_preserve_implicit_paragraph_numbering"
 _CONTINUATION_ROW_PREFIX_RE = re.compile(r"^(\d+)\.\s+")
 
@@ -1730,6 +1733,146 @@ def _assign_fallback_plain_slot_ops(
             state.subsec_map.assign(op, slot_inputs.amend_subs[state.sub_idx])
             state.used_subs.add(state.sub_idx)
         state.prev_mom = mom
+
+
+def _merge_sparse_plain_subsection_shell_continuations(
+    muutos_ir: Optional[IRNode],
+    group_ops: List[AmendmentOp],
+    assignment: SubsectionSlotAssignmentResult,
+) -> SubsectionSlotAssignmentResult:
+    """Move a shell-only slot to the previous intro and rebind the body slot.
+
+    Some amendment XML serializes one legal moment as two adjacent subsection
+    slots when the johtolause targets both ``N-1 momentin johdantokappale`` and
+    ``N momentti``: the colon-ending slot belongs to the prior intro, while the
+    following table/body slot is the actual plain moment payload.  This rule
+    only rewires already-authorized adjacent slots; it does not create a new
+    operation or target.
+    """
+    if muutos_ir is None or not assignment.sparse_slot_bindings:
+        return assignment
+    amend_subs = [child for child in muutos_ir.children if child.kind is IRNodeKind.SUBSECTION]
+    if not amend_subs:
+        return assignment
+    used_subs = set(assignment.used_subs)
+    subsec_map = assignment.subsec_map.copy()
+    observations = list(assignment.binding_observations)
+    changed = False
+
+    for binding in assignment.sparse_slot_bindings:
+        if binding.target_paragraph is None or binding.target_item or binding.target_special:
+            continue
+        assigned_idx = binding.payload_slot_index - 1
+        continuation_idx = assigned_idx + 1
+        if assigned_idx <= 0 or continuation_idx >= len(amend_subs):
+            continue
+        if continuation_idx in used_subs:
+            continue
+        shell = amend_subs[assigned_idx]
+        continuation = amend_subs[continuation_idx]
+        if not _slot_ir_is_intro_only_fragment(shell):
+            continue
+        if not irnode_to_text(continuation).strip():
+            continue
+        target_op = next(
+            (
+                op
+                for op in group_ops
+                if (
+                    op.target_paragraph == binding.target_paragraph
+                    and not op.target_item
+                    and not op.target_special
+                    and assignment.for_op(op) is shell
+                )
+            ),
+            None,
+        )
+        if target_op is None:
+            continue
+        intro_op = next(
+            (
+                op
+                for op in group_ops
+                if (
+                    op.target_paragraph == binding.target_paragraph - 1
+                    and not op.target_item
+                    and op.target_special == "johd"
+                    and assignment.for_op(op) is amend_subs[assigned_idx - 1]
+                )
+            ),
+            None,
+        )
+        if intro_op is None:
+            continue
+        intro_slot = amend_subs[assigned_idx - 1]
+        merged_intro_attrs = dict(intro_slot.attrs)
+        merged_intro_attrs["lawvm_payload_elaboration_rule"] = (
+            _SPARSE_PLAIN_SUBSECTION_SHELL_CONTINUATION_MERGE_RULE
+        )
+        merged_intro_attrs["lawvm_payload_elaboration_merged_slot"] = str(shell.label or "")
+        merged_intro = IRNode(
+            kind=intro_slot.kind,
+            label=intro_slot.label,
+            text=intro_slot.text,
+            attrs=merged_intro_attrs,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CONTENT,
+                    text=" ".join(
+                        part
+                        for part in (
+                            " ".join(irnode_to_text(intro_slot).split()),
+                            " ".join(irnode_to_text(shell).split()),
+                        )
+                        if part
+                    ),
+                ),
+            ),
+        )
+        merged_attrs = dict(shell.attrs)
+        merged_attrs["lawvm_payload_elaboration_rule"] = (
+            _SPARSE_PLAIN_SUBSECTION_SHELL_CONTINUATION_MERGE_RULE
+        )
+        merged_attrs["lawvm_payload_elaboration_rebound_from_slot"] = str(shell.label or "")
+        rebound = IRNode(
+            kind=continuation.kind,
+            label=shell.label,
+            text=continuation.text,
+            attrs=merged_attrs,
+            children=tuple(continuation.children),
+        )
+        subsec_map.assign(intro_op, merged_intro)
+        subsec_map.assign(target_op, rebound)
+        used_subs.add(continuation_idx)
+        observations.append(
+            _obs(
+                _SPARSE_PLAIN_SUBSECTION_SHELL_CONTINUATION_MERGE_RULE,
+                "sparse_subsection_elaboration",
+                intro_op_description=intro_op.description(),
+                op_description=target_op.description(),
+                intro_target_paragraph=intro_op.target_paragraph,
+                target_paragraph=binding.target_paragraph,
+                intro_slot=f"{assigned_idx}:{intro_slot.label or ''}",
+                shell_slot=f"{assigned_idx + 1}:{shell.label or ''}",
+                rebound_payload_slot=f"{continuation_idx + 1}:{continuation.label or ''}",
+            )
+        )
+        changed = True
+
+    if not changed:
+        return assignment
+    unassigned_payload_slots = [
+        (f"{idx + 1}:{sub.label}" if str(sub.label or "") else f"{idx + 1}:(unlabeled)")
+        for idx, sub in enumerate(amend_subs)
+        if idx not in used_subs
+    ]
+    return dc_replace(
+        assignment,
+        subsec_map=subsec_map,
+        used_subs=tuple(sorted(used_subs)),
+        unassigned_payload_slots=tuple(unassigned_payload_slots),
+        binding_observations=tuple(observations),
+    )
 
 
 def _assign_item_prefix_slot_ops(
@@ -6376,6 +6519,7 @@ def _elaborate_sparse_subsection_payload(
         group_ops,
         assignment,
     )
+    assignment = _merge_sparse_plain_subsection_shell_continuations(muutos_ir, group_ops, assignment)
     observations.extend(split_observations)
     observations.extend(assignment.binding_observations)
     observations.extend(_mixed_sparse_slot_cross_paragraph_bindings(group_ops, assignment))
