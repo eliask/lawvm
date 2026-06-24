@@ -61,6 +61,7 @@ from lawvm.core.mutation_boundary_proof import MutationBoundaryProof
 from lawvm.core.semantic_types import StructuralAction, TextPatchKindEnum
 from lawvm.us_federal.amendatory import (
     RULE_STRIKE_INSERT_TAIL,
+    RULE_STRIKE_INSERT_THROUGH_TAIL,
     USAmendatoryReport,
     lower_plaw_amendatory,
 )
@@ -1310,6 +1311,84 @@ def _replace_token_tail_in_text(text: str, match_text: str, replacement: str, co
     return text[: starts[0]] + (replacement or "")
 
 
+def _replace_token_through_in_text(
+    text: str,
+    start_text: str,
+    end_text: str,
+    replacement: str,
+    count: int,
+) -> str | None:
+    """Bounded tail strike: delete from ``start_text`` THROUGH ``end_text``.
+
+    Mirrors the open-ended tail strike, but stops the deletion at the END
+    anchor (inclusive) instead of running to the end of the target node.
+    Used for the "striking 'OLD' and all that follows through 'END' [and inserting
+    'NEW']" family: the right-side text after END survives the op.
+
+    The first (leftmost) ``start_text`` locates the deletion start; the
+    first ``end_text`` occurrence strictly AFTER that start locates the
+    inclusive right bound. Returns the patched text, or ``None`` when either
+    anchor is absent or out of order (in which case the caller should refuse
+    the op as an absent-target condition, not produce a wrong materialization).
+    """
+    if not start_text or not end_text:
+        return text
+    # Mirror _replace_token_tail_in_text's leftmost-start heuristic: use a
+    # word-boundary pattern for alphabetic anchors (so "Definitions" doesn't
+    # match inside "Definitions/foo"); use a literal find otherwise.
+    if start_text.isalpha():
+        start_pattern = _word_boundary_pattern(start_text)
+        sm = start_pattern.search(text)
+        if sm is None:
+            return None
+        start_pos = sm.start()
+        after_start = sm.end()
+    else:
+        start_pos = text.find(start_text)
+        if start_pos == -1:
+            return None
+        after_start = start_pos + len(start_text)
+    end_start = text.find(end_text, after_start)
+    if end_start == -1:
+        return None
+    return text[:start_pos] + (replacement or "")
+
+
+def _apply_text_patch_with_tail_dispatch(
+    operation: LegalOperation,
+    text: str,
+    *,
+    match_text: str,
+    replacement: str,
+    count: int,
+) -> str | None:
+    """Dispatch a text patch by the operation's tail-provenance tag and selector.
+
+    Routes the patch through one of three sibling functions:
+      * THROUGH_TAIL — bounded [start..end] deletion + replacement
+      * TAIL — open-ended deletion from start through end of node + replacement
+      * regular — first/each occurrence replace
+
+    Returns ``None`` when the THROUGH family cannot find its end anchor in the
+    running text (the materializer should refuse, mirroring an absent-anchor
+    refusal, rather than produce a wrong cut). For the TAIL/regular paths the
+    existing helpers return the input text unchanged when anchors are missing
+    (preserving their current behavior at section-level fallback sites).
+    """
+    if RULE_STRIKE_INSERT_THROUGH_TAIL in operation.provenance_tags:
+        end_match = (
+            operation.text_patch.selector.end_match_text
+            if operation.text_patch is not None
+            else None
+        ) or ""
+        return _replace_token_through_in_text(
+            text, match_text, end_match, replacement, count
+        )
+    if RULE_STRIKE_INSERT_TAIL in operation.provenance_tags:
+        return _replace_token_tail_in_text(text, match_text, replacement, count)
+    return _replace_token_in_text(text, match_text, replacement, count)
+
+
 def _subtree_overrides(
     node_overrides: NodeOverrides,
     target_segments: tuple[tuple[str, str], ...],
@@ -1529,13 +1608,29 @@ def _materialize_one(
                 # rewrites the leftmost match here and records the result in
                 # node_overrides; patch 1 then sees the post-patch node and rewrites
                 # the NEXT match — each consumes its own occurrence in source order.
-                if RULE_STRIKE_INSERT_TAIL in operation.provenance_tags:
-                    new_node_text = _replace_token_tail_in_text(
-                        node_text, match_text, replacement or "", count
-                    )
-                else:
-                    new_node_text = _replace_token_in_text(
-                        node_text, match_text, replacement or "", count
+                new_node_text = _apply_text_patch_with_tail_dispatch(
+                    operation,
+                    node_text,
+                    match_text=match_text,
+                    replacement=replacement or "",
+                    count=count,
+                )
+                if new_node_text is None:
+                    # Bounded through-tail: refuse when either anchor is absent from
+                    # the running node, or when out of order; never fall through to a
+                    # corrupt cut. The end anchor (or left anchor as a fallback) is the
+                    # self-evidencing witness. (TAIL/regular helpers never return None,
+                    # so reaching this refuse means the THROUGH family failed to find
+                    # its end anchor in the running node text.)
+                    end_match = (
+                        operation.text_patch.selector.end_match_text
+                        if operation.text_patch is not None
+                        else None
+                    ) or match_text
+                    return _refuse_absent_text_target(
+                        operation,
+                        absent_kind="through end anchor",
+                        absent_text=end_match,
                     )
                 # Substitute the patched node text back into the running section text
                 # (first occurrence — the node text is unique enough to anchor on).
@@ -1566,7 +1661,26 @@ def _materialize_one(
             if _token_in_text(before_text, match_text) and (
                 count == -1 or _token_count_in_text(before_text, match_text) == 1
             ):
-                materialized = _replace_token_in_text(before_text, match_text, replacement or "", count)
+                materialized = _apply_text_patch_with_tail_dispatch(
+                    operation,
+                    before_text,
+                    match_text=match_text,
+                    replacement=replacement or "",
+                    count=count,
+                )
+                if materialized is None:
+                    # The THROUGH family's end anchor was not locatable in the
+                    # running section text (the section-level fallback reached the
+                    # function but the end anchor is absent or out of order). Refuse
+                    # rather than silently fall back to a single-occurrence replace.
+                    end_match = (
+                        operation.text_patch.selector.end_match_text
+                        if operation.text_patch is not None
+                        else None
+                    ) or match_text
+                    return _refuse_absent_text_target(
+                        operation, absent_kind="through end anchor", absent_text=end_match
+                    )
                 return (materialized, "", "")
             if not _token_in_text(before_text, match_text):
                 # The targeted sub-section node is not locatable AND its match anchor
@@ -1600,7 +1714,22 @@ def _materialize_one(
             return _refuse_absent_text_target(
                 operation, absent_kind="match anchor", absent_text=match_text
             )
-        materialized = _replace_token_in_text(before_text, match_text, replacement or "", count)
+        materialized = _apply_text_patch_with_tail_dispatch(
+            operation,
+            before_text,
+            match_text=match_text,
+            replacement=replacement or "",
+            count=count,
+        )
+        if materialized is None:
+            end_match = (
+                operation.text_patch.selector.end_match_text
+                if operation.text_patch is not None
+                else None
+            ) or match_text
+            return _refuse_absent_text_target(
+                operation, absent_kind="through end anchor", absent_text=end_match
+            )
         return (materialized, "", "")
 
     if (

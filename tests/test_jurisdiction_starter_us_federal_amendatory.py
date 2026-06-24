@@ -35,12 +35,12 @@ from lawvm.us_federal.amendatory import (
     RULE_STRIKE_INSERT,
     RULE_STRIKE_INSERT_END_PUNCT,
     RULE_STRIKE_INSERT_PUNCT_WORD,
+    RULE_STRIKE_INSERT_THROUGH_TAIL,
     RULE_STRIKE_UNIT,
     RULE_STRIKE_UNIT_LIST,
     SENTENCE_STRIKE_FINDING_RULE_ID,
     TAIL_STRIKE_FINDING_RULE_ID,
     TARGET_UNRESOLVED_FINDING_RULE_ID,
-    THROUGH_TAIL_STRIKE_FINDING_RULE_ID,
     UNLOWERED_FINDING_RULE_ID,
     _first_usc_ref,
     _join_insert_after,
@@ -2503,7 +2503,13 @@ def test_tail_strike_emits_typed_not_section_representable_finding():
     assert instr.finding.rule_id == TAIL_STRIKE_FINDING_RULE_ID
 
 
-def test_through_tail_strike_emits_typed_not_section_representable_finding():
+def test_through_tail_strike_lowers_to_bounded_text_repeal():
+    # "striking 'OLD' and all that follows through 'END'" — the bounded through-
+    # tail strike deletes [OLD..END] inclusive (right-side text after END
+    # survives) and was previously held out as a typed finding; now lowered to a
+    # TEXT_REPEAL whose selector carries the END anchor on ``end_match_text``.
+    # Source witness: PL 108-136#instr721 etc. (the bounded through-tail family
+    # dominates the un-lowered tail bucket — ~933 rows in the 2026-06-24 scan).
     body = (
         '<section identifier="/us/pl/116/900/s1" role="instruction"><num>1.</num>'
         "<content>"
@@ -2514,10 +2520,68 @@ def test_through_tail_strike_emits_typed_not_section_representable_finding():
         '“<quotedText>the holder</quotedText>".'
         "</content></section>"
     )
+    instr = _accepted_instr(lower_plaw_amendatory(_synthetic_plaw(body)))
+    assert instr.witness_rule_id == RULE_STRIKE_INSERT_THROUGH_TAIL
+    op = instr.operation
+    assert op is not None
+    assert op.action is StructuralAction.TEXT_REPEAL
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "unless the trustee"
+    assert op.text_patch.selector.end_match_text == "the holder"
+    assert op.text_patch.kind is TextPatchKindEnum.DELETE
+    assert RULE_STRIKE_INSERT_THROUGH_TAIL in op.provenance_tags
+
+
+def test_through_tail_strike_insert_lowers_to_bounded_text_replace():
+    # "striking 'OLD' and all that follows through 'END' and inserting 'NEW'" —
+    # the 3-operand bounded through-tail strike-insert form. Delete [OLD..END]
+    # then insert NEW (right-side text after END survives). Source witness:
+    # PL 108-136#instr766 (Definitions → Budget Activity Defined.).
+    body = (
+        '<section identifier="/us/pl/116/900/s1" role="instruction"><num>1.</num>'
+        "<content>"
+        '<ref href="/us/usc/t11/s101">Section 101 of title 11, United States Code</ref>, '
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="delete">striking</amendingAction> '
+        '“<quotedText>Definitions</quotedText>" and all that follows through '
+        '“<quotedText>(1) The term</quotedText>" and '
+        '<amendingAction type="insert">inserting</amendingAction> '
+        '“<quotedText>Budget Activity Defined.</quotedText>".'
+        "</content></section>"
+    )
+    instr = _accepted_instr(lower_plaw_amendatory(_synthetic_plaw(body)))
+    assert instr.witness_rule_id == RULE_STRIKE_INSERT_THROUGH_TAIL
+    op = instr.operation
+    assert op is not None
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "Definitions"
+    assert op.text_patch.selector.end_match_text == "(1) The term"
+    assert op.text_patch.replacement == "Budget Activity Defined."
+    assert RULE_STRIKE_INSERT_THROUGH_TAIL in op.provenance_tags
+
+
+def test_through_tail_strike_insert_with_two_quotes_ignored_held_out():
+    # NEGATIVE: the through-tail strike-insert form REQUIRES three quoted
+    # operands (OLD, END, NEW). Two quotes means the INSERT half was not
+    # captured (e.g. an unterminated `<quotedContent>` payload); fall back to
+    # the un-lowered bucket rather than guess the operand assignment.
+    body = (
+        '<section identifier="/us/pl/116/900/s1" role="instruction"><num>1.</num>'
+        "<content>"
+        '<ref href="/us/usc/t11/s101">Section 101 of title 11, United States Code</ref>, '
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="delete">striking</amendingAction> '
+        '“<quotedText>Definitions</quotedText>" and all that follows through '
+        '“<quotedText>(1) The term</quotedText>" and '
+        '<amendingAction type="insert">inserting</amendingAction> '
+        'a new block (no quotedText operand captured).'
+        "</content></section>"
+    )
     instr = lower_plaw_amendatory(_synthetic_plaw(body)).instructions[0]
     assert instr.operation is None
     assert instr.finding is not None
-    assert instr.finding.rule_id == THROUGH_TAIL_STRIKE_FINDING_RULE_ID
+    assert instr.finding.rule_id == UNLOWERED_FINDING_RULE_ID
 
 
 # ---------------------------------------------------------------------------

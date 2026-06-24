@@ -83,6 +83,14 @@ RULE_STRIKE_INSERT_PUNCT_WORD = "us_amend_strike_insert_punctuation_word"
 # follows and inserting 'Y'".  The quoted match text is only the anchor; the
 # materializer must delete from the anchor to the end of the target node.
 RULE_STRIKE_INSERT_TAIL = "us_amend_strike_insert_tail"
+# A BOUNDED tail strike: "striking 'OLD' and all that follows through 'END' and
+# inserting 'NEW'". The first quoted text is the LEFT anchor; the second quoted
+# text is the RIGHT bound (inclusive). The materializer deletes [OLD..END] then
+# inserts NEW. Unlike RULE_STRIKE_INSERT_TAIL, the deletion stops at END instead
+# of running to the end of the node, so the inventoried right-side text after END
+# survives. Pure-strike form ("striking 'OLD' and all that follows through 'END'.")
+# lowers to the same shape with replacement="".
+RULE_STRIKE_INSERT_THROUGH_TAIL = "us_amend_strike_insert_through_tail"
 
 UNLOWERED_FINDING_RULE_ID = "us_amendatory_unlowered"
 TARGET_UNRESOLVED_FINDING_RULE_ID = "us_amendatory_target_unresolved"
@@ -2372,11 +2380,34 @@ def _lower_instruction(
                 "a node-level restructure, not a whole-node text replace",
             )
         elif _TAIL_STRIKE_RE.search(raw_text) is not None:
-            # "striking 'X' and all that follows and inserting 'Y'": the quoted anchor
-            # is only the start of the deletion; the materializer must remove from the
-            # anchor to the end of the target node.  (The bounded "through" form is
-            # still held out as not section-representable.)
-            if _THROUGH_TAIL_STRIKE_RE.search(raw_text) is None and len(quoted) >= 2:
+            # "striking 'X' and all that follows ... [through 'Y'] and inserting 'Z'":
+            # the quoted anchor is only the start of the deletion; the materializer
+            # must remove from the anchor EITHER to the end of the target node
+            # (open-ended tail) OR THROUGH the second quoted anchor (bounded).
+            through_match = _THROUGH_TAIL_STRIKE_RE.search(raw_text)
+            if through_match is not None and len(quoted) >= 3:
+                # BOUNDED through-tail strike-insert: "striking OLD and all that
+                # follows through END and inserting NEW". Delete [OLD..END]
+                # inclusive, then insert NEW. The right-side text after END
+                # survives (the op is a bounded deletion, not a to-end cut).
+                old, end, new = quoted[0], quoted[1], quoted[2]
+                op = _make_op(
+                    StructuralAction.TEXT_REPLACE,
+                    rule_id=RULE_STRIKE_INSERT_THROUGH_TAIL,
+                    text_patch=TextPatchSpec(
+                        kind=TextPatchKindEnum.REPLACE,
+                        selector=TextSelector(
+                            match_text=old,
+                            occurrence=-1 if _is_each_place_instruction(raw_text) else 0,
+                            end_match_text=end,
+                        ),
+                        replacement=new,
+                    ),
+                    target=_text_strike_target,
+                    extra_provenance_tags=(RULE_STRIKE_INSERT_THROUGH_TAIL,),
+                )
+                witness_rule_id = RULE_STRIKE_INSERT_THROUGH_TAIL
+            elif through_match is None and len(quoted) >= 2:
                 old, new = quoted[0], quoted[1]
                 op = _make_op(
                     StructuralAction.TEXT_REPLACE,
@@ -2574,14 +2605,28 @@ def _lower_instruction(
             )
     elif family == "strike":
         # Tail / through-tail strikes name a quoted anchor but DELETE MORE than that
-        # exact literal (everything after, or a bounded span). They are not exact-text
-        # strikes and are not safely materialized as a single TEXT_REPEAL, so they are
-        # held out as typed findings BEFORE the simple quoted-strike path.
-        if _THROUGH_TAIL_STRIKE_RE.search(raw_text):
-            finding = _finding(
-                THROUGH_TAIL_STRIKE_FINDING_RULE_ID,
-                "bounded tail strike ('... through ...') not section-representable",
+        # exact literal (everything after, or a bounded span). The BOUNDED "through"
+        # form ("striking OLD and all that follows through END") lowers to a
+        # bounded deletion [OLD..END] with empty replacement; the open-ended
+        # tail form ("... and all that follows") — which would delete to the END
+        # of the host node — is still held out as not section-representable.
+        if _THROUGH_TAIL_STRIKE_RE.search(raw_text) and len(quoted) >= 2:
+            old, end = quoted[0], quoted[1]
+            op = _make_op(
+                StructuralAction.TEXT_REPEAL,
+                rule_id=RULE_STRIKE_INSERT_THROUGH_TAIL,
+                text_patch=TextPatchSpec(
+                    kind=TextPatchKindEnum.DELETE,
+                    selector=TextSelector(
+                        match_text=old,
+                        occurrence=-1 if _is_each_place_instruction(raw_text) else 0,
+                        end_match_text=end,
+                    ),
+                ),
+                target=_text_strike_target,
+                extra_provenance_tags=(RULE_STRIKE_INSERT_THROUGH_TAIL,),
             )
+            witness_rule_id = RULE_STRIKE_INSERT_THROUGH_TAIL
         elif _TAIL_STRIKE_RE.search(raw_text):
             finding = _finding(
                 TAIL_STRIKE_FINDING_RULE_ID,

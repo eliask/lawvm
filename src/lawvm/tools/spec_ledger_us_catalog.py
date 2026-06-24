@@ -113,6 +113,14 @@ _US_RULE_SPECS: Dict[str, str] = {
         "instruction deletes from the anchor through the end of the target node and "
         "inserts the supplied replacement text."
     ),
+    "us_amend_strike_insert_through_tail": (
+        "A bounded 'striking <anchor> and all that follows through <end> [and inserting "
+        "<text>]' instruction deletes the inclusive span [<anchor>..<end>] from the "
+        "target node (the right-side text after <end> survives) and inserts the supplied "
+        "replacement text (empty for the pure-strike form). The end anchor is carried on "
+        "TextSelector.end_match_text; the materializer refuses when either anchor is "
+        "absent or out of order in the running node text."
+    ),
     "us_amend_strike_insert_end_punctuation": (
         "A 'striking the period/semicolon/comma at the end and inserting <punct>' "
         "instruction replaces the terminal punctuation of the target node with the "
@@ -516,6 +524,7 @@ _US_RULE_CONFIDENCE: Dict[str, str] = {
     "us_amend_strike_insert": US_CONFIDENCE_HEURISTIC,
     "us_amend_reconstituted_target_label": US_CONFIDENCE_HEURISTIC,
     "us_amend_strike_insert_tail": US_CONFIDENCE_HEURISTIC,
+    "us_amend_strike_insert_through_tail": US_CONFIDENCE_HEURISTIC,
     "us_amend_strike": US_CONFIDENCE_HEURISTIC,
     "us_amend_insert_after_anchor": US_CONFIDENCE_HEURISTIC,
     "us_amend_insert_before_anchor": US_CONFIDENCE_HEURISTIC,
