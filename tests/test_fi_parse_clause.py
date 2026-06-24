@@ -65,6 +65,33 @@ def test_parse_clause_doc_insert_range_after_heading_residue_does_not_crash():
     assert isinstance(result, ClauseParseResult)
 
 
+def test_parse_clause_keeps_insertions_before_trailing_appendix_item_insert():
+    """Regression for 2010/869: an appendix item tail must not drop earlier inserts."""
+    text = (
+        "lisätään 4 §:ään uusi 2 momentti, asetukseen uusi 7 a §, 9 §:ään uusi "
+        "3 momentti, 12 §:ään uusi 4 momentti, 13 §:ään uusi 2 momentti, uusi "
+        "14 e §, 19 §:ään 5 momentti, 24 §:ään uusi 6 – 9 kohta, 26 §:ään uusi "
+        "2 momentti sekä liitteeseen 5 uusi kohta 2 c, 4 b ja 4 c seuraavasti:"
+    )
+    result = parse_clause(text)
+
+    assert [(op.kind, op.number, op.momentti, op.item) for op in result.parsed_ops] == [
+        ("P", "4", 2, ""),
+        ("P", "7a", 0, ""),
+        ("P", "9", 3, ""),
+        ("P", "12", 4, ""),
+        ("P", "13", 2, ""),
+        ("P", "14e", 0, ""),
+        ("P", "19", 5, ""),
+        ("P", "24", 1, "6"),
+        ("P", "24", 1, "7"),
+        ("P", "24", 1, "8"),
+        ("P", "24", 1, "9"),
+        ("P", "26", 2, ""),
+        ("A", "5", 0, ""),
+    ]
+
+
 def test_parse_clause_alakohta_replace_preserves_later_chapter_scoped_targets():
     """Regression for 2019/518: alakohta precision must not truncate later targets."""
     text = (

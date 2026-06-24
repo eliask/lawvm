@@ -634,6 +634,36 @@ def test_lisataan_section_ill_bare_momentti_continuations_are_insertions() -> No
     ]
 
 
+def test_lisataan_chain_survives_trailing_appendix_item_insert() -> None:
+    text = (
+        "lisätään 4 §:ään uusi 2 momentti, asetukseen uusi 7 a §, 9 §:ään uusi "
+        "3 momentti, 12 §:ään uusi 4 momentti, 13 §:ään uusi 2 momentti, uusi "
+        "14 e §, 19 §:ään 5 momentti, 24 §:ään uusi 6 – 9 kohta, 26 §:ään uusi "
+        "2 momentti sekä liitteeseen 5 uusi kohta 2 c, 4 b ja 4 c seuraavasti:"
+    )
+    model = parse_text_with(text, new_parser.parse)
+    insertions = [_as_insertion(node) for node in model.verb_groups[0].nodes]
+
+    assert [
+        (node.kind, node.label, node.sub_target.momentti if node.sub_target else 0, node.sub_target.item if node.sub_target else "")
+        for node in insertions
+    ] == [
+        (TargetKind.SECTION, "4", 2, ""),
+        (TargetKind.SECTION, "7a", 0, ""),
+        (TargetKind.SECTION, "9", 3, ""),
+        (TargetKind.SECTION, "12", 4, ""),
+        (TargetKind.SECTION, "13", 2, ""),
+        (TargetKind.SECTION, "14e", 0, ""),
+        (TargetKind.SECTION, "19", 5, ""),
+        (TargetKind.SECTION, "24", 1, "6"),
+        (TargetKind.SECTION, "24", 1, "7"),
+        (TargetKind.SECTION, "24", 1, "8"),
+        (TargetKind.SECTION, "24", 1, "9"),
+        (TargetKind.SECTION, "26", 2, ""),
+        (TargetKind.APPENDIX, "5", 0, ""),
+    ]
+
+
 # Chained-insertion continuation arms where a LATER batch carries a trailing
 # reinstatement / citation / provenance span. The arm-level out-of-scope guard
 # must inspect only the CURRENT insertion arm, not scan to the next verb — a

@@ -1617,6 +1617,17 @@ def _dispatch(
                 return luvun_nodes
         scan.goto(saved_luvun)
 
+    # ``liitteeseen 5 uusi kohta 2 c, 4 b ja 4 c`` — a point insert inside a
+    # numbered appendix. The current surface model has appendix-level targets, not
+    # appendix item coordinates, so this consumes the item list as source witness
+    # and emits the owning appendix insertion. This must run before the broad
+    # LIITE out-of-scope guard below; otherwise an unsupported appendix tail makes
+    # the whole insertion list fall back to the legacy parser, which can drop
+    # earlier section insertions in the same list.
+    appendix_item = _try_appendix_ill_item_insert(scan)
+    if appendix_item is not None:
+        return appendix_item
+
     # Out-of-scope guard for the remaining (whole-target) arms. Two scans:
     #
     #   * Provenance markers (reinstatement / citation / tilalle spans) attach to
@@ -1697,6 +1708,38 @@ def _try_osa_scoped(scan: _Scan, effective_part: str) -> Optional[list[InsNode]]
         return [InsNode(kind=kind, label=n + sf, chapter="", part=part_label) for n, sf in ins_nums]
     scan.goto(saved)
     return None
+
+
+def _try_appendix_ill_item_insert(scan: _Scan) -> Optional[list[InsNode]]:
+    """``LIITE:ILL num uusi KOHTA numlist`` — insertion into an appendix list.
+
+    The grammar owns the full source shape, including the inserted item labels,
+    but the surface target language currently represents appendix operations at
+    appendix granularity. Emitting one appendix-level insertion preserves the
+    supported target without letting the unsupported item-coordinate tail escape
+    as residue.
+    """
+    saved = scan.pos
+    if not _at_cat_case(scan, "LIITE", "ILL"):
+        return None
+    scan.advance()
+    appendix_nums = _number_list(scan)
+    if not appendix_nums or len(appendix_nums) != 1:
+        scan.goto(saved)
+        return None
+    appendix_label = appendix_nums[0][0] + appendix_nums[0][1]
+    if not _consume_uusi(scan):
+        scan.goto(saved)
+        return None
+    if not _at(scan, "KOHTA"):
+        scan.goto(saved)
+        return None
+    scan.advance()
+    item_nums = _number_list(scan)
+    if not item_nums:
+        scan.goto(saved)
+        return None
+    return [InsNode(kind=TargetKind.APPENDIX, label=appendix_label, chapter="", part="")]
 
 
 def _consume_sub_target_continuation(
