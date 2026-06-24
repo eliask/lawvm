@@ -1,14 +1,14 @@
 {
   "_doc": "Monotone module-role baseline. The `dead` and `test_only_live` sets may only SHRINK: a module born dead must be wired or deleted, never added to the population. The `replay_exercised` map is a SNAPSHOT: a module flipping replay-exercised status (either direction) fails the ratchet until re-baselined. Regenerate with `uv run python scripts/inventory_module_roles.py --update-baseline` after legitimately retiring (deleting) a dead/test-only module, wiring it to a production consumer, or refreshing the replay-coverage snapshot (tests/data/replay_coverage_snapshot.json — see its provenance.refresh_command).",
   "counts": {
-    "dead": 73,
-    "live": 1001,
+    "dead": 72,
+    "live": 1003,
     "test_only_live": 28
   },
   "replay_counts": {
     "exercised": 170,
-    "cold": 237,
-    "in_scope": 407
+    "cold": 238,
+    "in_scope": 408
   },
   "dead": [
     "lawvm.core.certified_transition",
@@ -58,7 +58,6 @@
     "lawvm.finland.references.derivation_edges",
     "lawvm.finland.references.eu_transposition_edges",
     "lawvm.finland.references.surface_totality",
-    "lawvm.finland.target_selector_facades",
     "lawvm.finland.timeline_export_plan",
     "lawvm.new_zealand.commencement",
     "lawvm.substrate.eu_ingest",
@@ -156,6 +155,7 @@
     "lawvm.finland.johtolause.grammar",
     "lawvm.finland.johtolause.grammar.diff",
     "lawvm.finland.johtolause.lower_surface",
+    "lawvm.finland.johtolause.provenance_span",
     "lawvm.finland.johtolause.rule_registry",
     "lawvm.finland.johtolause.totality",
     "lawvm.finland.legal_surface",
@@ -300,6 +300,7 @@
     "lawvm.finland.strict_report_proof_projector",
     "lawvm.finland.table_target_merge",
     "lawvm.finland.target_selector_codec",
+    "lawvm.finland.target_selector_facades",
     "lawvm.finland.telos_section_flag",
     "lawvm.finland.temporal_arithmetic",
     "lawvm.finland.timeline_version_dedupe",
@@ -481,6 +482,7 @@
     "lawvm.finland.johtolause.lower_surface": false,
     "lawvm.finland.johtolause.meta_parse": true,
     "lawvm.finland.johtolause.parsed_op_clause_ast": true,
+    "lawvm.finland.johtolause.provenance_span": false,
     "lawvm.finland.johtolause.rule_registry": false,
     "lawvm.finland.johtolause.scan": true,
     "lawvm.finland.johtolause.sentinels": true,
