@@ -549,6 +549,16 @@ _KNOWN_UNFIXED: dict[str, str] = {
         "target normalization is next touched."
     ),
     # us_federal
+    "src/lawvm/us_federal/dry_run.py": (
+        "_SECTION_CATCHLINE_RE is the anchored USC new-section catchline head "
+        "(^\\s*[\"quote]?\\[?\\s*§+\\s*<bounded num>\\.) — same family as "
+        "source_tree._SECTION_HEAD_RE: the number group is bounded "
+        "([0-9]+[A-Za-z]* with a single optional dashed suffix), the whole "
+        "pattern is ^-anchored and only matches a short catchline prefix. The AST "
+        "lint flags the adjacent optional-\\s* runs (quote/bracket leading "
+        "whitespace), but the anchor + bounded num make it linear; static lint "
+        "false positive of the same class already allowlisted for source_tree.py."
+    ),
     "src/lawvm/us_federal/amendatory.py": (
         "USC amendatory-instruction target recognizers (_PROSE_TARGET_RE, "
         "_HREF_TARGET_RE, _RELATIVE_PROSE_TARGET_RE, _LEADING_SUBUNIT_ANCHOR_RE, "
