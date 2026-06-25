@@ -338,7 +338,7 @@ def projection_scope_confidence_for_op(
         return projection_scope_confidence(
             scope_confidence=op.scope_confidence,
             scope_provenance_tags=op.scope_provenance_tags,
-            resolved_chapter=op.target_chapter,
+            resolved_chapter=op.target_cols.target_chapter,
         )
     return projection_scope_confidence(
         scope_confidence=op.scope_confidence,
@@ -882,20 +882,21 @@ class AmendmentOp:
             )
 
     def description(self) -> str:
+        cols = self.target_cols
         return _format_operation_description(
             action_type=self.op_type,
-            target_unit_kind=self.target_unit_kind,
-            target_label=self.target_section,
-            target_chapter=self.target_chapter,
-            target_paragraph=self.target_paragraph,
-            target_item=self.target_item,
-            target_special=self.target_special,
+            target_unit_kind=cols.target_unit_kind,
+            target_label=cols.target_section,
+            target_chapter=cols.target_chapter,
+            target_paragraph=cols.target_paragraph,
+            target_item=cols.target_item,
+            target_special=cols.target_special,
         )
 
     @property
     def target_kind(self) -> TargetKind:
         """Return the Finland legacy target enum as a compatibility projection."""
-        return legacy_target_kind_for_unit_kind(self.target_unit_kind)
+        return legacy_target_kind_for_unit_kind(self.target_cols.target_unit_kind)
 
     @property
     def target_selector(self) -> "TargetSelector":
@@ -1330,11 +1331,11 @@ class ResolvedOp:
             target_unit_kind=target_unit_kind,
             target_norm=target_norm,
             target_chapter=target_chapter,
-            target_part=op.target_part,
-            target_paragraph=op.target_paragraph,
-            target_item=op.target_item,
-            target_subitem=op.target_subitem,
-            target_special=op.target_special,
+            target_part=op.target_cols.target_part,
+            target_paragraph=op.target_cols.target_paragraph,
+            target_item=op.target_cols.target_item,
+            target_subitem=op.target_cols.target_subitem,
+            target_special=op.target_cols.target_special,
         )
         if (
             resolved_target_address is not None
@@ -1370,12 +1371,12 @@ class ResolvedOp:
                     target_unit_kind=target_unit_kind,
                     resolved_target_address=resolved_target_address,
                 )
-                else _target_special_override_for_address(op.target_special, resolved_target_address)
+                else _target_special_override_for_address(op.target_cols.target_special, resolved_target_address)
             ),
             sec1_body_johto_fallback=op.sec1_body_johto_fallback,
             move_clause_target_unit_kind=op.move_clause_target_unit_kind,
-            move_clause_target_chapter=op.target_chapter,
-            move_clause_target_part=op.target_part,
+            move_clause_target_chapter=op.target_cols.target_chapter,
+            move_clause_target_part=op.target_cols.target_part,
             uncovered_body_recovery=op.uncovered_body_recovery,
             post_repeal_item_shift_label=op.post_repeal_item_shift_label,
             body_chapter_move_from=op.body_chapter_move_from,
@@ -1732,9 +1733,10 @@ def _op_target_subsection_label(op: "AmendmentOp") -> Optional[str]:
     the subsection as a bare label so governance consumers can match it against
     structural path labels without re-parsing the rendered description.
     """
-    if op.target_paragraph is None:
+    target_paragraph = op.target_cols.target_paragraph
+    if target_paragraph is None:
         return None
-    return str(op.target_paragraph)
+    return str(target_paragraph)
 
 
 @dataclass
@@ -2003,30 +2005,31 @@ def _augment_replay_address_with_op_descendant_scope(
     """Preserve AmendmentOp child scope when a legacy LO only names a section."""
     if address is None or not address.path:
         return address
-    if op.target_unit_kind != "section":
+    cols = op.target_cols
+    if cols.target_unit_kind != "section":
         return address
     if any(kind in {"subsection", "item", "subitem"} for kind, _label in address.path):
         return address
     has_descendant = (
-        op.target_paragraph is not None
-        or op.target_item is not None
-        or op.target_subitem is not None
+        cols.target_paragraph is not None
+        or cols.target_item is not None
+        or cols.target_subitem is not None
     )
-    has_special = op.target_special is not None
+    has_special = cols.target_special is not None
     if not has_descendant and not has_special:
         return address
 
     path_parts = list(address.path)
-    if op.target_paragraph is not None:
-        path_parts.append(("subsection", str(op.target_paragraph)))
-    if op.target_item is not None:
-        item_text = str(op.target_item)
-        compound = re.fullmatch(r"(\d+)([a-z])", item_text) if op.target_subitem is None else None
-        if op.target_subitem is not None:
-            if item_text.endswith(str(op.target_subitem)):
-                item_text = item_text[: -len(str(op.target_subitem))]
+    if cols.target_paragraph is not None:
+        path_parts.append(("subsection", str(cols.target_paragraph)))
+    if cols.target_item is not None:
+        item_text = str(cols.target_item)
+        compound = re.fullmatch(r"(\d+)([a-z])", item_text) if cols.target_subitem is None else None
+        if cols.target_subitem is not None:
+            if item_text.endswith(str(cols.target_subitem)):
+                item_text = item_text[: -len(str(cols.target_subitem))]
             path_parts.append(("item", item_text))
-            path_parts.append(("subitem", str(op.target_subitem)))
+            path_parts.append(("subitem", str(cols.target_subitem)))
         elif compound is not None:
             path_parts.append(("item", compound.group(1)))
             path_parts.append(("subitem", compound.group(2)))
@@ -2035,9 +2038,9 @@ def _augment_replay_address_with_op_descendant_scope(
 
     special = address.special
     if special is None:
-        if op.target_special in {"otsikko", "otsikko_edella"}:
+        if cols.target_special in {"otsikko", "otsikko_edella"}:
             special = FacetKind.HEADING
-        elif op.target_special == "johd":
+        elif cols.target_special == "johd":
             special = FacetKind.INTRO
     return LegalAddress(path=tuple(path_parts), special=special)
 
@@ -2112,7 +2115,8 @@ def _section_payload_requires_root_replace(
         return False
     if resolved_target_address is None or resolved_target_address.special != FacetKind.HEADING:
         return False
-    if op.target_paragraph is not None or op.target_item is not None:
+    cols = op.target_cols
+    if cols.target_paragraph is not None or cols.target_item is not None:
         return False
     if op.preserve_explicit_heading_facet:
         return False
