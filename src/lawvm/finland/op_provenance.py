@@ -117,7 +117,7 @@ class Recovered:
 
     surface: RecoverySurface
     recognizer_id: str
-    confidence: ConfidenceTier
+    tier: ConfidenceTier
     coverage: RecognitionCoverage = field(default_factory=RecognitionCoverage)
     scope_confidence: "ScopeConfidence | None" = None
 

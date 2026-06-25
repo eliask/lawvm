@@ -32,7 +32,7 @@ def _body_recovered() -> Recovered:
     return Recovered(
         surface=RecoverySurface.BODY,
         recognizer_id="PARSE.EXTRACTION_FALLBACK",
-        confidence=ConfidenceTier.HEURISTIC,
+        tier=ConfidenceTier.HEURISTIC,
     )
 
 
@@ -70,7 +70,7 @@ def test_mode_for_default_finland_profile_blocks_recovery_surfaces() -> None:
         prov = Recovered(
             surface=surface,
             recognizer_id=recognizer,
-            confidence=ConfidenceTier.HEURISTIC,
+            tier=ConfidenceTier.HEURISTIC,
         )
         assert mode_for(profile, prov) is AcceptanceMode.STRICT, surface
 
@@ -91,7 +91,7 @@ def test_mode_for_lenient_profile_admits_recovery() -> None:
         prov = Recovered(
             surface=surface,
             recognizer_id="r",
-            confidence=ConfidenceTier.HEURISTIC,
+            tier=ConfidenceTier.HEURISTIC,
         )
         assert mode_for(lenient, prov) is AcceptanceMode.QUIRKS, surface
 
@@ -104,9 +104,9 @@ def test_mode_for_is_keyed_per_surface() -> None:
         allows_context_dependent_anchor_resolution=True,
         allows_omission_expansion=True,
     )
-    body = Recovered(surface=RecoverySurface.BODY, recognizer_id="r", confidence=ConfidenceTier.HEURISTIC)
-    scope = Recovered(surface=RecoverySurface.SCOPE, recognizer_id="r", confidence=ConfidenceTier.HEURISTIC)
-    payload = Recovered(surface=RecoverySurface.PAYLOAD, recognizer_id="r", confidence=ConfidenceTier.HEURISTIC)
+    body = Recovered(surface=RecoverySurface.BODY, recognizer_id="r", tier=ConfidenceTier.HEURISTIC)
+    scope = Recovered(surface=RecoverySurface.SCOPE, recognizer_id="r", tier=ConfidenceTier.HEURISTIC)
+    payload = Recovered(surface=RecoverySurface.PAYLOAD, recognizer_id="r", tier=ConfidenceTier.HEURISTIC)
     assert mode_for(profile, body) is AcceptanceMode.STRICT
     assert mode_for(profile, scope) is AcceptanceMode.QUIRKS
     assert mode_for(profile, payload) is AcceptanceMode.QUIRKS
