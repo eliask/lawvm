@@ -121,38 +121,6 @@ class TextPatchSpec:
             raise ValueError("TextPatchSpec(kind='delete') must not set replacement")
 
 
-class LegalOperationPayloadActionError(ValueError):
-    """A ``LegalOperation`` payload contradicts its structural action.
-
-    Raised when an op's ``payload`` shape is incompatible with its ``action``:
-    a repeal action carrying a non-tombstone content payload (a payload that is
-    NOT a ``lawvm_repeal_placeholder`` tombstone). Mirrors the kind↔payload
-    closure that ``core.canonical_intent.Repeal`` enforces one layer up, applied
-    on the lower-level carrier that has 400+ construction sites.
-    """
-
-
-# Structural actions whose semantics are "remove the target". A repeal carries
-# either NO payload, or a repeal-placeholder tombstone (the apply path treats
-# REPEAL and a placeholder payload as the same "repeal snapshot" class — see
-# finland/apply_runtime_support.py: ``_is_repeal_snapshot``). Any OTHER content
-# payload contradicts the action and is rejected.
-_REPEAL_ACTIONS: FrozenSet[StructuralAction] = frozenset(
-    {StructuralAction.REPEAL, StructuralAction.TEXT_REPEAL}
-)
-
-
-def _is_repeal_placeholder_payload(payload: "IRNode") -> bool:
-    """True when ``payload`` is a repeal-placeholder tombstone (not real content).
-
-    A repeal may legitimately carry the tombstone IR it leaves behind; that
-    payload is identified by the authoritative ``lawvm_repeal_placeholder`` attr
-    (finland/apply_ir_ops.py: ``_build_repeal_placeholder*``).
-    """
-
-    return payload.attrs.get("lawvm_repeal_placeholder") == "1"
-
-
 @dataclass(frozen=True, slots=True)
 class LegalOperation:
     """A single compiled legal state change."""
@@ -194,21 +162,6 @@ class LegalOperation:
             raise ValueError(
                 "LegalOperation text_patch is only valid for text_replace/text_repeal/replace "
                 f"got action={self.action!r}"
-            )
-        # payload↔action closure: a repeal action that carries a real content
-        # payload contradicts itself. A repeal may carry NO payload, or the
-        # repeal-placeholder tombstone it leaves behind — nothing else.
-        if (
-            self.payload is not None
-            and self.action in _REPEAL_ACTIONS
-            and not _is_repeal_placeholder_payload(self.payload)
-        ):
-            raise LegalOperationPayloadActionError(
-                f"LegalOperation(action={self.action!r}) must not carry a content payload: "
-                f"a repeal removes its target. Got payload kind={self.payload.kind!r} "
-                f"label={self.payload.label!r} (children={len(self.payload.children)}); "
-                "only None or a lawvm_repeal_placeholder tombstone is permitted "
-                f"(op_id={self.op_id!r}, target={self.target!s})."
             )
 
 @dataclass
