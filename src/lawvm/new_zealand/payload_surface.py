@@ -10,8 +10,9 @@ from __future__ import annotations
 import json
 from collections import Counter
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, assert_never
 
 from lawvm.new_zealand.acquisition import open_farchive
 from lawvm.new_zealand.dependencies import latest_xml_locator_for_work
@@ -22,6 +23,80 @@ from lawvm.new_zealand.source_tree import (
     NZSourceNode,
     parse_nz_source_document,
 )
+
+
+class NZPayloadStatus(StrEnum):
+    """Closed payload-witness extraction status for an NZ operation row.
+
+    A ``StrEnum`` (not a bare ``str``) so status comparisons are member-vs-member
+    and survive renames as a type error rather than a silent string mismatch.
+    Members subclass ``str`` and their ``value`` equals the legacy wire string,
+    so ``NZPayloadStatus.PAYLOAD_FOUND == "payload_found"`` is ``True`` and JSON
+    serialization (including ``Counter`` keys) stays byte-identical.
+
+    ``BLOCKED_PAYLOAD_SURFACE_MISSING`` is produced downstream in
+    ``effect_readiness`` when no payload row exists for an operation row; it is
+    included here so the vocabulary has a single closed home.
+    """
+
+    PAYLOAD_FOUND = "payload_found"
+    BLOCKED_OPERATION_NOT_PAYLOAD_READY = "blocked_operation_not_payload_ready"
+    BLOCKED_DEPENDENCY_UNARCHIVED = "blocked_dependency_unarchived"
+    BLOCKED_PAYLOAD_HREF_MISSING = "blocked_payload_href_missing"
+    BLOCKED_PAYLOAD_HREF_NOT_FOUND = "blocked_payload_href_not_found"
+    BLOCKED_PAYLOAD_SURFACE_MISSING = "blocked_payload_surface_missing"
+
+
+class NZPayloadRole(StrEnum):
+    """Closed payload-witness role. ``NONE`` (``""``) marks an absent role.
+
+    The empty member is falsy, so the ``role or "__none__"`` summary idiom and
+    ``""`` JSON serialization stay byte-identical.
+    """
+
+    NONE = ""
+    AMENDING_PROVISION_WITNESS = "amending_provision_witness"
+
+
+class NZPayloadSemanticsStatus(StrEnum):
+    """Closed payload-semantics status for an NZ operation row."""
+
+    PAYLOAD_WITNESS_NOT_AVAILABLE = "payload_witness_not_available"
+    OPERATION_WITNESS_SUFFICIENT_NO_ENACTED_PAYLOAD_REQUIRED = (
+        "operation_witness_sufficient_no_enacted_payload_required"
+    )
+    AMENDING_PROVISION_WITNESS_NOT_ENACTED_PAYLOAD = "amending_provision_witness_not_enacted_payload"
+
+
+class NZPayloadInstructionShape(StrEnum):
+    """Closed instruction-shape classification of a payload witness.
+
+    ``NONE`` (``""``) marks "no shape" (e.g. no matches). The empty member is
+    falsy so the ``shape or "__none__"`` summary idiom stays byte-identical.
+    """
+
+    NONE = ""
+    EMPTY_OR_STUB = "empty_or_stub"
+    SCHEDULE_INDIRECTION = "schedule_indirection"
+    RETROSPECTIVE_INCORPORATED_NOTE = "retrospective_incorporated_note"
+    DIRECT_AMENDED_BY_INSTRUCTION = "direct_amended_by_instruction"
+    DIRECT_INSERT_INSTRUCTION = "direct_insert_instruction"
+    DIRECT_SUBSTITUTE_REPLACE_INSTRUCTION = "direct_substitute_replace_instruction"
+    DIRECT_REPEAL_REPLACE_INSTRUCTION = "direct_repeal_replace_instruction"
+    OTHER_INSTRUCTION = "other_instruction"
+
+
+class NZPayloadInstructionSafety(StrEnum):
+    """Closed instruction-safety classification, dispatched from shape.
+
+    ``NONE`` (``""``) marks "no safety class" (no shape).
+    """
+
+    NONE = ""
+    CANDIDATE_ONLY_SEMANTIC_CLASSIFICATION = "candidate_only_semantic_classification"
+    REVIEW_RETROSPECTIVE_INCORPORATED_NOTE = "review_retrospective_incorporated_note"
+    UNSAFE_SCHEDULE_OR_OMNIBUS_INDIRECTION = "unsafe_schedule_or_omnibus_indirection"
+    UNSAFE_OPAQUE_OR_UNCLASSIFIED = "unsafe_opaque_or_unclassified"
 
 
 @dataclass(frozen=True)
@@ -62,11 +137,11 @@ class NZPayloadWitnessRow:
     lowering_readiness_status: str
     amending_work_id: str
     amending_provision_hrefs: tuple[str, ...]
-    payload_status: str
-    payload_role: str = ""
-    payload_semantics_status: str = ""
-    payload_instruction_shape: str = ""
-    payload_instruction_safety: str = ""
+    payload_status: NZPayloadStatus
+    payload_role: NZPayloadRole = NZPayloadRole.NONE
+    payload_semantics_status: NZPayloadSemanticsStatus = NZPayloadSemanticsStatus.PAYLOAD_WITNESS_NOT_AVAILABLE
+    payload_instruction_shape: NZPayloadInstructionShape = NZPayloadInstructionShape.NONE
+    payload_instruction_safety: NZPayloadInstructionSafety = NZPayloadInstructionSafety.NONE
     matches: tuple[NZPayloadNodeWitness, ...] = ()
     blocking_rule_id: str = ""
 
@@ -120,7 +195,7 @@ class NZPayloadSurfaceReport:
             "operation_family_counts": dict(sorted(family_counts.items())),
             "operation_lowering_readiness_status_counts": dict(sorted(operation_readiness_counts.items())),
             "operation_target_address_status_counts": dict(sorted(operation_target_address_counts.items())),
-            "payload_found": sum(1 for row in self.rows if row.payload_status == "payload_found"),
+            "payload_found": sum(1 for row in self.rows if row.payload_status == NZPayloadStatus.PAYLOAD_FOUND),
             "replay_claims": False,
             "effect_lowering_claims": False,
             "enacted_payload_claims": False,
@@ -216,21 +291,21 @@ def build_payload_surface(
     rows: list[NZPayloadWitnessRow] = []
     node_indexes = {work_id: _node_index(document) for work_id, document in dependency_documents.items()}
     for index, operation_row in enumerate(operation_surface.rows, start=1):
-        status = "payload_found"
+        status = NZPayloadStatus.PAYLOAD_FOUND
         blocking_rule_id = ""
-        payload_role = ""
-        payload_semantics_status = "payload_witness_not_available"
-        payload_instruction_shape = ""
-        payload_instruction_safety = ""
+        payload_role = NZPayloadRole.NONE
+        payload_semantics_status = NZPayloadSemanticsStatus.PAYLOAD_WITNESS_NOT_AVAILABLE
+        payload_instruction_shape = NZPayloadInstructionShape.NONE
+        payload_instruction_safety = NZPayloadInstructionSafety.NONE
         matches: tuple[NZPayloadNodeWitness, ...] = ()
         if operation_row.lowering_readiness_status != "ready_for_amending_act_payload_extraction":
-            status = "blocked_operation_not_payload_ready"
+            status = NZPayloadStatus.BLOCKED_OPERATION_NOT_PAYLOAD_READY
             blocking_rule_id = "nz_payload_operation_not_payload_ready"
         elif not operation_row.amending_work_id or operation_row.amending_work_id not in dependency_documents:
-            status = "blocked_dependency_unarchived"
+            status = NZPayloadStatus.BLOCKED_DEPENDENCY_UNARCHIVED
             blocking_rule_id = "nz_payload_dependency_unarchived"
         elif not operation_row.amending_provision_hrefs:
-            status = "blocked_payload_href_missing"
+            status = NZPayloadStatus.BLOCKED_PAYLOAD_HREF_MISSING
             blocking_rule_id = "nz_payload_href_missing"
         else:
             index_by_xml_id = node_indexes[operation_row.amending_work_id]
@@ -241,11 +316,11 @@ def build_payload_surface(
                 if node is not None
             )
             if len(found) != len(operation_row.amending_provision_hrefs):
-                status = "blocked_payload_href_not_found"
+                status = NZPayloadStatus.BLOCKED_PAYLOAD_HREF_NOT_FOUND
                 blocking_rule_id = "nz_payload_href_not_found"
             matches = found
-            if status == "payload_found":
-                payload_role = "amending_provision_witness"
+            if status == NZPayloadStatus.PAYLOAD_FOUND:
+                payload_role = NZPayloadRole.AMENDING_PROVISION_WITNESS
                 payload_semantics_status = _payload_semantics_status(operation_row.operation_family)
                 payload_instruction_shape = _payload_instruction_shape(found)
                 payload_instruction_safety = _payload_instruction_safety(payload_instruction_shape)
@@ -351,51 +426,55 @@ def _filter_rows(
     return filtered
 
 
-def _payload_semantics_status(operation_family: str) -> str:
+def _payload_semantics_status(operation_family: str) -> NZPayloadSemanticsStatus:
     if operation_family == "repealed":
-        return "operation_witness_sufficient_no_enacted_payload_required"
-    return "amending_provision_witness_not_enacted_payload"
+        return NZPayloadSemanticsStatus.OPERATION_WITNESS_SUFFICIENT_NO_ENACTED_PAYLOAD_REQUIRED
+    return NZPayloadSemanticsStatus.AMENDING_PROVISION_WITNESS_NOT_ENACTED_PAYLOAD
 
 
-def _payload_instruction_shape(matches: tuple[NZPayloadNodeWitness, ...]) -> str:
+def _payload_instruction_shape(matches: tuple[NZPayloadNodeWitness, ...]) -> NZPayloadInstructionShape:
     if not matches:
-        return ""
+        return NZPayloadInstructionShape.NONE
     text = " ".join(match.text for match in matches)
     normalized = " ".join(text.lower().split())
     if not normalized or len(normalized.split()) <= 3:
-        return "empty_or_stub"
+        return NZPayloadInstructionShape.EMPTY_OR_STUB
     if "schedule" in normalized and any(word in normalized for word in ("amend", "set out", "indicated", "specified")):
-        return "schedule_indirection"
+        return NZPayloadInstructionShape.SCHEDULE_INDIRECTION
     if "this section" in normalized and any(
         word in normalized for word in ("amends", "amended", "inserted", "substituted", "repealed")
     ):
-        return "retrospective_incorporated_note"
+        return NZPayloadInstructionShape.RETROSPECTIVE_INCORPORATED_NOTE
     if "is amended by" in normalized or "are amended by" in normalized:
-        return "direct_amended_by_instruction"
+        return NZPayloadInstructionShape.DIRECT_AMENDED_BY_INSTRUCTION
     if "insert" in normalized:
-        return "direct_insert_instruction"
+        return NZPayloadInstructionShape.DIRECT_INSERT_INSTRUCTION
     if any(word in normalized for word in ("substitut", "replac")):
-        return "direct_substitute_replace_instruction"
+        return NZPayloadInstructionShape.DIRECT_SUBSTITUTE_REPLACE_INSTRUCTION
     if any(word in normalized for word in ("repealing", "repealed", "repeal")):
-        return "direct_repeal_replace_instruction"
-    return "other_instruction"
+        return NZPayloadInstructionShape.DIRECT_REPEAL_REPLACE_INSTRUCTION
+    return NZPayloadInstructionShape.OTHER_INSTRUCTION
 
 
-def _payload_instruction_safety(instruction_shape: str) -> str:
-    if instruction_shape in {
-        "direct_amended_by_instruction",
-        "direct_insert_instruction",
-        "direct_repeal_replace_instruction",
-        "direct_substitute_replace_instruction",
-    }:
-        return "candidate_only_semantic_classification"
-    if instruction_shape == "retrospective_incorporated_note":
-        return "review_retrospective_incorporated_note"
-    if instruction_shape == "schedule_indirection":
-        return "unsafe_schedule_or_omnibus_indirection"
-    if instruction_shape in {"empty_or_stub", "other_instruction"}:
-        return "unsafe_opaque_or_unclassified"
-    return ""
+def _payload_instruction_safety(instruction_shape: NZPayloadInstructionShape) -> NZPayloadInstructionSafety:
+    match instruction_shape:
+        case (
+            NZPayloadInstructionShape.DIRECT_AMENDED_BY_INSTRUCTION
+            | NZPayloadInstructionShape.DIRECT_INSERT_INSTRUCTION
+            | NZPayloadInstructionShape.DIRECT_REPEAL_REPLACE_INSTRUCTION
+            | NZPayloadInstructionShape.DIRECT_SUBSTITUTE_REPLACE_INSTRUCTION
+        ):
+            return NZPayloadInstructionSafety.CANDIDATE_ONLY_SEMANTIC_CLASSIFICATION
+        case NZPayloadInstructionShape.RETROSPECTIVE_INCORPORATED_NOTE:
+            return NZPayloadInstructionSafety.REVIEW_RETROSPECTIVE_INCORPORATED_NOTE
+        case NZPayloadInstructionShape.SCHEDULE_INDIRECTION:
+            return NZPayloadInstructionSafety.UNSAFE_SCHEDULE_OR_OMNIBUS_INDIRECTION
+        case NZPayloadInstructionShape.EMPTY_OR_STUB | NZPayloadInstructionShape.OTHER_INSTRUCTION:
+            return NZPayloadInstructionSafety.UNSAFE_OPAQUE_OR_UNCLASSIFIED
+        case NZPayloadInstructionShape.NONE:
+            return NZPayloadInstructionSafety.NONE
+        case _ as unreachable:
+            assert_never(unreachable)
 
 
 def main(args: Any) -> None:
