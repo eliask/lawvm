@@ -13,6 +13,10 @@ from lawvm.core.semantic_types import IRNodeKind, SpanKind
 from lawvm.core.span_anchor import (
     SectionAnchors,
     SpanAnchor,
+    UnmappedSpanAnchorKindError,
+    _KIND_MAP,
+    _NON_ANCHORABLE_KINDS,
+    _span_kind_for,
     extract_all_anchors,
     extract_span_anchors,
 )
@@ -315,3 +319,26 @@ def test_span_anchor_rejects_mismatched_path_and_index() -> None:
             text_hash="deadbeef" * 8,
             text_preview="Special provisions",
         )
+
+
+# ---------------------------------------------------------------------------
+# Coherence ratchet: every IRNodeKind is explicitly classified, so a newly
+# added kind cannot be silently denied a span anchor (it fails loud instead).
+# ---------------------------------------------------------------------------
+
+def test_every_irnodekind_is_span_classified() -> None:
+    """Each IRNodeKind is anchorable XOR explicitly non-anchorable (no gap)."""
+    covered = set(_KIND_MAP) | _NON_ANCHORABLE_KINDS
+    missing = [k for k in IRNodeKind if k not in covered]
+    overlap = set(_KIND_MAP) & _NON_ANCHORABLE_KINDS
+    assert not missing, f"unclassified IRNodeKind members would fail loud: {missing}"
+    assert not overlap, f"kinds both anchorable and non-anchorable: {overlap}"
+    # And every member dispatches without raising.
+    for k in IRNodeKind:
+        _span_kind_for(k)
+
+
+def test_span_kind_for_unknown_raw_str_fails_loud() -> None:
+    """A raw-str kind that is not an IRNodeKind member fails loud, self-evidencing."""
+    with pytest.raises(UnmappedSpanAnchorKindError, match="not_a_real_kind"):
+        _span_kind_for("not_a_real_kind")

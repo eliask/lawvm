@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Dict, Tuple
+from typing import TYPE_CHECKING, Dict, FrozenSet, Tuple
 
 from lawvm.core.ir import LegalAddress
 from lawvm.core.semantic_types import IRNodeKind, SpanKind
@@ -47,6 +47,88 @@ _KIND_MAP: Dict[IRNodeKind, SpanKind] = {
     IRNodeKind.CONTENT: SpanKind.SENTENCE,
     IRNodeKind.SUBPARAGRAPH: SpanKind.SUBPARAGRAPH,
 }
+
+# Kinds that are deliberately NOT span-anchored. These are structural
+# containers (resolved one section at a time elsewhere), table/markup
+# scaffolding, or kinds carried only as editorial context. Listing them
+# explicitly -- rather than relying on a `.get()->None` fall-through -- keeps
+# the dispatch a *closed* decision: a newly added IRNodeKind that is neither
+# anchorable nor explicitly non-anchorable raises a named diagnostic instead
+# of being silently dropped (= no anchor -> upper layers cannot bind claims).
+_NON_ANCHORABLE_KINDS: FrozenSet[IRNodeKind] = frozenset(
+    {
+        IRNodeKind.BODY,
+        IRNodeKind.CHAPTER,
+        IRNodeKind.PART,
+        IRNodeKind.SECTION,
+        IRNodeKind.DIVISION,
+        IRNodeKind.SUBDIVISION,
+        IRNodeKind.SCHEDULE,
+        IRNodeKind.SCHEDULE_ENTRY,
+        IRNodeKind.APPENDIX,
+        IRNodeKind.BLOCK,
+        IRNodeKind.HCONTAINER,
+        IRNodeKind.NUM,
+        IRNodeKind.I,
+        IRNodeKind.OMISSION,
+        IRNodeKind.CROSS_HEADING,
+        IRNodeKind.CROSSHEADING,
+        IRNodeKind.WRAP_UP,
+        IRNodeKind.SENTENCE,
+        IRNodeKind.RECITAL,
+        IRNodeKind.PREAMBLE,
+        IRNodeKind.P1GROUP,
+        IRNodeKind.PGROUP,
+        IRNodeKind.FINAL,
+        IRNodeKind.TABLE,
+        IRNodeKind.ROW,
+        IRNodeKind.CELL,
+        IRNodeKind.HEADER_CELL,
+    }
+)
+
+
+class UnmappedSpanAnchorKindError(ValueError):
+    """Raised when an IRNodeKind has no span-anchor classification.
+
+    Self-evidencing: the message embeds the offending kind. A kind reaching
+    this point is neither in ``_KIND_MAP`` (anchorable) nor in
+    ``_NON_ANCHORABLE_KINDS`` (deliberately skipped); silently dropping it
+    would deny upper layers an anchor to bind claims/refs to.
+    """
+
+
+def _span_kind_for(kind: "IRNodeKind | str") -> SpanKind | None:
+    """Return the SpanKind for a node kind, or None when deliberately skipped.
+
+    Fails loud (``UnmappedSpanAnchorKindError``) on any kind that is neither
+    explicitly anchorable nor explicitly non-anchorable, so a newly introduced
+    IRNodeKind cannot be silently denied a span anchor.
+    """
+    resolved: IRNodeKind
+    if isinstance(kind, IRNodeKind):
+        resolved = kind
+    else:
+        try:
+            resolved = IRNodeKind(kind)
+        except ValueError:
+            raise UnmappedSpanAnchorKindError(
+                f"span anchoring received an unknown raw IR node kind "
+                f"{kind!r} (not a member of IRNodeKind); cannot decide whether "
+                f"it is span-anchorable"
+            ) from None
+    span_kind = _KIND_MAP.get(resolved)
+    if span_kind is not None:
+        return span_kind
+    if resolved in _NON_ANCHORABLE_KINDS:
+        return None
+    raise UnmappedSpanAnchorKindError(
+        f"IR node kind {resolved!r} has no span-anchor classification "
+        f"(neither in _KIND_MAP nor _NON_ANCHORABLE_KINDS in span_anchor.py); "
+        f"silently dropping it would leave upper layers unable to attach "
+        f"claims/refs to spans of this kind"
+    )
+
 
 # Kinds whose children should also be anchored (one level of nesting).
 _NESTED_PARENT_KINDS = frozenset({IRNodeKind.SUBSECTION, IRNodeKind.PARAGRAPH})
@@ -116,7 +198,7 @@ def extract_span_anchors(section_ir: "IRNode", section_address: LegalAddress) ->
     anchors = []
 
     for i, child in enumerate(section_ir.children):
-        span_kind = _KIND_MAP.get(child.kind)
+        span_kind = _span_kind_for(child.kind)
         if span_kind is None:
             continue
         text = irnode_to_text(child).strip()
@@ -136,7 +218,7 @@ def extract_span_anchors(section_ir: "IRNode", section_address: LegalAddress) ->
         # Anchor nested children within subsections/paragraphs
         if child.kind in _NESTED_PARENT_KINDS:
             for j, grandchild in enumerate(child.children):
-                gc_kind = _KIND_MAP.get(grandchild.kind)
+                gc_kind = _span_kind_for(grandchild.kind)
                 if gc_kind is None:
                     continue
                 gc_text = irnode_to_text(grandchild).strip()

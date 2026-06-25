@@ -170,29 +170,48 @@ class UnitRegistry:
         """Return True when a typed FacetKind is accepted by the registry."""
         return facet.value in self.valid_facets
 
-    def get_identity_class(self, unit_kind: str) -> str:
-        """Return the identity_class for unit_kind, or 'stable_label' if unknown."""
+    def _require_spec(self, unit_kind: str, accessor: str) -> UnitSpec:
+        """Return the UnitSpec for unit_kind or fail loud.
+
+        The insertion/repeal/identity accessors below drive structural apply
+        policy. An unregistered ``unit_kind`` previously fell through to a
+        *guessed* default (identity_class="stable_label", insertion/repeal
+        False) -- silently applying a possibly-wrong lifecycle policy to a kind
+        the registry never declared. That is exactly the implicit-default seam
+        this registry exists to catch, so resolve it loud and self-evidencing
+        (the message embeds the offending unit_kind) instead.
+        """
         spec = self.unit_specs.get(unit_kind)
-        return spec.identity_class if spec is not None else "stable_label"
+        if spec is None:
+            message = (
+                f"Unregistered unit_kind {unit_kind!r} in {accessor} "
+                f"(registry={self.jurisdiction or '<unspecified>'}); refusing to "
+                f"apply a guessed default lifecycle policy. Known unit_kinds: "
+                f"{sorted(self.unit_specs)!r}"
+            )
+            _log.error(message)
+            raise IntentTargetValidationError(message)
+        return spec
+
+    def get_identity_class(self, unit_kind: str) -> str:
+        """Return the identity_class for unit_kind; fail loud if unregistered."""
+        return self._require_spec(unit_kind, "get_identity_class").identity_class
 
     def allows_suffix_insertion(self, unit_kind: str) -> bool:
         """True if new siblings are inserted as a-labelled units (no shift)."""
-        spec = self.unit_specs.get(unit_kind)
-        return spec is not None and spec.insertion_policy == "suffix"
+        return self._require_spec(unit_kind, "allows_suffix_insertion").insertion_policy == "suffix"
 
     def allows_ordinal_shift(self, unit_kind: str) -> bool:
         """True if inserting before an existing unit shifts later ordinals."""
-        spec = self.unit_specs.get(unit_kind)
-        return spec is not None and spec.insertion_policy == "shift_ordinal"
+        return self._require_spec(unit_kind, "allows_ordinal_shift").insertion_policy == "shift_ordinal"
 
     def repeal_compacts_siblings(self, unit_kind: str) -> bool:
         """True if repealing a unit causes later siblings to be renumbered.
 
         In the shared core registry this is always False for every registered
-        unit kind.
+        unit kind. An unregistered unit_kind fails loud rather than defaulting.
         """
-        spec = self.unit_specs.get(unit_kind)
-        return spec is not None and spec.repeal_compacts
+        return self._require_spec(unit_kind, "repeal_compacts_siblings").repeal_compacts
 
 
 # ---------------------------------------------------------------------------

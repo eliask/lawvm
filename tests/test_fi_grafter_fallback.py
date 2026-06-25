@@ -14320,6 +14320,38 @@ def test_has_dedup_label_duplicates_matches_owned_dedup_scope() -> None:
     assert not has_dedup_label_duplicates(duplicate_heading_label)
 
 
+def test_has_dedup_label_duplicates_no_drift_from_owned_dedup() -> None:
+    """The cheap predicate never disagrees with dedup_children_by_label.
+
+    Regression guard for the prior hand-rolled enum if/elif dispatch, which
+    only recognised SECTION/CHAPTER/PART/SUBSECTION and silently dropped any
+    other dedup-target kind via ``else: continue``.  subsection is in
+    _DEDUP_TARGET_KINDS and has an IRNodeKind enum form, so a drift here would
+    surface as the predicate reporting "no duplicates" while the owned dedup
+    still removes them.
+    """
+    from lawvm.core.ir import IRNode
+    from lawvm.core.tree_ops import (
+        dedup_children_by_label,
+        has_dedup_label_duplicates,
+    )
+
+    # subsection (enum form) duplicate inside a section container.
+    dup_subsection = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="5",
+        children=(
+            IRNode(kind=IRNodeKind.SUBSECTION, label="1"),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="1"),
+        ),
+    )
+    assert has_dedup_label_duplicates(dup_subsection)
+    # The owned dedup actually removes one -> predicate must agree it had work.
+    deduped = dedup_children_by_label(dup_subsection)
+    assert deduped is not dup_subsection
+    assert not has_dedup_label_duplicates(deduped)
+
+
 def test_dedup_children_by_label_removes_duplicate_subsections_in_section() -> None:
     """dedup_children_by_label deduplicates subsection siblings inside a section."""
     from lawvm.core.ir import IRNode

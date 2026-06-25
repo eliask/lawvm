@@ -548,10 +548,17 @@ def test_get_identity_class_known_units():
     assert FINLAND_REGISTRY.get_identity_class("row") == "implicit_ordinal"
 
 
-def test_get_identity_class_unknown_returns_stable_label():
-    """get_identity_class returns 'stable_label' as safe default for unknown unit kinds."""
-    assert FINLAND_REGISTRY.get_identity_class("widget") == "stable_label"
-    assert FINLAND_REGISTRY.get_identity_class("") == "stable_label"
+def test_get_identity_class_unknown_fails_loud():
+    """get_identity_class fails loud (self-evidencing) for unregistered unit kinds.
+
+    Previously an unregistered kind silently defaulted to 'stable_label' --
+    a guessed lifecycle policy. It now raises IntentTargetValidationError with
+    the offending unit_kind embedded.
+    """
+    with pytest.raises(IntentTargetValidationError, match="widget"):
+        FINLAND_REGISTRY.get_identity_class("widget")
+    with pytest.raises(IntentTargetValidationError, match="get_identity_class"):
+        FINLAND_REGISTRY.get_identity_class("")
 
 
 def test_allows_suffix_insertion():
@@ -560,7 +567,8 @@ def test_allows_suffix_insertion():
         assert FINLAND_REGISTRY.allows_suffix_insertion(kind), f"{kind!r}: expected allows_suffix_insertion=True"
     for kind in _IMPLICIT_ORDINAL_KINDS:
         assert not FINLAND_REGISTRY.allows_suffix_insertion(kind), f"{kind!r}: expected allows_suffix_insertion=False"
-    assert not FINLAND_REGISTRY.allows_suffix_insertion("widget")
+    with pytest.raises(IntentTargetValidationError, match="widget"):
+        FINLAND_REGISTRY.allows_suffix_insertion("widget")
 
 
 def test_allows_ordinal_shift():
@@ -569,16 +577,22 @@ def test_allows_ordinal_shift():
         assert FINLAND_REGISTRY.allows_ordinal_shift(kind), f"{kind!r}: expected allows_ordinal_shift=True"
     for kind in _STABLE_LABEL_KINDS:
         assert not FINLAND_REGISTRY.allows_ordinal_shift(kind), f"{kind!r}: expected allows_ordinal_shift=False"
-    assert not FINLAND_REGISTRY.allows_ordinal_shift("widget")
+    with pytest.raises(IntentTargetValidationError, match="widget"):
+        FINLAND_REGISTRY.allows_ordinal_shift("widget")
 
 
 def test_repeal_compacts_siblings_always_false():
-    """repeal_compacts_siblings returns False for every Finnish unit and unknown units."""
-    all_kinds = list(FINLAND_REGISTRY.unit_specs.keys()) + ["widget", ""]
-    for kind in all_kinds:
+    """repeal_compacts_siblings is False for every registered Finnish unit.
+
+    Unregistered kinds fail loud rather than defaulting to False.
+    """
+    for kind in FINLAND_REGISTRY.unit_specs.keys():
         assert not FINLAND_REGISTRY.repeal_compacts_siblings(kind), (
             f"{kind!r}: repeal_compacts_siblings should be False"
         )
+    for kind in ("widget", ""):
+        with pytest.raises(IntentTargetValidationError, match="repeal_compacts_siblings"):
+            FINLAND_REGISTRY.repeal_compacts_siblings(kind)
 
 
 def test_crossheading_is_registered_and_stable_label():

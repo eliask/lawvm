@@ -1327,18 +1327,27 @@ def has_dedup_label_duplicates(tree: IRNode) -> bool:
             for child in children:
                 if not child.label:
                     continue
-                child_kind_raw = child.kind
-                if child_kind_raw is IRNodeKind.SECTION:
-                    child_kind = "section"
-                elif child_kind_raw is IRNodeKind.CHAPTER:
-                    child_kind = "chapter"
-                elif child_kind_raw is IRNodeKind.PART:
-                    child_kind = "part"
-                elif child_kind_raw is IRNodeKind.SUBSECTION:
-                    child_kind = "subsection"
-                elif type(child_kind_raw) is str and child_kind_raw in _DEDUP_TARGET_KINDS:
-                    child_kind = child_kind_raw
-                else:
+                # Use the same total kind->string + target-membership policy as
+                # ``dedup_children_by_label`` so the cheap predicate cannot drift
+                # from the function it predicts.  Mapping enum members through a
+                # hand-rolled if/elif (the prior form) silently excluded any
+                # dedup-target kind whose enum branch was forgotten -- a new
+                # member of _DEDUP_TARGET_KINDS would then be dropped here while
+                # still deduped by dedup_children_by_label, making this predicate
+                # wrongly report "no duplicates".
+                child_kind = _kind_str(child.kind)
+                if child_kind not in _DEDUP_TARGET_KINDS:
+                    # Defensive coherence guard: an IRNodeKind enum member whose
+                    # string value IS a dedup target but that ``_kind_str`` failed
+                    # to surface would be a silent loss.  ``_kind_str`` is total,
+                    # so this only fires on a genuinely corrupt/unmapped kind.
+                    if isinstance(child.kind, IRNodeKind) and child.kind.value in _DEDUP_TARGET_KINDS:
+                        raise ValueError(
+                            "has_dedup_label_duplicates: IRNodeKind "
+                            f"{child.kind!r} is a dedup target by value but did "
+                            "not resolve to its target string via _kind_str; "
+                            "refusing to silently drop it from dedup detection"
+                        )
                     continue
                 key = (child_kind, child.label)
                 if key in seen:
