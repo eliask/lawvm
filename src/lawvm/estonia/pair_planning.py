@@ -2,9 +2,19 @@
 from __future__ import annotations
 
 import re
+import sqlite3
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, replace
 from typing import Any, Optional
+
+# A best-effort RT fetch probe can fail in exactly two expected ways: the act
+# does not resolve (fetch_rt_xml → RuntimeError "Failed to fetch: …"), or the
+# Farchive backing the probe is read-only and cannot cache a freshly-curled
+# blob (sqlite3.OperationalError "attempt to write a readonly database", e.g.
+# inspection/test contexts that open the archive readonly). Both mean "this
+# repair candidate could not be obtained" and are recorded, not swallowed
+# blindly. Any OTHER exception is an unexpected bug and must propagate.
+_EE_REPAIR_PROBE_EXPECTED_ERRORS = (RuntimeError, sqlite3.OperationalError)
 
 from lawvm.estonia.fetch import (
     AmendmentRef,
@@ -39,6 +49,34 @@ _EE_MUUTMISMARGE_PUBLICATION_NUMBER_REPAIR_XML_PARSE_FAILED_RULE = (
 )
 _EE_ORACLE_FETCH_FAILED_RULE = "ee_oracle_fetch_failed"
 _EE_ORACLE_REF_EXTRACTION_FAILED_RULE = "ee_oracle_ref_extraction_failed"
+
+
+class EEOracleRefExtractionCrash(RuntimeError):
+    """Unexpected crash while extracting/repairing oracle amendment refs.
+
+    ``extract_amendment_refs`` swallows ``ET.ParseError`` internally (→ empty)
+    and the two ``_repair_muutmismarge_*`` helpers narrowly catch the expected
+    ``RuntimeError`` fetch-miss. Any exception escaping that block is therefore
+    a genuine bug (e.g. a new ``LegalOperation``/IR invariant violation), not an
+    "oracle has no amendments" condition. Silently setting ``oracle_refs = ()``
+    here used to corrupt the amendment delta / comparison class behind an empty
+    result — per AGENTS.md §1.10 it must fail loud with the offending oracle id
+    and source snippet embedded.
+    """
+
+    rule_id = _EE_ORACLE_REF_EXTRACTION_FAILED_RULE
+
+    def __init__(self, *, base_id: str, oracle_id: str, as_of: str, xml_snippet: str, cause: BaseException) -> None:
+        self.base_id = base_id
+        self.oracle_id = oracle_id
+        self.as_of = as_of
+        self.xml_snippet = xml_snippet
+        super().__init__(
+            f"[{self.rule_id}] EE oracle amendment-ref extraction crashed "
+            f"unexpectedly for base_id={base_id!r} oracle_id={oracle_id!r} "
+            f"as_of={as_of!r}: {type(cause).__name__}: {cause}. Offending "
+            f"oracle XML head: {xml_snippet!r}"
+        )
 
 
 def _redactions_feed_diagnostic_finding(
@@ -163,7 +201,13 @@ def _repair_muutmismarge_publication_year_refs(
             candidate = f"{aid[:5]}{passed_year}{aid[9:]}"
             try:
                 fetch_rt_xml(candidate, archive)
-            except Exception as exc:
+            # lawvm-failloud (AGENTS.md §1.10): the synthesized year-repaired
+            # candidate act id is unobtainable (see _EE_REPAIR_PROBE_EXPECTED_ERRORS).
+            # That is the genuinely-expected case this repair probes for: keep the
+            # original ref and record a typed source_pathology finding (exception
+            # type + message embedded). Other exception types are unexpected bugs
+            # and must propagate, not be swallowed as a repair miss.
+            except _EE_REPAIR_PROBE_EXPECTED_ERRORS as exc:
                 repaired_refs.append(ref)
                 findings.append(
                     _unavailable_muutmismarge_repair_candidate_finding(
@@ -265,10 +309,19 @@ def _repair_muutmismarge_publication_number_refs(
             continue
         try:
             fetch_rt_xml(ref.aktViide, archive)
-        except Exception:
+        # lawvm-failloud (AGENTS.md §1.10): the original
+        # (publication-number-impossible) ref being unobtainable
+        # (_EE_REPAIR_PROBE_EXPECTED_ERRORS) is exactly the condition that
+        # justifies trying the publication-citation candidate below. Other
+        # exception types are bugs and must propagate.
+        except _EE_REPAIR_PROBE_EXPECTED_ERRORS:
             try:
                 fetch_rt_xml(candidate, archive)
-            except Exception as exc:
+            # lawvm-failloud (AGENTS.md §1.10): the candidate too is unobtainable
+            # → keep the original ref and record a typed
+            # repair_candidate_unavailable finding (exception embedded). Other
+            # exception types are unexpected bugs and must propagate.
+            except _EE_REPAIR_PROBE_EXPECTED_ERRORS as exc:
                 repaired_refs.append(ref)
                 findings.append(
                     _unavailable_muutmismarge_repair_candidate_finding(
@@ -354,7 +407,12 @@ def plan_ee_oracle_pair(
     elif selected_oracle_id:
         try:
             oracle_xml = fetch_rt_xml(selected_oracle_id, archive)
-        except Exception as exc:
+        # lawvm-failloud (AGENTS.md §1.10): the selected oracle redaction being
+        # unobtainable (_EE_REPAIR_PROBE_EXPECTED_ERRORS — not in the archive, or
+        # a read-only archive that cannot cache it) is the expected outcome; we
+        # record a typed ee_oracle_fetch_failed finding (exception embedded) and
+        # proceed oracle-less. Other exception types are bugs and must propagate.
+        except _EE_REPAIR_PROBE_EXPECTED_ERRORS as exc:
             oracle_fetch_findings.append(
                 {
                     "kind": "source_pathology",
@@ -392,7 +450,6 @@ def plan_ee_oracle_pair(
     oracle_refs: tuple[AmendmentRef, ...] = ()
     oracle_ref_repair_findings: tuple[dict[str, Any], ...] = ()
     oracle_ref_number_repair_findings: tuple[dict[str, Any], ...] = ()
-    oracle_ref_extraction_findings: list[dict[str, Any]] = []
 
     if (
         base_is_consolidated
@@ -410,20 +467,23 @@ def plan_ee_oracle_pair(
                 oracle_refs,
                 archive=archive,
             )
+        # lawvm-failloud (AGENTS.md §1.10): the callees here handle their own
+        # genuinely-expected failures — extract_amendment_refs swallows
+        # ET.ParseError (→ empty), and both repair helpers narrowly catch the
+        # expected probe errors (_EE_REPAIR_PROBE_EXPECTED_ERRORS). Anything
+        # escaping is an unexpected bug; do NOT degrade it to `oracle_refs = ()`
+        # (that silently fakes an amendment-less oracle and poisons the
+        # comparison class). Re-raise loud, embedding the oracle id and source
+        # snippet so triage never needs to re-run extraction. This catches
+        # broadly only to ATTACH context and RE-RAISE, never to swallow.
         except Exception as exc:
-            oracle_ref_extraction_findings.append(
-                {
-                    "kind": "source_pathology",
-                    "rule": _EE_ORACLE_REF_EXTRACTION_FAILED_RULE,
-                    "phase": "parse",
-                    "base_id": base_id,
-                    "oracle_id": selected_oracle_id or "",
-                    "as_of": as_of,
-                    "exception_type": type(exc).__name__,
-                    "message": str(exc),
-                }
-            )
-            oracle_refs = ()
+            raise EEOracleRefExtractionCrash(
+                base_id=base_id,
+                oracle_id=selected_oracle_id or "",
+                as_of=as_of,
+                xml_snippet=oracle_xml[:400].decode("utf-8", errors="replace"),
+                cause=exc,
+            ) from exc
 
     if base_is_consolidated and oracle_refs:
         pending_base_refs = _effective_pending_base_refs(
@@ -498,7 +558,6 @@ def plan_ee_oracle_pair(
         *oracle_fetch_findings,
         *oracle_ref_repair_findings,
         *oracle_ref_number_repair_findings,
-        *oracle_ref_extraction_findings,
         {
             "kind": "ee_pair_classification",
             "source_basis": source_basis.value,
