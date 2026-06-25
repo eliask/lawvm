@@ -413,7 +413,7 @@ def test_build_canonical_intent_uses_resolvedop_addresses_without_lo() -> None:
         target_norm="73",
         _op_type_seed=OpType.RENUMBER,
         _target_special_override=(
-            op.target_special if op.target_special not in {None, "otsikko", "johd"} else None
+            op.target_cols.target_special if op.target_cols.target_special not in {None, "otsikko", "johd"} else None
         ),
         sec1_body_johto_fallback=op.sec1_body_johto_fallback,
         uncovered_body_recovery=op.uncovered_body_recovery,
@@ -453,7 +453,7 @@ def test_build_canonical_intent_without_target_address_gracefully_returns_none()
         target_norm="5",
         _op_type_seed=OpType.REPLACE,
         _target_special_override=(
-            op.target_special if op.target_special not in {None, "otsikko", "johd"} else None
+            op.target_cols.target_special if op.target_cols.target_special not in {None, "otsikko", "johd"} else None
         ),
         sec1_body_johto_fallback=op.sec1_body_johto_fallback,
         uncovered_body_recovery=op.uncovered_body_recovery,

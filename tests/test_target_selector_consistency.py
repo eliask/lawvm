@@ -1,18 +1,20 @@
-"""Corpus-scale consistency test for ``AmendmentOp.target_selector`` (Wave 2).
+"""Corpus-scale codec round-trip test for ``AmendmentOp.target_selector``.
 
-This is the *real* validation of the Wave 2 accessor: it does not hand-craft op
-shapes (that is the golden-fixture job of ``test_target_selector_codec.py``).
-Instead it harvests EVERY ``AmendmentOp`` that flows through the production
-compile chokepoint (``compile_amendment_ops``) while replaying a representative
-slice of pinned real Finnish statutes, and asserts the round-trip invariant
+This is the *real* validation of the codec: it does not hand-craft op shapes
+(that is the golden-fixture job of ``test_target_selector_codec.py``). Instead it
+harvests EVERY ``AmendmentOp`` that flows through the production compile
+chokepoint (``compile_amendment_ops``) while replaying a representative slice of
+pinned real Finnish statutes, and asserts the codec round-trip invariant
 TARGET-03 at corpus scale:
 
-    TargetSelectorCodecV1.to_legacy(op.target_selector) == <op's 8 legacy fields>
+    TargetSelectorCodecV1.from_legacy(TargetSelectorCodecV1.to_legacy(sel)) == sel
 
-for every harvested op. If any *real* op shape cannot round-trip through the
-codec, that is a FINDING (as ``special_raw`` was at Wave 0): the codec needs
-extending, not papering over. The test reports the failing shapes explicitly so
-the finding is self-evidencing.
+for every harvested op's stored ``target_selector`` (W6 Phase C: the selector is
+the sole stored representation; ``op.target_cols`` is its legacy projection). If
+any *real* op shape cannot round-trip losslessly through the legacy codec, that
+is a FINDING (as ``special_raw`` was at Wave 0): the codec needs extending, not
+papering over. The test reports the failing shapes explicitly so the finding is
+self-evidencing.
 
 Why ``compile_amendment_ops`` is the harvest point: it is the single production
 boundary every replayed amendment's ``ops`` list passes through
@@ -54,20 +56,6 @@ _CONSISTENCY_CORPUS: tuple[str, ...] = (
 )
 
 
-def _legacy_record_of(op: AmendmentOp) -> AmendmentOpV1Record:
-    """The op's live 8 legacy ``target_*`` fields as an ``AmendmentOpV1Record``."""
-    return AmendmentOpV1Record(
-        target_unit_kind=op.target_unit_kind,
-        target_section=op.target_section,
-        target_chapter=op.target_chapter,
-        target_part=op.target_part,
-        target_paragraph=op.target_paragraph,
-        target_item=op.target_item,
-        target_subitem=op.target_subitem,
-        target_special=op.target_special,
-    )
-
-
 def _harvest_ops(monkeypatch: pytest.MonkeyPatch) -> list[AmendmentOp]:
     """Replay the corpus slice, capturing every op passed to compile_amendment_ops."""
     from tests.corpus_pin_helpers import ORACLE_VERSIONS, pinned_replay
@@ -99,9 +87,11 @@ def _harvest_ops(monkeypatch: pytest.MonkeyPatch) -> list[AmendmentOp]:
 def test_target_selector_round_trips_at_corpus_scale(monkeypatch: pytest.MonkeyPatch) -> None:
     """TARGET-03 at corpus scale: every real op's selector re-encodes byte-exact.
 
-    Asserts ``to_legacy(op.target_selector)`` reproduces the op's 8 legacy fields
-    EXACTLY for every op harvested from the pinned replay slice. Any mismatch is
-    reported with the offending op's full legacy record (self-evidencing finding).
+    Asserts ``from_legacy(to_legacy(op.target_selector))`` reproduces the stored
+    selector EXACTLY for every op harvested from the pinned replay slice (W6
+    Phase C: the selector is the sole stored target representation). Any mismatch
+    is reported with the offending op's projected legacy record (self-evidencing
+    finding) — a real op shape the legacy codec cannot round-trip losslessly.
     """
     ops = _harvest_ops(monkeypatch)
 
@@ -115,9 +105,11 @@ def test_target_selector_round_trips_at_corpus_scale(monkeypatch: pytest.MonkeyP
 
     mismatches: list[tuple[AmendmentOpV1Record, AmendmentOpV1Record]] = []
     for op in ops:
-        expected = _legacy_record_of(op)
+        selector = op.target_selector
+        expected = TargetSelectorCodecV1.to_legacy(selector)
         try:
-            actual = TargetSelectorCodecV1.to_legacy(op.target_selector)
+            relowered = TargetSelectorCodecV1.from_legacy(expected)
+            actual = TargetSelectorCodecV1.to_legacy(relowered)
         except Exception as exc:  # noqa: BLE001 — surface the offending shape
             # Sentinel mismatch record: target_unit_kind is the typed literal, so
             # carry the raised-shape text in target_section (a free str field) to
@@ -170,9 +162,10 @@ def test_corpus_slice_exercises_descendant_and_scope_shapes(monkeypatch: pytest.
     """
     ops = _harvest_ops(monkeypatch)
 
-    has_scope = any(op.target_chapter or op.target_part for op in ops)
+    has_scope = any(op.target_cols.target_chapter or op.target_cols.target_part for op in ops)
     has_descendant = any(
-        op.target_paragraph is not None or op.target_item is not None for op in ops
+        op.target_cols.target_paragraph is not None or op.target_cols.target_item is not None
+        for op in ops
     )
 
     assert has_scope, "corpus slice exercised no chapter/part scope ops"

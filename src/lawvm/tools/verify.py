@@ -284,8 +284,17 @@ def check_extract(ops, context: str = "") -> List[Issue]:
         # AmendmentOp fields
         op_type = getattr(op, "op_type", None)
         target_kind = getattr(op, "target_kind", None)
-        target_section = getattr(op, "target_section", None)
-        target_special = getattr(op, "target_special", None)
+        # AmendmentOp stores its target as a typed selector (W6 Phase C); the
+        # legacy 8-column shape is the read-only ``target_cols`` projection. This
+        # function is duck-typed over AmendmentOp and ParsedOp, so fall back to a
+        # direct getattr for non-AmendmentOp shapes that lack ``target_cols``.
+        target_cols = getattr(op, "target_cols", None)
+        if target_cols is not None:
+            target_section = target_cols.target_section
+            target_special = target_cols.target_special
+        else:
+            target_section = getattr(op, "target_section", None)
+            target_special = getattr(op, "target_special", None)
 
         if op_type is not None:
             # AmendmentOp

@@ -127,7 +127,7 @@ def test_1995_1084_routes_sparse_tail_from_29_to_31_third_moment() -> None:
         parent_id="1985/336",
         source_model=source_model,
     )
-    ops = [op for op in phase.output if str(op.target_section) in {"29", "31"}]
+    ops = [op for op in phase.output if str(op.target_cols.target_section) in {"29", "31"}]
 
     result = compile_amendment_ops(
         before.state,
@@ -139,9 +139,9 @@ def test_1995_1084_routes_sparse_tail_from_29_to_31_third_moment() -> None:
         target_statute="1985/336",
     )
 
-    assert {rop.op.target_section for rop in result.output} == {"29", "31"}
-    section_29 = next(rop for rop in result.output if rop.op.target_section == "29")
-    section_31 = next(rop for rop in result.output if rop.op.target_section == "31")
+    assert {rop.op.target_cols.target_section for rop in result.output} == {"29", "31"}
+    section_29 = next(rop for rop in result.output if rop.op.target_cols.target_section == "29")
+    section_31 = next(rop for rop in result.output if rop.op.target_cols.target_section == "31")
     assert section_29.muutos_ir is not None
     assert section_31.muutos_ir is not None
 
@@ -149,7 +149,7 @@ def test_1995_1084_routes_sparse_tail_from_29_to_31_third_moment() -> None:
     section_31_text = irnode_to_text(section_31.muutos_ir)
     assert "opettajankoulutusyksikkö voi harjoittelukoululain 11 §:n 2 momentissa" not in section_29_text
     assert "opettajankoulutusyksikkö voi harjoittelukoululain 11 §:n 2 momentissa" in section_31_text
-    assert section_31.op.target_paragraph == 3
+    assert section_31.op.target_cols.target_paragraph == 3
 
     finding_kinds = {finding.kind for finding in result.findings()}
     assert SPARSE_OMISSION_TAIL_CLAIM_RULE in finding_kinds

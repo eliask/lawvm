@@ -141,22 +141,22 @@ def _op(
 
 def _rop(op: AmendmentOp) -> ResolvedOp:
     path: list[tuple[str, str]] = []
-    if op.target_unit_kind == "chapter":
-        path.append(("chapter", str(op.target_section)))
-    elif op.target_unit_kind == "part":
-        path.append(("part", str(op.target_section)))
+    if op.target_cols.target_unit_kind == "chapter":
+        path.append(("chapter", str(op.target_cols.target_section)))
+    elif op.target_cols.target_unit_kind == "part":
+        path.append(("part", str(op.target_cols.target_section)))
     else:
-        if op.target_chapter:
-            path.append(("chapter", str(op.target_chapter)))
-        path.append(("section", str(op.target_section)))
-    if op.target_paragraph is not None:
-        path.append(("subsection", str(op.target_paragraph)))
-    if op.target_item is not None:
-        path.append(("item", str(op.target_item)))
+        if op.target_cols.target_chapter:
+            path.append(("chapter", str(op.target_cols.target_chapter)))
+        path.append(("section", str(op.target_cols.target_section)))
+    if op.target_cols.target_paragraph is not None:
+        path.append(("subsection", str(op.target_cols.target_paragraph)))
+    if op.target_cols.target_item is not None:
+        path.append(("item", str(op.target_cols.target_item)))
     special = None
-    if op.target_special in {"otsikko", "otsikko_edella"}:
+    if op.target_cols.target_special in {"otsikko", "otsikko_edella"}:
         special = FacetKind.HEADING
-    elif op.target_special == "johd":
+    elif op.target_cols.target_special == "johd":
         special = FacetKind.INTRO
 
     return ResolvedOp(
@@ -165,11 +165,11 @@ def _rop(op: AmendmentOp) -> ResolvedOp:
         cross_ir=None,
         amend_sub_ir=None,
         op_id=op.op_id,
-        target_unit_kind=op.target_unit_kind,
-        target_norm=op.target_section,
+        target_unit_kind=op.target_cols.target_unit_kind,
+        target_norm=op.target_cols.target_section,
         _op_type_seed=op.op_type,
         _target_special_override=(
-            op.target_special if op.target_special not in {None, "otsikko", "johd"} else None
+            op.target_cols.target_special if op.target_cols.target_special not in {None, "otsikko", "johd"} else None
         ),
         sec1_body_johto_fallback=op.sec1_body_johto_fallback,
         uncovered_body_recovery=op.uncovered_body_recovery,
@@ -189,7 +189,7 @@ def _rop(op: AmendmentOp) -> ResolvedOp:
 def test_amendment_op_projects_legacy_target_kind_from_explicit_unit_kind() -> None:
     op = AmendmentOp(op_type=OpType.REPLACE, target_unit_kind="chapter", target_section="5")
 
-    assert op.target_unit_kind == "chapter"
+    assert op.target_cols.target_unit_kind == "chapter"
 
 
 def test_amendment_op_rejects_conflicting_legacy_target_kind_seed() -> None:

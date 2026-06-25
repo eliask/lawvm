@@ -274,13 +274,14 @@ def section_scoped_group_ops(
     part_norm = _norm_num_token(amend_part_label) if amend_part_label else None
     scoped: list[AmendmentOp] = []
     for op in ops:
-        if _norm_num_token(op.target_section) != label_norm:
+        cols = op.target_cols
+        if _norm_num_token(cols.target_section) != label_norm:
             continue
-        if chapter_norm and op.target_chapter and _norm_num_token(op.target_chapter) != chapter_norm:
+        if chapter_norm and cols.target_chapter and _norm_num_token(cols.target_chapter) != chapter_norm:
             continue
-        if part_norm and op.target_part and _norm_num_token(op.target_part) != part_norm:
+        if part_norm and cols.target_part and _norm_num_token(cols.target_part) != part_norm:
             continue
-        if op.target_paragraph is None or op.target_item or op.target_special:
+        if cols.target_paragraph is None or cols.target_item or cols.target_special:
             continue
         if op.op_type not in (OpType.REPLACE, OpType.INSERT, OpType.REPEAL):
             continue

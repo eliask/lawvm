@@ -1226,7 +1226,7 @@ def _structure_apply_view_for_op(op: AmendmentOp | ResolvedOp) -> _StructureAppl
         target_chapter = op.target_cols.target_chapter
         target_part = op.target_cols.target_part
     return _StructureApplyView(
-        target_unit_kind=op.target_unit_kind,
+        target_unit_kind=op.target_unit_kind if isinstance(op, ResolvedOp) else op.target_cols.target_unit_kind,
         target_section=target_section,
         op_type=op_type,
         uncovered_body_recovery=op.uses_uncovered_body_recovery if isinstance(op, ResolvedOp) else op.uncovered_body_recovery,

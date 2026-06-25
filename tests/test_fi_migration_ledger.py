@@ -649,7 +649,7 @@ def _make_relabel_rop(
         target_norm=target_section,
         _op_type_seed=OpType.RENUMBER,
         _target_special_override=(
-            op.target_special if op.target_special not in {None, "otsikko", "johd"} else None
+            op.target_cols.target_special if op.target_cols.target_special not in {None, "otsikko", "johd"} else None
         ),
         sec1_body_johto_fallback=op.sec1_body_johto_fallback,
         uncovered_body_recovery=op.uncovered_body_recovery,
@@ -765,7 +765,7 @@ class TestMigrationLedgerIntegration:
             target_norm="3",
             _op_type_seed=OpType.RENUMBER,
             _target_special_override=(
-                op.target_special if op.target_special not in {None, "otsikko", "johd"} else None
+                op.target_cols.target_special if op.target_cols.target_special not in {None, "otsikko", "johd"} else None
             ),
             sec1_body_johto_fallback=op.sec1_body_johto_fallback,
             uncovered_body_recovery=op.uncovered_body_recovery,
@@ -839,7 +839,7 @@ class TestMigrationLedgerIntegration:
             target_norm="5a",
             _op_type_seed=OpType.RENUMBER,
             _target_special_override=(
-                op2.target_special if op2.target_special not in {None, "otsikko", "johd"} else None
+                op2.target_cols.target_special if op2.target_cols.target_special not in {None, "otsikko", "johd"} else None
             ),
             sec1_body_johto_fallback=op2.sec1_body_johto_fallback,
             uncovered_body_recovery=op2.uncovered_body_recovery,

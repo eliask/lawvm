@@ -557,8 +557,8 @@ class TestNormalizeAndCompileOps:
         assert len(ops) == 1
         op = ops[0]
         assert op.op_type == "REPLACE"
-        assert op.target_section == "3"
-        assert op.target_paragraph == 1
+        assert op.target_cols.target_section == "3"
+        assert op.target_cols.target_paragraph == 1
         assert op.source_statute == "2010/100"
         assert _findings(result, "obligation") == ()
 
@@ -576,7 +576,7 @@ class TestNormalizeAndCompileOps:
             parent_id="2000/1",
         )
 
-        assert any(op.target_section == "1" for op in result.output)
+        assert any(op.target_cols.target_section == "1" for op in result.output)
         findings = [
             finding
             for finding in _findings(result, "observation")
@@ -714,7 +714,7 @@ class TestNormalizeAndCompileOps:
             parent_id="2000/1",
         ).output
 
-        targets = {(op.op_type, op.target_section, op.target_paragraph) for op in ops}
+        targets = {(op.op_type, op.target_cols.target_section, op.target_cols.target_paragraph) for op in ops}
         assert ("REPLACE", "5", 1) in targets
         assert ("REPLACE", "5", 2) in targets
 
@@ -760,7 +760,7 @@ class TestNormalizeAndCompileOps:
             parent_id="396/2006",
         ).output
 
-        targets = {(op.op_type, op.target_section, op.target_paragraph) for op in ops}
+        targets = {(op.op_type, op.target_cols.target_section, op.target_cols.target_paragraph) for op in ops}
         assert ("REPLACE", "26", 3) in targets
         assert ("INSERT", "26", 3) in targets
         assert ("INSERT", "26", 5) in targets
@@ -779,7 +779,7 @@ class TestNormalizeAndCompileOps:
             parent_id="2000/1",
         ).output
 
-        assert any(op.op_type == "REPEAL" and op.target_section == "4" for op in ops)
+        assert any(op.op_type == "REPEAL" and op.target_cols.target_section == "4" for op in ops)
 
     def test_direct_same_label_move_clause_retargets_replace_and_drops_orphan_renumber(self) -> None:
         master = _make_master(
@@ -815,9 +815,9 @@ class TestNormalizeAndCompileOps:
         ).output
 
         moved_replace = [
-            op for op in ops if op.op_type == "REPLACE" and op.target_section == "85b" and op.target_chapter == "9"
+            op for op in ops if op.op_type == "REPLACE" and op.target_cols.target_section == "85b" and op.target_cols.target_chapter == "9"
         ]
-        orphan_renumber = [op for op in ops if op.op_type == "RENUMBER" and op.target_section == "85b"]
+        orphan_renumber = [op for op in ops if op.op_type == "RENUMBER" and op.target_cols.target_section == "85b"]
 
         assert moved_replace
         assert all(self._moved_to_chapter(op, "9") for op in moved_replace)
@@ -847,9 +847,9 @@ class TestNormalizeAndCompileOps:
         ).output
 
         moved_replace = [
-            op for op in ops if op.op_type == "REPLACE" and op.target_section == "85b" and op.target_chapter == "9"
+            op for op in ops if op.op_type == "REPLACE" and op.target_cols.target_section == "85b" and op.target_cols.target_chapter == "9"
         ]
-        orphan_renumber = [op for op in ops if op.op_type == "RENUMBER" and op.target_section == "85b"]
+        orphan_renumber = [op for op in ops if op.op_type == "RENUMBER" and op.target_cols.target_section == "85b"]
 
         assert moved_replace
         assert all(self._moved_to_chapter(op, "9") for op in moved_replace)
@@ -893,11 +893,11 @@ class TestNormalizeAndCompileOps:
         moved_replace = [
             op
             for op in ops
-            if op.op_type == "REPLACE" and op.target_section in {"33", "34"} and op.target_chapter == "5"
+            if op.op_type == "REPLACE" and op.target_cols.target_section in {"33", "34"} and op.target_cols.target_chapter == "5"
         ]
 
         assert moved_replace
-        assert {op.target_section for op in moved_replace} == {"33", "34"}
+        assert {op.target_cols.target_section for op in moved_replace} == {"33", "34"}
         assert all(self._moved_to_chapter(op, "5") for op in moved_replace)
 
     def test_direct_section_relabel_clause_recovers_source_and_destination(self) -> None:
@@ -927,8 +927,8 @@ class TestNormalizeAndCompileOps:
         ).output
 
         relabel = next(op for op in ops if op.op_type == "RENUMBER")
-        assert relabel.target_section == "73"
-        assert relabel.target_chapter == "7"
+        assert relabel.target_cols.target_section == "73"
+        assert relabel.target_cols.target_chapter == "7"
         assert relabel.lo is not None and relabel.lo.destination is not None
         assert dict(relabel.lo.destination.path) == {"chapter": "7", "section": "61"}
 
@@ -955,8 +955,8 @@ class TestNormalizeAndCompileOps:
         ).output
 
         relabel = next(op for op in ops if op.op_type == "RENUMBER")
-        assert relabel.target_section == "73"
-        assert relabel.target_chapter == "7"
+        assert relabel.target_cols.target_section == "73"
+        assert relabel.target_cols.target_chapter == "7"
         assert relabel.lo is not None and relabel.lo.destination is not None
         assert dict(relabel.lo.destination.path) == {"chapter": "7", "section": "61"}
 
@@ -983,8 +983,8 @@ class TestNormalizeAndCompileOps:
         ).output
 
         relabel = next(op for op in ops if op.op_type == "RENUMBER")
-        assert relabel.target_section == "73"
-        assert relabel.target_chapter == "7"
+        assert relabel.target_cols.target_section == "73"
+        assert relabel.target_cols.target_chapter == "7"
         assert relabel.lo is not None and relabel.lo.destination is not None
         assert dict(relabel.lo.destination.path) == {"chapter": "7", "section": "61"}
 
@@ -1011,8 +1011,8 @@ class TestNormalizeAndCompileOps:
         ).output
 
         relabel = next(op for op in ops if op.op_type == "RENUMBER")
-        assert relabel.target_section == "73"
-        assert relabel.target_chapter == "7"
+        assert relabel.target_cols.target_section == "73"
+        assert relabel.target_cols.target_chapter == "7"
         assert relabel.lo is not None and relabel.lo.destination is not None
         assert dict(relabel.lo.destination.path) == {"chapter": "7", "section": "61"}
 
@@ -1191,7 +1191,7 @@ class TestNormalizeAndCompileOps:
         assert len(ops) == 1
         assert ops[0].op_type == "REPEAL"
         assert ops[0].target_kind == "L"
-        assert ops[0].target_section == "5"
+        assert ops[0].target_cols.target_section == "5"
         assert ops[0].fallback_provenance is True
         assert "extraction_title_fallback" in ops[0].extraction_provenance_tags
 
@@ -1200,7 +1200,7 @@ class TestNormalizeAndCompileOps:
         seeded = AmendmentOp(op_id="seeded-target-kind", op_type=OpType.REPLACE, target_kind=TargetKind.CHAPTER, target_section="5")
 
         assert op.target_kind == TargetKind.CHAPTER
-        assert seeded.target_unit_kind == "chapter"
+        assert seeded.target_cols.target_unit_kind == "chapter"
         assert seeded.target_kind == TargetKind.CHAPTER
         with pytest.raises(TypeError, match="must be TargetKind"):
             cast(Any, AmendmentOp)(
@@ -1289,7 +1289,7 @@ class TestNormalizeAndCompileOps:
         assert remapped_muutos_ir.label == "3a"
         assert len(remapped_ops) == 1
         assert remapped_ops[0].op_type == "INSERT"
-        assert remapped_ops[0].target_section == "3a"
+        assert remapped_ops[0].target_cols.target_section == "3a"
         assert remapped_ops[0].body_root_replace_fallback is True
 
     def test_remap_body_root_replace_group_does_not_fire_from_breadcrumb_string_alone(self) -> None:
@@ -1442,7 +1442,7 @@ class TestNormalizeAndCompileOps:
             parent_id="1940/378",
         ).output
 
-        got = [(op.op_type, op.target_section, op.target_paragraph, op.target_item) for op in ops]
+        got = [(op.op_type, op.target_cols.target_section, op.target_cols.target_paragraph, op.target_cols.target_item) for op in ops]
         assert ("INSERT", "39a", None, None) in got
         assert ("INSERT", "63a", None, None) in got
         assert ("INSERT", "63b", None, None) in got
@@ -1506,7 +1506,7 @@ class TestNormalizeAndCompileOps:
             parent_id="1999/488",
         ).output
 
-        by_section = {op.target_section: op for op in ops if op.op_type == "INSERT"}
+        by_section = {op.target_cols.target_section: op for op in ops if op.op_type == "INSERT"}
         assert "21b" in by_section, f"expected INSERT for 21b, got: {list(by_section)}"
         assert by_section["21b"].is_temporary, "21b§ must be tagged as temporary"
         for sec in ("4a", "21a", "21c"):
@@ -1544,7 +1544,7 @@ class TestNormalizeAndCompileOps:
             parent_id="2010/1",
         ).output
 
-        by_section = {op.target_section: op for op in ops}
+        by_section = {op.target_cols.target_section: op for op in ops}
         assert "6" in by_section, f"expected op for section 6, got: {list(by_section)}"
         assert by_section["6"].is_temporary, "section 6 must be tagged as temporary"
         if "5" in by_section:
@@ -1580,7 +1580,7 @@ class TestNormalizeAndCompileOps:
             parent_id="2000/1",
         )
 
-        op = next(op for op in phase.output if op.target_section == "12a")
+        op = next(op for op in phase.output if op.target_cols.target_section == "12a")
         assert op.is_temporary
         assert op.lo is not None and op.lo.source is not None
         assert op.lo.source.effective == "1983-01-01"
@@ -1658,7 +1658,7 @@ class TestCompileAmendmentOps:
         r = resolved[0]
         assert r.op_id == "op0"
         assert r.op.op_type == "REPLACE"
-        assert r.op.target_section == "3"
+        assert r.op.target_cols.target_section == "3"
         assert r.resolved_target_address is not None
         assert r.resolved_target_address.path == (("section", "3"), ("subsection", "1"))
         assert r.intent is not None
@@ -2105,7 +2105,7 @@ class TestCompileAmendmentOps:
         # a resolved op with muutos_ir=None.  Both are acceptable — what must NOT
         # happen is a crash or a resolved op with a wrong muutos_ir.
         for r in resolved:
-            if r.op.op_type == "REPEAL" and r.op.target_section == "9":
+            if r.op.op_type == "REPEAL" and r.op.target_cols.target_section == "9":
                 assert r.muutos_ir is None or isinstance(r.muutos_ir, IRNode)
 
     def test_collects_elaboration_observations_from_compile_group(self, monkeypatch) -> None:
@@ -3111,8 +3111,8 @@ class TestSortGroupOpsInsertWithOtsikko:
         ]
         result = sort_group_ops_for_apply(target_ctx, group_ops)
         # otsikko (target_paragraph=None) sorts first (0), then ascending inserts
-        assert result[0].target_special == "otsikko"
-        assert [o.target_paragraph for o in result[1:]] == [3, 4, 5]
+        assert result[0].target_cols.target_special == "otsikko"
+        assert [o.target_cols.target_paragraph for o in result[1:]] == [3, 4, 5]
 
     def test_pure_insert_group_still_sorts_ascending(self) -> None:
         sec = self._make_sec_with_subsections("1", "2")
@@ -3139,7 +3139,7 @@ class TestSortGroupOpsInsertWithOtsikko:
             ),
         ]
         result = sort_group_ops_for_apply(target_ctx, group_ops)
-        assert [o.target_paragraph for o in result] == [3, 4, 5]
+        assert [o.target_cols.target_paragraph for o in result] == [3, 4, 5]
 
     def test_pure_replace_tail_append_group_sorts_ascending(self) -> None:
         sec = self._make_sec_with_subsections("1", "2")
@@ -3163,7 +3163,7 @@ class TestSortGroupOpsInsertWithOtsikko:
             ),
         ]
         result = sort_group_ops_for_apply(target_ctx, group_ops)
-        assert [o.target_paragraph for o in result] == [3, 4]
+        assert [o.target_cols.target_paragraph for o in result] == [3, 4]
 
     def test_item_inserts_sort_in_natural_legal_order_within_same_subsection(self) -> None:
         sec = self._make_sec_with_subsections("1")
@@ -3213,7 +3213,7 @@ class TestSortGroupOpsInsertWithOtsikko:
             ),
         ]
         result = sort_group_ops_for_apply(target_ctx, group_ops)
-        assert [o.target_item for o in result] == ["5a", "5b", "9", "10"]
+        assert [o.target_cols.target_item for o in result] == ["5a", "5b", "9", "10"]
 
 
 # ---------------------------------------------------------------------------

@@ -3309,7 +3309,7 @@ def test_compile_group_reports_body_chapter_replace_to_insert_move_recovery() ->
     assert len(result.output) == 1
     rop = result.output[0]
     assert rop.op.op_type == "INSERT"
-    assert rop.op.target_chapter == "7c"
+    assert rop.op.target_cols.target_chapter == "7c"
     assert rop.op.body_chapter_move_from == "7"
     assert rop.op.lo is not None
     assert rop.op.lo.action is StructuralAction.INSERT
@@ -3381,7 +3381,7 @@ def test_compile_group_preserves_declared_body_chapter_move_as_replace() -> None
     assert len(result.output) == 1
     rop = result.output[0]
     assert rop.op.op_type == "REPLACE"
-    assert rop.op.target_chapter == "6a"
+    assert rop.op.target_cols.target_chapter == "6a"
     assert rop.op.move_clause_target_unit_kind == "chapter"
     assert rop.op.body_chapter_move_from == "6"
     assert rop.op.lo is not None
@@ -3947,7 +3947,7 @@ def test_compile_group_retargets_explicit_chunk_section_to_unique_live_path_when
     )
 
     assert len(result.output) == 1
-    assert result.output[0].op.target_section == "75e"
+    assert result.output[0].op.target_cols.target_section == "75e"
 
 
 def test_build_group_surface_uses_renumber_destination_payload_when_source_label_missing() -> None:
@@ -5101,7 +5101,7 @@ def test_compile_group_does_not_undo_live_scope_with_mixed_real_body_wrapper() -
 
     recovered = result.output
     assert recovered.effective_target_chapter == "3"
-    assert [op.target_chapter for op in recovered.group_ops] == ["3", "3"]
+    assert [op.target_cols.target_chapter for op in recovered.group_ops] == ["3", "3"]
     first_lo = recovered.group_ops[0].lo
     second_lo = recovered.group_ops[1].lo
     assert first_lo is not None
@@ -5541,7 +5541,7 @@ def test_compile_group_keeps_carry_forward_insert_scope_when_body_chapter_is_new
     assert len(result.output) == 1
     rop = result.output[0]
     assert rop.resolved_target_scope_view.target_chapter == "5"
-    assert rop.op.target_chapter == "5"
+    assert rop.op.target_cols.target_chapter == "5"
     assert rop.op.lo is not None
     assert rop.op.lo.target.path == (("chapter", "5"), ("section", "16a"))
     assert not any(
@@ -6536,15 +6536,15 @@ def test_compile_2020_1207_keeps_explicit_insert_scope_over_body_wrappers() -> N
         target_statute="2014/917",
     )
     descendant_inserts = {
-        (op.target_section, str(op.target_paragraph or "")): (
+        (op.target_cols.target_section, str(op.target_cols.target_paragraph or "")): (
             rop.resolved_target_scope_part_label,
             rop.resolved_target_scope_chapter_label,
         )
         for rop in compiled.output
         if (op := rop.op).op_type == "INSERT"
-        and op.target_unit_kind == "section"
-        and op.target_section in {"60", "99", "100", "102"}
-        and op.target_paragraph is not None
+        and op.target_cols.target_unit_kind == "section"
+        and op.target_cols.target_section in {"60", "99", "100", "102"}
+        and op.target_cols.target_paragraph is not None
     }
 
     assert descendant_inserts[("60", "3")] == ("3", "9")
@@ -7038,8 +7038,8 @@ def test_extract_enacting_formula_body_insert_ops_fallback_inserts_new_letter_se
     ops = _extract_enacting_formula_body_insert_ops_fallback(johto, tree, master)
     assert len(ops) == 1
     assert ops[0].op_type == "INSERT"
-    assert ops[0].target_section == "26a"
-    assert ops[0].target_unit_kind == "section"
+    assert ops[0].target_cols.target_section == "26a"
+    assert ops[0].target_cols.target_unit_kind == "section"
 
 
 def test_extract_enacting_formula_body_insert_ops_fallback_skips_existing_letter_sections() -> None:
@@ -7179,8 +7179,8 @@ def test_parse_ops_fallback_heuristic_keeps_explicit_targets_in_mixed_container_
 
     ops = parse_ops_fallback_heuristic(johto)
 
-    assert any(op.op_type == "REPLACE" and op.target_section == "3" and op.target_paragraph == 1 for op in ops)
-    assert any(op.op_type == "REPLACE" and op.target_section == "4" and op.target_paragraph == 2 for op in ops)
+    assert any(op.op_type == "REPLACE" and op.target_cols.target_section == "3" and op.target_cols.target_paragraph == 1 for op in ops)
+    assert any(op.op_type == "REPLACE" and op.target_cols.target_section == "4" and op.target_cols.target_paragraph == 2 for op in ops)
 
 
 def test_extract_kumotaan_section_refs_keeps_trailing_history_citation() -> None:
@@ -7904,7 +7904,7 @@ def test_fallback_recovers_shifted_subsection_insert_and_retargeted_replace() ->
     )
 
     ops = parse_ops_fallback_heuristic(johto)
-    got = {(op.op_type, op.target_section, op.target_paragraph) for op in ops}
+    got = {(op.op_type, op.target_cols.target_section, op.target_cols.target_paragraph) for op in ops}
 
     assert ("INSERT", "3", 2) in got
     assert ("REPLACE", "3", 3) in got
@@ -7935,7 +7935,7 @@ def test_stabilize_insert_order_prefers_insert_first_when_replace_target_only_ex
 
     got = _stabilize_insert_order(ops, cast(Any, target_ctx))
 
-    assert [(op.op_type, op.target_paragraph) for op in got] == [
+    assert [(op.op_type, op.target_cols.target_paragraph) for op in got] == [
         ("INSERT", 2),
         ("REPLACE", 3),
     ]
@@ -7968,7 +7968,7 @@ def test_stabilize_insert_order_keeps_replace_first_when_live_target_exists() ->
 
     got = _stabilize_insert_order(ops, cast(Any, target_ctx))
 
-    assert [(op.op_type, op.target_paragraph) for op in got] == [
+    assert [(op.op_type, op.target_cols.target_paragraph) for op in got] == [
         ("REPLACE", 3),
         ("INSERT", 3),
         ("INSERT", 5),
@@ -8003,7 +8003,7 @@ def test_stabilize_insert_order_moves_same_wave_subsection_renumber_after_rebase
 
     got = _stabilize_insert_order(ops, cast(Any, target_ctx))
 
-    assert [(op.op_type, op.target_paragraph) for op in got] == [
+    assert [(op.op_type, op.target_cols.target_paragraph) for op in got] == [
         ("INSERT", 2),
         ("REPLACE", 3),
         ("RENUMBER", 2),
@@ -8024,7 +8024,7 @@ def test_subsection_insert_fallback_recovers_large_johtolause_moment_inserts() -
     )
 
     ops = _extract_insert_subsection_ops_fallback(johto)
-    got = {(op.op_type, op.target_section, op.target_paragraph) for op in ops}
+    got = {(op.op_type, op.target_cols.target_section, op.target_cols.target_paragraph) for op in ops}
 
     assert ("INSERT", "15", 4) in got
     assert ("INSERT", "29", 2) in got
@@ -8039,7 +8039,7 @@ def test_subsection_insert_fallback_keeps_same_section_scope_for_trailing_insert
     )
 
     ops = _extract_insert_subsection_ops_fallback(johto)
-    got = {(op.op_type, op.target_section, op.target_paragraph) for op in ops}
+    got = {(op.op_type, op.target_cols.target_section, op.target_cols.target_paragraph) for op in ops}
 
     assert ("INSERT", "26", 3) in got
     assert ("INSERT", "26", 5) in got
@@ -8052,7 +8052,7 @@ def test_subsection_insert_fallback_expands_plural_momentti_insert_after_provena
     )
 
     ops = _extract_insert_subsection_ops_fallback(johto)
-    got = {(op.op_type, op.target_section, op.target_paragraph) for op in ops}
+    got = {(op.op_type, op.target_cols.target_section, op.target_cols.target_paragraph) for op in ops}
 
     assert ("INSERT", "22", 5) in got
     assert ("INSERT", "22", 6) in got
@@ -8065,11 +8065,11 @@ def test_subsection_insert_fallback_expands_mom_abbreviation_before_section_inse
     )
 
     ops = _extract_insert_subsection_ops_fallback(johto)
-    got = {(op.op_type, op.target_section, op.target_paragraph) for op in ops}
+    got = {(op.op_type, op.target_cols.target_section, op.target_cols.target_paragraph) for op in ops}
 
     assert ("INSERT", "2", 9) in got
     assert ("INSERT", "2", 10) in got
-    assert not any(op.target_section == "27" for op in ops)
+    assert not any(op.target_cols.target_section == "27" for op in ops)
 
 
 def test_subsection_insert_fallback_stops_at_next_chapter_scoped_section_ref() -> None:
@@ -8081,7 +8081,7 @@ def test_subsection_insert_fallback_stops_at_next_chapter_scoped_section_ref() -
     )
 
     ops = _extract_insert_subsection_ops_fallback(johto)
-    got = {(op.op_type, op.target_section, op.target_paragraph) for op in ops}
+    got = {(op.op_type, op.target_cols.target_section, op.target_cols.target_paragraph) for op in ops}
 
     assert ("INSERT", "1", 11) in got
     assert ("INSERT", "1", 3) not in got
@@ -8095,7 +8095,7 @@ def test_subsection_insert_fallback_coverage_surfaces_unclassified_bounded_gap()
         source_artifact_id="2020/1",
     )
 
-    assert [(op.op_type, op.target_section, op.target_paragraph) for op in result.ops] == [
+    assert [(op.op_type, op.target_cols.target_section, op.target_cols.target_paragraph) for op in result.ops] == [
         ("INSERT", "5", 2),
     ]
     assert len(result.regex_recognition_coverage) == 1
@@ -8125,7 +8125,7 @@ def test_subsection_insert_fallback_coverage_marks_plain_connector_classified() 
 
     result = parse_ops_fallback_heuristic_with_coverage(johto)
 
-    assert [(op.op_type, op.target_section, op.target_paragraph) for op in result.ops] == [
+    assert [(op.op_type, op.target_cols.target_section, op.target_cols.target_paragraph) for op in result.ops] == [
         ("INSERT", "5", 2),
     ]
     assert len(result.regex_recognition_coverage) == 1
@@ -8144,7 +8144,7 @@ def test_item_insert_fallback_coverage_surfaces_unclassified_bounded_gap() -> No
     )
 
     got = {
-        (op.op_type, op.target_section, op.target_paragraph, op.target_item)
+        (op.op_type, op.target_cols.target_section, op.target_cols.target_paragraph, op.target_cols.target_item)
         for op in result.ops
     }
     assert ("INSERT", "5", 2, "4") in got
@@ -8177,7 +8177,7 @@ def test_item_insert_fallback_coverage_marks_plain_connector_classified() -> Non
     result = parse_ops_fallback_heuristic_with_coverage(johto)
 
     got = {
-        (op.op_type, op.target_section, op.target_paragraph, op.target_item)
+        (op.op_type, op.target_cols.target_section, op.target_cols.target_paragraph, op.target_cols.target_item)
         for op in result.ops
     }
     assert ("INSERT", "5", 2, "4") in got
@@ -8200,7 +8200,7 @@ def test_item_insert_fallback_recovers_historical_item_before_kohta_wording() ->
     result = parse_ops_fallback_heuristic_with_coverage(johto)
 
     got = {
-        (op.op_type, op.target_section, op.target_paragraph, op.target_item)
+        (op.op_type, op.target_cols.target_section, op.target_cols.target_paragraph, op.target_cols.target_item)
         for op in result.ops
     }
     assert got == {("INSERT", "3", 5, "11a")}
@@ -8226,7 +8226,7 @@ def test_normalize_compile_ops_converts_historical_item_insert_wording() -> None
     )
 
     assert [
-        (op.op_type, op.target_section, op.target_paragraph, op.target_item)
+        (op.op_type, op.target_cols.target_section, op.target_cols.target_paragraph, op.target_cols.target_item)
         for op in phase.output
     ] == [("INSERT", "3", 5, "11a")]
 
@@ -8316,7 +8316,7 @@ def test_fallback_expands_repealed_subsection_range() -> None:
     )
 
     ops = parse_ops_fallback_heuristic(johto)
-    got = {(op.op_type, op.target_section, op.target_paragraph) for op in ops}
+    got = {(op.op_type, op.target_cols.target_section, op.target_cols.target_paragraph) for op in ops}
 
     assert ("REPEAL", "9", 2) in got
     assert ("REPEAL", "9", 3) in got
@@ -8334,7 +8334,7 @@ def test_fallback_splits_mixed_repeal_and_replace_clause() -> None:
     )
 
     ops = parse_ops_fallback_heuristic(johto)
-    got = {(op.op_type, op.target_section, op.target_paragraph) for op in ops}
+    got = {(op.op_type, op.target_cols.target_section, op.target_cols.target_paragraph) for op in ops}
 
     assert ("REPEAL", "14", 1) in got
     assert ("REPLACE", "1", 2) in got
@@ -8348,7 +8348,7 @@ def test_extract_replace_ops_from_muutetaan_tail_recovers_mixed_section_and_mome
     johto = "kumotaan vapaakuntakokeilusta annetun lain 5 §, muutetaan 2 §:n 2 momentti ja 15 § seuraavasti:"
 
     ops = _extract_replace_ops_from_muutetaan_tail(johto)
-    got = {(op.op_type, op.target_section, op.target_paragraph) for op in ops}
+    got = {(op.op_type, op.target_cols.target_section, op.target_cols.target_paragraph) for op in ops}
 
     assert got == {
         ("REPLACE", "2", 2),
@@ -8382,7 +8382,7 @@ def test_fallback_recovers_explicit_item_insert_and_prunes_shadowed_parent_subse
     )
 
     ops = parse_ops_fallback_heuristic(johto)
-    got = {(op.op_type, op.target_section, op.target_paragraph, op.target_item) for op in ops}
+    got = {(op.op_type, op.target_cols.target_section, op.target_cols.target_paragraph, op.target_cols.target_item) for op in ops}
 
     assert ("INSERT", "49a", 1, "10") in got
     assert ("INSERT", "49a", 1, None) not in got
@@ -11159,7 +11159,7 @@ def test_uncovered_body_insert_overrides_chapter_when_family_base_in_different_c
     # The op should target chapter 7 (where §32 lives), not 4d
     insert_rop = [r for r in rops if r.op.op_id == "uncovered_insert_32a"]
     assert len(insert_rop) == 1
-    assert insert_rop[0].op.target_chapter == "7"
+    assert insert_rop[0].op.target_cols.target_chapter == "7"
     assert insert_rop[0].op.uncovered_body_recovery is True
 
 
@@ -11230,7 +11230,7 @@ def test_uncovered_body_insert_keeps_explicit_existing_chapter_ownership() -> No
     )
     assert len(rops) == 1
     assert rops[0].op.op_id == "uncovered_insert_37a"
-    assert rops[0].op.target_chapter == "6"
+    assert rops[0].op.target_cols.target_chapter == "6"
     assert rops[0].op.uncovered_body_recovery is True
 
 
@@ -11620,7 +11620,7 @@ def test_enrich_ops_prefers_live_body_chapter_before_letter_suffix_stem_host_for
     got = _enrich_ops_from_amendment_tree([op], "2024/1", muutos_tree, master=master)
 
     assert len(got) == 1
-    assert got[0].target_chapter == "6"
+    assert got[0].target_cols.target_chapter == "6"
     assert got[0].witness_rule_id == "fi_body_chapter_scope_from_source_body"
     assert got[0].scope_confidence is not None
     assert got[0].scope_confidence.source == "carry_forward"
@@ -11663,7 +11663,7 @@ def test_enrich_ops_prefers_letter_suffix_stem_host_before_unborn_body_wrapper_f
     got = _enrich_ops_from_amendment_tree([op], "2024/1", muutos_tree, master=master)
 
     assert len(got) == 1
-    assert got[0].target_chapter == "5"
+    assert got[0].target_cols.target_chapter == "5"
     assert got[0].witness_rule_id == "fi_letter_suffix_insert_scope_from_stem_host"
     assert got[0].scope_confidence is not None
     assert got[0].scope_confidence.source == "carry_forward"
@@ -11768,7 +11768,7 @@ def test_enrich_ops_overrides_live_stem_host_with_corroborated_source_body_chapt
         source_model=AmendmentSourceModel.from_tree(muutos_tree),
     )
 
-    assert got[0].target_chapter == "17"
+    assert got[0].target_cols.target_chapter == "17"
     assert got[0].witness_rule_id == "fi_live_stem_scope_overridden_by_corroborated_source_body"
     assert got[0].lo is not None
     assert got[0].lo.target.path == (("chapter", "17"), ("section", "130a"))
@@ -11837,7 +11837,7 @@ def test_enrich_ops_keeps_live_stem_host_without_existing_section_corroboration(
         source_model=AmendmentSourceModel.from_tree(muutos_tree),
     )
 
-    assert got[0].target_chapter == "16"
+    assert got[0].target_cols.target_chapter == "16"
     assert got[0].witness_rule_id != "fi_live_stem_scope_overridden_by_corroborated_source_body"
 
 
@@ -11915,7 +11915,7 @@ def test_enrich_ops_keeps_live_stem_host_without_internal_reference_witness() ->
         source_model=AmendmentSourceModel.from_tree(muutos_tree),
     )
 
-    assert got[0].target_chapter == "2"
+    assert got[0].target_cols.target_chapter == "2"
     assert got[0].witness_rule_id != "fi_live_stem_scope_overridden_by_corroborated_source_body"
 
 
@@ -11986,7 +11986,7 @@ def test_enrich_ops_keeps_live_stem_host_when_source_body_corroborator_is_distan
         source_model=AmendmentSourceModel.from_tree(muutos_tree),
     )
 
-    assert got[0].target_chapter == "2"
+    assert got[0].target_cols.target_chapter == "2"
     assert got[0].witness_rule_id != "fi_live_stem_scope_overridden_by_corroborated_source_body"
 
 
@@ -12063,7 +12063,7 @@ def test_enrich_ops_uses_vacated_live_scope_for_recodification_insert_under_mixe
     )
 
     got_insert = next(op for op in got if op.op_id == "insert_27f")
-    assert got_insert.target_chapter == "6a"
+    assert got_insert.target_cols.target_chapter == "6a"
     assert got_insert.witness_rule_id == "fi_recodification_vacated_insert_scope"
     assert got_insert.scope_confidence is not None
     assert got_insert.scope_confidence.source == "carry_forward"
@@ -12300,7 +12300,7 @@ def test_enrich_ops_keeps_live_carry_forward_subsection_scope_over_stale_body_ch
     got = _enrich_ops_from_amendment_tree([op], "2024/1", muutos_tree, master=master)
 
     assert len(got) == 1
-    assert got[0].target_chapter == "3"
+    assert got[0].target_cols.target_chapter == "3"
     assert got[0].scope_confidence is not None
     assert got[0].scope_confidence.source == "carry_forward"
     assert got[0].scope_confidence.resolved_chapter == "3"
@@ -12355,7 +12355,7 @@ def test_enrich_ops_still_rewrites_deep_carry_forward_when_live_host_is_absent()
     got = _enrich_ops_from_amendment_tree([op], "2024/1", muutos_tree, master=master)
 
     assert len(got) == 1
-    assert got[0].target_chapter == "6"
+    assert got[0].target_cols.target_chapter == "6"
 
 
 def test_coalesce_same_target_mixed_scope_section_groups_tags_bare_ops_on_merge() -> None:
@@ -12410,7 +12410,7 @@ def test_coalesce_same_target_mixed_scope_section_groups_tags_bare_ops_on_merge(
     merged_ops = got[GroupTargetKey(IRNodeKind.SECTION, "8", "2", None)]
     assert [op.op_id for op in merged_ops] == ["bare", "scoped"]
     assert merged_ops[0].scope_provenance_tags[-1] == "mixed_scope_group_merge"
-    assert merged_ops[0].target_chapter == "2"
+    assert merged_ops[0].target_cols.target_chapter == "2"
     assert merged_ops[0].scope_confidence is not None
     assert merged_ops[0].scope_confidence.tag == "mixed_scope_group_merge"
     assert merged_ops[0].scope_confidence.resolved_chapter == "2"
@@ -12551,7 +12551,7 @@ def test_coalesce_same_target_mixed_scope_section_groups_does_not_alias_roman_it
     assert set(got) == {(IRNodeKind.SECTION, "4", "1", None)}
     merged_ops = got[GroupTargetKey(IRNodeKind.SECTION, "4", "1", None)]
     assert [op.op_id for op in merged_ops] == ["scoped_insert_4", "bare_insert_iv"]
-    assert merged_ops[1].target_chapter == "1"
+    assert merged_ops[1].target_cols.target_chapter == "1"
     assert merged_ops[1].scope_provenance_tags[-1] == "mixed_scope_group_merge"
 
 
@@ -13303,7 +13303,7 @@ def test_supplement_missing_repeals_after_item_shift_clause_adds_lost_moment_rep
     )
 
     assert ("REPEAL", "2", 2, None, "d") in {
-        (op.op_type, op.target_section, op.target_paragraph, op.target_item, op.post_repeal_item_shift_label)
+        (op.op_type, op.target_cols.target_section, op.target_cols.target_paragraph, op.target_cols.target_item, op.post_repeal_item_shift_label)
         for op in got
     }
 
@@ -13363,7 +13363,7 @@ def test_supplement_named_table_row_mixed_clause_ops_adds_missing_replace_and_ta
         ),
     )
 
-    assert [(op.op_type, op.target_section) for op in got] == [("REPEAL", "1"), ("REPLACE", "1")]
+    assert [(op.op_type, op.target_cols.target_section) for op in got] == [("REPEAL", "1"), ("REPLACE", "1")]
     assert got[0].named_row_targets == ("iitin", "juvan")
     assert got[1].named_row_targets == ("kouvolan", "mikkelin")
 
@@ -13386,7 +13386,7 @@ def test_supplement_named_table_row_mixed_clause_ops_handles_osalta_wording() ->
         ),
     )
 
-    assert [(op.op_type, op.target_section) for op in got] == [("REPEAL", "1"), ("REPLACE", "1")]
+    assert [(op.op_type, op.target_cols.target_section) for op in got] == [("REPEAL", "1"), ("REPLACE", "1")]
     assert got[0].named_row_targets == ("pirkanmaan",)
     assert got[1].named_row_targets == ("tampereen",)
 
@@ -13406,7 +13406,7 @@ def test_tag_named_table_row_single_clause_ops_tags_single_replace_clause() -> N
         "muutetaan päätöksen 1 §:n Iisalmen käräjäoikeutta koskevan kohdan seuraavasti:",
     )
 
-    assert [(op.op_type, op.target_section) for op in got] == [("REPLACE", "1")]
+    assert [(op.op_type, op.target_cols.target_section) for op in got] == [("REPLACE", "1")]
     assert got[0].named_row_targets == ("iisalmen",)
 
 
@@ -13428,7 +13428,7 @@ def test_supplement_item_and_moment_clause_ops_recovers_item_targets() -> None:
     got = _supplement_item_and_moment_clause_ops(ops, johto)
 
     assert [
-        (op.op_type, op.target_section, op.target_paragraph, op.target_item)
+        (op.op_type, op.target_cols.target_section, op.target_cols.target_paragraph, op.target_cols.target_item)
         for op in got
     ] == [
         ("INSERT", "24", 1, "8"),
@@ -13465,18 +13465,18 @@ def test_supplement_jolloin_moment_renumber_ops_recovers_insert_continuation_shi
     renumbers = [op for op in got if op.op_type == "RENUMBER"]
 
     assert [
-        (op.target_section, op.target_paragraph)
+        (op.target_cols.target_section, op.target_cols.target_paragraph)
         for op in got
         if op.op_type == "INSERT"
     ] == [
         ("15", 2),
         ("15", 3),
     ]
-    assert [(op.target_section, op.target_paragraph) for op in recovered_inserts] == [
+    assert [(op.target_cols.target_section, op.target_cols.target_paragraph) for op in recovered_inserts] == [
         ("15", 3)
     ]
     assert [
-        (op.target_section, op.target_paragraph, op.lo.destination.path[-1][1])
+        (op.target_cols.target_section, op.target_cols.target_paragraph, op.lo.destination.path[-1][1])
         for op in renumbers
         if op.lo is not None and op.lo.destination is not None
     ] == [("15", 2, "4"), ("15", 3, "5")]
@@ -13521,7 +13521,7 @@ def test_supplement_mixed_explicit_clause_ops_recovers_skipped_targets() -> None
     got = _supplement_mixed_explicit_clause_ops(ops, johto)
 
     assert [
-        (op.op_type, op.target_section, op.target_paragraph, op.target_item, op.numbered_table_targets)
+        (op.op_type, op.target_cols.target_section, op.target_cols.target_paragraph, op.target_cols.target_item, op.numbered_table_targets)
         for op in got
     ] == [
         ("REPLACE", "13", None, None, ("4",)),
@@ -13563,9 +13563,9 @@ def test_supplement_mixed_explicit_clause_ops_recovers_terminal_section_list_and
     got = _supplement_mixed_explicit_clause_ops(ops, johto)
 
     assert [
-        (op.op_type, op.target_section, op.target_paragraph)
+        (op.op_type, op.target_cols.target_section, op.target_cols.target_paragraph)
         for op in got
-        if op.op_type == "REPLACE" and op.target_unit_kind == "section"
+        if op.op_type == "REPLACE" and op.target_cols.target_unit_kind == "section"
     ] == [
         ("REPLACE", "18", None),
         ("REPLACE", "23", None),
@@ -13604,7 +13604,7 @@ def test_supplement_mixed_explicit_clause_ops_does_not_add_moment_for_section_wi
     got = _supplement_mixed_explicit_clause_ops(ops, johto)
 
     assert [
-        (op.op_type, op.target_section, op.target_paragraph)
+        (op.op_type, op.target_cols.target_section, op.target_cols.target_paragraph)
         for op in got
     ] == [
         ("REPLACE", "7", 1),
@@ -13633,7 +13633,7 @@ def test_supplement_mixed_explicit_clause_ops_does_not_add_bare_section_for_mome
     got = _supplement_mixed_explicit_clause_ops(ops, johto)
 
     assert [
-        (op.op_type, op.target_section, op.target_paragraph, op.target_item)
+        (op.op_type, op.target_cols.target_section, op.target_cols.target_paragraph, op.target_cols.target_item)
         for op in got
     ] == [("REPLACE", "8", 2, "13")]
 
@@ -13662,12 +13662,12 @@ def test_supplement_mixed_explicit_clause_ops_preserves_explicit_chapter_for_mom
         op
         for op in got
         if op.op_type == "INSERT"
-        and op.target_section == "3"
-        and op.target_paragraph == 2
-        and op.target_unit_kind == "section"
+        and op.target_cols.target_section == "3"
+        and op.target_cols.target_paragraph == 2
+        and op.target_cols.target_unit_kind == "section"
     ]
     assert len(recovered) == 1
-    assert recovered[0].target_chapter == "2"
+    assert recovered[0].target_cols.target_chapter == "2"
     assert recovered[0].scope_provenance_tags == ("chapter_scope_from_explicit_chunk",)
     assert recovered[0].witness_rule_id == "fi.mixed_explicit_target_supplement.v1"
     assert recovered[0].extraction_provenance_tags == ("mixed_explicit_target_supplement",)
@@ -13712,7 +13712,7 @@ def test_supplement_mixed_explicit_clause_ops_keeps_possessive_moment_refs_child
     got = _supplement_mixed_explicit_clause_ops(ops, johto)
 
     assert [
-        (op.op_type, op.target_section, op.target_paragraph)
+        (op.op_type, op.target_cols.target_section, op.target_cols.target_paragraph)
         for op in got
     ] == [
         ("REPLACE", "2", 2),
@@ -13763,7 +13763,7 @@ def test_parse_ops_fallback_recovers_colonless_moment_target_list() -> None:
     got = parse_ops_fallback_heuristic(johto)
 
     assert [
-        (op.op_type, op.target_section, op.target_paragraph)
+        (op.op_type, op.target_cols.target_section, op.target_cols.target_paragraph)
         for op in got
     ] == [
         ("REPLACE", "2", 2),
@@ -13806,8 +13806,8 @@ def test_parse_ops_fallback_recovers_citation_prose_root_part_insert() -> None:
 
     assert any(
         op.op_type == "INSERT"
-        and op.target_unit_kind == "part"
-        and op.target_section == "2a"
+        and op.target_cols.target_unit_kind == "part"
+        and op.target_cols.target_section == "2a"
         for op in got
     )
 
@@ -13823,7 +13823,7 @@ def test_supplement_sparse_osalta_row_omission_repeals_owns_action_recovery() ->
         amendment_id="1999/77",
     )
 
-    assert [(op.op_type, op.target_section, op.named_row_targets) for op in got] == [
+    assert [(op.op_type, op.target_cols.target_section, op.named_row_targets) for op in got] == [
         ("REPEAL", "1", ("Pudasjärven",))
     ]
     assert got[0].witness_rule_id == "fi.sparse_osalta_row_omission_repeal.v1"
@@ -13854,7 +13854,7 @@ def test_tag_named_table_row_single_clause_ops_recovers_regional_table_sections(
         ),
     )
 
-    assert [(op.op_type, op.target_section) for op in got] == [("REPLACE", "13"), ("REPLACE", "14")]
+    assert [(op.op_type, op.target_cols.target_section) for op in got] == [("REPLACE", "13"), ("REPLACE", "14")]
     assert got[0].named_row_targets == (
         "uudenmaan",
         "turun ja porin",
@@ -14030,7 +14030,7 @@ def test_uncovered_body_allows_sections_from_muutetaan_whole_chapter() -> None:
         failed_ops_out=[],
     )
     # Sections 2 and 3 from chapter 45 body must NOT be filtered out
-    recovered_labels = {rop.op.target_section for rop in rops}
+    recovered_labels = {rop.op.target_cols.target_section for rop in rops}
     assert "2" in recovered_labels, (
         f"Section 2 from chapter 45 was filtered by johto guard; recovered: {recovered_labels}"
     )
@@ -14111,7 +14111,7 @@ def test_uncovered_body_allows_sections_from_uusi_chapter_range() -> None:
         "1995/578",
         failed_ops_out=[],
     )
-    recovered = {(rop.op.target_chapter, rop.op.target_section) for rop in rops}
+    recovered = {(rop.op.target_cols.target_chapter, rop.op.target_cols.target_section) for rop in rops}
     assert ("47", "2") in recovered, f"Section 47/2 was filtered; recovered: {recovered}"
     assert ("48", "7") in recovered, f"Section 48/7 was filtered; recovered: {recovered}"
 
@@ -15345,9 +15345,9 @@ def test_resolved_op_restructure_plan_helper_uses_typed_target_fields() -> None:
         ),
     )
 
-    assert rop.op.target_paragraph == 9
-    assert rop.op.target_chapter == "9"
-    assert rop.op.target_part == "11"
+    assert rop.op.target_cols.target_paragraph == 9
+    assert rop.op.target_cols.target_chapter == "9"
+    assert rop.op.target_cols.target_part == "11"
     assert rop.resolved_target_scope_chapter_label == "5"
     assert rop.resolved_target_scope_part_label is None
     assert rop.effective_target_paragraph is None
@@ -15452,7 +15452,7 @@ def test_resolved_op_canonical_intent_uses_typed_move_clause_destination_fields(
         target_chapter="6",
     )
 
-    assert rop.op.target_chapter == "9"
+    assert rop.op.target_cols.target_chapter == "9"
     rop.move_clause_target_chapter = "5"
     intent = _build_canonical_intent(rop)
     assert intent is not None
@@ -16498,7 +16498,7 @@ def test_normalize_amendment_1992_1243_2004_254_rehomes_section_71_from_cited_re
         strict_profile=None,
     )
 
-    op71 = next(op for op in phase.output if op.op_type == "INSERT" and op.target_section == "71")
+    op71 = next(op for op in phase.output if op.op_type == "INSERT" and op.target_cols.target_section == "71")
 
     assert op71.description() == "INSERT 9 luku 71 §"
     assert op71.lo is not None
@@ -17121,7 +17121,7 @@ def test_restore_heading_facet_for_mixed_scope_section_replaces_rewrites_plain_s
     # cause apply_structure_ops section handler to skip the op entirely
     # (only None / "otsikko_edella" pass through that gate).
     assert patched[0].description() == "REPLACE 8 §"
-    assert patched[0].target_special is None
+    assert patched[0].target_cols.target_special is None
     assert patched[0].preserve_explicit_heading_facet is True
     assert patched[1].description() == "REPLACE 8 § 3 mom"
     assert findings == []

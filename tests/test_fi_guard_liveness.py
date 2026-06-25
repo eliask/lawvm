@@ -863,7 +863,7 @@ def drill_body_chapter_descendant_scope_correction_compile_group_recovery() -> N
     assert finding.detail["body_chapter"] == "2a"
     # The guard genuinely retargeted: the descendant op rebounds onto the body chapter.
     assert result.output.effective_target_chapter == "2a"
-    assert result.output.group_ops[0].target_chapter == "2a"
+    assert result.output.group_ops[0].target_cols.target_chapter == "2a"
 
 
 def drill_restore_heading_for_explicit_facet_group_elaboration() -> None:
@@ -1081,7 +1081,7 @@ def drill_sparse_omission_tail_pruned_from_carrier_compile_surface() -> None:
         parent_id="1985/336",
         source_model=source_model,
     )
-    ops = [op for op in phase.output if str(op.target_section) in {"29", "31"}]
+    ops = [op for op in phase.output if str(op.target_cols.target_section) in {"29", "31"}]
 
     result = compile_amendment_ops(
         before.state,

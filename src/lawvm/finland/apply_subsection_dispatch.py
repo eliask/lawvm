@@ -86,7 +86,7 @@ def _target_scope_for_failure_reason(
 ) -> tuple[int | None, str | None]:
     if isinstance(dispatch_op, ResolvedOp):
         return dispatch_op.effective_target_paragraph, dispatch_op.effective_target_item_label
-    return dispatch_op.target_paragraph, dispatch_op.target_item
+    return dispatch_op.target_cols.target_paragraph, dispatch_op.target_cols.target_item
 
 
 def classify_subsection_dispatch_failure(
@@ -183,10 +183,11 @@ def _prepare_subsection_routing(
         item_view = _item_apply_view_for_op(rop)
     else:
         resolved_dispatch_op = raw_dispatch_op
-        target_item = raw_dispatch_op.target_item
-        target_section = raw_dispatch_op.target_section or ""
-        target_chapter = raw_dispatch_op.target_chapter
-        target_part = raw_dispatch_op.target_part
+        raw_cols = raw_dispatch_op.target_cols
+        target_item = raw_cols.target_item
+        target_section = raw_cols.target_section or ""
+        target_chapter = raw_cols.target_chapter
+        target_part = raw_cols.target_part
         subsection_view = _subsection_apply_view_for_op(raw_dispatch_op)
         item_view = _item_apply_view_for_op(raw_dispatch_op)
     if rop is not None:
@@ -330,9 +331,10 @@ def _rebound_item_only_target_to_unique_subsection(
         action = original.resolved_action_type
         witness_rule_id = original.witness_rule_id
     else:
-        target_paragraph = original.target_paragraph
-        target_item = original.target_item
-        target_section = original.target_section or ""
+        original_cols = original.target_cols
+        target_paragraph = original_cols.target_paragraph
+        target_item = original_cols.target_item
+        target_section = original_cols.target_section or ""
         source_statute = original.source_statute or ""
         action = original.op_type
         witness_rule_id = original.witness_rule_id
@@ -428,8 +430,8 @@ def _normalize_subsection_dispatch_inputs(
         original_target_paragraph = dispatch_op.effective_target_paragraph
         original_target_item = dispatch_op.effective_target_item_label
     else:
-        original_target_paragraph = dispatch_op.target_paragraph
-        original_target_item = dispatch_op.target_item
+        original_target_paragraph = dispatch_op.target_cols.target_paragraph
+        original_target_item = dispatch_op.target_cols.target_item
     if (
         source_pathologies_out is not None
         and original_target_paragraph is not None
@@ -438,10 +440,14 @@ def _normalize_subsection_dispatch_inputs(
         and original_target_paragraph > len(master_subsecs)
     ):
         normalized_target_paragraph = (
-            normalized.effective_target_paragraph if isinstance(normalized, ResolvedOp) else normalized.target_paragraph
+            normalized.effective_target_paragraph
+            if isinstance(normalized, ResolvedOp)
+            else normalized.target_cols.target_paragraph
         )
         normalized_target_item = (
-            normalized.effective_target_item_label if isinstance(normalized, ResolvedOp) else normalized.target_item
+            normalized.effective_target_item_label
+            if isinstance(normalized, ResolvedOp)
+            else normalized.target_cols.target_item
         )
         if normalized_target_paragraph == 1 and normalized_target_item == str(original_target_paragraph):
             if rop is not None:
@@ -452,7 +458,7 @@ def _normalize_subsection_dispatch_inputs(
                 rebound_target_section = dispatch_op.resolved_target_section_label or ""
             else:
                 rebound_source_statute = dispatch_op.source_statute or ""
-                rebound_target_section = dispatch_op.target_section or ""
+                rebound_target_section = dispatch_op.target_cols.target_section or ""
             source_pathologies_out.append(
                 build_subsection_target_rebound_pathology(
                     source_statute=rebound_source_statute,
@@ -513,10 +519,11 @@ def _maybe_update_section_heading(
         target_item = dispatch_op.effective_target_item_label
         target_special = dispatch_op.effective_target_special
     else:
+        dispatch_cols = dispatch_op.target_cols
         op_type = dispatch_op.op_type
-        target_paragraph = dispatch_op.target_paragraph
-        target_item = dispatch_op.target_item
-        target_special = dispatch_op.target_special
+        target_paragraph = dispatch_cols.target_paragraph
+        target_item = dispatch_cols.target_item
+        target_special = dispatch_cols.target_special
 
     if target_special != "otsikko" and op_type != "REPLACE":
         return result

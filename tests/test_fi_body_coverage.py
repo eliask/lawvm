@@ -68,6 +68,17 @@ def _op(
 
 @dataclass
 class _CoverageOpShim:
+    """Minimal duck-typed ``AmendmentOp`` stand-in for coverage-partition tests.
+
+    ``collect_coverage_claims_partition`` reads the op's target through the
+    typed ``op.target_cols`` projection (W6 Phase C: the 8 legacy columns are no
+    longer stored). This shim exposes the same ``target_cols`` accessor over its
+    raw fields so the partition's raw-validators — the empty ``target_section``
+    rejection and the ``unsupported_target_unit_kind`` rejection (this shim can
+    inject a kind outside the typed {section,chapter,part} literal to exercise
+    that defensive branch) — stay testable.
+    """
+
     op_id: str
     op_type: str
     target_section: str
@@ -76,6 +87,21 @@ class _CoverageOpShim:
     target_chapter: str | None = None
     fallback_provenance: bool = False
     body_root_replace_fallback: bool = False
+
+    @property
+    def target_cols(self) -> Any:
+        from lawvm.finland.target_selector_codec import AmendmentOpV1Record
+
+        return AmendmentOpV1Record(
+            target_unit_kind=cast(Any, self.target_unit_kind),
+            target_section=self.target_section,
+            target_chapter=self.target_chapter,
+            target_part=None,
+            target_paragraph=None,
+            target_item=None,
+            target_subitem=None,
+            target_special=None,
+        )
 
 
 # ---------------------------------------------------------------------------

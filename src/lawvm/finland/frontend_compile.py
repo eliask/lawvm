@@ -3140,10 +3140,11 @@ def _enrich_ops_from_amendment_tree(
         )
         if enriched[-1].op_id == "":
             enriched[-1] = dc_replace(enriched[-1], op_id=mint_fallback_op_id(amendment_id, enriched[-1]))
-        if _is_whole_section_insert(enriched[-1]) and enriched[-1].target_chapter:
-            last_inferred_section_norm = _norm_num_token(enriched[-1].target_section)
-            last_inferred_section_chapter = enriched[-1].target_chapter
-            last_inferred_section_part = enriched[-1].target_part
+        enriched_cols = enriched[-1].target_cols
+        if _is_whole_section_insert(enriched[-1]) and enriched_cols.target_chapter:
+            last_inferred_section_norm = _norm_num_token(enriched_cols.target_section)
+            last_inferred_section_chapter = enriched_cols.target_chapter
+            last_inferred_section_part = enriched_cols.target_part
         elif _is_whole_section_insert(enriched[-1]):
             last_inferred_section_norm = None
             last_inferred_section_chapter = None

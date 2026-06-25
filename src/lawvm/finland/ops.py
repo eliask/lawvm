@@ -35,15 +35,23 @@ from lawvm.core.semantic_types import (
 )
 from lawvm.core.tree_ops import Path
 from lawvm.core.elaboration_context import TargetUnitKind
+from lawvm.core.target_selector import (
+    AddressSegment,
+    ScopeStatus,
+    TargetScope,
+    TargetSelector,
+)
 from lawvm.finland.helpers import _expand_section_range, _norm_num_token
 from lawvm.finland.target_kind import TargetKind
+from lawvm.finland.target_selector_codec import (
+    AmendmentOpV1Record,
+    TargetSelectorCodecV1,
+)
 
 if TYPE_CHECKING:
     from lawvm.core.canonical_intent import CanonicalIntent
-    from lawvm.core.target_selector import TargetSelector
     from lawvm.core.temporal import ActivationRule
     from lawvm.finland.payload_normalize import PayloadCompletenessWitness, SubsectionSlotAssignmentResult
-    from lawvm.finland.target_selector_codec import AmendmentOpV1Record
 
 # ---------------------------------------------------------------------------
 # Type aliases
@@ -473,8 +481,14 @@ def _format_operation_description(
     return description
 
 
-def _lo_target_fields(lo: _LegalOperation) -> Dict[str, object]:
-    """Eagerly unpack LegalOperation target path into AmendmentOp field values."""
+def _lo_target_record(lo: _LegalOperation) -> AmendmentOpV1Record:
+    """Unpack a LegalOperation target path into the legacy 8-column record shape.
+
+    This is the ``lo`` → target-columns derivation; ``AmendmentOp`` encodes the
+    resulting record to its stored :class:`TargetSelector` via the codec, so the
+    selector is the sole stored representation and the legacy columns are a
+    projection (``AmendmentOp.target_cols``) rather than stored state.
+    """
     pd = {k: v for k, v in lo.target.path}
     if "section" in pd:
         section = pd["section"]
@@ -496,7 +510,7 @@ def _lo_target_fields(lo: _LegalOperation) -> Dict[str, object]:
     sub_val = pd.get("subsection", "")
     special = lo.target.special
     if special == FacetKind.HEADING or str(special) == "heading":
-        ts = "otsikko"
+        ts: str | None = "otsikko"
     elif str(special) == "otsikko_edella":
         ts = "otsikko_edella"
     elif special == FacetKind.INTRO or str(special) == "intro":
@@ -509,7 +523,7 @@ def _lo_target_fields(lo: _LegalOperation) -> Dict[str, object]:
     # two segments here while exposing the alakohta separately.
     item_label = pd.get("item")
     subitem_label = pd.get("subitem")
-    return dict(
+    return AmendmentOpV1Record(
         target_section=section,
         target_unit_kind=target_unit_kind,
         target_chapter=chapter,
@@ -518,6 +532,54 @@ def _lo_target_fields(lo: _LegalOperation) -> Dict[str, object]:
         target_item=(f"{item_label}{subitem_label}" if item_label and subitem_label else item_label),
         target_subitem=subitem_label,
         target_special=ts,
+    )
+
+
+# Sentinel: ``AmendmentOp.__init__``'s ``target_selector`` parameter was not
+# explicitly supplied. Distinct from ``None`` so a caller could (in principle)
+# clear it, and so ``dataclasses.replace`` — which re-passes the stored selector
+# — is distinguishable from a fresh column-built construction.
+class _TargetSelectorUnset:
+    __slots__ = ()
+
+
+_TARGET_SELECTOR_UNSET: "_TargetSelectorUnset" = _TargetSelectorUnset()
+
+# Default selector for a bare ``AmendmentOp()`` (section focus, empty label,
+# unspecified scope) — matches the historical column defaults
+# (``target_section=""``, ``target_unit_kind="section"``) byte-for-byte under the
+# codec round-trip.
+_DEFAULT_TARGET_SELECTOR: TargetSelector = TargetSelector(
+    relative_path=(AddressSegment("section", ""),),
+    scope=TargetScope(scope_status=ScopeStatus.UNSPECIFIED),
+    special=None,
+    special_raw=None,
+)
+
+
+def _selector_from_columns(
+    *,
+    target_unit_kind: TargetUnitKind,
+    target_section: str,
+    target_chapter: str | None,
+    target_part: str | None,
+    target_paragraph: int | None,
+    target_item: str | None,
+    target_subitem: str | None,
+    target_special: str | None,
+) -> TargetSelector:
+    """Encode the legacy 8-column construction inputs to the stored selector."""
+    return TargetSelectorCodecV1.from_legacy(
+        AmendmentOpV1Record(
+            target_unit_kind=target_unit_kind,
+            target_section=target_section,
+            target_chapter=target_chapter,
+            target_part=target_part,
+            target_paragraph=target_paragraph,
+            target_item=target_item,
+            target_subitem=target_subitem,
+            target_special=target_special,
+        )
     )
 
 
@@ -665,14 +727,13 @@ class AmendmentOp:
 
     op_id: str = ""
     op_type: OpType = OpType.REPLACE
-    target_section: str = ""
-    target_unit_kind: TargetUnitKind = "section"
-    target_chapter: Optional[str] = None
-    target_part: Optional[str] = None
-    target_paragraph: Optional[int] = None
-    target_item: Optional[str] = None
-    target_subitem: Optional[str] = None
-    target_special: Optional[str] = None
+    # W6 Phase C: the 8 loosely-typed legacy ``target_*`` columns are GONE as
+    # stored state. The op's target is held once, as the typed cross-jurisdiction
+    # :class:`TargetSelector`; the legacy 8-column shape is a lossless codec
+    # projection exposed read-only via :attr:`target_cols`. Construction still
+    # accepts the legacy ``target_*`` kwargs (or an ``lo`` carrier); both are
+    # encoded to this single stored selector in ``__init__``.
+    target_selector: TargetSelector = _DEFAULT_TARGET_SELECTOR
     named_row_targets: Tuple[str, ...] = ()
     numbered_table_targets: Tuple[str, ...] = ()
     body_root_replace_fallback: bool = False
@@ -724,6 +785,7 @@ class AmendmentOp:
         target_item: Optional[str] = None,
         target_subitem: Optional[str] = None,
         target_special: Optional[str] = None,
+        target_selector: "TargetSelector | _TargetSelectorUnset" = _TARGET_SELECTOR_UNSET,
         named_row_targets: Tuple[str, ...] = (),
         numbered_table_targets: Tuple[str, ...] = (),
         body_root_replace_fallback: bool = False,
@@ -749,6 +811,12 @@ class AmendmentOp:
         preserve_explicit_heading_facet: bool = False,
         witness_rule_id: Optional[str] = None,
     ) -> None:
+        explicit_selector = (
+            target_selector
+            if not isinstance(target_selector, _TargetSelectorUnset)
+            else None
+        )
+
         if target_kind is not None:
             if not isinstance(target_kind, TargetKind):
                 raise TypeError(f"AmendmentOp target_kind seed must be TargetKind, got {type(target_kind).__name__}")
@@ -759,43 +827,48 @@ class AmendmentOp:
                     f"{target_kind!r} vs {target_unit_kind!r}"
                 )
             target_unit_kind = seeded_target_unit_kind
-        elif target_unit_kind is None and lo is None:
+        elif target_unit_kind is None and lo is None and explicit_selector is None:
             raise ValueError(
                 "AmendmentOp direct construction requires explicit target_unit_kind "
-                "unless lo or TargetKind target_kind seed is provided"
+                "unless lo, an explicit target_selector, or a TargetKind target_kind "
+                "seed is provided"
             )
         elif target_unit_kind is None and lo is not None:
-            lo_fields = _lo_target_fields(lo)
-            target_unit_kind = cast(TargetUnitKind, lo_fields["target_unit_kind"])
-            if not target_section:
-                target_section = str(lo_fields["target_section"])
-            if target_chapter is None:
-                target_chapter = cast(Optional[str], lo_fields["target_chapter"])
-            if target_part is None:
-                target_part = cast(Optional[str], lo_fields["target_part"])
-            if target_paragraph is None:
-                target_paragraph = cast(Optional[int], lo_fields["target_paragraph"])
-            if target_item is None:
-                target_item = cast(Optional[str], lo_fields["target_item"])
-            if target_subitem is None:
-                target_subitem = cast(Optional[str], lo_fields["target_subitem"])
-            if target_special is None:
-                target_special = cast(Optional[str], lo_fields["target_special"])
+            target_unit_kind = _lo_target_record(lo).target_unit_kind
 
-        if target_unit_kind is None:
-            raise ValueError("AmendmentOp target_unit_kind could not be resolved")
-        resolved_target_unit_kind: TargetUnitKind = target_unit_kind
+        # Resolve the SINGLE stored representation of this op's target — the typed
+        # selector. Precedence (W6 Phase C):
+        #   1. ``lo`` present → derive from the lo target path (lo is fully
+        #      authoritative for the target columns, matching the pre-W6 behavior
+        #      where the lo-sourced setattr loop overwrote all 8 columns).
+        #   2. else an explicit ``target_selector`` (e.g. from ``replace_target``
+        #      or ``dataclasses.replace`` re-passing the stored field) → use it.
+        #   3. else encode the legacy 8-column construction kwargs.
+        if lo is not None:
+            self.target_selector = TargetSelectorCodecV1.from_legacy(_lo_target_record(lo))
+        elif explicit_selector is not None:
+            self.target_selector = explicit_selector
+        else:
+            if target_unit_kind is None:
+                raise ValueError("AmendmentOp target_unit_kind could not be resolved")
+            self.target_selector = _selector_from_columns(
+                target_unit_kind=target_unit_kind,
+                target_section=target_section,
+                target_chapter=target_chapter,
+                target_part=target_part,
+                target_paragraph=target_paragraph,
+                target_item=target_item,
+                target_subitem=target_subitem,
+                target_special=target_special,
+            )
+
+        # The final chapter, sourced from the stored selector, drives the
+        # scope-confidence normalization below (the pre-W6 code read the
+        # post-overwrite ``self.target_chapter``).
+        final_chapter = self.target_cols.target_chapter
 
         self.op_id = op_id
         self.op_type = op_type
-        self.target_section = target_section
-        self.target_unit_kind = resolved_target_unit_kind
-        self.target_chapter = target_chapter
-        self.target_part = target_part
-        self.target_paragraph = target_paragraph
-        self.target_item = target_item
-        self.target_subitem = target_subitem
-        self.target_special = target_special
         self.named_row_targets = named_row_targets
         self.numbered_table_targets = numbered_table_targets
         self.body_root_replace_fallback = body_root_replace_fallback
@@ -809,7 +882,7 @@ class AmendmentOp:
         self.scope_provenance_tags = scope_provenance_tags
         self.scope_confidence = normalize_scope_confidence(
             scope_confidence,
-            resolved_chapter=target_chapter,
+            resolved_chapter=final_chapter,
         )
         self.source_statute = source_statute
         self.source_issue_date = source_issue_date
@@ -840,9 +913,10 @@ class AmendmentOp:
             )
         self.move_clause_target_unit_kind = move_clause_target_unit_kind or derived_move_clause_target_unit_kind
 
-        if self.lo is not None:
-            for k, v in _lo_target_fields(self.lo).items():
-                object.__setattr__(self, k, v)
+        # W6 Phase C: the lo-sourced target columns are no longer stored — the
+        # stored ``target_selector`` was already derived from the lo target path
+        # above (lo authoritative). Only the lo-sourced PROVENANCE side-channels
+        # (scope tags / scope confidence / target-guessing tags) remain to fold.
         if self.lo is not None:
             lo_provenance_tags = self.lo.provenance_tags
             lo_scope_tags = tuple(note for note in lo_provenance_tags if note in _SCOPE_PROVENANCE_TAGS)
@@ -862,7 +936,7 @@ class AmendmentOp:
                     "scope_confidence",
                     normalize_scope_confidence(
                         lo_scope_conf,
-                        resolved_chapter=self.target_chapter,
+                        resolved_chapter=final_chapter,
                     ),
                 )
             if lo_target_guessing_tags and not self.target_guessing_provenance_tags:
@@ -877,7 +951,7 @@ class AmendmentOp:
                 "scope_confidence",
                 scope_confidence_from_tags(
                     self.scope_provenance_tags,
-                    resolved_chapter=self.target_chapter,
+                    resolved_chapter=final_chapter,
                 ),
             )
 
@@ -899,57 +973,23 @@ class AmendmentOp:
         return legacy_target_kind_for_unit_kind(self.target_cols.target_unit_kind)
 
     @property
-    def target_selector(self) -> "TargetSelector":
-        """The cross-jurisdiction :class:`TargetSelector` view of this op's target.
+    def target_cols(self) -> AmendmentOpV1Record:
+        """The 8 legacy ``target_*`` columns projected from the stored selector.
 
-        Wave 2 (additive, read-only): this is a *lazy, codec-derived* projection
-        of the 8 legacy ``target_*`` fields — the legacy fields remain the source
-        of truth (no new stored field, no construction/serialization change). It
-        builds an :class:`AmendmentOpV1Record` from the live fields and decodes it
-        via :meth:`TargetSelectorCodecV1.from_legacy`. The codec is lossless
-        (TARGET-03), so ``TargetSelectorCodecV1.to_legacy(self.target_selector)``
-        reproduces the 8 fields exactly. Computed on every read (no cache): the
-        codec is cheap and a cache would have to interact with the frozen-equality
-        contract, which is not worth the risk at this wave.
-        """
-        from lawvm.finland.target_selector_codec import (
-            AmendmentOpV1Record,
-            TargetSelectorCodecV1,
-        )
-
-        record = AmendmentOpV1Record(
-            target_unit_kind=self.target_unit_kind,
-            target_section=self.target_section,
-            target_chapter=self.target_chapter,
-            target_part=self.target_part,
-            target_paragraph=self.target_paragraph,
-            target_item=self.target_item,
-            target_subitem=self.target_subitem,
-            target_special=self.target_special,
-        )
-        return TargetSelectorCodecV1.from_legacy(record)
-
-    @property
-    def target_cols(self) -> "AmendmentOpV1Record":
-        """The 8 legacy ``target_*`` columns projected from the typed selector.
-
-        W6 (read migration): the single typed accessor every ``op.target_<col>``
-        read routes through, so the loosely-typed stored columns can be deleted.
-        It re-projects :attr:`target_selector` back to the legacy 8-tuple via
+        W6 Phase C: the loosely-typed ``target_*`` columns are no longer stored —
+        the typed :attr:`target_selector` is the sole stored representation. This
+        accessor re-projects it back to the legacy 8-tuple via
         :meth:`TargetSelectorCodecV1.to_legacy`. The codec is lossless
         (TARGET-03) and the corpus parity probe
-        (``scripts/w6_target_column_accessor_parity.py``) confirms this
-        reproduces every stored column byte-exactly on all compiled ops across
-        the full pinned corpus. Read sites use ``op.target_cols.target_<col>``;
-        the typed selector is the source of truth.
+        (``scripts/w6_target_column_accessor_parity.py``) confirmed this
+        reproduces every former stored column byte-exactly on all compiled ops
+        across the full pinned corpus. Read sites use ``op.target_cols.target_<col>``.
 
         Returns an :class:`AmendmentOpV1Record` (frozen): ``target_unit_kind``,
         ``target_section``, ``target_chapter``, ``target_part``,
         ``target_paragraph``, ``target_item``, ``target_subitem``,
-        ``target_special`` — same names/types as the stored columns.
+        ``target_special``.
         """
-        from lawvm.finland.target_selector_codec import TargetSelectorCodecV1
-
         return TargetSelectorCodecV1.to_legacy(self.target_selector)
 
     @classmethod

@@ -2651,7 +2651,7 @@ def _fold_single_insert_subsection_list_tail(
     if master_sec is None or master_sec.kind is not IRNodeKind.SECTION:
         return muutos_ir, None
     live_subsecs = [child for child in master_sec.children if child.kind == IRNodeKind.SUBSECTION]
-    target = int(plain_insert_ops[0].target_paragraph or 0)
+    target = int(plain_insert_ops[0].target_cols.target_paragraph or 0)
     if target != len(live_subsecs) + 1:
         return muutos_ir, None
 
@@ -2954,7 +2954,7 @@ def _normalize_heading_tagged_subsection_payload(
     if len(heading_children) != 1:
         return HeadingTaggedSubsectionPayloadResult(muutos_ir=muutos_ir)
 
-    target_paragraph = subsection_ops[0].target_paragraph
+    target_paragraph = subsection_ops[0].target_cols.target_paragraph
     heading = heading_children[0]
     heading_text = " ".join(irnode_to_text(heading).split())
     subsection = _with_payload_normalization_rule(
@@ -3347,7 +3347,7 @@ def _fold_split_target_subsection_intro_list_tail(
     ]
     if len(plain_replace_ops) != 1 or len(group_ops) != 1:
         return muutos_ir, False, empty_detail
-    target = int(plain_replace_ops[0].target_paragraph or 0)
+    target = int(plain_replace_ops[0].target_cols.target_paragraph or 0)
 
     live_target = ctx.subsection_by_label.get(str(target))
     if live_target is None or not _has_numbered_paragraph_sequence(live_target):
@@ -4038,7 +4038,7 @@ def _fold_text_table_row_subsections_into_target_subsection(
     ]
     if len(subsection_ops) != 1:
         return muutos_ir
-    target_label = str(subsection_ops[0].target_paragraph)
+    target_label = str(subsection_ops[0].target_cols.target_paragraph)
     children = list(muutos_ir.children)
     target_index = next(
         (

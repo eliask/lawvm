@@ -3018,7 +3018,7 @@ def _pre_resolve_omissions(
             # the johtolause explicitly changes the heading — trust the amendment
             # heading and do NOT overwrite it with the stale live heading.
             has_explicit_heading_op = any(
-                str(getattr(op, "target_special", "") or "").strip() == "otsikko"
+                str(op.target_cols.target_special or "").strip() == "otsikko"
                 for op in group_ops
             )
             shell_for_merge = (

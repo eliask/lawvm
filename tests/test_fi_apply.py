@@ -285,6 +285,7 @@ def _ctx(base_ir: IRNode | None = None) -> StatuteContext:
 def _op(
     op_type: OpType = OpType.REPLACE,
     target_section: str = "1",
+    target_unit_kind: TargetUnitKind = "section",
     target_chapter: Optional[str] = None,
     target_part: Optional[str] = None,
     target_paragraph: Optional[int] = None,
@@ -308,7 +309,7 @@ def _op(
         op_id="test_op",
         op_type=op_type,
         target_section=target_section,
-        target_unit_kind="section",
+        target_unit_kind=target_unit_kind,
         target_chapter=target_chapter,
         target_part=target_part,
         target_paragraph=target_paragraph,
@@ -1710,8 +1711,8 @@ def test_normalize_subsection_target_hint_keeps_real_inserted_moment_on_subsecti
         assert normalized.effective_target_paragraph == 2
         assert normalized.effective_target_item_label is None
     else:
-        assert normalized.target_paragraph == 2
-        assert normalized.target_item is None
+        assert normalized.target_cols.target_paragraph == 2
+        assert normalized.target_cols.target_item is None
 
 
 def test_resolvedop_from_lo_canonicalizes_roman_part_scope_on_replay_address() -> None:
@@ -9293,9 +9294,9 @@ def test_resolve_section_path_with_fallbacks_does_not_rewrite_section_suffix_tar
 
     assert resolution.path is None
     assert resolution.reason_code is None
-    assert op.target_section == "33a"
-    assert op.target_paragraph is None
-    assert op.target_item is None
+    assert op.target_cols.target_section == "33a"
+    assert op.target_cols.target_paragraph is None
+    assert op.target_cols.target_item is None
 
 
 def test_resolve_section_path_with_fallbacks_typed_path_does_not_reinterpret_section_suffix_target() -> None:
@@ -9331,9 +9332,9 @@ def test_resolve_section_path_with_fallbacks_typed_path_does_not_reinterpret_sec
 
     assert resolution.path is None
     assert resolution.reason_code is None
-    assert op.target_section == "33a"
-    assert op.target_paragraph is None
-    assert op.target_item is None
+    assert op.target_cols.target_section == "33a"
+    assert op.target_cols.target_paragraph is None
+    assert op.target_cols.target_item is None
 
 
 def test_resolve_section_path_with_fallbacks_does_not_reinterpret_real_letter_section_payload() -> None:
@@ -9359,9 +9360,9 @@ def test_resolve_section_path_with_fallbacks_does_not_reinterpret_real_letter_se
 
     assert resolution.path is None
     assert resolution.reason_code is None
-    assert op.target_section == "33a"
-    assert op.target_paragraph is None
-    assert op.target_item is None
+    assert op.target_cols.target_section == "33a"
+    assert op.target_cols.target_paragraph is None
+    assert op.target_cols.target_item is None
 
 
 def test_resolve_section_path_with_fallbacks_rejects_unique_global_section_in_wrong_chapter() -> None:
@@ -9754,8 +9755,7 @@ def test_resolve_section_path_with_fallbacks_rejects_unique_global_section_in_wr
             )
         )
     )
-    op = _op(op_type=OpType.REPLACE, target_section="23", target_chapter="5")
-    op.target_part = "II"
+    op = _op(op_type=OpType.REPLACE, target_section="23", target_chapter="5", target_part="II")
     rop = ResolvedOp.from_amendment_op(
         op,
         muutos_ir=_sec("23", _content("new part II chapter 5 content")),
@@ -9797,8 +9797,7 @@ def test_resolved_op_exposes_unified_scope_confidence() -> None:
 
 
 def test_resolved_op_exposes_grouped_part_scope_confidence() -> None:
-    op = _op(op_type=OpType.REPLACE, target_section="23", target_chapter="6")
-    op.target_part = "III"
+    op = _op(op_type=OpType.REPLACE, target_section="23", target_chapter="6", target_part="III")
     op.scope_provenance_tags = ("grouped_part_scope",)
     rop = ResolvedOp.from_amendment_op(
         op,
@@ -9959,8 +9958,7 @@ def test_resolve_section_path_with_fallbacks_rejects_unique_global_section_in_wr
             )
         )
     )
-    op = _op(op_type=OpType.REPLACE, target_section="23", target_chapter="5")
-    op.target_part = "II"
+    op = _op(op_type=OpType.REPLACE, target_section="23", target_chapter="5", target_part="II")
     op.scope_provenance_tags = ("grouped_part_scope",)
     rop = ResolvedOp.from_amendment_op(
         op,
@@ -10179,8 +10177,7 @@ def test_apply_op_does_not_rehome_unique_global_section_across_part_for_grouped_
             )
         )
     )
-    op = _op(op_type=OpType.REPLACE, target_section="23", target_chapter="5")
-    op.target_part = "II"
+    op = _op(op_type=OpType.REPLACE, target_section="23", target_chapter="5", target_part="II")
     op.scope_provenance_tags = ("grouped_part_scope",)
     rop = ResolvedOp.from_amendment_op(
         op,
@@ -10353,7 +10350,7 @@ def test_apply_op_prefers_slot_assignment_when_amend_sub_ir_is_absent() -> None:
             SparsePayloadSlotBinding(
                 op_description=op.description(),
                 op_type=str(op.op_type or ""),
-                target_paragraph=op.target_paragraph,
+                target_paragraph=op.target_cols.target_paragraph,
                 target_item=None,
                 target_special=None,
                 payload_slot_index=1,
@@ -10480,8 +10477,8 @@ def test_normalize_subsection_dispatch_inputs_rebounds_unique_bare_item_target()
 
     assert normalized_rop is None
     assert isinstance(normalized_dispatch_op, AmendmentOp)
-    assert normalized_dispatch_op.target_paragraph == 2
-    assert normalized_dispatch_op.target_item == "2"
+    assert normalized_dispatch_op.target_cols.target_paragraph == 2
+    assert normalized_dispatch_op.target_cols.target_item == "2"
     assert "unique_item_label_subsection_fallback" in normalized_dispatch_op.target_guessing_provenance_tags
     assert [p.code for p in pathologies] == ["SUBSECTION_TARGET_REBOUND"]
     assert pathologies[0].detail["rebound_kind"] == "unique_item_label_subsection_fallback"
@@ -10512,7 +10509,7 @@ def test_normalize_subsection_dispatch_inputs_blocks_unique_bare_item_rebound_in
 
     assert normalized_dispatch_op is op
     assert normalized_rop is None
-    assert op.target_paragraph is None
+    assert op.target_cols.target_paragraph is None
     assert [p.code for p in pathologies] == ["SUBSECTION_TARGET_REBOUND"]
     assert pathologies[0].detail["rebound_kind"] == "unique_item_label_subsection_fallback"
 
@@ -10536,7 +10533,7 @@ def test_normalize_subsection_dispatch_inputs_does_not_rebound_non_repeal_bare_i
 
     assert normalized_dispatch_op is op
     assert normalized_rop is None
-    assert op.target_paragraph is None
+    assert op.target_cols.target_paragraph is None
     assert pathologies == []
 
 
@@ -10559,7 +10556,7 @@ def test_normalize_subsection_dispatch_inputs_does_not_rebound_generic_bare_item
 
     assert normalized_dispatch_op is op
     assert normalized_rop is None
-    assert op.target_paragraph is None
+    assert op.target_cols.target_paragraph is None
     assert pathologies == []
 
 
@@ -10582,7 +10579,7 @@ def test_normalize_subsection_dispatch_inputs_does_not_rebound_ambiguous_bare_it
 
     assert normalized_dispatch_op is op
     assert normalized_rop is None
-    assert op.target_paragraph is None
+    assert op.target_cols.target_paragraph is None
     assert pathologies == []
 
 
@@ -10651,7 +10648,7 @@ def test_apply_op_prefers_slot_assignment_over_stale_amend_sub_ir() -> None:
             SparsePayloadSlotBinding(
                 op_description=op.description(),
                 op_type=str(op.op_type or ""),
-                target_paragraph=op.target_paragraph,
+                target_paragraph=op.target_cols.target_paragraph,
                 target_item=None,
                 target_special=None,
                 payload_slot_index=1,
@@ -10704,7 +10701,7 @@ def test_apply_op_handles_sparse_omission_payload_via_slot_assignment_without_ap
             SparsePayloadSlotBinding(
                 op_description=op.description(),
                 op_type=str(op.op_type or ""),
-                target_paragraph=op.target_paragraph,
+                target_paragraph=op.target_cols.target_paragraph,
                 target_item=None,
                 target_special=None,
                 payload_slot_index=2,
@@ -13666,7 +13663,7 @@ class TestApplyItemReplace:
         )
         state = replay.replay_fold_state
         phase = normalize_and_compile_ops(johto, root, state, "2019/1468", "", False, parent_id="2006/395")
-        descriptions = [op.description() for op in phase.output if op.target_section == "70"]
+        descriptions = [op.description() for op in phase.output if op.target_cols.target_section == "70"]
         assert "REPLACE 4 luku 70 § 2 mom" in descriptions
         assert "REPLACE 4 luku 70 § 3 mom 4 kohta" in descriptions
         assert "REPLACE 4 luku 70 § 3 mom 5 kohta" in descriptions
@@ -13682,7 +13679,7 @@ class TestApplyItemReplace:
         amend_sub_ir = fi_xml_to_ir_node(amend_sub)
 
         item_state = state
-        for op in [o for o in phase.output if o.target_section == "70" and o.target_item in {"4", "5", "12"}]:
+        for op in [o for o in phase.output if o.target_cols.target_section == "70" and o.target_cols.target_item in {"4", "5", "12"}]:
             current_sec = item_state.resolve(path)
             assert current_sec is not None
             subsecs = [c for c in current_sec.children if c.kind == IRNodeKind.SUBSECTION]
@@ -13694,7 +13691,7 @@ class TestApplyItemReplace:
                 subsecs,
                 amend_sub_ir,
                 amend_sec_ir,
-                f"70 § 3 mom {op.target_item} k",
+                f"70 § 3 mom {op.target_cols.target_item} k",
             )
             item_state = _modified(item_state, next_state)
 
@@ -13727,7 +13724,7 @@ class TestApplyItemReplace:
         )
         state = replay.replay_fold_state
         phase = normalize_and_compile_ops(johto, root, state, "2022/572", "", False, parent_id="2006/395")
-        descriptions = [op.description() for op in phase.output if op.target_section == "123"]
+        descriptions = [op.description() for op in phase.output if op.target_cols.target_section == "123"]
         assert "REPLACE 8 luku 123 § johd" in descriptions
         assert "REPLACE 8 luku 123 § 1 mom 8 kohta" in descriptions
         assert "REPLACE 8 luku 123 § 1 mom 9 kohta" in descriptions
@@ -13745,7 +13742,7 @@ class TestApplyItemReplace:
         amend_sub_ir = fi_xml_to_ir_node(amend_sub)
 
         item_state = state
-        for op in [o for o in phase.output if o.target_section == "123" and o.target_item in {"8", "9", "15"}]:
+        for op in [o for o in phase.output if o.target_cols.target_section == "123" and o.target_cols.target_item in {"8", "9", "15"}]:
             current_sec = item_state.resolve(path)
             assert current_sec is not None
             subsecs = [c for c in current_sec.children if c.kind == IRNodeKind.SUBSECTION]
@@ -13757,7 +13754,7 @@ class TestApplyItemReplace:
                 subsecs,
                 amend_sub_ir,
                 amend_sec_ir,
-                f"123 § 1 mom {op.target_item} k",
+                f"123 § 1 mom {op.target_cols.target_item} k",
             )
             item_state = _modified(item_state, next_state)
 
@@ -14909,7 +14906,7 @@ class TestDispatchIntegration:
                 SparsePayloadSlotBinding(
                     op_description=op.description(),
                     op_type=str(op.op_type or ""),
-                    target_paragraph=op.target_paragraph,
+                    target_paragraph=op.target_cols.target_paragraph,
                     target_item=None,
                     target_special=None,
                     payload_slot_index=1,
@@ -14959,7 +14956,7 @@ class TestDispatchIntegration:
         )
         rop.intent = intent
 
-        normalized_op = dc_replace(op, target_paragraph=2, target_item=None, target_special=None)
+        normalized_op = _op(op_type=OpType.REPEAL, target_section="1", target_paragraph=2)
 
         result = _apply_deterministic_subsection_op(
             state, normalized_op, sec_path, None, None, None, _LEGAL_PIT, "1 § 2 mom"
@@ -14976,7 +14973,7 @@ class TestDispatchIntegration:
         state = _make_state(body)
         sec_path = (("section", "1"),)
         raw_op = _op(op_type=OpType.REPEAL, target_section="1", target_paragraph=2)
-        normalized_op = dc_replace(raw_op, target_paragraph=1, target_item="2")
+        normalized_op = _op(op_type=OpType.REPEAL, target_section="1", target_paragraph=1, target_item="2")
 
         result = _apply_deterministic_subsection_op(
             state, normalized_op, sec_path, None, None, None, _LEGAL_PIT, "1 § 1 mom 2 kohta"
@@ -15363,21 +15360,21 @@ def _make_rop(
 ) -> ResolvedOp:
     """Build a minimal ResolvedOp carrying a typed intent."""
     path_parts: tuple[tuple[str, str], ...] = ()
-    if op.target_chapter:
-        path_parts = path_parts + (("chapter", str(op.target_chapter)),)
-    path_parts = path_parts + (("section", str(op.target_section or "")),)
-    if op.target_paragraph is not None:
-        path_parts = path_parts + (("subsection", str(op.target_paragraph)),)
-    if op.target_item is not None:
-        path_parts = path_parts + (("item", str(op.target_item)),)
+    if op.target_cols.target_chapter:
+        path_parts = path_parts + (("chapter", str(op.target_cols.target_chapter)),)
+    path_parts = path_parts + (("section", str(op.target_cols.target_section or "")),)
+    if op.target_cols.target_paragraph is not None:
+        path_parts = path_parts + (("subsection", str(op.target_cols.target_paragraph)),)
+    if op.target_cols.target_item is not None:
+        path_parts = path_parts + (("item", str(op.target_cols.target_item)),)
 
     rop = ResolvedOp.from_amendment_op(
         op,
         muutos_ir=muutos_ir,
         cross_ir=None,
-        target_unit_kind=op.target_unit_kind,
-        target_norm=op.target_section or "",
-        target_chapter=op.target_chapter,
+        target_unit_kind=op.target_cols.target_unit_kind,
+        target_norm=op.target_cols.target_section or "",
+        target_chapter=op.target_cols.target_chapter,
         target_address=LegalAddress(path=tuple(path_parts)),
         slot_assignment=slot_assignment,
     )
@@ -15419,23 +15416,23 @@ def _typed_rop_for_op(
         )
 
     path_parts: tuple[tuple[str, str], ...] = ()
-    if op.target_chapter:
-        path_parts = path_parts + (("chapter", str(op.target_chapter)),)
-    if op.target_part:
-        path_parts = path_parts + (("part", str(op.target_part)),)
-    path_parts = path_parts + (("section", str(op.target_section or "")),)
-    if op.target_paragraph is not None:
-        path_parts = path_parts + (("subsection", str(op.target_paragraph)),)
-    if op.target_item is not None:
-        path_parts = path_parts + (("item", str(op.target_item)),)
+    if op.target_cols.target_chapter:
+        path_parts = path_parts + (("chapter", str(op.target_cols.target_chapter)),)
+    if op.target_cols.target_part:
+        path_parts = path_parts + (("part", str(op.target_cols.target_part)),)
+    path_parts = path_parts + (("section", str(op.target_cols.target_section or "")),)
+    if op.target_cols.target_paragraph is not None:
+        path_parts = path_parts + (("subsection", str(op.target_cols.target_paragraph)),)
+    if op.target_cols.target_item is not None:
+        path_parts = path_parts + (("item", str(op.target_cols.target_item)),)
 
     rop = ResolvedOp.from_amendment_op(
         op,
         muutos_ir=muutos_ir,
         cross_ir=cross_ir,
-        target_unit_kind=op.target_unit_kind,
-        target_norm=op.target_section or "",
-        target_chapter=op.target_chapter,
+        target_unit_kind=op.target_cols.target_unit_kind,
+        target_norm=op.target_cols.target_section or "",
+        target_chapter=op.target_cols.target_chapter,
         target_address=LegalAddress(path=tuple(path_parts)),
         slot_assignment=slot_assignment,
     )
@@ -16920,8 +16917,7 @@ def test_typed_container_relabel_prefers_scoped_target_address() -> None:
             ),
         )
     )
-    op = _op(op_type=OpType.RENUMBER, target_section="2")
-    op.target_unit_kind = "chapter"
+    op = _op(op_type=OpType.RENUMBER, target_section="2", target_unit_kind="chapter")
     intent = Relabel(
         kind=IntentKind.RELABEL,
         source=NodeTarget(
@@ -16992,8 +16988,7 @@ def test_typed_part_relabel_emits_receipt_derived_migration_allowance() -> None:
             ),
         )
     )
-    op = _op(op_type=OpType.RENUMBER, target_section="II")
-    op.target_unit_kind = "part"
+    op = _op(op_type=OpType.RENUMBER, target_section="II", target_unit_kind="part")
     intent = Relabel(
         kind=IntentKind.RELABEL,
         source=NodeTarget(address=LegalAddress(path=(("part", "II"),))),

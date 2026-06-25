@@ -113,7 +113,7 @@ def test_inserted_body_chapter_scopes_following_child_section_insert() -> None:
     )
 
     assert result.output.effective_target_chapter == "6a"
-    assert [op.target_chapter for op in result.output.group_ops] == ["6a", "6a"]
+    assert [op.target_cols.target_chapter for op in result.output.group_ops] == ["6a", "6a"]
     assert result.output.group_ops[0].lo is not None
     assert result.output.group_ops[0].lo.target.path == (("chapter", "6a"), ("section", "25"))
     assert result.output.group_ops[1].lo is not None
@@ -206,7 +206,7 @@ def test_source_body_part_scope_is_promoted_when_chapter_already_matches() -> No
 
     assert result.output.effective_target_part == "2"
     assert result.output.effective_target_chapter == "13a"
-    assert result.output.group_ops[0].target_part == "2"
+    assert result.output.group_ops[0].target_cols.target_part == "2"
     assert result.output.group_ops[0].lo is not None
     assert result.output.group_ops[0].lo.target.path == (
         ("part", "2"),
@@ -308,8 +308,8 @@ def test_source_body_scope_overrides_prior_repeal_reinstatement_address() -> Non
 
     assert result.output.effective_target_part == "2"
     assert result.output.effective_target_chapter == "13a"
-    assert result.output.group_ops[0].target_part == "2"
-    assert result.output.group_ops[0].target_chapter == "13a"
+    assert result.output.group_ops[0].target_cols.target_part == "2"
+    assert result.output.group_ops[0].target_cols.target_chapter == "13a"
     assert result.output.group_ops[0].lo is not None
     assert result.output.group_ops[0].lo.target.path == (
         ("part", "2"),
@@ -411,8 +411,8 @@ def test_source_body_chapter_with_heading_overrides_live_stem_insert_scope() -> 
 
     assert result.output.effective_target_part == "2"
     assert result.output.effective_target_chapter == "13a"
-    assert result.output.group_ops[0].target_part == "2"
-    assert result.output.group_ops[0].target_chapter == "13a"
+    assert result.output.group_ops[0].target_cols.target_part == "2"
+    assert result.output.group_ops[0].target_cols.target_chapter == "13a"
     assert result.output.group_ops[0].lo is not None
     assert result.output.group_ops[0].lo.target.path == (
         ("part", "2"),
@@ -484,7 +484,7 @@ def test_pseudo_marker_body_chapter_scopes_following_child_section_insert() -> N
     )
 
     assert result.output.effective_target_chapter == "7a"
-    assert result.output.group_ops[0].target_chapter == "7a"
+    assert result.output.group_ops[0].target_cols.target_chapter == "7a"
     assert result.output.group_ops[0].lo is not None
     assert result.output.group_ops[0].lo.target.path == (("chapter", "7a"), ("section", "53a"))
     assert [finding.kind for finding in result.findings()] == [
@@ -615,7 +615,7 @@ def test_real_inserted_body_chapter_overrides_nonexplicit_family_target() -> Non
     )
 
     assert result.output.effective_target_chapter == "6"
-    assert result.output.group_ops[0].target_chapter == "6"
+    assert result.output.group_ops[0].target_cols.target_chapter == "6"
     assert result.output.group_ops[0].body_chapter_move_from == "5"
     assert result.output.group_ops[0].lo is not None
     assert result.output.group_ops[0].lo.target.path == (("chapter", "6"), ("section", "37a"))
@@ -684,7 +684,7 @@ def test_real_inserted_body_chapter_scopes_unscoped_section_insert_before_live_s
     )
 
     assert result.output.effective_target_chapter == "6a"
-    assert result.output.group_ops[0].target_chapter == "6a"
+    assert result.output.group_ops[0].target_cols.target_chapter == "6a"
     assert result.output.group_ops[0].lo is not None
     assert result.output.group_ops[0].lo.target.path == (("chapter", "6a"), ("section", "15a"))
     assert [finding.kind for finding in result.findings()] == [
@@ -769,7 +769,7 @@ def test_inserted_subchapter_body_overrides_live_stem_scope_guess() -> None:
     )
 
     assert result.output.effective_target_chapter == "6a"
-    assert result.output.group_ops[0].target_chapter == "6a"
+    assert result.output.group_ops[0].target_cols.target_chapter == "6a"
     assert result.output.group_ops[0].lo is not None
     assert result.output.group_ops[0].lo.target.path == (("chapter", "6a"), ("section", "15a"))
     assert [finding.kind for finding in result.findings()] == [
@@ -852,7 +852,7 @@ def test_existing_letter_run_body_chapter_overrides_live_stem_scope_guess() -> N
     )
 
     assert result.output.effective_target_chapter == "9b"
-    assert result.output.group_ops[0].target_chapter == "9b"
+    assert result.output.group_ops[0].target_cols.target_chapter == "9b"
     assert result.output.group_ops[0].lo is not None
     assert result.output.group_ops[0].lo.target.path == (("chapter", "9b"), ("section", "70t"))
     assert [finding.kind for finding in result.findings()] == [
@@ -942,7 +942,7 @@ def test_mixed_body_chapter_wrapper_does_not_override_whole_section_replace_live
     )
 
     assert result.output.effective_target_chapter == "10"
-    assert result.output.group_ops[0].target_chapter == "10"
+    assert result.output.group_ops[0].target_cols.target_chapter == "10"
     assert result.output.group_ops[0].lo is not None
     assert result.output.group_ops[0].lo.target.path == (("chapter", "10"), ("section", "67"))
     assert [finding.kind for finding in result.findings()] == [
@@ -1031,7 +1031,7 @@ def test_descendant_replace_retargets_to_body_owned_suffix_chapter() -> None:
 
     assert result.output.effective_target_chapter == "2a"
     assert result.output.surface_target_chapter == "2a"
-    assert result.output.group_ops[0].target_chapter == "2a"
+    assert result.output.group_ops[0].target_cols.target_chapter == "2a"
     assert result.output.group_ops[0].lo is not None
     assert result.output.group_ops[0].lo.target.path == (
         ("chapter", "2a"),
@@ -1115,7 +1115,7 @@ def test_existing_letter_run_body_chapter_needs_live_same_stem_sibling() -> None
     )
 
     assert result.output.effective_target_chapter == "9"
-    assert result.output.group_ops[0].target_chapter == "9"
+    assert result.output.group_ops[0].target_cols.target_chapter == "9"
     assert result.findings() == ()
 
 
@@ -1185,7 +1185,7 @@ def test_real_inserted_body_chapter_does_not_override_explicit_source_chapter() 
     )
 
     assert result.output.effective_target_chapter == "5"
-    assert result.output.group_ops[0].target_chapter == "5"
+    assert result.output.group_ops[0].target_cols.target_chapter == "5"
     assert result.findings() == ()
 
 
@@ -1276,7 +1276,7 @@ def test_live_stem_insert_keeps_existing_source_body_chapter_with_sibling_headin
     )
 
     assert result.output.effective_target_chapter == "6"
-    assert result.output.group_ops[0].target_chapter == "6"
+    assert result.output.group_ops[0].target_cols.target_chapter == "6"
     assert result.output.group_ops[0].lo is not None
     assert result.output.group_ops[0].lo.target.path == (("chapter", "6"), ("section", "37a"))
 
@@ -1353,7 +1353,7 @@ def test_live_stem_insert_without_sibling_heading_keeps_live_stem_scope() -> Non
     )
 
     assert result.output.effective_target_chapter == "5"
-    assert result.output.group_ops[0].target_chapter == "5"
+    assert result.output.group_ops[0].target_cols.target_chapter == "5"
     assert result.findings() == ()
 
 
@@ -1448,7 +1448,7 @@ def test_live_stem_insert_multi_section_body_chapter_keeps_live_stem_scope() -> 
     )
 
     assert result.output.effective_target_chapter == "5"
-    assert result.output.group_ops[0].target_chapter == "5"
+    assert result.output.group_ops[0].target_cols.target_chapter == "5"
     assert result.findings() == ()
 
 
@@ -1531,7 +1531,7 @@ def test_source_owned_existing_chapter_insert_is_not_retargeted_to_duplicate_liv
     )
 
     assert result.output.effective_target_chapter == "2"
-    assert result.output.group_ops[0].target_chapter == "2"
+    assert result.output.group_ops[0].target_cols.target_chapter == "2"
     assert result.output.group_ops[0].lo is not None
     assert result.output.group_ops[0].lo.target.path == (("chapter", "2"), ("section", "5"))
     assert result.findings() == ()
@@ -1636,7 +1636,7 @@ def test_item_targets_rewrite_to_subsections_for_flat_definition_entries() -> No
         )
     )
 
-    assert [op.target_item for op in result.output.group_ops] == [None, None]
+    assert [op.target_cols.target_item for op in result.output.group_ops] == [None, None]
     assert result.output.group_ops[0].lo is not None
     assert result.output.group_ops[0].lo.target.path == (
         ("chapter", "1"),
@@ -1721,7 +1721,7 @@ def test_item_targets_do_not_rewrite_when_live_host_has_paragraph_items() -> Non
         )
     )
 
-    assert result.output.group_ops[0].target_item == "2"
+    assert result.output.group_ops[0].target_cols.target_item == "2"
     assert result.output.group_ops[0].lo is not None
     assert result.output.group_ops[0].lo.target.path == (
         ("section", "2"),

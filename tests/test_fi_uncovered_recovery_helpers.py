@@ -45,6 +45,36 @@ from lawvm.finland.uncovered_recovery_state import (
 from lawvm.finland.uncovered_recovery_context import build_uncovered_recovery_context
 from lawvm.finland.uncovered_recovery_iteration import peg_owned_section_targets
 from lawvm.finland.ops import OpType, AmendmentOp
+from lawvm.finland.target_selector_codec import AmendmentOpV1Record
+
+
+def _op_cols(
+    *,
+    target_unit_kind: str = "section",
+    target_section: str = "",
+    target_chapter: str | None = None,
+    target_part: str | None = None,
+    target_paragraph: int | None = None,
+    target_item: str | None = None,
+    target_subitem: str | None = None,
+    target_special: str | None = None,
+) -> AmendmentOpV1Record:
+    """Build the ``target_cols`` projection a duck-typed op shim must expose.
+
+    W6 Phase C: the uncovered-recovery helpers read an op's target through the
+    typed ``op.target_cols`` accessor, so a ``SimpleNamespace`` op stand-in must
+    carry one too.
+    """
+    return AmendmentOpV1Record(
+        target_unit_kind=cast(Any, target_unit_kind),
+        target_section=target_section,
+        target_chapter=target_chapter,
+        target_part=target_part,
+        target_paragraph=target_paragraph,
+        target_item=target_item,
+        target_subitem=target_subitem,
+        target_special=target_special,
+    )
 
 
 def _section_with_heading(text: str) -> IRNode:
@@ -135,12 +165,12 @@ def test_part_label_from_path_none_when_absent() -> None:
 def test_uncovered_recovery_context_records_relabel_destinations() -> None:
     op = SimpleNamespace(
         op_type=OpType.RENUMBER,
-        target_unit_kind="section",
-        target_paragraph=None,
-        target_item=None,
-        target_special=None,
-        target_chapter="3",
-        target_part="II",
+        target_cols=_op_cols(
+            target_unit_kind="section",
+            target_section="",
+            target_chapter="3",
+            target_part="II",
+        ),
         lo=SimpleNamespace(
             destination=SimpleNamespace(
                 path=(("part", "II"), ("chapter", "7"), ("section", "5a")),
@@ -401,9 +431,11 @@ def test_uncovered_recovery_context_collects_johto_moment_targets() -> None:
 def test_uncovered_recovery_context_collects_part_insert_labels() -> None:
     op = SimpleNamespace(
         op_type=OpType.INSERT,
-        target_unit_kind="part",
-        target_section="5",
-        target_part=None,
+        target_cols=_op_cols(
+            target_unit_kind="part",
+            target_section="5",
+            target_part=None,
+        ),
     )
     context = build_uncovered_recovery_context(
         preamble_text="",

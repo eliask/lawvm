@@ -53,15 +53,15 @@ def normalize_group_ops_for_repeal_reenact(
     Multiple whole-section repeals in a group are pure repeals and must not be
     converted.
     """
-    whole_repeals = [o for o in group_ops if o.op_type == OpType.REPEAL and not o.target_paragraph]
+    whole_repeals = [o for o in group_ops if o.op_type == OpType.REPEAL and not o.target_cols.target_paragraph]
     other_ops = [o for o in group_ops if o not in whole_repeals]
     # Only convert when exactly one repeal exists and other ops target the same section
     if len(whole_repeals) == 1 and other_ops:
         repeal_op = whole_repeals[0]
         # Check that at least one other op targets the same section
-        repeal_target = (repeal_op.target_section or "").strip()
+        repeal_target = (repeal_op.target_cols.target_section or "").strip()
         same_section_ops = (
-            [o for o in other_ops if (o.target_section or "").strip() == repeal_target] if repeal_target else []
+            [o for o in other_ops if (o.target_cols.target_section or "").strip() == repeal_target] if repeal_target else []
         )
         if same_section_ops:
             new_lo = dc_replace(repeal_op.lo, action=StructuralAction.REPLACE) if repeal_op.lo else None
@@ -243,10 +243,10 @@ def sort_group_ops_for_apply(
         o
         for o in group_ops
         if (
-            o.target_unit_kind == "section"
-            and o.target_paragraph
-            and not o.target_item
-            and not o.target_special
+            o.target_cols.target_unit_kind == "section"
+            and o.target_cols.target_paragraph
+            and not o.target_cols.target_item
+            and not o.target_cols.target_special
             and o.op_type in (OpType.REPLACE, OpType.INSERT)
         )
     ]
@@ -259,9 +259,9 @@ def sort_group_ops_for_apply(
         # groups so existing sparse merge behaviour stays stable.
         if all(o.op_type == OpType.REPLACE for o in plain_moment_ops):
             replace_targets = sorted(
-                int(str(o.target_paragraph))
+                int(str(o.target_cols.target_paragraph))
                 for o in plain_moment_ops
-                if o.target_paragraph is not None
+                if o.target_cols.target_paragraph is not None
             )
             sec = target_ctx.live_node
             live_labels = (
@@ -314,14 +314,14 @@ def sort_group_ops_for_apply(
                     if child.kind == IRNodeKind.SUBSECTION and (child.label or "").isdigit()
                 }
                 insert_targets = [
-                    int(o.target_paragraph)
+                    int(o.target_cols.target_paragraph)
                     for o in plain_moment_ops
-                    if o.op_type == OpType.INSERT and o.target_paragraph is not None
+                    if o.op_type == OpType.INSERT and o.target_cols.target_paragraph is not None
                 ]
                 replace_targets = {
-                    int(o.target_paragraph)
+                    int(o.target_cols.target_paragraph)
                     for o in plain_moment_ops
-                    if o.op_type == OpType.REPLACE and o.target_paragraph is not None
+                    if o.op_type == OpType.REPLACE and o.target_cols.target_paragraph is not None
                 }
                 if insert_targets and live_labels and min(insert_targets) > max(live_labels):
                     return sorted(
@@ -333,7 +333,10 @@ def sort_group_ops_for_apply(
                         group_ops,
                         key=_op_apply_sort_key,
                     )
-    return sorted(group_ops, key=lambda o: (-(o.target_paragraph or 0), _item_target_sort_key(o.target_item)))
+    return sorted(
+        group_ops,
+        key=lambda o: (-(o.target_cols.target_paragraph or 0), _item_target_sort_key(o.target_cols.target_item)),
+    )
 
 
 def mixed_subsection_group_requires_insert_first(
@@ -352,38 +355,47 @@ def mixed_subsection_group_requires_insert_first(
     subsec_inserts = [
         o
         for o in ops
-        if o.op_type == OpType.INSERT and o.target_paragraph is not None and not o.target_item and not o.target_special
+        if o.op_type == OpType.INSERT
+        and o.target_cols.target_paragraph is not None
+        and not o.target_cols.target_item
+        and not o.target_cols.target_special
     ]
     subsec_replaces = [
         o
         for o in ops
-        if o.op_type == OpType.REPLACE and o.target_paragraph is not None and not o.target_item and not o.target_special
+        if o.op_type == OpType.REPLACE
+        and o.target_cols.target_paragraph is not None
+        and not o.target_cols.target_item
+        and not o.target_cols.target_special
     ]
     subsec_renumbers = [
         o
         for o in ops
-        if o.op_type == OpType.RENUMBER and o.target_paragraph is not None and not o.target_item and not o.target_special
+        if o.op_type == OpType.RENUMBER
+        and o.target_cols.target_paragraph is not None
+        and not o.target_cols.target_item
+        and not o.target_cols.target_special
     ]
     if not subsec_inserts or not subsec_replaces:
         return False
 
-    insert_targets = {int(o.target_paragraph or 0) for o in subsec_inserts}
-    renumber_targets = {int(o.target_paragraph or 0) for o in subsec_renumbers}
+    insert_targets = {int(o.target_cols.target_paragraph or 0) for o in subsec_inserts}
+    renumber_targets = {int(o.target_cols.target_paragraph or 0) for o in subsec_renumbers}
     if insert_targets & renumber_targets:
         for replace_op in subsec_replaces:
             if "rebase_duplicate_target_shifted_replace" not in replace_op.target_guessing_provenance_tags:
                 continue
-            replace_target = int(replace_op.target_paragraph or 0)
+            replace_target = int(replace_op.target_cols.target_paragraph or 0)
             if any(insert_target + 1 == replace_target for insert_target in insert_targets):
                 return True
 
     max_live_label = max(live_numeric_labels)
     for replace_op in subsec_replaces:
-        replace_target = int(replace_op.target_paragraph or 0)
+        replace_target = int(replace_op.target_cols.target_paragraph or 0)
         if replace_target in live_numeric_labels:
             continue
         insert_count_before_target = sum(
-            1 for insert_op in subsec_inserts if int(insert_op.target_paragraph or 0) <= replace_target
+            1 for insert_op in subsec_inserts if int(insert_op.target_cols.target_paragraph or 0) <= replace_target
         )
         if insert_count_before_target <= 0:
             continue
@@ -397,12 +409,18 @@ def stabilize_insert_order(ops: List[AmendmentOp], target_ctx: TargetContext) ->
     subsec_inserts = [
         o
         for o in ops
-        if o.op_type == OpType.INSERT and o.target_paragraph is not None and not o.target_item and not o.target_special
+        if o.op_type == OpType.INSERT
+        and o.target_cols.target_paragraph is not None
+        and not o.target_cols.target_item
+        and not o.target_cols.target_special
     ]
     subsec_replaces = [
         o
         for o in ops
-        if o.op_type == OpType.REPLACE and o.target_paragraph is not None and not o.target_item and not o.target_special
+        if o.op_type == OpType.REPLACE
+        and o.target_cols.target_paragraph is not None
+        and not o.target_cols.target_item
+        and not o.target_cols.target_special
     ]
     if not subsec_inserts or not subsec_replaces:
         return ops
@@ -411,17 +429,20 @@ def stabilize_insert_order(ops: List[AmendmentOp], target_ctx: TargetContext) ->
     ordered_replaces = [o for o in ops if o in subsec_replaces]
     ascending_inserts = sorted(
         subsec_inserts,
-        key=lambda o: (o.target_paragraph or 0, o.target_item or ""),
+        key=lambda o: (o.target_cols.target_paragraph or 0, o.target_cols.target_item or ""),
     )
     same_wave_shift_renumbers = [
         o
         for o in other_ops
         if (
             o.op_type == OpType.RENUMBER
-            and o.target_paragraph is not None
-            and not o.target_item
-            and not o.target_special
-            and any(int(ins.target_paragraph or 0) == int(o.target_paragraph or 0) for ins in subsec_inserts)
+            and o.target_cols.target_paragraph is not None
+            and not o.target_cols.target_item
+            and not o.target_cols.target_special
+            and any(
+                int(ins.target_cols.target_paragraph or 0) == int(o.target_cols.target_paragraph or 0)
+                for ins in subsec_inserts
+            )
             and any(
                 "rebase_duplicate_target_shifted_replace" in rep.target_guessing_provenance_tags
                 for rep in subsec_replaces

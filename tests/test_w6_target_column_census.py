@@ -65,71 +65,76 @@ def test_read_site_inventory_is_well_formed_and_nontrivial() -> None:
     assert sum(report["by_likely_amendment_op"].values()) == report["total_sites"]
 
 
-def test_target_cols_accessor_reproduces_stored_columns() -> None:
-    """The W6 typed accessor ``op.target_cols`` reproduces the stored columns.
+def test_target_cols_accessor_reproduces_construction_inputs() -> None:
+    """The typed accessor ``op.target_cols`` reproduces the construction inputs.
 
-    Phase A contract: ``op.target_cols`` is the single accessor every
-    ``op.target_<col>`` read routes through. It must reproduce the live stored
-    columns exactly for every column and every op shape (section/chapter/part,
-    descendant focus, heading facet, lo-absent direct build). The corpus probe
-    proves this at scale; this unit test pins the per-shape contract without a
-    corpus so a regression fails in the bounded shard, not only under replay.
+    W6 Phase C: the 8 loosely-typed ``target_*`` columns are GONE as stored
+    state — the typed :class:`TargetSelector` is the sole stored representation,
+    and ``op.target_cols`` is its read-only legacy projection. This pins the
+    per-shape round-trip (section/chapter/part, descendant focus, heading facet,
+    lo-absent direct build): each op's projected columns must equal the legacy
+    record it was constructed from, so the codec stays lossless for every shape.
     """
     from lawvm.finland.ops import AmendmentOp
+    from lawvm.finland.target_selector_codec import AmendmentOpV1Record
 
-    _COLUMNS = (
-        "target_unit_kind",
-        "target_section",
-        "target_chapter",
-        "target_part",
-        "target_paragraph",
-        "target_item",
-        "target_subitem",
-        "target_special",
-    )
-
-    # lo-absent direct builds (columns are the sole source). Each call is a
-    # distinct op shape the accessor must reproduce; built explicitly (not via a
-    # dict splat) so the constructor's typed parameters are statically checked.
-    cases = [
+    # (constructor kwargs, expected projected legacy record). Built explicitly
+    # (not via a dict splat) so the constructor's typed parameters are statically
+    # checked; the right side is the exact legacy 8-tuple the codec must round-trip.
+    cases: list[tuple[AmendmentOp, AmendmentOpV1Record]] = [
         # plain section
-        AmendmentOp(op_id="t", target_unit_kind="section", target_section="5"),
+        (
+            AmendmentOp(op_id="t", target_unit_kind="section", target_section="5"),
+            AmendmentOpV1Record("section", "5", None, None, None, None, None, None),
+        ),
         # section with enclosing chapter + part scope
-        AmendmentOp(
-            op_id="t",
-            target_unit_kind="section",
-            target_section="11",
-            target_chapter="4",
-            target_part="2",
+        (
+            AmendmentOp(
+                op_id="t",
+                target_unit_kind="section",
+                target_section="11",
+                target_chapter="4",
+                target_part="2",
+            ),
+            AmendmentOpV1Record("section", "11", "4", "2", None, None, None, None),
         ),
         # chapter focus with enclosing part
-        AmendmentOp(op_id="t", target_unit_kind="chapter", target_section="4", target_part="2"),
+        (
+            AmendmentOp(op_id="t", target_unit_kind="chapter", target_section="4", target_part="2"),
+            AmendmentOpV1Record("chapter", "4", None, "2", None, None, None, None),
+        ),
         # part focus with redundant mirrored target_part (the W2 finding)
-        AmendmentOp(op_id="t", target_unit_kind="part", target_section="III", target_part="III"),
+        (
+            AmendmentOp(op_id="t", target_unit_kind="part", target_section="III", target_part="III"),
+            AmendmentOpV1Record("part", "III", None, "III", None, None, None, None),
+        ),
         # descendant focus: momentti / kohta / alakohta
-        AmendmentOp(
-            op_id="t",
-            target_unit_kind="section",
-            target_section="7",
-            target_paragraph=2,
-            target_item="3",
-            target_subitem="a",
+        (
+            AmendmentOp(
+                op_id="t",
+                target_unit_kind="section",
+                target_section="7",
+                target_paragraph=2,
+                target_item="3",
+                target_subitem="a",
+            ),
+            AmendmentOpV1Record("section", "7", None, None, 2, "3", "a", None),
         ),
         # heading facet (otsikko_edella must round-trip, not collapse to otsikko)
-        AmendmentOp(
-            op_id="t",
-            target_unit_kind="section",
-            target_section="9",
-            target_special="otsikko_edella",
+        (
+            AmendmentOp(
+                op_id="t",
+                target_unit_kind="section",
+                target_section="9",
+                target_special="otsikko_edella",
+            ),
+            AmendmentOpV1Record("section", "9", None, None, None, None, None, "otsikko_edella"),
         ),
     ]
-    for op in cases:
-        cols = op.target_cols
-        for c in _COLUMNS:
-            assert getattr(cols, c) == getattr(op, c), (
-                f"target_cols.{c}={getattr(cols, c)!r} != stored {getattr(op, c)!r} "
-                f"for op {op.op_id} unit_kind={op.target_unit_kind} section={op.target_section}"
-            )
+    for op, expected in cases:
+        assert op.target_cols == expected, (
+            f"target_cols={op.target_cols!r} != expected {expected!r} for op {op.op_id}"
+        )
 
 
 def test_parity_probe_report_schema_is_stable() -> None:

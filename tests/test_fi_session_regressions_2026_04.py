@@ -128,26 +128,26 @@ def _rop(op: AmendmentOp, muutos_ir: Optional[IRNode] = None) -> ResolvedOp:
     semantics in isolation.
     """
     path: list[tuple[str, str]] = []
-    if op.target_unit_kind == "chapter":
-        path.append(("chapter", str(op.target_section or "")))
-    elif op.target_unit_kind == "part":
-        path.append(("part", str(op.target_section or "")))
+    if op.target_cols.target_unit_kind == "chapter":
+        path.append(("chapter", str(op.target_cols.target_section or "")))
+    elif op.target_cols.target_unit_kind == "part":
+        path.append(("part", str(op.target_cols.target_section or "")))
     else:
-        if op.target_chapter:
-            path.append(("chapter", str(op.target_chapter)))
-        path.append(("section", str(op.target_section or "")))
-    if op.target_paragraph is not None:
-        path.append(("subsection", str(op.target_paragraph)))
-    if op.target_item is not None:
-        path.append(("item", str(op.target_item)))
+        if op.target_cols.target_chapter:
+            path.append(("chapter", str(op.target_cols.target_chapter)))
+        path.append(("section", str(op.target_cols.target_section or "")))
+    if op.target_cols.target_paragraph is not None:
+        path.append(("subsection", str(op.target_cols.target_paragraph)))
+    if op.target_cols.target_item is not None:
+        path.append(("item", str(op.target_cols.target_item)))
 
     return ResolvedOp.from_amendment_op(
         op=op,
         muutos_ir=muutos_ir,
         cross_ir=None,
-        target_unit_kind=op.target_unit_kind,
-        target_norm=op.target_section or "",
-        target_chapter=op.target_chapter,
+        target_unit_kind=op.target_cols.target_unit_kind,
+        target_norm=op.target_cols.target_section or "",
+        target_chapter=op.target_cols.target_chapter,
         target_address=LegalAddress(path=tuple(path)),
     )
 
@@ -272,8 +272,8 @@ class TestChapterQualifiedDualRunGuards:
 
         _peg_ch_labels: Set[Tuple[Optional[str], str]] = set()
         for _op in ops:
-            if _op.target_unit_kind == "section" and _op.target_section:
-                _peg_ch_labels.add((_op.target_chapter, _norm_num_token(_op.target_section)))
+            if _op.target_cols.target_unit_kind == "section" and _op.target_cols.target_section:
+                _peg_ch_labels.add((_op.target_cols.target_chapter, _norm_num_token(_op.target_cols.target_section)))
 
         # Guard set should contain ('2', '1')
         assert ("2", "1") in _peg_ch_labels, (
@@ -312,8 +312,8 @@ class TestChapterQualifiedDualRunGuards:
 
         _peg_ch_labels: Set[Tuple[Optional[str], str]] = set()
         for _op in ops:
-            if _op.target_unit_kind == "section" and _op.target_section:
-                _peg_ch_labels.add((_op.target_chapter, _norm_num_token(_op.target_section)))
+            if _op.target_cols.target_unit_kind == "section" and _op.target_cols.target_section:
+                _peg_ch_labels.add((_op.target_cols.target_chapter, _norm_num_token(_op.target_cols.target_section)))
 
         assert (None, "1") in _peg_ch_labels, (
             f"Unscoped PEG op should produce (None, '1') in guard set, got: {_peg_ch_labels!r}."
@@ -338,8 +338,8 @@ class TestChapterQualifiedDualRunGuards:
 
         _peg_targeted_sections: Set[Tuple[Optional[str], str]] = set()
         for _op in ops:
-            if _op.target_unit_kind == "section" and _op.target_section:
-                _peg_targeted_sections.add((_op.target_chapter, _norm_num_token(_op.target_section)))
+            if _op.target_cols.target_unit_kind == "section" and _op.target_cols.target_section:
+                _peg_targeted_sections.add((_op.target_cols.target_chapter, _norm_num_token(_op.target_cols.target_section)))
 
         # Guard should contain ('2', '1')
         assert ("2", "1") in _peg_targeted_sections, (
@@ -1529,8 +1529,8 @@ class TestPartLevelInsertionViaSeka:
 
         assert any(
             op.op_type == "INSERT"
-            and op.target_unit_kind == "part"
-            and op.target_section == "2a"
+            and op.target_cols.target_unit_kind == "part"
+            and op.target_cols.target_section == "2a"
             for op in ops
         )
 
@@ -1617,9 +1617,9 @@ def test_2019_371_renumber_ops_bind_typed_intent_with_compound_source_parent_pat
         renumber_op,
         muutos_ir=None,
         cross_ir=None,
-        target_unit_kind=renumber_op.target_unit_kind,
-        target_norm=renumber_op.target_section or "",
-        target_chapter=renumber_op.target_chapter,
+        target_unit_kind=renumber_op.target_cols.target_unit_kind,
+        target_norm=renumber_op.target_cols.target_section or "",
+        target_chapter=renumber_op.target_cols.target_chapter,
     )
 
     assert rop.intent is not None
@@ -1690,7 +1690,7 @@ def test_1992_110_2017_48_reinstatement_chain_compiles_insert_13_and_materialize
     )
 
     assert any(
-        op.op_type == "INSERT" and op.target_unit_kind == "section" and op.target_section == "13"
+        op.op_type == "INSERT" and op.target_cols.target_unit_kind == "section" and op.target_cols.target_section == "13"
         for op in phase.output
     ), "Expected compile output to include INSERT 13 § for 1992/110 <- 2017/48."
 
@@ -1719,7 +1719,7 @@ def test_1994_201_2018_253_does_not_false_repeal_section_3_via_voimaantulo_extra
 
     ops = extract_voimaantulo_repeals(xml_bytes, statute_id, parent_title="Kotikuntalaki")
     assert not any(
-        op.target_unit_kind == "section" and op.target_section == "3" and not op.target_chapter
+        op.target_cols.target_unit_kind == "section" and op.target_cols.target_section == "3" and not op.target_cols.target_chapter
         for op in ops
     ), "Expected 2018/253 not to emit a false-positive REPEAL 3 § against 1994/201."
 
@@ -2564,7 +2564,7 @@ def test_letter_suffix_insert_inherits_same_amendment_stem_scope() -> None:
         source_model=AmendmentSourceModel.from_tree(source),
     )
 
-    assert retargeted[1].target_chapter == "3"
+    assert retargeted[1].target_cols.target_chapter == "3"
     assert retargeted[1].lo is not None
     assert retargeted[1].lo.target.path == (("chapter", "3"), ("section", "10a"))
     assert retargeted[1].scope_confidence is not None
@@ -2626,7 +2626,7 @@ def test_whole_section_replace_strips_stale_body_chapter_when_live_section_is_ro
     )
 
     assert stripped is not None
-    assert stripped.target_chapter is None
+    assert stripped.target_cols.target_chapter is None
     assert stripped.lo is not None
     assert stripped.lo.target.path == (("section", "106"),)
 
@@ -2834,7 +2834,7 @@ def test_letter_suffix_insert_does_not_inherit_chaptered_stem_scope_when_live_st
         master=master,
     )
 
-    assert retargeted[1].target_chapter is None
+    assert retargeted[1].target_cols.target_chapter is None
     assert retargeted[1].lo is not None
     assert retargeted[1].lo.target.path == (("section", "106a"),)
 
@@ -2907,7 +2907,7 @@ def test_letter_suffix_insert_same_amendment_stem_scope_preserves_explicit_suffi
         source_model=AmendmentSourceModel.from_tree(source),
     )
 
-    assert retargeted[1].target_chapter == "9"
+    assert retargeted[1].target_cols.target_chapter == "9"
     assert retargeted[1].lo is not None
     assert retargeted[1].lo.target.path == (("chapter", "9"), ("section", "10a"))
     assert retargeted[1].scope_confidence is None

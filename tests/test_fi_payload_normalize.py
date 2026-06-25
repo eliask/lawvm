@@ -178,7 +178,7 @@ def test_numbered_table_target_supplement_tags_and_adds_ops() -> None:
 
     got = _tag_numbered_table_target_clause_ops(ops, johto)
 
-    by_target = {(op.target_section, op.target_paragraph): op for op in got}
+    by_target = {(op.target_cols.target_section, op.target_cols.target_paragraph): op for op in got}
     assert by_target[("13", None)].numbered_table_targets == ("4",)
     assert by_target[("15", None)].numbered_table_targets == ("5",)
     assert by_target[("33", None)].numbered_table_targets == ("11",)
@@ -410,7 +410,7 @@ def test_rebase_numbered_table_offset_targets_to_structural_subsection_label() -
     )
 
     assert changed is True
-    assert rebased[0].target_paragraph == 3
+    assert rebased[0].target_cols.target_paragraph == 3
     assert rebased[0].target_guessing_provenance_tags == (
         "numbered_table_xml_subsection_offset",
     )
@@ -2666,7 +2666,7 @@ def test_numbered_table_prefix_does_not_absorb_explicit_moment_payload() -> None
     got = elaborate_payload_against_live(ctx, [op], prepared, set())
 
     assert got.rejected_ops == ()
-    assert [op.target_paragraph for op in got.group_ops] == [3]
+    assert [op.target_cols.target_paragraph for op in got.group_ops] == [3]
     mapped = _slot_assignment_result(got).for_stable_op_id("replace_33_2")
     assert mapped is not None
     assert "Yhtä uloskäytävää" in irnode_to_text(mapped)
@@ -4833,7 +4833,7 @@ def test_payload_normalize_rebases_shifted_replace_to_explicit_renumber_destinat
     descriptions = [op.description() for op in got.group_ops]
     assert "REPLACE 4 luku 12 § 14 mom" in descriptions
     assert "REPLACE 4 luku 12 § 13 mom" not in descriptions
-    rebased_replace = next(op for op in got.group_ops if op.op_type == "REPLACE" and op.target_paragraph == 14)
+    rebased_replace = next(op for op in got.group_ops if op.op_type == "REPLACE" and op.target_cols.target_paragraph == 14)
     assignment = _slot_assignment_result(got)
     mapped = assignment.for_op(rebased_replace)
     assert mapped is not None
@@ -5055,7 +5055,7 @@ def test_payload_normalize_rebases_sparse_replace_from_stale_predecessor_slot() 
 
     assert len(got.group_ops) == 1
     rebased = got.group_ops[0]
-    assert rebased.target_paragraph == 3
+    assert rebased.target_cols.target_paragraph == 3
     assert rebased.target_guessing_provenance_tags == ("rebase_sparse_stale_predecessor",)
     assignment = _slot_assignment_result(got)
     mapped = assignment.for_op(rebased)
@@ -5142,7 +5142,7 @@ def test_payload_normalize_keeps_sparse_replace_on_nominal_target_when_live_slot
     got = elaborate_payload_against_live(ctx, [op], muutos_ir, set())
 
     assert len(got.group_ops) == 1
-    assert got.group_ops[0].target_paragraph == 5
+    assert got.group_ops[0].target_cols.target_paragraph == 5
     assert got.group_ops[0].target_guessing_provenance_tags == ()
 
 
@@ -5328,7 +5328,7 @@ def test_subsection_slot_assignment_result_summary_surfaces_binding_and_leftover
             SparsePayloadSlotBinding(
                 op_description=op.description(),
                 op_type=str(op.op_type or ""),
-                target_paragraph=op.target_paragraph,
+                target_paragraph=op.target_cols.target_paragraph,
                 target_item=None,
                 target_special=None,
                 payload_slot_index=1,
@@ -5456,7 +5456,7 @@ def test_internal_ordered_list_payload_rewrites_broad_replace_to_item_inserts() 
 
     got = elaborate_payload_against_live(ctx, [op], muutos_ir, set())
 
-    assert [(item.op_type, item.target_paragraph, item.target_item) for item in got.group_ops] == [
+    assert [(item.op_type, item.target_cols.target_paragraph, item.target_cols.target_item) for item in got.group_ops] == [
         ("INSERT", 1, "2"),
         ("INSERT", 1, "4"),
     ]
@@ -5513,7 +5513,7 @@ def test_internal_ordered_list_insert_inference_ignores_leading_stereochemical_p
 
     got = elaborate_payload_against_live(ctx, [op], muutos_ir, set())
 
-    assert [(item.op_type, item.target_paragraph, item.target_item) for item in got.group_ops] == [
+    assert [(item.op_type, item.target_cols.target_paragraph, item.target_cols.target_item) for item in got.group_ops] == [
         ("INSERT", 1, "4")
     ]
 
@@ -6328,7 +6328,7 @@ def test_normalize_group_payload_keeps_sparse_item_inserts_when_only_johd_and_it
     )
 
     survivor_shapes = {
-        (op.op_type, op.target_paragraph, op.target_item, op.target_special)
+        (op.op_type, op.target_cols.target_paragraph, op.target_cols.target_item, op.target_cols.target_special)
         for op in got.group_ops
     }
     assert ("INSERT", 1, "4", None) in survivor_shapes
@@ -6435,7 +6435,7 @@ def test_normalize_group_payload_observes_mixed_sparse_slot_cross_paragraph() ->
     assert len(cross_para_obs) == 1
     assert cross_para_obs[0].detail is not None
     # Item ops (para 1) and plain op (para 2) share the same slot → observation fires.
-    assert [(op.op_type, op.target_paragraph, op.target_item) for op in got.group_ops] == [
+    assert [(op.op_type, op.target_cols.target_paragraph, op.target_cols.target_item) for op in got.group_ops] == [
         ("REPLACE", 1, "8"),
         ("REPLACE", 1, "9"),
         ("INSERT", 1, "10"),
@@ -7234,7 +7234,7 @@ def test_normalize_group_payload_keeps_targeted_replace_with_inner_omission_sect
     got = elaborate_payload_against_live(ctx, [op], muutos_ir, set())
 
     assert len(got.group_ops) == 1
-    assert got.group_ops[0].target_paragraph == 1
+    assert got.group_ops[0].target_cols.target_paragraph == 1
     assert _pathologies(got) == ()
 
 
@@ -7818,7 +7818,7 @@ def test_normalize_group_payload_expands_single_tail_insert_across_post_omission
 
     got = elaborate_payload_against_live(ctx, [op], muutos_ir, set())
 
-    assert [op.target_paragraph for op in got.group_ops] == [2, 3, 4]
+    assert [op.target_cols.target_paragraph for op in got.group_ops] == [2, 3, 4]
     assert len(got.subsec_map) == 3
 
 
@@ -7878,7 +7878,7 @@ def test_normalize_group_payload_folds_single_insert_list_tail_subsection() -> N
 
     got = elaborate_payload_against_live(ctx, [op], muutos_ir, set())
 
-    assert [op.target_paragraph for op in got.group_ops] == [2]
+    assert [op.target_cols.target_paragraph for op in got.group_ops] == [2]
     mapped = got.subsec_map[id(got.group_ops[0])]
     assert mapped.label == "2"
     assert "maksetusta palkasta" in irnode_to_text(mapped)
@@ -7956,7 +7956,7 @@ def test_normalize_group_payload_splits_flattened_insert_subsection_tail() -> No
     prepared = _muutos_ir(got)
     subsections = [child for child in prepared.children if child.kind is IRNodeKind.SUBSECTION]
     assert [sub.label for sub in subsections] == ["2", "3"]
-    assert [op.target_item for op in got.group_ops] == [None, None]
+    assert [op.target_cols.target_item for op in got.group_ops] == [None, None]
     assert got.subsec_map[id(got.group_ops[0])].label == "2"
     assert got.subsec_map[id(got.group_ops[1])].label == "3"
     assert "first item" in irnode_to_text(got.subsec_map[id(got.group_ops[0])])
@@ -8028,7 +8028,7 @@ def test_normalize_group_payload_expands_single_tail_insert_across_post_omission
     got = elaborate_payload_against_live(ctx, [replace_op, insert_op], muutos_ir, set())
 
     assert [op.op_type for op in got.group_ops] == ["REPLACE", "INSERT", "INSERT"]
-    assert [op.target_paragraph for op in got.group_ops] == [1, 5, 6]
+    assert [op.target_cols.target_paragraph for op in got.group_ops] == [1, 5, 6]
     assert len(got.subsec_map) == 3
 
 
@@ -8433,7 +8433,7 @@ def test_drop_redundant_case3_keeps_insert_when_lettered_item_not_in_live() -> N
 
     # INSERT '3a' must survive — it's a new item not yet in live state.
     assert ("INSERT", 1, "3a", None) in {
-        (op.op_type, op.target_paragraph, op.target_item, op.target_special)
+        (op.op_type, op.target_cols.target_paragraph, op.target_cols.target_item, op.target_cols.target_special)
         for op in got.group_ops
     }, "INSERT 3a kohta should not be dropped when item is new in live state"
     assert not any(
@@ -8517,7 +8517,7 @@ def test_drop_redundant_case3_drops_insert_when_lettered_item_exists_in_live() -
 
     # INSERT '3a' should be suppressed — item already exists in live.
     assert not any(
-        (op.op_type, op.target_item) == ("INSERT", "3a") for op in got.group_ops
+        (op.op_type, op.target_cols.target_item) == ("INSERT", "3a") for op in got.group_ops
     ), "INSERT 3a should be dropped when item already exists in live state"
 
 
@@ -8574,10 +8574,10 @@ def test_assign_subsection_slots_binds_item_ops_by_momentti_not_item_number() ->
     for op in group_ops:
         mapped = assignment.for_op(op)
         assert mapped is not None
-        if op.target_paragraph == 4:
-            assert mapped is amend_sub_4mom, (op.op_type, op.target_item)
+        if op.target_cols.target_paragraph == 4:
+            assert mapped is amend_sub_4mom, (op.op_type, op.target_cols.target_item)
         else:
-            assert mapped is amend_sub_5mom, (op.op_type, op.target_item)
+            assert mapped is amend_sub_5mom, (op.op_type, op.target_cols.target_item)
 
 
 def test_assign_subsection_slots_binds_carried_renumber_destination_payload_slots() -> None:

@@ -198,7 +198,7 @@ def _item_apply_view_for_op(op: AmendmentOp | ResolvedOp) -> _ItemApplyView:
     return _ItemApplyView(
         op_type=op_type,
         source_statute=source_statute,
-        target_unit_kind=op.target_unit_kind,
+        target_unit_kind=op.target_unit_kind if isinstance(op, ResolvedOp) else op.target_cols.target_unit_kind,
         target_section=target_section,
         target_paragraph=target_paragraph,
         target_item=target_item,
