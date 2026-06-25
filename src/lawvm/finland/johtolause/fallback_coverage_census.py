@@ -134,13 +134,13 @@ def _scan_one(sid: str) -> tuple[str, str, int, str] | None:
         return None
     try:
         johto = get_johtolause(xb) or ""
-    except Exception:
+    except Exception:  # lawvm-failloud: unparseable source yields no johtolause clause to census; no fallback firing to classify
         return None
     if not johto:
         return None
     try:
         result = parse_clause(johto, statute_id=sid)
-    except Exception:
+    except Exception:  # lawvm-failloud: production parse crash tracked by the fallback-residue audit, not a clean fallback firing; out of census partition scope
         # A production crash is not a clean fallback firing; out of census scope
         # (the fallback-residue audit tracks crashes separately). Counted only in
         # the denominator implicitly by being excluded here.
