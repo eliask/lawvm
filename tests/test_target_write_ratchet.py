@@ -251,7 +251,15 @@ class TestRatchetTrap:
         baseline_counts: dict[str, int] = dict(baseline["counts"])
 
         # Pick the heaviest real file and pretend it gained one more raw write.
-        victim = max(baseline_counts, key=lambda r: baseline_counts[r])
+        # Once the ratchet has driven every file to zero the baseline carries no
+        # files; fall back to a synthetic baselined file so the trap still proves
+        # the per-file increase comparison fires (a regression on an at-zero file
+        # is the exact case the gate must keep catching).
+        if baseline_counts:
+            victim = max(baseline_counts, key=lambda r: baseline_counts[r])
+        else:
+            victim = "src/lawvm/finland/existing.py"
+            baseline_counts = {victim: 0}
         mutated = dict(baseline_counts)
         mutated[victim] = baseline_counts[victim] + 1
 

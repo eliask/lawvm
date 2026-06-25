@@ -15,25 +15,7 @@
     "src/lawvm/finland/target_selector_codec.py",
     "src/lawvm/finland/target_selector_facades.py"
   ],
-  "counts": {
-    "src/lawvm/finland/apply_runtime_support.py": 7
-  },
-  "sites": {
-    "src/lawvm/finland/apply_runtime_support.py": [
-      {
-        "line": 184,
-        "callee": "AmendmentOp",
-        "kwargs": [
-          "target_chapter",
-          "target_item",
-          "target_paragraph",
-          "target_part",
-          "target_section",
-          "target_special",
-          "target_unit_kind"
-        ]
-      }
-    ]
-  },
-  "total": 7
+  "counts": {},
+  "sites": {},
+  "total": 0
 }

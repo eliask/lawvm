@@ -37,6 +37,12 @@ from lawvm.finland.scope import (
     source_names_descendant_scope_below_section,
 )
 from lawvm.finland.ops import AmendmentOp, ResolvedOp, ResolvedTargetScopeView, temporary_signal_for_op
+from lawvm.finland.target_selector_facades import (
+    LegacyTargetKwargs,
+    fi_chapter_target,
+    fi_part_target,
+    fi_section_target,
+)
 from lawvm.finland.replay_capture import ReplayLegalOperationCaptureList
 from lawvm.finland.standalone_targets import StandaloneSectionTargetsInput
 from lawvm.finland.source_normalize import normalize_source_ir
@@ -155,6 +161,62 @@ def _container_kind_for_name(kind_name: str) -> IRNodeKind | None:
     return None
 
 
+def _legacy_dispatch_shell_target_kwargs(rop: "ResolvedOp") -> LegacyTargetKwargs:
+    """Lower a late-waist ResolvedOp scope onto the legacy ``target_*`` kwargs.
+
+    Routes through the sanctioned typed ``fi_*_target`` construction facades
+    (which build a ``TargetSelector`` and lower it via the codec) instead of
+    hand-writing the loosely-typed ``target_*`` columns. The facade output is
+    byte-identical to the prior hand-derivation for the full legitimate input
+    domain:
+
+    - the structural section/chapter/part/momentti columns mirror the
+      ``ResolvedTargetScopeView`` exactly (the facade lowers them unchanged);
+    - the combined kohta+alakohta slot is passed as the facade's bare ``item``
+      with no ``subitem`` segment, reproducing the prior shape (``target_item``
+      combined, ``target_subitem`` absent);
+    - ``target_special`` is the resolved special token (``effective_target_special``
+      filtered through the legacy scope rule). The facet vocabulary is closed
+      (``otsikko``/``otsikko_edella``/``johd``), and ``special_raw`` round-trips
+      it through the codec, so the ``otsikko_edella`` distinction (which a typed
+      ``lo`` carrier could NOT encode — ``FacetKind`` collapses it to HEADING)
+      survives. An unrecognised facet token fails loud in the facade rather than
+      silently propagating, matching the fail-loud boundary.
+    """
+    scope = rop.resolved_target_scope_view
+    unit_kind = rop.target_unit_kind
+    section = _legacy_target_section_for_scope(scope, unit_kind)
+    special = _legacy_target_special_for_scope(scope, rop.effective_target_special)
+    # The legacy shell carries a single COMBINED kohta+alakohta slot (no separate
+    # target_subitem column), so pass the combined value as the facade's bare
+    # ``item`` and leave ``subitem`` unset.
+    item = scope.target_item
+    if unit_kind == "chapter":
+        return fi_chapter_target(
+            section,
+            part=scope.target_part,
+            subsection=scope.target_paragraph,
+            item=item,
+            special_raw=special,
+        )
+    if unit_kind == "part":
+        return fi_part_target(
+            section,
+            redundant_part_scope=scope.target_part is not None,
+            subsection=scope.target_paragraph,
+            item=item,
+            special_raw=special,
+        )
+    return fi_section_target(
+        section,
+        chapter=scope.target_chapter,
+        part=scope.target_part,
+        subsection=scope.target_paragraph,
+        item=item,
+        special_raw=special,
+    )
+
+
 def _legacy_dispatch_shell_for_rop(rop: "ResolvedOp") -> "AmendmentOp":
     """Project a late-waist op onto the narrow legacy apply shell.
 
@@ -184,13 +246,9 @@ def _legacy_dispatch_shell_for_rop(rop: "ResolvedOp") -> "AmendmentOp":
     return AmendmentOp(
         op_id=rop.op_id,
         op_type=cast(OpType, rop.resolved_action_type),
-        target_section=_legacy_target_section_for_scope(scope, rop.target_unit_kind),
-        target_unit_kind=rop.target_unit_kind,
-        target_chapter=scope.target_chapter,
-        target_part=scope.target_part,
-        target_paragraph=scope.target_paragraph,
-        target_item=scope.target_item,
-        target_special=_legacy_target_special_for_scope(scope, rop.effective_target_special),
+        # Structural target columns are derived via the sanctioned typed facade
+        # (TargetSelector + codec lowering), not hand-written raw target_* kwargs.
+        **_legacy_dispatch_shell_target_kwargs(rop),
         named_row_targets=rop.named_row_targets,
         numbered_table_targets=rop.numbered_table_targets,
         body_root_replace_fallback=rop.body_root_replace_fallback,
