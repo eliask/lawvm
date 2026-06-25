@@ -801,7 +801,7 @@ def test_assert_intent_compat_returns_none_on_match() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _production_section_rop(op_type: str) -> ResolvedOp:
+def _production_section_rop(op_type: OpType) -> ResolvedOp:
     """A lowered, address-bearing ResolvedOp with a real section payload.
 
     The intent is then built by the production ``_build_canonical_intent``,
@@ -812,7 +812,7 @@ def _production_section_rop(op_type: str) -> ResolvedOp:
 
     op = AmendmentOp(
         op_id="prod",
-        op_type=cast(Any, op_type),
+        op_type=op_type,
         target_unit_kind="section",
         target_section="1",
         source_statute="2020/1",
@@ -836,7 +836,7 @@ def test_production_intents_never_allow_all_occupancy_classes() -> None:
     from lawvm.core.occupancy import OccupancyClass
 
     all_classes = frozenset(OccupancyClass)
-    for op_type in ("REPLACE", "INSERT", "REPEAL"):
+    for op_type in (OpType.REPLACE, OpType.INSERT, OpType.REPEAL):
         intent = _build_canonical_intent(_production_section_rop(op_type))
         assert intent is not None, f"production builder returned None for {op_type}"
         policy = intent.contract.occupancy
@@ -850,7 +850,7 @@ def test_production_per_action_occupancy_policy_shapes() -> None:
     from lawvm.core.occupancy import OccupancyClass
 
     replace_policy_intent = _build_canonical_intent(
-        _production_section_rop("REPLACE")
+        _production_section_rop(OpType.REPLACE)
     )
     assert replace_policy_intent is not None
     replace_policy = replace_policy_intent.contract.occupancy
@@ -860,7 +860,7 @@ def test_production_per_action_occupancy_policy_shapes() -> None:
     )
 
     insert_policy_intent = _build_canonical_intent(
-        _production_section_rop("INSERT")
+        _production_section_rop(OpType.INSERT)
     )
     assert insert_policy_intent is not None
     insert_policy = insert_policy_intent.contract.occupancy
@@ -870,7 +870,7 @@ def test_production_per_action_occupancy_policy_shapes() -> None:
     )
 
     repeal_policy_intent = _build_canonical_intent(
-        _production_section_rop("REPEAL")
+        _production_section_rop(OpType.REPEAL)
     )
     assert repeal_policy_intent is not None
     repeal_policy = repeal_policy_intent.contract.occupancy
@@ -890,7 +890,7 @@ def test_production_lane_replace_on_tombstone_emits_observation() -> None:
     from lawvm.core.ir import IRNode
     from lawvm.finland.statute import ReplayState
 
-    rop = _production_section_rop("REPLACE")
+    rop = _production_section_rop(OpType.REPLACE)
     intent = _build_canonical_intent(rop)
     assert intent is not None
 
@@ -928,7 +928,7 @@ def test_production_lane_replace_on_absent_emits_violation() -> None:
     from lawvm.core.ir import IRNode
     from lawvm.finland.statute import ReplayState
 
-    rop = _production_section_rop("REPLACE")
+    rop = _production_section_rop(OpType.REPLACE)
     intent = _build_canonical_intent(rop)
     assert intent is not None
 
@@ -986,7 +986,7 @@ def test_production_lane_move_rider_replace_evaluates_origin_occupancy() -> None
         op_id=op.op_id,
         target_unit_kind="section",
         target_norm="29e",
-        _op_type_seed="REPLACE",
+        _op_type_seed=OpType.REPLACE,
         move_clause_target_unit_kind="chapter",
         _source_statute_override="2025/1382",
         _target_address_override=LegalAddress(
@@ -1046,7 +1046,7 @@ def test_production_lane_move_rider_replace_without_origin_still_violates() -> N
         op_id=op.op_id,
         target_unit_kind="section",
         target_norm="29e",
-        _op_type_seed="REPLACE",
+        _op_type_seed=OpType.REPLACE,
         move_clause_target_unit_kind="chapter",
         _source_statute_override="2025/1382",
         _target_address_override=LegalAddress(
@@ -1102,7 +1102,7 @@ def test_production_lane_temporally_disjoint_twin_insert_is_not_a_violation() ->
         op_id=op.op_id,
         target_unit_kind="section",
         target_norm="78c",
-        _op_type_seed="INSERT",
+        _op_type_seed=OpType.INSERT,
         _source_statute_override="2022/1282",
         _target_address_override=LegalAddress(
             path=(("chapter", "8"), ("section", "78c"))
@@ -1189,7 +1189,7 @@ def test_production_lane_same_effective_temporary_insert_is_window_observation()
         op_id=op.op_id,
         target_unit_kind="section",
         target_norm="69d",
-        _op_type_seed="INSERT",
+        _op_type_seed=OpType.INSERT,
         _source_statute_override="2009/887",
         _target_address_override=LegalAddress(
             path=(("chapter", "5"), ("section", "69d"))
@@ -1272,7 +1272,7 @@ def test_production_lane_overlapping_twin_insert_still_violates() -> None:
         op_id=op.op_id,
         target_unit_kind="section",
         target_norm="78c",
-        _op_type_seed="INSERT",
+        _op_type_seed=OpType.INSERT,
         _source_statute_override="2022/1282",
         _target_address_override=LegalAddress(
             path=(("chapter", "8"), ("section", "78c"))

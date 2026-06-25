@@ -274,7 +274,11 @@ def _make_minimal_rop(
             "chapter" if target_kind == TargetKind.CHAPTER else "part" if target_kind == TargetKind.PART else "section"
         ),
         target_norm=target_norm,
-        _op_type_seed=op_type,
+        # This helper deliberately accepts a non-OpType string (see
+        # test_build_canonical_intent_returns_none_does_not_crash, which feeds
+        # "UNKNOWN_FUTURE_OP") to exercise the unknown-op graceful-degradation
+        # path; production seeds are always a real OpType.
+        _op_type_seed=cast(OpType, op_type),
         _target_special_override=(
             target_special if target_special not in {None, "otsikko", "johd"} else None
         ),
@@ -407,7 +411,7 @@ def test_build_canonical_intent_uses_resolvedop_addresses_without_lo() -> None:
         op_id=op.op_id,
         target_unit_kind="section",
         target_norm="73",
-        _op_type_seed="RENUMBER",
+        _op_type_seed=OpType.RENUMBER,
         _target_special_override=(
             op.target_special if op.target_special not in {None, "otsikko", "johd"} else None
         ),
@@ -447,7 +451,7 @@ def test_build_canonical_intent_without_target_address_gracefully_returns_none()
         op_id=op.op_id,
         target_unit_kind="section",
         target_norm="5",
-        _op_type_seed="REPLACE",
+        _op_type_seed=OpType.REPLACE,
         _target_special_override=(
             op.target_special if op.target_special not in {None, "otsikko", "johd"} else None
         ),

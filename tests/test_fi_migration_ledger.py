@@ -647,7 +647,7 @@ def _make_relabel_rop(
         op_id=op.op_id,
         target_unit_kind="section",
         target_norm=target_section,
-        _op_type_seed="RENUMBER",
+        _op_type_seed=OpType.RENUMBER,
         _target_special_override=(
             op.target_special if op.target_special not in {None, "otsikko", "johd"} else None
         ),
@@ -763,7 +763,7 @@ class TestMigrationLedgerIntegration:
             op_id=op.op_id,
             target_unit_kind="chapter",
             target_norm="3",
-            _op_type_seed="RENUMBER",
+            _op_type_seed=OpType.RENUMBER,
             _target_special_override=(
                 op.target_special if op.target_special not in {None, "otsikko", "johd"} else None
             ),
@@ -837,7 +837,7 @@ class TestMigrationLedgerIntegration:
             op_id=op2.op_id,
             target_unit_kind="section",
             target_norm="5a",
-            _op_type_seed="RENUMBER",
+            _op_type_seed=OpType.RENUMBER,
             _target_special_override=(
                 op2.target_special if op2.target_special not in {None, "otsikko", "johd"} else None
             ),

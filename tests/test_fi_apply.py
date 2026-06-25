@@ -14776,7 +14776,7 @@ class TestDispatchIntegration:
             target_norm="22",
             target_chapter="4",
         )
-        rop._op_type_seed = "REPLACE"
+        rop._op_type_seed = OpType.REPLACE
 
         resolution = _resolve_section_path_with_fallbacks(
             state,
@@ -16839,7 +16839,10 @@ def test_typed_move_stops_without_legacy_dispatch() -> None:
         contract=ExecutionContract(occupancy=OccupancyPolicy.same_slot_replace()),
     )
     rop = _make_rop(op, intent)
-    rop._op_type_seed = "MOVE"
+    # Deliberate out-of-OpType "MOVE-ish residual" seed: MOVE is not a real
+    # OpType member; production never produces it. This drives the move-rider
+    # residual path, so we cast a non-member string in on purpose.
+    rop._op_type_seed = cast(OpType, "MOVE")
     ctx = _ctx(_body())
     mutation_events: List[ApplyMutationEvent] = []
     write_audits = []
@@ -16902,7 +16905,11 @@ def test_apply_op_fails_loud_when_op_reaches_apply_without_canonical_intent() ->
         target_address=LegalAddress(path=(("section", "1"),)),
     )
     rop.intent = None
-    rop._op_type_seed = "MOVE"
+    # Deliberate out-of-OpType "MOVE-ish residual" seed: MOVE is not a real
+    # OpType member, so intent_required_for_apply is False and apply must reach
+    # the APPLY_INTENT_NONE_UNEXPECTED fail-loud (not FI_TYPED_INTENT_REQUIRED).
+    # Production never produces a non-OpType action family.
+    rop._op_type_seed = cast(OpType, "MOVE")
 
     with pytest.raises(AssertionError, match="APPLY_INTENT_NONE_UNEXPECTED"):
         apply_op(
@@ -16937,7 +16944,7 @@ def test_typed_relabel_unhandled_target_keeps_target_address() -> None:
         ),
     )
     rop = _make_rop(op, intent)
-    rop._op_type_seed = "RENUMBER"
+    rop._op_type_seed = OpType.RENUMBER
     rop.target_unit_kind = "chapter"
     rop._target_address_override = LegalAddress(path=(("annex", "1"),))
     ctx = _ctx(_body())
@@ -17004,7 +17011,7 @@ def test_typed_container_relabel_prefers_scoped_target_address() -> None:
         ),
     )
     rop = _make_rop(op, intent)
-    rop._op_type_seed = "RENUMBER"
+    rop._op_type_seed = OpType.RENUMBER
     rop.target_unit_kind = "chapter"
     rop.target_norm = "2"
     rop._target_address_override = LegalAddress(path=(("part", "III"), ("chapter", "2")))
@@ -17072,7 +17079,7 @@ def test_typed_part_relabel_emits_receipt_derived_migration_allowance() -> None:
         ),
     )
     rop = _make_rop(op, intent)
-    rop._op_type_seed = "RENUMBER"
+    rop._op_type_seed = OpType.RENUMBER
     rop.target_unit_kind = "part"
     rop.target_norm = "II"
     rop._target_address_override = LegalAddress(path=(("part", "II"),))

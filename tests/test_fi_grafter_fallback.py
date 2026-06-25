@@ -15302,7 +15302,7 @@ def test_resolved_op_restructure_plan_helper_uses_typed_target_fields() -> None:
         target_norm="33",
         target_unit_kind="section",
         op_id="relabel-1",
-        _op_type_seed="RENUMBER",
+        _op_type_seed=OpType.RENUMBER,
         _target_address_override=source,
         _destination_address_override=destination,
         intent=Relabel(
@@ -15341,7 +15341,7 @@ def test_resolved_op_restructure_plan_helper_accepts_exact_owned_signature() -> 
         target_norm="33",
         target_unit_kind="section",
         op_id="relabel-1",
-        _op_type_seed="RENUMBER",
+        _op_type_seed=OpType.RENUMBER,
         _target_address_override=source,
         _destination_address_override=destination,
         intent=Relabel(
@@ -15375,7 +15375,7 @@ def test_resolved_op_restructure_plan_helper_rejects_same_leaf_labels_in_differe
         target_norm="33",
         target_unit_kind="section",
         op_id="relabel-1",
-        _op_type_seed="RENUMBER",
+        _op_type_seed=OpType.RENUMBER,
         _target_address_override=source,
         _destination_address_override=destination,
         intent=Relabel(

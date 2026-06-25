@@ -1899,7 +1899,7 @@ def drill_occupancy_policy_violation_finland_production() -> None:
         op_id=op.op_id,
         target_unit_kind="section",
         target_norm="1",
-        _op_type_seed="REPLACE",
+        _op_type_seed=OpType.REPLACE,
         _source_statute_override="1991/1",
         _target_address_override=LegalAddress(path=(("section", "1"),)),
     )
@@ -1983,7 +1983,7 @@ def drill_occupancy_temporally_disjoint_insert_finland_production() -> None:
         op_id=op.op_id,
         target_unit_kind="section",
         target_norm="78c",
-        _op_type_seed="INSERT",
+        _op_type_seed=OpType.INSERT,
         _source_statute_override="2022/1282",
         _target_address_override=LegalAddress(
             path=(("chapter", "8"), ("section", "78c"))
@@ -3001,7 +3001,7 @@ def drill_mutation_boundary_finding_at_op_quirks_apply_lane() -> None:
 def _closure_rop(
     *,
     op_id: str = "op_closure_1",
-    op_type: str = "REPLACE",
+    op_type: OpType = OpType.REPLACE,
     target_paragraph: Any = None,
     target_item: Any = None,
     target_special: Any = None,

@@ -21,7 +21,7 @@ import re
 from dataclasses import dataclass
 from dataclasses import replace as dc_replace
 from enum import StrEnum
-from typing import TYPE_CHECKING, Dict, Iterable, List, Literal, Optional, Tuple, cast
+from typing import TYPE_CHECKING, Dict, Iterable, List, Literal, Optional, Tuple, assert_never, cast
 
 from lawvm.core.ir import IRNode, LegalAddress, OperationSource, TextPatchSpec
 from lawvm.core.ir import LegalOperation as _LegalOperation
@@ -1131,7 +1131,7 @@ class ResolvedOp:
     op_id: str = ""
     # Transitional late-waist compatibility inputs. These are explicit
     # override hooks, not ordinary public runtime authority.
-    _op_type_seed: str = ""
+    _op_type_seed: OpType = OpType.REPLACE
     _target_special_override: Optional[str] = None
     sec1_body_johto_fallback: bool = False
     move_clause_target_unit_kind: TargetUnitKind | None = None
@@ -1314,7 +1314,7 @@ class ResolvedOp:
             op_id=op.op_id,
             target_unit_kind=target_unit_kind,
             target_norm=target_norm,
-            _op_type_seed=str(op.op_type),
+            _op_type_seed=op.op_type,
             _target_special_override=(
                 None
                 if _section_payload_requires_root_replace(
@@ -1548,7 +1548,7 @@ class ResolvedOp:
         return self._source_title_override or ""
 
     @property
-    def resolved_action_type(self) -> str:
+    def resolved_action_type(self) -> OpType:
         """Return the effective late-waist action family for replay/apply."""
         return self._op_type_seed
 
@@ -2229,71 +2229,79 @@ def _build_canonical_intent(rop: ResolvedOp) -> "CanonicalIntent | None":
             target = FacetTarget(host=host, facet=FacetKind.HEADING)
             validate_intent_target(target, FINLAND_REGISTRY)
 
-            if op_type == "REPLACE":
-                assert payload is not None
-                return Replace(
-                    kind=IntentKind.REPLACE,
-                    target=target,
-                    payload=cast(_IRNodeLike, payload),
-                    contract=ExecutionContract(
-                        occupancy=_replace_policy(),
-                        coverage=CoverageMode.EXACT,
-                    ),
-                )
-            elif op_type == "REPEAL":
-                return Repeal(
-                    kind=IntentKind.REPEAL,
-                    target=NodeTarget(address=host),
-                    contract=ExecutionContract(
-                        occupancy=OccupancyPolicy.repeal_to_tombstone(),
-                        coverage=CoverageMode.EXACT,
-                    ),
-                )
-            elif op_type == "INSERT":
-                # INSERT otsikko = add a heading to a section that had none.
-                # Modelled as a REPLACE so it works whether or not the heading
-                # already exists; tombstone headings are a legitimate reenact
-                # lane (allowed but non-primary).
-                if payload is None:
+            match op_type:
+                case OpType.REPLACE:
+                    assert payload is not None
+                    return Replace(
+                        kind=IntentKind.REPLACE,
+                        target=target,
+                        payload=cast(_IRNodeLike, payload),
+                        contract=ExecutionContract(
+                            occupancy=_replace_policy(),
+                            coverage=CoverageMode.EXACT,
+                        ),
+                    )
+                case OpType.REPEAL:
+                    return Repeal(
+                        kind=IntentKind.REPEAL,
+                        target=NodeTarget(address=host),
+                        contract=ExecutionContract(
+                            occupancy=OccupancyPolicy.repeal_to_tombstone(),
+                            coverage=CoverageMode.EXACT,
+                        ),
+                    )
+                case OpType.INSERT:
+                    # INSERT otsikko = add a heading to a section that had none.
+                    # Modelled as a REPLACE so it works whether or not the heading
+                    # already exists; tombstone headings are a legitimate reenact
+                    # lane (allowed but non-primary).
+                    if payload is None:
+                        return None
+                    return Replace(
+                        kind=IntentKind.REPLACE,
+                        target=target,
+                        payload=cast(_IRNodeLike, payload),
+                        contract=ExecutionContract(
+                            occupancy=_replace_policy(),
+                            coverage=CoverageMode.EXACT,
+                        ),
+                    )
+                case OpType.RENUMBER:
+                    # RENUMBER heading — uncommon, return None for graceful degradation
                     return None
-                return Replace(
-                    kind=IntentKind.REPLACE,
-                    target=target,
-                    payload=cast(_IRNodeLike, payload),
-                    contract=ExecutionContract(
-                        occupancy=_replace_policy(),
-                        coverage=CoverageMode.EXACT,
-                    ),
-                )
-            # RENUMBER heading — uncommon, return None for graceful degradation
-            return None
+                case _ as unreachable:
+                    assert_never(unreachable)
 
         if target_special == "johd":
             host = LegalAddress(path=address.path, special=None)
             target = FacetTarget(host=host, facet=FacetKind.INTRO)
             validate_intent_target(target, FINLAND_REGISTRY)
 
-            if op_type == "REPLACE":
-                assert payload is not None
-                return Replace(
-                    kind=IntentKind.REPLACE,
-                    target=target,
-                    payload=cast(_IRNodeLike, payload),
-                    contract=ExecutionContract(
-                        occupancy=_replace_policy(),
-                        coverage=CoverageMode.EXACT,
-                    ),
-                )
-            elif op_type == "REPEAL":
-                return Repeal(
-                    kind=IntentKind.REPEAL,
-                    target=NodeTarget(address=host),
-                    contract=ExecutionContract(
-                        occupancy=OccupancyPolicy.repeal_to_tombstone(),
-                        coverage=CoverageMode.EXACT,
-                    ),
-                )
-            return None
+            match op_type:
+                case OpType.REPLACE:
+                    assert payload is not None
+                    return Replace(
+                        kind=IntentKind.REPLACE,
+                        target=target,
+                        payload=cast(_IRNodeLike, payload),
+                        contract=ExecutionContract(
+                            occupancy=_replace_policy(),
+                            coverage=CoverageMode.EXACT,
+                        ),
+                    )
+                case OpType.REPEAL:
+                    return Repeal(
+                        kind=IntentKind.REPEAL,
+                        target=NodeTarget(address=host),
+                        contract=ExecutionContract(
+                            occupancy=OccupancyPolicy.repeal_to_tombstone(),
+                            coverage=CoverageMode.EXACT,
+                        ),
+                    )
+                case OpType.INSERT | OpType.RENUMBER:
+                    return None
+                case _ as unreachable:
+                    assert_never(unreachable)
 
         # --- NodeTarget cases ---
         node_addr = LegalAddress(path=address.path, special=None)
@@ -2332,74 +2340,71 @@ def _build_canonical_intent(rop: ResolvedOp) -> "CanonicalIntent | None":
                 ),
             )
 
-        if op_type == "REPLACE":
-            assert payload is not None
-            return Replace(
-                kind=IntentKind.REPLACE,
-                target=node_target,
-                payload=cast(_IRNodeLike, payload),
-                contract=ExecutionContract(
-                    occupancy=_replace_policy(),
-                    coverage=CoverageMode.EXACT,
-                ),
-            )
-
-        if op_type == "REPEAL":
-            return Repeal(
-                kind=IntentKind.REPEAL,
-                target=node_target,
-                contract=ExecutionContract(
-                    occupancy=OccupancyPolicy.repeal_to_tombstone(),
-                    coverage=CoverageMode.EXACT,
-                ),
-            )
-
-        if op_type == "INSERT":
-            assert payload is not None
-            return Insert(
-                kind=IntentKind.INSERT,
-                target=node_target,
-                payload=cast(_IRNodeLike, payload),
-                contract=ExecutionContract(
-                    occupancy=_insert_policy(),
-                    coverage=CoverageMode.EXACT,
-                    insert_order=InsertOrder.SORTED_FAMILY,
-                ),
-            )
-
-        if op_type == "RENUMBER":
-            # Relabel needs both source and destination addresses on the late
-            # execution waist. Missing destination is now a lowering bug or an
-            # intentional graceful-degradation case for older tests.
-            destination_address = rop.resolved_destination_address
-            if destination_address is not None:
-                # The legacy destination often carries only the new leaf label
-                # (for example ``section:3``), while Relabel requires the full
-                # parent path to stay identical to the source address.
-                source_address = rop.resolved_target_address
-                source_path = source_address.path if source_address is not None else ()
-                if source_path:
-                    dest_leaf_kind = source_path[-1][0]
-                    dest_path = source_path[:-1] + ((dest_leaf_kind, destination_address.leaf_label()),)
-                else:
-                    dest_path = destination_address.path
-                dest_target = NodeTarget(
-                    address=LegalAddress(path=dest_path, special=None),
-                )
-                return Relabel(
-                    kind=IntentKind.RELABEL,
-                    source=node_target,
-                    destination=dest_target,
+        match op_type:
+            case OpType.REPLACE:
+                assert payload is not None
+                return Replace(
+                    kind=IntentKind.REPLACE,
+                    target=node_target,
+                    payload=cast(_IRNodeLike, payload),
                     contract=ExecutionContract(
-                        occupancy=OccupancyPolicy.same_slot_replace(),
+                        occupancy=_replace_policy(),
                         coverage=CoverageMode.EXACT,
                     ),
                 )
-            # Cannot determine destination — graceful degradation
-            return None
-
-        # Unknown op_type — graceful degradation
-        return None
+            case OpType.REPEAL:
+                return Repeal(
+                    kind=IntentKind.REPEAL,
+                    target=node_target,
+                    contract=ExecutionContract(
+                        occupancy=OccupancyPolicy.repeal_to_tombstone(),
+                        coverage=CoverageMode.EXACT,
+                    ),
+                )
+            case OpType.INSERT:
+                assert payload is not None
+                return Insert(
+                    kind=IntentKind.INSERT,
+                    target=node_target,
+                    payload=cast(_IRNodeLike, payload),
+                    contract=ExecutionContract(
+                        occupancy=_insert_policy(),
+                        coverage=CoverageMode.EXACT,
+                        insert_order=InsertOrder.SORTED_FAMILY,
+                    ),
+                )
+            case OpType.RENUMBER:
+                # Relabel needs both source and destination addresses on the late
+                # execution waist. Missing destination is now a lowering bug or an
+                # intentional graceful-degradation case for older tests.
+                destination_address = rop.resolved_destination_address
+                if destination_address is not None:
+                    # The legacy destination often carries only the new leaf label
+                    # (for example ``section:3``), while Relabel requires the full
+                    # parent path to stay identical to the source address.
+                    source_address = rop.resolved_target_address
+                    source_path = source_address.path if source_address is not None else ()
+                    if source_path:
+                        dest_leaf_kind = source_path[-1][0]
+                        dest_path = source_path[:-1] + ((dest_leaf_kind, destination_address.leaf_label()),)
+                    else:
+                        dest_path = destination_address.path
+                    dest_target = NodeTarget(
+                        address=LegalAddress(path=dest_path, special=None),
+                    )
+                    return Relabel(
+                        kind=IntentKind.RELABEL,
+                        source=node_target,
+                        destination=dest_target,
+                        contract=ExecutionContract(
+                            occupancy=OccupancyPolicy.same_slot_replace(),
+                            coverage=CoverageMode.EXACT,
+                        ),
+                    )
+                # Cannot determine destination — graceful degradation
+                return None
+            case _ as unreachable:
+                assert_never(unreachable)
 
     except (NameError, TypeError, AttributeError):
         raise  # programming bugs — fail loud

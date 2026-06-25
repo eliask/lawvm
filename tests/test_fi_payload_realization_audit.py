@@ -98,7 +98,7 @@ def test_payload_realization_audit_scopes_heading_facet_to_cross_heading_payload
         amend_sub_ir=None,
         target_norm="7",
         op_id="replace_chapter_heading",
-        _op_type_seed="REPLACE",
+        _op_type_seed=OpType.REPLACE,
         _target_address_override=LegalAddress(path=(("chapter", "7"),), special=FacetKind.HEADING),
     )
     after_ir = IRNode(
@@ -164,7 +164,7 @@ def test_payload_realization_audit_suppresses_same_amendment_shadowed_gap() -> N
         amend_sub_ir=None,
         target_norm="4",
         op_id="insert_subsection",
-        _op_type_seed="INSERT",
+        _op_type_seed=OpType.INSERT,
         _target_address_override=LegalAddress(path=(("section", "4"), ("subsection", "3"))),
     )
     replacement = ResolvedOp(
@@ -188,7 +188,7 @@ def test_payload_realization_audit_suppresses_same_amendment_shadowed_gap() -> N
         amend_sub_ir=None,
         target_norm="4",
         op_id="replace_subsection",
-        _op_type_seed="REPLACE",
+        _op_type_seed=OpType.REPLACE,
         _target_address_override=LegalAddress(path=(("section", "4"), ("subsection", "3"))),
     )
 
@@ -231,7 +231,7 @@ def test_payload_realization_audit_keeps_gap_when_shadowing_replace_failed() -> 
         amend_sub_ir=None,
         target_norm="4",
         op_id="insert_subsection",
-        _op_type_seed="INSERT",
+        _op_type_seed=OpType.INSERT,
         _target_address_override=LegalAddress(path=(("section", "4"), ("subsection", "3"))),
     )
     failed_replacement = ResolvedOp(
@@ -255,7 +255,7 @@ def test_payload_realization_audit_keeps_gap_when_shadowing_replace_failed() -> 
         amend_sub_ir=None,
         target_norm="4",
         op_id="replace_subsection",
-        _op_type_seed="REPLACE",
+        _op_type_seed=OpType.REPLACE,
         _target_address_override=LegalAddress(path=(("section", "4"), ("subsection", "3"))),
     )
 
@@ -572,7 +572,7 @@ def test_payload_realization_audit_scopes_child_target_to_matching_payload_subtr
         amend_sub_ir=None,
         target_norm="6",
         op_id="op1",
-        _op_type_seed="INSERT",
+        _op_type_seed=OpType.INSERT,
         _target_address_override=LegalAddress(
             path=(("section", "6"), ("subsection", "1"), ("item", "7a"))
         ),
@@ -626,7 +626,7 @@ def test_payload_realization_audit_does_not_charge_post_omission_carried_tail_to
         amend_sub_ir=carrier,
         target_norm="7",
         op_id="op1",
-        _op_type_seed="REPLACE",
+        _op_type_seed=OpType.REPLACE,
         _target_address_override=LegalAddress(
             path=(("section", "7"), ("subsection", "1"), ("item", "3"))
         ),
@@ -669,7 +669,7 @@ def test_payload_realization_audit_scopes_split_subitem_target_to_combined_paylo
         amend_sub_ir=carrier,
         target_norm="6",
         op_id="op1",
-        _op_type_seed="INSERT",
+        _op_type_seed=OpType.INSERT,
         _target_address_override=LegalAddress(
             path=(("section", "6"), ("subsection", "1"), ("item", "7"), ("subitem", "e"))
         ),
@@ -723,7 +723,7 @@ def test_payload_realization_audit_scopes_combined_item_target_to_split_payload_
         amend_sub_ir=carrier,
         target_norm="1",
         op_id="op1",
-        _op_type_seed="REPLACE",
+        _op_type_seed=OpType.REPLACE,
         _target_address_override=LegalAddress(
             path=(("section", "1"), ("subsection", "1"), ("item", "6c"))
         ),
@@ -755,7 +755,7 @@ def test_payload_realization_audit_does_not_smuggle_carrier_text_to_unmatched_ch
         ),
         target_norm="6",
         op_id="op1",
-        _op_type_seed="INSERT",
+        _op_type_seed=OpType.INSERT,
         _target_address_override=LegalAddress(
             path=(("section", "6"), ("subsection", "1"), ("item", "7"), ("subitem", "e"))
         ),
@@ -795,7 +795,7 @@ def test_payload_realization_audit_scopes_heading_target_to_heading_facet() -> N
         amend_sub_ir=None,
         target_norm="6",
         op_id="op1",
-        _op_type_seed="REPLACE",
+        _op_type_seed=OpType.REPLACE,
         _target_address_override=LegalAddress(
             path=(("chapter", "6"),),
             special=FacetKind.HEADING,
@@ -834,7 +834,7 @@ def test_payload_realization_audit_does_not_require_body_text_for_missing_headin
         amend_sub_ir=None,
         target_norm="6",
         op_id="op1",
-        _op_type_seed="REPLACE",
+        _op_type_seed=OpType.REPLACE,
         _target_address_override=LegalAddress(
             path=(("chapter", "6"),),
             special=FacetKind.HEADING,
@@ -932,7 +932,7 @@ def test_payload_realization_audit_reports_unrealized_post_omission_sparse_momen
         amend_sub_ir=None,
         target_norm="5",
         op_id="op1",
-        _op_type_seed="REPLACE",
+        _op_type_seed=OpType.REPLACE,
         _target_address_override=LegalAddress(path=(("section", "5"),)),
     )
 

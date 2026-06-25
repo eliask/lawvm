@@ -223,7 +223,7 @@ def _legacy_dispatch_shell_for_rop(rop: "ResolvedOp") -> "AmendmentOp":
     Keep this compatibility projection owned by the apply/runtime boundary,
     not by generic `ResolvedOp` consumers.
     """
-    from lawvm.finland.ops import AmendmentOp, OpType
+    from lawvm.finland.ops import AmendmentOp
 
     scope = rop.resolved_target_scope_view
     # Mirror the computation in apply_subsection_ops._subsection_apply_view_for_op
@@ -245,7 +245,7 @@ def _legacy_dispatch_shell_for_rop(rop: "ResolvedOp") -> "AmendmentOp":
 
     return AmendmentOp(
         op_id=rop.op_id,
-        op_type=cast(OpType, rop.resolved_action_type),
+        op_type=rop.resolved_action_type,
         # Structural target columns are derived via the sanctioned typed facade
         # (TargetSelector + codec lowering), not hand-written raw target_* kwargs.
         **_legacy_dispatch_shell_target_kwargs(rop),

@@ -68,7 +68,7 @@ def _op_authorization(*, rule_id: str) -> ExecutionAuthorization:
 
 
 def _rop(*, op_id: str, target_address: LegalAddress | None = None) -> Any:
-    from lawvm.finland.ops import AmendmentOp, ResolvedOp
+    from lawvm.finland.ops import AmendmentOp, OpType, ResolvedOp
     from lawvm.finland.target_kind import TargetKind
 
     op = AmendmentOp(
@@ -86,7 +86,7 @@ def _rop(*, op_id: str, target_address: LegalAddress | None = None) -> Any:
         target_norm="1",
         target_unit_kind="section",
         op_id=op_id,
-        _op_type_seed="REPLACE",
+        _op_type_seed=OpType.REPLACE,
         _target_address_override=target_address,
     )
 
