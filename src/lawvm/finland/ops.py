@@ -936,13 +936,33 @@ class AmendmentOp:
         Section ranges (e.g. '12―14') are expanded into one op each.
         Target fields are derived from lo.target.
         """
+        # Every StructuralAction that can reach AmendmentOp conversion must be
+        # mapped explicitly. HEADING_REPLACE compiles to the REPLACE op family
+        # on purpose: its heading scope is carried by the typed target facet
+        # (FacetKind.HEADING / target_special), not by the op-type axis, so the
+        # canonical op_type IS OpType.REPLACE. The remaining StructuralAction
+        # members (META, TEXT_REPLACE, TEXT_REPEAL) are handled in separate
+        # lanes (MetaClause / TextAmend / law-level text patch) and never reach
+        # this conversion. A silent ``.get(..., OpType.REPLACE)`` default would
+        # mask any future routing change that delivered such an action here as a
+        # spurious section-body REPLACE; fail loud instead with a self-evidencing
+        # diagnostic that embeds the offending action.
         _ACTION_MAP: Dict[StructuralAction, OpType] = {
             StructuralAction.REPLACE: OpType.REPLACE,
             StructuralAction.REPEAL: OpType.REPEAL,
             StructuralAction.INSERT: OpType.INSERT,
             StructuralAction.RENUMBER: OpType.RENUMBER,
+            StructuralAction.HEADING_REPLACE: OpType.REPLACE,
         }
-        op_type: OpType = _ACTION_MAP.get(lo.action, OpType.REPLACE)
+        op_type: OpType | None = _ACTION_MAP.get(lo.action)
+        if op_type is None:
+            raise ValueError(
+                "AmendmentOp.from_lo received a LegalOperation action with no "
+                "structural op-type mapping: "
+                f"action={lo.action!r} op_id={lo.op_id!r}. Non-structural "
+                "actions (META/TEXT_REPLACE/TEXT_REPEAL) must be routed through "
+                "their dedicated lanes before AmendmentOp conversion."
+            )
         base_id = lo.op_id or f"op_{idx}"
         move_clause_target_unit_kind = cast(TargetUnitKind | None, lo.move_clause_target_unit_kind)
         all_ops: List[AmendmentOp] = []
