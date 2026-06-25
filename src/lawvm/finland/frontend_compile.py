@@ -164,20 +164,20 @@ def _ambiguous_unscoped_additive_fallback_insert_observation(
     """Reject unscoped additive fallback item inserts when section ownership is multi-scoped."""
     if (
         fallback_op.op_type != OpType.INSERT
-        or fallback_op.target_chapter is not None
-        or fallback_op.target_section is None
-        or fallback_op.target_paragraph is None
-        or fallback_op.target_item is None
-        or fallback_op.target_special is not None
+        or fallback_op.target_cols.target_chapter is not None
+        or fallback_op.target_cols.target_section is None
+        or fallback_op.target_cols.target_paragraph is None
+        or fallback_op.target_cols.target_item is None
+        or fallback_op.target_cols.target_special is not None
         or "extraction_fallback_heuristic" not in fallback_op.extraction_provenance_tags
     ):
         return None
 
     candidate_chapters = sorted(
         {
-            _norm_num_token(op.target_chapter)
+            _norm_num_token(op.target_cols.target_chapter)
             for op in existing_ops
-            if op.target_section == fallback_op.target_section and op.target_chapter
+            if op.target_cols.target_section == fallback_op.target_cols.target_section and op.target_cols.target_chapter
         }
     )
     if len(candidate_chapters) <= 1:
@@ -191,9 +191,9 @@ def _ambiguous_unscoped_additive_fallback_insert_observation(
             "message": "Unscoped additive fallback insert was rejected because the amendment carries multiple explicit chapter-scoped owners for that section.",
             "reason_code": "ELAB.AMBIGUOUS_UNSCOPED_FALLBACK_INSERT_MULTI_SCOPE",
             "description": fallback_op.description(),
-            "target_section": fallback_op.target_section,
-            "target_paragraph": fallback_op.target_paragraph,
-            "target_item": fallback_op.target_item,
+            "target_section": fallback_op.target_cols.target_section,
+            "target_paragraph": fallback_op.target_cols.target_paragraph,
+            "target_item": fallback_op.target_cols.target_item,
             "candidate_chapters": candidate_chapters,
         },
         source_statute=amendment_id,
@@ -256,28 +256,28 @@ def _single_payload_already_owned_fallback_insert_observation(
     """
     if (
         fallback_op.op_type != OpType.INSERT
-        or fallback_op.target_section is None
-        or fallback_op.target_paragraph is None
-        or fallback_op.target_item is not None
-        or fallback_op.target_special is not None
+        or fallback_op.target_cols.target_section is None
+        or fallback_op.target_cols.target_paragraph is None
+        or fallback_op.target_cols.target_item is not None
+        or fallback_op.target_cols.target_special is not None
         or "extraction_fallback_heuristic" not in fallback_op.extraction_provenance_tags
     ):
         return None
 
-    labels = _single_body_section_subsection_labels(muutos_tree, fallback_op.target_section)
+    labels = _single_body_section_subsection_labels(muutos_tree, fallback_op.target_cols.target_section)
     if labels != (None,):
         return None
 
     owned_paragraphs = sorted(
         {
-            int(op.target_paragraph)
+            int(op.target_cols.target_paragraph)
             for op in existing_ops
             if op.op_type == OpType.INSERT
-            and op.target_section == fallback_op.target_section
-            and op.target_paragraph is not None
-            and op.target_paragraph != fallback_op.target_paragraph
-            and op.target_item is None
-            and op.target_special is None
+            and op.target_cols.target_section == fallback_op.target_cols.target_section
+            and op.target_cols.target_paragraph is not None
+            and op.target_cols.target_paragraph != fallback_op.target_cols.target_paragraph
+            and op.target_cols.target_item is None
+            and op.target_cols.target_special is None
         }
     )
     if not owned_paragraphs:
@@ -291,8 +291,8 @@ def _single_payload_already_owned_fallback_insert_observation(
             "message": "Fallback subsection insert was rejected because the source body has one unnumbered subsection payload already owned by a parsed insert for this section.",
             "reason_code": "ELAB.FALLBACK_INSERT_SINGLE_PAYLOAD_ALREADY_OWNED",
             "description": fallback_op.description(),
-            "target_section": fallback_op.target_section,
-            "target_paragraph": fallback_op.target_paragraph,
+            "target_section": fallback_op.target_cols.target_section,
+            "target_paragraph": fallback_op.target_cols.target_paragraph,
             "owned_paragraphs": owned_paragraphs,
         },
         source_statute=amendment_id,
@@ -315,11 +315,11 @@ def _reject_overbroad_section_repeals_for_deep_targets(
     instead of mutating the parent.
     """
     deep_repeal_sections = {
-        _norm_num_token(op.target_section or "")
+        _norm_num_token(op.target_cols.target_section or "")
         for op in ops
         if op.op_type == OpType.REPEAL
-        and op.target_section
-        and op.target_item is not None
+        and op.target_cols.target_section
+        and op.target_cols.target_item is not None
     }
     if not deep_repeal_sections:
         return ops, []
@@ -329,11 +329,11 @@ def _reject_overbroad_section_repeals_for_deep_targets(
     for op in ops:
         if (
             op.op_type == OpType.REPEAL
-            and op.target_unit_kind == "section"
-            and op.target_paragraph is None
-            and op.target_item is None
-            and op.target_special is None
-            and _norm_num_token(op.target_section or "") in deep_repeal_sections
+            and op.target_cols.target_unit_kind == "section"
+            and op.target_cols.target_paragraph is None
+            and op.target_cols.target_item is None
+            and op.target_cols.target_special is None
+            and _norm_num_token(op.target_cols.target_section or "") in deep_repeal_sections
         ):
             findings.append(
                 Finding(
@@ -344,7 +344,7 @@ def _reject_overbroad_section_repeals_for_deep_targets(
                         "message": "Whole-section repeal was rejected because the clause explicitly targets deeper kohta/alakohta scope.",
                         "reason_code": "ELAB.OVERBROAD_SECTION_REPEAL_FOR_DEEP_TARGET",
                         "description": op.description(),
-                        "target_section": op.target_section or "",
+                        "target_section": op.target_cols.target_section or "",
                     },
                     source_statute=amendment_id,
                     blocking=False,
@@ -386,12 +386,12 @@ def _parenthesized_payload_labels_for_section(
 
 
 def _live_direct_subsection_labels(master: "ReplayState | None", op: AmendmentOp) -> set[str]:
-    if master is None or op.target_unit_kind != "section" or not op.target_section:
+    if master is None or op.target_cols.target_unit_kind != "section" or not op.target_cols.target_section:
         return set()
     section = master.find_section(
-        _norm_num_token(op.target_section),
-        op.target_chapter,
-        op.target_part,
+        _norm_num_token(op.target_cols.target_section),
+        op.target_cols.target_chapter,
+        op.target_cols.target_part,
     )
     if section is None:
         return set()
@@ -469,14 +469,14 @@ def _normalize_historical_top_level_kohta_subsection_ops(
 
     for op in ops:
         if (
-            op.target_unit_kind == "section"
+            op.target_cols.target_unit_kind == "section"
             and op.op_type == OpType.REPLACE
-            and op.target_section
-            and op.target_paragraph is None
-            and op.target_item is None
-            and op.target_special is None
+            and op.target_cols.target_section
+            and op.target_cols.target_paragraph is None
+            and op.target_cols.target_item is None
+            and op.target_cols.target_special is None
         ):
-            section_label = _norm_num_token(op.target_section)
+            section_label = _norm_num_token(op.target_cols.target_section)
             replace_labels = _postposed_kohta_labels_for_section(johto, section_label=section_label)
             payload_labels = _parenthesized_payload_labels_for_section(
                 muutos_tree,
@@ -495,7 +495,7 @@ def _normalize_historical_top_level_kohta_subsection_ops(
     emitted_labels_by_section: dict[str, set[str]] = {section: set() for section in rewrite_sections}
     output: List[AmendmentOp] = []
     for op in ops:
-        section_label = _norm_num_token(op.target_section or "")
+        section_label = _norm_num_token(op.target_cols.target_section or "")
         if op is broad_replaces.get(section_label):
             for label in sorted(rewrite_sections[section_label], key=lambda value: int(value)):
                 op_id = op.op_id if len(rewrite_sections[section_label]) == 1 else f"{op.op_id}__histkohta_{label}"
@@ -516,13 +516,13 @@ def _normalize_historical_top_level_kohta_subsection_ops(
         )
         if (
             section_label in rewrite_sections
-            and op.target_unit_kind == "section"
+            and op.target_cols.target_unit_kind == "section"
             and op.op_type in {OpType.INSERT, OpType.REPLACE}
-            and op.target_paragraph == 1
-            and op.target_item
-            and op.target_special is None
+            and op.target_cols.target_paragraph == 1
+            and op.target_cols.target_item
+            and op.target_cols.target_special is None
         ):
-            item_label = _norm_num_token(op.target_item)
+            item_label = _norm_num_token(op.target_cols.target_item)
             if item_label.isdigit() and item_label in payload_labels:
                 retargeted = _retarget_op_to_subsection(
                     op,
@@ -589,10 +589,10 @@ def _attach_target_version_selectors(
     findings: List[Finding] = []
     patched: List[AmendmentOp] = []
     for op in ops:
-        if op.target_unit_kind != "section" or not op.target_section:
+        if op.target_cols.target_unit_kind != "section" or not op.target_cols.target_section:
             patched.append(op)
             continue
-        target_norm = _norm_num_token(op.target_section)
+        target_norm = _norm_num_token(op.target_cols.target_section)
         cited_ids = sorted(label_to_cited_ids.get(target_norm, ()))
         if not cited_ids:
             patched.append(op)
@@ -607,7 +607,7 @@ def _attach_target_version_selectors(
                         "message": "Multiple cited-version selectors matched the same section target; selector ownership was left unresolved.",
                         "reason_code": "ELAB.AMBIGUOUS_TARGET_VERSION_SELECTOR",
                         "description": op.description(),
-                        "target_section": op.target_section,
+                        "target_section": op.target_cols.target_section,
                         "candidate_statute_ids": cited_ids,
                     },
                     source_statute=amendment_id,
@@ -674,39 +674,39 @@ def _restore_heading_facet_for_mixed_scope_section_replaces(
     # and a REPLACE section-container are different ops for the same section.
     descendant_scope_present: set[tuple[str, str]] = {
         (
-            str(op.target_part or "").strip(),
-            str(op.target_section or "").strip(),
+            str(op.target_cols.target_part or "").strip(),
+            str(op.target_cols.target_section or "").strip(),
         )
         for op in ops
-        if op.target_unit_kind == "section"
-        and str(op.target_section or "").strip()
-        and (op.target_paragraph is not None or bool(op.target_item))
+        if op.target_cols.target_unit_kind == "section"
+        and str(op.target_cols.target_section or "").strip()
+        and (op.target_cols.target_paragraph is not None or bool(op.target_cols.target_item))
     }
 
     for op in ops:
         key = (
             str(op.op_type or "").strip(),
-            str(op.target_part or "").strip(),
-            str(op.target_section or "").strip(),
+            str(op.target_cols.target_part or "").strip(),
+            str(op.target_cols.target_section or "").strip(),
         )
         descendant_scope_key = (
-            str(op.target_part or "").strip(),
-            str(op.target_section or "").strip(),
+            str(op.target_cols.target_part or "").strip(),
+            str(op.target_cols.target_section or "").strip(),
         )
         # Allow explicit heading ops (target_special == "otsikko") as well as
         # plain section replaces to receive the preserve flag when co-occurring
         # with a subsection op for the same section. An explicit "otsikko" op
         # must stay on the heading facet even when the shared XML payload
         # carries subsection children intended for the sibling subsection op.
-        is_explicit_heading_op = op.target_special == "otsikko"
+        is_explicit_heading_op = op.target_cols.target_special == "otsikko"
         if (
             key not in candidate_keys
             or descendant_scope_key not in descendant_scope_present
-            or op.target_unit_kind != "section"
+            or op.target_cols.target_unit_kind != "section"
             or op.op_type != OpType.REPLACE
-            or op.target_paragraph is not None
-            or bool(op.target_item)
-            or (op.target_special is not None and not is_explicit_heading_op)
+            or op.target_cols.target_paragraph is not None
+            or bool(op.target_cols.target_item)
+            or (op.target_cols.target_special is not None and not is_explicit_heading_op)
         ):
             continue
         op.preserve_explicit_heading_facet = True
@@ -808,13 +808,13 @@ def _compiled_cited_section_scopes(
     )
     section_scopes: dict[str, tuple[str | None, str | None]] = {}
     for cited_op in cited_phase.output:
-        if cited_op.target_unit_kind != "section" or not cited_op.target_section:
+        if cited_op.target_cols.target_unit_kind != "section" or not cited_op.target_cols.target_section:
             continue
-        if not cited_op.target_chapter and not cited_op.target_part:
+        if not cited_op.target_cols.target_chapter and not cited_op.target_cols.target_part:
             continue
         section_scopes.setdefault(
-            _norm_num_token(cited_op.target_section),
-            (cited_op.target_part, cited_op.target_chapter),
+            _norm_num_token(cited_op.target_cols.target_section),
+            (cited_op.target_cols.target_part, cited_op.target_cols.target_chapter),
         )
     _cited_scope_cache[cache_key] = section_scopes
     return section_scopes
@@ -871,7 +871,7 @@ def _lift_explicit_scopes_from_cited_version_ops(
         {
             str(op.target_version_statute_id or "")
             for op in ops
-            if op.target_version_statute_id and op.target_unit_kind == "section" and op.target_section and not op.target_chapter
+            if op.target_version_statute_id and op.target_cols.target_unit_kind == "section" and op.target_cols.target_section and not op.target_cols.target_chapter
         }
     )
     if not relevant_cited_ids:
@@ -894,13 +894,13 @@ def _lift_explicit_scopes_from_cited_version_ops(
     patched: List[AmendmentOp] = []
     for op in ops:
         cited_id = str(op.target_version_statute_id or "")
-        target_norm = _norm_num_token(op.target_section or "")
+        target_norm = _norm_num_token(op.target_cols.target_section or "")
         scoped_target = cited_scope_map.get(cited_id, {}).get(target_norm)
         if (
             not cited_id
             or not target_norm
-            or op.target_unit_kind != "section"
-            or op.target_chapter is not None
+            or op.target_cols.target_unit_kind != "section"
+            or op.target_cols.target_chapter is not None
             or scoped_target is None
         ):
             patched.append(op)
@@ -910,7 +910,7 @@ def _lift_explicit_scopes_from_cited_version_ops(
             target_norm,
             target_chapter,
             target_part,
-        ) is None and master.find_section_path(target_norm, None, op.target_part) is not None:
+        ) is None and master.find_section_path(target_norm, None, op.target_cols.target_part) is not None:
             patched.append(op)
             continue
         patched.append(
@@ -1019,29 +1019,29 @@ def _body_chapter_scope_for_section_op(
     already part of the master statute. We only attach a chapter when the body
     chapter is unique for the section label and already exists in the master.
     """
-    if op.target_unit_kind != "section" or not op.target_section:
+    if op.target_cols.target_unit_kind != "section" or not op.target_cols.target_section:
         return None
     scope_witness = projection_scope_confidence(
         scope_confidence=op.scope_confidence,
         scope_provenance_tags=op.scope_provenance_tags,
-        resolved_chapter=op.target_chapter,
+        resolved_chapter=op.target_cols.target_chapter,
     )
-    if op.target_chapter:
+    if op.target_cols.target_chapter:
         if not (
             op.op_type == OpType.INSERT
-            and op.target_paragraph is None
-            and not op.target_item
-            and not op.target_special
+            and op.target_cols.target_paragraph is None
+            and not op.target_cols.target_item
+            and not op.target_cols.target_special
             and scope_witness is not None
             and scope_witness.source is ScopeResolutionSource.CARRY_FORWARD
         ):
             return None
 
-    section_label = _norm_num_token(op.target_section)
+    section_label = _norm_num_token(op.target_cols.target_section)
     if source_model is not None:
         chapter_label = source_model.unique_body_section_chapter(
             section_label,
-            target_part=op.target_part,
+            target_part=op.target_cols.target_part,
         )
         if chapter_label is None:
             return None
@@ -1073,9 +1073,9 @@ def _body_chapter_scope_for_section_op(
             sec_label = _normalize_source_section_num(num_el.text)
             if sec_label != section_label:
                 continue
-            if op.target_part:
+            if op.target_cols.target_part:
                 body_part = _part_label_for_element(sec)
-                if body_part != op.target_part:
+                if body_part != op.target_cols.target_part:
                     continue
             parent = sec.getparent()
             if parent is None or str(parent.tag).rsplit("}", 1)[-1] != "chapter":
@@ -1092,7 +1092,7 @@ def _body_chapter_scope_for_section_op(
 
         chapter_label = next(iter(candidate_chapters))
 
-    if op.target_chapter and chapter_label == op.target_chapter:
+    if op.target_cols.target_chapter and chapter_label == op.target_cols.target_chapter:
         return None
     if _body_chapter_scope_conflicts_with_unchaptered_live_target(
         op=op,
@@ -1104,7 +1104,7 @@ def _body_chapter_scope_for_section_op(
         return None
     if master.find_chapter(chapter_label) is None:
         if not (
-            op.target_chapter
+            op.target_cols.target_chapter
             and scope_witness is not None
             and scope_witness.source is ScopeResolutionSource.CARRY_FORWARD
             and _source_declares_chapter_heading_wave(muutos_tree=muutos_tree, johto=johto)
@@ -1137,11 +1137,11 @@ def _body_chapter_scope_conflicts_with_unchaptered_live_target(
     johto: str,
 ) -> bool:
     """Reject stale source-body chapter wrappers over root-level live sections."""
-    section_norm = _norm_num_token(op.target_section or "")
+    section_norm = _norm_num_token(op.target_cols.target_section or "")
     if (
-        op.target_paragraph is not None
-        or op.target_item is not None
-        or op.target_special is not None
+        op.target_cols.target_paragraph is not None
+        or op.target_cols.target_item is not None
+        or op.target_cols.target_special is not None
         or _johtolause_explicitly_mentions_chaptered_section_target(
             johto,
             chapter_label,
@@ -1154,7 +1154,7 @@ def _body_chapter_scope_conflicts_with_unchaptered_live_target(
         and _live_section_path_is_unchaptered(
             master=master,
             section_norm=section_norm,
-            target_part=op.target_part,
+            target_part=op.target_cols.target_part,
         )
     ):
         return True
@@ -1167,7 +1167,7 @@ def _body_chapter_scope_conflicts_with_unchaptered_live_target(
     if not _live_section_path_is_unchaptered(
         master=master,
         section_norm=stem_norm,
-        target_part=op.target_part,
+        target_part=op.target_cols.target_part,
     ):
         return False
     stem_body_scope = source_model.body_section_scope(stem_norm)
@@ -1180,11 +1180,11 @@ def _body_chapter_scope_conflicts_with_unchaptered_live_target(
 def _is_whole_section_insert(op: AmendmentOp) -> bool:
     return (
         op.op_type == OpType.INSERT
-        and op.target_unit_kind == "section"
-        and bool(op.target_section)
-        and op.target_paragraph is None
-        and op.target_item is None
-        and op.target_special is None
+        and op.target_cols.target_unit_kind == "section"
+        and bool(op.target_cols.target_section)
+        and op.target_cols.target_paragraph is None
+        and op.target_cols.target_item is None
+        and op.target_cols.target_special is None
     )
 
 
@@ -1248,11 +1248,11 @@ def _is_identity_whole_section_renumber(op: AmendmentOp) -> bool:
     the SIIRTAA verb group. Such targets carry no real relabel — their true verb
     is the outer ``lisätään`` (insert).
     """
-    if op.op_type != OpType.RENUMBER or op.target_unit_kind != "section":
+    if op.op_type != OpType.RENUMBER or op.target_cols.target_unit_kind != "section":
         return False
-    if not op.target_section:
+    if not op.target_cols.target_section:
         return False
-    if op.target_paragraph is not None or op.target_item or op.target_special:
+    if op.target_cols.target_paragraph is not None or op.target_cols.target_item or op.target_cols.target_special:
         return False
     lo = op.lo
     if lo is None or lo.target is None or lo.destination is None:
@@ -1340,15 +1340,15 @@ def _infer_flat_body_insert_chapter_from_bracketing_live_siblings(
     master: "ReplayState",
 ) -> str | None:
     """Infer a flat source-body section insert's chapter from bracketing live siblings."""
-    if not _is_whole_section_insert(op) or op.target_chapter is not None:
+    if not _is_whole_section_insert(op) or op.target_cols.target_chapter is not None:
         return None
-    section_norm = _norm_num_token(op.target_section)
+    section_norm = _norm_num_token(op.target_cols.target_section)
     if _DIGITS_RE.fullmatch(section_norm) is None:
         return None
     if not _source_body_has_flat_whole_section(
         muutos_tree=muutos_tree,
         section_norm=section_norm,
-        target_part=op.target_part,
+        target_part=op.target_cols.target_part,
     ):
         return None
 
@@ -1368,7 +1368,7 @@ def _infer_flat_body_insert_chapter_from_bracketing_live_siblings(
         elif kind is IRNodeKind.SECTION and label and next_chapter:
             sibling_norm = _norm_num_token(str(label))
             if _DIGITS_RE.fullmatch(sibling_norm) is not None and (
-                op.target_part is None or next_part == op.target_part
+                op.target_cols.target_part is None or next_part == op.target_cols.target_part
             ):
                 sibling_num = int(sibling_norm)
                 distance = abs(sibling_num - target_num)
@@ -1406,21 +1406,21 @@ def _infer_flat_body_replace_scope_from_bracketing_live_siblings(
     """
     if (
         op.op_type != OpType.REPLACE
-        or op.target_unit_kind != "section"
-        or not op.target_section
-        or op.target_chapter is not None
-        or op.target_special is not None
-        or op.target_item
+        or op.target_cols.target_unit_kind != "section"
+        or not op.target_cols.target_section
+        or op.target_cols.target_chapter is not None
+        or op.target_cols.target_special is not None
+        or op.target_cols.target_item
     ):
         return None
-    section_norm = _norm_num_token(op.target_section)
+    section_norm = _norm_num_token(op.target_cols.target_section)
     target_order = _section_label_order_key(section_norm)
     if target_order is None:
         return None
     if not _source_body_has_flat_whole_section(
         muutos_tree=muutos_tree,
         section_norm=section_norm,
-        target_part=op.target_part,
+        target_part=op.target_cols.target_part,
     ):
         return None
 
@@ -1440,7 +1440,7 @@ def _infer_flat_body_replace_scope_from_bracketing_live_siblings(
             if sibling_norm == section_norm:
                 return
             sibling_order = _section_label_order_key(sibling_norm)
-            if sibling_order is not None and (op.target_part is None or next_part == op.target_part):
+            if sibling_order is not None and (op.target_cols.target_part is None or next_part == op.target_cols.target_part):
                 sibling_num, sibling_suffix_rank = sibling_order
                 numeric_distance = abs(sibling_num - target_num)
                 if numeric_distance <= 2:
@@ -1523,30 +1523,30 @@ def _infer_flat_body_replace_chapter_from_live_section_gap(
     """
     if (
         op.op_type != OpType.REPLACE
-        or op.target_unit_kind != "section"
-        or not op.target_section
-        or op.target_chapter is not None
-        or op.target_paragraph is not None
-        or op.target_item
-        or op.target_special
+        or op.target_cols.target_unit_kind != "section"
+        or not op.target_cols.target_section
+        or op.target_cols.target_chapter is not None
+        or op.target_cols.target_paragraph is not None
+        or op.target_cols.target_item
+        or op.target_cols.target_special
     ):
         return None
-    section_norm = _norm_num_token(op.target_section)
+    section_norm = _norm_num_token(op.target_cols.target_section)
     if _DIGITS_RE.fullmatch(section_norm) is None:
         return None
     if not _source_body_has_flat_whole_section(
         muutos_tree=muutos_tree,
         section_norm=section_norm,
-        target_part=op.target_part,
+        target_part=op.target_cols.target_part,
     ):
         return None
-    if master.find_section_path(section_norm, None, op.target_part) is not None:
+    if master.find_section_path(section_norm, None, op.target_cols.target_part) is not None:
         return None
 
     target_num = int(section_norm)
     source_nums = _flat_source_body_section_nums(
         muutos_tree=muutos_tree,
-        target_part=op.target_part,
+        target_part=op.target_cols.target_part,
     )
     chapters: list[tuple[str | None, str, tuple[int, ...]]] = []
 
@@ -1563,7 +1563,7 @@ def _infer_flat_body_replace_chapter_from_live_section_gap(
                 child_norm = _norm_num_token(str(child.label))
                 if _DIGITS_RE.fullmatch(child_norm) is not None:
                     nums.append(int(child_norm))
-            if nums and (op.target_part is None or next_part == op.target_part):
+            if nums and (op.target_cols.target_part is None or next_part == op.target_cols.target_part):
                 chapters.append((next_part, chapter, tuple(sorted(set(nums)))))
         for child in node.children:
             _walk(child, next_part)
@@ -1708,47 +1708,47 @@ def _infer_flat_reinstated_section_scope_from_base(
     """
     if not _is_whole_section_insert(op):
         return None
-    section_norm = _norm_num_token(op.target_section)
+    section_norm = _norm_num_token(op.target_cols.target_section)
     scope_witness = projection_scope_confidence(
         scope_confidence=op.scope_confidence,
         scope_provenance_tags=op.scope_provenance_tags,
-        resolved_chapter=op.target_chapter,
+        resolved_chapter=op.target_cols.target_chapter,
     )
     unwitnessed_absent_statute_level_reinstatement = (
-        op.target_chapter is not None
+        op.target_cols.target_chapter is not None
         and scope_witness is None
-        and master.find_section_path(section_norm, op.target_chapter, op.target_part) is None
+        and master.find_section_path(section_norm, op.target_cols.target_chapter, op.target_cols.target_part) is None
         and _johto_says_statute_level_repealed_section_replaced_by_new_section(
             johto,
             section_norm,
         )
     )
     explicit_absent_statute_level_reinstatement = (
-        op.target_chapter is not None
+        op.target_cols.target_chapter is not None
         and scope_witness is not None
         and scope_witness.source is ScopeResolutionSource.EXPLICIT_CHUNK
-        and master.find_section_path(section_norm, op.target_chapter, op.target_part) is None
+        and master.find_section_path(section_norm, op.target_cols.target_chapter, op.target_cols.target_part) is None
         and _johto_says_statute_level_repealed_section_replaced_by_new_section(
             johto,
             section_norm,
         )
     )
-    if op.target_chapter is not None and (
+    if op.target_cols.target_chapter is not None and (
         scope_witness is None
         or scope_witness.source not in {ScopeResolutionSource.CARRY_FORWARD, ScopeResolutionSource.EXPLICIT_CHUNK}
     ):
         if not unwitnessed_absent_statute_level_reinstatement:
             return None
-    if op.target_chapter is not None and master.find_section_path(
+    if op.target_cols.target_chapter is not None and master.find_section_path(
         section_norm,
-        op.target_chapter,
-        op.target_part,
+        op.target_cols.target_chapter,
+        op.target_cols.target_part,
     ) is not None:
         return None
     if not _source_body_carries_whole_section(
         muutos_tree=muutos_tree,
         section_norm=section_norm,
-        target_part=op.target_part,
+        target_part=op.target_cols.target_part,
         source_model=source_model,
     ):
         return None
@@ -1763,7 +1763,7 @@ def _infer_flat_reinstated_section_scope_from_base(
     )
     if cited_scope is not None:
         cited_part, cited_chapter = cited_scope
-        if op.target_part is not None and cited_part != op.target_part:
+        if op.target_cols.target_part is not None and cited_part != op.target_cols.target_part:
             return None
         if cited_chapter is not None and _container_path_exists_in_master(
             master=master,
@@ -1771,18 +1771,18 @@ def _infer_flat_reinstated_section_scope_from_base(
             chapter=cited_chapter,
         ):
             source_chunk_target_absent = (
-                op.target_chapter is not None
+                op.target_cols.target_chapter is not None
                 and scope_witness is not None
                 and scope_witness.source is ScopeResolutionSource.EXPLICIT_CHUNK
-                and master.find_section_path(section_norm, op.target_chapter, op.target_part)
+                and master.find_section_path(section_norm, op.target_cols.target_chapter, op.target_cols.target_part)
                 is None
             )
             cited_repeal_target_present = (
                 master.find_section_path(section_norm, cited_chapter, cited_part) is not None
             )
             if (
-                op.target_chapter is None
-                or cited_chapter == op.target_chapter
+                op.target_cols.target_chapter is None
+                or cited_chapter == op.target_cols.target_chapter
                 or (
                     scope_witness is not None
                     and scope_witness.source is ScopeResolutionSource.CARRY_FORWARD
@@ -1798,23 +1798,23 @@ def _infer_flat_reinstated_section_scope_from_base(
     base_part, base_chapter = base_scope
     if base_chapter is None:
         return None
-    if base_chapter == op.target_chapter and base_part == op.target_part:
+    if base_chapter == op.target_cols.target_chapter and base_part == op.target_cols.target_part:
         return None
-    if op.target_part is not None and base_part != op.target_part:
+    if op.target_cols.target_part is not None and base_part != op.target_cols.target_part:
         return None
     if not _container_path_exists_in_master(master=master, part=base_part, chapter=base_chapter):
         return None
     if (
         unwitnessed_absent_statute_level_reinstatement
         or explicit_absent_statute_level_reinstatement
-        or op.target_chapter is None
+        or op.target_cols.target_chapter is None
         or (scope_witness is not None and scope_witness.source is ScopeResolutionSource.CARRY_FORWARD)
     ):
         return (base_part, base_chapter)
     if not _source_body_has_flat_whole_section(
         muutos_tree=muutos_tree,
         section_norm=section_norm,
-        target_part=op.target_part,
+        target_part=op.target_cols.target_part,
     ):
         return None
     return (base_part, base_chapter)
@@ -1842,22 +1842,22 @@ def _infer_unique_live_section_chapter_scope(
     master: "ReplayState",
 ) -> str | None:
     """Bind chapter scope when johto cites only §N and live tree has one host."""
-    if op.target_unit_kind != "section" or not op.target_section:
+    if op.target_cols.target_unit_kind != "section" or not op.target_cols.target_section:
         return None
     has_child_target = (
-        op.target_paragraph is not None
-        or bool(op.target_item)
-        or bool(op.target_special)
+        op.target_cols.target_paragraph is not None
+        or bool(op.target_cols.target_item)
+        or bool(op.target_cols.target_special)
     )
-    section_label = _norm_num_token(op.target_section)
+    section_label = _norm_num_token(op.target_cols.target_section)
     if op.op_type in {OpType.REPLACE, OpType.REPEAL}:
-        if op.target_chapter is not None or has_child_target:
+        if op.target_cols.target_chapter is not None or has_child_target:
             return None
     elif op.op_type == OpType.INSERT and has_child_target:
-        if op.target_chapter is not None and master.find_section_path(
+        if op.target_cols.target_chapter is not None and master.find_section_path(
             section_label,
-            op.target_chapter,
-            op.target_part,
+            op.target_cols.target_chapter,
+            op.target_cols.target_part,
         ) is not None:
             return None
     else:
@@ -1865,12 +1865,12 @@ def _infer_unique_live_section_chapter_scope(
     unique_chapter = _unique_section_chapter(
         master,
         section_label,
-        part_label=op.target_part,
+        part_label=op.target_cols.target_part,
     )
     if unique_chapter is not None and master.find_section_path(
         section_label,
         unique_chapter,
-        op.target_part,
+        op.target_cols.target_part,
     ) is not None:
         return unique_chapter
     if op.op_type == OpType.INSERT and has_child_target:
@@ -1878,7 +1878,7 @@ def _infer_unique_live_section_chapter_scope(
     return infer_letter_suffix_section_chapter_from_stem_host(
         master,
         section_label,
-        part_label=op.target_part,
+        part_label=op.target_cols.target_part,
     )
 
 
@@ -1901,21 +1901,21 @@ def _infer_duplicate_section_scope_from_source_heading(
     if source_model is None:
         return None
     if (
-        op.target_unit_kind != "section"
+        op.target_cols.target_unit_kind != "section"
         or op.op_type not in {OpType.REPLACE, OpType.REPEAL}
-        or not op.target_section
-        or op.target_chapter is not None
-        or op.target_paragraph is not None
-        or op.target_item is not None
-        or op.target_special is not None
+        or not op.target_cols.target_section
+        or op.target_cols.target_chapter is not None
+        or op.target_cols.target_paragraph is not None
+        or op.target_cols.target_item is not None
+        or op.target_cols.target_special is not None
     ):
         return None
 
-    section_norm = _norm_num_token(op.target_section)
+    section_norm = _norm_num_token(op.target_cols.target_section)
     source_payload = source_model.lookup_payload_ir(
         "section",
         section_norm,
-        target_part=op.target_part,
+        target_part=op.target_cols.target_part,
     )
     source_heading = _direct_heading_text(source_payload.payload_ir).casefold()
     if not source_heading:
@@ -1925,7 +1925,7 @@ def _infer_duplicate_section_scope_from_source_heading(
     for path in section_paths_for_label(
         master.provision_index,
         section_norm,
-        target_part=op.target_part,
+        target_part=op.target_cols.target_part,
     ):
         node = master.resolve(path)
         if node is None:
@@ -1956,15 +1956,15 @@ def _renumbers_same_section_label_away(
     ops: List[AmendmentOp],
 ) -> bool:
     """Return True when this amendment explicitly vacates ``op``'s label."""
-    section_label = _norm_num_token(op.target_section or "")
+    section_label = _norm_num_token(op.target_cols.target_section or "")
     if not section_label:
         return False
     for candidate in ops:
         if (
             candidate is op
             or candidate.op_type != "RENUMBER"
-            or candidate.target_unit_kind != "section"
-            or _norm_num_token(candidate.target_section or "") != section_label
+            or candidate.target_cols.target_unit_kind != "section"
+            or _norm_num_token(candidate.target_cols.target_section or "") != section_label
             or candidate.lo is None
             or candidate.lo.destination is None
         ):
@@ -1992,7 +1992,7 @@ def _infer_recodification_vacated_insert_scope(
     """
     if source_model is None or not _is_whole_section_insert(op):
         return None
-    section_label = _norm_num_token(op.target_section or "")
+    section_label = _norm_num_token(op.target_cols.target_section or "")
     if not _renumbers_same_section_label_away(op, ops):
         return None
     body_scope = source_model.body_section_scope(section_label)
@@ -2003,7 +2003,7 @@ def _infer_recodification_vacated_insert_scope(
         return None
     if not source_model.body_chapter_is_single_mixed_wrapper(body_chapter, master):
         return None
-    live_path = master.find_section_path(section_label, None, op.target_part)
+    live_path = master.find_section_path(section_label, None, op.target_cols.target_part)
     if live_path is None:
         return None
     live_part = next((label for kind, label in live_path if kind == "part"), None)
@@ -2032,20 +2032,20 @@ def _infer_letter_suffix_insert_chapter_from_stem_host(
     """
     if not _is_whole_section_insert(op):
         return None
-    section_label = _norm_num_token(op.target_section)
+    section_label = _norm_num_token(op.target_cols.target_section)
     if _LETTER_SUFFIX_SECTION_RE.fullmatch(section_label) is None:
         return None
     scope_witness = projection_scope_confidence(
         scope_confidence=op.scope_confidence,
         scope_provenance_tags=op.scope_provenance_tags,
-        resolved_chapter=op.target_chapter,
+        resolved_chapter=op.target_cols.target_chapter,
     )
     body_scope = _body_scope_for_section_label(
         muutos_tree=muutos_tree,
         section_label=section_label,
         source_model=source_model,
     )
-    if op.target_chapter is not None:
+    if op.target_cols.target_chapter is not None:
         if scope_witness is None:
             return None
         if scope_witness.source is ScopeResolutionSource.CARRY_FORWARD:
@@ -2054,37 +2054,37 @@ def _infer_letter_suffix_insert_chapter_from_stem_host(
             if body_scope is None:
                 return None
             body_part, body_chapter = body_scope
-            if body_part != op.target_part:
+            if body_part != op.target_cols.target_part:
                 return None
         else:
             return None
     if not _source_body_carries_whole_section(
         muutos_tree=muutos_tree,
         section_norm=section_label,
-        target_part=op.target_part,
+        target_part=op.target_cols.target_part,
         source_model=source_model,
     ):
         return None
     if body_scope is not None:
         body_part, body_chapter = body_scope
-        if body_part == op.target_part and _container_path_exists_in_master(
+        if body_part == op.target_cols.target_part and _container_path_exists_in_master(
             master=master,
             part=body_part,
             chapter=body_chapter,
         ):
             return None
-    if op.target_chapter is not None and master.find_section_path(
+    if op.target_cols.target_chapter is not None and master.find_section_path(
         section_label,
-        op.target_chapter,
-        op.target_part,
+        op.target_cols.target_chapter,
+        op.target_cols.target_part,
     ) is not None:
         return None
     inferred_chapter = infer_letter_suffix_section_chapter_from_stem_host(
         master,
         section_label,
-        part_label=op.target_part,
+        part_label=op.target_cols.target_part,
     )
-    if inferred_chapter is None or inferred_chapter == op.target_chapter:
+    if inferred_chapter is None or inferred_chapter == op.target_cols.target_chapter:
         return None
     return inferred_chapter
 
@@ -2108,16 +2108,16 @@ def _infer_corroborated_body_scope_for_live_stem_insert(
     scope_witness = projection_scope_confidence(
         scope_confidence=op.scope_confidence,
         scope_provenance_tags=op.scope_provenance_tags,
-        resolved_chapter=op.target_chapter,
+        resolved_chapter=op.target_cols.target_chapter,
     )
     if scope_witness is None or scope_witness.source is not ScopeResolutionSource.LIVE_STEM_HOST:
         return None
-    section_label = _norm_num_token(op.target_section or "")
+    section_label = _norm_num_token(op.target_cols.target_section or "")
     body_scope = source_model.body_section_scope(section_label)
     if body_scope is None:
         return None
     body_part, body_chapter = body_scope
-    if not body_chapter or (body_part == op.target_part and body_chapter == op.target_chapter):
+    if not body_chapter or (body_part == op.target_cols.target_part and body_chapter == op.target_cols.target_chapter):
         return None
     if not source_model.body_has_section(
         section_label,
@@ -2152,18 +2152,18 @@ def _infer_corroborated_body_scope_for_live_stem_insert(
 
     corroborating_labels: set[str] = set()
     for other in ops:
-        if other is op or other.target_unit_kind != "section" or not other.target_section:
+        if other is op or other.target_cols.target_unit_kind != "section" or not other.target_cols.target_section:
             continue
         if other.op_type == OpType.INSERT and _is_whole_section_insert(other):
             continue
-        other_chapter = _norm_num_token(other.target_chapter or "")
+        other_chapter = _norm_num_token(other.target_cols.target_chapter or "")
         if other_chapter != _norm_num_token(body_chapter):
             continue
-        other_part = _norm_num_token(other.target_part or "") if other.target_part else None
+        other_part = _norm_num_token(other.target_cols.target_part or "") if other.target_cols.target_part else None
         body_part_norm = _norm_num_token(body_part or "") if body_part else None
         if other_part != body_part_norm:
             continue
-        other_label = _norm_num_token(other.target_section)
+        other_label = _norm_num_token(other.target_cols.target_section)
         if other_label == section_label:
             continue
         if source_model.body_has_section(
@@ -2180,9 +2180,9 @@ def _infer_corroborated_body_scope_for_live_stem_insert(
 
     has_internal_reference_witness = False
     for other in ops:
-        if other is op or other.target_unit_kind != "section" or not other.target_section:
+        if other is op or other.target_cols.target_unit_kind != "section" or not other.target_cols.target_section:
             continue
-        other_label = _norm_num_token(other.target_section)
+        other_label = _norm_num_token(other.target_cols.target_section)
         if other_label == section_label:
             continue
         if not source_model.body_has_section(
@@ -2239,7 +2239,7 @@ def _add_inferred_section_chapter_scope(
         op,
         **replace_target(
             op,
-            target_part=part if part is not None else op.target_part,
+            target_part=part if part is not None else op.target_cols.target_part,
             target_chapter=chapter,
         ),
         scope_provenance_tags=tags,
@@ -2266,22 +2266,22 @@ def _retarget_letter_suffix_inserts_from_same_amendment_stem_scope(
     stem_scopes: dict[str, tuple[str | None, str, ScopeConfidence]] = {}
     conflicted_stems: set[str] = set()
     for op in ops:
-        if op.target_unit_kind != "section" or not op.target_section or not op.target_chapter:
+        if op.target_cols.target_unit_kind != "section" or not op.target_cols.target_section or not op.target_cols.target_chapter:
             continue
-        section_label = _norm_num_token(op.target_section)
+        section_label = _norm_num_token(op.target_cols.target_section)
         if not section_label.isdigit():
             continue
         witness = projection_scope_confidence(
             scope_confidence=op.scope_confidence,
             scope_provenance_tags=op.scope_provenance_tags,
-            resolved_chapter=op.target_chapter,
+            resolved_chapter=op.target_cols.target_chapter,
         )
         if witness is None or witness.source in {
             ScopeResolutionSource.LIVE_STEM_HOST,
             ScopeResolutionSource.CARRY_FORWARD,
         }:
             continue
-        candidate = (op.target_part, op.target_chapter, witness)
+        candidate = (op.target_cols.target_part, op.target_cols.target_chapter, witness)
         existing = stem_scopes.get(section_label)
         if existing is not None and existing[:2] != candidate[:2]:
             conflicted_stems.add(section_label)
@@ -2295,7 +2295,7 @@ def _retarget_letter_suffix_inserts_from_same_amendment_stem_scope(
 
     retargeted: list[AmendmentOp] = []
     for op in ops:
-        section_label = _norm_num_token(op.target_section or "")
+        section_label = _norm_num_token(op.target_cols.target_section or "")
         match = _LETTER_SUFFIX_SECTION_RE.fullmatch(section_label)
         if (
             match is None
@@ -2328,9 +2328,9 @@ def _retarget_letter_suffix_inserts_from_same_amendment_stem_scope(
         current_witness = projection_scope_confidence(
             scope_confidence=op.scope_confidence,
             scope_provenance_tags=op.scope_provenance_tags,
-            resolved_chapter=op.target_chapter,
+            resolved_chapter=op.target_cols.target_chapter,
         )
-        if current_witness is None and op.target_chapter is not None:
+        if current_witness is None and op.target_cols.target_chapter is not None:
             retargeted.append(op)
             continue
         if current_witness is not None and current_witness.source not in {
@@ -2340,8 +2340,8 @@ def _retarget_letter_suffix_inserts_from_same_amendment_stem_scope(
             retargeted.append(op)
             continue
         if (
-            op.target_part == stem_part
-            and op.target_chapter == stem_chapter
+            op.target_cols.target_part == stem_part
+            and op.target_cols.target_chapter == stem_chapter
             and (
                 current_witness is None
                 or current_witness.source is not ScopeResolutionSource.LIVE_STEM_HOST
@@ -2540,22 +2540,22 @@ def _strip_impossible_chapter_scope_for_bare_body_section_op(
     chapter. We only clear the chapter when the amendment body or live target
     path proves a bare top-level section.
     """
-    if op.target_unit_kind != "section" or not op.target_section or not op.target_chapter:
+    if op.target_cols.target_unit_kind != "section" or not op.target_cols.target_section or not op.target_cols.target_chapter:
         return None
     body_scope = _body_scope_for_section_label(
         muutos_tree=muutos_tree,
-        section_label=op.target_section,
+        section_label=op.target_cols.target_section,
         source_model=source_model,
     )
-    section_norm = _norm_num_token(op.target_section)
+    section_norm = _norm_num_token(op.target_cols.target_section)
     has_descendant_target = (
-        op.target_paragraph is not None
-        or op.target_item is not None
-        or op.target_special is not None
+        op.target_cols.target_paragraph is not None
+        or op.target_cols.target_item is not None
+        or op.target_cols.target_special is not None
     )
-    scoped_path = master.find_section_path(section_norm, op.target_chapter, op.target_part)
-    live_path = master.find_section_path(section_norm, None, op.target_part)
-    if live_path is None and op.target_part is not None:
+    scoped_path = master.find_section_path(section_norm, op.target_cols.target_chapter, op.target_cols.target_part)
+    live_path = master.find_section_path(section_norm, None, op.target_cols.target_part)
+    if live_path is None and op.target_cols.target_part is not None:
         live_path = master.find_section_path(section_norm, None, None)
     live_chapter = (
         next((label for kind, label in live_path if kind == "chapter"), None)
@@ -2570,8 +2570,8 @@ def _strip_impossible_chapter_scope_for_bare_body_section_op(
         and not has_descendant_target
         and op.op_type in {OpType.REPLACE, OpType.REPEAL}
         and not any(
-            sibling.target_unit_kind == "chapter"
-            and _norm_num_token(sibling.target_section or "") == _norm_num_token(op.target_chapter)
+            sibling.target_cols.target_unit_kind == "chapter"
+            and _norm_num_token(sibling.target_cols.target_section or "") == _norm_num_token(op.target_cols.target_chapter)
             for sibling in sibling_ops
         )
     )
@@ -2580,8 +2580,8 @@ def _strip_impossible_chapter_scope_for_bare_body_section_op(
         live_path_proves_unchaptered
         and not _johtolause_explicitly_mentions_chaptered_section_target(
             johto,
-            op.target_chapter,
-            op.target_section,
+            op.target_cols.target_chapter,
+            op.target_cols.target_section,
         )
     ):
         return None
@@ -2628,12 +2628,12 @@ def _retarget_stale_body_scope_for_section_op(
     scope_witness = projection_scope_confidence(
         scope_confidence=op.scope_confidence,
         scope_provenance_tags=op.scope_provenance_tags,
-        resolved_chapter=op.target_chapter,
+        resolved_chapter=op.target_cols.target_chapter,
     )
     if (
-        op.target_unit_kind != "section"
-        or not op.target_section
-        or not op.target_chapter
+        op.target_cols.target_unit_kind != "section"
+        or not op.target_cols.target_section
+        or not op.target_cols.target_chapter
         or (
             scope_witness is not None
             and scope_witness.source
@@ -2646,11 +2646,11 @@ def _retarget_stale_body_scope_for_section_op(
     ):
         return None
 
-    section_label = _norm_num_token(op.target_section)
-    scoped_path = master.find_section_path(section_label, op.target_chapter, op.target_part)
+    section_label = _norm_num_token(op.target_cols.target_section)
+    scoped_path = master.find_section_path(section_label, op.target_cols.target_chapter, op.target_cols.target_part)
     if scoped_path is not None:
         return None
-    if op.target_chapter and section_label in _same_label_move_sections_for_chapter(johto, op.target_chapter):
+    if op.target_cols.target_chapter and section_label in _same_label_move_sections_for_chapter(johto, op.target_cols.target_chapter):
         # PEG/clause-surface already owns explicit same-label move destinations
         # like "29 e §, joka samalla siirretään 5 b lukuun". If the live tree
         # still has the old same-labeled section under another chapter, that is
@@ -2673,9 +2673,9 @@ def _retarget_stale_body_scope_for_section_op(
         scope_witness is not None
         and scope_witness.source is ScopeResolutionSource.EXPLICIT_CHUNK
         and op.op_type == OpType.INSERT
-        and op.target_paragraph is None
-        and not op.target_item
-        and not op.target_special
+        and op.target_cols.target_paragraph is None
+        and not op.target_cols.target_item
+        and not op.target_cols.target_special
     ):
         # Explicit chunk scope is source-owned. Do not rehome a whole-section
         # insert merely because the body wrapper resembles an existing live
@@ -2683,11 +2683,11 @@ def _retarget_stale_body_scope_for_section_op(
         return None
     if (
         op.op_type == OpType.INSERT
-        and op.target_paragraph is None
-        and not op.target_item
-        and not op.target_special
-        and body_chapter == op.target_chapter
-        and body_part == op.target_part
+        and op.target_cols.target_paragraph is None
+        and not op.target_cols.target_item
+        and not op.target_cols.target_special
+        and body_chapter == op.target_cols.target_chapter
+        and body_part == op.target_cols.target_part
     ):
         # A whole-section INSERT whose amendment body already agrees with the
         # explicit source scope is creating a new section there. A same-labeled
@@ -2703,7 +2703,7 @@ def _retarget_stale_body_scope_for_section_op(
 
     live_part = next((label for kind, label in live_path if kind == "part"), None)
     live_chapter = next((label for kind, label in live_path if kind == "chapter"), None)
-    if not live_chapter or (live_chapter == op.target_chapter and live_part == op.target_part):
+    if not live_chapter or (live_chapter == op.target_cols.target_chapter and live_part == op.target_cols.target_part):
         return None
     return live_part, live_chapter
 
@@ -2822,24 +2822,24 @@ def _enrich_ops_from_amendment_tree(
             scope_witness = projection_scope_confidence(
                 scope_confidence=scoped_op.scope_confidence,
                 scope_provenance_tags=scoped_op.scope_provenance_tags,
-                resolved_chapter=scoped_op.target_chapter,
+                resolved_chapter=scoped_op.target_cols.target_chapter,
             )
             if (
                 scoped_op.op_type == OpType.INSERT
-                and scoped_op.target_unit_kind == "section"
-                and scoped_op.target_chapter is not None
+                and scoped_op.target_cols.target_unit_kind == "section"
+                and scoped_op.target_cols.target_chapter is not None
                 and (
-                    scoped_op.target_paragraph is not None
-                    or scoped_op.target_item is not None
-                    or scoped_op.target_special is not None
+                    scoped_op.target_cols.target_paragraph is not None
+                    or scoped_op.target_cols.target_item is not None
+                    or scoped_op.target_cols.target_special is not None
                 )
                 and scope_witness is not None
                 and scope_witness.source is ScopeResolutionSource.CARRY_FORWARD
             ):
                 carry_forward_host = master.find_section_path(
-                    _norm_num_token(scoped_op.target_section or ""),
-                    scoped_op.target_chapter,
-                    scoped_op.target_part,
+                    _norm_num_token(scoped_op.target_cols.target_section or ""),
+                    scoped_op.target_cols.target_chapter,
+                    scoped_op.target_cols.target_part,
                 )
                 if carry_forward_host is None:
                     retained_scope_tags = tuple(
@@ -2863,17 +2863,17 @@ def _enrich_ops_from_amendment_tree(
                     scope_witness = projection_scope_confidence(
                         scope_confidence=scoped_op.scope_confidence,
                         scope_provenance_tags=scoped_op.scope_provenance_tags,
-                        resolved_chapter=scoped_op.target_chapter,
+                        resolved_chapter=scoped_op.target_cols.target_chapter,
                     )
             inferred_part = None
             inferred_chapter = None
             inferred_rule_id = "fi_body_chapter_scope_from_source_body"
-            if scoped_op.target_chapter is None or (
+            if scoped_op.target_cols.target_chapter is None or (
                 scoped_op.op_type == OpType.INSERT
-                and scoped_op.target_unit_kind == "section"
-                and scoped_op.target_paragraph is None
-                and scoped_op.target_item is None
-                and scoped_op.target_special is None
+                and scoped_op.target_cols.target_unit_kind == "section"
+                and scoped_op.target_cols.target_paragraph is None
+                and scoped_op.target_cols.target_item is None
+                and scoped_op.target_cols.target_special is None
                 and scope_witness is not None
                 and scope_witness.source
                 in {
@@ -2922,9 +2922,9 @@ def _enrich_ops_from_amendment_tree(
                         inferred_rule_id = (
                             "fi_unique_live_section_chapter_scope"
                             if master.find_section_path(
-                                _norm_num_token(scoped_op.target_section or ""),
+                                _norm_num_token(scoped_op.target_cols.target_section or ""),
                                 inferred_chapter,
-                                scoped_op.target_part,
+                                scoped_op.target_cols.target_part,
                             )
                             is not None
                             else "fi_letter_suffix_stem_host_chapter_scope"
@@ -2987,17 +2987,17 @@ def _enrich_ops_from_amendment_tree(
                 if (
                     inferred_chapter is None
                     and _is_whole_section_insert(scoped_op)
-                    and scoped_op.target_chapter is None
-                    and scoped_op.target_part == last_inferred_section_part
+                    and scoped_op.target_cols.target_chapter is None
+                    and scoped_op.target_cols.target_part == last_inferred_section_part
                     and last_inferred_section_chapter is not None
                     and _source_body_has_flat_whole_section(
                         muutos_tree=muutos_tree,
-                        section_norm=_norm_num_token(scoped_op.target_section),
-                        target_part=scoped_op.target_part,
+                        section_norm=_norm_num_token(scoped_op.target_cols.target_section),
+                        target_part=scoped_op.target_cols.target_part,
                     )
                     and _is_letter_suffix_section_family_continuation(
                         last_inferred_section_norm,
-                        _norm_num_token(scoped_op.target_section),
+                        _norm_num_token(scoped_op.target_cols.target_section),
                     )
                 ):
                     inferred_chapter = last_inferred_section_chapter
@@ -3025,8 +3025,8 @@ def _enrich_ops_from_amendment_tree(
                 )
                 if retargeted_scope is not None:
                     retargeted_part, retargeted_chapter = retargeted_scope
-                    stale_body_part = scoped_op.target_part
-                    stale_body_chapter = scoped_op.target_chapter
+                    stale_body_part = scoped_op.target_cols.target_part
+                    stale_body_chapter = scoped_op.target_cols.target_chapter
                     retargeted_lo = (
                         _lo_with_path_update(
                             scoped_op.lo,
@@ -3089,22 +3089,22 @@ def _enrich_ops_from_amendment_tree(
             master is not None
             and _is_identity_whole_section_renumber(scoped_op)
             and master.find_section_path(
-                _norm_num_token(scoped_op.target_section),
-                scoped_op.target_chapter,
-                scoped_op.target_part,
+                _norm_num_token(scoped_op.target_cols.target_section),
+                scoped_op.target_cols.target_chapter,
+                scoped_op.target_cols.target_part,
             )
             is None
             and _source_body_carries_whole_section(
                 muutos_tree=muutos_tree,
-                section_norm=_norm_num_token(scoped_op.target_section),
-                target_part=scoped_op.target_part,
+                section_norm=_norm_num_token(scoped_op.target_cols.target_section),
+                target_part=scoped_op.target_cols.target_part,
                 source_model=source_model,
             )
         ):
             declared_move_destination = (
-                scoped_op.target_chapter is not None
-                and _norm_num_token(scoped_op.target_section)
-                in _same_label_move_sections_for_chapter(johto, scoped_op.target_chapter)
+                scoped_op.target_cols.target_chapter is not None
+                and _norm_num_token(scoped_op.target_cols.target_section)
+                in _same_label_move_sections_for_chapter(johto, scoped_op.target_cols.target_chapter)
             )
             rewritten_lo = scoped_op.lo
             if scoped_op.lo is not None:
@@ -3156,9 +3156,9 @@ def _enrich_ops_from_amendment_tree(
         next_patched = []
         for op in patched:
             if (
-                _norm_num_token(op.target_section or "") == target.section
-                and op.target_paragraph == target.subsection
-                and op.target_special == target.special
+                _norm_num_token(op.target_cols.target_section or "") == target.section
+                and op.target_cols.target_paragraph == target.subsection
+                and op.target_cols.target_special == target.special
                 and op.lo is not None
                 and op.lo.source is not None
             ):
@@ -3183,13 +3183,13 @@ def _enrich_ops_from_amendment_tree(
         next_patched: List[AmendmentOp] = []
         for op in patched:
             if (
-                op.target_unit_kind == "section"
+                op.target_cols.target_unit_kind == "section"
                 # Both `labels` and the target_section must pass through the
                 # SAME canonical token normalizer.  `labels` were built by
                 # `_parse_section_list_labels` (internal whitespace stripped,
                 # lowercased → e.g. "21b"); a raw ".lower()" on a spaced path
                 # label like "21 b" would miss "21b".  Normalize both sides.
-                and _norm_num_token(op.target_section or "")
+                and _norm_num_token(op.target_cols.target_section or "")
                 in {_norm_num_token(label) for label in labels}
                 and op.lo is not None
                 and op.lo.source is not None
@@ -3237,7 +3237,7 @@ def _temporary_events_for_op(op: AmendmentOp, amendment_id: str) -> tuple[Tempor
         target_statute=op.source_statute or amendment_id,
         exact_addresses=(op.lo.target,) if op.lo is not None else (),
     )
-    event_key = op.op_id or op.target_section or "op"
+    event_key = op.op_id or op.target_cols.target_section or "op"
     events = [
         TemporalEvent(
             event_id=f"fi-temporary:{amendment_id}:{event_key}:commence",
@@ -3270,10 +3270,10 @@ def _body_text_for_temporary_op(
     source_model: "AmendmentSourceModel | None" = None,
 ) -> str:
     """Return amendment-body text for a section-targeted temporary op."""
-    if op.target_unit_kind != "section" or not op.target_section:
+    if op.target_cols.target_unit_kind != "section" or not op.target_cols.target_section:
         return ""
 
-    target_label = _norm_num_token(op.target_section)
+    target_label = _norm_num_token(op.target_cols.target_section)
     if not target_label:
         return ""
 
@@ -3821,9 +3821,9 @@ def _enacting_formula_body_insert_unowned_section_findings(
         return []
 
     accepted_targets = {
-        op.target_section
+        op.target_cols.target_section
         for op in accepted_ops
-        if op.op_type == OpType.INSERT and op.target_unit_kind == "section" and op.target_section
+        if op.op_type == OpType.INSERT and op.target_cols.target_unit_kind == "section" and op.target_cols.target_section
     }
     if not accepted_targets:
         return []
@@ -4102,11 +4102,11 @@ def _accepted_fallback_op_findings(
                     "rule_id": rule_id,
                     "op_type": op.op_type,
                     "description": op.description(),
-                    "target_section": op.target_section or "",
-                    "target_unit_kind": op.target_unit_kind,
-                    "target_paragraph": op.target_paragraph,
-                    "target_item": op.target_item or "",
-                    "target_special": op.target_special or "",
+                    "target_section": op.target_cols.target_section or "",
+                    "target_unit_kind": op.target_cols.target_unit_kind,
+                    "target_paragraph": op.target_cols.target_paragraph,
+                    "target_item": op.target_cols.target_item or "",
+                    "target_special": op.target_cols.target_special or "",
                     "johto_preview": johto_preview,
                 },
                 source_statute=amendment_id,
@@ -4139,8 +4139,8 @@ def _act_wide_body_section_replace_findings(
                     ),
                     "rule_id": FI_ACT_WIDE_BODY_SECTION_REPLACE_RULE_ID,
                     "description": op.description(),
-                    "target_section": op.target_section or "",
-                    "target_paragraph": op.target_paragraph,
+                    "target_section": op.target_cols.target_section or "",
+                    "target_paragraph": op.target_cols.target_paragraph,
                     "johto_preview": _WHITESPACE_RE.sub(" ", johto or "").strip()[:240],
                 },
                 source_statute=amendment_id,
@@ -4209,11 +4209,11 @@ def normalize_and_compile_ops(
                 amendment_id=amendment_id,
                 description=op.description(),
                 reason=f"{source} rejected by strict profile (allows_target_guessing=False)",
-                target_section=op.target_section or "",
-                target_unit_kind=op.target_unit_kind,
-                target_chapter=op.target_chapter,
+                target_section=op.target_cols.target_section or "",
+                target_unit_kind=op.target_cols.target_unit_kind,
+                target_chapter=op.target_cols.target_chapter,
                 target_subsection=_op_target_subsection_label(op),
-                target_item=op.target_item,
+                target_item=op.target_cols.target_item,
             )
             detail = {
                 **failed.as_detail(),
@@ -4526,7 +4526,7 @@ def normalize_and_compile_ops(
                 # stamp site above: `_temporary_targets` were normalized by
                 # `_parse_section_list_labels` (→ "21b"), so a raw ".lower()"
                 # of a spaced path label "21 b" would miss the temporary scope.
-                if _norm_num_token(op.target_section or "") in {
+                if _norm_num_token(op.target_cols.target_section or "") in {
                     _norm_num_token(label) for label in _temporary_targets
                 }:
                     temp_tagged, temp_events = _tag_temporary_ops(
@@ -4567,8 +4567,8 @@ def normalize_and_compile_ops(
                         stage="frontend_compile",
                         detail={
                             "amendment_id": amendment_id,
-                            "target_section": op.target_section or "",
-                            "target_chapter": op.target_chapter or "",
+                            "target_section": op.target_cols.target_section or "",
+                            "target_chapter": op.target_cols.target_chapter or "",
                         },
                         source_statute=amendment_id,
                         blocking=False,
@@ -4607,7 +4607,7 @@ def normalize_and_compile_ops(
             1
             for op in enriched_fallback_ops
             if op.op_type == OpType.INSERT
-            and op.target_special is None
+            and op.target_cols.target_special is None
         )
         for op in enriched_fallback_ops:
             op.fallback_provenance = True
@@ -4640,20 +4640,20 @@ def normalize_and_compile_ops(
             existing_keys = {
                 (
                     op.op_type,
-                    op.target_section,
-                    op.target_paragraph,
-                    op.target_item,
-                    op.target_special,
+                    op.target_cols.target_section,
+                    op.target_cols.target_paragraph,
+                    op.target_cols.target_item,
+                    op.target_cols.target_special,
                 )
                 for op in ops
             }
             for op in enriched_fallback_ops:
                 key = (
                     op.op_type,
-                    op.target_section,
-                    op.target_paragraph,
-                    op.target_item,
-                    op.target_special,
+                    op.target_cols.target_section,
+                    op.target_cols.target_paragraph,
+                    op.target_cols.target_item,
+                    op.target_cols.target_special,
                 )
                 if key in existing_keys:
                     continue
@@ -4676,7 +4676,7 @@ def normalize_and_compile_ops(
                     continue
                 if op.op_type != OpType.INSERT:
                     continue
-                if op.target_special is not None:
+                if op.target_cols.target_special is not None:
                     continue
                 frontend_findings_out.extend(
                     _accepted_fallback_op_findings(
@@ -4998,7 +4998,7 @@ def normalize_and_compile_ops(
                 continue
             reinstated_part, reinstated_chapter = reinstated_scope
             if reinstated_chapter is None or (
-                reinstated_part == op.target_part and reinstated_chapter == op.target_chapter
+                reinstated_part == op.target_cols.target_part and reinstated_chapter == op.target_cols.target_chapter
             ):
                 reinstated_scope_ops.append(op)
                 continue
