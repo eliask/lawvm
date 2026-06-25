@@ -2093,6 +2093,23 @@ def _try_luku_scoped(
         scan.goto(saved)
         return None
 
+    # A PROVENANCE_SPAN between ``lukuun`` and ``uusi`` is the pure chapter
+    # provenance ``sellaisena kuin se on (siihen) myöhemmin tehtyine muutoksineen``
+    # — a self-contained appositive attributing the chapter's prior amendment
+    # history, with NO reinstated-slot / tilalle clause inside it. It does not
+    # change WHERE the new section lands: ``lisätään rikoslain 30 lukuun,
+    # sellaisena kuin se on siihen myöhemmin tehtyine muutoksineen, uusi 3 a §``
+    # inserts §3a INTO chapter 30 exactly as the citation-free ``N lukuun uusi M §``
+    # does. The OLD parser DROPS this insertion entirely (it emits zero ops for the
+    # whole ``N lukuun [PROV] uusi N §`` clause — a silent legacy drop verified
+    # per-statute), so recovering it with chapter=N is a STRICT improvement, not a
+    # legacy-byte-identity case. A REINST_SPAN / TILALLE reinstatement preamble is a
+    # distinct cat handled below; only the pure-provenance PROVENANCE_SPAN is
+    # skipped here. (An optional comma may close the span on either side.)
+    if _at(scan, "PROVENANCE_SPAN"):
+        scan.advance()
+        _optional_comma(scan)
+
     # Single tilalle / reinstatement span (the collapsed reinstatement preamble:
     # ``siitä lailla X kumotun K §:n tilalle``). CITATION_SPAN is excluded above.
     if _at(scan, "TILALLE", "REINST_SPAN"):

@@ -589,6 +589,69 @@ def test_luku_scoped_citation_provenance_does_not_misscope() -> None:
     assert node.chapter == ""
 
 
+@pytest.mark.parametrize(
+    "text, chapter, labels",
+    [
+        # ``N lukuun, sellaisena kuin se on (siihen) myöhemmin tehtyine
+        # muutoksineen, uusi N §`` — a numbered-chapter-scoped section insert whose
+        # PROVENANCE_SPAN (pure ``sellaisena kuin … muutoksineen`` history, no
+        # reinstated-slot / tilalle clause) sits between ``lukuun`` and ``uusi``.
+        # The grammar must skip the provenance and scope the inserted section to the
+        # chapter (``chapter == N``). The LEGACY parser silently DROPS this whole
+        # insertion (emits zero ops), so this is a strict recovery, NOT a
+        # byte-identity case — assert the recovered ops directly.
+        (
+            "lisätään 19 päivänä joulukuuta 1889 annetun rikoslain ( 39/1889 ) "
+            "30 lukuun, sellaisena kuin se on siihen myöhemmin tehtyine "
+            "muutoksineen, uusi 3 a § seuraavasti:",
+            "30",
+            ["3a"],
+        ),
+        (
+            "lisätään 19 päivänä joulukuuta 1889 annetun rikoslain ( 39/1889 ) "
+            "34 lukuun, sellaisena kuin se on siihen myöhemmin tehtyine "
+            "muutoksineen, uusi 9 b ja 13 § seuraavasti:",
+            "34",
+            ["9b", "13"],
+        ),
+        (
+            "lisätään oikeudenkäymiskaaren 21 lukuun siihen myöhemmin tehtyine "
+            "muutoksineen uusi 8 d § seuraavasti:",
+            "21",
+            ["8d"],
+        ),
+    ],
+)
+def test_luku_scoped_provenance_section_insert_is_recovered(
+    text: str, chapter: str, labels: list[str]
+) -> None:
+    model = parse_text_with(text, new_parser.parse)
+    insertions = [_as_insertion(node) for node in model.verb_groups[0].nodes]
+    assert [node.label for node in insertions] == labels
+    assert {node.chapter for node in insertions} == {chapter}
+    assert all(node.kind == TargetKind.SECTION for node in insertions)
+
+
+def test_luku_scoped_citation_provenance_boundary_still_declines() -> None:
+    # DECLINE-BOUNDARY CONTROL for the recovery above. A CITATION_SPAN provenance
+    # (``sellaisena kuin se on laissa X`` — citing a SPECIFIC law, lexed as a
+    # CITATION_SPAN, not a PROVENANCE_SPAN) between ``lukuun`` and ``uusi`` is still
+    # NOT a clean chapter-scoped recovery: the chapter-scoped arm declines and the
+    # bare ``uusi N §`` arm scopes the section chapter-LESS, byte-identical to the
+    # old authority (the inserted section is NOT mis-scoped to the chapter). The
+    # PROVENANCE_SPAN recovery must not have widened to swallow this citation form.
+    text = (
+        "lisätään lain (610/2014) 3 lukuun, sellaisena kuin se on laissa 679/2003, "
+        "uusi 96 a § seuraavasti:"
+    )
+    report = compare_surface_parsers(text, surface_parse.parse, new_parser.parse)
+    assert report.equal, f"delta:\n{report.summary()}"
+    model = parse_text_with(text, new_parser.parse)
+    node = _as_insertion(model.verb_groups[0].nodes[0])
+    assert node.label == "96a"
+    assert node.chapter == ""
+
+
 def test_section_ref_kohta_without_uusi_is_not_an_insertion() -> None:
     # "12 §:n 2 momentin 3 kohta" (no "uusi") is a plain section reference, not an
     # insertion — the new parser must reproduce the old parser's SurfaceTargetRef.
