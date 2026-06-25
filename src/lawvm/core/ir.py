@@ -153,21 +153,6 @@ def _is_repeal_placeholder_payload(payload: "IRNode") -> bool:
     return payload.attrs.get("lawvm_repeal_placeholder") == "1"
 
 
-def _payload_has_substantive_content(payload: "IRNode") -> bool:
-    """True iff a payload carries real replacement content — non-empty text or
-    any children — as opposed to an empty metadata/selection carrier.
-
-    A repeal must not carry *substantive* content (that contradicts removing the
-    target), but an otherwise-empty CONTENT node used purely to carry attrs is
-    legitimate: e.g. Estonia attaches ``subsection_selection_meta`` in ``attrs``
-    on an empty-text/zero-child node to encode a repeal RANGE
-    (tests/test_ee_apply_semantics.py). That carries no replacement content, so
-    it is permitted; only real content is forbidden.
-    """
-
-    return bool((payload.text or "").strip()) or bool(payload.children)
-
-
 @dataclass(frozen=True, slots=True)
 class LegalOperation:
     """A single compiled legal state change."""
@@ -210,23 +195,19 @@ class LegalOperation:
                 "LegalOperation text_patch is only valid for text_replace/text_repeal/replace "
                 f"got action={self.action!r}"
             )
-        # payload↔action closure: a repeal action that carries SUBSTANTIVE
-        # replacement content contradicts itself. A repeal may carry NO payload,
-        # the repeal-placeholder tombstone it leaves behind, or an empty
-        # metadata/selection carrier (empty text + no children) — but never real
-        # replacement content.
+        # payload↔action closure: a repeal action that carries a real content
+        # payload contradicts itself. A repeal may carry NO payload, or the
+        # repeal-placeholder tombstone it leaves behind — nothing else.
         if (
             self.payload is not None
             and self.action in _REPEAL_ACTIONS
             and not _is_repeal_placeholder_payload(self.payload)
-            and _payload_has_substantive_content(self.payload)
         ):
             raise LegalOperationPayloadActionError(
-                f"LegalOperation(action={self.action!r}) must not carry a substantive content "
-                f"payload: a repeal removes its target. Got payload kind={self.payload.kind!r} "
+                f"LegalOperation(action={self.action!r}) must not carry a content payload: "
+                f"a repeal removes its target. Got payload kind={self.payload.kind!r} "
                 f"label={self.payload.label!r} (children={len(self.payload.children)}); "
-                "only None, a lawvm_repeal_placeholder tombstone, or an empty "
-                "metadata carrier is permitted "
+                "only None or a lawvm_repeal_placeholder tombstone is permitted "
                 f"(op_id={self.op_id!r}, target={self.target!s})."
             )
 

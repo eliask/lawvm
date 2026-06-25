@@ -141,9 +141,7 @@ def test_text_patch_spec_append_requires_replacement() -> None:
 def test_repeal_action_rejects_content_payload(action: StructuralAction) -> None:
     """A repeal action carrying a real content payload is unrepresentable."""
     content = IRNode(kind=IRNodeKind.SECTION, label="5", text="real content")
-    with pytest.raises(
-        LegalOperationPayloadActionError, match="must not carry a substantive content payload"
-    ):
+    with pytest.raises(LegalOperationPayloadActionError, match="must not carry a content payload"):
         LegalOperation(
             op_id="rep-content",
             sequence=1,
@@ -175,27 +173,6 @@ def test_repeal_action_accepts_repeal_placeholder_tombstone(action: StructuralAc
         payload=tombstone,
     )
     assert op.payload is tombstone
-
-
-@pytest.mark.parametrize("action", [StructuralAction.REPEAL, StructuralAction.TEXT_REPEAL])
-def test_repeal_action_accepts_empty_metadata_carrier(action: StructuralAction) -> None:
-    """A repeal may carry an empty (no text, no children) CONTENT node used only
-    to carry attrs — e.g. Estonia encodes a repeal RANGE via
-    ``subsection_selection_meta`` in attrs. That is not substantive content, so
-    the payload↔action closure permits it."""
-    carrier = IRNode(
-        kind=IRNodeKind.CONTENT,
-        text="",
-        attrs={"subsection_selection_meta": "(2,3,4)"},
-    )
-    op = LegalOperation(
-        op_id="rep-meta-carrier",
-        sequence=1,
-        action=action,
-        target=_addr(),
-        payload=carrier,
-    )
-    assert op.payload is carrier
 
 
 def test_replace_action_accepts_none_payload() -> None:
