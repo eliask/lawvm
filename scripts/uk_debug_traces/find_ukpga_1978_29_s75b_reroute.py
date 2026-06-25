@@ -42,14 +42,13 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from farchive import Farchive
 
-from lawvm.core.ir import IRNode
+from lawvm.core.ir import IRStatute, LegalOperation
 from lawvm.tools.uk_replay import _archive_url_for_statute
 from lawvm.uk_legislation import uk_amendment_replay as ukrm
-from lawvm.uk_legislation import replay_executor as replay_exec_mod
 from lawvm.uk_legislation.uk_grafter import (
     extract_eid_map_bytes,
     parse_uk_statute_ir_bytes,
@@ -106,14 +105,22 @@ def main() -> int:
         )
 
         enacted_url = _archive_url_for_statute(STATUTE_ID, pit_date=None, enacted=True)
+        enacted_bytes = archive.get(enacted_url)
+        if enacted_bytes is None:
+            print(f"enacted source missing: {enacted_url}", file=sys.stderr)
+            return 1
         base_ir = parse_uk_statute_ir_bytes(
-            archive.get(enacted_url),
+            enacted_bytes,
             statute_id=STATUTE_ID,
             version_label="enacted",
             source_path=enacted_url,
         )
         oracle_url = _archive_url_for_statute(STATUTE_ID, pit_date=None, enacted=False)
-        od = extract_eid_map_bytes(archive.get(oracle_url), pit_date=None)
+        oracle_bytes = archive.get(oracle_url)
+        if oracle_bytes is None:
+            print(f"oracle source missing: {oracle_url}", file=sys.stderr)
+            return 1
+        od = extract_eid_map_bytes(oracle_bytes, pit_date=None)
         eid_map = od.get("eid_map", {})
         text_map = od.get("text_map", {})
 
@@ -125,10 +132,11 @@ def main() -> int:
 
         original_apply_ops = ukrm.UKReplayPipeline.apply_ops
 
-        def steppable_apply(self, base_ir, ops, **kw):
+        def steppable_apply(
+            self, base_ir: IRStatute, ops: list[LegalOperation], **kw: Any
+        ) -> IRStatute:
             # Apply per-amendment in groups so our trace prints at boundary.
             seen: set[Any] = set()
-            groups: list[tuple[Any, list[Any]]] = []
             by_act: dict[Any, list[Any]] = {}
             order: list[Any] = []
             for op in ops:
@@ -167,7 +175,7 @@ def main() -> int:
                         )
             return cur_ir
 
-        ukrm.UKReplayPipeline.apply_ops = steppable_apply
+        ukrm.UKReplayPipeline.apply_ops = cast(Any, steppable_apply)
 
         try:
             cur_ir = pipeline.apply_ops(
