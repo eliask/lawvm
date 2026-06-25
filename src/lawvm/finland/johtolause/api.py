@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Literal, Sequence
+from typing import TYPE_CHECKING, Any, Literal, Sequence, assert_never
 
 from lawvm.core.frontend_contract import (
     DerivedCompatibilityArtifact,
@@ -1296,21 +1296,24 @@ def _derive_parsed_ops_from_ast(clause_ast: ClauseAST) -> list[ParsedOp]:
         # Map target.special to facet (keep as FacetKind enum)
         facet = target.special if target.special else None
 
-        if kind is TargetKind.SECTION:
-            number = path_dict.get("section", "")
-            momentti = int(path_dict.get("subsection", "0") or "0")
-            item = path_dict.get("item", "")
-            subitem = path_dict.get("subitem", "")
-        elif kind is TargetKind.CHAPTER:
-            number = path_dict.get("chapter", "")
-            chapter = ""  # chapter-kind ops don't carry chapter context
-        elif kind is TargetKind.PART:
-            number = path_dict.get("part", "")
-            part = ""  # part-kind ops don't carry part context
-        elif kind is TargetKind.NIMIKE:
-            number = path_dict.get("nimike", "")
-        elif kind is TargetKind.APPENDIX:
-            number = path_dict.get("appendix", "")
+        # The op's number is read from the path_dict slot named after the
+        # canonical leaf-kind; leaf_kind() is the exhaustive lowering helper.
+        number = path_dict.get(kind.leaf_kind(), "")
+        match kind:
+            case TargetKind.SECTION:
+                momentti = int(path_dict.get("subsection", "0") or "0")
+                item = path_dict.get("item", "")
+                subitem = path_dict.get("subitem", "")
+            case TargetKind.CHAPTER:
+                chapter = ""  # chapter-kind ops don't carry chapter context
+            case TargetKind.PART:
+                part = ""  # part-kind ops don't carry part context
+            case TargetKind.NIMIKE:
+                pass
+            case TargetKind.APPENDIX:
+                pass
+            case _:
+                assert_never(kind)
 
         # Renumber destination
         renumber_dest = ""
@@ -1567,16 +1570,9 @@ def derive_features(text: str, ops: list[ParsedOp]) -> frozenset[str]:
         verb_names = {"M": "verb_muuttaa", "K": "verb_kumota", "L": "verb_lisata", "S": "verb_siirtaa"}
         if op.verb in verb_names:
             features.add(verb_names[op.verb])
-        if op.typed_kind is TargetKind.SECTION:
-            features.add("section_ref")
-        elif op.typed_kind is TargetKind.CHAPTER:
-            features.add("chapter_ref")
-        elif op.typed_kind is TargetKind.PART:
-            features.add("part_ref")
-        elif op.typed_kind is TargetKind.APPENDIX:
-            features.add("appendix_ref")
-        elif op.typed_kind is TargetKind.NIMIKE:
-            features.add("nimike_ref")
+        # leaf_kind() is the exhaustive TargetKind lowering helper; the
+        # feature tag is uniformly "{leaf}_ref" across all 5 members.
+        features.add(f"{op.typed_kind.leaf_kind()}_ref")
         if op.momentti:
             features.add("sub_ref_momentti")
             features.add("sub_ref")
