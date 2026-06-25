@@ -17,11 +17,9 @@ grafter.py re-exports every public symbol from here for backward compatibility.
 from __future__ import annotations
 
 import re
-import warnings
 from dataclasses import dataclass
 from dataclasses import replace as dc_replace
 from typing import List, Optional, Set, Tuple
-from warnings import deprecated
 
 import lxml.etree as etree
 
@@ -140,7 +138,7 @@ def _extract_grouped_container_targets(johto: str, noun: str) -> Set[str]:
     """
     text = _RE_WHITESPACE.sub(" ", johto or "").replace("\xa0", " ")
     labels: Set[str] = set()
-    # lawvm-regex: owning_parser N-container coordinated bare-number container-noun inheritance over passed-in johto (label-interpolated dynamic pattern, left inline per §1.11); part of the deferred rank-3 fallback retirement (route into clause-AST/PEG + disable allows_target_guessing)
+    # lawvm-regex: owning_parser N-container coordinated bare-number container-noun inheritance over passed-in johto (label-interpolated dynamic pattern, left inline per §1.11); part of the RETAINED rank-3 load-bearing fallback residual (census-proven; see normalize_fallback_heuristic_census)
     for match in re.finditer(rf"((?:\d+\s*,\s*)*\d+(?:\s+ja\s+\d+)?)\s+{noun}\b", text, flags=re.I):
         cluster = match.group(1)
         for token in _RE_COMMA_OR_JA.split(cluster):
@@ -259,7 +257,7 @@ def _extract_insert_subsection_ops_fallback(cleaned: str) -> List[AmendmentOp]:
     """
     ops: List[AmendmentOp] = []
     seen: Set[Tuple[str, int]] = set()
-    # lawvm-regex: owning_parser N-insert-fallback subsection insert recognizer over passed-in johto; gated by allows_target_guessing, has RegexRecognitionCoverage shadow; part of the deferred rank-3 fallback retirement
+    # lawvm-regex: owning_parser N-insert-fallback subsection insert recognizer over passed-in johto; gated by allows_target_guessing, has RegexRecognitionCoverage shadow; part of the RETAINED rank-3 load-bearing fallback residual (census-proven; see normalize_fallback_heuristic_census)
     for m in re.finditer(
         r"(\d+\s*[a-z]?)\s*§\s*:ään\s*,?\s*(?:sellaisena\s+kuin\s+[^,]+,\s*)?"
         r"(.*?)(?=(?:\d+\s*[a-z]?\s*§\s*:ään)|(?:\d+\s*[a-z]?\s+luvun\s+\d+\s*[a-z]?\s*§\s*:)"
@@ -300,7 +298,7 @@ def _extract_insert_subsection_ops_fallback_with_coverage(
     ops = _extract_insert_subsection_ops_fallback(cleaned)
     coverage_rows: list[RegexRecognitionCoverage] = []
     source_hash = regex_source_text_hash(cleaned)
-    # lawvm-regex: owning_parser N-insert-fallback subsection coverage-row builder (same recognizer); part of the deferred rank-3 fallback retirement
+    # lawvm-regex: owning_parser N-insert-fallback subsection coverage-row builder (same recognizer); part of the RETAINED rank-3 load-bearing fallback residual (census-proven; see normalize_fallback_heuristic_census)
     for m in _INSERT_SUBSECTION_FALLBACK_RE.finditer(cleaned):
         sec_norm = _RE_WHITESPACE.sub("", m.group(1)).lower()
         clause = m.group(2)
@@ -359,7 +357,7 @@ def _extract_insert_item_ops_fallback(cleaned: str) -> List[AmendmentOp]:
     """
     ops: List[AmendmentOp] = []
     seen: Set[Tuple[str, int, str]] = set()
-    # lawvm-regex: owning_parser N-insert-fallback item insert recognizer over passed-in johto; gated by allows_target_guessing; part of the deferred rank-3 fallback retirement
+    # lawvm-regex: owning_parser N-insert-fallback item insert recognizer over passed-in johto; gated by allows_target_guessing; part of the RETAINED rank-3 load-bearing fallback residual (census-proven; see normalize_fallback_heuristic_census)
     for m in _INSERT_ITEM_FALLBACK_RE.finditer(cleaned):
         sec = m.group(1)
         mom = m.group(2)
@@ -395,7 +393,7 @@ def _extract_insert_item_ops_fallback_with_coverage(
     ops = _extract_insert_item_ops_fallback(cleaned)
     coverage_rows: list[RegexRecognitionCoverage] = []
     source_hash = regex_source_text_hash(cleaned)
-    # lawvm-regex: owning_parser N-insert-fallback item coverage-row builder (same recognizer); part of the deferred rank-3 fallback retirement
+    # lawvm-regex: owning_parser N-insert-fallback item coverage-row builder (same recognizer); part of the RETAINED rank-3 load-bearing fallback residual (census-proven; see normalize_fallback_heuristic_census)
     for m in _INSERT_ITEM_FALLBACK_RE.finditer(cleaned):
         sec_norm = _RE_WHITESPACE.sub("", m.group(1)).lower()
         try:
@@ -614,7 +612,7 @@ def _extract_insert_container_ops_fallback(cleaned: str) -> List[AmendmentOp]:
     seen_sections: Set[Tuple[str, str]] = set()
     seen_parts: Set[str] = set()
 
-    # lawvm-regex: owning_parser N-insert-fallback root-part insert recognizer over passed-in johto; gated by allows_target_guessing; part of the deferred rank-3 fallback retirement
+    # lawvm-regex: owning_parser N-insert-fallback root-part insert recognizer over passed-in johto; gated by allows_target_guessing; part of the RETAINED rank-3 load-bearing fallback residual (census-proven; see normalize_fallback_heuristic_census)
     for m in _INSERT_ROOT_PART_FALLBACK_RE.finditer(cleaned):
         part = _norm_num_token(m.group(1))
         if not part or part in seen_parts:
@@ -628,7 +626,7 @@ def _extract_insert_container_ops_fallback(cleaned: str) -> List[AmendmentOp]:
             )
         )
 
-    # lawvm-regex: owning_parser N-insert-fallback chapter-scoped section insert recognizer over passed-in johto; gated by allows_target_guessing; part of the deferred rank-3 fallback retirement
+    # lawvm-regex: owning_parser N-insert-fallback chapter-scoped section insert recognizer over passed-in johto; gated by allows_target_guessing; part of the RETAINED rank-3 load-bearing fallback residual (census-proven; see normalize_fallback_heuristic_census)
     for m in _INSERT_CHAPTER_SECTION_FALLBACK_RE.finditer(cleaned):
         chapter = _RE_WHITESPACE.sub("", m.group(1)).lower()
         clause = m.group(2)
@@ -660,7 +658,7 @@ def _extract_insert_container_ops_fallback_with_coverage(
     seen_sections: Set[Tuple[str, str]] = set()
     seen_parts: Set[str] = set()
 
-    # lawvm-regex: owning_parser N-insert-fallback root-part coverage-row builder (same recognizer); part of the deferred rank-3 fallback retirement
+    # lawvm-regex: owning_parser N-insert-fallback root-part coverage-row builder (same recognizer); part of the RETAINED rank-3 load-bearing fallback residual (census-proven; see normalize_fallback_heuristic_census)
     for m in _INSERT_ROOT_PART_FALLBACK_RE.finditer(cleaned):
         part = _norm_num_token(m.group(1))
         if not part or part in seen_parts:
@@ -682,7 +680,7 @@ def _extract_insert_container_ops_fallback_with_coverage(
             )
         )
 
-    # lawvm-regex: owning_parser N-insert-fallback chapter-section coverage-row builder (same recognizer); part of the deferred rank-3 fallback retirement
+    # lawvm-regex: owning_parser N-insert-fallback chapter-section coverage-row builder (same recognizer); part of the RETAINED rank-3 load-bearing fallback residual (census-proven; see normalize_fallback_heuristic_census)
     for m in _INSERT_CHAPTER_SECTION_FALLBACK_RE.finditer(cleaned):
         chapter = _RE_WHITESPACE.sub("", m.group(1)).lower()
         clause = m.group(2)
@@ -743,7 +741,7 @@ def _extract_root_replace_ops_from_body_fallback(
         return []
     if "kumotaan" in cleaned or "lisätään" in cleaned:
         return []
-    # lawvm-regex: owning_parser N-body-replace §-presence guard over passed-in johto; part of the deferred rank-3 fallback retirement
+    # lawvm-regex: owning_parser N-body-replace §-presence guard over passed-in johto; part of the RETAINED rank-3 load-bearing fallback residual (census-proven; see normalize_fallback_heuristic_census)
     if re.search(r"\d+\s*[a-z]?\s*§", cleaned, flags=re.I):
         return []
 
@@ -849,7 +847,7 @@ def _extract_replace_ops_from_muutetaan_tail(cleaned: str) -> List[AmendmentOp]:
     and subsection targets. It exists for mixed clauses where PEG found the
     repeal side but dropped the subsequent replace side entirely.
     """
-    # lawvm-regex: owning_parser N-tail-replace muutetaan-tail recognizer over passed-in johto; part of the deferred rank-3 fallback retirement
+    # lawvm-regex: owning_parser N-tail-replace muutetaan-tail recognizer over passed-in johto; part of the RETAINED rank-3 load-bearing fallback residual (census-proven; see normalize_fallback_heuristic_census)
     m = re.search(r"\bmuutetaan\b(.*?)(?:\bseuraavasti\b|$)", cleaned, flags=re.I)
     if m is None:
         return []
@@ -864,7 +862,7 @@ def _extract_replace_ops_from_muutetaan_tail(cleaned: str) -> List[AmendmentOp]:
     refs: List[Tuple[str, Optional[str]]] = []
     refs.extend(
         (_RE_WHITESPACE.sub("", sec), mom)
-        # lawvm-regex: owning_parser N-tail-replace subsection ref recognizer; part of the deferred rank-3 fallback retirement
+        # lawvm-regex: owning_parser N-tail-replace subsection ref recognizer; part of the RETAINED rank-3 load-bearing fallback residual (census-proven; see normalize_fallback_heuristic_census)
         for sec, mom in re.findall(
             r"(\d+\s*[a-z]?)\s*§\s*:n\s*(\d+)\s+moment(?:ti|in)",
             tail,
@@ -873,14 +871,14 @@ def _extract_replace_ops_from_muutetaan_tail(cleaned: str) -> List[AmendmentOp]:
     )
     refs.extend(
         (_RE_WHITESPACE.sub("", sec), None)
-        # lawvm-regex: owning_parser N-tail-replace whole-section ref recognizer; part of the deferred rank-3 fallback retirement
+        # lawvm-regex: owning_parser N-tail-replace whole-section ref recognizer; part of the RETAINED rank-3 load-bearing fallback residual (census-proven; see normalize_fallback_heuristic_census)
         for sec in re.findall(
             r"(\d+\s*[a-z]?)\s*§(?!\s*:)",
             tail,
             flags=re.I,
         )
     )
-    # lawvm-regex: owning_parser N-tail-replace section-list ref recognizer; part of the deferred rank-3 fallback retirement
+    # lawvm-regex: owning_parser N-tail-replace section-list ref recognizer; part of the RETAINED rank-3 load-bearing fallback residual (census-proven; see normalize_fallback_heuristic_census)
     for sec_list in re.findall(
         r"((?:\d+\s*[–—―-]\s*\d+|\d+)(?:\s*(?:,|ja)\s*(?:\d+\s*[–—―-]\s*\d+|\d+))*)\s*§(?!\s*:)",
         tail,
@@ -926,15 +924,21 @@ def _expand_numeric_section_list_ir(text: str) -> List[str]:
 # ---------------------------------------------------------------------------
 
 
-@deprecated(
-    "Legacy fallback op heuristic (rank-3 fallback retirement, gated by "
-    "allows_target_guessing). New callers must route johtolause through the "
-    "owning johtolause/forest parser in lawvm.finland.frontend_compile; this "
-    "regex heuristic only fires when the typed parse yields no ops and is being "
-    "strangled out."
-)
 def parse_ops_fallback_heuristic(johto: str) -> List[AmendmentOp]:
-    """Deterministic fallback for very simple johtolause patterns.
+    """Deterministic rank-3 fallback for simple johtolause patterns (RETAINED).
+
+    Gated by ``allows_target_guessing`` and fired by
+    :func:`lawvm.finland.frontend_compile.normalize_and_compile_ops` ONLY on the
+    ``if not ops:`` / additive-subsection branch — i.e. exactly when the typed
+    grammar + LO normalization chain produced NO ops. A whole-corpus census
+    (:mod:`lawvm.finland.normalize_fallback_heuristic_census`, pinned by
+    ``tests/test_fi_normalize_fallback_heuristic_census.py``) proves its output
+    reaches the FINAL compiled ops on a real (load-bearing) set of statutes the
+    deterministic grammar declines, so this is a REQUIRED residual, not a
+    deprecated lane: the johtolause shapes it recovers (bare section / momentti
+    repeal/replace/insert clauses, ``sekä kumotaan/muutetaan`` multi-verb splits)
+    are precisely the ones the typed grammar emits ``OutOfScope`` for, and a
+    sound grammar rule for them cannot be auto-derived from a decline.
 
     Used only when the LLM returns no ops. Keeps scope intentionally narrow:
     whole-section or whole-momentti changes without ranges, kohta targets, or chapter/part refs.
@@ -945,9 +949,9 @@ def parse_ops_fallback_heuristic(johto: str) -> List[AmendmentOp]:
     if (
         "lisätään" not in cleaned
         and "siirretään" not in cleaned
-        and re.search(r"\bsekä\s+(?:kumotaan|muutetaan)\b", cleaned)  # lawvm-regex: owning_parser N-fallback-heuristic multi-verb split discriminator; part of the deferred rank-3 fallback retirement
+        and re.search(r"\bsekä\s+(?:kumotaan|muutetaan)\b", cleaned)  # lawvm-regex: owning_parser N-fallback-heuristic multi-verb split discriminator; part of the RETAINED rank-3 load-bearing fallback residual (census-proven; see normalize_fallback_heuristic_census)
     ):
-        # lawvm-regex: owning_parser N-fallback-heuristic verb-clause splitter; part of the deferred rank-3 fallback retirement
+        # lawvm-regex: owning_parser N-fallback-heuristic verb-clause splitter; part of the RETAINED rank-3 load-bearing fallback residual (census-proven; see normalize_fallback_heuristic_census)
         verb_matches = list(re.finditer(r"\b(kumotaan|muutetaan)\b", cleaned))
         split_ops: List[AmendmentOp] = []
         for i, match in enumerate(verb_matches):
@@ -957,12 +961,7 @@ def parse_ops_fallback_heuristic(johto: str) -> List[AmendmentOp]:
             chunk = re.sub(r"^(?:sekä|ja)\s+", "", chunk)
             if not chunk or chunk == cleaned:
                 continue
-            with warnings.catch_warnings():
-                # Internal recursion of this legacy fallback over verb-split
-                # chunks; the @deprecated signal is for external callers, not
-                # the fallback's own bounded self-recursion.
-                warnings.simplefilter("ignore", DeprecationWarning)
-                split_ops.extend(parse_ops_fallback_heuristic(chunk))
+            split_ops.extend(parse_ops_fallback_heuristic(chunk))
         if split_ops:
             return _dedupe_fallback_ops_ir(split_ops)
     insert_subsection_ops = _extract_insert_subsection_ops_fallback(cleaned)
@@ -973,7 +972,7 @@ def parse_ops_fallback_heuristic(johto: str) -> List[AmendmentOp]:
     )
 
     repeal_range_ops: List[AmendmentOp] = []
-    # lawvm-regex: owning_parser N-fallback-heuristic repeal-range op-minter over passed-in johto; gated by allows_target_guessing; part of the deferred rank-3 fallback retirement
+    # lawvm-regex: owning_parser N-fallback-heuristic repeal-range op-minter over passed-in johto; gated by allows_target_guessing; part of the RETAINED rank-3 load-bearing fallback residual (census-proven; see normalize_fallback_heuristic_census)
     for sec, start, end in re.findall(
         r"(\d+\s*[a-z]?)\s*§\s*:n\s*(\d+)\s*[–—―-]\s*(\d+)\s+moment(?:ti|in)",
         cleaned,
@@ -994,11 +993,11 @@ def parse_ops_fallback_heuristic(johto: str) -> List[AmendmentOp]:
                     **fi_section_target(sec_norm, subsection=mom),
                 )
             )
-    # lawvm-regex: owning_parser N-fallback-heuristic non-repeal verb guard; part of the deferred rank-3 fallback retirement
+    # lawvm-regex: owning_parser N-fallback-heuristic non-repeal verb guard; part of the RETAINED rank-3 load-bearing fallback residual (census-proven; see normalize_fallback_heuristic_census)
     has_non_repeal_verbs = bool(re.search(r"\b(muutetaan|lisätään|korvataan|otetaan|siirretään)\b", cleaned))
     pure_repeal_range_clause = bool(repeal_range_ops) and not has_non_repeal_verbs
 
-    # lawvm-regex: owning_parser N-fallback-heuristic container-shape guard; part of the deferred rank-3 fallback retirement
+    # lawvm-regex: owning_parser N-fallback-heuristic container-shape guard; part of the RETAINED rank-3 load-bearing fallback residual (census-proven; see normalize_fallback_heuristic_census)
     container_shape = bool(re.search(r"\b(luku|osa|otsikko|johd|johdantokappale|kohta)\b", cleaned))
     if container_shape and pure_repeal_range_clause:
         return repeal_range_ops
@@ -1025,14 +1024,14 @@ def parse_ops_fallback_heuristic(johto: str) -> List[AmendmentOp]:
     refs: List[Tuple[str, Optional[str]]] = []
     refs.extend(
         (sec, mom)
-        # lawvm-regex: owning_parser N-fallback-heuristic subsection-target recognizer; part of the deferred rank-3 fallback retirement
+        # lawvm-regex: owning_parser N-fallback-heuristic subsection-target recognizer; part of the RETAINED rank-3 load-bearing fallback residual (census-proven; see normalize_fallback_heuristic_census)
         for sec, mom in re.findall(
             r"(\d+\s*[a-z]?)\s*§\s*:n\s*(\d+)\s+moment(?:ti|in)",
             cleaned,
             flags=re.I,
         )
     )
-    # lawvm-regex: owning_parser N-fallback-heuristic moment-list target recognizer; part of the deferred rank-3 fallback retirement
+    # lawvm-regex: owning_parser N-fallback-heuristic moment-list target recognizer; part of the RETAINED rank-3 load-bearing fallback residual (census-proven; see normalize_fallback_heuristic_census)
     for sec, moments in re.findall(
         r"(\d+\s*[a-z]?)\s*§\s*(?::n\s*)?"
         r"(\d+(?:\s*(?:,|ja)\s*\d+){0,12})\s+moment(?:ti|in)",
@@ -1043,7 +1042,7 @@ def parse_ops_fallback_heuristic(johto: str) -> List[AmendmentOp]:
         refs.extend((sec, mom) for mom in re.findall(r"\d+", moments))
     refs.extend(
         (sec, None)
-        # lawvm-regex: owning_parser N-fallback-heuristic whole-section target recognizer; part of the deferred rank-3 fallback retirement
+        # lawvm-regex: owning_parser N-fallback-heuristic whole-section target recognizer; part of the RETAINED rank-3 load-bearing fallback residual (census-proven; see normalize_fallback_heuristic_census)
         for sec in re.findall(
             r"(\d+\s*[a-z]?)\s*§(?!\s*:)"
             r"(?!\s*\d+(?:\s*(?:,|ja)\s*\d+){0,12}\s+moment)",
@@ -1051,7 +1050,7 @@ def parse_ops_fallback_heuristic(johto: str) -> List[AmendmentOp]:
             flags=re.I,
         )
     )
-    # lawvm-regex: owning_parser N-fallback-heuristic section-list target recognizer; part of the deferred rank-3 fallback retirement
+    # lawvm-regex: owning_parser N-fallback-heuristic section-list target recognizer; part of the RETAINED rank-3 load-bearing fallback residual (census-proven; see normalize_fallback_heuristic_census)
     for sec_list in re.findall(
         r"((?:\d+\s*[–—―-]\s*\d+|\d+)(?:\s*(?:,|ja)\s*(?:\d+\s*[–—―-]\s*\d+|\d+))*)"
         r"\s*§(?!\s*:)(?!\s*\d+(?:\s*(?:,|ja)\s*\d+){0,12}\s+moment)",
@@ -1073,7 +1072,7 @@ def parse_ops_fallback_heuristic(johto: str) -> List[AmendmentOp]:
 
     insert_matches = [
         (_RE_WHITESPACE.sub("", sec), int(mom))
-        # lawvm-regex: owning_parser N-fallback-heuristic insert-subsection op-minter; part of the deferred rank-3 fallback retirement
+        # lawvm-regex: owning_parser N-fallback-heuristic insert-subsection op-minter; part of the RETAINED rank-3 load-bearing fallback residual (census-proven; see normalize_fallback_heuristic_census)
         for sec, mom in re.findall(
             r"lisätään\s+(\d+\s*[a-z]?)\s*§\s*:ään\s+uusi\s+(\d+)\s+momentti",
             cleaned,
@@ -1093,7 +1092,7 @@ def parse_ops_fallback_heuristic(johto: str) -> List[AmendmentOp]:
                 )
             )
 
-    # lawvm-regex: owning_parser N-fallback-heuristic renumber-on-insert op-rewriter; part of the deferred rank-3 fallback retirement
+    # lawvm-regex: owning_parser N-fallback-heuristic renumber-on-insert op-rewriter; part of the RETAINED rank-3 load-bearing fallback residual (census-proven; see normalize_fallback_heuristic_census)
     for sec, old_mom, new_mom in re.findall(
         r"lisätään\s+(\d+\s*[a-z]?)\s*§\s*:ään\s+uusi\s+\d+\s+momentti\s*,\s*jolloin\s+(?:muutettu|nykyinen)\s+(\d+)\s+momentti\s+siirtyy\s+(\d+)\s+momentiksi",
         cleaned,
@@ -1139,30 +1138,26 @@ def parse_ops_fallback_heuristic(johto: str) -> List[AmendmentOp]:
     )
 
 
-@deprecated(
-    "Legacy fallback op heuristic (coverage-diagnostic shadow of "
-    "parse_ops_fallback_heuristic; rank-3 fallback retirement). New callers must "
-    "route johtolause through the owning johtolause/forest parser in "
-    "lawvm.finland.frontend_compile; this regex heuristic only fires when the "
-    "typed parse yields no ops and is being strangled out."
-)
 def parse_ops_fallback_heuristic_with_coverage(
     johto: str,
     *,
     source_artifact_id: str = "",
 ) -> FallbackParseResult:
-    """Return fallback ops plus passive regex span coverage diagnostics.
+    """Return fallback ops plus passive regex span coverage diagnostics (RETAINED).
+
+    The production shadow of :func:`parse_ops_fallback_heuristic`: it delegates
+    op production to that bare heuristic (so the two share one firing
+    population) and additionally surfaces passive regex span-coverage
+    diagnostics. This is the form ``normalize_and_compile_ops`` actually calls.
+    It is RETAINED for the same reason as the bare heuristic — the census proves
+    its ops are load-bearing on statutes the typed grammar declines.
 
     This is intentionally a shadow API.  It does not change which fallback ops
     replay sees; it exposes whether bounded regex recognizers skipped text that
     is still semantically unowned.
     """
 
-    with warnings.catch_warnings():
-        # Internal delegation to the sibling legacy fallback; both are demoted
-        # together. The @deprecated signal targets external callers.
-        warnings.simplefilter("ignore", DeprecationWarning)
-        ops = parse_ops_fallback_heuristic(johto)
+    ops = parse_ops_fallback_heuristic(johto)
     cleaned = _RE_WHITESPACE.sub(" ", johto).strip().lower()
     container_coverage = _extract_insert_container_ops_fallback_with_coverage(
         cleaned,
@@ -1186,19 +1181,21 @@ def parse_ops_fallback_heuristic_with_coverage(
     )
 
 
-@deprecated(
-    "Legacy title-only fallback op heuristic (rank-3 fallback retirement). New "
-    "callers must route the amendment through the owning johtolause/forest "
-    "parser in lawvm.finland.frontend_compile; this title-driven repeal-only "
-    "heuristic fires only when the body yields no ops and is being strangled out."
-)
 def parse_ops_title_fallback(title: str) -> List[AmendmentOp]:
-    """Recover narrow title-only amendment semantics when the body yields no ops.
+    """Recover narrow title-only amendment semantics when the body yields no ops (RETAINED).
 
     Motivating statute: `1998/745` amendment `2005/636`, whose operative effect is
     entirely visible in the title `... lain 5 luvun kumoamisesta` while the parsed
     johtolause/LLM path returns `NONE`. Keeping this fallback title-driven and
     repeal-only avoids smearing broader semantic guessing into the front-end.
+
+    RETAINED (not deprecated): the whole-corpus census
+    (:mod:`lawvm.finland.normalize_fallback_heuristic_census`) proves these
+    title-driven chapter/part/section repeal ops reach the FINAL compiled output
+    on a real load-bearing set of statutes whose body yields no ops — operative
+    effect that lives only in the title and that the body-text grammar cannot
+    recover. A sound grammar rule for "effect in the title only" cannot be
+    derived from the body-decline, so this residual is required.
     """
     cleaned = _RE_WHITESPACE.sub(" ", title or "").strip().lower()
     if not cleaned:
@@ -1206,15 +1203,15 @@ def parse_ops_title_fallback(title: str) -> List[AmendmentOp]:
 
     ops: List[AmendmentOp] = []
 
-    # lawvm-regex: owning_parser N-title-fallback chapter-repeal title op-minter; part of the deferred rank-3 fallback retirement
+    # lawvm-regex: owning_parser N-title-fallback chapter-repeal title op-minter; part of the RETAINED rank-3 load-bearing fallback residual (census-proven; see normalize_fallback_heuristic_census)
     for chapter in re.findall(r"(\d+[a-z]?)\s+luvun\s+kumoamisesta", cleaned, flags=re.I):
         ops.append(AmendmentOp(op_id="", op_type=OpType.REPEAL, **fi_chapter_target(chapter)))
 
-    # lawvm-regex: owning_parser N-title-fallback part-repeal title op-minter; part of the deferred rank-3 fallback retirement
+    # lawvm-regex: owning_parser N-title-fallback part-repeal title op-minter; part of the RETAINED rank-3 load-bearing fallback residual (census-proven; see normalize_fallback_heuristic_census)
     for part in re.findall(r"(\d+[a-z]?)\s+osan\s+kumoamisesta", cleaned, flags=re.I):
         ops.append(AmendmentOp(op_id="", op_type=OpType.REPEAL, **fi_part_target(part)))
 
-    # lawvm-regex: owning_parser N-title-fallback section-repeal title op-minter; part of the deferred rank-3 fallback retirement
+    # lawvm-regex: owning_parser N-title-fallback section-repeal title op-minter; part of the RETAINED rank-3 load-bearing fallback residual (census-proven; see normalize_fallback_heuristic_census)
     for sec in re.findall(r"(\d+[a-z]?)\s*§(?::n)?\s+kumoamisesta", cleaned, flags=re.I):
         ops.append(
             AmendmentOp(

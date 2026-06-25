@@ -65,10 +65,12 @@ class TestCohortIntegrity:
         import importlib
 
         # Symbol -> dotted module path (parallel to DEPRECATED_SYMBOLS values).
+        # NB: the three rank-3 normalize fallback op-heuristics were
+        # de-deprecated after a census proved them load-bearing required
+        # residuals (see scripts/inventory_deprecated_callsites.py and
+        # tests/test_fi_normalize_fallback_heuristic_census.py); they left this
+        # cohort honestly and so are no longer tracked here.
         symbol_modules = {
-            "parse_ops_fallback_heuristic": "lawvm.finland.normalize",
-            "parse_ops_fallback_heuristic_with_coverage": "lawvm.finland.normalize",
-            "parse_ops_title_fallback": "lawvm.finland.normalize",
             "extract_plain_text_statute_mentions": (
                 "lawvm.finland.references.ref_mention_extractor"
             ),

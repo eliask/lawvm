@@ -1,14 +1,14 @@
 {
   "_doc": "Monotone module-role baseline. The `dead` and `test_only_live` sets may only SHRINK: a module born dead must be wired or deleted, never added to the population. The `replay_exercised` map is a SNAPSHOT: a module flipping replay-exercised status (either direction) fails the ratchet until re-baselined. Regenerate with `uv run python scripts/inventory_module_roles.py --update-baseline` after legitimately retiring (deleting) a dead/test-only module, wiring it to a production consumer, or refreshing the replay-coverage snapshot (tests/data/replay_coverage_snapshot.json — see its provenance.refresh_command).",
   "counts": {
-    "dead": 73,
+    "dead": 74,
     "live": 1003,
     "test_only_live": 28
   },
   "replay_counts": {
     "exercised": 170,
-    "cold": 239,
-    "in_scope": 409
+    "cold": 240,
+    "in_scope": 410
   },
   "dead": [
     "lawvm.core.certified_transition",
@@ -54,6 +54,7 @@
     "lawvm.finland.legal_surface.surface_token_totality",
     "lawvm.finland.legal_surface.temporal_census",
     "lawvm.finland.materialization_totality",
+    "lawvm.finland.normalize_fallback_heuristic_census",
     "lawvm.finland.recovery_rule_registry",
     "lawvm.finland.references.annotation_reliability_census",
     "lawvm.finland.references.derivation_edges",
@@ -585,6 +586,7 @@
     "lawvm.finland.morphology.stems": true,
     "lawvm.finland.mutation_boundary_proof_projector": false,
     "lawvm.finland.normalize": true,
+    "lawvm.finland.normalize_fallback_heuristic_census": false,
     "lawvm.finland.ontology": true,
     "lawvm.finland.ops": true,
     "lawvm.finland.oracle_comparison": true,

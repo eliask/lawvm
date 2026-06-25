@@ -37,9 +37,14 @@ BASELINE_PATH = Path("tests/data/deprecated_callsite_baseline.json")
 # The PEP 702 @deprecated FI legacy-fallback cohort.  Each entry maps the
 # tracked symbol to the module that defines it (for documentation / auditing).
 DEPRECATED_SYMBOLS: dict[str, str] = {
-    "parse_ops_fallback_heuristic": "src/lawvm/finland/normalize.py",
-    "parse_ops_fallback_heuristic_with_coverage": "src/lawvm/finland/normalize.py",
-    "parse_ops_title_fallback": "src/lawvm/finland/normalize.py",
+    # NB: the three rank-3 normalize fallback op-heuristics
+    # (parse_ops_fallback_heuristic, parse_ops_fallback_heuristic_with_coverage,
+    # parse_ops_title_fallback) were DE-DEPRECATED after a whole-corpus census
+    # (lawvm.finland.normalize_fallback_heuristic_census, pinned by
+    # tests/test_fi_normalize_fallback_heuristic_census.py) proved each is a
+    # load-bearing required residual the typed grammar cannot own — not a
+    # strangled lane. They left this cohort honestly (matching the
+    # strip_legacy_*_heading_prefix retain-with-guard precedent).
     "extract_plain_text_statute_mentions": (
         "src/lawvm/finland/references/ref_mention_extractor.py"
     ),

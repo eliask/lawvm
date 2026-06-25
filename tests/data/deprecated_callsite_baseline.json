@@ -1,53 +1,16 @@
 {
   "_doc": "Monotone call-site baseline for the PEP 702 @deprecated FI legacy-fallback cohort. Counts may only fall. Regenerate with `uv run python scripts/inventory_deprecated_callsites.py --update-baseline` after legitimately retiring a legacy call site (or, with explicit acknowledgment, after adding one).",
   "symbols": {
-    "parse_ops_fallback_heuristic": "src/lawvm/finland/normalize.py",
-    "parse_ops_fallback_heuristic_with_coverage": "src/lawvm/finland/normalize.py",
-    "parse_ops_title_fallback": "src/lawvm/finland/normalize.py",
     "extract_plain_text_statute_mentions": "src/lawvm/finland/references/ref_mention_extractor.py",
     "strip_legacy_roman_division_heading_prefix": "src/lawvm/finland/oracle_comparison.py",
     "strip_legacy_numbered_section_heading_prefix": "src/lawvm/finland/oracle_comparison.py"
   },
   "counts": {
-    "parse_ops_fallback_heuristic": 17,
-    "parse_ops_fallback_heuristic_with_coverage": 6,
-    "parse_ops_title_fallback": 2,
     "extract_plain_text_statute_mentions": 22,
     "strip_legacy_roman_division_heading_prefix": 1,
     "strip_legacy_numbered_section_heading_prefix": 1
   },
   "sites": {
-    "parse_ops_fallback_heuristic": [
-      "src/lawvm/finland/normalize.py:969",
-      "src/lawvm/finland/normalize.py:1175",
-      "src/lawvm/tools/dump.py:303",
-      "src/lawvm/tools/verify.py:354",
-      "tests/test_fi_grafter_fallback.py:7180",
-      "tests/test_fi_grafter_fallback.py:7906",
-      "tests/test_fi_grafter_fallback.py:8318",
-      "tests/test_fi_grafter_fallback.py:8336",
-      "tests/test_fi_grafter_fallback.py:8384",
-      "tests/test_fi_grafter_fallback.py:8686",
-      "tests/test_fi_grafter_fallback.py:8787",
-      "tests/test_fi_grafter_fallback.py:12797",
-      "tests/test_fi_grafter_fallback.py:13763",
-      "tests/test_fi_grafter_fallback.py:13805",
-      "tests/test_fi_session_regressions_2026_04.py:1528",
-      "tests/test_parser_smell_inventory.py:18",
-      "scripts/capture_gold.py:80"
-    ],
-    "parse_ops_fallback_heuristic_with_coverage": [
-      "src/lawvm/finland/frontend_compile.py:4580",
-      "tests/test_fi_grafter_fallback.py:8093",
-      "tests/test_fi_grafter_fallback.py:8126",
-      "tests/test_fi_grafter_fallback.py:8141",
-      "tests/test_fi_grafter_fallback.py:8177",
-      "tests/test_fi_grafter_fallback.py:8200"
-    ],
-    "parse_ops_title_fallback": [
-      "src/lawvm/finland/frontend_compile.py:4875",
-      "scripts/capture_gold.py:86"
-    ],
     "extract_plain_text_statute_mentions": [
       "src/lawvm/finland/references/ref_mention_extractor.py:15",
       "src/lawvm/finland/references/ref_mention_extractor.py:2242",
@@ -79,5 +42,5 @@
       "src/lawvm/finland/oracle_comparison.py:421"
     ]
   },
-  "total": 49
+  "total": 24
 }
