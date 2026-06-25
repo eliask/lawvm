@@ -11,8 +11,9 @@ import json
 import re
 from collections import Counter
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, assert_never
 
 from lawvm.core.evidence_contracts import CorpusOperationEvidenceRow, CorpusRowStatus
 from lawvm.core.target_resolution import (
@@ -23,11 +24,18 @@ from lawvm.core.target_resolution import (
 )
 from lawvm.new_zealand.effect_readiness import (
     NZEffectReadinessReport,
+    NZInstructionSemanticCandidateFamily,
+    NZInstructionSemanticCandidateStatus,
     build_archived_work_effect_readiness_surface,
     build_effect_readiness_surface,
 )
 from lawvm.new_zealand.operation_surface import NZOperationSurfaceReport, build_archived_work_operation_surface
-from lawvm.new_zealand.payload_surface import NZPayloadSurfaceReport, build_archived_work_payload_surface
+from lawvm.new_zealand.payload_surface import (
+    NZPayloadInstructionSafety,
+    NZPayloadInstructionShape,
+    NZPayloadSurfaceReport,
+    build_archived_work_payload_surface,
+)
 from lawvm.new_zealand.source_tree import NZSourceDocument, NZSourceNode, parse_archived_work_latest
 from lawvm.new_zealand.text_comparison import (
     normalized_nz_inline_contains,
@@ -35,40 +43,244 @@ from lawvm.new_zealand.text_comparison import (
 )
 
 
+class NZWorkQueueStatus(StrEnum):
+    """Closed queue disposition for an NZ instruction-workqueue row.
+
+    A ``StrEnum`` (not a bare ``str``) so the dispatch over the upstream
+    instruction-semantic candidate status is exhaustive (a new candidate status
+    becomes a type error here, not a silent fall-through to ``BLOCKED``).
+    Members subclass ``str`` and their ``value`` equals the legacy wire string,
+    so JSON serialization (including ``Counter`` keys) stays byte-identical.
+    """
+
+    CANDIDATE = "candidate"
+    REVIEW = "review"
+    BLOCKED = "blocked"
+    NOT_REQUIRED = "not_required"
+
+
+class NZTextSubstitutionStatus(StrEnum):
+    """Closed classification status produced by the text-substitution helpers.
+
+    The vocabulary is closed and owned entirely by the ``_classify_*`` helpers
+    in this module. Members subclass ``str`` so ``status.startswith(...)`` and
+    ``==`` comparisons and JSON serialization stay byte-identical. ``NONE``
+    (``""``) is never produced by a helper; it exists only as the falsy default
+    for the row field whose later siblings carry defaults.
+    """
+
+    NONE = ""
+    AMBIGUOUS = "ambiguous"
+    MATCHED = "matched"
+    MATCHED_IN_MULTI_CLAUSE_PAYLOAD = "matched_in_multi_clause_payload"
+    MISMATCH = "mismatch"
+    NO_MATCH = "no_match"
+    NOT_TEXT_SUBSTITUTION_SHAPE = "not_text_substitution_shape"
+    BLOCKED_MULTI_CLAUSE_NO_MATCHING_TARGET = "blocked_multi_clause_no_matching_target"
+    BLOCKED_MULTI_CLAUSE_PAYLOAD = "blocked_multi_clause_payload"
+    BLOCKED_MULTI_CLAUSE_TARGET_AMBIGUOUS = "blocked_multi_clause_target_ambiguous"
+    BLOCKED_MULTIPLE_OCCURRENCE_TEXT_SUBSTITUTION = "blocked_multiple_occurrence_text_substitution"
+    BLOCKED_OMITTING_SUBSTITUTING_PARSE_FAILED = "blocked_omitting_substituting_parse_failed"
+    BLOCKED_PAYLOAD_MULTIPLICITY = "blocked_payload_multiplicity"
+    BLOCKED_STRUCTURAL_OMITTING_SUBSTITUTING_PAYLOAD = "blocked_structural_omitting_substituting_payload"
+    BLOCKED_STRUCTURAL_REPLACEMENT_PAYLOAD = "blocked_structural_replacement_payload"
+    BLOCKED_TARGET_CITATION_MISMATCH = "blocked_target_citation_mismatch"
+    BLOCKED_TEXT_SUBSTITUTION_PARSE_FAILED = "blocked_text_substitution_parse_failed"
+    BLOCKED_TYPED_AMEND_IN_AMBIGUOUS_TARGET = "blocked_typed_amend_in_ambiguous_target"
+    BLOCKED_TYPED_AMEND_IN_INSERT_ANCHOR_UNPARSED = "blocked_typed_amend_in_insert_anchor_unparsed"
+    BLOCKED_TYPED_AMEND_IN_NOT_SUBSTITUTION_VERB = "blocked_typed_amend_in_not_substitution_verb"
+    BLOCKED_TYPED_AMEND_IN_PAYLOAD_INCOMPLETE = "blocked_typed_amend_in_payload_incomplete"
+    CANDIDATE_DIRECT_EACH_PLACE_OMITTING_SUBSTITUTING_TEXT_SUBSTITUTION = (
+        "candidate_direct_each_place_omitting_substituting_text_substitution"
+    )
+    CANDIDATE_DIRECT_EACH_PLACE_TEXT_SUBSTITUTION = "candidate_direct_each_place_text_substitution"
+    CANDIDATE_DIRECT_EACH_PLACE_TYPED_AMEND_IN_INSERT = "candidate_direct_each_place_typed_amend_in_insert"
+    CANDIDATE_DIRECT_EACH_PLACE_TYPED_AMEND_IN_OMIT_DELETION = (
+        "candidate_direct_each_place_typed_amend_in_omit_deletion"
+    )
+    CANDIDATE_DIRECT_EACH_PLACE_TYPED_AMEND_IN_TEXT_SUBSTITUTION = (
+        "candidate_direct_each_place_typed_amend_in_text_substitution"
+    )
+    CANDIDATE_DIRECT_MULTI_CLAUSE_EACH_PLACE_OMITTING_SUBSTITUTING_TEXT_SUBSTITUTION = (
+        "candidate_direct_multi_clause_each_place_omitting_substituting_text_substitution"
+    )
+    CANDIDATE_DIRECT_MULTI_CLAUSE_EACH_PLACE_TEXT_SUBSTITUTION = (
+        "candidate_direct_multi_clause_each_place_text_substitution"
+    )
+    CANDIDATE_DIRECT_MULTI_CLAUSE_OMITTING_SUBSTITUTING_TEXT_SUBSTITUTION = (
+        "candidate_direct_multi_clause_omitting_substituting_text_substitution"
+    )
+    CANDIDATE_DIRECT_MULTI_CLAUSE_TEXT_SUBSTITUTION = "candidate_direct_multi_clause_text_substitution"
+    CANDIDATE_DIRECT_OMITTING_SUBSTITUTING_TEXT_SUBSTITUTION = (
+        "candidate_direct_omitting_substituting_text_substitution"
+    )
+    CANDIDATE_DIRECT_SINGLE_TEXT_SUBSTITUTION = "candidate_direct_single_text_substitution"
+    CANDIDATE_DIRECT_TYPED_AMEND_IN_INSERT = "candidate_direct_typed_amend_in_insert"
+    CANDIDATE_DIRECT_TYPED_AMEND_IN_OMIT_DELETION = "candidate_direct_typed_amend_in_omit_deletion"
+    CANDIDATE_DIRECT_TYPED_AMEND_IN_TEXT_SUBSTITUTION = "candidate_direct_typed_amend_in_text_substitution"
+
+
+class NZTextSubstitutionSubfamily(StrEnum):
+    """Closed subfamily for a text-substitution candidate. ``NONE`` (``""``) marks absent.
+
+    The empty member is falsy, so the ``subfamily or "__none__"`` summary idiom
+    and ``""`` JSON serialization stay byte-identical.
+    """
+
+    NONE = ""
+    DIRECT_SINGLE_TEXT_SUBSTITUTION = "direct_single_text_substitution"
+    DIRECT_EACH_PLACE_TEXT_SUBSTITUTION = "direct_each_place_text_substitution"
+
+
+class NZTextSubstitutionScope(StrEnum):
+    """Closed occurrence scope of a text substitution. ``NONE`` (``""``) marks absent."""
+
+    NONE = ""
+    INLINE_TEXT_SINGLE_OCCURRENCE = "inline_text_single_occurrence"
+    INLINE_TEXT_EACH_PLACE = "inline_text_each_place"
+
+
+class NZTargetCitationStatus(StrEnum):
+    """Closed target-citation match status. ``NONE`` (``""``) marks absent."""
+
+    NONE = ""
+    MATCHED = "matched"
+    MATCHED_IN_MULTI_CLAUSE_PAYLOAD = "matched_in_multi_clause_payload"
+    MISMATCH = "mismatch"
+    NO_MATCH = "no_match"
+    AMBIGUOUS = "ambiguous"
+
+
+class NZStructuralSubfamilyStatus(StrEnum):
+    """Closed report-only structural-subfamily status. ``NONE`` (``""``) marks absent."""
+
+    NONE = ""
+    REVIEW_RETROSPECTIVE_INCORPORATED_PAYLOAD = "review_retrospective_incorporated_payload"
+    BLOCKED_AMBIGUOUS_AMEND_REPLACE_PAYLOAD = "blocked_ambiguous_amend_replace_payload"
+    BLOCKED_CROSS_HEADING_INSERT_PAYLOAD_NOT_LOWERED = "blocked_cross_heading_insert_payload_not_lowered"
+    BLOCKED_DEFINITION_ALPHABETICAL_INSERT_PAYLOAD_NOT_LOWERED = (
+        "blocked_definition_alphabetical_insert_payload_not_lowered"
+    )
+    BLOCKED_HISTORICAL_INSERTED_NOTE_PAYLOAD_NOT_LOWERED = "blocked_historical_inserted_note_payload_not_lowered"
+    BLOCKED_INCORPORATED_AMENDMENT_STUB_PAYLOAD = "blocked_incorporated_amendment_stub_payload"
+    BLOCKED_MIXED_REPEAL_SUBSTITUTE_PAYLOAD_NOT_LOWERED = "blocked_mixed_repeal_substitute_payload_not_lowered"
+    BLOCKED_MIXED_TEXT_AND_STRUCTURAL_INSERT_PAYLOAD_NOT_LOWERED = (
+        "blocked_mixed_text_and_structural_insert_payload_not_lowered"
+    )
+    BLOCKED_MULTI_SECTION_REPLACE_PAYLOAD_NOT_LOWERED = "blocked_multi_section_replace_payload_not_lowered"
+    BLOCKED_PARAGRAPH_AFTER_INSERT_PAYLOAD_NOT_LOWERED = "blocked_paragraph_after_insert_payload_not_lowered"
+    BLOCKED_SCHEDULE_INDIRECTION_PAYLOAD = "blocked_schedule_indirection_payload"
+    BLOCKED_SECTION_AFTER_INSERT_PAYLOAD_NOT_LOWERED = "blocked_section_after_insert_payload_not_lowered"
+    BLOCKED_STRUCTURAL_AMEND_PAYLOAD_NOT_LOWERED = "blocked_structural_amend_payload_not_lowered"
+    BLOCKED_STRUCTURAL_INSERT_PAYLOAD_NOT_LOWERED = "blocked_structural_insert_payload_not_lowered"
+    BLOCKED_STRUCTURAL_REPLACE_PAYLOAD_NOT_LOWERED = "blocked_structural_replace_payload_not_lowered"
+    BLOCKED_SUBSECTION_AFTER_INSERT_PAYLOAD_NOT_LOWERED = "blocked_subsection_after_insert_payload_not_lowered"
+    BLOCKED_TEXT_INSERT_PAYLOAD_NOT_LOWERED = "blocked_text_insert_payload_not_lowered"
+    BLOCKED_WHOLE_PROVISION_SUBSTITUTION_PAYLOAD_NOT_LOWERED = (
+        "blocked_whole_provision_substitution_payload_not_lowered"
+    )
+
+
+class NZStructuralSubfamily(StrEnum):
+    """Closed report-only structural subfamily. ``NONE`` (``""``) marks absent."""
+
+    NONE = ""
+    AMBIGUOUS_AMEND_REPLACE_PAYLOAD = "ambiguous_amend_replace_payload"
+    CROSS_HEADING_INSERT_PAYLOAD = "cross_heading_insert_payload"
+    DEFINITION_ALPHABETICAL_INSERT_PAYLOAD = "definition_alphabetical_insert_payload"
+    DIRECT_AMEND_PAYLOAD = "direct_amend_payload"
+    DIRECT_INSERT_PAYLOAD = "direct_insert_payload"
+    DIRECT_REPLACE_PAYLOAD = "direct_replace_payload"
+    DIRECT_TEXT_INSERT_PAYLOAD = "direct_text_insert_payload"
+    HISTORICAL_INSERTED_NOTE_PAYLOAD = "historical_inserted_note_payload"
+    INCORPORATED_AMENDMENT_STUB_PAYLOAD = "incorporated_amendment_stub_payload"
+    MIXED_REPEAL_SUBSTITUTE_PAYLOAD = "mixed_repeal_substitute_payload"
+    MIXED_TEXT_AND_STRUCTURAL_INSERT_PAYLOAD = "mixed_text_and_structural_insert_payload"
+    MULTI_SECTION_REPLACE_PAYLOAD = "multi_section_replace_payload"
+    PARAGRAPH_AFTER_INSERT_PAYLOAD = "paragraph_after_insert_payload"
+    RETROSPECTIVE_INCORPORATED_NOTE = "retrospective_incorporated_note"
+    SCHEDULE_INDIRECTION_PAYLOAD = "schedule_indirection_payload"
+    SECTION_AFTER_INSERT_PAYLOAD = "section_after_insert_payload"
+    SUBSECTION_AFTER_INSERT_PAYLOAD = "subsection_after_insert_payload"
+    WHOLE_PROVISION_SUBSTITUTION_PAYLOAD = "whole_provision_substitution_payload"
+
+
+class NZLatestOracleTextStatus(StrEnum):
+    """Closed latest-oracle text-witness status. ``NONE`` (``""``) marks absent.
+
+    The ``oracle_*`` members are the verdict of comparing the candidate
+    old/new text against the latest consolidated source node; the ``not_*`` and
+    ``blocked_target_*`` members mark why the witness could not run. The rule_id
+    is derived as ``f"nz_instruction_latest_oracle_text_{status}"``; because a
+    ``StrEnum`` member formats to its ``value``, the rule_id stays byte-identical.
+    """
+
+    NONE = ""
+    NOT_APPLICABLE_NOT_DIRECT_TEXT_SUBSTITUTION = "not_applicable_not_direct_text_substitution"
+    NOT_RUN_TARGET_DOCUMENT_UNAVAILABLE = "not_run_target_document_unavailable"
+    BLOCKED_TARGET_ADDRESS_UNMAPPED = "blocked_target_address_unmapped"
+    BLOCKED_TARGET_GRANULARITY_NOT_INDEXED = "blocked_target_granularity_not_indexed"
+    BLOCKED_TARGET_SOURCE_NODE_DELETED = "blocked_target_source_node_deleted"
+    BLOCKED_TARGET_SOURCE_NODE_MISSING = "blocked_target_source_node_missing"
+    BLOCKED_TARGET_SOURCE_NODE_NOT_UNIQUE = "blocked_target_source_node_not_unique"
+    ORACLE_OLD_TEXT_DELETED = "oracle_old_text_deleted"
+    ORACLE_OLD_TEXT_NOT_DELETED = "oracle_old_text_not_deleted"
+    ORACLE_NEW_TEXT_ONLY = "oracle_new_text_only"
+    ORACLE_NEW_TEXT_ONLY_EACH_PLACE = "oracle_new_text_only_each_place"
+    ORACLE_NEW_TEXT_CONTAINS_OLD_TEXT = "oracle_new_text_contains_old_text"
+    ORACLE_OLD_TEXT_ONLY = "oracle_old_text_only"
+    ORACLE_OLD_AND_NEW_TEXT = "oracle_old_and_new_text"
+    ORACLE_NEITHER_OLD_NOR_NEW_TEXT = "oracle_neither_old_nor_new_text"
+
+
+class NZLatestOracleTargetResolutionStatus(StrEnum):
+    """Closed latest-oracle target-resolution status. ``NONE`` (``""``) marks absent."""
+
+    NONE = ""
+    EXACT_SOURCE_PATH = "exact_source_path"
+    VIA_UNLABELED_SOURCE_CARRIER = "via_unlabeled_source_carrier"
+
+
 @dataclass(frozen=True)
 class NZInstructionWorkQueueRow:
     row_id: str
     operation_row_id: str
     effect_readiness_row_id: str
-    queue_status: str
+    queue_status: NZWorkQueueStatus
     operation_family: str
     target_address: str
+    # effect_readiness_status forwards the upstream effect-readiness merged
+    # vocabulary (NZPayloadStatus blocked terms in union with effect-readiness
+    # ready/blocked terms); kept ``str`` because it is an open/merged vocab, not
+    # owned here.
     effect_readiness_status: str
     blocking_rule_id: str
     amending_work_id: str
     amending_provision_hrefs: tuple[str, ...]
-    instruction_semantic_candidate_status: str
-    instruction_semantic_candidate_family: str
+    instruction_semantic_candidate_status: NZInstructionSemanticCandidateStatus
+    instruction_semantic_candidate_family: NZInstructionSemanticCandidateFamily
     instruction_semantic_rule_id: str
-    payload_instruction_shape: str
-    payload_instruction_safety: str
+    payload_instruction_shape: NZPayloadInstructionShape
+    payload_instruction_safety: NZPayloadInstructionSafety
     payload_match_headings: tuple[str, ...]
     payload_text_snippets: tuple[str, ...]
-    instruction_subfamily_status: str = ""
-    instruction_subfamily: str = ""
+    instruction_subfamily_status: NZTextSubstitutionStatus = NZTextSubstitutionStatus.NONE
+    instruction_subfamily: NZTextSubstitutionSubfamily = NZTextSubstitutionSubfamily.NONE
     instruction_subfamily_rule_id: str = ""
-    payload_structural_subfamily_status: str = ""
-    payload_structural_subfamily: str = ""
+    payload_structural_subfamily_status: NZStructuralSubfamilyStatus = NZStructuralSubfamilyStatus.NONE
+    payload_structural_subfamily: NZStructuralSubfamily = NZStructuralSubfamily.NONE
     payload_structural_subfamily_rule_id: str = ""
     instruction_clause_count: int = 0
     explicit_target_citation: str = ""
-    target_citation_status: str = ""
+    target_citation_status: NZTargetCitationStatus = NZTargetCitationStatus.NONE
     old_text: str = ""
     new_text: str = ""
-    text_substitution_scope: str = ""
-    latest_oracle_text_status: str = ""
+    text_substitution_scope: NZTextSubstitutionScope = NZTextSubstitutionScope.NONE
+    latest_oracle_text_status: NZLatestOracleTextStatus = NZLatestOracleTextStatus.NONE
     latest_oracle_text_rule_id: str = ""
-    latest_oracle_target_resolution_status: str = ""
+    latest_oracle_target_resolution_status: NZLatestOracleTargetResolutionStatus = (
+        NZLatestOracleTargetResolutionStatus.NONE
+    )
     latest_oracle_target_resolution_rule_id: str = ""
     latest_oracle_target_source_path: tuple[str, ...] = ()
     latest_oracle_old_text_occurrences: int = 0
@@ -250,10 +462,10 @@ def _summarize_rows(work_id: str, rows: tuple[NZInstructionWorkQueueRow, ...]) -
         "latest_oracle_target_resolution_status_counts": dict(sorted(latest_oracle_target_resolution_counts.items())),
         "direct_single_text_substitution_candidates": subfamily_counts["direct_single_text_substitution"],
         "direct_each_place_text_substitution_candidates": subfamily_counts["direct_each_place_text_substitution"],
-        "candidate_instruction_rows": queue_status_counts["candidate"],
-        "review_instruction_rows": queue_status_counts["review"],
-        "blocked_instruction_rows": queue_status_counts["blocked"],
-        "not_required_rows": queue_status_counts["not_required"],
+        "candidate_instruction_rows": queue_status_counts[NZWorkQueueStatus.CANDIDATE],
+        "review_instruction_rows": queue_status_counts[NZWorkQueueStatus.REVIEW],
+        "blocked_instruction_rows": queue_status_counts[NZWorkQueueStatus.BLOCKED],
+        "not_required_rows": queue_status_counts[NZWorkQueueStatus.NOT_REQUIRED],
         "replay_claims": False,
         "canonical_effect_claims": False,
     }
@@ -376,14 +588,23 @@ def build_archived_work_instruction_workqueue(db_path: Path, work_id: str) -> NZ
     return build_instruction_workqueue(operation_surface, payload_surface, effect_readiness, target_document)
 
 
-def _queue_status(instruction_status: str) -> str:
-    if instruction_status == "candidate_only_instruction_semantics":
-        return "candidate"
-    if instruction_status == "review_retrospective_incorporated_note":
-        return "review"
-    if instruction_status == "not_required_for_repeal_candidate":
-        return "not_required"
-    return "blocked"
+def _queue_status(instruction_status: NZInstructionSemanticCandidateStatus) -> NZWorkQueueStatus:
+    match instruction_status:
+        case NZInstructionSemanticCandidateStatus.CANDIDATE_ONLY_INSTRUCTION_SEMANTICS:
+            return NZWorkQueueStatus.CANDIDATE
+        case NZInstructionSemanticCandidateStatus.REVIEW_RETROSPECTIVE_INCORPORATED_NOTE:
+            return NZWorkQueueStatus.REVIEW
+        case NZInstructionSemanticCandidateStatus.NOT_REQUIRED_FOR_REPEAL_CANDIDATE:
+            return NZWorkQueueStatus.NOT_REQUIRED
+        case (
+            NZInstructionSemanticCandidateStatus.BLOCKED_PAYLOAD_WITNESS_NOT_AVAILABLE
+            | NZInstructionSemanticCandidateStatus.BLOCKED_INSTRUCTION_INDIRECTION
+            | NZInstructionSemanticCandidateStatus.BLOCKED_INSTRUCTION_OPAQUE_OR_UNCLASSIFIED
+            | NZInstructionSemanticCandidateStatus.BLOCKED_INSTRUCTION_SEMANTICS_UNCLASSIFIED
+        ):
+            return NZWorkQueueStatus.BLOCKED
+        case _ as unreachable:
+            assert_never(unreachable)
 
 
 def _snippet(text: str, *, limit: int = 220) -> str:
@@ -430,7 +651,7 @@ def _workqueue_evidence_row(
     report: NZInstructionWorkQueueReport,
     row: NZInstructionWorkQueueRow,
 ) -> CorpusOperationEvidenceRow:
-    if row.queue_status == "not_required":
+    if row.queue_status == NZWorkQueueStatus.NOT_REQUIRED:
         return CorpusOperationEvidenceRow(
             row_id=row.row_id,
             frontend_id="new_zealand",
@@ -516,12 +737,12 @@ def _latest_oracle_target_resolution_evidence(row: NZInstructionWorkQueueRow) ->
         return {}
     status = (
         TARGET_RESOLVED
-        if row.latest_oracle_target_resolution_status == "exact_source_path"
+        if row.latest_oracle_target_resolution_status == NZLatestOracleTargetResolutionStatus.EXACT_SOURCE_PATH
         else TARGET_RECOVERED
     )
     scope_confidence = (
         SCOPE_CONFIDENCE_EXPLICIT_SOURCE
-        if row.latest_oracle_target_resolution_status == "exact_source_path"
+        if row.latest_oracle_target_resolution_status == NZLatestOracleTargetResolutionStatus.EXACT_SOURCE_PATH
         else ""
     )
     return TargetResolutionCoverage(
@@ -542,29 +763,29 @@ def _latest_oracle_target_resolution_evidence(row: NZInstructionWorkQueueRow) ->
 
 @dataclass(frozen=True)
 class _TextSubstitutionCandidate:
-    status: str
-    subfamily: str = ""
+    status: NZTextSubstitutionStatus
+    subfamily: NZTextSubstitutionSubfamily = NZTextSubstitutionSubfamily.NONE
     rule_id: str = ""
     clause_count: int = 0
     explicit_target_citation: str = ""
-    target_citation_status: str = ""
+    target_citation_status: NZTargetCitationStatus = NZTargetCitationStatus.NONE
     old_text: str = ""
     new_text: str = ""
-    scope: str = ""
+    scope: NZTextSubstitutionScope = NZTextSubstitutionScope.NONE
 
 
 @dataclass(frozen=True)
 class _StructuralInstructionSubfamily:
-    status: str = ""
-    subfamily: str = ""
+    status: NZStructuralSubfamilyStatus = NZStructuralSubfamilyStatus.NONE
+    subfamily: NZStructuralSubfamily = NZStructuralSubfamily.NONE
     rule_id: str = ""
 
 
 @dataclass(frozen=True)
 class _LatestOracleTextWitness:
-    status: str
+    status: NZLatestOracleTextStatus
     rule_id: str
-    target_resolution_status: str = ""
+    target_resolution_status: NZLatestOracleTargetResolutionStatus = NZLatestOracleTargetResolutionStatus.NONE
     target_resolution_rule_id: str = ""
     target_source_path: tuple[str, ...] = ()
     old_text_occurrences: int = 0
@@ -574,7 +795,7 @@ class _LatestOracleTextWitness:
 @dataclass(frozen=True)
 class _LatestOracleTargetResolution:
     node: NZSourceNode
-    status: str
+    status: NZLatestOracleTargetResolutionStatus
     rule_id: str
 
 
@@ -618,11 +839,11 @@ def _classify_typed_amend_in_text_substitution(
         return None
     if len(matched) > 1:
         return _TextSubstitutionCandidate(
-            status="blocked_typed_amend_in_ambiguous_target",
+            status=NZTextSubstitutionStatus.BLOCKED_TYPED_AMEND_IN_AMBIGUOUS_TARGET,
             rule_id="nz_instruction_semantics_blocked_typed_amend_in_ambiguous_target",
             clause_count=len(matched),
             explicit_target_citation=matched[0].target_citation,
-            target_citation_status="matched",
+            target_citation_status=NZTargetCitationStatus.MATCHED,
         )
     instruction = matched[0]
     if instruction.verb == "omitting" and instruction.omit_only:
@@ -631,19 +852,19 @@ def _classify_typed_amend_in_text_substitution(
         return _classify_typed_insert_after(instruction)
     if instruction.verb not in {"omitting_substituting", "replace_with"}:
         return _TextSubstitutionCandidate(
-            status="blocked_typed_amend_in_not_substitution_verb",
+            status=NZTextSubstitutionStatus.BLOCKED_TYPED_AMEND_IN_NOT_SUBSTITUTION_VERB,
             rule_id="nz_instruction_semantics_blocked_typed_amend_in_not_substitution_verb",
             explicit_target_citation=instruction.target_citation,
-            target_citation_status="matched",
+            target_citation_status=NZTargetCitationStatus.MATCHED,
         )
     old_text = " ".join(instruction.old_text.split()).strip(" ,;.")
     new_text = " ".join(instruction.new_text.split()).strip(" ,;.")
     if not old_text or not new_text:
         return _TextSubstitutionCandidate(
-            status="blocked_typed_amend_in_payload_incomplete",
+            status=NZTextSubstitutionStatus.BLOCKED_TYPED_AMEND_IN_PAYLOAD_INCOMPLETE,
             rule_id="nz_instruction_semantics_blocked_typed_amend_in_payload_incomplete",
             explicit_target_citation=instruction.target_citation,
-            target_citation_status="matched",
+            target_citation_status=NZTargetCitationStatus.MATCHED,
             old_text=old_text,
             new_text=new_text,
         )
@@ -658,24 +879,24 @@ def _classify_typed_amend_in_text_substitution(
     # honest residual rather than a false agreement.
     if instruction.each_place:
         return _TextSubstitutionCandidate(
-            status="candidate_direct_each_place_typed_amend_in_text_substitution",
-            subfamily="direct_each_place_text_substitution",
+            status=NZTextSubstitutionStatus.CANDIDATE_DIRECT_EACH_PLACE_TYPED_AMEND_IN_TEXT_SUBSTITUTION,
+            subfamily=NZTextSubstitutionSubfamily.DIRECT_EACH_PLACE_TEXT_SUBSTITUTION,
             rule_id="nz_instruction_semantics_direct_each_place_typed_amend_in_text_substitution_candidate",
             explicit_target_citation=instruction.target_citation,
-            target_citation_status="matched",
+            target_citation_status=NZTargetCitationStatus.MATCHED,
             old_text=old_text,
             new_text=new_text,
-            scope="inline_text_each_place",
+            scope=NZTextSubstitutionScope.INLINE_TEXT_EACH_PLACE,
         )
     return _TextSubstitutionCandidate(
-        status="candidate_direct_typed_amend_in_text_substitution",
-        subfamily="direct_single_text_substitution",
+        status=NZTextSubstitutionStatus.CANDIDATE_DIRECT_TYPED_AMEND_IN_TEXT_SUBSTITUTION,
+        subfamily=NZTextSubstitutionSubfamily.DIRECT_SINGLE_TEXT_SUBSTITUTION,
         rule_id="nz_instruction_semantics_direct_typed_amend_in_text_substitution_candidate",
         explicit_target_citation=instruction.target_citation,
-        target_citation_status="matched",
+        target_citation_status=NZTargetCitationStatus.MATCHED,
         old_text=old_text,
         new_text=new_text,
-        scope="inline_text_single_occurrence",
+        scope=NZTextSubstitutionScope.INLINE_TEXT_SINGLE_OCCURRENCE,
     )
 
 
@@ -691,32 +912,32 @@ def _classify_typed_omit_only(instruction: Any) -> _TextSubstitutionCandidate:
     old_text = " ".join(instruction.old_text.split()).strip(" ,;.")
     if not old_text:
         return _TextSubstitutionCandidate(
-            status="blocked_typed_amend_in_payload_incomplete",
+            status=NZTextSubstitutionStatus.BLOCKED_TYPED_AMEND_IN_PAYLOAD_INCOMPLETE,
             rule_id="nz_instruction_semantics_blocked_typed_amend_in_payload_incomplete",
             explicit_target_citation=instruction.target_citation,
-            target_citation_status="matched",
+            target_citation_status=NZTargetCitationStatus.MATCHED,
             old_text=old_text,
         )
     if instruction.each_place:
         return _TextSubstitutionCandidate(
-            status="candidate_direct_each_place_typed_amend_in_omit_deletion",
-            subfamily="direct_each_place_text_substitution",
+            status=NZTextSubstitutionStatus.CANDIDATE_DIRECT_EACH_PLACE_TYPED_AMEND_IN_OMIT_DELETION,
+            subfamily=NZTextSubstitutionSubfamily.DIRECT_EACH_PLACE_TEXT_SUBSTITUTION,
             rule_id="nz_instruction_semantics_direct_each_place_typed_amend_in_omit_deletion_candidate",
             explicit_target_citation=instruction.target_citation,
-            target_citation_status="matched",
+            target_citation_status=NZTargetCitationStatus.MATCHED,
             old_text=old_text,
             new_text="",
-            scope="inline_text_each_place",
+            scope=NZTextSubstitutionScope.INLINE_TEXT_EACH_PLACE,
         )
     return _TextSubstitutionCandidate(
-        status="candidate_direct_typed_amend_in_omit_deletion",
-        subfamily="direct_single_text_substitution",
+        status=NZTextSubstitutionStatus.CANDIDATE_DIRECT_TYPED_AMEND_IN_OMIT_DELETION,
+        subfamily=NZTextSubstitutionSubfamily.DIRECT_SINGLE_TEXT_SUBSTITUTION,
         rule_id="nz_instruction_semantics_direct_typed_amend_in_omit_deletion_candidate",
         explicit_target_citation=instruction.target_citation,
-        target_citation_status="matched",
+        target_citation_status=NZTargetCitationStatus.MATCHED,
         old_text=old_text,
         new_text="",
-        scope="inline_text_single_occurrence",
+        scope=NZTextSubstitutionScope.INLINE_TEXT_SINGLE_OCCURRENCE,
     )
 
 
@@ -739,10 +960,10 @@ def _classify_typed_insert_after(instruction: Any) -> _TextSubstitutionCandidate
     new = " ".join(instruction.new_text.split()).strip(" ,;.")
     if not anchor or not new or instruction.insert_position not in {"after", "before"}:
         return _TextSubstitutionCandidate(
-            status="blocked_typed_amend_in_insert_anchor_unparsed",
+            status=NZTextSubstitutionStatus.BLOCKED_TYPED_AMEND_IN_INSERT_ANCHOR_UNPARSED,
             rule_id="nz_instruction_semantics_blocked_typed_amend_in_insert_anchor_unparsed",
             explicit_target_citation=instruction.target_citation,
-            target_citation_status="matched",
+            target_citation_status=NZTargetCitationStatus.MATCHED,
         )
     if instruction.insert_position == "after":
         replacement = f"{anchor} {new}"
@@ -750,24 +971,24 @@ def _classify_typed_insert_after(instruction: Any) -> _TextSubstitutionCandidate
         replacement = f"{new} {anchor}"
     if instruction.each_place:
         return _TextSubstitutionCandidate(
-            status="candidate_direct_each_place_typed_amend_in_insert",
-            subfamily="direct_each_place_text_substitution",
+            status=NZTextSubstitutionStatus.CANDIDATE_DIRECT_EACH_PLACE_TYPED_AMEND_IN_INSERT,
+            subfamily=NZTextSubstitutionSubfamily.DIRECT_EACH_PLACE_TEXT_SUBSTITUTION,
             rule_id="nz_instruction_semantics_direct_each_place_typed_amend_in_insert_candidate",
             explicit_target_citation=instruction.target_citation,
-            target_citation_status="matched",
+            target_citation_status=NZTargetCitationStatus.MATCHED,
             old_text=anchor,
             new_text=replacement,
-            scope="inline_text_each_place",
+            scope=NZTextSubstitutionScope.INLINE_TEXT_EACH_PLACE,
         )
     return _TextSubstitutionCandidate(
-        status="candidate_direct_typed_amend_in_insert",
-        subfamily="direct_single_text_substitution",
+        status=NZTextSubstitutionStatus.CANDIDATE_DIRECT_TYPED_AMEND_IN_INSERT,
+        subfamily=NZTextSubstitutionSubfamily.DIRECT_SINGLE_TEXT_SUBSTITUTION,
         rule_id="nz_instruction_semantics_direct_typed_amend_in_insert_candidate",
         explicit_target_citation=instruction.target_citation,
-        target_citation_status="matched",
+        target_citation_status=NZTargetCitationStatus.MATCHED,
         old_text=anchor,
         new_text=replacement,
-        scope="inline_text_single_occurrence",
+        scope=NZTextSubstitutionScope.INLINE_TEXT_SINGLE_OCCURRENCE,
     )
 
 
@@ -775,33 +996,33 @@ def _classify_direct_single_text_substitution(
     *,
     operation_family: str,
     target_address: str,
-    payload_instruction_shape: str,
+    payload_instruction_shape: NZPayloadInstructionShape,
     amending_provision_hrefs: tuple[str, ...],
     payload_texts: tuple[str, ...],
 ) -> _TextSubstitutionCandidate:
-    if payload_instruction_shape == "direct_amended_by_instruction":
+    if payload_instruction_shape == NZPayloadInstructionShape.DIRECT_AMENDED_BY_INSTRUCTION:
         return _classify_omitting_substituting_text_substitution(
             operation_family=operation_family,
             target_address=target_address,
             amending_provision_hrefs=amending_provision_hrefs,
             payload_texts=payload_texts,
         )
-    if payload_instruction_shape != "direct_substitute_replace_instruction":
+    if payload_instruction_shape != NZPayloadInstructionShape.DIRECT_SUBSTITUTE_REPLACE_INSTRUCTION:
         return _TextSubstitutionCandidate(
-            status="not_text_substitution_shape",
+            status=NZTextSubstitutionStatus.NOT_TEXT_SUBSTITUTION_SHAPE,
             rule_id="nz_instruction_subfamily_not_text_substitution_shape",
         )
     text = " ".join(payload_texts)
     clause_count = _replacement_clause_count(text)
     if operation_family != "amended":
         return _TextSubstitutionCandidate(
-            status="blocked_structural_replacement_payload",
+            status=NZTextSubstitutionStatus.BLOCKED_STRUCTURAL_REPLACEMENT_PAYLOAD,
             rule_id="nz_instruction_semantics_blocked_structural_replacement_payload",
             clause_count=clause_count,
         )
     if len(amending_provision_hrefs) != 1 or len(payload_texts) != 1:
         return _TextSubstitutionCandidate(
-            status="blocked_payload_multiplicity",
+            status=NZTextSubstitutionStatus.BLOCKED_PAYLOAD_MULTIPLICITY,
             rule_id="nz_instruction_semantics_blocked_payload_multiplicity",
             clause_count=clause_count,
         )
@@ -813,14 +1034,14 @@ def _classify_direct_single_text_substitution(
         )
     if text.lower().startswith("replace with:"):
         return _TextSubstitutionCandidate(
-            status="blocked_structural_replacement_payload",
+            status=NZTextSubstitutionStatus.BLOCKED_STRUCTURAL_REPLACEMENT_PAYLOAD,
             rule_id="nz_instruction_semantics_blocked_structural_replacement_payload",
             clause_count=clause_count,
         )
     pieces = _extract_replace_with_pieces(text)
     if pieces is None:
         return _TextSubstitutionCandidate(
-            status="blocked_text_substitution_parse_failed",
+            status=NZTextSubstitutionStatus.BLOCKED_TEXT_SUBSTITUTION_PARSE_FAILED,
             rule_id="nz_instruction_semantics_blocked_text_substitution_parse_failed",
             clause_count=clause_count,
         )
@@ -828,45 +1049,45 @@ def _classify_direct_single_text_substitution(
     cleaned_new_text, occurrence_scope = _text_substitution_scope(new_text)
     if not _target_citation_matches(explicit_target_citation, target_address):
         return _TextSubstitutionCandidate(
-            status="blocked_target_citation_mismatch",
+            status=NZTextSubstitutionStatus.BLOCKED_TARGET_CITATION_MISMATCH,
             rule_id="nz_instruction_semantics_blocked_target_citation_mismatch",
             clause_count=clause_count,
             explicit_target_citation=explicit_target_citation,
-            target_citation_status="mismatch",
+            target_citation_status=NZTargetCitationStatus.MISMATCH,
             old_text=old_text,
             new_text=cleaned_new_text,
             scope=occurrence_scope,
         )
-    if occurrence_scope != "inline_text_single_occurrence":
-        if occurrence_scope == "inline_text_each_place":
+    if occurrence_scope != NZTextSubstitutionScope.INLINE_TEXT_SINGLE_OCCURRENCE:
+        if occurrence_scope == NZTextSubstitutionScope.INLINE_TEXT_EACH_PLACE:
             return _TextSubstitutionCandidate(
-                status="candidate_direct_each_place_text_substitution",
-                subfamily="direct_each_place_text_substitution",
+                status=NZTextSubstitutionStatus.CANDIDATE_DIRECT_EACH_PLACE_TEXT_SUBSTITUTION,
+                subfamily=NZTextSubstitutionSubfamily.DIRECT_EACH_PLACE_TEXT_SUBSTITUTION,
                 rule_id="nz_instruction_semantics_direct_each_place_text_substitution_candidate",
                 clause_count=clause_count,
                 explicit_target_citation=explicit_target_citation,
-                target_citation_status="matched",
+                target_citation_status=NZTargetCitationStatus.MATCHED,
                 old_text=old_text,
                 new_text=cleaned_new_text,
                 scope=occurrence_scope,
             )
         return _TextSubstitutionCandidate(
-            status="blocked_multiple_occurrence_text_substitution",
+            status=NZTextSubstitutionStatus.BLOCKED_MULTIPLE_OCCURRENCE_TEXT_SUBSTITUTION,
             rule_id="nz_instruction_semantics_blocked_multiple_occurrence_text_substitution",
             clause_count=clause_count,
             explicit_target_citation=explicit_target_citation,
-            target_citation_status="matched",
+            target_citation_status=NZTargetCitationStatus.MATCHED,
             old_text=old_text,
             new_text=cleaned_new_text,
             scope=occurrence_scope,
         )
     return _TextSubstitutionCandidate(
-        status="candidate_direct_single_text_substitution",
-        subfamily="direct_single_text_substitution",
+        status=NZTextSubstitutionStatus.CANDIDATE_DIRECT_SINGLE_TEXT_SUBSTITUTION,
+        subfamily=NZTextSubstitutionSubfamily.DIRECT_SINGLE_TEXT_SUBSTITUTION,
         rule_id="nz_instruction_semantics_direct_single_text_substitution_candidate",
         clause_count=clause_count,
         explicit_target_citation=explicit_target_citation,
-        target_citation_status="matched",
+        target_citation_status=NZTargetCitationStatus.MATCHED,
         old_text=old_text,
         new_text=cleaned_new_text,
         scope=occurrence_scope,
@@ -885,18 +1106,18 @@ def _classify_omitting_substituting_text_substitution(
     if operation_family != "amended":
         if operation_family in {"inserted", "added"}:
             return _TextSubstitutionCandidate(
-                status="not_text_substitution_shape",
+                status=NZTextSubstitutionStatus.NOT_TEXT_SUBSTITUTION_SHAPE,
                 rule_id="nz_instruction_subfamily_not_text_substitution_shape",
                 clause_count=clause_count,
             )
         return _TextSubstitutionCandidate(
-            status="blocked_structural_replacement_payload",
+            status=NZTextSubstitutionStatus.BLOCKED_STRUCTURAL_REPLACEMENT_PAYLOAD,
             rule_id="nz_instruction_semantics_blocked_structural_replacement_payload",
             clause_count=clause_count,
         )
     if len(amending_provision_hrefs) != 1 or len(payload_texts) != 1:
         return _TextSubstitutionCandidate(
-            status="blocked_payload_multiplicity",
+            status=NZTextSubstitutionStatus.BLOCKED_PAYLOAD_MULTIPLICITY,
             rule_id="nz_instruction_semantics_blocked_payload_multiplicity",
             clause_count=clause_count,
         )
@@ -909,14 +1130,14 @@ def _classify_omitting_substituting_text_substitution(
     pieces = _extract_omitting_substituting_pieces(text)
     if pieces is None:
         return _TextSubstitutionCandidate(
-            status="blocked_omitting_substituting_parse_failed",
+            status=NZTextSubstitutionStatus.BLOCKED_OMITTING_SUBSTITUTING_PARSE_FAILED,
             rule_id="nz_instruction_semantics_blocked_omitting_substituting_parse_failed",
             clause_count=clause_count,
         )
     explicit_target_citation, old_text, new_text = pieces
     if _looks_structural_omitting_substituting_payload(old_text, new_text):
         return _TextSubstitutionCandidate(
-            status="blocked_structural_omitting_substituting_payload",
+            status=NZTextSubstitutionStatus.BLOCKED_STRUCTURAL_OMITTING_SUBSTITUTING_PAYLOAD,
             rule_id="nz_instruction_semantics_blocked_structural_omitting_substituting_payload",
             clause_count=clause_count,
             explicit_target_citation=explicit_target_citation,
@@ -926,45 +1147,45 @@ def _classify_omitting_substituting_text_substitution(
     cleaned_old_text, cleaned_new_text, occurrence_scope = _omitting_substitution_scope(old_text, new_text)
     if not _target_citation_matches(explicit_target_citation, target_address):
         return _TextSubstitutionCandidate(
-            status="blocked_target_citation_mismatch",
+            status=NZTextSubstitutionStatus.BLOCKED_TARGET_CITATION_MISMATCH,
             rule_id="nz_instruction_semantics_blocked_target_citation_mismatch",
             clause_count=clause_count,
             explicit_target_citation=explicit_target_citation,
-            target_citation_status="mismatch",
+            target_citation_status=NZTargetCitationStatus.MISMATCH,
             old_text=cleaned_old_text,
             new_text=cleaned_new_text,
             scope=occurrence_scope,
         )
-    if occurrence_scope != "inline_text_single_occurrence":
-        if occurrence_scope == "inline_text_each_place":
+    if occurrence_scope != NZTextSubstitutionScope.INLINE_TEXT_SINGLE_OCCURRENCE:
+        if occurrence_scope == NZTextSubstitutionScope.INLINE_TEXT_EACH_PLACE:
             return _TextSubstitutionCandidate(
-                status="candidate_direct_each_place_omitting_substituting_text_substitution",
-                subfamily="direct_each_place_text_substitution",
+                status=NZTextSubstitutionStatus.CANDIDATE_DIRECT_EACH_PLACE_OMITTING_SUBSTITUTING_TEXT_SUBSTITUTION,
+                subfamily=NZTextSubstitutionSubfamily.DIRECT_EACH_PLACE_TEXT_SUBSTITUTION,
                 rule_id="nz_instruction_semantics_direct_each_place_omitting_substituting_text_substitution_candidate",
                 clause_count=clause_count,
                 explicit_target_citation=explicit_target_citation,
-                target_citation_status="matched",
+                target_citation_status=NZTargetCitationStatus.MATCHED,
                 old_text=cleaned_old_text,
                 new_text=cleaned_new_text,
                 scope=occurrence_scope,
             )
         return _TextSubstitutionCandidate(
-            status="blocked_multiple_occurrence_text_substitution",
+            status=NZTextSubstitutionStatus.BLOCKED_MULTIPLE_OCCURRENCE_TEXT_SUBSTITUTION,
             rule_id="nz_instruction_semantics_blocked_multiple_occurrence_text_substitution",
             clause_count=clause_count,
             explicit_target_citation=explicit_target_citation,
-            target_citation_status="matched",
+            target_citation_status=NZTargetCitationStatus.MATCHED,
             old_text=cleaned_old_text,
             new_text=cleaned_new_text,
             scope=occurrence_scope,
         )
     return _TextSubstitutionCandidate(
-        status="candidate_direct_omitting_substituting_text_substitution",
-        subfamily="direct_single_text_substitution",
+        status=NZTextSubstitutionStatus.CANDIDATE_DIRECT_OMITTING_SUBSTITUTING_TEXT_SUBSTITUTION,
+        subfamily=NZTextSubstitutionSubfamily.DIRECT_SINGLE_TEXT_SUBSTITUTION,
         rule_id="nz_instruction_semantics_direct_omitting_substituting_text_substitution_candidate",
         clause_count=clause_count,
         explicit_target_citation=explicit_target_citation,
-        target_citation_status="matched",
+        target_citation_status=NZTargetCitationStatus.MATCHED,
         old_text=cleaned_old_text,
         new_text=cleaned_new_text,
         scope=occurrence_scope,
@@ -975,29 +1196,29 @@ def _classify_report_only_structural_subfamily(
     *,
     operation_family: str,
     target_address: str,
-    payload_instruction_shape: str,
-    text_substitution_status: str,
+    payload_instruction_shape: NZPayloadInstructionShape,
+    text_substitution_status: NZTextSubstitutionStatus,
     payload_texts: tuple[str, ...],
 ) -> _StructuralInstructionSubfamily:
     if text_substitution_status.startswith("candidate_direct_"):
         return _StructuralInstructionSubfamily()
-    if payload_instruction_shape == "direct_insert_instruction":
+    if payload_instruction_shape == NZPayloadInstructionShape.DIRECT_INSERT_INSTRUCTION:
         if operation_family in {"amended", "inserted", "added"}:
             return _direct_insert_payload_subfamily(target_address=target_address, payload_texts=payload_texts)
-    if payload_instruction_shape == "direct_substitute_replace_instruction":
+    if payload_instruction_shape == NZPayloadInstructionShape.DIRECT_SUBSTITUTE_REPLACE_INSTRUCTION:
         if operation_family in {"replaced", "substituted"}:
             return _direct_replace_payload_subfamily(payload_texts)
         if operation_family == "amended":
             return _StructuralInstructionSubfamily(
-                status="blocked_ambiguous_amend_replace_payload",
-                subfamily="ambiguous_amend_replace_payload",
+                status=NZStructuralSubfamilyStatus.BLOCKED_AMBIGUOUS_AMEND_REPLACE_PAYLOAD,
+                subfamily=NZStructuralSubfamily.AMBIGUOUS_AMEND_REPLACE_PAYLOAD,
                 rule_id="nz_instruction_structural_subfamily_ambiguous_amend_replace_payload_blocked",
             )
-    if payload_instruction_shape == "direct_amended_by_instruction":
+    if payload_instruction_shape == NZPayloadInstructionShape.DIRECT_AMENDED_BY_INSTRUCTION:
         if _looks_mixed_repeal_substitute_payload(payload_texts):
             return _StructuralInstructionSubfamily(
-                status="blocked_mixed_repeal_substitute_payload_not_lowered",
-                subfamily="mixed_repeal_substitute_payload",
+                status=NZStructuralSubfamilyStatus.BLOCKED_MIXED_REPEAL_SUBSTITUTE_PAYLOAD_NOT_LOWERED,
+                subfamily=NZStructuralSubfamily.MIXED_REPEAL_SUBSTITUTE_PAYLOAD,
                 rule_id="nz_instruction_structural_subfamily_mixed_repeal_substitute_payload_blocked",
             )
         if operation_family in {"inserted", "added"}:
@@ -1006,22 +1227,22 @@ def _classify_report_only_structural_subfamily(
             return _direct_replace_payload_subfamily(payload_texts)
         if operation_family == "amended":
             return _direct_amend_payload_subfamily(payload_texts)
-    if payload_instruction_shape == "retrospective_incorporated_note":
+    if payload_instruction_shape == NZPayloadInstructionShape.RETROSPECTIVE_INCORPORATED_NOTE:
         return _StructuralInstructionSubfamily(
-            status="review_retrospective_incorporated_payload",
-            subfamily="retrospective_incorporated_note",
+            status=NZStructuralSubfamilyStatus.REVIEW_RETROSPECTIVE_INCORPORATED_PAYLOAD,
+            subfamily=NZStructuralSubfamily.RETROSPECTIVE_INCORPORATED_NOTE,
             rule_id="nz_instruction_structural_subfamily_retrospective_incorporated_note_review",
         )
-    if payload_instruction_shape == "schedule_indirection":
+    if payload_instruction_shape == NZPayloadInstructionShape.SCHEDULE_INDIRECTION:
         return _StructuralInstructionSubfamily(
-            status="blocked_schedule_indirection_payload",
-            subfamily="schedule_indirection_payload",
+            status=NZStructuralSubfamilyStatus.BLOCKED_SCHEDULE_INDIRECTION_PAYLOAD,
+            subfamily=NZStructuralSubfamily.SCHEDULE_INDIRECTION_PAYLOAD,
             rule_id="nz_instruction_structural_subfamily_schedule_indirection_payload_blocked",
         )
-    if payload_instruction_shape == "other_instruction" and _looks_incorporated_amendment_stub_payload(payload_texts):
+    if payload_instruction_shape == NZPayloadInstructionShape.OTHER_INSTRUCTION and _looks_incorporated_amendment_stub_payload(payload_texts):
         return _StructuralInstructionSubfamily(
-            status="blocked_incorporated_amendment_stub_payload",
-            subfamily="incorporated_amendment_stub_payload",
+            status=NZStructuralSubfamilyStatus.BLOCKED_INCORPORATED_AMENDMENT_STUB_PAYLOAD,
+            subfamily=NZStructuralSubfamily.INCORPORATED_AMENDMENT_STUB_PAYLOAD,
             rule_id="nz_instruction_structural_subfamily_incorporated_amendment_stub_payload_blocked",
         )
     return _StructuralInstructionSubfamily()
@@ -1032,19 +1253,19 @@ def _direct_replace_payload_subfamily(payload_texts: tuple[str, ...]) -> _Struct
     normalized = " ".join(text.lower().split())
     if re.search(r"^replace\s+with:\s+sections?\s+\S+\s+and\s+\S+\b", normalized):
         return _StructuralInstructionSubfamily(
-            status="blocked_multi_section_replace_payload_not_lowered",
-            subfamily="multi_section_replace_payload",
+            status=NZStructuralSubfamilyStatus.BLOCKED_MULTI_SECTION_REPLACE_PAYLOAD_NOT_LOWERED,
+            subfamily=NZStructuralSubfamily.MULTI_SECTION_REPLACE_PAYLOAD,
             rule_id="nz_instruction_structural_subfamily_multi_section_replace_payload_blocked",
         )
     if re.search(r"\brepealed\s+and\s+the\s+following\s+sections?\s+substituted\b", normalized):
         return _StructuralInstructionSubfamily(
-            status="blocked_whole_provision_substitution_payload_not_lowered",
-            subfamily="whole_provision_substitution_payload",
+            status=NZStructuralSubfamilyStatus.BLOCKED_WHOLE_PROVISION_SUBSTITUTION_PAYLOAD_NOT_LOWERED,
+            subfamily=NZStructuralSubfamily.WHOLE_PROVISION_SUBSTITUTION_PAYLOAD,
             rule_id="nz_instruction_structural_subfamily_whole_provision_substitution_payload_blocked",
         )
     return _StructuralInstructionSubfamily(
-        status="blocked_structural_replace_payload_not_lowered",
-        subfamily="direct_replace_payload",
+        status=NZStructuralSubfamilyStatus.BLOCKED_STRUCTURAL_REPLACE_PAYLOAD_NOT_LOWERED,
+        subfamily=NZStructuralSubfamily.DIRECT_REPLACE_PAYLOAD,
         rule_id="nz_instruction_structural_subfamily_direct_replace_payload_blocked",
     )
 
@@ -1057,15 +1278,15 @@ def _direct_amend_payload_subfamily(payload_texts: tuple[str, ...]) -> _Structur
         normalized,
     ):
         return _StructuralInstructionSubfamily(
-            status="blocked_mixed_text_and_structural_insert_payload_not_lowered",
-            subfamily="mixed_text_and_structural_insert_payload",
+            status=NZStructuralSubfamilyStatus.BLOCKED_MIXED_TEXT_AND_STRUCTURAL_INSERT_PAYLOAD_NOT_LOWERED,
+            subfamily=NZStructuralSubfamily.MIXED_TEXT_AND_STRUCTURAL_INSERT_PAYLOAD,
             rule_id="nz_instruction_structural_subfamily_mixed_text_and_structural_insert_payload_blocked",
         )
     if _looks_direct_text_insert_payload(normalized):
         return _direct_text_insert_payload_subfamily()
     return _StructuralInstructionSubfamily(
-        status="blocked_structural_amend_payload_not_lowered",
-        subfamily="direct_amend_payload",
+        status=NZStructuralSubfamilyStatus.BLOCKED_STRUCTURAL_AMEND_PAYLOAD_NOT_LOWERED,
+        subfamily=NZStructuralSubfamily.DIRECT_AMEND_PAYLOAD,
         rule_id="nz_instruction_structural_subfamily_direct_amend_payload_blocked",
     )
 
@@ -1096,22 +1317,22 @@ def _direct_insert_payload_subfamily(
     normalized = " ".join(text.lower().split())
     if re.search(r"\bthis\s+(?:section|subsection|paragraph|subparagraph)\s+inserted\s+s\s*\.", normalized):
         return _StructuralInstructionSubfamily(
-            status="blocked_historical_inserted_note_payload_not_lowered",
-            subfamily="historical_inserted_note_payload",
+            status=NZStructuralSubfamilyStatus.BLOCKED_HISTORICAL_INSERTED_NOTE_PAYLOAD_NOT_LOWERED,
+            subfamily=NZStructuralSubfamily.HISTORICAL_INSERTED_NOTE_PAYLOAD,
             rule_id="nz_instruction_structural_subfamily_historical_inserted_note_payload_blocked",
         )
     if re.search(r"\b(?:replace|omitting)\b.*\b(?:with|substituting)\b", normalized) and re.search(
         r"\binsert(?:ing)?\b", normalized
     ):
         return _StructuralInstructionSubfamily(
-            status="blocked_mixed_text_and_structural_insert_payload_not_lowered",
-            subfamily="mixed_text_and_structural_insert_payload",
+            status=NZStructuralSubfamilyStatus.BLOCKED_MIXED_TEXT_AND_STRUCTURAL_INSERT_PAYLOAD_NOT_LOWERED,
+            subfamily=NZStructuralSubfamily.MIXED_TEXT_AND_STRUCTURAL_INSERT_PAYLOAD,
             rule_id="nz_instruction_structural_subfamily_mixed_text_and_structural_insert_payload_blocked",
         )
     if target_address.endswith("/heading") and re.search(r"^after\s*,?\s+insert:", normalized):
         return _StructuralInstructionSubfamily(
-            status="blocked_cross_heading_insert_payload_not_lowered",
-            subfamily="cross_heading_insert_payload",
+            status=NZStructuralSubfamilyStatus.BLOCKED_CROSS_HEADING_INSERT_PAYLOAD_NOT_LOWERED,
+            subfamily=NZStructuralSubfamily.CROSS_HEADING_INSERT_PAYLOAD,
             rule_id="nz_instruction_structural_subfamily_cross_heading_insert_payload_blocked",
         )
     if (
@@ -1119,8 +1340,8 @@ def _direct_insert_payload_subfamily(
         or "inserting the following definition in its appropriate alphabetical order" in normalized
     ):
         return _StructuralInstructionSubfamily(
-            status="blocked_definition_alphabetical_insert_payload_not_lowered",
-            subfamily="definition_alphabetical_insert_payload",
+            status=NZStructuralSubfamilyStatus.BLOCKED_DEFINITION_ALPHABETICAL_INSERT_PAYLOAD_NOT_LOWERED,
+            subfamily=NZStructuralSubfamily.DEFINITION_ALPHABETICAL_INSERT_PAYLOAD,
             rule_id="nz_instruction_structural_subfamily_definition_alphabetical_insert_payload_blocked",
         )
     if re.search(
@@ -1128,14 +1349,14 @@ def _direct_insert_payload_subfamily(
         normalized,
     ):
         return _StructuralInstructionSubfamily(
-            status="blocked_paragraph_after_insert_payload_not_lowered",
-            subfamily="paragraph_after_insert_payload",
+            status=NZStructuralSubfamilyStatus.BLOCKED_PARAGRAPH_AFTER_INSERT_PAYLOAD_NOT_LOWERED,
+            subfamily=NZStructuralSubfamily.PARAGRAPH_AFTER_INSERT_PAYLOAD,
             rule_id="nz_instruction_structural_subfamily_paragraph_after_insert_payload_blocked",
         )
     if re.search(r"\binsert(?:ing)?\s+the\s+following\s+subsections?\s+after\s+subsection\b", normalized):
         return _StructuralInstructionSubfamily(
-            status="blocked_subsection_after_insert_payload_not_lowered",
-            subfamily="subsection_after_insert_payload",
+            status=NZStructuralSubfamilyStatus.BLOCKED_SUBSECTION_AFTER_INSERT_PAYLOAD_NOT_LOWERED,
+            subfamily=NZStructuralSubfamily.SUBSECTION_AFTER_INSERT_PAYLOAD,
             rule_id="nz_instruction_structural_subfamily_subsection_after_insert_payload_blocked",
         )
     if (
@@ -1148,15 +1369,15 @@ def _direct_insert_payload_subfamily(
         and re.search(r"^after\s*,?\s+insert:\s+section\b", normalized)
     ):
         return _StructuralInstructionSubfamily(
-            status="blocked_section_after_insert_payload_not_lowered",
-            subfamily="section_after_insert_payload",
+            status=NZStructuralSubfamilyStatus.BLOCKED_SECTION_AFTER_INSERT_PAYLOAD_NOT_LOWERED,
+            subfamily=NZStructuralSubfamily.SECTION_AFTER_INSERT_PAYLOAD,
             rule_id="nz_instruction_structural_subfamily_section_after_insert_payload_blocked",
         )
     if _looks_direct_text_insert_payload(normalized):
         return _direct_text_insert_payload_subfamily()
     return _StructuralInstructionSubfamily(
-        status="blocked_structural_insert_payload_not_lowered",
-        subfamily="direct_insert_payload",
+        status=NZStructuralSubfamilyStatus.BLOCKED_STRUCTURAL_INSERT_PAYLOAD_NOT_LOWERED,
+        subfamily=NZStructuralSubfamily.DIRECT_INSERT_PAYLOAD,
         rule_id="nz_instruction_structural_subfamily_direct_insert_payload_blocked",
     )
 
@@ -1170,8 +1391,8 @@ def _looks_direct_text_insert_payload(normalized_payload_text: str) -> bool:
 
 def _direct_text_insert_payload_subfamily() -> _StructuralInstructionSubfamily:
     return _StructuralInstructionSubfamily(
-        status="blocked_text_insert_payload_not_lowered",
-        subfamily="direct_text_insert_payload",
+        status=NZStructuralSubfamilyStatus.BLOCKED_TEXT_INSERT_PAYLOAD_NOT_LOWERED,
+        subfamily=NZStructuralSubfamily.DIRECT_TEXT_INSERT_PAYLOAD,
         rule_id="nz_instruction_structural_subfamily_direct_text_insert_payload_blocked",
     )
 
@@ -1185,7 +1406,7 @@ def _classify_multi_clause_omitting_substituting_text_substitution(
     clauses = _numbered_instruction_clauses(text)
     if not clauses:
         return _TextSubstitutionCandidate(
-            status="blocked_omitting_substituting_parse_failed",
+            status=NZTextSubstitutionStatus.BLOCKED_OMITTING_SUBSTITUTING_PARSE_FAILED,
             rule_id="nz_instruction_semantics_blocked_omitting_substituting_parse_failed",
             clause_count=clause_count,
         )
@@ -1199,63 +1420,63 @@ def _classify_multi_clause_omitting_substituting_text_substitution(
             matches.append(pieces)
     if not matches:
         return _TextSubstitutionCandidate(
-            status="blocked_multi_clause_no_matching_target",
+            status=NZTextSubstitutionStatus.BLOCKED_MULTI_CLAUSE_NO_MATCHING_TARGET,
             rule_id="nz_instruction_semantics_blocked_multi_clause_no_matching_target",
             clause_count=clause_count,
-            target_citation_status="no_match",
+            target_citation_status=NZTargetCitationStatus.NO_MATCH,
         )
     if len(matches) != 1:
         return _TextSubstitutionCandidate(
-            status="blocked_multi_clause_target_ambiguous",
+            status=NZTextSubstitutionStatus.BLOCKED_MULTI_CLAUSE_TARGET_AMBIGUOUS,
             rule_id="nz_instruction_semantics_blocked_multi_clause_target_ambiguous",
             clause_count=clause_count,
-            target_citation_status="ambiguous",
+            target_citation_status=NZTargetCitationStatus.AMBIGUOUS,
         )
     explicit_target_citation, old_text, new_text = matches[0]
     if _looks_structural_omitting_substituting_payload(old_text, new_text):
         return _TextSubstitutionCandidate(
-            status="blocked_structural_omitting_substituting_payload",
+            status=NZTextSubstitutionStatus.BLOCKED_STRUCTURAL_OMITTING_SUBSTITUTING_PAYLOAD,
             rule_id="nz_instruction_semantics_blocked_structural_omitting_substituting_payload",
             clause_count=clause_count,
             explicit_target_citation=explicit_target_citation,
-            target_citation_status="matched_in_multi_clause_payload",
+            target_citation_status=NZTargetCitationStatus.MATCHED_IN_MULTI_CLAUSE_PAYLOAD,
             old_text=old_text,
             new_text=new_text,
         )
     cleaned_old_text, cleaned_new_text, occurrence_scope = _omitting_substitution_scope(old_text, new_text)
-    if occurrence_scope != "inline_text_single_occurrence":
-        if occurrence_scope == "inline_text_each_place":
+    if occurrence_scope != NZTextSubstitutionScope.INLINE_TEXT_SINGLE_OCCURRENCE:
+        if occurrence_scope == NZTextSubstitutionScope.INLINE_TEXT_EACH_PLACE:
             return _TextSubstitutionCandidate(
-                status="candidate_direct_multi_clause_each_place_omitting_substituting_text_substitution",
-                subfamily="direct_each_place_text_substitution",
+                status=NZTextSubstitutionStatus.CANDIDATE_DIRECT_MULTI_CLAUSE_EACH_PLACE_OMITTING_SUBSTITUTING_TEXT_SUBSTITUTION,
+                subfamily=NZTextSubstitutionSubfamily.DIRECT_EACH_PLACE_TEXT_SUBSTITUTION,
                 rule_id=(
                     "nz_instruction_semantics_direct_multi_clause_each_place_omitting_substituting_"
                     "text_substitution_candidate"
                 ),
                 clause_count=clause_count,
                 explicit_target_citation=explicit_target_citation,
-                target_citation_status="matched_in_multi_clause_payload",
+                target_citation_status=NZTargetCitationStatus.MATCHED_IN_MULTI_CLAUSE_PAYLOAD,
                 old_text=cleaned_old_text,
                 new_text=cleaned_new_text,
                 scope=occurrence_scope,
             )
         return _TextSubstitutionCandidate(
-            status="blocked_multiple_occurrence_text_substitution",
+            status=NZTextSubstitutionStatus.BLOCKED_MULTIPLE_OCCURRENCE_TEXT_SUBSTITUTION,
             rule_id="nz_instruction_semantics_blocked_multiple_occurrence_text_substitution",
             clause_count=clause_count,
             explicit_target_citation=explicit_target_citation,
-            target_citation_status="matched_in_multi_clause_payload",
+            target_citation_status=NZTargetCitationStatus.MATCHED_IN_MULTI_CLAUSE_PAYLOAD,
             old_text=cleaned_old_text,
             new_text=cleaned_new_text,
             scope=occurrence_scope,
         )
     return _TextSubstitutionCandidate(
-        status="candidate_direct_multi_clause_omitting_substituting_text_substitution",
-        subfamily="direct_single_text_substitution",
+        status=NZTextSubstitutionStatus.CANDIDATE_DIRECT_MULTI_CLAUSE_OMITTING_SUBSTITUTING_TEXT_SUBSTITUTION,
+        subfamily=NZTextSubstitutionSubfamily.DIRECT_SINGLE_TEXT_SUBSTITUTION,
         rule_id="nz_instruction_semantics_direct_multi_clause_omitting_substituting_text_substitution_candidate",
         clause_count=clause_count,
         explicit_target_citation=explicit_target_citation,
-        target_citation_status="matched_in_multi_clause_payload",
+        target_citation_status=NZTargetCitationStatus.MATCHED_IN_MULTI_CLAUSE_PAYLOAD,
         old_text=cleaned_old_text,
         new_text=cleaned_new_text,
         scope=occurrence_scope,
@@ -1271,7 +1492,7 @@ def _classify_multi_clause_direct_text_substitution(
     clauses = _numbered_instruction_clauses(text)
     if not clauses:
         return _TextSubstitutionCandidate(
-            status="blocked_multi_clause_payload",
+            status=NZTextSubstitutionStatus.BLOCKED_MULTI_CLAUSE_PAYLOAD,
             rule_id="nz_instruction_semantics_blocked_multi_clause_payload",
             clause_count=clause_count,
         )
@@ -1285,50 +1506,50 @@ def _classify_multi_clause_direct_text_substitution(
             matches.append(pieces)
     if not matches:
         return _TextSubstitutionCandidate(
-            status="blocked_multi_clause_no_matching_target",
+            status=NZTextSubstitutionStatus.BLOCKED_MULTI_CLAUSE_NO_MATCHING_TARGET,
             rule_id="nz_instruction_semantics_blocked_multi_clause_no_matching_target",
             clause_count=clause_count,
-            target_citation_status="no_match",
+            target_citation_status=NZTargetCitationStatus.NO_MATCH,
         )
     if len(matches) != 1:
         return _TextSubstitutionCandidate(
-            status="blocked_multi_clause_target_ambiguous",
+            status=NZTextSubstitutionStatus.BLOCKED_MULTI_CLAUSE_TARGET_AMBIGUOUS,
             rule_id="nz_instruction_semantics_blocked_multi_clause_target_ambiguous",
             clause_count=clause_count,
-            target_citation_status="ambiguous",
+            target_citation_status=NZTargetCitationStatus.AMBIGUOUS,
         )
     explicit_target_citation, old_text, new_text = matches[0]
     cleaned_new_text, occurrence_scope = _text_substitution_scope(new_text)
-    if occurrence_scope != "inline_text_single_occurrence":
-        if occurrence_scope == "inline_text_each_place":
+    if occurrence_scope != NZTextSubstitutionScope.INLINE_TEXT_SINGLE_OCCURRENCE:
+        if occurrence_scope == NZTextSubstitutionScope.INLINE_TEXT_EACH_PLACE:
             return _TextSubstitutionCandidate(
-                status="candidate_direct_multi_clause_each_place_text_substitution",
-                subfamily="direct_each_place_text_substitution",
+                status=NZTextSubstitutionStatus.CANDIDATE_DIRECT_MULTI_CLAUSE_EACH_PLACE_TEXT_SUBSTITUTION,
+                subfamily=NZTextSubstitutionSubfamily.DIRECT_EACH_PLACE_TEXT_SUBSTITUTION,
                 rule_id="nz_instruction_semantics_direct_multi_clause_each_place_text_substitution_candidate",
                 clause_count=clause_count,
                 explicit_target_citation=explicit_target_citation,
-                target_citation_status="matched_in_multi_clause_payload",
+                target_citation_status=NZTargetCitationStatus.MATCHED_IN_MULTI_CLAUSE_PAYLOAD,
                 old_text=old_text,
                 new_text=cleaned_new_text,
                 scope=occurrence_scope,
             )
         return _TextSubstitutionCandidate(
-            status="blocked_multiple_occurrence_text_substitution",
+            status=NZTextSubstitutionStatus.BLOCKED_MULTIPLE_OCCURRENCE_TEXT_SUBSTITUTION,
             rule_id="nz_instruction_semantics_blocked_multiple_occurrence_text_substitution",
             clause_count=clause_count,
             explicit_target_citation=explicit_target_citation,
-            target_citation_status="matched",
+            target_citation_status=NZTargetCitationStatus.MATCHED,
             old_text=old_text,
             new_text=cleaned_new_text,
             scope=occurrence_scope,
         )
     return _TextSubstitutionCandidate(
-        status="candidate_direct_multi_clause_text_substitution",
-        subfamily="direct_single_text_substitution",
+        status=NZTextSubstitutionStatus.CANDIDATE_DIRECT_MULTI_CLAUSE_TEXT_SUBSTITUTION,
+        subfamily=NZTextSubstitutionSubfamily.DIRECT_SINGLE_TEXT_SUBSTITUTION,
         rule_id="nz_instruction_semantics_direct_multi_clause_text_substitution_candidate",
         clause_count=clause_count,
         explicit_target_citation=explicit_target_citation,
-        target_citation_status="matched_in_multi_clause_payload",
+        target_citation_status=NZTargetCitationStatus.MATCHED_IN_MULTI_CLAUSE_PAYLOAD,
         old_text=old_text,
         new_text=cleaned_new_text,
         scope=occurrence_scope,
@@ -1341,14 +1562,17 @@ def _latest_oracle_text_witness(
     target_address: str,
     target_document: NZSourceDocument | None,
 ) -> _LatestOracleTextWitness:
-    if text_substitution.subfamily not in {"direct_single_text_substitution", "direct_each_place_text_substitution"}:
+    if text_substitution.subfamily not in {
+        NZTextSubstitutionSubfamily.DIRECT_SINGLE_TEXT_SUBSTITUTION,
+        NZTextSubstitutionSubfamily.DIRECT_EACH_PLACE_TEXT_SUBSTITUTION,
+    }:
         return _LatestOracleTextWitness(
-            status="not_applicable_not_direct_text_substitution",
+            status=NZLatestOracleTextStatus.NOT_APPLICABLE_NOT_DIRECT_TEXT_SUBSTITUTION,
             rule_id="nz_instruction_latest_oracle_text_not_applicable",
         )
     if target_document is None:
         return _LatestOracleTextWitness(
-            status="not_run_target_document_unavailable",
+            status=NZLatestOracleTextStatus.NOT_RUN_TARGET_DOCUMENT_UNAVAILABLE,
             rule_id="nz_instruction_latest_oracle_text_target_document_unavailable",
         )
     target_node = _latest_oracle_target_node(target_document, target_address)
@@ -1361,27 +1585,27 @@ def _latest_oracle_text_witness(
         # Omit-only deletion: the omitted span is absent from the latest
         # consolidated text, consistent with its deletion. ``new_text`` is empty
         # so the substitution-oriented branches below never apply.
-        status = "oracle_old_text_deleted"
+        status = NZLatestOracleTextStatus.ORACLE_OLD_TEXT_DELETED
     elif is_deletion:
         # The span the instruction says to omit is still present in the latest
         # text — refuse rather than assert a deletion the oracle contradicts.
-        status = "oracle_old_text_not_deleted"
+        status = NZLatestOracleTextStatus.ORACLE_OLD_TEXT_NOT_DELETED
     elif old_occurrences == 0 and new_occurrences == 1:
-        status = "oracle_new_text_only"
+        status = NZLatestOracleTextStatus.ORACLE_NEW_TEXT_ONLY
     elif (
-        text_substitution.scope == "inline_text_each_place"
+        text_substitution.scope == NZTextSubstitutionScope.INLINE_TEXT_EACH_PLACE
         and old_occurrences == 0
         and new_occurrences > 1
     ):
-        status = "oracle_new_text_only_each_place"
+        status = NZLatestOracleTextStatus.ORACLE_NEW_TEXT_ONLY_EACH_PLACE
     elif normalized_nz_inline_contains(text_substitution.new_text, text_substitution.old_text) and new_occurrences > 0:
-        status = "oracle_new_text_contains_old_text"
+        status = NZLatestOracleTextStatus.ORACLE_NEW_TEXT_CONTAINS_OLD_TEXT
     elif old_occurrences == 1 and new_occurrences == 0:
-        status = "oracle_old_text_only"
+        status = NZLatestOracleTextStatus.ORACLE_OLD_TEXT_ONLY
     elif old_occurrences > 0 and new_occurrences > 0:
-        status = "oracle_old_and_new_text"
+        status = NZLatestOracleTextStatus.ORACLE_OLD_AND_NEW_TEXT
     else:
-        status = "oracle_neither_old_nor_new_text"
+        status = NZLatestOracleTextStatus.ORACLE_NEITHER_OLD_NOR_NEW_TEXT
     return _LatestOracleTextWitness(
         status=status,
         rule_id=f"nz_instruction_latest_oracle_text_{status}",
@@ -1400,13 +1624,13 @@ def _latest_oracle_target_node(
     suffixes = _source_path_suffix_candidates_from_target_address(target_address)
     if not suffixes:
         return _LatestOracleTextWitness(
-            status="blocked_target_address_unmapped",
+            status=NZLatestOracleTextStatus.BLOCKED_TARGET_ADDRESS_UNMAPPED,
             rule_id="nz_instruction_latest_oracle_text_target_address_unmapped",
         )
     matches = tuple(
         _LatestOracleTargetResolution(
             node=node,
-            status="exact_source_path",
+            status=NZLatestOracleTargetResolutionStatus.EXACT_SOURCE_PATH,
             rule_id="nz_instruction_latest_oracle_target_exact_source_path",
         )
         for suffix in suffixes
@@ -1417,7 +1641,7 @@ def _latest_oracle_target_node(
         matches = tuple(
             _LatestOracleTargetResolution(
                 node=node,
-                status="via_unlabeled_source_carrier",
+                status=NZLatestOracleTargetResolutionStatus.VIA_UNLABELED_SOURCE_CARRIER,
                 rule_id="nz_instruction_latest_oracle_target_via_unlabeled_source_carrier",
             )
             for suffix in suffixes
@@ -1428,22 +1652,22 @@ def _latest_oracle_target_node(
         nearest_node = _nearest_existing_source_node(target_document, suffixes[0])
         if nearest_node is not None:
             return _LatestOracleTextWitness(
-                status="blocked_target_granularity_not_indexed",
+                status=NZLatestOracleTextStatus.BLOCKED_TARGET_GRANULARITY_NOT_INDEXED,
                 rule_id="nz_instruction_latest_oracle_text_target_granularity_not_indexed",
                 target_source_path=nearest_node.path,
             )
         return _LatestOracleTextWitness(
-            status="blocked_target_source_node_missing",
+            status=NZLatestOracleTextStatus.BLOCKED_TARGET_SOURCE_NODE_MISSING,
             rule_id="nz_instruction_latest_oracle_text_target_source_node_missing",
         )
     if len(matches) > 1:
         return _LatestOracleTextWitness(
-            status="blocked_target_source_node_not_unique",
+            status=NZLatestOracleTextStatus.BLOCKED_TARGET_SOURCE_NODE_NOT_UNIQUE,
             rule_id="nz_instruction_latest_oracle_text_target_source_node_not_unique",
         )
     if matches[0].node.deletion_status:
         return _LatestOracleTextWitness(
-            status="blocked_target_source_node_deleted",
+            status=NZLatestOracleTextStatus.BLOCKED_TARGET_SOURCE_NODE_DELETED,
             rule_id="nz_instruction_latest_oracle_text_target_source_node_deleted",
             target_source_path=matches[0].node.path,
         )
@@ -1620,22 +1844,22 @@ def _target_citation_matches(explicit_target_citation: str, target_address: str)
     return bool(expected) and _citation_key(explicit_target_citation) == _citation_key(expected)
 
 
-def _text_substitution_scope(new_text: str) -> tuple[str, str]:
+def _text_substitution_scope(new_text: str) -> tuple[str, NZTextSubstitutionScope]:
     normalized = " ".join(new_text.split()).strip(" ,;.")
     suffix = " in each place"
     if normalized.lower().endswith(suffix):
-        return normalized[: -len(suffix)].strip(" ,;."), "inline_text_each_place"
-    return normalized, "inline_text_single_occurrence"
+        return normalized[: -len(suffix)].strip(" ,;."), NZTextSubstitutionScope.INLINE_TEXT_EACH_PLACE
+    return normalized, NZTextSubstitutionScope.INLINE_TEXT_SINGLE_OCCURRENCE
 
 
-def _omitting_substitution_scope(old_text: str, new_text: str) -> tuple[str, str, str]:
+def _omitting_substitution_scope(old_text: str, new_text: str) -> tuple[str, str, NZTextSubstitutionScope]:
     cleaned_old = " ".join(old_text.split()).strip(" ,;.")
     cleaned_new = " ".join(new_text.split()).strip(" ,;.")
     if re.search(r"\bin each place\b|\bwherever\b", cleaned_old, re.IGNORECASE):
         cleaned_old = re.sub(r"\s+in each place(?: where it appears)?\b.*$", "", cleaned_old, flags=re.IGNORECASE)
         cleaned_new = re.sub(r"^in each case\s+", "", cleaned_new, flags=re.IGNORECASE)
-        return cleaned_old.strip(" ,;."), cleaned_new.strip(" ,;."), "inline_text_each_place"
-    return cleaned_old, cleaned_new, "inline_text_single_occurrence"
+        return cleaned_old.strip(" ,;."), cleaned_new.strip(" ,;."), NZTextSubstitutionScope.INLINE_TEXT_EACH_PLACE
+    return cleaned_old, cleaned_new, NZTextSubstitutionScope.INLINE_TEXT_SINGLE_OCCURRENCE
 
 
 def _citation_from_target_address(target_address: str) -> str:
