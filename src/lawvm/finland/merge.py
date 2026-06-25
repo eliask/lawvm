@@ -979,16 +979,16 @@ def _planned_section_subsection_targets(
     plain_ops = [
         op
         for op in group_ops
-        if op.target_paragraph is not None
-        and not op.target_item
-        and not op.target_special
+        if op.target_cols.target_paragraph is not None
+        and not op.target_cols.target_item
+        and not op.target_cols.target_special
         and op.op_type in (OpType.REPLACE, OpType.INSERT)
     ]
     if not plain_ops:
         return None
 
     direct_plan: List[Tuple[OpType, int]] = [
-        (op.op_type, int(op.target_paragraph or 0)) for op in plain_ops
+        (op.op_type, int(op.target_cols.target_paragraph or 0)) for op in plain_ops
     ]
     if len(direct_plan) == explicit_subsection_count:
         return direct_plan
@@ -1037,12 +1037,12 @@ def _merge_section_with_targeted_ops_ir(
         if c.kind is not IRNodeKind.SUBSECTION and not _is_omission_ir(c)
     ]
     explicit_repeal_targets = {
-        int(op.target_paragraph)
+        int(op.target_cols.target_paragraph)
         for op in group_ops
         if (
-            op.target_paragraph is not None
-            and not op.target_item
-            and not op.target_special
+            op.target_cols.target_paragraph is not None
+            and not op.target_cols.target_item
+            and not op.target_cols.target_special
             and op.op_type == OpType.REPEAL
         )
     }
@@ -2542,7 +2542,7 @@ def _drop_suspicious_partial_whole_section_replaces(
     pathologies: List[SourcePathology] = []
     rejected_ops: List[FailedOp] = []
     for op in group_ops:
-        if op.target_paragraph is not None or op.target_item is not None or op.target_special:
+        if op.target_cols.target_paragraph is not None or op.target_cols.target_item is not None or op.target_cols.target_special:
             filtered.append(op)
             continue
         diag = _partial_section_replace_diagnostics_ir(op, live_sec, muutos_ir)
@@ -2558,11 +2558,11 @@ def _drop_suspicious_partial_whole_section_replaces(
                     description=op.description(),
                     reason="_drop_suspicious_partial_whole_section_replaces: suspicious partial whole-section fallback replace",
                     reason_code="PARTIAL_WHOLE_SECTION_REPLACE_REJECTED",
-                    target_section=op.target_section or target_norm,
-                    target_unit_kind=op.target_unit_kind,
-                    target_chapter=op.target_chapter or target_chapter,
+                    target_section=op.target_cols.target_section or target_norm,
+                    target_unit_kind=op.target_cols.target_unit_kind,
+                    target_chapter=op.target_cols.target_chapter or target_chapter,
                     target_subsection=_op_target_subsection_label(op),
-                    target_item=op.target_item,
+                    target_item=op.target_cols.target_item,
                 )
             )
             diag_reason = str(diag.get("reason") or "")
@@ -2573,7 +2573,7 @@ def _drop_suspicious_partial_whole_section_replaces(
             pathologies.append(
                 build_partial_whole_section_payload_pathology(
                     source_statute=op.source_statute,
-                    target_unit_kind=op.target_unit_kind,
+                    target_unit_kind=op.target_cols.target_unit_kind,
                     target_section=target_norm,
                     target_chapter=target_chapter or "",
                     live_paragraph_count=live_para_count,
@@ -2587,7 +2587,7 @@ def _drop_suspicious_partial_whole_section_replaces(
                 pathologies.append(
                     build_malformed_broad_replace_body_pathology(
                         source_statute=op.source_statute,
-                        target_unit_kind=op.target_unit_kind,
+                        target_unit_kind=op.target_cols.target_unit_kind,
                         target_section=target_norm,
                         target_chapter=target_chapter or "",
                         live_paragraph_count=live_para_count,
@@ -2651,13 +2651,13 @@ def _drop_suspicious_partial_subsection_shell_replaces(
     for op in group_ops:
         if (
             op.op_type != OpType.REPLACE
-            or op.target_paragraph is None
-            or op.target_item is not None
-            or op.target_special
+            or op.target_cols.target_paragraph is None
+            or op.target_cols.target_item is not None
+            or op.target_cols.target_special
         ):
             filtered.append(op)
             continue
-        target_label = str(op.target_paragraph)
+        target_label = str(op.target_cols.target_paragraph)
         amend_sub = amend_subsections[0]
         if amend_sub.label and _norm_num_token(amend_sub.label) != target_label:
             filtered.append(op)
@@ -2673,17 +2673,17 @@ def _drop_suspicious_partial_subsection_shell_replaces(
                 description=op.description(),
                 reason="_drop_suspicious_partial_subsection_shell_replaces: stale whole-section shell for subsection-targeted replace",
                 reason_code="STALE_WHOLE_SECTION_SHELL_REJECTED",
-                target_section=op.target_section or target_norm,
-                target_unit_kind=op.target_unit_kind,
-                target_chapter=op.target_chapter or target_chapter,
+                target_section=op.target_cols.target_section or target_norm,
+                target_unit_kind=op.target_cols.target_unit_kind,
+                target_chapter=op.target_cols.target_chapter or target_chapter,
                 target_subsection=_op_target_subsection_label(op),
-                target_item=op.target_item,
+                target_item=op.target_cols.target_item,
             )
         )
         pathologies.append(
             build_partial_whole_section_payload_pathology(
                 source_statute=op.source_statute,
-                target_unit_kind=op.target_unit_kind,
+                target_unit_kind=op.target_cols.target_unit_kind,
                 target_section=target_norm,
                 target_chapter=target_chapter or "",
                 live_paragraph_count=live_para_count,
@@ -2708,20 +2708,20 @@ def _explicit_heading_and_plain_subsection_replace_source_clause(
     subsection predicate is owned by ``scope.source_targets_plain_subsection_moment``
     rather than an inline ``raw_text`` regex (AGENTS.md §1.12 reach-back).
     """
-    has_heading_op = any(str(op.target_special or "").strip() == "otsikko" for op in group_ops)
+    has_heading_op = any(str(op.target_cols.target_special or "").strip() == "otsikko" for op in group_ops)
     if not has_heading_op:
         return None
     for op in group_ops:
         if (
             op.op_type != OpType.REPLACE
-            or op.target_paragraph is None
-            or op.target_item is not None
-            or op.target_special
+            or op.target_cols.target_paragraph is None
+            or op.target_cols.target_item is not None
+            or op.target_cols.target_special
         ):
             continue
         source = getattr(getattr(op, "lo", None), "source", None)
         raw_text = str(getattr(source, "raw_text", "") or "")
-        if source_targets_plain_subsection_moment(raw_text, op.target_paragraph):
+        if source_targets_plain_subsection_moment(raw_text, op.target_cols.target_paragraph):
             return raw_text
     return None
 
@@ -2753,15 +2753,15 @@ def _is_compact_first_subsection_replace_shell_ir(
         op
         for op in group_ops
         if (
-            op.target_paragraph is not None
-            and not op.target_item
-            and not op.target_special
+            op.target_cols.target_paragraph is not None
+            and not op.target_cols.target_item
+            and not op.target_cols.target_special
             and op.op_type == OpType.REPLACE
         )
     ]
     if len(plain_subsection_ops) != 1:
         return False
-    if str(plain_subsection_ops[0].target_paragraph) != "1":
+    if str(plain_subsection_ops[0].target_cols.target_paragraph) != "1":
         return False
     if muutos_ir.kind is not IRNodeKind.SECTION:
         return False
@@ -2807,7 +2807,7 @@ def _is_single_subsection_insert_item_shell_ir(
     insert_sub_ops = [
         op
         for op in group_ops
-        if op.op_type == OpType.INSERT and op.target_paragraph is not None
+        if op.op_type == OpType.INSERT and op.target_cols.target_paragraph is not None
     ]
     if not insert_sub_ops:
         return False
@@ -2842,15 +2842,15 @@ def _is_single_subsection_replace_section_omission_shell_ir(
         op
         for op in group_ops
         if (
-            op.target_paragraph is not None
-            and not op.target_item
-            and not op.target_special
+            op.target_cols.target_paragraph is not None
+            and not op.target_cols.target_item
+            and not op.target_cols.target_special
             and op.op_type == OpType.REPLACE
         )
     ]
     if len(plain_subsection_ops) != 1:
         return False
-    target_label = str(plain_subsection_ops[0].target_paragraph or "")
+    target_label = str(plain_subsection_ops[0].target_cols.target_paragraph or "")
     if not target_label:
         return False
     if muutos_ir.kind is not IRNodeKind.SECTION:
@@ -2901,9 +2901,9 @@ def _is_single_subsection_insert_section_omission_shell_ir(
         op
         for op in group_ops
         if op.op_type == OpType.INSERT
-        and op.target_paragraph is not None
-        and not op.target_item
-        and not op.target_special
+        and op.target_cols.target_paragraph is not None
+        and not op.target_cols.target_item
+        and not op.target_cols.target_special
     ]
     if len(insert_sub_ops) != 1:
         return False
@@ -2978,9 +2978,9 @@ def _pre_resolve_omissions(
     def _has_whole_op(op_type: str) -> bool:
         return any(
             op.op_type == op_type
-            and not op.target_paragraph
-            and not op.target_item
-            and not op.target_special
+            and not op.target_cols.target_paragraph
+            and not op.target_cols.target_item
+            and not op.target_cols.target_special
             for op in group_ops
         )
 
@@ -2988,12 +2988,12 @@ def _pre_resolve_omissions(
         if ctx.live_node is None:
             return False
         target_paragraphs = {
-            op.target_paragraph
+            op.target_cols.target_paragraph
             for op in group_ops
             if op.op_type == OpType.INSERT
-            and op.target_paragraph is not None
-            and not op.target_item
-            and not op.target_special
+            and op.target_cols.target_paragraph is not None
+            and not op.target_cols.target_item
+            and not op.target_cols.target_special
         }
         if not target_paragraphs:
             return False
@@ -3064,9 +3064,9 @@ def _pre_resolve_omissions(
             # will insert at the right position).
             live_subsecs = [c for c in ctx.live_node.children if c.kind is IRNodeKind.SUBSECTION]
             target_paragraphs = {
-                op.target_paragraph
+                op.target_cols.target_paragraph
                 for op in group_ops
-                if op.op_type == OpType.INSERT and op.target_paragraph is not None and not op.target_item
+                if op.op_type == OpType.INSERT and op.target_cols.target_paragraph is not None and not op.target_cols.target_item
             }
             target_exists_in_live = any(
                 op_para is not None
@@ -3085,7 +3085,7 @@ def _pre_resolve_omissions(
                         resolved = _mark_targeted_subsections_in_place(resolved, target_paragraphs)
                     return resolved
         elif _has_whole_op("REPLACE"):
-            if any(bool(op.target_item) for op in group_ops):
+            if any(bool(op.target_cols.target_item) for op in group_ops):
                 return muutos_ir
             master_ref = ctx.live_node
         elif _has_whole_op("INSERT") and profile.replace_same_numbered_section_insert:
@@ -3114,9 +3114,9 @@ def _pre_resolve_omissions(
                 # so _apply_subsection_insert replaces them in-place instead of
                 # renumbering them upward.
                 item_target_paragraphs = {
-                    op.target_paragraph
+                    op.target_cols.target_paragraph
                     for op in group_ops
-                    if op.target_paragraph is not None and bool(op.target_item)
+                    if op.target_cols.target_paragraph is not None and bool(op.target_cols.target_item)
                 }
                 if item_target_paragraphs:
                     resolved = _mark_targeted_subsections_in_place(resolved, item_target_paragraphs)
