@@ -302,6 +302,8 @@ _EE_RULE_SPECS: Dict[str, str] = {
     "ee_pair_classification": "An explicit base/oracle pair carries a classification of how replay and oracle differ on that pair.",
     "ee_oracle_fetch_failed": "A failure to fetch the oracle consolidation is recorded as a visible failure, not a silent pass.",
     "ee_oracle_ref_extraction_failed": "An unexpected crash while extracting amendment references from the oracle fails loud (EEOracleRefExtractionCrash, embedding oracle id + source snippet) rather than degrading to an empty oracle.",
+    "ee_oracle_parse_failed": "A failure to parse the RT oracle consolidation is recorded as a visible blocking adjudication (oracle id + exception + source snippet) so a replay left uncompared is never read as agreement.",
+    "ee_consistency_check_failed": "A crash in the replay/oracle consistency check is recorded as a visible blocking adjudication so an uncompared result (no divergences computed) is never read as agreement.",
     "ee_oracle_group_mismatch": "An oracle group that does not align with the replayed group is recorded as a mismatch.",
     "ee_redactions_feed_fetch_failed": "A failure to fetch the redactions feed is recorded as a visible source-lane failure.",
     "ee_pit": "A point-in-time materialization marker scopes the EE replay/compare to the oracle redaction's own effective date (living spec §31).",

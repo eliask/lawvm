@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import sys
 import re
+import sqlite3
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
@@ -51,6 +52,15 @@ from lawvm.estonia.fetch import (
     open_rt_archive,
 )
 
+# Expected, non-fatal failure modes of a best-effort RT source fetch: the act
+# does not resolve (fetch_rt_xml → RuntimeError "Failed to fetch: …"), or the
+# Farchive is read-only and cannot cache a freshly-curled blob
+# (sqlite3.OperationalError "attempt to write a readonly database", e.g.
+# inspection/test contexts). Both mean "this amendment source is unavailable"
+# and are recorded with a typed source-lane adjudication; any OTHER exception is
+# an unexpected bug and must propagate (AGENTS.md §1.10).
+_EE_AMENDMENT_FETCH_EXPECTED_ERRORS = (RuntimeError, sqlite3.OperationalError)
+
 
 def _ee_ref_sort_key(ref) -> tuple[str, str, str]:
     return (ref.joustumine, ref.passed, ref.aktViide)
@@ -81,7 +91,11 @@ def _ee_extract_act_title(
 ) -> str:
     try:
         root = ET.fromstring(xml_bytes)
-    except Exception as exc:
+    # lawvm-failloud (AGENTS.md §1.10): the only genuinely-expected failure of
+    # ET.fromstring on fetched RT source is ET.ParseError (malformed XML). The
+    # prefilter records a typed parse-failed adjudication and conservatively
+    # returns empty; any other exception is an unexpected bug and must propagate.
+    except ET.ParseError as exc:
         _ee_emit_prefilter_parse_failed_adjudication(
             rule_id=_EE_EXTRACT_ACT_TITLE_PARSE_FAILED_RULE,
             failure=exc,
@@ -267,7 +281,10 @@ def _ee_extract_target_matching_paragraph_numbers(
 ) -> set[str]:
     try:
         root = ET.fromstring(xml_bytes)
-    except Exception as exc:
+    # lawvm-failloud (AGENTS.md §1.10): only ET.ParseError (malformed RT XML) is
+    # the genuinely-expected failure; the prefilter records a typed parse-failed
+    # adjudication and conservatively returns empty. Other exceptions propagate.
+    except ET.ParseError as exc:
         _ee_emit_prefilter_parse_failed_adjudication(
             rule_id=_EE_EXTRACT_TARGET_MATCHING_PARAGRAPHS_PARSE_FAILED_RULE,
             failure=exc,
@@ -306,7 +323,11 @@ def _ee_source_surface_may_target_title(xml_bytes: bytes, target_title: str) -> 
         return False
     try:
         root = ET.fromstring(xml_bytes)
-    except Exception:
+    # lawvm-failloud (AGENTS.md §1.10): a malformed-XML ET.ParseError is the
+    # expected failure; this conservative prefilter returns True (never hides
+    # uncertainty — see docstring). Any other exception is an unexpected bug and
+    # must propagate rather than be absorbed into a spurious "may target".
+    except ET.ParseError:
         return True
     ns = _ee_xml_ns(root)
     act_title = _ee_extract_act_title(xml_bytes)
@@ -340,7 +361,10 @@ def _ee_extract_repealed_source_paragraph_numbers(
 ) -> set[str]:
     try:
         root = ET.fromstring(xml_bytes)
-    except Exception as exc:
+    # lawvm-failloud (AGENTS.md §1.10): only ET.ParseError (malformed RT XML) is
+    # the genuinely-expected failure; the prefilter records a typed parse-failed
+    # adjudication and conservatively returns empty. Other exceptions propagate.
+    except ET.ParseError as exc:
         _ee_emit_prefilter_parse_failed_adjudication(
             rule_id=_EE_EXTRACT_REPEALED_SOURCE_PARAGRAPHS_PARSE_FAILED_RULE,
             failure=exc,
@@ -385,7 +409,10 @@ def _ee_extract_rewritten_source_paragraph_numbers(
 ) -> set[str]:
     try:
         root = ET.fromstring(xml_bytes)
-    except Exception as exc:
+    # lawvm-failloud (AGENTS.md §1.10): only ET.ParseError (malformed RT XML) is
+    # the genuinely-expected failure; the prefilter records a typed parse-failed
+    # adjudication and conservatively returns empty. Other exceptions propagate.
+    except ET.ParseError as exc:
         _ee_emit_prefilter_parse_failed_adjudication(
             rule_id=_EE_EXTRACT_REWRITTEN_SOURCE_PARAGRAPHS_PARSE_FAILED_RULE,
             failure=exc,
@@ -440,6 +467,8 @@ _EE_AMENDMENT_PARSE_FAILED_RULE = "ee_amendment_parse_failed"
 _EE_TEMPORAL_SOURCE_SCAN_FAILED_RULE = "ee_temporal_source_scan_failed"
 _EE_PENDING_SOURCE_ACT_COMMENCEMENT_FETCH_FAILED_RULE = "ee_pending_source_act_commencement_source_fetch_failed"
 _EE_PENDING_AMENDMENT_METAPASS_PARSE_FAILED_RULE = "ee_pending_amendment_metapass_parse_failed"
+_EE_ORACLE_PARSE_FAILED_RULE = "ee_oracle_parse_failed"
+_EE_CONSISTENCY_CHECK_FAILED_RULE = "ee_consistency_check_failed"
 _EE_EXTRACT_ACT_TITLE_PARSE_FAILED_RULE = "ee_extract_act_title_parse_failed"
 _EE_EXTRACT_TARGET_MATCHING_PARAGRAPHS_PARSE_FAILED_RULE = (
     "ee_extract_target_matching_paragraphs_parse_failed"
@@ -580,7 +609,11 @@ def _ee_filter_cancelled_pending_refs(
     for ref in refs:
         try:
             xml_bytes = _ee_fetch_rt_xml_cached(ref.aktViide, archive, successful_xml_cache)
-        except Exception as exc:
+        # lawvm-failloud (AGENTS.md §1.10): only an expected source-unavailable
+        # fetch failure (_EE_AMENDMENT_FETCH_EXPECTED_ERRORS) is recorded here as
+        # an incomplete source lane; the ref is conservatively retained. Other
+        # exceptions are unexpected bugs and must propagate.
+        except _EE_AMENDMENT_FETCH_EXPECTED_ERRORS as exc:
             if adjudications_out is not None:
                 adjudications_out.append(
                     _ee_orchestration_adjudication(
@@ -890,7 +923,11 @@ def _ee_precompose_pending_source_act_commencements(
     for ref in refs:
         try:
             xml_bytes = _ee_fetch_rt_xml_cached(ref.aktViide, archive, successful_xml_cache)
-        except Exception as exc:
+        # lawvm-failloud (AGENTS.md §1.10): only an expected source-unavailable
+        # fetch failure (_EE_AMENDMENT_FETCH_EXPECTED_ERRORS) is recorded here;
+        # the amendment is skipped from precomposition. Other exceptions are
+        # unexpected bugs and must propagate.
+        except _EE_AMENDMENT_FETCH_EXPECTED_ERRORS as exc:
             adjudications.append(
                 _ee_orchestration_adjudication(
                     kind=_EE_PENDING_SOURCE_ACT_COMMENCEMENT_FETCH_FAILED_RULE,
@@ -1050,17 +1087,19 @@ def _ee_precompose_pending_amendment_text_patches(
                         ref_effective=later_ref.joustumine,
                         adjudications_out=adjudications,
                     )
+                # lawvm-failloud (AGENTS.md §1.10 / §1.8): NOT a silent swallow.
+                # During the pending-amendment metapass that re-reads future-oracle
+                # amendments to live-update still-targeted text, parse_ee_amendment_ops
+                # raises on any unsupported/unparseable amendment shape (ET.ParseError,
+                # ValueError, …) — the genuinely-expected source pathology for this
+                # best-effort precomposition. The broad catch is intentional: it emits a
+                # distinct ee_pending_amendment_metapass_parse_failed adjudication
+                # embedding exception_type + message (self-evidencing) before treating
+                # the parse as empty, so the failure is accounted for rather than hidden
+                # behind a bare ``parsed = []``. Same parse contract the blocking
+                # acquisition path (above) records; here non-blocking because the
+                # metapass is an optional text-patch refinement, not a load-bearing lane.
                 except Exception as e:
-                    # Per AGENTS.md §1.10 / §1.8: do not silently swallow a
-                    # parser crash during the pending-amendment metapass that
-                    # re-reads future-oracle amendments to live-update
-                    # still-targeted text. A real parser crash here (e.g. a
-                    # new ``LegalOperation.__post_init__`` violation surfacing
-                    # only on this omnibus shape) used to be swallowed as
-                    # ``parsed = []``, hiding the bug behind an empty result.
-                    # Emit a typed adjudication so the failure is accounted
-                    # for, then treat the parse as empty (the metapass must
-                    # still continue without crashing the whole replay).
                     parsed = []
                     adjudications.append(
                         _ee_orchestration_adjudication(
@@ -1416,12 +1455,23 @@ def replay_ee_to_pit(
             base_xml = p.read_bytes()
         else:
             base_xml = fetch_rt_xml(base_id, _archive)
+    # lawvm-failloud (AGENTS.md §1.10): NOT a silent swallow. Base acquisition
+    # can fail by local file IO (OSError) or RT fetch (RuntimeError /
+    # readonly-archive sqlite3.OperationalError); the broad catch is intentional
+    # because it records a distinct, self-evidencing "Failed to load base: {e}"
+    # banner that classify_ee_replayability maps to BASE_SOURCE_UNAVAILABLE.
     except Exception as e:
         result.error = f"Failed to load base: {e}"
         return result
 
     try:
         base = parse_ee_statute(base_xml, f"ee/{base_id}")
+    # lawvm-failloud (AGENTS.md §1.10): NOT a silent swallow. parse_ee_statute
+    # raises on any malformed/unsupported base XML (ET.ParseError, ValueError,
+    # …); the broad catch records a distinct "Failed to parse base: {e}" banner
+    # (exception embedded) that classify_ee_replayability maps to
+    # BASE_SOURCE_PARSE_ERROR. The failure is recorded and classified, never
+    # guessed past.
     except Exception as e:
         result.error = f"Failed to parse base: {e}"
         return result
@@ -1451,13 +1501,46 @@ def replay_ee_to_pit(
         _log(f"grupiId: {pair_plan.grupi_id}")
         _log(f"Oracle redaction: {pair_plan.oracle_id or '(none found for this date)'}")
 
+    oracle_parse_adjudications: list[CompileAdjudication] = []
     if pair_plan.oracle_is_base:
         result.oracle = base
     elif planning.oracle_xml is not None and pair_plan.oracle_id is not None:
         try:
             result.oracle = parse_ee_statute(planning.oracle_xml, f"ee/{pair_plan.oracle_id}")
+        # lawvm-failloud (AGENTS.md §1.10): the oracle is the comparison
+        # reference; leaving result.oracle = None silently skips the entire
+        # consistency check downstream (it is guarded on `result.oracle is not
+        # None`), so a parse failure here must NOT be a verbose-only WARN. Record
+        # a distinct, self-evidencing ee_oracle_parse_failed adjudication
+        # embedding the oracle id, exception type/message, and a source snippet,
+        # so a silently-uncompared replay is always accounted for. parse_ee_statute
+        # raises on any malformed/unsupported oracle XML (ET.ParseError,
+        # ValueError, …), all of which are this expected source-pathology lane.
         except Exception as e:
             _log(f"WARN: oracle parse failed: {e}")
+            oracle_parse_adjudications.append(
+                _ee_orchestration_adjudication(
+                    kind=_EE_ORACLE_PARSE_FAILED_RULE,
+                    message=(
+                        "Estonia replay could not parse the RT oracle consolidation; "
+                        "the consistency check against the oracle is skipped and the "
+                        "result is left uncompared."
+                    ),
+                    source_statute=f"ee/{pair_plan.oracle_id}",
+                    detail={
+                        "oracle_id": pair_plan.oracle_id,
+                        "reason": "oracle_source_xml_parse_failed",
+                        "exception_type": type(e).__name__,
+                        "exception": str(e),
+                        "oracle_xml_head": planning.oracle_xml[:400].decode(
+                            "utf-8", errors="replace"
+                        ),
+                    },
+                    phase="parse",
+                    family="source_lane_failure",
+                    blocking=True,
+                )
+            )
 
     # ── Step 3: Amendment discovery ───────────────────────────────────────────
     _log(f"Base tekstiliik: {'terviktekst' if pair_plan.base_is_consolidated else 'algtekst'}")
@@ -1515,7 +1598,11 @@ def replay_ee_to_pit(
         _log(f"  {ref.aktViide}  effective={ref.joustumine}...")
         try:
             amend_xml = _ee_fetch_rt_xml_cached(ref.aktViide, _archive, successful_amendment_xml_cache)
-        except Exception as e:
+        # lawvm-failloud (AGENTS.md §1.10): only an expected source-unavailable
+        # fetch failure (_EE_AMENDMENT_FETCH_EXPECTED_ERRORS) marks the amendment
+        # failed and records a blocking source-lane adjudication. Other
+        # exceptions are unexpected bugs and must propagate.
+        except _EE_AMENDMENT_FETCH_EXPECTED_ERRORS as e:
             _log(f"    fetch failed: {e}")
             result.amendments_failed.append(ref.aktViide)
             source_lane_failure_adjudications.append(
@@ -1563,6 +1650,15 @@ def replay_ee_to_pit(
                 ),
                 adjudications_out=slice_filter_adjudications,
             )
+        # lawvm-failloud (AGENTS.md §1.10): NOT a silent swallow. parse_ee_amendment_ops
+        # signals every unsupported/unparseable amendment shape by raising (ET.ParseError
+        # for malformed XML, ValueError for an unsupported XML shape, etc.); each is the
+        # genuinely-expected source-lane failure for this acquisition path. The broad
+        # catch is intentional and §1.10-compliant because it emits a distinct, BLOCKING
+        # ee_amendment_parse_failed adjudication that embeds exception_type + message
+        # (self-evidencing) and marks the amendment failed — it never degrades to a
+        # guessed/empty result. Contract pinned by
+        # test_replay_ee_to_pit_adjudicates_amendment_parse_failure.
         except Exception as e:
             _log(f"    parse failed: {e}")
             result.amendments_failed.append(ref.aktViide)
@@ -1669,6 +1765,15 @@ def replay_ee_to_pit(
                     ),
                     adjudications_out=slice_filter_adjudications,
                 )
+            # lawvm-failloud (AGENTS.md §1.10): NOT a silent swallow. The temporal
+            # source scan fetches then parses; its genuinely-expected failures are an
+            # unavailable amendment source (fetch RuntimeError / readonly-archive
+            # sqlite3.OperationalError) or any unsupported/unparseable amendment shape
+            # that parse_ee_amendment_ops raises (ET.ParseError, ValueError, …). The
+            # broad catch is intentional and §1.10-compliant because it emits a
+            # distinct, BLOCKING ee_temporal_source_scan_failed adjudication embedding
+            # exception_type + message; it never degrades to a guess. Contract pinned by
+            # test_replay_ee_to_pit_adjudicates_temporal_source_scan_failure.
             except Exception as e:
                 _log(f"    temporal scan failed for {ref.aktViide}: {e}")
                 source_lane_failure_adjudications.append(
@@ -1728,11 +1833,17 @@ def replay_ee_to_pit(
             lo_ops_out=lo_ops_out,
             adjudications_out=adjudications,
         )
+    # lawvm-failloud (AGENTS.md §1.10): NOT a silent swallow. An apply-stage
+    # failure is recorded as a distinct, self-evidencing "Failed to apply ops:
+    # {e}" banner (exception embedded) that classify_ee_replayability maps to
+    # REPLAY_ERROR_OTHER; the broad catch is intentional because the failure is
+    # surfaced and classified, never absorbed into a partial/guessed tree.
     except Exception as e:
         result.error = f"Failed to apply ops: {e}"
         return result
 
     result.adjudications = [
+        *oracle_parse_adjudications,
         *cancellation_filter_adjudications,
         *commencement_precomposition_adjudications,
         *slice_filter_adjudications,
@@ -1790,7 +1901,35 @@ def replay_ee_to_pit(
             result.n_mismatch   = sum(1 for d in divs if d.divergence_type == "MISMATCH")
             result.n_ops_missing = sum(1 for d in divs if d.divergence_type == "OPS_MISSING")
             result.n_con_missing = sum(1 for d in divs if d.divergence_type == "CONSOLIDATED_MISSING")
+        # lawvm-failloud (AGENTS.md §1.10): the consistency check IS the
+        # verification step; a crash here would leave result.divergences unset,
+        # making a replay that was never actually compared look divergence-free.
+        # That must NOT be a verbose-only WARN — record a distinct,
+        # self-evidencing ee_consistency_check_failed adjudication embedding the
+        # oracle id and exception so an uncompared result is always accounted
+        # for downstream.
         except Exception as e:
             _log(f"WARN: consistency check failed: {e}")
+            result.adjudications = [
+                *result.adjudications,
+                _ee_orchestration_adjudication(
+                    kind=_EE_CONSISTENCY_CHECK_FAILED_RULE,
+                    message=(
+                        "Estonia replay/oracle consistency check crashed; the "
+                        "result is left uncompared (no divergences computed) and "
+                        "must not be read as agreement."
+                    ),
+                    source_statute=result.oracle.statute_id,
+                    detail={
+                        "oracle_id": result.oracle_id or "",
+                        "reason": "consistency_check_crashed",
+                        "exception_type": type(e).__name__,
+                        "exception": str(e),
+                    },
+                    phase="compare",
+                    family="source_lane_failure",
+                    blocking=True,
+                ),
+            ]
 
     return result
