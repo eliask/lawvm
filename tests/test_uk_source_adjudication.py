@@ -7334,7 +7334,7 @@ def test_classifier_emits_only_enum_status_values() -> None:
     for node in ast.walk(tree):
         # inline dict literals: {"status": "<token>" | UKManualFrontierStatus.X.value}
         if isinstance(node, ast.Dict):
-            for key, value in zip(node.keys, node.values):
+            for key, value in zip(node.keys, node.values, strict=True):
                 if isinstance(key, ast.Constant) and key.value == "status":
                     if isinstance(value, ast.Constant) and isinstance(value.value, str):
                         emitted.add(value.value)
