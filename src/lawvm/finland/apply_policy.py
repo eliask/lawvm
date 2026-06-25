@@ -164,7 +164,7 @@ def _observe_occupancy_transition(
     action = _OP_TYPE_TO_ACTION.get(op.op_type or "")
     if action is None:
         return
-    if op.target_unit_kind != "section" or op.target_paragraph or op.target_item:
+    if op.target_cols.target_unit_kind != "section" or op.target_cols.target_paragraph or op.target_cols.target_item:
         return
 
     current = _section_occupancy(state, sec_path)
@@ -174,7 +174,7 @@ def _observe_occupancy_transition(
         logger.debug(
             "  %s → occupancy violation: §%s is %s but action is %r — %s",
             ctx_label,
-            op.target_section,
+            op.target_cols.target_section,
             current.value,
             action,
             exc,

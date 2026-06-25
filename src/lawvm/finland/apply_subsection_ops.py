@@ -113,10 +113,10 @@ def _subsection_apply_view_for_op(op: AmendmentOp | ResolvedOp) -> _SubsectionAp
         is_temporary = temporary_signal_for_op(op)
         has_exact_bound_payload = op.has_exact_bound_payload
         op_type = op.op_type
-        target_section = op.target_section or ""
-        target_paragraph = op.target_paragraph
-        target_item = op.target_item
-        target_special = op.target_special
+        target_section = op.target_cols.target_section or ""
+        target_paragraph = op.target_cols.target_paragraph
+        target_item = op.target_cols.target_item
+        target_special = op.target_cols.target_special
     return _SubsectionApplyView(
         op_type=op_type,
         target_section=target_section,

@@ -426,7 +426,7 @@ def _collapse_intro_list_amend_subsection_ir(muutos_ir: Optional[IRNode]) -> Opt
 
 def _make_item_repeal_placeholder_ir(paragraph: IRNode, op: AmendmentOp | ResolvedOp) -> IRNode:
     """Return a paragraph-scoped repeal placeholder preserving the visible item label."""
-    op_target_item = op.effective_target_item_label if isinstance(op, ResolvedOp) else op.target_item
+    op_target_item = op.effective_target_item_label if isinstance(op, ResolvedOp) else op.target_cols.target_item
     label = paragraph.label or (op_target_item or "")
     attrs = {"lawvm_repeal_placeholder": "1"}
     if "unique_item_label_subsection_fallback" in op.target_guessing_provenance_tags:

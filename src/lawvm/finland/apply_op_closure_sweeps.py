@@ -323,10 +323,10 @@ def _op_declares_descendant_granularity(rop: ResolvedOp) -> bool:
     if amendment_op is None:
         return False
     return (
-        amendment_op.target_paragraph is not None
-        or bool(amendment_op.target_item)
-        or bool(amendment_op.target_subitem)
-        or bool(amendment_op.target_special)
+        amendment_op.target_cols.target_paragraph is not None
+        or bool(amendment_op.target_cols.target_item)
+        or bool(amendment_op.target_cols.target_subitem)
+        or bool(amendment_op.target_cols.target_special)
     )
 
 
@@ -374,9 +374,9 @@ def _sweep_granularity_escalation(
                     "would overwrite its host whole-unit (LS-07)."
                 ),
                 "op_id": rop.op_id or "",
-                "declared_paragraph": amendment_op.target_paragraph if amendment_op else None,
-                "declared_item": (amendment_op.target_item or "") if amendment_op else "",
-                "declared_special": (amendment_op.target_special or "") if amendment_op else "",
+                "declared_paragraph": amendment_op.target_cols.target_paragraph if amendment_op else None,
+                "declared_item": (amendment_op.target_cols.target_item or "") if amendment_op else "",
+                "declared_special": (amendment_op.target_cols.target_special or "") if amendment_op else "",
                 "resolved_path": [
                     [str(kind), str(label)] for kind, label in address.path
                 ],
@@ -409,9 +409,9 @@ def _sweep_payload_smuggling(
     """
     amendment_op = rop.op
     declared_descendant = amendment_op is not None and (
-        amendment_op.target_paragraph is not None
-        or bool(amendment_op.target_item)
-        or bool(amendment_op.target_subitem)
+        amendment_op.target_cols.target_paragraph is not None
+        or bool(amendment_op.target_cols.target_item)
+        or bool(amendment_op.target_cols.target_subitem)
     )
     if not declared_descendant:
         return
@@ -438,8 +438,8 @@ def _sweep_payload_smuggling(
                     "LS-09)."
                 ),
                 "op_id": rop.op_id or "",
-                "declared_paragraph": amendment_op.target_paragraph if amendment_op else None,
-                "declared_item": (amendment_op.target_item or "") if amendment_op else "",
+                "declared_paragraph": amendment_op.target_cols.target_paragraph if amendment_op else None,
+                "declared_item": (amendment_op.target_cols.target_item or "") if amendment_op else "",
                 "resolved_path": [
                     [str(kind), str(label)] for kind, label in address.path
                 ],

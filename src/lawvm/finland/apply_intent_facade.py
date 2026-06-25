@@ -315,7 +315,7 @@ def dispatch_apply_intent(
     target_repr = (
         rop.target_norm
         if rop is not None
-        else (op.target_section if op is not None else "<unknown>")
+        else (op.target_cols.target_section if op is not None else "<unknown>")
     )
     action_repr = (
         rop.resolved_action_type

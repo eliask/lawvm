@@ -42,12 +42,12 @@ def _resolved_target_path_for_event(
     if sec_path is None:
         return None
     resolved: TreePath = tuple(sec_path)
-    if op.target_paragraph is not None:
-        resolved = resolved + (("subsection", str(op.target_paragraph)),)
-    if op.target_item is not None:
-        resolved = resolved + (("paragraph", str(op.target_item)),)
-    if op.target_special is not None:
-        resolved = resolved + (("special", str(op.target_special)),)
+    if op.target_cols.target_paragraph is not None:
+        resolved = resolved + (("subsection", str(op.target_cols.target_paragraph)),)
+    if op.target_cols.target_item is not None:
+        resolved = resolved + (("paragraph", str(op.target_cols.target_item)),)
+    if op.target_cols.target_special is not None:
+        resolved = resolved + (("special", str(op.target_cols.target_special)),)
     return _path_to_tuple(resolved)
 
 

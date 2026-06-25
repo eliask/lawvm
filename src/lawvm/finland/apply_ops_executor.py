@@ -138,7 +138,7 @@ def _retarget_same_wave_shifted_subsection_repeals(
             continue
         old_label, new_label = retarget
         target_path = _replace_last_subsection_label(address.path, new_label)
-        op_target_paragraph = int(new_label) if new_label.isdigit() else rop.op.target_paragraph
+        op_target_paragraph = int(new_label) if new_label.isdigit() else rop.op.target_cols.target_paragraph
         next_resolved.append(
             dc_replace(
                 rop,

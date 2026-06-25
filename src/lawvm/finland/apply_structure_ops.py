@@ -1219,12 +1219,12 @@ def _structure_apply_view_for_op(op: AmendmentOp | ResolvedOp) -> _StructureAppl
         op_type = op.op_type
         target_address = op.lo.target if op.lo is not None else None
         source_effective = op.lo.source.effective if op.lo is not None and op.lo.source is not None else ""
-        target_section = op.target_section or ""
-        target_paragraph = op.target_paragraph
-        target_item = op.target_item
-        target_special = op.target_special
-        target_chapter = op.target_chapter
-        target_part = op.target_part
+        target_section = op.target_cols.target_section or ""
+        target_paragraph = op.target_cols.target_paragraph
+        target_item = op.target_cols.target_item
+        target_special = op.target_cols.target_special
+        target_chapter = op.target_cols.target_chapter
+        target_part = op.target_cols.target_part
     return _StructureApplyView(
         target_unit_kind=op.target_unit_kind,
         target_section=target_section,
@@ -3989,8 +3989,8 @@ def _normalize_subsection_target_hint_ir(
     ctx_label: str,
 ) -> AmendmentOp | ResolvedOp:
     """Normalize subsection target hint using IRNode data."""
-    target_paragraph = op.effective_target_paragraph if isinstance(op, ResolvedOp) else op.target_paragraph
-    target_item = op.effective_target_item_label if isinstance(op, ResolvedOp) else op.target_item
+    target_paragraph = op.effective_target_paragraph if isinstance(op, ResolvedOp) else op.target_cols.target_paragraph
+    target_item = op.effective_target_item_label if isinstance(op, ResolvedOp) else op.target_cols.target_item
     if not target_paragraph or not master_subsecs:
         return op
     if target_paragraph > len(master_subsecs) and len(master_subsecs) == 1 and not target_item:
