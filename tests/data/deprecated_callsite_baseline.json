@@ -1,46 +1,7 @@
 {
   "_doc": "Monotone call-site baseline for the PEP 702 @deprecated FI legacy-fallback cohort. Counts may only fall. Regenerate with `uv run python scripts/inventory_deprecated_callsites.py --update-baseline` after legitimately retiring a legacy call site (or, with explicit acknowledgment, after adding one).",
-  "symbols": {
-    "extract_plain_text_statute_mentions": "src/lawvm/finland/references/ref_mention_extractor.py",
-    "strip_legacy_roman_division_heading_prefix": "src/lawvm/finland/oracle_comparison.py",
-    "strip_legacy_numbered_section_heading_prefix": "src/lawvm/finland/oracle_comparison.py"
-  },
-  "counts": {
-    "extract_plain_text_statute_mentions": 22,
-    "strip_legacy_roman_division_heading_prefix": 1,
-    "strip_legacy_numbered_section_heading_prefix": 1
-  },
-  "sites": {
-    "extract_plain_text_statute_mentions": [
-      "src/lawvm/finland/references/ref_mention_extractor.py:15",
-      "src/lawvm/finland/references/ref_mention_extractor.py:2242",
-      "src/lawvm/finland/references/ref_mention_extractor.py:2270",
-      "tests/test_fi_cross_statute_chapter.py:92",
-      "tests/test_fi_cross_statute_chapter.py:108",
-      "tests/test_fi_reference_mention.py:823",
-      "tests/test_fi_reference_mention.py:1413",
-      "tests/test_fi_reference_mention.py:1432",
-      "tests/test_fi_reference_mention.py:1449",
-      "tests/test_fi_reference_mention.py:1475",
-      "tests/test_fi_reference_mention.py:1504",
-      "tests/test_fi_reference_mention.py:1525",
-      "tests/test_fi_reference_mention.py:1641",
-      "tests/test_fi_reference_mention.py:1762",
-      "tests/test_fi_reference_mention.py:1789",
-      "tests/test_fi_reference_mention.py:1950",
-      "tests/test_fi_reference_mention.py:1961",
-      "tests/test_fi_reference_mention.py:1972",
-      "tests/test_fi_reference_mention.py:1983",
-      "tests/test_fi_reference_mention.py:1994",
-      "tests/test_fi_reference_mention.py:2010",
-      "tests/test_fi_reference_mention.py:2321"
-    ],
-    "strip_legacy_roman_division_heading_prefix": [
-      "src/lawvm/finland/oracle_comparison.py:422"
-    ],
-    "strip_legacy_numbered_section_heading_prefix": [
-      "src/lawvm/finland/oracle_comparison.py:421"
-    ]
-  },
-  "total": 24
+  "symbols": {},
+  "counts": {},
+  "sites": {},
+  "total": 0
 }
