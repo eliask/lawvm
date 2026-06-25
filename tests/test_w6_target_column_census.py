@@ -65,6 +65,68 @@ def test_read_site_inventory_is_well_formed_and_nontrivial() -> None:
     assert sum(report["by_likely_amendment_op"].values()) == report["total_sites"]
 
 
+def test_target_cols_accessor_reproduces_stored_columns() -> None:
+    """The W6 typed accessor ``op.target_cols`` reproduces the stored columns.
+
+    Phase A contract: ``op.target_cols`` is the single accessor every
+    ``op.target_<col>`` read routes through. It must reproduce the live stored
+    columns exactly for every column and every op shape (section/chapter/part,
+    descendant focus, heading facet, lo-absent direct build). The corpus probe
+    proves this at scale; this unit test pins the per-shape contract without a
+    corpus so a regression fails in the bounded shard, not only under replay.
+    """
+    from lawvm.finland.ops import AmendmentOp
+
+    _COLUMNS = (
+        "target_unit_kind",
+        "target_section",
+        "target_chapter",
+        "target_part",
+        "target_paragraph",
+        "target_item",
+        "target_subitem",
+        "target_special",
+    )
+
+    cases = [
+        # plain section
+        dict(target_unit_kind="section", target_section="5"),
+        # section with enclosing chapter + part scope
+        dict(
+            target_unit_kind="section",
+            target_section="11",
+            target_chapter="4",
+            target_part="2",
+        ),
+        # chapter focus with enclosing part
+        dict(target_unit_kind="chapter", target_section="4", target_part="2"),
+        # part focus with redundant mirrored target_part (the W2 finding)
+        dict(target_unit_kind="part", target_section="III", target_part="III"),
+        # descendant focus: momentti / kohta / alakohta
+        dict(
+            target_unit_kind="section",
+            target_section="7",
+            target_paragraph=2,
+            target_item="3",
+            target_subitem="a",
+        ),
+        # heading facet (otsikko_edella must round-trip, not collapse to otsikko)
+        dict(
+            target_unit_kind="section",
+            target_section="9",
+            target_special="otsikko_edella",
+        ),
+    ]
+    for kwargs in cases:
+        op = AmendmentOp(op_id="t", **kwargs)  # lo-absent direct build
+        cols = op.target_cols
+        for c in _COLUMNS:
+            assert getattr(cols, c) == getattr(op, c), (
+                f"target_cols.{c}={getattr(cols, c)!r} != stored {getattr(op, c)!r} "
+                f"for {kwargs}"
+            )
+
+
 def test_parity_probe_report_schema_is_stable() -> None:
     """The probe module loads and exposes the go/no-go report contract.
 

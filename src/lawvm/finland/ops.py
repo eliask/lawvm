@@ -43,6 +43,7 @@ if TYPE_CHECKING:
     from lawvm.core.target_selector import TargetSelector
     from lawvm.core.temporal import ActivationRule
     from lawvm.finland.payload_normalize import PayloadCompletenessWitness, SubsectionSlotAssignmentResult
+    from lawvm.finland.target_selector_codec import AmendmentOpV1Record
 
 # ---------------------------------------------------------------------------
 # Type aliases
@@ -926,6 +927,29 @@ class AmendmentOp:
             target_special=self.target_special,
         )
         return TargetSelectorCodecV1.from_legacy(record)
+
+    @property
+    def target_cols(self) -> "AmendmentOpV1Record":
+        """The 8 legacy ``target_*`` columns projected from the typed selector.
+
+        W6 (read migration): the single typed accessor every ``op.target_<col>``
+        read routes through, so the loosely-typed stored columns can be deleted.
+        It re-projects :attr:`target_selector` back to the legacy 8-tuple via
+        :meth:`TargetSelectorCodecV1.to_legacy`. The codec is lossless
+        (TARGET-03) and the corpus parity probe
+        (``scripts/w6_target_column_accessor_parity.py``) confirms this
+        reproduces every stored column byte-exactly on all compiled ops across
+        the full pinned corpus. Read sites use ``op.target_cols.target_<col>``;
+        the typed selector is the source of truth.
+
+        Returns an :class:`AmendmentOpV1Record` (frozen): ``target_unit_kind``,
+        ``target_section``, ``target_chapter``, ``target_part``,
+        ``target_paragraph``, ``target_item``, ``target_subitem``,
+        ``target_special`` — same names/types as the stored columns.
+        """
+        from lawvm.finland.target_selector_codec import TargetSelectorCodecV1
+
+        return TargetSelectorCodecV1.to_legacy(self.target_selector)
 
     @classmethod
     def from_lo(cls, lo: _LegalOperation, idx: int) -> List[AmendmentOp]:
