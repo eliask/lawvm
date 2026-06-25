@@ -12,6 +12,17 @@ Design intent (see ``notes/FI_OP_PROVENANCE_CONSOLIDATION_SPEC.md``):
 - ``OpProvenance`` is a sum type: ``Parsed`` (a grammar rule produced the op) or
   ``Recovered`` (a recognizer/fallback guessed it). Recognizer coverage is
   *intrinsic* to ``Recovered`` — there is no separate "with coverage" shadow.
+- A single op may be touched by SEVERAL recovery recognizers at once (e.g. a
+  sec1-body fallback whose op is then uncovered-body recovered). Recovery markers
+  are therefore COMPOSABLE: ``Recovered`` carries a ``frozenset`` of
+  :class:`RecognizerId` members, not one recognizer. ``RecognizerId`` is a CLOSED
+  enum — one member per load-bearing recovery recognizer that an apply site
+  branches on today: the literal ``*_provenance_tags`` membership tests, the
+  boolean ``*_fallback`` / ``*_recovery`` flags, and the branched
+  ``witness_rule_id`` values. Each member's ``value`` is the existing literal
+  string, so Phase 2 rekeys each apply-site branch onto a membership test against
+  this set (``RecognizerId.X in prov.recognizer_ids``), one recognizer per commit,
+  with the serialized strings round-trippable.
 - ``ConfidenceTier`` is a DISCRETE enum (no floats, no numeric thresholds),
   mirroring the existing ``CiteConfidence`` / ``ScopeResolutionConfidence``
   style: string values + semantic docstrings.
@@ -25,10 +36,16 @@ Design intent (see ``notes/FI_OP_PROVENANCE_CONSOLIDATION_SPEC.md``):
 only bridge between the two. ``StrictProfile`` remains the single source of
 truth for strict-vs-quirks policy.
 
+Note on scope confidence: ``scope_confidence`` is ORTHOGONAL to recovery — it
+rides on ``Parsed`` ops too (a grammar-parsed op can still carry a
+context-resolved scope). It is therefore NOT a facet of ``Recovered``; it stays a
+separate op-level field (the existing ``AmendmentOp.scope_confidence``), and
+``scope_provenance_tags`` retires into that typed field, not into this provenance
+sum type.
+
 This module is intentionally dependency-light: it does not import from
 ``lawvm.finland.ops`` (so it can be wired into ``AmendmentOp`` in a later phase
-without an import cycle). The scope-confidence facet of ``Recovered`` is typed
-under ``TYPE_CHECKING`` only.
+without an import cycle).
 """
 
 from __future__ import annotations
@@ -39,7 +56,68 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from lawvm.core.compile_result import StrictProfile
-    from lawvm.finland.ops import ScopeConfidence
+
+
+class RecognizerId(Enum):
+    """CLOSED namespace of load-bearing FI recovery recognizers.
+
+    Exhaustive over every recovery recognizer / provenance tag / witness rule
+    that an apply (or compile) site branches on today. Each member's ``value`` is
+    the existing literal string used at those sites, so the Phase-2 migration is a
+    mechanical rekey of each literal-membership / boolean-flag branch onto a
+    membership test against :attr:`Recovered.recognizer_ids`, preserving the
+    serialized identity.
+
+    Provenance is composable: an op carries the SET of every recognizer that
+    touched it, so co-occurring markers (e.g. ``SEC1_BODY_JOHTO`` together with a
+    body fallback) both land in ``recognizer_ids``.
+    """
+
+    # --- Boolean recovery flags on AmendmentOp (§1a) ---
+    SEC1_BODY_JOHTO = "sec1_body_johto_fallback"
+    """``AmendmentOp.sec1_body_johto_fallback``: placeholder -> semantic repeal
+    recovery (apply_runtime_support)."""
+
+    BODY_ROOT_REPLACE = "body_root_replace_fallback"
+    """``AmendmentOp.body_root_replace_fallback``: whole-section body replace
+    fallback (group_ops heading dedup)."""
+
+    UNCOVERED_BODY = "uncovered_body_recovery"
+    """``AmendmentOp.uncovered_body_recovery``: chapter-scaffold / uncovered-body
+    recovery (apply_structure_ops, merge, apply_subsection_ops)."""
+
+    # --- extraction_provenance_tags literal branches ---
+    EXTRACTION_FALLBACK_HEURISTIC = "extraction_fallback_heuristic"
+    """Bare body-text extraction heuristic (frontend_compile gating)."""
+
+    JOLLOIN_MOMENT_RENUMBER_SUPPLEMENT = "jolloin_moment_renumber_supplement"
+    """`jolloin` moment renumber supplement (payload_normalize gating)."""
+
+    # --- target_guessing_provenance_tags literal branches ---
+    UNIQUE_ITEM_LABEL_SUBSECTION_FALLBACK = "unique_item_label_subsection_fallback"
+    """Item label -> subsection target guess (apply_item_ops, apply_payload_ops)."""
+
+    NORMALIZE_ITEM_LIKE_TARGET = "normalize_item_like_target"
+    """Item-like target normalization (payload_normalize)."""
+
+    REBASE_DUPLICATE_TARGET_SHIFTED_REPLACE = "rebase_duplicate_target_shifted_replace"
+    """Replace already rebased off a same-wave shifted duplicate target
+    (apply_policy, group_ops, apply_runtime_support, payload_normalize)."""
+
+    REBASE_REPLACED_RENUMBER_SOURCE = "rebase_replaced_renumber_source"
+    """Replace rebased off a renumber source (apply_policy)."""
+
+    # --- LegalOperation provenance_tags literal branch (scope.py) ---
+    CHAPTER_SCOPE_FROM_UNIQUE_LIVE_SECTION = "chapter_scope_from_unique_live_section"
+    """Chapter scope inferred from a unique live section (scope.py jolloin
+    renumber path)."""
+
+    # --- Branched witness_rule_id values ---
+    JOLLOIN_RENUMBER = "fi.jolloin_renumber"
+    """`jolloin` renumber witness (scope.py)."""
+
+    REPEAL_VTS_VOIMAANTULO = "fi.repeal_vts_voimaantulo"
+    """Voimaantulo repeal VTS witness (apply_subsection_dispatch)."""
 
 
 class RecoverySurface(Enum):
@@ -107,19 +185,22 @@ class Parsed:
 
 @dataclass(frozen=True, slots=True)
 class Recovered:
-    """The op was guessed by a recovery recognizer / fallback.
+    """The op was guessed by one or more recovery recognizers / fallbacks.
 
-    ``recognizer_id`` subsumes the diagnostic ``witness_rule_id`` and the
-    load-bearing provenance tag strings: it names the recognizer (in the
-    ``recovery_authorization_registry`` ``kind`` namespace) that produced the
-    op, so a strict consumer can ask the registry whether to block it.
+    ``recognizer_ids`` is the SET of every load-bearing recognizer that touched
+    the op (the boolean ``*_fallback`` flags, the load-bearing provenance tag
+    strings, and the branched ``witness_rule_id`` values all fold here). Recovery
+    markers are independent and composable, so co-occurring recognizers all land
+    in the set, and an apply site asks ``RecognizerId.X in op.provenance.recognizer_ids``.
+
+    ``scope_confidence`` is deliberately NOT here: it is orthogonal to recovery
+    (it rides on ``Parsed`` ops too) and stays a separate op-level field.
     """
 
     surface: RecoverySurface
-    recognizer_id: str
+    recognizer_ids: frozenset[RecognizerId]
     tier: ConfidenceTier
     coverage: RecognitionCoverage = field(default_factory=RecognitionCoverage)
-    scope_confidence: "ScopeConfidence | None" = None
 
 
 OpProvenance = Parsed | Recovered
@@ -184,6 +265,7 @@ __all__ = [
     "OpProvenance",
     "Parsed",
     "RecognitionCoverage",
+    "RecognizerId",
     "Recovered",
     "RecoverySurface",
     "admits",

@@ -16,6 +16,7 @@ from lawvm.finland.op_provenance import (
     ConfidenceTier,
     Parsed,
     RecognitionCoverage,
+    RecognizerId,
     Recovered,
     RecoverySurface,
     admits,
@@ -31,7 +32,7 @@ from lawvm.finland.strict_profile import default_finland_strict_profile
 def _body_recovered() -> Recovered:
     return Recovered(
         surface=RecoverySurface.BODY,
-        recognizer_id="PARSE.EXTRACTION_FALLBACK",
+        recognizer_ids=frozenset({RecognizerId.EXTRACTION_FALLBACK_HEURISTIC}),
         tier=ConfidenceTier.HEURISTIC,
     )
 
@@ -62,14 +63,14 @@ def test_mode_for_default_finland_profile_blocks_recovery_surfaces() -> None:
     # and omission expansion -> every recovery surface is STRICT.
     profile = default_finland_strict_profile()
     for surface, recognizer in (
-        (RecoverySurface.BODY, "PARSE.EXTRACTION_FALLBACK"),
-        (RecoverySurface.TITLE, "PARSE.EXTRACTION_FALLBACK"),
-        (RecoverySurface.SCOPE, "LOWER.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION"),
-        (RecoverySurface.PAYLOAD, "ELAB.ALIGN_SPARSE_OMISSION_TO_LIVE"),
+        (RecoverySurface.BODY, RecognizerId.EXTRACTION_FALLBACK_HEURISTIC),
+        (RecoverySurface.TITLE, RecognizerId.EXTRACTION_FALLBACK_HEURISTIC),
+        (RecoverySurface.SCOPE, RecognizerId.CHAPTER_SCOPE_FROM_UNIQUE_LIVE_SECTION),
+        (RecoverySurface.PAYLOAD, RecognizerId.NORMALIZE_ITEM_LIKE_TARGET),
     ):
         prov = Recovered(
             surface=surface,
-            recognizer_id=recognizer,
+            recognizer_ids=frozenset({recognizer}),
             tier=ConfidenceTier.HEURISTIC,
         )
         assert mode_for(profile, prov) is AcceptanceMode.STRICT, surface
@@ -90,7 +91,7 @@ def test_mode_for_lenient_profile_admits_recovery() -> None:
     ):
         prov = Recovered(
             surface=surface,
-            recognizer_id="r",
+            recognizer_ids=frozenset({RecognizerId.EXTRACTION_FALLBACK_HEURISTIC}),
             tier=ConfidenceTier.HEURISTIC,
         )
         assert mode_for(lenient, prov) is AcceptanceMode.QUIRKS, surface
@@ -104,9 +105,10 @@ def test_mode_for_is_keyed_per_surface() -> None:
         allows_context_dependent_anchor_resolution=True,
         allows_omission_expansion=True,
     )
-    body = Recovered(surface=RecoverySurface.BODY, recognizer_id="r", tier=ConfidenceTier.HEURISTIC)
-    scope = Recovered(surface=RecoverySurface.SCOPE, recognizer_id="r", tier=ConfidenceTier.HEURISTIC)
-    payload = Recovered(surface=RecoverySurface.PAYLOAD, recognizer_id="r", tier=ConfidenceTier.HEURISTIC)
+    rids = frozenset({RecognizerId.EXTRACTION_FALLBACK_HEURISTIC})
+    body = Recovered(surface=RecoverySurface.BODY, recognizer_ids=rids, tier=ConfidenceTier.HEURISTIC)
+    scope = Recovered(surface=RecoverySurface.SCOPE, recognizer_ids=rids, tier=ConfidenceTier.HEURISTIC)
+    payload = Recovered(surface=RecoverySurface.PAYLOAD, recognizer_ids=rids, tier=ConfidenceTier.HEURISTIC)
     assert mode_for(profile, body) is AcceptanceMode.STRICT
     assert mode_for(profile, scope) is AcceptanceMode.QUIRKS
     assert mode_for(profile, payload) is AcceptanceMode.QUIRKS
@@ -132,6 +134,67 @@ def test_provenance_records_are_frozen_and_hashable() -> None:
     assert a == b
     assert hash(a) == hash(b)
     assert Parsed("x") == Parsed("x")
+
+
+def test_recognizer_id_values_are_distinct_strings() -> None:
+    # Closed namespace: every member is a distinct string-valued recognizer id.
+    values = [r.value for r in RecognizerId]
+    for v in values:
+        assert isinstance(v, str)
+    assert len(set(values)) == len(values)
+
+
+def test_recognizer_id_values_match_existing_literals() -> None:
+    # Each member's value is the literal string used at the apply/compile site it
+    # will replace in Phase 2, so the rekey is mechanical and round-trippable.
+    assert RecognizerId.SEC1_BODY_JOHTO.value == "sec1_body_johto_fallback"
+    assert RecognizerId.BODY_ROOT_REPLACE.value == "body_root_replace_fallback"
+    assert RecognizerId.UNCOVERED_BODY.value == "uncovered_body_recovery"
+    assert RecognizerId.EXTRACTION_FALLBACK_HEURISTIC.value == "extraction_fallback_heuristic"
+    assert (
+        RecognizerId.JOLLOIN_MOMENT_RENUMBER_SUPPLEMENT.value == "jolloin_moment_renumber_supplement"
+    )
+    assert (
+        RecognizerId.UNIQUE_ITEM_LABEL_SUBSECTION_FALLBACK.value
+        == "unique_item_label_subsection_fallback"
+    )
+    assert RecognizerId.NORMALIZE_ITEM_LIKE_TARGET.value == "normalize_item_like_target"
+    assert (
+        RecognizerId.REBASE_DUPLICATE_TARGET_SHIFTED_REPLACE.value
+        == "rebase_duplicate_target_shifted_replace"
+    )
+    assert RecognizerId.REBASE_REPLACED_RENUMBER_SOURCE.value == "rebase_replaced_renumber_source"
+    assert (
+        RecognizerId.CHAPTER_SCOPE_FROM_UNIQUE_LIVE_SECTION.value
+        == "chapter_scope_from_unique_live_section"
+    )
+    assert RecognizerId.JOLLOIN_RENUMBER.value == "fi.jolloin_renumber"
+    assert RecognizerId.REPEAL_VTS_VOIMAANTULO.value == "fi.repeal_vts_voimaantulo"
+
+
+def test_recovered_recognizer_ids_are_composable() -> None:
+    # Co-occurring recovery markers all land in the set; membership is the
+    # Phase-2 apply-site query shape.
+    prov = Recovered(
+        surface=RecoverySurface.BODY,
+        recognizer_ids=frozenset(
+            {RecognizerId.SEC1_BODY_JOHTO, RecognizerId.UNCOVERED_BODY}
+        ),
+        tier=ConfidenceTier.HEURISTIC,
+    )
+    assert RecognizerId.SEC1_BODY_JOHTO in prov.recognizer_ids
+    assert RecognizerId.UNCOVERED_BODY in prov.recognizer_ids
+    assert RecognizerId.BODY_ROOT_REPLACE not in prov.recognizer_ids
+    # Equality / hashing is order-independent for the set.
+    other = Recovered(
+        surface=RecoverySurface.BODY,
+        recognizer_ids=frozenset(
+            {RecognizerId.UNCOVERED_BODY, RecognizerId.SEC1_BODY_JOHTO}
+        ),
+        tier=ConfidenceTier.HEURISTIC,
+    )
+    assert prov == other
+    assert hash(prov) == hash(other)
 
 
 def test_blocks_in_strict_typed_method_matches_disposition() -> None:
