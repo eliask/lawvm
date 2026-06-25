@@ -65,6 +65,7 @@ Phase: Parse (§6 phase 3) + Emit evidence (§6 phase 11).
 from __future__ import annotations
 
 import re
+from lawvm.core.regex_safety import compile_classifier_regex
 from dataclasses import dataclass
 from datetime import date
 from enum import Enum
@@ -379,11 +380,8 @@ _PROPOSAL_RELATIVE_RE = re.compile(
 
 # Pattern for proposed voimaantulo date extraction from enactment sections
 # Matches: "päivänä MONTH YEAR", "YEAR päivänä", numeric dates
-_VOIMAANTULO_RE = re.compile(
-    r"(?:voimaan|voimaantulo)[^.]{0,150}?"
-    r"(?:(\d{1,2})\s+päivän[aä]\s+([a-zäöå]+)\s+(\d{4})|(\d{4})-(\d{2})-(\d{2}))",
-    re.IGNORECASE,
-)
+_VOIMAANTULO_RE = compile_classifier_regex(r"(?:voimaan|voimaantulo)[^.]{0,150}?"
+    r"(?:(\d{1,2})\s+päivän[aä]\s+([a-zäöå]+)\s+(\d{4})|(\d{4})-(\d{2})-(\d{2}))", re.IGNORECASE, classifier_id="fi.he_branch_parser.voimaantulo_re")
 
 def _extract_proposed_voimaantulo(full_body_text: str) -> Optional[date]:
     """Extract proposed voimaantulo (entry-into-force) date from HE body text.

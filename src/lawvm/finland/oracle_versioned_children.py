@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from difflib import SequenceMatcher
 import re
+from lawvm.core.regex_safety import compile_classifier_regex
 from typing import Optional
 
 from lxml import etree
@@ -19,7 +20,7 @@ from lawvm.finland.helpers import _norm_num_token
 # lawvm-regex: diagnostic Finlex eId version suffix parser for oracle dedup
 _ORACLE_VERSION_SUFFIX_RE = re.compile(r"v(?P<version>\d{8})$")
 # lawvm-regex: diagnostic Finlex editorial prior-wording note classifier
-_PRIOR_WORDING_RE = re.compile(r"\bAiempi sanamuoto kuuluu\b", re.IGNORECASE)
+_PRIOR_WORDING_RE = compile_classifier_regex(r"\bAiempi sanamuoto kuuluu\b", re.IGNORECASE, classifier_id="fi.oracle_versioned_children.prior_wording_re")
 
 
 def _tag(el: etree._Element) -> str:

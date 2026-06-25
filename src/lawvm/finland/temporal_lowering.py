@@ -21,6 +21,7 @@ Finland-local lowering surface.  Do not import this from other jurisdictions.
 from __future__ import annotations
 
 import re
+from lawvm.core.regex_safety import compile_classifier_regex
 from dataclasses import dataclass
 from collections.abc import Sequence
 from typing import Optional
@@ -50,13 +51,10 @@ _SIMULTANEOUS_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-_DECREE_SET_PATTERN = re.compile(
-    r"asetuksella\s+säädettävänä\s+ajankohtana"
+_DECREE_SET_PATTERN = compile_classifier_regex(r"asetuksella\s+säädettävänä\s+ajankohtana"
     r"|valtioneuvoston\s+(?:asetuksella|päätöksellä)"
     r"|erikseen\s+säädettävän[aä]"
-    r"|voimaantulosta\s+säädetään\s+(?:asetuksella|erikseen\s+lailla)",
-    re.IGNORECASE,
-)
+    r"|voimaantulosta\s+säädetään\s+(?:asetuksella|erikseen\s+lailla)", re.IGNORECASE, classifier_id="fi.temporal_lowering.decree_set_pattern")
 
 
 # ---------------------------------------------------------------------------

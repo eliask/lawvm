@@ -10,6 +10,7 @@ only the uniquely identified table-bearing direct child.
 from __future__ import annotations
 
 import re
+from lawvm.core.regex_safety import compile_classifier_regex
 from dataclasses import dataclass
 from typing import Iterable
 
@@ -19,10 +20,7 @@ from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.helpers import _norm_num_token
 
-_TABLE_MARKER_RE = re.compile(
-    r"\btaulukko\s+(?P<label>\d{1,4}+\s{0,3}+[a-z]?)\s*[\.:]",
-    re.I,
-)
+_TABLE_MARKER_RE = compile_classifier_regex(r"\btaulukko\s+(?P<label>\d{1,4}+\s{0,3}+[a-z]?)\s*[\.:]", re.I, classifier_id="fi.table_target_merge.table_marker_re")
 _TABLE_TARGET_PAYLOAD_RULE = "ELAB.NUMBERED_TABLE_TARGET_MERGE"
 _DUPLICATE_TABLE_NOTE_BLOCK_RULE = "ELAB.DUPLICATE_TABLE_NOTE_BLOCK_PRUNED"
 _PAYLOAD_NORMALIZATION_RULE_ATTR = "lawvm_payload_normalization_rule"

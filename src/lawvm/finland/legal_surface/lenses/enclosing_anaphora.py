@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from lawvm.core.regex_safety import compile_classifier_regex
 
 from lawvm.core.legal_surface_graph import SourceSpanRef
 from lawvm.core.legal_surface_lens import (
@@ -99,10 +100,8 @@ _EXPLICIT_REF_AFTER_NOUN = re.compile(
 
 #: Applicability matrices. EXCEPTION (``ei [kuitenkaan] sovelleta`` / ``estämättä``)
 #: vs CONDITION (``sovelletaan``).
-_MATRIX_EXCEPTION_RE = re.compile(
-    r"\b(ei\s{1,8}kuitenkaan\s{1,8}sovelleta|ei\s{1,8}sovelleta|estämättä)\b", re.IGNORECASE
-)
-_MATRIX_CONDITION_RE = re.compile(r"\bsovelletaan\b", re.IGNORECASE)
+_MATRIX_EXCEPTION_RE = compile_classifier_regex(r"\b(ei\s{1,8}kuitenkaan\s{1,8}sovelleta|ei\s{1,8}sovelleta|estämättä)\b", re.IGNORECASE, classifier_id="fi.legal_surface.lenses.enclosing_anaphora.matrix_exception_re")
+_MATRIX_CONDITION_RE = compile_classifier_regex(r"\bsovelletaan\b", re.IGNORECASE, classifier_id="fi.legal_surface.lenses.enclosing_anaphora.matrix_condition_re")
 
 
 def _matrix_after(text: str, noun_end: int) -> tuple[str, int, int] | None:

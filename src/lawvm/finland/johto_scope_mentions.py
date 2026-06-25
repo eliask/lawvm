@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import functools
 import re
+from lawvm.core.regex_safety import compile_classifier_regex
 from dataclasses import dataclass
 
 from lawvm.finland.helpers import _norm_num_token
@@ -67,22 +68,16 @@ _MOVE_SECTION_TO_CHAPTER_RE = re.compile(
 # Bounded anaphor anchor for ``uusi 6 a luku, johon ... siirretään 25, 26 ja
 # 27 §``. The section list itself is parsed by ``scan_legal_addresses`` below;
 # this regex only ties the list to the single declared new chapter antecedent.
-_ANAPHORIC_NEW_CHAPTER_MOVE_TAIL_RE = re.compile(
-    r"\bjohon\b[^§\n]{0,80}?\bsiirretään\b(?P<section_tail>[^§\n]{0,240}§)",
-    re.I,
-)
-_MUUTETAAN_RE = re.compile(r"\bmuutetaan\b", re.I)
-_LUKU_RE = re.compile(r"\bluku\b", re.I)
+_ANAPHORIC_NEW_CHAPTER_MOVE_TAIL_RE = compile_classifier_regex(r"\bjohon\b[^§\n]{0,80}?\bsiirretään\b(?P<section_tail>[^§\n]{0,240}§)", re.I, classifier_id="fi.johto_scope_mentions.anaphoric_new_chapter_move_tail_re")
+_MUUTETAAN_RE = compile_classifier_regex(r"\bmuutetaan\b", re.I, classifier_id="fi.johto_scope_mentions.muutetaan_re")
+_LUKU_RE = compile_classifier_regex(r"\bluku\b", re.I, classifier_id="fi.johto_scope_mentions.luku_re")
 _CHAPTER_NUMBER_RE = re.compile(
     r"(\d+\s*(?:[a-z](?![a-z]))?)(?:\s*" + _DASH_CHARS + r"\s*(\d+\s*(?:[a-z](?![a-z]))?))?",
     re.I,
 )
-_SECTION_OR_GENITIVE_CHAPTER_RE = re.compile(r"§|luvun", re.I)
-_NUMBERED_TABLE_TARGET_RE = re.compile(
-    r"(?P<section>\d{1,4}+\s{0,3}+[a-z]?)\s*§\s*:\s*n\s+"
-    r"tauluk(?:ko|on)\s+(?P<table>\d{1,4}+\s{0,3}+[a-z]?)\b",
-    re.I,
-)
+_SECTION_OR_GENITIVE_CHAPTER_RE = compile_classifier_regex(r"§|luvun", re.I, classifier_id="fi.johto_scope_mentions.section_or_genitive_chapter_re")
+_NUMBERED_TABLE_TARGET_RE = compile_classifier_regex(r"(?P<section>\d{1,4}+\s{0,3}+[a-z]?)\s*§\s*:\s*n\s+"
+    r"tauluk(?:ko|on)\s+(?P<table>\d{1,4}+\s{0,3}+[a-z]?)\b", re.I, classifier_id="fi.johto_scope_mentions.numbered_table_target_re")
 _ILLATIVE_SECTION_SUBSECTION_INSERT_RE = re.compile(
     r"(?P<labels>(?:" + _SEC_LABEL_RANGE + r")"
     r"(?:\s{0,3}(?:,|ja|sekä)\s{0,3}(?:" + _SEC_LABEL_RANGE + r"))*)"
@@ -90,11 +85,8 @@ _ILLATIVE_SECTION_SUBSECTION_INSERT_RE = re.compile(
     r"(?=[^§.;]{0,180}?\bmoment(?:ti|in)\b)",
     re.I,
 )
-_PRECEDING_ILLATIVE_SECTION_SIBLING_RE = re.compile(
-    r"(?P<section>\d{1,4}+\s{0,3}+[a-z]?)\s*§\s*:\s*(?:ään|aan)\s+"
-    r"(?:ja|sekä)\s*$",
-    re.I,
-)
+_PRECEDING_ILLATIVE_SECTION_SIBLING_RE = compile_classifier_regex(r"(?P<section>\d{1,4}+\s{0,3}+[a-z]?)\s*§\s*:\s*(?:ään|aan)\s+"
+    r"(?:ja|sekä)\s*$", re.I, classifier_id="fi.johto_scope_mentions.preceding_illative_section_sibling_re")
 
 
 @dataclass(frozen=True, slots=True)

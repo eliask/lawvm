@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import functools
 import re
+from lawvm.core.regex_safety import compile_classifier_regex
 import datetime as dt
 from typing import List, Literal, Optional, Tuple
 
@@ -21,7 +22,7 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.roman import roman_to_arabic as _roman_to_arabic_shared
 
 _NUM_TOKEN_STRIP_RE = re.compile(r"[)\s§.]")
-_RANGAISTUS_HEADING_NAME_RE = re.compile(r"\b(rangaistus|rikos)\b")
+_RANGAISTUS_HEADING_NAME_RE = compile_classifier_regex(r"\b(rangaistus|rikos)\b", classifier_id="fi.helpers.rangaistus_heading_name_re")
 _SECTION_SORT_RE = re.compile(r"^(\d+)([a-z]*)$")
 _SECTION_SORT_NON_DIGIT_RE = re.compile(r"[^0-9]")
 _PREVIOUS_ITEM_NUM_SUFFIX_RE = re.compile(r"^(\d+)([a-z]?)$", flags=re.I)
@@ -151,13 +152,10 @@ def _is_omission_ir(node: IRNode) -> bool:
     return False
 
 
-_RANGAISTUS_SENTENCING_RE = re.compile(r"\bon tuomittava\b", re.I)
-_RANGAISTUS_PENALTY_RE = re.compile(r"\b(sakkoon|vankeuteen|elinkaudeksi)\b", re.I)
-_RANGAISTUS_OFFENCE_PREFIX_RE = re.compile(r"^\s*(joka|jos)\b", re.I)
-_RANGAISTUS_ADMIN_SANCTION_RE = re.compile(
-    r"\b(seuraamusmaksu|rikkomusmaksu|rikemaksu|laiminlyöntimaksu|myöhästymismaksu)\b",
-    re.I,
-)
+_RANGAISTUS_SENTENCING_RE = compile_classifier_regex(r"\bon tuomittava\b", re.I, classifier_id="fi.helpers.rangaistus_sentencing_re")
+_RANGAISTUS_PENALTY_RE = compile_classifier_regex(r"\b(sakkoon|vankeuteen|elinkaudeksi)\b", re.I, classifier_id="fi.helpers.rangaistus_penalty_re")
+_RANGAISTUS_OFFENCE_PREFIX_RE = compile_classifier_regex(r"^\s*(joka|jos)\b", re.I, classifier_id="fi.helpers.rangaistus_offence_prefix_re")
+_RANGAISTUS_ADMIN_SANCTION_RE = compile_classifier_regex(r"\b(seuraamusmaksu|rikkomusmaksu|rikemaksu|laiminlyöntimaksu|myöhästymismaksu)\b", re.I, classifier_id="fi.helpers.rangaistus_admin_sanction_re")
 
 
 def _normalized_node_text(node: IRNode) -> str:

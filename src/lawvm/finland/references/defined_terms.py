@@ -67,6 +67,7 @@ substring guards before regex on long text.
 from __future__ import annotations
 
 import re
+from lawvm.core.regex_safety import compile_classifier_regex
 from dataclasses import dataclass
 from typing import Optional
 
@@ -177,10 +178,10 @@ class DefinedTermBinding:
 # the positional lowering (cite ending at an offset / first cite in window) stays
 # in this lane.
 # Finnish "(NUMBER/YEAR)" wrapped act id (closing paren required).
-_FI_ID = re.compile(r"\((\d{1,6})/(\d{4})\)")
+_FI_ID = compile_classifier_regex(r"\((\d{1,6})/(\d{4})\)", classifier_id="fi.references.defined_terms.fi_id")
 # Finnish act id followed by a separator (whitespace / comma / paren) — used when
 # scanning prose for "the first act mentioned".
-_FI_ID_LOOSE = re.compile(r"\((\d{1,6})/(\d{4})[\s,)]")
+_FI_ID_LOOSE = compile_classifier_regex(r"\((\d{1,6})/(\d{4})[\s,)]", classifier_id="fi.references.defined_terms.fi_id_loose")
 
 # A single token of a Finnish term: letters (incl. ä ö å) and internal hyphen.
 _TERM_WORD = r"[a-zA-ZäöåÄÖÅ]+(?:-[a-zA-ZäöåÄÖÅ]+)*"
@@ -214,9 +215,7 @@ def _strip_markup(s: str) -> str:
 # parenthesis must NOT itself be an act cite or a "jäljempänä …" group (handled
 # by their own shapes).  Bounded alias body (1..80 chars).
 
-_PAREN_ALIAS = re.compile(
-    r"\(\s{0,3}([^()]{1,80}?)\s{0,3}\)",
-)
+_PAREN_ALIAS = compile_classifier_regex(r"\(\s{0,3}([^()]{1,80}?)\s{0,3}\)", classifier_id="fi.references.defined_terms.paren_alias")
 
 # ---------------------------------------------------------------------------
 # Shape 2: "jäljempänä X" / 'jäljempänä "X"'
@@ -371,10 +370,7 @@ _SCOPE_CUE_TASSA = re.compile(
     re.IGNORECASE,
 )
 # "Tätä lakia sovellettaessa" — statute-wide application cue.
-_SCOPE_CUE_SOVELLETTAESSA = re.compile(
-    r"\bTätä\s{1,3}lakia\s{1,3}sovellettaessa\b",
-    re.IGNORECASE,
-)
+_SCOPE_CUE_SOVELLETTAESSA = compile_classifier_regex(r"\bTätä\s{1,3}lakia\s{1,3}sovellettaessa\b", re.IGNORECASE, classifier_id="fi.references.defined_terms.scope_cue_sovellettaessa")
 _GUARD_TASSA = "tässä"
 _GUARD_SOVELLETTAESSA = "sovellettaessa"
 

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 import re
+from lawvm.core.regex_safety import compile_classifier_regex
 from dataclasses import dataclass, replace as dc_replace
 from datetime import date
 from difflib import SequenceMatcher
@@ -3407,7 +3408,7 @@ def _apply_inferred_payload_expiry_to_temporary_ops(
 # ---------------------------------------------------------------------------
 
 # "väliaikaisesti" token
-_VAALIAIKAISESTI_RE = re.compile(r'\bväliaikaisesti\b', re.IGNORECASE)
+_VAALIAIKAISESTI_RE = compile_classifier_regex(r'\bväliaikaisesti\b', re.IGNORECASE, classifier_id="fi.frontend_compile.vaaliaikaisesti_re")
 # Valid Finnish section label: one or more digits followed by optional letter suffix
 # e.g. "5", "21b", "16g", "87a"
 _VALID_SECTION_LABEL_RE = re.compile(r'^\d+[a-z]*$', re.IGNORECASE)
@@ -3540,13 +3541,11 @@ def _extract_temporary_targets_from_johtolause(
 _ENACTING_FORMULA_EXACT = "eduskunnan päätöksen mukaisesti"
 _LETTER_SUFFIX_NUM_RE = re.compile(r"^\d+\s+[a-z]\s*§", re.IGNORECASE)
 _PLAIN_SECTION_NUM_RE = re.compile(r"^\d+\s*§", re.IGNORECASE)
-_OPERATIVE_VERB_RE = re.compile(r"\b(?:kumotaan|muutetaan|lisätään|poistetaan|siirretään)\b", re.IGNORECASE)
+_OPERATIVE_VERB_RE = compile_classifier_regex(r"\b(?:kumotaan|muutetaan|lisätään|poistetaan|siirretään)\b", re.IGNORECASE, classifier_id="fi.frontend_compile.operative_verb_re")
 _BODY_ONLY_ITEM_LABEL_RE = re.compile(r"^\s*(\d+[a-z]?)\)")
 # Structural-target marker in a johtolause (hoisted per §1.11 from the act-wide
 # body-recovery fallback guard); presence means the johto already names a target.
-_JOHTO_STRUCTURAL_TARGET_MARKER_RE = re.compile(
-    r"\b(?:§|luku|luvun|osa|osan|liite|liitteen)\b"
-)
+_JOHTO_STRUCTURAL_TARGET_MARKER_RE = compile_classifier_regex(r"\b(?:§|luku|luvun|osa|osan|liite|liitteen)\b", classifier_id="fi.frontend_compile.johto_structural_target_marker_re")
 
 
 def _body_direct_sections(muutos_tree: "etree._Element") -> "list[etree._Element]":

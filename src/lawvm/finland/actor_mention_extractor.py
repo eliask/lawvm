@@ -35,6 +35,7 @@ Registry: lawvm.finland.canonical_actor_registry.REGISTRY.
 from __future__ import annotations
 
 import re
+from lawvm.core.regex_safety import PrefilteredPattern, compile_classifier_regex
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from datetime import date
@@ -101,18 +102,18 @@ _MODAL_CONTEXT_WINDOW = 120  # chars to look at after the actor phrase
 
 # The recognizer runs patterns in PRIORITY ORDER.
 # First match wins. Each pattern has a guard string + compiled regex.
-_MODAL_PATTERNS: Tuple[Tuple[str, ActorModalKind, re.Pattern[str]], ...] = (
+_MODAL_PATTERNS: Tuple[Tuple[str, ActorModalKind, re.Pattern[str] | PrefilteredPattern], ...] = (
     # PROHIBITION: 'ei saa' (must precede PERMISSION check)
     (
         "ei saa",
         ActorModalKind.PROHIBITION,
-        re.compile(r"\bei\s+saa\b", re.IGNORECASE),
+        compile_classifier_regex(r"\bei\s+saa\b", re.IGNORECASE, classifier_id="fi.actor_mention_extractor.(in _modal_patterns tuple)"),
     ),
     # PASSIVE_OBLIGATION: 'tehtavana on' / 'X:n tehtavana on'
     (
         "teht",
         ActorModalKind.PASSIVE_OBLIGATION,
-        re.compile(r"\bteht[a\xe4]v[a\xe4]n[a\xe4]\s+on\b", re.IGNORECASE),
+        compile_classifier_regex(r"\bteht[a\xe4]v[a\xe4]n[a\xe4]\s+on\b", re.IGNORECASE, classifier_id="fi.actor_mention_extractor.(in _modal_patterns tuple)"),
     ),
     # DUTY: genitive 'on' construction.
     # Two sub-patterns in PRIORITY ORDER:
@@ -124,27 +125,24 @@ _MODAL_PATTERNS: Tuple[Tuple[str, ActorModalKind, re.Pattern[str]], ...] = (
     (
         " on",
         ActorModalKind.DUTY,
-        re.compile(
-            r"(?:"
+        compile_classifier_regex(r"(?:"
             r"^\s*on\b"                                              # pattern 1: genitive phrase, 'on' right after
             r"|^\s*tulee\b"                                          # pattern 1b: 'tulee' right after
             r"|[a-z\xe4\xf6\xe5é]{2,40}n\s+on\b"              # pattern 2: word-in-context n + on
             r"|[a-z\xe4\xf6\xe5é]{2,40}n\s+tulee\b"           # pattern 2b: word-in-context n + tulee
-            r")",
-            re.IGNORECASE,
-        ),
+            r")", re.IGNORECASE, classifier_id="fi.actor_mention_extractor.(in _modal_patterns tuple)"),
     ),
     # PERMISSION: 'saa' (without 'ei' before it)
     (
         "saa",
         ActorModalKind.PERMISSION,
-        re.compile(r"(?<!ei\s)\bsaa\b", re.IGNORECASE),
+        compile_classifier_regex(r"(?<!ei\s)\bsaa\b", re.IGNORECASE, classifier_id="fi.actor_mention_extractor.(in _modal_patterns tuple)"),
     ),
     # DISCRETION: 'voi'
     (
         "voi",
         ActorModalKind.DISCRETION,
-        re.compile(r"\bvoi\b", re.IGNORECASE),
+        compile_classifier_regex(r"\bvoi\b", re.IGNORECASE, classifier_id="fi.actor_mention_extractor.(in _modal_patterns tuple)"),
     ),
 )
 

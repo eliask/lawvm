@@ -52,6 +52,7 @@ Pure measure-only. Changes no production behavior; off the replay/apply path.
 from __future__ import annotations
 
 import re
+from lawvm.core.regex_safety import PrefilteredPattern, compile_classifier_regex
 from collections.abc import Iterator
 from dataclasses import dataclass
 
@@ -166,19 +167,19 @@ def _condexc_miss_shape(missing_keys: set[str], declared_marker: str) -> str:
 #: matching one of these but yielding NO construction qualifier is a candidate
 #: recall miss. These overlap the closed cue lists but are spelled as cheap
 #: regexes so they are a genuine independent signal.
-_CHEAP_SIGNALS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"\bjos\b", re.IGNORECASE),
-    re.compile(r"\bjollei\b", re.IGNORECASE),
-    re.compile(r"\bellei\b", re.IGNORECASE),
-    re.compile(r"\bkun\b", re.IGNORECASE),
-    re.compile(r"\bmikäli\b", re.IGNORECASE),
-    re.compile(r"\bei\s+kuitenkaan\b", re.IGNORECASE),
-    re.compile(r"\bsen\s+estämättä\b", re.IGNORECASE),
-    re.compile(r"\bpaitsi\b", re.IGNORECASE),
-    re.compile(r"\blukuun\s+ottamatta\b", re.IGNORECASE),
-    re.compile(r"\bpoiketen\b", re.IGNORECASE),
-    re.compile(r"\bedellyttäen\b", re.IGNORECASE),
-    re.compile(r"\bsiltä\s+osin\b", re.IGNORECASE),
+_CHEAP_SIGNALS: tuple[re.Pattern[str] | PrefilteredPattern, ...] = (
+    compile_classifier_regex(r"\bjos\b", re.IGNORECASE, classifier_id="fi.legal_surface.condition_exception_census.cheap_signals[jos]"),
+    compile_classifier_regex(r"\bjollei\b", re.IGNORECASE, classifier_id="fi.legal_surface.condition_exception_census.cheap_signals[jollei]"),
+    compile_classifier_regex(r"\bellei\b", re.IGNORECASE, classifier_id="fi.legal_surface.condition_exception_census.cheap_signals[ellei]"),
+    compile_classifier_regex(r"\bkun\b", re.IGNORECASE, classifier_id="fi.legal_surface.condition_exception_census.cheap_signals[kun]"),
+    compile_classifier_regex(r"\bmikäli\b", re.IGNORECASE, classifier_id="fi.legal_surface.condition_exception_census.cheap_signals[mikali]"),
+    compile_classifier_regex(r"\bei\s+kuitenkaan\b", re.IGNORECASE, classifier_id="fi.legal_surface.condition_exception_census.cheap_signals[ei_kuitenkaan]"),
+    compile_classifier_regex(r"\bsen\s+estämättä\b", re.IGNORECASE, classifier_id="fi.legal_surface.condition_exception_census.cheap_signals[sen_estamatta]"),
+    compile_classifier_regex(r"\bpaitsi\b", re.IGNORECASE, classifier_id="fi.legal_surface.condition_exception_census.cheap_signals[paitsi]"),
+    compile_classifier_regex(r"\blukuun\s+ottamatta\b", re.IGNORECASE, classifier_id="fi.legal_surface.condition_exception_census.cheap_signals[lukuun_ottamatta]"),
+    compile_classifier_regex(r"\bpoiketen\b", re.IGNORECASE, classifier_id="fi.legal_surface.condition_exception_census.cheap_signals[poiketen]"),
+    compile_classifier_regex(r"\bedellyttäen\b", re.IGNORECASE, classifier_id="fi.legal_surface.condition_exception_census.cheap_signals[edellyttaen]"),
+    compile_classifier_regex(r"\bsiltä\s+osin\b", re.IGNORECASE, classifier_id="fi.legal_surface.condition_exception_census.cheap_signals[silta_osin]"),
 )
 
 

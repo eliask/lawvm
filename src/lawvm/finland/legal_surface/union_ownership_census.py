@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import os
 import re
+from lawvm.core.regex_safety import PrefilteredPattern, compile_classifier_regex
 from collections import Counter
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
@@ -241,28 +242,28 @@ def reference_owned_spans(sentence_text: str) -> dict[str, list[tuple[int, int]]
 # shape used to rank the worklist. Patterns are anchored / quantifier-bounded so
 # they cannot backtrack (regex-discipline: no catastrophic backtracking).
 # ---------------------------------------------------------------------------
-_CHEAP_SIGNAL_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+_CHEAP_SIGNAL_PATTERNS: tuple[tuple[str, re.Pattern[str] | PrefilteredPattern], ...] = (
     # Structural address signals.
-    ("section_mark", re.compile(r"§")),
-    ("momentti", re.compile(r"\b\d{1,3}\s+mom(?:entti|\.)", re.IGNORECASE)),
-    ("kohta", re.compile(r"\b\d{1,3}\s+(?:ala)?koh[dt]a[a-zä]*\b", re.IGNORECASE)),
+    ("section_mark", compile_classifier_regex(r"§", classifier_id="fi.legal_surface.union_ownership_census.cheap_signal_patterns[section_mark]")),
+    ("momentti", compile_classifier_regex(r"\b\d{1,3}\s+mom(?:entti|\.)", re.IGNORECASE, classifier_id="fi.legal_surface.union_ownership_census.cheap_signal_patterns[momentti]")),
+    ("kohta", compile_classifier_regex(r"\b\d{1,3}\s+(?:ala)?koh[dt]a[a-zä]*\b", re.IGNORECASE, classifier_id="fi.legal_surface.union_ownership_census.cheap_signal_patterns[kohta]")),
     # Temporal / applicability signals.
-    ("tulee_voimaan", re.compile(r"\btulee\s+voimaan\b", re.IGNORECASE)),
-    ("voimaan", re.compile(r"\bvoimaan\b", re.IGNORECASE)),
-    ("sovelletaan", re.compile(r"\bsovelle[t]aan\b", re.IGNORECASE)),
+    ("tulee_voimaan", compile_classifier_regex(r"\btulee\s+voimaan\b", re.IGNORECASE, classifier_id="fi.legal_surface.union_ownership_census.cheap_signal_patterns[tulee_voimaan]")),
+    ("voimaan", compile_classifier_regex(r"\bvoimaan\b", re.IGNORECASE, classifier_id="fi.legal_surface.union_ownership_census.cheap_signal_patterns[voimaan]")),
+    ("sovelletaan", compile_classifier_regex(r"\bsovelle[t]aan\b", re.IGNORECASE, classifier_id="fi.legal_surface.union_ownership_census.cheap_signal_patterns[sovelletaan]")),
     # Modal / deontic signals.
-    ("modal_on_velvollinen", re.compile(r"\bon\s+velvollinen\b", re.IGNORECASE)),
-    ("modal_tulee", re.compile(r"\btulee\b(?!\s+voimaan)", re.IGNORECASE)),
-    ("modal_voi", re.compile(r"\bvoi(?:daan)?\b", re.IGNORECASE)),
+    ("modal_on_velvollinen", compile_classifier_regex(r"\bon\s+velvollinen\b", re.IGNORECASE, classifier_id="fi.legal_surface.union_ownership_census.cheap_signal_patterns[modal_on_velvollinen]")),
+    ("modal_tulee", compile_classifier_regex(r"\btulee\b(?!\s+voimaan)", re.IGNORECASE, classifier_id="fi.legal_surface.union_ownership_census.cheap_signal_patterns[modal_tulee]")),
+    ("modal_voi", compile_classifier_regex(r"\bvoi(?:daan)?\b", re.IGNORECASE, classifier_id="fi.legal_surface.union_ownership_census.cheap_signal_patterns[modal_voi]")),
     ("modal_saa", re.compile(r"\b(?:ei\s+)?saa\b", re.IGNORECASE)),
     # Definition signal.
-    ("tarkoitetaan", re.compile(r"\btarkoitetaan\b", re.IGNORECASE)),
+    ("tarkoitetaan", compile_classifier_regex(r"\btarkoitetaan\b", re.IGNORECASE, classifier_id="fi.legal_surface.union_ownership_census.cheap_signal_patterns[tarkoitetaan]")),
     # Exception signal.
-    ("sen_estamatta", re.compile(r"\bsen\s+estämättä\b", re.IGNORECASE)),
+    ("sen_estamatta", compile_classifier_regex(r"\bsen\s+estämättä\b", re.IGNORECASE, classifier_id="fi.legal_surface.union_ownership_census.cheap_signal_patterns[sen_estamatta]")),
     # Preparatory-work / treaty / EU reference signals.
-    ("he_ref", re.compile(r"\bHE\s+\d{1,4}/\d{4}\b")),
-    ("sops_ref", re.compile(r"\bSopS\b")),
-    ("celex", re.compile(r"\b3\d{4}[A-Z]\d{4}\b")),
+    ("he_ref", compile_classifier_regex(r"\bHE\s+\d{1,4}/\d{4}\b", classifier_id="fi.legal_surface.union_ownership_census.cheap_signal_patterns[he_ref]")),
+    ("sops_ref", compile_classifier_regex(r"\bSopS\b", classifier_id="fi.legal_surface.union_ownership_census.cheap_signal_patterns[sops_ref]")),
+    ("celex", compile_classifier_regex(r"\b3\d{4}[A-Z]\d{4}\b", classifier_id="fi.legal_surface.union_ownership_census.cheap_signal_patterns[celex]")),
 )
 
 
