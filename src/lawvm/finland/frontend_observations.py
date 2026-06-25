@@ -54,18 +54,19 @@ def _target_detail_for_op(
     target_norm: Optional[str] = None,
     target_chapter: Optional[str] = None,
 ) -> dict[str, object]:
-    target_unit_kind = op.target_unit_kind
+    cols = op.target_cols
+    target_unit_kind = cols.target_unit_kind
     return _target_detail_for_unit_kind(
         target_unit_kind,
         target_norm=(
             target_norm
             if target_norm is not None
-            else (_norm_num_token(op.target_section) if op.target_section else "")
+            else (_norm_num_token(cols.target_section) if cols.target_section else "")
         ),
         target_chapter=(
             target_chapter
             if target_chapter is not None
-            else (_norm_num_token(op.target_chapter) if op.target_chapter else "")
+            else (_norm_num_token(cols.target_chapter) if cols.target_chapter else "")
         ),
     )
 
@@ -94,15 +95,16 @@ def _duplicate_frontend_target_observations(
         List[AmendmentOp],
     ] = {}
     for op in ops:
-        target_unit_kind = op.target_unit_kind
+        cols = op.target_cols
+        target_unit_kind = cols.target_unit_kind
         key = (
             op.op_type,
             target_unit_kind,
-            _norm_num_token(op.target_section) if op.target_section else "",
-            op.target_paragraph,
-            op.target_item,
-            op.target_special,
-            _norm_num_token(op.target_chapter) if op.target_chapter else None,
+            _norm_num_token(cols.target_section) if cols.target_section else "",
+            cols.target_paragraph,
+            cols.target_item,
+            cols.target_special,
+            _norm_num_token(cols.target_chapter) if cols.target_chapter else None,
         )
         grouped.setdefault(key, []).append(op)
 
@@ -232,11 +234,12 @@ def _semantic_collapse_move_or_renumber_observations(
 
     section_replace_ops: dict[Tuple[str, str], List[AmendmentOp]] = {}
     for op in ops:
-        if op.op_type != OpType.REPLACE or op.target_unit_kind != "section" or not op.target_section:
+        cols = op.target_cols
+        if op.op_type != OpType.REPLACE or cols.target_unit_kind != "section" or not cols.target_section:
             continue
         key = (
-            _norm_num_token(op.target_chapter) if op.target_chapter else "",
-            _norm_num_token(op.target_section),
+            _norm_num_token(cols.target_chapter) if cols.target_chapter else "",
+            _norm_num_token(cols.target_section),
         )
         section_replace_ops.setdefault(key, []).append(op)
 
@@ -305,16 +308,17 @@ def _destinationless_move_or_relabel_observations(
             continue
         if op.lo is None or op.lo.destination is not None:
             continue
-        if not op.target_section:
+        cols = op.target_cols
+        if not cols.target_section:
             continue
-        target_unit_kind = op.target_unit_kind
+        target_unit_kind = cols.target_unit_kind
         key = (
             target_unit_kind,
-            _norm_num_token(op.target_section),
-            _norm_num_token(op.target_chapter) if op.target_chapter else "",
-            op.target_paragraph,
-            op.target_item,
-            op.target_special,
+            _norm_num_token(cols.target_section),
+            _norm_num_token(cols.target_chapter) if cols.target_chapter else "",
+            cols.target_paragraph,
+            cols.target_item,
+            cols.target_special,
         )
         if key in seen:
             continue
@@ -328,9 +332,9 @@ def _destinationless_move_or_relabel_observations(
                     **_target_detail_for_op(op),
                     "collapse_kind": "destinationless_move_relabel",
                     "op_type": op.op_type,
-                    "target_paragraph": op.target_paragraph,
-                    "target_item": op.target_item or "",
-                    "target_special": op.target_special or "",
+                    "target_paragraph": cols.target_paragraph,
+                    "target_item": cols.target_item or "",
+                    "target_special": cols.target_special or "",
                     "destination_missing": True,
                 },
                 blocking=False,
@@ -352,8 +356,9 @@ def _scope_anchor_dependence_observations(
     seen: Set[Tuple[str, str, str, str]] = set()
     findings: List[Finding] = []
     for op in ops:
-        target_norm = _norm_num_token(op.target_section) if op.target_section else ""
-        target_chapter = _norm_num_token(op.target_chapter) if op.target_chapter else ""
+        cols = op.target_cols
+        target_norm = _norm_num_token(cols.target_section) if cols.target_section else ""
+        target_chapter = _norm_num_token(cols.target_chapter) if cols.target_chapter else ""
         witness = projection_scope_confidence(
             scope_confidence=op.scope_confidence,
             scope_provenance_tags=op.scope_provenance_tags,
@@ -373,7 +378,7 @@ def _scope_anchor_dependence_observations(
             obs_kind = "LOWER.EXPLICIT_SCOPE_REWRITE"
         else:
             continue
-        target_unit_kind = op.target_unit_kind
+        target_unit_kind = cols.target_unit_kind
         key = (obs_kind, target_unit_kind, target_norm, target_chapter)
         if key in seen:
             continue
@@ -393,9 +398,9 @@ def _scope_anchor_dependence_observations(
                     "scope_source": witness.source,
                     "scope_confidence": witness.confidence,
                     "op_type": op.op_type,
-                    "target_paragraph": op.target_paragraph,
-                    "target_item": op.target_item or "",
-                    "target_special": op.target_special or "",
+                    "target_paragraph": cols.target_paragraph,
+                    "target_item": cols.target_item or "",
+                    "target_special": cols.target_special or "",
                 },
                 blocking=False,
             )
