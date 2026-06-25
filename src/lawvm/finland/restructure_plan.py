@@ -25,7 +25,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, List, Optional, Tuple, cast
+from typing import TYPE_CHECKING, List, Optional, Tuple, assert_never, cast
 
 from lawvm.core.canonical_intent import Relabel
 from lawvm.core.ir import IRNode, LegalAddress
@@ -339,188 +339,191 @@ def build_restructure_plan(
         is_part = target_unit_kind == "part"
         is_section = target_unit_kind == "section"
 
-        if op_type == "RENUMBER":
-            is_root_relabel = (
-                op.target_paragraph is None
-                and not op.target_item
-                and not op.target_special
-            )
-            if not is_root_relabel:
-                continue
-            destination_addr = None
-            if op.lo is not None and op.lo.target is not None:
-                target_addr = _address_to_string(op.lo.target.path)
-            elif is_chapter:
-                if target_section:
+        match op_type:
+            case OpType.RENUMBER:
+                is_root_relabel = (
+                    op.target_paragraph is None
+                    and not op.target_item
+                    and not op.target_special
+                )
+                if not is_root_relabel:
+                    continue
+                destination_addr = None
+                if op.lo is not None and op.lo.target is not None:
+                    target_addr = _address_to_string(op.lo.target.path)
+                elif is_chapter:
+                    if target_section:
+                        target_addr = (
+                            f"part:{target_part}/chapter:{target_section}"
+                            if target_part
+                            else f"chapter:{target_section}"
+                        )
+                    else:
+                        target_addr = (
+                            f"part:{target_part}/chapter:{target_chapter}"
+                            if target_part and target_chapter
+                            else f"chapter:{target_chapter}"
+                        )
+                elif is_part:
+                    target_addr = f"part:{target_section}" if target_section else f"part:{target_part}"
+                elif is_section:
                     target_addr = (
-                        f"part:{target_part}/chapter:{target_section}"
-                        if target_part
-                        else f"chapter:{target_section}"
+                        (
+                            f"part:{target_part}/chapter:{target_chapter}/section:{target_section}"
+                            if target_part
+                            else f"chapter:{target_chapter}/section:{target_section}"
+                        )
+                        if target_chapter
+                        else (
+                            f"part:{target_part}/section:{target_section}"
+                            if target_part
+                            else f"section:{target_section}"
+                        )
                     )
                 else:
+                    target_addr = target_section
+                if op.lo is not None and op.lo.destination is not None:
+                    destination_addr = _address_to_string(op.lo.destination.path)
+                op_out = StructuralTransformOp(
+                    kind=TransformOpKind.RELABEL,
+                    target=target_addr,
+                    destination=destination_addr,
+                    notes=("from_amendment_op",),
+                )
+                if op_out not in seen_transform_ops:
+                    seen_transform_ops.add(op_out)
+                    transform_ops.append(op_out)
+
+            case OpType.INSERT:
+                if is_chapter and target_section:
+                    chapter_label = target_section
+                    chapter_key = (target_part, chapter_label)
+                    # Gather body units under this chapter as subtree payload claims
+                    subtree_ids = tuple(body_unit_ids_by_chapter.get(chapter_key, []))
                     target_addr = (
-                        f"part:{target_part}/chapter:{target_chapter}"
-                        if target_part and target_chapter
-                        else f"chapter:{target_chapter}"
-                    )
-            elif is_part:
-                target_addr = f"part:{target_section}" if target_section else f"part:{target_part}"
-            elif is_section:
-                target_addr = (
-                    (
-                        f"part:{target_part}/chapter:{target_chapter}/section:{target_section}"
+                        f"part:{target_part}/chapter:{chapter_label}"
                         if target_part
-                        else f"chapter:{target_chapter}/section:{target_section}"
+                        else f"chapter:{chapter_label}"
                     )
-                    if target_chapter
-                    else (
-                        f"part:{target_part}/section:{target_section}"
-                        if target_part
-                        else f"section:{target_section}"
+                    note = "chapter_insert_subtree"
+                    if subtree_ids:
+                        note = f"chapter_insert_subtree:{len(subtree_ids)}_children"
+                    op_out = StructuralTransformOp(
+                        kind=TransformOpKind.INSERT_SUBTREE,
+                        target=target_addr,
+                        payload_claim_ids=subtree_ids,
+                        notes=(note,),
                     )
-                )
-            else:
-                target_addr = target_section
-            if op.lo is not None and op.lo.destination is not None:
-                destination_addr = _address_to_string(op.lo.destination.path)
-            op_out = StructuralTransformOp(
-                kind=TransformOpKind.RELABEL,
-                target=target_addr,
-                destination=destination_addr,
-                notes=("from_amendment_op",),
-            )
-            if op_out not in seen_transform_ops:
-                seen_transform_ops.add(op_out)
-                transform_ops.append(op_out)
+                    if op_out not in seen_transform_ops:
+                        seen_transform_ops.add(op_out)
+                        transform_ops.append(op_out)
+                elif is_part and target_section:
+                    op_out = StructuralTransformOp(
+                        kind=TransformOpKind.INSERT_SUBTREE,
+                        target=f"part:{_normalize_label('part', target_section)}",
+                        notes=("part_insert_subtree",),
+                    )
+                    if op_out not in seen_transform_ops:
+                        seen_transform_ops.add(op_out)
+                        transform_ops.append(op_out)
+                elif is_section and target_section:
+                    target_addr = (
+                        (
+                            f"part:{target_part}/chapter:{target_chapter}/section:{target_section}"
+                            if target_part
+                            else f"chapter:{target_chapter}/section:{target_section}"
+                        )
+                        if target_chapter
+                        else (
+                            f"part:{target_part}/section:{target_section}"
+                            if target_part
+                            else f"section:{target_section}"
+                        )
+                    )
+                    op_out = StructuralTransformOp(
+                        kind=TransformOpKind.REPLACE_LEAF,
+                        target=target_addr,
+                        notes=("section_insert",),
+                    )
+                    if op_out not in seen_transform_ops:
+                        seen_transform_ops.add(op_out)
+                        transform_ops.append(op_out)
 
-        elif op_type == "INSERT":
-            if is_chapter and target_section:
-                chapter_label = target_section
-                chapter_key = (target_part, chapter_label)
-                # Gather body units under this chapter as subtree payload claims
-                subtree_ids = tuple(body_unit_ids_by_chapter.get(chapter_key, []))
-                target_addr = (
-                    f"part:{target_part}/chapter:{chapter_label}"
-                    if target_part
-                    else f"chapter:{chapter_label}"
-                )
-                note = "chapter_insert_subtree"
-                if subtree_ids:
-                    note = f"chapter_insert_subtree:{len(subtree_ids)}_children"
-                op_out = StructuralTransformOp(
-                    kind=TransformOpKind.INSERT_SUBTREE,
-                    target=target_addr,
-                    payload_claim_ids=subtree_ids,
-                    notes=(note,),
-                )
-                if op_out not in seen_transform_ops:
-                    seen_transform_ops.add(op_out)
-                    transform_ops.append(op_out)
-            elif is_part and target_section:
-                op_out = StructuralTransformOp(
-                    kind=TransformOpKind.INSERT_SUBTREE,
-                    target=f"part:{_normalize_label('part', target_section)}",
-                    notes=("part_insert_subtree",),
-                )
-                if op_out not in seen_transform_ops:
-                    seen_transform_ops.add(op_out)
-                    transform_ops.append(op_out)
-            elif is_section and target_section:
-                target_addr = (
-                    (
-                        f"part:{target_part}/chapter:{target_chapter}/section:{target_section}"
-                        if target_part
-                        else f"chapter:{target_chapter}/section:{target_section}"
+            case OpType.REPLACE:
+                if is_chapter and target_section:
+                    op_out = StructuralTransformOp(
+                        kind=TransformOpKind.REPLACE_SUBTREE,
+                        target=(
+                            f"part:{target_part}/chapter:{target_section}"
+                            if target_part
+                            else f"chapter:{target_section}"
+                        ),
+                        notes=("chapter_replace",),
                     )
-                    if target_chapter
-                    else (
-                        f"part:{target_part}/section:{target_section}"
-                        if target_part
-                        else f"section:{target_section}"
+                    if op_out not in seen_transform_ops:
+                        seen_transform_ops.add(op_out)
+                        transform_ops.append(op_out)
+                elif is_section and target_section:
+                    target_addr = (
+                        (
+                            f"part:{target_part}/chapter:{target_chapter}/section:{target_section}"
+                            if target_part
+                            else f"chapter:{target_chapter}/section:{target_section}"
+                        )
+                        if target_chapter
+                        else (
+                            f"part:{target_part}/section:{target_section}"
+                            if target_part
+                            else f"section:{target_section}"
+                        )
                     )
-                )
-                op_out = StructuralTransformOp(
-                    kind=TransformOpKind.REPLACE_LEAF,
-                    target=target_addr,
-                    notes=("section_insert",),
-                )
-                if op_out not in seen_transform_ops:
-                    seen_transform_ops.add(op_out)
-                    transform_ops.append(op_out)
+                    op_out = StructuralTransformOp(
+                        kind=TransformOpKind.REPLACE_LEAF,
+                        target=target_addr,
+                        notes=("section_replace",),
+                    )
+                    if op_out not in seen_transform_ops:
+                        seen_transform_ops.add(op_out)
+                        transform_ops.append(op_out)
 
-        elif op_type == "REPLACE":
-            if is_chapter and target_section:
-                op_out = StructuralTransformOp(
-                    kind=TransformOpKind.REPLACE_SUBTREE,
-                    target=(
-                        f"part:{target_part}/chapter:{target_section}"
-                        if target_part
-                        else f"chapter:{target_section}"
-                    ),
-                    notes=("chapter_replace",),
-                )
-                if op_out not in seen_transform_ops:
-                    seen_transform_ops.add(op_out)
-                    transform_ops.append(op_out)
-            elif is_section and target_section:
-                target_addr = (
-                    (
-                        f"part:{target_part}/chapter:{target_chapter}/section:{target_section}"
-                        if target_part
-                        else f"chapter:{target_chapter}/section:{target_section}"
+            case OpType.REPEAL:
+                if is_chapter and target_section:
+                    op_out = StructuralTransformOp(
+                        kind=TransformOpKind.REPEAL_NODE,
+                        target=(
+                            f"part:{target_part}/chapter:{target_section}"
+                            if target_part
+                            else f"chapter:{target_section}"
+                        ),
+                        notes=("chapter_repeal",),
                     )
-                    if target_chapter
-                    else (
-                        f"part:{target_part}/section:{target_section}"
-                        if target_part
-                        else f"section:{target_section}"
+                    if op_out not in seen_transform_ops:
+                        seen_transform_ops.add(op_out)
+                        transform_ops.append(op_out)
+                elif is_section and target_section:
+                    target_addr = (
+                        (
+                            f"part:{target_part}/chapter:{target_chapter}/section:{target_section}"
+                            if target_part
+                            else f"chapter:{target_chapter}/section:{target_section}"
+                        )
+                        if target_chapter
+                        else (
+                            f"part:{target_part}/section:{target_section}"
+                            if target_part
+                            else f"section:{target_section}"
+                        )
                     )
-                )
-                op_out = StructuralTransformOp(
-                    kind=TransformOpKind.REPLACE_LEAF,
-                    target=target_addr,
-                    notes=("section_replace",),
-                )
-                if op_out not in seen_transform_ops:
-                    seen_transform_ops.add(op_out)
-                    transform_ops.append(op_out)
-
-        elif op_type == "REPEAL":
-            if is_chapter and target_section:
-                op_out = StructuralTransformOp(
-                    kind=TransformOpKind.REPEAL_NODE,
-                    target=(
-                        f"part:{target_part}/chapter:{target_section}"
-                        if target_part
-                        else f"chapter:{target_section}"
-                    ),
-                    notes=("chapter_repeal",),
-                )
-                if op_out not in seen_transform_ops:
-                    seen_transform_ops.add(op_out)
-                    transform_ops.append(op_out)
-            elif is_section and target_section:
-                target_addr = (
-                    (
-                        f"part:{target_part}/chapter:{target_chapter}/section:{target_section}"
-                        if target_part
-                        else f"chapter:{target_chapter}/section:{target_section}"
+                    op_out = StructuralTransformOp(
+                        kind=TransformOpKind.REPEAL_NODE,
+                        target=target_addr,
+                        notes=("section_repeal",),
                     )
-                    if target_chapter
-                    else (
-                        f"part:{target_part}/section:{target_section}"
-                        if target_part
-                        else f"section:{target_section}"
-                    )
-                )
-                op_out = StructuralTransformOp(
-                    kind=TransformOpKind.REPEAL_NODE,
-                    target=target_addr,
-                    notes=("section_repeal",),
-                )
-                if op_out not in seen_transform_ops:
-                    seen_transform_ops.add(op_out)
-                    transform_ops.append(op_out)
+                    if op_out not in seen_transform_ops:
+                        seen_transform_ops.add(op_out)
+                        transform_ops.append(op_out)
+            case _ as unreachable:
+                assert_never(unreachable)
 
     # Coalesce exact duplicate transform ops while preserving first-seen order.
     # Recovery/restructure planning can observe the same normalized section
