@@ -468,64 +468,6 @@ _ENTRY_PATTERN: re.Pattern[str] = re.compile(
 )
 
 
-def _find_fi_block_legacy(text: str) -> str | None:
-    """Legacy fallback: return the substring containing Finnish headings JSON.
-
-    Finlex serves statute pages as Next.js RSC HTML with section headings
-    embedded inside inline ``<script>self.__next_f.push([1,"..."])`` blocks.
-
-    This legacy approach uses string-range searching to scope to the Finnish
-    block.  It is kept as a fallback for pages where the primary JSON-based
-    extraction fails.
-
-    Two strategies are tried in order:
-
-    1. ``documentToCs`` strategy (current URL scheme /fi/lainsaadanto/):
-       Locate ``\\"fin\\":[\\"$\\"`` (start of fin ToC array) and end either at
-       ``\\"swe\\":[\\"$\\"`` (start of swe ToC array) or end of the enclosing
-       script block, whichever comes first.
-
-       **Known defect**: ``swe`` appears as ``"$Lxx"`` (lazy reference) in the
-       ``documentToCs`` block, not as an inlined array.  The SWE_MARKER is
-       therefore typically NOT found in the same block, so this strategy
-       overshoots into a later RSC block (~block #70) that inlines the Swedish
-       ToC as a real array.  The result is that Swedish ghost entries can leak
-       into the Finnish label list.  This is the bug that the primary JSON
-       path fixes.
-
-    2. Legacy ``lang=fi`` strategy (old URL scheme /fi/laki/ajantasa/):
-       Locate ``\\"lang\\":\\"fi\\",\\"headings\\":[`` and extract the enclosing
-       ``<script>`` block.
-
-    Returns None if neither strategy finds the expected RSC structure.
-    """
-    # Strategy 1: documentToCs fin/swe split (current /fi/lainsaadanto/ pages)
-    FIN_MARKER = '\\"fin\\":[\\"$\\"'
-    SWE_MARKER = '\\"swe\\":[\\"$\\"'
-    fi_idx = text.find(FIN_MARKER)
-    if fi_idx >= 0:
-        swe_idx = text.find(SWE_MARKER, fi_idx)
-        if swe_idx > fi_idx:
-            return text[fi_idx:swe_idx]
-        # No swe block found — return to end of enclosing script block
-        script_end = text.find('</script>', fi_idx)
-        end = script_end if script_end > fi_idx else len(text)
-        return text[fi_idx:end]
-
-    # Strategy 2: legacy lang=fi headings block (old /fi/laki/ajantasa/ pages)
-    LEGACY_MARKER = r'\\"lang\\":\\"fi\\",\\"headings\\":\['
-    fi_idx = text.find(LEGACY_MARKER)
-    if fi_idx < 0:
-        return None
-    script_start = text.rfind('<script', 0, fi_idx)
-    if script_start < 0:
-        return None
-    script_end = text.find('</script>', fi_idx)
-    if script_end < 0:
-        script_end = len(text)
-    return text[script_start:script_end]
-
-
 def _is_section_heading_id(heading_id: str) -> bool:
     """True if headingId identifies a section (§), not a chapter or other element."""
     return heading_id.startswith('sec_') or '__sec_' in heading_id
