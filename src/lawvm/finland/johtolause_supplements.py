@@ -320,9 +320,9 @@ def _tag_explicit_item_shift_after_repeal_hints(
         for op in tagged_ops:
             if (
                 op.op_type == OpType.REPEAL
-                and op.target_section == clause.target_section
-                and op.target_paragraph == clause.target_paragraph
-                and normalized_label_key(op.target_item or "") == repealed
+                and op.target_cols.target_section == clause.target_section
+                and op.target_cols.target_paragraph == clause.target_paragraph
+                and normalized_label_key(op.target_cols.target_item or "") == repealed
             ):
                 op.post_repeal_item_shift_label = repealed
     return tagged_ops
@@ -345,9 +345,9 @@ def _supplement_missing_repeals_after_item_shift_clause(
     for _clause, extra_op in results:
         already_present = any(
             op.op_type == OpType.REPEAL
-            and op.target_section == extra_op.target_section
-            and op.target_paragraph == extra_op.target_paragraph
-            and not op.target_item
+            and op.target_cols.target_section == extra_op.target_cols.target_section
+            and op.target_cols.target_paragraph == extra_op.target_cols.target_paragraph
+            and not op.target_cols.target_item
             for op in supplemented
         )
         if already_present:
@@ -447,9 +447,9 @@ def _supplement_jolloin_moment_renumber_ops(
         for op in supplemented:
             if op.op_type != OpType.RENUMBER:
                 continue
-            if _norm_num_token(op.target_section or "") != clause.section:
+            if _norm_num_token(op.target_cols.target_section or "") != clause.section:
                 continue
-            if op.target_paragraph != clause.source_moment:
+            if op.target_cols.target_paragraph != clause.source_moment:
                 continue
             destination = op.lo.destination if op.lo is not None else None
             if destination is None:
@@ -500,10 +500,10 @@ def _supplement_jolloin_moment_renumber_ops(
         for moment in clause.inserted_moments:
             insert_already_present = any(
                 op.op_type == OpType.INSERT
-                and _norm_num_token(op.target_section or "") == clause.section
-                and op.target_paragraph == moment
-                and not op.target_item
-                and not op.target_special
+                and _norm_num_token(op.target_cols.target_section or "") == clause.section
+                and op.target_cols.target_paragraph == moment
+                and not op.target_cols.target_item
+                and not op.target_cols.target_special
                 for op in supplemented
             )
             if insert_already_present:
@@ -547,11 +547,11 @@ def _supplement_named_table_row_mixed_clause_ops(
         for pos, op in enumerate(supplemented):
             if (
                 op.op_type == OpType.REPEAL
-                and op.target_section == sec_norm
-                and op.target_unit_kind == "section"
-                and op.target_paragraph is None
-                and op.target_item is None
-                and not op.target_special
+                and op.target_cols.target_section == sec_norm
+                and op.target_cols.target_unit_kind == "section"
+                and op.target_cols.target_paragraph is None
+                and op.target_cols.target_item is None
+                and not op.target_cols.target_special
             ):
                 supplemented[pos] = dc_replace(
                     op,
@@ -564,11 +564,11 @@ def _supplement_named_table_row_mixed_clause_ops(
 
         has_replace = any(
             op.op_type == OpType.REPLACE
-            and op.target_section == sec_norm
-            and op.target_unit_kind == "section"
-            and op.target_paragraph is None
-            and op.target_item is None
-            and not op.target_special
+            and op.target_cols.target_section == sec_norm
+            and op.target_cols.target_unit_kind == "section"
+            and op.target_cols.target_paragraph is None
+            and op.target_cols.target_item is None
+            and not op.target_cols.target_special
             for op in supplemented
         )
         if has_replace:
@@ -612,11 +612,11 @@ def _tag_named_table_row_single_clause_ops(
         for pos, op in enumerate(supplemented):
             if (
                 op.op_type.lower() == clause.action.value
-                and op.target_section == clause.target_section
-                and op.target_unit_kind == "section"
-                and op.target_paragraph is None
-                and op.target_item is None
-                and not op.target_special
+                and op.target_cols.target_section == clause.target_section
+                and op.target_cols.target_unit_kind == "section"
+                and op.target_cols.target_paragraph is None
+                and op.target_cols.target_item is None
+                and not op.target_cols.target_special
             ):
                 if tuple(op.named_row_targets) == tuple(clause.named_targets):
                     tagged = True
@@ -676,11 +676,11 @@ def _tag_numbered_table_target_clause_ops(
         for pos, op in enumerate(supplemented):
             if (
                 op.op_type == OpType.REPLACE
-                and op.target_section == section
-                and op.target_unit_kind == "section"
-                and op.target_paragraph is None
-                and op.target_item is None
-                and not op.target_special
+                and op.target_cols.target_section == section
+                and op.target_cols.target_unit_kind == "section"
+                and op.target_cols.target_paragraph is None
+                and op.target_cols.target_item is None
+                and not op.target_cols.target_special
             ):
                 supplemented[pos] = _with_numbered_table_targets(op, table_labels)
                 tagged = True
@@ -774,12 +774,12 @@ def _has_op(
 ) -> bool:
     return any(
         op.op_type == op_type
-        and op.target_unit_kind == "section"
-        and op.target_section == section
-        and _chapter_matches(op.target_chapter, chapter)
-        and op.target_paragraph == moment
-        and (op.target_item or None) == item
-        and not op.target_special
+        and op.target_cols.target_unit_kind == "section"
+        and op.target_cols.target_section == section
+        and _chapter_matches(op.target_cols.target_chapter, chapter)
+        and op.target_cols.target_paragraph == moment
+        and (op.target_cols.target_item or None) == item
+        and not op.target_cols.target_special
         for op in ops
     )
 
@@ -792,13 +792,13 @@ def _blocks_moment_supplement(
 ) -> bool:
     chapter_filter: str | None | object = chapter if chapter is not None else _ANY_CHAPTER
     return any(
-        op.target_unit_kind == "section"
-        and op.target_section == section
-        and _chapter_matches(op.target_chapter, chapter_filter)
+        op.target_cols.target_unit_kind == "section"
+        and op.target_cols.target_section == section
+        and _chapter_matches(op.target_cols.target_chapter, chapter_filter)
         and (
-            op.target_paragraph is not None
-            or bool(op.target_item)
-            or bool(op.target_special)
+            op.target_cols.target_paragraph is not None
+            or bool(op.target_cols.target_item)
+            or bool(op.target_cols.target_special)
             or not op.numbered_table_targets
         )
         for op in ops
@@ -828,12 +828,12 @@ def _append_unique_op(
         return
     if moment is None and any(
         op.op_type == op_type
-        and op.target_unit_kind == "section"
-        and op.target_section == section
-        and _chapter_matches(op.target_chapter, chapter_filter)
-        and op.target_paragraph is None
-        and not op.target_item
-        and not op.target_special
+        and op.target_cols.target_unit_kind == "section"
+        and op.target_cols.target_section == section
+        and _chapter_matches(op.target_cols.target_chapter, chapter_filter)
+        and op.target_cols.target_paragraph is None
+        and not op.target_cols.target_item
+        and not op.target_cols.target_special
         for op in ops
     ):
         return
@@ -1153,25 +1153,25 @@ def _supplement_item_and_moment_clause_ops(
         for pos, op in enumerate(supplemented):
             if (
                 op.op_type == OpType.INSERT
-                and op.target_unit_kind == "section"
-                and (not op.target_section or op.target_section == clause.section)
-                and (clause.chapter is None or not op.target_chapter or op.target_chapter == clause.chapter)
-                and op.target_paragraph == clause.moment
-                and not op.target_item
-                and not op.target_special
+                and op.target_cols.target_unit_kind == "section"
+                and (not op.target_cols.target_section or op.target_cols.target_section == clause.section)
+                and (clause.chapter is None or not op.target_cols.target_chapter or op.target_cols.target_chapter == clause.chapter)
+                and op.target_cols.target_paragraph == clause.moment
+                and not op.target_cols.target_item
+                and not op.target_cols.target_special
             ):
                 supplemented[pos] = dc_replace(
                     op,
                     **replace_target(
                         op,
                         target_section=clause.section,
-                        target_chapter=clause.chapter or op.target_chapter,
+                        target_chapter=clause.chapter or op.target_cols.target_chapter,
                         target_item=clause.item_label,
                     ),
                     lo=(
                         _lo_with_path_update(
                             op.lo,
-                            chapter=clause.chapter or op.target_chapter,
+                            chapter=clause.chapter or op.target_cols.target_chapter,
                             section=clause.section,
                             subsection=str(clause.moment),
                             item=clause.item_label,
@@ -1280,8 +1280,8 @@ def _supplement_sparse_osalta_row_omission_repeals(
     for idx, clause in enumerate(clauses):
         duplicate = any(
             op.op_type == OpType.REPEAL
-            and op.target_unit_kind == "section"
-            and op.target_section == clause.section
+            and op.target_cols.target_unit_kind == "section"
+            and op.target_cols.target_section == clause.section
             and tuple(op.named_row_targets) == (clause.row_target,)
             for op in supplemented
         )
