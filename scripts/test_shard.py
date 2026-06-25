@@ -489,6 +489,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_target_selector_codec.py",
         "test_target_selector_consistency.py",
         "test_target_selector_facades.py",
+        "test_w6_target_column_census.py",
         "test_unicode_folds.py",
         "test_fi_unit_registry.py",
     ),
