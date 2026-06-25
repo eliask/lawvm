@@ -234,11 +234,13 @@ def replace_target(
 
     # Fail loud on the one non-round-tripping shape: the codec lowers an
     # empty-string chapter/part/special to None, so this helper cannot reproduce
-    # a literal "" column. Surface the offending column rather than mutate it.
+    # a literal "" column. This guard must inspect the RAW stored columns (not
+    # the codec-projected ``target_cols`` view, which has already collapsed ""
+    # to None) — reading the projection here would silently defeat the guard.
     for name, value in (
-        ("target_chapter", op.target_cols.target_chapter),
-        ("target_part", op.target_cols.target_part),
-        ("target_special", op.target_cols.target_special),
+        ("target_chapter", op.target_chapter),
+        ("target_part", op.target_part),
+        ("target_special", op.target_special),
     ):
         if value == "":
             raise ValueError(

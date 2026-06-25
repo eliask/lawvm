@@ -119,9 +119,12 @@ def test_target_selector_round_trips_at_corpus_scale(monkeypatch: pytest.MonkeyP
         try:
             actual = TargetSelectorCodecV1.to_legacy(op.target_selector)
         except Exception as exc:  # noqa: BLE001 — surface the offending shape
+            # Sentinel mismatch record: target_unit_kind is the typed literal, so
+            # carry the raised-shape text in target_section (a free str field) to
+            # keep the failure report informative while staying type-valid.
             actual = AmendmentOpV1Record(
-                target_unit_kind=f"<raised {type(exc).__name__}: {exc}>",
-                target_section="",
+                target_unit_kind="section",
+                target_section=f"<raised {type(exc).__name__}: {exc}>",
                 target_chapter=None,
                 target_part=None,
                 target_paragraph=None,

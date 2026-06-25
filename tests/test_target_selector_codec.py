@@ -21,6 +21,7 @@ import pytest
 
 from lawvm.core.ir import LegalAddress
 from lawvm.core.semantic_types import FacetKind
+from lawvm.core.target_scope import TargetUnitKind
 from lawvm.core.target_selector import (
     AddressSegment,
     ScopeStatus,
@@ -35,7 +36,7 @@ from lawvm.finland.target_selector_codec import (
 
 def _rec(
     *,
-    target_unit_kind: str = "section",
+    target_unit_kind: TargetUnitKind = "section",
     target_section: str = "1",
     target_chapter: str | None = None,
     target_part: str | None = None,

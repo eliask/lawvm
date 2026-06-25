@@ -15,11 +15,7 @@ section+subsection+item(+subitem).
 
 from __future__ import annotations
 
-from typing import cast
-
 import pytest
-
-from lawvm.core.target_scope import TargetUnitKind
 
 from lawvm.finland.target_selector_codec import (
     AmendmentOpV1Record,
@@ -38,7 +34,7 @@ from lawvm.finland.target_selector_facades import (
 def _legacy_kwargs(rec: AmendmentOpV1Record) -> LegacyTargetKwargs:
     """Hand-written legacy kwargs equivalent of a record (the byte-identity oracle)."""
     return LegacyTargetKwargs(
-        target_unit_kind=cast(TargetUnitKind, rec.target_unit_kind),
+        target_unit_kind=rec.target_unit_kind,
         target_section=rec.target_section,
         target_chapter=rec.target_chapter,
         target_part=rec.target_part,
