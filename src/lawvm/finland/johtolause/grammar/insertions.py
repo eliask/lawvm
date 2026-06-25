@@ -1385,13 +1385,21 @@ def _trailing_anaphoric_heading_residue_start(scan: _Scan, hard: int) -> int | N
     structural OOS guard can stop scanning there), or ``None`` when no such
     terminal anaphoric residue is present.
 
-    This is the heading the old parser DROPS: it emits a single section insertion
-    and no heading node. Letting the whole-target arm parse the section insert and
-    leaving this residue for the driver's ``_skip_anaphoric_heading_residue`` is
-    byte-identical to the legacy fallback (verified per-statute). A non-anaphoric
-    ``N §:n edelle …`` placement (an explicit §:GEN target before EDELLA) — for
-    which the old parser emits a REAL heading node — is NOT matched here (the token
-    before EDELLA must be an anaphor pronoun, never a structural noun).
+    The ``uusi`` between ``EDELLA`` and the heading noun is OPTIONAL: both the
+    ``sen edelle uusi väliotsikko`` and the bare ``sen edelle väliotsikko`` forms
+    are the same anaphoric placement the old parser DROPS (it emits a single
+    section insertion and no heading node in either case — verified per-statute,
+    e.g. 1995/1387 ``lakiin uusi 5 a § ja sen edelle väliotsikko`` → one SECTION
+    insert of 5a, the väliotsikko dropped; the consolidated arvo-osuustililaki
+    827/1991 carries §5a preceded by a cross-heading, so the section is the
+    operative insert and the heading attribution is the legacy drop we reproduce).
+
+    Letting the whole-target arm parse the section insert and leaving this residue
+    for the driver's ``_skip_anaphoric_heading_residue`` is byte-identical to the
+    legacy fallback (verified per-statute). A non-anaphoric ``N §:n edelle …``
+    placement (an explicit §:GEN target before EDELLA) — for which the old parser
+    emits a REAL heading node — is NOT matched here (the token before EDELLA must
+    be an anaphor pronoun, never a structural noun).
     """
     toks = scan.cur.tokens
     # Locate a single EDELLA before ``hard``.
@@ -1409,16 +1417,14 @@ def _trailing_anaphoric_heading_residue_start(scan: _Scan, hard: int) -> int | N
     prev = toks[edella_idx - 1]
     if prev.cat != "WORD" or (prev.lemma or prev.text).lower() not in _ANAPHOR_HEADING_LEMMAS:
         return None
-    # Walk the heading payload after EDELLA: uusi [N [letter] luvun] (OTSIKKO|VALIOTSIKKO).
-    # ``uusi`` is REQUIRED: this matches exactly what the driver's
-    # ``_skip_anaphoric_heading_residue`` can consume (it mandates ``EDELLA uusi``),
-    # so the recovered section insert is always followed by a residue the driver
-    # drops. A no-``uusi`` ``sen edelle väliotsikko`` tail stays declined (the
-    # driver cannot skip it) — leaving that rarer form to the legacy fallback.
+    # Walk the heading payload after EDELLA: [uusi] [N [letter] luvun] (OTSIKKO|VALIOTSIKKO).
+    # ``uusi`` is OPTIONAL: the driver's ``_skip_anaphoric_heading_residue`` consumes
+    # either ``EDELLA uusi (väli|ala)otsikko`` or the bare ``EDELLA (väli|ala)otsikko``
+    # form, dropping the heading in both cases (the old parser does the same), so the
+    # recovered section insert is always followed by a residue the driver drops.
     j = edella_idx + 1
-    if j >= hard or toks[j].cat != "UUSI":
-        return None
-    j += 1
+    if j < hard and toks[j].cat == "UUSI":
+        j += 1
     if j < hard and toks[j].cat == "NUM":
         j += 1
         if j < hard and toks[j].cat == "LETTER":

@@ -1332,13 +1332,19 @@ def _skip_heading_residue(
 def _skip_anaphoric_heading_residue(scan: _Scan) -> bool:
     """Consume an anaphoric heading-placement residue, minting no node.
 
-    Matches ``[<anaphor>] (edellä|edelle) uusi [N luvun] (väli|ala)otsikko`` — the
-    ``[uusi N §] ja sen edelle uusi väliotsikko`` tail. The old parser consumes
-    this arm but represents NO heading node for the anaphoric form (verified
-    byte-identical: a single SECTION insertion node with the whole clause
+    Matches ``[<anaphor>] (edellä|edelle) [uusi] [N luvun] (väli|ala)otsikko`` —
+    the ``[uusi N §] ja sen edelle [uusi] väliotsikko`` tail. The old parser
+    consumes this arm but represents NO heading node for the anaphoric form
+    (verified byte-identical: a single SECTION insertion node with the whole clause
     consumed), so the new outer loop swallows it the same way.
 
-    Position-gated: the ENTIRE ``[anaphor] EDELLA uusi [N luvun] OTSIKKO`` shape
+    The ``uusi`` between ``EDELLA`` and the heading noun is OPTIONAL: the
+    ``sen edelle uusi väliotsikko`` and the bare ``sen edelle väliotsikko`` forms
+    (e.g. 1995/1387) are the same anaphoric placement the old parser drops in both
+    cases — the only legacy node is the section insert, and the consolidated text
+    (arvo-osuustililaki 827/1991 §5a) confirms the section is the operative insert.
+
+    Position-gated: the ENTIRE ``[anaphor] EDELLA [uusi] [N luvun] OTSIKKO`` shape
     must match or the cursor is rewound, so a stray ``WORD`` / ``EDELLA`` is never
     swallowed. The non-anaphoric ``N §:n edelle uusi väliotsikko`` form (a §:GEN
     target before EDELLA) does not match here.
@@ -1353,10 +1359,10 @@ def _skip_anaphoric_heading_residue(scan: _Scan) -> bool:
         scan.goto(saved)
         return False
     scan.advance()  # edellä / edelle
-    if not ((t := scan.peek()) and t.cat == "UUSI"):
-        scan.goto(saved)
-        return False
-    scan.advance()
+    # Optional ``uusi`` before the (qualifier and) heading noun.
+    had_uusi = bool((t := scan.peek()) and t.cat == "UUSI")
+    if had_uusi:
+        scan.advance()
     # Optional ``N luvun`` chapter-genitive qualifier before the heading noun.
     saved_q = scan.pos
     if (t := scan.peek()) and t.cat == "NUM":
@@ -1372,14 +1378,26 @@ def _skip_anaphoric_heading_residue(scan: _Scan) -> bool:
     if (t := scan.peek()) and t.cat in ("OTSIKKO", "VALIOTSIKKO"):
         scan.advance()
         # A terminal anaphoric heading is the benign consume-and-drop form. The
-        # same residue may also be followed by a list separator and another clean
+        # ``uusi`` form may ALSO be followed by a list separator and another clean
         # insertion arm (``… 9 b § ja sen edelle uusi 2 a luvun otsikko sekä
         # asetukseen uusi 118 b §``); leave the separator for the outer loop.
         # Other trailing content (``, jolloin …`` renumber tail, a cross-verb
         # continuation) belongs to a complex clause the new parser must still
         # decline (1999/1001) — rewind so it is not silently swallowed.
+        #
+        # The no-``uusi`` form (``sen edelle väliotsikko``) is recovered ONLY when
+        # it is STRICTLY TERMINAL (clause end). A mid-clause no-``uusi`` heading
+        # residue sits inside a complex multi-verb enumeration (e.g. 1996/581's
+        # ``muutetaan … 4 § ja sen edellä oleva väliotsikko, 5 §, …``) whose other
+        # arms the new parser cannot reproduce; consuming it there would let the
+        # clause parse with a node set that diverges from legacy and is not
+        # oracle-verified. Restricting the no-``uusi`` recovery to the terminal tail
+        # keeps those complex clauses declining (honest residue) while still owning
+        # the clean terminal ``lakiin uusi N § ja sen edelle väliotsikko`` shape.
         nxt = scan.peek()
-        if nxt is None or nxt.cat in ("END_SENTINEL_SPAN", "COMMA", "CONJ", "SEKA"):
+        if nxt is None or nxt.cat == "END_SENTINEL_SPAN":
+            return True
+        if had_uusi and nxt.cat in ("COMMA", "CONJ", "SEKA"):
             return True
         scan.goto(saved)
         return False

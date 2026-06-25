@@ -108,7 +108,19 @@ FI_JOHTOLAUSE_FALLBACK_RESIDUE_CLASSES_V0: tuple[FallbackResidueClass, ...] = (
         # structural). The recovery is TIGHT: the tail must carry a ``LIITE`` and no
         # further structural target noun (§/momentti/kohta/luku/otsikko) or later
         # verb, so no clause with a real kept target is silently stripped. Net -6.
-        baseline_count=348,
+        #
+        # 348 -> 347: the no-``uusi`` trailing anaphoric heading-residue recovery
+        # owns 1995/407 (``… nojalla [provenance], asetukseen uusi 25 a § ja sen
+        # edellä väliotsikko``) — its ONLY remaining blocker was the bare
+        # ``sen edellä väliotsikko`` tail (no ``uusi`` before the heading noun),
+        # the no-``uusi`` sibling of the already-owned ``EDELLA uusi`` residue. The
+        # old parser drops the väliotsikko in both forms and emits only the §25a
+        # SECTION insert; the grammar now reproduces that full-model byte-identically
+        # (consolidated esitutkinta-asetus 575/1988 carries §25a, eId sec_25a). The
+        # recovery is gated to a STRICTLY-TERMINAL residue (clause end), so a
+        # mid-clause no-``uusi`` heading residue inside a complex multi-verb
+        # enumeration (1996/581) still declines. Net -1.
+        baseline_count=347,
     ),
     FallbackResidueClass(
         class_id="complex_enumeration_with_subtarget_continuation",
@@ -204,7 +216,16 @@ FI_JOHTOLAUSE_FALLBACK_RESIDUE_CLASSES_V0: tuple[FallbackResidueClass, ...] = (
         # with such a fold is silently stripped — those stay declined. Net -6 here;
         # no recipient class grows (the single interleaved-provenance clause the arm
         # also freed became fully owned, -1 there too).
-        baseline_count=264,
+        #
+        # 264 -> 263: the no-``uusi`` trailing anaphoric heading-residue recovery
+        # owns 1995/1387 (``lakiin uusi 5 a § ja sen edelle väliotsikko``) — the
+        # bare ``sen edelle väliotsikko`` tail (no ``uusi`` before the heading noun)
+        # was its only blocker. The old parser drops the väliotsikko and emits only
+        # the §5a SECTION insert; the grammar now reproduces that full-model
+        # byte-identically (consolidated arvo-osuustililaki 827/1991 carries §5a,
+        # eId sec_5a, behind a cross-heading). Gated to a strictly-terminal residue,
+        # so complex mid-clause heading residues still decline. Net -1.
+        baseline_count=263,
     ),
     # --- not-a-target / target-position declines -----------------------------
     FallbackResidueClass(

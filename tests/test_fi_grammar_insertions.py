@@ -26,6 +26,7 @@ from lawvm.finland.johtolause.grammar.diff import (
 )
 from lawvm.finland.johtolause.grammar.parser import OutOfScope
 from lawvm.finland.johtolause.surface_model import (
+    SurfaceHeadingPlacement,
     SurfaceInsertion,
     SurfaceNode,
     SurfaceRenumberTail,
@@ -191,6 +192,60 @@ def test_conj_before_uusi_after_citation_is_owned() -> None:
 def test_terminal_anaphoric_heading_co_insert_is_zero_delta(text: str) -> None:
     report = compare_surface_parsers(text, surface_parse.parse, new_parser.parse)
     assert report.equal, report.summary()
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # The no-``uusi`` sibling of the residue above: ``uusi N § ja sen edelle
+        # väliotsikko`` (NO ``uusi`` before the heading noun). The old parser drops
+        # the väliotsikko and emits only the SECTION insert in BOTH forms; the new
+        # parser now owns this terminal no-``uusi`` form too, byte-identically.
+        # These are the two real corpus clauses (1995/1387, 1995/407) verbatim —
+        # the statute-name annotation makes them open on a CITATION_SPAN, the path
+        # the driver's anaphoric-heading-residue skip covers. 1995/407 also carries
+        # a leading ``N §:n nojalla`` authority basis (consumed by the existing
+        # authority-skip). Oracle: §5a exists in arvo-osuustililaki 827/1991 and
+        # §25a in esitutkinta-asetus 575/1988 (both behind a cross-heading).
+        (
+            "lisätään arvo-osuustileistä 17 päivänä toukokuuta 1991 annettuun lakiin "
+            "(827/91) uusi 5 a § ja sen edelle väliotsikko seuraavasti:"
+        ),
+        (
+            "lisätään 30 päivänä huhtikuuta 1987 annetun pakkokeinolain (450/87) 5 a "
+            "luvun 8 §:n nojalla, sellaisena kuin se on 24 päivänä maaliskuuta 1995 "
+            "annetussa laissa (402/95), esitutkinnasta ja pakkokeinoista 17 päivänä "
+            "kesäkuuta 1988 annettuun asetukseen (575/88) uusi 25 a § ja sen edellä "
+            "väliotsikko seuraavasti:"
+        ),
+    ],
+)
+def test_terminal_no_uusi_anaphoric_heading_co_insert_is_zero_delta(text: str) -> None:
+    report = compare_surface_parsers(text, surface_parse.parse, new_parser.parse)
+    assert report.equal, report.summary()
+    model = parse_text_with(text, new_parser.parse)
+    (vg,) = model.verb_groups
+    insertions = [n for n in vg.nodes if isinstance(n, SurfaceInsertion)]
+    assert len(insertions) == 1
+    assert insertions[0].kind == TargetKind.SECTION
+    # No heading node is minted for the dropped anaphoric väliotsikko.
+    assert all(not isinstance(n, SurfaceHeadingPlacement) for n in vg.nodes)
+
+
+def test_mid_clause_no_uusi_anaphoric_heading_still_declines() -> None:
+    # Decline-boundary control: the no-``uusi`` recovery is gated to a STRICTLY
+    # TERMINAL residue. A mid-clause no-``uusi`` heading residue (followed by a
+    # separator + further arms the grammar cannot reproduce) must STILL decline,
+    # so a complex multi-verb enumeration like 1996/581 is not parsed with a node
+    # set that diverges from legacy and is not oracle-verified. (The ``uusi`` form
+    # IS allowed mid-clause — see test_anaphoric_heading_between_doc_level_inserts
+    # _keeps_later_insert — this control fixes the no-``uusi`` form's tighter gate.)
+    text = (
+        "lisätään asetukseen uusi 9 b § ja sen edelle väliotsikko sekä asetukseen "
+        "uusi 118 b § seuraavasti:"
+    )
+    with pytest.raises(new_parser.OutOfScope):
+        parse_text_with(text, new_parser.parse)
 
 
 def test_anaphoric_heading_before_jolloin_renumber_keeps_tail() -> None:
