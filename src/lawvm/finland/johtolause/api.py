@@ -1369,17 +1369,35 @@ def _derive_parsed_ops_from_ast(clause_ast: ClauseAST) -> list[ParsedOp]:
         op.raw = op.code()
         ops.append(op)
 
+    # Exhaustive over every StructuralAction member. The structural/text-patch
+    # actions HEADING_REPLACE / META / TEXT_REPLACE / TEXT_REPEAL canonicalize to
+    # the "M" (muuttaa/replace) verb code on this Finland ParsedOp bridge: their
+    # meta / heading / text-patch payload rides on the op, and the downstream
+    # diversion keys off that payload + target, not the verb-code axis, so "M" is
+    # their established code here. An unmapped action can only be a newly added
+    # StructuralAction member; fail loud with a self-evidencing diagnostic instead
+    # of defaulting silently.
+    verb_map: dict[StructuralAction, str] = {
+        StructuralAction.REPLACE: "M",
+        StructuralAction.REPEAL: "K",
+        StructuralAction.INSERT: "L",
+        StructuralAction.RENUMBER: "S",
+        StructuralAction.HEADING_REPLACE: "M",
+        StructuralAction.META: "M",
+        StructuralAction.TEXT_REPLACE: "M",
+        StructuralAction.TEXT_REPEAL: "M",
+    }
     for vg in clause_ast.verb_groups:
         # VerbGroup.verb is a shared StructuralAction enum.
         if isinstance(vg.verb, StructuralAction):
-            verb_map = {
-                StructuralAction.REPLACE: "M",
-                StructuralAction.REPEAL: "K",
-                StructuralAction.INSERT: "L",
-                StructuralAction.RENUMBER: "S",
-                StructuralAction.META: "M",
-            }
-            verb = verb_map.get(vg.verb, "M")
+            verb_code: str | None = verb_map.get(vg.verb)
+            if verb_code is None:
+                raise ValueError(
+                    "_derive_parsed_ops_from_ast received a StructuralAction with "
+                    f"no verb-code mapping: verb={vg.verb!r}. verb_map must be "
+                    "exhaustive over StructuralAction — add the new member explicitly."
+                )
+            verb = verb_code
         else:
             verb = str(vg.verb)
         for node in vg.nodes:
