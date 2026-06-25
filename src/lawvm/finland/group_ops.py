@@ -33,6 +33,7 @@ from lawvm.finland.ops import (
 )
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.apply_ir_ops import _relabel_section_ir
+from lawvm.finland.target_selector_facades import replace_target
 
 if TYPE_CHECKING:
     pass
@@ -161,7 +162,7 @@ def remap_body_root_replace_group_before_terminal_voimaantulo(
         dc_replace(
             op,
             op_type=OpType.INSERT,
-            target_section=insert_label,
+            **replace_target(op, target_section=insert_label),
         )
         for op in group_ops
     ]

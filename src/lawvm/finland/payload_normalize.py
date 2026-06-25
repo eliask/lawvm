@@ -58,6 +58,7 @@ from lawvm.finland.sparse_tail_claims import (
 )
 from lawvm.finland.standalone_targets import StandaloneSectionTarget
 from lawvm.finland.table_target_merge import merge_numbered_table_targets_into_live_section
+from lawvm.finland.target_selector_facades import replace_target
 from lawvm.finland.table_target_merge import mentioned_numbered_table_labels
 
 from lawvm.core.elaboration_context import PayloadElaborationContext
@@ -4807,7 +4808,7 @@ def _rebase_item_targets_to_sparse_slot_labels(
             rebased.append(
                 dc_replace(
                     op,
-                    target_paragraph=new_paragraph,
+                    **replace_target(op, target_paragraph=new_paragraph),
                     lo=(
                         _lo_with_path_update(op.lo, subsection=str(new_paragraph))
                         if op.lo is not None
@@ -4861,7 +4862,7 @@ def _rebase_numbered_table_offset_targets_to_sparse_slot_labels(
         rebased.append(
             dc_replace(
                 op,
-                target_paragraph=new_paragraph,
+                **replace_target(op, target_paragraph=new_paragraph),
                 lo=(
                     _lo_with_path_update(op.lo, subsection=str(new_paragraph))
                     if op.lo is not None
@@ -4976,7 +4977,7 @@ def _rebase_sparse_stale_predecessor_replace(
     new_paragraph = op.target_paragraph - 1
     rebased = dc_replace(
         op,
-        target_paragraph=new_paragraph,
+        **replace_target(op, target_paragraph=new_paragraph),
         lo=(
             _lo_with_path_update(op.lo, subsection=str(new_paragraph))
             if op.lo is not None
@@ -5097,7 +5098,7 @@ def _rebase_duplicate_target_shifted_replace(
 
         rebased = dc_replace(
             op,
-            target_paragraph=rebased_paragraph,
+            **replace_target(op, target_paragraph=rebased_paragraph),
             lo=_lo_with_path_update(op.lo, subsection=str(rebased_paragraph)) if op.lo is not None else None,
             target_guessing_provenance_tags=tuple(
                 dict.fromkeys((*op.target_guessing_provenance_tags, "rebase_duplicate_target_shifted_replace"))
@@ -5163,7 +5164,7 @@ def _rebase_replaced_renumber_sources_to_destinations(
 
         rebased = dc_replace(
             op,
-            target_paragraph=destination_paragraph,
+            **replace_target(op, target_paragraph=destination_paragraph),
             lo=_lo_with_path_update(op.lo, subsection=str(destination_paragraph)) if op.lo is not None else None,
             target_guessing_provenance_tags=tuple(
                 dict.fromkeys((*op.target_guessing_provenance_tags, "rebase_replaced_renumber_source"))
@@ -5257,7 +5258,7 @@ def _expand_post_omission_tail_insert_subsections(
             dc_replace(
                 base_op,
                 op_id=base_op.op_id if idx == 0 else f"{base_op.op_id}_tail_{idx + 1}",
-                target_paragraph=target_paragraph,
+                **replace_target(base_op, target_paragraph=target_paragraph),
                 lo=lo,
             )
         )
@@ -6961,8 +6962,7 @@ def _rewrite_named_row_table_replaces(
             rewritten_ops.append(
                 dc_replace(
                     op,
-                    target_paragraph=1,
-                    target_item=live_paragraph.label,
+                    **replace_target(op, target_paragraph=1, target_item=live_paragraph.label),
                     lo=(
                         _lo_with_path_update(
                             op.lo,
@@ -7075,8 +7075,7 @@ def _rewrite_partial_whole_section_table_payload(
             dc_replace(
                 base_op,
                 op_type=OpType.REPLACE,
-                target_paragraph=1,
-                target_item=live_paragraph.label,
+                **replace_target(base_op, target_paragraph=1, target_item=live_paragraph.label),
                 lo=(
                     _lo_with_path_update(
                         base_op.lo,
@@ -7296,8 +7295,7 @@ def _rewrite_internal_ordered_list_inserts(
         dc_replace(
             op,
             op_type=OpType.INSERT,
-            target_paragraph=int(live_subsection_label),
-            target_item=target_label,
+            **replace_target(op, target_paragraph=int(live_subsection_label), target_item=target_label),
             lo=(
                 _lo_with_path_update(
                     op.lo,
@@ -7395,8 +7393,7 @@ def _rewrite_named_row_table_repeals(
             rewritten_ops.append(
                 dc_replace(
                     op,
-                    target_paragraph=1,
-                    target_item=live_paragraph.label,
+                    **replace_target(op, target_paragraph=1, target_item=live_paragraph.label),
                     lo=(
                         _lo_with_path_update(
                             op.lo,

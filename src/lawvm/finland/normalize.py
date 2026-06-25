@@ -41,6 +41,7 @@ from lawvm.finland.target_selector_facades import (
     fi_chapter_target,
     fi_part_target,
     fi_section_target,
+    replace_target,
 )
 
 # ---------------------------------------------------------------------------
@@ -1106,7 +1107,7 @@ def parse_ops_fallback_heuristic(johto: str) -> List[AmendmentOp]:
                 and op.target_paragraph == int(old_mom)
                 and not op.target_item
             ):
-                ops[i] = dc_replace(op, target_paragraph=int(new_mom))
+                ops[i] = dc_replace(op, **replace_target(op, target_paragraph=int(new_mom)))
                 break
     if fallback_insert_ops:
         fallback_insert_keys = {

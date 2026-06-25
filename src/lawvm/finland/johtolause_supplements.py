@@ -54,7 +54,7 @@ from lawvm.finland.johto_scope_mentions import (
     expand_johto_section_label_range,
 )
 from lawvm.finland.ops import AmendmentOp, OpType, _lo_with_path_update
-from lawvm.finland.target_selector_facades import fi_section_target
+from lawvm.finland.target_selector_facades import fi_section_target, replace_target
 
 _SPARSE_OSALTA_ROW_OMISSION_RULE_ID = "fi.sparse_osalta_row_omission_repeal.v1"
 _SPARSE_OSALTA_ROW_OMISSION_TAG = "sparse_osalta_row_omission_repeal"
@@ -1162,9 +1162,12 @@ def _supplement_item_and_moment_clause_ops(
             ):
                 supplemented[pos] = dc_replace(
                     op,
-                    target_section=clause.section,
-                    target_chapter=clause.chapter or op.target_chapter,
-                    target_item=clause.item_label,
+                    **replace_target(
+                        op,
+                        target_section=clause.section,
+                        target_chapter=clause.chapter or op.target_chapter,
+                        target_item=clause.item_label,
+                    ),
                     lo=(
                         _lo_with_path_update(
                             op.lo,

@@ -32,6 +32,7 @@ from lawvm.finland.ops import (
 )
 from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.statute import ReplayState
+from lawvm.finland.target_selector_facades import replace_target
 
 
 _REJECTED_OPERATION_MESSAGE = "operation rejected before apply"
@@ -263,8 +264,11 @@ def _body_chapter_corrected_ops(
     return [
         dc_replace(
             op,
-            target_part=resolved_body_part if resolved_body_part is not None else op.target_part,
-            target_chapter=resolved_body_chapter,
+            **replace_target(
+                op,
+                target_part=resolved_body_part if resolved_body_part is not None else op.target_part,
+                target_chapter=resolved_body_chapter,
+            ),
             body_chapter_move_from=body_chapter_move_from or op.body_chapter_move_from,
             scope_confidence=normalize_scope_confidence(
                 projection_scope_confidence(
@@ -315,9 +319,12 @@ def _replace_to_insert_ops(
             dc_replace(
                 op,
                 op_type=OpType.INSERT,
-                target_chapter=replacement_chapter,
+                **replace_target(
+                    op,
+                    target_chapter=replacement_chapter,
+                    target_special=None,
+                ),
                 body_chapter_move_from=target_chapter,
-                target_special=None,
                 scope_confidence=normalize_scope_confidence(
                     projection_scope_confidence(
                         scope_confidence=op.scope_confidence,
@@ -371,10 +378,13 @@ def _replace_to_declared_move_ops(
         rewritten.append(
             dc_replace(
                 op,
-                target_chapter=replacement_chapter,
+                **replace_target(
+                    op,
+                    target_chapter=replacement_chapter,
+                    target_special=None,
+                ),
                 move_clause_target_unit_kind="chapter",
                 body_chapter_move_from=target_chapter,
-                target_special=None,
                 scope_confidence=normalize_scope_confidence(
                     projection_scope_confidence(
                         scope_confidence=op.scope_confidence,
@@ -411,8 +421,11 @@ def _retargeted_live_section_ops(
         rewritten.append(
             dc_replace(
                 op,
-                target_part=live_part,
-                target_chapter=live_chapter,
+                **replace_target(
+                    op,
+                    target_part=live_part,
+                    target_chapter=live_chapter,
+                ),
                 scope_confidence=(
                     ScopeConfidence(
                         tag="body_container_membership_rewrite",
@@ -615,9 +628,12 @@ def _item_as_subsection_rewritten_ops(
         rewritten.append(
             dc_replace(
                 op,
-                target_paragraph=None,
-                target_item=None,
-                target_subitem=None,
+                **replace_target(
+                    op,
+                    target_paragraph=None,
+                    target_item=None,
+                    target_subitem=None,
+                ),
                 lo=rewritten_lo,
             )
         )

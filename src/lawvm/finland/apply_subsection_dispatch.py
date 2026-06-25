@@ -382,8 +382,11 @@ def _rebound_item_only_target_to_unique_subsection(
         )
     return dc_replace(
         original,
-        target_paragraph=int(rebound_label),
-        target_item=target_item,
+        **replace_target(
+            original,
+            target_paragraph=int(rebound_label),
+            target_item=target_item,
+        ),
         target_guessing_provenance_tags=tuple(
             dict.fromkeys(
                 (

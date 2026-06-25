@@ -17,6 +17,7 @@ from lawvm.finland.ops import (
     scope_confidence_from_tags,
 )
 from lawvm.finland.helpers import _norm_num_token
+from lawvm.finland.target_selector_facades import replace_target
 
 _GROUP_KEY_NON_WORD_RE = re.compile(r"[^\d\w]")
 
@@ -190,7 +191,7 @@ def coalesce_same_target_mixed_scope_section_groups(
             )
             tagged_op = dc_replace(
                 op,
-                target_chapter=scoped_chapter,
+                **replace_target(op, target_chapter=scoped_chapter),
                 scope_provenance_tags=tuple(op.scope_provenance_tags) + ("mixed_scope_group_merge",),
                 scope_confidence=merged_scope_confidence,
                 lo=_lo_with_path_update(op.lo, chapter=scoped_chapter) if op.lo is not None else op.lo,

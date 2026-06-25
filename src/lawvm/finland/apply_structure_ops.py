@@ -67,6 +67,7 @@ from lawvm.finland.source_pathology import (
     build_temporary_section_rebase_pathology,
     build_unique_payload_insert_under_live_duplicates_pathology,
 )
+from lawvm.finland.target_selector_facades import replace_target
 from lawvm.finland.apply_ir_ops import (
     _build_repeal_placeholder_ir,
     _build_repeal_placeholder_from_label_ir,
@@ -4017,8 +4018,7 @@ def _normalize_subsection_target_hint_ir(
             new_lo = _lo_with_path_update(op.lo, subsection="1", item=str(target_paragraph)) if op.lo else None
             updated_legacy = dc_replace(
                 op,
-                target_paragraph=1,
-                target_item=str(target_paragraph),
+                **replace_target(op, target_paragraph=1, target_item=str(target_paragraph)),
                 lo=new_lo,
             )
             return updated_legacy

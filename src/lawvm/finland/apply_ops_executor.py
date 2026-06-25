@@ -51,6 +51,7 @@ from lawvm.finland.restructure_plan_replay import (
 from lawvm.finland.standalone_targets import (
     build_standalone_section_targets as _build_standalone_section_targets,
 )
+from lawvm.finland.target_selector_facades import replace_target
 from lawvm.finland.helpers import _norm_num_token
 
 if TYPE_CHECKING:
@@ -141,7 +142,7 @@ def _retarget_same_wave_shifted_subsection_repeals(
         next_resolved.append(
             dc_replace(
                 rop,
-                op=dc_replace(rop.op, target_paragraph=op_target_paragraph),
+                op=dc_replace(rop.op, **replace_target(rop.op, target_paragraph=op_target_paragraph)),
                 _target_address_override=LegalAddress(path=target_path, special=address.special),
                 scope_provenance_tags=tuple(
                     dict.fromkeys(

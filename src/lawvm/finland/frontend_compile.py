@@ -115,7 +115,7 @@ from lawvm.finland.frontend_observations import (
     _scope_anchor_dependence_observations,
 )
 from lawvm.finland.replay_notices import replay_print as _replay_print
-from lawvm.finland.target_selector_facades import fi_section_target
+from lawvm.finland.target_selector_facades import fi_section_target, replace_target
 
 _WHITESPACE_RE = re.compile(r"\s+")
 _TEMPORARY_SECTION_PREFIX_RE = re.compile(r"^\s*(?:uusi|uudet)\s*", flags=re.IGNORECASE)
@@ -429,9 +429,12 @@ def _retarget_op_to_subsection(
     return dc_replace(
         op,
         op_id=op_id if op_id is not None else op.op_id,
-        target_paragraph=int(subsection_label),
-        target_item=None,
-        target_special=None,
+        **replace_target(
+            op,
+            target_paragraph=int(subsection_label),
+            target_item=None,
+            target_special=None,
+        ),
         lo=lo,
         extraction_provenance_tags=tuple(
             dict.fromkeys((*op.extraction_provenance_tags, provenance_tag))
@@ -913,8 +916,11 @@ def _lift_explicit_scopes_from_cited_version_ops(
         patched.append(
             dc_replace(
                 op,
-                target_part=target_part,
-                target_chapter=target_chapter,
+                **replace_target(
+                    op,
+                    target_part=target_part,
+                    target_chapter=target_chapter,
+                ),
                 scope_confidence=ScopeConfidence(
                     tag="chapter_scope_from_cited_version_binding",
                     source=ScopeResolutionSource.EXPLICIT_CHUNK,
@@ -2231,8 +2237,11 @@ def _add_inferred_section_chapter_scope(
         )
     return dc_replace(
         op,
-        target_part=part if part is not None else op.target_part,
-        target_chapter=chapter,
+        **replace_target(
+            op,
+            target_part=part if part is not None else op.target_part,
+            target_chapter=chapter,
+        ),
         scope_provenance_tags=tags,
         scope_confidence=ScopeConfidence(
             tag="chapter_scope_carry_forward",
@@ -2365,8 +2374,11 @@ def _retarget_letter_suffix_inserts_from_same_amendment_stem_scope(
         retargeted.append(
             dc_replace(
                 op,
-                target_part=stem_part,
-                target_chapter=stem_chapter,
+                **replace_target(
+                    op,
+                    target_part=stem_part,
+                    target_chapter=stem_chapter,
+                ),
                 scope_provenance_tags=tags,
                 scope_confidence=ScopeConfidence(
                     tag="chapter_scope_from_same_amendment_stem",
@@ -2586,7 +2598,7 @@ def _strip_impossible_chapter_scope_for_bare_body_section_op(
             )
     return dc_replace(
         op,
-        target_chapter=None,
+        **replace_target(op, target_chapter=None),
         scope_confidence=normalize_scope_confidence(None, resolved_chapter=None),
         scope_provenance_tags=retained_scope_tags,
         lo=retained_lo,
@@ -2843,7 +2855,7 @@ def _enrich_ops_from_amendment_tree(
                         )
                     scoped_op = dc_replace(
                         scoped_op,
-                        target_chapter=None,
+                        **replace_target(scoped_op, target_chapter=None),
                         scope_confidence=normalize_scope_confidence(None, resolved_chapter=None),
                         scope_provenance_tags=retained_scope_tags,
                         lo=retained_lo,
@@ -3039,8 +3051,11 @@ def _enrich_ops_from_amendment_tree(
                         )
                     scoped_op = dc_replace(
                         scoped_op,
-                        target_part=retargeted_part,
-                        target_chapter=retargeted_chapter,
+                        **replace_target(
+                            scoped_op,
+                            target_part=retargeted_part,
+                            target_chapter=retargeted_chapter,
+                        ),
                         scope_confidence=(
                             ScopeConfidence(
                                 tag="body_container_membership_rewrite",
