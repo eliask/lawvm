@@ -30,6 +30,28 @@ class FakeOp:
         self.target_item = None
         self.target_special = None
 
+    @property
+    def target_cols(self):
+        """Mirror AmendmentOp.target_cols so the shim satisfies the column-read API."""
+        from lawvm.finland.target_selector_codec import (
+            AmendmentOpV1Record,
+            TargetSelectorCodecV1,
+        )
+
+        record = AmendmentOpV1Record(
+            target_unit_kind="section",
+            target_section=self.target_section or "",
+            target_chapter=None,
+            target_part=None,
+            target_paragraph=self.target_paragraph,
+            target_item=self.target_item,
+            target_subitem=None,
+            target_special=self.target_special,
+        )
+        return TargetSelectorCodecV1.to_legacy(
+            TargetSelectorCodecV1.from_legacy(record)
+        )
+
 
 class FakeIRState:
     """Carries only ``.ir`` (an opaque sentinel); find_family is monkeypatched."""
