@@ -183,13 +183,13 @@ def _build_peg_covered_sets(
                 failed_sections.add(_norm_num_token(fop.target_section))
     covered_labels: set[UncoveredSectionKey] = set()
     for op in ops:
-        if op.target_cols.target_unit_kind == "section" and op.target_cols.target_section:
-            label = _norm_num_token(op.target_cols.target_section)
+        if op.target_unit_kind == "section" and op.target_section:
+            label = _norm_num_token(op.target_section)
             if label not in failed_sections:
                 covered_labels.add(
                     uncovered_section_key(
-                        part=op.target_cols.target_part,
-                        chapter=op.target_cols.target_chapter,
+                        part=op.target_part,
+                        chapter=op.target_chapter,
                         section=label,
                     )
                 )
