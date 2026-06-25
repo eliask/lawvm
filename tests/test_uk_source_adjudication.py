@@ -7303,3 +7303,40 @@ def test_normalize_uk_replay_compare_eids_keeps_table_nodes_when_oracle_has_tabl
         "schedule-1-group-1",
         "schedule-1-group-1-part-1-table",
     }
+
+
+# ── Manual-frontier status vocabulary (closed enum) ──────────────────────────
+
+
+def test_manual_frontier_status_wire_values_are_stable() -> None:
+    # The .value tokens are the persisted manual-frontier diagnostic wire shape
+    # and the contract with execution_authorization; they must not drift.
+    assert {s.value for s in sa.UKManualFrontierStatus} == {
+        "manual_compile_candidate",
+        "source_insufficient",
+        "non_textual_or_out_of_scope",
+        "deterministic_frontend_candidate",
+        "deterministic_frontend_supported",
+        "source_or_feed_target_conflict",
+        "unclassified_frontier",
+    }
+
+
+def test_classifier_emits_only_enum_status_values() -> None:
+    # Every literal status token the manual-frontier classifier serializes (via
+    # the typed _ManualFrontierClassification waist or an inline diagnostic dict)
+    # must be a member of UKManualFrontierStatus — a drift here means a status
+    # escaped the closed vocabulary.
+    path = Path(__file__).parents[1] / "src/lawvm/uk_legislation/source_adjudication.py"
+    tree = ast.parse(path.read_text())
+    enum_values = {s.value for s in sa.UKManualFrontierStatus}
+    emitted: set[str] = set()
+    for node in ast.walk(tree):
+        # inline dict literals: {"status": "<token>" | UKManualFrontierStatus.X.value}
+        if isinstance(node, ast.Dict):
+            for key, value in zip(node.keys, node.values):
+                if isinstance(key, ast.Constant) and key.value == "status":
+                    if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                        emitted.add(value.value)
+    # Any raw string status literal left in the module must be a known member.
+    assert emitted <= enum_values, sorted(emitted - enum_values)
