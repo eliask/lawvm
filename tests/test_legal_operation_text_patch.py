@@ -3,7 +3,15 @@ from __future__ import annotations
 import pytest
 from types import SimpleNamespace
 
-from lawvm.core.ir import IRNode, LegalAddress, LegalOperation, StructuralAction, TextPatchSpec, TextSelector
+from lawvm.core.ir import (
+    IRNode,
+    LegalAddress,
+    LegalOperation,
+    LegalOperationPayloadActionError,
+    StructuralAction,
+    TextPatchSpec,
+    TextSelector,
+)
 from lawvm.core.semantic_types import IRNodeKind, TextPatchKindEnum
 
 
@@ -122,6 +130,72 @@ def test_text_patch_spec_append_requires_replacement() -> None:
             kind=TextPatchKindEnum.APPEND,
             selector=TextSelector(match_text="TEXT_END"),
         )
+
+
+# ---------------------------------------------------------------------------
+# payload↔action closure (coherence audit Axis-2 finding A)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("action", [StructuralAction.REPEAL, StructuralAction.TEXT_REPEAL])
+def test_repeal_action_rejects_content_payload(action: StructuralAction) -> None:
+    """A repeal action carrying a real content payload is unrepresentable."""
+    content = IRNode(kind=IRNodeKind.SECTION, label="5", text="real content")
+    with pytest.raises(LegalOperationPayloadActionError, match="must not carry a content payload"):
+        LegalOperation(
+            op_id="rep-content",
+            sequence=1,
+            action=action,
+            target=_addr(),
+            payload=content,
+        )
+
+
+@pytest.mark.parametrize("action", [StructuralAction.REPEAL, StructuralAction.TEXT_REPEAL])
+def test_repeal_action_accepts_none_payload(action: StructuralAction) -> None:
+    op = LegalOperation(op_id="rep-none", sequence=1, action=action, target=_addr())
+    assert op.payload is None
+
+
+@pytest.mark.parametrize("action", [StructuralAction.REPEAL, StructuralAction.TEXT_REPEAL])
+def test_repeal_action_accepts_repeal_placeholder_tombstone(action: StructuralAction) -> None:
+    """A repeal may carry the tombstone it leaves behind (lawvm_repeal_placeholder)."""
+    tombstone = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="5",
+        attrs={"lawvm_repeal_placeholder": "1"},
+    )
+    op = LegalOperation(
+        op_id="rep-tombstone",
+        sequence=1,
+        action=action,
+        target=_addr(),
+        payload=tombstone,
+    )
+    assert op.payload is tombstone
+
+
+def test_replace_action_accepts_none_payload() -> None:
+    """REPLACE with payload=None is a legitimate container snapshot shape (not gated)."""
+    op = LegalOperation(
+        op_id="rep-replace-none",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=_addr(),
+        payload=None,
+    )
+    assert op.payload is None
+
+
+def test_replace_action_accepts_content_payload() -> None:
+    op = LegalOperation(
+        op_id="rep-replace-content",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=_addr(),
+        payload=IRNode(kind=IRNodeKind.SECTION, label="5", text="new"),
+    )
+    assert op.payload is not None
 
 
 def test_explicit_text_patch_is_authoritative() -> None:
