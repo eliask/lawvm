@@ -507,7 +507,7 @@ def collect_coverage_claims_partition(
     rejected_claims: List[CoverageRejectedClaim] = []
 
     for op in ops:
-        if not op.target_cols.target_section:
+        if not op.target_section:
             rejected_claims.append(
                 CoverageRejectedClaim(
                     reason="missing_target_section",
@@ -517,14 +517,14 @@ def collect_coverage_claims_partition(
             )
             continue
 
-        if op.target_cols.target_unit_kind == "section":
-            label = _norm_num_token(op.target_cols.target_section)
+        if op.target_unit_kind == "section":
+            label = _norm_num_token(op.target_section)
             kind = "section"
-        elif op.target_cols.target_unit_kind == "chapter":
-            label = _norm_num_token(op.target_cols.target_section).removesuffix("luku")
+        elif op.target_unit_kind == "chapter":
+            label = _norm_num_token(op.target_section).removesuffix("luku")
             kind = "chapter"
-        elif op.target_cols.target_unit_kind == "part":
-            label = _norm_num_token(op.target_cols.target_section)
+        elif op.target_unit_kind == "part":
+            label = _norm_num_token(op.target_section)
             kind = "part"
         else:
             rejected_claims.append(
@@ -534,7 +534,7 @@ def collect_coverage_claims_partition(
                     evidence=(
                         f"op_id={op.op_id}",
                         f"op_type={op.op_type}",
-                        f"target_unit_kind={op.target_cols.target_unit_kind}",
+                        f"target_unit_kind={op.target_unit_kind}",
                     ),
                 )
             )
@@ -550,8 +550,8 @@ def collect_coverage_claims_partition(
 
         # Build the candidate unit_id(s) this op might cover
         chapter_label: Optional[str] = None
-        if op.target_cols.target_chapter:
-            chapter_label = _norm_num_token(op.target_cols.target_chapter).removesuffix("luku")
+        if op.target_chapter:
+            chapter_label = _norm_num_token(op.target_chapter).removesuffix("luku")
 
         if chapter_label:
             base_unit_id = f"{kind}_{chapter_label}_{label}"
