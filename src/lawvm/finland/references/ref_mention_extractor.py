@@ -46,9 +46,7 @@ from __future__ import annotations
 
 import os
 import re
-import warnings
 import xml.etree.ElementTree as ET
-from warnings import deprecated
 from dataclasses import dataclass, field, replace
 from datetime import date
 from typing import Callable, List, Optional, Tuple
@@ -90,7 +88,6 @@ from lawvm.finland.references.by_name import (
     recognize_by_name_refs,
 )
 from lawvm.finland.references.shared_reference_orchestrator import (
-    inline_id_provision_key,
     lift_inline_id_construction_mentions,
 )
 from lawvm.core.preparatory_reference import (
@@ -1235,13 +1232,6 @@ def extract_eu_reference_mentions(
     return result
 
 
-@deprecated(
-    "Legacy plain-text statute-citation regex lane, demoted to a typed-residue "
-    "FALLBACK behind the construction-grammar lane "
-    "(extract_inline_id_construction_mentions). New callers must go through "
-    "extract_all_reference_mentions, which runs the owning recognizer first and "
-    "keeps this regex lane only as an auditable residue net."
-)
 def extract_plain_text_statute_mentions(
     xml_bytes: bytes,
     statute_id: str,
@@ -1250,7 +1240,35 @@ def extract_plain_text_statute_mentions(
     ref_covered_statute_ids: Optional[set[str]] = None,
     include_ref_text: bool = False,
 ) -> ExtractionResult:
-    """Extract plain-text Finnish statute citations NOT covered by <ref> markup.
+    """MEASUREMENT/AUDIT recognizer for plain-text statute citations — NO production authority.
+
+    CONTRACT (post-census, base f5843e95): this is the regex-backed plain-text
+    statute-citation recognizer. It is NOT a production reference source and carries
+    NO reference authority. The production citation lane in
+    :func:`extract_all_reference_mentions` is the construction parse
+    (:func:`extract_inline_id_construction_mentions`) and that lane ALONE — the
+    legacy regex residue fallback this function once fed
+    (``phrase_lemma="plain_text_fallback"``) was DELETED after a whole-corpus census
+    proved every firing was a 2-digit-year citation the construction lane already
+    caught with the correct (causal) century, mis-duplicated by the regex's acausal
+    ``date.today()`` pivot. See ``tests/test_fi_ref_legacy_regex_residue_census.py``.
+
+    This function is retained for exactly two non-production uses:
+
+      1. The annotation-independence MEASUREMENT lane
+         (``extract_all_reference_mentions(..., ignore_annotations=True)``), which
+         folds ``<ref>`` inner text (``include_ref_text=True``) to measure how much
+         of the annotated surface the text recognizer could recover unaided. This is
+         a metric, not a reference-emission path.
+      2. Direct unit-testing of the ``PlainTextStatuteCitationRecognizer`` grammar
+         family.
+
+    Callers MUST NOT treat the ``statute_id`` orientation of its mentions as legal
+    truth: the regex 2-digit-year pivot is acausal (``date.today()`` based) and can
+    mint future-dated ids; only the construction lane resolves the century causally.
+    De-deprecated (no longer a production fallback) but explicitly non-authoritative.
+
+    Extract plain-text Finnish statute citations NOT covered by <ref> markup.
 
     Walks <p> elements in the AKN body, collecting text that is NOT inside
     <ref> child elements, and applies the PlainTextStatuteCitationRecognizer
@@ -1933,15 +1951,8 @@ def extract_preparatory_reference_mentions(
 # cite dedups onto the SAME entity node, never a re-inverted NUMBER/YEAR node.
 
 
-# A statute-name head token run immediately before the ``(id)`` paren: a run of
-# letters / hyphens (the inflected statute name ``arvonlisäverolain`` /
-# ``-kaaressa`` / the descriptive ``päätös``), optionally one space off the paren.
-# Bounded (§1.11): a single trailing run, length-capped.
 # The inline-(id) citation-construction surface/dedup helpers live in the shared
-# orchestrator (ONE lifter for the lens lane AND the forest projection). The
-# regex-fallback dedup below reuses the SAME key fn so both lanes agree on what
-# "the same citation" is.
-_inline_id_provision_key = inline_id_provision_key
+# orchestrator (ONE lifter for the lens lane AND the forest projection).
 
 
 def extract_inline_id_construction_mentions(
@@ -2220,36 +2231,46 @@ def extract_all_reference_mentions(
 
     # Inline-(id) plain-text citation family.
     #
-    # PRIMARY: the citation-construction parse (keys on the ``(NUMBER/YEAR)``
-    # anchor) — it subsumes the brittle ``_PLAIN_TEXT_FI_STATUTE_RE`` and recovers
-    # the Finding-B class (statute-name head separated from its paren by an
-    # intervening modifier; ``-kaari`` heads). FALLBACK: the regex lane, kept as a
-    # typed-residue safety net (``phrase_lemma="plain_text_fallback"``) that fires
-    # ONLY for inline-(id) targets the construction did not cover, so nothing the
-    # old lane found can silently disappear (§1.8) and any residue is auditable.
+    # SOLE PRODUCTION SOURCE: the citation-construction parse (keys on the
+    # ``(NUMBER/YEAR)`` anchor). It subsumes the brittle ``_PLAIN_TEXT_FI_STATUTE_RE``
+    # and recovers the Finding-B class (statute-name head separated from its paren by
+    # an intervening modifier; ``-kaari`` heads). It bounds the 2-digit-year century
+    # pivot CAUSALLY by the citing statute (a 1993 act citing ``(71/23)`` resolves to
+    # ``1923/71``), which the regex lane could not — the regex pivoted by
+    # ``date.today()`` (acausal), minting future-dated ids.
     #
-    # Measurement mode (``ignore_annotations``) is exempt: it folds ``<ref>`` INNER
-    # text into the regex lane (``include_ref_text``) to measure annotation
-    # independence — the construction lane here scans only non-ref text — so that
-    # path keeps the regex lane as primary, byte-identical to before the flip.
+    # The legacy regex lane (:func:`extract_plain_text_statute_mentions`) was
+    # previously retained here as a typed-residue FALLBACK
+    # (``phrase_lemma="plain_text_fallback"``) for inline-(id) targets the
+    # construction did not cover. A whole-corpus census (guarded by
+    # ``tests/test_fi_ref_legacy_regex_residue_census.py``) found the residue
+    # contributed ZERO citations the construction lane misses correctly: every
+    # firing corpus-wide was a 2-digit-year citation the construction ALREADY caught
+    # with the correct (causal) century, duplicated by the regex with the WRONG
+    # century — a different statute id, hence undeduped. So the residue net was not a
+    # safety net but a source of mis-pivoted false edges; it is DELETED. The
+    # production guard test pins that ``extract_all_reference_mentions`` never emits
+    # ``plain_text_fallback`` again (a future construction regression surfaces as a
+    # test failure, not silent loss).
+    #
+    # Measurement mode (``ignore_annotations``) is exempt: it still runs the plain-text
+    # recognizer with ``include_ref_text`` folded in to measure annotation
+    # independence (the construction lane scans only non-ref text). That path is an
+    # AUDIT/measurement lane with NO production reference authority — it never feeds
+    # the ``plain_text_fallback`` production surface (deleted above).
     plain = ExtractionResult()
     if ignore_annotations:
-        with warnings.catch_warnings():
-            # Internal demotion path: the regex lane is intentionally kept here
-            # as a typed-residue fallback / measurement lane. @deprecated lights
-            # up EXTERNAL callers, not this owning orchestrator.
-            warnings.simplefilter("ignore", DeprecationWarning)
-            plain = extract_plain_text_statute_mentions(
-                xml_bytes,
-                statute_id,
-                valid_at_interval=valid_at_interval,
-                ref_covered_statute_ids=ref_covered,
-                # Measurement mode also reads <ref> INNER text (production hides it in
-                # the markup), so the text lane gets a real shot at the hidden cite.
-                include_ref_text=True,
-            )
+        plain = extract_plain_text_statute_mentions(
+            xml_bytes,
+            statute_id,
+            valid_at_interval=valid_at_interval,
+            ref_covered_statute_ids=ref_covered,
+            # Measurement mode also reads <ref> INNER text (production hides it in
+            # the markup), so the text lane gets a real shot at the hidden cite.
+            include_ref_text=True,
+        )
     else:
-        construction, construction_keys = extract_inline_id_construction_mentions(
+        construction, _construction_keys = extract_inline_id_construction_mentions(
             xml_bytes,
             statute_id,
             valid_at_interval=valid_at_interval,
@@ -2257,31 +2278,6 @@ def extract_all_reference_mentions(
         )
         plain.mentions.extend(construction.mentions)
         plain.diagnostics.extend(construction.diagnostics)
-
-        # Regex fallback for residue ONLY: a regex hit whose statute+provision key
-        # the construction already covered is the SAME citation (drop the dup); a
-        # regex hit the construction did NOT cover is genuine residue — emit it,
-        # marked as a typed fallback so the residual class is auditable.
-        with warnings.catch_warnings():
-            # Internal demotion path: regex lane runs ONLY for residue the
-            # construction lane did not cover. @deprecated targets external
-            # callers, not this owning orchestrator.
-            warnings.simplefilter("ignore", DeprecationWarning)
-            regex_residue = extract_plain_text_statute_mentions(
-                xml_bytes,
-                statute_id,
-                valid_at_interval=valid_at_interval,
-                ref_covered_statute_ids=ref_covered,
-                include_ref_text=False,
-            )
-        for m in regex_residue.mentions:
-            key = _inline_id_provision_key(m.target_provision_ref)
-            if key is not None and key in construction_keys:
-                # Same citation the construction lane already emitted — drop the dup.
-                continue
-            plain.mentions.append(replace(m, phrase_lemma="plain_text_fallback"))
-        plain.rejected.extend(regex_residue.rejected)
-        plain.diagnostics.extend(regex_residue.diagnostics)
 
     # Surface-grammar lane: treaty (SopS), vague-OPEN, EU-by-nickname directive
     # articles. Families disjoint from the lanes above (no statute-id dedup

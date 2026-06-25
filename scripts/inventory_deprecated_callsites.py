@@ -45,9 +45,12 @@ DEPRECATED_SYMBOLS: dict[str, str] = {
     # load-bearing required residual the typed grammar cannot own — not a
     # strangled lane. They left this cohort honestly (matching the
     # strip_legacy_*_heading_prefix retain-with-guard precedent).
-    "extract_plain_text_statute_mentions": (
-        "src/lawvm/finland/references/ref_mention_extractor.py"
-    ),
+    # NOTE: extract_plain_text_statute_mentions was retired from this cohort after a
+    # whole-corpus census proved its production residue fallback contributed only
+    # mis-pivoted duplicate citations (see
+    # tests/test_fi_ref_legacy_regex_residue_census.py). The production residue lane
+    # was DELETED and the function de-deprecated to an explicitly non-authoritative
+    # measurement/audit recognizer, so it is no longer a deprecated production lane.
     "strip_legacy_roman_division_heading_prefix": (
         "src/lawvm/finland/oracle_comparison.py"
     ),

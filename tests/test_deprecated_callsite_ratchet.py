@@ -71,9 +71,6 @@ class TestCohortIntegrity:
         # tests/test_fi_normalize_fallback_heuristic_census.py); they left this
         # cohort honestly and so are no longer tracked here.
         symbol_modules = {
-            "extract_plain_text_statute_mentions": (
-                "lawvm.finland.references.ref_mention_extractor"
-            ),
             "strip_legacy_roman_division_heading_prefix": (
                 "lawvm.finland.oracle_comparison"
             ),
