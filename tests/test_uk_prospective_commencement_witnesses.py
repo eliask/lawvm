@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from lawvm.uk_legislation.effects import UKEffectRecord
 from lawvm.uk_legislation.prospective_commencement_witnesses import (
+    UKProspectiveCommencementStatus,
     prospective_commencement_status_counts,
+    prospective_commencement_status_for_in_force,
     prospective_commencement_witness_for_effect,
 )
 from scripts.uk_prospective_commencement_scan import (
@@ -59,6 +61,28 @@ def _xml() -> bytes:
                  RestrictStartDate="2099-01-01"/>
       </Body>
     </Legislation>""".encode()
+
+
+def test_prospective_commencement_status_for_in_force_maps_tristate() -> None:
+    assert (
+        prospective_commencement_status_for_in_force(True)
+        is UKProspectiveCommencementStatus.RESOLVED_IN_FORCE
+    )
+    assert (
+        prospective_commencement_status_for_in_force(False)
+        is UKProspectiveCommencementStatus.RESOLVED_FUTURE
+    )
+    assert (
+        prospective_commencement_status_for_in_force(None)
+        is UKProspectiveCommencementStatus.UNRESOLVED
+    )
+
+
+def test_prospective_commencement_status_is_str_enum_wire_stable() -> None:
+    # The .value tokens are the persisted wire shape and must not drift.
+    assert UKProspectiveCommencementStatus.RESOLVED_IN_FORCE.value == "resolved_in_force"
+    assert UKProspectiveCommencementStatus.RESOLVED_FUTURE.value == "resolved_future"
+    assert UKProspectiveCommencementStatus.UNRESOLVED.value == "unresolved"
 
 
 def test_prospective_commencement_witness_resolves_in_force() -> None:
