@@ -88,22 +88,27 @@ def test_target_cols_accessor_reproduces_stored_columns() -> None:
         "target_special",
     )
 
+    # lo-absent direct builds (columns are the sole source). Each call is a
+    # distinct op shape the accessor must reproduce; built explicitly (not via a
+    # dict splat) so the constructor's typed parameters are statically checked.
     cases = [
         # plain section
-        dict(target_unit_kind="section", target_section="5"),
+        AmendmentOp(op_id="t", target_unit_kind="section", target_section="5"),
         # section with enclosing chapter + part scope
-        dict(
+        AmendmentOp(
+            op_id="t",
             target_unit_kind="section",
             target_section="11",
             target_chapter="4",
             target_part="2",
         ),
         # chapter focus with enclosing part
-        dict(target_unit_kind="chapter", target_section="4", target_part="2"),
+        AmendmentOp(op_id="t", target_unit_kind="chapter", target_section="4", target_part="2"),
         # part focus with redundant mirrored target_part (the W2 finding)
-        dict(target_unit_kind="part", target_section="III", target_part="III"),
+        AmendmentOp(op_id="t", target_unit_kind="part", target_section="III", target_part="III"),
         # descendant focus: momentti / kohta / alakohta
-        dict(
+        AmendmentOp(
+            op_id="t",
             target_unit_kind="section",
             target_section="7",
             target_paragraph=2,
@@ -111,19 +116,19 @@ def test_target_cols_accessor_reproduces_stored_columns() -> None:
             target_subitem="a",
         ),
         # heading facet (otsikko_edella must round-trip, not collapse to otsikko)
-        dict(
+        AmendmentOp(
+            op_id="t",
             target_unit_kind="section",
             target_section="9",
             target_special="otsikko_edella",
         ),
     ]
-    for kwargs in cases:
-        op = AmendmentOp(op_id="t", **kwargs)  # lo-absent direct build
+    for op in cases:
         cols = op.target_cols
         for c in _COLUMNS:
             assert getattr(cols, c) == getattr(op, c), (
                 f"target_cols.{c}={getattr(cols, c)!r} != stored {getattr(op, c)!r} "
-                f"for {kwargs}"
+                f"for op {op.op_id} unit_kind={op.target_unit_kind} section={op.target_section}"
             )
 
 
