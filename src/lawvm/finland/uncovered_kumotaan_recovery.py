@@ -127,33 +127,34 @@ def _apply_uncovered_kumotaan_typed(
     source_pathologies_out = sinks.source_pathologies_out
 
     vts_section_refs = [
-        _norm_num_token(op.target_section)
+        _norm_num_token(op.target_cols.target_section)
         for op in ops
         if (
             op.voimaantulo_repeal
-            and op.target_unit_kind == "section"
-            and op.target_section
-            and not op.target_paragraph
-            and not op.target_item
-            and not op.target_special
+            and op.target_cols.target_unit_kind == "section"
+            and op.target_cols.target_section
+            and not op.target_cols.target_paragraph
+            and not op.target_cols.target_item
+            and not op.target_cols.target_special
         )
     ]
     vts_granular_section_refs = {
-        _norm_num_token(op.target_section)
+        _norm_num_token(op.target_cols.target_section)
         for op in ops
         if (
             op.voimaantulo_repeal
-            and op.target_unit_kind == "section"
-            and op.target_section
-            and (op.target_paragraph or op.target_item or op.target_special)
+            and op.target_cols.target_unit_kind == "section"
+            and op.target_cols.target_section
+            and (op.target_cols.target_paragraph or op.target_cols.target_item or op.target_cols.target_special)
         )
     }
     vts_container_refs: dict[TargetUnitKind, list[str]] = {"chapter": [], "part": []}
     for op in ops:
-        if not op.voimaantulo_repeal or not op.target_section:
+        cols = op.target_cols
+        if not op.voimaantulo_repeal or not cols.target_section:
             continue
-        if op.target_unit_kind in {"chapter", "part"}:
-            vts_container_refs[op.target_unit_kind].append(_norm_num_token(op.target_section))
+        if cols.target_unit_kind in ("chapter", "part"):
+            vts_container_refs[cols.target_unit_kind].append(_norm_num_token(cols.target_section))
 
     if not johto or "kumotaan" not in johto.lower():
         if not vts_section_refs and not vts_container_refs["chapter"] and not vts_container_refs["part"]:
@@ -170,15 +171,16 @@ def _apply_uncovered_kumotaan_typed(
     for op in ops:
         if op.voimaantulo_repeal:
             continue
-        if op.target_unit_kind == "section" and op.target_section:
-            if op.target_special in {"otsikko", "otsikko_edella"}:
+        cols = op.target_cols
+        if cols.target_unit_kind == "section" and cols.target_section:
+            if cols.target_special in {"otsikko", "otsikko_edella"}:
                 continue
-            covered_labels.add(_norm_num_token(op.target_section))
-        elif op.target_unit_kind in {"chapter", "part"} and op.target_section:
+            covered_labels.add(_norm_num_token(cols.target_section))
+        elif cols.target_unit_kind in ("chapter", "part") and cols.target_section:
             covered_containers.add(
                 CoveredContainerKey(
-                    target_unit_kind=op.target_unit_kind,
-                    label=_norm_num_token(op.target_section),
+                    target_unit_kind=cols.target_unit_kind,
+                    label=_norm_num_token(cols.target_section),
                 )
             )
     covered_labels |= _same_amendment_non_repeal_section_labels(

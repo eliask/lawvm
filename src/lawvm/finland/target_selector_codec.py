@@ -47,6 +47,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from lawvm.core.semantic_types import FacetKind
+from lawvm.core.target_scope import TargetUnitKind
 from lawvm.core.target_selector import (
     AddressSegment,
     ScopeStatus,
@@ -73,7 +74,7 @@ class AmendmentOpV1Record:
     round-trips against.
     """
 
-    target_unit_kind: str
+    target_unit_kind: TargetUnitKind
     target_section: str
     target_chapter: str | None
     target_part: str | None
@@ -159,11 +160,17 @@ class TargetSelectorCodecV1:
         target_paragraph: int | None = None
         target_item: str | None = None
         target_subitem: str | None = None
-        focus_kind: str | None = None
+        focus_kind: TargetUnitKind | None = None
         focus_label: str = ""
         for segment in sel.relative_path:
-            if segment.kind in ("section", "chapter", "part"):
-                focus_kind = segment.kind
+            if segment.kind == "section":
+                focus_kind = "section"
+                focus_label = segment.label
+            elif segment.kind == "chapter":
+                focus_kind = "chapter"
+                focus_label = segment.label
+            elif segment.kind == "part":
+                focus_kind = "part"
                 focus_label = segment.label
             elif segment.kind == "subsection":
                 target_paragraph = int(segment.label)

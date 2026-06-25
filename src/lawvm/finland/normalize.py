@@ -449,21 +449,25 @@ def _extract_insert_item_ops_fallback_with_coverage(
 def _prune_shadowed_parent_subsection_insert_fallbacks(ops: List[AmendmentOp]) -> List[AmendmentOp]:
     """Drop coarse fallback subsection inserts shadowed by explicit item inserts."""
     explicit_item_targets = {
-        (_norm_num_token(op.target_section), op.target_paragraph)
+        (_norm_num_token(op.target_cols.target_section), op.target_cols.target_paragraph)
         for op in ops
-        if op.op_type == OpType.INSERT and op.target_section and op.target_paragraph is not None and op.target_item
+        if op.op_type == OpType.INSERT
+        and op.target_cols.target_section
+        and op.target_cols.target_paragraph is not None
+        and op.target_cols.target_item
     }
     if not explicit_item_targets:
         return ops
     pruned: List[AmendmentOp] = []
     for op in ops:
+        cols = op.target_cols
         if (
             op.op_type == OpType.INSERT
-            and op.target_section
-            and (_norm_num_token(op.target_section), op.target_paragraph) in explicit_item_targets
-            and op.target_paragraph is not None
-            and op.target_item is None
-            and op.target_special is None
+            and cols.target_section
+            and (_norm_num_token(cols.target_section), cols.target_paragraph) in explicit_item_targets
+            and cols.target_paragraph is not None
+            and cols.target_item is None
+            and cols.target_special is None
         ):
             continue
         pruned.append(op)
@@ -774,29 +778,33 @@ def _extract_root_replace_ops_from_body_fallback(
 
 
 def _op_signature(op: AmendmentOp) -> Tuple[object, ...]:
+    cols = op.target_cols
     return (
         op.op_type,
-        op.target_unit_kind,
-        op.target_chapter,
-        op.target_section,
-        op.target_paragraph,
-        op.target_item,
-        op.target_special,
+        cols.target_unit_kind,
+        cols.target_chapter,
+        cols.target_section,
+        cols.target_paragraph,
+        cols.target_item,
+        cols.target_special,
     )
 
 
 def _is_root_insert_op(op: AmendmentOp) -> bool:
+    cols = op.target_cols
     return (
-        op.op_type == OpType.INSERT and op.target_paragraph is None and op.target_item is None and op.target_special is None
+        op.op_type == OpType.INSERT and cols.target_paragraph is None and cols.target_item is None and cols.target_special is None
     )
 
 
 def _same_root_insert_target(lhs: AmendmentOp, rhs: AmendmentOp) -> bool:
+    lhs_cols = lhs.target_cols
+    rhs_cols = rhs.target_cols
     return (
         _is_root_insert_op(lhs)
         and _is_root_insert_op(rhs)
-        and lhs.target_unit_kind == rhs.target_unit_kind
-        and lhs.target_section == rhs.target_section
+        and lhs_cols.target_unit_kind == rhs_cols.target_unit_kind
+        and lhs_cols.target_section == rhs_cols.target_section
     )
 
 
@@ -821,15 +829,16 @@ def _dedupe_fallback_ops_ir(ops: List[AmendmentOp]) -> List[AmendmentOp]:
             dest_path = tuple(op.lo.destination.path)
             if dest_path:
                 destination_label = "/".join(f"{kind}:{label}" for kind, label in dest_path if label)
+        cols = op.target_cols
         key = (
             op.op_type,
-            op.target_unit_kind,
-            _norm_num_token(op.target_section) if op.target_section else "",
-            op.target_paragraph,
-            op.target_item,
-            op.target_special,
-            _norm_num_token(op.target_chapter) if op.target_chapter else None,
-            _norm_num_token(op.target_part) if op.target_part else None,
+            cols.target_unit_kind,
+            _norm_num_token(cols.target_section) if cols.target_section else "",
+            cols.target_paragraph,
+            cols.target_item,
+            cols.target_special,
+            _norm_num_token(cols.target_chapter) if cols.target_chapter else None,
+            _norm_num_token(cols.target_part) if cols.target_part else None,
             destination_label,
         )
         if key in seen:
@@ -1081,7 +1090,10 @@ def parse_ops_fallback_heuristic(johto: str) -> List[AmendmentOp]:
     ]
     for sec, mom in insert_matches:
         if not any(
-            op.op_type == OpType.INSERT and op.target_section == sec and op.target_paragraph == mom and not op.target_item
+            op.op_type == OpType.INSERT
+            and op.target_cols.target_section == sec
+            and op.target_cols.target_paragraph == mom
+            and not op.target_cols.target_item
             for op in ops
         ):
             ops.append(
@@ -1100,21 +1112,22 @@ def parse_ops_fallback_heuristic(johto: str) -> List[AmendmentOp]:
     ):
         sec_norm = _RE_WHITESPACE.sub("", sec)
         for i, op in enumerate(ops):
+            cols = op.target_cols
             if (
                 op.op_type == OpType.REPLACE
-                and op.target_section == sec_norm
-                and op.target_paragraph == int(old_mom)
-                and not op.target_item
+                and cols.target_section == sec_norm
+                and cols.target_paragraph == int(old_mom)
+                and not cols.target_item
             ):
                 ops[i] = dc_replace(op, **replace_target(op, target_paragraph=int(new_mom)))
                 break
     if fallback_insert_ops:
         fallback_insert_keys = {
             (
-                _RE_WHITESPACE.sub("", str(op.target_section or "")).lower(),
-                op.target_paragraph,
-                str(op.target_item or "") or None,
-                str(op.target_special or "") or None,
+                _RE_WHITESPACE.sub("", str(op.target_cols.target_section or "")).lower(),
+                op.target_cols.target_paragraph,
+                str(op.target_cols.target_item or "") or None,
+                str(op.target_cols.target_special or "") or None,
             )
             for op in fallback_insert_ops
         }
@@ -1124,10 +1137,10 @@ def parse_ops_fallback_heuristic(johto: str) -> List[AmendmentOp]:
             if (
                 op.op_type == OpType.INSERT
                 or (
-                    _RE_WHITESPACE.sub("", str(op.target_section or "")).lower(),
-                    op.target_paragraph,
-                    str(op.target_item or "") or None,
-                    str(op.target_special or "") or None,
+                    _RE_WHITESPACE.sub("", str(op.target_cols.target_section or "")).lower(),
+                    op.target_cols.target_paragraph,
+                    str(op.target_cols.target_item or "") or None,
+                    str(op.target_cols.target_special or "") or None,
                 )
                 not in fallback_insert_keys
             )
@@ -1224,7 +1237,8 @@ def parse_ops_title_fallback(title: str) -> List[AmendmentOp]:
     deduped: List[AmendmentOp] = []
     seen: Set[Tuple[str, str, str]] = set()
     for op in ops:
-        key = (op.op_type, op.target_unit_kind, _norm_num_token(op.target_section))
+        cols = op.target_cols
+        key = (op.op_type, cols.target_unit_kind, _norm_num_token(cols.target_section))
         if key in seen:
             continue
         seen.add(key)
