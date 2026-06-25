@@ -37,12 +37,6 @@ from lawvm.finland.scope import (
     source_names_descendant_scope_below_section,
 )
 from lawvm.finland.ops import AmendmentOp, ResolvedOp, ResolvedTargetScopeView, temporary_signal_for_op
-from lawvm.finland.target_selector_facades import (
-    LegacyTargetKwargs,
-    fi_chapter_target,
-    fi_part_target,
-    fi_section_target,
-)
 from lawvm.finland.replay_capture import ReplayLegalOperationCaptureList
 from lawvm.finland.standalone_targets import StandaloneSectionTargetsInput
 from lawvm.finland.source_normalize import normalize_source_ir
@@ -159,120 +153,6 @@ def _container_kind_for_name(kind_name: str) -> IRNodeKind | None:
     if kind_name == "part":
         return IRNodeKind.PART
     return None
-
-
-def _legacy_dispatch_shell_target_kwargs(rop: "ResolvedOp") -> LegacyTargetKwargs:
-    """Lower a late-waist ResolvedOp scope onto the legacy ``target_*`` kwargs.
-
-    Routes through the sanctioned typed ``fi_*_target`` construction facades
-    (which build a ``TargetSelector`` and lower it via the codec) instead of
-    hand-writing the loosely-typed ``target_*`` columns. The facade output is
-    byte-identical to the prior hand-derivation for the full legitimate input
-    domain:
-
-    - the structural section/chapter/part/momentti columns mirror the
-      ``ResolvedTargetScopeView`` exactly (the facade lowers them unchanged);
-    - the combined kohta+alakohta slot is passed as the facade's bare ``item``
-      with no ``subitem`` segment, reproducing the prior shape (``target_item``
-      combined, ``target_subitem`` absent);
-    - ``target_special`` is the resolved special token (``effective_target_special``
-      filtered through the legacy scope rule). The facet vocabulary is closed
-      (``otsikko``/``otsikko_edella``/``johd``), and ``special_raw`` round-trips
-      it through the codec, so the ``otsikko_edella`` distinction (which a typed
-      ``lo`` carrier could NOT encode — ``FacetKind`` collapses it to HEADING)
-      survives. An unrecognised facet token fails loud in the facade rather than
-      silently propagating, matching the fail-loud boundary.
-    """
-    scope = rop.resolved_target_scope_view
-    unit_kind = rop.target_unit_kind
-    section = _legacy_target_section_for_scope(scope, unit_kind)
-    special = _legacy_target_special_for_scope(scope, rop.effective_target_special)
-    # The legacy shell carries a single COMBINED kohta+alakohta slot (no separate
-    # target_subitem column), so pass the combined value as the facade's bare
-    # ``item`` and leave ``subitem`` unset.
-    item = scope.target_item
-    if unit_kind == "chapter":
-        return fi_chapter_target(
-            section,
-            part=scope.target_part,
-            subsection=scope.target_paragraph,
-            item=item,
-            special_raw=special,
-        )
-    if unit_kind == "part":
-        return fi_part_target(
-            section,
-            redundant_part_scope=scope.target_part is not None,
-            subsection=scope.target_paragraph,
-            item=item,
-            special_raw=special,
-        )
-    return fi_section_target(
-        section,
-        chapter=scope.target_chapter,
-        part=scope.target_part,
-        subsection=scope.target_paragraph,
-        item=item,
-        special_raw=special,
-    )
-
-
-def _legacy_dispatch_shell_for_rop(rop: "ResolvedOp") -> "AmendmentOp":
-    """Project a late-waist op onto the narrow legacy apply shell.
-
-    Keep this compatibility projection owned by the apply/runtime boundary,
-    not by generic `ResolvedOp` consumers.
-    """
-    from lawvm.finland.ops import AmendmentOp
-
-    scope = rop.resolved_target_scope_view
-    # Mirror the computation in apply_subsection_ops._subsection_apply_view_for_op
-    # so that subsection apply paths reading op.has_exact_bound_payload (legacy
-    # AmendmentOp branch) see the same value as paths that compute it directly
-    # from the ResolvedOp.  Without this the legacy shell projection silently
-    # leaves the field at its dataclass default (False), creating an asymmetric
-    # wiring gap between the two _subsection_apply_view_for_op input branches.
-    mapped = rop.slot_assignment.for_stable_op_id(rop.op_id) if rop.slot_assignment is not None else None
-    has_exact_bound_payload = (
-        rop.slot_assignment is not None
-        and rop.slot_assignment.has_owned_bound_payload_for_stable_op_id(rop.op_id)
-    ) or (
-        mapped is not None
-        and scope.target_paragraph is not None
-        and mapped.label is not None
-        and normalized_label_key(mapped.label) == str(scope.target_paragraph)
-    )
-
-    return AmendmentOp(
-        op_id=rop.op_id,
-        op_type=rop.resolved_action_type,
-        # Structural target columns are derived via the sanctioned typed facade
-        # (TargetSelector + codec lowering), not hand-written raw target_* kwargs.
-        **_legacy_dispatch_shell_target_kwargs(rop),
-        named_row_targets=rop.named_row_targets,
-        numbered_table_targets=rop.numbered_table_targets,
-        body_root_replace_fallback=rop.body_root_replace_fallback,
-        fallback_provenance=rop.fallback_provenance,
-        source_statute=rop.resolved_source_statute,
-        source_issue_date=rop.resolved_source_issue_date,
-        source_title=rop.resolved_source_title,
-        sec1_body_johto_fallback=rop.uses_sec1_body_johto_fallback,
-        move_clause_target_unit_kind=rop.move_clause_target_unit_kind,
-        uncovered_body_recovery=rop.uses_uncovered_body_recovery,
-        voimaantulo_repeal=rop.voimaantulo_repeal,
-        extraction_provenance_tags=rop.extraction_provenance_tags,
-        target_guessing_provenance_tags=rop.target_guessing_provenance_tags,
-        scope_provenance_tags=rop.scope_provenance_tags,
-        scope_confidence=rop.scope_confidence,
-        post_repeal_item_shift_label=rop.resolved_post_repeal_item_shift_label,
-        body_chapter_move_from=rop.body_chapter_move_from,
-        # Runtime dispatch shells must not carry parser-shell target authority.
-        lo=None,
-        is_temporary=temporary_signal_for_op(rop),
-        has_exact_bound_payload=has_exact_bound_payload,
-        temporal_activation=rop.temporal_activation,
-        witness_rule_id=rop.witness_rule_id,
-    )
 
 
 def _unique_substantive_section_path(

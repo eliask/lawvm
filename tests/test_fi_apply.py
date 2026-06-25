@@ -71,7 +71,6 @@ from lawvm.finland.apply_runtime_support import (
     _expired_temporary_section_merge_base,
     _expired_temporary_section_merge_base_rebase_info,
     _expired_temporary_subsection_slot_can_be_consumed,
-    _legacy_dispatch_shell_for_rop,
     _valid_target_path_hint,
     _valid_target_group_path_hint,
 )
@@ -1530,80 +1529,6 @@ def test_apply_op_rejects_contradictory_typed_intent_action_family() -> None:
             None,
             rop=rop,
         )
-
-
-def test_legacy_dispatch_shell_for_rop_prefers_late_waist_fields() -> None:
-    op = _op(
-        op_type=OpType.REPEAL,
-        target_section="9",
-        target_paragraph=99,
-        named_row_targets=("alpha", "beta"),
-        body_root_replace_fallback=True,
-        fallback_provenance=True,
-        voimaantulo_repeal=True,
-        extraction_provenance_tags=("extract_a",),
-        target_guessing_provenance_tags=("guess_a",),
-        scope_provenance_tags=("scope_a",),
-        is_temporary=True,
-        witness_rule_id="rule-1",
-    )
-    rop = ResolvedOp.from_amendment_op(
-        op,
-        muutos_ir=None,
-        cross_ir=None,
-        target_unit_kind="section",
-        target_norm="1",
-        target_chapter="2",
-    )
-    rop._target_address_override = LegalAddress(
-        path=(("chapter", "2"), ("section", "1"), ("subsection", "2"), ("item", "a"))
-    )
-    rop._source_statute_override = "2020/1"
-    rop._source_title_override = "Typed Source"
-    rop.named_row_targets = ("typed_row",)
-    rop.body_root_replace_fallback = False
-    rop.fallback_provenance = False
-    rop.voimaantulo_repeal = False
-    rop.extraction_provenance_tags = ("typed_extract",)
-    rop.target_guessing_provenance_tags = ("typed_guess",)
-    rop.scope_provenance_tags = ("typed_scope",)
-    rop.scope_confidence = ScopeConfidence(
-        tag="chapter_scope_from_explicit_chunk",
-        source=ScopeResolutionSource.EXPLICIT_CHUNK,
-        confidence=ScopeResolutionConfidence.EXPLICIT,
-        resolved_chapter="2",
-    )
-    rop.is_temporary = False
-    rop.witness_rule_id = "typed-rule"
-
-    bridge = _legacy_dispatch_shell_for_rop(rop)
-
-    assert bridge is not op
-    assert bridge.target_section == "1"
-    assert bridge.target_chapter == "2"
-    assert bridge.target_paragraph == 2
-    assert bridge.target_item == "a"
-    assert bridge.source_statute == "2020/1"
-    assert bridge.source_title == "Typed Source"
-    assert bridge.named_row_targets == ("typed_row",)
-    assert bridge.body_root_replace_fallback is False
-    assert bridge.fallback_provenance is False
-    assert bridge.voimaantulo_repeal is False
-    assert bridge.extraction_provenance_tags == ("typed_extract",)
-    assert bridge.target_guessing_provenance_tags == ("typed_guess",)
-    assert bridge.scope_provenance_tags == ("typed_scope",)
-    assert bridge.scope_confidence is not None
-    assert bridge.scope_confidence.tag == "chapter_scope_from_explicit_chunk"
-    assert bridge.scope_confidence.source == "explicit_chunk"
-    assert bridge.scope_confidence.confidence == "explicit"
-    assert bridge.scope_confidence.resolved_chapter == "2"
-    assert bridge.resolved_scope_confidence is not None
-    assert bridge.resolved_scope_confidence.tag == "chapter_scope_from_explicit_chunk"
-    assert bridge.resolved_scope_confidence.source == "explicit_chunk"
-    assert bridge.resolved_scope_confidence.confidence == "explicit"
-    assert bridge.resolved_scope_confidence.resolved_chapter == "2"
-    assert bridge.is_temporary is False
-    assert bridge.witness_rule_id == "typed-rule"
 
 
 def test_resolvedop_resolved_amend_sub_ir_uses_stable_slot_lookup() -> None:

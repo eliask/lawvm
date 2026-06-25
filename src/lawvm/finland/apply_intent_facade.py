@@ -175,8 +175,8 @@ APPLY_INTENT_LANES: tuple[ApplyIntentLane, ...] = (
         lane_id="runtime_support",
         module="lawvm.finland.apply_runtime_support",
         granularity="runtime",
-        symbol="_legacy_dispatch_shell_for_rop",
-        notes="Legacy shell projection and insert-parent path helpers.",
+        symbol="_find_insert_parent_path",
+        notes="Insert-parent path resolution and replay-history support helpers.",
     ),
     ApplyIntentLane(
         lane_id="resolved_op",
