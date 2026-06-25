@@ -139,7 +139,7 @@ def _repeal_row() -> NZCanonicalEffectCandidateRow:
         row_id="nz-effect-candidate-1",
         operation_row_id="nz-opw-1",
         effect_readiness_row_id="nz-readiness-1",
-        status="candidate_emitted",
+        candidate_status="candidate_emitted",
         action=str(StructuralAction.REPEAL),
         target_address="section:108",
         operation=_repeal_operation(),

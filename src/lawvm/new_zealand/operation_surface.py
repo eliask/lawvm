@@ -13,7 +13,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Literal, Mapping
 
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.evidence_contracts import CorpusFindingEvidenceRow, CorpusOperationEvidenceRow, CorpusRowStatus
@@ -36,6 +36,16 @@ from lawvm.new_zealand.source_tree import NZHistoryWitness, NZSourceDocument, NZ
 
 
 NZ_OPERATION_EFFECT_BLOCKED_RULE_ID = "nz_operation_surface_effect_lowering_not_implemented"
+
+# Closed vocabulary for a parsed target hint (the amended-provision label parse).
+NZTargetHintStatus = Literal[
+    "missing",
+    "document_facet",
+    "attached_facet",
+    "compound_target_unparsed",
+    "parsed",
+    "unparsed",
+]
 _KNOWN_OPERATION_FAMILIES = {
     "added",
     "amended",
@@ -65,7 +75,7 @@ _PART_TARGET_RE = re.compile(r"^parts?\s+(?P<label>[0-9A-Za-z]+)", re.IGNORECASE
 
 @dataclass(frozen=True)
 class NZTargetHint:
-    status: str
+    target_hint_status: NZTargetHintStatus
     kind: str = ""
     label: str = ""
     subsection: str = ""
@@ -78,7 +88,7 @@ class NZTargetHint:
 
     def to_jsonable(self) -> dict[str, Any]:
         return {
-            "status": self.status,
+            "target_hint_status": self.target_hint_status,
             "kind": self.kind,
             "label": self.label,
             "subsection": self.subsection,
@@ -91,7 +101,7 @@ class NZTargetHint:
 
 @dataclass(frozen=True)
 class NZTargetAddressCandidate:
-    status: str
+    target_address_status: str
     address: str = ""
     path: TreePath = ()
     special: str = ""
@@ -99,7 +109,7 @@ class NZTargetAddressCandidate:
 
     def to_jsonable(self) -> dict[str, Any]:
         return {
-            "status": self.status,
+            "target_address_status": self.target_address_status,
             "address": self.address,
             "path": [list(part) for part in self.path],
             "special": self.special,
@@ -179,9 +189,9 @@ class NZOperationSurfaceReport:
         status_counts = Counter(row.operation_status for row in self.rows)
         family_counts = Counter(row.operation_family for row in self.rows)
         target_counts = Counter(row.target_surface_status for row in self.rows)
-        target_hint_status_counts = Counter(row.target_hint.status for row in self.rows)
+        target_hint_status_counts = Counter(row.target_hint.target_hint_status for row in self.rows)
         target_hint_kind_counts = Counter(row.target_hint.kind or "__none__" for row in self.rows)
-        target_address_status_counts = Counter(row.target_address_candidate.status for row in self.rows)
+        target_address_status_counts = Counter(row.target_address_candidate.target_address_status for row in self.rows)
         dependency_counts = Counter(row.dependency_status for row in self.rows)
         amending_provision_href_counts = Counter(
             "present" if row.amending_provision_hrefs else "missing" for row in self.rows
@@ -299,13 +309,13 @@ class NZOperationSurfaceReport:
         if operation_family:
             filtered = tuple(row for row in filtered if row.operation_family == operation_family)
         if target_address_status:
-            filtered = tuple(row for row in filtered if row.target_address_candidate.status == target_address_status)
+            filtered = tuple(row for row in filtered if row.target_address_candidate.target_address_status == target_address_status)
         if dependency_status:
             filtered = tuple(row for row in filtered if row.dependency_status == dependency_status)
         if lowering_readiness_status:
             filtered = tuple(row for row in filtered if row.lowering_readiness_status == lowering_readiness_status)
         if target_hint_status:
-            filtered = tuple(row for row in filtered if row.target_hint.status == target_hint_status)
+            filtered = tuple(row for row in filtered if row.target_hint.target_hint_status == target_hint_status)
         return filtered
 
 
@@ -403,9 +413,9 @@ def build_operation_surface(
                     blocking=True,
                 )
             )
-        if target_address_candidate.status != "candidate":
-            rule_id = target_address_candidate.blocking_rule_id or f"nz_target_address_{target_address_candidate.status}"
-            reason = f"target address candidate is {target_address_candidate.status}"
+        if target_address_candidate.target_address_status != "candidate":
+            rule_id = target_address_candidate.blocking_rule_id or f"nz_target_address_{target_address_candidate.target_address_status}"
+            reason = f"target address candidate is {target_address_candidate.target_address_status}"
             findings.append(
                 _finding(
                     rule_id=rule_id,
@@ -428,7 +438,7 @@ def build_operation_surface(
                     },
                 )
             )
-        if target_status == "skeleton_duplicate_resolved" and target_address_candidate.status == "candidate":
+        if target_status == "skeleton_duplicate_resolved" and target_address_candidate.target_address_status == "candidate":
             rule_id = "nz_target_address_skeleton_duplicate_resolved"
             reason = "source path duplicate is caused by non-current end skeleton nodes; primary node target kept"
             findings.append(
@@ -454,7 +464,7 @@ def build_operation_surface(
                     },
                 )
             )
-        if target_hint.status == "attached_facet" and target_address_candidate.status == "candidate":
+        if target_hint.target_hint_status == "attached_facet" and target_address_candidate.target_address_status == "candidate":
             rule_id = "nz_target_address_attached_heading_from_context"
             reason = "history note targets the attached node heading by local context"
             findings.append(
@@ -541,18 +551,18 @@ def parse_target_hint(amended_provision: str, *, defined_term: str = "") -> NZTa
     normalized = raw.lower()
     definition = " ".join(defined_term.replace("\ufeff", "").split())
     if not raw:
-        return NZTargetHint(status="missing", raw=raw)
+        return NZTargetHint(target_hint_status="missing", raw=raw)
     if normalized in {"title", "long title"}:
-        return NZTargetHint(status="document_facet", kind="document", facet=normalized, raw=raw)
+        return NZTargetHint(target_hint_status="document_facet", kind="document", facet=normalized, raw=raw)
     if normalized == "heading":
-        return NZTargetHint(status="attached_facet", kind="attached_node", facet="heading", raw=raw)
+        return NZTargetHint(target_hint_status="attached_facet", kind="attached_node", facet="heading", raw=raw)
     compound_section_match = _COMPOUND_SECTION_TARGET_RE.match(raw)
     if compound_section_match is not None:
         components = tuple(re.findall(r"\(([0-9A-Za-z]+)\)", compound_section_match.group("components") or ""))
         subsection = components[0] if components else ""
         paragraphs = components[1:] if len(components) > 1 else ()
         return NZTargetHint(
-            status="compound_target_unparsed",
+            target_hint_status="compound_target_unparsed",
             kind="section",
             label=compound_section_match.group("section"),
             subsection=subsection,
@@ -572,7 +582,7 @@ def parse_target_hint(amended_provision: str, *, defined_term: str = "") -> NZTa
         # the note is not a heading facet.
         carried_definition = definition if (definition and not paragraphs and not facet) else ""
         return NZTargetHint(
-            status="parsed",
+            target_hint_status="parsed",
             kind="section",
             label=section_match.group("section"),
             subsection=subsection,
@@ -583,11 +593,11 @@ def parse_target_hint(amended_provision: str, *, defined_term: str = "") -> NZTa
         )
     schedule_match = _SCHEDULE_TARGET_RE.match(raw)
     if schedule_match is not None:
-        return NZTargetHint(status="parsed", kind="schedule", label=schedule_match.group("label"), raw=raw)
+        return NZTargetHint(target_hint_status="parsed", kind="schedule", label=schedule_match.group("label"), raw=raw)
     part_match = _PART_TARGET_RE.match(raw)
     if part_match is not None:
-        return NZTargetHint(status="parsed", kind="part", label=part_match.group("label"), raw=raw)
-    return NZTargetHint(status="unparsed", raw=raw)
+        return NZTargetHint(target_hint_status="parsed", kind="part", label=part_match.group("label"), raw=raw)
+    return NZTargetHint(target_hint_status="unparsed", raw=raw)
 
 
 def _operation_status(operation_family: str) -> str:
@@ -619,12 +629,12 @@ def _lowering_readiness_status(
         return "blocked_same_label_rebirth_duplicate"
     if target_surface_status == "document_level_facet":
         return "blocked_non_structural_facet"
-    if target_hint.status == "attached_facet" and target_address_candidate.status != "candidate":
+    if target_hint.target_hint_status == "attached_facet" and target_address_candidate.target_address_status != "candidate":
         return "blocked_non_structural_facet"
-    if target_hint.status != "parsed" and target_address_candidate.status != "candidate":
-        return f"blocked_target_hint_{target_hint.status}"
-    if target_address_candidate.status != "candidate":
-        return f"blocked_target_address_{target_address_candidate.status}"
+    if target_hint.target_hint_status != "parsed" and target_address_candidate.target_address_status != "candidate":
+        return f"blocked_target_hint_{target_hint.target_hint_status}"
+    if target_address_candidate.target_address_status != "candidate":
+        return f"blocked_target_address_{target_address_candidate.target_address_status}"
     return "ready_for_amending_act_payload_extraction"
 
 
@@ -636,30 +646,30 @@ def _target_address_candidate(
 ) -> NZTargetAddressCandidate:
     if target_surface_status == "duplicate_source_path":
         return NZTargetAddressCandidate(
-            status="blocked_duplicate_source_path",
+            target_address_status="blocked_duplicate_source_path",
             blocking_rule_id="nz_target_address_duplicate_source_path",
         )
     if target_surface_status == "same_label_rebirth_duplicate":
         return NZTargetAddressCandidate(
-            status="blocked_same_label_rebirth_duplicate",
+            target_address_status="blocked_same_label_rebirth_duplicate",
             blocking_rule_id="nz_target_address_same_label_rebirth_duplicate",
         )
     if target_surface_status == "non_current_skeleton_node":
         return NZTargetAddressCandidate(
-            status="blocked_non_current_skeleton_node",
+            target_address_status="blocked_non_current_skeleton_node",
             blocking_rule_id="nz_target_address_non_current_skeleton_node",
         )
     if target_surface_status == "document_level_facet":
         return NZTargetAddressCandidate(
-            status="blocked_document_level_facet",
+            target_address_status="blocked_document_level_facet",
             blocking_rule_id="nz_target_address_document_level_facet",
         )
-    if target_hint.status == "attached_facet" and target_hint.facet == "heading":
+    if target_hint.target_hint_status == "attached_facet" and target_hint.facet == "heading":
         return _attached_heading_address_candidate(source_path)
-    if target_hint.status != "parsed":
+    if target_hint.target_hint_status != "parsed":
         return NZTargetAddressCandidate(
-            status=f"blocked_target_hint_{target_hint.status}",
-            blocking_rule_id=f"nz_target_address_hint_{target_hint.status}",
+            target_address_status=f"blocked_target_hint_{target_hint.target_hint_status}",
+            blocking_rule_id=f"nz_target_address_hint_{target_hint.target_hint_status}",
         )
     path: TreePath
     if target_hint.kind == "section":
@@ -678,13 +688,13 @@ def _target_address_candidate(
         path = (("part", target_hint.label),)
     else:
         return NZTargetAddressCandidate(
-            status=f"blocked_target_kind_{target_hint.kind or 'missing'}",
+            target_address_status=f"blocked_target_kind_{target_hint.kind or 'missing'}",
             blocking_rule_id="nz_target_address_unsupported_target_kind",
         )
     special = FacetKind.HEADING if target_hint.facet == "heading" else None
     address = LegalAddress(path=path, special=special)
     return NZTargetAddressCandidate(
-        status="candidate",
+        target_address_status="candidate",
         address=str(address),
         path=address.path,
         special=str(address.special or ""),
@@ -697,18 +707,18 @@ def _attached_heading_address_candidate(source_path: tuple[str, ...]) -> NZTarge
         path_part = _address_part_from_source_segment(segment)
         if path_part is None:
             return NZTargetAddressCandidate(
-                status="blocked_attached_heading_source_path",
+                target_address_status="blocked_attached_heading_source_path",
                 blocking_rule_id="nz_target_address_attached_heading_source_path_unparsed",
             )
         path_parts.append(path_part)
     if not path_parts:
         return NZTargetAddressCandidate(
-            status="blocked_attached_heading_missing_source_path",
+            target_address_status="blocked_attached_heading_missing_source_path",
             blocking_rule_id="nz_target_address_attached_heading_missing_source_path",
         )
     address = LegalAddress(path=tuple(path_parts), special=FacetKind.HEADING)
     return NZTargetAddressCandidate(
-        status="candidate",
+        target_address_status="candidate",
         address=str(address),
         path=address.path,
         special=str(address.special or ""),
@@ -871,7 +881,7 @@ def _target_resolution_evidence(
                 reason=candidate_reason,
                 detail={
                     "source_path": row.source_path,
-                    "target_address_status": candidate.status,
+                    "target_address_status": candidate.target_address_status,
                 },
             ),
         )
@@ -892,9 +902,9 @@ def _target_resolution_evidence(
         strict_disposition="block" if blocking else "warn",
         quirks_disposition="skip_with_finding" if blocking else "warn",
         detail={
-            "jurisdiction_status": candidate.status,
+            "jurisdiction_status": candidate.target_address_status,
             "target_surface_status": row.target_surface_status,
-            "target_hint_status": row.target_hint.status,
+            "target_hint_status": row.target_hint.target_hint_status,
             "target_hint_kind": row.target_hint.kind,
             "source_path": row.source_path,
             "source_xml_path": row.source_xml_path,
@@ -932,8 +942,8 @@ def _operation_evidence_row(
             "reason": NZ_OPERATION_EFFECT_BLOCKED_RULE_ID,
             "operation_status": row.operation_status,
             "target_surface_status": row.target_surface_status,
-            "target_hint_status": row.target_hint.status,
-            "target_address_status": row.target_address_candidate.status,
+            "target_hint_status": row.target_hint.target_hint_status,
+            "target_address_status": row.target_address_candidate.target_address_status,
             "target_address": row.target_address_candidate.address,
             "dependency_status": row.dependency_status,
             "lowering_readiness_status": row.lowering_readiness_status,

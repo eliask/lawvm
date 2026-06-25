@@ -1168,7 +1168,7 @@ def _not_in_scope_reason(
     source_change_only: Any,
     target_recovery: Any,
 ) -> str:
-    if row.status != "candidate_emitted":
+    if row.candidate_status != "candidate_emitted":
         return NZ_DRY_RUN_NOT_IN_SCOPE_BLOCKED_OPERATION_WITNESS
     if row.operation is None:
         return NZ_DRY_RUN_NOT_IN_SCOPE_CANDIDATE_OPERATION_MISSING
@@ -1197,7 +1197,7 @@ def _replayable_repeal_rows(
 
     rows: list[NZCanonicalEffectCandidateRow] = []
     for row in preflight.candidate_report.rows:
-        if row.status != "candidate_emitted":
+        if row.candidate_status != "candidate_emitted":
             continue
         if row.operation is None:
             continue
@@ -1239,7 +1239,7 @@ def _replayable_text_replace_rows(
 
     rows: list[NZCanonicalEffectCandidateRow] = []
     for row in preflight.candidate_report.rows:
-        if row.status != "candidate_emitted":
+        if row.candidate_status != "candidate_emitted":
             continue
         if row.operation is None:
             continue
@@ -1265,7 +1265,7 @@ def _is_text_replace_witness(row: NZCanonicalEffectCandidateRow) -> bool:
     stable discriminator for the text_replace replay-coverage denominator.
     """
 
-    if row.status == "candidate_emitted":
+    if row.candidate_status == "candidate_emitted":
         return row.action == str(StructuralAction.TEXT_REPLACE)
     return row.blocking_rule_id == _NZ_TEXT_REPLACE_BLOCKED_RULE_ID
 
@@ -1319,7 +1319,7 @@ def _selected_family_text_replace_scope_completeness(
 
 
 def _text_replace_not_in_scope_reason(row: NZCanonicalEffectCandidateRow) -> str:
-    if row.status != "candidate_emitted":
+    if row.candidate_status != "candidate_emitted":
         return NZ_DRY_RUN_NOT_IN_SCOPE_BLOCKED_OPERATION_WITNESS
     if row.operation is None:
         return NZ_DRY_RUN_NOT_IN_SCOPE_CANDIDATE_OPERATION_MISSING
@@ -2041,7 +2041,7 @@ def _replace_witness_rows(surface: Any) -> tuple[Any, ...]:
     for row in surface.rows:
         if row.operation_family not in _NZ_REPLACE_OPERATION_FAMILIES:
             continue
-        if row.target_address_candidate.status != "candidate":
+        if row.target_address_candidate.target_address_status != "candidate":
             continue
         rows.append(row)
     return tuple(rows)
@@ -2099,7 +2099,7 @@ def _selected_family_replace_scope_completeness(
 def _replace_not_in_scope_reason(row: Any) -> str:
     if row.operation_family not in _NZ_REPLACE_OPERATION_FAMILIES:
         return NZ_DRY_RUN_NOT_IN_SCOPE_NON_REPLACE_FAMILY
-    if row.target_address_candidate.status != "candidate":
+    if row.target_address_candidate.target_address_status != "candidate":
         return NZ_DRY_RUN_NOT_IN_SCOPE_REPLACE_TARGET_NOT_CANDIDATE
     # A candidate-target structural-replace witness not in the in-scope set would
     # contradict the in-scope filter. Name it distinctly so any future filter
@@ -2119,14 +2119,14 @@ def _dry_run_one_replace(
     target_address = row.target_address_candidate.address or row.amended_provision
     amendment_date_iso = row.amendment_date_iso
 
-    if row.target_address_candidate.status != "candidate":
+    if row.target_address_candidate.target_address_status != "candidate":
         return NZDryRunRefusal(
             op_id=op_id,
             rule_id=NZ_DRY_RUN_REFUSED_REPLACE_TARGET_NOT_CANDIDATE_RULE_ID,
             message="dry-run structural-replace refused because the target address is not an exact candidate",
             target_address=target_address,
             amendment_date_iso=amendment_date_iso,
-            detail={"target_address_status": row.target_address_candidate.status},
+            detail={"target_address_status": row.target_address_candidate.target_address_status},
         )
 
     if not row.amending_work_id or not row.amending_provision_hrefs:
@@ -2575,7 +2575,7 @@ def _insert_witness_rows(surface: Any) -> tuple[Any, ...]:
     for row in surface.rows:
         if row.operation_family not in _NZ_INSERT_OPERATION_FAMILIES:
             continue
-        if row.target_address_candidate.status != "candidate":
+        if row.target_address_candidate.target_address_status != "candidate":
             continue
         rows.append(row)
     return tuple(rows)
@@ -2653,7 +2653,7 @@ def _selected_family_insert_scope_completeness(
 def _insert_not_in_scope_reason(row: Any) -> str:
     if row.operation_family not in _NZ_INSERT_OPERATION_FAMILIES:
         return NZ_DRY_RUN_NOT_IN_SCOPE_NON_INSERT_FAMILY
-    if row.target_address_candidate.status != "candidate":
+    if row.target_address_candidate.target_address_status != "candidate":
         return NZ_DRY_RUN_NOT_IN_SCOPE_INSERT_TARGET_NOT_CANDIDATE
     return NZ_DRY_RUN_NOT_IN_SCOPE_NON_INSERT_FAMILY
 
@@ -2875,14 +2875,14 @@ def _dry_run_one_insert(
     target_address = row.target_address_candidate.address or row.amended_provision
     amendment_date_iso = row.amendment_date_iso
 
-    if row.target_address_candidate.status != "candidate":
+    if row.target_address_candidate.target_address_status != "candidate":
         return NZDryRunRefusal(
             op_id=op_id,
             rule_id=NZ_DRY_RUN_REFUSED_INSERT_TARGET_NOT_CANDIDATE_RULE_ID,
             message="dry-run structural-insert refused because the target address is not an exact candidate",
             target_address=target_address,
             amendment_date_iso=amendment_date_iso,
-            detail={"target_address_status": row.target_address_candidate.status},
+            detail={"target_address_status": row.target_address_candidate.target_address_status},
         )
 
     # The inserted node's own source path (where it will live). A single-segment

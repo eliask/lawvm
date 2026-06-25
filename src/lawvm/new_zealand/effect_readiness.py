@@ -268,12 +268,12 @@ def build_effect_readiness_surface(
             payload_row.operation_target_surface_status if payload_row is not None else operation_row.target_surface_status
         )
         operation_target_hint_status = (
-            payload_row.operation_target_hint_status if payload_row is not None else operation_row.target_hint.status
+            payload_row.operation_target_hint_status if payload_row is not None else operation_row.target_hint.target_hint_status
         )
         operation_target_address_status = (
             payload_row.operation_target_address_status
             if payload_row is not None
-            else operation_row.target_address_candidate.status
+            else operation_row.target_address_candidate.target_address_status
         )
         operation_target_blocking_rule_id = (
             payload_row.operation_target_blocking_rule_id

@@ -262,7 +262,7 @@ def _text_replace_row(
         row_id="nz-effect-candidate-1",
         operation_row_id="nz-opw-1",
         effect_readiness_row_id="nz-readiness-1",
-        status="candidate_emitted",
+        candidate_status="candidate_emitted",
         action=str(StructuralAction.TEXT_REPLACE),
         target_address="section:108/subsection:1",
         operation=operation
@@ -281,7 +281,7 @@ def _blocked_text_replace_row() -> NZCanonicalEffectCandidateRow:
         row_id="nz-effect-candidate-2",
         operation_row_id="nz-opw-2",
         effect_readiness_row_id="nz-readiness-2",
-        status="blocked",
+        candidate_status="blocked",
         target_address="section:200",
         blocking_rule_id="nz_text_replace_candidate_latest_oracle_witness_unavailable",
         operation_family="amended",
@@ -564,7 +564,7 @@ def test_text_replace_scope_completeness_types_other_witnesses() -> None:
         row_id="nz-effect-candidate-3",
         operation_row_id="nz-opw-3",
         effect_readiness_row_id="nz-readiness-3",
-        status="candidate_emitted",
+        candidate_status="candidate_emitted",
         action=str(StructuralAction.REPEAL),
         target_address="section:300",
         operation=LegalOperation(

@@ -166,8 +166,8 @@ def _archive(after_xml: bytes = _AFTER_XML_AGREES) -> _FakeArchive:
 
 
 class _FakeTargetCandidate:
-    def __init__(self, status: str, address: str, path: tuple[tuple[str, str], ...]) -> None:
-        self.status = status
+    def __init__(self, target_address_status: str, address: str, path: tuple[tuple[str, str], ...]) -> None:
+        self.target_address_status = target_address_status
         self.address = address
         self.path = path
 

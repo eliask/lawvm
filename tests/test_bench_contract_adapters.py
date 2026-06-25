@@ -224,7 +224,7 @@ def test_ee_exception_is_crash() -> None:
 
 def _nz_result(
     *,
-    status: str = "OK",
+    work_status: str = "OK",
     slice_nodes: int = 10,
     slice_agreements: int = 8,
     text_similarity: float = 0.9,
@@ -235,7 +235,7 @@ def _nz_result(
     return nz_bench._WorkResult(
         work_id="w1",
         families=(),
-        status=status,
+        work_status=work_status,
         transitions_replayed=1,
         transitions_refused=0,
         ops_replayed=1,
@@ -296,7 +296,7 @@ def test_nz_no_slice_nodes_is_non_scored() -> None:
 def test_nz_exception_is_crash() -> None:
     from lawvm.tools import nz_bench
 
-    r = nz_bench.nz_bench_unit_result(_nz_result(status="EXC:boom"))
+    r = nz_bench.nz_bench_unit_result(_nz_result(work_status="EXC:boom"))
     assert r.status is BenchStatus.CRASH
     assert r.is_failure
 

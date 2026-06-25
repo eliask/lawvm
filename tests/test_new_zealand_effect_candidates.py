@@ -147,7 +147,7 @@ def test_effect_candidate_summary_separates_emitted_rows_from_executable_operati
                 row_id="nz-effect-candidate-1",
                 operation_row_id="nz-opw-1",
                 effect_readiness_row_id="nz-effect-ready-1",
-                status="candidate_emitted",
+                candidate_status="candidate_emitted",
                 action="repeal",
                 target_address="section:1",
                 operation=None,
@@ -210,7 +210,7 @@ def test_build_effect_candidate_surface_corroborates_direct_repeal_range_payload
     report = build_effect_candidate_surface(operation_surface, payload_surface)
     row = report.rows[0]
 
-    assert row.status == "candidate_emitted"
+    assert row.candidate_status == "candidate_emitted"
     assert row.action == "repeal"
     assert row.repeal_payload_corroboration_status == "corroborated_direct_repeal_payload_target"
     assert row.repeal_payload_corroboration_rule_id == "nz_repeal_payload_target_corroborated"
@@ -295,7 +295,7 @@ def test_build_effect_candidate_surface_blocks_direct_repeal_payload_target_mism
     row = report.rows[0]
     evidence_row = report.operation_evidence_rows()[0].to_dict()
 
-    assert row.status == "blocked"
+    assert row.candidate_status == "blocked"
     assert row.operation is None
     assert row.blocking_rule_id == "nz_repeal_payload_target_mismatch"
     assert row.repeal_payload_corroboration_status == "blocked_direct_repeal_payload_target_mismatch"
@@ -377,7 +377,7 @@ def test_build_effect_candidate_surface_emits_text_replace_candidate_from_owned_
         },
         source_change_text_witnesses={
             "nz-opw-1": _SourceChangeTextWitness(
-                status="observed_single_replacement",
+                witness_status="observed_single_replacement",
                 rule_id="nz_source_change_text_observed_single_replacement",
                 change_window_truth_claim="source_change_window_not_effective_date",
                 requested_date="2025-01-01",
@@ -926,7 +926,7 @@ def test_build_effect_candidate_surface_emits_text_replace_from_archived_source_
         instruction_workqueue,
         source_change_text_witnesses={
             "nz-opw-1": _SourceChangeTextWitness(
-                status="observed_single_replacement",
+                witness_status="observed_single_replacement",
                 rule_id="nz_source_change_text_observed_single_replacement",
                 change_window_truth_claim="source_change_window_not_effective_date",
                 requested_date="2025-01-01",
@@ -1025,7 +1025,7 @@ def test_build_effect_candidate_surface_keeps_partial_source_change_text_witness
         instruction_workqueue,
         source_change_text_witnesses={
             "nz-opw-1": _SourceChangeTextWitness(
-                status="partial_text_change_observed",
+                witness_status="partial_text_change_observed",
                 rule_id="nz_source_change_text_partial_text_change_observed",
                 requested_date="2025-01-01",
                 target_source_path=("prov:21",),
@@ -1100,7 +1100,7 @@ def test_build_effect_candidate_surface_rejects_source_change_witness_for_differ
         instruction_workqueue,
         source_change_text_witnesses={
             "nz-opw-1": _SourceChangeTextWitness(
-                status="observed_single_replacement",
+                witness_status="observed_single_replacement",
                 rule_id="nz_source_change_text_observed_single_replacement",
                 target_source_path=("prov:99",),
                 before_old_text_occurrences=1,
@@ -1295,7 +1295,7 @@ def test_build_effect_candidate_surface_preserves_upstream_target_blocker_contex
     row = report.rows[0]
     evidence_row = report.operation_evidence_rows()[0].to_dict()
 
-    assert row.status == "blocked"
+    assert row.candidate_status == "blocked"
     assert row.blocking_rule_id == "nz_effect_readiness_operation_not_payload_ready"
     assert row.operation_family == "amended"
     assert row.operation_lowering_readiness_status == "blocked_duplicate_source_path"
@@ -1362,7 +1362,7 @@ def test_nz_effect_candidates_text_cli_prints_filtered_context(monkeypatch, caps
                 row_id="candidate-row",
                 operation_row_id="op-candidate",
                 effect_readiness_row_id="ready-candidate",
-                status="candidate_emitted",
+                candidate_status="candidate_emitted",
                 action="repeal",
                 operation_family="repealed",
                 target_address="section:1",
@@ -1371,7 +1371,7 @@ def test_nz_effect_candidates_text_cli_prints_filtered_context(monkeypatch, caps
                 row_id="blocked-row",
                 operation_row_id="op-blocked",
                 effect_readiness_row_id="ready-blocked",
-                status="blocked",
+                candidate_status="blocked",
                 action="text_replace",
                 operation_family="amended",
                 target_address="section:2",

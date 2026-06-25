@@ -21,7 +21,7 @@ def test_classify_operation_family_normalizes_known_and_unclassified_values() ->
 
 def test_parse_target_hint_extracts_bounded_structural_hints() -> None:
     assert parse_target_hint("Section 12(3)").to_jsonable() == {
-        "status": "parsed",
+        "target_hint_status": "parsed",
         "kind": "section",
         "label": "12",
         "subsection": "3",
@@ -33,11 +33,11 @@ def test_parse_target_hint_extracts_bounded_structural_hints() -> None:
     assert parse_target_hint("Section 78B(1)\ufeff(a)\ufeff(viii)").to_jsonable()["paragraphs"] == ["a", "viii"]
     assert parse_target_hint("Section 1 heading").to_jsonable()["facet"] == "heading"
     assert parse_target_hint("Schedule 2").to_jsonable()["kind"] == "schedule"
-    assert parse_target_hint("Heading").to_jsonable()["status"] == "attached_facet"
-    assert parse_target_hint("Title").to_jsonable()["status"] == "document_facet"
-    assert parse_target_hint("").to_jsonable()["status"] == "missing"
+    assert parse_target_hint("Heading").to_jsonable()["target_hint_status"] == "attached_facet"
+    assert parse_target_hint("Title").to_jsonable()["target_hint_status"] == "document_facet"
+    assert parse_target_hint("").to_jsonable()["target_hint_status"] == "missing"
     assert parse_target_hint("Section 2(1) and (2)").to_jsonable() == {
-        "status": "compound_target_unparsed",
+        "target_hint_status": "compound_target_unparsed",
         "kind": "section",
         "label": "2",
         "subsection": "1",
@@ -46,7 +46,7 @@ def test_parse_target_hint_extracts_bounded_structural_hints() -> None:
         "raw": "Section 2(1) and (2)",
         "definition": "",
     }
-    assert parse_target_hint("Sections 1 and 2").to_jsonable()["status"] == "compound_target_unparsed"
+    assert parse_target_hint("Sections 1 and 2").to_jsonable()["target_hint_status"] == "compound_target_unparsed"
     # A definition note carries its defined term as a refining segment.
     definition_hint = parse_target_hint("Section 2(1)", defined_term="Commission")
     assert definition_hint.kind == "section"
@@ -149,7 +149,7 @@ def test_build_operation_surface_extracts_history_witness_rows() -> None:
     assert report.rows[1].target_hint.kind == "section"
     assert report.rows[1].target_hint.label == "1"
     assert report.rows[1].target_address_candidate.address == "section:1"
-    assert report.rows[1].target_address_candidate.status == "candidate"
+    assert report.rows[1].target_address_candidate.target_address_status == "candidate"
     assert report.rows[1].amending_provision_hrefs == ("amend-3",)
     assert report.rows[1].lowering_readiness_status == "ready_for_amending_act_payload_extraction"
 
@@ -199,7 +199,7 @@ def test_operation_surface_json_filters_rows_and_related_evidence() -> None:
     assert payload["filtered_summary"]["findings"] == 2
     assert payload["filtered_summary"]["target_address_status_counts"] == {"blocked_document_level_facet": 1}
     assert len(payload["rows"]) == 1
-    assert payload["rows"][0]["target_address_candidate"]["status"] == "blocked_document_level_facet"
+    assert payload["rows"][0]["target_address_candidate"]["target_address_status"] == "blocked_document_level_facet"
     assert [finding["rule_id"] for finding in payload["findings"]] == [
         "nz_target_address_document_level_facet",
         "nz_lowering_readiness_blocked_non_structural_facet",
@@ -299,7 +299,7 @@ def test_build_operation_surface_records_duplicate_target_and_unarchived_depende
     report = build_operation_surface(parse_nz_source_document(xml), archived_dependency_work_ids=frozenset())
 
     assert report.rows[0].target_surface_status == "duplicate_source_path"
-    assert report.rows[0].target_address_candidate.status == "blocked_duplicate_source_path"
+    assert report.rows[0].target_address_candidate.target_address_status == "blocked_duplicate_source_path"
     assert report.rows[0].dependency_status == "amending_work_resolved_unarchived"
     assert report.rows[0].lowering_readiness_status == "blocked_amending_work_resolved_unarchived"
     assert [finding["rule_id"] for finding in report.findings] == [
@@ -381,7 +381,7 @@ def test_build_operation_surface_classifies_same_label_rebirth_duplicate_without
     )
 
     assert report.rows[0].target_surface_status == "same_label_rebirth_duplicate"
-    assert report.rows[0].target_address_candidate.status == "blocked_same_label_rebirth_duplicate"
+    assert report.rows[0].target_address_candidate.target_address_status == "blocked_same_label_rebirth_duplicate"
     assert report.rows[0].lowering_readiness_status == "blocked_same_label_rebirth_duplicate"
     assert [finding["rule_id"] for finding in report.findings] == [
         "nz_target_address_same_label_rebirth_duplicate",

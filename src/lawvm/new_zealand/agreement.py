@@ -111,7 +111,7 @@ class NZAgreementReport:
         residuals: list[AgreementResidual] = []
         for index, row in enumerate(self.rows):
             family = classify_comparator_status_family(row.agreement_status)
-            status: AgreementResidualStatus = _COMPARATOR_RESIDUAL_STATUS.get(row.agreement_status, "residual")
+            residual_status: AgreementResidualStatus = _COMPARATOR_RESIDUAL_STATUS.get(row.agreement_status, "residual")
             path_key = "/".join(row.path) or f"row_{index}"
             residuals.append(
                 AgreementResidual(
@@ -119,7 +119,7 @@ class NZAgreementReport:
                     jurisdiction="nz",
                     agreement_surface=agreement_surface,
                     family=family,
-                    agreement_residual_status=status,
+                    agreement_residual_status=residual_status,
                     owner_phase="agreement",
                     rule_id=f"nz_agreement_comparator_status_{row.agreement_status}",
                     source_artifact_id=path_key,
@@ -128,7 +128,7 @@ class NZAgreementReport:
                     safe_default="classify_candidate_vs_oracle_without_authorizing_replay_or_oracle_truth",
                     forbidden_shortcuts=_AGREEMENT_FORBIDDEN_SHORTCUTS,
                     detail={
-                        "status": row.agreement_status,
+                        "agreement_status": row.agreement_status,
                         "candidate_xml_id": row.candidate_xml_id,
                         "oracle_xml_id": row.oracle_xml_id,
                         "candidate_heading": row.candidate_heading,

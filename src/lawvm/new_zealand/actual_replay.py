@@ -1188,14 +1188,14 @@ def _refusal_residual(
         refusal_rule_id=refusal.rule_id,
         dry_run_refusal_rule_id=dry_run_refusal_rule_id,
     )
-    status: AgreementResidualStatus = _REFUSAL_FAMILY_STATUS.get(family, "blocked")
+    residual_status: AgreementResidualStatus = _REFUSAL_FAMILY_STATUS.get(family, "blocked")
     op_tag = refusal.op_ids[0] if refusal.op_ids else f"transition_{index}"
     return AgreementResidual(
         residual_id=f"{work_id}:{op_tag}:{refusal.rule_id}:{index}",
         jurisdiction="nz",
         agreement_surface="nz_actual_replay",
         family=family,
-        agreement_residual_status=status,
+        agreement_residual_status=residual_status,
         owner_phase="actual_replay",
         rule_id=refusal.rule_id,
         source_artifact_id=op_tag,

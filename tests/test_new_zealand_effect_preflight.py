@@ -197,7 +197,7 @@ def test_effect_candidate_preflight_blocks_source_change_only_text_replace_candi
         instruction_workqueue,
         source_change_text_witnesses={
             "nz-opw-1": _SourceChangeTextWitness(
-                status="observed_single_replacement",
+                witness_status="observed_single_replacement",
                 rule_id="nz_source_change_text_observed_single_replacement",
                 change_window_truth_claim="source_change_window_not_effective_date",
                 requested_date="2025-01-01",
@@ -235,7 +235,7 @@ def test_effect_candidate_preflight_blocks_source_change_only_text_replace_candi
         "nz_effect_preflight_source_change_only_candidates_not_dry_run_replayable"
     )
     assert operation_row["evidence_status"] == "unsupported"
-    assert operation_row["detail"]["status"] == "blocked_source_change_only_candidate"
+    assert operation_row["detail"]["preflight_status"] == "blocked_source_change_only_candidate"
     assert operation_row["detail"]["candidate_witness_rule_id"] == (
         "nz_text_replace_candidate_from_archived_source_change_witness"
     )
@@ -311,7 +311,7 @@ def test_effect_candidate_preflight_blocks_target_recovery_text_replace_candidat
     operation_row = report.operation_evidence_rows()[0].to_dict()
     finding_row = report.finding_evidence_rows()[0].to_dict()
 
-    assert candidate_report.rows[0].status == "candidate_emitted"
+    assert candidate_report.rows[0].candidate_status == "candidate_emitted"
     assert candidate_report.rows[0].latest_oracle_target_resolution_status == "via_unlabeled_source_carrier"
     assert summary["preflight_status"] == "blocked_target_recovery_candidates"
     assert summary["candidate_operations"] == 1
@@ -329,7 +329,7 @@ def test_effect_candidate_preflight_blocks_target_recovery_text_replace_candidat
         "nz_effect_preflight_target_recovery_candidates_not_dry_run_replayable"
     )
     assert operation_row["evidence_status"] == "unsupported"
-    assert operation_row["detail"]["status"] == "blocked_target_recovery_candidate"
+    assert operation_row["detail"]["preflight_status"] == "blocked_target_recovery_candidate"
     assert operation_row["detail"]["reason"] == (
         "nz_effect_preflight_target_recovery_candidates_not_dry_run_replayable"
     )
@@ -348,7 +348,7 @@ def test_effect_candidate_preflight_labels_mixed_non_replayable_candidate_set() 
                 row_id="nz-effect-candidate-1",
                 operation_row_id="nz-opw-1",
                 effect_readiness_row_id="nz-effect-ready-1",
-                status="candidate_emitted",
+                candidate_status="candidate_emitted",
                 action="text_replace",
                 target_address="section:21",
                 operation=_text_replace_operation(
@@ -361,7 +361,7 @@ def test_effect_candidate_preflight_labels_mixed_non_replayable_candidate_set() 
                 row_id="nz-effect-candidate-2",
                 operation_row_id="nz-opw-2",
                 effect_readiness_row_id="nz-effect-ready-2",
-                status="candidate_emitted",
+                candidate_status="candidate_emitted",
                 action="text_replace",
                 target_address="section:21/paragraph:a",
                 operation=_text_replace_operation(
@@ -403,7 +403,7 @@ def test_effect_candidate_preflight_counts_candidate_with_two_non_replayable_tra
                 row_id="nz-effect-candidate-1",
                 operation_row_id="nz-opw-1",
                 effect_readiness_row_id="nz-effect-ready-1",
-                status="candidate_emitted",
+                candidate_status="candidate_emitted",
                 action="text_replace",
                 target_address="section:21/paragraph:a",
                 operation=_text_replace_operation(
@@ -435,7 +435,7 @@ def test_effect_candidate_preflight_counts_candidate_with_two_non_replayable_tra
         "nz_effect_preflight_source_change_only_candidates_not_dry_run_replayable",
         "nz_effect_preflight_target_recovery_candidates_not_dry_run_replayable",
     )
-    assert operation_row["detail"]["status"] == "blocked_non_replayable_candidate"
+    assert operation_row["detail"]["preflight_status"] == "blocked_non_replayable_candidate"
     assert operation_row["detail"]["reason"] == (
         "nz_effect_preflight_non_replayable_candidates_not_dry_run_replayable"
     )
@@ -544,7 +544,7 @@ def test_effect_candidate_preflight_blocks_emitted_candidate_without_operation()
                 row_id="nz-effect-candidate-1",
                 operation_row_id="nz-opw-1",
                 effect_readiness_row_id="nz-effect-ready-1",
-                status="candidate_emitted",
+                candidate_status="candidate_emitted",
                 action="repeal",
                 target_address="section:1",
                 operation=None,
@@ -567,7 +567,7 @@ def test_effect_candidate_preflight_blocks_emitted_candidate_without_operation()
     assert report.operations_for_dry_run_replay() == ()
     operation_rows = [row.to_dict() for row in report.operation_evidence_rows()]
     assert operation_rows[0]["evidence_status"] == "unsupported"
-    assert operation_rows[0]["detail"]["status"] == "blocked_candidate_operation_missing"
+    assert operation_rows[0]["detail"]["preflight_status"] == "blocked_candidate_operation_missing"
     assert operation_rows[0]["detail"]["reason"] == "nz_effect_preflight_candidate_operation_missing"
     assert operation_rows[0]["detail"]["candidate_operation_missing"] is True
     assert operation_rows[0]["detail"]["batch_blocking_rule_id"] == (
@@ -588,7 +588,7 @@ def test_preflight_text_cli_prints_emitted_candidate_missing_operation(monkeypat
                 row_id="nz-effect-candidate-1",
                 operation_row_id="nz-opw-1",
                 effect_readiness_row_id="nz-effect-ready-1",
-                status="candidate_emitted",
+                candidate_status="candidate_emitted",
                 action="repeal",
                 target_address="section:1",
                 operation=None,
