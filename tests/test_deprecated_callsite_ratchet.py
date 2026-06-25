@@ -71,12 +71,10 @@ class TestCohortIntegrity:
         # tests/test_fi_normalize_fallback_heuristic_census.py); they left this
         # cohort honestly and so are no longer tracked here.
         symbol_modules = {
-            "strip_legacy_roman_division_heading_prefix": (
-                "lawvm.finland.oracle_comparison"
-            ),
-            "strip_legacy_numbered_section_heading_prefix": (
-                "lawvm.finland.oracle_comparison"
-            ),
+            # Cohort is now EMPTY — every FI legacy-fallback symbol has left the
+            # @deprecated cohort (deleted, or de-deprecated-with-guard). See
+            # DEPRECATED_SYMBOLS in scripts/inventory_deprecated_callsites.py for the
+            # per-symbol disposition.
         }
         assert set(symbol_modules) == set(_INV.DEPRECATED_SYMBOLS), (
             "Test cohort drifted from scanner's DEPRECATED_SYMBOLS."

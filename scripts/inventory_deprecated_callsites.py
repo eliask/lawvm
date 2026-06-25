@@ -37,26 +37,20 @@ BASELINE_PATH = Path("tests/data/deprecated_callsite_baseline.json")
 # The PEP 702 @deprecated FI legacy-fallback cohort.  Each entry maps the
 # tracked symbol to the module that defines it (for documentation / auditing).
 DEPRECATED_SYMBOLS: dict[str, str] = {
-    # NB: the three rank-3 normalize fallback op-heuristics
-    # (parse_ops_fallback_heuristic, parse_ops_fallback_heuristic_with_coverage,
-    # parse_ops_title_fallback) were DE-DEPRECATED after a whole-corpus census
-    # (lawvm.finland.normalize_fallback_heuristic_census, pinned by
-    # tests/test_fi_normalize_fallback_heuristic_census.py) proved each is a
-    # load-bearing required residual the typed grammar cannot own — not a
-    # strangled lane. They left this cohort honestly (matching the
-    # strip_legacy_*_heading_prefix retain-with-guard precedent).
-    # NOTE: extract_plain_text_statute_mentions was retired from this cohort after a
-    # whole-corpus census proved its production residue fallback contributed only
-    # mis-pivoted duplicate citations (see
-    # tests/test_fi_ref_legacy_regex_residue_census.py). The production residue lane
-    # was DELETED and the function de-deprecated to an explicitly non-authoritative
-    # measurement/audit recognizer, so it is no longer a deprecated production lane.
-    "strip_legacy_roman_division_heading_prefix": (
-        "src/lawvm/finland/oracle_comparison.py"
-    ),
-    "strip_legacy_numbered_section_heading_prefix": (
-        "src/lawvm/finland/oracle_comparison.py"
-    ),
+    # All FI legacy-fallback symbols have left this @deprecated cohort after
+    # whole-corpus censuses adjudicated each as DELETED (dead) or RETAINED-
+    # load-bearing (de-deprecated + guarded). The cohort is now EMPTY:
+    # - parse_ops_fallback_heuristic / _with_coverage / parse_ops_title_fallback:
+    #   DE-DEPRECATED — load-bearing required residuals the typed grammar cannot own
+    #   (pinned by tests/test_fi_normalize_fallback_heuristic_census.py).
+    # - extract_plain_text_statute_mentions: production residue lane DELETED (it
+    #   contributed only mis-pivoted duplicate citations); function de-deprecated to a
+    #   non-authoritative measurement recognizer
+    #   (tests/test_fi_ref_legacy_regex_residue_census.py).
+    # - strip_legacy_roman/numbered heading-prefix strippers: DE-DEPRECATED — required
+    #   load-bearing source-projection residue (real mutations in BOTH oracle modes),
+    #   justified by tests/test_fi_legacy_strippers_loadbearing.py (witnesses
+    #   1932/242 §64/§67 and 1993/1055 §13/§18), which FAILS if either goes inert.
 }
 
 # Roots scanned for call sites.

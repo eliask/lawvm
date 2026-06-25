@@ -20,9 +20,7 @@ adjudication (not pure comparison normalization).
 from __future__ import annotations
 
 import re
-import warnings
 from typing import Any
-from warnings import deprecated
 
 from lawvm.core.comparison_normalization import ComparisonNormalizationRule, normalize_comparison_text
 
@@ -343,12 +341,6 @@ _STANDALONE_SUBSECTION_ORDINAL_RE = re.compile(
 )
 
 
-@deprecated(
-    "Legacy comparison-only heading-prefix stripper for old FI Roman division "
-    "headings. Comparison-only and self-validating; new callers must go through "
-    "strip_non_substantive_source_projection_residue (the owning composite) "
-    "rather than invoking this legacy stripper directly."
-)
 def strip_legacy_roman_division_heading_prefix(text: str) -> str:
     """Drop old FI division headings accidentally attached to section text.
 
@@ -357,18 +349,21 @@ def strip_legacy_roman_division_heading_prefix(text: str) -> str:
     section. Consolidated Finlex comparison surfaces often omit that division
     heading from the section text. This helper is comparison-only; callers must
     self-validate by comparing the stripped text against the oracle.
+
+    NOT deprecated: this is required, load-bearing source-projection residue, not
+    a strangled legacy lane. A full-corpus census proves it performs real
+    mutations in BOTH oracle modes (witness statute ``1993/1055`` §13 ``C. Kaste``
+    / §18 ``D. Avioliittoon vihkiminen``); the committed
+    ``tests/test_fi_legacy_strippers_loadbearing.py`` guard FAILS if it ever goes
+    inert. It is comparison-only and must be reached through the owning composite
+    ``strip_non_substantive_source_projection_residue``, never invoked directly by
+    new callers.
     """
     if "." not in text:
         return text
     return _LEGACY_ROMAN_DIVISION_HEADING_PREFIX_RE.sub(r"\1", text, count=1)
 
 
-@deprecated(
-    "Legacy comparison-only heading-prefix stripper for old FI numbered "
-    "presentation headings. Comparison-only and self-validating; new callers "
-    "must go through strip_non_substantive_source_projection_residue (the owning "
-    "composite) rather than invoking this legacy stripper directly."
-)
 def strip_legacy_numbered_section_heading_prefix(text: str) -> str:
     """Drop old FI numbered presentation headings attached to section text.
 
@@ -376,6 +371,15 @@ def strip_legacy_numbered_section_heading_prefix(text: str) -> str:
     ``2. Vekselinjäljennökset.`` into the following section heading. Finlex's
     consolidated section text may omit the label. This is comparison-only and
     callers must self-validate against the oracle.
+
+    NOT deprecated: this is required, load-bearing source-projection residue, not
+    a strangled legacy lane. A full-corpus census proves it performs real
+    mutations in BOTH oracle modes (witness statute ``1932/242`` (vekselilaki) §64
+    ``1. Eri kappaleet vekseliä`` / §67 ``2. Vekselinjäljennökset``); the
+    committed ``tests/test_fi_legacy_strippers_loadbearing.py`` guard FAILS if it
+    ever goes inert. It is comparison-only and must be reached through the owning
+    composite ``strip_non_substantive_source_projection_residue``, never invoked
+    directly by new callers.
     """
     if "." not in text:
         return text
@@ -411,17 +415,19 @@ def strip_standalone_subsection_ordinals(text: str) -> str:
 
 
 def strip_non_substantive_source_projection_residue(text: str) -> str:
-    """Remove FI source-side presentation/promulgation residue for comparison."""
-    with warnings.catch_warnings():
-        # This composite is the OWNING entry point for the legacy heading
-        # strippers; @deprecated lights up external direct callers, not this
-        # owner's own delegation.
-        warnings.simplefilter("ignore", DeprecationWarning)
-        return strip_promulgation_closure_tail(
-            strip_legacy_numbered_section_heading_prefix(
-                strip_legacy_roman_division_heading_prefix(text)
-            )
+    """Remove FI source-side presentation/promulgation residue for comparison.
+
+    This is the OWNING entry point for the two heading-prefix strippers, which
+    are comparison-only and must be reached through here (never invoked directly
+    by new callers). Both strippers are required, load-bearing residue (not
+    deprecated): the committed ``test_fi_legacy_strippers_loadbearing.py`` guard
+    pins their corpus witnesses and FAILS if either goes inert.
+    """
+    return strip_promulgation_closure_tail(
+        strip_legacy_numbered_section_heading_prefix(
+            strip_legacy_roman_division_heading_prefix(text)
         )
+    )
 
 
 # A figure-legend entry: a bare ordinal (1–2 digits) naming one numbered marking
