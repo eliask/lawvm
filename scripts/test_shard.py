@@ -615,6 +615,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_morphology.py",
         "test_fi_norm_composition.py",
         "test_fi_norm_subject_and_procedure_edges.py",
+        "test_fi_op_provenance.py",
         "test_fi_overlay_projection.py",
         "test_fi_procedure.py",
         "test_fi_ref_lints.py",

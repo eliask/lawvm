@@ -88,7 +88,7 @@ def recovery_execution_authorization_rows_from_projection_rows(
         if key in seen:
             continue
         seen.add(key)
-        blocking = kind in fail_reason_set or rule.strict_disposition == "block"
+        blocking = kind in fail_reason_set or rule.blocks_in_strict()
         authorization = ExecutionAuthorization(
             executable=False,
             replay_authorized=False,
