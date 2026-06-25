@@ -810,7 +810,7 @@ def test_provision_state_response_exposes_lineage_chain_from_migration_events() 
         "migration_event_count_considered": payload["lineage"]["migration_event_count_considered"],
     }
     with_fingerprint = _hash_payload(
-        status="selected",
+        payload_status="selected",
         statute_id="2000/1",
         jurisdiction="fi",
         query=payload["query"],
@@ -820,7 +820,7 @@ def test_provision_state_response_exposes_lineage_chain_from_migration_events() 
         content_hash="",
     )
     without_fingerprint = _hash_payload(
-        status="selected",
+        payload_status="selected",
         statute_id="2000/1",
         jurisdiction="fi",
         query=payload["query"],

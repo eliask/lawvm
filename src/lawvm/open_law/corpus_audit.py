@@ -687,14 +687,14 @@ def _finding_evidence_row(row: OpenLawOperationAuditRow, finding: OpenLawFinding
     )
 
 
-def _shared_status(status: str) -> CorpusRowStatus:
-    if status in {"matched", "metadata_matched"}:
+def _shared_status(row_status: str) -> CorpusRowStatus:
+    if row_status in {"matched", "metadata_matched"}:
         return CorpusRowStatus.MATCHED
-    if status in {"diverged", "metadata_diverged"}:
+    if row_status in {"diverged", "metadata_diverged"}:
         return CorpusRowStatus.DIVERGED
-    if status in {"lifecycle_unsupported", "metadata_unsupported"}:
+    if row_status in {"lifecycle_unsupported", "metadata_unsupported"}:
         return CorpusRowStatus.UNSUPPORTED
-    if status in {"planning_failed", "snapshot_missing"}:
+    if row_status in {"planning_failed", "snapshot_missing"}:
         return CorpusRowStatus.FAILED
     return CorpusRowStatus.ACCEPTED
 
@@ -721,13 +721,13 @@ def _quirks_disposition(row: OpenLawOperationAuditRow) -> str:
     return "record"
 
 
-def _finding_phase(status: str) -> str:
-    if status in {"matched", "diverged"}:
+def _finding_phase(finding_status: str) -> str:
+    if finding_status in {"matched", "diverged"}:
         return "audit"
-    if status.startswith("metadata_"):
+    if finding_status.startswith("metadata_"):
         return "metadata_audit"
-    if status == "lifecycle_unsupported":
+    if finding_status == "lifecycle_unsupported":
         return "lifecycle"
-    if status == "planning_failed":
+    if finding_status == "planning_failed":
         return "planning"
     return "corpus_audit"

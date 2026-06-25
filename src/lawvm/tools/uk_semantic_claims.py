@@ -329,8 +329,8 @@ def _asserts_authorization(value: Any) -> bool:
     return False
 
 
-def _is_forbidden_weak_validator_status(status: str) -> bool:
-    return status.strip().lower() in _FORBIDDEN_WEAK_VALIDATOR_CHECK_STATUSES
+def _is_forbidden_weak_validator_status(validator_status: str) -> bool:
+    return validator_status.strip().lower() in _FORBIDDEN_WEAK_VALIDATOR_CHECK_STATUSES
 
 
 def _workqueue_source_preview_sha256(row: Mapping[str, Any]) -> str:

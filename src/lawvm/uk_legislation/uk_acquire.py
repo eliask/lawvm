@@ -218,9 +218,9 @@ def _is_storable_xml_source_blob(data: bytes) -> bool:
     return head[:1] == b"<"
 
 
-def _source_fetch_error(data: bytes | None, status: int | None) -> str | None:
+def _source_fetch_error(data: bytes | None, http_status: int | None) -> str | None:
     if not data:
-        return f"http_{status}" if status else "transport_error"
+        return f"http_{http_status}" if http_status else "transport_error"
     source_state = classify_uk_source_blob(data)
     if source_state.source_state_status is not UKSourceStatus.AVAILABLE:
         return source_state.source_state_status.value

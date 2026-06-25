@@ -845,13 +845,13 @@ def _matches_filters(
     return True
 
 
-def _row_matches_claim_template_status(row: Mapping[str, Any], status: str) -> bool:
-    if not status:
+def _row_matches_claim_template_status(row: Mapping[str, Any], claim_template_status: str) -> bool:
+    if not claim_template_status:
         return True
     counts = row.get("suggested_claim_template_status_counts") or {}
     if not isinstance(counts, Mapping):
         return False
-    return int(counts.get(status) or 0) > 0
+    return int(counts.get(claim_template_status) or 0) > 0
 
 
 def _matching_frontier(
@@ -1851,7 +1851,7 @@ def _uk_candidate_row_jsonable(
     residual_candidate_root_samples: tuple[dict[str, Any], ...] = (),
     residual_candidate_root_samples_omitted: int = 0,
     defeated_residual_roots: set[str],
-    status: str,
+    candidate_status: str,
     effect_feed_parse_rejections: tuple[dict[str, Any], ...] = (),
     effect_selection_observations: tuple[dict[str, Any], ...] = (),
     residual_effect_feed_parse_rejections: tuple[dict[str, Any], ...] = (),
@@ -2149,33 +2149,33 @@ def _uk_candidate_row_jsonable(
         "malformed_residual_roots": sorted(malformed_residual_roots),
         "backed_residual_roots": sorted(residual_root_hits),
         "defeated_residual_roots": sorted(defeated_residual_roots),
-        "status": status,
-        "triage_rule_id": _triage_rule_id(status),
+        "status": candidate_status,
+        "triage_rule_id": _triage_rule_id(candidate_status),
     }
 
 
-def _triage_rule_id(status: str) -> str:
-    if status == "real residual frontier":
+def _triage_rule_id(triage_status: str) -> str:
+    if triage_status == "real residual frontier":
         return "uk_residual_claim_backed_by_candidate_overlap"
-    if status == "residual branches defeated by no candidate overlap":
+    if triage_status == "residual branches defeated by no candidate overlap":
         return "uk_residual_claim_defeated_no_candidate_overlap"
-    if status == "classification-heavy":
+    if triage_status == "classification-heavy":
         return "uk_frontier_classification_heavy_no_candidate_effects"
-    if status == "candidate-clean after residual overlap":
+    if triage_status == "candidate-clean after residual overlap":
         return "uk_frontier_candidate_clean_after_residual_overlap"
-    if status == "frontier prefilter only":
+    if triage_status == "frontier prefilter only":
         return "uk_frontier_prefilter_only"
-    if status == "residual analysis budget skipped":
+    if triage_status == "residual analysis budget skipped":
         return "uk_residual_analysis_budget_skipped"
-    if status == "residual comparison source unavailable":
+    if triage_status == "residual comparison source unavailable":
         return "uk_residual_analysis_source_unavailable"
-    if status == "residual comparison execution unavailable":
+    if triage_status == "residual comparison execution unavailable":
         return "uk_residual_analysis_execution_unavailable"
-    if status == "effect inspection budget truncated":
+    if triage_status == "effect inspection budget truncated":
         return "uk_effect_inspection_budget_truncated"
-    if status == "malformed residual roots deferred":
+    if triage_status == "malformed residual roots deferred":
         return "uk_residual_claim_deferred_malformed_eid_root"
-    if status == "residual branches include malformed roots":
+    if triage_status == "residual branches include malformed roots":
         return "uk_residual_claim_partially_deferred_malformed_eid_root"
     return "uk_frontier_status_unclassified"
 
@@ -2233,7 +2233,7 @@ def _saved_bench_prefilter_candidate_row_jsonable(
         malformed_residual_roots=set(),
         residual_root_hits=set(),
         defeated_residual_roots=set(),
-        status="frontier prefilter only",
+        candidate_status="frontier prefilter only",
         manual_compile_status_counts=_count_map_from_object(
             getattr(result, "manual_compile_status_counts", {})
         ),
@@ -4519,7 +4519,7 @@ def main(args: "argparse.Namespace") -> None:
                             residual_inventory["residual_candidate_root_samples_omitted"]
                         ),
                         defeated_residual_roots=defeated_residual_roots,
-                        status=status,
+                        candidate_status=status,
                         effect_feed_parse_rejections=tuple(parse_rejections),
                         effect_selection_observations=tuple(effect_selection_observations),
                         residual_effect_feed_parse_rejections=tuple(residual_effect_feed_parse_rejections),
@@ -5238,7 +5238,7 @@ def main(args: "argparse.Namespace") -> None:
                     residual_inventory["residual_candidate_root_samples_omitted"]
                 ),
                 defeated_residual_roots=defeated_residual_roots,
-                status=status,
+                candidate_status=status,
                 effect_feed_parse_rejections=tuple(parse_rejections),
                 effect_selection_observations=tuple(effect_selection_observations),
                 residual_effect_feed_parse_rejections=tuple(residual_effect_feed_parse_rejections),

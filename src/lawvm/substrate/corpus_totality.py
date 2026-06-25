@@ -236,11 +236,11 @@ class CorpusTotality:
         """Design §23.x alias of :attr:`work_inventory_root` (identical value)."""
         return self.work_inventory_root
 
-    def _root_over(self, status: str, domain: str) -> str:
+    def _root_over(self, inventory_status: str, domain: str) -> str:
         """MapRoot over the subset of works carrying ``status`` (typed partition)."""
         return map_root(
             domain,
-            {r.work_id: r.row_id for r in self.work_inventory if r.status == status},
+            {r.work_id: r.row_id for r in self.work_inventory if r.status == inventory_status},
         )
 
     def roots(self) -> dict[str, JsonValue]:

@@ -325,7 +325,7 @@ class ReferenceLens:
 
                 node_seeds.append(
                     self._reference_expr_seed(
-                        mention, source_ref=source_ref, status=node_status,
+                        mention, source_ref=source_ref, resolution_status=node_status,
                         local=expr_local,
                     )
                 )
@@ -334,7 +334,7 @@ class ReferenceLens:
                         mention,
                         resolved=resolved,
                         source_ref=source_ref,
-                        status=node_status,
+                        resolution_status=node_status,
                         local=resolution_local,
                     )
                 )
@@ -453,7 +453,7 @@ class ReferenceLens:
         mention: ReferenceMention,
         *,
         source_ref: SourceSpanRef,
-        status: str,
+        resolution_status: str,
         local: str,
     ) -> SurfaceNodeSeed:
         target = mention.target_provision_ref
@@ -498,7 +498,7 @@ class ReferenceLens:
             source_ref=source_ref,
             local_discriminator=local,
             rule_id=_RULE_EXPR,
-            status=status,
+            status=resolution_status,
             payload=payload,
             authority_role="surface_fact",
         )
@@ -509,7 +509,7 @@ class ReferenceLens:
         *,
         resolved: ResolvedReference | None,
         source_ref: SourceSpanRef,
-        status: str,
+        resolution_status: str,
         local: str,
     ) -> SurfaceNodeSeed:
         payload: dict[str, object] = {
@@ -525,7 +525,7 @@ class ReferenceLens:
             source_ref=source_ref,
             local_discriminator=local,
             rule_id=_RULE_RESOLUTION,
-            status=status,
+            status=resolution_status,
             payload=payload,
             authority_role="surface_fact",
         )

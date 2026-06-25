@@ -1041,7 +1041,7 @@ def test_candidate_row_jsonable_records_defeated_residual_roots() -> None:
         malformed_residual_roots={"section-4."},
         residual_root_hits={"section-3"},
         defeated_residual_roots={"section-4"},
-        status="residual branches defeated by no candidate overlap",
+        candidate_status="residual branches defeated by no candidate overlap",
         effect_feed_parse_rejections=(
             {
                 "rule_id": "uk_effect_feed_xml_parse_rejected",

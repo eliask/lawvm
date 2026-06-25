@@ -91,19 +91,19 @@ _LATEST_CONSOLIDATED_SELECTOR = ConsolidatedArtifactSelector.latest_cached_edito
 _BENCH_CONSOLIDATED_SELECTOR = ConsolidatedArtifactSelector.bench_comparable()
 
 
-def _format_error_for_display(similarity: float, status: str) -> str:
+def _format_error_for_display(similarity: float, unit_status: str) -> str:
     if similarity >= 0:
         return f"{(1 - similarity) * 100:.2f}%"
-    if status in _NONSCORED_STATUSES:
+    if unit_status in _NONSCORED_STATUSES:
         return "n/a"
     return "ERR"
 
 
-def _format_similarity_for_csv(similarity: float, status: str) -> str:
+def _format_similarity_for_csv(similarity: float, unit_status: str) -> str:
     if similarity >= 0:
         return f"{similarity:.6f}"
-    if status in _NONSCORED_STATUSES:
-        return status
+    if unit_status in _NONSCORED_STATUSES:
+        return unit_status
     return "ERR"
 
 
@@ -1026,16 +1026,16 @@ def _score_one_with_warning_summary(
 # ---------------------------------------------------------------------------
 
 
-def _fi_status_to_bench_status(status: str) -> "BenchStatus":
+def _fi_status_to_bench_status(fi_status: str) -> "BenchStatus":
     from lawvm.core.bench_contract import BenchStatus
 
-    if status == "OK":
+    if fi_status == "OK":
         return BenchStatus.SCORED
-    if status == "SOURCE_UNAVAILABLE":
+    if fi_status == "SOURCE_UNAVAILABLE":
         return BenchStatus.SOURCE_UNAVAILABLE
-    if status == _ORACLE_STALE_DIAGNOSIS:
+    if fi_status == _ORACLE_STALE_DIAGNOSIS:
         return BenchStatus.ORACLE_STALE
-    if status in {"NO_TRUTH", "NO_ORACLE_TREE", "NO_ORACLE_SECS"}:
+    if fi_status in {"NO_TRUTH", "NO_ORACLE_TREE", "NO_ORACLE_SECS"}:
         return BenchStatus.NO_TRUTH
     # Any other string is an exception message — a genuine crash.
     return BenchStatus.CRASH

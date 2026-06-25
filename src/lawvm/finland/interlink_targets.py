@@ -61,7 +61,7 @@ def build_fi_interlink_target_row(
 
     engine_id = engine_statute_id(target_ref.local_id)
     if not _looks_like_engine_statute_id(engine_id):
-        return _unsupported_fi_target_row(target_ref, status="unsupported_fi_target_id")
+        return _unsupported_fi_target_row(target_ref, preview_status="unsupported_fi_target_id")
     preview = _target_preview_payload(
         target_ref,
         engine_id=engine_id,
@@ -202,7 +202,7 @@ def resolve_fi_interlink_target_row(
     context: InterlinkTargetPreviewContext,
 ) -> LawvmInterlinkTargetRow:
     if context.corpus is None:
-        return _unsupported_fi_target_row(target_ref, status="missing_local_corpus")
+        return _unsupported_fi_target_row(target_ref, preview_status="missing_local_corpus")
     return build_fi_interlink_target_row(
         target_ref,
         corpus=cast(_PreviewCorpus, context.corpus),
@@ -225,7 +225,7 @@ def _looks_like_engine_statute_id(engine_id: str) -> bool:
 def _unsupported_fi_target_row(
     target_ref: LawvmInterlinkTargetRef,
     *,
-    status: str,
+    preview_status: str,
 ) -> LawvmInterlinkTargetRow:
     return LawvmInterlinkTargetRow(
         target_key=target_ref.key,
@@ -236,13 +236,13 @@ def _unsupported_fi_target_row(
         target_locator=target_ref.locator,
         target_url=None,
         target_links_json="[]",
-        preview_status=status,
+        preview_status=preview_status,
         preview_source="",
         title="",
         locator_label=_locator_label(target_ref.locator),
         hierarchy_json="[]",
         preview_text="",
-        detail_json=json.dumps({"status": status}, ensure_ascii=False, sort_keys=True),
+        detail_json=json.dumps({"status": preview_status}, ensure_ascii=False, sort_keys=True),
     )
 
 

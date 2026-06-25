@@ -654,7 +654,7 @@ class UKReplayPipeline:
                         append_prospective_pit_commencement_observation(
                             effect_diagnostics_out,
                             effect=e,
-                            status="resolved_in_force",
+                            commencement_status="resolved_in_force",
                             start_dates=start_dates,
                             pit_date=pit_date,
                         )
@@ -664,7 +664,7 @@ class UKReplayPipeline:
                         append_prospective_pit_commencement_observation(
                             effect_diagnostics_out,
                             effect=e,
-                            status="resolved_future",
+                            commencement_status="resolved_future",
                             start_dates=start_dates,
                             pit_date=pit_date,
                         )
@@ -672,7 +672,7 @@ class UKReplayPipeline:
                     append_prospective_pit_commencement_observation(
                         effect_diagnostics_out,
                         effect=e,
-                        status="unresolved",
+                        commencement_status="unresolved",
                         start_dates=start_dates,
                         pit_date=pit_date,
                     )

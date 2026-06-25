@@ -216,10 +216,10 @@ _COMPARATOR_STATUS_FAMILY: dict[str, AgreementResidualFamily] = {
 }
 
 
-def classify_comparator_status_family(status: str) -> AgreementResidualFamily:
+def classify_comparator_status_family(comparator_status: str) -> AgreementResidualFamily:
     """Type one standalone-comparator node status into a core family."""
 
-    return _COMPARATOR_STATUS_FAMILY.get(status or "", "unknown")
+    return _COMPARATOR_STATUS_FAMILY.get(comparator_status or "", "unknown")
 
 
 @dataclass(frozen=True)

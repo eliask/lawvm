@@ -1810,10 +1810,10 @@ def archive_se_backfill_official_checkpoint(archive: _ArchiveLike, checkpoint: d
     )
 
 
-def archive_se_backfill_official_status(archive: _ArchiveLike, status: dict[str, Any]) -> None:
+def archive_se_backfill_official_status(archive: _ArchiveLike, official_status: dict[str, Any]) -> None:
     archive.store(
         se_backfill_official_status_locator(),
-        _json_bytes(_normalize_jsonable(status)),
+        _json_bytes(_normalize_jsonable(official_status)),
         storage_class="json",
     )
 

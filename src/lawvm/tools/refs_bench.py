@@ -108,9 +108,9 @@ _SCORECARD_BUCKET_ORDER = tuple(
 )
 
 
-def _bucket_for_status(status: str) -> str:
+def _bucket_for_status(ref_status: str) -> str:
     """Map a CiteConfidence value to its scorecard success bucket ("other" if new)."""
-    return _SCORECARD_BUCKET.get(status, "other")
+    return _SCORECARD_BUCKET.get(ref_status, "other")
 
 
 def _scorecard_rows(

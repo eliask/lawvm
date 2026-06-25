@@ -764,7 +764,7 @@ def _build_finland_clause_phase_surface(
 
     def row(
         phase: str,
-        status: str,
+        phase_status: str,
         artifact_kind: str,
         authority_role: str,
         produced: bool,
@@ -775,7 +775,7 @@ def _build_finland_clause_phase_surface(
     ) -> FrontendPhaseRow:
         return FrontendPhaseRow(
             phase=phase,
-            phase_status=status,
+            phase_status=phase_status,
             artifact_kind=artifact_kind,
             authority_role=authority_role,
             produced=produced,

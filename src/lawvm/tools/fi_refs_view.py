@@ -74,10 +74,10 @@ _RESIDUE_STATUSES: frozenset[str] = frozenset(
 _REFS_GLYPH = "→"
 
 
-def _sigil(status: Optional[str]) -> str:
-    if status is None:
+def _sigil(ref_status: Optional[str]) -> str:
+    if ref_status is None:
         return _SIGIL_UNKNOWN
-    return _SIGIL_BY_STATUS.get(status, _SIGIL_UNKNOWN)
+    return _SIGIL_BY_STATUS.get(ref_status, _SIGIL_UNKNOWN)
 
 
 # ── Mark abstraction (the overlay contract) ──────────────────────────────────

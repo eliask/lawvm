@@ -280,7 +280,7 @@ def build_provision_state_response(
             "address_candidates": [_address_wire(candidate) for candidate in resolution.candidates],
             "selection": None,
             "hashes": _hash_payload(
-                status=status,
+                payload_status=status,
                 statute_id=statute_id,
                 jurisdiction=jurisdiction,
                 query=query,
@@ -609,7 +609,7 @@ def invalid_provision_selector_payload(
         "address_candidates": [],
         "selection": None,
         "hashes": _hash_payload(
-            status="invalid_address",
+            payload_status="invalid_address",
             statute_id=statute_id,
             jurisdiction=jurisdiction,
             query=query,
@@ -663,7 +663,7 @@ def invalid_query_payload(
         "address_candidates": [],
         "selection": None,
         "hashes": _hash_payload(
-            status="invalid_query",
+            payload_status="invalid_query",
             statute_id=statute_id,
             jurisdiction=jurisdiction,
             query=query,
@@ -1145,7 +1145,7 @@ def _selected_response(
         "selection": _selection_payload(selection),
         "version": _version_payload(payload_version, content_state_override=("expired" if expired else None)),
         "hashes": _hash_payload(
-            status=status,
+            payload_status=status,
             statute_id=statute_id,
             jurisdiction=jurisdiction,
             query=query,
@@ -1672,7 +1672,7 @@ def _structured_content_hash(version: ProvisionVersion | None) -> str:
 
 def _hash_payload(
     *,
-    status: str,
+    payload_status: str,
     statute_id: str,
     jurisdiction: str,
     query: Mapping[str, Any],
@@ -1688,7 +1688,7 @@ def _hash_payload(
     structured_content_hash = _structured_content_hash(version)
     derived_input = {
         "schema": SCHEMA,
-        "status": status,
+        "status": payload_status,
         "jurisdiction": jurisdiction,
         "statute_id": statute_id,
         "query": query,
@@ -2429,7 +2429,7 @@ def _xml_element_is_ancestor(candidate_ancestor: Any, candidate_child: Any) -> b
 
 
 def _unavailable_operation_source_container_span(
-    status: str,
+    span_status: str,
     *,
     match_count: int,
     candidate_count: int = 0,
@@ -2437,9 +2437,9 @@ def _unavailable_operation_source_container_span(
     local_tag: str = "",
     sourceline: int = 0,
 ) -> dict[str, Any]:
-    counter_family = "text_sequence" if "text_sequence" in status else "text_container"
+    counter_family = "text_sequence" if "text_sequence" in span_status else "text_container"
     detail: dict[str, Any] = {
-        "operation_source_xml_span_status": status,
+        "operation_source_xml_span_status": span_status,
         "operation_source_xml_quote_match_count": 0,
         f"operation_source_xml_{counter_family}_match_count": match_count,
         f"operation_source_xml_{counter_family}_candidate_count": candidate_count,
@@ -2455,7 +2455,7 @@ def _unavailable_operation_source_container_span(
         "byte_span": None,
         "detail": detail,
         "source_witness_detail": {
-            "artifact_span_status": status,
+            "artifact_span_status": span_status,
             "artifact_span_match_count": match_count,
         },
     }

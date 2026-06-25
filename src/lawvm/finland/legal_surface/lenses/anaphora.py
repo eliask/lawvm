@@ -70,13 +70,13 @@ _STATUS_TO_GRAPH: dict[AnaphorStatus, str] = {
 }
 
 
-def _graph_status(status: AnaphorStatus) -> str:
+def _graph_status(anaphor_status: AnaphorStatus) -> str:
     """Map an AnaphorStatus to a graph node status (fail-loud on the unmapped)."""
     try:
-        return _STATUS_TO_GRAPH[status]
+        return _STATUS_TO_GRAPH[anaphor_status]
     except KeyError as exc:  # pragma: no cover — closed enum, defensive
         raise ValueError(
-            f"{LENS_ID}: no graph status mapping for AnaphorStatus {status!r}"
+            f"{LENS_ID}: no graph status mapping for AnaphorStatus {anaphor_status!r}"
         ) from exc
 
 
@@ -178,14 +178,14 @@ class AnaphoraLens:
 
                 node_seeds.append(
                     self._reference_expr_seed(
-                        ref, source_ref=source_ref, status=node_status, local=expr_local
+                        ref, source_ref=source_ref, resolution_status=node_status, local=expr_local
                     )
                 )
                 node_seeds.append(
                     self._reference_resolution_seed(
                         ref,
                         source_ref=source_ref,
-                        status=node_status,
+                        resolution_status=node_status,
                         local=resolution_local,
                     )
                 )
@@ -226,7 +226,7 @@ class AnaphoraLens:
         ref: AnaphoricRef,
         *,
         source_ref: SourceSpanRef,
-        status: str,
+        resolution_status: str,
         local: str,
     ) -> SurfaceNodeSeed:
         """The expr node: what the anaphor SAYS (its surface + head kind)."""
@@ -235,14 +235,14 @@ class AnaphoraLens:
             "head_kind": ref.head_kind.value,
             "cite_kind": ref.mention.cite_kind.value,
             "phrase_lemma": ref.mention.phrase_lemma,
-            "resolution_status": status,
+            "resolution_status": resolution_status,
         }
         return SurfaceNodeSeed(
             node_kind="reference_expr",
             source_ref=source_ref,
             local_discriminator=local,
             rule_id=_RULE_EXPR,
-            status=status,
+            status=resolution_status,
             payload=payload,
             authority_role="surface_fact",
         )
@@ -252,7 +252,7 @@ class AnaphoraLens:
         ref: AnaphoricRef,
         *,
         source_ref: SourceSpanRef,
-        status: str,
+        resolution_status: str,
         local: str,
     ) -> SurfaceNodeSeed:
         """The resolution node: what the anaphor POINTS BACK to (the antecedent).
@@ -262,7 +262,7 @@ class AnaphoraLens:
         AMBIGUOUS the candidate list rides the payload — the lens never picks.
         """
         payload: dict[str, object] = {
-            "resolution_status": status,
+            "resolution_status": resolution_status,
             "anaphor_surface": ref.surface_text,
             "head_kind": ref.head_kind.value,
             "target_provision_ref": _target_provision_ref(ref),
@@ -274,7 +274,7 @@ class AnaphoraLens:
             source_ref=source_ref,
             local_discriminator=local,
             rule_id=_RULE_RESOLUTION,
-            status=status,
+            status=resolution_status,
             payload=payload,
             authority_role="surface_fact",
         )

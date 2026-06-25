@@ -252,7 +252,7 @@ def _print_verify_pack(args: Namespace) -> None:
 def _print_explain(args: Namespace) -> None:
     report_dir = Path(args.report_dir)
     rows = _read_jsonl(report_dir / "operation_audits.jsonl")
-    selected = _select_explain_rows(rows, op_id=args.op_id, status=args.status, limit=args.limit)
+    selected = _select_explain_rows(rows, op_id=args.op_id, row_status=args.status, limit=args.limit)
     if args.json:
         print(json.dumps(selected, indent=2, ensure_ascii=False))
         return
@@ -530,8 +530,8 @@ def _human_summary_provenance_issues(report_dir: Path, artifact_manifest: Mappin
     return issues
 
 
-def _count_status(records: tuple[Any, ...], status: str) -> int:
-    return sum(1 for record in records if record.original.get("status") == status)
+def _count_status(records: tuple[Any, ...], row_status: str) -> int:
+    return sum(1 for record in records if record.original.get("status") == row_status)
 
 
 def _int_field(value: object) -> int:
@@ -542,14 +542,14 @@ def _select_explain_rows(
     rows: list[dict[str, Any]],
     *,
     op_id: str,
-    status: str,
+    row_status: str,
     limit: int,
 ) -> list[dict[str, Any]]:
     selected = []
     for row in rows:
         if op_id and row.get("op_id") != op_id:
             continue
-        if status and row.get("status") != status:
+        if row_status and row.get("status") != row_status:
             continue
         selected.append(row)
         if len(selected) >= limit:
