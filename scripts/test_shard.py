@@ -296,6 +296,8 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_family_census.py",
         "test_fi_fallback_coverage_census.py",
         "test_fi_legacy_strippers_loadbearing.py",
+        "test_fi_normalize_fallback_heuristic_census.py",
+        "test_fi_ref_legacy_regex_residue_census.py",
         # writer E + F + G additions
         "test_fi_proposal_history.py",
         "test_fi_proposals_competing.py",
