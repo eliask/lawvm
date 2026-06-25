@@ -48,10 +48,10 @@ def _is_payloadless_section_relabel_source(op: AmendmentOp, label: str) -> bool:
     """True when a whole-section RENUMBER's source label is not a payload claim."""
     if (
         op.op_type != OpType.RENUMBER
-        or op.target_unit_kind != "section"
-        or op.target_paragraph is not None
-        or op.target_item
-        or op.target_special
+        or op.target_cols.target_unit_kind != "section"
+        or op.target_cols.target_paragraph is not None
+        or op.target_cols.target_item
+        or op.target_cols.target_special
         or op.lo is None
         or op.lo.destination is None
         or not op.lo.destination.path
@@ -68,12 +68,12 @@ def peg_owned_section_targets(ops: Iterable[AmendmentOp]) -> PegOwnedSectionTarg
     descendant_sections: set[Tuple[Optional[str], str]] = set()
     descendant_labels: set[str] = set()
     for op in ops:
-        if op.target_unit_kind == "section" and op.target_section:
-            label = _norm_num_token(op.target_section)
+        if op.target_cols.target_unit_kind == "section" and op.target_cols.target_section:
+            label = _norm_num_token(op.target_cols.target_section)
             if _is_payloadless_section_relabel_source(op, label):
                 continue
-            chapter = op.target_chapter
-            if op.target_paragraph is not None or op.target_item or op.target_special:
+            chapter = op.target_cols.target_chapter
+            if op.target_cols.target_paragraph is not None or op.target_cols.target_item or op.target_cols.target_special:
                 descendant_sections.add((chapter, label))
                 descendant_labels.add(label)
             else:

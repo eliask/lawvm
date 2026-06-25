@@ -19,7 +19,7 @@ def group_has_scope_source(group_ops: Iterable[AmendmentOp], source: str) -> boo
                 witness := projection_scope_confidence(
                     scope_confidence=op.scope_confidence,
                     scope_provenance_tags=op.scope_provenance_tags,
-                    resolved_chapter=op.target_chapter,
+                    resolved_chapter=op.target_cols.target_chapter,
                 )
             )
             is not None

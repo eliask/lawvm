@@ -44,9 +44,9 @@ class UncoveredRecoveryContext:
 def _part_insert_labels_from_ops(ops: Iterable[AmendmentOp]) -> frozenset[str]:
     labels: set[str] = set()
     for op in ops:
-        if op.op_type != OpType.INSERT or op.target_unit_kind != "part":
+        if op.op_type != OpType.INSERT or op.target_cols.target_unit_kind != "part":
             continue
-        label = _norm_num_token(str(op.target_section or op.target_part or ""))
+        label = _norm_num_token(str(op.target_cols.target_section or op.target_cols.target_part or ""))
         if label:
             labels.add(label)
     return frozenset(labels)
@@ -81,10 +81,10 @@ def build_uncovered_recovery_context(
     for op in ops:
         if (
             op.op_type != OpType.RENUMBER
-            or op.target_unit_kind != "section"
-            or op.target_paragraph is not None
-            or op.target_item
-            or op.target_special
+            or op.target_cols.target_unit_kind != "section"
+            or op.target_cols.target_paragraph is not None
+            or op.target_cols.target_item
+            or op.target_cols.target_special
             or op.lo is None
             or op.lo.destination is None
             or not op.lo.destination.path
@@ -96,8 +96,8 @@ def build_uncovered_recovery_context(
             if label
         }
         dest_section = dest_map.get("section")
-        dest_chapter = dest_map.get("chapter") or _norm_num_token(op.target_chapter or "")
-        dest_part = dest_map.get("part") or _norm_num_token(op.target_part or "")
+        dest_chapter = dest_map.get("chapter") or _norm_num_token(op.target_cols.target_chapter or "")
+        dest_part = dest_map.get("part") or _norm_num_token(op.target_cols.target_part or "")
         if dest_part:
             dest_part_arabic = _roman_label_to_arabic(dest_part)
             if dest_part_arabic is not None:

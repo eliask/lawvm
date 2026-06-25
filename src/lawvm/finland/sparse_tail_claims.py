@@ -118,21 +118,21 @@ def build_sparse_omission_tail_claims(
         op
         for op in ops
         if op.op_type in {OpType.REPLACE, OpType.INSERT}
-        and op.target_unit_kind == "section"
-        and op.target_paragraph is not None
-        and not op.target_item
-        and not op.target_special
-        and source_model.lookup_payload_ir("section", op.target_section, None, None).status
+        and op.target_cols.target_unit_kind == "section"
+        and op.target_cols.target_paragraph is not None
+        and not op.target_cols.target_item
+        and not op.target_cols.target_special
+        and source_model.lookup_payload_ir("section", op.target_cols.target_section, None, None).status
         == "missing"
     ]
     carrier_ops = [
         op
         for op in ops
         if op.op_type == OpType.REPLACE
-        and op.target_unit_kind == "section"
-        and op.target_paragraph is None
-        and not op.target_item
-        and not op.target_special
+        and op.target_cols.target_unit_kind == "section"
+        and op.target_cols.target_paragraph is None
+        and not op.target_cols.target_item
+        and not op.target_cols.target_special
     ]
 
     candidates: list[SparseOmissionTailClaim] = []
