@@ -15,11 +15,11 @@ def mint_fallback_op_id(scope_id: str, op: AmendmentOp, *, prefix: str = "fi") -
         [
             scope_id,
             op.op_type,
-            op.target_unit_kind or "",
-            op.target_section or "",
-            str(op.target_paragraph) if op.target_paragraph is not None else "",
-            op.target_chapter or "",
-            op.target_special or "",
+            op.target_cols.target_unit_kind or "",
+            op.target_cols.target_section or "",
+            str(op.target_cols.target_paragraph) if op.target_cols.target_paragraph is not None else "",
+            op.target_cols.target_chapter or "",
+            op.target_cols.target_special or "",
         ]
     )
     digest = hashlib.sha1(signature.encode("utf-8")).hexdigest()[:12]

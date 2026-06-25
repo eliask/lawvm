@@ -125,9 +125,9 @@ def remap_body_root_replace_group_before_terminal_voimaantulo(
         or not group_ops
         or any(
             op.op_type != OpType.REPLACE
-            or op.target_paragraph
-            or op.target_item
-            or op.target_special
+            or op.target_cols.target_paragraph
+            or op.target_cols.target_item
+            or op.target_cols.target_special
             or not op.body_root_replace_fallback
             for op in group_ops
         )
@@ -184,13 +184,13 @@ class CompiledOpTargetScope:
     @classmethod
     def from_amendment_op(cls, op: AmendmentOp) -> "CompiledOpTargetScope":
         return cls(
-            target_unit_kind=op.target_unit_kind,
-            target_norm=_norm_num_token(op.target_section) if op.target_section else "",
-            target_chapter=_norm_num_token(op.target_chapter) if op.target_chapter else "",
-            target_part=_norm_num_token(op.target_part) if op.target_part else "",
-            target_paragraph=str(op.target_paragraph) if op.target_paragraph is not None else "",
-            target_item=str(op.target_item).strip() if op.target_item is not None else "",
-            target_special=str(op.target_special).strip() if op.target_special is not None else "",
+            target_unit_kind=op.target_cols.target_unit_kind,
+            target_norm=_norm_num_token(op.target_cols.target_section) if op.target_cols.target_section else "",
+            target_chapter=_norm_num_token(op.target_cols.target_chapter) if op.target_cols.target_chapter else "",
+            target_part=_norm_num_token(op.target_cols.target_part) if op.target_cols.target_part else "",
+            target_paragraph=str(op.target_cols.target_paragraph) if op.target_cols.target_paragraph is not None else "",
+            target_item=str(op.target_cols.target_item).strip() if op.target_cols.target_item is not None else "",
+            target_special=str(op.target_cols.target_special).strip() if op.target_cols.target_special is not None else "",
         )
 
     @classmethod
@@ -225,7 +225,7 @@ def _item_target_sort_key(item: Optional[str]) -> tuple[int, int, str]:
 
 
 def _op_apply_sort_key(op: AmendmentOp) -> tuple[int, tuple[int, int, str]]:
-    return (op.target_paragraph or 0, _item_target_sort_key(op.target_item))
+    return (op.target_cols.target_paragraph or 0, _item_target_sort_key(op.target_cols.target_item))
 
 
 def sort_group_ops_for_apply(

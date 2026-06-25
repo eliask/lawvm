@@ -398,32 +398,32 @@ def clause_ast_from_amendment_ops(ops: list[AmendmentOp]) -> ClauseAST:
                     pass  # fall through to direct construction
 
             # Direct construction from AmendmentOp fields
-            addr_kind = _TARGET_UNIT_KIND_TO_ADDR.get(op.target_unit_kind)
+            addr_kind = _TARGET_UNIT_KIND_TO_ADDR.get(op.target_cols.target_unit_kind)
             if addr_kind is None:
                 continue
             path: list[tuple[str, str]] = []
-            if op.target_part:
-                path.append(("part", op.target_part))
-            if op.target_chapter:
-                path.append(("chapter", op.target_chapter))
-            if op.target_section:
-                path.append((addr_kind, op.target_section))
-            if op.target_paragraph:
-                path.append(("subsection", str(op.target_paragraph)))
-                if op.target_item:
-                    path.append(("item", op.target_item))
+            if op.target_cols.target_part:
+                path.append(("part", op.target_cols.target_part))
+            if op.target_cols.target_chapter:
+                path.append(("chapter", op.target_cols.target_chapter))
+            if op.target_cols.target_section:
+                path.append((addr_kind, op.target_cols.target_section))
+            if op.target_cols.target_paragraph:
+                path.append(("subsection", str(op.target_cols.target_paragraph)))
+                if op.target_cols.target_item:
+                    path.append(("item", op.target_cols.target_item))
 
             if not path:
                 continue
 
             special: Optional[FacetKind] = None
-            if op.target_special:
-                special = {"otsikko": FacetKind.HEADING, "johd": FacetKind.INTRO}.get(op.target_special)
+            if op.target_cols.target_special:
+                special = {"otsikko": FacetKind.HEADING, "johd": FacetKind.INTRO}.get(op.target_cols.target_special)
 
             target = LegalAddress(path=tuple(path), special=special)
             op_action = _OP_TYPE_TO_ACTION.get(op.op_type, StructuralAction.REPLACE)
 
-            if op.op_type == OpType.RENUMBER or op.target_special == "otsikko":
+            if op.op_type == OpType.RENUMBER or op.target_cols.target_special == "otsikko":
                 la = LabelAction.RENUMBER if op.op_type == OpType.RENUMBER else LabelAction.HEADING_REPLACE
                 nodes.append(
                     LabelAmend(
@@ -618,13 +618,13 @@ def build_clause_claims_from_ops(
             witness = op.witness
         elif isinstance(op, AmendmentOp):
             op_type = op.op_type
-            maybe_kind = TargetKind.for_leaf_kind(op.target_unit_kind)
+            maybe_kind = TargetKind.for_leaf_kind(op.target_cols.target_unit_kind)
             if maybe_kind is None:
                 continue
             kind = maybe_kind
-            number = op.target_section
-            chapter = op.target_chapter or ""
-            part = op.target_part or ""
+            number = op.target_cols.target_section
+            chapter = op.target_cols.target_chapter or ""
+            part = op.target_cols.target_part or ""
             witness = op.witness_rule_id
         else:
             continue

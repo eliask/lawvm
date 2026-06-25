@@ -261,8 +261,8 @@ def detect_restructure_signals(
     """
     signals: list[RestructureSignal] = []
 
-    has_chapter_insert = any(op.target_unit_kind == "chapter" and op.op_type == OpType.INSERT for op in ops)
-    has_part_insert = any(op.target_unit_kind == "part" and op.op_type == OpType.INSERT for op in ops)
+    has_chapter_insert = any(op.target_cols.target_unit_kind == "chapter" and op.op_type == OpType.INSERT for op in ops)
+    has_part_insert = any(op.target_cols.target_unit_kind == "part" and op.op_type == OpType.INSERT for op in ops)
     has_renumber = any(op.op_type == OpType.RENUMBER for op in ops)
 
     if has_chapter_insert:
@@ -330,10 +330,10 @@ def build_restructure_plan(
 
     for op in ops:
         op_type = op.op_type
-        target_unit_kind = op.target_unit_kind
-        target_section = _normalize_label("section", str(op.target_section or ""))
-        target_chapter = _normalize_label("chapter", str(op.target_chapter or ""))
-        target_part = _normalize_label("part", str(op.target_part or ""))
+        target_unit_kind = op.target_cols.target_unit_kind
+        target_section = _normalize_label("section", str(op.target_cols.target_section or ""))
+        target_chapter = _normalize_label("chapter", str(op.target_cols.target_chapter or ""))
+        target_part = _normalize_label("part", str(op.target_cols.target_part or ""))
 
         is_chapter = target_unit_kind == "chapter"
         is_part = target_unit_kind == "part"
@@ -342,9 +342,9 @@ def build_restructure_plan(
         match op_type:
             case OpType.RENUMBER:
                 is_root_relabel = (
-                    op.target_paragraph is None
-                    and not op.target_item
-                    and not op.target_special
+                    op.target_cols.target_paragraph is None
+                    and not op.target_cols.target_item
+                    and not op.target_cols.target_special
                 )
                 if not is_root_relabel:
                     continue

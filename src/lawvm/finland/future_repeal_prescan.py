@@ -192,14 +192,14 @@ def _pre_scan_repeal_targets(
                         source_diagnostics_out=vts_source_diagnostics_out,
                     )
                     for op in vts_ops:
-                        sec_norm = _norm_num_token(op.target_section) if op.target_section else ""
+                        sec_norm = _norm_num_token(op.target_cols.target_section) if op.target_cols.target_section else ""
                         ch_norm: Optional[str] = (
-                            _norm_num_token(op.target_chapter).removesuffix("luku")
-                            if op.target_chapter
+                            _norm_num_token(op.target_cols.target_chapter).removesuffix("luku")
+                            if op.target_cols.target_chapter
                             else None
                         )
                         if sec_norm:
-                            targets.add(RepealTargetRef(op.target_unit_kind, sec_norm, ch_norm))
+                            targets.add(RepealTargetRef(op.target_cols.target_unit_kind, sec_norm, ch_norm))
                 except (ValueError, KeyError, AttributeError, TypeError, IndexError) as exc:
                     _record_prescan_diagnostic(
                         prescan_diagnostics_out,

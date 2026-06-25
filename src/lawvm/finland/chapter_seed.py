@@ -372,9 +372,9 @@ def _op_targets_chapter(op: AmendmentOp, chapter_labels: Set[str]) -> bool:
     - It is a section-level op (target_kind == `TargetKind.SECTION`) scoped to a seeded
       chapter via target_chapter.
     """
-    if op.target_unit_kind == "chapter" and op.target_section in chapter_labels:
+    if op.target_cols.target_unit_kind == "chapter" and op.target_cols.target_section in chapter_labels:
         return True
-    if op.target_unit_kind == "section" and op.target_chapter in chapter_labels:
+    if op.target_cols.target_unit_kind == "section" and op.target_cols.target_chapter in chapter_labels:
         return True
     return False
 

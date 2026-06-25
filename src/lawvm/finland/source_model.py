@@ -1577,13 +1577,13 @@ class AmendmentSourceModel:
 
         if any(
             op.op_type in (OpType.REPLACE, OpType.INSERT)
-            and op.target_unit_kind == "section"
-            and op.target_special is None
+            and op.target_cols.target_unit_kind == "section"
+            and op.target_cols.target_special is None
             for op in ops
         ):
             return True
         if any(
-            op.op_type in (OpType.REPLACE, OpType.INSERT) and op.target_unit_kind == "chapter"
+            op.op_type in (OpType.REPLACE, OpType.INSERT) and op.target_cols.target_unit_kind == "chapter"
             for op in ops
         ):
             return True

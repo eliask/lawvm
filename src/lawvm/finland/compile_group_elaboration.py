@@ -131,10 +131,10 @@ def _restore_source_heading_for_explicit_heading_facet(
         return prepared_muutos_ir, None
 
     has_heading_op = any(
-        op.target_unit_kind == "section"
-        and _norm_num_token(str(op.target_section or target_norm or ""))
+        op.target_cols.target_unit_kind == "section"
+        and _norm_num_token(str(op.target_cols.target_section or target_norm or ""))
         == _norm_num_token(str(target_norm or ""))
-        and str(op.target_special or "") == "otsikko"
+        and str(op.target_cols.target_special or "") == "otsikko"
         for op in group_ops
     )
     if not has_heading_op:
@@ -197,13 +197,13 @@ def drop_payloadless_source_replace_shadowed_by_same_group_relabel(
     for op in group_ops:
         if (
             op.op_type == OpType.REPLACE
-            and op.target_unit_kind == "section"
-            and _norm_num_token(op.target_section or "") == target_norm
-            and op.target_paragraph is None
-            and not op.target_item
-            and not op.target_special
-            and op.target_chapter == target_chapter
-            and op.target_part == target_part
+            and op.target_cols.target_unit_kind == "section"
+            and _norm_num_token(op.target_cols.target_section or "") == target_norm
+            and op.target_cols.target_paragraph is None
+            and not op.target_cols.target_item
+            and not op.target_cols.target_special
+            and op.target_cols.target_chapter == target_chapter
+            and op.target_cols.target_part == target_part
         ):
             rejected_ops.append(
                 FailedOp.from_scope(
@@ -248,10 +248,10 @@ def _source_complete_container_replacement_witness(
         op
         for op in group_ops
         if op.op_type == OpType.REPLACE
-        and op.target_unit_kind == target_unit_kind
-        and op.target_paragraph is None
-        and not op.target_item
-        and (not op.target_special or op.target_special in {"otsikko", "otsikko_edella"})
+        and op.target_cols.target_unit_kind == target_unit_kind
+        and op.target_cols.target_paragraph is None
+        and not op.target_cols.target_item
+        and (not op.target_cols.target_special or op.target_cols.target_special in {"otsikko", "otsikko_edella"})
     ]
     if len(whole_replaces) != 1:
         return None
