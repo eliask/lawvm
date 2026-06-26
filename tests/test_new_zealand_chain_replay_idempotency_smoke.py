@@ -409,13 +409,21 @@ def test_chain_replay_in_oracle_prov_level_target_absent_has_structural_residue_
 
     Two structural causes exhaustively cover the post-widening honest residue:
 
-    * (A) Upstream INSERT/repeal-skip residue: the section IS present in the
-      archived snapshot dated AT OR BEFORE the op's amendment_date (i.e.,
-      the archived before-tree at the op's transition step DID carry the
-      section -- the carried tree simply diverged from the archived state
-      because an upstream chain op got `payload_not_extractable` /
-      `insert_anchor_*` skipped, OR was not enumerated at all). Honest
-      residue per AGENTS §1.8 receipt-conservation; NOT a silent drop.
+    * (A) Section entered archived consolidation between the chain's start
+      snapshot (earliest archived) and the op's amendment_date WITHOUT a
+      matching enumerated INSERT/REPLACE op. The chain's carried tree starts
+      at the earliest archived snapshot; if the section is NOT in that
+      earliest snapshot but IS present in some later archived snapshot
+      dated at-or-before the op's amendment_date, then no enumerated chain
+      op derived the section's insertion -- the editorial consolidation
+      baked in the insert (frontier residue per AGENTS §0 manual-compilation
+      frontier; acquiring the unarchived amending act OR pre-cutoff baked-in
+      change closes the lane). The skip is HONEST: the carried tree correctly
+      lacks the section at the op's transition step; the latest-oracle carries
+      it because the consolidation editor baked the (unrecovered) amending
+      directive's result. Examples verified 2026-06-26:
+      `act_public_2009_13 prov:19A` (section absent in earliest 2009-05-23
+      snapshot, present at 2009-09-23; amendment 2010-06-15 targets it).
 
     * (B) Omnibus-reparent: the section moved between ``<part>`` containers
       between at least one consecutive pair of archived snapshots. The
