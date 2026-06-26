@@ -274,6 +274,64 @@ _US_RULE_SPECS: Dict[str, str] = {
         "owned by the temporal layer; it is not lowered as an immediate REPLACE because "
         "doing so would corrupt the in-force text for any edition before the effective date."
     ),
+    "us_amendatory_unrecognized_redesignate_shape": (
+        "A 'redesignating ... as ...' instruction that matched the redesignate family "
+        "but whose shape the lowerer cannot safely emit RENUMBER ops for: ordinal-"
+        "prefixed duplicates ('the second subsection (X) as subsection (X)'), "
+        "redesignate-with-indenting-appropriately suffix, or other multi-unit shapes "
+        "without a label list, range, or sibling table. Held out as a typed residual."
+    ),
+    "us_amendatory_unrecognized_form": (
+        "An amendatory instruction whose action-verb sequence has no matching family "
+        "classifier. The catch-all for the witness_rule_id default when no family branch "
+        "produced an op or named finding — never silently dropped."
+    ),
+    "us_amendatory_insert_after_missing_operands": (
+        "An 'inserting after <anchor>' instruction matched the insert_after family but "
+        "the operand extractor could not surface both the inserted text and the anchor "
+        "text. Held out rather than guessed."
+    ),
+    "us_amendatory_strike_no_quoted_anchor": (
+        "A 'strike ...' instruction without a quoted anchor or recognizable structural "
+        "unit name. The form 'strike X' needs a quoted X or a named unit like 'subsection (a)'."
+    ),
+    "us_amendatory_strike_insert_missing_operands": (
+        "A 'strike-and-insert' instruction missing the two quoted strings or quoted "
+        "block payload the form requires. Held out rather than guess the operand assignment."
+    ),
+    "us_amendatory_add_at_end_missing_payload": (
+        "An 'add at the end' instruction with no quoted payload operand. Held out rather "
+        "than emit an empty append."
+    ),
+    "us_amendatory_amend_to_read_missing_payload": (
+        "An 'amend ... to read as follows' instruction with no quoted replacement block "
+        "operand. Held out rather than emit a no-op REPLACE."
+    ),
+    "us_amendatory_tail_strike_insert_missing_operands": (
+        "An open-ended tail strike-insert ('striking X and all that follows and inserting "
+        "Y') missing the matched old/new quoted pair. Held out rather than guess at the "
+        "open-ended deletion."
+    ),
+    "us_amendatory_end_punct_insert_no_quoted_capture": (
+        "An end-punctuation insert ('inserting ... before/after the period') whose regex "
+        "matched classify but no quoted insertion was captured, OR classify matched but "
+        "the regex did not. Held out rather than fabricate an inserted literal."
+    ),
+    "us_amendatory_end_punct_strike_insert_regex_miss": (
+        "An end-punctuation strike-insert ('striking the period at the end and inserting "
+        "<X>') whose classify routed to the end_punct family but the regex did not match "
+        "concretely. Held out rather than patch over the classifier/regex divergence."
+    ),
+    "us_amendatory_punct_word_unrecognized": (
+        "A punctuation-word strike-insert ('striking <old> and inserting a semicolon/comma/"
+        "period') whose ins_word did not map to a known punctuation character. Held out "
+        "rather than guess at the character mapping."
+    ),
+    "us_amendatory_table_redesignate_ambiguous_title": (
+        "A 'redesignating the sections as described in the table' instruction whose "
+        "resolved target has ambiguous title scope (multi-title or no title segment in "
+        "the address). Held out rather than guess which title owns the table's rows."
+    ),
     # --- Dry-run outcome rules: the witness classifier --------------------------------
     "us_dry_run_section_materialized_text_matches_oracle": (
         "AGREES witness: the composed section text (before-text with all in-scope ops "
@@ -553,6 +611,18 @@ _US_RULE_CONFIDENCE: Dict[str, str] = {
     "us_dry_run_residual_materialized_text_mismatch_with_oracle": US_CONFIDENCE_HEURISTIC,
     "us_dry_run_residual_source_truncated_payload": US_CONFIDENCE_HEURISTIC,
     "us_amendatory_deferred_amend_to_read": US_CONFIDENCE_HEURISTIC,
+    "us_amendatory_unrecognized_redesignate_shape": US_CONFIDENCE_HEURISTIC,
+    "us_amendatory_unrecognized_form": US_CONFIDENCE_HEURISTIC,
+    "us_amendatory_insert_after_missing_operands": US_CONFIDENCE_HEURISTIC,
+    "us_amendatory_strike_no_quoted_anchor": US_CONFIDENCE_HEURISTIC,
+    "us_amendatory_strike_insert_missing_operands": US_CONFIDENCE_HEURISTIC,
+    "us_amendatory_add_at_end_missing_payload": US_CONFIDENCE_HEURISTIC,
+    "us_amendatory_amend_to_read_missing_payload": US_CONFIDENCE_HEURISTIC,
+    "us_amendatory_tail_strike_insert_missing_operands": US_CONFIDENCE_HEURISTIC,
+    "us_amendatory_end_punct_insert_no_quoted_capture": US_CONFIDENCE_HEURISTIC,
+    "us_amendatory_end_punct_strike_insert_regex_miss": US_CONFIDENCE_HEURISTIC,
+    "us_amendatory_punct_word_unrecognized": US_CONFIDENCE_HEURISTIC,
+    "us_amendatory_table_redesignate_ambiguous_title": US_CONFIDENCE_HEURISTIC,
     "us_nonpositive_target_via_paren": US_CONFIDENCE_HEURISTIC,
     "us_nonpositive_target_via_href": US_CONFIDENCE_HEURISTIC,
     "us_sunset_temporary_provision_reverted_to_prior_permanent": US_CONFIDENCE_HEURISTIC,

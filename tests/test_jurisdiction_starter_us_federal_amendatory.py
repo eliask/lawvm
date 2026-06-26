@@ -41,6 +41,7 @@ from lawvm.us_federal.amendatory import (
     RULE_STRIKE_UNIT_LIST,
     SENTENCE_STRIKE_FINDING_RULE_ID,
     TAIL_STRIKE_FINDING_RULE_ID,
+    TAIL_STRIKE_INSERT_MISSING_OPERANDS_FINDING_RULE_ID,
     TARGET_UNRESOLVED_FINDING_RULE_ID,
     UNLOWERED_FINDING_RULE_ID,
     _first_usc_ref,
@@ -1178,7 +1179,10 @@ def test_strike_structural_unit_with_future_effective_language_is_not_an_immedia
     instr = report.instructions[0]
     assert instr.operation is None
     assert instr.finding is not None
-    assert instr.finding.rule_id == UNLOWERED_FINDING_RULE_ID
+    # Future-effective strike is owned by the temporal layer; the FUTURE_EFFECTIVE
+    # guard at the top of the strike family emits DEFERRED_AMEND_TO_READ before
+    # any structural-unit / through-tail / tail processing.
+    assert instr.finding.rule_id == DEFERRED_AMEND_TO_READ_FINDING_RULE_ID
 
 
 def test_amend_to_read_with_sunset_language_is_not_an_immediate_replace():
@@ -1465,7 +1469,10 @@ def test_future_effective_multi_strike_is_not_an_immediate_repeal():
     instr = report.instructions[0]
     assert instr.operation is None
     assert instr.finding is not None
-    assert instr.finding.rule_id == UNLOWERED_FINDING_RULE_ID
+    # Future-effective strike is owned by the temporal layer; the FUTURE_EFFECTIVE
+    # guard at the top of the strike family emits DEFERRED_AMEND_TO_READ before
+    # the multi-unit structural-strike path runs.
+    assert instr.finding.rule_id == DEFERRED_AMEND_TO_READ_FINDING_RULE_ID
 
 
 def test_structural_strike_with_list_conjunction_trailing_semicolon():
@@ -2721,7 +2728,7 @@ def test_through_tail_strike_insert_with_two_quotes_ignored_held_out():
     instr = lower_plaw_amendatory(_synthetic_plaw(body)).instructions[0]
     assert instr.operation is None
     assert instr.finding is not None
-    assert instr.finding.rule_id == UNLOWERED_FINDING_RULE_ID
+    assert instr.finding.rule_id == TAIL_STRIKE_INSERT_MISSING_OPERANDS_FINDING_RULE_ID
 
 
 # ---------------------------------------------------------------------------

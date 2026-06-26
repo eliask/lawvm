@@ -134,6 +134,24 @@ THROUGH_TAIL_STRIKE_FINDING_RULE_ID = "us_amendatory_through_tail_strike_not_sec
 # for any after-edition before the effective date. The temporal layer owns them.
 DEFERRED_AMEND_TO_READ_FINDING_RULE_ID = "us_amendatory_deferred_amend_to_read"
 
+# Owned typed findings for families that are detected-but-held-out (not the
+# generic UNLOWERED catch-all). Each names a concrete shape the parser
+# recognized but cannot safely lower — keeping the uncertainty visible per
+# AGENTS.md §2.1 (stable rule id, family tag) and §1.8 (residual stays in
+# the accounting, never silently dropped).
+UNRECOGNIZED_REDESIGNATE_FINDING_RULE_ID = "us_amendatory_unrecognized_redesignate_shape"
+UNRECOGNIZED_AMENDATORY_FORM_FINDING_RULE_ID = "us_amendatory_unrecognized_form"
+INSERT_AFTER_MISSING_OPERANDS_FINDING_RULE_ID = "us_amendatory_insert_after_missing_operands"
+STRIKE_NO_QUOTED_ANCHOR_FINDING_RULE_ID = "us_amendatory_strike_no_quoted_anchor"
+STRIKE_INSERT_MISSING_OPERANDS_FINDING_RULE_ID = "us_amendatory_strike_insert_missing_operands"
+ADD_AT_END_MISSING_PAYLOAD_FINDING_RULE_ID = "us_amendatory_add_at_end_missing_payload"
+AMEND_TO_READ_MISSING_PAYLOAD_FINDING_RULE_ID = "us_amendatory_amend_to_read_missing_payload"
+TAIL_STRIKE_INSERT_MISSING_OPERANDS_FINDING_RULE_ID = "us_amendatory_tail_strike_insert_missing_operands"
+END_PUNCT_INSERT_NO_QUOTED_CAPTURE_FINDING_RULE_ID = "us_amendatory_end_punct_insert_no_quoted_capture"
+END_PUNCT_STRIKE_INSERT_REGEX_MISS_FINDING_RULE_ID = "us_amendatory_end_punct_strike_insert_regex_miss"
+PUNCT_WORD_UNRECOGNIZED_FINDING_RULE_ID = "us_amendatory_punct_word_unrecognized"
+TABLE_REDESIGNATE_AMBIGUOUS_TITLE_FINDING_RULE_ID = "us_amendatory_table_redesignate_ambiguous_title"
+
 # A target whose title was inferred from the Act section's govinfo/OLRC classification
 # refs (including sidenote refs) when the amendatory head omits "of title N". The
 # section number is named in the head; the title comes from the publisher's own
@@ -2397,12 +2415,12 @@ def _lower_instruction(
         return USAmendmentInstruction(
             instruction_id=instruction_id,
             status=USInstructionStatus.UNSUPPORTED,
-            witness_rule_id=UNLOWERED_FINDING_RULE_ID,
+            witness_rule_id=TARGET_UNRESOLVED_FINDING_RULE_ID,
             action=family,
             target_phrase=target_phrase,
             target_href=target_href,
             finding=finding,
-            parse_witness=ParseWitness(rule_id=UNLOWERED_FINDING_RULE_ID),
+            parse_witness=ParseWitness(rule_id=TARGET_UNRESOLVED_FINDING_RULE_ID),
             raw_text=raw_text,
         )
 
@@ -2419,7 +2437,7 @@ def _lower_instruction(
 
     op: LegalOperation | None = None
     extra_ops: list[LegalOperation] = []
-    witness_rule_id = UNLOWERED_FINDING_RULE_ID
+    witness_rule_id = UNRECOGNIZED_AMENDATORY_FORM_FINDING_RULE_ID
     status = USInstructionStatus.UNSUPPORTED
     finding: USAmendatoryFinding | None = None
 
@@ -2520,7 +2538,7 @@ def _lower_instruction(
             # ``_strike_structural_unit`` applies to structural strikes).
             if _FUTURE_EFFECTIVE_RE.search(raw_text) is not None:
                 finding = _finding(
-                    UNLOWERED_FINDING_RULE_ID,
+                    DEFERRED_AMEND_TO_READ_FINDING_RULE_ID,
                     "tail/strike-through-tail instruction carries future-effective "
                     "language; owned by the temporal layer, not lowered as immediate",
                 )
@@ -2567,8 +2585,10 @@ def _lower_instruction(
                     witness_rule_id = RULE_STRIKE_INSERT_TAIL
                 else:
                     finding = _finding(
-                        UNLOWERED_FINDING_RULE_ID,
-                        "open-ended tail strike-insert not lowerable without matched old/new quotes",
+                        TAIL_STRIKE_INSERT_MISSING_OPERANDS_FINDING_RULE_ID,
+                        "open-ended tail strike-insert not lowerable without matched "
+                        "old/new quotes (the 'striking X and all that follows and "
+                        "inserting Y' form needs two quoted operands)",
                     )
         elif len(quoted) >= 2:
             old, new = quoted[0], quoted[1]
@@ -2630,8 +2650,9 @@ def _lower_instruction(
             witness_rule_id = RULE_STRIKE_INSERT
         else:
             finding = _finding(
-                UNLOWERED_FINDING_RULE_ID,
-                "strike-and-insert without two quoted strings or a quoted block payload",
+                STRIKE_INSERT_MISSING_OPERANDS_FINDING_RULE_ID,
+                "strike-and-insert without two quoted strings or a quoted block payload "
+                "(the form 'striking X and inserting Y' needs the X and Y operands)",
             )
     elif family == "strike_insert_end_punct":
         # Terminal punctuation edit: "striking the period at the end and inserting
@@ -2691,7 +2712,7 @@ def _lower_instruction(
             witness_rule_id = RULE_STRIKE_INSERT_END_PUNCT
         else:
             finding = _finding(
-                UNLOWERED_FINDING_RULE_ID,
+                END_PUNCT_STRIKE_INSERT_REGEX_MISS_FINDING_RULE_ID,
                 "end-punctuation strike-insert matched classify but not regex",
             )
     elif family == "strike_insert_punct_word":
@@ -2715,12 +2736,12 @@ def _lower_instruction(
                 witness_rule_id = RULE_STRIKE_INSERT_PUNCT_WORD
             else:
                 finding = _finding(
-                    UNLOWERED_FINDING_RULE_ID,
+                    PUNCT_WORD_UNRECOGNIZED_FINDING_RULE_ID,
                     f"unrecognized punctuation word: {m.group('ins_word')!r}",
                 )
         else:
             finding = _finding(
-                UNLOWERED_FINDING_RULE_ID,
+                PUNCT_WORD_UNRECOGNIZED_FINDING_RULE_ID,
                 "punctuation-word strike-insert matched classify but not regex",
             )
     elif family == "insert_end_punct":
@@ -2738,7 +2759,7 @@ def _lower_instruction(
             ins_quoted = ins_post or ins_pre
             if ins_quoted is None:
                 finding = _finding(
-                    UNLOWERED_FINDING_RULE_ID,
+                    END_PUNCT_INSERT_NO_QUOTED_CAPTURE_FINDING_RULE_ID,
                     "end-punctuation insert matched classify but no quoted insertion captured",
                 )
             else:
@@ -2763,7 +2784,7 @@ def _lower_instruction(
                 witness_rule_id = RULE_INSERT_END_PUNCT
         else:
             finding = _finding(
-                UNLOWERED_FINDING_RULE_ID,
+                END_PUNCT_INSERT_NO_QUOTED_CAPTURE_FINDING_RULE_ID,
                 "end-punctuation insert matched classify but not regex",
             )
     elif family == "strike":
@@ -2779,7 +2800,7 @@ def _lower_instruction(
         # ``_strike_structural_unit`` / ``_strike_insert_unit_target``).
         if _FUTURE_EFFECTIVE_RE.search(raw_text) is not None:
             finding = _finding(
-                UNLOWERED_FINDING_RULE_ID,
+                DEFERRED_AMEND_TO_READ_FINDING_RULE_ID,
                 "through-tail / tail strike carries future-effective language; "
                 "owned by the temporal layer, not lowered as immediate",
             )
@@ -2879,8 +2900,10 @@ def _lower_instruction(
                     witness_rule_id = RULE_STRIKE_UNIT_LIST
                 else:
                     finding = _finding(
-                        UNLOWERED_FINDING_RULE_ID,
-                        "strike with no quoted string and no recognizable structural unit",
+                        STRIKE_NO_QUOTED_ANCHOR_FINDING_RULE_ID,
+                        "strike with no quoted string and no recognizable structural "
+                        "unit (the form 'strike X' needs a quoted X or a named "
+                        "sub-unit like 'subsection (a)')",
                     )
     elif family == "insert_after":
         node_anchor = _INSERT_NODE_AFTER_RE.search(raw_text)
@@ -2947,7 +2970,7 @@ def _lower_instruction(
             witness_rule_id = RULE_INSERT_NODE_AFTER
         else:
             finding = _finding(
-                UNLOWERED_FINDING_RULE_ID,
+                INSERT_AFTER_MISSING_OPERANDS_FINDING_RULE_ID,
                 "insert-after without both inserted text and anchor text",
             )
     elif family == "add_at_end":
@@ -3006,7 +3029,10 @@ def _lower_instruction(
             )
             witness_rule_id = RULE_ADD_AT_END
         else:
-            finding = _finding(UNLOWERED_FINDING_RULE_ID, "add-at-end without a quoted payload")
+            finding = _finding(
+                ADD_AT_END_MISSING_PAYLOAD_FINDING_RULE_ID,
+                "add-at-end without a quoted payload",
+            )
     elif family == "amend_to_read":
         if _FUTURE_EFFECTIVE_RE.search(effective_text or raw_text):
             finding = _finding(
@@ -3032,7 +3058,10 @@ def _lower_instruction(
             )
             witness_rule_id = RULE_AMEND_TO_READ
         else:
-            finding = _finding(UNLOWERED_FINDING_RULE_ID, "amend-to-read without a quoted replacement block")
+            finding = _finding(
+                AMEND_TO_READ_MISSING_PAYLOAD_FINDING_RULE_ID,
+                "amend-to-read without a quoted replacement block",
+            )
     elif family == "repeal":
         op = _make_op(StructuralAction.REPEAL, rule_id=RULE_REPEAL)
         witness_rule_id = RULE_REPEAL
@@ -3103,7 +3132,7 @@ def _lower_instruction(
             title_segments = tuple(p for p in address.path if p[0] == "title")
             if len(title_segments) != 1:
                 finding = _finding(
-                    UNLOWERED_FINDING_RULE_ID,
+                    TABLE_REDESIGNATE_AMBIGUOUS_TITLE_FINDING_RULE_ID,
                     "table-form redesignation: resolved target has ambiguous "
                     f"title scope (path={address.path}); needs exactly one title",
                 )
@@ -3129,13 +3158,19 @@ def _lower_instruction(
                 witness_rule_id = RULE_REDESIGNATE_TABLE
         else:
             finding = _finding(
-                UNLOWERED_FINDING_RULE_ID,
-                "redesignation is multi-unit or non-numeric range form (not lowered to RENUMBER)",
+                UNRECOGNIZED_REDESIGNATE_FINDING_RULE_ID,
+                "redesignation is multi-unit, non-numeric range, or other shape "
+                "the lowering cannot safely emit RENUMBER ops for (no contiguous "
+                "range, no paired label list, no sibling table); held out as a "
+                "typed residual — typically 'redesignating the second subsection (X) "
+                "as subsection (X)' (ordinal-prefixed duplicate) or redesignate-with-"
+                "indenting-appropriately suffix.",
             )
     else:
         finding = _finding(
-            UNLOWERED_FINDING_RULE_ID,
-            f"amendatory form not recognized (actions={actions!r})",
+            UNRECOGNIZED_AMENDATORY_FORM_FINDING_RULE_ID,
+            f"amendatory form not recognized (actions={actions!r}); the action "
+            f"verb sequence has no matching family classifier",
         )
 
     if op is not None:
