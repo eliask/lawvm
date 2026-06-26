@@ -55,6 +55,9 @@ _UK_DYNAMIC_RULE_ID_SUFFIXES: Tuple[str, ...] = (
 
 
 _UK_RULE_SPECS: Dict[str, str] = {
+    # -- Repeal payload hygiene -------------------------------------------------
+    "uk_effect_repeal_payload_dropped":
+        "A UK REPEAL/TEXT_REPEAL effect arriving at the generic single-target mint boundary with a synthesised non-None payload has that payload coerced to None (a repeal removes its target, so a content payload is contradictory); the drop is recorded as a non-blocking observation, never silently applied.",
     # -- Whole-Act / occurrence-scope substitution (OPC §6 occurrence scope) ----
     "uk_effect_simple_whole_act_all_occurrences_substitution_text_patch":
         "'In this Act, for X substitute Y' rewrites every occurrence of X across the whole Act.",
