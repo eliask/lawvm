@@ -106,7 +106,6 @@ _TARGET_GUESSING_PROVENANCE_TAGS = frozenset(
 def _derive_op_provenance(
     *,
     fallback_provenance: bool,
-    body_root_replace_fallback: bool,
     uncovered_body_recovery: bool,
     extraction_provenance_tags: Tuple[str, ...],
     target_guessing_provenance_tags: Tuple[str, ...],
@@ -139,8 +138,6 @@ def _derive_op_provenance(
     phase; absence is represented as ``None`` here to stay additive.
     """
     ids: set[RecognizerId] = set()
-    if body_root_replace_fallback:
-        ids.add(RecognizerId.BODY_ROOT_REPLACE)
     if uncovered_body_recovery:
         ids.add(RecognizerId.UNCOVERED_BODY)
     # Total per-bag fold: every serialized tag string -> its typed recognizer.
@@ -832,7 +829,6 @@ class AmendmentOp:
     target_selector: TargetSelector = _DEFAULT_TARGET_SELECTOR
     named_row_targets: Tuple[str, ...] = ()
     numbered_table_targets: Tuple[str, ...] = ()
-    body_root_replace_fallback: bool = False
     fallback_provenance: bool = False
     move_clause_target_unit_kind: Optional[TargetUnitKind] = None
     uncovered_body_recovery: bool = False
@@ -908,7 +904,6 @@ class AmendmentOp:
         """Derive the stamp from THIS op's current recovery markers + stamps."""
         return _derive_op_provenance(
             fallback_provenance=self.fallback_provenance,
-            body_root_replace_fallback=self.body_root_replace_fallback,
             uncovered_body_recovery=self.uncovered_body_recovery,
             extraction_provenance_tags=self.extraction_provenance_tags,
             target_guessing_provenance_tags=self.target_guessing_provenance_tags,
@@ -933,9 +928,9 @@ class AmendmentOp:
     def restamp_provenance(self) -> None:
         """Re-derive the stored provenance stamp from the current markers.
 
-        Called at the frontend setattr sites (``op.body_root_replace_fallback =
-        True``, ``op.extraction_provenance_tags = …``, ``op.witness_rule_id = …``)
-        and by :meth:`stamp_recognizer` (the M2 inversion seam) that mutate
+        Called at the frontend setattr sites (``op.extraction_provenance_tags =
+        …``, ``op.witness_rule_id = …``) and by :meth:`stamp_recognizer` (the M2
+        inversion seam, e.g. body-root-replace fallback) that mutate
         recovery markers / stamps AFTER construction, so the stored stamp stays in
         lockstep with the markers the legacy readers used. Fresh construction
         stamps via this method; a
@@ -968,7 +963,6 @@ class AmendmentOp:
         target_selector: "TargetSelector | _TargetSelectorUnset" = _TARGET_SELECTOR_UNSET,
         named_row_targets: Tuple[str, ...] = (),
         numbered_table_targets: Tuple[str, ...] = (),
-        body_root_replace_fallback: bool = False,
         fallback_provenance: bool = False,
         move_clause_target_unit_kind: TargetUnitKind | None = None,
         uncovered_body_recovery: bool = False,
@@ -1052,7 +1046,6 @@ class AmendmentOp:
         self.op_type = op_type
         self.named_row_targets = named_row_targets
         self.numbered_table_targets = numbered_table_targets
-        self.body_root_replace_fallback = body_root_replace_fallback
         self.fallback_provenance = fallback_provenance
         self.move_clause_target_unit_kind = move_clause_target_unit_kind
         self.uncovered_body_recovery = uncovered_body_recovery
@@ -1435,7 +1428,6 @@ class ResolvedOp:
     body_chapter_move_from: Optional[str] = None
     named_row_targets: tuple[str, ...] = ()
     numbered_table_targets: tuple[str, ...] = ()
-    body_root_replace_fallback: bool = False
     fallback_provenance: bool = False
     voimaantulo_repeal: bool = False
     extraction_provenance_tags: tuple[str, ...] = ()
@@ -1483,7 +1475,6 @@ class ResolvedOp:
     def _derive_provenance_from_markers(self) -> OpProvenance | None:
         return _derive_op_provenance(
             fallback_provenance=self.fallback_provenance,
-            body_root_replace_fallback=self.body_root_replace_fallback,
             uncovered_body_recovery=self.uncovered_body_recovery,
             extraction_provenance_tags=self.extraction_provenance_tags,
             target_guessing_provenance_tags=self.target_guessing_provenance_tags,
@@ -1675,7 +1666,6 @@ class ResolvedOp:
             body_chapter_move_from=op.body_chapter_move_from,
             named_row_targets=op.named_row_targets,
             numbered_table_targets=op.numbered_table_targets,
-            body_root_replace_fallback=op.body_root_replace_fallback,
             fallback_provenance=op.fallback_provenance,
             voimaantulo_repeal=op.voimaantulo_repeal,
             extraction_provenance_tags=op.extraction_provenance_tags,

@@ -19,6 +19,7 @@ from lawvm.finland.body_coverage import (
     collect_coverage_claims,
     extract_body_coverage,
 )
+from lawvm.finland.op_provenance import RecognizerId
 from lawvm.finland.ops import AmendmentOp, OpType, TargetKind
 
 
@@ -62,7 +63,11 @@ def _op(
         target_kind=cast(TargetKind, target_kind),
         target_chapter=target_chapter,
         fallback_provenance=fallback_provenance,
-        body_root_replace_fallback=body_root_replace_fallback,
+        _stamped_recognizers=(
+            frozenset({RecognizerId.BODY_ROOT_REPLACE})
+            if body_root_replace_fallback
+            else frozenset()
+        ),
     )
 
 
@@ -94,16 +99,21 @@ class _CoverageOpShim:
         # recovery markers this shim carries, so coverage readers that test
         # ``isinstance(op.provenance, Recovered)`` / ``has_recognizer(...)`` see
         # the same typed provenance the production op would.
+        from lawvm.finland.op_provenance import RecognizerId
         from lawvm.finland.ops import _derive_op_provenance
 
         return _derive_op_provenance(
             fallback_provenance=self.fallback_provenance,
-            body_root_replace_fallback=self.body_root_replace_fallback,
             uncovered_body_recovery=False,
             extraction_provenance_tags=(),
             target_guessing_provenance_tags=(),
             scope_provenance_tags=(),
             witness_rule_id=None,
+            stamped_recognizers=(
+                frozenset({RecognizerId.BODY_ROOT_REPLACE})
+                if self.body_root_replace_fallback
+                else frozenset()
+            ),
         )
 
     @property

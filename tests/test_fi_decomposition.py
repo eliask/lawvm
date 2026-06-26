@@ -1106,7 +1106,7 @@ class TestNormalizeAndCompileOps:
 
         assert ops
         for op in ops:
-            assert op.body_root_replace_fallback is True
+            assert has_recognizer(op.provenance, RecognizerId.BODY_ROOT_REPLACE)
             assert "extraction_body_root_replace" in op.extraction_provenance_tags
 
     def test_destinationless_move_relabel_is_reported_before_missing_intent(self) -> None:
@@ -1274,7 +1274,7 @@ class TestNormalizeAndCompileOps:
                 op_type=OpType.REPLACE,
                 target_kind=TargetKind.SECTION,
                 target_section="4",
-                body_root_replace_fallback=True,
+                _stamped_recognizers=frozenset({RecognizerId.BODY_ROOT_REPLACE}),
             )
         ]
 
@@ -1291,7 +1291,7 @@ class TestNormalizeAndCompileOps:
         assert len(remapped_ops) == 1
         assert remapped_ops[0].op_type == "INSERT"
         assert remapped_ops[0].target_cols.target_section == "3a"
-        assert remapped_ops[0].body_root_replace_fallback is True
+        assert has_recognizer(remapped_ops[0].provenance, RecognizerId.BODY_ROOT_REPLACE)
 
     def test_remap_body_root_replace_group_does_not_fire_from_breadcrumb_string_alone(self) -> None:
         parent = IRNode(

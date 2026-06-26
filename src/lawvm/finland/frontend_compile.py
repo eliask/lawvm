@@ -4720,7 +4720,12 @@ def normalize_and_compile_ops(
                     source_model=source_model,
                 )
                 for op in ops:
-                    op.body_root_replace_fallback = True
+                    # M2: stamp the recognizer directly (replaces the deleted
+                    # ``body_root_replace_fallback`` boolean). The trailing
+                    # ``restamp_provenance`` folds in the markers set just below.
+                    op._stamped_recognizers = op._stamped_recognizers | {
+                        RecognizerId.BODY_ROOT_REPLACE
+                    }
                     op.fallback_provenance = True
                     if not op.witness_rule_id:
                         op.witness_rule_id = FI_BODY_ROOT_REPLACE_FALLBACK_RULE_ID

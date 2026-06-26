@@ -342,15 +342,17 @@ def test_derive_op_provenance_folds_every_serialized_bag_tag() -> None:
 
     prov = _derive_op_provenance(
         fallback_provenance=False,
-        body_root_replace_fallback=True,
         uncovered_body_recovery=True,
         extraction_provenance_tags=extraction,
         target_guessing_provenance_tags=target_guessing,
         scope_provenance_tags=scope,
         witness_rule_id=RecognizerId.JOLLOIN_RENUMBER.value,
-        # ``SEC1_BODY_JOHTO`` is now stamped directly (its legacy boolean was
-        # deleted in the M2 inversion), so it arrives via ``stamped_recognizers``.
-        stamped_recognizers=frozenset({RecognizerId.SEC1_BODY_JOHTO}),
+        # ``SEC1_BODY_JOHTO`` and ``BODY_ROOT_REPLACE`` are now stamped directly
+        # (their legacy booleans were deleted in the M2 inversion), so they arrive
+        # via ``stamped_recognizers``.
+        stamped_recognizers=frozenset(
+            {RecognizerId.SEC1_BODY_JOHTO, RecognizerId.BODY_ROOT_REPLACE}
+        ),
     )
     assert isinstance(prov, Recovered)
     # Every member except the second witness (only one witness_rule_id per op)
