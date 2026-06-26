@@ -1234,7 +1234,7 @@ def _default_execution_authorization_packet(row: Mapping[str, Any]) -> Mapping[s
     status = str(
         row.get("current_manual_compile_status")
         or row.get("manual_compile_status")
-        or manual_frontier.get("status")
+        or manual_frontier.get("manual_frontier_status")
         or ""
     )
     rule_id = str(

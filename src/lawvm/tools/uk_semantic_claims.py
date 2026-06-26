@@ -170,7 +170,7 @@ class _WorkqueueIndex(NamedTuple):
 class _WorkqueueMatch(NamedTuple):
     row: Mapping[str, Any] | None
     issues: tuple[str, ...]
-    status: str
+    workqueue_status: str
 
 
 class _LiveTargetIndex(NamedTuple):
@@ -4367,13 +4367,13 @@ def _match_workqueue(
             return _WorkqueueMatch(
                 row=None,
                 issues=(f"work_item_id {work_item_id} was not found",),
-                status="rejected_workqueue_missing",
+                workqueue_status="rejected_workqueue_missing",
             )
         return _WorkqueueMatch(
             row=match,
             issues=index.issues_by_work_item_id.get(work_item_id, ())
             + _workqueue_mismatch_issues(row, match),
-            status="rejected_workqueue_mismatch",
+            workqueue_status="rejected_workqueue_mismatch",
         )
     identity = _claim_identity(row)
     if not all(identity):
@@ -4382,7 +4382,7 @@ def _match_workqueue(
             issues=(
                 "claim must include work_item_id or statute_id/effect_id/manual_compile_rule_id",
             ),
-            status="rejected_workqueue_missing",
+            workqueue_status="rejected_workqueue_missing",
         )
     matches = index.by_identity.get(identity, ())
     if not matches:
@@ -4391,7 +4391,7 @@ def _match_workqueue(
             issues=(
                 "no workqueue row matched statute_id/effect_id/manual_compile_rule_id",
             ),
-            status="rejected_workqueue_missing",
+            workqueue_status="rejected_workqueue_missing",
         )
     matches = _deduplicated_workqueue_matches(matches)
     if len(matches) > 1:
@@ -4406,13 +4406,13 @@ def _match_workqueue(
                 "workqueue identity match is ambiguous; claim must include "
                 f"work_item_id; candidates: {candidates}",
             ),
-            status="rejected_workqueue_missing",
+            workqueue_status="rejected_workqueue_missing",
         )
     match = matches[0]
     return _WorkqueueMatch(
         row=match,
         issues=_workqueue_mismatch_issues(row, match),
-        status="rejected_workqueue_mismatch",
+        workqueue_status="rejected_workqueue_mismatch",
     )
 
 
@@ -5583,7 +5583,7 @@ def validate_semantic_claim_rows(
                 output.append(
                     _validation_row(
                         row,
-                        validator_status=workqueue_match.status,
+                        validator_status=workqueue_match.workqueue_status,
                         rule_id="uk_semantic_claim_workqueue_missing",
                         issues=workqueue_match.issues,
                         reason="Semantic claim does not match the supplied workqueue.",
@@ -5594,7 +5594,7 @@ def validate_semantic_claim_rows(
                 output.append(
                     _validation_row(
                         row,
-                        validator_status=workqueue_match.status,
+                        validator_status=workqueue_match.workqueue_status,
                         rule_id="uk_semantic_claim_workqueue_mismatch",
                         issues=workqueue_match.issues,
                         workqueue_row=workqueue_match.row,

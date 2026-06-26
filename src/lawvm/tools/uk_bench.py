@@ -555,7 +555,7 @@ def _bench_exception_result(
         n_oracle_eids=0,
         n_common=0,
         score=0.0,
-        status="ERR",
+        bench_status="ERR",
         bench_exception_count=len(observations),
         bench_exception_rule_counts=_rule_counts(observations),
         bench_exception_observations=observations,
@@ -1003,7 +1003,10 @@ class _BenchResult:
     n_oracle_eids: int
     n_common: int
     score: float
-    status: str
+    # Typed-open bench-result boundary: carries runtime "OK"/"EMPTY_ORACLE"/
+    # "NO_ORACLE"/"NO_ENACTED"/"ERR"/"EXC:<type>:<msg>" strings, deliberately
+    # left ``str`` (not enumerated) because it absorbs arbitrary exception text.
+    bench_status: str
     n_effect_feed_pages: int = 0
     n_effect_rows: int = 0
     effect_feed_rejection_count: int = 0
@@ -1123,7 +1126,7 @@ def uk_bench_unit_result(result: "_BenchResult", *, has_commencement: bool = Fal
     """
     from lawvm.core.bench_contract import BenchStatus, BenchUnitResult
 
-    status = result.status
+    status = result.bench_status
     if status == "OK":
         score = _bench_primary_score(result, has_commencement=has_commencement)
         if score < 0:
@@ -1247,7 +1250,7 @@ def _replay_regime_label(acc: "_BenchRunAccumulator") -> str:
 
 def _format_uk_bench_progress_score(result: _BenchResult, *, has_commencement: bool) -> str:
     primary_score = _bench_primary_score(result, has_commencement=has_commencement)
-    if result.status == "OK" and result.core_benchmark:
+    if result.bench_status == "OK" and result.core_benchmark:
         return f"score={primary_score:.1%}"
     return f"score=n/a raw={primary_score:.1%}"
 
@@ -1256,7 +1259,7 @@ def _format_uk_bench_progress_replay(result: _BenchResult, *, has_commencement: 
     replay_score = _bench_primary_replay_score(result, has_commencement=has_commencement)
     if replay_score < 0.0:
         return ""
-    if result.status == "OK" and result.core_benchmark:
+    if result.bench_status == "OK" and result.core_benchmark:
         return f" replay={replay_score:.1%}"
     return f" replay=n/a raw_replay={replay_score:.1%}"
 
@@ -1321,7 +1324,7 @@ def _average_primary_ok_score(
     ok_results = [
         result
         for result in results
-        if result.status == "OK" and result.n_oracle_eids > 0
+        if result.bench_status == "OK" and result.n_oracle_eids > 0
     ]
     if not ok_results:
         return 0.0
@@ -1495,7 +1498,7 @@ class _BenchRunAccumulator:
 
         self.total_count += 1
 
-        self.row_status_counts[r.status] += 1
+        self.row_status_counts[r.bench_status] += 1
         self.comparison_class_counts[r.comparison_class or "unknown"] += 1
         if r.core_benchmark:
             self.core_count += 1
@@ -1504,10 +1507,10 @@ class _BenchRunAccumulator:
         self.enacted_source_counts[r.enacted_source_status] += 1
         self.oracle_source_counts[r.oracle_source_status] += 1
 
-        if r.status in ("NO_ORACLE", "NO_ENACTED"):
+        if r.bench_status in ("NO_ORACLE", "NO_ENACTED"):
             if len(self.no_oracle_rows) < 10:
                 self.no_oracle_rows.append(_report_row())
-        elif r.status == "ERR":
+        elif r.bench_status == "ERR":
             if len(self.error_rows) < 10:
                 self.error_rows.append(_report_row())
 
@@ -1605,7 +1608,7 @@ class _BenchRunAccumulator:
         self.residual_claim_kind_counts[r.uk_residual_claim_kind or "unknown"] += 1
         self.uk_residual_section_claims_total += r.uk_residual_section_claim_count
 
-        if r.status == "OK" and r.n_oracle_eids > 0:
+        if r.bench_status == "OK" and r.n_oracle_eids > 0:
             self.ok_count += 1
 
             p_score = _bench_primary_score(r, has_commencement=self.has_commencement)
@@ -1928,7 +1931,7 @@ def _score_statute(
                 n_oracle_eids=0,
                 n_common=0,
                 score=0.0,
-                status="NO_ENACTED",
+                bench_status="NO_ENACTED",
                 n_effect_rows=n_effect_rows,
                 effect_feed_rejection_count=effect_feed_rejection_count,
                 effect_feed_rejection_rule_counts=effect_feed_rejection_rule_counts,
@@ -1977,7 +1980,7 @@ def _score_statute(
                 n_oracle_eids=0,
                 n_common=0,
                 score=0.0,
-                status="NO_ORACLE",
+                bench_status="NO_ORACLE",
                 n_effect_rows=n_effect_rows,
                 effect_feed_rejection_count=effect_feed_rejection_count,
                 effect_feed_rejection_rule_counts=effect_feed_rejection_rule_counts,
@@ -2588,7 +2591,7 @@ def _score_statute(
             n_oracle_eids=len(oracle_eids),
             n_common=len(common),
             score=score,
-            status="OK",
+            bench_status="OK",
             n_effect_rows=n_effect_rows,
             effect_feed_rejection_count=effect_feed_rejection_count,
             effect_feed_rejection_rule_counts=effect_feed_rejection_rule_counts,
@@ -2693,7 +2696,7 @@ def _score_statute(
             n_oracle_eids=0,
             n_common=0,
             score=0.0,
-            status="ERR",
+            bench_status="ERR",
             n_effect_rows=n_effect_rows,
             effect_feed_rejection_count=effect_feed_rejection_count,
             effect_feed_rejection_rule_counts=effect_feed_rejection_rule_counts,
@@ -2901,7 +2904,7 @@ def _get_csv_headers(
             "score",
             "raw_score",
             "n_commenced_eids",
-            "status",
+            "bench_status",
             "error",
             "comparison_class",
             "core_benchmark",
@@ -2949,7 +2952,7 @@ def _get_csv_headers(
             "n_oracle_eids",
             "n_common",
             "score",
-            "status",
+            "bench_status",
             "error",
             "comparison_class",
             "core_benchmark",
@@ -3106,7 +3109,7 @@ def _get_csv_row(
             f"{primary_score:.4f}",
             f"{r.score:.4f}",
             r.n_commenced_eids,
-            r.status,
+            r.bench_status,
             r.error,
             r.comparison_class,
             "1" if r.core_benchmark else "0",
@@ -3153,7 +3156,7 @@ def _get_csv_row(
             r.n_oracle_eids,
             r.n_common,
             f"{r.score:.4f}",
-            r.status,
+            r.bench_status,
             r.error,
             r.comparison_class,
             "1" if r.core_benchmark else "0",
@@ -3713,7 +3716,7 @@ def _bench_row_evidence_context(result: _BenchResult) -> str:
             f"/oracle:{result.oracle_source_sha256 or '(none)'} "
         )
     return (
-        f"status={result.status} "
+        f"status={result.bench_status} "
         f"class={result.comparison_class or 'unknown'} "
         f"sources=enacted:{result.enacted_source_status}/oracle:{result.oracle_source_status} "
         f"source_sizes=enacted:{result.enacted_source_size}/oracle:{result.oracle_source_size} "
@@ -3843,7 +3846,7 @@ def _print_slowest_rows(
             f"source_mb={(result.enacted_source_size + result.oracle_source_size) / 1_000_000:.1f} "
             f"rss_mb={result.process_maxrss_kb / 1024:.0f} "
             f"class={result.comparison_class or 'unknown'} "
-            f"status={result.status}"
+            f"status={result.bench_status}"
         )
 
 
@@ -3878,7 +3881,7 @@ def _print_highest_rss_rows(
             f"effect_rows={result.n_effect_rows:5d} "
             f"source_mb={(result.enacted_source_size + result.oracle_source_size) / 1_000_000:.1f} "
             f"class={result.comparison_class or 'unknown'} "
-            f"status={result.status}"
+            f"status={result.bench_status}"
         )
 
 
@@ -4006,7 +4009,7 @@ def _print_report(
         acc = results
     else:
         acc = _BenchRunAccumulator(
-            has_commencement=any(r.commencement_score >= 0.0 for r in results if r.status == "OK" and r.n_oracle_eids > 0),
+            has_commencement=any(r.commencement_score >= 0.0 for r in results if r.bench_status == "OK" and r.n_oracle_eids > 0),
             replay_adjudication_sample_kinds=replay_adjudication_sample_kinds,
             replay_adjudication_sample_limit=replay_adjudication_sample_limit,
         )
@@ -4249,7 +4252,7 @@ def _print_report(
         print(f"Source unavailable rows ({len(acc.no_oracle_rows)}):")
         for r in acc.no_oracle_rows[:10]:
             print(
-                f"  {r.statute_id}: status={r.status} "
+                f"  {r.statute_id}: status={r.bench_status} "
                 f"enacted={r.enacted_source_status} ({r.enacted_source_size} bytes) "
                 f"oracle={r.oracle_source_status} ({r.oracle_source_size} bytes)"
             )
@@ -5456,7 +5459,7 @@ def _append_history(
             has_commencement=any(
                 r.commencement_score >= 0.0
                 for r in results
-                if r.status == "OK" and r.n_oracle_eids > 0
+                if r.bench_status == "OK" and r.n_oracle_eids > 0
             ),
         )
         for r in results:
@@ -5900,7 +5903,7 @@ def _save_results(results: list[_BenchResult], label: str) -> None:
                 "score",
                 "raw_score",
                 "n_commenced_eids",
-                "status",
+                "bench_status",
                 "error",
                 "comparison_class",
                 "core_benchmark",
@@ -5948,7 +5951,7 @@ def _save_results(results: list[_BenchResult], label: str) -> None:
                 "n_oracle_eids",
                 "n_common",
                 "score",
-                "status",
+                "bench_status",
                 "error",
                 "comparison_class",
                 "core_benchmark",
@@ -6098,7 +6101,7 @@ def _save_results(results: list[_BenchResult], label: str) -> None:
                     f"{primary_score:.4f}",
                     f"{r.score:.4f}",
                     r.n_commenced_eids,
-                    r.status,
+                    r.bench_status,
                     r.error,
                     r.comparison_class,
                     "1" if r.core_benchmark else "0",
@@ -6145,7 +6148,7 @@ def _save_results(results: list[_BenchResult], label: str) -> None:
                     r.n_oracle_eids,
                     r.n_common,
                     f"{r.score:.4f}",
-                    r.status,
+                    r.bench_status,
                     r.error,
                     r.comparison_class,
                     "1" if r.core_benchmark else "0",
@@ -6272,7 +6275,7 @@ def _save_results(results: list[_BenchResult], label: str) -> None:
             has_commencement=any(
                 r.commencement_score >= 0.0
                 for r in results
-                if r.status == "OK" and r.n_oracle_eids > 0
+                if r.bench_status == "OK" and r.n_oracle_eids > 0
             ),
         )
         for result in results:
@@ -6652,7 +6655,7 @@ def _load_run(label: str, *, include_diagnostics: bool = True) -> list[_BenchRes
                     n_oracle_eids=int(row["n_oracle_eids"]),
                     n_common=int(row["n_common"]),
                     score=raw_score_val,
-                    status=row["status"],
+                    bench_status=row["bench_status"],
                     error=row.get("error", ""),
                     n_replayed_eids=int(row.get("n_replayed_eids", 0) or 0),
                     n_replay_common=int(row.get("n_replay_common", 0) or 0),
@@ -6973,7 +6976,7 @@ def _compare_runs(label_a: str, label_b: str, *, summary_only: bool = False) -> 
     if summary_only:
         print(
             "Row statuses: "
-            f"{_status_counts(results_a, 'status')} -> {_status_counts(results_b, 'status')}"
+            f"{_status_counts(results_a, 'bench_status')} -> {_status_counts(results_b, 'bench_status')}"
         )
         print(
             "Core benchmark rows: "
@@ -7006,7 +7009,7 @@ def _compare_runs(label_a: str, label_b: str, *, summary_only: bool = False) -> 
         print(f"Average: {avg_a:.1%} -> {avg_b:.1%} ({avg_b - avg_a:+.1%})")
         print(f"Improved: {len(improved)}, Regressed: {len(regressed)}")
         return
-    print(f"Row statuses: {_status_counts(results_a, 'status')} -> {_status_counts(results_b, 'status')}")
+    print(f"Row statuses: {_status_counts(results_a, 'bench_status')} -> {_status_counts(results_b, 'bench_status')}")
     print(
         "Comparison classes: "
         f"{_status_counts(results_a, 'comparison_class')} -> "
@@ -8023,7 +8026,7 @@ def main(args) -> None:
             print(
                 f"  [{done}/{progress_total}] {r.statute_id:<30} "
                 f"{score_fragment}{replay_fragment} "
-                f"({r.duration_s:.2f}s) status={r.status} {diagnostic_fragment}",
+                f"({r.duration_s:.2f}s) status={r.bench_status} {diagnostic_fragment}",
                 file=sys.stderr,
             )
 

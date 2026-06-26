@@ -2558,7 +2558,7 @@ def test_manual_frontier_classifies_table_reference_instructions_as_manual() -> 
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_table_entry_candidate"
 
 
@@ -4048,7 +4048,7 @@ def test_uk_effect_row_json_exposes_manual_compile_frontier() -> None:
     payload = _effect_report_row_jsonable(row, statute_id="ukpga/2000/1")
 
     assert payload["manual_compile_frontier"] == {
-        "status": "manual_compile_candidate",
+        "manual_frontier_status": "manual_compile_candidate",
         "rule_id": "uk_manual_frontier_heading_facet_candidate",
         "reason": "Heading facet requires an explicit manual claim.",
         "owner_phase": "typed_elaboration",
@@ -4340,7 +4340,7 @@ def test_single_uk_effect_report_includes_deterministic_frontier_claim_template(
         op_rows=[],
     )
 
-    assert report["manual_compile_frontier"]["status"] == "deterministic_frontend_candidate"
+    assert report["manual_compile_frontier"]["manual_frontier_status"] == "deterministic_frontend_candidate"
     assert report["suggested_claim_template_status"] == "available"
     assert report["suggested_claim_template"]["action_family"] == (
         "referent_qualified_text_substitution"

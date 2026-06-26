@@ -165,9 +165,9 @@ def classify_si_commencement_metadata(
     ``prospective_unresolved`` — the metadata cannot prove the effect is in
     force. A single proven commencement date always wins over this signal.
 
-    The mapping is total over ``UKCommencementMetadata.status``.
+    The mapping is total over ``UKCommencementMetadata.commencement_status``.
     """
-    status = metadata.status
+    status = metadata.commencement_status
     dates = tuple(metadata.dates)
     made_dates = tuple(metadata.made_dates)
 
@@ -287,7 +287,7 @@ def audit_affecting_si_commencement(
         xml_bytes,
         source_locator=source_locator,
     )
-    if metadata.status is UKCommencementMetadataStatus.SOURCE_XML_UNAVAILABLE:
+    if metadata.commencement_status is UKCommencementMetadataStatus.SOURCE_XML_UNAVAILABLE:
         return classify_si_commencement_metadata(
             affecting_act_id,
             metadata,

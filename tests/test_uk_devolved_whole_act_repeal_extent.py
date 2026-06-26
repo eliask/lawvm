@@ -186,7 +186,7 @@ def test_devolved_whole_act_repeal_frontier_status_is_out_of_scope() -> None:
         replay_applicable=False,
         structural_for_replay=False,
     )
-    assert classification["status"] == "non_textual_or_out_of_scope"
+    assert classification["manual_frontier_status"] == "non_textual_or_out_of_scope"
     assert (
         classification["rule_id"]
         == "uk_manual_frontier_devolved_extent_limited_repeal_out_of_scope"

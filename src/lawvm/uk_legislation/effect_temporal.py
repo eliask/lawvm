@@ -52,7 +52,7 @@ class UKCommencementMetadataStatus(StrEnum):
 class UKCommencementMetadata(NamedTuple):
     effective_date: str
     source_locator: str
-    status: UKCommencementMetadataStatus
+    commencement_status: UKCommencementMetadataStatus
     dates: tuple[str, ...] = ()
     made_dates: tuple[str, ...] = ()
     parse_error: str = ""
@@ -67,7 +67,7 @@ def _instrument_commencement_metadata(
         return UKCommencementMetadata(
             effective_date="",
             source_locator="",
-            status=UKCommencementMetadataStatus.SOURCE_XML_UNAVAILABLE,
+            commencement_status=UKCommencementMetadataStatus.SOURCE_XML_UNAVAILABLE,
         )
     try:
         root = ET.fromstring(xml_bytes)
@@ -75,7 +75,7 @@ def _instrument_commencement_metadata(
         return UKCommencementMetadata(
             effective_date="",
             source_locator=source_locator,
-            status=UKCommencementMetadataStatus.SOURCE_XML_PARSE_ERROR,
+            commencement_status=UKCommencementMetadataStatus.SOURCE_XML_PARSE_ERROR,
             parse_error=str(exc),
         )
     dates = {
@@ -99,7 +99,7 @@ def _instrument_commencement_metadata(
         return UKCommencementMetadata(
             effective_date="",
             source_locator=source_locator,
-            status=status,
+            commencement_status=status,
             dates=tuple(sorted(dates)),
             made_dates=tuple(sorted(made_dates)),
         )
@@ -107,7 +107,7 @@ def _instrument_commencement_metadata(
     return UKCommencementMetadata(
         effective_date=date,
         source_locator=source_locator,
-        status=UKCommencementMetadataStatus.SINGLE_DATE,
+        commencement_status=UKCommencementMetadataStatus.SINGLE_DATE,
         dates=(date,),
         made_dates=tuple(sorted(made_dates)),
     )
@@ -174,11 +174,11 @@ def _append_commencement_unresolved_observation(
 ) -> None:
     detail = {
         **_effect_detail(effect),
-        "commencement_metadata_status": metadata.status.value,
+        "commencement_metadata_status": metadata.commencement_status.value,
         "commencement_metadata_dates": metadata.dates,
         "commencement_metadata_made_dates": metadata.made_dates,
         "commencement_default_candidate": (
-            metadata.status
+            metadata.commencement_status
             is UKCommencementMetadataStatus.DEFAULT_COMMENCEMENT_MADE_DATE_CANDIDATE
         ),
     }

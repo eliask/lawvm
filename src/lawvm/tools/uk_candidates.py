@@ -65,7 +65,8 @@ class _BenchResultLike(Protocol):
     n_enacted_eids: int
     n_oracle_eids: int
     score: float
-    status: str
+    # Mirrors _BenchResult.bench_status (typed-open bench-result boundary str).
+    bench_status: str
     replay_score: float
     commencement_score: float
     n_commenced_eids: int
@@ -368,7 +369,7 @@ def _residual_claim_candidate_set_coverage(
     omitted = int(row.get("residual_candidate_samples_omitted") or 0) + int(
         row.get("residual_candidate_root_samples_omitted") or 0
     )
-    status = str(row.get("status") or "")
+    status = str(row.get("triage_status") or "")
     blockers: dict[str, int] = {}
     if not status or status == "frontier prefilter only":
         completeness_status = CANDIDATE_SET_UNAVAILABLE
@@ -465,7 +466,7 @@ def _residual_claim_agreement_residual(
             "candidate_count": int(
                 candidate_set_coverage.get("candidate_count") or 0
             ),
-            "residual_status": str(row.get("status") or ""),
+            "residual_status": str(row.get("triage_status") or ""),
             "triage_rule_id": str(row.get("triage_rule_id") or ""),
         },
     ).to_dict()
@@ -681,7 +682,7 @@ def _uk_residual_claim_evidence_row_from_candidate_row(
         ),
         "uk_residual_claim": dict(claim),
         "residual_evidence": {
-            "status": str(row.get("status") or ""),
+            "triage_status": str(row.get("triage_status") or ""),
             "triage_rule_id": str(row.get("triage_rule_id") or ""),
             "residual_roots": list(row.get("residual_roots") or ()),
             "replayed_residual_roots": list(row.get("replayed_residual_roots") or ()),
@@ -779,13 +780,13 @@ def _uk_residual_claim_evidence_row_from_candidate_row(
             ),
         },
         "enacted_source": {
-            "status": str(row.get("enacted_source_status") or "unknown"),
+            "source_status": str(row.get("enacted_source_status") or "unknown"),
             "size": int(row.get("enacted_source_size") or 0),
             "sha256": str(row.get("enacted_source_sha256") or ""),
             "url": str(row.get("enacted_source_url") or ""),
         },
         "oracle_source": {
-            "status": str(row.get("oracle_source_status") or "unknown"),
+            "source_status": str(row.get("oracle_source_status") or "unknown"),
             "size": int(row.get("oracle_source_size") or 0),
             "sha256": str(row.get("oracle_source_sha256") or ""),
             "url": str(row.get("oracle_source_url") or ""),
@@ -864,7 +865,7 @@ def _matching_frontier(
 ) -> list[_BenchResultLike]:
     frontier = [
         r for r in results
-        if r.status == "OK"
+        if r.bench_status == "OK"
         and _effective_core_benchmark(r)
         and _primary_frontier_score(r, score_mode=score_mode) < 1.0
         and _matches_filters(r, min_year=min_year, max_year=max_year, types=types)
@@ -1556,13 +1557,13 @@ def _replay_adjudication_evidence_row_jsonable(
         "uk_replay_regime_claim": _uk_replay_regime_claim_from_bench_row(result),
         "uk_residual_claim": _uk_residual_claim_from_bench_row(result),
         "enacted_source": {
-            "status": str(getattr(result, "enacted_source_status", "") or "unknown"),
+            "source_status": str(getattr(result, "enacted_source_status", "") or "unknown"),
             "size": int(getattr(result, "enacted_source_size", 0) or 0),
             "sha256": str(getattr(result, "enacted_source_sha256", "") or ""),
             "url": str(getattr(result, "enacted_source_url", "") or ""),
         },
         "oracle_source": {
-            "status": str(getattr(result, "oracle_source_status", "") or "unknown"),
+            "source_status": str(getattr(result, "oracle_source_status", "") or "unknown"),
             "size": int(getattr(result, "oracle_source_size", 0) or 0),
             "sha256": str(getattr(result, "oracle_source_sha256", "") or ""),
             "url": str(getattr(result, "oracle_source_url", "") or ""),
@@ -2149,7 +2150,7 @@ def _uk_candidate_row_jsonable(
         "malformed_residual_roots": sorted(malformed_residual_roots),
         "backed_residual_roots": sorted(residual_root_hits),
         "defeated_residual_roots": sorted(defeated_residual_roots),
-        "status": candidate_status,
+        "triage_status": candidate_status,
         "triage_rule_id": _triage_rule_id(candidate_status),
     }
 
@@ -2276,7 +2277,7 @@ def _uk_candidates_report_jsonable(
         if replay_adjudication_prefilter_count is None
         else replay_adjudication_prefilter_count
     )
-    status_counts: Counter[str] = Counter(str(row.get("status") or "") for row in rows)
+    status_counts: Counter[str] = Counter(str(row.get("triage_status") or "") for row in rows)
     source_counts: Counter[str] = Counter()
     compare_counts: Counter[str] = Counter()
     candidate_source_counts: Counter[str] = Counter()
@@ -4864,7 +4865,7 @@ def main(args: "argparse.Namespace") -> None:
                 "malformed_residual_roots": [],
                 "backed_residual_roots": [],
                 "defeated_residual_roots": [],
-                "status": status,
+                "triage_status": status,
                 "triage_rule_id": _triage_rule_id(status),
             })
             if json_output:

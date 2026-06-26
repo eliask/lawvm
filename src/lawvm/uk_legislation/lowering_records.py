@@ -472,7 +472,7 @@ def mark_manual_frontier_nonreplay_lowering_rejections_nonblocking(
     lowering_rejections: list[dict[str, Any]],
     start_index: int,
 ) -> bool:
-    if manual_frontier.get("status") != "non_textual_or_out_of_scope":
+    if manual_frontier.get("manual_frontier_status") != "non_textual_or_out_of_scope":
         return False
     if start_index >= len(lowering_rejections):
         return False
@@ -489,7 +489,7 @@ def mark_manual_frontier_nonreplay_lowering_rejections_nonblocking(
         )
         rejection["replay_relevance"] = "manual_frontier_out_of_scope"
         rejection["manual_compile_rule_id"] = manual_frontier.get("rule_id", "")
-        rejection["manual_compile_status"] = manual_frontier.get("status", "")
+        rejection["manual_compile_status"] = manual_frontier.get("manual_frontier_status", "")
         rejection["reclassification_reason"] = (
             "Manual-frontier classification proves this row is outside direct "
             "UK text/tree replay; the lowering diagnostic is evidence, not a "
@@ -550,11 +550,11 @@ def append_manual_compile_frontier_diagnostic(
         effect=effect,
         blocking=False,
         owner_phase=uk_phase_owner_for_manual_frontier(
-            manual_compile_status=manual_frontier["status"],
+            manual_compile_status=manual_frontier["manual_frontier_status"],
             manual_compile_rule_id=manual_frontier["rule_id"],
             source_pathology=source_pathology or "",
         ),
-        manual_compile_status=manual_frontier["status"],
+        manual_compile_status=manual_frontier["manual_frontier_status"],
         manual_compile_rule_id=manual_frontier["rule_id"],
         manual_compile_reason=manual_frontier["reason"],
         lowering_rule_ids=_lowering_record_rule_ids(current_lowering_rejections),

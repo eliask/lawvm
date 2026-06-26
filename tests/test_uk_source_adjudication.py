@@ -1195,7 +1195,7 @@ def test_classify_uk_manual_compile_frontier_marks_heading_facets_manual() -> No
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_heading_facet_candidate"
 
 
@@ -1216,7 +1216,7 @@ def test_classify_uk_manual_compile_frontier_requires_source_witness_for_heading
         structural_for_replay=True,
     )
 
-    assert result["status"] == "source_insufficient"
+    assert result["manual_frontier_status"] == "source_insufficient"
     assert result["rule_id"] == "uk_manual_frontier_missing_payload_source_insufficient"
 
 
@@ -1237,7 +1237,7 @@ def test_classify_uk_manual_compile_frontier_marks_body_section_schedule_payload
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_body_section_schedule_payload_candidate"
 
 
@@ -1258,7 +1258,7 @@ def test_classify_uk_manual_compile_frontier_marks_savings_references_qualified_
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert (
         result["rule_id"]
         == "uk_manual_frontier_savings_references_qualified_repeal_candidate"
@@ -1282,7 +1282,7 @@ def test_classify_uk_manual_compile_frontier_marks_incorporation_of_enactments_o
         structural_for_replay=True,
     )
 
-    assert result["status"] == "non_textual_or_out_of_scope"
+    assert result["manual_frontier_status"] == "non_textual_or_out_of_scope"
     assert (
         result["rule_id"]
         == "uk_manual_frontier_incorporation_of_enactments_out_of_scope"
@@ -1306,7 +1306,7 @@ def test_classify_uk_manual_compile_frontier_marks_crossheading_insert_manual() 
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_crossheading_candidate"
 
 
@@ -1327,7 +1327,7 @@ def test_classify_uk_manual_compile_frontier_source_pathology_blocks_heading_cla
         structural_for_replay=True,
     )
 
-    assert result["status"] == "source_insufficient"
+    assert result["manual_frontier_status"] == "source_insufficient"
     assert result["rule_id"] == "uk_manual_frontier_source_pathology_insufficient"
 
 
@@ -1356,7 +1356,7 @@ def test_classify_uk_manual_compile_frontier_uses_parent_heading_context() -> No
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_heading_facet_candidate"
 
 
@@ -1385,7 +1385,7 @@ def test_classify_uk_manual_compile_frontier_does_not_infer_heading_without_pare
         structural_for_replay=True,
     )
 
-    assert result["status"] == "source_insufficient"
+    assert result["manual_frontier_status"] == "source_insufficient"
     assert result["rule_id"] == "uk_manual_frontier_source_pathology_insufficient"
 
 
@@ -1414,7 +1414,7 @@ def test_classify_uk_manual_compile_frontier_uses_parent_grouped_repeal_context(
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_parser_or_extraction_candidate"
 
 
@@ -1449,7 +1449,7 @@ def test_classify_uk_manual_compile_frontier_uses_parent_consequential_repeal_co
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_parser_or_extraction_candidate"
 
 
@@ -1477,7 +1477,7 @@ def test_classify_uk_manual_compile_frontier_does_not_infer_grouped_repeal_witho
         structural_for_replay=True,
     )
 
-    assert result["status"] == "source_insufficient"
+    assert result["manual_frontier_status"] == "source_insufficient"
     assert result["rule_id"] == "uk_manual_frontier_source_pathology_insufficient"
 
 
@@ -1508,7 +1508,7 @@ def test_classify_uk_manual_compile_frontier_uses_parent_grouped_substitution_co
         structural_for_replay=True,
     )
 
-    assert result["status"] == "source_insufficient"
+    assert result["manual_frontier_status"] == "source_insufficient"
     assert result["rule_id"] == "uk_manual_frontier_source_payload_without_instruction_context"
 
 
@@ -1536,7 +1536,7 @@ def test_classify_uk_manual_compile_frontier_does_not_infer_grouped_substitution
         structural_for_replay=True,
     )
 
-    assert result["status"] == "source_insufficient"
+    assert result["manual_frontier_status"] == "source_insufficient"
     assert result["rule_id"] == "uk_manual_frontier_source_payload_without_instruction_context"
 
 
@@ -1560,7 +1560,7 @@ def test_classify_uk_manual_compile_frontier_marks_broad_schedule_flat_payload_s
         structural_for_replay=True,
     )
 
-    assert result["status"] == "source_insufficient"
+    assert result["manual_frontier_status"] == "source_insufficient"
     assert result["rule_id"] == "uk_manual_frontier_source_pathology_insufficient"
 
 
@@ -1583,7 +1583,7 @@ def test_classify_uk_manual_compile_frontier_marks_broad_schedule_flat_payload_f
         structural_for_replay=True,
     )
 
-    assert result["status"] == "source_insufficient"
+    assert result["manual_frontier_status"] == "source_insufficient"
     assert result["rule_id"] == "uk_manual_frontier_source_pathology_insufficient"
     assert "broad schedule" in result["reason"]
 
@@ -1608,7 +1608,7 @@ def test_classify_uk_manual_compile_frontier_marks_temporary_as_if_word_omission
         structural_for_replay=True,
     )
 
-    assert result["status"] == "non_textual_or_out_of_scope"
+    assert result["manual_frontier_status"] == "non_textual_or_out_of_scope"
     assert result["rule_id"] == "uk_manual_frontier_as_if_application_modification_out_of_scope"
 
 
@@ -1633,7 +1633,7 @@ def test_classify_uk_manual_compile_frontier_marks_nonblocking_temporary_as_if_w
         structural_for_replay=True,
     )
 
-    assert result["status"] == "non_textual_or_out_of_scope"
+    assert result["manual_frontier_status"] == "non_textual_or_out_of_scope"
     assert result["rule_id"] == "uk_manual_frontier_as_if_application_modification_out_of_scope"
 
 
@@ -1654,7 +1654,7 @@ def test_classify_uk_manual_compile_frontier_marks_reference_only_fragment_sourc
         structural_for_replay=True,
     )
 
-    assert result["status"] == "source_insufficient"
+    assert result["manual_frontier_status"] == "source_insufficient"
     assert result["rule_id"] == "uk_manual_frontier_source_pathology_insufficient"
 
 
@@ -1675,7 +1675,7 @@ def test_classify_uk_manual_compile_frontier_marks_payload_fragment_without_form
         structural_for_replay=True,
     )
 
-    assert result["status"] == "source_insufficient"
+    assert result["manual_frontier_status"] == "source_insufficient"
     assert result["rule_id"] == "uk_manual_frontier_source_pathology_insufficient"
 
 
@@ -1700,7 +1700,7 @@ def test_classify_uk_manual_compile_frontier_marks_structured_payload_fragment_m
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert (
         result["rule_id"]
         == "uk_manual_frontier_source_carried_structured_text_patch_candidate"
@@ -1736,7 +1736,7 @@ def test_classify_uk_manual_compile_frontier_marks_overlap_arity_structured_payl
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert (
         result["rule_id"]
         == "uk_manual_frontier_source_carried_structured_text_patch_candidate"
@@ -1761,7 +1761,7 @@ def test_classify_uk_manual_compile_frontier_does_not_promote_unstructured_paylo
         structural_for_replay=True,
     )
 
-    assert result["status"] == "source_insufficient"
+    assert result["manual_frontier_status"] == "source_insufficient"
     assert result["rule_id"] == "uk_manual_frontier_source_pathology_insufficient"
 
 
@@ -1785,7 +1785,7 @@ def test_classify_uk_manual_compile_frontier_marks_source_carried_multi_subunit_
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert (
         result["rule_id"]
         == "uk_manual_frontier_source_carried_multi_subunit_text_rewrite_candidate"
@@ -1813,7 +1813,7 @@ def test_classify_uk_manual_compile_frontier_marks_for_words_in_subsections_rewr
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert (
         result["rule_id"]
         == "uk_manual_frontier_source_carried_multi_subunit_text_rewrite_candidate"
@@ -1864,7 +1864,7 @@ def test_classify_uk_manual_compile_frontier_marks_source_carried_child_tail_tex
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert (
         result["rule_id"]
         == "uk_manual_frontier_source_carried_child_tail_text_rewrite_candidate"
@@ -1888,7 +1888,7 @@ def test_classify_uk_manual_compile_frontier_marks_structured_tail_substitution(
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert (
         result["rule_id"]
         == "uk_manual_frontier_source_carried_structured_tail_substitution_candidate"
@@ -1912,7 +1912,7 @@ def test_classify_uk_manual_compile_frontier_marks_top_level_roman_structured_ta
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert (
         result["rule_id"]
         == "uk_manual_frontier_source_carried_structured_tail_substitution_candidate"
@@ -1937,7 +1937,7 @@ def test_classify_uk_manual_compile_frontier_keeps_out_of_scope_heading_non_manu
         structural_for_replay=False,
     )
 
-    assert result["status"] == "non_textual_or_out_of_scope"
+    assert result["manual_frontier_status"] == "non_textual_or_out_of_scope"
     assert result["rule_id"] == "uk_manual_frontier_non_textual_or_out_of_scope"
 
 
@@ -1958,7 +1958,7 @@ def test_classify_uk_manual_compile_frontier_marks_missing_payload_source_insuff
         structural_for_replay=True,
     )
 
-    assert result["status"] == "source_insufficient"
+    assert result["manual_frontier_status"] == "source_insufficient"
     assert result["rule_id"] == "uk_manual_frontier_missing_payload_source_insufficient"
 
 
@@ -1979,7 +1979,7 @@ def test_classify_uk_manual_compile_frontier_marks_parser_gap_manual() -> None:
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_parser_or_extraction_candidate"
 
 
@@ -2003,7 +2003,7 @@ def test_classify_uk_manual_compile_frontier_marks_amount_target_mismatch() -> N
         structural_for_replay=True,
     )
 
-    assert result["status"] == "source_or_feed_target_conflict"
+    assert result["manual_frontier_status"] == "source_or_feed_target_conflict"
     assert (
         result["rule_id"]
         == "uk_manual_frontier_amount_specified_source_target_mismatch"
@@ -2030,7 +2030,7 @@ def test_classify_uk_manual_compile_frontier_marks_crossheading_source_target_mi
         structural_for_replay=True,
     )
 
-    assert result["status"] == "source_or_feed_target_conflict"
+    assert result["manual_frontier_status"] == "source_or_feed_target_conflict"
     assert result["rule_id"] == "uk_manual_frontier_crossheading_source_target_mismatch"
     assert "cross-heading facet" in result["reason"]
 
@@ -2055,7 +2055,7 @@ def test_classify_uk_manual_compile_frontier_crossheading_mismatch_preempts_scop
         structural_for_replay=True,
     )
 
-    assert result["status"] == "source_or_feed_target_conflict"
+    assert result["manual_frontier_status"] == "source_or_feed_target_conflict"
     assert result["rule_id"] == "uk_manual_frontier_crossheading_source_target_mismatch"
 
 
@@ -2081,7 +2081,7 @@ def test_classify_uk_manual_compile_frontier_marks_sentence_scoped_repeated_inse
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_sentence_scoped_repeated_insert_candidate"
 
 
@@ -2106,7 +2106,7 @@ def test_classify_uk_manual_compile_frontier_marks_deictic_definition_range_sour
         structural_for_replay=True,
     )
 
-    assert result["status"] == "source_insufficient"
+    assert result["manual_frontier_status"] == "source_insufficient"
     assert (
         result["rule_id"]
         == "uk_manual_frontier_definition_range_to_end_source_context_insufficient"
@@ -2133,7 +2133,7 @@ def test_classify_uk_manual_compile_frontier_marks_unquoted_preimage_substitutio
         structural_for_replay=True,
     )
 
-    assert result["status"] == "source_insufficient"
+    assert result["manual_frontier_status"] == "source_insufficient"
     assert result["rule_id"] == "uk_manual_frontier_unquoted_preimage_substitution_source_insufficient"
 
 
@@ -2154,7 +2154,7 @@ def test_classify_uk_manual_compile_frontier_accepts_dash_punctuated_instruction
         structural_for_replay=True,
     )
 
-    assert result["status"] == "deterministic_frontend_candidate"
+    assert result["manual_frontier_status"] == "deterministic_frontend_candidate"
     assert result["rule_id"] == "uk_manual_frontier_structural_sibling_insert_candidate"
 
 
@@ -2178,7 +2178,7 @@ def test_classify_uk_manual_compile_frontier_marks_feed_action_object_fragment()
         structural_for_replay=True,
     )
 
-    assert result["status"] == "deterministic_frontend_candidate"
+    assert result["manual_frontier_status"] == "deterministic_frontend_candidate"
     assert (
         result["rule_id"]
         == "uk_manual_frontier_effect_metadata_carried_text_patch_candidate"
@@ -2205,7 +2205,7 @@ def test_classify_uk_manual_compile_frontier_marks_feed_definition_fragment() ->
         structural_for_replay=True,
     )
 
-    assert result["status"] == "source_insufficient"
+    assert result["manual_frontier_status"] == "source_insufficient"
     assert (
         result["rule_id"]
         == "uk_manual_frontier_definition_target_fragment_source_insufficient"
@@ -2232,7 +2232,7 @@ def test_classify_uk_manual_compile_frontier_marks_unanchored_definition_entry_p
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert (
         result["rule_id"]
         == "uk_manual_frontier_appropriate_place_definition_entry_candidate"
@@ -2256,7 +2256,7 @@ def test_classify_uk_manual_compile_frontier_marks_appropriate_place_definition_
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert (
         result["rule_id"]
         == "uk_manual_frontier_appropriate_place_definition_entry_candidate"
@@ -2284,7 +2284,7 @@ def test_classify_uk_manual_compile_frontier_prefers_appropriate_place_definitio
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert (
         result["rule_id"]
         == "uk_manual_frontier_appropriate_place_definition_entry_candidate"
@@ -2308,7 +2308,7 @@ def test_classify_uk_manual_compile_frontier_keeps_action_fragment_with_parser_w
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_parser_or_extraction_candidate"
 
 
@@ -2332,7 +2332,7 @@ def test_classify_uk_manual_compile_frontier_marks_empty_type_whole_act_out_of_s
         structural_for_replay=True,
     )
 
-    assert result["status"] == "non_textual_or_out_of_scope"
+    assert result["manual_frontier_status"] == "non_textual_or_out_of_scope"
     assert (
         result["rule_id"]
         == "uk_manual_frontier_empty_type_whole_act_action_out_of_scope"
@@ -2356,7 +2356,7 @@ def test_classify_uk_manual_compile_frontier_marks_whole_act_text_patch_candidat
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_whole_act_word_level_text_patch_candidate"
 
 
@@ -2377,7 +2377,7 @@ def test_classify_uk_manual_compile_frontier_marks_partial_whole_act_repeal_cand
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_partial_whole_act_repeal_candidate"
 
 
@@ -2398,7 +2398,7 @@ def test_classify_uk_manual_compile_frontier_marks_appropriate_place_manual() ->
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_appropriate_place_candidate"
 
 
@@ -2419,7 +2419,7 @@ def test_classify_uk_manual_compile_frontier_marks_appropriate_place_source_path
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_appropriate_place_candidate"
 
 
@@ -2443,7 +2443,7 @@ def test_classify_uk_manual_compile_frontier_marks_appropriate_place_index_entry
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_appropriate_place_index_entry_candidate"
 
 
@@ -2467,7 +2467,7 @@ def test_classify_uk_manual_compile_frontier_marks_appropriate_place_definition_
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_appropriate_place_definition_entry_candidate"
 
 
@@ -2491,7 +2491,7 @@ def test_classify_uk_manual_compile_frontier_marks_schedule_list_entry_manual() 
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_schedule_list_entry_candidate"
 
 
@@ -2515,7 +2515,7 @@ def test_classify_uk_manual_compile_frontier_marks_schedule_list_entry_before_ge
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_schedule_list_entry_candidate"
 
 
@@ -2540,7 +2540,7 @@ def test_classify_uk_manual_compile_frontier_marks_schedule_end_insert_manual() 
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_schedule_list_entry_candidate"
 
 
@@ -2564,7 +2564,7 @@ def test_classify_uk_manual_compile_frontier_marks_schedule_there_is_inserted_at
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_schedule_list_entry_candidate"
 
 
@@ -2589,7 +2589,7 @@ def test_classify_uk_manual_compile_frontier_marks_schedule_after_entry_insert_m
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_schedule_list_entry_candidate"
 
 
@@ -2615,7 +2615,7 @@ def test_classify_uk_manual_compile_frontier_marks_schedule_entries_substitute_m
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_schedule_list_entry_candidate"
 
 
@@ -2641,7 +2641,7 @@ def test_classify_uk_manual_compile_frontier_marks_schedule_end_of_list_insert_m
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_schedule_list_entry_candidate"
 
 
@@ -2667,7 +2667,7 @@ def test_classify_uk_manual_compile_frontier_marks_schedule_end_of_part_insert_m
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_schedule_list_entry_candidate"
 
 
@@ -2692,7 +2692,7 @@ def test_classify_uk_manual_compile_frontier_marks_schedule_at_end_there_is_inse
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_schedule_list_entry_candidate"
 
 
@@ -2718,7 +2718,7 @@ def test_classify_uk_manual_compile_frontier_marks_schedule_target_end_insert_fr
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_schedule_list_entry_candidate"
 
 
@@ -2740,7 +2740,7 @@ def test_classify_uk_manual_compile_frontier_marks_schedule_target_after_entry_f
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_schedule_list_entry_candidate"
 
 
@@ -2787,7 +2787,7 @@ def test_classify_uk_manual_compile_frontier_marks_schedule_table_end_rows_missi
         structural_for_replay=True,
     )
 
-    assert result["status"] == "source_insufficient"
+    assert result["manual_frontier_status"] == "source_insufficient"
     assert (
         result["rule_id"]
         == "uk_manual_frontier_schedule_table_end_rows_payload_source_insufficient"
@@ -2837,7 +2837,7 @@ def test_classify_uk_manual_compile_frontier_marks_table_row_omission_manual() -
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_table_entry_candidate"
 
 
@@ -2863,7 +2863,7 @@ def test_classify_uk_manual_compile_frontier_marks_table_entry_relating_parent_g
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_table_entry_candidate"
     assert "table marker or cell boundary" in result["reason"]
 
@@ -2889,7 +2889,7 @@ def test_classify_uk_manual_compile_frontier_marks_entry_beginning_substitution_
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_schedule_list_entry_candidate"
 
 
@@ -2915,7 +2915,7 @@ def test_classify_uk_manual_compile_frontier_marks_entry_that_begins_substitutio
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_schedule_list_entry_candidate"
 
 
@@ -2939,7 +2939,7 @@ def test_classify_uk_manual_compile_frontier_marks_structural_sibling_insert_bef
         structural_for_replay=True,
     )
 
-    assert result["status"] == "deterministic_frontend_candidate"
+    assert result["manual_frontier_status"] == "deterministic_frontend_candidate"
     assert result["rule_id"] == "uk_manual_frontier_structural_sibling_insert_candidate"
 
 
@@ -2963,7 +2963,7 @@ def test_classify_uk_manual_compile_frontier_marks_deictic_structural_sibling_in
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert (
         result["rule_id"]
         == "uk_manual_frontier_deictic_structural_sibling_insert_candidate"
@@ -2990,7 +2990,7 @@ def test_classify_uk_manual_compile_frontier_marks_child_tail_sibling_insert() -
         structural_for_replay=True,
     )
 
-    assert result["status"] == "deterministic_frontend_candidate"
+    assert result["manual_frontier_status"] == "deterministic_frontend_candidate"
     assert result["rule_id"] == "uk_manual_frontier_structural_sibling_insert_candidate"
 
 
@@ -3017,7 +3017,7 @@ def test_classify_uk_manual_compile_frontier_marks_labeled_child_end_range() -> 
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_labeled_child_end_range_candidate"
 
 
@@ -3038,7 +3038,7 @@ def test_classify_uk_manual_compile_frontier_marks_amendment_program_target() ->
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_amendment_program_target_candidate"
 
 
@@ -3070,7 +3070,7 @@ def test_classify_uk_manual_compile_frontier_marks_inserted_section_amendment_pr
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_amendment_program_target_candidate"
 
 
@@ -3097,7 +3097,7 @@ def test_classify_uk_manual_compile_frontier_marks_deictic_amendment_program_anc
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert (
         result["rule_id"]
         == "uk_manual_frontier_deictic_amendment_program_target_candidate"
@@ -3127,7 +3127,7 @@ def test_classify_uk_manual_compile_frontier_keeps_explicit_amendment_program_an
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_amendment_program_target_candidate"
 
 
@@ -3148,7 +3148,7 @@ def test_classify_uk_manual_compile_frontier_marks_table_entry_target() -> None:
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_table_entry_candidate"
 
 
@@ -3169,7 +3169,7 @@ def test_classify_uk_manual_compile_frontier_marks_repeal_schedule_table_source(
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_repeal_table_candidate"
 
 
@@ -3195,7 +3195,7 @@ def test_classify_uk_manual_compile_frontier_marks_unresolved_repeal_table_lower
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_repeal_table_candidate"
 
 
@@ -3223,7 +3223,7 @@ def test_classify_uk_manual_compile_frontier_marks_flat_repeal_schedule_structur
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_repeal_table_candidate"
 
 
@@ -3247,7 +3247,7 @@ def test_classify_uk_manual_compile_frontier_marks_mixed_body_heading_split() ->
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert (
         result["rule_id"]
         == "uk_manual_frontier_mixed_body_heading_text_substitution_split"
@@ -3288,7 +3288,7 @@ def test_classify_uk_manual_compile_frontier_marks_repeal_table_feed_source_gap(
         structural_for_replay=True,
     )
 
-    assert result["status"] == "source_insufficient"
+    assert result["manual_frontier_status"] == "source_insufficient"
     assert result["rule_id"] == "uk_manual_frontier_repeal_table_feed_source_target_gap"
 
 
@@ -3309,7 +3309,7 @@ def test_classify_uk_manual_compile_frontier_marks_as_if_application_out_of_scop
         structural_for_replay=True,
     )
 
-    assert result["status"] == "non_textual_or_out_of_scope"
+    assert result["manual_frontier_status"] == "non_textual_or_out_of_scope"
     assert result["rule_id"] == "uk_manual_frontier_as_if_application_modification_out_of_scope"
 
 
@@ -3333,7 +3333,7 @@ def test_classify_uk_manual_compile_frontier_marks_commencement_out_of_scope() -
         structural_for_replay=True,
     )
 
-    assert result["status"] == "non_textual_or_out_of_scope"
+    assert result["manual_frontier_status"] == "non_textual_or_out_of_scope"
     assert result["rule_id"] == "uk_manual_frontier_commencement_effect_out_of_scope"
 
 
@@ -3358,7 +3358,7 @@ def test_classify_uk_manual_compile_frontier_marks_conditional_temporal_repeal_o
         structural_for_replay=True,
     )
 
-    assert result["status"] == "non_textual_or_out_of_scope"
+    assert result["manual_frontier_status"] == "non_textual_or_out_of_scope"
     assert result["rule_id"] == (
         "uk_manual_frontier_conditional_temporal_repeal_out_of_scope"
     )
@@ -3386,7 +3386,7 @@ def test_classify_uk_manual_compile_frontier_marks_definition_child_and_tail_sub
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == (
         "uk_manual_frontier_definition_child_and_tail_substitution_candidate"
     )
@@ -3409,7 +3409,7 @@ def test_classify_uk_manual_compile_frontier_marks_application_payload_out_of_sc
         structural_for_replay=True,
     )
 
-    assert result["status"] == "non_textual_or_out_of_scope"
+    assert result["manual_frontier_status"] == "non_textual_or_out_of_scope"
     assert result["rule_id"] == "uk_manual_frontier_application_modification_payload_out_of_scope"
 
 
@@ -3430,7 +3430,7 @@ def test_classify_uk_manual_compile_frontier_marks_schedule_note_target() -> Non
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_schedule_note_candidate"
 
 
@@ -3524,7 +3524,7 @@ def test_classify_uk_manual_compile_frontier_marks_heading_facet_pathology() -> 
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_heading_facet_candidate"
 
 
@@ -3545,7 +3545,7 @@ def test_classify_uk_manual_compile_frontier_marks_crossheading_pathology() -> N
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_crossheading_candidate"
 
 
@@ -3570,7 +3570,7 @@ def test_classify_uk_manual_compile_frontier_marks_table_crossheading_pathology(
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_table_crossheading_candidate"
 
 
@@ -3591,7 +3591,7 @@ def test_classify_uk_manual_compile_frontier_treats_record_disposition_as_nonblo
         structural_for_replay=True,
     )
 
-    assert result["status"] == "deterministic_frontend_supported"
+    assert result["manual_frontier_status"] == "deterministic_frontend_supported"
     assert result["rule_id"] == "uk_manual_frontier_deterministic_supported"
 
 
@@ -3612,7 +3612,7 @@ def test_classify_uk_manual_compile_frontier_accepts_source_structuralized_added
         structural_for_replay=False,
     )
 
-    assert result["status"] == "deterministic_frontend_supported"
+    assert result["manual_frontier_status"] == "deterministic_frontend_supported"
     assert result["rule_id"] == "uk_manual_frontier_deterministic_supported"
 
 
@@ -3633,7 +3633,7 @@ def test_classify_uk_manual_compile_frontier_marks_pseudo_definition_source_insu
         structural_for_replay=False,
     )
 
-    assert result["status"] == "source_insufficient"
+    assert result["manual_frontier_status"] == "source_insufficient"
     assert (
         result["rule_id"]
         == "uk_manual_frontier_structural_pseudo_definition_source_insufficient"
@@ -3657,7 +3657,7 @@ def test_classify_uk_manual_compile_frontier_marks_pseudo_definition_payload_pla
         structural_for_replay=False,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert (
         result["rule_id"]
         == "uk_manual_frontier_structural_pseudo_definition_entry_placement_candidate"
@@ -3684,7 +3684,7 @@ def test_classify_uk_manual_compile_frontier_marks_pseudo_definition_instruction
         structural_for_replay=False,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert (
         result["rule_id"]
         == "uk_manual_frontier_structural_pseudo_definition_entry_placement_candidate"
@@ -3711,7 +3711,7 @@ def test_classify_uk_manual_compile_frontier_promotes_definition_list_end_insert
         structural_for_replay=False,
     )
 
-    assert result["status"] == "deterministic_frontend_candidate"
+    assert result["manual_frontier_status"] == "deterministic_frontend_candidate"
     assert result["rule_id"] == "uk_manual_frontier_definition_list_end_insert_candidate"
 
 
@@ -3736,7 +3736,7 @@ def test_classify_uk_manual_compile_frontier_marks_definition_list_end_insert_be
         structural_for_replay=True,
     )
 
-    assert result["status"] == "deterministic_frontend_candidate"
+    assert result["manual_frontier_status"] == "deterministic_frontend_candidate"
     assert result["rule_id"] == "uk_manual_frontier_definition_list_end_insert_candidate"
 
 
@@ -3752,7 +3752,7 @@ def test_classify_uk_manual_compile_frontier_accepts_ceases_replay_repeal() -> N
         structural_for_replay=False,
     )
 
-    assert result["status"] == "deterministic_frontend_supported"
+    assert result["manual_frontier_status"] == "deterministic_frontend_supported"
     assert result["rule_id"] == "uk_manual_frontier_deterministic_supported"
 
 
@@ -3769,7 +3769,7 @@ def test_classify_uk_manual_compile_frontier_marks_text_patch_preimage_chain_gap
         compare_shape="text_patch_preimage_absent_from_target_surfaces",
     )
 
-    assert result["status"] == "source_insufficient"
+    assert result["manual_frontier_status"] == "source_insufficient"
     assert result["rule_id"] == "uk_manual_frontier_text_patch_preimage_chain_gap"
 
 
@@ -3790,7 +3790,7 @@ def test_classify_uk_manual_compile_frontier_application_reference_preempts_prei
         compare_shape="text_patch_preimage_absent_from_target_surfaces",
     )
 
-    assert result["status"] == "non_textual_or_out_of_scope"
+    assert result["manual_frontier_status"] == "non_textual_or_out_of_scope"
     assert result["rule_id"] == "uk_manual_frontier_application_by_reference_out_of_scope"
 
 
@@ -3807,7 +3807,7 @@ def test_classify_uk_manual_compile_frontier_misselected_target_preempts_preimag
         compare_shape="text_patch_preimage_absent_from_target_surfaces",
     )
 
-    assert result["status"] == "source_insufficient"
+    assert result["manual_frontier_status"] == "source_insufficient"
     assert (
         result["rule_id"]
         == "uk_manual_frontier_misselected_target_context_source_insufficient"
@@ -3827,7 +3827,7 @@ def test_classify_uk_manual_compile_frontier_marks_text_patch_target_source_chai
         compare_shape="text_patch_target_absent_from_enacted_source_chain",
     )
 
-    assert result["status"] == "source_insufficient"
+    assert result["manual_frontier_status"] == "source_insufficient"
     assert result["rule_id"] == "uk_manual_frontier_text_patch_target_source_chain_gap"
     assert "target absent from the enacted source" in result["reason"]
 
@@ -3849,7 +3849,7 @@ def test_classify_uk_manual_compile_frontier_marks_instruction_header_source_ins
         structural_for_replay=True,
     )
 
-    assert result["status"] == "source_insufficient"
+    assert result["manual_frontier_status"] == "source_insufficient"
     assert result["rule_id"] == "uk_manual_frontier_instruction_header_source_insufficient"
 
 
@@ -3870,7 +3870,7 @@ def test_classify_uk_manual_compile_frontier_marks_structural_child_range_substi
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_structural_child_range_substitution_candidate"
 
 
@@ -3891,7 +3891,7 @@ def test_classify_uk_manual_compile_frontier_marks_active_structural_child_range
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_structural_child_range_substitution_candidate"
 
 
@@ -3915,7 +3915,7 @@ def test_classify_uk_manual_compile_frontier_marks_to_range_definition_child_sub
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_structural_child_range_substitution_candidate"
 
 
@@ -3936,7 +3936,7 @@ def test_classify_uk_manual_compile_frontier_marks_deictic_text_patch_source_ins
         structural_for_replay=True,
     )
 
-    assert result["status"] == "source_insufficient"
+    assert result["manual_frontier_status"] == "source_insufficient"
     assert result["rule_id"] == "uk_manual_frontier_deictic_text_patch_source_insufficient"
 
 
@@ -3961,7 +3961,7 @@ def test_classify_uk_manual_compile_frontier_marks_definition_child_structural_s
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_definition_child_structural_substitution_candidate"
 
 
@@ -3991,7 +3991,7 @@ def test_classify_uk_manual_compile_frontier_marks_definition_entry_substitution
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_definition_entry_substitution_candidate"
 
 
@@ -4043,7 +4043,7 @@ def test_classify_uk_manual_compile_frontier_marks_labelled_purpose_payload_frag
         structural_for_replay=True,
     )
 
-    assert result["status"] == "source_insufficient"
+    assert result["manual_frontier_status"] == "source_insufficient"
     assert result["rule_id"] == "uk_manual_frontier_source_payload_without_instruction_context"
 
 
@@ -4068,7 +4068,7 @@ def test_classify_uk_manual_compile_frontier_marks_nested_definition_child_struc
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert (
         result["rule_id"]
         == "uk_manual_frontier_nested_definition_child_structural_substitution_candidate"
@@ -4097,7 +4097,7 @@ def test_classify_uk_manual_compile_frontier_marks_definition_child_structural_i
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_definition_child_structural_insert_candidate"
 
 
@@ -4121,7 +4121,7 @@ def test_classify_uk_manual_compile_frontier_marks_definition_child_insert_rejec
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_definition_child_structural_insert_candidate"
 
 
@@ -4212,7 +4212,7 @@ def test_manual_frontier_keeps_owned_table_cell_surface_gap_deterministic() -> N
         compare_shape="table_cell_text_patch_requires_table_surface",
     )
 
-    assert result["status"] == "deterministic_frontend_supported"
+    assert result["manual_frontier_status"] == "deterministic_frontend_supported"
     assert result["rule_id"] == "uk_manual_frontier_deterministic_supported"
 
 
@@ -4229,7 +4229,7 @@ def test_classify_uk_manual_compile_frontier_marks_range_to_container_target_abs
         compare_shape="range_to_container_target_absent",
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_range_to_container_candidate"
 
 
@@ -4245,7 +4245,7 @@ def test_classify_uk_manual_compile_frontier_marks_range_to_container_source_pat
         structural_for_replay=False,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_range_to_container_candidate"
 
 
@@ -4265,7 +4265,7 @@ def test_classify_uk_manual_compile_frontier_marks_naked_payload_source_insuffic
         structural_for_replay=True,
     )
 
-    assert result["status"] == "source_insufficient"
+    assert result["manual_frontier_status"] == "source_insufficient"
     assert result["rule_id"] == "uk_manual_frontier_payload_without_action_source_insufficient"
 
 
@@ -4288,7 +4288,7 @@ def test_classify_uk_manual_compile_frontier_marks_applied_as_non_textual_modifi
         structural_for_replay=True,
     )
 
-    assert result["status"] == "non_textual_or_out_of_scope"
+    assert result["manual_frontier_status"] == "non_textual_or_out_of_scope"
     assert result["rule_id"] == "uk_non_textual_modification_out_of_scope"
 
 
@@ -4310,7 +4310,7 @@ def test_classify_uk_manual_compile_frontier_keeps_unsupported_family_out_of_sco
         structural_for_replay=True,
     )
 
-    assert result["status"] == "non_textual_or_out_of_scope"
+    assert result["manual_frontier_status"] == "non_textual_or_out_of_scope"
     assert result["rule_id"] == "uk_manual_frontier_unsupported_effect_family"
 
 
@@ -4333,7 +4333,7 @@ def test_classify_uk_manual_compile_frontier_marks_application_by_reference_out_
         structural_for_replay=True,
     )
 
-    assert result["status"] == "non_textual_or_out_of_scope"
+    assert result["manual_frontier_status"] == "non_textual_or_out_of_scope"
     assert result["rule_id"] == "uk_manual_frontier_application_by_reference_out_of_scope"
 
 
@@ -4358,7 +4358,7 @@ def test_classify_uk_manual_compile_frontier_external_act_target_out_of_scope() 
         structural_for_replay=True,
     )
 
-    assert result["status"] == "non_textual_or_out_of_scope"
+    assert result["manual_frontier_status"] == "non_textual_or_out_of_scope"
     assert result["rule_id"] == "uk_manual_frontier_external_act_target_out_of_scope"
 
 
@@ -4379,7 +4379,7 @@ def test_classify_uk_manual_compile_frontier_preserves_unclassified_rows() -> No
         structural_for_replay=True,
     )
 
-    assert result["status"] == "unclassified_frontier"
+    assert result["manual_frontier_status"] == "unclassified_frontier"
     assert result["rule_id"] == "uk_manual_frontier_unclassified"
     assert "inspect the source and lowering evidence" in result["reason"]
 
@@ -4409,7 +4409,7 @@ def test_classify_uk_manual_compile_frontier_marks_schedule_paragraph_range_to_p
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == (
         "uk_manual_frontier_effect_metadata_schedule_paragraph_range_to_part_renumber_candidate"
     )
@@ -4436,7 +4436,7 @@ def test_classify_uk_manual_compile_frontier_marks_other_unsupported_metadata_re
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert (
         result["rule_id"]
         == "uk_manual_frontier_effect_metadata_unsupported_renumber_candidate"
@@ -4463,7 +4463,7 @@ def test_classify_uk_manual_compile_frontier_marks_relative_occurrence_pathology
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_relative_other_place_occurrence_candidate"
     assert "sibling-aware occurrence proof" in result["reason"]
 
@@ -4489,7 +4489,7 @@ def test_classify_uk_manual_compile_frontier_marks_scoped_occurrence_exclusion_p
         structural_for_replay=True,
     )
 
-    assert result["status"] == "deterministic_frontend_candidate"
+    assert result["manual_frontier_status"] == "deterministic_frontend_candidate"
     assert (
         result["rule_id"]
         == "uk_manual_frontier_scoped_occurrence_text_patch_with_exclusions_candidate"
@@ -4518,7 +4518,7 @@ def test_classify_uk_manual_compile_frontier_marks_scoped_occurrence_program_exc
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert (
         result["rule_id"]
         == "uk_manual_frontier_scoped_occurrence_program_exclusion_candidate"
@@ -4549,7 +4549,7 @@ def test_classify_uk_manual_compile_frontier_marks_definition_anchor_tail_insert
         structural_for_replay=True,
     )
 
-    assert result["status"] == "deterministic_frontend_candidate"
+    assert result["manual_frontier_status"] == "deterministic_frontend_candidate"
     assert result["rule_id"] == "uk_manual_frontier_definition_anchor_tail_insert_candidate"
     assert "definition boundary" in result["reason"]
 
@@ -4573,7 +4573,7 @@ def test_classify_uk_manual_compile_frontier_marks_referent_qualified_pathology(
         structural_for_replay=True,
     )
 
-    assert result["status"] == "deterministic_frontend_candidate"
+    assert result["manual_frontier_status"] == "deterministic_frontend_candidate"
     assert result["rule_id"] == "uk_manual_frontier_referent_qualified_text_substitution_candidate"
     assert "referent-sensitive text predicate" in result["reason"]
 
@@ -5552,7 +5552,7 @@ def test_classify_uk_manual_frontier_overlap_table_entry_candidate() -> None:
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_table_entry_candidate"
 
 
@@ -5574,7 +5574,7 @@ def test_classify_uk_manual_frontier_table_target_end_insert_candidate() -> None
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_table_entry_candidate"
 
 
@@ -5596,7 +5596,7 @@ def test_classify_uk_manual_frontier_deictic_table_entry_candidate() -> None:
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_table_entry_deictic_candidate"
 
 
@@ -5623,7 +5623,7 @@ def test_classify_uk_manual_frontier_table_entry_instruction_rejection_without_p
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_table_entry_candidate"
 
 
@@ -5657,7 +5657,7 @@ def test_classify_uk_manual_frontier_deictic_table_row_insert_payload_gap() -> N
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_table_entry_deictic_candidate"
 
 
@@ -5679,7 +5679,7 @@ def test_classify_uk_manual_frontier_table_column_insert_candidate() -> None:
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_table_column_insert_candidate"
 
 
@@ -5701,7 +5701,7 @@ def test_classify_uk_manual_frontier_table_appropriate_place_candidate() -> None
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_table_appropriate_place_candidate"
 
 
@@ -6598,7 +6598,7 @@ def test_manual_frontier_keeps_postimage_without_preimage_source_insufficient() 
         compare_shape="text_patch_replacement_present_without_preimage",
     )
 
-    assert result["status"] == "source_insufficient"
+    assert result["manual_frontier_status"] == "source_insufficient"
     assert result["rule_id"] == "uk_manual_frontier_text_patch_postimage_chain_gap"
 
 
@@ -7332,10 +7332,10 @@ def test_classifier_emits_only_enum_status_values() -> None:
     enum_values = {s.value for s in sa.UKManualFrontierStatus}
     emitted: set[str] = set()
     for node in ast.walk(tree):
-        # inline dict literals: {"status": "<token>" | UKManualFrontierStatus.X.value}
+        # inline dict literals: {"manual_frontier_status": "<token>" | UKManualFrontierStatus.X.value}
         if isinstance(node, ast.Dict):
             for key, value in zip(node.keys, node.values, strict=True):
-                if isinstance(key, ast.Constant) and key.value == "status":
+                if isinstance(key, ast.Constant) and key.value == "manual_frontier_status":
                     if isinstance(value, ast.Constant) and isinstance(value.value, str):
                         emitted.add(value.value)
     # Any raw string status literal left in the module must be a known member.

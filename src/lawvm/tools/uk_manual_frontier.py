@@ -36,7 +36,7 @@ _VALIDATION_ERROR_STATUSES = frozenset({"effect_not_found", "input_error"})
 
 
 class _ValidationStatus(NamedTuple):
-    status: str
+    validation_status: str
     rule_id: str
 
 
@@ -196,26 +196,26 @@ def _validation_status(
 ) -> _ValidationStatus:
     if current_manual_status == "deterministic_frontend_supported":
         return _ValidationStatus(
-            status="resolved_deterministic_supported",
+            validation_status="resolved_deterministic_supported",
             rule_id="uk_manual_frontier_validator_currently_deterministic_supported",
         )
     if current_manual_status:
         return _ValidationStatus(
-            status="still_manual_frontier",
+            validation_status="still_manual_frontier",
             rule_id="uk_manual_frontier_validator_still_manual_frontier",
         )
     if current_compiled_op_count > 0 and not current_blocking_rules:
         return _ValidationStatus(
-            status="resolved_compiles_without_blocking_lowering",
+            validation_status="resolved_compiles_without_blocking_lowering",
             rule_id="uk_manual_frontier_validator_currently_compiles",
         )
     if current_blocking_rules:
         return _ValidationStatus(
-            status="still_blocked_without_manual_frontier_classification",
+            validation_status="still_blocked_without_manual_frontier_classification",
             rule_id="uk_manual_frontier_validator_still_blocked_unclassified",
         )
     return _ValidationStatus(
-        status="changed_without_manual_frontier_or_ops",
+        validation_status="changed_without_manual_frontier_or_ops",
         rule_id="uk_manual_frontier_validator_current_shape_changed",
     )
 
@@ -359,11 +359,11 @@ def _validation_row_jsonable(
         manual_compile_status=current_manual_status,
         manual_compile_rule_id=current_manual_rule_id,
         owner_phase=current_owner_phase,
-        validator_status=validation_status.status,
+        validator_status=validation_status.validation_status,
     ).to_dict()
     return _manual_frontier_validation_row(
         rule_id=validation_status.rule_id,
-        validator_status=validation_status.status,
+        validator_status=validation_status.validation_status,
         line_number=_row_line_number(row),
         statute_id=statute_id,
         effect_id=effect_id,

@@ -61,11 +61,6 @@
     "src/lawvm/finland/references/temporal.py": 1,
     "src/lawvm/finland/references/term_use.py": 1,
     "src/lawvm/finland/source_model.py": 4,
-    "src/lawvm/new_zealand/actual_replay.py": 1,
-    "src/lawvm/new_zealand/agreement.py": 2,
-    "src/lawvm/new_zealand/effect_candidates.py": 9,
-    "src/lawvm/new_zealand/instruction_workqueue.py": 4,
-    "src/lawvm/new_zealand/operation_surface.py": 4,
     "src/lawvm/norway/commencement.py": 12,
     "src/lawvm/norway/sources.py": 1,
     "src/lawvm/open_law/audit.py": 1,
@@ -102,7 +97,6 @@
     "src/lawvm/tools/fi_refs_view.py": 4,
     "src/lawvm/tools/frontier.py": 1,
     "src/lawvm/tools/invariant_harvest.py": 1,
-    "src/lawvm/tools/nz_bench.py": 2,
     "src/lawvm/tools/parse_bench.py": 1,
     "src/lawvm/tools/projection_freshness.py": 1,
     "src/lawvm/tools/provenance.py": 1,
@@ -116,14 +110,7 @@
     "src/lawvm/tools/step_attribution.py": 1,
     "src/lawvm/tools/sweden.py": 3,
     "src/lawvm/tools/transition_graph_interlinks.py": 2,
-    "src/lawvm/tools/uk_bench.py": 1,
-    "src/lawvm/tools/uk_candidates.py": 8,
-    "src/lawvm/tools/uk_corpus.py": 1,
-    "src/lawvm/tools/uk_effects.py": 1,
-    "src/lawvm/tools/uk_manual_frontier.py": 1,
-    "src/lawvm/tools/uk_semantic_claims.py": 3,
-    "src/lawvm/uk_legislation/effect_temporal.py": 1,
-    "src/lawvm/uk_legislation/source_adjudication.py": 96,
+    "src/lawvm/tools/uk_semantic_claims.py": 2,
     "src/lawvm/us_federal/amendatory.py": 2,
     "src/lawvm/us_federal/bench.py": 2,
     "src/lawvm/us_federal/dry_run.py": 2,
@@ -361,5 +348,5 @@
     "lawvm.work.v1",
     "lawvm.work_inventory_row.v0"
   ],
-  "total_bare_status": 335
+  "total_bare_status": 203
 }

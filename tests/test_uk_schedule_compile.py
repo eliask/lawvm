@@ -53208,7 +53208,7 @@ def test_pipeline_excludes_temporally_qualified_ceases_to_have_effect_repeal_ops
         replay_applicable=True,
         structural_for_replay=False,
     )
-    assert frontier["status"] == "non_textual_or_out_of_scope"
+    assert frontier["manual_frontier_status"] == "non_textual_or_out_of_scope"
     assert frontier["rule_id"] == UK_TEMPORAL_CEASES_TO_HAVE_EFFECT_REPLAY_EXCLUDED_RULE_ID
 
 
@@ -54113,7 +54113,7 @@ def test_compile_metadata_cross_container_renumber_corrects_effect_type_destinat
         replay_applicable=True,
         structural_for_replay=True,
     )
-    assert manual_frontier["status"] == "deterministic_frontend_supported"
+    assert manual_frontier["manual_frontier_status"] == "deterministic_frontend_supported"
     assert manual_frontier["rule_id"] == "uk_manual_frontier_deterministic_supported"
 
 
@@ -54149,7 +54149,7 @@ def test_manual_frontier_classifies_corresponding_table_entry_unresolved() -> No
     )
 
     assert source_pathology == "table_entry_target_unsupported"
-    assert manual_frontier["status"] == "manual_compile_candidate"
+    assert manual_frontier["manual_frontier_status"] == "manual_compile_candidate"
     assert manual_frontier["rule_id"] == "uk_manual_frontier_table_entry_candidate"
 
 
@@ -54227,10 +54227,10 @@ def test_manual_frontier_classifies_table_point_and_row_anchor_parser_misses() -
         structural_for_replay=True,
     )
 
-    assert point_frontier["status"] == "manual_compile_candidate"
+    assert point_frontier["manual_frontier_status"] == "manual_compile_candidate"
     assert point_frontier["rule_id"] == "uk_manual_frontier_table_entry_candidate"
     assert row_anchor_pathology == "table_entry_target_unsupported"
-    assert row_anchor_frontier["status"] == "manual_compile_candidate"
+    assert row_anchor_frontier["manual_frontier_status"] == "manual_compile_candidate"
     assert row_anchor_frontier["rule_id"] == "uk_manual_frontier_table_entry_candidate"
 
 
@@ -54268,7 +54268,7 @@ def test_manual_frontier_classifies_savings_qualified_text_omission() -> None:
     )
 
     assert source_pathology == "savings_qualified_text_omission_unsupported"
-    assert manual_frontier["status"] == "manual_compile_candidate"
+    assert manual_frontier["manual_frontier_status"] == "manual_compile_candidate"
     assert (
         manual_frontier["rule_id"]
         == "uk_manual_frontier_savings_qualified_text_omission_candidate"
@@ -54308,7 +54308,7 @@ def test_manual_frontier_classifies_non_simple_whole_act_word_patch_as_manual_ca
     )
 
     assert source_pathology == "whole_act_word_level_text_patch_unsupported"
-    assert manual_frontier["status"] == "manual_compile_candidate"
+    assert manual_frontier["manual_frontier_status"] == "manual_compile_candidate"
     assert (
         manual_frontier["rule_id"]
         == "uk_manual_frontier_whole_act_word_level_text_patch_candidate"
@@ -72895,7 +72895,7 @@ def test_words_before_table_substitution_lowers_to_replace_plus_sibling_inserts(
         replay_applicable=True,
         structural_for_replay=False,
     )
-    assert frontier["status"] == "deterministic_frontend_supported"
+    assert frontier["manual_frontier_status"] == "deterministic_frontend_supported"
     assert any(
         record["rule_id"] == UK_SCHEDULE_WORDS_BEFORE_TABLE_SUBSTITUTION_RULE_ID
         and not record["blocking"]

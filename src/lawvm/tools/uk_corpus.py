@@ -93,7 +93,7 @@ def _affecting_acquisition_event(
         "affecting_act_id": affecting_act_id,
         "locator": _missing_enacted_locator(affecting_act_id),
         "url": url,
-        "status": acquisition_status,
+        "acquisition_status": acquisition_status,
         "reason": reason,
         "blocking": blocking,
         "strict_disposition": "block" if blocking else "record",
