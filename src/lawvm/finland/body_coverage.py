@@ -35,7 +35,7 @@ from lawvm.core.coverage import (
 )
 from lawvm.core.filter_result import FilterResult
 from lawvm.core.stage_result import PartitionResult, Residual
-from lawvm.finland.op_provenance import RecognizerId, has_recognizer
+from lawvm.finland.op_provenance import Recovered, RecognizerId, has_recognizer
 from lawvm.finland.ops import AmendmentOp
 from lawvm.finland.helpers import _normalize_source_part_num, _normalize_source_section_num, _norm_num_token
 
@@ -554,7 +554,7 @@ def collect_coverage_claims_partition(
         # Determine claim_kind from typed provenance; `resolution_hint` is
         # historical residue only and is no longer a Finland runtime transport
         # lane.
-        if op.fallback_provenance or has_recognizer(op.provenance, RecognizerId.BODY_ROOT_REPLACE):
+        if isinstance(op.provenance, Recovered):
             claim_kind = "fallback"
         else:
             claim_kind = "explicit"

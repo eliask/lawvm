@@ -13,6 +13,7 @@ from lawvm.core.payload_surface import GroupSurface, build_group_surface as _bui
 from lawvm.core.phase_result import Finding, PhaseBuilder, PhaseResult
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.helpers import _is_omission_ir, _norm_num_token
+from lawvm.finland.op_provenance import Recovered
 from lawvm.finland.ops import AmendmentOp, OpType
 from lawvm.finland.sparse_tail_claims import (
     SPARSE_OMISSION_TAIL_CLAIM_RULE,
@@ -122,7 +123,7 @@ def _is_explicit_whole_section_replace_group(group_ops: list[AmendmentOp]) -> bo
         and op.target_cols.target_paragraph is None
         and not op.target_cols.target_item
         and not op.target_cols.target_special
-        and not op.fallback_provenance
+        and not isinstance(op.provenance, Recovered)
         and not op.target_guessing_provenance_tags
         and bool(op.witness_rule_id)
     )

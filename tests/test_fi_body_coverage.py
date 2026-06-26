@@ -89,6 +89,24 @@ class _CoverageOpShim:
     body_root_replace_fallback: bool = False
 
     @property
+    def provenance(self) -> Any:
+        # Mirror AmendmentOp.provenance: derive the typed view from the raw
+        # recovery markers this shim carries, so coverage readers that test
+        # ``isinstance(op.provenance, Recovered)`` / ``has_recognizer(...)`` see
+        # the same typed provenance the production op would.
+        from lawvm.finland.ops import _derive_op_provenance
+
+        return _derive_op_provenance(
+            fallback_provenance=self.fallback_provenance,
+            body_root_replace_fallback=self.body_root_replace_fallback,
+            sec1_body_johto_fallback=False,
+            uncovered_body_recovery=False,
+            extraction_provenance_tags=(),
+            target_guessing_provenance_tags=(),
+            witness_rule_id=None,
+        )
+
+    @property
     def target_cols(self) -> Any:
         from lawvm.finland.target_selector_codec import AmendmentOpV1Record
 

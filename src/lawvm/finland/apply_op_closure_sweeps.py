@@ -48,6 +48,7 @@ from lawvm.core.ir import LegalAddress
 from lawvm.core.phase_result import Finding
 from lawvm.finland.apply_policy import _OP_TYPE_TO_ACTION
 from lawvm.finland.migration_ledger import MigrationLedger
+from lawvm.finland.op_provenance import Recovered
 from lawvm.finland.ops import ResolvedOp
 
 # ---------------------------------------------------------------------------
@@ -264,7 +265,7 @@ def _has_conversion_witness(rop: ResolvedOp) -> bool:
         rop.extraction_provenance_tags
         or rop.target_guessing_provenance_tags
         or rop.scope_provenance_tags
-        or rop.fallback_provenance
+        or isinstance(rop.provenance, Recovered)
         or rop.uses_uncovered_body_recovery
         or rop.witness_rule_id
     )
