@@ -37,7 +37,7 @@ def _uk_result(
         n_oracle_eids=n_oracle_eids,
         n_common=n_common,
         score=score,
-        status=status,
+        bench_status=status,
         text_score=text_score,
         error=error,
     )
@@ -99,7 +99,7 @@ def test_uk_commencement_lens_perfect_score_has_no_phantom_residue() -> None:
         n_oracle_eids=12,
         n_common=12,
         score=12 / 20,  # unfiltered score is imperfect
-        status="OK",
+        bench_status="OK",
         # ... but the commencement-lensed score is perfect.
         commencement_score=1.0,
         n_commenced_eids=12,
@@ -122,7 +122,7 @@ def test_uk_commencement_lens_imperfect_score_records_typed_residue() -> None:
         n_oracle_eids=12,
         n_common=12,
         score=12 / 20,
-        status="OK",
+        bench_status="OK",
         commencement_score=0.8,  # imperfect commenced score -> 20% structural err
         n_commenced_eids=10,
     )

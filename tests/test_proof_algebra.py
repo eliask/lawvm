@@ -593,7 +593,7 @@ class TestFallbackDefeaterRules:
         ssv = SectionStrictVerdict(
             section_label="section:1",
             amendment_id="2020/100",
-            status="source_incomplete",
+            verdict_status="source_incomplete",
             barrier_codes=("APPLY.SOURCE_INCOMPLETE",),
         )
         ctx = _ctx(strict_verdict=ssv)
@@ -605,7 +605,7 @@ class TestFallbackDefeaterRules:
         ssv = SectionStrictVerdict(
             section_label="section:1",
             amendment_id="2020/200",
-            status="strict_blocked_by_recovery",
+            verdict_status="strict_blocked_by_recovery",
             barrier_codes=("APPLY.UNCOVERED_BODY_RECOVERY",),
         )
         ctx = _ctx(strict_verdict=ssv)
@@ -616,7 +616,7 @@ class TestFallbackDefeaterRules:
         ssv = SectionStrictVerdict(
             section_label="section:1",
             amendment_id="2020/100",
-            status="source_incomplete",
+            verdict_status="source_incomplete",
             barrier_codes=("APPLY.SOURCE_INCOMPLETE", "APPLY.UNCOVERED_BODY_RECOVERY"),
         )
         ctx = _ctx(strict_verdict=ssv)
@@ -1075,7 +1075,7 @@ class TestParity:
         ssv = SectionStrictVerdict(
             section_label="section:1",
             amendment_id="2020/100",
-            status="source_incomplete",
+            verdict_status="source_incomplete",
             barrier_codes=("APPLY.SOURCE_INCOMPLETE",),
         )
         _assert_parity(
@@ -1097,7 +1097,7 @@ class TestParity:
         ssv = SectionStrictVerdict(
             section_label="section:1",
             amendment_id="2020/200",
-            status="strict_blocked_by_recovery",
+            verdict_status="strict_blocked_by_recovery",
             barrier_codes=("APPLY.UNCOVERED_BODY_RECOVERY",),
         )
         _assert_parity(

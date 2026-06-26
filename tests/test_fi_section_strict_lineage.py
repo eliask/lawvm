@@ -60,7 +60,7 @@ class TestSectionStrictVerdictType:
             section_label="1",
             amendment_id="2020/100",
             barrier_codes=("APPLY.SOURCE_INCOMPLETE",),
-            status="source_incomplete",
+            verdict_status="source_incomplete",
         )
         assert not v.is_strict_clean
         assert "source" in v.barrier_families
@@ -308,7 +308,7 @@ class TestSectionStrictInEvidenceClaims:
             section_label="1",
             amendment_id="2020/100",
             barrier_codes=("APPLY.SOURCE_INCOMPLETE",),
-            status="source_incomplete",
+            verdict_status="source_incomplete",
         )
         claims = _build_section_claims(
             section_results=[
@@ -332,7 +332,7 @@ class TestSectionStrictInEvidenceClaims:
             section_label="1",
             amendment_id="2020/100",
             barrier_codes=("APPLY.UNCOVERED_BODY_RECOVERY",),
-            status="strict_blocked_by_recovery",
+            verdict_status="strict_blocked_by_recovery",
         )
         claims = _build_section_claims(
             section_results=[
@@ -355,7 +355,7 @@ class TestSectionStrictInEvidenceClaims:
         ssv = SectionStrictVerdict(
             section_label="1",
             amendment_id="2020/100",
-            status="strict_clean",
+            verdict_status="strict_clean",
         )
         claims = _build_section_claims(
             section_results=[
@@ -395,7 +395,7 @@ class TestSectionStrictInEvidenceClaims:
             section_label="1",
             amendment_id="2020/100",
             barrier_codes=("APPLY.SOURCE_INCOMPLETE",),
-            status="source_incomplete",
+            verdict_status="source_incomplete",
         )
         claims = _build_section_claims(
             section_results=[

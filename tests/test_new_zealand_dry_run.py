@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from typing import Literal
 
 import pytest
 
@@ -123,7 +124,7 @@ def _repeal_row(
     operation: LegalOperation | None = None,
     amendment_date_iso: str = "2019-10-24",
     target_resolution_status: str = "",
-    status: str = "candidate_emitted",
+    status: Literal["candidate_emitted", "blocked"] = "candidate_emitted",
 ) -> NZCanonicalEffectCandidateRow:
     return NZCanonicalEffectCandidateRow(
         row_id="nz-effect-candidate-1",

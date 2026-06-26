@@ -293,7 +293,7 @@ def test_compare_pass_grammar_only_and_annotation_only_are_neutral() -> None:
     assert "grammar_only" in statuses
     assert "annotation_only" in statuses
     for e in cmp_edges:
-        assert e.status == "candidate"
+        assert e.surface_edge_status == "candidate"
         # One-sided statuses are self-edges (single present node).
         if e.payload["comparison_status"] in ("grammar_only", "annotation_only"):
             assert e.src == e.dst
