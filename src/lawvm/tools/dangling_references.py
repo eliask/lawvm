@@ -589,11 +589,42 @@ def _default_fi_refs_path() -> str:
     return os.path.join(".tmp", "projections", "fi_refs.jsonl")
 
 
+def _render_cause_text(cause_report: Any, top: int) -> str:
+    """Render the temporal-cause split of the DANGLING set (REPEALED vs UNDETERMINED)."""
+    from lawvm.tools.dangling_temporal_cause import DanglingCauseReport
+
+    assert isinstance(cause_report, DanglingCauseReport)
+    lines: list[str] = []
+    lines.append("\n  --- DANGLING split by temporal CAUSE ---")
+    lines.append(
+        "  (positive repeal evidence only; an unmatched DANGLING is UNDETERMINED,"
+        "\n   NEVER claimed never-existed. The as-of-now consolidated oracle cannot"
+        "\n   evidence never-existence; that is the honest residual.)"
+    )
+    lines.append(f"    DANGLING_REPEALED_TARGET  : {cause_report.repealed_target}")
+    lines.append(f"    DANGLING_CAUSE_UNDETERMINED: {cause_report.undetermined}")
+    lines.append(
+        f"\n  REPEALED witnesses (cited provision covered by an in-place repeal "
+        f"note; showing up to {top}):"
+    )
+    if cause_report.repealed_rows:
+        for r in cause_report.repealed_rows[:top]:
+            lines.append(
+                f"    {r.source_statute_id} {r.source_provision_ref_str} -> "
+                f"{r.target_provision_ref_str}  [repealed by {r.amending_act} "
+                f"({r.repeal_spec} {r.repeal_unit})]"
+            )
+    else:
+        lines.append("    (none)")
+    return "\n".join(lines)
+
+
 def main(args: argparse.Namespace) -> None:
     fi_refs_path: str = getattr(args, "fi_refs", None) or _default_fi_refs_path()
     out_path: Optional[str] = getattr(args, "out", None)
     as_json: bool = bool(getattr(args, "json", False))
     top: int = int(getattr(args, "top", 20) or 20)
+    temporal_cause: bool = bool(getattr(args, "temporal_cause", False))
 
     import os
 
@@ -609,21 +640,48 @@ def main(args: argparse.Namespace) -> None:
         "against the current-state existence oracle...",
         file=sys.stderr,
     )
-    oracle = CurrentStateExistenceOracle(_resolve_store())
+    store = _resolve_store()
+    oracle = CurrentStateExistenceOracle(store)
     report = build_dangling_report(fi_refs_path, oracle)
+
+    cause_report = None
+    if temporal_cause:
+        from lawvm.tools.dangling_temporal_cause import (
+            RepealNoteCauseOracle,
+            classify_dangling_causes,
+        )
+
+        print(
+            "dangling-refs: splitting the DANGLING set by temporal cause "
+            "(repeal-note evidence vs undetermined)...",
+            file=sys.stderr,
+        )
+        cause_report = classify_dangling_causes(
+            report, RepealNoteCauseOracle(store)
+        )
 
     if out_path:
         os.makedirs(os.path.dirname(os.path.abspath(out_path)) or ".", exist_ok=True)
+        payload = report.to_canonical_dict()
+        if cause_report is not None:
+            payload = dict(payload)
+            payload["temporal_cause"] = cause_report.to_canonical_dict()
         with open(out_path, "w", encoding="utf-8") as handle:
-            json.dump(report.to_canonical_dict(), handle, ensure_ascii=False, indent=2)
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
             handle.write("\n")
         print(f"dangling-refs: wrote report -> {out_path}", file=sys.stderr)
 
     if as_json:
-        json.dump(report.to_canonical_dict(), sys.stdout, ensure_ascii=False)
+        payload = report.to_canonical_dict()
+        if cause_report is not None:
+            payload = dict(payload)
+            payload["temporal_cause"] = cause_report.to_canonical_dict()
+        json.dump(payload, sys.stdout, ensure_ascii=False)
         sys.stdout.write("\n")
         return
     print(_render_text(report, top))
+    if cause_report is not None:
+        print(_render_cause_text(cause_report, top))
 
 
 __all__ = [

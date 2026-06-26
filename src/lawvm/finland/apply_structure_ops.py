@@ -25,6 +25,7 @@ from lawvm.core.ir_helpers import _kind_str, structural_subtree_hash
 from lawvm.core.resolver_binding import RUNG_SCOPED_FIND, ResolverBinding, binding_id_for
 from lawvm.core.write_receipt import WriteReceipt, receipt_address_string
 
+from lawvm.finland.op_provenance import OpProvenance, RecognizerId, has_recognizer
 from lawvm.finland.ops import (
     AmendmentOp,
     ContainerPathResolution,
@@ -67,6 +68,7 @@ from lawvm.finland.source_pathology import (
     build_temporary_section_rebase_pathology,
     build_unique_payload_insert_under_live_duplicates_pathology,
 )
+from lawvm.finland.target_selector_facades import replace_target
 from lawvm.finland.apply_ir_ops import (
     _build_repeal_placeholder_ir,
     _build_repeal_placeholder_from_label_ir,
@@ -1164,7 +1166,7 @@ class _StructureApplyView:
     target_unit_kind: TargetUnitKind
     target_section: str
     op_type: str
-    uncovered_body_recovery: bool
+    provenance: "OpProvenance | None"
     target_paragraph: int | None
     target_item: str | None
     target_special: str | None
@@ -1218,17 +1220,17 @@ def _structure_apply_view_for_op(op: AmendmentOp | ResolvedOp) -> _StructureAppl
         op_type = op.op_type
         target_address = op.lo.target if op.lo is not None else None
         source_effective = op.lo.source.effective if op.lo is not None and op.lo.source is not None else ""
-        target_section = op.target_section or ""
-        target_paragraph = op.target_paragraph
-        target_item = op.target_item
-        target_special = op.target_special
-        target_chapter = op.target_chapter
-        target_part = op.target_part
+        target_section = op.target_cols.target_section or ""
+        target_paragraph = op.target_cols.target_paragraph
+        target_item = op.target_cols.target_item
+        target_special = op.target_cols.target_special
+        target_chapter = op.target_cols.target_chapter
+        target_part = op.target_cols.target_part
     return _StructureApplyView(
-        target_unit_kind=op.target_unit_kind,
+        target_unit_kind=op.target_unit_kind if isinstance(op, ResolvedOp) else op.target_cols.target_unit_kind,
         target_section=target_section,
         op_type=op_type,
-        uncovered_body_recovery=op.uses_uncovered_body_recovery if isinstance(op, ResolvedOp) else op.uncovered_body_recovery,
+        provenance=op.provenance,
         target_paragraph=target_paragraph,
         target_item=target_item,
         target_special=target_special,
@@ -1323,7 +1325,7 @@ def _container_resolver_contract_error_binding(
         op_label=ctx_label,
         target_text=target_text,
         target_path=None,
-        status="blocked_by_policy",
+        binding_status="blocked_by_policy",
         policy_id=CONTAINER_TARGET_POLICY_ID,
         rung_id=None,
         candidate_count=resolution.candidate_count,
@@ -1509,7 +1511,7 @@ def _apply_container_op(
             ctx_label,
             container_binding.binding_id,
             container_binding.rung_id,
-            container_binding.status,
+            container_binding.binding_status,
             container_binding.candidate_count,
         )
     path = (
@@ -3591,7 +3593,7 @@ def _apply_whole_section_op(
             )
             if parent_path is None:
                 scaffolded_parent = None
-                if view.uncovered_body_recovery and _target_part and _target_chapter:
+                if has_recognizer(view.provenance, RecognizerId.UNCOVERED_BODY) and _target_part and _target_chapter:
                     scaffolded_parent = _insert_missing_chapter_scaffold_under_part(
                         state,
                         target_part=_target_part,
@@ -3988,8 +3990,8 @@ def _normalize_subsection_target_hint_ir(
     ctx_label: str,
 ) -> AmendmentOp | ResolvedOp:
     """Normalize subsection target hint using IRNode data."""
-    target_paragraph = op.effective_target_paragraph if isinstance(op, ResolvedOp) else op.target_paragraph
-    target_item = op.effective_target_item_label if isinstance(op, ResolvedOp) else op.target_item
+    target_paragraph = op.effective_target_paragraph if isinstance(op, ResolvedOp) else op.target_cols.target_paragraph
+    target_item = op.effective_target_item_label if isinstance(op, ResolvedOp) else op.target_cols.target_item
     if not target_paragraph or not master_subsecs:
         return op
     if target_paragraph > len(master_subsecs) and len(master_subsecs) == 1 and not target_item:
@@ -4017,8 +4019,7 @@ def _normalize_subsection_target_hint_ir(
             new_lo = _lo_with_path_update(op.lo, subsection="1", item=str(target_paragraph)) if op.lo else None
             updated_legacy = dc_replace(
                 op,
-                target_paragraph=1,
-                target_item=str(target_paragraph),
+                **replace_target(op, target_paragraph=1, target_item=str(target_paragraph)),
                 lo=new_lo,
             )
             return updated_legacy

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from lawvm.core.regex_safety import compile_classifier_regex
 from dataclasses import dataclass
 from typing import Optional, Sequence
 
@@ -201,8 +202,8 @@ def should_use_sec1_fallback_post_routing(johto: str, sec1_text: str) -> bool:
     return bool(any(kw in sec1_text.lower() for kw in OP_KEYWORDS) and (not has_subprov or pure_repeal_subprov))
 
 
-_GENERIC_FI_STATUTE_CITATION_RE = re.compile(r"\(\s*\d+\s*/\s*\d{2,4}\s*\)")
-_NUMBERED_LIST_ITEM_RE = re.compile(r"(?m)^\s*\d+\)\s*")
+_GENERIC_FI_STATUTE_CITATION_RE = compile_classifier_regex(r"\(\s*\d+\s*/\s*\d{2,4}\s*\)", classifier_id="fi.acquisition.generic_fi_statute_citation_re")
+_NUMBERED_LIST_ITEM_RE = compile_classifier_regex(r"(?m)^\s*\d+\)\s*", classifier_id="fi.acquisition.numbered_list_item_re")
 
 
 def _sec1_numbered_repeal_list_has_foreign_statute_items(sec1_text: str, parent_id: str) -> bool:

@@ -82,7 +82,7 @@ class CorpusNodeRow:
     node_id: str
     node_kind: str
     authority_role: str
-    status: str
+    node_status: str
     work_id: str | None
     payload_hash: str
     surface_only: bool
@@ -92,7 +92,7 @@ class CorpusNodeRow:
             "node_id": self.node_id,
             "node_kind": self.node_kind,
             "authority_role": self.authority_role,
-            "status": self.status,
+            "node_status": self.node_status,
             "work_id": self.work_id,
             "payload_hash": self.payload_hash,
             "surface_only": self.surface_only,
@@ -113,7 +113,7 @@ class CorpusEdgeRow:
     src: str
     dst: str
     rule_id: str
-    status: str
+    surface_edge_status: str
     citing_work_id: str | None
     target_work_id: str | None
     cross_statute: bool
@@ -133,7 +133,7 @@ class CorpusEdgeRow:
             "src": self.src,
             "dst": self.dst,
             "rule_id": self.rule_id,
-            "status": self.status,
+            "surface_edge_status": self.surface_edge_status,
             "citing_work_id": self.citing_work_id,
             "target_work_id": self.target_work_id,
             "cross_statute": self.cross_statute,
@@ -275,7 +275,7 @@ def build_export(graph: LegalSurfaceGraph) -> CorpusSurfaceGraphExport:
             node_id=node.node_id,
             node_kind=node.node_kind,
             authority_role=str(node.authority_role),
-            status=str(node.status),
+            node_status=str(node.node_status),
             work_id=_node_work_id(node),
             payload_hash=node.payload_hash,
             surface_only=node.surface_only,
@@ -312,7 +312,7 @@ def build_export(graph: LegalSurfaceGraph) -> CorpusSurfaceGraphExport:
                 src=edge.src,
                 dst=edge.dst,
                 rule_id=edge.rule_id,
-                status=edge.status,
+                surface_edge_status=edge.surface_edge_status,
                 citing_work_id=citing_work,
                 target_work_id=target_work,
                 cross_statute=cross,

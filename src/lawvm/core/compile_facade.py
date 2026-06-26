@@ -354,7 +354,7 @@ class CompileFacade:
             verdict_payload = {
                 "mode": self.verdict.mode,
                 "profile": self.verdict.profile,
-                "status": self.verdict.status,
+                "verdict_status": self.verdict.verdict_status,
                 "barrier_kinds": self.verdict.barrier_codes,
             }
 
@@ -375,8 +375,8 @@ class CompileFacade:
                 self.finding_ledger,
                 verdict=self.verdict,
             )
-            if not blockers and self.verdict is not None and self.verdict.status != "strict_clean":
-                blockers = (self.verdict.status,)
+            if not blockers and self.verdict is not None and self.verdict.verdict_status != "strict_clean":
+                blockers = (self.verdict.verdict_status,)
             status = ProcessingStatus(
                 kind="partial",
                 blockers=blockers,

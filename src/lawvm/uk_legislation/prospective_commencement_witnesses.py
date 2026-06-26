@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Any, Iterable
 
 from lawvm.uk_legislation.affecting_act_commencement import (
@@ -13,6 +14,31 @@ from lawvm.uk_legislation.affecting_act_commencement import (
 )
 from lawvm.uk_legislation.effects import UKEffectRecord, load_effects_for_statute_from_archive
 from lawvm.uk_legislation.phase_discipline import UK_PHASE_EFFECT_METADATA_FRONTEND
+
+
+class UKProspectiveCommencementStatus(StrEnum):
+    """Closed PIT resolution status for a prospective-only structural effect.
+
+    Derived deterministically from the tri-state
+    ``affecting_provision_in_force`` result (``True``/``False``/``None``). The
+    ``.value`` strings are the stable wire tokens emitted into diagnostic and
+    witness rows, so they must not change.
+    """
+
+    RESOLVED_IN_FORCE = "resolved_in_force"
+    RESOLVED_FUTURE = "resolved_future"
+    UNRESOLVED = "unresolved"
+
+
+def prospective_commencement_status_for_in_force(
+    in_force: bool | None,
+) -> UKProspectiveCommencementStatus:
+    """Map the tri-state in-force result to the closed status enum."""
+    if in_force is True:
+        return UKProspectiveCommencementStatus.RESOLVED_IN_FORCE
+    if in_force is False:
+        return UKProspectiveCommencementStatus.RESOLVED_FUTURE
+    return UKProspectiveCommencementStatus.UNRESOLVED
 
 
 @dataclass(frozen=True)
@@ -25,7 +51,7 @@ class UKProspectiveCommencementWitness:
     affected_provisions: str
     affecting_act_id: str
     affecting_provisions: str
-    witness_status: str
+    witness_status: UKProspectiveCommencementStatus
     rule_id: str
     start_dates: tuple[str, ...] = ()
     as_of: str = ""
@@ -39,7 +65,7 @@ class UKProspectiveCommencementWitness:
             "affected_provisions": self.affected_provisions,
             "affecting_act_id": self.affecting_act_id,
             "affecting_provisions": self.affecting_provisions,
-            "witness_status": self.witness_status,
+            "witness_status": self.witness_status.value,
             "rule_id": self.rule_id,
         }
         if self.start_dates:
@@ -72,15 +98,14 @@ def prospective_commencement_witness_for_effect(
         affecting_act_xml,
         as_of=as_of,
     )
-    if in_force is True:
-        status = "resolved_in_force"
-        rule_id = "uk_prospective_effect_affecting_provision_in_force"
-    elif in_force is False:
-        status = "resolved_future"
-        rule_id = "uk_prospective_effect_affecting_provision_future"
-    else:
-        status = "unresolved"
-        rule_id = "uk_prospective_effect_affecting_provision_unresolved"
+    status = prospective_commencement_status_for_in_force(in_force)
+    match status:
+        case UKProspectiveCommencementStatus.RESOLVED_IN_FORCE:
+            rule_id = "uk_prospective_effect_affecting_provision_in_force"
+        case UKProspectiveCommencementStatus.RESOLVED_FUTURE:
+            rule_id = "uk_prospective_effect_affecting_provision_future"
+        case UKProspectiveCommencementStatus.UNRESOLVED:
+            rule_id = "uk_prospective_effect_affecting_provision_unresolved"
     return UKProspectiveCommencementWitness(
         statute_id=statute_id,
         effect_id=str(effect.effect_id or ""),
@@ -150,4 +175,4 @@ def scan_prospective_commencement_witnesses(
 def prospective_commencement_status_counts(
     witnesses: Iterable[UKProspectiveCommencementWitness],
 ) -> dict[str, int]:
-    return dict(Counter(witness.witness_status for witness in witnesses))
+    return dict(Counter(witness.witness_status.value for witness in witnesses))

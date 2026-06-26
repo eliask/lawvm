@@ -71,7 +71,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Optional, Tuple
+from typing import List, Literal, Optional, Tuple
 
 from lawvm.core.legal_surface_tokens import MorphOverlay, Token, TokenTape
 from lawvm.core.reference_mention import SourceSpan
@@ -330,7 +330,7 @@ class ProcedureFrame:
     actor_span: Optional[SourceSpan]
     deadline_span: Optional[SourceSpan]
     source_span: SourceSpan
-    status: str
+    procedure_status: Literal["surface_fact_only"]
     rule_id: str
 
 
@@ -714,7 +714,7 @@ def scan_procedure(
                     actor_span=actor_span,
                     deadline_span=deadline_span,
                     source_span=_span(source_file, proc_start, proc_end),
-                    status="surface_fact_only",
+                    procedure_status="surface_fact_only",
                     rule_id=_RULE_ID,
                 )
             )
@@ -736,7 +736,7 @@ def scan_procedure(
                 actor_span=actor_span,
                 deadline_span=_span(source_file, ds, de),
                 source_span=_span(source_file, ds, de),
-                status="surface_fact_only",
+                procedure_status="surface_fact_only",
                 rule_id=_RULE_ID,
             )
         )

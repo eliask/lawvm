@@ -871,7 +871,7 @@ class CompileVerdict:
 
     mode: StrictMode
     profile: str
-    status: CompileStatus
+    verdict_status: CompileStatus
     barrier_codes: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
@@ -879,22 +879,22 @@ class CompileVerdict:
             raise ValueError("CompileVerdict.mode must be strict or quirks")
         if not self.profile:
             raise ValueError("CompileVerdict.profile must be non-empty")
-        if self.status not in {
+        if self.verdict_status not in {
             "strict_clean",
             "strict_blocked_by_recovery",
             "source_incomplete",
             "internal_failure",
         }:
-            raise ValueError("CompileVerdict.status is not a known compile status")
+            raise ValueError("CompileVerdict.verdict_status is not a known compile status")
         object.__setattr__(self, "barrier_codes", tuple(self.barrier_codes))
         if not all(isinstance(code, str) and code for code in self.barrier_codes):
             raise ValueError("CompileVerdict.barrier_codes must contain non-empty strings")
-        if self.status == "strict_clean" and self.barrier_codes:
+        if self.verdict_status == "strict_clean" and self.barrier_codes:
             raise ValueError("CompileVerdict strict_clean status cannot carry barrier_codes")
 
     @property
     def is_strict_clean(self) -> bool:
-        return self.status == "strict_clean"
+        return self.verdict_status == "strict_clean"
 
     @property
     def barrier_families(self) -> tuple[BarrierFamily, ...]:
@@ -1408,18 +1408,18 @@ def compute_verdict_from_registry(
 ) -> CompileVerdict:
     """Build a CompileVerdict from the governed registry-backed barrier rail."""
     if has_internal_failure:
-        status: CompileStatus = "internal_failure"
+        verdict_status: CompileStatus = "internal_failure"
     elif not finding_codes:
-        status = "strict_clean"
+        verdict_status = "strict_clean"
     elif any(r in _SOURCE_INCOMPLETE_CODES for r in finding_codes):
-        status = "source_incomplete"
+        verdict_status = "source_incomplete"
     else:
-        status = "strict_blocked_by_recovery"
+        verdict_status = "strict_blocked_by_recovery"
 
     return CompileVerdict(
         mode="strict",
         profile=profile.name,
-        status=status,
+        verdict_status=verdict_status,
         barrier_codes=tuple(finding_codes),
     )
 
@@ -1436,29 +1436,29 @@ class SectionStrictVerdict:
     section_label: str
     amendment_id: str
     barrier_codes: tuple[str, ...] = ()
-    status: CompileStatus = "strict_clean"
+    verdict_status: CompileStatus = "strict_clean"
 
     def __post_init__(self) -> None:
         if not self.section_label:
             raise ValueError("SectionStrictVerdict.section_label must be non-empty")
         if not self.amendment_id:
             raise ValueError("SectionStrictVerdict.amendment_id must be non-empty")
-        if self.status not in {
+        if self.verdict_status not in {
             "strict_clean",
             "strict_blocked_by_recovery",
             "source_incomplete",
             "internal_failure",
         }:
-            raise ValueError("SectionStrictVerdict.status is not a known compile status")
+            raise ValueError("SectionStrictVerdict.verdict_status is not a known compile status")
         object.__setattr__(self, "barrier_codes", tuple(self.barrier_codes))
         if not all(isinstance(code, str) and code for code in self.barrier_codes):
             raise ValueError("SectionStrictVerdict.barrier_codes must contain non-empty strings")
-        if self.status == "strict_clean" and self.barrier_codes:
+        if self.verdict_status == "strict_clean" and self.barrier_codes:
             raise ValueError("SectionStrictVerdict strict_clean status cannot carry barrier_codes")
 
     @property
     def is_strict_clean(self) -> bool:
-        return self.status == "strict_clean"
+        return self.verdict_status == "strict_clean"
 
     @property
     def barrier_families(self) -> set[BarrierFamily]:
@@ -1540,17 +1540,17 @@ def compute_section_strict_verdicts(
             "APPLY.SOURCE_CORRECTED_BY_PATCH",
         }
         if not section_reasons:
-            status: CompileStatus = "strict_clean"
+            verdict_status: CompileStatus = "strict_clean"
         elif any(r in _source_codes for r in section_reasons):
-            status = "source_incomplete"
+            verdict_status = "source_incomplete"
         else:
-            status = "strict_blocked_by_recovery"
+            verdict_status = "strict_blocked_by_recovery"
 
         verdicts[section_label] = SectionStrictVerdict(
             section_label=section_label,
             amendment_id=amendment_id,
             barrier_codes=tuple(section_reasons),
-            status=status,
+            verdict_status=verdict_status,
         )
 
     return verdicts

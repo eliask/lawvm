@@ -593,7 +593,7 @@ class ReferenceResolution:
                              referent is named but not enumerated).
         target_set_semantics: How the set is read (range/coordination vs
                              ambiguity vs open).
-        status:              Set-level resolution status.
+        reference_status:    Set-level resolution status.
         corpus_version:      Resolution scope key — the corpus version the
                              targets resolve under.
         branch:              Resolution scope key — the branch/line the targets
@@ -603,7 +603,7 @@ class ReferenceResolution:
     surface_expr_id: str
     target_set: Tuple[ProvisionRef, ...]
     target_set_semantics: ReferenceTargetSetSemantics
-    status: ReferenceResolutionStatus
+    reference_status: ReferenceResolutionStatus
     corpus_version: str = ""
     branch: str = ""
 

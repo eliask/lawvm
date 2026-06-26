@@ -1227,7 +1227,7 @@ async def _classify_pdf(
                 "regex", agreed=True,
                 expected_pair_count=expected_pair_count,
             )
-        return {"pdf": pdf_name, "source_pdf": source_pdf, "status": "OK",
+        return {"pdf": pdf_name, "source_pdf": source_pdf, "pdf_status": "OK",
                 "amendment_id": amendment_id, "types": ["sami_translation"],
                 "has_johtolause": False, "official_rows": rows, "adjudication_rows": arows}
 
@@ -1238,7 +1238,7 @@ async def _classify_pdf(
             f"  TOO_LARGE {pdf_name}: {pages} pages > {_PDF_MAX_PAGES} — bulk/liite/translation PDF, skipping.",
             flush=True,
         )
-        return {"pdf": pdf_name, "source_pdf": source_pdf, "status": "TOO_LARGE",
+        return {"pdf": pdf_name, "source_pdf": source_pdf, "pdf_status": "TOO_LARGE",
                 "amendment_id": amendment_id, "types": [], "has_johtolause": False,
                 "official_rows": [], "adjudication_rows": [], "pages": pages}
 
@@ -1261,7 +1261,7 @@ async def _classify_pdf(
         if not images_b64:
             if verbose:
                 print(f"  {pdf_name}: NO_TEXT")
-            return {"pdf": pdf_name, "status": "NO_TEXT", "source_pdf": source_pdf,
+            return {"pdf": pdf_name, "pdf_status": "NO_TEXT", "source_pdf": source_pdf,
                     "official_rows": [], "adjudication_rows": []}
         raw_vision = await _call_llm_vision(session, sem, images_b64)
         vision_ext = _parse_llm_lines(raw_vision, [], pdf_name)
@@ -1276,7 +1276,7 @@ async def _classify_pdf(
                 vision_extraction=[_correction_item_to_dict(it) for it in vision_ext.corrections],
                 expected_pair_count=expected_pair_count,
             )
-        return {"pdf": pdf_name, "source_pdf": source_pdf, "status": "OK",
+        return {"pdf": pdf_name, "source_pdf": source_pdf, "pdf_status": "OK",
                 "amendment_id": amendment_id, "types": types,
                 "has_johtolause": "johtolause" in types,
                 "official_rows": rows, "adjudication_rows": arows}
@@ -1291,7 +1291,7 @@ async def _classify_pdf(
             f"merged/bulk PDF? Skipping LLM; regex only.",
             flush=True,
         )
-        return {"pdf": pdf_name, "source_pdf": source_pdf, "status": "TOO_LARGE",
+        return {"pdf": pdf_name, "source_pdf": source_pdf, "pdf_status": "TOO_LARGE",
                 "amendment_id": amendment_id, "types": [], "has_johtolause": False,
                 "official_rows": [], "adjudication_rows": [], "chars": len(numbered_text)}
 
@@ -1472,7 +1472,7 @@ async def _classify_pdf(
     return {
         "pdf": pdf_name,
         "source_pdf": source_pdf,
-        "status": "OK",
+        "pdf_status": "OK",
         "amendment_id": amendment_id,
         "types": types,
         "has_johtolause": has_johtolause,
@@ -1596,10 +1596,10 @@ async def _run_classify(args) -> None:
         write_adjudication_records(adjudication_records, _ADJUDICATIONS_TEXT)
 
     # Summary
-    ok = [r for r in results if r["status"] == "OK"]
-    errors = [r for r in results if r["status"] == "PARSE_ERROR"]
-    no_text = [r for r in results if r["status"] == "NO_TEXT"]
-    too_large = [r for r in results if r["status"] == "TOO_LARGE"]
+    ok = [r for r in results if r["pdf_status"] == "OK"]
+    errors = [r for r in results if r["pdf_status"] == "PARSE_ERROR"]
+    no_text = [r for r in results if r["pdf_status"] == "NO_TEXT"]
+    too_large = [r for r in results if r["pdf_status"] == "TOO_LARGE"]
     by_type: dict[str, int] = {}
     johtolause_cases = []
     for r in ok:
@@ -2351,7 +2351,7 @@ def build_provenance_bundle(
             "attachment_only": attachment_only,
             "exact_manual_override": exact_manual,
             "manual_override_count_for_amendment": len(manual_entries),
-            "status": status,
+            "provenance_status": status,
         }
         if source_witness is not None:
             rendered_row["source_witness"] = source_witness
@@ -2366,7 +2366,7 @@ def build_provenance_bundle(
         "attachment_only_count": sum(1 for row in rendered_rows if row["attachment_only"]),
         "manual_exact_count": sum(1 for row in rendered_rows if row["exact_manual_override"]),
         "open_manual_candidate_count": sum(
-            1 for row in rendered_rows if row["status"] == "open_manual_candidate"
+            1 for row in rendered_rows if row["provenance_status"] == "open_manual_candidate"
         ),
         "manual_entry_count": len(manual_entries),
         "source_witnesses": sorted(
@@ -3132,7 +3132,7 @@ def _cmd_provenance(args) -> None:
             f"{row['correction_type'][:12]:<12}  "
             f"{db_verified:>2}  "
             f"{current_verified:>3}  "
-            f"{row['status'][:26]:<26}  "
+            f"{row['provenance_status'][:26]:<26}  "
             f"{row['source_pdf'][:20]:<20}  "
             f"{row['location_desc'][:40]}"
         )

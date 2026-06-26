@@ -201,7 +201,7 @@ def fold_reference_set(
         surface_expr_id=expression.surface_expr_id,
         target_set=tuple(member_targets),
         target_set_semantics=semantics,
-        status=status,
+        reference_status=status,
         corpus_version=corpus_version,
         branch=branch,
     )

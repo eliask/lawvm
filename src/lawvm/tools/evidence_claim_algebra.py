@@ -11,12 +11,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Callable, Mapping, TypeAlias, TYPE_CHECKING
+from typing import Any, Callable, Mapping, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from lawvm.core.section_evidence_context import SectionEvidenceContext
 
-SupportPayload: TypeAlias = Mapping[str, Any]
+type SupportPayload = Mapping[str, Any]
 
 
 # ---------------------------------------------------------------------------
@@ -132,7 +132,7 @@ class UnresolvedSink:
         }
 
 
-SelectableCandidate: TypeAlias = PositiveClaim | UnresolvedSink
+type SelectableCandidate = PositiveClaim | UnresolvedSink
 
 
 # ---------------------------------------------------------------------------

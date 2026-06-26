@@ -13,7 +13,8 @@ from lawvm.core.payload_surface import GroupSurface, build_group_surface as _bui
 from lawvm.core.phase_result import Finding, PhaseBuilder, PhaseResult
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.helpers import _is_omission_ir, _norm_num_token
-from lawvm.finland.ops import AmendmentOp
+from lawvm.finland.op_provenance import Recovered
+from lawvm.finland.ops import AmendmentOp, OpType
 from lawvm.finland.sparse_tail_claims import (
     SPARSE_OMISSION_TAIL_CLAIM_RULE,
     SparseOmissionTailClaim,
@@ -31,7 +32,7 @@ def _renumber_destination_section_label(group_ops: list[AmendmentOp]) -> Optiona
     labels = {
         dest_path["section"]
         for op in group_ops
-        if op.op_type == "RENUMBER"
+        if op.op_type == OpType.RENUMBER
         and op.lo is not None
         and op.lo.destination is not None
         and (dest_path := dict(op.lo.destination.path)).get("section")
@@ -80,13 +81,13 @@ def collect_recodification_omission_only_section_shell_pathologies(
     destination_section = _renumber_destination_section_label(group_ops)
     if destination_section is None:
         return ()
-    has_same_group_relabel = any(op.op_type == "RENUMBER" for op in group_ops)
+    has_same_group_relabel = any(op.op_type == OpType.RENUMBER for op in group_ops)
     if not has_same_group_relabel:
         return ()
     has_destination_payload_op = any(
-        op.op_type != "RENUMBER"
-        and op.target_unit_kind == "section"
-        and _norm_num_token(op.target_section or "") == _norm_num_token(destination_section)
+        op.op_type != OpType.RENUMBER
+        and op.target_cols.target_unit_kind == "section"
+        and _norm_num_token(op.target_cols.target_section or "") == _norm_num_token(destination_section)
         for op in group_ops
     )
     if has_destination_payload_op:
@@ -117,12 +118,12 @@ def _is_explicit_whole_section_replace_group(group_ops: list[AmendmentOp]) -> bo
         return False
     op = group_ops[0]
     return (
-        op.op_type == "REPLACE"
-        and op.target_unit_kind == "section"
-        and op.target_paragraph is None
-        and not op.target_item
-        and not op.target_special
-        and not op.fallback_provenance
+        op.op_type == OpType.REPLACE
+        and op.target_cols.target_unit_kind == "section"
+        and op.target_cols.target_paragraph is None
+        and not op.target_cols.target_item
+        and not op.target_cols.target_special
+        and not isinstance(op.provenance, Recovered)
         and not op.target_guessing_provenance_tags
         and bool(op.witness_rule_id)
     )
@@ -149,9 +150,9 @@ def _single_conflicting_section_payload(
     if not observed_label or observed_label == target_label:
         return None
     if any(
-        _norm_num_token(op.target_section or "") == observed_label
+        _norm_num_token(op.target_cols.target_section or "") == observed_label
         for op in amendment_group_ops
-        if op.target_section
+        if op.target_cols.target_section
     ):
         return None
     unit_chapter = _norm_num_token(unit.chapter_label) if unit.chapter_label else None
@@ -167,7 +168,7 @@ def _single_conflicting_section_payload(
         unit_chapter,
         unit_part,
     )
-    if observed_payload.status != "unique" or observed_payload.payload_ir is None:
+    if observed_payload.lookup_status != "unique" or observed_payload.payload_ir is None:
         return None
     if not irnode_to_text(observed_payload.payload_ir).strip():
         return None
@@ -204,7 +205,7 @@ def _relabel_section_payload_root(payload: IRNode, target_norm: str) -> IRNode:
 
 def _is_pure_section_renumber_group(group_ops: list[AmendmentOp]) -> bool:
     return bool(group_ops) and all(
-        op.op_type == "RENUMBER" and op.target_unit_kind == "section"
+        op.op_type == OpType.RENUMBER and op.target_cols.target_unit_kind == "section"
         for op in group_ops
     )
 
@@ -369,19 +370,19 @@ def build_group_surface(request: BuildGroupSurfaceRequest) -> PhaseResult[GroupS
         )
     if target_unit_kind == "section":
         destination_section = _renumber_destination_section_label(group_ops)
-        has_same_group_relabel = any(op.op_type == "RENUMBER" for op in group_ops)
+        has_same_group_relabel = any(op.op_type == OpType.RENUMBER for op in group_ops)
         has_followup_payload_op = any(
-            op.op_type != "RENUMBER"
-            and op.target_unit_kind == "section"
+            op.op_type != OpType.RENUMBER
+            and op.target_cols.target_unit_kind == "section"
             and not (
                 has_same_group_relabel
-                and op.op_type == "REPLACE"
-                and _norm_num_token(op.target_section or "") == target_norm
-                and op.target_paragraph is None
-                and not op.target_item
-                and not op.target_special
-                and op.target_chapter == target_chapter
-                and op.target_part == target_part
+                and op.op_type == OpType.REPLACE
+                and _norm_num_token(op.target_cols.target_section or "") == target_norm
+                and op.target_cols.target_paragraph is None
+                and not op.target_cols.target_item
+                and not op.target_cols.target_special
+                and op.target_cols.target_chapter == target_chapter
+                and op.target_cols.target_part == target_part
             )
             for op in group_ops
         )
@@ -438,7 +439,7 @@ def build_group_surface(request: BuildGroupSurfaceRequest) -> PhaseResult[GroupS
     b = PhaseBuilder()
     if surface_findings:
         b.add_findings(tuple(surface_findings))
-    if group_surface.body_ir is None and any(op.op_type not in ("REPEAL", "ADD_HEADING") for op in group_ops):
+    if group_surface.body_ir is None and any(op.op_type not in (OpType.REPEAL, "ADD_HEADING") for op in group_ops):
         b.add_findings((
             Finding(
                 kind="ELAB.MISSING_PAYLOAD_SURFACE",

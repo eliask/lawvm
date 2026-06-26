@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 
 from lawvm.new_zealand.actual_replay import (
+    NZ_ACTUAL_REPLAY_REFUSED_OP_DRY_RUN_RESIDUAL_RULE_ID,
     NZ_ACTUAL_REPLAY_REFUSED_OP_NOT_DRY_RUN_VERIFIED_RULE_ID,
     NZ_ACTUAL_REPLAY_REFUSED_SURFACE_MISSING_RULE_ID,
     build_actual_replay,
@@ -165,8 +166,8 @@ def _archive(after_xml: bytes = _AFTER_XML_AGREES) -> _FakeArchive:
 
 
 class _FakeTargetCandidate:
-    def __init__(self, status: str, address: str, path: tuple[tuple[str, str], ...]) -> None:
-        self.status = status
+    def __init__(self, target_address_status: str, address: str, path: tuple[tuple[str, str], ...]) -> None:
+        self.target_address_status = target_address_status
         self.address = address
         self.path = path
 
@@ -345,6 +346,40 @@ def test_actual_replay_fails_closed_when_replace_does_not_verify() -> None:
     # The same-window verified insert op is reported as part of the blocked
     # transition, never partially materialized.
     assert NZ_ACTUAL_REPLAY_REFUSED_OP_NOT_DRY_RUN_VERIFIED_RULE_ID in refusal_rules
+
+
+def test_actual_replay_residual_refusal_propagates_dry_run_divergence_class() -> None:
+    # AGENTS §0 evidence propagation: when the dry-run proof for a refused op carried
+    # a target-level divergence classification (``divergence_class``), the actual-replay
+    # residual refusal MUST carry that classification forward onto its detail receipt —
+    # the promotion plane may not silently lose the source-truth-bucket signal (the §0
+    # deterministic-gap / manual-compilation-frontier / oracle-suspect tag) that the
+    # dry-run plane computed. Strict-superset additive: no rule_id change, no
+    # fail-closed behaviour change.
+    report = _run(
+        _AFTER_XML_REPLACE_DIVERGES, (_replace_row(),), ("replace",)
+    )
+    # The synthetic divergent oracle: section 41 is NOT replaced (oracle still carries
+    # OLD heading + OLD body). The replace op fails dry-run under residual_replacement_mismatch.
+    residual_refusals = [
+        ref for ref in report.refusals
+        if ref.rule_id == NZ_ACTUAL_REPLAY_REFUSED_OP_DRY_RUN_RESIDUAL_RULE_ID
+    ]
+    assert residual_refusals, "expected at least one dry-run-residual refusal from the divergent replace"
+    refusal = residual_refusals[0]
+    detail = refusal.detail or {}
+    # The residual refusal must carry the dry-run's divergence classification on its
+    # receipt so the source-truth-bucket doesn't have to be re-derived from the dry-run plane.
+    assert "divergence_class" in detail, (
+        f"replace residual refusal detail lost divergence_class: keys={sorted(detail)}"
+    )
+    assert detail["divergence_class"] is not None
+    # The dry-run's oracle_match rule id ALSO lifts to the actual-replay receipt so
+    # the specific residual-variant (replacement_mismatch / target_missing /
+    # content_mismatch / position_mismatch) is distinguishable per AGENTS §1.10.
+    assert detail["oracle_match_rule_id"] == (
+        "nz_dry_run_structural_replace_residual_replacement_mismatch_in_oracle"
+    )
 
 
 # --- 6. A structural family requested without a surface is not attempted ------

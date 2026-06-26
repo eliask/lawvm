@@ -280,7 +280,7 @@ def test_filtered_frontier_keeps_only_core_filtered_rows_sorted_by_frontier_scor
     rows = [
         SimpleNamespace(
             statute_id="ukpga/2000/41",
-            status="OK",
+            bench_status="OK",
             year=2000,
             act_type="ukpga",
             replay_commencement_score=-1.0,
@@ -295,7 +295,7 @@ def test_filtered_frontier_keeps_only_core_filtered_rows_sorted_by_frontier_scor
         ),
         SimpleNamespace(
             statute_id="ukpga/2000/22",
-            status="OK",
+            bench_status="OK",
             year=2000,
             act_type="ukpga",
             replay_commencement_score=-1.0,
@@ -310,7 +310,7 @@ def test_filtered_frontier_keeps_only_core_filtered_rows_sorted_by_frontier_scor
         ),
         SimpleNamespace(
             statute_id="ukpga/2000/3",
-            status="OK",
+            bench_status="OK",
             year=2000,
             act_type="ukpga",
             replay_commencement_score=-1.0,
@@ -325,7 +325,7 @@ def test_filtered_frontier_keeps_only_core_filtered_rows_sorted_by_frontier_scor
         ),
         SimpleNamespace(
             statute_id="asp/2003/1",
-            status="OK",
+            bench_status="OK",
             year=2003,
             act_type="asp",
             replay_commencement_score=-1.0,
@@ -1041,7 +1041,7 @@ def test_candidate_row_jsonable_records_defeated_residual_roots() -> None:
         malformed_residual_roots={"section-4."},
         residual_root_hits={"section-3"},
         defeated_residual_roots={"section-4"},
-        status="residual branches defeated by no candidate overlap",
+        candidate_status="residual branches defeated by no candidate overlap",
         effect_feed_parse_rejections=(
             {
                 "rule_id": "uk_effect_feed_xml_parse_rejected",
@@ -1312,7 +1312,7 @@ def test_candidates_report_jsonable_records_summary_and_filters() -> None:
         label="uk_frontier",
         rows=[
             {
-                "status": "real residual frontier",
+                "triage_status": "real residual frontier",
                 "comparison_class": "commensurable",
                 "core_benchmark": True,
                 "enacted_source_status": "available",
@@ -1397,7 +1397,7 @@ def test_candidates_report_jsonable_records_summary_and_filters() -> None:
                 "blocking_lowering_rejection_rule_counts": {"rule-a": 1},
             },
             {
-                "status": "real residual frontier",
+                "triage_status": "real residual frontier",
                 "comparison_class": "unapplied_oracle_expansion",
                 "core_benchmark": True,
                 "enacted_source_status": "available",
@@ -1486,7 +1486,7 @@ def test_candidates_report_jsonable_records_summary_and_filters() -> None:
                 "blocking_lowering_rejection_rule_counts": {},
             },
             {
-                "status": "classification-heavy",
+                "triage_status": "classification-heavy",
                 "comparison_class": "collapsed_subtree_oracle_shape",
                 "core_benchmark": False,
                 "enacted_source_status": "unknown",
@@ -1769,7 +1769,7 @@ def test_candidates_report_jsonable_can_omit_rows_for_summary_only() -> None:
         label="uk_frontier",
         rows=[
             {
-                "status": "frontier prefilter only",
+                "triage_status": "frontier prefilter only",
                 "effect_count": 10,
                 "effect_row_count": 7,
                 "effect_feed_page_count": 3,
@@ -1820,7 +1820,7 @@ def test_candidates_report_jsonable_can_limit_summary_count_maps() -> None:
         label="uk_frontier",
         rows=[
             {
-                "status": "real residual frontier",
+                "triage_status": "real residual frontier",
                 "effect_inspection_truncated": False,
                 "residual_analysis_skipped": False,
                 "residual_analysis_unavailable": False,
@@ -1892,7 +1892,7 @@ def test_load_saved_bench_run_supports_legacy_test_loader_signature() -> None:
 def test_candidates_report_jsonable_can_emit_compact_rows() -> None:
     row = {
         "statute_id": "ukpga/2000/1",
-        "status": "real residual frontier",
+        "triage_status": "real residual frontier",
         "effect_count": 10,
         "effect_row_count": 7,
         "effect_feed_page_count": 3,
@@ -1953,7 +1953,7 @@ def test_candidates_report_jsonable_can_emit_compact_rows() -> None:
 def test_candidates_report_jsonable_can_limit_row_count_maps() -> None:
     row = {
         "statute_id": "ukpga/2000/1",
-        "status": "real residual frontier",
+        "triage_status": "real residual frontier",
         "effect_count": 10,
         "effect_row_count": 7,
         "effect_feed_page_count": 3,
@@ -2041,7 +2041,7 @@ def test_print_uk_candidates_text_summary_uses_report_summary(capsys) -> None:
         label="uk_frontier",
         rows=[
             {
-                "status": "real residual frontier",
+                "triage_status": "real residual frontier",
                 "comparison_class": "commensurable",
                 "core_benchmark": True,
                 "enacted_source_status": "available",
@@ -2238,7 +2238,7 @@ def test_uk_candidates_top_zero_json_summary_preserves_matched_frontier(monkeypa
     rows = [
         SimpleNamespace(
             statute_id="ukpga/2000/1",
-            status="OK",
+            bench_status="OK",
             year=2000,
             act_type="ukpga",
             replay_commencement_score=-1.0,
@@ -2253,7 +2253,7 @@ def test_uk_candidates_top_zero_json_summary_preserves_matched_frontier(monkeypa
         ),
         SimpleNamespace(
             statute_id="ukpga/2000/2",
-            status="OK",
+            bench_status="OK",
             year=2000,
             act_type="ukpga",
             replay_commencement_score=-1.0,
@@ -2309,7 +2309,7 @@ def test_uk_candidates_top_zero_summary_aggregates_saved_bench_counts_without_di
     rows = [
         SimpleNamespace(
             statute_id="ukpga/2000/1",
-            status="OK",
+            bench_status="OK",
             year=2000,
             act_type="ukpga",
             replay_commencement_score=-1.0,
@@ -2383,7 +2383,7 @@ def test_uk_candidates_fast_prefilter_preserves_saved_source_surface(monkeypatch
     rows = [
         SimpleNamespace(
             statute_id="ukpga/2000/1",
-            status="OK",
+            bench_status="OK",
             year=2000,
             act_type="ukpga",
             replay_commencement_score=-1.0,
@@ -2770,7 +2770,7 @@ def test_uk_candidates_fast_compact_json_omits_saved_diagnostic_arrays(
     rows = [
         SimpleNamespace(
             statute_id="ukpga/2000/1",
-            status="OK",
+            bench_status="OK",
             year=2000,
             act_type="ukpga",
             replay_commencement_score=-1.0,
@@ -2850,7 +2850,7 @@ def test_uk_candidates_fast_text_reports_saved_rejection_rules(monkeypatch, caps
     rows = [
         SimpleNamespace(
             statute_id="ukpga/2000/1",
-            status="OK",
+            bench_status="OK",
             year=2000,
             act_type="ukpga",
             replay_commencement_score=-1.0,
@@ -2972,7 +2972,7 @@ def test_uk_candidates_full_text_reports_saved_bench_rejection_rules(
     db_path.write_bytes(b"placeholder")
     row = SimpleNamespace(
         statute_id="ukpga/2000/1",
-        status="OK",
+        bench_status="OK",
         year=2000,
         act_type="ukpga",
         replay_commencement_score=-1.0,
@@ -3074,7 +3074,7 @@ def test_uk_candidates_full_mode_exports_manual_compile_evidence_jsonl(
     out_path = tmp_path / "manual" / "uk-manual.jsonl"
     bench_row = SimpleNamespace(
         statute_id="ukpga/2000/1",
-        status="OK",
+        bench_status="OK",
         year=2000,
         act_type="ukpga",
         replay_commencement_score=-1.0,
@@ -3270,7 +3270,7 @@ def test_uk_candidates_manual_compile_evidence_jsonl_can_export_frontend_candida
     out_path = tmp_path / "manual" / "uk-frontier.jsonl"
     bench_row = SimpleNamespace(
         statute_id="asp/2001/2",
-        status="OK",
+        bench_status="OK",
         year=2001,
         act_type="asp",
         replay_commencement_score=-1.0,
@@ -3575,7 +3575,7 @@ def test_uk_candidates_fast_residual_only_keeps_source_unavailable_rows(
     db_path.write_bytes(b"placeholder")
     bench_row = SimpleNamespace(
         statute_id="ukpga/2000/1",
-        status="OK",
+        bench_status="OK",
         year=2000,
         act_type="ukpga",
         replay_commencement_score=-1.0,
@@ -3671,7 +3671,7 @@ def test_uk_candidates_fast_residual_only_keeps_source_unavailable_rows(
     payload = json.loads(capsys.readouterr().out)
     assert payload["summary"]["emitted_row_count"] == 1
     row = payload["rows"][0]
-    assert row["status"] == "residual comparison source unavailable"
+    assert row["triage_status"] == "residual comparison source unavailable"
     assert row["triage_rule_id"] == "uk_residual_analysis_source_unavailable"
     assert row["residual_analysis_unavailable"] is True
     assert row["residual_analysis_unavailable_reason"] == "enacted_missing"
@@ -3692,7 +3692,7 @@ def test_uk_candidates_fast_residual_only_keeps_source_unavailable_without_candi
     db_path.write_bytes(b"placeholder")
     bench_row = SimpleNamespace(
         statute_id="ukpga/2000/1",
-        status="OK",
+        bench_status="OK",
         year=2000,
         act_type="ukpga",
         replay_commencement_score=-1.0,
@@ -3780,7 +3780,7 @@ def test_uk_candidates_fast_residual_only_keeps_source_unavailable_without_candi
     payload = json.loads(capsys.readouterr().out)
     assert payload["summary"]["emitted_row_count"] == 1
     row = payload["rows"][0]
-    assert row["status"] == "residual comparison source unavailable"
+    assert row["triage_status"] == "residual comparison source unavailable"
     assert row["triage_rule_id"] == "uk_residual_analysis_source_unavailable"
     assert row["residual_analysis_unavailable"] is True
     assert row["residual_analysis_unavailable_reason"] == "enacted_missing"
@@ -3800,7 +3800,7 @@ def test_uk_candidates_fast_residual_only_keeps_budget_skipped_rows_without_cand
     db_path.write_bytes(b"placeholder")
     bench_row = SimpleNamespace(
         statute_id="ukpga/2000/1",
-        status="OK",
+        bench_status="OK",
         year=2000,
         act_type="ukpga",
         replay_commencement_score=-1.0,
@@ -3889,7 +3889,7 @@ def test_uk_candidates_fast_residual_only_keeps_budget_skipped_rows_without_cand
     assert payload["summary"]["emitted_row_count"] == 1
     assert payload["summary"]["rows_with_residual_analysis_skipped"] == 1
     row = payload["rows"][0]
-    assert row["status"] == "residual analysis budget skipped"
+    assert row["triage_status"] == "residual analysis budget skipped"
     assert row["triage_rule_id"] == "uk_residual_analysis_budget_skipped"
     assert row["residual_analysis_skipped"] is True
     assert row["residual_analysis_unavailable"] is False
@@ -3912,7 +3912,7 @@ def test_uk_candidates_residual_analysis_uses_saved_replay_regime(
     db_path.write_bytes(b"placeholder")
     bench_row = SimpleNamespace(
         statute_id="ukpga/2000/1",
-        status="OK",
+        bench_status="OK",
         year=2000,
         act_type="ukpga",
         replay_commencement_score=-1.0,
@@ -4048,7 +4048,7 @@ def test_uk_candidates_residual_analysis_uses_saved_replay_regime(
 
     payload = json.loads(capsys.readouterr().out)
     row = payload["rows"][0]
-    assert row["status"] == "real residual frontier"
+    assert row["triage_status"] == "real residual frontier"
     assert row["residual_analysis_unavailable"] is False
     assert row["residual_candidate_effect_count"] == 1
     assert effect_modes == ["effective_date_only"]
@@ -4104,7 +4104,7 @@ def test_uk_candidates_residual_analysis_exceptions_are_row_local(
     db_path.write_bytes(b"placeholder")
     bench_row = SimpleNamespace(
         statute_id="ukpga/2000/1",
-        status="OK",
+        bench_status="OK",
         year=2000,
         act_type="ukpga",
         replay_commencement_score=-1.0,
@@ -4215,7 +4215,7 @@ def test_uk_candidates_residual_analysis_exceptions_are_row_local(
     assert payload["summary"]["rows_with_residual_analysis_unavailable"] == 1
     assert payload["summary"]["residual_compile_rejection_rule_counts"] == {expected_rule: 1}
     row = payload["rows"][0]
-    assert row["status"] == "residual comparison execution unavailable"
+    assert row["triage_status"] == "residual comparison execution unavailable"
     assert row["triage_rule_id"] == "uk_residual_analysis_execution_unavailable"
     assert row["residual_analysis_unavailable"] is True
     assert row["residual_analysis_unavailable_reason"] == expected_reason
@@ -4437,7 +4437,7 @@ def test_uk_candidates_fast_json_filters_replay_adjudication_samples(
     rows = [
         SimpleNamespace(
             statute_id="ukpga/2000/1",
-            status="OK",
+            bench_status="OK",
             year=2000,
             act_type="ukpga",
             score=0.8,
@@ -4497,7 +4497,7 @@ def test_uk_candidates_fast_json_filters_replay_adjudication_samples(
         ),
         SimpleNamespace(
             statute_id="ukpga/2000/2",
-            status="OK",
+            bench_status="OK",
             year=2000,
             act_type="ukpga",
             score=0.7,
@@ -4631,7 +4631,7 @@ def test_uk_candidates_fast_json_exposes_duplication_warning_sample_detail(
     rows = [
         SimpleNamespace(
             statute_id="ukpga/2000/1",
-            status="OK",
+            bench_status="OK",
             year=2000,
             act_type="ukpga",
             score=0.8,
@@ -4723,7 +4723,7 @@ def test_uk_candidates_fast_json_exports_replay_adjudication_evidence_jsonl(
     rows = [
         SimpleNamespace(
             statute_id="ukpga/2000/1",
-            status="OK",
+            bench_status="OK",
             year=2000,
             act_type="ukpga",
             score=0.8,
@@ -4918,7 +4918,7 @@ def test_uk_candidates_fast_json_exports_residual_claim_evidence_jsonl(
     rows = [
         SimpleNamespace(
             statute_id="asc/2024/6",
-            status="OK",
+            bench_status="OK",
             year=2024,
             act_type="asc",
             score=0.99,
@@ -4963,7 +4963,7 @@ def test_uk_candidates_fast_json_exports_residual_claim_evidence_jsonl(
         ),
         SimpleNamespace(
             statute_id="ukpga/2000/1",
-            status="OK",
+            bench_status="OK",
             year=2000,
             act_type="ukpga",
             score=0.9,
@@ -5121,7 +5121,7 @@ def test_uk_candidates_fast_json_exports_residual_claim_evidence_jsonl(
         "replay_adjudication_samples": [],
         "replay_adjudication_samples_omitted": 0,
         "residual_roots": [],
-        "status": "frontier prefilter only",
+        "triage_status": "frontier prefilter only",
         "triage_rule_id": "uk_frontier_prefilter_only",
     }
     assert evidence_rows[0]["uk_replay_regime"] == {
@@ -5162,7 +5162,7 @@ def test_uk_residual_claim_evidence_rows_preserve_analyzed_root_samples() -> Non
                     "section_claim_count": 0,
                     "section_claim_emitted": False,
                 },
-                "status": "real residual frontier",
+                "triage_status": "real residual frontier",
                 "triage_rule_id": "uk_residual_claim_backed_by_candidate_overlap",
                 "residual_roots": ["part-1", "schedule-1"],
                 "replayed_residual_roots": ["part-1"],
@@ -5273,7 +5273,7 @@ def test_uk_residual_claim_evidence_rows_preserve_analyzed_root_samples() -> Non
         ],
         "replay_adjudication_samples_omitted": 7,
         "residual_roots": ["part-1", "schedule-1"],
-        "status": "real residual frontier",
+        "triage_status": "real residual frontier",
         "triage_rule_id": "uk_residual_claim_backed_by_candidate_overlap",
     }
 
@@ -5285,7 +5285,7 @@ def test_uk_candidates_fast_json_infers_body_root_for_old_duplication_samples(
     rows = [
         SimpleNamespace(
             statute_id="ukpga/2000/1",
-            status="OK",
+            bench_status="OK",
             year=2000,
             act_type="ukpga",
             score=0.8,

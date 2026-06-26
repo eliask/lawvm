@@ -27,7 +27,7 @@ def _fake_bench_result_from_entry(entry: dict[str, object]) -> _BenchResult:
         n_oracle_eids=1,
         n_common=1,
         score=1.0,
-        status="OK",
+        bench_status="OK",
     )
 
 
@@ -121,7 +121,7 @@ def test_uk_bench_progress_score_marks_noncore_rows_not_applicable() -> None:
         n_oracle_eids=0,
         n_common=0,
         score=0.0,
-        status="OK",
+        bench_status="OK",
         comparison_class="no_oracle_eids",
         core_benchmark=False,
     )
@@ -146,7 +146,7 @@ def test_uk_bench_progress_score_preserves_core_scores() -> None:
         n_oracle_eids=12,
         n_common=9,
         score=0.75,
-        status="OK",
+        bench_status="OK",
         replay_score=0.8,
         comparison_class="commensurable",
         core_benchmark=True,
@@ -226,7 +226,7 @@ def test_uk_bench_primary_score_prefers_commencement_when_active() -> None:
         n_oracle_eids=10,
         n_common=5,
         score=0.5,
-        status="OK",
+        bench_status="OK",
         commencement_score=0.9,
         replay_score=0.4,
         replay_commencement_score=0.95,
@@ -240,7 +240,7 @@ def test_uk_bench_primary_score_prefers_commencement_when_active() -> None:
         n_oracle_eids=10,
         n_common=8,
         score=0.8,
-        status="OK",
+        bench_status="OK",
         commencement_score=-1.0,
         replay_score=0.7,
         replay_commencement_score=-1.0,
@@ -273,7 +273,7 @@ def test_uk_bench_report_surfaces_slowest_rows(capsys) -> None:
         n_oracle_eids=10,
         n_common=10,
         score=1.0,
-        status="OK",
+        bench_status="OK",
         comparison_class="commensurable",
         duration_s=0.5,
     )
@@ -288,7 +288,7 @@ def test_uk_bench_report_surfaces_slowest_rows(capsys) -> None:
         n_oracle_eids=100,
         n_common=90,
         score=0.9,
-        status="OK",
+        bench_status="OK",
         replay_score=0.8,
         n_ops=1900,
         enacted_source_size=2_000_000,
@@ -321,7 +321,7 @@ def test_uk_bench_prints_highest_rss_rows_separately(capsys) -> None:
         n_oracle_eids=10,
         n_common=10,
         score=1.0,
-        status="OK",
+        bench_status="OK",
         duration_s=30.0,
         process_maxrss_kb=64_000,
     )
@@ -335,7 +335,7 @@ def test_uk_bench_prints_highest_rss_rows_separately(capsys) -> None:
         n_oracle_eids=100,
         n_common=90,
         score=0.9,
-        status="OK",
+        bench_status="OK",
         replay_score=0.8,
         n_ops=1900,
         enacted_source_size=2_000_000,
@@ -375,7 +375,7 @@ def test_uk_unified_summary_renders_worst_of_axes(capsys) -> None:
         n_oracle_eids=100,
         n_common=90,  # Jaccard 90/110 ... but with equal sets -> score governs
         score=0.9,  # structural 10% error
-        status="OK",
+        bench_status="OK",
         text_score=0.95,  # text 5% error -> worst-of is structural 10%
         comparison_class="commensurable",
     )
@@ -388,7 +388,7 @@ def test_uk_unified_summary_renders_worst_of_axes(capsys) -> None:
         n_oracle_eids=0,
         n_common=0,
         score=-1.0,
-        status="NO_ORACLE",
+        bench_status="NO_ORACLE",
     )
     crashed = _BenchResult(
         statute_id="ukpga/2012/2",
@@ -399,7 +399,7 @@ def test_uk_unified_summary_renders_worst_of_axes(capsys) -> None:
         n_oracle_eids=0,
         n_common=0,
         score=-1.0,
-        status="ERR",
+        bench_status="ERR",
         error="boom",
     )
 
@@ -432,7 +432,7 @@ def test_uk_bench_report_summary_only_bounds_terminal_output(capsys) -> None:
         n_oracle_eids=100,
         n_common=90,
         score=0.9,
-        status="OK",
+        bench_status="OK",
         replay_score=0.8,
         n_ops=1900,
         replay_adjudication_count=2,
@@ -477,7 +477,7 @@ def test_uk_bench_report_summary_only_uses_true_even_median(capsys) -> None:
         n_oracle_eids=10,
         n_common=2,
         score=0.2,
-        status="OK",
+        bench_status="OK",
         comparison_class="commensurable",
     )
     high = _BenchResult(
@@ -489,7 +489,7 @@ def test_uk_bench_report_summary_only_uses_true_even_median(capsys) -> None:
         n_oracle_eids=10,
         n_common=10,
         score=1.0,
-        status="OK",
+        bench_status="OK",
         comparison_class="commensurable",
     )
 
@@ -512,7 +512,7 @@ def test_uk_bench_report_summary_only_shows_core_lane_for_mixed_rows(capsys) -> 
         n_oracle_eids=10,
         n_common=9,
         score=0.9,
-        status="OK",
+        bench_status="OK",
         replay_score=0.8,
         n_ops=100,
         comparison_class="commensurable",
@@ -526,7 +526,7 @@ def test_uk_bench_report_summary_only_shows_core_lane_for_mixed_rows(capsys) -> 
         n_oracle_eids=10,
         n_common=2,
         score=0.2,
-        status="OK",
+        bench_status="OK",
         replay_score=0.1,
         n_ops=900,
         comparison_class="unapplied_oracle_expansion",
@@ -559,7 +559,7 @@ def test_uk_bench_report_summary_only_shows_core_commencement_lane(capsys) -> No
         n_oracle_eids=10,
         n_common=9,
         score=0.9,
-        status="OK",
+        bench_status="OK",
         replay_score=0.8,
         commencement_score=0.95,
         replay_commencement_score=0.9,
@@ -574,7 +574,7 @@ def test_uk_bench_report_summary_only_shows_core_commencement_lane(capsys) -> No
         n_oracle_eids=10,
         n_common=2,
         score=0.2,
-        status="OK",
+        bench_status="OK",
         replay_score=0.1,
         commencement_score=0.25,
         replay_commencement_score=0.2,
@@ -616,7 +616,7 @@ def test_uk_bench_accumulator_keeps_report_rows_memory_bounded() -> None:
         n_oracle_eids=100,
         n_common=50,
         score=0.5,
-        status="OK",
+        bench_status="OK",
         replay_score=0.4,
         replay_adjudication_count=1,
         replay_adjudication_kind_counts={"replay_bug": 1},
@@ -676,7 +676,7 @@ def test_uk_bench_phase_timing_report_surfaces_slowest_phases(capsys) -> None:
         n_oracle_eids=10,
         n_common=10,
         score=1.0,
-        status="OK",
+        bench_status="OK",
         duration_s=0.5,
         phase_timings={"parse_oracle": 0.25, "replay": 0.10},
     )
@@ -689,7 +689,7 @@ def test_uk_bench_phase_timing_report_surfaces_slowest_phases(capsys) -> None:
         n_oracle_eids=100,
         n_common=90,
         score=0.9,
-        status="OK",
+        bench_status="OK",
         n_ops=1900,
         duration_s=42.25,
         phase_timings={
@@ -736,7 +736,7 @@ def test_uk_bench_phase_timing_schema_includes_uk_compile_subphases() -> None:
         n_oracle_eids=100,
         n_common=90,
         score=0.9,
-        status="OK",
+        bench_status="OK",
         duration_s=42.25,
         phase_timings={
             "compile_lower_effect": 3.25,
@@ -773,7 +773,7 @@ def test_uk_bench_phase_timing_report_explains_missing_timings(capsys) -> None:
         n_oracle_eids=10,
         n_common=10,
         score=1.0,
-        status="OK",
+        bench_status="OK",
     )
 
     uk_bench._print_phase_timing_rows([result], limit=1)
@@ -939,7 +939,7 @@ def test_uk_bench_score_statute_can_skip_text_similarity(monkeypatch) -> None:
         score_text=False,
     )
 
-    assert result.status == "OK"
+    assert result.bench_status == "OK"
     assert result.score == 1.0
     assert result.text_score == -1.0
     assert result.n_text_compared == 0
@@ -1610,7 +1610,7 @@ def test_uk_bench_save_load_round_trips_commencement_scores(monkeypatch, tmp_pat
         n_oracle_eids=12,
         n_common=4,
         score=0.4,
-        status="OK",
+        bench_status="OK",
         n_replayed_eids=11,
         n_replay_common=8,
         replay_score=0.8,
@@ -2153,7 +2153,7 @@ def test_uk_bench_load_legacy_replay_csv_marks_residual_claim_unknown(
                 "n_oracle_eids",
                 "n_common",
                 "score",
-                "status",
+                "bench_status",
                 "n_replayed_eids",
                 "n_replay_common",
                 "replay_score",
@@ -2211,7 +2211,7 @@ def test_uk_bench_save_results_omits_empty_score_witness_sidecar(monkeypatch, tm
         n_oracle_eids=1,
         n_common=1,
         score=1.0,
-        status="OK",
+        bench_status="OK",
     )
 
     uk_bench._save_results([result], "empty")
@@ -2264,7 +2264,7 @@ def test_uk_bench_history_records_replay_evidence_summary(monkeypatch, tmp_path)
         n_oracle_eids=12,
         n_common=4,
         score=0.4,
-        status="OK",
+        bench_status="OK",
         enacted_source_status="available",
         oracle_source_status="available",
         replay_score=0.8,
@@ -2305,7 +2305,7 @@ def test_uk_bench_history_records_replay_evidence_summary(monkeypatch, tmp_path)
         n_oracle_eids=0,
         n_common=0,
         score=0.0,
-        status="ERR",
+        bench_status="ERR",
         enacted_source_status="absent",
         oracle_source_status="available",
         source_parse_rejection_count=1,
@@ -2433,7 +2433,7 @@ def test_uk_bench_history_records_all_source_failed_runs(monkeypatch, tmp_path) 
         n_oracle_eids=0,
         n_common=0,
         score=0.0,
-        status="NO_ORACLE",
+        bench_status="NO_ORACLE",
         enacted_source_status="available",
         oracle_source_status="too_small",
         uk_metadata_backfill_enabled=False,
@@ -2451,7 +2451,7 @@ def test_uk_bench_history_records_all_source_failed_runs(monkeypatch, tmp_path) 
         n_oracle_eids=0,
         n_common=0,
         score=0.0,
-        status="NO_ENACTED",
+        bench_status="NO_ENACTED",
         enacted_source_status="absent",
         oracle_source_status="available",
     )
@@ -2636,7 +2636,7 @@ def test_uk_bench_history_appends_one_current_header_after_legacy_segment(
         n_oracle_eids=2,
         n_common=1,
         score=0.5,
-        status="OK",
+        bench_status="OK",
     )
 
     uk_bench._save_results([result], "current-1")
@@ -2939,7 +2939,7 @@ def test_uk_bench_compare_prints_primary_score_modes(monkeypatch, tmp_path, caps
         n_oracle_eids=10,
         n_common=5,
         score=0.5,
-        status="OK",
+        bench_status="OK",
         comparison_class="commensurable",
         text_score=0.4,
         replay_text_score=0.5,
@@ -2985,7 +2985,7 @@ def test_uk_bench_compare_prints_primary_score_modes(monkeypatch, tmp_path, caps
         n_oracle_eids=10,
         n_common=8,
         score=0.8,
-        status="OK",
+        bench_status="OK",
         comparison_class="commensurable",
         commencement_score=0.7,
         n_commenced_eids=4,
@@ -3011,7 +3011,7 @@ def test_uk_bench_compare_prints_primary_score_modes(monkeypatch, tmp_path, caps
         n_oracle_eids=10,
         n_common=6,
         score=0.6,
-        status="OK",
+        bench_status="OK",
         comparison_class="collapsed_subtree_oracle_shape",
         core_benchmark=False,
     )
@@ -3041,7 +3041,7 @@ def test_uk_bench_compare_prints_primary_score_modes(monkeypatch, tmp_path, caps
         n_oracle_eids=10,
         n_common=9,
         score=0.9,
-        status="OK",
+        bench_status="OK",
         comparison_class="no_oracle_eids",
         core_benchmark=False,
         commencement_score=0.85,
@@ -3189,7 +3189,7 @@ def test_uk_bench_loads_legacy_commencement_score_column(monkeypatch, tmp_path) 
                 "score",
                 "commencement_score",
                 "n_commenced_eids",
-                "status",
+                "bench_status",
                 "error",
                 "comparison_class",
                 "core_benchmark",
@@ -3208,7 +3208,7 @@ def test_uk_bench_loads_legacy_commencement_score_column(monkeypatch, tmp_path) 
                 "score": "0.5000",
                 "commencement_score": "0.7000",
                 "n_commenced_eids": "4",
-                "status": "OK",
+                "bench_status": "OK",
                 "error": "",
                 "comparison_class": "commensurable",
                 "core_benchmark": "1",
@@ -3271,7 +3271,7 @@ def test_uk_bench_load_derives_legacy_core_flag_from_comparison_class(monkeypatc
                 "n_oracle_eids",
                 "n_common",
                 "score",
-                "status",
+                "bench_status",
                 "error",
                 "comparison_class",
             ],
@@ -3287,7 +3287,7 @@ def test_uk_bench_load_derives_legacy_core_flag_from_comparison_class(monkeypatc
                 "n_oracle_eids": "12",
                 "n_common": "5",
                 "score": "0.5000",
-                "status": "OK",
+                "bench_status": "OK",
                 "error": "",
                 "comparison_class": "collapsed_subtree_oracle_shape",
             }
@@ -3326,7 +3326,7 @@ def test_uk_bench_save_load_preserves_replay_and_commencement_errors(monkeypatch
         n_oracle_eids=12,
         n_common=4,
         score=0.4,
-        status="OK",
+        bench_status="OK",
         n_ops=-1,
         replay_error="RuntimeError: replay failed",
         replay_adjudication_count=1,
@@ -3464,7 +3464,7 @@ def test_uk_bench_diagnostics_preserve_nonblocking_source_acquisition_observatio
         n_oracle_eids=0,
         n_common=0,
         score=0.0,
-        status="OK",
+        bench_status="OK",
         source_acquisition_rejection_count=1,
         source_acquisition_rejection_rule_counts={
             "uk_affecting_act_xml_missing_rejected": 1,
@@ -3505,7 +3505,7 @@ def test_uk_bench_diagnostics_use_lane_aware_blocking_for_manual_frontier() -> N
         n_oracle_eids=0,
         n_common=0,
         score=0.0,
-        status="OK",
+        bench_status="OK",
         effect_diagnostics=(
             {
                 "rule_id": "uk_effect_source_pathology_classified",
@@ -3574,7 +3574,7 @@ def test_uk_bench_report_prints_replay_and_commencement_error_lanes(capsys) -> N
         n_oracle_eids=12,
         n_common=4,
         score=0.4,
-        status="OK",
+        bench_status="OK",
         n_ops=-1,
         replay_score=0.2,
         replay_error="RuntimeError: replay failed",
@@ -3700,7 +3700,7 @@ def test_uk_bench_report_prints_requested_replay_adjudication_samples(capsys) ->
         n_oracle_eids=10,
         n_common=8,
         score=0.8,
-        status="OK",
+        bench_status="OK",
         n_ops=1,
         replay_score=0.7,
         replay_adjudication_count=2,
@@ -3762,7 +3762,7 @@ def test_uk_bench_report_worst_rows_use_commencement_score_when_available(capsys
         n_oracle_eids=10,
         n_common=1,
         score=0.1,
-        status="OK",
+        bench_status="OK",
         n_effect_rows=1,
         n_effect_feed_pages=1,
         commencement_score=0.9,
@@ -3781,7 +3781,7 @@ def test_uk_bench_report_worst_rows_use_commencement_score_when_available(capsys
         n_oracle_eids=10,
         n_common=8,
         score=0.8,
-        status="OK",
+        bench_status="OK",
         n_effect_rows=1,
         n_effect_feed_pages=1,
         commencement_score=0.4,
@@ -3818,7 +3818,7 @@ def test_uk_bench_report_prints_source_unavailable_rows(capsys) -> None:
             n_oracle_eids=0,
             n_common=0,
             score=0.0,
-            status="NO_ORACLE",
+            bench_status="NO_ORACLE",
             enacted_source_status="available",
             oracle_source_status="too_small",
             enacted_source_size=456,
@@ -3843,7 +3843,7 @@ def test_uk_bench_report_prints_source_unavailable_rows(capsys) -> None:
             n_oracle_eids=0,
             n_common=0,
             score=0.0,
-            status="NO_ENACTED",
+            bench_status="NO_ENACTED",
             enacted_source_status="absent",
             oracle_source_status="available",
             enacted_source_size=0,
@@ -3902,7 +3902,7 @@ def test_uk_bench_report_distinguishes_status_ok_from_scored_ok(capsys) -> None:
         n_oracle_eids=0,
         n_common=0,
         score=0.0,
-        status="OK",
+        bench_status="OK",
         enacted_source_status="available",
         oracle_source_status="available",
         enacted_source_size=456,
@@ -3935,7 +3935,7 @@ def test_uk_bench_report_prints_err_rows_before_empty_ok_return(capsys) -> None:
         n_oracle_eids=0,
         n_common=0,
         score=0.0,
-        status="ERR",
+        bench_status="ERR",
         error="ValueError: parse failed",
         bench_exception_count=1,
         bench_exception_rule_counts={"uk_bench_unclassified_exception": 1},
@@ -4054,7 +4054,7 @@ def test_uk_bench_show_run_reports_persisted_evidence_lanes(monkeypatch, tmp_pat
         n_oracle_eids=12,
         n_common=4,
         score=0.4,
-        status="OK",
+        bench_status="OK",
         n_replayed_eids=11,
         n_replay_common=8,
         replay_score=0.8,
@@ -4155,7 +4155,7 @@ def test_uk_bench_show_run_does_not_load_diagnostics_without_sample_request(
         n_oracle_eids=10,
         n_common=8,
         score=0.8,
-        status="OK",
+        bench_status="OK",
         n_ops=1,
         replay_score=0.7,
         replay_adjudication_count=1,
@@ -4207,7 +4207,7 @@ def test_uk_bench_show_run_summary_only_does_not_count_diagnostics_rows(
         n_oracle_eids=10,
         n_common=8,
         score=0.8,
-        status="OK",
+        bench_status="OK",
         replay_score=0.7,
         replay_adjudication_count=1,
         replay_adjudication_kind_counts={"uk_replay_text_match_missing": 1},
@@ -4258,7 +4258,7 @@ def test_uk_bench_show_run_summary_only_ignores_sample_request_diagnostics_load(
         n_oracle_eids=10,
         n_common=8,
         score=0.8,
-        status="OK",
+        bench_status="OK",
         n_ops=1,
         replay_score=0.7,
         replay_adjudication_count=1,
@@ -4313,7 +4313,7 @@ def test_uk_bench_show_run_streams_diagnostic_sidecar_samples(
         n_oracle_eids=10,
         n_common=8,
         score=0.8,
-        status="OK",
+        bench_status="OK",
         replay_score=0.7,
         source_acquisition_observation_count=1,
         source_acquisition_rejection_count=1,
@@ -4376,7 +4376,7 @@ def test_uk_bench_compare_does_not_load_diagnostics_sidecars(
         n_oracle_eids=10,
         n_common=8,
         score=0.8,
-        status="OK",
+        bench_status="OK",
         n_ops=1,
         replay_score=0.7,
         replay_adjudication_count=1,
@@ -4401,7 +4401,7 @@ def test_uk_bench_compare_does_not_load_diagnostics_sidecars(
         n_oracle_eids=10,
         n_common=9,
         score=0.9,
-        status="OK",
+        bench_status="OK",
         n_ops=1,
         replay_score=0.8,
         replay_adjudication_count=1,
@@ -4441,7 +4441,7 @@ def test_uk_bench_compare_summary_only_bounds_terminal_output(
         n_oracle_eids=10,
         n_common=8,
         score=0.8,
-        status="OK",
+        bench_status="OK",
         replay_adjudication_count=5,
         replay_adjudication_kind_counts={"uk_replay_text_match_missing": 5},
         lowering_rejection_count=12,
@@ -4459,7 +4459,7 @@ def test_uk_bench_compare_summary_only_bounds_terminal_output(
         n_oracle_eids=10,
         n_common=9,
         score=0.9,
-        status="OK",
+        bench_status="OK",
         replay_adjudication_count=7,
         replay_adjudication_kind_counts={"uk_replay_text_match_missing": 7},
         lowering_rejection_count=10,
@@ -4505,7 +4505,7 @@ def test_uk_bench_compare_prefers_replay_primary_scores_when_present(
         n_oracle_eids=10,
         n_common=5,
         score=0.5,
-        status="OK",
+        bench_status="OK",
         replay_score=0.8,
         comparison_class="commensurable",
     )
@@ -4518,7 +4518,7 @@ def test_uk_bench_compare_prefers_replay_primary_scores_when_present(
         n_oracle_eids=10,
         n_common=5,
         score=0.5,
-        status="OK",
+        bench_status="OK",
         replay_score=0.9,
         comparison_class="commensurable",
     )
@@ -4552,7 +4552,7 @@ def test_uk_bench_compare_rejects_mixed_replay_and_raw_score_lanes(
         n_oracle_eids=10,
         n_common=5,
         score=0.5,
-        status="OK",
+        bench_status="OK",
         replay_score=0.8,
         comparison_class="commensurable",
     )
@@ -4565,7 +4565,7 @@ def test_uk_bench_compare_rejects_mixed_replay_and_raw_score_lanes(
         n_oracle_eids=10,
         n_common=5,
         score=0.7,
-        status="OK",
+        bench_status="OK",
         comparison_class="commensurable",
     )
     after = [
@@ -4608,7 +4608,7 @@ def test_uk_bench_compare_same_label_disambiguates_only_in_lines(
         n_oracle_eids=10,
         n_common=9,
         score=0.9,
-        status="OK",
+        bench_status="OK",
         comparison_class="commensurable",
     )
     monkeypatch.setattr(
@@ -4646,7 +4646,7 @@ def test_uk_bench_show_run_can_print_persisted_phase_timings(
         n_oracle_eids=100,
         n_common=90,
         score=0.9,
-        status="OK",
+        bench_status="OK",
         n_ops=1900,
         replay_score=0.8,
         duration_s=42.25,
@@ -4693,7 +4693,7 @@ def test_uk_bench_show_run_prints_persisted_replay_adjudication_samples(
         n_oracle_eids=10,
         n_common=8,
         score=0.8,
-        status="OK",
+        bench_status="OK",
         n_ops=1,
         replay_score=0.7,
         replay_adjudication_count=2,
@@ -4821,7 +4821,7 @@ def test_uk_bench_effect_feed_count_error_is_persisted(monkeypatch) -> None:
         cast(Farchive, FakeArchive()),
     )
 
-    assert result.status == "OK"
+    assert result.bench_status == "OK"
     assert result.effect_feed_rejection_count == 1
     assert result.effect_feed_rejection_rule_counts == {"uk_effect_feed_count_error": 1}
     assert result.effect_feed_observation_count == 1
@@ -4867,7 +4867,7 @@ def test_uk_bench_records_available_enacted_source_parse_failure(monkeypatch) ->
         cast(Farchive, FakeArchive()),
     )
 
-    assert result.status == "ERR"
+    assert result.bench_status == "ERR"
     assert result.comparison_class == "exception"
     assert result.enacted_source_status == "available"
     assert result.oracle_source_status == "available"
@@ -4910,7 +4910,7 @@ def test_uk_bench_records_available_oracle_source_parse_failure(monkeypatch) -> 
         cast(Farchive, FakeArchive()),
     )
 
-    assert result.status == "ERR"
+    assert result.bench_status == "ERR"
     assert result.comparison_class == "exception"
     assert result.enacted_source_status == "available"
     assert result.oracle_source_status == "available"
@@ -4944,7 +4944,7 @@ def test_uk_bench_records_unclassified_exception_as_typed_observation(monkeypatc
         cast(Farchive, FakeArchive()),
     )
 
-    assert result.status == "ERR"
+    assert result.bench_status == "ERR"
     assert result.comparison_class == "exception"
     assert result.error == "RuntimeError: archive backend failed"
     assert result.source_parse_rejection_count == 0
@@ -4992,7 +4992,7 @@ def test_uk_bench_worker_archive_open_failure_becomes_typed_row(monkeypatch) -> 
         }
     )
 
-    assert result.status == "ERR"
+    assert result.bench_status == "ERR"
     assert result.comparison_class == "exception"
     assert result.error == "RuntimeError: worker archive open failed"
     assert result.n_effects == 2
@@ -5062,7 +5062,7 @@ def test_uk_bench_parallel_future_failure_becomes_typed_row(monkeypatch) -> None
 
     assert len(results) == 1
     result = results[0]
-    assert result.status == "ERR"
+    assert result.bench_status == "ERR"
     assert result.error == "RuntimeError: worker future failed"
     assert result.bench_exception_count == 1
     assert result.bench_exception_rule_counts == {"uk_bench_unclassified_exception": 1}
@@ -5483,7 +5483,7 @@ def test_uk_bench_parallel_submit_failure_becomes_typed_row(monkeypatch) -> None
 
     assert len(results) == 1
     result = results[0]
-    assert result.status == "ERR"
+    assert result.bench_status == "ERR"
     assert result.error == "RuntimeError: worker submit failed"
     assert result.bench_exception_count == 1
     assert result.bench_exception_rule_counts == {"uk_bench_unclassified_exception": 1}
@@ -5520,7 +5520,7 @@ def test_uk_bench_sequential_scorer_failure_becomes_typed_row(monkeypatch) -> No
 
     assert len(results) == 1
     result = results[0]
-    assert result.status == "ERR"
+    assert result.bench_status == "ERR"
     assert result.error == "RuntimeError: sequential scorer failed"
     assert result.bench_exception_count == 1
     assert result.bench_exception_rule_counts == {"uk_bench_unclassified_exception": 1}
@@ -5553,7 +5553,7 @@ def test_uk_bench_classifies_too_small_oracle_source(monkeypatch) -> None:
         cast(Farchive, FakeArchive()),
     )
 
-    assert result.status == "NO_ORACLE"
+    assert result.bench_status == "NO_ORACLE"
     assert result.enacted_source_status == "available"
     assert result.oracle_source_status == "too_small"
     assert result.oracle_source_size == len(b"<short/>")
@@ -5584,7 +5584,7 @@ def test_uk_bench_no_enacted_preserves_oracle_source_state(monkeypatch) -> None:
         cast(Farchive, FakeArchive()),
     )
 
-    assert result.status == "NO_ENACTED"
+    assert result.bench_status == "NO_ENACTED"
     assert result.enacted_source_status == "too_small"
     assert result.enacted_source_size == len(b"<short/>")
     assert result.enacted_source_sha256 == hashlib.sha256(b"<short/>").hexdigest()
@@ -5616,7 +5616,7 @@ def test_uk_bench_classifies_multiple_choices_enacted_source(monkeypatch) -> Non
         cast(Farchive, FakeArchive()),
     )
 
-    assert result.status == "NO_ENACTED"
+    assert result.bench_status == "NO_ENACTED"
     assert result.enacted_source_status == "multiple_choices"
     assert result.enacted_source_size == len(b"HTTP 300 Multiple Choices")
     assert result.oracle_source_status == "available"

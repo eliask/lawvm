@@ -9,11 +9,44 @@ from __future__ import annotations
 import json
 from collections import Counter
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
 from lawvm.new_zealand.operation_surface import NZOperationSurfaceReport, build_archived_work_operation_surface
-from lawvm.new_zealand.payload_surface import NZPayloadSurfaceReport, build_archived_work_payload_surface
+from lawvm.new_zealand.payload_surface import (
+    NZPayloadInstructionSafety,
+    NZPayloadInstructionShape,
+    NZPayloadRole,
+    NZPayloadSemanticsStatus,
+    NZPayloadStatus,
+    NZPayloadSurfaceReport,
+    build_archived_work_payload_surface,
+)
+
+
+class NZInstructionSemanticCandidateStatus(StrEnum):
+    """Closed instruction-semantic candidate status for an NZ effect-readiness row."""
+
+    BLOCKED_PAYLOAD_WITNESS_NOT_AVAILABLE = "blocked_payload_witness_not_available"
+    NOT_REQUIRED_FOR_REPEAL_CANDIDATE = "not_required_for_repeal_candidate"
+    REVIEW_RETROSPECTIVE_INCORPORATED_NOTE = "review_retrospective_incorporated_note"
+    CANDIDATE_ONLY_INSTRUCTION_SEMANTICS = "candidate_only_instruction_semantics"
+    BLOCKED_INSTRUCTION_INDIRECTION = "blocked_instruction_indirection"
+    BLOCKED_INSTRUCTION_OPAQUE_OR_UNCLASSIFIED = "blocked_instruction_opaque_or_unclassified"
+    BLOCKED_INSTRUCTION_SEMANTICS_UNCLASSIFIED = "blocked_instruction_semantics_unclassified"
+
+
+class NZInstructionSemanticCandidateFamily(StrEnum):
+    """Closed instruction-semantic candidate family. ``NONE`` (``""``) marks absent."""
+
+    NONE = ""
+    REPEAL_WITHOUT_ENACTED_PAYLOAD = "repeal_without_enacted_payload"
+    SCHEDULE_OR_OMNIBUS_INDIRECTION = "schedule_or_omnibus_indirection"
+    INSERT_INSTRUCTION = "insert_instruction"
+    REPLACE_INSTRUCTION = "replace_instruction"
+    AMEND_INSTRUCTION = "amend_instruction"
+    UNMAPPED_INSTRUCTION = "unmapped_instruction"
 
 
 @dataclass(frozen=True)
@@ -29,14 +62,18 @@ class NZEffectReadinessRow:
     operation_target_blocking_rule_id: str
     operation_dependency_status: str
     target_address: str
-    payload_status: str
-    payload_role: str
-    payload_semantics_status: str
-    payload_instruction_shape: str
-    payload_instruction_safety: str
-    instruction_semantic_candidate_status: str
-    instruction_semantic_candidate_family: str
+    payload_status: NZPayloadStatus
+    payload_role: NZPayloadRole
+    payload_semantics_status: NZPayloadSemanticsStatus
+    payload_instruction_shape: NZPayloadInstructionShape
+    payload_instruction_safety: NZPayloadInstructionSafety
+    instruction_semantic_candidate_status: NZInstructionSemanticCandidateStatus
+    instruction_semantic_candidate_family: NZInstructionSemanticCandidateFamily
     instruction_semantic_rule_id: str
+    # effect_readiness_status forwards the upstream payload-blocked vocabulary
+    # (NZPayloadStatus values) when payload extraction did not succeed, in union
+    # with this module's own ready/blocked-effect terms; it is therefore a merged
+    # serialized vocabulary kept typed-open as ``str`` rather than force-closed.
     effect_readiness_status: str
     canonical_family_candidate: str = ""
     blocking_rule_id: str = ""
@@ -207,13 +244,21 @@ def build_effect_readiness_surface(
     rows: list[NZEffectReadinessRow] = []
     for index, operation_row in enumerate(operation_surface.rows, start=1):
         payload_row = payload_by_operation_row_id.get(operation_row.row_id)
-        payload_status = payload_row.payload_status if payload_row is not None else "blocked_payload_surface_missing"
-        payload_role = payload_row.payload_role if payload_row is not None else ""
-        payload_semantics_status = (
-            payload_row.payload_semantics_status if payload_row is not None else "payload_witness_not_available"
+        payload_status = (
+            payload_row.payload_status if payload_row is not None else NZPayloadStatus.BLOCKED_PAYLOAD_SURFACE_MISSING
         )
-        payload_instruction_shape = payload_row.payload_instruction_shape if payload_row is not None else ""
-        payload_instruction_safety = payload_row.payload_instruction_safety if payload_row is not None else ""
+        payload_role = payload_row.payload_role if payload_row is not None else NZPayloadRole.NONE
+        payload_semantics_status = (
+            payload_row.payload_semantics_status
+            if payload_row is not None
+            else NZPayloadSemanticsStatus.PAYLOAD_WITNESS_NOT_AVAILABLE
+        )
+        payload_instruction_shape = (
+            payload_row.payload_instruction_shape if payload_row is not None else NZPayloadInstructionShape.NONE
+        )
+        payload_instruction_safety = (
+            payload_row.payload_instruction_safety if payload_row is not None else NZPayloadInstructionSafety.NONE
+        )
         operation_lowering_readiness_status = (
             payload_row.operation_lowering_readiness_status
             if payload_row is not None
@@ -223,12 +268,12 @@ def build_effect_readiness_surface(
             payload_row.operation_target_surface_status if payload_row is not None else operation_row.target_surface_status
         )
         operation_target_hint_status = (
-            payload_row.operation_target_hint_status if payload_row is not None else operation_row.target_hint.status
+            payload_row.operation_target_hint_status if payload_row is not None else operation_row.target_hint.target_hint_status
         )
         operation_target_address_status = (
             payload_row.operation_target_address_status
             if payload_row is not None
-            else operation_row.target_address_candidate.status
+            else operation_row.target_address_candidate.target_address_status
         )
         operation_target_blocking_rule_id = (
             payload_row.operation_target_blocking_rule_id
@@ -281,8 +326,8 @@ def build_archived_work_effect_readiness_surface(db_path: Path, work_id: str) ->
     return build_effect_readiness_surface(operation_surface, payload_surface)
 
 
-def _effect_readiness_status(operation_family: str, payload_status: str) -> tuple[str, str, str]:
-    if payload_status != "payload_found":
+def _effect_readiness_status(operation_family: str, payload_status: NZPayloadStatus) -> tuple[str, str, str]:
+    if payload_status != NZPayloadStatus.PAYLOAD_FOUND:
         rule_suffix = payload_status.removeprefix("blocked_")
         return payload_status, "", f"nz_effect_readiness_{rule_suffix}"
     if operation_family == "repealed":
@@ -308,63 +353,63 @@ def _effect_readiness_status(operation_family: str, payload_status: str) -> tupl
 
 def _instruction_semantic_candidate(
     operation_family: str,
-    payload_status: str,
-    payload_instruction_shape: str,
-    payload_instruction_safety: str,
-) -> tuple[str, str, str]:
-    if payload_status != "payload_found":
+    payload_status: NZPayloadStatus,
+    payload_instruction_shape: NZPayloadInstructionShape,
+    payload_instruction_safety: NZPayloadInstructionSafety,
+) -> tuple[NZInstructionSemanticCandidateStatus, NZInstructionSemanticCandidateFamily, str]:
+    if payload_status != NZPayloadStatus.PAYLOAD_FOUND:
         return (
-            "blocked_payload_witness_not_available",
-            "",
+            NZInstructionSemanticCandidateStatus.BLOCKED_PAYLOAD_WITNESS_NOT_AVAILABLE,
+            NZInstructionSemanticCandidateFamily.NONE,
             "nz_instruction_semantics_payload_witness_not_available",
         )
     if operation_family == "repealed":
         return (
-            "not_required_for_repeal_candidate",
-            "repeal_without_enacted_payload",
+            NZInstructionSemanticCandidateStatus.NOT_REQUIRED_FOR_REPEAL_CANDIDATE,
+            NZInstructionSemanticCandidateFamily.REPEAL_WITHOUT_ENACTED_PAYLOAD,
             "nz_instruction_semantics_not_required_repeal",
         )
-    if payload_instruction_shape == "retrospective_incorporated_note":
+    if payload_instruction_shape == NZPayloadInstructionShape.RETROSPECTIVE_INCORPORATED_NOTE:
         family = _candidate_instruction_family(operation_family)
         return (
-            "review_retrospective_incorporated_note",
+            NZInstructionSemanticCandidateStatus.REVIEW_RETROSPECTIVE_INCORPORATED_NOTE,
             family,
             "nz_instruction_semantics_review_retrospective_incorporated_note",
         )
-    if payload_instruction_safety == "candidate_only_semantic_classification":
+    if payload_instruction_safety == NZPayloadInstructionSafety.CANDIDATE_ONLY_SEMANTIC_CLASSIFICATION:
         family = _candidate_instruction_family(operation_family)
         return (
-            "candidate_only_instruction_semantics",
+            NZInstructionSemanticCandidateStatus.CANDIDATE_ONLY_INSTRUCTION_SEMANTICS,
             family,
             "nz_instruction_semantics_candidate_direct_instruction",
         )
-    if payload_instruction_safety == "unsafe_schedule_or_omnibus_indirection":
+    if payload_instruction_safety == NZPayloadInstructionSafety.UNSAFE_SCHEDULE_OR_OMNIBUS_INDIRECTION:
         return (
-            "blocked_instruction_indirection",
-            "schedule_or_omnibus_indirection",
+            NZInstructionSemanticCandidateStatus.BLOCKED_INSTRUCTION_INDIRECTION,
+            NZInstructionSemanticCandidateFamily.SCHEDULE_OR_OMNIBUS_INDIRECTION,
             "nz_instruction_semantics_blocked_schedule_or_omnibus_indirection",
         )
-    if payload_instruction_safety == "unsafe_opaque_or_unclassified":
+    if payload_instruction_safety == NZPayloadInstructionSafety.UNSAFE_OPAQUE_OR_UNCLASSIFIED:
         return (
-            "blocked_instruction_opaque_or_unclassified",
-            "",
+            NZInstructionSemanticCandidateStatus.BLOCKED_INSTRUCTION_OPAQUE_OR_UNCLASSIFIED,
+            NZInstructionSemanticCandidateFamily.NONE,
             "nz_instruction_semantics_blocked_opaque_or_unclassified",
         )
     return (
-        "blocked_instruction_semantics_unclassified",
-        "",
+        NZInstructionSemanticCandidateStatus.BLOCKED_INSTRUCTION_SEMANTICS_UNCLASSIFIED,
+        NZInstructionSemanticCandidateFamily.NONE,
         "nz_instruction_semantics_unclassified",
     )
 
 
-def _candidate_instruction_family(operation_family: str) -> str:
+def _candidate_instruction_family(operation_family: str) -> NZInstructionSemanticCandidateFamily:
     if operation_family in {"inserted", "added"}:
-        return "insert_instruction"
+        return NZInstructionSemanticCandidateFamily.INSERT_INSTRUCTION
     if operation_family in {"replaced", "substituted"}:
-        return "replace_instruction"
+        return NZInstructionSemanticCandidateFamily.REPLACE_INSTRUCTION
     if operation_family == "amended":
-        return "amend_instruction"
-    return "unmapped_instruction"
+        return NZInstructionSemanticCandidateFamily.AMEND_INSTRUCTION
+    return NZInstructionSemanticCandidateFamily.UNMAPPED_INSTRUCTION
 
 
 def main(args: Any) -> None:

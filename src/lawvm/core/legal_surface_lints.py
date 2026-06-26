@@ -20,7 +20,7 @@ must never be read as making (e.g. "the statute is legally defective").
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
+from typing import Literal, Protocol, runtime_checkable
 
 from lawvm.core.legal_surface_graph import LegalSurfaceGraph, SourceSpanRef
 
@@ -48,7 +48,7 @@ class SurfaceLint:
     support_node_ids: tuple[str, ...]
     source_refs: tuple[SourceSpanRef, ...]
     message: str
-    status: str  # active | suppressed | not_applicable
+    lint_status: Literal["active", "suppressed", "not_applicable"]
     surface_only: bool = True
     legal_conclusion: bool = False
     replay_authorized: bool = False
@@ -76,9 +76,9 @@ def _validate_lint(lint: SurfaceLint, *, origin: str) -> None:
             f"{origin}: lint {lint.lint_id!r} has unknown severity {lint.severity!r}; "
             f"allowed={sorted(LINT_SEVERITIES)}"
         )
-    if lint.status not in LINT_STATUSES:
+    if lint.lint_status not in LINT_STATUSES:
         raise SurfaceLintError(
-            f"{origin}: lint {lint.lint_id!r} has unknown status {lint.status!r}; "
+            f"{origin}: lint {lint.lint_id!r} has unknown status {lint.lint_status!r}; "
             f"allowed={sorted(LINT_STATUSES)}"
         )
     # Firewall (§D6/§D7): a lint can never claim legal/replay authority.

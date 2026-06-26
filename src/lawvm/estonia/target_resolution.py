@@ -290,9 +290,17 @@ def _mark_old_format_out_of_body_clause(op: LegalOperation, source_text: str) ->
     if op.target.path:
         return op
     tags = tuple((*op.provenance_tags, _EE_OLD_FORMAT_OUT_OF_BODY_APPENDIX_CLAUSE_RULE))
+    # The META relabel moves a body op into the out-of-body evidence lane.
+    # Body-replay-only fields (text_patch/anchor/destination) are forbidden on
+    # META by LegalOperation.__post_init__, so they must be cleared here. The
+    # source-text witness is preserved on the META payload (spec rule 78).
     return replace(
         op,
         action=StructuralAction.META,
+        target=LegalAddress(path=()),
+        anchor=None,
+        destination=None,
+        text_patch=None,
         payload=IRNode(
             kind=IRNodeKind.CONTENT,
             text=source_text,
@@ -820,6 +828,73 @@ def _has_embedded_open_quote_payload_section_header(html_block: str) -> bool:
 
 
 def _has_unclosed_payload_quote_after_formula(text: str) -> bool:
+    """True iff ``text`` carries a quoted payload whose opening quote has not
+    been locally closed after its opening marker.
+
+    EE old-format amendment HTML wraps inserted payloads in quoted text:
+
+      ``paragrahvi N täiendatakse lõikega M järgmises sõnastuses:
+      „(M) ..."`` ...
+
+    When the wrapper-section splitter considers a split at the next ``§ N.``
+    boundary, the current block is unsafe to split iff such a payload marker
+    has opened but not yet locally closed.
+
+    A strict balanced quote count (``open_count > close_count``) is too
+    conservative: it considers ANY global imbalance as "unclosed". That
+    breaks per-section extraction for acts whose source HTML carries a
+    single unmatched ``„`` somewhere mid-document (corpus witness:
+    ``123122021012`` produced 0 wrapper splits vs pre-balanced-count's 5,
+    dropping its bench row ``112102018008`` from 93.5%/13-open to
+    74.2%/39-open).
+
+    The marker-local heuristic instead looks at the tail AFTER the last
+    ``järgmises sõnastuses:`` marker and asks whether that quote has
+    locally closed:
+
+      * No marker found → fall back to balanced quote count. If opens
+        exceed closes, treat as still-open (conservative). Otherwise safe.
+      * Marker found but tail doesn't start with an open-quote char → the
+        marker doesn't open a quoted payload in this block → safe to split.
+      * Marker found, tail starts with an opener AND that opener's
+        *matching* closer appears later in the tail (after the opening
+        delimiter) → the marker's payload has closed at
+        some point in the tail; the rest of the tail is non-quoted content
+        → safe to split. Pre-fix only considered the tail *end* as the
+        close site, which dropped legitimate mid-tail closes and absorbed
+        legitimate wrapper sections (corpus witness: ``128062014035``
+        §2-§4 against ``Kinnipidamiskeskuse sisekorraeeskirja
+        kehtestamine`` produced ``ops=0`` pre-fix).
+      * Marker found, tail starts with an opener AND that opener's
+        matching closer never appears after it → the marker's payload is
+        still open across the block boundary (the close sits in a later
+        ``§ N`` body) → split is unsafe.
+
+    Quote character sets (EE source is irregular; a closer is searched for
+    only PAST the opening delimiter so an opener can never close itself):
+
+      * openers: ``„`` (``\\u201e`` low-9), ``“`` (``\\u201c`` left-double),
+        ``«`` (``\\u00ab`` guillemet), ASCII ``\\u0022``, ``ˮ`` (``\\u02ee``
+        modifier).
+      * closers: ``”`` (``\\u201d`` close-9), ``“`` (``\\u201c`` left-double
+        — EE also uses it as a CLOSE, e.g. ``„...“``), ``»`` (``\\u00bb``
+        guillemet close), ASCII ``\\u0022``, ``ˮ`` (``\\u02ee``).
+      * The symmetric quotes (ASCII ``\\u0022`` and ``ˮ``) close with the
+        SAME character as they open. An earlier docstring claimed ASCII
+        ``\\u0022`` was *not* counted, but it was present in both the open
+        set and the close regex and matched *itself* at index 0, so an
+        unclosed ASCII-quoted (or ``“``/``ˮ``-opened) payload looked
+        closed. Searching ``tail[1:]`` for a closer fixes that while
+        keeping the irregular ``„...“`` close working.
+
+    Pre-balanced-count this function used a "tail-ends-with-close-quote"
+    heuristic that broke ``128062014035``. Post-balanced-count this
+    function used a global "open_count > close_count" check that broke
+    ``123122021012``. This implementation combines the marker-local close
+    check (handles ``128062014035`` mid-tail close) with the balanced
+    count as a fallback for non-marker blocks (handles ``123122021012``
+    quoting with no nearby marker).
+    """
     marker_matches = list(
         re.finditer(
             r"(?:järgmises\s+sõnastuses|järgnevas\s+sõnastuses|järgmiselt)\s*:\s*",
@@ -829,9 +904,33 @@ def _has_unclosed_payload_quote_after_formula(text: str) -> bool:
     )
     if marker_matches:
         tail = text[marker_matches[-1].end():].lstrip()
-        if tail.startswith(("„", '"', "“", "«", "ˮ")):
-            return not bool(re.search(r'[“”"»ˮ]\s*[.;:]?\s*$', tail))
-    return text.count("„") > text.count("“") + text.count("”")
+        # A payload is "still open" iff the tail begins with an opener whose
+        # closer never appears AFTER the opening delimiter. The bug being
+        # fixed: three chars (\u201c left-double, ASCII \u0022, \u02ee
+        # modifier) sat in BOTH the open set and the close set, so for a
+        # payload opening with one of them the close-search matched the
+        # OPENING char itself and reported "closed" -> the wrapper-splitter
+        # absorbed a later ``\u00a7 N`` body and dropped its ops. The fix is
+        # to search for a closer only in tail[1:], i.e. PAST the opening
+        # delimiter, so an opener can never close itself.
+        #
+        # Openers (EE source): \u201e low-9, \u201c left-double, \u00ab
+        # guillemet, ASCII \u0022, \u02ee modifier.
+        # Closers (EE source): \u201d close-9, \u201c left-double (EE also
+        # uses it as a CLOSE, e.g. ``\u201e...\u201c``), \u00bb guillemet,
+        # ASCII \u0022, \u02ee modifier. The asymmetric pairs are
+        # \u201e/\u201c -> \u201d|\u201c and \u00ab -> \u00bb; the symmetric
+        # quotes (ASCII \u0022, \u02ee) close with the same character, which
+        # is exactly why the close-search must skip index 0.
+        open_quote_chars = ("\u201e", "\u0022", "\u201c", "\u00ab", "\u02ee")
+        if tail.startswith(open_quote_chars):
+            return not bool(
+                re.search(r"[\u201c\u201d\u0022\u00bb\u02ee]", tail[1:])
+            )
+        return False
+    open_quote = text.count("\u201e") + text.count("\u00ab")
+    close_quote = text.count("\u201d") + text.count("\u201c") + text.count("\u00bb")
+    return open_quote > close_quote
 
 
 def _item_has_embedded_open_quote_payload_section_header(item_text: str) -> bool:
@@ -1766,16 +1865,7 @@ def split_old_format_wrapper_blocks(section_html: str) -> list[str]:
 
     def _current_has_unclosed_payload_quote() -> bool:
         text = "\n".join(strip_old_format_html_text(para) for para in current)
-        marker_matches = list(re.finditer(
-            r"(?:järgmises\s+sõnastuses|järgmiselt)\s*:\s*",
-            text,
-            re.IGNORECASE | re.DOTALL,
-        ))
-        if marker_matches:
-            tail = text[marker_matches[-1].end():].lstrip()
-            if tail.startswith(("„", '"', "“", "«", "ˮ")):
-                return not bool(re.search(r'[“”"»ˮ]\s*[.;:]?\s*$', tail))
-        return text.count("„") > text.count("“")
+        return _has_unclosed_payload_quote_after_formula(text)
 
     blocks: list[str] = []
     current: list[str] = []
@@ -2231,7 +2321,7 @@ def old_format_extract_op_texts(content_block: str, block_header_text: str) -> l
 
 def old_format_extract_section_header_text(section_html: str) -> str:
     """Extract and normalize the first section header text from an old-format section block."""
-    sect_p = r"(?:§|&sect;)"
+    sect_p = r"(?:§|&sect;)(?:&nbsp;)*"
     bold_open_p = r"<(?:b|strong)\b[^>]*>"
     bold_close_p = r"</(?:b|strong)>"
 
@@ -2325,7 +2415,7 @@ def old_format_split_sections(full_html: str) -> list[str]:
     header that explicitly names a law/code, and finally to paragraph-based
     statute-section splitting.
     """
-    sect_p = r"(?:§|&sect;)"
+    sect_p = r"(?:§|&sect;)(?:&nbsp;)*"
     rt_ref_p = r"\(RT\s+[IV]+[\s,]"
     bold_open_p = r"<(?:b|strong)\b[^>]*>"
     bold_close_p = r"</(?:b|strong)>"

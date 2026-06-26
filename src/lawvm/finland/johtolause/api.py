@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Literal, Sequence
+from typing import TYPE_CHECKING, Any, Literal, Sequence, assert_never
 
 from lawvm.core.frontend_contract import (
     DerivedCompatibilityArtifact,
@@ -764,7 +764,7 @@ def _build_finland_clause_phase_surface(
 
     def row(
         phase: str,
-        status: str,
+        phase_status: str,
         artifact_kind: str,
         authority_role: str,
         produced: bool,
@@ -775,7 +775,7 @@ def _build_finland_clause_phase_surface(
     ) -> FrontendPhaseRow:
         return FrontendPhaseRow(
             phase=phase,
-            phase_status=status,
+            phase_status=phase_status,
             artifact_kind=artifact_kind,
             authority_role=authority_role,
             produced=produced,
@@ -951,7 +951,7 @@ def _build_parsed_ops_compatibility_artifact(
         source_artifact_id=f"fi:johtolause:{source_hash}:clause_ast",
         source_artifact_kind="ClauseAST",
         derivation_phase="parsed_ops_compat",
-        status="derived_compatibility_projection",
+        phase_status="derived_compatibility_projection",
         lossy=True,
         preserved_fields=(
             "operation_kind",
@@ -1296,21 +1296,24 @@ def _derive_parsed_ops_from_ast(clause_ast: ClauseAST) -> list[ParsedOp]:
         # Map target.special to facet (keep as FacetKind enum)
         facet = target.special if target.special else None
 
-        if kind is TargetKind.SECTION:
-            number = path_dict.get("section", "")
-            momentti = int(path_dict.get("subsection", "0") or "0")
-            item = path_dict.get("item", "")
-            subitem = path_dict.get("subitem", "")
-        elif kind is TargetKind.CHAPTER:
-            number = path_dict.get("chapter", "")
-            chapter = ""  # chapter-kind ops don't carry chapter context
-        elif kind is TargetKind.PART:
-            number = path_dict.get("part", "")
-            part = ""  # part-kind ops don't carry part context
-        elif kind is TargetKind.NIMIKE:
-            number = path_dict.get("nimike", "")
-        elif kind is TargetKind.APPENDIX:
-            number = path_dict.get("appendix", "")
+        # The op's number is read from the path_dict slot named after the
+        # canonical leaf-kind; leaf_kind() is the exhaustive lowering helper.
+        number = path_dict.get(kind.leaf_kind(), "")
+        match kind:
+            case TargetKind.SECTION:
+                momentti = int(path_dict.get("subsection", "0") or "0")
+                item = path_dict.get("item", "")
+                subitem = path_dict.get("subitem", "")
+            case TargetKind.CHAPTER:
+                chapter = ""  # chapter-kind ops don't carry chapter context
+            case TargetKind.PART:
+                part = ""  # part-kind ops don't carry part context
+            case TargetKind.NIMIKE:
+                pass
+            case TargetKind.APPENDIX:
+                pass
+            case _:
+                assert_never(kind)
 
         # Renumber destination
         renumber_dest = ""
@@ -1369,17 +1372,35 @@ def _derive_parsed_ops_from_ast(clause_ast: ClauseAST) -> list[ParsedOp]:
         op.raw = op.code()
         ops.append(op)
 
+    # Exhaustive over every StructuralAction member. The structural/text-patch
+    # actions HEADING_REPLACE / META / TEXT_REPLACE / TEXT_REPEAL canonicalize to
+    # the "M" (muuttaa/replace) verb code on this Finland ParsedOp bridge: their
+    # meta / heading / text-patch payload rides on the op, and the downstream
+    # diversion keys off that payload + target, not the verb-code axis, so "M" is
+    # their established code here. An unmapped action can only be a newly added
+    # StructuralAction member; fail loud with a self-evidencing diagnostic instead
+    # of defaulting silently.
+    verb_map: dict[StructuralAction, str] = {
+        StructuralAction.REPLACE: "M",
+        StructuralAction.REPEAL: "K",
+        StructuralAction.INSERT: "L",
+        StructuralAction.RENUMBER: "S",
+        StructuralAction.HEADING_REPLACE: "M",
+        StructuralAction.META: "M",
+        StructuralAction.TEXT_REPLACE: "M",
+        StructuralAction.TEXT_REPEAL: "M",
+    }
     for vg in clause_ast.verb_groups:
         # VerbGroup.verb is a shared StructuralAction enum.
         if isinstance(vg.verb, StructuralAction):
-            verb_map = {
-                StructuralAction.REPLACE: "M",
-                StructuralAction.REPEAL: "K",
-                StructuralAction.INSERT: "L",
-                StructuralAction.RENUMBER: "S",
-                StructuralAction.META: "M",
-            }
-            verb = verb_map.get(vg.verb, "M")
+            verb_code: str | None = verb_map.get(vg.verb)
+            if verb_code is None:
+                raise ValueError(
+                    "_derive_parsed_ops_from_ast received a StructuralAction with "
+                    f"no verb-code mapping: verb={vg.verb!r}. verb_map must be "
+                    "exhaustive over StructuralAction — add the new member explicitly."
+                )
+            verb = verb_code
         else:
             verb = str(vg.verb)
         for node in vg.nodes:
@@ -1549,16 +1570,9 @@ def derive_features(text: str, ops: list[ParsedOp]) -> frozenset[str]:
         verb_names = {"M": "verb_muuttaa", "K": "verb_kumota", "L": "verb_lisata", "S": "verb_siirtaa"}
         if op.verb in verb_names:
             features.add(verb_names[op.verb])
-        if op.typed_kind is TargetKind.SECTION:
-            features.add("section_ref")
-        elif op.typed_kind is TargetKind.CHAPTER:
-            features.add("chapter_ref")
-        elif op.typed_kind is TargetKind.PART:
-            features.add("part_ref")
-        elif op.typed_kind is TargetKind.APPENDIX:
-            features.add("appendix_ref")
-        elif op.typed_kind is TargetKind.NIMIKE:
-            features.add("nimike_ref")
+        # leaf_kind() is the exhaustive TargetKind lowering helper; the
+        # feature tag is uniformly "{leaf}_ref" across all 5 members.
+        features.add(f"{op.typed_kind.leaf_kind()}_ref")
         if op.momentti:
             features.add("sub_ref_momentti")
             features.add("sub_ref")

@@ -267,7 +267,7 @@ def _candidate_set_report_row(row: Mapping[str, Any]) -> dict[str, Any]:
         "surface": "candidate_set_coverage",
         "row_id": str(row.get("scope_id") or ""),
         "subject_id": str(row.get("scope_id") or ""),
-        "status": str(row.get("completeness_status") or ""),
+        "row_status": str(row.get("completeness_status") or ""),
         "proof_ref": str(row.get("rule_id") or ""),
         "forbidden_shortcuts": _CANDIDATE_SET_REPORT_FORBIDDEN_SHORTCUTS,
     }

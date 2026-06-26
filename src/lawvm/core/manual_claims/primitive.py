@@ -224,7 +224,7 @@ class ClaimState:
     """
 
     claim_id: str
-    status: ClaimStatus
+    claim_state_status: ClaimStatus
     review_status: ReviewStatus
     validator_status: ValidatorStatus
     confidence: ClaimConfidence

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
+from lawvm.core.regex_safety import compile_classifier_regex
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 import lxml.etree as etree
@@ -32,10 +33,7 @@ from lawvm.finland.chapter_seed_targets import ChapterSeedSkip
 from lawvm.corpus_store import CorpusStore
 
 DEBUG = False
-_MISSING_CHAPTER_SPAN_RE = re.compile(
-    r"\bpuuttuu\s+luvut?\s+(\d+)\s*[-–]\s*(\d+)\b",
-    re.IGNORECASE,
-)
+_MISSING_CHAPTER_SPAN_RE = compile_classifier_regex(r"\bpuuttuu\s+luvut?\s+(\d+)\s*[-–]\s*(\d+)\b", re.IGNORECASE, classifier_id="fi.chapter_seed.missing_chapter_span_re")
 
 
 def _chapter_sort_key(label: str) -> Tuple[int, str, int]:
@@ -374,9 +372,9 @@ def _op_targets_chapter(op: AmendmentOp, chapter_labels: Set[str]) -> bool:
     - It is a section-level op (target_kind == `TargetKind.SECTION`) scoped to a seeded
       chapter via target_chapter.
     """
-    if op.target_unit_kind == "chapter" and op.target_section in chapter_labels:
+    if op.target_cols.target_unit_kind == "chapter" and op.target_cols.target_section in chapter_labels:
         return True
-    if op.target_unit_kind == "section" and op.target_chapter in chapter_labels:
+    if op.target_cols.target_unit_kind == "section" and op.target_cols.target_chapter in chapter_labels:
         return True
     return False
 

@@ -76,7 +76,7 @@ def _node(
         source_ref=span,
         lens_id="test",
         rule_id="test",
-        status=status,
+        node_status=status,
         payload_hash="ph",
         payload=payload,
     )
@@ -235,7 +235,7 @@ def test_reference_delta_groups_by_status() -> None:
     delta = ba.build_reference_delta(_rich_graph(), BODY)
     assert delta["count"] == 3
     assert delta["by_status"] == {"broken": 1, "open": 1, "resolved": 1}
-    resolved = [r for r in delta["references"] if r["status"] == "resolved"][0]
+    resolved = [r for r in delta["references"] if r["node_status"] == "resolved"][0]
     assert resolved["work_id"] == "2099/1"
 
 

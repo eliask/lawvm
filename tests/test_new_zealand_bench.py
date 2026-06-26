@@ -121,7 +121,7 @@ def test_aggregate_keeps_coverage_lanes_separate_from_similarity() -> None:
     work = nz_bench._WorkResult(
         work_id="w1",
         families=("repeal",),
-        status="OK",
+        work_status="OK",
         transitions_replayed=2,
         transitions_refused=8,
         ops_replayed=3,
@@ -192,7 +192,7 @@ def _ok_work(work_id: str = "w1") -> nz_bench._WorkResult:
     return nz_bench._WorkResult(
         work_id=work_id,
         families=("repeal",),
-        status="OK",
+        work_status="OK",
         transitions_replayed=3,
         transitions_refused=2,
         ops_replayed=4,
@@ -243,7 +243,7 @@ def test_progress_line_no_replay_surfaces_coverage_not_zero_similarity() -> None
 
 def test_progress_line_typed_status_for_errors() -> None:
     work = _ok_work()
-    work.status = "EXC:ValueError:boom"
+    work.work_status = "EXC:ValueError:boom"
     work.transitions_replayed = 0
     line = nz_bench._format_progress_line(done=2, total=10, elapsed=1.0, result=work)
     assert "ERROR" in line
@@ -269,7 +269,7 @@ def test_unified_summary_renders_worst_of_dual_axes(capsys) -> None:
     scored.residual_family_counts = {"temporal_mismatch": 1}
 
     crashed = _ok_work("crashed")
-    crashed.status = "EXC:boom"
+    crashed.work_status = "EXC:boom"
 
     nz_bench._render_unified_summary([scored, crashed], "smoke")
 

@@ -1,0 +1,21 @@
+{
+  "_doc": "Monotone per-file baseline of raw target_* writes to AmendmentOp under src/lawvm/finland (constructor kwargs + dataclasses.replace). Counts may only fall as call sites migrate onto the typed target_selector_facades. Regenerate with `uv run python scripts/inventory_target_writes.py --update-baseline` after legitimately retiring a raw write (the codec + facades are excluded as the sanctioned lowering point).",
+  "scan_dir": "src/lawvm/finland",
+  "target_kwargs": [
+    "target_chapter",
+    "target_item",
+    "target_paragraph",
+    "target_part",
+    "target_section",
+    "target_special",
+    "target_subitem",
+    "target_unit_kind"
+  ],
+  "excluded": [
+    "src/lawvm/finland/target_selector_codec.py",
+    "src/lawvm/finland/target_selector_facades.py"
+  ],
+  "counts": {},
+  "sites": {},
+  "total": 0
+}

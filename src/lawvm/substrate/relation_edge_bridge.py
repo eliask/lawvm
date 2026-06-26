@@ -80,7 +80,7 @@ def _edge_status_and_verification(
     plane with ``replay_authorized=false`` (§25.3), so every edge this bridge
     builds is matrix-legal by construction.
     """
-    status = resolution.status
+    status = resolution.reference_status
     semantics = resolution.target_set_semantics
 
     if status is ReferenceResolutionStatus.RESOLVED:
@@ -167,7 +167,7 @@ def reference_set_to_relation_edge(
         authority_plane=AuthorityPlane.SURFACE,
         verification_level=verification,
         replay_authorized=False,
-        status=status,
+        edge_status=status,
         effective_scope={"branch_id": branch_id},
         corpus_version=corpus_version,
         branch_id=branch_id,

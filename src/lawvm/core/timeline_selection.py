@@ -101,15 +101,15 @@ class VersionSelectionCoverage:
 class VersionSelectionResult:
     """Explicit selection result that can represent missing required scope."""
 
-    status: str
+    selection_status: str
     version: Optional[ProvisionVersion] = None
     required_dimensions: tuple[str, ...] = ()
     certificate: Optional[VersionSelectionCoverage] = None
 
     def __post_init__(self) -> None:
-        if self.status not in _VERSION_SELECTION_STATUSES:
+        if self.selection_status not in _VERSION_SELECTION_STATUSES:
             raise ValueError(
-                "VersionSelectionResult.status must be one of "
+                "VersionSelectionResult.selection_status must be one of "
                 f"{sorted(_VERSION_SELECTION_STATUSES)!r}"
             )
         if self.version is not None and not isinstance(self.version, ProvisionVersion):
@@ -125,7 +125,7 @@ class VersionSelectionResult:
             raise TypeError(
                 "VersionSelectionResult.certificate must be VersionSelectionCoverage or None"
             )
-        if self.status == "selected":
+        if self.selection_status == "selected":
             if self.version is None:
                 raise ValueError("VersionSelectionResult selected status requires a version")
             if self.certificate is not None:
@@ -146,11 +146,11 @@ class VersionSelectionResult:
             return
         if self.version is not None:
             raise ValueError("VersionSelectionResult non-selected status cannot carry a version")
-        if self.status == "ambiguous_missing_scope" and not self.required_dimensions:
+        if self.selection_status == "ambiguous_missing_scope" and not self.required_dimensions:
             raise ValueError(
                 "VersionSelectionResult ambiguous_missing_scope requires required_dimensions"
             )
-        if self.certificate is not None and self.certificate.selected_rail != self.status:
+        if self.certificate is not None and self.certificate.selected_rail != self.selection_status:
             raise ValueError(
                 "VersionSelectionResult non-selected certificate rail must match result status"
             )
@@ -511,7 +511,7 @@ def _select_single_active_version(
     """Fast path for one-version timelines, preserving selector certificates."""
     if not eligible(version, as_of, query_type, expires_as_of=expires_as_of):
         return VersionSelectionResult(
-            status="absent",
+            selection_status="absent",
             certificate=VersionSelectionCoverage(
                 address=timeline.address,
                 as_of=as_of,
@@ -525,7 +525,7 @@ def _select_single_active_version(
     required_dimensions = _required_scope_dimensions_from_eligible([version])
     if territory is None and required_dimensions:
         return VersionSelectionResult(
-            status="ambiguous_missing_scope",
+            selection_status="ambiguous_missing_scope",
             required_dimensions=required_dimensions,
             certificate=VersionSelectionCoverage(
                 address=timeline.address,
@@ -539,7 +539,7 @@ def _select_single_active_version(
         )
     if not applicability_matches(version, territory=territory):
         return VersionSelectionResult(
-            status="absent",
+            selection_status="absent",
             certificate=VersionSelectionCoverage(
                 address=timeline.address,
                 as_of=as_of,
@@ -572,7 +572,7 @@ def _select_single_active_version(
             and version.effective > expires_as_of
         ):
             return VersionSelectionResult(
-                status="absent",
+                selection_status="absent",
                 certificate=VersionSelectionCoverage(
                     address=timeline.address,
                     as_of=as_of,
@@ -587,7 +587,7 @@ def _select_single_active_version(
         return None
 
     return VersionSelectionResult(
-        status="selected",
+        selection_status="selected",
         version=version,
         certificate=VersionSelectionCoverage(
             address=timeline.address,
@@ -703,7 +703,7 @@ def select_active_version_ex_prevalidated(
     required_dimensions = _required_scope_dimensions_from_eligible(eligible_versions)
     if territory is None and required_dimensions:
         return VersionSelectionResult(
-            status="ambiguous_missing_scope",
+            selection_status="ambiguous_missing_scope",
             required_dimensions=required_dimensions,
             certificate=VersionSelectionCoverage(
                 address=timeline.address,
@@ -755,7 +755,7 @@ def select_active_version_ex_prevalidated(
         overlay = None
     if overlay is not None:
         return VersionSelectionResult(
-            status="selected",
+            selection_status="selected",
             version=overlay,
             certificate=VersionSelectionCoverage(
                 address=timeline.address,
@@ -771,7 +771,7 @@ def select_active_version_ex_prevalidated(
 
     if background is not None:
         return VersionSelectionResult(
-            status="selected",
+            selection_status="selected",
             version=background,
             certificate=VersionSelectionCoverage(
                 address=timeline.address,
@@ -786,7 +786,7 @@ def select_active_version_ex_prevalidated(
         )
 
     return VersionSelectionResult(
-        status="absent",
+        selection_status="absent",
         certificate=VersionSelectionCoverage(
             address=timeline.address,
             as_of=as_of,
@@ -813,7 +813,7 @@ def select_active_version(
         query_type=query_type,
         territory=territory,
     )
-    if selection.status == "ambiguous_missing_scope":
+    if selection.selection_status == "ambiguous_missing_scope":
         raise ValueError(
             "select_active_version requires explicit scope when active candidates "
             f"need {selection.required_dimensions!r}; use select_active_version_ex() "

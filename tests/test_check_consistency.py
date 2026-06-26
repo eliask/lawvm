@@ -310,7 +310,7 @@ def test_section_no_timeline_detected_via_timeline_api() -> None:
     for addr, tl in timelines.items():
         if addr.path and addr.path[-1][0] == "section":
             selection = select_active_version_ex(tl, "9999-12-31")
-            if selection.version is not None and selection.status == "selected":
+            if selection.version is not None and selection.selection_status == "selected":
                 tl_sections[_addr_str(addr.path)] = selection.version
 
     # All PIT sections should have a timeline entry
@@ -371,7 +371,7 @@ def test_content_drift_detected_when_text_differs() -> None:
     # Timeline should also have the amended text as latest version
     tl = timelines[addr_s1]
     selection = select_active_version_ex(tl, "2025-01-01")
-    assert selection.status == "selected"
+    assert selection.selection_status == "selected"
     assert selection.version is not None
     assert selection.version.content is not None
     pit_text = _irnode_text_clean(pit_sections["section:1"])
@@ -421,7 +421,7 @@ def test_repeal_removes_section_from_pit_and_timeline() -> None:
     # Section 2 should have a tombstone in the timeline
     tl = timelines[addr_s2]
     selection = select_active_version_ex(tl, "2025-01-01")
-    assert selection.status == "selected"
+    assert selection.selection_status == "selected"
     assert selection.version is not None
     assert selection.version.content is None  # tombstone
 

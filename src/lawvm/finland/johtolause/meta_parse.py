@@ -32,6 +32,7 @@ TODO (future work):
 from __future__ import annotations
 
 import re
+from lawvm.core.regex_safety import PrefilteredPattern, compile_classifier_regex
 from typing import List
 
 from lawvm.core.semantic_types import MetaClauseKind
@@ -49,36 +50,27 @@ _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+(?=[A-ZÄÖÅ])")
 # SurfaceMetaClause meta_kind values)
 # ---------------------------------------------------------------------------
 
-_META_PATTERNS: List[tuple[MetaClauseKind, re.Pattern[str]]] = [
+_META_PATTERNS: List[tuple[MetaClauseKind, re.Pattern[str] | PrefilteredPattern]] = [
     # Transition/applicability clauses — check before voimaantulo to avoid
     # "ennen lain voimaantuloa" matching as a commencement/expiry pattern.
     (
         MetaClauseKind.TRANSITION,
-        re.compile(
-            r"soveltamiss[aä][äa]nn[öo]s"
+        compile_classifier_regex(r"soveltamiss[aä][äa]nn[öo]s"
             r"|siirtymäs[aä][äa]nn[öo]s"
             r"|tätä\s+lakia\s+sovelletaan"
-            r"|ennen\s+(?:tämän\s+lain|lain)\s+voimaantuloa\s+(?:vireille|käsitelty|myönnetty)",
-            re.IGNORECASE,
-        ),
+            r"|ennen\s+(?:tämän\s+lain|lain)\s+voimaantuloa\s+(?:vireille|käsitelty|myönnetty)", re.IGNORECASE, classifier_id="fi.johtolause.meta_parse.(_meta_patterns[0] transition)"),
     ),
     # Expiry — "on voimassa [until date]" (must precede commencement to avoid
     # false positive on "tulee voimaan" when "on voimassa" is also present).
     (
         MetaClauseKind.EXPIRY,
-        re.compile(
-            r"\bon\s+voimassa\b"
-            r"|voimassaoloaika",
-            re.IGNORECASE,
-        ),
+        compile_classifier_regex(r"\bon\s+voimassa\b"
+            r"|voimassaoloaika", re.IGNORECASE, classifier_id="fi.johtolause.meta_parse.(_meta_patterns[1] expiry)"),
     ),
     # Commencement — "tulee/tuli voimaan"
     (
         MetaClauseKind.COMMENCEMENT,
-        re.compile(
-            r"(?:tulee|tuli)\s+voimaan",
-            re.IGNORECASE,
-        ),
+        compile_classifier_regex(r"(?:tulee|tuli)\s+voimaan", re.IGNORECASE, classifier_id="fi.johtolause.meta_parse.(_meta_patterns[2] commencement)"),
     ),
     # Delegation — "antaa tarkempia säännöksiä / määräyksiä"
     (

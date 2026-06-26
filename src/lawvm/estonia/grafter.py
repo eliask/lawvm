@@ -6524,6 +6524,56 @@ def _ee_replace_ambiguous_genitive_phrase(text: str, old: str, new: str) -> str:
             return True
         return False
 
+    def _looks_like_noun_head(word: str) -> bool:
+        """Best-effort plain-noun-head detector for the genitive-modifier rule.
+
+        A ``vastavas käändes`` rename whose new surface's sg_gen splits from
+        sg_nom (e.g. ``bürooassistent`` / ``bürooassistendi``) must take the
+        genitive when it directly modifies a following noun head. Earlier
+        cues in ``_genitive_context`` already cover participle / adjective
+        heads (-v, -se, -tud, -dud) and explicit genitive prefix cues; this
+        detector covers the plain noun-head case (``bürooassistent eriala``
+        -> ``bürooassistendi eriala``). It is deliberately conservative: it
+        accepts a word as a noun head only if it carries no verbal or
+        participle suffix, is not a known verb, and is not itself a
+        genitive-form noun (``-se`` ending), since a genitive-headed next
+        word signals a genitive-chain / apposition construction where the
+        matched surface stays nominative (the V2-subject case). This keeps
+        the V2-subject and copula-predicate cases handled above from being
+        re-admitted here.
+        """
+        if not word or len(word) < 3:
+            return False
+        if word in likely_verb_words:
+            return False
+        if word.endswith(nonfinite_suffixes):
+            return False
+        if word.endswith(("vad", "b", "ma", "da")):
+            return False
+        if word.endswith(("nud", "tud", "dud", "vat", "mata", "vaks", "mast", "maks")):
+            return False
+        if word.endswith("v"):
+            return False
+        # Genitive-form head (``-se``): signals a genitive chain (the matched
+        # word is the subject/apposition, not a modifier of this head).
+        # Witness: ``Põllumajandus-ja Toiduamet asendustäitmise ja sunniraha
+        # seaduses sätestatud korras`` keeps nominative before ``asendustäitmise``.
+        if word.endswith("se"):
+            return False
+        # Compound-head cue: the suffix begins with a hyphen (e.g.
+        # ``Transpordiamet-Transpordiamet või selle struktuuriüksus``), so the
+        # ``_next_words`` regex captures a leading-hyphen token. A hyphen-
+        # joined compound signals that the matched surface is one half of an
+        # institution-name compound, not a modifier of the next word — the
+        # first half stays in its native surface (nominative).  Witness:
+        # ``117122025002`` §2 over ``112022019010`` (Väikelaeva ... reg)
+        # defines ``Transpordiamet`` as ``Transpordiamet või selle
+        # struktuuriüksus``; pre-carve-out the rule produced
+        # ``Transpordiameti-Transpordiamet``.
+        if word.startswith("-"):
+            return False
+        return True
+
     def _has_active_finite_verb_since_sentence_start(prefix_text: str) -> bool:
         clause = re.split(r"[.!?;:]", prefix_text)[-1]
         return any(_looks_like_finite_verb(word) for word in _next_words(clause))
@@ -6533,6 +6583,17 @@ def _ee_replace_ambiguous_genitive_phrase(text: str, old: str, new: str) -> str:
         if next_word in {"poolt", "taotlusel"}:
             return True
         if suffix_text.lstrip().startswith((",", ")", ".", "!", "?", ";", ":")):
+            return False
+        # Dash-separated compound: the matched surface is followed by an en/em
+        # dash or ASCII hyphen (``X – Y`` / ``X—Y`` / ``X-Y``). Whether spaced
+        # or unspaced, the dash signals a coordinate compound or institution-
+        # name overlap (``Transpordiamet – Transpordiamet või selle
+        # struktuuriüksus`` after a same-target rename like `` Veeteede Amet /
+        # Maanteeamet -> Transpordiamet ``), not a modifier slot, so the
+        # matched surface stays nominative. Witness: ``117122025002`` §2
+        # over ``112022019010`` (Väikelaeva ... reg), item:19.
+        stripped_suffix = suffix_text.lstrip()
+        if stripped_suffix[:1] in {"-", "–", "—"}:
             return False
 
         preceding_word = _preceding_word(prefix_text)
@@ -6597,6 +6658,22 @@ def _ee_replace_ambiguous_genitive_phrase(text: str, old: str, new: str) -> str:
         if preceding_word in genitive_prefix_cues:
             return True
         if joiner and preceding_word in genitive_prefix_cues:
+            return True
+        # Noun-modifier position: ``vastavas käändes`` rename whose new sg_gen
+        # splits from sg_nom (e.g. ``bürooassistent`` / ``bürooassistendi``)
+        # directly modifying a following plain noun head. Estonian defaults to
+        # genitive case for a noun modifier before another noun. The cues above
+        # already cover participle / adjective heads and explicit genitive
+        # prefixes, and the finite-verb-predicate / copula cases returned False
+        # earlier, so what reaches here is a modifier slot. The conservative
+        # nominative default under-detected this family because the canonical
+        # corpus witness (``bürootöö``) collapses sg_nom onto sg_gen, hiding the
+        # gap until a rename to a noun with a distinct genitive exposed it.
+        # Family: ``ee_case_inflected_vastavas_käändes``; witness: ``120092023001``
+        # §1 over ``130042020016`` (Sekretäri- ja kontoritöö erialade riiklik
+        #ppekava), where the source-backed rename ``bürootöö -> bürooassistent
+        # vastavas käändes`` requires ``bürooassistendi`` before every noun head.
+        if _looks_like_noun_head(next_word):
             return True
         return False
 

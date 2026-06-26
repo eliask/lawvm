@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import Any, Iterable, Optional
+from typing import Any, Iterable, Optional, assert_never
 
 from lxml import etree as ET
 
@@ -31,6 +31,7 @@ from lawvm.uk_legislation.affecting_act_commencement import (
 )
 from lawvm.uk_legislation.effect_temporal import (
     UKCommencementMetadata,
+    UKCommencementMetadataStatus,
     _instrument_commencement_metadata,
 )
 from lawvm.uk_legislation.effects import (
@@ -104,7 +105,7 @@ class UKSICommencementAuditState:
     commencement_dates: tuple[str, ...] = ()
     made_dates: tuple[str, ...] = ()
     coming_into_force_element_present: bool = False
-    metadata_status: str = ""
+    metadata_status: UKCommencementMetadataStatus | str = ""
     source_locator: str = ""
     parse_error: str = ""
     detail: dict[str, Any] = field(default_factory=dict)
@@ -117,7 +118,7 @@ class UKSICommencementAuditState:
             "commencement_dates": self.commencement_dates,
             "made_dates": self.made_dates,
             "coming_into_force_element_present": self.coming_into_force_element_present,
-            "metadata_status": self.metadata_status,
+            "metadata_status": str(self.metadata_status),
             "owner_phase": UK_PHASE_EFFECT_METADATA_FRONTEND,
         }
         if self.source_locator:
@@ -164,61 +165,63 @@ def classify_si_commencement_metadata(
     ``prospective_unresolved`` — the metadata cannot prove the effect is in
     force. A single proven commencement date always wins over this signal.
 
-    The mapping is total over ``UKCommencementMetadata.status``.
+    The mapping is total over ``UKCommencementMetadata.commencement_status``.
     """
-    status = metadata.status
+    status = metadata.commencement_status
     dates = tuple(metadata.dates)
     made_dates = tuple(metadata.made_dates)
 
-    if status == "source_xml_unavailable":
+    def _state(state: str, reason_tags: tuple[str, ...], *, parse_error: str = "") -> UKSICommencementAuditState:
         return UKSICommencementAuditState(
             affecting_act_id=affecting_act_id,
-            state=UK_SI_COMMENCEMENT_SOURCE_UNAVAILABLE,
-            reason_tags=(REASON_SOURCE_XML_UNAVAILABLE,),
+            state=state,
+            reason_tags=reason_tags,
             commencement_dates=dates,
             made_dates=made_dates,
             coming_into_force_element_present=coming_into_force_element_present,
             metadata_status=status,
             source_locator=metadata.source_locator,
-        )
-    if status == "source_xml_parse_error":
-        return UKSICommencementAuditState(
-            affecting_act_id=affecting_act_id,
-            state=UK_SI_COMMENCEMENT_SOURCE_PARSE_ERROR,
-            reason_tags=(REASON_SOURCE_XML_PARSE_ERROR,),
-            commencement_dates=dates,
-            made_dates=made_dates,
-            coming_into_force_element_present=coming_into_force_element_present,
-            metadata_status=status,
-            source_locator=metadata.source_locator,
-            parse_error=metadata.parse_error,
+            parse_error=parse_error,
         )
 
-    if status == "single_date":
-        # A proven single official commencement date always wins, even if the
-        # effect feed flagged the effect prospective: the metadata resolves it.
-        return UKSICommencementAuditState(
-            affecting_act_id=affecting_act_id,
-            state=UK_SI_COMMENCEMENT_RESOLVED_IN_FORCE,
-            reason_tags=(REASON_SINGLE_COMMENCEMENT_DATE,),
-            commencement_dates=dates,
-            made_dates=made_dates,
-            coming_into_force_element_present=coming_into_force_element_present,
-            metadata_status=status,
-            source_locator=metadata.source_locator,
-        )
-
-    if status == "multiple_or_textual" and dates:
-        return UKSICommencementAuditState(
-            affecting_act_id=affecting_act_id,
-            state=UK_SI_COMMENCEMENT_MULTIPLE_DATES,
-            reason_tags=(REASON_MULTIPLE_COMMENCEMENT_DATES,),
-            commencement_dates=dates,
-            made_dates=made_dates,
-            coming_into_force_element_present=coming_into_force_element_present,
-            metadata_status=status,
-            source_locator=metadata.source_locator,
-        )
+    # Statuses whose audit state is fully determined by the metadata extraction,
+    # independent of the prospective/coming-into-force guards below. The producer
+    # only emits ``MULTIPLE_OR_TEXTUAL`` with at least one commencement date, so
+    # the historical ``and dates`` guard is preserved defensively.
+    match status:
+        case UKCommencementMetadataStatus.SOURCE_XML_UNAVAILABLE:
+            return _state(
+                UK_SI_COMMENCEMENT_SOURCE_UNAVAILABLE,
+                (REASON_SOURCE_XML_UNAVAILABLE,),
+            )
+        case UKCommencementMetadataStatus.SOURCE_XML_PARSE_ERROR:
+            return _state(
+                UK_SI_COMMENCEMENT_SOURCE_PARSE_ERROR,
+                (REASON_SOURCE_XML_PARSE_ERROR,),
+                parse_error=metadata.parse_error,
+            )
+        case UKCommencementMetadataStatus.SINGLE_DATE:
+            # A proven single official commencement date always wins, even if the
+            # effect feed flagged the effect prospective: the metadata resolves it.
+            return _state(
+                UK_SI_COMMENCEMENT_RESOLVED_IN_FORCE,
+                (REASON_SINGLE_COMMENCEMENT_DATE,),
+            )
+        case UKCommencementMetadataStatus.MULTIPLE_OR_TEXTUAL if dates:
+            return _state(
+                UK_SI_COMMENCEMENT_MULTIPLE_DATES,
+                (REASON_MULTIPLE_COMMENCEMENT_DATES,),
+            )
+        case (
+            UKCommencementMetadataStatus.MULTIPLE_OR_TEXTUAL
+            | UKCommencementMetadataStatus.TEXTUAL_OR_MISSING_DATE
+            | UKCommencementMetadataStatus.DEFAULT_COMMENCEMENT_MADE_DATE_CANDIDATE
+        ):
+            # No parseable commencement date in metadata — fall through to the
+            # prospective/made-date/textual classification below.
+            pass
+        case _:
+            assert_never(status)
 
     # From here: no parseable commencement date in metadata, so a prospective
     # effect whose affecting provision is itself unresolved cannot be proven in
@@ -232,62 +235,39 @@ def classify_si_commencement_metadata(
     )
 
     if prospective_unresolved:
-        return UKSICommencementAuditState(
-            affecting_act_id=affecting_act_id,
-            state=UK_SI_COMMENCEMENT_PROSPECTIVE_UNRESOLVED,
-            reason_tags=(
+        return _state(
+            UK_SI_COMMENCEMENT_PROSPECTIVE_UNRESOLVED,
+            (
                 REASON_PROSPECTIVE_AFFECTING_PROVISION_UNRESOLVED,
                 REASON_NO_COMMENCEMENT_DATE,
                 made_reason,
             ),
-            commencement_dates=dates,
-            made_dates=made_dates,
-            coming_into_force_element_present=coming_into_force_element_present,
-            metadata_status=status,
-            source_locator=metadata.source_locator,
         )
 
-    if status == "default_commencement_made_date_candidate":
-        return UKSICommencementAuditState(
-            affecting_act_id=affecting_act_id,
-            state=UK_SI_COMMENCEMENT_MADE_DATE_DEFAULT_CANDIDATE,
-            reason_tags=(
+    if status is UKCommencementMetadataStatus.DEFAULT_COMMENCEMENT_MADE_DATE_CANDIDATE:
+        return _state(
+            UK_SI_COMMENCEMENT_MADE_DATE_DEFAULT_CANDIDATE,
+            (
                 REASON_NO_COMMENCEMENT_DATE,
                 REASON_SINGLE_MADE_DATE,
                 REASON_MADE_DATE_DEFAULT_UNPROVED,
             ),
-            commencement_dates=dates,
-            made_dates=made_dates,
-            coming_into_force_element_present=coming_into_force_element_present,
-            metadata_status=status,
-            source_locator=metadata.source_locator,
         )
 
-    # status == "textual_or_missing_date": no dates, and made_dates != 1.
+    # status == "textual_or_missing_date" (or the never-emitted dateless
+    # multiple_or_textual): no dates, and made_dates != 1.
     if coming_into_force_element_present:
-        return UKSICommencementAuditState(
-            affecting_act_id=affecting_act_id,
-            state=UK_SI_COMMENCEMENT_TEXTUAL_ONLY,
-            reason_tags=(
+        return _state(
+            UK_SI_COMMENCEMENT_TEXTUAL_ONLY,
+            (
                 REASON_COMING_INTO_FORCE_ELEMENT_PRESENT,
                 REASON_NO_COMMENCEMENT_DATE,
                 made_reason,
             ),
-            commencement_dates=dates,
-            made_dates=made_dates,
-            coming_into_force_element_present=coming_into_force_element_present,
-            metadata_status=status,
-            source_locator=metadata.source_locator,
         )
-    return UKSICommencementAuditState(
-        affecting_act_id=affecting_act_id,
-        state=UK_SI_COMMENCEMENT_NO_MADE_DATE,
-        reason_tags=(REASON_NO_COMMENCEMENT_DATE, made_reason),
-        commencement_dates=dates,
-        made_dates=made_dates,
-        coming_into_force_element_present=coming_into_force_element_present,
-        metadata_status=status,
-        source_locator=metadata.source_locator,
+    return _state(
+        UK_SI_COMMENCEMENT_NO_MADE_DATE,
+        (REASON_NO_COMMENCEMENT_DATE, made_reason),
     )
 
 
@@ -307,7 +287,7 @@ def audit_affecting_si_commencement(
         xml_bytes,
         source_locator=source_locator,
     )
-    if metadata.status == "source_xml_unavailable":
+    if metadata.commencement_status is UKCommencementMetadataStatus.SOURCE_XML_UNAVAILABLE:
         return classify_si_commencement_metadata(
             affecting_act_id,
             metadata,

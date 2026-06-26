@@ -13,10 +13,12 @@ from lawvm.norway.commencement import (
 )
 from lawvm.norway.index import NOAmendmentIndex, build_no_amendment_index, load_no_amendment_index
 from lawvm.norway.sources import (
+    NOReplayStatus,
     iter_no_current_artifacts,
     load_available_lti_law_ids,
     load_no_current_law_ids,
     load_no_current_law_titles,
+    no_base_replay_status_from_statuses,
     resolve_no_source_path,
 )
 
@@ -32,14 +34,14 @@ class NOInventory:
     malformed_base_refs: Counter[str] = field(default_factory=Counter)
     current_law_source_diagnostics: list[dict[str, Any]] = field(default_factory=list)
 
-    def law_status_map(self) -> dict[str, str]:
+    def law_status_map(self) -> dict[str, NOReplayStatus]:
         laws_with_amendments = self.current_law_ids & set(self.base_to_statuses)
         statuses = {base_id: self._base_replay_status(base_id) for base_id in laws_with_amendments}
         for base_id in self.current_law_ids - laws_with_amendments:
-            statuses[base_id] = "no_amendments"
+            statuses[base_id] = NOReplayStatus.NO_AMENDMENTS
         return statuses
 
-    def amended_executable_law_status_map(self) -> dict[str, str]:
+    def amended_executable_law_status_map(self) -> dict[str, NOReplayStatus]:
         amended_current_laws = self.current_law_ids & set(self.base_to_statuses)
         executable_current_laws = amended_current_laws & self.current_law_ids_with_local_base_source
         return {base_id: self._base_replay_status(base_id) for base_id in executable_current_laws}
@@ -47,19 +49,19 @@ class NOInventory:
     def to_dict(self) -> dict[str, Any]:
         status_map = self.law_status_map()
         executable_status_map = self.amended_executable_law_status_map()
-        laws_with_amendments = {base_id for base_id, status in status_map.items() if status != "no_amendments"}
-        fully_replayable = {base_id for base_id, status in status_map.items() if status == "fully_replayable"}
-        blocked_contingent = {base_id for base_id, status in status_map.items() if status == "blocked_contingent"}
-        blocked_unknown = {base_id for base_id, status in status_map.items() if status == "blocked_unknown"}
-        no_amendments = {base_id for base_id, status in status_map.items() if status == "no_amendments"}
+        laws_with_amendments = {base_id for base_id, status in status_map.items() if status != NOReplayStatus.NO_AMENDMENTS}
+        fully_replayable = {base_id for base_id, status in status_map.items() if status == NOReplayStatus.FULLY_REPLAYABLE}
+        blocked_contingent = {base_id for base_id, status in status_map.items() if status == NOReplayStatus.BLOCKED_CONTINGENT}
+        blocked_unknown = {base_id for base_id, status in status_map.items() if status == NOReplayStatus.BLOCKED_UNKNOWN}
+        no_amendments = {base_id for base_id, status in status_map.items() if status == NOReplayStatus.NO_AMENDMENTS}
         executable_fully_replayable = {
-            base_id for base_id, status in executable_status_map.items() if status == "fully_replayable"
+            base_id for base_id, status in executable_status_map.items() if status == NOReplayStatus.FULLY_REPLAYABLE
         }
         executable_blocked_contingent = {
-            base_id for base_id, status in executable_status_map.items() if status == "blocked_contingent"
+            base_id for base_id, status in executable_status_map.items() if status == NOReplayStatus.BLOCKED_CONTINGENT
         }
         executable_blocked_unknown = {
-            base_id for base_id, status in executable_status_map.items() if status == "blocked_unknown"
+            base_id for base_id, status in executable_status_map.items() if status == NOReplayStatus.BLOCKED_UNKNOWN
         }
         missing_base_source = laws_with_amendments - self.current_law_ids_with_local_base_source
 
@@ -149,15 +151,10 @@ class NOInventory:
             "current_law_source_diagnostics": list(self.current_law_source_diagnostics),
         }
 
-    def _base_replay_status(self, base_id: str) -> str:
-        statuses = self.base_to_statuses.get(base_id, [])
-        if not statuses:
-            return "no_amendments"
-        if any(status == "contingent" for status in statuses):
-            return "blocked_contingent"
-        if any(status not in {"dated", "immediate", "override"} for status in statuses):
-            return "blocked_unknown"
-        return "fully_replayable"
+    def _base_replay_status(self, base_id: str) -> NOReplayStatus:
+        return no_base_replay_status_from_statuses(
+            self.base_to_statuses.get(base_id, [])
+        )
 
 
 def build_no_inventory(

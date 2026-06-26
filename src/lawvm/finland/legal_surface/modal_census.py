@@ -49,6 +49,7 @@ Pure measure-only. Changes no production behavior; off the replay/apply path.
 from __future__ import annotations
 
 import re
+from lawvm.core.regex_safety import PrefilteredPattern, compile_classifier_regex
 from collections.abc import Iterator
 from dataclasses import dataclass
 
@@ -166,16 +167,16 @@ def _modal_miss_shape(missing_keys: set[str], declared_marker: str) -> str:
 #: yielding NO construction core is a candidate recall miss. These overlap the
 #: closed marker list but are spelled as cheap regexes (incl. the participle
 #: forms a bare ``on`` governs) so they are a genuine independent signal.
-_CHEAP_SIGNALS: tuple[re.Pattern[str], ...] = (
+_CHEAP_SIGNALS: tuple[re.Pattern[str] | PrefilteredPattern, ...] = (
     re.compile(r"\bon\b[^.;:\n]{0,40}?\w*t[aä]v[aä]\b", re.IGNORECASE),  # on … -ttava
-    re.compile(r"\btulee\b(?!\s+voimaan)", re.IGNORECASE),  # excl. ``tulee voimaan`` (temporal)
-    re.compile(r"\btäytyy\b", re.IGNORECASE),
-    re.compile(r"\bei\s+saa\b", re.IGNORECASE),
-    re.compile(r"\bsaa\b", re.IGNORECASE),
-    re.compile(r"\bvoidaan\b", re.IGNORECASE),
-    re.compile(r"\bvoi\b", re.IGNORECASE),
-    re.compile(r"\bon\s+velvollinen\b", re.IGNORECASE),
-    re.compile(r"\bon\s+oikeus\b", re.IGNORECASE),
+    compile_classifier_regex(r"\btulee\b(?!\s+voimaan)", re.IGNORECASE, classifier_id="fi.legal_surface.modal_census.cheap_signals[1]"),  # excl. ``tulee voimaan`` (temporal)
+    compile_classifier_regex(r"\btäytyy\b", re.IGNORECASE, classifier_id="fi.legal_surface.modal_census.cheap_signals[2]"),
+    compile_classifier_regex(r"\bei\s+saa\b", re.IGNORECASE, classifier_id="fi.legal_surface.modal_census.cheap_signals[3]"),
+    compile_classifier_regex(r"\bsaa\b", re.IGNORECASE, classifier_id="fi.legal_surface.modal_census.cheap_signals[4]"),
+    compile_classifier_regex(r"\bvoidaan\b", re.IGNORECASE, classifier_id="fi.legal_surface.modal_census.cheap_signals[5]"),
+    compile_classifier_regex(r"\bvoi\b", re.IGNORECASE, classifier_id="fi.legal_surface.modal_census.cheap_signals[6]"),
+    compile_classifier_regex(r"\bon\s+velvollinen\b", re.IGNORECASE, classifier_id="fi.legal_surface.modal_census.cheap_signals[7]"),
+    compile_classifier_regex(r"\bon\s+oikeus\b", re.IGNORECASE, classifier_id="fi.legal_surface.modal_census.cheap_signals[8]"),
 )
 
 

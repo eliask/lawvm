@@ -176,6 +176,8 @@ def evaluate_past_repeal_guard(
     reinstated only when this amendment explicitly inserts the same section
     ("tilalle" INSERT) or wholly replaces the chapter.
     """
+    from lawvm.finland.ops import OpType
+
     if existing_attrs.get("lawvm_repeal_placeholder") != "1":
         return PastRepealVerdict(applies=False, bypass=False, bypass_reason=None)
     if amend_part and part_insert_labels:
@@ -187,14 +189,14 @@ def evaluate_past_repeal_guard(
                 bypass_reason="part_insert_subtree",
             )
     has_insert_op = any(
-        op.op_type == "INSERT"
-        and op.target_unit_kind == "section"
-        and op.target_section
-        and _norm_num_token(op.target_section) == label
+        op.op_type == OpType.INSERT
+        and op.target_cols.target_unit_kind == "section"
+        and op.target_cols.target_section
+        and _norm_num_token(op.target_cols.target_section) == label
         and (
-            not op.target_chapter
+            not op.target_cols.target_chapter
             or not amend_chapter
-            or _norm_num_token(op.target_chapter) == amend_chapter
+            or _norm_num_token(op.target_cols.target_chapter) == amend_chapter
         )
         for op in ops
     )

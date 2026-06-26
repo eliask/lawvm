@@ -108,7 +108,7 @@ def test_admissible_binding_coverage_frozen() -> None:
 
 def _make_op(
     target_paragraph: int,
-    op_type: OpType = "REPLACE",
+    op_type: OpType = OpType.REPLACE,
     source_statute: str = "2024/100",
     target_item: str | None = None,
     target_special: str | None = None,

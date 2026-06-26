@@ -108,7 +108,7 @@ class AnnotationWitnessLens:
                         rule_id=_RULE_BLOCKED,
                         reason_code="unit_has_no_source_bytes",
                         payload={"source_unit_id": unit.source_unit_id},
-                        status="blocked",
+                        residual_status="blocked",
                     )
                 )
                 continue
@@ -210,7 +210,7 @@ class AnnotationWitnessLens:
             source_ref=source_ref,
             local_discriminator=local,
             rule_id=_RULE_WITNESS,
-            status="present",
+            node_status="present",
             payload=payload,
             authority_role="candidate",
         )

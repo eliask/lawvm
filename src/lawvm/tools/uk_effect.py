@@ -244,7 +244,7 @@ def _manual_compile_claim_template_for_effect_report(
 ) -> dict[str, Any]:
     from lawvm.tools.uk_claim_templates import manual_compile_suggested_claim_template
 
-    status = str(manual_frontier.get("status") or "")
+    status = str(manual_frontier.get("manual_frontier_status") or "")
     rule_id = str(manual_frontier.get("rule_id") or "")
     if status not in {
         "deterministic_frontend_candidate",
@@ -361,12 +361,12 @@ def uk_effect_report_jsonable(
         show_text=show_text,
     )
     manual_frontier_owner_phase = uk_phase_owner_for_manual_frontier(
-        manual_compile_status=manual_frontier["status"],
+        manual_compile_status=manual_frontier["manual_frontier_status"],
         manual_compile_rule_id=manual_frontier["rule_id"],
         source_pathology=source_pathology or "",
     )
     execution_authorization = uk_execution_authorization_from_manual_frontier(
-        manual_compile_status=manual_frontier["status"],
+        manual_compile_status=manual_frontier["manual_frontier_status"],
         manual_compile_rule_id=manual_frontier["rule_id"],
         owner_phase=manual_frontier_owner_phase,
     ).to_dict()
@@ -381,7 +381,7 @@ def uk_effect_report_jsonable(
                 "affecting_act_id": effect.affecting_act_id,
                 "affected_provisions": effect.affected_provisions,
                 "affecting_provisions": effect.affecting_provisions,
-                "manual_compile_status": manual_frontier["status"],
+                "manual_compile_status": manual_frontier["manual_frontier_status"],
                 "manual_compile_rule_id": manual_frontier["rule_id"],
                 "manual_compile_reason": manual_frontier["reason"],
                 "owner_phase": manual_frontier_owner_phase,
@@ -564,7 +564,7 @@ def uk_effect_report_jsonable(
         "source_parse_rejection_count": len(source_parse_rejection_rows),
         "source_acquisition_observation_count": len(source_acquisition_observation_rows),
         "source_acquisition_rejection_count": len(source_acquisition_rejection_rows),
-        "manual_compile_status": manual_frontier["status"],
+        "manual_compile_status": manual_frontier["manual_frontier_status"],
         "manual_compile_rule_id": manual_frontier["rule_id"],
         "owner_phase": manual_frontier_owner_phase,
         "authorization_status": execution_authorization["authorization_status"],
@@ -1332,7 +1332,7 @@ def main(args: "argparse.Namespace") -> None:
         start_index=lowering_rejection_count_before,
     )
     candidate = (
-        manual_frontier["status"] != "non_textual_or_out_of_scope"
+        manual_frontier["manual_frontier_status"] != "non_textual_or_out_of_scope"
         and is_core_uk_effect_source_candidate(source_pathology)
         and (not ops or is_core_uk_effect_compare_candidate(compare_shape))
         and not has_blocking_lowering_rejection(lowering_rejections)

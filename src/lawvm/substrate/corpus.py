@@ -300,7 +300,7 @@ def make_cross_work_resolution(
             "replay_authorized": False,
             "projection_not_source": False,
         },
-        "status": "resolved",
+        "resolution_status": "resolved",
         "scope": {
             "corpus_version": corpus_version,
             "branch_id": "actual",

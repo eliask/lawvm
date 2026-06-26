@@ -41,7 +41,10 @@ from lawvm.uk_legislation.nlp_parser import (
     US,
     parse_fragment_substitution,
 )
-from lawvm.uk_legislation.effects import uk_nonstructural_replay_candidate_family
+from lawvm.uk_legislation.effects import (
+    UK_SCHEDULE_WORDS_BEFORE_TABLE_SUBSTITUTION_RULE_ID,
+    uk_nonstructural_replay_candidate_family,
+)
 from lawvm.uk_legislation.effect_temporal import (
     UK_UNDATED_APPLIED_SI_COMMENCEMENT_DATE_RULE_ID,
     resolve_uk_effective_date_overrides_for_replay,
@@ -2208,7 +2211,14 @@ def test_compile_mixed_heading_structural_insert_allows_explicit_schedule_paragr
     assert ops[0].action is StructuralAction.INSERT
     assert ops[0].target == LegalAddress((("schedule", "22"), ("paragraph", "89a")))
     assert ops[0].payload is not None
-    assert ops[0].payload.label == "89A"
+    assert ops[0].payload.kind is IRNodeKind.CROSSHEADING
+    assert ops[0].payload.text == "Quantitative restrictions not to apply to ordinary charters"
+    assert ops[0].payload.attrs.get("eId") == (
+        "schedule-22-crossheading-quantitative-restrictions-not-to-apply-to-ordinary-charters"
+    )
+    assert len(ops[0].payload.children) == 1
+    assert ops[0].payload.children[0].kind is IRNodeKind.PARAGRAPH
+    assert ops[0].payload.children[0].label == "89A"
     assert any(
         record["rule_id"] == "uk_effect_mixed_heading_structural_insert_target_normalized"
         and record["heading_facet_status"] == "unresolved"
@@ -2418,7 +2428,7 @@ def test_compile_inserted_section_p1group_title_becomes_heading_carrier() -> Non
     assert lowering_records[0]["blocking"] is False
 
 
-def test_compile_inserted_schedule_paragraph_p1group_title_becomes_heading_carrier() -> None:
+def test_compile_inserted_schedule_paragraph_p1group_title_becomes_crossheading_wrapper() -> None:
     extracted_el = ET.fromstring(
         f"""
         <P1 xmlns="{_LEG_NS}">
@@ -2437,7 +2447,7 @@ def test_compile_inserted_schedule_paragraph_p1group_title_becomes_heading_carri
         """
     )
     effect = UKEffectRecord(
-        effect_id="uk_test_inserted_schedule_paragraph_p1group_heading",
+        effect_id="uk_test_inserted_schedule_paragraph_p1group_crossheading",
         effect_type="inserted",
         applied=True,
         requires_applied=True,
@@ -2464,20 +2474,83 @@ def test_compile_inserted_schedule_paragraph_p1group_title_becomes_heading_carri
     assert ops[0].target == LegalAddress((("schedule", "6"), ("paragraph", "43a")))
     payload = ops[0].payload
     assert payload is not None
-    assert payload.kind is IRNodeKind.PARAGRAPH
-    assert payload.label == "43A"
-    assert payload.children[0].kind is IRNodeKind.HEADING
-    assert payload.children[0].text == "Electronic monitoring: general"
-    assert payload.children[0].attrs == {
-        "source_tag": "P1group",
-        "source_rule_id": "uk_inserted_p1group_heading_carrier",
-    }
+    assert payload.kind is IRNodeKind.CROSSHEADING
+    assert payload.text == "Electronic monitoring: general"
+    assert payload.attrs.get("eId") == "schedule-6-crossheading-electronic-monitoring-general"
+    assert payload.attrs.get("source_rule_id") == (
+        "uk_effect_inserted_schedule_p1group_crossheading_wrapper_lowered"
+    )
+    assert len(payload.children) == 1
+    paragraph = payload.children[0]
+    assert paragraph.kind is IRNodeKind.PARAGRAPH
+    assert paragraph.label == "43A"
+    assert paragraph.attrs.get("eId") == "schedule-6-paragraph-43A"
     assert any(
-        record["rule_id"] == "uk_effect_inserted_p1group_heading_carrier_lowered"
-        and record["reason_code"] == "inserted_paragraph_wrapped_by_p1group_title"
+        record["rule_id"] == "uk_effect_inserted_schedule_p1group_crossheading_wrapper_lowered"
+        and record["reason_code"] == "inserted_schedule_paragraph_p1group_wrapper_lowered_to_crossheading"
         and record["blocking"] is False
         for record in lowering_records
     )
+
+
+def test_compile_inserted_schedule_paragraph_p1group_wraps_multiple_paragraphs() -> None:
+    """A schedule paragraph insert may carry sibling paragraphs under one crossheading."""
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}">
+          <Pnumber>21</Pnumber>
+          <Text>After paragraph 196, insert—</Text>
+          <BlockAmendment>
+            <P1group>
+              <Title>The Levelling-Up and Regeneration Act 2023 (c. 55)</Title>
+              <P1 eId="p12345">
+                <Pnumber>197</Pnumber>
+                <P1para><Text>Body of paragraph 197.</Text></P1para>
+              </P1>
+              <P1 eId="p12346">
+                <Pnumber>198</Pnumber>
+                <P1para><Text>Body of paragraph 198.</Text></P1para>
+              </P1>
+            </P1group>
+          </BlockAmendment>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_inserted_schedule_p1group_multi",
+        effect_type="inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-04-25",
+        affected_uri="/id/asc/2023/3/schedule/13",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2023",
+        affected_number="3",
+        affected_provisions="Sch. 13 para. 197",
+        affecting_uri="/id/wsi/2024/1061",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2024",
+        affecting_number="1061",
+        affecting_provisions="Regulation 21",
+        affecting_title="Historic Environment (Wales) Act 2023 (Consequential Provision) (Primary Legislation) Regulations 2024",
+        comments="",
+        in_force_dates=[{"date": "2024-11-03", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    payload = ops[0].payload
+    assert payload is not None
+    assert payload.kind is IRNodeKind.CROSSHEADING
+    assert payload.text == "The Levelling-Up and Regeneration Act 2023 (c. 55)"
+    assert payload.attrs.get("eId") == "schedule-13-crossheading-the-levellingup-and-regeneration-act-2023-c-55"
+    assert len(payload.children) == 2
+    labels = [child.label for child in payload.children]
+    assert labels == ["197", "198"]
+    assert payload.children[0].attrs.get("eId") == "schedule-13-paragraph-197"
+    assert payload.children[1].attrs.get("eId") == "schedule-13-paragraph-198"
 
 
 def test_compile_schedule_paragraph_range_with_plural_cross_headings_suffix_expands_payload_children() -> None:
@@ -2557,18 +2630,22 @@ def test_compile_schedule_paragraph_range_with_plural_cross_headings_suffix_expa
         LegalAddress((("schedule", "6"), ("paragraph", "48"))),
     ]
     payloads = [op.payload for op in ops]
-    assert all(payload is not None for payload in payloads)
-    assert [payload.label for payload in payloads if payload is not None] == ["45", "46", "47", "48"]
-    assert [
-        payload.children[0].text
-        for payload in payloads
-        if payload is not None and payload.children
-    ] == [
+    non_none_payloads = [payload for payload in payloads if payload is not None]
+    assert len(non_none_payloads) == 4
+    assert all(payload.kind is IRNodeKind.CROSSHEADING for payload in non_none_payloads)
+    assert [payload.text for payload in non_none_payloads] == [
         "Electronic whereabouts monitoring requirement",
         "Person responsible for electronic monitoring: electronic whereabouts monitoring order",
         "Electronic whereabouts monitoring requirement: general",
         "Restrictions on imposing electronic whereabouts monitoring requirement",
     ]
+    assert [payload.children[0].kind for payload in non_none_payloads] == [
+        IRNodeKind.PARAGRAPH,
+        IRNodeKind.PARAGRAPH,
+        IRNodeKind.PARAGRAPH,
+        IRNodeKind.PARAGRAPH,
+    ]
+    assert [payload.children[0].label for payload in non_none_payloads] == ["45", "46", "47", "48"]
     assert any(
         record["rule_id"] == "uk_effect_chained_insertion_anchor_lowered"
         and record["target"] == "schedule:6/paragraph:46"
@@ -4865,6 +4942,26 @@ def test_repeal_tail_for_substituted_series_single_first_anchor_subsection() -> 
     )
 
     assert tail == ["s. 5(6)"]
+
+
+def test_repeal_tail_for_substituted_series_later_anchor_label() -> None:
+    # The new provision takes the label of a later anchor; the trailing anchor(s)
+    # must still be repealed so the replacement does not create a duplicate label.
+    tail = _repeal_tail_for_substituted_series_replacement(
+        "substituted for s. 75(11)(12)",
+        ["s. 75(12)"],
+    )
+
+    assert tail == ["s. 75(12)"]
+
+
+def test_repeal_tail_for_substituted_series_later_anchor_label_three_anchors() -> None:
+    tail = _repeal_tail_for_substituted_series_replacement(
+        "substituted for s. 75(11)(12)(13)",
+        ["s. 75(12)"],
+    )
+
+    assert tail == ["s. 75(12)", "s. 75(13)"]
 
 
 def test_split_metadata_whitespace_compressed_sibling_subsections() -> None:
@@ -26878,7 +26975,7 @@ def test_compile_repeal_table_structural_schedule_paragraph_list_and_range_membe
         )
 
 
-def test_compile_repeal_table_broad_schedule_repeal_blocks_descendant_feed_row() -> None:
+def test_compile_repeal_table_broad_schedule_repeal_lowers_descendant_feed_row() -> None:
     source_root = ET.fromstring(
         """
         <Legislation>
@@ -26927,15 +27024,20 @@ def test_compile_repeal_table_broad_schedule_repeal_blocks_descendant_feed_row()
         source_root=source_root,
     )
 
-    assert ops == []
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPEAL
+    assert ops[0].target.path == (("schedule", "12"), ("paragraph", "1"))
+    assert (
+        ops[0].witness_rule_id
+        == "uk_effect_broad_container_repeal_table_feed_descendant_repeal"
+    )
     assert any(
-        record["rule_id"] == "uk_effect_repeal_table_structural_repeal_unresolved"
-        and record["reason_code"] == "broad_container_repeal_requires_grouped_feed_compilation"
+        record["rule_id"] == "uk_effect_broad_container_repeal_table_feed_descendant_repeal"
+        and record["reason_code"] == "broad_container_repeal_table_feed_descendant_derived"
         and record["target"] == "schedule:12/paragraph:1"
         and record["broad_container_target"] == "schedule:12"
         and record["extent_cell"] == "Schedule 12."
-        and record["blocking"] is True
-        and record["strict_disposition"] == "block"
+        and record["blocking"] is False
         for record in lowering_records
     )
 
@@ -38985,6 +39087,40 @@ def test_compile_retargets_instruction_paragraph_to_affected_section() -> None:
     assert ops[0].payload.label == "100"
     assert [child.label for child in ops[0].payload.children] == ["a", "b"]
 
+
+def test_compile_does_not_retarget_subsection_paragraph_to_section() -> None:
+    """A subsection-level source extract may not be relabelled as a section.
+
+    The retargeting helper is supposed to recover cases where an amending
+    schedule paragraph itself carries the target provision number in its text.
+    If the source element is a P2/Subsection but the target is a section,
+    relabelling would silently replace the whole section with a single
+    subsection (granularity escalation) and produce an illegal
+    ``subsection inside p1group`` tree shape. Such a mismatch must return
+    ``None`` so structural lowering fails instead of fabricating a malformed
+    payload.
+    """
+    from lawvm.uk_legislation.source_payload_elaboration import (
+        _retarget_instruction_element_to_target,
+    )
+    from lawvm.uk_legislation.target_parser import _parse_affected_target
+
+    subsection_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}">
+          <Pnumber>11</Pnumber>
+          <P2para>
+            <Text>
+              An instrument containing an order may (in spite of section 14 of
+              the Interpretation Act 1978) be subject to a different procedure.
+            </Text>
+          </P2para>
+        </P2>
+        """
+    )
+    target = _parse_affected_target("s. 14")
+    text = "An instrument containing an order may (in spite of section 14 of the Interpretation Act 1978) be subject to a different procedure."
+    assert _retarget_instruction_element_to_target(subsection_el, target, text) is None
 
 def test_substituted_for_words_effect_is_admitted_as_structural() -> None:
     effect = UKEffectRecord(
@@ -52246,10 +52382,13 @@ def test_compile_metadata_only_schedule_part_insert_uses_metadata_fallback_place
     assert ops[0].action is StructuralAction.INSERT
     assert ops[0].target.path == (("schedule", "1"), ("part", "3"), ("paragraph", "7"))
     assert ops[0].payload is not None
-    assert ops[0].payload.kind == IRNodeKind.PARAGRAPH
-    assert ops[0].payload.label == "7"
+    assert ops[0].payload.kind == IRNodeKind.P1GROUP
+    assert len(ops[0].payload.children) == 1
+    assert ops[0].payload.children[0].kind == IRNodeKind.PARAGRAPH
+    assert ops[0].payload.children[0].label == "7"
     assert (
-        ops[0].payload.text == "[inserted by metadata source only: uk_test_metadata_only_schedule_part_insert_fallback]"
+        ops[0].payload.children[0].text
+        == "[inserted by metadata source only: uk_test_metadata_only_schedule_part_insert_fallback]"
     )
     assert any(
         note.startswith(_NOTE_METADATA_SOURCE_FALLBACK + "uk_test_metadata_only_schedule_part_insert_fallback")
@@ -53069,7 +53208,7 @@ def test_pipeline_excludes_temporally_qualified_ceases_to_have_effect_repeal_ops
         replay_applicable=True,
         structural_for_replay=False,
     )
-    assert frontier["status"] == "non_textual_or_out_of_scope"
+    assert frontier["manual_frontier_status"] == "non_textual_or_out_of_scope"
     assert frontier["rule_id"] == UK_TEMPORAL_CEASES_TO_HAVE_EFFECT_REPLAY_EXCLUDED_RULE_ID
 
 
@@ -53974,7 +54113,7 @@ def test_compile_metadata_cross_container_renumber_corrects_effect_type_destinat
         replay_applicable=True,
         structural_for_replay=True,
     )
-    assert manual_frontier["status"] == "deterministic_frontend_supported"
+    assert manual_frontier["manual_frontier_status"] == "deterministic_frontend_supported"
     assert manual_frontier["rule_id"] == "uk_manual_frontier_deterministic_supported"
 
 
@@ -54010,7 +54149,7 @@ def test_manual_frontier_classifies_corresponding_table_entry_unresolved() -> No
     )
 
     assert source_pathology == "table_entry_target_unsupported"
-    assert manual_frontier["status"] == "manual_compile_candidate"
+    assert manual_frontier["manual_frontier_status"] == "manual_compile_candidate"
     assert manual_frontier["rule_id"] == "uk_manual_frontier_table_entry_candidate"
 
 
@@ -54088,10 +54227,10 @@ def test_manual_frontier_classifies_table_point_and_row_anchor_parser_misses() -
         structural_for_replay=True,
     )
 
-    assert point_frontier["status"] == "manual_compile_candidate"
+    assert point_frontier["manual_frontier_status"] == "manual_compile_candidate"
     assert point_frontier["rule_id"] == "uk_manual_frontier_table_entry_candidate"
     assert row_anchor_pathology == "table_entry_target_unsupported"
-    assert row_anchor_frontier["status"] == "manual_compile_candidate"
+    assert row_anchor_frontier["manual_frontier_status"] == "manual_compile_candidate"
     assert row_anchor_frontier["rule_id"] == "uk_manual_frontier_table_entry_candidate"
 
 
@@ -54129,7 +54268,7 @@ def test_manual_frontier_classifies_savings_qualified_text_omission() -> None:
     )
 
     assert source_pathology == "savings_qualified_text_omission_unsupported"
-    assert manual_frontier["status"] == "manual_compile_candidate"
+    assert manual_frontier["manual_frontier_status"] == "manual_compile_candidate"
     assert (
         manual_frontier["rule_id"]
         == "uk_manual_frontier_savings_qualified_text_omission_candidate"
@@ -54169,7 +54308,7 @@ def test_manual_frontier_classifies_non_simple_whole_act_word_patch_as_manual_ca
     )
 
     assert source_pathology == "whole_act_word_level_text_patch_unsupported"
-    assert manual_frontier["status"] == "manual_compile_candidate"
+    assert manual_frontier["manual_frontier_status"] == "manual_compile_candidate"
     assert (
         manual_frontier["rule_id"]
         == "uk_manual_frontier_whole_act_word_level_text_patch_candidate"
@@ -67662,9 +67801,11 @@ def test_compile_enacted_schedule_table_row_refines_target_to_source_part() -> N
     assert ops[0].action is StructuralAction.INSERT
     assert str(ops[0].target) == "schedule:1/part:4/paragraph:32b"
     assert ops[0].payload is not None
-    assert ops[0].payload.kind is IRNodeKind.PARAGRAPH
-    assert ops[0].payload.label == "32B"
-    assert ops[0].payload.text == "NHS Health Scotland"
+    assert ops[0].payload.kind == IRNodeKind.P1GROUP
+    assert len(ops[0].payload.children) == 1
+    assert ops[0].payload.children[0].kind == IRNodeKind.PARAGRAPH
+    assert ops[0].payload.children[0].label == "32B"
+    assert ops[0].payload.children[0].text == "NHS Health Scotland"
     refinement_record = next(
         row
         for row in lowering
@@ -72658,3 +72799,184 @@ def test_executor_refuses_impossible_body_root_fallback_for_descendant_insert() 
     )
 
     assert executor.statute.body.children == []
+
+
+def _schedule_paragraph_node(label: str, text: str, extra_children: tuple[IRNode, ...] = ()) -> IRNode:
+    return IRNode(
+        kind=IRNodeKind.PARAGRAPH,
+        label=label,
+        attrs={"eId": f"schedule-2-paragraph-{label.lower()}"},
+        text=text,
+        children=extra_children,
+    )
+
+
+def test_words_before_table_substitution_lowers_to_replace_plus_sibling_inserts() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}">
+          <Pnumber>1</Pnumber>
+          <Text>In paragraph 20, for the words before the table substitute—</Text>
+          <BlockAmendment>
+            <P1>
+              <Pnumber>20</Pnumber>
+              <Text>20. The lead-in text.</Text>
+              <P2>
+                <Pnumber>1</Pnumber>
+                <Text>Sub-point.</Text>
+              </P2>
+            </P1>
+            <P1>
+              <Pnumber>20A</Pnumber>
+              <Text>20A. New sibling A.</Text>
+            </P1>
+            <P1>
+              <Pnumber>20B</Pnumber>
+              <Text>20B. New sibling B.</Text>
+            </P1>
+          </BlockAmendment>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-test-words-before-table",
+        effect_type="substituted Sch. 2 para. 20 (for the words before the table substitute— except for the table which now becomes part of new para. 20A)",
+        applied=True,
+        requires_applied=True,
+        modified="2024-10-30",
+        affected_uri="/id/asc/2023/3/schedule/2",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2023",
+        affected_number="3",
+        affected_provisions="Sch. 2 para. 20-20B",
+        affecting_uri="/id/wsi/2024/1061",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2024",
+        affecting_number="1061",
+        affecting_provisions="reg. 20",
+        affecting_title="Affecting SI",
+        in_force_dates=[{"date": "2024-11-03", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 3
+    replace_op = ops[0]
+    insert_a, insert_b = ops[1], ops[2]
+
+    assert replace_op.action is StructuralAction.REPLACE
+    assert replace_op.target.path == (("schedule", "2"), ("paragraph", "20"))
+    assert replace_op.payload is not None
+    assert replace_op.payload.attrs.get("eId") == "schedule-2-paragraph-20"
+    assert replace_op.witness_rule_id == UK_SCHEDULE_WORDS_BEFORE_TABLE_SUBSTITUTION_RULE_ID
+
+    assert insert_a.action is StructuralAction.INSERT
+    assert insert_a.target.path == (("schedule", "2"), ("paragraph", "20a"))
+    assert insert_a.witness_rule_id == UK_SCHEDULE_WORDS_BEFORE_TABLE_SUBSTITUTION_RULE_ID
+    assert insert_b.action is StructuralAction.INSERT
+    assert insert_b.target.path == (("schedule", "2"), ("paragraph", "20b"))
+    assert insert_b.witness_rule_id == UK_SCHEDULE_WORDS_BEFORE_TABLE_SUBSTITUTION_RULE_ID
+
+    assert should_replay_nonstructural_ops(effect, ops, applicability_mode="effective_date_plus_feed_applied")
+    assert uk_nonstructural_replay_candidate_family(effect) == "substituted_schedule_words_before_table"
+    frontier = classify_uk_manual_compile_frontier(
+        effect_type=effect.effect_type,
+        source_pathology="",
+        extracted_tag="P1",
+        extracted_text="In paragraph 20, for the words before the table substitute—",
+        lowering_rejections=lowering_records,
+        compiled_op_count=len(ops),
+        replay_applicable=True,
+        structural_for_replay=False,
+    )
+    assert frontier["manual_frontier_status"] == "deterministic_frontend_supported"
+    assert any(
+        record["rule_id"] == UK_SCHEDULE_WORDS_BEFORE_TABLE_SUBSTITUTION_RULE_ID
+        and not record["blocking"]
+        for record in lowering_records
+    )
+
+
+def test_words_before_table_substitution_replays_against_schedule_paragraph() -> None:
+    base = IRStatute(
+        statute_id="asc/2023/3",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="2",
+                attrs={"eId": "schedule-2"},
+                text="Schedule 2",
+                children=(
+                    _schedule_paragraph_node("20", "Old lead-in text."),
+                    _schedule_paragraph_node("21", "Following paragraph."),
+                ),
+            ),
+        ),
+    )
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}">
+          <Pnumber>1</Pnumber>
+          <Text>In paragraph 20, for the words before the table substitute—</Text>
+          <BlockAmendment>
+            <P1>
+              <Pnumber>20</Pnumber>
+              <Text>20. New lead-in text.</Text>
+            </P1>
+            <P1>
+              <Pnumber>20A</Pnumber>
+              <Text>20A. Inserted A.</Text>
+            </P1>
+            <P1>
+              <Pnumber>20B</Pnumber>
+              <Text>20B. Inserted B.</Text>
+            </P1>
+          </BlockAmendment>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-test-words-before-table-replay",
+        effect_type="substituted Sch. 2 para. 20 (for the words before the table substitute— except for the table which now becomes part of new para. 20A)",
+        applied=True,
+        requires_applied=True,
+        modified="2024-10-30",
+        affected_uri="/id/asc/2023/3/schedule/2",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2023",
+        affected_number="3",
+        affected_provisions="Sch. 2 para. 20-20B",
+        affecting_uri="/id/wsi/2024/1061",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2024",
+        affecting_number="1061",
+        affecting_provisions="reg. 20",
+        affecting_title="Affecting SI",
+        in_force_dates=[{"date": "2024-11-03", "prospective": "false"}],
+    )
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=[],
+    )
+    executor: Any = UKReplayExecutor(base)
+    for op in ops:
+        executor.apply_op(op)
+
+    schedule = executor.statute.supplements[0]
+    eids = {node.attrs.get("eId") for node in schedule.children}
+    assert eids == {"schedule-2-paragraph-20", "schedule-2-paragraph-20A", "schedule-2-paragraph-20B", "schedule-2-paragraph-21"}
+    assert schedule.children[0].text == "20. New lead-in text."
+    assert schedule.children[1].text == "20A. Inserted A."
+    assert schedule.children[2].text == "20B. Inserted B."
+    assert schedule.children[3].text == "Following paragraph."

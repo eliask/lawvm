@@ -10946,3 +10946,180 @@ def test_replace_section_item_recovers_inline_singleton_subsection_item() -> Non
     assert subsection.text == "Inline list is: 19) old previous; 20) new item; 21) old next."
     assert subsection.attrs["source_family"] == "ee_inline_item_replace_singleton_subsection"
     assert [item.kind for item in adjudications] == ["ee_inline_item_replace_singleton_subsection"]
+
+
+def test_ee_phrase_forms_returns_assistent_loanword_family() -> None:
+    """Synthetic unit isolating the ``-assistent`` loanword agent noun family.
+    Corpus motivation: ``120092023001`` §1 item 1 amends
+    ``Sekretäri- ja kontoritöö erialade riiklikppekava`` via the
+    source-backed rename ``bürootöö → bürooassistent vastavas käändes``.
+    Pre-fix the new noun dropped to nominative-only because no decay
+    family existed for the ``-ent`` loanword agent suffix.
+    """
+    from lawvm.estonia.text_morphology import _ee_phrase_forms
+
+    forms = _ee_phrase_forms("bürooassistent")
+    assert forms is not None
+    assert forms["sg_nom"] == "bürooassistent"
+    assert forms["sg_gen"] == "bürooassistendi"
+    assert forms["sg_part"] == "bürooassistenti"
+    assert forms["sg_ine"] == "bürooassistendis"
+    assert forms["sg_all"] == "bürooassistendile"
+    assert forms["sg_ade"] == "bürooassistendil"
+    assert forms["sg_abl"] == "bürooassistendilt"
+    assert forms["sg_trn"] == "bürooassistendiks"
+    assert forms["sg_ess"] == "bürooassistentina"
+    assert forms["pl_nom"] == "bürooassistendid"
+    # Plural oblique forms: standard Estonian declines this ``-ent`` agent
+    # loanword like the consonant-final ``vorm`` family (strong-grade ``-ent``
+    # + ``-ide`` plural stem). Gen pl is ``assistentide`` and part pl
+    # ``assistente``; the earlier ``-ite`` / ``assistendeid`` forms were
+    # non-standard and tested only ``pl_nom``, hiding the divergence.
+    assert forms["pl_gen"] == "bürooassistentide"
+    assert forms["pl_part"] == "bürooassistente"
+    assert forms["pl_ine"] == "bürooassistentides"
+    assert forms["pl_ela"] == "bürooassistentidest"
+    assert forms["pl_all"] == "bürooassistentidele"
+    assert forms["pl_ade"] == "bürooassistentidel"
+    assert forms["pl_abl"] == "bürooassistentidelt"
+    assert forms["pl_trn"] == "bürooassistentideks"
+
+
+def test_ee_phrase_forms_returns_long_vowel_oo_family() -> None:
+    """Synthetic unit isolating the ``-öö`` long-vowel noun family.
+    Corpus motivation: ``120092023001`` source-backed rename
+    ``bürootöö → bürooassistent vastavas käändes``. ``bürootöö`` shares
+    the Estonian class-II long-vowel paradigm where sg_nom == sg_gen
+    (no vowel drop, no consonant gradation); the ambiguity-genitive
+    sanity check relies on this double-collapse.
+    """
+    from lawvm.estonia.text_morphology import _ee_phrase_forms
+
+    forms = _ee_phrase_forms("bürootöö")
+    assert forms is not None
+    assert forms["sg_nom"] == "bürootöö"
+    assert forms["sg_gen"] == "bürootöö"
+    assert forms["sg_part"] == "bürootööd"
+    assert forms["sg_ine"] == "bürootöös"
+    assert forms["sg_ill"] == "bürootöösse"
+    assert forms["sg_all"] == "bürootööle"
+    assert forms["sg_com"] == "bürootööga"
+    # Same family holds for the bare-long-vowel ``töö`` head noun.
+    too = _ee_phrase_forms("töö")
+    assert too is not None
+    assert too["sg_nom"] == "töö"
+    assert too["sg_gen"] == "töö"
+    assert too["sg_part"] == "tööd"
+
+
+def test_case_inflected_text_replace_uses_assistent_genitive_on_modifier_context() -> None:
+    """Case-aware rewrite of ``bürootöö -> bürooassistent`` must produce the
+    genitive ``bürooassistendi`` in a genitive-modifier context
+    (e.g., ``bürooassistendi erialappekava üldosa``), because the new
+    noun's sg_gen splits away from sg_nom while the old noun's sg_gen
+    collapses onto sg_nom.
+
+    This exercises the ``_ee_replace_ambiguous_genitive_phrase`` path
+    through ``_ee_apply_text_replace_value``.
+    """
+    replaced = _ee_apply_text_replace_value(
+        "Bürootöö erialappekava üldosa",
+        "bürootöö",
+        "bürooassistent",
+        case_inflected=True,
+    )
+    assert replaced == "Bürooassistendi erialappekava üldosa"
+
+
+def test_case_inflected_text_replace_uses_assistent_genitive_before_plain_noun_head() -> None:
+    """Plain noun-head modifier context — the corpus-motivated family.
+
+    ``bialppekava`` (ending in ``-va``) was already handled by the
+    earlier participle/``-va`` cue in ``_genitive_context``, but a plain
+    noun head like ``eriala`` does not match any earlier cue and used to
+    fall through to the conservative nominative default. Corpus witness:
+    ``120092023001`` §1 over ``130042020016`` (Sekretäri- ja
+    kontoritöö erialade riiklikppekava), where the source-backed rename
+    ``bürootöö -> bürooassistent vastavas käändes`` requires
+    ``bürooassistendi`` before every noun head (``bürooassistendi eriala``,
+    ``bürooassistendi erialappekava üldosa``, etc.). Pre-fix this pair
+    showed 14 open divergences at 44.4% sentence match; post-fix it
+    converges to 0 open divergences at 100% match.
+    """
+    # Sentence-medial, plain noun head, no earlier cue fires.
+    assert _ee_apply_text_replace_value(
+        "Riiklikuppekavaga kehtestatakse kohustuslikppesisu bürootöö eriala "
+        "(inglise keeles office assistant) näol.",
+        "bürootöö",
+        "bürooassistent",
+        case_inflected=True,
+    ) == (
+        "Riiklikuppekavaga kehtestatakse kohustuslikppesisu bürooassistendi "
+        "eriala (inglise keeles office assistant) näol."
+    )
+    # Heading-initial, plain noun head, capitalisation preserved.
+    assert _ee_apply_text_replace_value(
+        "Bürootöö erialappekava üldosa Bürooassistent eriala "
+        "kutsekeskharidusõppe eesmärk japiväljundid",
+        "bürootöö",
+        "bürooassistent",
+        case_inflected=True,
+    ) == (
+        "Bürooassistendi erialappekava üldosa Bürooassistendi eriala "
+        "kutsekeskharidusõppe eesmärk japiväljundid"
+    )
+
+
+def test_case_inflected_text_replace_keeps_nominative_before_genitive_chain_noun_head() -> None:
+    """Negative: matched surface stays nominative when the next word is itself
+    a genitive-form noun (``-se`` ending), signalling a genitive-chain /
+    apposition construction rather than a modifier slot.
+
+    Witness: ``Põllumajandus-ja Toiduamet asendustäitmise ja sunniraha
+    seaduses sätestatud korras`` keeps nominative before ``asendustäitmise``
+    (the subject of ``sätestatud``).  Pin against the
+    ``-se`` carve-out in ``_looks_like_noun_head`` so the genitive-modifier
+    rule cannot back-fire here and produce ``Põllumajandus-ja Toiduameti``.
+    """
+    assert _ee_apply_text_replace_value(
+        "Põllumajandusamet asendustäitmise ja sunniraha seaduses sätestatud korras.",
+        "Põllumajandusamet",
+        "Põllumajandus-ja Toiduamet",
+        case_inflected=True,
+    ) == "Põllumajandus-ja Toiduamet asendustäitmise ja sunniraha seaduses sätestatud korras."
+
+
+def test_case_inflected_text_replace_keeps_nominative_before_dash_compound_overlap() -> None:
+    """Negative: matched surface stays nominative when followed by a dash
+    separator (ASCII hyphen, en-dash, or em-dash) and another noun / name —
+    ``X – Y või selle struktuuriüksus`` is a coordinate compound where the
+    matched surface is the subject/term slot, not a modifier of Y.
+
+    Witness: ``117122025002`` §2 over ``112022019010`` (Väikelaeva ... reg)
+    item:19, where the same-target rename chain ``Veeteede Amet /
+    Maanteeamet -> Transpordiamet`` ultimately produces ``Transpordiamet –
+    Transpordiamet või selle struktuuriüksus``. Each rename op is a separate
+    ``_ee_apply_text_replace_value`` call; the genitive post-pass would
+    otherwise fire on just-replaced ``Transpordiamet`` before the dash
+    separator and lower it to ``Transpordiameti``. Pre-carve-out the pair
+    regressed to a 4-divergence MISMATCH at 93.75% sentence match;
+    post-carve-out it converges to 0 open divergences at 100%.
+
+    ``_ee_apply_text_replace_value`` runs one op per call, so each assertion
+    applies ONE rename and checks the genitive carve-out doesn't then fire
+    on the just-replaced noun before the dash separator.
+    """
+    # En-dash with spaces (the live pattern).
+    assert _ee_apply_text_replace_value(
+        "Veeteede Amet – Maanteeamet või selle struktuuriüksus;",
+        "Veeteede Amet",
+        "Transpordiamet",
+        case_inflected=True,
+    ) == "Transpordiamet – Maanteeamet või selle struktuuriüksus;"
+    # Em-dash, spaced (typographical variant).
+    assert _ee_apply_text_replace_value(
+        "Veeteede Amet — Maanteeamet või selle struktuuriüksus;",
+        "Veeteede Amet",
+        "Transpordiamet",
+        case_inflected=True,
+    ) == "Transpordiamet — Maanteeamet või selle struktuuriüksus;"

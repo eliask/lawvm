@@ -56,7 +56,7 @@ def uk_execution_authorization_from_manual_frontier(
         )
     if status == "deterministic_frontend_candidate":
         return _non_authorized_frontier(
-            status="deterministic_frontend_work_required",
+            authorization_status="deterministic_frontend_work_required",
             rule_id="uk_execution_authorization_deterministic_candidate",
             owner_phase=owner_phase,
             strict_disposition=strict_disposition,
@@ -69,7 +69,7 @@ def uk_execution_authorization_from_manual_frontier(
         )
     if status == "manual_compile_candidate":
         return _non_authorized_frontier(
-            status="manual_claim_required",
+            authorization_status="manual_claim_required",
             rule_id="uk_execution_authorization_manual_claim_required",
             owner_phase=owner_phase,
             strict_disposition=strict_disposition,
@@ -89,7 +89,7 @@ def uk_execution_authorization_from_manual_frontier(
         )
     if status == "source_insufficient":
         return _non_authorized_frontier(
-            status="source_insufficient",
+            authorization_status="source_insufficient",
             rule_id="uk_execution_authorization_source_insufficient",
             owner_phase=owner_phase,
             strict_disposition=strict_disposition,
@@ -102,7 +102,7 @@ def uk_execution_authorization_from_manual_frontier(
         )
     if status == "non_textual_or_out_of_scope":
         return _non_authorized_frontier(
-            status="out_of_scope",
+            authorization_status="out_of_scope",
             rule_id="uk_execution_authorization_non_textual_or_out_of_scope",
             owner_phase=owner_phase,
             strict_disposition=strict_disposition,
@@ -115,7 +115,7 @@ def uk_execution_authorization_from_manual_frontier(
         )
     if status == "source_or_feed_target_conflict":
         return _non_authorized_frontier(
-            status="source_target_conflict",
+            authorization_status="source_target_conflict",
             rule_id="uk_execution_authorization_source_target_conflict",
             owner_phase=owner_phase,
             strict_disposition=strict_disposition,
@@ -127,7 +127,7 @@ def uk_execution_authorization_from_manual_frontier(
             manual_compile_rule_id=rule_id,
         )
     return _non_authorized_frontier(
-        status="unclassified_frontier",
+        authorization_status="unclassified_frontier",
         rule_id="uk_execution_authorization_unclassified_frontier",
         owner_phase=owner_phase,
         strict_disposition=strict_disposition,
@@ -165,7 +165,7 @@ def uk_execution_authorization_from_compile_record(
     quirks_disposition = str(record.get("quirks_disposition") or "record")
     if blocking:
         return _non_authorized_compile_record(
-            status=f"{lane_id}_compile_blocked",
+            authorization_status=f"{lane_id}_compile_blocked",
             rule_id=f"uk_execution_authorization_{lane_id}_compile_blocked",
             lane=lane_id,
             owner_phase=owner_phase,
@@ -180,7 +180,7 @@ def uk_execution_authorization_from_compile_record(
             record=record,
         )
     return _non_authorized_compile_record(
-        status=f"{lane_id}_diagnostic_evidence_only",
+        authorization_status=f"{lane_id}_diagnostic_evidence_only",
         rule_id=f"uk_execution_authorization_{lane_id}_diagnostic_evidence_only",
         lane=lane_id,
         owner_phase=owner_phase,
@@ -256,7 +256,7 @@ def uk_execution_authorization_from_semantic_claim_validation(
     status = str(validator_status or "")
     if status.startswith("validated_"):
         return _non_authorized_claim(
-            status="validated_non_executable_claim",
+            authorization_status="validated_non_executable_claim",
             rule_id="uk_execution_authorization_semantic_claim_validated_non_executable",
             owner_phase=owner_phase,
             strict_disposition=strict_disposition,
@@ -275,7 +275,7 @@ def uk_execution_authorization_from_semantic_claim_validation(
         )
     if status == "rejected_schema":
         return _non_authorized_claim(
-            status="claim_rejected_schema",
+            authorization_status="claim_rejected_schema",
             rule_id="uk_execution_authorization_semantic_claim_rejected_schema",
             owner_phase=owner_phase,
             strict_disposition=strict_disposition,
@@ -286,7 +286,7 @@ def uk_execution_authorization_from_semantic_claim_validation(
         )
     if status == "rejected_workqueue_missing":
         return _non_authorized_claim(
-            status="claim_rejected_workqueue_missing",
+            authorization_status="claim_rejected_workqueue_missing",
             rule_id="uk_execution_authorization_semantic_claim_workqueue_missing",
             owner_phase=owner_phase,
             strict_disposition=strict_disposition,
@@ -297,7 +297,7 @@ def uk_execution_authorization_from_semantic_claim_validation(
         )
     if status == "rejected_workqueue_mismatch":
         return _non_authorized_claim(
-            status="claim_rejected_workqueue_mismatch",
+            authorization_status="claim_rejected_workqueue_mismatch",
             rule_id="uk_execution_authorization_semantic_claim_workqueue_mismatch",
             owner_phase=owner_phase,
             strict_disposition=strict_disposition,
@@ -308,7 +308,7 @@ def uk_execution_authorization_from_semantic_claim_validation(
         )
     if status == "rejected_source_text_mismatch":
         return _non_authorized_claim(
-            status="claim_rejected_source_text_mismatch",
+            authorization_status="claim_rejected_source_text_mismatch",
             rule_id="uk_execution_authorization_semantic_claim_source_text_mismatch",
             owner_phase=owner_phase,
             strict_disposition=strict_disposition,
@@ -319,7 +319,7 @@ def uk_execution_authorization_from_semantic_claim_validation(
         )
     if status in {"rejected_live_state_missing", "rejected_live_state_mismatch"}:
         return _non_authorized_claim(
-            status="claim_rejected_live_state",
+            authorization_status="claim_rejected_live_state",
             rule_id="uk_execution_authorization_semantic_claim_live_state_rejected",
             owner_phase=owner_phase,
             strict_disposition=strict_disposition,
@@ -329,7 +329,7 @@ def uk_execution_authorization_from_semantic_claim_validation(
             safe_default="reject_claim_without_replay",
         )
     return _non_authorized_claim(
-        status="claim_validation_frontier",
+        authorization_status="claim_validation_frontier",
         rule_id="uk_execution_authorization_semantic_claim_validation_frontier",
         owner_phase=owner_phase,
         strict_disposition=strict_disposition,
@@ -385,7 +385,7 @@ def uk_execution_authorization_from_residual_claim(
 
 def _non_authorized_compile_record(
     *,
-    status: str,
+    authorization_status: str,
     rule_id: str,
     lane: str,
     owner_phase: str,
@@ -399,7 +399,7 @@ def _non_authorized_compile_record(
     return ExecutionAuthorization(
         executable=False,
         replay_authorized=False,
-        authorization_status=status,
+        authorization_status=authorization_status,
         authorization_rule_id=rule_id,
         owner_phase=owner_phase,
         strict_disposition=strict_disposition,
@@ -430,7 +430,7 @@ def _status_token(value: str) -> str:
 
 def _non_authorized_frontier(
     *,
-    status: str,
+    authorization_status: str,
     rule_id: str,
     owner_phase: str,
     strict_disposition: str,
@@ -444,7 +444,7 @@ def _non_authorized_frontier(
     return ExecutionAuthorization(
         executable=False,
         replay_authorized=False,
-        authorization_status=status,
+        authorization_status=authorization_status,
         authorization_rule_id=rule_id,
         owner_phase=owner_phase,
         strict_disposition=strict_disposition,
@@ -467,7 +467,7 @@ def _non_authorized_frontier(
 
 def _non_authorized_claim(
     *,
-    status: str,
+    authorization_status: str,
     rule_id: str,
     owner_phase: str,
     strict_disposition: str,
@@ -479,7 +479,7 @@ def _non_authorized_claim(
     return ExecutionAuthorization(
         executable=False,
         replay_authorized=False,
-        authorization_status=status,
+        authorization_status=authorization_status,
         authorization_rule_id=rule_id,
         owner_phase=owner_phase,
         strict_disposition=strict_disposition,

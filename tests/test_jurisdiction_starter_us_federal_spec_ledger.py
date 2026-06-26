@@ -33,7 +33,7 @@ from lawvm.tools.spec_ledger_us_catalog import (
     _US_RULE_SPECS,
     US_NON_RULE_LITERALS,
 )
-from lawvm.us_federal.bench import BenchWindow, WindowResult
+from lawvm.us_federal.bench import BenchWindow, WindowResult, WindowStatus
 from dataclasses import replace
 
 from lawvm.us_federal.dry_run import (
@@ -44,6 +44,7 @@ from lawvm.us_federal.dry_run import (
     US_DRY_RUN_SECTION_AGREES_RULE_ID,
     USDryRunRefusal,
     USDryRunReport,
+    USDryRunRowStatus,
     USDryRunSectionRow,
     build_us_dry_run,
 )
@@ -157,7 +158,9 @@ def _window(title: int = 11, before: int = 2018, after: int = 2020) -> BenchWind
     )
 
 
-def _result(report: USDryRunReport | None, *, status: str = "evaluated") -> WindowResult:
+def _result(
+    report: USDryRunReport | None, *, status: WindowStatus = WindowStatus.EVALUATED
+) -> WindowResult:
     return WindowResult(
         window=_window(report.title if report else 99),
         status=status,
@@ -194,7 +197,7 @@ def _synthetic_report() -> USDryRunReport:
             action="TEXT_REPLACE",
             target_address="11:10",
             section_key="11:10",
-            status="agree",
+            status=USDryRunRowStatus.AGREE,
             rule_id=US_DRY_RUN_SECTION_AGREES_RULE_ID,
             oracle_changed=True,
         ),
@@ -203,7 +206,7 @@ def _synthetic_report() -> USDryRunReport:
             action="TEXT_REPLACE",
             target_address="11:20",
             section_key="11:20",
-            status="residual",
+            status=USDryRunRowStatus.RESIDUAL,
             rule_id=US_DRY_RUN_RESIDUAL_TEXT_MISMATCH_RULE_ID,
             disposition=DISPOSITION_LAWVM_WRONG,
             oracle_changed=True,
@@ -214,7 +217,7 @@ def _synthetic_report() -> USDryRunReport:
             action="TEXT_REPLACE",
             target_address="11:40",
             section_key="11:40",
-            status="residual",
+            status=USDryRunRowStatus.RESIDUAL,
             rule_id="us_dry_run_residual_not_a_real_cataloged_rule",
             disposition=DISPOSITION_ORACLE_SUSPECT,
             oracle_changed=True,
@@ -293,7 +296,7 @@ def test_uncataloged_rule_is_a_loud_legacy_unknown_blind_spot() -> None:
 
 
 def test_skipped_result_contributes_nothing() -> None:
-    skipped = _result(None, status="skipped")
+    skipped = _result(None, status=WindowStatus.SKIPPED)
     assert us_ledger_inputs_from_reports([skipped]) == []
 
 

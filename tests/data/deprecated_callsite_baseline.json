@@ -1,0 +1,7 @@
+{
+  "_doc": "Monotone call-site baseline for the PEP 702 @deprecated FI legacy-fallback cohort. Counts may only fall. Regenerate with `uv run python scripts/inventory_deprecated_callsites.py --update-baseline` after legitimately retiring a legacy call site (or, with explicit acknowledgment, after adding one).",
+  "symbols": {},
+  "counts": {},
+  "sites": {},
+  "total": 0
+}

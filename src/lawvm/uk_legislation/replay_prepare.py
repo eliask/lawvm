@@ -12,6 +12,7 @@ from lawvm.uk_legislation.addressing import _action_name
 from lawvm.uk_legislation.replay_prepare_filters import _is_unsafe_schedule_entry_repeal_op
 from lawvm.uk_legislation.replay_prepare_ordering import (
     _classify_same_source_text_patch_overlaps,
+    _collect_renumber_before_insert_edges,
     _order_ops_by_before_edges,
 )
 from lawvm.uk_legislation.replay_records import (
@@ -138,7 +139,10 @@ def prepare_replay_uk_ops(
         filtered_ops.append(op)
     filtered_ops = _order_ops_by_before_edges(
         filtered_ops,
-        overlap_classification.disjoint_before_edges,
+        {
+            **overlap_classification.disjoint_before_edges,
+            **_collect_renumber_before_insert_edges(filtered_ops),
+        },
     )
     return UKReplayPrepareResult(
         accepted_ops=tuple(filtered_ops),

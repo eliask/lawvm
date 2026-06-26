@@ -43,7 +43,7 @@ from lawvm.substrate.selection import (
 
 
 def _scope(territory: list[str] | None = None, status: str = "total") -> ScopePredicate:
-    return ScopePredicate(dimensions={"territory": territory or []}, status=status)
+    return ScopePredicate(dimensions={"territory": territory or []}, scope_status=status)
 
 
 def _temporal_basis(kind: str = "fixed_date") -> TemporalBasis:
@@ -94,7 +94,7 @@ def _row(
         effect_interval=effect_interval,
         account_interval=account_interval,
         source_policy_id="keeper_latest_semantic",
-        status=status,
+        selection_status=status,
         selected_node_version_id=selected_node_version_id,
         candidate_set_hash="sha256:candset1",
         required_scope_dimensions=required_scope_dimensions,
@@ -170,9 +170,9 @@ def test_scope_predicate_dimensions_are_closed() -> None:
 
 
 def test_scope_predicate_status_enum() -> None:
-    ScopePredicate(dimensions={}, status="unsupported")
+    ScopePredicate(dimensions={}, scope_status="unsupported")
     with pytest.raises(SelectionError):
-        ScopePredicate(dimensions={}, status="maybe")
+        ScopePredicate(dimensions={}, scope_status="maybe")
 
 
 def test_scope_predicate_canonical_dict_lists_all_closed_dimensions() -> None:
@@ -232,8 +232,8 @@ def test_block_reason_only_with_blocked_status() -> None:
 def test_absent_and_out_of_scope_are_distinct_statuses() -> None:
     absent = _row(status="absent", selected_node_version_id=None)
     out_of_scope = _row(status="out_of_scope", selected_node_version_id=None)
-    assert absent.status == "absent"
-    assert out_of_scope.status == "out_of_scope"
+    assert absent.selection_status == "absent"
+    assert out_of_scope.selection_status == "out_of_scope"
     assert absent.selection_key != out_of_scope.selection_key
 
 
@@ -553,7 +553,7 @@ def test_temporary_twin_window_clean_disjoint_versions() -> None:
         selected_node_version_id="sha256:temp",
         effect_interval=("2023-01-01", "2023-07-01"),
     )
-    assert row.status == "selected"
+    assert row.selection_status == "selected"
     assert row.candidate_set_hash is not None
     assert cs.candidate_set_id.startswith("sha256:")
 
@@ -568,7 +568,7 @@ def test_scope_ambiguity_without_territory() -> None:
         selected_node_version_id=None,
         required_scope_dimensions=("territory",),
     )
-    assert row.status == "ambiguous_missing_scope"
+    assert row.selection_status == "ambiguous_missing_scope"
     assert "territory" in row.required_scope_dimensions
 
 
@@ -583,12 +583,12 @@ def test_scope_specific_selection_with_territory() -> None:
         effect_interval=("2020-01-01", None),
         account_interval=("corpus:2026-06-21", None),
         source_policy_id="keeper_latest_semantic",
-        status="selected",
+        selection_status="selected",
         selected_node_version_id="sha256:ew_version",
         candidate_set_hash="sha256:cs",
         decision_basis=DecisionBasis(selection_rule_id="lawvm.selection.scope_match.v1"),
     )
-    assert row.status == "selected"
+    assert row.selection_status == "selected"
     assert row.selected_node_version_id == "sha256:ew_version"
 
 
@@ -624,7 +624,7 @@ def test_same_day_precedence_unresolved_blocks() -> None:
         selected_node_version_id=None,
         block_reason="same_day_precedence_unresolved",
     )
-    assert row.status == "blocked"
+    assert row.selection_status == "blocked"
     assert row.block_reason == "same_day_precedence_unresolved"
     assert row.selected_node_version_id is None
 

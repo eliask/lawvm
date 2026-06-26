@@ -196,16 +196,18 @@ class InsertChapter:
 
 
 def _family_base_repealed(ops: Iterable[Any], family_base_label: Optional[str]) -> bool:
+    from lawvm.finland.ops import OpType
+
     if not family_base_label:
         return False
     return any(
-        op.op_type == "REPEAL"
-        and op.target_unit_kind == "section"
-        and op.target_section
-        and _norm_num_token(op.target_section) == family_base_label
-        and not op.target_paragraph
-        and not op.target_item
-        and not op.target_special
+        op.op_type == OpType.REPEAL
+        and op.target_cols.target_unit_kind == "section"
+        and op.target_cols.target_section
+        and _norm_num_token(op.target_cols.target_section) == family_base_label
+        and not op.target_cols.target_paragraph
+        and not op.target_cols.target_item
+        and not op.target_cols.target_special
         for op in ops
     )
 

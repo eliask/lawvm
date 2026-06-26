@@ -2367,7 +2367,7 @@ def build_certificate_bundle(
                     "quote_hash": _sha256_rendered(data),
                 },
                 "classification": "operative",
-                "status": "compiled",
+                "source_unit_status": "compiled",
                 "refs": [],
             }
         )

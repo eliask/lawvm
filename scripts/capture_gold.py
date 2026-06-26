@@ -79,13 +79,13 @@ def _capture_one(statute_id: str) -> list:
             tree = etree.fromstring(xml)
             fallback = parse_ops_fallback_heuristic(cap.preamble_normalized)
             if fallback:
-                cap.peg_ops = [{"action": op.op_type, "section": op.target_section} for op in fallback]
+                cap.peg_ops = [{"action": op.op_type, "section": op.target_cols.target_section} for op in fallback]
                 cap.extraction_path = "fallback_heuristic"
             else:
                 title = _tree_title(tree)
                 title_ops = parse_ops_title_fallback(title)
                 if title_ops:
-                    cap.peg_ops = [{"action": op.op_type, "section": op.target_section} for op in title_ops]
+                    cap.peg_ops = [{"action": op.op_type, "section": op.target_cols.target_section} for op in title_ops]
                     cap.extraction_path = "title_fallback"
                 else:
                     cap.extraction_path = "none"

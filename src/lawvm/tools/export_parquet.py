@@ -101,7 +101,7 @@ def _section_diff_failed_finding(statute_id: str, exc: Exception) -> Dict[str, A
         "blocking": False,
         "strict_disposition": "record",
         "quirks_disposition": "record",
-        "status": "section_diff_failed",
+        "section_diff_status": "section_diff_failed",
         "error_type": type(exc).__name__,
     }
 
@@ -160,7 +160,7 @@ def _project_one_statute(
             "amendment_count": amendment_count,
             "oracle_version": "",
             "score": -1.0,
-            "status": str(exc),
+            "run_status": str(exc),
             "diff_kind_summary": "",
         })
         return result
@@ -326,7 +326,7 @@ def _project_one_statute(
         "amendment_count": amendment_count,
         "oracle_version": oracle_version,
         "score": round(score, 6),
-        "status": "OK",
+        "run_status": "OK",
         "diff_kind_summary": diff_kind_summary,
     })
 
@@ -349,7 +349,7 @@ def _project_worker(args: Tuple[int, str, str]) -> Tuple[str, Dict[str, Any], fl
                 "amendment_count": amendment_count,
                 "oracle_version": "",
                 "score": -1.0,
-                "status": str(exc),
+                "run_status": str(exc),
                 "diff_kind_summary": "",
             }],
             "sections": [],

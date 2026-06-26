@@ -103,7 +103,7 @@ def _request_notice(notice: NoticeRequest, timeout_s: int = DEFAULT_TIMEOUT_S) -
         meta = {
             "requested_url": notice.url(),
             "final_url": response.geturl(),
-            "status": getattr(response, "status", None),
+            "http_status": getattr(response, "status", None),
             "bytes": len(data),
             "sha256": hashlib.sha256(data).hexdigest(),
             "content_type": response.headers.get("Content-Type", ""),
@@ -124,7 +124,7 @@ def _request_url(url: str, timeout_s: int = DEFAULT_TIMEOUT_S, accept: str | Non
         meta = {
             "requested_url": url,
             "final_url": response.geturl(),
-            "status": getattr(response, "status", None),
+            "http_status": getattr(response, "status", None),
             "bytes": len(data),
             "sha256": hashlib.sha256(data).hexdigest(),
             "content_type": response.headers.get("Content-Type", ""),

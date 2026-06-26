@@ -7,9 +7,17 @@ from lxml import etree as ET
 from typing import Any, Callable, Optional
 
 from lawvm.core.ir import IRNode, LegalAddress
-from lawvm.uk_legislation.addressing import _addr_container, _addr_leaf_kind, _addr_leaf_label
+from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.tree_ops import _NESTING_ORDER
+from lawvm.uk_legislation.addressing import (
+    _addr_container,
+    _addr_field,
+    _addr_leaf_kind,
+    _addr_leaf_label,
+)
 from lawvm.uk_legislation.effects import UKEffectRecord
 from lawvm.uk_legislation.effect_payload_rejections import (
+    reject_body_section_replace_with_unmatched_schedule_payload,
     reject_broad_schedule_flat_replace_payload,
     reject_non_substantive_structural_payload,
 )
@@ -34,6 +42,7 @@ from lawvm.uk_legislation.source_payload_helpers import (
     _prepend_inserted_section_heading_carrier,
 )
 from lawvm.uk_legislation.uk_grafter import (
+    _LEG_NS,
     _clean_num,
     _parse_chapter,
     _parse_p1group,
@@ -44,6 +53,8 @@ from lawvm.uk_legislation.uk_grafter import (
     _parse_pblock,
     _parse_schedule_single,
     _parse_section,
+    _slugify,
+    _text_content,
 )
 from lawvm.uk_legislation.xml_helpers import _direct_structural_num, _tag
 
@@ -54,6 +65,299 @@ _UK_EFFECT_PAYLOAD_LABEL_REALIGNED_TO_TARGET_LEAF_RULE_ID = (
 _UK_EFFECT_PAYLOAD_KIND_REALIGNED_TO_TARGET_LEAF_RULE_ID = (
     "uk_effect_payload_kind_realigned_to_target_leaf"
 )
+
+
+_UK_EFFECT_SCHEDULE_PART_P1GROUP_WRAPPER_RULE_ID = (
+    "uk_effect_schedule_part_paragraph_p1group_wrapper_lowered"
+)
+_UK_EFFECT_SCHEDULE_SUBPARAGRAPH_DEFINITION_ENTRIES_RULE_ID = (
+    "uk_effect_schedule_subparagraph_definition_entries_lowered"
+)
+
+
+def _is_schedule_target(target: LegalAddress) -> bool:
+    """Return whether the target address lives under a schedule."""
+    return bool(target.path) and _addr_container(target) == "schedule"
+
+
+def _synthetic_paragraph_wrapping_table(table_node: UKMutableNode) -> UKMutableNode:
+    """Wrap a bare table node in an unlabelled paragraph for schedule-p1group grouping.
+
+    ``P1group`` does not admit ``table`` children directly, but a ``P1group`` of
+    paragraphs can contain a paragraph whose sole child is a table.  This keeps
+    schedule ``Part`` payloads structurally canonical without losing the table.
+    """
+    attrs = dict(table_node.attrs)
+    attrs["source_rule_id"] = _UK_EFFECT_SCHEDULE_PART_P1GROUP_WRAPPER_RULE_ID
+    attrs["source_tag"] = table_node.attrs.get("source_tag", "Table")
+    attrs["promoted_from_kind"] = "table"
+    return UKMutableNode(
+        kind=IRNodeKind.PARAGRAPH,
+        label=None,
+        text="",
+        attrs=attrs,
+        children=[table_node],
+    )
+
+
+def _normalize_inserted_schedule_part_p1group_wrapping(
+    payload_node_mut: Optional[UKMutableNode],
+    curr_action: str,
+    target: LegalAddress,
+    effect: UKEffectRecord,
+    target_ref: str,
+    extracted_el: Optional[ET._Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> Optional[UKMutableNode]:
+    """Wrap direct paragraph-level children of an inserted schedule part in p1group.
+
+    UK affecting XML sometimes places ``P1`` paragraphs or tables directly inside
+    a ``<Part>`` of a schedule (e.g. ``after Part 3 insert— Part 3A ... 15A`` or
+    ``Part 4A ... table``).  Canonical UK schedule structure requires an
+    intermediate ``P1group`` between ``Part`` and ``paragraph``/``table``.  When a
+    schedule-part insert/replace payload lacks that wrapper, this normalization
+    inserts one p1group per contiguous run of paragraph/table-level children and
+    records the transformation.
+    """
+    if payload_node_mut is None:
+        return None
+    if curr_action not in ("insert", "replace"):
+        return payload_node_mut
+    if not _is_schedule_target(target):
+        return payload_node_mut
+    if _addr_leaf_kind(target) != "part":
+        return payload_node_mut
+    if payload_node_mut.kind.value != "part":
+        return payload_node_mut
+
+    children_needing_wrap = {"paragraph", "subparagraph", "item", "point", "table"}
+    existing_grouping_kinds = {"p1group", "pblock", "crossheading", "crossHeading"}
+    wrapped_run_count = 0
+    new_children: list[UKMutableNode] = []
+    current_run: list[UKMutableNode] = []
+
+    def _flush_run() -> None:
+        nonlocal current_run, wrapped_run_count
+        if not current_run:
+            return
+        run_children: list[UKMutableNode] = []
+        for child in current_run:
+            if child.kind.value == "table":
+                run_children.append(_synthetic_paragraph_wrapping_table(child))
+            else:
+                run_children.append(child)
+        if len(run_children) == 1 and run_children[0].kind.value == "p1group":
+            new_children.append(run_children[0])
+        else:
+            wrapper = UKMutableNode(
+                kind=IRNodeKind.P1GROUP,
+                label=None,
+                text="",
+                attrs={
+                    "source_rule_id": _UK_EFFECT_SCHEDULE_PART_P1GROUP_WRAPPER_RULE_ID,
+                    "source_tag": "synthetic",
+                },
+                children=list(run_children),
+            )
+            new_children.append(wrapper)
+            wrapped_run_count += 1
+        current_run = []
+
+    for child in payload_node_mut.children:
+        if child.kind.value in children_needing_wrap:
+            current_run.append(child)
+        elif child.kind.value in existing_grouping_kinds:
+            _flush_run()
+            new_children.append(child)
+        else:
+            _flush_run()
+            new_children.append(child)
+    _flush_run()
+
+    if wrapped_run_count == 0:
+        return payload_node_mut
+
+    payload_node_mut.children = new_children
+    _append_uk_effect_lowering_observation(
+        lowering_rejections_out,
+        rule_id=_UK_EFFECT_SCHEDULE_PART_P1GROUP_WRAPPER_RULE_ID,
+        family="payload_normalization",
+        reason_code="schedule_part_paragraph_run_wrapped_in_p1group",
+        reason=(
+            "UK schedule part insert/replace payload carried paragraph/table-level children "
+            "directly under the part; lowering wrapped them in p1group to match "
+            "canonical schedule structure."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            "target_ref": target_ref,
+            "target": str(target),
+            "wrapped_run_count": wrapped_run_count,
+            "action": curr_action,
+            "strict_disposition": "record",
+            "quirks_disposition": "apply",
+        },
+    )
+    return payload_node_mut
+
+
+def _normalize_inserted_schedule_part_direct_child_p1group_wrapping(
+    payload_node_mut: Optional[UKMutableNode],
+    curr_action: str,
+    target: LegalAddress,
+    effect: UKEffectRecord,
+    target_ref: str,
+    extracted_el: Optional[ET._Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> Optional[UKMutableNode]:
+    """Wrap a paragraph/table payload inserted directly under a schedule Part.
+
+    Some schedule amendments target ``Part X/paragraph N`` but the extracted
+    payload is a bare paragraph (or table) that would be inserted as a direct
+    child of the Part.  That violates canonical schedule nesting; we wrap it in
+    an unlabelled P1group before replay.
+    """
+    if payload_node_mut is None:
+        return None
+    if curr_action not in ("insert", "replace"):
+        return payload_node_mut
+    if not _is_schedule_target(target):
+        return payload_node_mut
+    if len(target.path) < 2 or target.path[-2][0] != "part":
+        return payload_node_mut
+    child_kind = payload_node_mut.kind.value
+    if child_kind not in {"paragraph", "subparagraph", "item", "point", "table"}:
+        return payload_node_mut
+
+    inner_node = payload_node_mut
+    if child_kind == "table":
+        inner_node = _synthetic_paragraph_wrapping_table(payload_node_mut)
+
+    wrapper = UKMutableNode(
+        kind=IRNodeKind.P1GROUP,
+        label=None,
+        text="",
+        attrs={
+            "source_rule_id": _UK_EFFECT_SCHEDULE_PART_P1GROUP_WRAPPER_RULE_ID,
+            "source_tag": "synthetic",
+        },
+        children=[inner_node],
+    )
+    _append_uk_effect_lowering_observation(
+        lowering_rejections_out,
+        rule_id=_UK_EFFECT_SCHEDULE_PART_P1GROUP_WRAPPER_RULE_ID,
+        family="payload_normalization",
+        reason_code="schedule_part_direct_child_wrapped_in_p1group",
+        reason=(
+            "UK schedule part target addressed a paragraph/table child directly under the part; "
+            "lowering wrapped it in p1group to match canonical schedule structure."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            "target_ref": target_ref,
+            "target": str(target),
+            "child_kind": child_kind,
+            "action": curr_action,
+            "strict_disposition": "record",
+            "quirks_disposition": "apply",
+        },
+    )
+    return wrapper
+
+
+def _normalize_schedule_subparagraph_definition_schedule_entries(
+    payload_node_mut: Optional[UKMutableNode],
+    curr_action: str,
+    target: LegalAddress,
+    effect: UKEffectRecord,
+    target_ref: str,
+    extracted_el: Optional[ET._Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> Optional[UKMutableNode]:
+    """Promote schedule_entry definition items out of schedule subparagraphs.
+
+    In schedule-paragraph source XML, ``<UnorderedList Class="Definition">``
+    items inside a ``P2para`` are currently lowered as ``schedule_entry``
+    children of the enclosing ``subparagraph``.  That nesting is structurally
+    invalid (``subparagraph`` does not admit ``schedule_entry``).  Because such
+    definition lists are semantically clause text, this normalization promotes
+    each ``schedule_entry`` child to a sibling ``paragraph`` under the nearest
+    paragraph ancestor, preserving source order and text.
+    """
+    if payload_node_mut is None:
+        return None
+    if curr_action not in ("insert", "replace"):
+        return payload_node_mut
+    if not _is_schedule_target(target):
+        return payload_node_mut
+
+    promoted_count = 0
+
+    def _walk(node: UKMutableNode, parent: Optional[UKMutableNode], idx: int) -> None:
+        nonlocal promoted_count
+        if node.kind.value == "subparagraph" and parent is not None:
+            entries: list[UKMutableNode] = []
+            other_children: list[UKMutableNode] = []
+            for child in node.children:
+                if child.kind.value == "schedule_entry" and not child.children:
+                    entries.append(child)
+                else:
+                    other_children.append(child)
+            if entries:
+                node.children = other_children
+                insert_at = idx + 1
+                for entry in reversed(entries):
+                    para = UKMutableNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label=None,
+                        text=entry.text,
+                        attrs=dict(entry.attrs),
+                    )
+                    para.attrs["source_rule_id"] = (
+                        _UK_EFFECT_SCHEDULE_SUBPARAGRAPH_DEFINITION_ENTRIES_RULE_ID
+                    )
+                    para.attrs["source_tag"] = entry.attrs.get("source_tag", "ListItem")
+                    para.attrs["promoted_from_kind"] = "schedule_entry"
+                    parent.children.insert(insert_at, para)
+                    promoted_count += 1
+        for child_idx, child in enumerate(list(node.children)):
+            _walk(child, node, child_idx)
+
+    _walk(payload_node_mut, None, 0)
+    if promoted_count == 0:
+        return payload_node_mut
+
+    _append_uk_effect_lowering_observation(
+        lowering_rejections_out,
+        rule_id=_UK_EFFECT_SCHEDULE_SUBPARAGRAPH_DEFINITION_ENTRIES_RULE_ID,
+        family="payload_normalization",
+        reason_code="schedule_subparagraph_definition_entries_promoted_to_paragraph",
+        reason=(
+            "UK schedule-paragraph definition list items were lowered as "
+            "schedule_entry children of a subparagraph; lowering promoted them to "
+            "paragraph siblings under the enclosing paragraph to match canonical "
+            "nesting."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            "target_ref": target_ref,
+            "target": str(target),
+            "promoted_count": promoted_count,
+            "action": curr_action,
+            "strict_disposition": "record",
+            "quirks_disposition": "apply",
+        },
+    )
+    return payload_node_mut
 
 
 @dataclass(frozen=True)
@@ -82,6 +386,167 @@ def _uk_core_kind_alias_value(kind: str) -> str:
     if kind_value == "point":
         return "item"
     return kind_value
+
+
+_UK_EFFECT_INSERTED_SCHEDULE_P1GROUP_CROSSHEADING_WRAPPER_RULE_ID = (
+    "uk_effect_inserted_schedule_p1group_crossheading_wrapper_lowered"
+)
+
+
+def _find_schedule_p1group_wrapper_payload_element(
+    extracted_el: Optional[ET._Element],
+    payload_match_target: LegalAddress,
+) -> Optional[ET._Element]:
+    """Return a P1group wrapper whose inner P1 matches a schedule paragraph target.
+
+    UK affecting XML sometimes wraps inserted schedule paragraphs in a
+    ``P1group/Title`` that supplies the intended crossheading (e.g. ``The
+    Harbours Act 1964 (c. 40)``).  The matching inner ``P1`` supplies the
+    paragraph number.  When present, the whole ``P1group`` should be lowered as
+    the payload so the crossheading wrapper is preserved.
+    """
+    if extracted_el is None:
+        return None
+    if (
+        _addr_container(payload_match_target) != "schedule"
+        or _addr_leaf_kind(payload_match_target) != "paragraph"
+    ):
+        return None
+    target_label = _addr_leaf_label(payload_match_target) or ""
+    if not target_label:
+        return None
+    target_clean = _clean_num(target_label)
+    for am in extracted_el.iter():
+        if _tag(am) not in ("BlockAmendment", "InlineAmendment"):
+            continue
+        for child in list(am):
+            if _tag(child) != "P1group":
+                continue
+            inner_p1s = [c for c in child if _tag(c) == "P1"]
+            if not inner_p1s:
+                continue
+            if any(
+                _clean_num(_direct_structural_num(p1)) == target_clean
+                for p1 in inner_p1s
+            ):
+                return _with_trailing_subordinate_siblings(child, am)
+    return None
+
+
+def _is_foreign_physical_source_id(identity: str) -> bool:
+    """Return True for legislation.gov.uk physical ids like ``p02828``."""
+    if not identity or identity[0] != "p" or len(identity) < 4:
+        return False
+    return identity[1:4].isdigit()
+
+
+def _maybe_lower_inserted_schedule_p1group_crossheading_wrapper(
+    *,
+    content_ir: Optional[dict[str, Any]],
+    actual_el: Optional[ET._Element],
+    target: LegalAddress,
+    effect: UKEffectRecord,
+    target_ref: str,
+    extracted_el: Optional[ET._Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> Optional[dict[str, Any]]:
+    """Convert an inserted schedule P1group wrapper into a crossheading Pblock.
+
+    UK affecting XML sometimes wraps inserted schedule paragraphs in a
+    ``P1group`` whose ``Title`` supplies the intended crossheading.  The oracle
+    materialises this as a ``<Pblock id=\"...crossheading-...\">`` containing
+    the inserted paragraphs.  Lowering converts the ``P1group`` to a
+    ``CROSSHEADING`` node, assigns a schedule-scoped crossheading EID, and gives
+    each child paragraph a flat schedule EID.
+    """
+    if content_ir is None or actual_el is None:
+        return content_ir
+    if _tag(actual_el) != "P1group":
+        return content_ir
+    if _addr_container(target) != "schedule" or _addr_leaf_kind(target) != "paragraph":
+        return content_ir
+    schedule_label = _addr_field(target, "schedule")
+    if not schedule_label:
+        return content_ir
+    schedule_root = f"schedule-{_clean_num(schedule_label)}"
+    title_el = actual_el.find(f"./{{{_LEG_NS}}}Title")
+    heading_text = _text_content(title_el) if title_el is not None else ""
+    if not heading_text:
+        return content_ir
+    # The current-oracle crossheading slug appears to strip hyphens before
+    # slugifying compound words (e.g. "Levelling-Up" -> "levellingup"), so
+    # we remove ASCII hyphens here to stay commensurable.
+    heading_slug = _slugify(heading_text.replace("-", ""))
+    if not heading_slug:
+        return content_ir
+    wrapper_eid = f"{schedule_root}-crossheading-{heading_slug}"
+
+    result = dict(content_ir)
+    result["kind"] = IRNodeKind.CROSSHEADING.value
+    result["attrs"] = dict(result.get("attrs") or {})
+    result["attrs"]["eId"] = wrapper_eid
+    result["attrs"].pop("id", None)
+    result["attrs"]["source_tag"] = "P1group"
+    result["attrs"]["source_rule_id"] = (
+        _UK_EFFECT_INSERTED_SCHEDULE_P1GROUP_CROSSHEADING_WRAPPER_RULE_ID
+    )
+
+    child_eids: list[str] = []
+    children = list(result.get("children") or [])
+    for child in children:
+        child_kind = str(child.get("kind") or "").lower()
+        child_label = str(child.get("label") or "").strip()
+        clean_label = _clean_num(child_label) if child_label else ""
+        if not clean_label:
+            continue
+        if child_kind == "paragraph":
+            child_eid = f"{schedule_root}-paragraph-{clean_label}"
+        elif child_kind in ("subparagraph", "item", "point", "p2", "p3", "p4"):
+            child_eid = f"{schedule_root}-{child_kind}-{clean_label}"
+        else:
+            continue
+        child["attrs"] = dict(child.get("attrs") or {})
+        child["attrs"]["eId"] = child_eid
+        child["attrs"].pop("id", None)
+        child_eids.append(child_eid)
+
+    def _scrub_foreign_ids(node: dict[str, Any]) -> None:
+        attrs = node.get("attrs")
+        if isinstance(attrs, dict):
+            identity = str(attrs.get("eId") or attrs.get("id") or "")
+            if _is_foreign_physical_source_id(identity):
+                attrs.pop("eId", None)
+                attrs.pop("id", None)
+        for c in node.get("children") or []:
+            _scrub_foreign_ids(c)
+
+    _scrub_foreign_ids(result)
+
+    _append_uk_effect_lowering_observation(
+        lowering_rejections_out,
+        rule_id=_UK_EFFECT_INSERTED_SCHEDULE_P1GROUP_CROSSHEADING_WRAPPER_RULE_ID,
+        family="payload_normalization",
+        reason_code="inserted_schedule_paragraph_p1group_wrapper_lowered_to_crossheading",
+        reason=(
+            "UK inserted schedule paragraph payload is wrapped in a P1group whose "
+            "Title supplies the intended crossheading; lowering converts the "
+            "P1group to a CROSSHEADING Pblock and assigns flat schedule EIDs to "
+            "the wrapper and its paragraph children."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            "target_ref": target_ref,
+            "target": str(target),
+            "schedule_root": schedule_root,
+            "wrapper_eid": wrapper_eid,
+            "heading_text_preview": heading_text[:200],
+            "child_eids": child_eids,
+        },
+    )
+    return result
 
 
 def lower_flat_p1para_schedule_paragraph_insert_payload(
@@ -232,6 +697,11 @@ def extract_uk_structural_payload_ir(
     if actual_el is None and action == "insert" and _addr_container(target) == "schedule" and len(target.path) > 1:
         schedule_root_target = LegalAddress(path=target.path[:1], special=None)
         actual_el = _select_whole_schedule_element(extracted_el, schedule_root_target)
+    if content_ir is None and actual_el is None and action == "insert":
+        actual_el = _find_schedule_p1group_wrapper_payload_element(
+            extracted_el=extracted_el,
+            payload_match_target=payload_match_target,
+        )
     if content_ir is None and actual_el is None:
         actual_el = _find_matching_structural_payload_element(
             extracted_el=extracted_el,
@@ -261,6 +731,16 @@ def extract_uk_structural_payload_ir(
                 target=target,
                 content_ir=content_ir,
                 actual_el=actual_el,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                lowering_rejections_out=lowering_rejections_out,
+            )
+            content_ir = _maybe_lower_inserted_schedule_p1group_crossheading_wrapper(
+                content_ir=content_ir,
+                actual_el=actual_el,
+                target=target,
+                effect=effect,
+                target_ref=target_ref,
                 extracted_el=extracted_el,
                 extracted_text=extracted_text,
                 lowering_rejections_out=lowering_rejections_out,
@@ -304,12 +784,22 @@ def prepare_uk_operation_payload_node(
     ):
         payload_node_mut.label = target_replacement_leaf_override
 
-    if payload_node_mut is not None and curr_action == "insert":
+    if payload_node_mut is not None and curr_action in ("insert", "replace"):
         leaf_kind = _addr_leaf_kind(target) or ""
         leaf_label = _addr_leaf_label(target) or ""
         payload_kind = payload_node_mut.kind.value
-        leafish_kinds = {"subsection", "paragraph", "subparagraph", "item", "point"}
+        leafish_kinds = {"section", "subsection", "paragraph", "subparagraph", "item", "point"}
         canonical_leaf_kind = _uk_core_kind_alias_value(leaf_kind)
+        parent_kind: Optional[str] = None
+        parent_allowed_children: Optional[set[str]] = None
+        if len(target.path) >= 2:
+            parent_kind = _uk_core_kind_alias_value(target.path[-2][0])
+            parent_allowed_children = _NESTING_ORDER.get(parent_kind)
+        payload_kind_would_violate_parent = (
+            curr_action == "replace"
+            and parent_allowed_children is not None
+            and payload_kind not in parent_allowed_children
+        )
         if (
             leaf_kind
             and leaf_label
@@ -320,16 +810,17 @@ def prepare_uk_operation_payload_node(
                 lowering_rejections_out,
                 rule_id=_UK_EFFECT_PAYLOAD_LABEL_REALIGNED_TO_TARGET_LEAF_RULE_ID,
                 family="payload_realignment",
-                reason_code="insert_payload_blank_label_realigned_to_target_leaf",
+                reason_code="payload_blank_label_realigned_to_target_leaf",
                 reason=(
-                    "UK insert payload has a blank label but its kind matches the "
+                    "UK insert/replace payload has a blank label but its kind matches the "
                     "target leaf kind; the payload label is realigned to the target "
-                    "leaf label so the inserted node carries the expected address."
+                    "leaf label so the node carries the expected address."
                 ),
                 effect=effect,
                 extracted_el=extracted_el,
                 extracted_text=extracted_text,
                 detail={
+                    "action": curr_action,
                     "original_payload_label": "",
                     "new_payload_label": leaf_label,
                     "payload_kind": payload_kind,
@@ -345,22 +836,26 @@ def prepare_uk_operation_payload_node(
             and payload_kind in leafish_kinds
             and payload_kind != canonical_leaf_kind
             and _clean_num(payload_node_mut.label or "") == _clean_num(leaf_label)
+            and (curr_action == "insert" or payload_kind_would_violate_parent)
         ):
             _append_uk_effect_lowering_observation(
                 lowering_rejections_out,
                 rule_id=_UK_EFFECT_PAYLOAD_KIND_REALIGNED_TO_TARGET_LEAF_RULE_ID,
                 family="payload_realignment",
-                reason_code="insert_payload_kind_realigned_to_canonical_target_leaf_kind",
+                reason_code="payload_kind_realigned_to_canonical_target_leaf_kind",
                 reason=(
-                    "UK insert payload has a leafish kind that differs from the "
+                    "UK insert/replace payload has a leafish kind that differs from the "
                     "canonical target leaf kind but whose label number matches the "
                     "target leaf label; the payload kind is realigned to the canonical "
-                    "target leaf kind so the inserted node has the expected structure."
+                    "target leaf kind so the node has the expected structure."
+                    " For replace actions this guard is limited to payloads that would be "
+                    "structurally invalid under the target's parent container."
                 ),
                 effect=effect,
                 extracted_el=extracted_el,
                 extracted_text=extracted_text,
                 detail={
+                    "action": curr_action,
                     "original_payload_kind": payload_kind,
                     "new_payload_kind": canonical_leaf_kind,
                     "payload_label": payload_node_mut.label or "",
@@ -371,6 +866,38 @@ def prepare_uk_operation_payload_node(
                 },
             )
             payload_node_mut.kind = uk_ir_node_kind(leaf_kind)
+
+    if payload_node_mut is not None and curr_action in ("insert", "replace"):
+        payload_node_mut = _normalize_inserted_schedule_part_p1group_wrapping(
+            payload_node_mut,
+            curr_action=curr_action,
+            target=target,
+            effect=effect,
+            target_ref=target_ref,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            lowering_rejections_out=lowering_rejections_out,
+        )
+        payload_node_mut = _normalize_inserted_schedule_part_direct_child_p1group_wrapping(
+            payload_node_mut,
+            curr_action=curr_action,
+            target=target,
+            effect=effect,
+            target_ref=target_ref,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            lowering_rejections_out=lowering_rejections_out,
+        )
+        payload_node_mut = _normalize_schedule_subparagraph_definition_schedule_entries(
+            payload_node_mut,
+            curr_action=curr_action,
+            target=target,
+            effect=effect,
+            target_ref=target_ref,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            lowering_rejections_out=lowering_rejections_out,
+        )
 
     if payload_node_mut is not None and curr_action in ("insert", "replace"):
         payload_identity_target = payload_match_target if curr_action == "replace" else target
@@ -400,6 +927,18 @@ def prepare_uk_operation_payload_node(
     ):
         return UKPayloadNodePreparation(payload_node=None, skip_effect=True)
     if reject_broad_schedule_flat_replace_payload(
+        effect=effect,
+        curr_action=curr_action,
+        t_str=target_ref,
+        target=target,
+        payload_node_mut=payload_node_mut,
+        actual_el=actual_el,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        lowering_rejections_out=lowering_rejections_out,
+    ):
+        return UKPayloadNodePreparation(payload_node=None, skip_effect=True)
+    if reject_body_section_replace_with_unmatched_schedule_payload(
         effect=effect,
         curr_action=curr_action,
         t_str=target_ref,

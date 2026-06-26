@@ -15,7 +15,7 @@ from lawvm.finland.johto_scope_mentions import (
     collect_johto_numbered_table_targets_by_section,
     collect_johto_whole_section_targets,
 )
-from lawvm.finland.ops import AmendmentOp
+from lawvm.finland.ops import AmendmentOp, OpType
 from lawvm.finland.uncovered_recovery_state import (
     UncoveredSectionKey,
     uncovered_section_key,
@@ -44,9 +44,10 @@ class UncoveredRecoveryContext:
 def _part_insert_labels_from_ops(ops: Iterable[AmendmentOp]) -> frozenset[str]:
     labels: set[str] = set()
     for op in ops:
-        if op.op_type != "INSERT" or op.target_unit_kind != "part":
+        cols = op.target_cols
+        if op.op_type != OpType.INSERT or cols.target_unit_kind != "part":
             continue
-        label = _norm_num_token(str(op.target_section or op.target_part or ""))
+        label = _norm_num_token(str(cols.target_section or cols.target_part or ""))
         if label:
             labels.add(label)
     return frozenset(labels)
@@ -79,12 +80,13 @@ def build_uncovered_recovery_context(
     owned_chapter_labels: set[str] = set(new_chapter_labels or ())
 
     for op in ops:
+        cols = op.target_cols
         if (
-            op.op_type != "RENUMBER"
-            or op.target_unit_kind != "section"
-            or op.target_paragraph is not None
-            or op.target_item
-            or op.target_special
+            op.op_type != OpType.RENUMBER
+            or cols.target_unit_kind != "section"
+            or cols.target_paragraph is not None
+            or cols.target_item
+            or cols.target_special
             or op.lo is None
             or op.lo.destination is None
             or not op.lo.destination.path
@@ -96,8 +98,8 @@ def build_uncovered_recovery_context(
             if label
         }
         dest_section = dest_map.get("section")
-        dest_chapter = dest_map.get("chapter") or _norm_num_token(op.target_chapter or "")
-        dest_part = dest_map.get("part") or _norm_num_token(op.target_part or "")
+        dest_chapter = dest_map.get("chapter") or _norm_num_token(cols.target_chapter or "")
+        dest_part = dest_map.get("part") or _norm_num_token(cols.target_part or "")
         if dest_part:
             dest_part_arabic = _roman_label_to_arabic(dest_part)
             if dest_part_arabic is not None:

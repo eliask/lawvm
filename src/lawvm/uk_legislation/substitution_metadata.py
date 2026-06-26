@@ -229,6 +229,14 @@ def _repeal_tail_for_substituted_series_replacement(
 
     That still authorizes only the trailing anchor repeal. It does not widen
     the replacement target beyond the explicitly named first anchor.
+
+    A third variant names a later anchor as the new label:
+      effect_type="substituted for s. 75(11)(12)"
+      affected_provisions="s. 75(12)"
+
+    Here the payload is a single new subsection (12) that replaces the first
+    anchor (11); the old subsection (12) must still be repealed to avoid a
+    duplicate label.
     """
     raw = (effect_type or "").strip()
     if not raw.lower().startswith("substituted for "):
@@ -259,11 +267,29 @@ def _repeal_tail_for_substituted_series_replacement(
         or anchor_leaf_kind != replacement_leaf_kind
         or not anchor_leaf
         or not replacement_leaf
-        or not replacement_leaf.startswith(anchor_leaf)
     ):
         return []
 
-    return anchor_refs[1:]
+    if replacement_leaf.startswith(anchor_leaf):
+        return anchor_refs[1:]
+
+    # The replacement label may match a later anchor exactly (e.g. the new
+    # provision takes the label of the second anchor). In that case all anchors
+    # after the first are still repealed.
+    for ref in anchor_refs[1:]:
+        try:
+            later_anchor = _parse_affected_target(ref)
+        except ValueError:
+            continue
+        if _addr_leaf_kind(later_anchor) != anchor_leaf_kind:
+            continue
+        later_section = _addr_field(later_anchor, "section") or _addr_field(later_anchor, "schedule")
+        if later_section != anchor_section:
+            continue
+        if _clean_num(_addr_leaf_label(later_anchor) or "") == replacement_leaf:
+            return anchor_refs[1:]
+
+    return []
 
 
 def _source_replaced_sibling_count_from_substitution_text(

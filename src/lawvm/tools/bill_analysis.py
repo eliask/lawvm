@@ -174,7 +174,7 @@ def _span_text(node: "SurfaceNode", body: str) -> str:
 
 def _status_str(node: "SurfaceNode") -> str:
     """The node's status as a plain string (handles enum-or-str)."""
-    return str(getattr(node.status, "value", node.status))
+    return str(getattr(node.node_status, "value", node.node_status))
 
 
 # ---------------------------------------------------------------------------
@@ -261,7 +261,7 @@ def build_delegation_delta(
                 "delegate_actor": payload.get("delegate_actor", ""),
                 "instrument_kind": payload.get("instrument_kind", ""),
                 "binding_strength": payload.get("binding_strength", ""),
-                "status": _status_str(node),
+                "node_status": _status_str(node),
                 "span_text": _span_text(node, body),
             }
         )
@@ -289,14 +289,14 @@ def build_reference_delta(
         refs.append(
             {
                 "node_id": node.node_id,
-                "status": status,
+                "node_status": status,
                 "surface_text": payload.get("surface_text", ""),
                 "work_id": payload.get("work_id"),
                 "candidates": candidates,
                 "span_text": _span_text(node, body),
             }
         )
-    refs.sort(key=lambda r: (str(r["status"]), str(r["surface_text"])))
+    refs.sort(key=lambda r: (str(r["node_status"]), str(r["surface_text"])))
     return {
         "count": len(refs),
         "by_status": dict(sorted(by_status.items())),
@@ -316,7 +316,7 @@ def _ref_risk_entry(
     return {
         "node_id": node_id,
         "surface_text": surface_text,
-        "status": status_str,
+        "node_status": status_str,
         "span_text": span_text,
     }
 
@@ -434,7 +434,7 @@ def build_definition_delta(
                 "term": payload.get("term", ""),
                 "scope": payload.get("scope", ""),
                 "binding_kind": payload.get("binding_kind", ""),
-                "status": _status_str(node),
+                "node_status": _status_str(node),
                 "span_text": _span_text(node, body),
             }
         )
@@ -550,7 +550,7 @@ def build_unowned_candidates(
                 "subject": entry.get("surface_text", ""),
                 "detail": (
                     f"reference {entry.get('surface_text', '?')!r} "
-                    f"(status={entry.get('status', '?')})"
+                    f"(status={entry.get('node_status', '?')})"
                 ),
                 "span_text": entry.get("span_text", ""),
                 "why": _CANDIDATE_RULES["repeal_strands_reference"],
@@ -675,7 +675,7 @@ def render_bill_report(report: dict[str, Any]) -> str:
     for d in dele["delegations"]:
         lines.append(
             f"    └─ {d['delegate_actor']!r} -> {d['instrument_kind']} "
-            f"({d['binding_strength']})  [{d['status']}]"
+            f"({d['binding_strength']})  [{d['node_status']}]"
         )
         if d["span_text"]:
             lines.append(f"         · {d['span_text'][:88]!r}")
@@ -695,7 +695,7 @@ def render_bill_report(report: dict[str, Any]) -> str:
             f"  candidates={r['candidates']}" if r["candidates"] else ""
         )
         lines.append(
-            f"    └─ [{r['status']:11}] {r['surface_text']!r}{tgt}{cand}"
+            f"    └─ [{r['node_status']:11}] {r['surface_text']!r}{tgt}{cand}"
         )
 
     # --- broken / dangling reference risk ---
@@ -726,7 +726,7 @@ def render_bill_report(report: dict[str, Any]) -> str:
         lines.append("    (none recognised in the bill's text)")
     for d in defs["definitions"]:
         scope = f"  scope={d['scope']}" if d["scope"] else ""
-        lines.append(f"    └─ {d['term']!r}{scope}  [{d['status']}]")
+        lines.append(f"    └─ {d['term']!r}{scope}  [{d['node_status']}]")
 
     # --- unowned-channel candidates ---
     un = report["unowned_channel_candidates"]

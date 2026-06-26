@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from lxml import etree as ET
 import re
-from typing import Any, Mapping, Optional, Sequence
+from typing import Any, Mapping, Optional, Sequence, assert_never
 
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.compile_records import CompileRecord, is_blocking_compile_record
@@ -28,6 +28,9 @@ from lawvm.uk_legislation.phase_discipline import (
 from lawvm.uk_legislation.effect_temporal_cessation import (
     UK_TEMPORAL_CEASES_TO_HAVE_EFFECT_REPLAY_EXCLUDED_REASON,
     temporal_ceases_to_have_effect_exclusion_rule_for_ops,
+)
+from lawvm.uk_legislation.prospective_commencement_witnesses import (
+    UKProspectiveCommencementStatus,
 )
 from lawvm.uk_legislation.source_adjudication import classify_uk_manual_compile_frontier
 from lawvm.uk_legislation.source_payload_helpers import (
@@ -469,7 +472,7 @@ def mark_manual_frontier_nonreplay_lowering_rejections_nonblocking(
     lowering_rejections: list[dict[str, Any]],
     start_index: int,
 ) -> bool:
-    if manual_frontier.get("status") != "non_textual_or_out_of_scope":
+    if manual_frontier.get("manual_frontier_status") != "non_textual_or_out_of_scope":
         return False
     if start_index >= len(lowering_rejections):
         return False
@@ -486,7 +489,7 @@ def mark_manual_frontier_nonreplay_lowering_rejections_nonblocking(
         )
         rejection["replay_relevance"] = "manual_frontier_out_of_scope"
         rejection["manual_compile_rule_id"] = manual_frontier.get("rule_id", "")
-        rejection["manual_compile_status"] = manual_frontier.get("status", "")
+        rejection["manual_compile_status"] = manual_frontier.get("manual_frontier_status", "")
         rejection["reclassification_reason"] = (
             "Manual-frontier classification proves this row is outside direct "
             "UK text/tree replay; the lowering diagnostic is evidence, not a "
@@ -547,11 +550,11 @@ def append_manual_compile_frontier_diagnostic(
         effect=effect,
         blocking=False,
         owner_phase=uk_phase_owner_for_manual_frontier(
-            manual_compile_status=manual_frontier["status"],
+            manual_compile_status=manual_frontier["manual_frontier_status"],
             manual_compile_rule_id=manual_frontier["rule_id"],
             source_pathology=source_pathology or "",
         ),
-        manual_compile_status=manual_frontier["status"],
+        manual_compile_status=manual_frontier["manual_frontier_status"],
         manual_compile_rule_id=manual_frontier["rule_id"],
         manual_compile_reason=manual_frontier["reason"],
         lowering_rule_ids=_lowering_record_rule_ids(current_lowering_rejections),
@@ -684,32 +687,35 @@ def append_prospective_pit_commencement_observation(
     diagnostics_out: Optional[list[dict[str, Any]]],
     *,
     effect: UKEffectRecord,
-    status: str,
+    commencement_status: UKProspectiveCommencementStatus,
     start_dates: Sequence[str],
     pit_date: str,
 ) -> None:
     """Record PIT resolution for a prospective-only structural effect."""
     if diagnostics_out is None:
         return
-    if status == "resolved_in_force":
-        rule_id = "uk_effect_pit_prospective_commencement_in_force"
-        reason = (
-            "UK prospective-only structural effect is included for the requested "
-            "point-in-time because the affecting provision is in force by that date"
-        )
-    elif status == "resolved_future":
-        rule_id = "uk_effect_pit_prospective_commencement_future_rejected"
-        reason = (
-            "UK prospective-only structural effect is later than the requested "
-            "point-in-time because the affecting provision starts after that date"
-        )
-    else:
-        rule_id = "uk_effect_pit_prospective_commencement_unresolved"
-        reason = (
-            "UK prospective-only structural effect could not be resolved from the "
-            "affecting provision's commencement metadata; existing PIT filtering "
-            "continues without guessing"
-        )
+    match commencement_status:
+        case UKProspectiveCommencementStatus.RESOLVED_IN_FORCE:
+            rule_id = "uk_effect_pit_prospective_commencement_in_force"
+            reason = (
+                "UK prospective-only structural effect is included for the requested "
+                "point-in-time because the affecting provision is in force by that date"
+            )
+        case UKProspectiveCommencementStatus.RESOLVED_FUTURE:
+            rule_id = "uk_effect_pit_prospective_commencement_future_rejected"
+            reason = (
+                "UK prospective-only structural effect is later than the requested "
+                "point-in-time because the affecting provision starts after that date"
+            )
+        case UKProspectiveCommencementStatus.UNRESOLVED:
+            rule_id = "uk_effect_pit_prospective_commencement_unresolved"
+            reason = (
+                "UK prospective-only structural effect could not be resolved from the "
+                "affecting provision's commencement metadata; existing PIT filtering "
+                "continues without guessing"
+            )
+        case _:
+            assert_never(commencement_status)
     diagnostics_out.append(
         _effect_diagnostic(
             rule_id=rule_id,
@@ -718,7 +724,7 @@ def append_prospective_pit_commencement_observation(
             reason=reason,
             blocking=False,
             pit_date=pit_date,
-            commencement_status=status,
+            commencement_status=commencement_status.value,
             start_dates=tuple(start_dates),
         )
     )

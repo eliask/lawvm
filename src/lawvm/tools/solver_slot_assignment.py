@@ -38,7 +38,7 @@ class SlotAssignmentWitness:
     hard_constraint_count: int
     soft_constraint_count: int
     solver: str  # "cp_sat"
-    status: Literal["unique", "ambiguous", "infeasible"]
+    solver_status: Literal["unique", "ambiguous", "infeasible"]
     selected_assignment: dict[int, int] | None  # payload_idx -> live_idx
     alternative_model_count: int
     solve_time_ms: float
@@ -268,7 +268,7 @@ def solve_slot_assignment(
             hard_constraint_count=0,
             soft_constraint_count=0,
             solver="cp_sat",
-            status="unique",
+            solver_status="unique",
             selected_assignment={},
             alternative_model_count=0,
             solve_time_ms=(time.monotonic() - t0) * 1000,
@@ -282,7 +282,7 @@ def solve_slot_assignment(
             hard_constraint_count=0,
             soft_constraint_count=0,
             solver="cp_sat",
-            status="infeasible",
+            solver_status="infeasible",
             selected_assignment=None,
             alternative_model_count=0,
             solve_time_ms=(time.monotonic() - t0) * 1000,
@@ -325,7 +325,7 @@ def solve_slot_assignment(
             hard_constraint_count=hard_count,
             soft_constraint_count=soft_count,
             solver="cp_sat",
-            status="infeasible",
+            solver_status="infeasible",
             selected_assignment=None,
             alternative_model_count=0,
             solve_time_ms=(time.monotonic() - t0) * 1000,
@@ -339,7 +339,7 @@ def solve_slot_assignment(
             hard_constraint_count=hard_count,
             soft_constraint_count=soft_count,
             solver="cp_sat",
-            status="infeasible",
+            solver_status="infeasible",
             selected_assignment=None,
             alternative_model_count=0,
             solve_time_ms=(time.monotonic() - t0) * 1000,
@@ -383,7 +383,7 @@ def solve_slot_assignment(
         hard_constraint_count=hard_count,
         soft_constraint_count=soft_count,
         solver="cp_sat",
-        status=result_status,
+        solver_status=result_status,
         selected_assignment=first_assignment,
         alternative_model_count=alt_count,
         solve_time_ms=(time.monotonic() - t0) * 1000,
@@ -449,7 +449,7 @@ def diagnose_assignment(
 
     return {
         "solver_witness": witness,
-        "solver_status": witness.status,
+        "solver_status": witness.solver_status,
         "heuristic_matches_solver": matches,
         "disagreement_slots": disagreement_slots,
         "heuristic_is_optimal": matches,
@@ -553,7 +553,7 @@ def cli_solver_diag(args: object) -> None:
             payload_labels_list, live_labels_list, heuristic_map,
         )
 
-        status = witness.status
+        status = witness.solver_status
         if status == "unique":
             total_unique += 1
         elif status == "ambiguous":

@@ -724,7 +724,7 @@ def _build_section_claims(
                                 "observation_sources": ["compile_result", "section_strict_lineage"],
                                 "support": {
                                     "amendment_id": getattr(_ssv, "amendment_id", ""),
-                                    "status": getattr(_ssv, "status", ""),
+                                    "verdict_status": getattr(_ssv, "verdict_status", ""),
                                     "barrier_kinds": sorted(_barrier_kinds),
                                     "barrier_families": sorted(_barrier_families),
                                 },
@@ -742,7 +742,7 @@ def _build_section_claims(
                                 "observation_sources": ["compile_result", "section_strict_lineage"],
                                 "support": {
                                     "amendment_id": getattr(_ssv, "amendment_id", ""),
-                                    "status": getattr(_ssv, "status", ""),
+                                    "verdict_status": getattr(_ssv, "verdict_status", ""),
                                     "barrier_kinds": sorted(_barrier_kinds),
                                     "barrier_families": sorted(_barrier_families),
                                 },
@@ -818,7 +818,7 @@ def _build_section_claims(
         if section_strict_verdicts:
             _ssv_b4 = section_strict_verdicts.get(section)
             if _ssv_b4 is not None:
-                _status_b4 = getattr(_ssv_b4, "status", "")
+                _status_b4 = getattr(_ssv_b4, "verdict_status", "")
                 if _status_b4 == "strict_clean":
                     _payload_confidence = "strict_clean"
                 elif _status_b4 == "source_incomplete":

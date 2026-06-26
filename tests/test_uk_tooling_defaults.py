@@ -276,7 +276,7 @@ def test_uk_bench_diagnostics_report_envelopes_sidecar_claims(tmp_path, monkeypa
             n_oracle_eids=3,
             n_common=1,
             score=0.5,
-            status="OK",
+            bench_status="OK",
             comparison_class="commensurable",
             source_parse_observation_count=1,
             source_parse_observation_rule_counts={"uk_visible_inline_text_preserved": 1},
@@ -327,7 +327,7 @@ def _make_replay_commenced_result(**overrides: Any) -> "uk_bench._BenchResult":
         n_oracle_eids=120,
         n_common=84,
         score=0.70,  # enacted-baseline structural coverage (heavily amended)
-        status="OK",
+        bench_status="OK",
         comparison_class="commensurable",
         core_benchmark=True,
         n_ops=58,

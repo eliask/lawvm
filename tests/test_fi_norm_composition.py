@@ -95,7 +95,7 @@ def test_resolved_condition_attaches_to_its_core() -> None:
     for edge in resolved:
         assert graph.nodes[edge.src].node_kind == "exception_condition_cue"
         assert graph.nodes[edge.dst].node_kind == "deontic_core"
-        assert edge.status == "asserted"
+        assert edge.surface_edge_status == "asserted"
         assert edge.payload.get("source") == "construction_attachment"
         assert edge.payload.get("qualifier_kind") == "condition"
         # the attached core span lies inside the dst frame's span (the frame
@@ -134,7 +134,7 @@ def test_ambiguous_attachment_emits_candidate_set_not_a_pick() -> None:
     # all ambiguous edges from the SAME qualifier carry the SAME candidate set,
     # and there is one edge per candidate core that has a backing graph node.
     for edge in amb:
-        assert edge.status == "ambiguous"
+        assert edge.surface_edge_status == "ambiguous"
         cand = edge.payload.get("candidate_core_spans")
         assert isinstance(cand, list) and len(cand) >= 2, (
             "an ambiguous edge must carry the FULL candidate set (>=2 cores), "
@@ -207,7 +207,7 @@ def test_norm_edges_obey_the_firewall() -> None:
     for edge in edges:
         assert edge.surface_only is True
         assert edge.replay_authorized is False
-        assert edge.status in ("asserted", "ambiguous")
+        assert edge.surface_edge_status in ("asserted", "ambiguous")
 
 
 # ── (f) determinism ──────────────────────────────────────────────────────────
@@ -219,7 +219,7 @@ def test_norm_composition_is_deterministic() -> None:
 
     def _keys(graph):
         return sorted(
-            (e.edge_id, e.edge_kind, e.src, e.dst, e.status, e.payload_hash)
+            (e.edge_id, e.edge_kind, e.src, e.dst, e.surface_edge_status, e.payload_hash)
             for e in _norm_edges(graph)
         )
 
@@ -368,7 +368,7 @@ def test_cross_sentence_resolved_binds_exception_to_internal_provision() -> None
     assert resolved, "expected a resolved cross-sentence back-reference attachment"
     for edge in resolved:
         assert edge.edge_kind == EDGE_EXCEPTION_EXCEPTS
-        assert edge.status == "asserted"
+        assert edge.surface_edge_status == "asserted"
         # source is the exception cue; target is the INTERNAL provision reference.
         assert graph.nodes[edge.src].node_kind == "exception_condition_cue"
         assert graph.nodes[edge.dst].node_kind == "reference_expr"
@@ -390,7 +390,7 @@ def test_cross_sentence_ambiguous_emits_full_set_not_a_pick() -> None:
     targets = {e.payload.get("target_provision_ref") for e in ambiguous}
     assert {"888/2025/2", "888/2025/5"} <= targets
     for edge in ambiguous:
-        assert edge.status == "ambiguous"
+        assert edge.surface_edge_status == "ambiguous"
         assert edge.edge_kind == EDGE_EXCEPTION_EXCEPTS
         full_set = edge.payload.get("candidate_provisions")
         assert full_set and len(full_set) >= 2, "ambiguous edge must carry full set"
@@ -420,7 +420,7 @@ def test_cross_sentence_edges_obey_the_firewall() -> None:
     for edge in edges:
         assert edge.surface_only is True
         assert edge.replay_authorized is False
-        assert edge.status in ("asserted", "ambiguous")
+        assert edge.surface_edge_status in ("asserted", "ambiguous")
 
 
 def test_cross_sentence_is_strict_superset_intra_unchanged() -> None:
@@ -454,7 +454,7 @@ def test_cross_sentence_is_deterministic() -> None:
 
     def _keys(graph):
         return sorted(
-            (e.edge_id, e.edge_kind, e.src, e.dst, e.status, e.payload_hash)
+            (e.edge_id, e.edge_kind, e.src, e.dst, e.surface_edge_status, e.payload_hash)
             for e in _xsent_edges(graph)
         )
 
@@ -538,7 +538,7 @@ def test_list_item_condition_attaches_via_chapeau_inheritance_not_proximity() ->
     for edge in chap:
         assert graph.nodes[edge.src].node_kind == "exception_condition_cue"
         assert graph.nodes[edge.dst].node_kind == "deontic_core"
-        assert edge.status == "asserted"
+        assert edge.surface_edge_status == "asserted"
         # the attached core is the chapeau's ``voi`` — its span PRECEDES the cue
         # (a different, earlier sentence): proximity-within-sentence could not find
         # it; only the structural inheritance does.
@@ -558,7 +558,7 @@ def test_enclosing_segment_exception_attaches_to_segment_core() -> None:
     for edge in seg:
         assert edge.edge_kind == EDGE_EXCEPTION_EXCEPTS
         assert graph.nodes[edge.dst].node_kind == "deontic_core"
-        assert edge.status == "asserted"
+        assert edge.surface_edge_status == "asserted"
 
 
 def test_no_structure_candidate_falls_back_to_proximity_never_dropped() -> None:
@@ -573,7 +573,7 @@ def test_no_structure_candidate_falls_back_to_proximity_never_dropped() -> None:
     ]
     assert fb, "expected a proximity-fallback edge (candidate never dropped)"
     for edge in fb:
-        assert edge.status == "ambiguous", "a proximity fallback is never asserted"
+        assert edge.surface_edge_status == "ambiguous", "a proximity fallback is never asserted"
         assert graph.nodes[edge.dst].node_kind == "deontic_core"
 
 
@@ -636,12 +636,12 @@ def test_forest_structural_edges_obey_firewall_and_are_deterministic() -> None:
     for edge in fe:
         assert edge.surface_only is True
         assert edge.replay_authorized is False
-        assert edge.status in ("asserted", "ambiguous")
+        assert edge.surface_edge_status in ("asserted", "ambiguous")
     assert first.graph_id == second.graph_id
 
     def _fkeys(graph):
         return sorted(
-            (e.edge_id, e.edge_kind, e.src, e.dst, e.status, e.payload_hash)
+            (e.edge_id, e.edge_kind, e.src, e.dst, e.surface_edge_status, e.payload_hash)
             for e in _forest_edges(graph)
         )
 

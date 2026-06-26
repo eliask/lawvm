@@ -398,8 +398,8 @@ def normalize_text(tree: IRNode) -> IRNode:
 
 PathStep: TypeAlias = TreePathStep
 Path: TypeAlias = TreePath  # ((kind, label), ...)
-_NormalizedPathStep: TypeAlias = Tuple[str, str]
-_NormalizedPath: TypeAlias = Tuple[_NormalizedPathStep, ...]
+type _NormalizedPathStep = Tuple[str, str]
+type _NormalizedPath = Tuple[_NormalizedPathStep, ...]
 LabelIndex = Dict[PathStep, List[Path]]
 
 InvariantPathStep = Tuple[str, Optional[str]]
@@ -872,7 +872,7 @@ class WriteOutcome:
 
     The pair is inseparable by construction: the witnessed primitives return
     this, so no caller can take ``tree`` without also taking ``receipt`` and
-    ``audit``. ``audit.status == "violation"`` means the receipt did not cover
+    ``audit``. ``audit.audit_status == "violation"`` means the receipt did not cover
     the observed mutation footprint — strict mode must block on it.
     """
 
@@ -1057,7 +1057,7 @@ def insert_sorted_witnessed(
 # here is always the neutral surface.
 
 #: The structural-mutation stage result alias (the carrier these ops return).
-StructuralStageResult: TypeAlias = StageResult[IRNode]
+type StructuralStageResult = StageResult[IRNode]
 
 
 def structural_stage_result(tree: IRNode, receipt: WriteReceipt) -> StructuralStageResult:
@@ -1327,18 +1327,27 @@ def has_dedup_label_duplicates(tree: IRNode) -> bool:
             for child in children:
                 if not child.label:
                     continue
-                child_kind_raw = child.kind
-                if child_kind_raw is IRNodeKind.SECTION:
-                    child_kind = "section"
-                elif child_kind_raw is IRNodeKind.CHAPTER:
-                    child_kind = "chapter"
-                elif child_kind_raw is IRNodeKind.PART:
-                    child_kind = "part"
-                elif child_kind_raw is IRNodeKind.SUBSECTION:
-                    child_kind = "subsection"
-                elif type(child_kind_raw) is str and child_kind_raw in _DEDUP_TARGET_KINDS:
-                    child_kind = child_kind_raw
-                else:
+                # Use the same total kind->string + target-membership policy as
+                # ``dedup_children_by_label`` so the cheap predicate cannot drift
+                # from the function it predicts.  Mapping enum members through a
+                # hand-rolled if/elif (the prior form) silently excluded any
+                # dedup-target kind whose enum branch was forgotten -- a new
+                # member of _DEDUP_TARGET_KINDS would then be dropped here while
+                # still deduped by dedup_children_by_label, making this predicate
+                # wrongly report "no duplicates".
+                child_kind = _kind_str(child.kind)
+                if child_kind not in _DEDUP_TARGET_KINDS:
+                    # Defensive coherence guard: an IRNodeKind enum member whose
+                    # string value IS a dedup target but that ``_kind_str`` failed
+                    # to surface would be a silent loss.  ``_kind_str`` is total,
+                    # so this only fires on a genuinely corrupt/unmapped kind.
+                    if isinstance(child.kind, IRNodeKind) and child.kind.value in _DEDUP_TARGET_KINDS:
+                        raise ValueError(
+                            "has_dedup_label_duplicates: IRNodeKind "
+                            f"{child.kind!r} is a dedup target by value but did "
+                            "not resolve to its target string via _kind_str; "
+                            "refusing to silently drop it from dedup detection"
+                        )
                     continue
                 key = (child_kind, child.label)
                 if key in seen:
@@ -1534,12 +1543,32 @@ _NESTING_ORDER = {
         "preamble",
         "recital",
         "final",
+        "p1group",
     },
     "hcontainer": {"part", "chapter", "section", "subsection", "hcontainer", "crossHeading", "heading", "num", "content", "omission"},
-    "part": {"chapter", "section", "heading", "num"},
-    "chapter": {"section", "subsection", "division", "omission", "heading", "num", "crossHeading"},
-    "section": {"subsection", "pgroup", "omission", "heading", "num", "content", "crossHeading"},
-    "subsection": {"intro", "content", "paragraph", "pgroup", "num", "hcontainer", "wrapUp", "omission", "crossHeading"},
+    "part": {
+        "chapter",
+        "section",
+        "heading",
+        "num",
+        "crossHeading",
+        "crossheading",
+        "p1group",
+        "pblock",
+    },
+    "chapter": {
+        "section",
+        "subsection",
+        "division",
+        "omission",
+        "heading",
+        "num",
+        "crossHeading",
+        "crossheading",
+        "p1group",
+    },
+    "section": {"subsection", "paragraph", "subparagraph", "schedule_entry", "table", "pgroup", "omission", "heading", "num", "content", "crossHeading", "crossheading"},
+    "subsection": {"intro", "content", "paragraph", "subparagraph", "item", "schedule_entry", "table", "pgroup", "num", "hcontainer", "wrapUp", "omission", "crossHeading", "crossheading"},
     "division": {
         "division",
         "subdivision",
@@ -1595,6 +1624,8 @@ _NESTING_ORDER = {
         "paragraph",
         "subparagraph",
         "item",
+        "schedule_entry",
+        "table",
         "sentence",
         "heading",
         "num",
@@ -1605,10 +1636,11 @@ _NESTING_ORDER = {
         "omission",
         "hcontainer",
     },
-    "subparagraph": {"subparagraph", "item", "sentence", "heading", "num", "content", "pgroup", "intro", "wrapUp", "omission", "hcontainer"},
-    "item": {"sentence", "content", "intro", "wrapUp", "omission", "hcontainer"},
+    "subparagraph": {"subparagraph", "item", "schedule_entry", "sentence", "heading", "num", "content", "pgroup", "intro", "wrapUp", "omission", "hcontainer"},
+    "item": {"item", "subparagraph", "sentence", "content", "intro", "wrapUp", "omission", "hcontainer"},
     "sentence": {"content"},
-    "p1group": {"paragraph"},
+    "p1group": {"paragraph", "section", "article", "rule", "regulation", "heading", "num"},
+    "pblock": {"p1group", "crossHeading", "crossheading", "section", "heading", "num"},
     "pgroup": {"subsection", "paragraph", "subparagraph", "item"},
     "preamble": {"paragraph", "subparagraph", "item", "sentence", "content", "heading", "num", "hcontainer"},
     "recital": {"paragraph", "subparagraph", "item", "sentence", "content", "heading", "num", "hcontainer"},
@@ -1790,15 +1822,35 @@ def iter_tree_invariant_violations(
         )
         return
 
-    def _wants(kind: TreeInvariantKind) -> bool:
-        return selected is None or kind in selected
+    # Hoist the per-family membership predicates out of the per-node closure.
+    # The cProfile of a complete UK statute replay (`ukpga/1988/1`,
+    # 2026-06-24) showed 102M ``enum.__hash__`` / 21s dominated by the
+    # ~5 ``_wants(...)`` calls per node visit at ~17M visits. ``selected`` is
+    # constant per scan; resolving family membership once per scan (not per
+    # child) preserves the yielded violations exactly.
+    wants_duplicate = selected is None or "duplicate_label" in selected
+    wants_normalized_duplicate = (
+        selected is None or "normalized_duplicate_label" in selected
+    )
+    wants_sort_order = selected is None or "sort_order" in selected
+    wants_unexpected_kind = selected is None or "unexpected_child_kind" in selected
+    wants_mixed_hierarchy = selected is not None and "mixed_hierarchy_child" in selected
 
     def _check(node: TreeInvariantNode, path: InvariantPath) -> Iterator[TreeInvariantViolation]:
-        if _wants("duplicate_label"):
+        if not node.children:
+            return
+        # Resolve kind_str once per child rather than 4-5 times per visit; the
+        # ``kind_str`` helper's ``isinstance`` + ``.value`` lookup was the
+        # single largest idle cost on the UK replay hot path.
+        child_entries: list[tuple[TreeInvariantNode, str, Optional[str]]] = [
+            (child, _kind_str(child.kind), child.label) for child in node.children
+        ]
+
+        if wants_duplicate:
             seen: Dict[Tuple[str, str], int] = {}
-            for child in node.children:
-                if child.label:
-                    key = (_kind_str(child.kind), child.label)
+            for _child, child_kind, child_label in child_entries:
+                if child_label:
+                    key = (child_kind, child_label)
                     seen[key] = seen.get(key, 0) + 1
             for (kind, label), count in seen.items():
                 if count > 1:
@@ -1810,15 +1862,14 @@ def iter_tree_invariant_violations(
                         count=count,
                     )
 
-        if _wants("normalized_duplicate_label"):
+        if wants_normalized_duplicate:
             norm_seen: Dict[Tuple[str, str], str] = {}
-            for child in node.children:
-                if child.label is not None:
-                    child_kind = _kind_str(child.kind)
-                    normalized_label = _norm(child.label)
+            for _child, child_kind, child_label in child_entries:
+                if child_label is not None:
+                    normalized_label = _norm(child_label)
                     norm_key = (child_kind, normalized_label)
                     if norm_key in norm_seen:
-                        if norm_seen[norm_key] != child.label:
+                        if norm_seen[norm_key] != child_label:
                             yield TreeInvariantViolation(
                                 kind="normalized_duplicate_label",
                                 path=path,
@@ -1826,13 +1877,13 @@ def iter_tree_invariant_violations(
                                 normalized_label=normalized_label,
                             )
                     else:
-                        norm_seen[norm_key] = child.label
+                        norm_seen[norm_key] = child_label
 
-        if _wants("sort_order"):
+        if wants_sort_order:
             by_kind: Dict[str, List[str]] = {}
-            for child in node.children:
-                if child.label:
-                    by_kind.setdefault(_kind_str(child.kind), []).append(child.label)
+            for _child, child_kind, child_label in child_entries:
+                if child_label:
+                    by_kind.setdefault(child_kind, []).append(child_label)
             for kind, labels in by_kind.items():
                 if kind in _ORDERED_INVARIANT_KINDS:
                     if _preserve_source_order_for_mixed_labels(kind, labels):
@@ -1849,12 +1900,11 @@ def iter_tree_invariant_violations(
                                 next_label=labels[i + 1],
                             )
 
-        if _wants("unexpected_child_kind"):
+        if wants_unexpected_kind:
             parent_kind = _kind_str(node.kind)
             allowed = _NESTING_ORDER.get(parent_kind)
             if allowed is not None:
-                for child in node.children:
-                    child_kind = _kind_str(child.kind)
+                for _child, child_kind, _child_label in child_entries:
                     if child_kind not in allowed:
                         yield TreeInvariantViolation(
                             kind="unexpected_child_kind",
@@ -1863,17 +1913,17 @@ def iter_tree_invariant_violations(
                             child_kind=child_kind,
                         )
 
-        if selected is not None and "mixed_hierarchy_child" in selected:
-            child_entries = [
-                (index, _kind_str(child.kind), child.label)
-                for index, child in enumerate(node.children)
-                if child.label
+        if wants_mixed_hierarchy:
+            ranked_children = [
+                (index, kind_value, label_value)
+                for index, (_child, kind_value, label_value) in enumerate(child_entries)
+                if label_value
             ]
             container_rank = {"part": 0, "chapter": 1, "section": 2}
             ranked_children = [
-                (index, kind, label, container_rank[kind])
-                for index, kind, label in child_entries
-                if kind in container_rank
+                (index, kind_value, label_value, container_rank[kind_value])
+                for index, kind_value, label_value in ranked_children
+                if kind_value in container_rank
             ]
             for child_index, child_kind, child_label, child_rank in ranked_children:
                 previous_containers = [
@@ -1904,9 +1954,11 @@ def iter_tree_invariant_violations(
                     container_label=container_label,
                 )
 
-        for child in node.children:
-            child_path = path + ((_kind_str(child.kind), child.label),)
-            yield from _check(child, child_path)
+        for child, child_kind, child_label in child_entries:
+            if child.children:
+                yield from _check(
+                    child, path + ((child_kind, child_label),)
+                )
 
     yield from _check(tree, root)
 

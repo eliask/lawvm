@@ -104,7 +104,7 @@ def main(argv: list[str] | None = None) -> int:
 
     fieldnames = [
         "statute_id",
-        "status",
+        "audit_status",
         "violation_type",
         "path",
         "detail",

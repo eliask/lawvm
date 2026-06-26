@@ -706,6 +706,20 @@ class UKReplayInsertApplyMixin:
         if "-" in target_eid:
             parent_eid = "-".join(target_eid.split("-")[:-1])
             p_node, _, _ = self._find_node_and_parent_statute(parent_eid)
+            # Defense-in-depth against a §1.1 silent target hijack: the
+            # EID-derived parent lookup uses sequence-token matching, which
+            # collapses a section-level eId like ``section-75b`` onto a
+            # paragraph-level node like ``section-75-b`` (both flatten to the
+            # token sequence ``section/75/b``).  Binding the insert there would
+            # silently absorb a section-level target into a paragraph sibling
+            # with no failed-op signal.  Refuse the bind when the resolved node
+            # is not kind-compatible with the named parent leaf, so the caller
+            # falls through to a fail-loud ``uk_replay_missing_..._parent_shape_gap``.
+            if p_node is not None and parent_addr is not None and not self._eid_candidate_matches_target_leaf(
+                p_node,
+                parent_addr,
+            ):
+                p_node = None
             if p_node:
                 if self._skip_insert_if_parent_already_has_target_child(
                     parent_node=p_node,

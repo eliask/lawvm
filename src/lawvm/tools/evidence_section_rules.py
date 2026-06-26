@@ -1068,7 +1068,7 @@ def rule_section_source_barrier_defeater(
         observation_sources=("compile_result", "section_strict_lineage"),
         support={
             "amendment_id": ctx.strict_amendment_id,
-            "status": ctx.strict_status,
+            "verdict_status": ctx.strict_status,
             "barrier_kinds": list(ctx.strict_barrier_kinds),
             "barrier_families": list(ctx.strict_barrier_families),
         },
@@ -1109,7 +1109,7 @@ def rule_section_recovery_barrier_defeater(
         observation_sources=("compile_result", "section_strict_lineage"),
         support={
             "amendment_id": ctx.strict_amendment_id,
-            "status": ctx.strict_status,
+            "verdict_status": ctx.strict_status,
             "barrier_kinds": list(ctx.strict_barrier_kinds),
             "barrier_families": list(ctx.strict_barrier_families),
         },

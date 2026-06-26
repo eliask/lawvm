@@ -17,13 +17,14 @@ from lxml import etree
 from lawvm.new_zealand.dry_run import (
     NZ_DRY_RUN_NOT_IN_SCOPE_NON_REPLACE_FAMILY,
     NZ_DRY_RUN_NOT_IN_SCOPE_REPLACE_TARGET_NOT_CANDIDATE,
-    NZ_DRY_RUN_REFUSED_NO_REPEAL_CANDIDATE_RULE_ID,
+    NZ_DRY_RUN_REFUSED_NO_REPLACE_CANDIDATE_RULE_ID,
     NZ_DRY_RUN_REFUSED_REPLACE_NO_AMENDING_WORK_RULE_ID,
     NZ_DRY_RUN_REFUSED_REPLACE_PAYLOAD_NOT_EXTRACTABLE_RULE_ID,
     NZ_DRY_RUN_REPLACE_AGREES_RULE_ID,
     NZ_DRY_RUN_REPLACE_RESIDUAL_MISMATCH_RULE_ID,
     NZ_DRY_RUN_REPLACE_RESIDUAL_TARGET_MISSING_RULE_ID,
     NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPLACE,
+    NZDryRunReport,
     _amend_provision_overlaps_target_in_other_step,
     _instruction_target_label_path,
     _node_label_path,
@@ -185,8 +186,8 @@ def _archive(after_xml: bytes, *, amending_xml: bytes = _AMENDING_XML) -> _FakeA
 
 
 class _FakeTargetCandidate:
-    def __init__(self, status: str, address: str, path: tuple[tuple[str, str], ...]) -> None:
-        self.status = status
+    def __init__(self, target_address_status: str, address: str, path: tuple[tuple[str, str], ...]) -> None:
+        self.target_address_status = target_address_status
         self.address = address
         self.path = path
 
@@ -918,7 +919,9 @@ def test_replace_no_candidate_witness_refuses_whole_work() -> None:
     report = _run(_AFTER_XML_AGREES, (row,))
     assert report.proofs == ()
     assert len(report.refusals) == 1
-    assert report.refusals[0].rule_id == NZ_DRY_RUN_REFUSED_NO_REPEAL_CANDIDATE_RULE_ID
+    # The family-specific no-candidate rule (AGENTS §1.10 distinguishability): the
+    # receipt must name this family's witness reader, not the repeal lane's.
+    assert report.refusals[0].rule_id == NZ_DRY_RUN_REFUSED_NO_REPLACE_CANDIDATE_RULE_ID
     completeness = report.scope_completeness
     assert completeness is not None
     assert completeness.not_in_scope_reason_counts.get(NZ_DRY_RUN_NOT_IN_SCOPE_NON_REPLACE_FAMILY) == 1
@@ -1065,3 +1068,103 @@ def test_overlap_detects_later_add_step_on_same_node() -> None:
     assert _amend_provision_overlaps_target_in_other_step(
         node, ("part:14", "prov:358", "subprov:1")
     ) is True
+
+
+# --- Omnibus-reparent manual-compilation frontier (§1.6 no unstated migration) ---
+# Piece 1 (synth regression pinning the CURRENT no-migration-emitter behaviour).
+# Anchors pieces 2-5 of the front-end migration-emitter lane:
+#   1. this test (synth regression pinning current behaviour) — landed here;
+#   2. front-end MigrationEvent emitter for the reparented provision range;
+#   3. _resolve_target_nodes consults the migration map before returning empty;
+#   4. real-corpus @slow regression on act_public_1992_122 @ 2010-04-01;
+#   5. actual-replay promotion (migration-resolved proofs may promote cleanly).
+#
+# The omnibus amending act reparents a whole range of provisions (sections 84-110
+# in act_public_1992_122) from Part 9 to Part 10 between archived snapshots.
+# Because there is no crossing-archive migration map today, the dry-run resolves
+# the target on the BEFORE path and fails to find it on the ORACLE's reparented
+# path -- the §1.6 manual-compilation frontier residual (target_missing_in_oracle).
+# The contract pinned here is the HONEST current behaviour; pieces 2-5 will flip
+# it from honest-residual-to-conservatively-resolved WITHOUT silently widening
+# the semantics.
+_BEFORE_XML_REPARENT = b"""\
+<act>
+  <body>
+    <part><label>9</label><heading>Part nine before</heading>
+      <prov id="DLMa41" deletion-status=""><label>41</label><heading>Old heading</heading>
+        <prov.body><para><text>41 Old heading The old body of section 41.</text></para></prov.body></prov>
+    </part>
+    <prov id="DLMa42" deletion-status=""><label>42</label><heading>Neighbour</heading>
+      <prov.body><para><text>42 Neighbour Neighbour body.</text></para></prov.body></prov>
+  </body>
+</act>
+"""
+
+# On-or-after snapshot post-amendment: section 41 is now under Part 10 (omnibus
+# act reparented 41+ from Part 9 to Part 10 between snapshots). The new body
+# reflects the replacement payload. Section 42 stays in-place untouched.
+_AFTER_XML_REPARENTED = b"""\
+<act>
+  <body>
+    <part><label>9</label><heading>Part nine after</heading>
+      <prov id="DLMa_other" deletion-status=""><label>43</label><heading>Unrelated section in Part 9</heading>
+        <prov.body><para><text>43 Placeholder Placeholder body.</text></para></prov.body></prov>
+    </part>
+    <part><label>10</label><heading>Part ten after</heading>
+      <prov id="DLMa41" deletion-status=""><label>41</label><heading>New heading</heading>
+        <prov.body><para><text>41 New heading The brand new body of section 41.</text></para></prov.body></prov>
+    </part>
+    <prov id="DLMa42" deletion-status=""><label>42</label><heading>Neighbour</heading>
+      <prov.body><para><text>42 Neighbour Neighbour body.</text></para></prov.body></prov>
+  </body>
+</act>
+"""
+
+_AMENDING_XML_REPARENT = b"""\
+<act><body><prov id="DLM9000010"><label>10</label><heading>Amendments to principal Act</heading>
+  <prov.body><subprov><label>1</label><para>
+    <text><citation jurisdiction="nz"><extref href="DLMa41">section 41</extref></citation> is repealed and the following section substituted:</text>
+    <amend>
+      <prov id="newDLMa41"><label>41</label><heading>New heading</heading>
+        <prov.body><para><text>41 New heading The brand new body of section 41.</text></para></prov.body></prov>
+    </amend>
+  </para></subprov></prov.body></prov></body></act>
+"""
+
+
+def _run_reparent(after_xml: bytes) -> NZDryRunReport:
+    # The witness row declares the pre-migration target path. This is what the
+    # real operation surface carries: the history note is anchored on section 41
+    # under Part 9 (the address at BEFORE time).
+    row = _FakeWitnessRow(
+        target_path=(("part", "9"), ("section", "41")),
+        amended_provision="Section 41",
+    )
+    archive = _archive(after_xml, amending_xml=_AMENDING_XML_REPARENT)
+    archive.rows[
+        "https://www.legislation.govt.nz/act/public/2018/99/en/2018-01-01.xml"
+    ] = _BEFORE_XML_REPARENT
+    return build_dry_run_replace(archive, work_id=_WORK_ID, surface=_FakeSurface((row,)))
+
+
+def test_replace_reparent_pinned_as_target_missing_in_oracle() -> None:
+    # §1.6 manual-compilation-frontier synth regression.
+    # Before piece 2 (front-end migration emitter for the reparented range), the
+    # dry-run resolve_target_nodes is path-exact and matches no oracle node at
+    # part:9/prov:41 (the section moved to part:10). The residual is honestly
+    # classified as nz_dry_run_structural_replace_residual_target_missing_in_oracle
+    # -- NOT a guessed agreement -- so the migration emitter lane is bounded
+    # (piece 2 flips it to a migration-resolved target without forcing a sibling).
+    report = _run_reparent(_AFTER_XML_REPARENTED)
+
+    assert report.summary()["dry_run_oracle_agreements"] == 0
+    assert report.summary()["dry_run_oracle_residuals"] == 1
+    proof = report.proofs[0]
+    assert proof.oracle_match == "target_missing"
+    assert proof.oracle_match_rule_id == NZ_DRY_RUN_REPLACE_RESIDUAL_TARGET_MISSING_RULE_ID
+    assert proof.oracle_target_present is False
+    # The pre-migration path is the resolved one (the section DID live there in
+    # the before snapshot). piece 2 will carry the post-migration path as the
+    # migration-resolved resolution lane; this assertion pins the current path
+    # so the subsequent change is verifiable.
+    assert proof.selected_source_path == ("part:9", "prov:41")

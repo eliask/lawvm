@@ -1,5 +1,4 @@
 """Unit tests for lawvm.finland.merge — IRNode-level merge functions."""
-from typing import Literal
 
 import pytest
 
@@ -24,7 +23,7 @@ from lawvm.finland.merge import (
     _paragraph_signatures_ir,
     _pre_resolve_omissions,
 )
-from lawvm.finland.ops import AmendmentOp, get_replay_profile
+from lawvm.finland.ops import OpType, AmendmentOp, get_replay_profile
 
 # ---------------------------------------------------------------------------
 # IRNode fixture helpers
@@ -72,7 +71,7 @@ def _has_omission(node: IRNode) -> bool:
 
 
 def _op(
-    op_type: Literal["REPLACE", "INSERT", "REPEAL"],
+    op_type: OpType,
     *,
     target_section: str,
     target_paragraph: int | None = None,
@@ -662,7 +661,7 @@ def test_merge_section_with_targeted_insert_and_shifted_replace_preserves_tail()
     result = _merge_section_with_omission_ir(
         master_sec,
         amend_sec,
-        group_ops=[_op("INSERT", target_section="32", target_paragraph=1)],
+        group_ops=[_op(OpType.INSERT, target_section="32", target_paragraph=1)],
     )
 
     assert result is not None
@@ -696,7 +695,7 @@ def test_merge_section_with_targeted_insert_before_live_tail_preserves_shifted_s
     result = _merge_section_with_omission_ir(
         master_sec,
         amend_sec,
-        group_ops=[_op("INSERT", target_section="118", target_paragraph=4)],
+        group_ops=[_op(OpType.INSERT, target_section="118", target_paragraph=4)],
     )
 
     assert result is not None
@@ -730,9 +729,9 @@ def test_merge_section_with_targeted_replaces_and_tail_insert_keeps_middle_maste
         master_sec,
         amend_sec,
         group_ops=[
-            _op("REPLACE", target_section="122", target_paragraph=1),
-            _op("REPLACE", target_section="122", target_paragraph=2),
-            _op("INSERT", target_section="122", target_paragraph=4),
+            _op(OpType.REPLACE, target_section="122", target_paragraph=1),
+            _op(OpType.REPLACE, target_section="122", target_paragraph=2),
+            _op(OpType.INSERT, target_section="122", target_paragraph=4),
         ],
     )
 
@@ -770,8 +769,8 @@ def test_merge_section_targeted_replace_with_trailing_omission_preserves_all_mas
         master_sec,
         amend_sec,
         group_ops=[
-            _op("REPLACE", target_section="15"),
-            _op("REPLACE", target_section="15", target_paragraph=1),
+            _op(OpType.REPLACE, target_section="15"),
+            _op(OpType.REPLACE, target_section="15", target_paragraph=1),
         ],
     )
 
@@ -807,7 +806,7 @@ def test_merge_section_with_johto_moment_target_replaces_tail_not_second_slot() 
     result = _merge_section_with_omission_ir(
         master_sec,
         amend_sec,
-        group_ops=[_op("REPLACE", target_section="74", target_paragraph=4)],
+        group_ops=[_op(OpType.REPLACE, target_section="74", target_paragraph=4)],
     )
 
     assert result is not None
@@ -846,10 +845,10 @@ def test_merge_section_targeted_replace_with_explicit_child_repeal_skips_repeale
         master_sec,
         amend_sec,
         group_ops=[
-            _op("REPEAL", target_section="8a", target_paragraph=2),
-            _op("REPLACE", target_section="8a"),
-            _op("REPLACE", target_section="8a", target_paragraph=1),
-            _op("REPLACE", target_section="8a", target_paragraph=5),
+            _op(OpType.REPEAL, target_section="8a", target_paragraph=2),
+            _op(OpType.REPLACE, target_section="8a"),
+            _op(OpType.REPLACE, target_section="8a", target_paragraph=1),
+            _op(OpType.REPLACE, target_section="8a", target_paragraph=5),
         ],
     )
 
@@ -885,7 +884,7 @@ def test_merge_section_with_targeted_replace_after_leading_omission_preserves_pr
     result = _merge_section_with_omission_ir(
         master_sec,
         amend_sec,
-        group_ops=[_op("REPLACE", target_section="205", target_paragraph=3)],
+        group_ops=[_op(OpType.REPLACE, target_section="205", target_paragraph=3)],
     )
 
     assert result is not None
@@ -1161,8 +1160,8 @@ def test_merge_section_targeted_ops_keeps_first_duplicate_when_neither_duplicate
         master_sec,
         amend_sec,
         group_ops=[
-            _op("REPLACE", target_section="15"),
-            _op("REPLACE", target_section="15", target_paragraph=1),
+            _op(OpType.REPLACE, target_section="15"),
+            _op(OpType.REPLACE, target_section="15", target_paragraph=1),
         ],
     )
 
@@ -2247,7 +2246,7 @@ def _container_replace_ctx(
 def _whole_replace_op(target_unit_kind: TargetUnitKind) -> AmendmentOp:
     return AmendmentOp(
         op_id=f"replace_{target_unit_kind}_1",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind=target_unit_kind,
         source_statute="2006/395",
     )

@@ -22,6 +22,7 @@ from lawvm.core.elaboration_context import TargetUnitKind
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core import tree_ops as _tops
 from lawvm.core.tree_ops import normalized_label_key
+from lawvm.finland.op_provenance import OpProvenance, RecognizerId, has_recognizer
 from lawvm.finland.ops import AmendmentOp, ReplayProfile, ResolvedOp
 from lawvm.finland.helpers import _is_omission_ir, _norm_num_token, _previous_item_token
 from lawvm.finland.source_pathology import (
@@ -171,6 +172,7 @@ class _ItemApplyView:
     target_special: str | None
     post_repeal_item_shift_label: str | None
     target_guessing_provenance_tags: tuple[str, ...] = ()
+    provenance: OpProvenance | None = None
 
 
 def _coerce_item_apply_view(op: "_ItemApplyView | AmendmentOp | ResolvedOp") -> _ItemApplyView:
@@ -191,14 +193,14 @@ def _item_apply_view_for_op(op: AmendmentOp | ResolvedOp) -> _ItemApplyView:
     else:
         source_statute = op.source_statute or ""
         op_type = op.op_type
-        target_section = op.target_section or ""
-        target_paragraph = op.target_paragraph
-        target_item = op.target_item
-        target_special = op.target_special
+        target_section = op.target_cols.target_section or ""
+        target_paragraph = op.target_cols.target_paragraph
+        target_item = op.target_cols.target_item
+        target_special = op.target_cols.target_special
     return _ItemApplyView(
         op_type=op_type,
         source_statute=source_statute,
-        target_unit_kind=op.target_unit_kind,
+        target_unit_kind=op.target_unit_kind if isinstance(op, ResolvedOp) else op.target_cols.target_unit_kind,
         target_section=target_section,
         target_paragraph=target_paragraph,
         target_item=target_item,
@@ -207,6 +209,7 @@ def _item_apply_view_for_op(op: AmendmentOp | ResolvedOp) -> _ItemApplyView:
             op.resolved_post_repeal_item_shift_label if isinstance(op, ResolvedOp) else op.post_repeal_item_shift_label
         ),
         target_guessing_provenance_tags=op.target_guessing_provenance_tags,
+        provenance=op.provenance,
     )
 
 
@@ -845,7 +848,7 @@ def _apply_item_repeal(
                 para = paras[para_idx]
                 label = para.label or (view.target_item or "")
                 placeholder_attrs = {"lawvm_repeal_placeholder": "1"}
-                if "unique_item_label_subsection_fallback" in view.target_guessing_provenance_tags:
+                if has_recognizer(view.provenance, RecognizerId.UNIQUE_ITEM_LABEL_SUBSECTION_FALLBACK):
                     placeholder_attrs["lawvm_restore_materialized_stale_item_slot"] = "1"
                 placeholder = _relabel_paragraph_ir(
                     IRNode(

@@ -13,7 +13,6 @@ Run:
 from __future__ import annotations
 
 
-from typing import Literal
 
 from lawvm.core.phase_result import Finding
 from lawvm.core.observation_registry import finding_codes_by_role
@@ -25,6 +24,7 @@ from lawvm.finland.frontend_observations import (
     _scope_anchor_dependence_observations,
 )
 from lawvm.finland.ops import (
+    OpType,
     AmendmentOp,
     ScopeConfidence,
     ScopeResolutionConfidence,
@@ -42,7 +42,7 @@ OBSERVATION_CODES = set(finding_codes_by_role("observation"))
 
 
 def _make_op(
-    op_type: Literal["REPLACE", "REPEAL", "INSERT", "RENUMBER"] = "REPLACE",
+    op_type: OpType = OpType.REPLACE,
     target_section: str = "1",
     target_kind: TargetKind = TargetKind.SECTION,
     target_chapter: str | None = None,
@@ -68,7 +68,7 @@ def _make_op(
 
 
 def test_duplicate_target_returns_finding_instances() -> None:
-    ops = [_make_op("REPLACE", "5"), _make_op("REPLACE", "5")]
+    ops = [_make_op(OpType.REPLACE, "5"), _make_op(OpType.REPLACE, "5")]
     result = _duplicate_frontend_target_observations(ops, "2020/123")
     assert len(result) == 1
     obs = result[0]
@@ -81,10 +81,10 @@ def test_duplicate_target_returns_finding_instances() -> None:
 
 def test_semantic_collapse_returns_finding_instances() -> None:
     ops = [
-        _make_op("REPLACE", "10"),
-        _make_op("REPLACE", "10"),
-        _make_op("REPLACE", "11"),
-        _make_op("REPLACE", "11"),
+        _make_op(OpType.REPLACE, "10"),
+        _make_op(OpType.REPLACE, "10"),
+        _make_op(OpType.REPLACE, "11"),
+        _make_op(OpType.REPLACE, "11"),
     ]
     johto = "muutetaan 9–11 §, joista 10 ja 11 § samalla siirretään 3 lukuun"
     result = _semantic_collapse_move_or_renumber_observations(ops, johto, "2021/456")
@@ -97,10 +97,10 @@ def test_semantic_collapse_returns_finding_instances() -> None:
 
 def test_semantic_collapse_accepts_inline_move_without_samalla() -> None:
     ops = [
-        _make_op("REPLACE", "33"),
-        _make_op("REPLACE", "33"),
-        _make_op("REPLACE", "34"),
-        _make_op("REPLACE", "34"),
+        _make_op(OpType.REPLACE, "33"),
+        _make_op(OpType.REPLACE, "33"),
+        _make_op(OpType.REPLACE, "34"),
+        _make_op(OpType.REPLACE, "34"),
     ]
     johto = "muutetaan 31–34 §, joista 33 ja 34 § siirretään 5 lukuun"
     result = _semantic_collapse_move_or_renumber_observations(ops, johto, "2021/456")
@@ -115,7 +115,7 @@ def test_destinationless_move_relabel_returns_finding_instances() -> None:
     ops = [
         AmendmentOp(
             op_id="",
-            op_type="RENUMBER",
+            op_type=OpType.RENUMBER,
             target_section="73",
             target_kind=TargetKind.SECTION,
             target_chapter="7",
@@ -143,7 +143,7 @@ def test_destinationless_move_relabel_returns_finding_instances() -> None:
 def test_scope_anchor_returns_finding_instances() -> None:
     ops = [
         _make_op(scope_provenance_tags=("grouped_chapter_scope",)),
-        _make_op("REPLACE", "2", scope_provenance_tags=("chapter_scope_carry_forward",)),
+        _make_op(OpType.REPLACE, "2", scope_provenance_tags=("chapter_scope_carry_forward",)),
     ]
     result = _scope_anchor_dependence_observations(ops, "2019/789")
     assert len(result) == 2
@@ -158,13 +158,13 @@ def test_scope_anchor_returns_finding_instances() -> None:
 
 
 def test_duplicate_target_kind_is_registered() -> None:
-    ops = [_make_op("REPLACE", "5"), _make_op("REPLACE", "5")]
+    ops = [_make_op(OpType.REPLACE, "5"), _make_op(OpType.REPLACE, "5")]
     for obs in _duplicate_frontend_target_observations(ops, "x"):
         assert obs.kind in OBSERVATION_CODES, f"kind '{obs.kind}' not in observation-role registry"
 
 
 def test_semantic_collapse_kinds_are_registered() -> None:
-    ops = [_make_op("REPLACE", "7"), _make_op("REPLACE", "7")]
+    ops = [_make_op(OpType.REPLACE, "7"), _make_op(OpType.REPLACE, "7")]
     johto = "muutetaan 6–7 §, joista 7 § samalla siirretään 2 lukuun"
     for obs in _semantic_collapse_move_or_renumber_observations(ops, johto, "x"):
         assert obs.kind in OBSERVATION_CODES, f"kind '{obs.kind}' not in observation-role registry"
@@ -189,7 +189,7 @@ def test_scope_anchor_kinds_are_registered() -> None:
 
 
 def test_duplicate_target_detail_has_required_fields() -> None:
-    ops = [_make_op("INSERT", "3", target_paragraph=2), _make_op("INSERT", "3", target_paragraph=2)]
+    ops = [_make_op(OpType.INSERT, "3", target_paragraph=2), _make_op(OpType.INSERT, "3", target_paragraph=2)]
     obs = _duplicate_frontend_target_observations(ops, "2020/1")[0]
     d = obs.detail
     assert "target_unit_kind" in d
@@ -202,7 +202,7 @@ def test_duplicate_target_detail_has_required_fields() -> None:
 
 
 def test_semantic_collapse_detail_has_required_fields() -> None:
-    ops = [_make_op("REPLACE", "33"), _make_op("REPLACE", "33")]
+    ops = [_make_op(OpType.REPLACE, "33"), _make_op(OpType.REPLACE, "33")]
     johto = "muutetaan 31–33 §, joista 33 § samalla siirretään 5 lukuun"
     for obs in _semantic_collapse_move_or_renumber_observations(ops, johto, "2020/1"):
         d = obs.detail

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from lawvm.uk_legislation.effect_temporal import (
     UKCommencementMetadata,
+    UKCommencementMetadataStatus,
     _instrument_commencement_metadata,
 )
 from lawvm.uk_legislation.si_commencement_audit import (
@@ -45,7 +46,7 @@ def test_single_date_classifies_resolved_in_force() -> None:
     metadata = UKCommencementMetadata(
         effective_date="2020-01-01",
         source_locator="loc",
-        status="single_date",
+        commencement_status=UKCommencementMetadataStatus.SINGLE_DATE,
         dates=("2020-01-01",),
         made_dates=("2019-12-01",),
     )
@@ -58,7 +59,7 @@ def test_multiple_dates_classifies_multiple() -> None:
     metadata = UKCommencementMetadata(
         effective_date="",
         source_locator="loc",
-        status="multiple_or_textual",
+        commencement_status=UKCommencementMetadataStatus.MULTIPLE_OR_TEXTUAL,
         dates=("2020-01-01", "2020-06-01"),
         made_dates=("2019-12-01",),
     )
@@ -71,7 +72,7 @@ def test_made_date_default_candidate_is_unproved() -> None:
     metadata = UKCommencementMetadata(
         effective_date="",
         source_locator="loc",
-        status="default_commencement_made_date_candidate",
+        commencement_status=UKCommencementMetadataStatus.DEFAULT_COMMENCEMENT_MADE_DATE_CANDIDATE,
         dates=(),
         made_dates=("2019-12-01",),
     )
@@ -84,7 +85,7 @@ def test_textual_only_when_cif_present_without_date() -> None:
     metadata = UKCommencementMetadata(
         effective_date="",
         source_locator="loc",
-        status="textual_or_missing_date",
+        commencement_status=UKCommencementMetadataStatus.TEXTUAL_OR_MISSING_DATE,
         dates=(),
         made_dates=(),
     )
@@ -102,7 +103,7 @@ def test_no_made_date_when_nothing_present() -> None:
     metadata = UKCommencementMetadata(
         effective_date="",
         source_locator="loc",
-        status="textual_or_missing_date",
+        commencement_status=UKCommencementMetadataStatus.TEXTUAL_OR_MISSING_DATE,
         dates=(),
         made_dates=(),
     )
@@ -115,7 +116,7 @@ def test_prospective_unresolved_overrides_undated_states() -> None:
     metadata = UKCommencementMetadata(
         effective_date="",
         source_locator="loc",
-        status="default_commencement_made_date_candidate",
+        commencement_status=UKCommencementMetadataStatus.DEFAULT_COMMENCEMENT_MADE_DATE_CANDIDATE,
         dates=(),
         made_dates=("2019-12-01",),
     )
@@ -133,7 +134,7 @@ def test_single_date_beats_prospective_unresolved() -> None:
     metadata = UKCommencementMetadata(
         effective_date="2020-01-01",
         source_locator="loc",
-        status="single_date",
+        commencement_status=UKCommencementMetadataStatus.SINGLE_DATE,
         dates=("2020-01-01",),
     )
     state = classify_si_commencement_metadata(
@@ -150,7 +151,7 @@ def test_source_unavailable_and_parse_error_states() -> None:
         UKCommencementMetadata(
             effective_date="",
             source_locator="",
-            status="source_xml_unavailable",
+            commencement_status=UKCommencementMetadataStatus.SOURCE_XML_UNAVAILABLE,
         ),
     )
     assert unavailable.state == UK_SI_COMMENCEMENT_SOURCE_UNAVAILABLE
@@ -159,7 +160,7 @@ def test_source_unavailable_and_parse_error_states() -> None:
         UKCommencementMetadata(
             effective_date="",
             source_locator="loc",
-            status="source_xml_parse_error",
+            commencement_status=UKCommencementMetadataStatus.SOURCE_XML_PARSE_ERROR,
             parse_error="boom",
         ),
     )
@@ -171,23 +172,26 @@ def test_source_unavailable_and_parse_error_states() -> None:
 
 
 def test_classifier_is_total_over_metadata_statuses() -> None:
-    statuses = (
-        "single_date",
-        "multiple_or_textual",
-        "textual_or_missing_date",
-        "default_commencement_made_date_candidate",
-        "source_xml_unavailable",
-        "source_xml_parse_error",
-    )
-    for status in statuses:
-        dates = ("2020-01-01", "2020-06-01") if status == "multiple_or_textual" else (
-            ("2020-01-01",) if status == "single_date" else ()
+    # Iterate the whole enum so a newly added member that the classifier does
+    # not map fails here (and, structurally, at the match/assert_never in
+    # classify_si_commencement_metadata).
+    for status in UKCommencementMetadataStatus:
+        dates = (
+            ("2020-01-01", "2020-06-01")
+            if status is UKCommencementMetadataStatus.MULTIPLE_OR_TEXTUAL
+            else (("2020-01-01",) if status is UKCommencementMetadataStatus.SINGLE_DATE else ())
         )
-        made = ("2019-12-01",) if status == "default_commencement_made_date_candidate" else ()
+        made = (
+            ("2019-12-01",)
+            if status is UKCommencementMetadataStatus.DEFAULT_COMMENCEMENT_MADE_DATE_CANDIDATE
+            else ()
+        )
         metadata = UKCommencementMetadata(
-            effective_date="2020-01-01" if status == "single_date" else "",
+            effective_date=(
+                "2020-01-01" if status is UKCommencementMetadataStatus.SINGLE_DATE else ""
+            ),
             source_locator="loc",
-            status=status,
+            commencement_status=status,
             dates=dates,
             made_dates=made,
         )
@@ -202,7 +206,7 @@ def test_audit_from_xml_matches_replay_extractor() -> None:
     xml = _si_xml(cif_dates=("2021-03-01",), made_dates=("2021-02-01",))
     # The audit reuses the replay-path extractor verbatim.
     metadata = _instrument_commencement_metadata(xml, source_locator="loc")
-    assert metadata.status == "single_date"
+    assert metadata.commencement_status == "single_date"
     state = audit_affecting_si_commencement("uksi/2021/100", xml, source_locator="loc")
     assert state.state == UK_SI_COMMENCEMENT_RESOLVED_IN_FORCE
     assert state.commencement_dates == ("2021-03-01",)

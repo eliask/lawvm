@@ -1238,12 +1238,12 @@ def materialize_pit_ex(
             territory=territory,
             expires_as_of=expires_as_of,
         )
-        if selection.status == "ambiguous_missing_scope":
+        if selection.selection_status == "ambiguous_missing_scope":
             degraded_dimensions.update(selection.required_dimensions)
             selection_states.append(
                 _MaterializationSelectionState(
                     address=address,
-                    status="ambiguous_missing_scope",
+                    materialization_status="ambiguous_missing_scope",
                 )
             )
             continue
@@ -1252,14 +1252,14 @@ def materialize_pit_ex(
                 selection_states.append(
                     _MaterializationSelectionState(
                         address=address,
-                        status="inactive",
+                        materialization_status="inactive",
                     )
                 )
                 continue
             selection_states.append(
                 _MaterializationSelectionState(
                     address=address,
-                    status="selected",
+                    materialization_status="selected",
                     version=selection.version,
                 )
             )
@@ -1271,7 +1271,7 @@ def materialize_pit_ex(
             selection_states.append(
                 _MaterializationSelectionState(
                     address=address,
-                    status="inactive",
+                    materialization_status="inactive",
                 )
             )
             inactive_expiry_by_address[address] = max(v.expires or "" for v in expired_versions)
@@ -1633,18 +1633,18 @@ def materialize_pit_ex(
     statute_id = base.statute_id if base else "unknown/unknown"
     metadata: Dict[str, Any] = dict(base.metadata) if base else {}
     metadata["materialized_as_of"] = as_of
-    status: MaterializationStatus = "materialized"
+    materialization_status: MaterializationStatus = "materialized"
     if ambiguous_addresses:
-        status = "degraded_missing_scope"
-        metadata["materialization_status"] = status
+        materialization_status = "degraded_missing_scope"
+        metadata["materialization_status"] = materialization_status
         metadata["required_scope_dimensions"] = list(sorted(degraded_dimensions))
         metadata["ambiguous_scope_addresses"] = [
             "/".join(f"{kind}:{label}" for kind, label in address.path)
             for address in sorted(ambiguous_addresses, key=lambda addr: addr.path)
         ]
     elif any(issue.blocking for issue in issues):
-        status = "degraded_timeline_issues"
-        metadata["materialization_status"] = status
+        materialization_status = "degraded_timeline_issues"
+        metadata["materialization_status"] = materialization_status
         metadata["timeline_issue_rule_ids"] = tuple(
             issue.rule_id for issue in issues if issue.blocking
         )
@@ -1657,7 +1657,7 @@ def materialize_pit_ex(
         metadata=metadata,
     )
     return MaterializationResult(
-        materialization_status=status,
+        materialization_status=materialization_status,
         statute=statute,
         required_dimensions=tuple(sorted(degraded_dimensions)),
         ambiguous_addresses=tuple(sorted(ambiguous_addresses, key=lambda addr: addr.path)),

@@ -116,7 +116,7 @@ class DefinitionClosurePass:
                         src_local=node_id,
                         dst_local=binding_id,
                         rule_id=RULE_CROSS_LENS_RESOLVES,
-                        status="asserted",
+                        surface_edge_status="asserted",
                         payload={"term_entity": entity_id},
                     )
                 )

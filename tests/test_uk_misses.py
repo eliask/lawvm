@@ -165,3 +165,148 @@ def test_uk_misses_ukpga_1978_30_matches_uk_replay() -> None:
     assert sum(len(members) for members in buckets.values()) == only_oracle
     largest = max(buckets.items(), key=lambda kv: len(kv[1]))
     assert len(largest[1]) >= 1
+
+
+@pytest.mark.skipif(
+    not _DB_PATH.exists(),
+    reason="uk_legislation.farchive not present — skipping live pipeline test",
+)
+def test_uk_misses_ukpga_1961_33_6a_series_is_replayed() -> None:
+    """ukpga/1961/33 s. 6A-6E must not appear as oracle-only misses.
+
+    These provisions come from a nonstructural "substituted for ss. 6-9" effects-feed
+    row that lowers entirely to source-backed after-anchor inserts.  The replay
+    engine must admit the whole series rather than under-applying it.
+    """
+    import io
+    import contextlib
+    from lawvm.tools import uk_misses
+
+    out_buf = io.StringIO()
+    with contextlib.redirect_stdout(out_buf):
+        uk_misses.main(
+            Namespace(
+                statute_id="ukpga/1961/33",
+                json=True,
+                db=None,
+                uk_allow_metadata_backfill=None,
+                uk_allow_oracle_alignment=None,
+                uk_respect_feed_applied=None,
+                uk_applicability_mode=None,
+                uk_allow_metadata_only_effects=None,
+                uk_source_first_candidate=False,
+                uk_authority_mode=None,
+            )
+        )
+
+    data = json.loads(out_buf.getvalue())
+    assert data["report_kind"] == "uk_misses_report"
+    assert data["statute_id"] == "ukpga/1961/33"
+
+    buckets: dict[str, list[str]] = data["only_in_oracle_buckets"]
+    assert "section-6a" not in buckets, (
+        f"section-6A series should be replayed; found only-in-oracle buckets: {list(buckets)}"
+    )
+    assert "section-6b" not in buckets
+    assert "section-6c" not in buckets
+    assert "section-6d" not in buckets
+    assert "section-6e" not in buckets
+    # Structural progress indicator: this family should push the statute well
+    # above its previous ~80% floor.
+    assert data["similarity"] >= 0.95
+
+
+@pytest.mark.skipif(
+    not _DB_PATH.exists(),
+    reason="uk_legislation.farchive not present — skipping live pipeline test",
+)
+def test_uk_misses_ukpga_1961_33_section_17_1b_1c_is_replayed() -> None:
+    """ukpga/1961/33 s. 17(1B)/(1C) must not appear as oracle-only misses.
+
+    These provisions come from chained after-anchor inserts for subsections 1B
+    and 1C.  The insertion anchors use a lowercase letter suffix ("section-17-1a"),
+    which must resolve against the uppercase-suffix node eId ("section-17-1A")
+    rather than falling through to the existing paragraph "section-17-1-a".
+    """
+    import io
+    import contextlib
+    from lawvm.tools import uk_misses
+
+    out_buf = io.StringIO()
+    with contextlib.redirect_stdout(out_buf):
+        uk_misses.main(
+            Namespace(
+                statute_id="ukpga/1961/33",
+                json=True,
+                db=None,
+                uk_allow_metadata_backfill=None,
+                uk_allow_oracle_alignment=None,
+                uk_respect_feed_applied=None,
+                uk_applicability_mode=None,
+                uk_allow_metadata_only_effects=None,
+                uk_source_first_candidate=False,
+                uk_authority_mode=None,
+            )
+        )
+
+    data = json.loads(out_buf.getvalue())
+    assert data["report_kind"] == "uk_misses_report"
+    assert data["statute_id"] == "ukpga/1961/33"
+
+    buckets: dict[str, list[str]] = data["only_in_oracle_buckets"]
+    assert "section-17-1b" not in buckets, (
+        f"section-17(1B) should be replayed; found only-in-oracle buckets: {list(buckets)}"
+    )
+    assert "section-17-1c" not in buckets
+    assert data["similarity"] >= 0.99
+
+
+@pytest.mark.skipif(
+    not _DB_PATH.exists(),
+    reason="uk_legislation.farchive not present — skipping live pipeline test",
+)
+def test_uk_misses_ukpga_1968_67_savings_qualified_schedules_preserved() -> None:
+    """ukpga/1968/67 Sch. 1A and Sch. 2 must not be oracle-only misses.
+
+    Both schedules are repealed by SI 2012/1916 Sch. 35 with explicit
+    ``ukm:Savings`` references to Sch. 32.  The savings references make the
+    repeals legally qualified, so replay must not apply them as unconditional
+    structural deletions.  Sch. 1 remains legitimately absent because its repeal
+    by SI 2005/1094 carries no savings references.
+    """
+    import io
+    import contextlib
+    from lawvm.tools import uk_misses
+
+    out_buf = io.StringIO()
+    with contextlib.redirect_stdout(out_buf):
+        uk_misses.main(
+            Namespace(
+                statute_id="ukpga/1968/67",
+                json=True,
+                db=None,
+                uk_allow_metadata_backfill=None,
+                uk_allow_oracle_alignment=None,
+                uk_respect_feed_applied=None,
+                uk_applicability_mode=None,
+                uk_allow_metadata_only_effects=None,
+                uk_source_first_candidate=False,
+                uk_authority_mode=None,
+            )
+        )
+
+    data = json.loads(out_buf.getvalue())
+    assert data["report_kind"] == "uk_misses_report"
+    assert data["statute_id"] == "ukpga/1968/67"
+
+    buckets: dict[str, list[str]] = data["only_in_oracle_buckets"]
+    assert "schedule-1a" not in buckets, (
+        f"schedule-1A should be preserved; found only-in-oracle buckets: {list(buckets)}"
+    )
+    assert "schedule-2" not in buckets, (
+        f"schedule-2 should be preserved; found only-in-oracle buckets: {list(buckets)}"
+    )
+    # schedule-1 has a source-backed repeal without savings references; it is the
+    # remaining source-closure/manual-frontier case, not a deterministic gap.
+    assert "schedule-1" in buckets
+    assert data["similarity"] >= 0.95

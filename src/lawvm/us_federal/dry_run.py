@@ -46,7 +46,8 @@ import re
 from dataclasses import dataclass, field
 from datetime import date
 from functools import lru_cache
-from typing import Any, Iterable, Mapping
+from enum import StrEnum
+from typing import Any, Iterable, Mapping, assert_never
 
 from lawvm.core.agreement_residual import (
     AgreementResidual,
@@ -494,19 +495,35 @@ def _section_tree_path(title: str, section: str) -> TreePath:
 # ---------------------------------------------------------------------------
 
 
+class USDryRunRowStatus(StrEnum):
+    """Closed set of per-section dry-run outcomes.
+
+    A ``StrEnum`` so existing string consumers (JSON dict keys, test
+    ``== "..."`` comparisons) keep working byte-for-byte while the value set is
+    closed and dispatch can be made exhaustive.
+    """
+
+    AGREE = "agree"
+    """Materialized text matches the oracle after-text."""
+
+    RESIDUAL = "residual"
+    """Materialized text diverges; ``disposition`` carries the witness-side gap."""
+
+
 @dataclass(frozen=True)
 class USDryRunSectionRow:
     """One claimed-section outcome: materialized text vs oracle after-text.
 
-    ``status`` is ``agree`` or ``residual``; ``disposition`` is empty on agreement
-    and carries the witness-side gap on a residual.
+    ``status`` is a :class:`USDryRunRowStatus` (``agree`` or ``residual``);
+    ``disposition`` is empty on agreement and carries the witness-side gap on a
+    residual.
     """
 
     op_id: str
     action: str
     target_address: str
     section_key: str
-    status: str
+    status: USDryRunRowStatus
     rule_id: str
     disposition: str = ""
     match_text: str = ""
@@ -613,10 +630,10 @@ class USDryRunReport:
     # --- agreement / residual partitions -------------------------------------
 
     def agreeing_rows(self) -> tuple[USDryRunSectionRow, ...]:
-        return tuple(r for r in self.rows if r.status == "agree")
+        return tuple(r for r in self.rows if r.status is USDryRunRowStatus.AGREE)
 
     def residual_rows(self) -> tuple[USDryRunSectionRow, ...]:
-        return tuple(r for r in self.rows if r.status != "agree")
+        return tuple(r for r in self.rows if r.status is not USDryRunRowStatus.AGREE)
 
     def agreeing_sections(self) -> tuple[str, ...]:
         # Distinct sections materialized in agreement with the oracle after-text.
@@ -658,7 +675,14 @@ class USDryRunReport:
         """Project per-section rows into a typed agreement surface (core reuse)."""
         residuals: list[AgreementResidual] = []
         for row in self.rows:
-            if row.status == "agree":
+            match row.status:
+                case USDryRunRowStatus.AGREE:
+                    is_agreement = True
+                case USDryRunRowStatus.RESIDUAL:
+                    is_agreement = False
+                case _ as unreachable:
+                    assert_never(unreachable)
+            if is_agreement:
                 residuals.append(
                     AgreementResidual(
                         residual_id=f"us:{self.title}:{row.section_key}:{row.op_id}:agrees",
@@ -2319,7 +2343,7 @@ def build_us_dry_run(
                     action=row_action,
                     target_address=target_address,
                     section_key=section_key,
-                    status="residual",
+                    status=USDryRunRowStatus.RESIDUAL,
                     rule_id=rule_id,
                     disposition=disposition,
                     match_text=row_match,
@@ -2340,7 +2364,7 @@ def build_us_dry_run(
                     action=row_action,
                     target_address=target_address,
                     section_key=section_key,
-                    status="agree",
+                    status=USDryRunRowStatus.AGREE,
                     rule_id=US_DRY_RUN_SECTION_AGREES_RULE_ID,
                     match_text=row_match,
                     replacement=row_replacement,
@@ -2361,7 +2385,7 @@ def build_us_dry_run(
                     action=row_action,
                     target_address=target_address,
                     section_key=section_key,
-                    status="residual",
+                    status=USDryRunRowStatus.RESIDUAL,
                     rule_id=US_DRY_RUN_RESIDUAL_TEXT_MISMATCH_RULE_ID,
                     disposition=DISPOSITION_ORACLE_SUSPECT,
                     match_text=row_match,
@@ -2383,7 +2407,7 @@ def build_us_dry_run(
                     action=row_action,
                     target_address=target_address,
                     section_key=section_key,
-                    status="residual",
+                    status=USDryRunRowStatus.RESIDUAL,
                     rule_id=US_DRY_RUN_RESIDUAL_SOURCE_TRUNCATED_PAYLOAD_RULE_ID,
                     disposition=DISPOSITION_ORACLE_SUSPECT,
                     match_text=row_match,
@@ -2409,7 +2433,7 @@ def build_us_dry_run(
                     action=row_action,
                     target_address=target_address,
                     section_key=section_key,
-                    status="residual",
+                    status=USDryRunRowStatus.RESIDUAL,
                     rule_id=rule_id,
                     disposition=DISPOSITION_LAWVM_WRONG,
                     match_text=row_match,

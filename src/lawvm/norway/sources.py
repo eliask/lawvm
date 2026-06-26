@@ -17,12 +17,14 @@ import os
 import re
 import tarfile
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import Any, Iterator, Optional, cast
 
 from lxml import etree
 
 from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.ir_helpers import kind_str
 from lawvm.core.source_lane import SourceLaneAttempt, SourceLaneSelectionEvidence
 from lawvm.norway.grafter import lovdata_amendment_filename_to_id, lovdata_filename_to_id
 
@@ -45,9 +47,104 @@ class NOLocatedArtifact:
     payload: bytes
 
 
+class NOEffectiveStatus(StrEnum):
+    """Closed set of commencement (in-force) resolution outcomes for a NO act.
+
+    A ``StrEnum`` so the value flows through the serialized ``effective_status``
+    dict/field and test ``== "..."`` comparisons byte-for-byte while the value
+    set is closed.
+    """
+
+    DATED = "dated"
+    """A concrete in-force date was resolved."""
+
+    IMMEDIATE = "immediate"
+    """In force on the source/promulgation date."""
+
+    OVERRIDE = "override"
+    """An explicit commencement override supplied the in-force date."""
+
+    CONTINGENT = "contingent"
+    """In force on a condition / future delegated commencement (unresolved)."""
+
+    MISSING = "missing"
+    """No in-force signal present in the source."""
+
+    UNKNOWN = "unknown"
+    """An in-force signal was present but not interpretable."""
+
+
+# Statuses that count as a RESOLVED in-force date (replayable). The complement
+# (contingent/missing/unknown) blocks deterministic replay.
+NO_RESOLVED_EFFECTIVE_STATUSES: frozenset[NOEffectiveStatus] = frozenset(
+    {NOEffectiveStatus.DATED, NOEffectiveStatus.IMMEDIATE, NOEffectiveStatus.OVERRIDE}
+)
+NO_UNRESOLVED_EFFECTIVE_STATUSES: frozenset[NOEffectiveStatus] = frozenset(
+    {NOEffectiveStatus.CONTINGENT, NOEffectiveStatus.MISSING, NOEffectiveStatus.UNKNOWN}
+)
+
+
+class NOReplayStatus(StrEnum):
+    """Closed set of per-base-law replayability classifications.
+
+    Derived from the in-force statuses of a base law's amendments. A ``StrEnum``
+    so it flows through serialized status maps / test comparisons byte-for-byte.
+    """
+
+    NO_AMENDMENTS = "no_amendments"
+    """The base law has no amendments to replay."""
+
+    FULLY_REPLAYABLE = "fully_replayable"
+    """Every amendment has a resolved in-force date."""
+
+    BLOCKED_CONTINGENT = "blocked_contingent"
+    """At least one amendment is contingent (future/conditional commencement)."""
+
+    BLOCKED_UNKNOWN = "blocked_unknown"
+    """At least one amendment has a missing/unknown in-force status."""
+
+
+def no_base_replay_status_from_statuses(
+    statuses: list[NOEffectiveStatus] | list[str],
+) -> NOReplayStatus:
+    """Classify a base law's replayability from its amendments' in-force statuses.
+
+    Single source of truth for the rule shared by the inventory and the
+    commencement report (was duplicated in both).
+    """
+    if not statuses:
+        return NOReplayStatus.NO_AMENDMENTS
+    if any(status == NOEffectiveStatus.CONTINGENT for status in statuses):
+        return NOReplayStatus.BLOCKED_CONTINGENT
+    if any(status not in NO_RESOLVED_EFFECTIVE_STATUSES for status in statuses):
+        return NOReplayStatus.BLOCKED_UNKNOWN
+    return NOReplayStatus.FULLY_REPLAYABLE
+
+
+class NOBackfillLane(StrEnum):
+    """Closed set of recommended source-acquisition lanes for a NO backfill.
+
+    Derived from which candidate-source families surfaced. A ``StrEnum`` so it
+    flows through serialized ``recommended_lane`` dict keys / advisory output and
+    test comparisons byte-for-byte.
+    """
+
+    MIXED = "mixed"
+    """Both local_corpus and statsrad produced candidates."""
+
+    STATSRAD = "statsrad"
+    """Only statsrad candidates surfaced."""
+
+    LOCAL_CORPUS = "local_corpus"
+    """Only local_corpus candidates surfaced."""
+
+    UNRESOLVED = "unresolved"
+    """No candidate surfaced in any lane."""
+
+
 @dataclass(frozen=True)
 class NOEffectiveDate:
-    status: str
+    status: NOEffectiveStatus
     effective_date: Optional[str] = None
     raw_text: str = ""
 
@@ -162,9 +259,11 @@ def effective_date_from_amendment(html_bytes: bytes, source_date: str = "") -> N
     if not dates:
         lowered = raw.lower()
         if not raw:
-            return NOEffectiveDate(status="missing", raw_text="")
+            return NOEffectiveDate(status=NOEffectiveStatus.MISSING, raw_text="")
         if "straks" in lowered and source_date:
-            return NOEffectiveDate(status="immediate", effective_date=source_date, raw_text=raw)
+            return NOEffectiveDate(
+                status=NOEffectiveStatus.IMMEDIATE, effective_date=source_date, raw_text=raw
+            )
         contingent_markers = (
             "kongen bestemmer",
             "kongen fastset",
@@ -173,9 +272,11 @@ def effective_date_from_amendment(html_bytes: bytes, source_date: str = "") -> N
             "fra den tid",
         )
         if any(marker in lowered for marker in contingent_markers):
-            return NOEffectiveDate(status="contingent", raw_text=raw)
-        return NOEffectiveDate(status="unknown", raw_text=raw)
-    return NOEffectiveDate(status="dated", effective_date=min(dates), raw_text=raw)
+            return NOEffectiveDate(status=NOEffectiveStatus.CONTINGENT, raw_text=raw)
+        return NOEffectiveDate(status=NOEffectiveStatus.UNKNOWN, raw_text=raw)
+    return NOEffectiveDate(
+        status=NOEffectiveStatus.DATED, effective_date=min(dates), raw_text=raw
+    )
 
 
 def archive_year_span(archive_path: Path) -> Optional[tuple[int, int]]:
@@ -445,18 +546,55 @@ def load_no_amendment_artifact_bytes(
     return None
 
 
+# §§ 1.9 / 1.10 — module-scope IR-operative-content predicate.
+#
+# The previous shape was a nested closure inside ``load_no_current_law_ids``
+# with this membership test:
+#
+#     if getattr(node, "kind", "") in {"section", "subsection", "item", "sentence"}:
+#
+# which silently returned False on every IRNode whose ``kind`` is an
+# ``IRNodeKind`` enum member (enum members don't equal their string values).
+# The OR-clause's right side (``_payload_has_operative_content``) was the
+# sole authority — the IR walk was dead code, an invisible §1.10 heuristic
+# that lied about whether the IR carried operative content.
+#
+# The fix uses ``kind_str`` coercion (the same pattern as
+# ``_no_kind_value`` in verify.py:269); both enum and plain-str kinds now
+# participate. Hoisted to module scope so the predicate is unit-testable
+# directly against synthetic IRNodes.
+_NO_OPERATIVE_KINDS: frozenset[str] = frozenset(
+    {"section", "subsection", "item", "sentence"}
+)
+
+
+def _has_operative_content(node: Any) -> bool:
+    """Return True if *node* (or any descendant) carries operative section content.
+
+    A node is operative when its ``kind`` is one of the leaf-bearing legal-unit
+    kinds (section / subsection / item / sentence) AND it has either populated
+    text or non-empty children. The IR-walk recurses into any non-leaf node
+    (the body, chapter, …) so the recursive case remains the authority when
+    the inspected level is a container, not a leaf.
+
+    Honors both IRNode with ``IRNodeKind`` enum kind and any legacy str-typed
+    kind — coercion goes through :func:`lawvm.core.ir_helpers.kind_str`, the
+    shared canonical-string projection (mirroring ``_no_kind_value`` in
+    verify.py).
+    """
+    kind_value = kind_str(getattr(node, "kind", ""))
+    if kind_value in _NO_OPERATIVE_KINDS:
+        if getattr(node, "text", "") or getattr(node, "children", []):
+            return True
+    return any(_has_operative_content(child) for child in getattr(node, "children", []))
+
+
 def load_no_current_law_ids(
     source_path: Path | None = None,
     *,
     diagnostics_out: list[dict[str, Any]] | None = None,
 ) -> set[str]:
     from lawvm.norway.grafter import parse_no_statute
-
-    def _has_operative_content(node: Any) -> bool:
-        if getattr(node, "kind", "") in {"section", "subsection", "item", "sentence"}:
-            if getattr(node, "text", "") or getattr(node, "children", []):
-                return True
-        return any(_has_operative_content(child) for child in getattr(node, "children", []))
 
     def _payload_has_operative_content(payload: bytes) -> bool:
         text = payload.decode("utf-8", errors="ignore")

@@ -242,7 +242,7 @@ class ReferenceLens:
                         rule_id=_RULE_UNLOCATABLE,
                         reason_code="unit_has_no_source_bytes",
                         payload={"source_unit_id": unit.source_unit_id},
-                        status="blocked",
+                        residual_status="blocked",
                     )
                 )
                 continue
@@ -325,7 +325,7 @@ class ReferenceLens:
 
                 node_seeds.append(
                     self._reference_expr_seed(
-                        mention, source_ref=source_ref, status=node_status,
+                        mention, source_ref=source_ref, resolution_status=node_status,
                         local=expr_local,
                     )
                 )
@@ -334,7 +334,7 @@ class ReferenceLens:
                         mention,
                         resolved=resolved,
                         source_ref=source_ref,
-                        status=node_status,
+                        resolution_status=node_status,
                         local=resolution_local,
                     )
                 )
@@ -344,7 +344,7 @@ class ReferenceLens:
                         src_local=resolution_local,
                         dst_local=expr_local,
                         rule_id=_RULE_RESOLUTION_OF,
-                        status="asserted",
+                        surface_edge_status="asserted",
                         payload={},
                     )
                 )
@@ -453,7 +453,7 @@ class ReferenceLens:
         mention: ReferenceMention,
         *,
         source_ref: SourceSpanRef,
-        status: str,
+        resolution_status: str,
         local: str,
     ) -> SurfaceNodeSeed:
         target = mention.target_provision_ref
@@ -498,7 +498,7 @@ class ReferenceLens:
             source_ref=source_ref,
             local_discriminator=local,
             rule_id=_RULE_EXPR,
-            status=status,
+            node_status=resolution_status,
             payload=payload,
             authority_role="surface_fact",
         )
@@ -509,7 +509,7 @@ class ReferenceLens:
         *,
         resolved: ResolvedReference | None,
         source_ref: SourceSpanRef,
-        status: str,
+        resolution_status: str,
         local: str,
     ) -> SurfaceNodeSeed:
         payload: dict[str, object] = {
@@ -525,7 +525,7 @@ class ReferenceLens:
             source_ref=source_ref,
             local_discriminator=local,
             rule_id=_RULE_RESOLUTION,
-            status=status,
+            node_status=resolution_status,
             payload=payload,
             authority_role="surface_fact",
         )
@@ -554,7 +554,7 @@ class ReferenceLens:
                         src_local=resolution_local,
                         dst_local=_entity_local(work_id),
                         rule_id=_RULE_REFERS_TO,
-                        status="asserted",
+                        surface_edge_status="asserted",
                         payload={"work_id": work_id},
                     )
                 )
@@ -579,7 +579,7 @@ class ReferenceLens:
                         src_local=resolution_local,
                         dst_local=_entity_local(candidate),
                         rule_id=_RULE_HAS_CANDIDATE,
-                        status="candidate",
+                        surface_edge_status="candidate",
                         payload={"candidate_id": candidate},
                     )
                 )
@@ -614,7 +614,7 @@ class ReferenceLens:
             source_ref=None,
             local_discriminator=_entity_local(work_id),
             rule_id=_RULE_REFERS_TO,
-            status="present",
+            node_status="present",
             payload={"work_id": work_id},
             authority_role="entity_handle",
         )
@@ -637,7 +637,7 @@ class ReferenceLens:
                 src_local=resolution_local,
                 dst_local=residual_local,
                 rule_id=_RULE_UNRESOLVED_BECAUSE,
-                status=edge_status,
+                surface_edge_status=edge_status,
                 payload={"reason_code": reason_code},
             )
         )
@@ -648,7 +648,7 @@ class ReferenceLens:
             rule_id=_RULE_UNRESOLVED_BECAUSE,
             reason_code=reason_code,
             payload={"reason_code": reason_code},
-            status=residual_status,
+            residual_status=residual_status,
         )
 
     @staticmethod
@@ -671,7 +671,7 @@ class ReferenceLens:
                 "source_statute_id": rej.source_statute_id,
                 "blocking": rej.blocking,
             },
-            status="blocked" if rej.blocking else "open",
+            residual_status="blocked" if rej.blocking else "open",
         )
 
 

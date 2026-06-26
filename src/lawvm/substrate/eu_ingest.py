@@ -594,7 +594,7 @@ def resolve_fi_eu_edge(
         authority_plane=AuthorityPlane.SURFACE,
         verification_level=VerificationLevel.REGISTRY_RESOLVED,
         replay_authorized=False,
-        status=EdgeStatus.RESOLVED,
+        edge_status=EdgeStatus.RESOLVED,
         effective_scope=cast("dict[str, JsonValue]", edge.get("effective_scope", {"branch_id": _BRANCH_ID})),
         corpus_version=corpus_version,
         branch_id=str(edge.get("branch_id", _BRANCH_ID)),
@@ -729,7 +729,7 @@ def export_eu_regulation_pack(
     # -- work + selection profiles + total scope ----------------------------- #
     base_w.write(_work_body(work_id, work_title, JURISDICTION, corpus_version))
 
-    total_scope = ScopePredicate(dimensions={}, status="total")
+    total_scope = ScopePredicate(dimensions={}, scope_status="total")
     scope_predicate_id = total_scope.scope_predicate_id
     scope_predicate_hashes = [state_w.write(total_scope.to_canonical_dict())]
 
@@ -834,7 +834,7 @@ def export_eu_regulation_pack(
             effect_interval=(ingest_date, None),
             account_interval=(corpus_version, None),
             source_policy_id="archival_exact",
-            status="selected",
+            selection_status="selected",
             candidate_set_hash=cs_object_hash,
             selected_node_version_id=nv_id,
             decision_basis=DecisionBasis(

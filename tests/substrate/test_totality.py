@@ -48,7 +48,7 @@ def _selection_row(address_id: str, status: str = "selected") -> dict[str, JsonV
         "schema": "lawvm.selection_row.v1",
         "work_id": "fi:act:301/2004",
         "address_id": address_id,
-        "status": status,
+        "selection_status": status,
         "selection_key": f"key:{address_id}:{status}",
     }
 

@@ -150,7 +150,7 @@ def test_frame_relation_edges_firewall_and_candidate_status() -> None:
     for edge in rel:
         assert edge.surface_only is True
         assert edge.replay_authorized is False
-        assert edge.status == "candidate"
+        assert edge.surface_edge_status == "candidate"
 
 
 # ── (e) determinism ───────────────────────────────────────────────────────────
@@ -162,7 +162,7 @@ def test_frame_relation_passes_are_deterministic() -> None:
 
     def _edge_keys(graph):
         return sorted(
-            (e.edge_id, e.edge_kind, e.src, e.dst, e.status, e.payload_hash)
+            (e.edge_id, e.edge_kind, e.src, e.dst, e.surface_edge_status, e.payload_hash)
             for e in graph.edges
             if e.edge_kind
             in ("exception_scopes_frame", "frame_has_colocated_actor")

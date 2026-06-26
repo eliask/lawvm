@@ -77,7 +77,7 @@ class _StubCandidate:
 
 class _StubLookupResult:
     def __init__(self, candidates: list[str]) -> None:
-        self.status = {0: "none", 1: "single"}.get(len(candidates), "multiple")
+        self.registry_status = {0: "none", 1: "single"}.get(len(candidates), "multiple")
         self.candidates = tuple(_StubCandidate(c) for c in candidates)
 
 
@@ -282,7 +282,7 @@ def test_eu_transposition_family_folded() -> None:
     e = trans[0]
     assert e.citing_work_id == _TRANS_ID
     assert e.dst == "entity:eu-directive:32010L0075"
-    assert e.status == "asserted"  # CELEX bound
+    assert e.surface_edge_status == "asserted"  # CELEX bound
     # The directive entity node exists and carries the binding status.
     by_id = {n.node_id: n for n in export.nodes}
     directive = by_id[e.dst]
@@ -378,4 +378,4 @@ def test_unbound_directive_is_candidate_not_invented() -> None:
         if e.edge_kind == "transposes"
         and e.dst == "entity:eu-directive-surface:jokindirektiivi"
     ]
-    assert cand and cand[0].status == "candidate"
+    assert cand and cand[0].surface_edge_status == "candidate"

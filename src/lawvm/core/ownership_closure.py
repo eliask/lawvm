@@ -149,7 +149,7 @@ def _ownership_closure_report_row(certificate: OwnershipClosureCoverage) -> dict
         "surface": "ownership_closure_coverage",
         "row_id": certificate.certificate_id,
         "subject_id": certificate.corpus_slice_id,
-        "status": row["closure_status"],
+        "row_status": row["closure_status"],
         "closure_ref": certificate.certificate_id,
         "forbidden_shortcuts": _OWNERSHIP_CLOSURE_REPORT_FORBIDDEN_SHORTCUTS,
     }

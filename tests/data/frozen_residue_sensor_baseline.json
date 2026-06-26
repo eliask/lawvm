@@ -2,7 +2,6 @@
   "_doc": "Monotone FW-08 frozen-residue structural-sensor baseline. Four AST-based categories (per_op_fstring_regex, multi_finditer_same_src, span_overlap_dedup, clause_boundary_dup) over the scanned semantic-plane core/finland files (the regex-ratchet scan set). Each per-file count may only FALL; a fall must be committed. Regenerate with `uv run python scripts/inventory_parser_smells.py --update-frozen-residue-baseline`. See tests/test_frozen_residue_sensors_ratchet.py and registry row FW-08.",
   "category_counts": {
     "clause_boundary_dup": {
-      "src/lawvm/finland/apply_intent_facade.py": 1,
       "src/lawvm/finland/apply_subsection_dispatch.py": 1,
       "src/lawvm/finland/apply_subsection_ops.py": 2,
       "src/lawvm/finland/frontend_compile.py": 2,
@@ -10,7 +9,6 @@
       "src/lawvm/finland/payload_normalize.py": 1
     },
     "multi_finditer_same_src": {
-      "src/lawvm/finland/address_parse.py": 2,
       "src/lawvm/finland/amendment_chapter_precreate.py": 2,
       "src/lawvm/finland/johto_scope_mentions.py": 4,
       "src/lawvm/finland/metadata.py": 8,
@@ -40,10 +38,10 @@
       "src/lawvm/finland/references/eu_transposition.py": 1
     }
   },
-  "grand_total": 76,
+  "grand_total": 73,
   "totals": {
-    "clause_boundary_dup": 8,
-    "multi_finditer_same_src": 21,
+    "clause_boundary_dup": 7,
+    "multi_finditer_same_src": 19,
     "per_op_fstring_regex": 38,
     "span_overlap_dedup": 9
   }

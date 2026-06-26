@@ -16,7 +16,7 @@ from hypothesis import strategies as st
 
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind
-from lawvm.finland.ops import AmendmentOp
+from lawvm.finland.ops import OpType, AmendmentOp
 from lawvm.finland.payload_normalize import _build_subsection_slot_assignment
 from lawvm.finland.target_kind import TargetKind
 
@@ -54,7 +54,7 @@ def dense_local_slot_case(draw) -> tuple[IRNode, list[AmendmentOp], int]:
     )
     group_ops = [
         AmendmentOp(
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_kind=TargetKind.SECTION,
             target_section=section_label,
             target_paragraph=target_start + idx - 1,
@@ -75,19 +75,19 @@ def ambiguous_slot_case(draw) -> tuple[IRNode, list[AmendmentOp]]:
     )
     group_ops = [
         AmendmentOp(
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_kind=TargetKind.SECTION,
             target_section=section_label,
             target_paragraph=1,
         ),
         AmendmentOp(
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_kind=TargetKind.SECTION,
             target_section=section_label,
             target_paragraph=2,
         ),
         AmendmentOp(
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_kind=TargetKind.SECTION,
             target_section=section_label,
             target_paragraph=2,
@@ -111,7 +111,7 @@ def coverage_partition_case(draw) -> tuple[IRNode, list[AmendmentOp], int]:
     )
     group_ops = [
         AmendmentOp(
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_kind=TargetKind.SECTION,
             target_section=section_label,
             target_paragraph=idx,

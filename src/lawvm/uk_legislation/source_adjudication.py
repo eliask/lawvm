@@ -24,15 +24,26 @@ from __future__ import annotations
 
 import re
 from collections import Counter
+from enum import StrEnum
 from typing import Any, Iterable, NamedTuple
 
 from lawvm.core.compile_records import CompileRecord, is_blocking_compile_record
 from lawvm.core.regex_safety import compile_classifier_regex
 from lawvm.replay_adjudication import SourceAdjudication
-from lawvm.uk_legislation.effects import uk_nonstructural_replay_candidate_family_for_effect_type
 from lawvm.uk_legislation.effect_temporal_cessation import (
     UK_TEMPORAL_CEASES_TO_HAVE_EFFECT_REPLAY_EXCLUDED_REASON,
     temporal_ceases_to_have_effect_exclusion_rule,
+)
+from lawvm.uk_legislation.effects import (
+    UK_SCHEDULE_WORDS_BEFORE_TABLE_SUBSTITUTION_RULE_ID,
+    uk_nonstructural_replay_candidate_family_for_effect_type,
+)
+
+
+_UK_SOURCE_STRUCTURED_NONSTRUCTURAL_RULE_IDS: frozenset[str] = frozenset(
+    {
+        UK_SCHEDULE_WORDS_BEFORE_TABLE_SUBSTITUTION_RULE_ID,
+    }
 )
 
 
@@ -123,8 +134,29 @@ UK_COMPARE_CHAINED_TEXT_REWRITE_RULE_IDS = frozenset(
         "uk_effect_wherever_they_occur_substitution_text_patch",
     }
 )
+class UKManualFrontierStatus(StrEnum):
+    """Closed disposition emitted by the manual-compile-frontier classifier.
+
+    Produced internally by ``classify_uk_manual_compile_frontier`` /
+    ``_uk_manual_frontier_classification`` from source-pathology rule ids. The
+    ``.value`` tokens are the wire shape carried into the manual-frontier
+    diagnostic row's ``status`` field and consumed downstream by
+    ``execution_authorization.uk_execution_authorization_from_manual_frontier``
+    (where the value re-enters as an open string from a persisted record, so the
+    consumer keeps its catch-all). These tokens must not change.
+    """
+
+    MANUAL_COMPILE_CANDIDATE = "manual_compile_candidate"
+    SOURCE_INSUFFICIENT = "source_insufficient"
+    NON_TEXTUAL_OR_OUT_OF_SCOPE = "non_textual_or_out_of_scope"
+    DETERMINISTIC_FRONTEND_CANDIDATE = "deterministic_frontend_candidate"
+    DETERMINISTIC_FRONTEND_SUPPORTED = "deterministic_frontend_supported"
+    SOURCE_OR_FEED_TARGET_CONFLICT = "source_or_feed_target_conflict"
+    UNCLASSIFIED_FRONTIER = "unclassified_frontier"
+
+
 class _ManualFrontierClassification(NamedTuple):
-    status: str
+    manual_frontier_status: UKManualFrontierStatus
     rule_id: str
     reason: str
 
@@ -174,7 +206,7 @@ _REQUIRED_SECTION_DEPTH_RE = re.compile(
 
 _UK_MANUAL_FRONTIER_RANGE_SOURCE_PATHOLOGY_RESULTS: dict[str, _ManualFrontierClassification] = {
     "range_to_container_target_unsupported": _ManualFrontierClassification(
-        "manual_compile_candidate",
+        UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE,
         "uk_manual_frontier_range_to_container_candidate",
         "The source substitutes a section range into a higher-level container; a manual or deterministic range-to-container migration claim must own the replaced range, new container, and lineage.",
     ),
@@ -183,17 +215,17 @@ _UK_MANUAL_FRONTIER_SOURCE_INSUFFICIENT_PATHOLOGY_RESULTS: dict[
     str, _ManualFrontierClassification
 ] = {
     "missing_extracted_source": _ManualFrontierClassification(
-        "source_insufficient",
+        UKManualFrontierStatus.SOURCE_INSUFFICIENT,
         "uk_manual_frontier_missing_payload_source_insufficient",
         "No extracted source witness is available; a manual claim cannot replace missing public source evidence.",
     ),
     "non_substantive_shell_payload": _ManualFrontierClassification(
-        "source_insufficient",
+        UKManualFrontierStatus.SOURCE_INSUFFICIENT,
         "uk_manual_frontier_non_substantive_payload_source_insufficient",
         "The available payload is non-substantive shell or dot-leader text and should not become legal content.",
     ),
     "misselected_target_context": _ManualFrontierClassification(
-        "source_insufficient",
+        UKManualFrontierStatus.SOURCE_INSUFFICIENT,
         "uk_manual_frontier_misselected_target_context_source_insufficient",
         "The extracted source text appears to describe a different target context from the effect-feed target; source/target reconciliation must happen before treating any preimage miss as replay evidence.",
     ),
@@ -210,162 +242,162 @@ _UK_MANUAL_FRONTIER_OUT_OF_SCOPE_PATHOLOGIES = frozenset(
 )
 _UK_MANUAL_FRONTIER_MAIN_SOURCE_PATHOLOGY_RESULTS: dict[str, _ManualFrontierClassification] = {
     "amendment_text_target_unsupported": _ManualFrontierClassification(
-        "manual_compile_candidate",
+        UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE,
         "uk_manual_frontier_amendment_program_target_candidate",
         "The source targets text inserted by another amendment instruction; a claim or future amendment-program compiler must prove the parent instruction, created target, and mutation boundary before replay.",
     ),
     "schedule_list_entry_target_unsupported": _ManualFrontierClassification(
-        "manual_compile_candidate",
+        UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE,
         "uk_manual_frontier_schedule_list_entry_candidate",
         "The source targets a schedule/list entry by anchor entry text; a claim or future list-entry compiler must identify the entry carrier and sibling insertion point rather than mutating collapsed schedule text.",
     ),
     "appropriate_place_definition_entry_insert_unsupported": _ManualFrontierClassification(
-        "manual_compile_candidate",
+        UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE,
         "uk_manual_frontier_appropriate_place_definition_entry_candidate",
         "The source inserts a definition entry at an appropriate place without naming an anchor; a claim or future placement compiler must supply and validate the exact definition-entry insertion point instead of inferring it from live text.",
     ),
     "appropriate_place_index_entry_insert_unsupported": _ManualFrontierClassification(
-        "manual_compile_candidate",
+        UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE,
         "uk_manual_frontier_appropriate_place_index_entry_candidate",
         "The source inserts an index/list entry at an appropriate place without naming an anchor; a claim or future placement compiler must supply and validate the exact list-entry insertion point instead of inferring it from live text.",
     ),
     "appropriate_place_insert_unsupported": _ManualFrontierClassification(
-        "manual_compile_candidate",
+        UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE,
         "uk_manual_frontier_appropriate_place_candidate",
         "The source asks for appropriate-place placement; a claim or future placement compiler must identify the insertion anchor without guessing from live text.",
     ),
     "repeal_schedule_table_source_unsupported": _ManualFrontierClassification(
-        "manual_compile_candidate",
+        UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE,
         "uk_manual_frontier_repeal_table_candidate",
         "The row appears to depend on a repeal schedule/table or grouped repeal source that may need row/column compilation.",
     ),
     "application_by_reference_effect_out_of_scope": _ManualFrontierClassification(
-        "non_textual_or_out_of_scope",
+        UKManualFrontierStatus.NON_TEXTUAL_OR_OUT_OF_SCOPE,
         "uk_manual_frontier_application_by_reference_out_of_scope",
         "The source applies or invokes another Act's rules by reference, rather than mutating the affected statute text/tree under the current UK replay model.",
     ),
     "as_if_application_modification_unsupported": _ManualFrontierClassification(
-        "non_textual_or_out_of_scope",
+        UKManualFrontierStatus.NON_TEXTUAL_OR_OUT_OF_SCOPE,
         "uk_manual_frontier_as_if_application_modification_out_of_scope",
         "The source is an applied/as-if modification clause rather than a direct mutation of the affected statute text/tree under the current UK replay model.",
     ),
     "temporary_as_if_word_omission_unsupported": _ManualFrontierClassification(
-        "non_textual_or_out_of_scope",
+        UKManualFrontierStatus.NON_TEXTUAL_OR_OUT_OF_SCOPE,
         "uk_manual_frontier_as_if_application_modification_out_of_scope",
         "The source temporarily applies a provision as if words were omitted, rather than directly repealing printed text in the affected statute under the current UK replay model.",
     ),
     "commencement_effect_out_of_scope": _ManualFrontierClassification(
-        "non_textual_or_out_of_scope",
+        UKManualFrontierStatus.NON_TEXTUAL_OR_OUT_OF_SCOPE,
         "uk_manual_frontier_commencement_effect_out_of_scope",
         "The source is a commencement/applicability instrument; it may matter to temporal selection, but it is not a direct text/tree mutation under the current UK replay model.",
     ),
     "conditional_temporal_repeal_unsupported": _ManualFrontierClassification(
-        "non_textual_or_out_of_scope",
+        UKManualFrontierStatus.NON_TEXTUAL_OR_OUT_OF_SCOPE,
         "uk_manual_frontier_conditional_temporal_repeal_out_of_scope",
         "The source conditionally repeals material based on future commencement state; replay must not treat it as an unconditional current-text repeal without explicit temporal applicability evidence.",
     ),
     "definition_child_and_tail_substitution_unsupported": _ManualFrontierClassification(
-        "manual_compile_candidate",
+        UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE,
         "uk_manual_frontier_definition_child_and_tail_substitution_candidate",
         "The source substitutes a definition child together with that child's trailing connective; a claim or future multi-patch compiler must own both the child text and the post-child tail boundary.",
     ),
     "nested_definition_child_structural_substitution_unsupported": _ManualFrontierClassification(
-        "manual_compile_candidate",
+        UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE,
         "uk_manual_frontier_nested_definition_child_structural_substitution_candidate",
         "The source substitutes a structural child inside another definition child; a claim or future nested-definition compiler must prove the outer child, nested child, replacement payload shape, and tail ownership before replay.",
     ),
     "definition_child_structural_insert_unsupported": _ManualFrontierClassification(
-        "manual_compile_candidate",
+        UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE,
         "uk_manual_frontier_definition_child_structural_insert_candidate",
         "The source inserts a child inside a definition and explicitly references the existing child-tail connective; a claim or future compiler must own the inserted child shape and connector boundary before replay.",
     ),
     "definition_anchor_tail_insert_unsupported": _ManualFrontierClassification(
-        "deterministic_frontend_candidate",
+        UKManualFrontierStatus.DETERMINISTIC_FRONTEND_CANDIDATE,
         "uk_manual_frontier_definition_anchor_tail_insert_candidate",
         "The source changes the terminal punctuation of a named definition and inserts following tail text after that definition; compile must split the compound instruction and prove the definition boundary plus inserted tail before replay.",
     ),
     "sentence_scoped_repeated_insert_unsupported": _ManualFrontierClassification(
-        "manual_compile_candidate",
+        UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE,
         "uk_manual_frontier_sentence_scoped_repeated_insert_candidate",
         "The source inserts text at the end of each selected sentence; a claim or future sentence-boundary compiler must prove each insertion boundary before replay.",
     ),
     "application_modification_payload_out_of_scope": _ManualFrontierClassification(
-        "non_textual_or_out_of_scope",
+        UKManualFrontierStatus.NON_TEXTUAL_OR_OUT_OF_SCOPE,
         "uk_manual_frontier_application_modification_payload_out_of_scope",
         "The extracted payload belongs to an application-modification formula; replay must not treat it as a direct amendment to current target text without a scoped temporal/application model.",
     ),
     "source_carried_multi_subunit_text_rewrite_unsupported": _ManualFrontierClassification(
-        "manual_compile_candidate",
+        UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE,
         "uk_manual_frontier_source_carried_multi_subunit_text_rewrite_candidate",
         "The feed target is broader than the source-carried child targets; a claim or future compiler must split the text rewrite by the named child units and prove each child boundary rather than mutate the whole parent.",
     ),
     "source_carried_child_tail_text_rewrite_unsupported": _ManualFrontierClassification(
-        "manual_compile_candidate",
+        UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE,
         "uk_manual_frontier_source_carried_child_tail_text_rewrite_candidate",
         "The source targets the text tail following a named child; a claim or future compiler must own a bounded child-tail selector rather than delete from the whole parent text.",
     ),
     "source_carried_structured_tail_substitution_unsupported": _ManualFrontierClassification(
-        "manual_compile_candidate",
+        UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE,
         "uk_manual_frontier_source_carried_structured_tail_substitution_candidate",
         "The source substitutes a tail range with visibly structured child material; a claim or future compiler must preserve the carried child structure instead of flattening it into host text.",
     ),
     "relative_other_place_occurrence_unsupported": _ManualFrontierClassification(
-        "manual_compile_candidate",
+        UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE,
         "uk_manual_frontier_relative_other_place_occurrence_candidate",
         "The source uses a relative occurrence phrase such as 'each other place'; replay needs a sibling-aware occurrence proof unless lowering has already found the preceding first-occurrence source sibling.",
     ),
     "referent_qualified_text_substitution_unsupported": _ManualFrontierClassification(
-        "deterministic_frontend_candidate",
+        UKManualFrontierStatus.DETERMINISTIC_FRONTEND_CANDIDATE,
         "uk_manual_frontier_referent_qualified_text_substitution_candidate",
         "The source limits substitution to quoted words only where they refer to a named actor; compile needs a referent-sensitive text predicate instead of replacing every phrase occurrence.",
     ),
     "scoped_occurrence_text_patch_with_exclusions_unsupported": _ManualFrontierClassification(
-        "deterministic_frontend_candidate",
+        UKManualFrontierStatus.DETERMINISTIC_FRONTEND_CANDIDATE,
         "uk_manual_frontier_scoped_occurrence_text_patch_with_exclusions_candidate",
         "The source applies a quoted text patch only to each occurrence outside named exclusions; compile needs an owned occurrence selector with exclusion proof instead of all-occurrences replay.",
     ),
     "scoped_occurrence_program_exclusion_unsupported": _ManualFrontierClassification(
-        "manual_compile_candidate",
+        UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE,
         "uk_manual_frontier_scoped_occurrence_program_exclusion_candidate",
         "The source applies a quoted text patch except as otherwise provided by a sibling amendment program, including heading or inserted-provision scope; a claim or future compiler must split the source program and prove each non-excluded text boundary before replay.",
     ),
     "structural_sibling_insert_unsupported": _ManualFrontierClassification(
-        "manual_compile_candidate",
+        UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE,
         "uk_manual_frontier_structural_sibling_insert_candidate",
         "The source inserts new structural siblings after a named child; a claim or future compiler must prove the exact parent, anchor sibling, inserted payload, and mutation boundary before replay.",
     ),
     "heading_facet_target_unsupported": _ManualFrontierClassification(
-        "manual_compile_candidate",
+        UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE,
         "uk_manual_frontier_heading_facet_candidate",
         "The source targets a heading/title/sidenote facet; a manual claim or future facet compiler must target that facet without mutating the host body.",
     ),
     "crossheading_target_unsupported": _ManualFrontierClassification(
-        "manual_compile_candidate",
+        UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE,
         "uk_manual_frontier_crossheading_candidate",
         "The source targets a cross-heading surface that needs an explicit crossheading/facet claim.",
     ),
     "table_crossheading_target_unsupported": _ManualFrontierClassification(
-        "manual_compile_candidate",
+        UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE,
         "uk_manual_frontier_table_crossheading_candidate",
         "The source targets a table cross-heading surface; a claim or future table compiler must identify the table, heading cell/prefix, and row boundary instead of treating it as a normal paragraph heading.",
     ),
     "schedule_note_target_unsupported": _ManualFrontierClassification(
-        "manual_compile_candidate",
+        UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE,
         "uk_manual_frontier_schedule_note_candidate",
         "The source targets a schedule note surface; a claim or future note compiler must target that note without inventing paragraph structure.",
     ),
     "whole_act_word_level_text_patch_unsupported": _ManualFrontierClassification(
-        "manual_compile_candidate",
+        UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE,
         "uk_manual_frontier_whole_act_word_level_text_patch_candidate",
         "The source/effect row claims a non-simple word-level text rewrite across the whole Act; a claim or future compiler must own document-wide scope, exclusions, and title/short-title boundaries instead of sending it to ordinary replay.",
     ),
     "partial_whole_act_repeal_unsupported": _ManualFrontierClassification(
-        "manual_compile_candidate",
+        UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE,
         "uk_manual_frontier_partial_whole_act_repeal_candidate",
         "The source repeals the whole Act except named provisions; a claim or future compiler must prove the exception set, target enumeration, applicability, and mutation boundary before replay can apply the broad negative scope.",
     ),
     "savings_qualified_text_omission_unsupported": _ManualFrontierClassification(
-        "manual_compile_candidate",
+        UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE,
         "uk_manual_frontier_savings_qualified_text_omission_candidate",
         "The source omits text only subject to an exception or savings class; replay must not compile it as an unconditional text omission without an applicability-aware claim or compiler.",
     ),
@@ -554,6 +586,7 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "uk_replay_descendant_renumber_provision",
         "uk_effect_word_substitution_escalated_to_structural_replace",
         "uk_replay_source_anchored_order_observed",
+        "uk_replay_sort_order_observation",
         "uk_replay_source_carried_table_entry_paragraph_substitution_resolved",
         "uk_effect_source_parent_each_provision_substitution_text_patch",
         "uk_replay_table_entry_multi_cell_text_patch_resolved",
@@ -2544,7 +2577,7 @@ def _uk_manual_frontier_classification(
     if classification is None:
         return None
     return {
-        "status": classification.status,
+        "manual_frontier_status": classification.manual_frontier_status.value,
         "rule_id": classification.rule_id,
         "reason": classification.reason,
     }
@@ -2835,28 +2868,28 @@ def classify_uk_manual_compile_frontier(
 
     if compare_shape_norm == "text_patch_preimage_absent_from_target_surfaces":
         return {
-            "status": "source_insufficient",
+            "manual_frontier_status": UKManualFrontierStatus.SOURCE_INSUFFICIENT.value,
             "rule_id": "uk_manual_frontier_text_patch_preimage_chain_gap",
             "reason": "The source instruction lowers to a text patch, but the quoted preimage is absent from available enacted/oracle target surfaces; acquire or prove the missing intermediate source chain before replaying or claiming it.",
         }
 
     if compare_shape_norm == "text_patch_target_absent_from_enacted_source_chain":
         return {
-            "status": "source_insufficient",
+            "manual_frontier_status": UKManualFrontierStatus.SOURCE_INSUFFICIENT.value,
             "rule_id": "uk_manual_frontier_text_patch_target_source_chain_gap",
             "reason": "The source instruction lowers to a text patch against a target absent from the enacted source but present in the current oracle; acquire or prove the amendment-created target chain before replaying or claiming the row in isolation.",
         }
 
     if compare_shape_norm == "text_patch_replacement_present_without_preimage":
         return {
-            "status": "source_insufficient",
+            "manual_frontier_status": UKManualFrontierStatus.SOURCE_INSUFFICIENT.value,
             "rule_id": "uk_manual_frontier_text_patch_postimage_chain_gap",
             "reason": "The quoted preimage is absent from available target surfaces while the replacement text is already visible; acquire or prove the intermediate amendment chain before treating the current postimage as replay evidence.",
         }
 
     if compare_shape_norm == "range_to_container_target_absent":
         return {
-            "status": "manual_compile_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_range_to_container_candidate",
             "reason": "The source substitutes a section range into a higher-level container whose feed target is absent from the available source surfaces; a manual or deterministic range-to-container migration claim must own the replaced range, new container, and lineage.",
         }
@@ -2874,27 +2907,39 @@ def classify_uk_manual_compile_frontier(
         and "uk_effect_added_type_source_structuralized" in all_rules
     ):
         return {
-            "status": "deterministic_frontend_supported",
+            "manual_frontier_status": UKManualFrontierStatus.DETERMINISTIC_FRONTEND_SUPPORTED.value,
             "rule_id": "uk_manual_frontier_deterministic_supported",
             "reason": "The row already lowers to replay operations through a source-verified nonstructural replay family.",
+        }
+
+    if (
+        compiled_op_count > 0
+        and replay_applicable
+        and not blocking_rules
+        and all_rules & _UK_SOURCE_STRUCTURED_NONSTRUCTURAL_RULE_IDS
+    ):
+        return {
+            "manual_frontier_status": UKManualFrontierStatus.DETERMINISTIC_FRONTEND_SUPPORTED.value,
+            "rule_id": "uk_manual_frontier_deterministic_supported",
+            "reason": "The row lowers to replay operations through a source-backed structural lowering rule that owns a nonstructural effect-feed family.",
         }
 
     if "uk_effect_structural_pseudo_definition_target_rejected" in blocking_rules:
         if _looks_like_definition_entry_payload(extracted_text_norm):
             return {
-                "status": "manual_compile_candidate",
+                "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
                 "rule_id": "uk_manual_frontier_structural_pseudo_definition_entry_placement_candidate",
                 "reason": "The effect feed encodes a definition entry as a pseudo structural path and the source carries a quoted definition-entry payload or instruction; a claim or future definition-entry compiler must prove the carrier, insertion/replacement semantics, and placement before replay.",
             }
         return {
-            "status": "source_insufficient",
+            "manual_frontier_status": UKManualFrontierStatus.SOURCE_INSUFFICIENT.value,
             "rule_id": "uk_manual_frontier_structural_pseudo_definition_source_insufficient",
             "reason": "The effect feed encodes a definition entry as a pseudo structural path, but the extracted source is not a definition-entry payload; acquire or extract the child amendment row before a definition-entry compiler can replay it.",
         }
 
     if "uk_effect_source_range_definition_entry_at_end_insert_rejected" in blocking_rules:
         return {
-            "status": "deterministic_frontend_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.DETERMINISTIC_FRONTEND_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_definition_list_end_insert_candidate",
             "reason": "The source range includes an at-end definition-entry insertion; a deterministic definition-list-end compiler must prove the list carrier and append point before replaying that row.",
         }
@@ -2905,7 +2950,7 @@ def classify_uk_manual_compile_frontier(
     )
     if temporal_cessation_exclusion_rule:
         return {
-            "status": "non_textual_or_out_of_scope",
+            "manual_frontier_status": UKManualFrontierStatus.NON_TEXTUAL_OR_OUT_OF_SCOPE.value,
             "rule_id": temporal_cessation_exclusion_rule,
             "reason": UK_TEMPORAL_CEASES_TO_HAVE_EFFECT_REPLAY_EXCLUDED_REASON,
         }
@@ -2920,14 +2965,25 @@ def classify_uk_manual_compile_frontier(
         and nonstructural_replay_family
     ):
         return {
-            "status": "deterministic_frontend_supported",
+            "manual_frontier_status": UKManualFrontierStatus.DETERMINISTIC_FRONTEND_SUPPORTED.value,
             "rule_id": "uk_manual_frontier_deterministic_supported",
             "reason": "The row already lowers to replay operations through a source-verified nonstructural replay family.",
         }
 
+    if "uk_effect_devolved_whole_act_repeal_extent_limited_rejected" in blocking_rules:
+        return {
+            "manual_frontier_status": UKManualFrontierStatus.NON_TEXTUAL_OR_OUT_OF_SCOPE.value,
+            "rule_id": "uk_manual_frontier_devolved_extent_limited_repeal_out_of_scope",
+            "reason": (
+                "The effect row repeals the whole Act under a devolved instrument and "
+                "therefore only repeals it as it extends to that devolved territory; "
+                "current UK replay does not materialize territorial-extent slices."
+            ),
+        }
+
     if not replay_applicable or not structural_for_replay:
         return {
-            "status": "non_textual_or_out_of_scope",
+            "manual_frontier_status": UKManualFrontierStatus.NON_TEXTUAL_OR_OUT_OF_SCOPE.value,
             "rule_id": "uk_manual_frontier_non_textual_or_out_of_scope",
             "reason": "The selected replay lens does not admit this row as a structural text/tree replay effect.",
         }
@@ -2938,7 +2994,7 @@ def classify_uk_manual_compile_frontier(
         and _has_source_parent_heading_substitution_context(lowering_rows)
     ):
         return {
-            "status": "manual_compile_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_heading_facet_candidate",
             "reason": (
                 "The extracted child source is only a payload fragment, but the "
@@ -2955,7 +3011,7 @@ def classify_uk_manual_compile_frontier(
         and _has_source_parent_grouped_repeal_context(lowering_rows)
     ):
         return {
-            "status": "manual_compile_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_parser_or_extraction_candidate",
             "reason": (
                 "The extracted child source is only a grouped-repeal payload "
@@ -2972,7 +3028,7 @@ def classify_uk_manual_compile_frontier(
         and _has_source_parent_grouped_substitution_context(lowering_rows)
     ):
         return {
-            "status": "source_insufficient",
+            "manual_frontier_status": UKManualFrontierStatus.SOURCE_INSUFFICIENT.value,
             "rule_id": "uk_manual_frontier_source_payload_without_instruction_context",
             "reason": (
                 "The extracted child source is only a grouped-substitution "
@@ -2984,7 +3040,7 @@ def classify_uk_manual_compile_frontier(
 
     if _has_effect_metadata_schedule_paragraph_range_to_part_renumber(lowering_rows):
         return {
-            "status": "manual_compile_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_effect_metadata_schedule_paragraph_range_to_part_renumber_candidate",
             "reason": (
                 "The effect metadata and source witness indicate a schedule "
@@ -2997,7 +3053,7 @@ def classify_uk_manual_compile_frontier(
 
     if _has_schedule_table_end_rows_missing_table_payload(lowering_rows):
         return {
-            "status": "source_insufficient",
+            "manual_frontier_status": UKManualFrontierStatus.SOURCE_INSUFFICIENT.value,
             "rule_id": "uk_manual_frontier_schedule_table_end_rows_payload_source_insufficient",
             "reason": (
                 "The source explicitly inserts at the end of a schedule, but "
@@ -3009,7 +3065,7 @@ def classify_uk_manual_compile_frontier(
 
     if _has_broad_schedule_flat_payload_rejected(lowering_rows):
         return {
-            "status": "source_insufficient",
+            "manual_frontier_status": UKManualFrontierStatus.SOURCE_INSUFFICIENT.value,
             "rule_id": "uk_manual_frontier_source_pathology_insufficient",
             "reason": (
                 "The source/lowering evidence exposes a broad schedule or Part "
@@ -3021,7 +3077,7 @@ def classify_uk_manual_compile_frontier(
 
     if _has_effect_metadata_unsupported_renumber(lowering_rows):
         return {
-            "status": "manual_compile_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_effect_metadata_unsupported_renumber_candidate",
             "reason": (
                 "The effect metadata explicitly describes a renumbering shape "
@@ -3040,7 +3096,7 @@ def classify_uk_manual_compile_frontier(
 
     if "uk_effect_appropriate_place_definition_entry_insert_rejected" in blocking_rules:
         return {
-            "status": "manual_compile_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_appropriate_place_definition_entry_candidate",
             "reason": "The source inserts a definition entry at an appropriate place without naming an anchor; a claim or future placement compiler must supply and validate the exact definition-entry insertion point instead of inferring it from live text.",
         }
@@ -3053,7 +3109,7 @@ def classify_uk_manual_compile_frontier(
         and _looks_like_source_carried_structured_text_patch_payload(extracted_text_norm)
     ):
         return {
-            "status": "manual_compile_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_source_carried_structured_text_patch_candidate",
             "reason": "The extracted payload is a source-carried structured replacement/insert fragment; a future compiler or manual claim must combine the parent formula anchor with the payload structure instead of flattening it into host text.",
         }
@@ -3065,7 +3121,7 @@ def classify_uk_manual_compile_frontier(
         and _looks_like_source_carried_structured_text_patch_payload(extracted_text_norm)
     ):
         return {
-            "status": "manual_compile_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_source_carried_structured_text_patch_candidate",
             "reason": (
                 "The effect metadata expands an overlap substitution into multiple "
@@ -3073,6 +3129,30 @@ def classify_uk_manual_compile_frontier(
                 "BlockAmendment payload; a claim or future compiler must bind the "
                 "parent formula, payload children, and mutation boundary before replay."
             ),
+        }
+
+    if "uk_effect_incorporation_of_enactments_source_rejected" in all_rules:
+        return {
+            "manual_frontier_status": UKManualFrontierStatus.NON_TEXTUAL_OR_OUT_OF_SCOPE.value,
+            "rule_id": "uk_manual_frontier_incorporation_of_enactments_out_of_scope",
+            "reason": (
+                "The source is an incorporation-of-enactments uptake article rather "
+                "than a direct text/tree mutation of the affected statute; replay must "
+                "not lower it as a structural amendment."
+            ),
+        }
+
+    if "uk_effect_crossheading_insert_rejected" in blocking_rules:
+        if source_pathology_norm == "table_crossheading_target_unsupported":
+            return {
+                "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
+                "rule_id": "uk_manual_frontier_table_crossheading_candidate",
+                "reason": "The source targets a table cross-heading surface; a claim or future table compiler must identify the table, heading cell/prefix, and row boundary instead of treating it as a normal paragraph heading.",
+            }
+        return {
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
+            "rule_id": "uk_manual_frontier_crossheading_candidate",
+            "reason": "The source targets a cross-heading surface that needs an explicit crossheading/facet claim.",
         }
 
     if (
@@ -3089,14 +3169,14 @@ def classify_uk_manual_compile_frontier(
         and blocking_rules
     ):
         return {
-            "status": "source_insufficient",
+            "manual_frontier_status": UKManualFrontierStatus.SOURCE_INSUFFICIENT.value,
             "rule_id": "uk_manual_frontier_source_pathology_insufficient",
             "reason": "The blocking row is dominated by source-shape pathology rather than an unambiguous manual compilation opportunity.",
         }
 
     if "uk_effect_crossheading_source_target_mismatch_rejected" in blocking_rules:
         return {
-            "status": "source_or_feed_target_conflict",
+            "manual_frontier_status": UKManualFrontierStatus.SOURCE_OR_FEED_TARGET_CONFLICT.value,
             "rule_id": "uk_manual_frontier_crossheading_source_target_mismatch",
             "reason": "The source explicitly names a cross-heading facet but the effect-feed target does not; replay needs source-feed target reconciliation before lowering a heading or host-body text patch.",
         }
@@ -3107,7 +3187,7 @@ def classify_uk_manual_compile_frontier(
     )
     if _has_deictic_amendment_program_inserted_anchor(lowering_rows):
         return {
-            "status": "manual_compile_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_deictic_amendment_program_target_candidate",
             "reason": "The source targets text inserted by another amendment instruction but identifies the prior anchor only as 'as inserted'; a claim or future source-context compiler must prove the instruction that created the anchor before replay.",
         }
@@ -3116,7 +3196,7 @@ def classify_uk_manual_compile_frontier(
         and _looks_like_deictic_structural_sibling_insert_instruction(extracted_text_norm)
     ):
         return {
-            "status": "manual_compile_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_deictic_structural_sibling_insert_candidate",
             "reason": "The source inserts structural siblings after a deictic anchor such as 'that paragraph'; a claim or future source-context compiler must resolve the exact parent and anchor sibling before replay.",
         }
@@ -3125,7 +3205,7 @@ def classify_uk_manual_compile_frontier(
         and _looks_like_top_level_roman_structured_tail_substitution(extracted_text)
     ):
         return {
-            "status": "manual_compile_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_source_carried_structured_tail_substitution_candidate",
             "reason": "The source substitutes a parent tail range with top-level roman child units but does not name the child carrier that should receive them; a claim or future live-state elaboration must own that carrier boundary before replay.",
         }
@@ -3134,21 +3214,21 @@ def classify_uk_manual_compile_frontier(
 
     if compiled_op_count > 0 and not blocking_rules:
         return {
-            "status": "deterministic_frontend_supported",
+            "manual_frontier_status": UKManualFrontierStatus.DETERMINISTIC_FRONTEND_SUPPORTED.value,
             "rule_id": "uk_manual_frontier_deterministic_supported",
             "reason": "The row already lowers to replay operations without blocking lowering rejections.",
         }
 
     if "uk_effect_table_deictic_this_subsection_insert_rejected" in blocking_rules:
         return {
-            "status": "manual_compile_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_table_deictic_this_subsection_insert",
             "reason": "The source inserts a deictic reference to this subsection into a table column; a claim or future table compiler must prove source-section context, rendered row text, and row/cell placement.",
         }
 
     if "uk_effect_amendment_table_payload_without_row_context_rejected" in blocking_rules:
         return {
-            "status": "source_insufficient",
+            "manual_frontier_status": UKManualFrontierStatus.SOURCE_INSUFFICIENT.value,
             "rule_id": "uk_manual_frontier_amendment_table_payload_without_row_context",
             "reason": "The extracted source is an amendment table payload without the specific row for the affected target; acquisition or extraction must recover row-level context before lowering.",
         }
@@ -3164,65 +3244,89 @@ def classify_uk_manual_compile_frontier(
         }
         if "deictic_table_entry" in entry_shapes:
             return {
-                "status": "manual_compile_candidate",
+                "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
                 "rule_id": "uk_manual_frontier_table_entry_deictic_candidate",
                 "reason": "The source uses deictic table-entry placement such as 'after that entry'; a future compiler must prove the antecedent from source context, resolve exactly one table row, and preserve the source-owned row payload.",
             }
         if "between_columns" in entry_shapes:
             return {
-                "status": "manual_compile_candidate",
+                "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
                 "rule_id": "uk_manual_frontier_table_column_insert_candidate",
                 "reason": "The source inserts material between table columns; this needs a column-insertion compiler that proves the column boundary, row alignment, and rowspan handling instead of replaying a row insertion.",
             }
         if "appropriate_place_table_entry" in entry_shapes:
             return {
-                "status": "manual_compile_candidate",
+                "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
                 "rule_id": "uk_manual_frontier_table_appropriate_place_candidate",
                 "reason": "The source inserts table rows at an appropriate place without an explicit row anchor; a placement claim or compiler must prove the predecessor/successor or table ordering rule before replay.",
             }
         return {
-            "status": "manual_compile_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_table_entry_candidate",
             "reason": "The source targets a table entry/column surface; a claim or future table compiler must identify the row and cell rather than mutating host body text.",
         }
 
     if "uk_effect_heading_only_ref_rejected" in blocking_rules:
         return {
-            "status": "manual_compile_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_heading_facet_candidate",
             "reason": "The source targets a heading/title/sidenote facet; a manual claim could target an explicit facet without mutating the host body.",
+        }
+
+    if "uk_effect_body_section_replace_schedule_unmatched_rejected" in blocking_rules:
+        return {
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
+            "rule_id": "uk_manual_frontier_body_section_schedule_payload_candidate",
+            "reason": (
+                "The source names a body-section replacement but the extracted "
+                "schedule payload contains no matching section-like unit; a claim or "
+                "future compiler must decide how the schedule structure maps onto "
+                "the body section before replay."
+            ),
+        }
+
+    if "uk_effect_savings_references_qualified_repeal_blocked" in blocking_rules:
+        return {
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
+            "rule_id": "uk_manual_frontier_savings_references_qualified_repeal_candidate",
+            "reason": (
+                "The whole-target repeal is qualified by an explicit savings schedule "
+                "reference in the affecting instrument; replay must not apply it as an "
+                "unconditional structural repeal until a claim or future compiler "
+                "owns the savings scope and affected target boundary."
+            ),
         }
 
     if "uk_effect_crossheading_replace_rejected" in blocking_rules:
         if source_pathology_norm == "table_crossheading_target_unsupported":
             return {
-                "status": "manual_compile_candidate",
+                "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
                 "rule_id": "uk_manual_frontier_table_crossheading_candidate",
                 "reason": "The source targets a table cross-heading surface; a claim or future table compiler must identify the table, heading cell/prefix, and row boundary instead of treating it as a normal paragraph heading.",
             }
         return {
-            "status": "manual_compile_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_crossheading_candidate",
             "reason": "The source targets a cross-heading surface that needs an explicit crossheading/facet claim.",
         }
 
     if "uk_effect_appropriate_place_insert_rejected" in blocking_rules:
         return {
-            "status": "manual_compile_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_appropriate_place_candidate",
             "reason": "The source inserts material at an appropriate place without naming an anchor or ordering rule; a claim or future placement compiler must supply and validate the exact insertion point instead of inferring it from live text.",
         }
 
     if "uk_effect_external_act_target_rejected" in blocking_rules:
         return {
-            "status": "non_textual_or_out_of_scope",
+            "manual_frontier_status": UKManualFrontierStatus.NON_TEXTUAL_OR_OUT_OF_SCOPE.value,
             "rule_id": "uk_manual_frontier_external_act_target_out_of_scope",
             "reason": "The affecting source names a different Act as the mutation target; the row is not a manual compilation opportunity for the current statute.",
         }
 
     if _has_repeal_table_feed_source_target_gap(lowering_rows):
         return {
-            "status": "source_insufficient",
+            "manual_frontier_status": UKManualFrontierStatus.SOURCE_INSUFFICIENT.value,
             "rule_id": "uk_manual_frontier_repeal_table_feed_source_target_gap",
             "reason": "The repeal-table source proves at least one feed-expanded target but leaves another feed-expanded target without a unique source row; replay needs an explicit source-feed target correction or missing-source witness rather than a manual lowering guess.",
         }
@@ -3233,14 +3337,14 @@ def classify_uk_manual_compile_frontier(
         "uk_effect_repeal_table_structural_repeal_unresolved",
     }:
         return {
-            "status": "manual_compile_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_repeal_table_candidate",
             "reason": "The row depends on an unresolved repeal schedule/table source; a claim or future grouped repeal-table compiler must prove the exact extent row, target split, and target coverage before replay.",
         }
 
     if "uk_effect_source_payload_without_instruction_context_rejected" in blocking_rules:
         return {
-            "status": "source_insufficient",
+            "manual_frontier_status": UKManualFrontierStatus.SOURCE_INSUFFICIENT.value,
             "rule_id": "uk_manual_frontier_source_payload_without_instruction_context",
             "reason": "The extracted source is a payload fragment without the owning operative instruction; replay requires exact source-context recovery before lowering.",
         }
@@ -3253,35 +3357,35 @@ def classify_uk_manual_compile_frontier(
         and _looks_like_labelled_purpose_payload_fragment(extracted_text_norm)
     ):
         return {
-            "status": "source_insufficient",
+            "manual_frontier_status": UKManualFrontierStatus.SOURCE_INSUFFICIENT.value,
             "rule_id": "uk_manual_frontier_source_payload_without_instruction_context",
             "reason": "The extracted BlockAmendment is a labelled provision payload while the effect row describes a word substitution; replay requires the owning parent instruction and payload split before lowering.",
         }
 
     if "uk_effect_child_qualified_word_omission_target_mismatch_rejected" in blocking_rules:
         return {
-            "status": "source_or_feed_target_conflict",
+            "manual_frontier_status": UKManualFrontierStatus.SOURCE_OR_FEED_TARGET_CONFLICT.value,
             "rule_id": "uk_manual_frontier_child_qualified_word_omission_target_mismatch",
             "reason": "The source explicitly scopes a quoted word omission to a child provision that differs from the effect-feed target; replay needs a source-feed target adjudication before lowering.",
         }
 
     if "uk_effect_labeled_child_end_range_target_rejected" in blocking_rules:
         return {
-            "status": "manual_compile_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_labeled_child_end_range_candidate",
             "reason": "The source substitutes text from a quoted preimage to the end of a named child provision, but the effect-feed target is not the child carrier; a claim or future compiler must prove the exact child endpoint and mutation boundary before replay.",
         }
 
     if "uk_effect_crossheading_source_target_mismatch_rejected" in blocking_rules:
         return {
-            "status": "source_or_feed_target_conflict",
+            "manual_frontier_status": UKManualFrontierStatus.SOURCE_OR_FEED_TARGET_CONFLICT.value,
             "rule_id": "uk_manual_frontier_crossheading_source_target_mismatch",
             "reason": "The source explicitly names a cross-heading facet but the effect-feed target does not; replay needs source-feed target reconciliation before lowering a heading or host-body text patch.",
         }
 
     if "uk_effect_amount_specified_source_target_mismatch_rejected" in blocking_rules:
         return {
-            "status": "source_or_feed_target_conflict",
+            "manual_frontier_status": UKManualFrontierStatus.SOURCE_OR_FEED_TARGET_CONFLICT.value,
             "rule_id": "uk_manual_frontier_amount_specified_source_target_mismatch",
             "reason": "The source explicitly names an amount-bearing child target that differs from the effect-feed target; replay needs source-feed target reconciliation before lowering a unique amount substitution.",
         }
@@ -3291,63 +3395,63 @@ def classify_uk_manual_compile_frontier(
         and _looks_like_savings_qualified_text_omission(extracted_text_norm)
     ):
         return {
-            "status": "manual_compile_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_savings_qualified_text_omission_candidate",
             "reason": "The source omits text only subject to an exception or savings class; replay must not compile it as an unconditional text omission without an applicability-aware claim or compiler.",
         }
 
     if "uk_effect_mixed_structural_text_rewrite_rejected" in blocking_rules:
         return {
-            "status": "deterministic_frontend_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.DETERMINISTIC_FRONTEND_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_mixed_structural_text_rewrite_split",
             "reason": "The source combines structural and text mutations; a future compiler must split and witness each canonical operation before replay.",
         }
 
     if "uk_effect_mixed_structural_definition_repeal_rejected" in blocking_rules:
         return {
-            "status": "deterministic_frontend_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.DETERMINISTIC_FRONTEND_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_mixed_structural_definition_repeal_split",
             "reason": "The source combines structural subsection repeal and definition-entry repeal; a future compiler must split and witness each canonical operation before replay.",
         }
 
     if "uk_effect_mixed_body_heading_text_substitution_rejected" in blocking_rules:
         return {
-            "status": "manual_compile_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_mixed_body_heading_text_substitution_split",
             "reason": "The source applies one quoted substitution to both body text and heading facets; a claim or future compiler must split body and heading/facet operations and prove each mutation boundary instead of applying a broad section text patch.",
         }
 
     if "uk_effect_table_entry_placement_insert_rejected" in blocking_rules:
         return {
-            "status": "manual_compile_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_table_entry_placement_insert",
             "reason": "The source inserts material into a table entry/list position; a claim or future table compiler must prove the row/cell placement and preserve unclaimed table structure.",
         }
 
     if "uk_effect_corresponding_table_entry_word_substitution_unresolved" in blocking_rules:
         return {
-            "status": "manual_compile_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_table_entry_candidate",
             "reason": "The source substitutes words by reference to a corresponding table entry; a claim or future table compiler must prove the source table row/cell correspondence before replay.",
         }
 
     if "uk_effect_table_entry_relating_text_patch" in blocking_rules:
         return {
-            "status": "manual_compile_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_table_entry_candidate",
             "reason": "The source targets a table entry by relating text, but lowering could not prove the containing table marker or cell boundary; a claim or future table compiler must identify the table carrier, row, and cell before replay.",
         }
 
     if "uk_effect_multi_enactment_specified_provisions_text_patch_rejected" in blocking_rules:
         return {
-            "status": "deterministic_frontend_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.DETERMINISTIC_FRONTEND_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_multi_enactment_specified_provisions_text_patch",
             "reason": "The source applies one substitution across a list of specified provisions with alternate preimages; a future compiler must prove the affected provision is listed and choose the matching preimage.",
         }
 
     if "uk_effect_scoped_occurrence_substitution_with_exclusions_rejected" in blocking_rules:
         return {
-            "status": "deterministic_frontend_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.DETERMINISTIC_FRONTEND_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_scoped_occurrence_substitution_with_exclusions",
             "reason": "The source has a negative context condition plus explicit target exclusions; a future text compiler needs an owned scoped-occurrence selector, not all-occurrences replay.",
         }
@@ -3368,7 +3472,7 @@ def classify_uk_manual_compile_frontier(
         )
     ):
         return {
-            "status": "manual_compile_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_table_entry_candidate",
             "reason": "The source targets a table entry/column surface; a claim or future table compiler must identify the row and cell rather than mutating host body text.",
         }
@@ -3384,7 +3488,7 @@ def classify_uk_manual_compile_frontier(
         )
     ):
         return {
-            "status": "manual_compile_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_table_entry_candidate",
             "reason": "The source targets a table point, entry, or row-anchor surface; a claim or future table compiler must identify the row and cell rather than treating the instruction as a generic text patch.",
         }
@@ -3395,7 +3499,7 @@ def classify_uk_manual_compile_frontier(
         and re.search(r"\b(?:insert|substitute)\b", extracted_text_norm)
     ):
         return {
-            "status": "manual_compile_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_appropriate_place_candidate",
             "reason": "The source asks for appropriate-place placement; a claim or future placement compiler must identify the insertion anchor without guessing from live text.",
         }
@@ -3405,7 +3509,7 @@ def classify_uk_manual_compile_frontier(
         and _looks_like_definition_list_end_insert_instruction(extracted_text_norm)
     ):
         return {
-            "status": "deterministic_frontend_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.DETERMINISTIC_FRONTEND_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_definition_list_end_insert_candidate",
             "reason": "The source inserts definition entries at the end of a definition-list surface; a deterministic definition-list-end compiler must prove the list carrier, payload entries, and append point before replaying that row.",
         }
@@ -3415,7 +3519,7 @@ def classify_uk_manual_compile_frontier(
         and _looks_like_schedule_list_entry_instruction(extracted_text_norm)
     ):
         return {
-            "status": "manual_compile_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_schedule_list_entry_candidate",
             "reason": "The source targets a schedule/list entry by anchor entry text; a claim or future list-entry compiler must identify the entry carrier and sibling insertion point rather than mutating collapsed schedule text.",
         }
@@ -3435,7 +3539,7 @@ def classify_uk_manual_compile_frontier(
         )
     ):
         return {
-            "status": "manual_compile_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_schedule_list_entry_candidate",
             "reason": "The source fragment carries a schedule/list entry insertion while the effect row supplies the schedule target; a claim or future list-entry compiler must identify the entry carrier and sibling insertion point before replay.",
         }
@@ -3446,12 +3550,12 @@ def classify_uk_manual_compile_frontier(
     ):
         if _looks_like_deictic_structural_sibling_insert_instruction(extracted_text_norm):
             return {
-                "status": "manual_compile_candidate",
+                "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
                 "rule_id": "uk_manual_frontier_deictic_structural_sibling_insert_candidate",
                 "reason": "The source inserts structural siblings after a deictic anchor such as 'that paragraph'; a claim or future source-context compiler must resolve the exact parent and anchor sibling before replay.",
             }
         return {
-            "status": "deterministic_frontend_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.DETERMINISTIC_FRONTEND_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_structural_sibling_insert_candidate",
             "reason": "The source inserts new structural siblings after a named child; a future compiler must emit sibling insert operations instead of appending payload text to the anchor child.",
         }
@@ -3461,7 +3565,7 @@ def classify_uk_manual_compile_frontier(
         and _looks_like_structural_child_range_substitution_instruction(extracted_text_norm)
     ):
         return {
-            "status": "manual_compile_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_structural_child_range_substitution_candidate",
             "reason": "The source substitutes a structural child range such as paragraphs (a) and (b); a claim or future compiler must own the removed children, replacement payload shape, and any connector/tail semantics instead of lowering it as a word-level text patch.",
         }
@@ -3471,7 +3575,7 @@ def classify_uk_manual_compile_frontier(
         and _looks_like_deictic_text_substitution_instruction(extracted_text_norm)
     ):
         return {
-            "status": "source_insufficient",
+            "manual_frontier_status": UKManualFrontierStatus.SOURCE_INSUFFICIENT.value,
             "rule_id": "uk_manual_frontier_deictic_text_patch_source_insufficient",
             "reason": "The source uses a deictic preimage such as 'those words' without carrying the antecedent in the extracted row; replay requires source-local antecedent proof before a text patch can be lowered.",
         }
@@ -3481,7 +3585,7 @@ def classify_uk_manual_compile_frontier(
         and _looks_like_definition_child_structural_substitution_instruction(extracted_text_norm)
     ):
         return {
-            "status": "manual_compile_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_definition_child_structural_substitution_candidate",
             "reason": "The source substitutes a paragraph inside a definition and may carry connector/tail semantics; a claim or future compiler must identify the definition child, replacement structure, and tail ownership before replay.",
         }
@@ -3494,7 +3598,7 @@ def classify_uk_manual_compile_frontier(
         and _looks_like_definition_entry_substitution_payload(extracted_text_norm)
     ):
         return {
-            "status": "manual_compile_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_definition_entry_substitution_candidate",
             "reason": "The effect metadata and source payload indicate a whole definition-entry substitution, but lowering could not prove the definition entry target and replacement boundary; a claim or future definition compiler must own that boundary before replay.",
         }
@@ -3507,7 +3611,7 @@ def classify_uk_manual_compile_frontier(
         )
     ):
         return {
-            "status": "manual_compile_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_definition_child_structural_insert_candidate",
             "reason": "The source inserts a child inside a definition while explicitly preserving or moving an existing connector/tail; a claim or future compiler must identify the definition child, inserted payload structure, and tail ownership before replay.",
         }
@@ -3517,7 +3621,7 @@ def classify_uk_manual_compile_frontier(
         and _looks_like_deictic_definition_range_to_end_substitution(extracted_text_norm)
     ):
         return {
-            "status": "source_insufficient",
+            "manual_frontier_status": UKManualFrontierStatus.SOURCE_INSUFFICIENT.value,
             "rule_id": "uk_manual_frontier_definition_range_to_end_source_context_insufficient",
             "reason": "The source substitutes from a quoted anchor to the end of the definition but the extracted child row does not name the definition term; replay requires parent source context or a typed definition-boundary proof before emitting a definition-scoped text patch.",
         }
@@ -3531,7 +3635,7 @@ def classify_uk_manual_compile_frontier(
         and not re.search(r"[“\"’’]", str(extracted_text or ""))
     ):
         return {
-            "status": "source_insufficient",
+            "manual_frontier_status": UKManualFrontierStatus.SOURCE_INSUFFICIENT.value,
             "rule_id": "uk_manual_frontier_unquoted_preimage_substitution_source_insufficient",
             "reason": "The source names the new period but does not quote or otherwise provide the old text preimage; replay requires an explicit source/preimage claim rather than parser inference from the live target.",
         }
@@ -3542,7 +3646,7 @@ def classify_uk_manual_compile_frontier(
         and any(term in effect_type_norm for term in ("repeal", "omit"))
     ):
         return {
-            "status": "manual_compile_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_repeal_table_candidate",
             "reason": "The row appears to depend on a repeal schedule/table or grouped repeal source that may need row/column compilation.",
         }
@@ -3552,7 +3656,7 @@ def classify_uk_manual_compile_frontier(
         and _looks_like_sentence_scoped_repeated_insert_instruction(extracted_text_norm)
     ):
         return {
-            "status": "manual_compile_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_sentence_scoped_repeated_insert_candidate",
             "reason": "The source inserts text at the end of each of a bounded sentence set; a claim or future sentence-boundary compiler must prove sentence segmentation and insert before the selected sentence terminators before replay.",
         }
@@ -3562,7 +3666,7 @@ def classify_uk_manual_compile_frontier(
         and _looks_like_source_carried_multi_subunit_text_rewrite(extracted_text_norm)
     ):
         return {
-            "status": "manual_compile_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_source_carried_multi_subunit_text_rewrite_candidate",
             "reason": "The source carries one text rewrite across multiple named child units; a claim or future compiler must split the instruction by child unit and prove each text preimage and mutation boundary before replay.",
         }
@@ -3576,7 +3680,7 @@ def classify_uk_manual_compile_frontier(
         )
     ):
         return {
-            "status": "manual_compile_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_parser_or_extraction_candidate",
             "reason": "The source still contains explicit instruction text; a semantic compile claim or future parser must identify the exact preimage, payload, target scope, and mutation boundary before replay.",
         }
@@ -3590,7 +3694,7 @@ def classify_uk_manual_compile_frontier(
         )
     ):
         return {
-            "status": "source_insufficient",
+            "manual_frontier_status": UKManualFrontierStatus.SOURCE_INSUFFICIENT.value,
             "rule_id": "uk_manual_frontier_definition_target_fragment_source_insufficient",
             "reason": "The source fragment identifies a definition target but does not carry the inserted words or a placement instruction; replay requires the missing parent instruction or payload evidence.",
         }
@@ -3603,7 +3707,7 @@ def classify_uk_manual_compile_frontier(
         and _looks_like_definition_entry_payload(extracted_text_norm)
     ):
         return {
-            "status": "manual_compile_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_appropriate_place_definition_entry_candidate",
             "reason": "The official effect feed supplies a word-level insertion action and target, while the extracted source carries a definition-entry payload without a source-owned insertion anchor; a claim or future placement compiler must supply and validate the exact definition-entry insertion point.",
         }
@@ -3617,7 +3721,7 @@ def classify_uk_manual_compile_frontier(
         )
     ):
         return {
-            "status": "deterministic_frontend_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.DETERMINISTIC_FRONTEND_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_effect_metadata_carried_text_patch_candidate",
             "reason": (
                 "The official effect feed supplies a word-level action and target, "
@@ -3636,21 +3740,21 @@ def classify_uk_manual_compile_frontier(
         )
     ):
         return {
-            "status": "source_insufficient",
+            "manual_frontier_status": UKManualFrontierStatus.SOURCE_INSUFFICIENT.value,
             "rule_id": "uk_manual_frontier_instruction_header_source_insufficient",
             "reason": "The extracted source is only an amendment header or context row, not a legal payload or complete action formula; replay requires the missing child instruction/payload before a text patch can be claimed.",
         }
 
     if "uk_effect_missing_structural_payload_rejected" in blocking_rules:
         return {
-            "status": "source_insufficient",
+            "manual_frontier_status": UKManualFrontierStatus.SOURCE_INSUFFICIENT.value,
             "rule_id": "uk_manual_frontier_missing_payload_source_insufficient",
             "reason": "No extracted payload is available; a closed operation cannot be claimed without better source evidence.",
         }
 
     if "uk_effect_non_substantive_payload_rejected" in blocking_rules:
         return {
-            "status": "source_insufficient",
+            "manual_frontier_status": UKManualFrontierStatus.SOURCE_INSUFFICIENT.value,
             "rule_id": "uk_manual_frontier_non_substantive_payload_source_insufficient",
             "reason": "The available payload is non-substantive shell or dot-leader text and should not become legal content.",
         }
@@ -3661,21 +3765,21 @@ def classify_uk_manual_compile_frontier(
         and extracted_tag_norm == "BlockAmendment"
     ):
         return {
-            "status": "source_insufficient",
+            "manual_frontier_status": UKManualFrontierStatus.SOURCE_INSUFFICIENT.value,
             "rule_id": "uk_manual_frontier_payload_without_action_source_insufficient",
             "reason": "The source lane exposes a naked payload fragment without a supported action verb or effect type.",
         }
 
     if "uk_effect_metadata_cross_container_renumber_rejected" in all_rules:
         return {
-            "status": "manual_compile_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_cross_container_renumber_candidate",
             "reason": "The effect metadata proves a cross-container renumber/migration; a claim or future migration compiler must own source identity, destination identity, and descendant wrapping before replay can apply it.",
         }
 
     if "uk_effect_empty_type_whole_act_action_rejected" in blocking_rules:
         return {
-            "status": "non_textual_or_out_of_scope",
+            "manual_frontier_status": UKManualFrontierStatus.NON_TEXTUAL_OR_OUT_OF_SCOPE.value,
             "rule_id": "uk_manual_frontier_empty_type_whole_act_action_out_of_scope",
             "reason": (
                 "The effect row names the whole Act but has no effect type; replay "
@@ -3686,7 +3790,7 @@ def classify_uk_manual_compile_frontier(
 
     if "uk_effect_partial_whole_act_repeal_rejected" in blocking_rules:
         return {
-            "status": "manual_compile_candidate",
+            "manual_frontier_status": UKManualFrontierStatus.MANUAL_COMPILE_CANDIDATE.value,
             "rule_id": "uk_manual_frontier_partial_whole_act_repeal_candidate",
             "reason": (
                 "The source repeals the whole Act except named provisions; "
@@ -3704,7 +3808,7 @@ def classify_uk_manual_compile_frontier(
         and _is_uk_non_textual_modification_effect_type(effect_type_norm)
     ):
         return {
-            "status": "non_textual_or_out_of_scope",
+            "manual_frontier_status": UKManualFrontierStatus.NON_TEXTUAL_OR_OUT_OF_SCOPE.value,
             "rule_id": "uk_non_textual_modification_out_of_scope",
             "reason": (
                 "The effect type is a non-textual modification (the provision is "
@@ -3720,13 +3824,13 @@ def classify_uk_manual_compile_frontier(
         or "uk_effect_application_overlay_no_textual_action_observed" in all_rules
     ):
         return {
-            "status": "non_textual_or_out_of_scope",
+            "manual_frontier_status": UKManualFrontierStatus.NON_TEXTUAL_OR_OUT_OF_SCOPE.value,
             "rule_id": "uk_manual_frontier_unsupported_effect_family",
             "reason": "The effect family is currently outside UK text/tree replay, though the diagnostic remains visible.",
         }
 
     return {
-        "status": "unclassified_frontier",
+        "manual_frontier_status": UKManualFrontierStatus.UNCLASSIFIED_FRONTIER.value,
         "rule_id": "uk_manual_frontier_unclassified",
         "reason": "No manual-frontier rule classified this row; inspect the source and lowering evidence directly.",
     }

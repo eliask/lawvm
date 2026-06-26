@@ -720,7 +720,7 @@ def export_work_pack(
     n_address_nodes = 0
 
     # One closed total scope predicate for v0 (no scope dimensions narrowed).
-    total_scope = ScopePredicate(dimensions={}, status="total")
+    total_scope = ScopePredicate(dimensions={}, scope_status="total")
     scope_predicate_id = total_scope.scope_predicate_id
     h = state_w.write(total_scope.to_canonical_dict())
     scope_predicate_hashes.append(h)
@@ -869,7 +869,7 @@ def export_work_pack(
             effect_interval=_interval(span.effective, end_date),
             account_interval=(corpus_version, None),
             source_policy_id="archival_exact",
-            status="selected",
+            selection_status="selected",
             candidate_set_hash=cs_object_hash,
             selected_node_version_id=nv_id,
             decision_basis=DecisionBasis(

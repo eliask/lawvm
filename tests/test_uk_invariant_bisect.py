@@ -6,8 +6,8 @@ Unit tests (no archive required):
 
 Integration tests (require data/uk_legislation.farchive):
   - duplicate_label on ukpga/1978/30: no violations found, bundle is well-formed
-  - all_tree on ukpga/1978/30: pre-window violations from enacted base are detected;
-    initial_clean is False; monotone_failure is True
+  - all_tree on ukpga/1978/30: enacted base is now clean under UK-aware nesting
+    rules; the first bad amendment is identified and its violations are listed
   - after/before window bounds are respected (count < total_in_chain)
 """
 from __future__ import annotations
@@ -122,8 +122,22 @@ def test_uk_invariant_bisect_duplicate_label_no_violations_ukpga_1978_30() -> No
     reason="uk_legislation.farchive not present — skipping live UK invariant-bisect test",
 )
 @pytest.mark.slow
-def test_uk_invariant_bisect_all_tree_base_violations_ukpga_1978_30() -> None:
-    """ukpga/1978/30 all_tree: enacted base has illegal_edge violations (monotone)."""
+def test_uk_invariant_bisect_all_tree_clean_ukpga_1978_30() -> None:
+    """ukpga/1978/30 all_tree: no structural violations across the chain.
+
+    Core tree invariants now model UK canonical nesting (crossheadings in
+    parts/chapters, p1group wrappers, section-like children).  The enacted base
+    no longer triggers unexpected_child_kind violations.  The previous first bad
+    amendment (ukpga/2000/26) no longer produces the malformed
+    ``subsection inside p1group`` shape because subsection-level source payloads
+    are no longer relabelled as whole-section replacements.
+
+    The UK ``all_tree`` gate deliberately excludes ``sort_order`` from the hard
+    structural family: UK sections are inserted at source-declared positions
+    (e.g. "after section 23") and the resulting sibling order may therefore
+    differ from strict label collation.  The ``sort_order`` detector remains
+    available as a standalone lint for diagnosing suspect ordering.
+    """
     from lawvm.tools.invariant_bisect import build_uk_invariant_bisect_bundle
 
     bundle = build_uk_invariant_bisect_bundle(
@@ -132,12 +146,42 @@ def test_uk_invariant_bisect_all_tree_base_violations_ukpga_1978_30() -> None:
         db_path=_DB_PATH,
     )
     assert bundle["jurisdiction"] == "uk"
-    # The enacted base IR already contains illegal_edge violations
-    assert bundle["initial_clean"] is False
-    assert len(bundle["initial_violations"]) > 0
-    # Violations persist monotonically through all amendments
+    # Enacted base is clean under UK-aware nesting rules
+    assert bundle["initial_clean"] is True
+    assert len(bundle["initial_violations"]) == 0
+    # No structural violations anywhere in the chain
+    assert bundle["failure_count"] == 0
+    assert bundle["first_bad_amendment"] == ""
+    assert bundle["monotone_failure"] is False
+    assert bundle["transient_failure"] is False
+    # The fixed p1group/subsection nesting violation must not appear.
+    assert not any(
+        "unexpected subsection inside p1group" in v
+        for step in bundle["steps"]
+        for v in step["violations"]
+    )
+
+
+@pytest.mark.skipif(
+    not _DB_PATH.exists(),
+    reason="uk_legislation.farchive not present — skipping live UK invariant-bisect test",
+)
+def test_uk_invariant_bisect_sort_order_still_reports_source_order_ukpga_1978_30() -> None:
+    """sort_order remains available as a standalone lint for source-order anomalies."""
+    from lawvm.tools.invariant_bisect import build_uk_invariant_bisect_bundle
+
+    bundle = build_uk_invariant_bisect_bundle(
+        "ukpga/1978/30",
+        detector="sort_order",
+        db_path=_DB_PATH,
+    )
+    assert bundle["jurisdiction"] == "uk"
+    assert bundle["first_bad_amendment"] == "ukpga/2018/16"
+    assert any(
+        "section out of order: 23ZA > 23A" in v
+        for v in bundle["first_bad_violations"]
+    )
     assert bundle["monotone_failure"] is True
-    assert bundle["failure_count"] == bundle["total_scanned"]
 
 
 @pytest.mark.skipif(

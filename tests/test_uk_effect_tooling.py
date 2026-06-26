@@ -97,6 +97,7 @@ def test_uk_claim_template_rule_id_set_tracks_supported_templates() -> None:
         "uk_manual_frontier_appropriate_place_candidate",
         "uk_manual_frontier_appropriate_place_definition_entry_candidate",
         "uk_manual_frontier_appropriate_place_index_entry_candidate",
+        "uk_manual_frontier_body_section_schedule_payload_candidate",
         "uk_manual_frontier_amendment_program_target_candidate",
         "uk_manual_frontier_amount_specified_source_target_mismatch",
         "uk_manual_frontier_child_qualified_word_omission_target_mismatch",
@@ -133,6 +134,7 @@ def test_uk_claim_template_rule_id_set_tracks_supported_templates() -> None:
         "uk_manual_frontier_same_moment_cross_act_precedence_resolution_candidate",
         "uk_manual_frontier_sentence_scoped_repeated_insert_candidate",
         "uk_manual_frontier_savings_qualified_text_omission_candidate",
+        "uk_manual_frontier_savings_references_qualified_repeal_candidate",
         "uk_manual_frontier_scoped_occurrence_substitution_with_exclusions",
         "uk_manual_frontier_scoped_occurrence_program_exclusion_candidate",
         "uk_manual_frontier_scoped_occurrence_text_patch_with_exclusions_candidate",
@@ -2556,7 +2558,7 @@ def test_manual_frontier_classifies_table_reference_instructions_as_manual() -> 
         structural_for_replay=True,
     )
 
-    assert result["status"] == "manual_compile_candidate"
+    assert result["manual_frontier_status"] == "manual_compile_candidate"
     assert result["rule_id"] == "uk_manual_frontier_table_entry_candidate"
 
 
@@ -4046,7 +4048,7 @@ def test_uk_effect_row_json_exposes_manual_compile_frontier() -> None:
     payload = _effect_report_row_jsonable(row, statute_id="ukpga/2000/1")
 
     assert payload["manual_compile_frontier"] == {
-        "status": "manual_compile_candidate",
+        "manual_frontier_status": "manual_compile_candidate",
         "rule_id": "uk_manual_frontier_heading_facet_candidate",
         "reason": "Heading facet requires an explicit manual claim.",
         "owner_phase": "typed_elaboration",
@@ -4338,7 +4340,7 @@ def test_single_uk_effect_report_includes_deterministic_frontier_claim_template(
         op_rows=[],
     )
 
-    assert report["manual_compile_frontier"]["status"] == "deterministic_frontend_candidate"
+    assert report["manual_compile_frontier"]["manual_frontier_status"] == "deterministic_frontend_candidate"
     assert report["suggested_claim_template_status"] == "available"
     assert report["suggested_claim_template"]["action_family"] == (
         "referent_qualified_text_substitution"

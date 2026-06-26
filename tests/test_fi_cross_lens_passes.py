@@ -141,7 +141,7 @@ def test_cross_lens_edges_firewall_and_candidate_status() -> None:
     for edge in cross:
         assert edge.surface_only is True
         assert edge.replay_authorized is False
-        assert edge.status == "candidate"
+        assert edge.surface_edge_status == "candidate"
 
 
 # ── (e) determinism ───────────────────────────────────────────────────────────
@@ -153,7 +153,7 @@ def test_cross_lens_passes_are_deterministic() -> None:
 
     def _edge_keys(graph):
         return sorted(
-            (e.edge_id, e.edge_kind, e.src, e.dst, e.status, e.payload_hash)
+            (e.edge_id, e.edge_kind, e.src, e.dst, e.surface_edge_status, e.payload_hash)
             for e in graph.edges
             if e.edge_kind
             in ("frame_contains_reference", "frame_qualified_by_temporal")

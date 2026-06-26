@@ -93,8 +93,8 @@ def test_power_core_delegates_to_delegation_frame() -> None:
         # power grants → status "asserted" (resolved), source "deontic_frame_cue_in_frame".
         # The sentence-local co-occurrence fallback (no containment / several
         # containers) stays "candidate"/"ambiguous", source "deontic_frame_sentence_local".
-        assert edge.status in ("asserted", "candidate", "ambiguous")
-        if edge.status == "asserted":
+        assert edge.surface_edge_status in ("asserted", "candidate", "ambiguous")
+        if edge.surface_edge_status == "asserted":
             assert edge.payload.get("attachment") == "resolved_by_containment"
             assert edge.payload.get("source") == "deontic_frame_cue_in_frame"
             # the core cue span lies INSIDE the frame span
@@ -119,7 +119,7 @@ def test_duty_core_is_sanctioned_by_sanction_frame() -> None:
         assert graph.nodes[edge.dst].node_kind == "sanction_frame"
         assert edge.payload.get("source") == "deontic_frame_sentence_local"
     # the single-sanction obligation sentence (P2) yields a "candidate" edge
-    candidate = [e for e in sancts if e.status == "candidate"]
+    candidate = [e for e in sancts if e.surface_edge_status == "candidate"]
     assert candidate, "expected at least one candidate (single-frame) sanctioned_by"
 
 
@@ -131,7 +131,7 @@ def test_multi_frame_core_emits_full_candidate_set_not_a_pick() -> None:
     amb = [
         e
         for e in _edges(graph)
-        if e.status == "ambiguous"
+        if e.surface_edge_status == "ambiguous"
     ]
     assert amb, "expected ambiguous sanctioned_by edges (P3 two-sanction sentence)"
     # all ambiguous edges from the SAME core carry the SAME candidate set, one edge
@@ -183,7 +183,7 @@ def test_deontic_frame_edges_obey_the_firewall() -> None:
         assert edge.replay_authorized is False
         # delegates_to resolves by containment to "asserted"; the co-occurrence
         # cases stay "candidate"/"ambiguous". The firewall holds for all.
-        assert edge.status in ("asserted", "candidate", "ambiguous")
+        assert edge.surface_edge_status in ("asserted", "candidate", "ambiguous")
 
 
 # ── (f) determinism ──────────────────────────────────────────────────────────
@@ -195,7 +195,7 @@ def test_deontic_frame_composition_is_deterministic() -> None:
 
     def _keys(graph):
         return sorted(
-            (e.edge_id, e.edge_kind, e.src, e.dst, e.status, e.payload_hash)
+            (e.edge_id, e.edge_kind, e.src, e.dst, e.surface_edge_status, e.payload_hash)
             for e in _edges(graph)
         )
 

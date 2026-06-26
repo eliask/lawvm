@@ -128,7 +128,7 @@ def test_section_anaphor_attaches_to_own_section_core_only() -> None:
     # exactly one core in §4 → asserted, attaching to §4's core
     assert len(enc) == 1
     e = enc[0]
-    assert e.status == "asserted"
+    assert e.surface_edge_status == "asserted"
     assert e.payload["attachment"] == ATTACHMENT_RESOLVED_BY_ENCLOSING
     assert e.payload["enclosing_provision"] == "4"
     # the dst core sits in §4 (its enclosing provision), never §5
@@ -188,7 +188,7 @@ def test_section_anaphor_with_several_cores_is_ambiguous() -> None:
     enc = _enclosing_edges(graph)
     assert len(enc) >= 2, "several cores in the section → one edge per core"
     for e in enc:
-        assert e.status == "ambiguous"
+        assert e.surface_edge_status == "ambiguous"
         assert e.payload["enclosing_provision"] == "9"
         # the full candidate-core set rides in every ambiguous edge
         assert "candidate_core_spans" in e.payload

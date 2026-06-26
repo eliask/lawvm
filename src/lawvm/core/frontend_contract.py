@@ -245,7 +245,7 @@ class DerivedCompatibilityArtifact:
     source_artifact_id: str
     source_artifact_kind: str
     derivation_phase: str
-    status: str
+    phase_status: str
     lossy: bool
     preserved_fields: tuple[str, ...] = ()
     lost_fields: tuple[str, ...] = ()
@@ -305,8 +305,8 @@ class DerivedCompatibilityArtifact:
         )
         object.__setattr__(
             self,
-            "status",
-            _required_string("DerivedCompatibilityArtifact.status", self.status),
+            "phase_status",
+            _required_string("DerivedCompatibilityArtifact.phase_status", self.phase_status),
         )
         object.__setattr__(
             self,
@@ -370,7 +370,7 @@ class DerivedCompatibilityArtifact:
             "source_artifact_id": self.source_artifact_id,
             "source_artifact_kind": self.source_artifact_kind,
             "derivation_phase": self.derivation_phase,
-            "status": self.status,
+            "phase_status": self.phase_status,
             "lossy": self.lossy,
             "preserved_fields": list(self.preserved_fields),
             "lost_fields": list(self.lost_fields),

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace as dc_replace
 from functools import lru_cache
-from typing import NamedTuple, Optional, Sequence, TypeAlias
+from typing import NamedTuple, Optional, Sequence
 
 from lawvm.core.ir_helpers import _kind_str
 from lawvm.core.ir import LegalAddress, LegalOperation
@@ -43,14 +43,14 @@ class VersionedNodeLookup(NamedTuple):
     index: Optional[int]
 
 
-TargetLookupKey: TypeAlias = tuple[tuple[tuple[str, Optional[str]], ...], bool, bool]
+type TargetLookupKey = tuple[tuple[tuple[str, Optional[str]], ...], bool, bool]
 # Key: (id(root_node), kind, label) → (serial, tuple-of-matches capped at 2)
-_RecursiveMatchAllKey: TypeAlias = tuple[int, str, str]
-_NodeTreePathIndex: TypeAlias = dict[int, tuple[UKMutableNode, TreePath]]
-_NodeStructuralShape: TypeAlias = tuple[
+type _RecursiveMatchAllKey = tuple[int, str, str]
+type _NodeTreePathIndex = dict[int, tuple[UKMutableNode, TreePath]]
+type _NodeStructuralShape = tuple[
     object,
     Optional[str],
-    tuple["_NodeStructuralShape", ...],
+    tuple[_NodeStructuralShape, ...],
 ]
 _MISSING_NODE_LOOKUP = NodeLookupResult(node=None, parent=None, index=None)
 _ROOT_PARENT_INDEX = ParentIndexEntry(parent=None, index=None)
@@ -511,6 +511,18 @@ class UKReplayStateMixin:
                 ambiguous.add(eid)
                 continue
             index[eid] = NodeIndexEntry(node=node, parent=parent, index=idx)
+            # §case-alias: anchors and oracle-eid keys are kept lowercase, while
+            # emitted node eIds uppercase letter suffixes (e.g. section-17-1A).
+            # Register a lowercase exact alias so a lowercase anchor resolves to
+            # the uppercase node before falling through to sequence/suffix lookup
+            # that can misroute a sibling inserted provision to a descendant.
+            lower_eid = eid.lower()
+            if lower_eid != eid and lower_eid not in ambiguous:
+                if lower_eid in index and index[lower_eid].node is not node:
+                    index.pop(lower_eid, None)
+                    ambiguous.add(lower_eid)
+                else:
+                    index[lower_eid] = NodeIndexEntry(node=node, parent=parent, index=idx)
             for suffix_key in self._eid_suffix_alias_keys(eid):
                 if suffix_key in suffix_ambiguous:
                     continue
@@ -662,6 +674,11 @@ class UKReplayStateMixin:
                 entry = self._eid_lookup_index.get(eid)
                 if entry is not None and entry.node is current:
                     self._eid_lookup_index.pop(eid, None)
+                lower_eid = eid.lower()
+                if lower_eid != eid:
+                    lower_entry = self._eid_lookup_index.get(lower_eid)
+                    if lower_entry is not None and lower_entry.node is current:
+                        self._eid_lookup_index.pop(lower_eid, None)
                 if self._eid_suffix_lookup_index is not None:
                     for suffix_key in self._eid_suffix_alias_keys(eid):
                         suffix_entry = self._eid_suffix_lookup_index.get(suffix_key)

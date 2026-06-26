@@ -588,6 +588,84 @@ def _ee_declension_forms(word: str) -> dict[str, str] | None:
             "pl_abl": stem + "telt",
             "pl_trn": stem + "teks",
         }
+    if lower.endswith("assistent"):
+        # Loanword agent family (bürooassistent, arstiasistent,ppeassistent,
+        # laohooldusspetsialist-assistent, ...). Consonant gradation: nom
+        # strong grade ends in ``-ent``, weak grade replaces the final
+        # ``nt`` with ``nd`` and is used for all oblique singular forms.
+        # Corpus witness: ``120092023001`` §1 item 1 names a source-backed
+        # ``bürootöö → bürooassistent vastavas käändes`` rename whose genitive
+        # ``bürooassistendi`` must land on the OT-rewritten title and body.
+        stem = word[:-2] + "nd"
+        return {
+            "sg_nom": word,
+            "sg_gen": stem + "i",
+            "sg_part": word + "i",
+            "sg_ine": stem + "is",
+            "sg_ela": stem + "ist",
+            "sg_ill": word + "isse",
+            "sg_all": stem + "ile",
+            "sg_ade": stem + "il",
+            "sg_abl": stem + "ilt",
+            "sg_trn": stem + "iks",
+            "sg_ter": stem + "ini",
+            "sg_ess": word + "ina",
+            "sg_abe": stem + "ita",
+            "sg_com": stem + "iga",
+            # Plural: nom pl takes the weak grade (``assistendid``); the
+            # oblique plural takes the strong grade ``-ent`` + ``-ide`` stem,
+            # exactly like the consonant-final loanword ``vorm`` family above
+            # (``vorm`` -> ``vormid`` / ``vormide`` / ``vorme``). Standard
+            # Estonian gen pl is ``assistentide`` and part pl ``assistente``;
+            # the prior ``-ite`` / ``assistendeid`` forms were non-standard.
+            "pl_nom": stem + "id",
+            "pl_gen": word + "ide",
+            "pl_part": word + "e",
+            "pl_ine": word + "ides",
+            "pl_ela": word + "idest",
+            "pl_all": word + "idele",
+            "pl_ade": word + "idel",
+            "pl_abl": word + "idelt",
+            "pl_trn": word + "ideks",
+        }
+    if lower.endswith(("öö", "üü", "ää", "aa", "ee", "ii", "uu", "õõ")):
+        # Long-vowel noun family (``töö`` / ``bürootöö`` / ``maa`` / ``puu``
+        # / ``võõras`` *not* this family — that one ends in ``as``
+        # adjectivally). ``öö``-final nouns share singular genitive =
+        # nominative (no vowel drop) and singular partitive = nominative
+        # + ``d``. Plural partitive is contracted (``töö`` → ``töid``) but
+        # not every long-vowel noun contracts cleanly, so the conservative
+        # ``+ sid`` form is used to avoid false-positive matches.
+        # Corpus witness: ``120092023001`` §1 item 1 source-backed
+        # ``bürootöö → bürooassistent vastavas käändes`` rewrite. The old
+        # surface ``bürootöö`` must declense to ``bürootöö``, ``bürootööd``,
+        # ``bürootöösse``, etc.; the new surface ``bürooassistent`` follows
+        # the ``-assistent`` family above.
+        return {
+            "sg_nom": word,
+            "sg_gen": word,
+            "sg_part": word + "d",
+            "sg_ine": word + "s",
+            "sg_ela": word + "st",
+            "sg_ill": word + "sse",
+            "sg_all": word + "le",
+            "sg_ade": word + "l",
+            "sg_abl": word + "lt",
+            "sg_trn": word + "ks",
+            "sg_ter": word + "ni",
+            "sg_ess": word + "na",
+            "sg_abe": word + "ta",
+            "sg_com": word + "ga",
+            "pl_nom": word + "d",
+            "pl_gen": word + "de",
+            "pl_part": word + "sid",
+            "pl_ine": word + "des",
+            "pl_ela": word + "dest",
+            "pl_all": word + "dele",
+            "pl_ade": word + "del",
+            "pl_abl": word + "delt",
+            "pl_trn": word + "deks",
+        }
     if lower.endswith("tõend"):
         stem = word + "i"
         return {

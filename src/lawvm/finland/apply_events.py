@@ -42,12 +42,12 @@ def _resolved_target_path_for_event(
     if sec_path is None:
         return None
     resolved: TreePath = tuple(sec_path)
-    if op.target_paragraph is not None:
-        resolved = resolved + (("subsection", str(op.target_paragraph)),)
-    if op.target_item is not None:
-        resolved = resolved + (("paragraph", str(op.target_item)),)
-    if op.target_special is not None:
-        resolved = resolved + (("special", str(op.target_special)),)
+    if op.target_cols.target_paragraph is not None:
+        resolved = resolved + (("subsection", str(op.target_cols.target_paragraph)),)
+    if op.target_cols.target_item is not None:
+        resolved = resolved + (("paragraph", str(op.target_cols.target_item)),)
+    if op.target_cols.target_special is not None:
+        resolved = resolved + (("special", str(op.target_cols.target_special)),)
     return _path_to_tuple(resolved)
 
 
@@ -300,29 +300,6 @@ def _emit_apply_mutation_event_from_receipt(
     _emit_apply_mutation_event(mutation_events_out, op=op, **shared_fields)
 
 
-def _emit_legacy_dispatch_fallback_event(
-    mutation_events_out: Optional[List[ApplyMutationEvent]],
-    *,
-    rop: ResolvedOp,
-    helper: str,
-    reason_tag: str,
-    failure_reason: str,
-    reason_code: str = "",
-    path_hint: Path | None = None,
-) -> None:
-    """Record that typed apply fell back to legacy field-based dispatch."""
-    _emit_apply_mutation_event_for_rop(
-        mutation_events_out,
-        rop=rop,
-        helper=helper,
-        outcome="skipped",
-        resolved_target_path=_target_address_path_for_rop_event(rop, path_hint),
-        used_fallback_tags=("APPLY.LEGACY_DISPATCH_FALLBACK", reason_tag),
-        failure_reason=failure_reason,
-        reason_code=reason_code,
-    )
-
-
 __all__ = [
     "ApplyMutationEvent",
     "ApplyMutationAccountingResult",
@@ -345,5 +322,4 @@ __all__ = [
     "_emit_apply_mutation_event",
     "_emit_apply_mutation_event_for_rop",
     "_emit_apply_mutation_event_from_receipt",
-    "_emit_legacy_dispatch_fallback_event",
 ]

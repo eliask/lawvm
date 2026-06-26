@@ -240,7 +240,7 @@ class _BenchResult:
     sec_match: float
     r_secs: int
     o_secs: int
-    status: str
+    bench_status: str
     source_basis: str = ""
     comparison_class: str = ""
     core_benchmark: bool = True
@@ -341,7 +341,7 @@ def _score_one_pair(gid: str, base_id: str, oracle_id: str, title: str, archive:
             sec_match=sec_match,
             r_secs=len(r_secs),
             o_secs=len(o_secs),
-            status=status,
+            bench_status=status,
             source_basis=r.source_basis,
             comparison_class=r.comparison_class,
             core_benchmark=core_benchmark,
@@ -364,7 +364,7 @@ def _score_one_pair(gid: str, base_id: str, oracle_id: str, title: str, archive:
             sec_match=0.0,
             r_secs=0,
             o_secs=0,
-            status=f"EXC:{str(e)[:60]}",
+            bench_status=f"EXC:{str(e)[:60]}",
             source_basis="",
             comparison_class="exception",
             core_benchmark=False,
@@ -403,7 +403,7 @@ def ee_bench_unit_result(result: _BenchResult) -> "BenchUnitResult":
     from lawvm.core.bench_contract import BenchStatus, BenchUnitResult
 
     unit_id = result.base_id or result.grupi_id
-    if result.status == "OK":
+    if result.bench_status == "OK":
         if result.o_secs <= 0:
             # OK row but oracle has no body sections — nothing to score against.
             return BenchUnitResult(unit_id=unit_id, status=BenchStatus.NO_TRUTH)
@@ -421,10 +421,10 @@ def ee_bench_unit_result(result: _BenchResult) -> "BenchUnitResult":
             text_err=None,
             residue_buckets=residue,
         )
-    if result.status == "EMPTY_ORACLE":
+    if result.bench_status == "EMPTY_ORACLE":
         return BenchUnitResult(unit_id=unit_id, status=BenchStatus.NO_TRUTH)
     # "ERR" (replay error set) or "EXC:..." (caught exception) — a genuine failure.
-    witnesses = (result.status,) if result.status.startswith("EXC") else ()
+    witnesses = (result.bench_status,) if result.bench_status.startswith("EXC") else ()
     return BenchUnitResult(unit_id=unit_id, status=BenchStatus.CRASH, witnesses=witnesses)
 
 
@@ -525,11 +525,11 @@ def _render_unified_summary(results: list[_BenchResult], label: str) -> None:
 
 
 def _print_report(results: list[_BenchResult], label: str) -> None:
-    ok = [r for r in results if r.status == "OK" and r.o_secs > 0]
+    ok = [r for r in results if r.bench_status == "OK" and r.o_secs > 0]
     core = [r for r in ok if r.core_benchmark]
     noncore = [r for r in ok if not r.core_benchmark]
-    empty = [r for r in results if r.status == "EMPTY_ORACLE"]
-    errs = [r for r in results if r.status.startswith("E")]
+    empty = [r for r in results if r.bench_status == "EMPTY_ORACLE"]
+    errs = [r for r in results if r.bench_status.startswith("E")]
 
     print(f"\n=== EE Bench: {label} ===")
     print(f"Total: {len(results)}, OK: {len(ok)}, Empty oracle: {len(empty)}, Errors: {len(errs)}")
@@ -632,7 +632,7 @@ def _save_results(results: list[_BenchResult], label: str) -> None:
                 "sec_match",
                 "r_secs",
                 "o_secs",
-                "status",
+                "bench_status",
                 "source_basis",
                 "comparison_class",
                 "benchmark_reporting_stratum",
@@ -657,7 +657,7 @@ def _save_results(results: list[_BenchResult], label: str) -> None:
                     f"{r.sec_match:.4f}",
                     r.r_secs,
                     r.o_secs,
-                    r.status,
+                    r.bench_status,
                     r.source_basis,
                     r.comparison_class,
                     r.benchmark_reporting_stratum,
@@ -674,7 +674,7 @@ def _save_results(results: list[_BenchResult], label: str) -> None:
     print(f"\nResults saved: {out_path}")
 
     # Append to history
-    ok = [r for r in results if r.status == "OK" and r.o_secs > 0]
+    ok = [r for r in results if r.bench_status == "OK" and r.o_secs > 0]
     if ok:
         avg = sum(r.sec_match for r in ok) / len(ok)
         perfect = sum(1 for r in ok if r.sec_match == 1.0)
@@ -718,7 +718,7 @@ def _show_run(label: str) -> None:
                     sec_match=float(row["sec_match"]),
                     r_secs=int(row["r_secs"]),
                     o_secs=int(row["o_secs"]),
-                    status=row["status"],
+                    bench_status=row["bench_status"],
                     source_basis=row.get("source_basis", ""),
                     comparison_class=row.get("comparison_class", ""),
                     benchmark_reporting_stratum=row.get("benchmark_reporting_stratum", ""),
@@ -812,7 +812,7 @@ def _run_single_statute(statute_id: str, args) -> None:
     print(f"=== EE Bench: {gid} ===")
     print(f"  base   : {base_id}")
     print(f"  oracle : {oracle_id}")
-    print(f"  status : {result.status}")
+    print(f"  status : {result.bench_status}")
     print(f"  compare: {result.comparison_class}")
     print(f"  core   : {'yes' if result.core_benchmark else 'no'}")
     print(f"  ops    : {result.n_ops}")

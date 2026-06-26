@@ -167,7 +167,7 @@ def _make_accepted_state(
 ) -> ClaimState:
     return ClaimState(
         claim_id=claim_id,
-        status=ClaimStatus.ACCEPTED,
+        claim_state_status=ClaimStatus.ACCEPTED,
         review_status=review_status,
         validator_status=validator_status,
         confidence=ClaimConfidence.HIGH,
@@ -178,7 +178,7 @@ def _make_accepted_state(
 def _make_proposed_state(claim_id: str) -> ClaimState:
     return ClaimState(
         claim_id=claim_id,
-        status=ClaimStatus.PROPOSED,
+        claim_state_status=ClaimStatus.PROPOSED,
         review_status=ReviewStatus.PROPOSED,
         validator_status=ValidatorStatus.UNVALIDATED,
         confidence=ClaimConfidence.MEDIUM,

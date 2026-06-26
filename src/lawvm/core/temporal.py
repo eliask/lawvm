@@ -176,41 +176,41 @@ class ResolutionFact:
     the contingent trigger has not happened as of the relevant query horizon.
     """
 
-    status: ResolutionStatus
+    resolution_status: ResolutionStatus
     resolved_effective: str = ""
     authority_source: str = ""
     coverage_certificate_id: str = ""
 
     def __post_init__(self) -> None:
-        if self.status == RESOLVED_STATUS and not self.resolved_effective:
+        if self.resolution_status == RESOLVED_STATUS and not self.resolved_effective:
             raise ValueError(
-                "ResolutionFact(status='resolved') requires a non-empty resolved_effective"
+                "ResolutionFact(resolution_status='resolved') requires a non-empty resolved_effective"
             )
         if (
-            self.status == UNTRIGGERED_CERTIFIED_STATUS
+            self.resolution_status == UNTRIGGERED_CERTIFIED_STATUS
             and not self.authority_source
             and not self.coverage_certificate_id
         ):
             raise ValueError(
-                "ResolutionFact(status='untriggered_certified') requires authority_source "
+                "ResolutionFact(resolution_status='untriggered_certified') requires authority_source "
                 "or coverage_certificate_id"
             )
 
     @property
     def is_resolved(self) -> bool:
-        return self.status == RESOLVED_STATUS
+        return self.resolution_status == RESOLVED_STATUS
 
     @property
     def is_unresolved(self) -> bool:
-        return self.status == UNRESOLVED_STATUS
+        return self.resolution_status == UNRESOLVED_STATUS
 
     @property
     def is_untriggered_certified(self) -> bool:
-        return self.status == UNTRIGGERED_CERTIFIED_STATUS
+        return self.resolution_status == UNTRIGGERED_CERTIFIED_STATUS
 
     @property
     def is_superseded(self) -> bool:
-        return self.status == SUPERSEDED_STATUS
+        return self.resolution_status == SUPERSEDED_STATUS
 
 
 # ---------------------------------------------------------------------------

@@ -415,7 +415,7 @@ def _run_quietly(fn, *args, **kwargs):
 def _proof_contract() -> Dict:
     return {
         "version": _PROOF_CONTRACT_VERSION,
-        "status": _PROOF_STATUS,
+        "proof_status": _PROOF_STATUS,
         "meaning": (
             "LawVM proof tiers are current-system evidence claims, not formal mathematical proofs. "
             "They are generated from current replay semantics, current oracle-check diagnoses, "

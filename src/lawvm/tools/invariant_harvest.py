@@ -458,7 +458,7 @@ def records_to_audit_rows(
         rows.append(
             {
                 "statute_id": statute_id,
-                "status": "violation" if record.severity == "violation" else "warning",
+                "audit_status": "violation" if record.severity == "violation" else "warning",
                 "violation_type": record.violation_type,
                 "path": record.path,
                 "detail": record.detail,

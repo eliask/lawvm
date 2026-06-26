@@ -124,7 +124,7 @@ class DelegationLens:
                         rule_id=frame.rule_id,
                         # NODE_STATUSES structural value: an owned, present surface
                         # fact (NOT a resolution outcome).
-                        status="asserted",
+                        node_status="asserted",
                         payload={
                             "delegate_actor": frame.delegate_actor,
                             "instrument_kind": frame.instrument_kind,
@@ -180,5 +180,5 @@ def _residual_seed(
             "surface_text": residual.surface_text,
             "detail": residual.detail,
         },
-        status="open",
+        residual_status="open",
     )

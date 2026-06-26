@@ -24,7 +24,7 @@ from lawvm.finland.group_ops import (
     remap_body_root_replace_group_before_terminal_voimaantulo,
 )
 from lawvm.finland.helpers import _norm_num_token, _norm_row_anchor_text
-from lawvm.finland.ops import AmendmentOp, FailedOp, ReplayProfile
+from lawvm.finland.ops import AmendmentOp, OpType, FailedOp, ReplayProfile
 from lawvm.finland.sparse_tail_claims import (
     SPARSE_OMISSION_TAIL_PRUNE_RULE,
     SparseOmissionTailClaim,
@@ -131,10 +131,10 @@ def _restore_source_heading_for_explicit_heading_facet(
         return prepared_muutos_ir, None
 
     has_heading_op = any(
-        op.target_unit_kind == "section"
-        and _norm_num_token(str(op.target_section or target_norm or ""))
+        op.target_cols.target_unit_kind == "section"
+        and _norm_num_token(str(op.target_cols.target_section or target_norm or ""))
         == _norm_num_token(str(target_norm or ""))
-        and str(op.target_special or "") == "otsikko"
+        and str(op.target_cols.target_special or "") == "otsikko"
         for op in group_ops
     )
     if not has_heading_op:
@@ -172,7 +172,7 @@ def _restore_source_heading_for_explicit_heading_facet(
     return restored, {
         "target_unit_kind": target_unit_kind,
         "target_norm": target_norm,
-        "source_payload_status": lookup.status,
+        "source_payload_status": lookup.lookup_status,
         "heading_text_chars": len(str(source_heading.text or "")),
     }
 
@@ -189,21 +189,21 @@ def drop_payloadless_source_replace_shadowed_by_same_group_relabel(
     """Reject payloadless whole-section REPLACE ops shadowed by same-group relabel."""
     if muutos_ir is not None or target_unit_kind != "section":
         return group_ops, []
-    if not any(op.op_type == "RENUMBER" for op in group_ops):
+    if not any(op.op_type == OpType.RENUMBER for op in group_ops):
         return group_ops, []
 
     kept_ops: list[AmendmentOp] = []
     rejected_ops: list[FailedOp] = []
     for op in group_ops:
         if (
-            op.op_type == "REPLACE"
-            and op.target_unit_kind == "section"
-            and _norm_num_token(op.target_section or "") == target_norm
-            and op.target_paragraph is None
-            and not op.target_item
-            and not op.target_special
-            and op.target_chapter == target_chapter
-            and op.target_part == target_part
+            op.op_type == OpType.REPLACE
+            and op.target_cols.target_unit_kind == "section"
+            and _norm_num_token(op.target_cols.target_section or "") == target_norm
+            and op.target_cols.target_paragraph is None
+            and not op.target_cols.target_item
+            and not op.target_cols.target_special
+            and op.target_cols.target_chapter == target_chapter
+            and op.target_cols.target_part == target_part
         ):
             rejected_ops.append(
                 FailedOp.from_scope(
@@ -247,11 +247,11 @@ def _source_complete_container_replacement_witness(
     whole_replaces = [
         op
         for op in group_ops
-        if op.op_type == "REPLACE"
-        and op.target_unit_kind == target_unit_kind
-        and op.target_paragraph is None
-        and not op.target_item
-        and (not op.target_special or op.target_special in {"otsikko", "otsikko_edella"})
+        if op.op_type == OpType.REPLACE
+        and op.target_cols.target_unit_kind == target_unit_kind
+        and op.target_cols.target_paragraph is None
+        and not op.target_cols.target_item
+        and (not op.target_cols.target_special or op.target_cols.target_special in {"otsikko", "otsikko_edella"})
     ]
     if len(whole_replaces) != 1:
         return None

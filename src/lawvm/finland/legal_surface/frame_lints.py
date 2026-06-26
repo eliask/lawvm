@@ -118,7 +118,7 @@ class DelegationWithoutInstrumentLintPass:
                         "(no instrument_kind in payload). Surface observation "
                         "only; NOT a legal conclusion."
                     ),
-                    status="active",
+                    lint_status="active",
                     forbidden_overclaims=_FORBIDDEN_OVERCLAIMS,
                 )
             )

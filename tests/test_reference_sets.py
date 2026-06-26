@@ -75,7 +75,7 @@ def test_eu_directive_article_range_folds_to_one_all_valid_set() -> None:
 
     res = folded.resolution
     assert res.target_set_semantics is ReferenceTargetSetSemantics.ALL_VALID
-    assert res.status is ReferenceResolutionStatus.RESOLVED
+    assert res.reference_status is ReferenceResolutionStatus.RESOLVED
     assert len(res.target_set) == 3
     assert sorted(t.section_label for t in res.target_set) == ["33", "34", "35"]
     # The set is carried as targets, NOT N ungrouped rows.
@@ -113,7 +113,7 @@ def test_section_range_folds_to_one_all_valid_set() -> None:
     folded = fold_reference_set(mentions)
     assert folded.expression.expression_kind == "range"
     assert folded.resolution.target_set_semantics is ReferenceTargetSetSemantics.ALL_VALID
-    assert folded.resolution.status is ReferenceResolutionStatus.RESOLVED
+    assert folded.resolution.reference_status is ReferenceResolutionStatus.RESOLVED
     assert [t.section_label for t in folded.resolution.target_set] == members
 
 
@@ -136,7 +136,7 @@ def test_ambiguous_reference_folds_to_candidate_ambiguity() -> None:
         folded.resolution.target_set_semantics
         is ReferenceTargetSetSemantics.CANDIDATE_AMBIGUITY
     )
-    assert folded.resolution.status is ReferenceResolutionStatus.UNRESOLVED
+    assert folded.resolution.reference_status is ReferenceResolutionStatus.UNRESOLVED
 
 
 # ---------------------------------------------------------------------------
@@ -152,7 +152,7 @@ def test_open_vague_reference_folds_to_open() -> None:
     folded = fold_reference_set(mentions)
     assert folded.resolution.target_set_semantics is ReferenceTargetSetSemantics.OPEN
     assert folded.resolution.target_set == ()
-    assert folded.resolution.status is ReferenceResolutionStatus.UNRESOLVED
+    assert folded.resolution.reference_status is ReferenceResolutionStatus.UNRESOLVED
 
 
 def test_unresolved_no_referent_folds_to_no_enumerable_extension() -> None:

@@ -37,7 +37,7 @@ def _att(**kw) -> SignatureAttestation:
 
 def test_default_status_is_unverifiable() -> None:
     """v0 cannot verify → it must NOT claim ``active`` (honest default)."""
-    assert _att().status == "unverifiable"
+    assert _att().attestation_status == "unverifiable"
 
 
 def test_subject_must_be_a_signable_root() -> None:

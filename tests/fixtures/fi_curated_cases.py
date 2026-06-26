@@ -657,6 +657,60 @@ CURATED_CASES = [
         "expected": ["M P 1", "M A "],
         "features": {"verb_muuttaa", "section_ref", "appendix_ref", "conj_target_list"},
     },
+    # ------------------------------------------------------------------
+    # Insertion tail = whole-statute appendix the legacy parser DROPS
+    # (no appendix-insert family in surface_parse; emits zero nodes for the
+    # tail). The grammar now owns these clauses by dropping the same tail —
+    # byte-identical to legacy — instead of declining to the legacy fallback.
+    # Migrated from the legacy_reference_fallback lane
+    # (complex_enumeration_with_interleaved_provenance class). See
+    # _insertion_tail_is_appendix_drop and fallback_residue baseline 354->348.
+    # ------------------------------------------------------------------
+    {
+        "name": "insertion appendix-drop tail (lakiin liite)",
+        # 2024/652 for 624/2006: '... uusi 9 a § sekä lakiin liite seuraavasti:'.
+        # surface_parse drops 'sekä lakiin liite' entirely; only the section
+        # insert survives. Grammar now owns it identically.
+        "text": (
+            "lisätään osakeyhtiölain ( 624/2006 ) 6 lukuun uusi 9 a § "
+            "sekä lakiin liite seuraavasti:"
+        ),
+        "expected": ["L P L:6 9a"],
+        "features": {"verb_lisata", "insertion_chapter_scoped", "appendix_ref"},
+    },
+    {
+        "name": "insertion appendix-drop tail (uusi liite N)",
+        # 2002/220 for 662/2000: '... uusi 4 a § ja uusi liite 3 seuraavasti:'.
+        # The trailing 'uusi liite 3' carries no operative node in surface_parse.
+        "text": (
+            "lisätään erityisruokavaliovalmisteista 4 päivänä heinäkuuta 2000 "
+            "annettuun kauppa- ja teollisuusministeriön asetukseen ( 662/2000 ) "
+            "4 §:ään uusi toinen momentti, uusi 4 a § ja uusi liite 3 seuraavasti:"
+        ),
+        "expected": ["L P 4", "L P 4a"],
+        "features": {"verb_lisata", "insertion_pykala_ill", "appendix_ref"},
+    },
+    {
+        "name": "insertion appendix-drop tail (multi-verb, asetukseen uusi C liite)",
+        # 1993/278 for 161/88: a muutetaan list (with a mid-clause 'sekä asetuksen
+        # B liite' the old parser drops) plus a lisätään group ending '... sekä
+        # asetukseen uusi C liite seuraavasti:' — both liite arms drop in legacy.
+        "text": (
+            "muutetaan 12 päivänä helmikuuta 1988 annetun ydinenergia-asetuksen "
+            "( 161/88 ) 1 §:n 1 momentin 5 kohta, 5 §, 10 §:n 1 momentin 3 kohta, "
+            "50 §:n 1 momentti, 52 § ja 56 §:n 1 momentti sekä asetuksen B liite "
+            "sekä lisätään asetukseen uusi 8 a ja 8 b §, 35 §:ään uusi 2 momentti "
+            "sekä asetukseen uusi C liite seuraavasti:"
+        ),
+        "expected": [
+            "M P 1 1 5", "M P 5", "M P 10 1 3", "M P 50 1", "M P 52", "M P 56 1",
+            "L P 8a", "L P 8b", "L P 35 2",
+        ],
+        "features": {
+            "verb_muuttaa", "verb_lisata", "section_ref", "sub_ref_momentti",
+            "sub_ref_kohta", "appendix_ref", "multi_verb_group",
+        },
+    },
     {
         "name": "nimike_ref",
         "text": "muutetaan nimike ja 1 §",
@@ -1676,6 +1730,37 @@ CURATED_CASES = [
             "multi_verb_group",
             "insertion_law_level",
             "he_enacting_preamble",
+        },
+    },
+    {
+        # Missing-separator juxtaposition (G0-w3): the comma between two section
+        # targets was lost in transcription, so a fresh ``<NUM> §`` sits directly
+        # against the previous target's momentti sub-ref with only whitespace
+        # between (modelled on 1975/10: ``13 §:n 1 momentti 15 §:n 2 momentti``).
+        # The legacy parser stops at the gap and silently drops the second target;
+        # the grammar continues the list across the missing comma.
+        "name": "missing_separator_juxtaposed_momentti_section (cf. 1975/10)",
+        "text": "muutetaan lain 13 §:n 1 momentti 15 §:n 2 momentti seuraavasti:",
+        "expected": ["M P 13 1", "M P 15 2"],
+        "features": {
+            "verb_muuttaa",
+            "section_ref",
+            "momentti_ref",
+            "missing_separator_recovery",
+        },
+    },
+    {
+        # Missing-separator juxtaposition, bare-section form: ``12 § 13 §:n 1
+        # momentti`` (no comma before the second ``§``). Same recovery as above
+        # for a target whose first arm is a bare section with no sub-ref.
+        "name": "missing_separator_juxtaposed_bare_section (cf. 1982/414)",
+        "text": "muutetaan lain 12 § 13 §:n 1 momentti seuraavasti:",
+        "expected": ["M P 12", "M P 13 1"],
+        "features": {
+            "verb_muuttaa",
+            "section_ref",
+            "momentti_ref",
+            "missing_separator_recovery",
         },
     },
 ]

@@ -74,10 +74,10 @@ _RESIDUE_STATUSES: frozenset[str] = frozenset(
 _REFS_GLYPH = "→"
 
 
-def _sigil(status: Optional[str]) -> str:
-    if status is None:
+def _sigil(ref_status: Optional[str]) -> str:
+    if ref_status is None:
         return _SIGIL_UNKNOWN
-    return _SIGIL_BY_STATUS.get(status, _SIGIL_UNKNOWN)
+    return _SIGIL_BY_STATUS.get(ref_status, _SIGIL_UNKNOWN)
 
 
 # ── Mark abstraction (the overlay contract) ──────────────────────────────────
@@ -98,7 +98,7 @@ class Mark:
     char_end: int
     glyph: str
     label: str
-    status: Optional[str]
+    ref_status: Optional[str]
     payload: dict[str, Any] = field(default_factory=dict)
 
 
@@ -114,7 +114,7 @@ def _serialize_target(ref: dict[str, Any], source_statute_id: str) -> str:
     target_id = ref.get("target_id")
     if not target:
         # statute identity only, or open/unresolved → describe by status.
-        status = ref.get("status")
+        status = ref.get("ref_status")
         if status == "open":
             return "(open: vague catch-all)"
         if status == "unresolved":
@@ -197,7 +197,7 @@ def _ref_dict(node: Any, resolution: Any, body: str) -> dict[str, Any]:
         "node_id": node.node_id,
         "surface_text": payload.get("surface_text") or "",
         "cite_kind": payload.get("cite_kind"),
-        "status": status,
+        "ref_status": status,
         "phrase_lemma": payload.get("phrase_lemma"),
         "edge_subtype": payload.get("edge_subtype"),
         "target_id": payload.get("target_id"),
@@ -256,7 +256,7 @@ def _load_references(statute_id: str) -> tuple[str, list[dict[str, Any]], str]:
 def _passes_only(ref: dict[str, Any], only: Optional[frozenset[str]]) -> bool:
     if only is None:
         return True
-    return (ref.get("status") or "unresolved") in only
+    return (ref.get("ref_status") or "unresolved") in only
 
 
 def _passes_as_of(ref: dict[str, Any], as_of: Optional[str]) -> bool:
@@ -298,7 +298,7 @@ def build_marks(
             continue
         if not _passes_as_of(ref, as_of):
             continue
-        status = ref.get("status")
+        status = ref.get("ref_status")
         target = _serialize_target(ref, source_statute_id)
         if ref.get("char_start") is None or ref.get("char_end") is None:
             positionless.append(
@@ -307,7 +307,7 @@ def build_marks(
                     "role": ref.get("phrase_lemma") or ref.get("edge_subtype"),
                     "surface": ref.get("surface_text") or "",
                     "target": target,
-                    "status": status,
+                    "ref_status": status,
                     "sigil": _sigil(status),
                     "cite_kind": ref.get("cite_kind"),
                 }
@@ -320,7 +320,7 @@ def build_marks(
                 char_end=int(ref["char_end"]),
                 glyph=_REFS_GLYPH,
                 label=ref.get("surface_text") or "",
-                status=status,
+                ref_status=status,
                 payload={
                     "node_id": ref["node_id"],
                     "target": target,
@@ -358,11 +358,11 @@ def build_counts(
     """O(1)-output census: refs by family (canvas vs positionless) × status."""
     by_status: dict[str, int] = {}
     for m in marks:
-        key = m.status or "unresolved"
+        key = m.ref_status or "unresolved"
         by_status[key] = by_status.get(key, 0) + 1
     pos_by_status: dict[str, int] = {}
     for p in positionless:
-        key = p.get("status") or "unresolved"
+        key = p.get("ref_status") or "unresolved"
         pos_by_status[key] = pos_by_status.get(key, 0) + 1
     return {
         "by_family": {
@@ -453,8 +453,8 @@ def _mark_dict(mark: Mark) -> dict[str, Any]:
         "span": [mark.char_start, mark.char_end],
         "glyph": mark.glyph,
         "surface": mark.label,
-        "status": mark.status,
-        "sigil": _sigil(mark.status),
+        "ref_status": mark.ref_status,
+        "sigil": _sigil(mark.ref_status),
         "target": mark.payload.get("target"),
         "self_ref": mark.payload.get("self_ref"),
         "family": mark.payload.get("family"),
@@ -550,7 +550,7 @@ def render_counts_view(view: dict[str, Any]) -> str:
 
 def _digest_sort_key(m: dict[str, Any]) -> tuple[int, str, int]:
     """Residue statuses first, then by source provision, then char position."""
-    status = m.get("status") or "unresolved"
+    status = m.get("ref_status") or "unresolved"
     residue_first = 0 if status in _RESIDUE_STATUSES else 1
     return (residue_first, str(status), int(m["span"][0]))
 

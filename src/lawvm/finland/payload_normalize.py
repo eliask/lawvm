@@ -50,7 +50,8 @@ from lawvm.finland.merge import (
     _drop_suspicious_partial_whole_section_replaces,
     _pre_resolve_omissions,
 )
-from lawvm.finland.ops import AmendmentOp, FailedOp, _lo_with_path_update, _op_target_subsection_label
+from lawvm.finland.op_provenance import RecognizerId, has_recognizer
+from lawvm.finland.ops import AmendmentOp, FailedOp, OpType, _lo_with_path_update, _op_target_subsection_label
 from lawvm.finland.sparse_tail_claims import (
     SPARSE_OMISSION_TAIL_PRUNE_RULE,
     SparseOmissionTailClaim,
@@ -58,6 +59,7 @@ from lawvm.finland.sparse_tail_claims import (
 )
 from lawvm.finland.standalone_targets import StandaloneSectionTarget
 from lawvm.finland.table_target_merge import merge_numbered_table_targets_into_live_section
+from lawvm.finland.target_selector_facades import replace_target
 from lawvm.finland.table_target_merge import mentioned_numbered_table_labels
 
 from lawvm.core.elaboration_context import PayloadElaborationContext
@@ -70,6 +72,9 @@ if TYPE_CHECKING:
 
 _NUMBERED_TABLE_XML_SUBSECTION_OFFSET_RULE = "ELAB.NUMBERED_TABLE_XML_SUBSECTION_OFFSET"
 _INTERNAL_ORDERED_LIST_INSERT_RULE = "ELAB.INTERNAL_ORDERED_LIST_INSERT_REWRITE"
+_SPARSE_PLAIN_SUBSECTION_SHELL_CONTINUATION_MERGE_RULE = (
+    "ELAB.SPARSE_PLAIN_SUBSECTION_SHELL_CONTINUATION_MERGE"
+)
 _PRESERVE_IMPLICIT_PARAGRAPH_NUMBER_ATTR = "lawvm_preserve_implicit_paragraph_numbering"
 _CONTINUATION_ROW_PREFIX_RE = re.compile(r"^(\d+)\.\s+")
 
@@ -538,13 +543,13 @@ def _classify_payload_completeness(
     detail: dict[str, Any] = {}
     pathology_codes = {str(pathology.code or "") for pathology in source_pathologies}
     observation_kinds = {str(obs.kind or "") for obs in observations}
-    targets_item_level = any(bool(op.target_item) for op in group_ops)
+    targets_item_level = any(bool(op.target_cols.target_item) for op in group_ops)
     has_whole_section_op = any(
-        op.target_paragraph is None and not op.target_item and not op.target_special
+        op.target_cols.target_paragraph is None and not op.target_cols.target_item and not op.target_cols.target_special
         for op in group_ops
     )
     has_descendant_scoped_op = any(
-        op.target_paragraph is not None or bool(op.target_item) or bool(op.target_special)
+        op.target_cols.target_paragraph is not None or bool(op.target_cols.target_item) or bool(op.target_cols.target_special)
         for op in group_ops
     )
     amend_subsection_count = (
@@ -560,7 +565,7 @@ def _classify_payload_completeness(
     payloadless_repeal_group = bool(
         muutos_ir is None
         and group_ops
-        and all(op.op_type == "REPEAL" for op in group_ops)
+        and all(op.op_type == OpType.REPEAL for op in group_ops)
     )
 
     if payloadless_repeal_group:
@@ -626,7 +631,7 @@ def _classify_payload_completeness(
         detail["descendant_scoped_op_count"] = sum(
             1
             for op in group_ops
-            if op.target_paragraph is not None or bool(op.target_item) or bool(op.target_special)
+            if op.target_cols.target_paragraph is not None or bool(op.target_cols.target_item) or bool(op.target_cols.target_special)
         )
         return PayloadCompletenessWitness(
             kind="fragmentary",
@@ -706,13 +711,13 @@ def _unsupported_payload_rejected_ops(
     reason = "ELAB." + reason_code
     generated: list[FailedOp] = []
     for op in group_ops:
-        if op.op_type == "RENUMBER":
+        if op.op_type == OpType.RENUMBER:
             continue
         key = (
             op.description(),
-            op.target_unit_kind,
-            str(op.target_section or ""),
-            op.target_chapter or "",
+            op.target_cols.target_unit_kind,
+            str(op.target_cols.target_section or ""),
+            op.target_cols.target_chapter or "",
         )
         if key in existing:
             continue
@@ -722,11 +727,11 @@ def _unsupported_payload_rejected_ops(
                 description=op.description(),
                 reason=reason,
                 reason_code=reason_code,
-                target_section=str(op.target_section or ""),
-                target_unit_kind=op.target_unit_kind,
-                target_chapter=op.target_chapter,
+                target_section=str(op.target_cols.target_section or ""),
+                target_unit_kind=op.target_cols.target_unit_kind,
+                target_chapter=op.target_cols.target_chapter,
                 target_subsection=_op_target_subsection_label(op),
-                target_item=op.target_item,
+                target_item=op.target_cols.target_item,
             )
         )
     return tuple(generated)
@@ -889,12 +894,12 @@ def _assign_duplicate_target_slot_ops(
         insert_ops = [
             op
             for op in slot_inputs.payload_subsec_ops
-            if op.target_paragraph == target and op.op_type == "INSERT" and not op.target_item
+            if op.target_cols.target_paragraph == target and op.op_type == OpType.INSERT and not op.target_cols.target_item
         ]
         replace_ops = [
             op
             for op in slot_inputs.payload_subsec_ops
-            if op.target_paragraph == target and op.op_type == "REPLACE" and not op.target_item
+            if op.target_cols.target_paragraph == target and op.op_type == OpType.REPLACE and not op.target_cols.target_item
         ]
         if len(insert_ops) != 1 or len(replace_ops) != 1:
             continue
@@ -933,23 +938,23 @@ def _assign_insert_before_moved_same_target_slot_ops(
     owns the following slot.
     """
     occupied_targets = {
-        int(op.target_paragraph)
+        int(op.target_cols.target_paragraph)
         for op in slot_inputs.payload_subsec_ops
-        if op.target_paragraph is not None
+        if op.target_cols.target_paragraph is not None
     }
     renumber_destinations = {
-        int(op.target_paragraph): int(destination)
+        int(op.target_cols.target_paragraph): int(destination)
         for op in slot_inputs.renumber_subsec_ops
         if (
-            op.target_paragraph is not None
+            op.target_cols.target_paragraph is not None
             and _renumber_consumes_source_payload(op)
             and (destination := _destination_subsection_label_for_renumber(op)).isdigit()
         )
     }
     intro_reserved_targets = {
-        int(op.target_paragraph)
+        int(op.target_cols.target_paragraph)
         for op in slot_inputs.intro_subsec_ops
-        if op.target_paragraph is not None and op.target_special == "johd"
+        if op.target_cols.target_paragraph is not None and op.target_cols.target_special == "johd"
     }
     for target in slot_inputs.duplicate_targets:
         if renumber_destinations.get(target) != target + 1:
@@ -957,12 +962,12 @@ def _assign_insert_before_moved_same_target_slot_ops(
         insert_ops = [
             op
             for op in slot_inputs.payload_subsec_ops
-            if op.target_paragraph == target and op.op_type == "INSERT" and not op.target_item
+            if op.target_cols.target_paragraph == target and op.op_type == OpType.INSERT and not op.target_cols.target_item
         ]
         replace_ops = [
             op
             for op in slot_inputs.payload_subsec_ops
-            if op.target_paragraph == target and op.op_type == "REPLACE" and not op.target_item
+            if op.target_cols.target_paragraph == target and op.op_type == OpType.REPLACE and not op.target_cols.target_item
         ]
         if len(insert_ops) != 1 or len(replace_ops) != 1:
             continue
@@ -1009,13 +1014,13 @@ def _assign_insert_before_moved_same_target_slot_ops(
         )
 
     renumber_source_targets = {
-        int(op.target_paragraph)
+        int(op.target_cols.target_paragraph)
         for op in slot_inputs.renumber_subsec_ops
         if (
-            op.target_paragraph is not None
+            op.target_cols.target_paragraph is not None
             and _renumber_consumes_source_payload(op)
             and _destination_subsection_label_for_renumber(op).isdigit()
-            and int(_destination_subsection_label_for_renumber(op)) == int(op.target_paragraph) + 1
+            and int(_destination_subsection_label_for_renumber(op)) == int(op.target_cols.target_paragraph) + 1
         )
     }
     for target in sorted(renumber_source_targets):
@@ -1023,17 +1028,17 @@ def _assign_insert_before_moved_same_target_slot_ops(
             op
             for op in slot_inputs.payload_subsec_ops
             if (
-                op.target_paragraph == target
-                and op.op_type == "INSERT"
-                and not op.target_item
-                and not op.target_special
+                op.target_cols.target_paragraph == target
+                and op.op_type == OpType.INSERT
+                and not op.target_cols.target_item
+                and not op.target_cols.target_special
                 and op not in state.subsec_map
             )
         ]
         renumber_ops = [
             op
             for op in slot_inputs.renumber_subsec_ops
-            if op.target_paragraph == target and op not in state.subsec_map
+            if op.target_cols.target_paragraph == target and op not in state.subsec_map
         ]
         if len(insert_ops) != 1 or len(renumber_ops) != 1:
             continue
@@ -1102,11 +1107,11 @@ def _assign_multi_paragraph_item_slot_ops(
     item_ops = [
         op
         for op in slot_inputs.payload_subsec_ops
-        if op.target_item and op.target_paragraph is not None and op not in state.subsec_map
+        if op.target_cols.target_item and op.target_cols.target_paragraph is not None and op not in state.subsec_map
     ]
     if not item_ops:
         return
-    ordered_paragraphs = sorted({int(op.target_paragraph or 0) for op in item_ops})
+    ordered_paragraphs = sorted({int(op.target_cols.target_paragraph or 0) for op in item_ops})
     if len(ordered_paragraphs) < 2:
         return
     free_slots = [(idx, sub) for idx, sub in enumerate(slot_inputs.amend_subs) if idx not in state.used_subs]
@@ -1114,7 +1119,7 @@ def _assign_multi_paragraph_item_slot_ops(
         return
     paragraph_to_slot = dict(zip(ordered_paragraphs, free_slots, strict=True))
     for op in item_ops:
-        idx, sub = paragraph_to_slot[int(op.target_paragraph or 0)]
+        idx, sub = paragraph_to_slot[int(op.target_cols.target_paragraph or 0)]
         state.subsec_map.assign(op, sub)
         state.used_subs.add(idx)
 
@@ -1157,10 +1162,10 @@ def _item_table_row_payload_subsection(
     op: AmendmentOp,
     row_text: str,
 ) -> IRNode:
-    item_label = str(op.target_item or "")
+    item_label = str(op.target_cols.target_item or "")
     return IRNode(
         kind=IRNodeKind.SUBSECTION,
-        label=str(op.target_paragraph or source_subsection.label or ""),
+        label=str(op.target_cols.target_paragraph or source_subsection.label or ""),
         attrs=dict(source_subsection.attrs),
         children=(
             IRNode(
@@ -1185,18 +1190,18 @@ def _assign_unlabeled_table_item_row_ops(
         for op in slot_inputs.payload_subsec_ops
         if (
             op not in state.subsec_map
-            and op.target_item
-            and op.target_paragraph is not None
-            and op.op_type in {"REPLACE", "INSERT"}
+            and op.target_cols.target_item
+            and op.target_cols.target_paragraph is not None
+            and op.op_type in {OpType.REPLACE, OpType.INSERT}
         )
     ]
     if len(item_ops) < 2:
         return
 
-    paragraphs = sorted({int(op.target_paragraph or 0) for op in item_ops})
+    paragraphs = sorted({int(op.target_cols.target_paragraph or 0) for op in item_ops})
     for paragraph in paragraphs:
         ops_for_paragraph = [
-            op for op in item_ops if int(op.target_paragraph or 0) == paragraph
+            op for op in item_ops if int(op.target_cols.target_paragraph or 0) == paragraph
         ]
         if len(ops_for_paragraph) < 2:
             continue
@@ -1221,8 +1226,8 @@ def _assign_unlabeled_table_item_row_ops(
                 _obs(
                     "ELAB.UNLABELED_TABLE_ITEM_ROW_SOURCE_ORDER",
                     "sparse_subsection_elaboration",
-                    target_paragraph=op.target_paragraph,
-                    target_item=str(op.target_item or ""),
+                    target_paragraph=op.target_cols.target_paragraph,
+                    target_item=str(op.target_cols.target_item or ""),
                     payload_slot_label=str(sub.label or ""),
                     op_description=op.description(),
                 )
@@ -1239,23 +1244,23 @@ def _assign_item_matched_slot_ops(
             # Already bound by an earlier, more specific pass (e.g. per-momentti
             # source-order binding). Do not let item-number matching overwrite it.
             continue
-        target_tok = str(op.target_item or "")
+        target_tok = str(op.target_cols.target_item or "")
         if not target_tok:
             continue
         same_target_slot = None
         has_same_target_intro_op = any(
-            intro.target_paragraph == op.target_paragraph
-            and intro.target_special == "johd"
+            intro.target_cols.target_paragraph == op.target_cols.target_paragraph
+            and intro.target_cols.target_special == "johd"
             for intro in slot_inputs.intro_subsec_ops
         )
         has_plain_subsection_op = any(
-            candidate.target_paragraph is not None
-            and not candidate.target_item
-            and not candidate.target_special
+            candidate.target_cols.target_paragraph is not None
+            and not candidate.target_cols.target_item
+            and not candidate.target_cols.target_special
             for candidate in slot_inputs.payload_subsec_ops
         )
         for other in slot_inputs.payload_subsec_ops:
-            if other is op or other.target_paragraph != op.target_paragraph:
+            if other is op or other.target_cols.target_paragraph != op.target_cols.target_paragraph:
                 continue
             shared_slot = state.subsec_map.for_op(other)
             if (
@@ -1274,8 +1279,8 @@ def _assign_item_matched_slot_ops(
                 _obs(
                     "ELAB.SAME_TARGET_ITEM_SLOT_SHARING",
                     "sparse_subsection_elaboration",
-                    target_paragraph=op.target_paragraph,
-                    target_item=str(op.target_item or ""),
+                    target_paragraph=op.target_cols.target_paragraph,
+                    target_item=str(op.target_cols.target_item or ""),
                     payload_slot_label=str(same_target_slot.label or ""),
                     op_description=op.description(),
                 )
@@ -1311,13 +1316,13 @@ def _assign_shared_sparse_item_slot_ops(
     state: SubsectionSlotAssignmentState,
 ) -> None:
     for op in slot_inputs.payload_subsec_ops:
-        if op in state.subsec_map or not op.target_item or op.target_paragraph is None:
+        if op in state.subsec_map or not op.target_cols.target_item or op.target_cols.target_paragraph is None:
             continue
         for other in slot_inputs.payload_subsec_ops:
             if other is op:
                 continue
             shared = state.subsec_map.for_op(other)
-            if shared is not None and (_slot_ir_has_omission(shared) or _slot_ir_has_item(shared, str(op.target_item))):
+            if shared is not None and (_slot_ir_has_omission(shared) or _slot_ir_has_item(shared, str(op.target_cols.target_item))):
                 state.subsec_map.assign(op, shared)
                 break
 
@@ -1354,14 +1359,14 @@ def _assign_dense_local_target_groups(
     remaining_ops = [
         op
         for op in [*slot_inputs.payload_subsec_ops, *slot_inputs.intro_subsec_ops]
-        if op not in state.subsec_map and op.target_paragraph is not None and not op.target_item
+        if op not in state.subsec_map and op.target_cols.target_paragraph is not None and not op.target_cols.target_item
     ]
     if not remaining_ops:
         return
 
     target_groups: dict[int, list[AmendmentOp]] = {}
     for op in remaining_ops:
-        target_groups.setdefault(int(op.target_paragraph or 0), []).append(op)
+        target_groups.setdefault(int(op.target_cols.target_paragraph or 0), []).append(op)
     ordered_targets = sorted(target_groups)
     if len(ordered_targets) != len(remaining_pairs):
         return
@@ -1382,7 +1387,7 @@ def _assign_dense_local_target_groups(
     for (_idx, sub), target in zip(remaining_pairs, ordered_targets, strict=True):
         for op in sorted(
             target_groups[target],
-            key=lambda current: (current.target_special != "johd", current.op_type),
+            key=lambda current: (current.target_cols.target_special != "johd", current.op_type),
         ):
             state.subsec_map.assign(op, sub)
             state.binding_rule_by_op_id[id(op)] = "local_dense_subsection_numbering"
@@ -1405,7 +1410,7 @@ def _assign_dense_local_slot_ops(
     remaining_plain_ops = [
         op
         for op in slot_inputs.payload_subsec_ops
-        if op not in state.subsec_map and not op.target_item and op.target_paragraph is not None
+        if op not in state.subsec_map and not op.target_cols.target_item and op.target_cols.target_paragraph is not None
     ]
     remaining_sub_pairs = [
         (idx, sub)
@@ -1414,9 +1419,9 @@ def _assign_dense_local_slot_ops(
     ]
     if not remaining_plain_ops or len(remaining_plain_ops) != len(remaining_sub_pairs):
         return
-    sorted_ops = sorted(remaining_plain_ops, key=lambda op: op.target_paragraph or 0)
+    sorted_ops = sorted(remaining_plain_ops, key=lambda op: op.target_cols.target_paragraph or 0)
     sorted_subs = sorted(remaining_sub_pairs, key=lambda pair: int(pair[1].label or "0"))
-    offsets = {int(op.target_paragraph or 0) - int(sub.label or "0") for op, (_, sub) in zip(sorted_ops, sorted_subs, strict=True)}
+    offsets = {int(op.target_cols.target_paragraph or 0) - int(sub.label or "0") for op, (_, sub) in zip(sorted_ops, sorted_subs, strict=True)}
     if len(offsets) != 1:
         return
     offset = next(iter(offsets))
@@ -1428,8 +1433,8 @@ def _assign_dense_local_slot_ops(
         state.subsec_map.assign(op, sub)
         state.binding_rule_by_op_id[id(op)] = "local_dense_subsection_numbering"
         state.used_subs.add(idx)
-        if op.target_paragraph is not None:
-            bound_targets.append(int(op.target_paragraph))
+        if op.target_cols.target_paragraph is not None:
+            bound_targets.append(int(op.target_cols.target_paragraph))
         bound_labels.append(str(sub.label or ""))
     state.binding_observations.append(
         _obs(
@@ -1450,14 +1455,14 @@ def _assign_exact_plain_slot_ops(
     plain_ops = [
         op
         for op in slot_inputs.payload_subsec_ops
-        if op not in state.subsec_map and not op.target_item and op.target_paragraph is not None
+        if op not in state.subsec_map and not op.target_cols.target_item and op.target_cols.target_paragraph is not None
     ]
-    plain_ops.sort(key=lambda op: op.target_paragraph or 0)
+    plain_ops.sort(key=lambda op: op.target_cols.target_paragraph or 0)
     for pos, op in enumerate(plain_ops):
         remaining_after = len(plain_ops) - pos - 1
         all_pairs = list(enumerate(slot_inputs.amend_subs))
         exact_idx = next(
-            (idx for idx, sub in all_pairs if _norm_num_token(sub.label or "") == str(op.target_paragraph)),
+            (idx for idx, sub in all_pairs if _norm_num_token(sub.label or "") == str(op.target_cols.target_paragraph)),
             None,
         )
         if exact_idx is None:
@@ -1486,12 +1491,12 @@ def _assign_numbered_table_offset_slot_ops(
         if (
             op in state.subsec_map
             or not op.numbered_table_targets
-            or op.target_paragraph is None
-            or op.target_item
-            or op.target_special
+            or op.target_cols.target_paragraph is None
+            or op.target_cols.target_item
+            or op.target_cols.target_special
         ):
             continue
-        target = int(op.target_paragraph)
+        target = int(op.target_cols.target_paragraph)
         if any(
             idx not in state.used_subs and _norm_num_token(sub.label or "") == str(target)
             for idx, sub in enumerate(slot_inputs.amend_subs)
@@ -1539,9 +1544,9 @@ def _assign_numbered_table_companion_slot_ops(
         if (
             op not in state.subsec_map
             and op.numbered_table_targets
-            and op.target_paragraph is not None
-            and not op.target_item
-            and not op.target_special
+            and op.target_cols.target_paragraph is not None
+            and not op.target_cols.target_item
+            and not op.target_cols.target_special
         )
     ]
     remaining_slots = [
@@ -1554,7 +1559,7 @@ def _assign_numbered_table_companion_slot_ops(
 
     op = candidates[0]
     if any(
-        idx not in state.used_subs and _norm_num_token(sub.label or "") == str(op.target_paragraph)
+        idx not in state.used_subs and _norm_num_token(sub.label or "") == str(op.target_cols.target_paragraph)
         for idx, sub in enumerate(slot_inputs.amend_subs)
     ):
         return
@@ -1567,7 +1572,7 @@ def _assign_numbered_table_companion_slot_ops(
         _obs(
             "ELAB.NUMBERED_TABLE_COMPANION_SUBSECTION_BINDING",
             "sparse_subsection_elaboration",
-            source_target_paragraph=int(op.target_paragraph or 0),
+            source_target_paragraph=int(op.target_cols.target_paragraph or 0),
             structural_payload_label=str(sub.label or ""),
             numbered_table_targets=list(op.numbered_table_targets),
             op_description=op.description(),
@@ -1580,8 +1585,8 @@ def _plain_target_is_inadmissible_for_positional_fallback(
     state: SubsectionSlotAssignmentState,
     op: AmendmentOp,
 ) -> bool:
-    target = op.target_paragraph
-    if target is None or op.target_item or op.target_special:
+    target = op.target_cols.target_paragraph
+    if target is None or op.target_cols.target_item or op.target_cols.target_special:
         return False
 
     remaining_numeric_labels = [
@@ -1613,16 +1618,16 @@ def _should_bind_lone_insert_to_trailing_slot(
     op: AmendmentOp,
     remaining_numeric_labels: list[int] | None = None,
 ) -> bool:
-    if op.op_type != "INSERT" or op.target_paragraph is None or op.target_item or op.target_special:
+    if op.op_type != OpType.INSERT or op.target_cols.target_paragraph is None or op.target_cols.target_item or op.target_cols.target_special:
         return False
     remaining_plain_ops = [
         candidate
         for candidate in slot_inputs.payload_subsec_ops
         if (
             candidate not in state.subsec_map
-            and candidate.target_paragraph is not None
-            and not candidate.target_item
-            and not candidate.target_special
+            and candidate.target_cols.target_paragraph is not None
+            and not candidate.target_cols.target_item
+            and not candidate.target_cols.target_special
         )
     ]
     if len(remaining_plain_ops) != 1 or len(slot_inputs.amend_subs) <= 1:
@@ -1636,7 +1641,7 @@ def _should_bind_lone_insert_to_trailing_slot(
         ]
     if not labels:
         return False
-    return op.target_paragraph > max(labels)
+    return op.target_cols.target_paragraph > max(labels)
 
 
 def _assign_fallback_plain_slot_ops(
@@ -1650,32 +1655,32 @@ def _assign_fallback_plain_slot_ops(
     # (e.g. INSERT mom 5) grabs the johd slot by position, leaving the johd op
     # with no content and the actual INSERT slot (label "3") unassigned.
     reserved_intro_labels: Set[str] = {
-        str(op.target_paragraph)
+        str(op.target_cols.target_paragraph)
         for op in slot_inputs.intro_subsec_ops
-        if op.target_paragraph is not None
+        if op.target_cols.target_paragraph is not None
         and op not in state.subsec_map
         and any(
-            idx not in state.used_subs and _norm_num_token(sub.label or "") == str(op.target_paragraph)
+            idx not in state.used_subs and _norm_num_token(sub.label or "") == str(op.target_cols.target_paragraph)
             for idx, sub in enumerate(slot_inputs.amend_subs)
         )
     }
     for op in slot_inputs.payload_subsec_ops:
         if op in state.subsec_map:
-            state.prev_mom = op.target_paragraph
+            state.prev_mom = op.target_cols.target_paragraph
             continue
         shared = next(
             (
                 state.subsec_map.for_op(other)
                 for other in slot_inputs.payload_subsec_ops
                 if other is not op
-                and other.target_paragraph == op.target_paragraph
+                and other.target_cols.target_paragraph == op.target_cols.target_paragraph
                 and state.subsec_map.for_op(other) is not None
             ),
             None,
         )
         if shared is not None:
             state.subsec_map.assign(op, shared)
-            state.prev_mom = op.target_paragraph
+            state.prev_mom = op.target_cols.target_paragraph
             continue
         candidate_sub_idx = state.sub_idx
         while candidate_sub_idx < len(slot_inputs.amend_subs) and (
@@ -1692,18 +1697,18 @@ def _assign_fallback_plain_slot_ops(
             and not _slot_ir_has_paragraph_row(slot_inputs.amend_subs[candidate_sub_idx])
         )
         has_plain_payload_owner = any(
-            candidate.target_paragraph is not None
-            and not candidate.target_item
-            and not candidate.target_special
+            candidate.target_cols.target_paragraph is not None
+            and not candidate.target_cols.target_item
+            and not candidate.target_cols.target_special
             for candidate in slot_inputs.payload_subsec_ops
         )
         candidate_carries_item_row = (
             candidate_sub_idx < len(slot_inputs.amend_subs)
             and _slot_ir_carries_item_row_marker(
-                slot_inputs.amend_subs[candidate_sub_idx], str(op.target_item or "")
+                slot_inputs.amend_subs[candidate_sub_idx], str(op.target_cols.target_item or "")
             )
         )
-        if op.target_item and not candidate_carries_item_row and (
+        if op.target_cols.target_item and not candidate_carries_item_row and (
             slot_inputs.has_omission_slots
             or candidate_is_intro_only
             or (candidate_has_no_paragraph_rows and not has_plain_payload_owner)
@@ -1713,9 +1718,9 @@ def _assign_fallback_plain_slot_ops(
             # subsection fallback is only admissible for dense same-moment payloads;
             # in omission-sparse bodies or content-only subsection slots, an
             # intro/body fragment can otherwise silently become an item row.
-            state.prev_mom = op.target_paragraph
+            state.prev_mom = op.target_cols.target_paragraph
             continue
-        mom = op.target_paragraph
+        mom = op.target_cols.target_paragraph
         if mom != state.prev_mom and state.prev_mom is not None:
             state.sub_idx += 1
         while state.sub_idx < len(slot_inputs.amend_subs) and (
@@ -1732,14 +1737,154 @@ def _assign_fallback_plain_slot_ops(
         state.prev_mom = mom
 
 
+def _merge_sparse_plain_subsection_shell_continuations(
+    muutos_ir: Optional[IRNode],
+    group_ops: List[AmendmentOp],
+    assignment: SubsectionSlotAssignmentResult,
+) -> SubsectionSlotAssignmentResult:
+    """Move a shell-only slot to the previous intro and rebind the body slot.
+
+    Some amendment XML serializes one legal moment as two adjacent subsection
+    slots when the johtolause targets both ``N-1 momentin johdantokappale`` and
+    ``N momentti``: the colon-ending slot belongs to the prior intro, while the
+    following table/body slot is the actual plain moment payload.  This rule
+    only rewires already-authorized adjacent slots; it does not create a new
+    operation or target.
+    """
+    if muutos_ir is None or not assignment.sparse_slot_bindings:
+        return assignment
+    amend_subs = [child for child in muutos_ir.children if child.kind is IRNodeKind.SUBSECTION]
+    if not amend_subs:
+        return assignment
+    used_subs = set(assignment.used_subs)
+    subsec_map = assignment.subsec_map.copy()
+    observations = list(assignment.binding_observations)
+    changed = False
+
+    for binding in assignment.sparse_slot_bindings:
+        if binding.target_paragraph is None or binding.target_item or binding.target_special:
+            continue
+        assigned_idx = binding.payload_slot_index - 1
+        continuation_idx = assigned_idx + 1
+        if assigned_idx <= 0 or continuation_idx >= len(amend_subs):
+            continue
+        if continuation_idx in used_subs:
+            continue
+        shell = amend_subs[assigned_idx]
+        continuation = amend_subs[continuation_idx]
+        if not _slot_ir_is_intro_only_fragment(shell):
+            continue
+        if not irnode_to_text(continuation).strip():
+            continue
+        target_op = next(
+            (
+                op
+                for op in group_ops
+                if (
+                    op.target_cols.target_paragraph == binding.target_paragraph
+                    and not op.target_cols.target_item
+                    and not op.target_cols.target_special
+                    and assignment.for_op(op) is shell
+                )
+            ),
+            None,
+        )
+        if target_op is None:
+            continue
+        intro_op = next(
+            (
+                op
+                for op in group_ops
+                if (
+                    op.target_cols.target_paragraph == binding.target_paragraph - 1
+                    and not op.target_cols.target_item
+                    and op.target_cols.target_special == "johd"
+                    and assignment.for_op(op) is amend_subs[assigned_idx - 1]
+                )
+            ),
+            None,
+        )
+        if intro_op is None:
+            continue
+        intro_slot = amend_subs[assigned_idx - 1]
+        merged_intro_attrs = dict(intro_slot.attrs)
+        merged_intro_attrs["lawvm_payload_elaboration_rule"] = (
+            _SPARSE_PLAIN_SUBSECTION_SHELL_CONTINUATION_MERGE_RULE
+        )
+        merged_intro_attrs["lawvm_payload_elaboration_merged_slot"] = str(shell.label or "")
+        merged_intro = IRNode(
+            kind=intro_slot.kind,
+            label=intro_slot.label,
+            text=intro_slot.text,
+            attrs=merged_intro_attrs,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CONTENT,
+                    text=" ".join(
+                        part
+                        for part in (
+                            " ".join(irnode_to_text(intro_slot).split()),
+                            " ".join(irnode_to_text(shell).split()),
+                        )
+                        if part
+                    ),
+                ),
+            ),
+        )
+        merged_attrs = dict(shell.attrs)
+        merged_attrs["lawvm_payload_elaboration_rule"] = (
+            _SPARSE_PLAIN_SUBSECTION_SHELL_CONTINUATION_MERGE_RULE
+        )
+        merged_attrs["lawvm_payload_elaboration_rebound_from_slot"] = str(shell.label or "")
+        rebound = IRNode(
+            kind=continuation.kind,
+            label=shell.label,
+            text=continuation.text,
+            attrs=merged_attrs,
+            children=tuple(continuation.children),
+        )
+        subsec_map.assign(intro_op, merged_intro)
+        subsec_map.assign(target_op, rebound)
+        used_subs.add(continuation_idx)
+        observations.append(
+            _obs(
+                _SPARSE_PLAIN_SUBSECTION_SHELL_CONTINUATION_MERGE_RULE,
+                "sparse_subsection_elaboration",
+                intro_op_description=intro_op.description(),
+                op_description=target_op.description(),
+                intro_target_paragraph=intro_op.target_cols.target_paragraph,
+                target_paragraph=binding.target_paragraph,
+                intro_slot=f"{assigned_idx}:{intro_slot.label or ''}",
+                shell_slot=f"{assigned_idx + 1}:{shell.label or ''}",
+                rebound_payload_slot=f"{continuation_idx + 1}:{continuation.label or ''}",
+            )
+        )
+        changed = True
+
+    if not changed:
+        return assignment
+    unassigned_payload_slots = [
+        (f"{idx + 1}:{sub.label}" if str(sub.label or "") else f"{idx + 1}:(unlabeled)")
+        for idx, sub in enumerate(amend_subs)
+        if idx not in used_subs
+    ]
+    return dc_replace(
+        assignment,
+        subsec_map=subsec_map,
+        used_subs=tuple(sorted(used_subs)),
+        unassigned_payload_slots=tuple(unassigned_payload_slots),
+        binding_observations=tuple(observations),
+    )
+
+
 def _assign_item_prefix_slot_ops(
     slot_inputs: SubsectionSlotInputs,
     state: SubsectionSlotAssignmentState,
 ) -> None:
     for op in slot_inputs.payload_subsec_ops:
-        if op in state.subsec_map or not op.target_item:
+        if op in state.subsec_map or not op.target_cols.target_item:
             continue
-        item_norm = leaf_label_identity_key(str(op.target_item))
+        item_norm = leaf_label_identity_key(str(op.target_cols.target_item))
         for idx, sub in enumerate(slot_inputs.amend_subs):
             if idx in state.used_subs:
                 continue
@@ -1765,11 +1910,11 @@ def _assign_highest_insert_slot_op(
     insert_ops = [
         op
         for op in slot_inputs.payload_subsec_ops
-        if op.op_type == "INSERT" and op.target_paragraph and not op.target_item
+        if op.op_type == OpType.INSERT and op.target_cols.target_paragraph and not op.target_cols.target_item
     ]
     if not insert_ops:
         return
-    highest = max(insert_ops, key=lambda op: op.target_paragraph or 0)
+    highest = max(insert_ops, key=lambda op: op.target_cols.target_paragraph or 0)
     if highest not in state.subsec_map:
         if _plain_target_is_inadmissible_for_positional_fallback(slot_inputs, state, highest):
             if not _should_bind_lone_insert_to_trailing_slot(slot_inputs, state, highest):
@@ -1787,7 +1932,7 @@ def _assign_highest_insert_slot_op(
                 _obs(
                     "ELAB.TRAILING_SPARSE_INSERT_BINDING",
                     "sparse_subsection_elaboration",
-                    target_paragraph=int(highest.target_paragraph or 0),
+                    target_paragraph=int(highest.target_cols.target_paragraph or 0),
                     payload_slot_label=str(slot_inputs.amend_subs[last_unused_idx].label or ""),
                     op_description=highest.description(),
                 )
@@ -1812,7 +1957,7 @@ def _assign_intro_slot_ops(
     slot_inputs: SubsectionSlotInputs,
     state: SubsectionSlotAssignmentState,
 ) -> None:
-    intro_ops = [op for op in slot_inputs.intro_subsec_ops if op.target_paragraph is not None]
+    intro_ops = [op for op in slot_inputs.intro_subsec_ops if op.target_cols.target_paragraph is not None]
     if not intro_ops:
         return
 
@@ -1823,13 +1968,13 @@ def _assign_intro_slot_ops(
     mixed_intro_group = len(intro_ops) > 1 or bool(slot_inputs.payload_subsec_ops)
 
     for op in intro_ops:
-        if op.target_paragraph is None:
+        if op.target_cols.target_paragraph is None:
             continue
         shared = next(
             (
                 state.subsec_map.for_op(other)
                 for other in slot_inputs.payload_subsec_ops
-                if other.target_paragraph == op.target_paragraph and state.subsec_map.for_op(other) is not None
+                if other.target_cols.target_paragraph == op.target_cols.target_paragraph and state.subsec_map.for_op(other) is not None
             ),
             None,
         )
@@ -1840,7 +1985,7 @@ def _assign_intro_slot_ops(
             (
                 idx
                 for idx, sub in enumerate(slot_inputs.amend_subs)
-                if idx not in state.used_subs and _norm_num_token(sub.label or "") == str(op.target_paragraph)
+                if idx not in state.used_subs and _norm_num_token(sub.label or "") == str(op.target_cols.target_paragraph)
             ),
             None,
         )
@@ -1876,18 +2021,18 @@ def _assign_remaining_insert_slot_ops(
         op
         for op in slot_inputs.payload_subsec_ops
         if (
-            op.op_type == "INSERT"
+            op.op_type == OpType.INSERT
             and op not in state.subsec_map
-            and op.target_paragraph is not None
-            and not op.target_item
-            and not op.target_special
+            and op.target_cols.target_paragraph is not None
+            and not op.target_cols.target_item
+            and not op.target_cols.target_special
         )
     ]
     remaining_slots = [(idx, sub) for idx, sub in enumerate(slot_inputs.amend_subs) if idx not in state.used_subs]
     if not remaining_inserts or len(remaining_inserts) != len(remaining_slots):
         return
 
-    remaining_inserts.sort(key=lambda op: op.target_paragraph or 0)
+    remaining_inserts.sort(key=lambda op: op.target_cols.target_paragraph or 0)
     remaining_slots.sort(
         key=lambda pair: (
             int(_norm_num_token(pair[1].label or "0") or "0"),
@@ -1900,7 +2045,7 @@ def _assign_remaining_insert_slot_ops(
 
 
 def _destination_subsection_label_for_renumber(op: AmendmentOp) -> str:
-    if op.op_type != "RENUMBER" or op.lo is None or op.lo.destination is None:
+    if op.op_type != OpType.RENUMBER or op.lo is None or op.lo.destination is None:
         return ""
     return _norm_num_token(
         next((label for kind, label in reversed(op.lo.destination.path) if kind == "subsection"), "")
@@ -1908,7 +2053,7 @@ def _destination_subsection_label_for_renumber(op: AmendmentOp) -> str:
 
 
 def _renumber_consumes_source_payload(op: AmendmentOp) -> bool:
-    return "jolloin_moment_renumber_supplement" not in op.extraction_provenance_tags
+    return not has_recognizer(op.provenance, RecognizerId.JOLLOIN_MOMENT_RENUMBER_SUPPLEMENT)
 
 
 def _assign_renumber_destination_slot_ops(
@@ -1919,9 +2064,9 @@ def _assign_renumber_destination_slot_ops(
     for op in slot_inputs.renumber_subsec_ops:
         if (
             op in state.subsec_map
-            or op.target_paragraph is None
-            or op.target_item
-            or op.target_special
+            or op.target_cols.target_paragraph is None
+            or op.target_cols.target_item
+            or op.target_cols.target_special
             or not _renumber_consumes_source_payload(op)
         ):
             continue
@@ -1943,7 +2088,7 @@ def _assign_renumber_destination_slot_ops(
             _obs(
                 "ELAB.RENUMBER_DESTINATION_PAYLOAD_SLOT",
                 "sparse_subsection_elaboration",
-                source_target_paragraph=int(op.target_paragraph),
+                source_target_paragraph=int(op.target_cols.target_paragraph),
                 destination_paragraph=int(destination_label),
                 payload_slot_label=str(sub.label or ""),
                 op_description=op.description(),
@@ -2028,7 +2173,7 @@ def prepare_payload_surface(
     )
     if table_labels:
         has_non_table_child_targets = any(
-            op.target_paragraph is not None or op.target_item or op.target_special
+            op.target_cols.target_paragraph is not None or op.target_cols.target_item or op.target_cols.target_special
             for op in group_ops
         )
         if not has_non_table_child_targets:
@@ -2086,10 +2231,10 @@ def _single_plain_insert_sparse_payload_is_self_contained(
         op
         for op in group_ops
         if (
-            op.op_type == "INSERT"
-            and op.target_paragraph is not None
-            and not op.target_item
-            and not op.target_special
+            op.op_type == OpType.INSERT
+            and op.target_cols.target_paragraph is not None
+            and not op.target_cols.target_item
+            and not op.target_cols.target_special
         )
     ]
     if len(group_ops) != 1 or len(plain_insert_ops) != 1:
@@ -2158,16 +2303,16 @@ def _fold_intro_list_continuation_subsection_before_omission(
 
     plain_subsection_targets = sorted(
         {
-            int(op.target_paragraph)
+            int(op.target_cols.target_paragraph)
             for op in (group_ops or [])
-            if (op.target_paragraph is not None and not op.target_item and op.op_type in ("REPLACE", "INSERT"))
+            if (op.target_cols.target_paragraph is not None and not op.target_cols.target_item and op.op_type in (OpType.REPLACE, OpType.INSERT))
         }
     )
     subsection_payload_count = sum(1 for child in muutos_ir.children if child.kind is IRNodeKind.SUBSECTION)
     item_subsection_targets = {
-        int(op.target_paragraph)
+        int(op.target_cols.target_paragraph)
         for op in (group_ops or [])
-        if (op.target_paragraph is not None and bool(op.target_item) and op.op_type in ("REPLACE", "INSERT"))
+        if (op.target_cols.target_paragraph is not None and bool(op.target_cols.target_item) and op.op_type in (OpType.REPLACE, OpType.INSERT))
     }
 
     children = list(muutos_ir.children)
@@ -2313,18 +2458,18 @@ def _split_fused_restarted_subsection_across_consecutive_replaces(
             op
             for op in group_ops
             if (
-                op.op_type == "REPLACE"
-                and op.target_paragraph is not None
-                and not op.target_item
-                and not op.target_special
+                op.op_type == OpType.REPLACE
+                and op.target_cols.target_paragraph is not None
+                and not op.target_cols.target_item
+                and not op.target_cols.target_special
             )
         ],
-        key=lambda op: op.target_paragraph or 0,
+        key=lambda op: op.target_cols.target_paragraph or 0,
     )
     if len(replace_ops) < 2:
         return muutos_ir, False
 
-    targets = [int(op.target_paragraph or 0) for op in replace_ops]
+    targets = [int(op.target_cols.target_paragraph or 0) for op in replace_ops]
     if any(curr != prev + 1 for prev, curr in pairwise(targets)):
         return muutos_ir, False
 
@@ -2416,17 +2561,17 @@ def _split_flattened_insert_subsection_tail(
             op
             for op in group_ops
             if (
-                op.op_type == "INSERT"
-                and op.target_paragraph is not None
-                and not op.target_item
-                and not op.target_special
+                op.op_type == OpType.INSERT
+                and op.target_cols.target_paragraph is not None
+                and not op.target_cols.target_item
+                and not op.target_cols.target_special
             )
         ],
-        key=lambda op: op.target_paragraph or 0,
+        key=lambda op: op.target_cols.target_paragraph or 0,
     )
     if len(insert_ops) != 2:
         return muutos_ir, False
-    targets = [int(op.target_paragraph or 0) for op in insert_ops]
+    targets = [int(op.target_cols.target_paragraph or 0) for op in insert_ops]
     if targets[1] != targets[0] + 1:
         return muutos_ir, False
 
@@ -2498,7 +2643,7 @@ def _fold_single_insert_subsection_list_tail(
     plain_insert_ops = [
         op
         for op in group_ops
-        if (op.op_type == "INSERT" and op.target_paragraph is not None and not op.target_item and not op.target_special)
+        if (op.op_type == OpType.INSERT and op.target_cols.target_paragraph is not None and not op.target_cols.target_item and not op.target_cols.target_special)
     ]
     if len(plain_insert_ops) != 1:
         return muutos_ir, None
@@ -2507,7 +2652,7 @@ def _fold_single_insert_subsection_list_tail(
     if master_sec is None or master_sec.kind is not IRNodeKind.SECTION:
         return muutos_ir, None
     live_subsecs = [child for child in master_sec.children if child.kind == IRNodeKind.SUBSECTION]
-    target = int(plain_insert_ops[0].target_paragraph or 0)
+    target = int(plain_insert_ops[0].target_cols.target_paragraph or 0)
     if target != len(live_subsecs) + 1:
         return muutos_ir, None
 
@@ -2781,18 +2926,18 @@ def _normalize_heading_tagged_subsection_payload(
         return HeadingTaggedSubsectionPayloadResult(muutos_ir=muutos_ir)
     if not any(child.kind is IRNodeKind.OMISSION for child in muutos_ir.children):
         return HeadingTaggedSubsectionPayloadResult(muutos_ir=muutos_ir)
-    if any(op.target_special in {"otsikko", "otsikko_edella"} for op in group_ops):
+    if any(op.target_cols.target_special in {"otsikko", "otsikko_edella"} for op in group_ops):
         return HeadingTaggedSubsectionPayloadResult(muutos_ir=muutos_ir)
 
     subsection_ops = [
         op
         for op in group_ops
         if (
-            op.op_type == "REPLACE"
-            and op.target_unit_kind == "section"
-            and op.target_paragraph is not None
-            and not op.target_item
-            and not op.target_special
+            op.op_type == OpType.REPLACE
+            and op.target_cols.target_unit_kind == "section"
+            and op.target_cols.target_paragraph is not None
+            and not op.target_cols.target_item
+            and not op.target_cols.target_special
         )
     ]
     if len(subsection_ops) != 1:
@@ -2810,7 +2955,7 @@ def _normalize_heading_tagged_subsection_payload(
     if len(heading_children) != 1:
         return HeadingTaggedSubsectionPayloadResult(muutos_ir=muutos_ir)
 
-    target_paragraph = subsection_ops[0].target_paragraph
+    target_paragraph = subsection_ops[0].target_cols.target_paragraph
     heading = heading_children[0]
     heading_text = " ".join(irnode_to_text(heading).split())
     subsection = _with_payload_normalization_rule(
@@ -2888,17 +3033,17 @@ def _normalize_leading_subsection_heading_payload(
     """
     if target_unit_kind != "section" or muutos_ir is None or muutos_ir.kind is not IRNodeKind.SECTION:
         return LeadingSubsectionHeadingPayloadResult(muutos_ir=muutos_ir)
-    if any(op.target_special in {"otsikko", "otsikko_edella"} for op in group_ops):
+    if any(op.target_cols.target_special in {"otsikko", "otsikko_edella"} for op in group_ops):
         return LeadingSubsectionHeadingPayloadResult(muutos_ir=muutos_ir)
     whole_section_ops = [
         op
         for op in group_ops
         if (
-            op.op_type in {"INSERT", "REPLACE"}
-            and op.target_unit_kind == "section"
-            and op.target_paragraph is None
-            and not op.target_item
-            and not op.target_special
+            op.op_type in {OpType.INSERT, OpType.REPLACE}
+            and op.target_cols.target_unit_kind == "section"
+            and op.target_cols.target_paragraph is None
+            and not op.target_cols.target_item
+            and not op.target_cols.target_special
         )
     ]
     if len(whole_section_ops) != 1 or len(group_ops) != 1:
@@ -2974,18 +3119,18 @@ def _collapse_intro_list_subsections_inside_section_ir(
     if muutos_ir is None or target_unit_kind != "section" or muutos_ir.kind is not IRNodeKind.SECTION:
         return muutos_ir
     has_whole_section_replace = any(
-        op.op_type == "REPLACE"
-        and op.target_unit_kind == target_unit_kind
-        and op.target_paragraph is None
-        and not op.target_item
+        op.op_type == OpType.REPLACE
+        and op.target_cols.target_unit_kind == target_unit_kind
+        and op.target_cols.target_paragraph is None
+        and not op.target_cols.target_item
         for op in group_ops
     )
     has_first_subsection_replace = any(
-        op.op_type == "REPLACE"
-        and op.target_unit_kind == target_unit_kind
-        and op.target_paragraph == 1
-        and not op.target_item
-        and not op.target_special
+        op.op_type == OpType.REPLACE
+        and op.target_cols.target_unit_kind == target_unit_kind
+        and op.target_cols.target_paragraph == 1
+        and not op.target_cols.target_item
+        and not op.target_cols.target_special
         for op in group_ops
     )
     if not has_whole_section_replace and not has_first_subsection_replace:
@@ -3119,10 +3264,10 @@ def _single_item_tail_matches_explicit_target(
     if not paragraph_label:
         return False
     return any(
-        op.target_paragraph == int(child_label)
-        and bool(op.target_item)
-        and leaf_label_identity_key(str(op.target_item), "item") == leaf_label_identity_key(paragraph_label, "item")
-        and op.op_type in ("REPLACE", "INSERT")
+        op.target_cols.target_paragraph == int(child_label)
+        and bool(op.target_cols.target_item)
+        and leaf_label_identity_key(str(op.target_cols.target_item), "item") == leaf_label_identity_key(paragraph_label, "item")
+        and op.op_type in (OpType.REPLACE, OpType.INSERT)
         for op in group_ops
     )
 
@@ -3194,16 +3339,16 @@ def _fold_split_target_subsection_intro_list_tail(
         op
         for op in group_ops
         if (
-            op.op_type == "REPLACE"
-            and op.target_unit_kind == "section"
-            and op.target_paragraph is not None
-            and not op.target_item
-            and not op.target_special
+            op.op_type == OpType.REPLACE
+            and op.target_cols.target_unit_kind == "section"
+            and op.target_cols.target_paragraph is not None
+            and not op.target_cols.target_item
+            and not op.target_cols.target_special
         )
     ]
     if len(plain_replace_ops) != 1 or len(group_ops) != 1:
         return muutos_ir, False, empty_detail
-    target = int(plain_replace_ops[0].target_paragraph or 0)
+    target = int(plain_replace_ops[0].target_cols.target_paragraph or 0)
 
     live_target = ctx.subsection_by_label.get(str(target))
     if live_target is None or not _has_numbered_paragraph_sequence(live_target):
@@ -3277,31 +3422,31 @@ def _fold_multi_target_subsection_list_wrapups(
         op
         for op in group_ops
         if (
-            op.op_type == "REPLACE"
-            and op.target_unit_kind == "section"
-            and op.target_paragraph is not None
-            and not op.target_item
-            and not op.target_special
+            op.op_type == OpType.REPLACE
+            and op.target_cols.target_unit_kind == "section"
+            and op.target_cols.target_paragraph is not None
+            and not op.target_cols.target_item
+            and not op.target_cols.target_special
         )
     ]
     if len(plain_replace_ops) < 2:
         return muutos_ir, None
     if any(
-        op.op_type not in {"REPLACE", "REPEAL"}
+        op.op_type not in {OpType.REPLACE, OpType.REPEAL}
         or (
-            op.op_type == "REPLACE"
+            op.op_type == OpType.REPLACE
             and (
-                op.target_unit_kind != "section"
-                or op.target_paragraph is None
-                or bool(op.target_item)
-                or bool(op.target_special)
+                op.target_cols.target_unit_kind != "section"
+                or op.target_cols.target_paragraph is None
+                or bool(op.target_cols.target_item)
+                or bool(op.target_cols.target_special)
             )
         )
         for op in group_ops
     ):
         return muutos_ir, None
 
-    targets = sorted({int(op.target_paragraph or 0) for op in plain_replace_ops})
+    targets = sorted({int(op.target_cols.target_paragraph or 0) for op in plain_replace_ops})
     if len(targets) != len(plain_replace_ops):
         return muutos_ir, None
     if targets != list(range(targets[0], targets[-1] + 1)):
@@ -3437,11 +3582,11 @@ def _split_final_list_item_trailing_subsection(
         op
         for op in group_ops
         if (
-            op.op_type in {"INSERT", "REPLACE"}
-            and op.target_unit_kind == "section"
-            and op.target_paragraph is None
-            and not op.target_item
-            and not op.target_special
+            op.op_type in {OpType.INSERT, OpType.REPLACE}
+            and op.target_cols.target_unit_kind == "section"
+            and op.target_cols.target_paragraph is None
+            and not op.target_cols.target_item
+            and not op.target_cols.target_special
         )
     ]
     if len(whole_section_ops) != 1 or len(group_ops) != 1:
@@ -3563,18 +3708,18 @@ def _fold_split_omission_subsection_prefix_into_following_intro_list(
     plain_subsection_ops = [
         op
         for op in group_ops
-        if (op.target_paragraph is not None and not op.target_item and op.op_type in ("REPLACE", "INSERT"))
+        if (op.target_cols.target_paragraph is not None and not op.target_cols.target_item and op.op_type in (OpType.REPLACE, OpType.INSERT))
     ]
     plain_subsection_targets = sorted(
-        {int(op.target_paragraph) for op in plain_subsection_ops if op.target_paragraph is not None}
+        {int(op.target_cols.target_paragraph) for op in plain_subsection_ops if op.target_cols.target_paragraph is not None}
     )
     if len(plain_subsection_targets) >= 2:
         return muutos_ir
     item_subsection_targets = sorted(
         {
-            int(op.target_paragraph)
+            int(op.target_cols.target_paragraph)
             for op in group_ops
-            if op.target_paragraph is not None and bool(op.target_item)
+            if op.target_cols.target_paragraph is not None and bool(op.target_cols.target_item)
         }
     )
     if (
@@ -3586,7 +3731,7 @@ def _fold_split_omission_subsection_prefix_into_following_intro_list(
     # When all plain subsection ops are INSERTs, the body subsections after the
     # omission are genuinely new moments.  Folding them together would lose a
     # new subsection — skip the fold entirely.
-    if plain_subsection_ops and all(op.op_type == "INSERT" for op in plain_subsection_ops):
+    if plain_subsection_ops and all(op.op_type == OpType.INSERT for op in plain_subsection_ops):
         return muutos_ir
 
     numbered_table_targets = frozenset(
@@ -3685,13 +3830,13 @@ def _prune_carried_subsections_outside_single_target_moment_ir(
 
     plain_targets = sorted(
         {
-            int(op.target_paragraph)
+            int(op.target_cols.target_paragraph)
             for op in group_ops
             if (
-                op.target_paragraph is not None
-                and not op.target_item
-                and not op.target_special
-                and op.op_type in ("REPLACE", "INSERT")
+                op.target_cols.target_paragraph is not None
+                and not op.target_cols.target_item
+                and not op.target_cols.target_special
+                and op.op_type in (OpType.REPLACE, OpType.INSERT)
             )
         }
     )
@@ -3700,12 +3845,12 @@ def _prune_carried_subsections_outside_single_target_moment_ir(
     target_paragraph = plain_targets[0]
 
     item_targets = {
-        int(op.target_paragraph)
+        int(op.target_cols.target_paragraph)
         for op in group_ops
         if (
-            op.target_paragraph is not None
-            and bool(op.target_item)
-            and op.op_type in ("REPLACE", "INSERT")
+            op.target_cols.target_paragraph is not None
+            and bool(op.target_cols.target_item)
+            and op.op_type in (OpType.REPLACE, OpType.INSERT)
         )
     }
     if not item_targets or item_targets != {target_paragraph}:
@@ -3885,16 +4030,16 @@ def _fold_text_table_row_subsections_into_target_subsection(
         op
         for op in group_ops
         if (
-            op.op_type in {"REPLACE", "INSERT"}
-            and op.target_unit_kind == "section"
-            and op.target_paragraph is not None
-            and not op.target_item
-            and not op.target_special
+            op.op_type in {OpType.REPLACE, OpType.INSERT}
+            and op.target_cols.target_unit_kind == "section"
+            and op.target_cols.target_paragraph is not None
+            and not op.target_cols.target_item
+            and not op.target_cols.target_special
         )
     ]
     if len(subsection_ops) != 1:
         return muutos_ir
-    target_label = str(subsection_ops[0].target_paragraph)
+    target_label = str(subsection_ops[0].target_cols.target_paragraph)
     children = list(muutos_ir.children)
     target_index = next(
         (
@@ -3968,13 +4113,13 @@ def _normalize_item_like_target(
         return re.match(r"^(\d+[a-zA-Z]*)\)", _sub_text(sub)) is not None
 
     if (
-        op.target_unit_kind != "section"
-        or not op.target_paragraph
-        or op.target_item
-        or op.target_special
+        op.target_cols.target_unit_kind != "section"
+        or not op.target_cols.target_paragraph
+        or op.target_cols.target_item
+        or op.target_cols.target_special
     ):
         return op
-    if group_ops is not None and any(other is not op and bool(other.target_item) for other in group_ops):
+    if group_ops is not None and any(other is not op and bool(other.target_cols.target_item) for other in group_ops):
         return op
     master_sec = ctx.live_node
     if master_sec is None:
@@ -3988,25 +4133,25 @@ def _normalize_item_like_target(
     if len(amend_subs) > 1 and not all(_is_flat_numbered_item_sub(sub) for sub in amend_subs):
         return op
     if amend_subs and any(
-        _norm_num_token(sub.label or "") == str(op.target_paragraph)
+        _norm_num_token(sub.label or "") == str(op.target_cols.target_paragraph)
         for sub in amend_subs
     ):
         return op
-    if amend_subs and op.target_paragraph <= len(amend_subs):
+    if amend_subs and op.target_cols.target_paragraph <= len(amend_subs):
         return op
     if amend_subs and not any(c.kind is IRNodeKind.PARAGRAPH for c in amend_subs[0].children):
         flat_match = False
         for sub in amend_subs:
             # lawvm-regex: owning_parser P-item-prefix flat-match slot routing predicate over IR sub text; lexer-shaped
             m = re.match(r"^(\d+[a-zA-Z]*)\)", _sub_text(sub))
-            if m and _norm_num_token(m.group(1)) == str(op.target_paragraph):
+            if m and _norm_num_token(m.group(1)) == str(op.target_cols.target_paragraph):
                 flat_match = True
                 break
         if not flat_match:
             return op
-    if op.target_paragraph <= len(master_subsecs):
+    if op.target_cols.target_paragraph <= len(master_subsecs):
         return op
-    new_lo = _lo_with_path_update(op.lo, subsection="1", item=str(op.target_paragraph)) if op.lo else None
+    new_lo = _lo_with_path_update(op.lo, subsection="1", item=str(op.target_cols.target_paragraph)) if op.lo else None
     return dc_replace(
         op,
         lo=new_lo,
@@ -4306,11 +4451,11 @@ def _container_pruning_is_expected_heading_only(group_ops: List[AmendmentOp]) ->
     if not group_ops:
         return False
     for op in group_ops:
-        if op.op_type != "REPLACE":
+        if op.op_type != OpType.REPLACE:
             return False
-        if op.target_unit_kind in {"chapter", "part"} and not op.target_paragraph and not op.target_item:
+        if op.target_cols.target_unit_kind in {"chapter", "part"} and not op.target_cols.target_paragraph and not op.target_cols.target_item:
             continue
-        if op.target_special not in {"otsikko", "otsikko_edella"}:
+        if op.target_cols.target_special not in {"otsikko", "otsikko_edella"}:
             return False
     return True
 
@@ -4362,12 +4507,12 @@ def _split_historical_top_level_kohta_payload_ir(
         return muutos_ir
 
     target_labels = {
-        str(op.target_paragraph)
+        str(op.target_cols.target_paragraph)
         for op in group_ops
         if (
-            op.target_paragraph is not None
-            and not op.target_item
-            and not op.target_special
+            op.target_cols.target_paragraph is not None
+            and not op.target_cols.target_item
+            and not op.target_cols.target_special
             and _HISTORICAL_TOP_LEVEL_KOHTA_SUBSECTION_RULE_ID in op.extraction_provenance_tags
         )
     }
@@ -4444,13 +4589,13 @@ def _align_sparse_omission_subsections_to_live(
     amend_subsecs = [c for c in muutos_ir.children if c.kind is IRNodeKind.SUBSECTION]
     if group_ops is not None:
         has_item_targets = any(
-            op.target_paragraph is not None and bool(op.target_item)
+            op.target_cols.target_paragraph is not None and bool(op.target_cols.target_item)
             for op in group_ops
         )
         has_plain_targets = any(
-            op.target_paragraph is not None
-            and not op.target_item
-            and op.op_type in ("REPLACE", "INSERT")
+            op.target_cols.target_paragraph is not None
+            and not op.target_cols.target_item
+            and op.op_type in (OpType.REPLACE, OpType.INSERT)
             for op in group_ops
         )
         # Item-only sparse payloads are not moment-slot rewrites. Relabeling
@@ -4462,22 +4607,22 @@ def _align_sparse_omission_subsections_to_live(
         if has_item_targets and not has_plain_targets:
             return muutos_ir, False
     ordered_targets = [
-        op.target_paragraph
+        op.target_cols.target_paragraph
         for op in (group_ops or [])
-        if (op.target_paragraph is not None and not op.target_item and op.op_type in ("REPLACE", "INSERT"))
+        if (op.target_cols.target_paragraph is not None and not op.target_cols.target_item and op.op_type in (OpType.REPLACE, OpType.INSERT))
     ]
     ordered_logical_targets = list(
         dict.fromkeys(
-            op.target_paragraph
+            op.target_cols.target_paragraph
             for op in (group_ops or [])
-            if (op.target_paragraph is not None and op.op_type in ("REPLACE", "INSERT"))
+            if (op.target_cols.target_paragraph is not None and op.op_type in (OpType.REPLACE, OpType.INSERT))
         )
     )
     explicit_targets = sorted(
         {
-            op.target_paragraph
+            op.target_cols.target_paragraph
             for op in (group_ops or [])
-            if (op.target_paragraph is not None and not op.target_item and op.op_type in ("REPLACE", "INSERT"))
+            if (op.target_cols.target_paragraph is not None and not op.target_cols.target_item and op.op_type in (OpType.REPLACE, OpType.INSERT))
         }
     )
     if amend_subsecs and len(ordered_logical_targets) == len(amend_subsecs):
@@ -4620,8 +4765,8 @@ def _rebase_item_targets_to_sparse_slot_labels(
         mapped = assignment.for_op(op)
         if (
             mapped is not None
-            and op.target_item
-            and op.target_paragraph is not None
+            and op.target_cols.target_item
+            and op.target_cols.target_paragraph is not None
         ):
             binding = next(
                 (
@@ -4629,9 +4774,9 @@ def _rebase_item_targets_to_sparse_slot_labels(
                     for candidate in assignment.sparse_slot_bindings
                     if (
                         candidate.op_type == str(op.op_type or "")
-                        and candidate.target_paragraph == op.target_paragraph
-                        and (candidate.target_item or "") == str(op.target_item or "")
-                        and (candidate.target_special or "") == str(op.target_special or "")
+                        and candidate.target_paragraph == op.target_cols.target_paragraph
+                        and (candidate.target_item or "") == str(op.target_cols.target_item or "")
+                        and (candidate.target_special or "") == str(op.target_cols.target_special or "")
                     )
                 ),
                 None,
@@ -4654,17 +4799,17 @@ def _rebase_item_targets_to_sparse_slot_labels(
             # Preserve explicit source paragraph authority. This rebase rail is
             # only for item-like targets that were already heuristically
             # normalized into subsection/item shape earlier in elaboration.
-            if "normalize_item_like_target" not in op.target_guessing_provenance_tags:
+            if not has_recognizer(op.provenance, RecognizerId.NORMALIZE_ITEM_LIKE_TARGET):
                 rebased.append(op)
                 continue
-            if len(sibling_plain_targets) != 1 or sibling_plain_targets[0] == int(op.target_paragraph):
+            if len(sibling_plain_targets) != 1 or sibling_plain_targets[0] == int(op.target_cols.target_paragraph):
                 rebased.append(op)
                 continue
             new_paragraph = sibling_plain_targets[0]
             rebased.append(
                 dc_replace(
                     op,
-                    target_paragraph=new_paragraph,
+                    **replace_target(op, target_paragraph=new_paragraph),
                     lo=(
                         _lo_with_path_update(op.lo, subsection=str(new_paragraph))
                         if op.lo is not None
@@ -4700,13 +4845,13 @@ def _rebase_numbered_table_offset_targets_to_sparse_slot_labels(
         if (
             mapped is None
             or not op.numbered_table_targets
-            or op.target_paragraph is None
-            or op.target_item
-            or op.target_special
+            or op.target_cols.target_paragraph is None
+            or op.target_cols.target_item
+            or op.target_cols.target_special
         ):
             rebased.append(op)
             continue
-        source_target = int(op.target_paragraph)
+        source_target = int(op.target_cols.target_paragraph)
         new_paragraph: int | None = None
         if mapped_label.isdigit() and int(mapped_label) == source_target + 1:
             new_paragraph = int(mapped_label)
@@ -4718,7 +4863,7 @@ def _rebase_numbered_table_offset_targets_to_sparse_slot_labels(
         rebased.append(
             dc_replace(
                 op,
-                target_paragraph=new_paragraph,
+                **replace_target(op, target_paragraph=new_paragraph),
                 lo=(
                     _lo_with_path_update(op.lo, subsection=str(new_paragraph))
                     if op.lo is not None
@@ -4737,7 +4882,7 @@ def _rebase_numbered_table_offset_targets_to_sparse_slot_labels(
         details.append(
             {
                 "op_description": op.description(),
-                "source_target_paragraph": int(op.target_paragraph),
+                "source_target_paragraph": int(op.target_cols.target_paragraph),
                 "structural_target_paragraph": new_paragraph,
                 "payload_slot_label": str(mapped.label or ""),
                 "original_sparse_subsection_label": original_sparse_label,
@@ -4784,17 +4929,17 @@ def _rebase_sparse_stale_predecessor_replace(
         op
         for op in group_ops
         if (
-            op.op_type == "REPLACE"
-            and op.target_paragraph is not None
-            and not op.target_item
-            and not op.target_special
+            op.op_type == OpType.REPLACE
+            and op.target_cols.target_paragraph is not None
+            and not op.target_cols.target_item
+            and not op.target_cols.target_special
         )
     ]
     if len(group_ops) != 1 or len(plain_replace_ops) != 1:
         return group_ops, False, None
 
     op = plain_replace_ops[0]
-    if op.target_paragraph is None or op.target_paragraph <= 1:
+    if op.target_cols.target_paragraph is None or op.target_cols.target_paragraph <= 1:
         return group_ops, False, None
 
     mapped = assignment.for_op(op)
@@ -4806,7 +4951,7 @@ def _rebase_sparse_stale_predecessor_replace(
         (
             idx
             for idx, sub in enumerate(live_subsecs)
-            if sub.label and normalized_label_key(sub.label) == str(op.target_paragraph)
+            if sub.label and normalized_label_key(sub.label) == str(op.target_cols.target_paragraph)
         ),
         None,
     )
@@ -4830,10 +4975,10 @@ def _rebase_sparse_stale_predecessor_replace(
     if pred_score < 0.60 or pred_score <= target_score + 0.10:
         return group_ops, False, None
 
-    new_paragraph = op.target_paragraph - 1
+    new_paragraph = op.target_cols.target_paragraph - 1
     rebased = dc_replace(
         op,
-        target_paragraph=new_paragraph,
+        **replace_target(op, target_paragraph=new_paragraph),
         lo=(
             _lo_with_path_update(op.lo, subsection=str(new_paragraph))
             if op.lo is not None
@@ -4847,7 +4992,7 @@ def _rebase_sparse_stale_predecessor_replace(
         [rebased],
         True,
         {
-            "from_paragraph": op.target_paragraph,
+            "from_paragraph": op.target_cols.target_paragraph,
             "to_paragraph": new_paragraph,
             "predecessor_label": predecessor.label,
             "nominal_label": nominal_target.label,
@@ -4879,24 +5024,24 @@ def _rebase_duplicate_target_shifted_replace(
     explicit rather than guessed.
     """
     renumber_destinations = {
-        int(op.target_paragraph): int(destination)
+        int(op.target_cols.target_paragraph): int(destination)
         for op in group_ops
         if (
-            op.op_type == "RENUMBER"
-            and op.target_paragraph is not None
-            and not op.target_item
-            and not op.target_special
+            op.op_type == OpType.RENUMBER
+            and op.target_cols.target_paragraph is not None
+            and not op.target_cols.target_item
+            and not op.target_cols.target_special
             and (destination := _destination_subsection_label_for_renumber(op)).isdigit()
         )
     }
     renumber_targets = {
-        int(op.target_paragraph)
+        int(op.target_cols.target_paragraph)
         for op in group_ops
         if (
-            op.op_type == "RENUMBER"
-            and op.target_paragraph is not None
-            and not op.target_item
-            and not op.target_special
+            op.op_type == OpType.RENUMBER
+            and op.target_cols.target_paragraph is not None
+            and not op.target_cols.target_item
+            and not op.target_cols.target_special
         )
     }
     if not renumber_targets:
@@ -4907,11 +5052,11 @@ def _rebase_duplicate_target_shifted_replace(
     rebased_ops: List[AmendmentOp] = []
     for op in group_ops:
         if (
-            op.op_type != "REPLACE"
-            or op.target_paragraph is None
-            or op.target_item
-            or op.target_special
-            or int(op.target_paragraph) not in renumber_targets
+            op.op_type != OpType.REPLACE
+            or op.target_cols.target_paragraph is None
+            or op.target_cols.target_item
+            or op.target_cols.target_special
+            or int(op.target_cols.target_paragraph) not in renumber_targets
         ):
             rebased_ops.append(op)
             continue
@@ -4922,7 +5067,7 @@ def _rebase_duplicate_target_shifted_replace(
             rebased_ops.append(op)
             continue
 
-        target_paragraph = int(op.target_paragraph)
+        target_paragraph = int(op.target_cols.target_paragraph)
         mapped_paragraph = int(mapped_label)
         if mapped_paragraph <= target_paragraph:
             rebased_ops.append(op)
@@ -4934,16 +5079,16 @@ def _rebase_duplicate_target_shifted_replace(
                 for candidate in group_ops
                 if (
                     candidate.op_type == "INSERT"
-                    and candidate.target_paragraph == op.target_paragraph
-                    and not candidate.target_item
-                    and not candidate.target_special
+                    and candidate.target_cols.target_paragraph == op.target_cols.target_paragraph
+                    and not candidate.target_cols.target_item
+                    and not candidate.target_cols.target_special
                 )
             ),
             None,
         )
         insert_mapped = assignment.for_op(same_target_insert) if same_target_insert is not None else None
         insert_label = _norm_num_token(insert_mapped.label or "") if insert_mapped is not None else ""
-        if not insert_label.isdigit() or int(insert_label) != int(op.target_paragraph):
+        if not insert_label.isdigit() or int(insert_label) != int(op.target_cols.target_paragraph):
             rebased_ops.append(op)
             continue
 
@@ -4954,7 +5099,7 @@ def _rebase_duplicate_target_shifted_replace(
 
         rebased = dc_replace(
             op,
-            target_paragraph=rebased_paragraph,
+            **replace_target(op, target_paragraph=rebased_paragraph),
             lo=_lo_with_path_update(op.lo, subsection=str(rebased_paragraph)) if op.lo is not None else None,
             target_guessing_provenance_tags=tuple(
                 dict.fromkeys((*op.target_guessing_provenance_tags, "rebase_duplicate_target_shifted_replace"))
@@ -4964,7 +5109,7 @@ def _rebase_duplicate_target_shifted_replace(
         changed = True
         if detail is None:
             detail = {
-                "from_paragraph": op.target_paragraph,
+                "from_paragraph": op.target_cols.target_paragraph,
                 "to_paragraph": rebased_paragraph,
                 "payload_slot_label": mapped_label,
                 "op_description": op.description(),
@@ -4985,13 +5130,13 @@ def _rebase_replaced_renumber_sources_to_destinations(
     sent through an unrelated later source label.
     """
     renumber_destinations = {
-        int(op.target_paragraph): int(destination)
+        int(op.target_cols.target_paragraph): int(destination)
         for op in group_ops
         if (
-            op.op_type == "RENUMBER"
-            and op.target_paragraph is not None
-            and not op.target_item
-            and not op.target_special
+            op.op_type == OpType.RENUMBER
+            and op.target_cols.target_paragraph is not None
+            and not op.target_cols.target_item
+            and not op.target_cols.target_special
             and (destination := _destination_subsection_label_for_renumber(op)).isdigit()
         )
     }
@@ -5003,16 +5148,16 @@ def _rebase_replaced_renumber_sources_to_destinations(
     rebased_ops: List[AmendmentOp] = []
     for op in group_ops:
         if (
-            op.op_type != "REPLACE"
-            or op.target_paragraph is None
-            or op.target_item
-            or op.target_special
-            or "rebase_duplicate_target_shifted_replace" in op.target_guessing_provenance_tags
+            op.op_type != OpType.REPLACE
+            or op.target_cols.target_paragraph is None
+            or op.target_cols.target_item
+            or op.target_cols.target_special
+            or has_recognizer(op.provenance, RecognizerId.REBASE_DUPLICATE_TARGET_SHIFTED_REPLACE)
         ):
             rebased_ops.append(op)
             continue
 
-        target_paragraph = int(op.target_paragraph)
+        target_paragraph = int(op.target_cols.target_paragraph)
         destination_paragraph = renumber_destinations.get(target_paragraph)
         if destination_paragraph is None or destination_paragraph == target_paragraph:
             rebased_ops.append(op)
@@ -5020,7 +5165,7 @@ def _rebase_replaced_renumber_sources_to_destinations(
 
         rebased = dc_replace(
             op,
-            target_paragraph=destination_paragraph,
+            **replace_target(op, target_paragraph=destination_paragraph),
             lo=_lo_with_path_update(op.lo, subsection=str(destination_paragraph)) if op.lo is not None else None,
             target_guessing_provenance_tags=tuple(
                 dict.fromkeys((*op.target_guessing_provenance_tags, "rebase_replaced_renumber_source"))
@@ -5068,7 +5213,7 @@ def _expand_post_omission_tail_insert_subsections(
     plain_insert_ops = [
         op
         for op in group_ops
-        if (op.op_type == "INSERT" and op.target_paragraph is not None and not op.target_item and not op.target_special)
+        if (op.op_type == OpType.INSERT and op.target_cols.target_paragraph is not None and not op.target_cols.target_item and not op.target_cols.target_special)
     ]
     if len(plain_insert_ops) != 1:
         return group_ops
@@ -5090,7 +5235,7 @@ def _expand_post_omission_tail_insert_subsections(
     live_subsecs = [child for child in master_sec.children if child.kind == IRNodeKind.SUBSECTION]
 
     base_op = plain_insert_ops[0]
-    if base_op.target_paragraph is None or base_op.target_paragraph != len(live_subsecs) + 1:
+    if base_op.target_cols.target_paragraph is None or base_op.target_cols.target_paragraph != len(live_subsecs) + 1:
         return group_ops
 
     trailing_labels = [(child.label or "").strip() for child in trailing_subs]
@@ -5098,13 +5243,13 @@ def _expand_post_omission_tail_insert_subsections(
         return group_ops
     if any(trailing_labels):
         dense_local = [str(idx) for idx in range(1, len(trailing_subs) + 1)]
-        dense_target = [str(base_op.target_paragraph + idx) for idx in range(len(trailing_subs))]
+        dense_target = [str(base_op.target_cols.target_paragraph + idx) for idx in range(len(trailing_subs))]
         if trailing_labels not in (dense_local, dense_target):
             return group_ops
 
     expanded_insert_ops: List[AmendmentOp] = []
     for idx in range(len(trailing_subs)):
-        target_paragraph = base_op.target_paragraph + idx
+        target_paragraph = base_op.target_cols.target_paragraph + idx
         lo = (
             _lo_with_path_update(base_op.lo, subsection=str(target_paragraph), item=None)
             if base_op.lo is not None
@@ -5114,7 +5259,7 @@ def _expand_post_omission_tail_insert_subsections(
             dc_replace(
                 base_op,
                 op_id=base_op.op_id if idx == 0 else f"{base_op.op_id}_tail_{idx + 1}",
-                target_paragraph=target_paragraph,
+                **replace_target(base_op, target_paragraph=target_paragraph),
                 lo=lo,
             )
         )
@@ -5158,18 +5303,18 @@ def _split_sparse_omission_single_subsection_across_consecutive_replaces(
             op
             for op in group_ops
             if (
-                op.op_type == "REPLACE"
-                and op.target_paragraph is not None
-                and not op.target_item
-                and not op.target_special
+                op.op_type == OpType.REPLACE
+                and op.target_cols.target_paragraph is not None
+                and not op.target_cols.target_item
+                and not op.target_cols.target_special
             )
         ],
-        key=lambda op: op.target_paragraph or 0,
+        key=lambda op: op.target_cols.target_paragraph or 0,
     )
     if len(replace_ops) < 2:
         return muutos_ir, False
 
-    targets = [int(op.target_paragraph or 0) for op in replace_ops]
+    targets = [int(op.target_cols.target_paragraph or 0) for op in replace_ops]
     if any(curr != prev + 1 for prev, curr in pairwise(targets)):
         return muutos_ir, False
 
@@ -5331,24 +5476,24 @@ def _split_single_target_subsection_carried_live_tail(
 
     plain_targets = sorted(
         {
-            int(op.target_paragraph)
+            int(op.target_cols.target_paragraph)
             for op in group_ops
             if (
-                op.op_type in {"REPLACE", "INSERT"}
-                and op.target_paragraph is not None
-                and not op.target_item
-                and not op.target_special
+                op.op_type in {OpType.REPLACE, OpType.INSERT}
+                and op.target_cols.target_paragraph is not None
+                and not op.target_cols.target_item
+                and not op.target_cols.target_special
             )
         }
     )
     if len(plain_targets) != 1:
         return muutos_ir, None
     if any(
-        op.target_paragraph is not None
+        op.target_cols.target_paragraph is not None
         and (
-            bool(op.target_item)
-            or bool(op.target_special)
-            or int(op.target_paragraph) != plain_targets[0]
+            bool(op.target_cols.target_item)
+            or bool(op.target_cols.target_special)
+            or int(op.target_cols.target_paragraph) != plain_targets[0]
         )
         for op in group_ops
     ):
@@ -5486,9 +5631,9 @@ def _assign_subsection_slots(
     all_slot_ops = sorted(
         [*slot_inputs.payload_subsec_ops, *slot_inputs.intro_subsec_ops, *slot_inputs.renumber_subsec_ops],
         key=lambda op: (
-            op.target_paragraph or 0,
-            op.target_item or "",
-            op.target_special or "",
+            op.target_cols.target_paragraph or 0,
+            op.target_cols.target_item or "",
+            op.target_cols.target_special or "",
             op.op_type,
         ),
     )
@@ -5496,9 +5641,9 @@ def _assign_subsection_slots(
         SparsePayloadSlotBinding(
             op_description=op.description(),
             op_type=str(op.op_type or ""),
-            target_paragraph=op.target_paragraph,
-            target_item=str(op.target_item or "") or None,
-            target_special=str(op.target_special or "") or None,
+            target_paragraph=op.target_cols.target_paragraph,
+            target_item=str(op.target_cols.target_item or "") or None,
+            target_special=str(op.target_cols.target_special or "") or None,
             payload_slot_index=assigned_idx + 1,
             payload_slot_label=str(slot_inputs.amend_subs[assigned_idx].label or ""),
         )
@@ -5532,9 +5677,9 @@ def _assign_subsection_slots(
         if assigned_idx < 0:
             continue
         key = (
-            op.target_paragraph,
-            str(op.target_item or "") or None,
-            str(op.target_special or "") or None,
+            op.target_cols.target_paragraph,
+            str(op.target_cols.target_item or "") or None,
+            str(op.target_cols.target_special or "") or None,
             assigned_idx + 1,
         )
         binding_rule = state.binding_rule_by_op_id.get(id(op))
@@ -5579,7 +5724,7 @@ def _assign_subsection_slots(
             admissibility = "fallback"
         source_statute = ""
         for op in all_slot_ops:
-            if op.target_paragraph == binding.target_paragraph and str(op.target_item or "") == str(
+            if op.target_cols.target_paragraph == binding.target_paragraph and str(op.target_cols.target_item or "") == str(
                 binding.target_item or ""
             ):
                 source_statute = str(op.source_statute or "")
@@ -5595,9 +5740,9 @@ def _assign_subsection_slots(
         for op in all_slot_ops:
             if (
                 (op.op_id or "").strip()
-                and op.target_paragraph == binding.target_paragraph
-                and str(op.target_item or "") == str(binding.target_item or "")
-                and str(op.target_special or "") == str(binding.target_special or "")
+                and op.target_cols.target_paragraph == binding.target_paragraph
+                and str(op.target_cols.target_item or "") == str(binding.target_item or "")
+                and str(op.target_cols.target_special or "") == str(binding.target_special or "")
                 and assigned_indices_by_op_id.get(id(op), -1) + 1 == binding.payload_slot_index
             ):
                 binding_admissibility_by_op_id[str(op.op_id)] = admissibility
@@ -5629,31 +5774,31 @@ def _collect_subsection_slot_inputs(
         op
         for op in group_ops
         if (
-            op.target_paragraph
-            and op.op_type in ("REPLACE", "INSERT")
-            and (not op.target_special or op.target_special == "johd")
+            op.target_cols.target_paragraph
+            and op.op_type in (OpType.REPLACE, OpType.INSERT)
+            and (not op.target_cols.target_special or op.target_cols.target_special == "johd")
         )
     ]
     renumber_subsec_ops = [
         op
         for op in group_ops
         if (
-            op.target_paragraph
-            and op.op_type == "RENUMBER"
-            and not op.target_item
-            and not op.target_special
+            op.target_cols.target_paragraph
+            and op.op_type == OpType.RENUMBER
+            and not op.target_cols.target_item
+            and not op.target_cols.target_special
             and _destination_subsection_label_for_renumber(op)
         )
     ]
-    subsec_ops.sort(key=lambda op: (op.target_paragraph or 0, op.target_item or ""))
+    subsec_ops.sort(key=lambda op: (op.target_cols.target_paragraph or 0, op.target_cols.target_item or ""))
     renumber_subsec_ops.sort(
         key=lambda op: (
             int(_destination_subsection_label_for_renumber(op) or "0"),
-            op.target_paragraph or 0,
+            op.target_cols.target_paragraph or 0,
         )
     )
-    payload_subsec_ops = [op for op in subsec_ops if op.target_special != "johd"]
-    intro_subsec_ops = [op for op in subsec_ops if op.target_special == "johd"]
+    payload_subsec_ops = [op for op in subsec_ops if op.target_cols.target_special != "johd"]
+    intro_subsec_ops = [op for op in subsec_ops if op.target_cols.target_special == "johd"]
     if muutos_ir is None or not (subsec_ops or renumber_subsec_ops):
         return None
     amend_subs = [child for child in muutos_ir.children if child.kind == IRNodeKind.SUBSECTION]
@@ -5676,11 +5821,11 @@ def _collect_subsection_slot_inputs(
         return None
     duplicate_targets = sorted(
         {
-            op.target_paragraph
+            op.target_cols.target_paragraph
             for op in payload_subsec_ops
-            if op.target_paragraph is not None
+            if op.target_cols.target_paragraph is not None
             and any(
-                other is not op and other.target_paragraph == op.target_paragraph and not other.target_item
+                other is not op and other.target_cols.target_paragraph == op.target_cols.target_paragraph and not other.target_cols.target_item
                 for other in payload_subsec_ops
             )
         }
@@ -5740,11 +5885,11 @@ def _attach_terminal_section_omission_to_tail_subsection(
         return muutos_ir, assignment
 
     highest_plain = max(
-        (op for op in group_ops if not op.target_item and op.target_paragraph is not None),
-        key=lambda op: op.target_paragraph or 0,
+        (op for op in group_ops if not op.target_cols.target_item and op.target_cols.target_paragraph is not None),
+        key=lambda op: op.target_cols.target_paragraph or 0,
         default=None,
     )
-    if highest_plain is None or highest_plain.target_paragraph != len(live_subsecs):
+    if highest_plain is None or highest_plain.target_cols.target_paragraph != len(live_subsecs):
         return muutos_ir, assignment
 
     mapped = assignment.for_op(highest_plain)
@@ -5825,7 +5970,7 @@ def _drop_item_replaces_missing_from_sparse_payload(
     pathologies: List[SourcePathology] = []
     rejected: List[FailedOp] = []
     for op in group_ops:
-        if op.op_type != "REPLACE" or not op.target_item:
+        if op.op_type != OpType.REPLACE or not op.target_cols.target_item:
             filtered.append(op)
             continue
         amend_sub = assignment.for_op(op)
@@ -5836,16 +5981,16 @@ def _drop_item_replaces_missing_from_sparse_payload(
         if not has_omission:
             filtered.append(op)
             continue
-        item_norm = leaf_label_identity_key(str(op.target_item))
+        item_norm = leaf_label_identity_key(str(op.target_cols.target_item))
         if _sub_has_item(amend_sub, item_norm):
             filtered.append(op)
             continue
         pathologies.append(
             build_sparse_item_body_missing_pathology(
                 source_statute=op.source_statute,
-                target_section=op.target_section,
-                target_paragraph=str(op.target_paragraph or ""),
-                target_item=str(op.target_item or ""),
+                target_section=op.target_cols.target_section,
+                target_paragraph=str(op.target_cols.target_paragraph or ""),
+                target_item=str(op.target_cols.target_item or ""),
             )
         )
         rejected.append(
@@ -5853,11 +5998,11 @@ def _drop_item_replaces_missing_from_sparse_payload(
                 amendment_id=op.source_statute or "",
                 description=op.description(),
                 reason="ELAB.DROP_ITEM_REPLACES_MISSING",
-                target_section=str(op.target_section or ""),
-                target_unit_kind=op.target_unit_kind,
-                target_chapter=op.target_chapter,
+                target_section=str(op.target_cols.target_section or ""),
+                target_unit_kind=op.target_cols.target_unit_kind,
+                target_chapter=op.target_cols.target_chapter,
                 target_subsection=_op_target_subsection_label(op),
-                target_item=op.target_item,
+                target_item=op.target_cols.target_item,
             )
         )
         continue
@@ -5933,7 +6078,7 @@ def _drop_redundant_item_ops_claimed_by_sparse_slot(
     filtered: List[AmendmentOp] = []
     dropped: List[FailedOp] = []
     for op in group_ops:
-        if op.op_type != "INSERT" or not op.target_item or op.target_paragraph is None:
+        if op.op_type != OpType.INSERT or not op.target_cols.target_item or op.target_cols.target_paragraph is None:
             filtered.append(op)
             continue
         mapped = assignment.for_op(op)
@@ -5941,7 +6086,7 @@ def _drop_redundant_item_ops_claimed_by_sparse_slot(
             filtered.append(op)
             continue
 
-        item_norm = leaf_label_identity_key(str(op.target_item))
+        item_norm = leaf_label_identity_key(str(op.target_cols.target_item))
         if not _sub_has_item(mapped, item_norm):
             filtered.append(op)
             continue
@@ -5966,10 +6111,10 @@ def _drop_redundant_item_ops_claimed_by_sparse_slot(
                 (
                     # Plain moment REPLACE (no target_item) owns the whole slot.
                     # A plain moment INSERT does NOT carry the slot.
-                    not other.target_item
-                    and other.target_special is None
-                    and other.op_type == "REPLACE"
-                    and other.target_paragraph == op.target_paragraph
+                    not other.target_cols.target_item
+                    and other.target_cols.target_special is None
+                    and other.op_type == OpType.REPLACE
+                    and other.target_cols.target_paragraph == op.target_cols.target_paragraph
                 )
                 or (
                     # Sparse slot with OMISSION: a plain whole-moment REPLACE
@@ -5978,11 +6123,11 @@ def _drop_redundant_item_ops_claimed_by_sparse_slot(
                     # target subsection has no paragraph items. Intro/johd or
                     # item-specific REPLACE ops do not carry sibling items.
                     slot_has_omission
-                    and op.target_paragraph is not None
-                    and not _live_para_has_items(op.target_paragraph)
-                    and other.op_type == "REPLACE"
-                    and not other.target_item
-                    and other.target_special is None
+                    and op.target_cols.target_paragraph is not None
+                    and not _live_para_has_items(op.target_cols.target_paragraph)
+                    and other.op_type == OpType.REPLACE
+                    and not other.target_cols.target_item
+                    and other.target_cols.target_special is None
                 )
                 or (
                     # Non-omission slot: REPLACE of the lettered-family base
@@ -5995,14 +6140,14 @@ def _drop_redundant_item_ops_claimed_by_sparse_slot(
                     # time) is never carried by the base REPLACE and must be
                     # applied by its own INSERT op.
                     not slot_has_omission
-                    and op.target_paragraph is not None
-                    and _live_para_has_specific_item(op.target_paragraph, item_norm)
-                    and other.op_type == "REPLACE"
-                    and other.target_item is not None
+                    and op.target_cols.target_paragraph is not None
+                    and _live_para_has_specific_item(op.target_cols.target_paragraph, item_norm)
+                    and other.op_type == OpType.REPLACE
+                    and other.target_cols.target_item is not None
                     # lawvm-regex: owning_parser compound-item-label shape predicate over a normalized label; lexer-shaped
                     and re.match(r"^\d+[a-z]$", item_norm)
                     and item_norm.rstrip("abcdefghijklmnopqrstuvwxyz")
-                    == leaf_label_identity_key(str(other.target_item))
+                    == leaf_label_identity_key(str(other.target_cols.target_item))
                 )
             )
             for other in group_ops
@@ -6016,11 +6161,11 @@ def _drop_redundant_item_ops_claimed_by_sparse_slot(
                 amendment_id=op.source_statute or "",
                 description=op.description(),
                 reason="ELAB.DROP_REDUNDANT_ITEM_OPS_IN_SPARSE_SLOT",
-                target_section=str(op.target_section or ""),
-                target_unit_kind=op.target_unit_kind,
-                target_chapter=op.target_chapter,
+                target_section=str(op.target_cols.target_section or ""),
+                target_unit_kind=op.target_cols.target_unit_kind,
+                target_chapter=op.target_cols.target_chapter,
                 target_subsection=_op_target_subsection_label(op),
-                target_item=op.target_item,
+                target_item=op.target_cols.target_item,
             )
         )
 
@@ -6053,11 +6198,11 @@ def _mixed_sparse_slot_cross_paragraph_bindings(
 
     observations: List[ElaborationObservation] = []
     for slot_label, slot_ops in sorted(ops_by_slot.items()):
-        paragraphs = sorted({int(op.target_paragraph or 0) for op in slot_ops if op.target_paragraph is not None})
+        paragraphs = sorted({int(op.target_cols.target_paragraph or 0) for op in slot_ops if op.target_cols.target_paragraph is not None})
         if len(paragraphs) < 2:
             continue
-        item_ops = [op for op in slot_ops if op.target_item]
-        plain_ops = [op for op in slot_ops if not op.target_item and op.target_paragraph is not None]
+        item_ops = [op for op in slot_ops if op.target_cols.target_item]
+        plain_ops = [op for op in slot_ops if not op.target_cols.target_item and op.target_cols.target_paragraph is not None]
         if not item_ops or not plain_ops:
             continue
         observations.append(
@@ -6110,15 +6255,15 @@ def _split_mixed_sparse_slot_cross_paragraph_payloads(
         item_ops = [
             op
             for op in slot_ops
-            if op.target_item and op.target_paragraph is not None
+            if op.target_cols.target_item and op.target_cols.target_paragraph is not None
         ]
         plain_ops = [
             op
             for op in slot_ops
             if (
-                op.target_paragraph is not None
-                and not op.target_item
-                and not op.target_special
+                op.target_cols.target_paragraph is not None
+                and not op.target_cols.target_item
+                and not op.target_cols.target_special
             )
         ]
         if not item_ops or not plain_ops:
@@ -6126,9 +6271,9 @@ def _split_mixed_sparse_slot_cross_paragraph_payloads(
 
         for plain_op in plain_ops:
             cross_item_labels = {
-                leaf_label_identity_key(str(item_op.target_item))
+                leaf_label_identity_key(str(item_op.target_cols.target_item))
                 for item_op in item_ops
-                if item_op.target_paragraph != plain_op.target_paragraph
+                if item_op.target_cols.target_paragraph != plain_op.target_cols.target_paragraph
             }
             if not cross_item_labels:
                 continue
@@ -6169,7 +6314,7 @@ def _split_mixed_sparse_slot_cross_paragraph_payloads(
                     "sparse_subsection_elaboration",
                     slot_label=str(mapped.label or ""),
                     plain_op=plain_op.description(),
-                    plain_target_paragraph=plain_op.target_paragraph,
+                    plain_target_paragraph=plain_op.target_cols.target_paragraph,
                     removed_item_labels=removed_labels,
                     item_ops=[op.description() for op in item_ops],
                 )
@@ -6376,6 +6521,7 @@ def _elaborate_sparse_subsection_payload(
         group_ops,
         assignment,
     )
+    assignment = _merge_sparse_plain_subsection_shell_continuations(muutos_ir, group_ops, assignment)
     observations.extend(split_observations)
     observations.extend(assignment.binding_observations)
     observations.extend(_mixed_sparse_slot_cross_paragraph_bindings(group_ops, assignment))
@@ -6709,10 +6855,10 @@ def _rewrite_named_row_province_table_replaces(
     rebuilt_muutos_ir = muutos_ir
     for op in group_ops:
         if not (
-            op.op_type == "REPLACE"
-            and op.target_paragraph is None
-            and op.target_item is None
-            and not op.target_special
+            op.op_type == OpType.REPLACE
+            and op.target_cols.target_paragraph is None
+            and op.target_cols.target_item is None
+            and not op.target_cols.target_special
         ):
             continue
         named_rows = tuple(row for row in op.named_row_targets if row)
@@ -6772,7 +6918,7 @@ def _rewrite_named_row_table_replaces(
     changed = False
     for op in group_ops:
         if not (
-            op.op_type == "REPLACE" and op.target_paragraph is None and op.target_item is None and not op.target_special
+            op.op_type == OpType.REPLACE and op.target_cols.target_paragraph is None and op.target_cols.target_item is None and not op.target_cols.target_special
         ):
             rewritten_ops.append(op)
             continue
@@ -6817,8 +6963,7 @@ def _rewrite_named_row_table_replaces(
             rewritten_ops.append(
                 dc_replace(
                     op,
-                    target_paragraph=1,
-                    target_item=live_paragraph.label,
+                    **replace_target(op, target_paragraph=1, target_item=live_paragraph.label),
                     lo=(
                         _lo_with_path_update(
                             op.lo,
@@ -6893,7 +7038,7 @@ def _rewrite_partial_whole_section_table_payload(
         op
         for op in group_ops
         if (
-            op.target_paragraph is None and op.target_item is None and not op.target_special and op.op_type == "REPLACE"
+            op.target_cols.target_paragraph is None and op.target_cols.target_item is None and not op.target_cols.target_special and op.op_type == OpType.REPLACE
         )
     ]
     if len(whole_ops) != 1:
@@ -6930,9 +7075,8 @@ def _rewrite_partial_whole_section_table_payload(
         rewritten_ops.append(
             dc_replace(
                 base_op,
-                op_type="REPLACE",
-                target_paragraph=1,
-                target_item=live_paragraph.label,
+                op_type=OpType.REPLACE,
+                **replace_target(base_op, target_paragraph=1, target_item=live_paragraph.label),
                 lo=(
                     _lo_with_path_update(
                         base_op.lo,
@@ -7102,10 +7246,10 @@ def _rewrite_internal_ordered_list_inserts(
         return group_ops, muutos_ir, None
     [op] = group_ops
     if (
-        op.op_type != "REPLACE"
-        or op.target_paragraph is not None
-        or op.target_item
-        or op.target_special
+        op.op_type != OpType.REPLACE
+        or op.target_cols.target_paragraph is not None
+        or op.target_cols.target_item
+        or op.target_cols.target_special
         or not _source_targets_internal_ordered_list(op)
     ):
         return group_ops, muutos_ir, None
@@ -7151,9 +7295,8 @@ def _rewrite_internal_ordered_list_inserts(
     rewritten_ops = [
         dc_replace(
             op,
-            op_type="INSERT",
-            target_paragraph=int(live_subsection_label),
-            target_item=target_label,
+            op_type=OpType.INSERT,
+            **replace_target(op, target_paragraph=int(live_subsection_label), target_item=target_label),
             lo=(
                 _lo_with_path_update(
                     op.lo,
@@ -7173,7 +7316,7 @@ def _rewrite_internal_ordered_list_inserts(
             _INTERNAL_ORDERED_LIST_INSERT_RULE,
             "payload_elaboration",
             source_op=op.description(),
-            target_section=op.target_section or "",
+            target_section=op.target_cols.target_section or "",
             target_subsection=live_subsection_label,
             inserted_item_targets=list(targets),
             payload_slot_count=len(payload_slots),
@@ -7222,7 +7365,7 @@ def _rewrite_named_row_table_repeals(
     changed = False
     for op in group_ops:
         if not (
-            op.op_type == "REPEAL" and op.target_paragraph is None and op.target_item is None and not op.target_special
+            op.op_type == OpType.REPEAL and op.target_cols.target_paragraph is None and op.target_cols.target_item is None and not op.target_cols.target_special
         ):
             rewritten_ops.append(op)
             continue
@@ -7251,8 +7394,7 @@ def _rewrite_named_row_table_repeals(
             rewritten_ops.append(
                 dc_replace(
                     op,
-                    target_paragraph=1,
-                    target_item=live_paragraph.label,
+                    **replace_target(op, target_paragraph=1, target_item=live_paragraph.label),
                     lo=(
                         _lo_with_path_update(
                             op.lo,
@@ -7300,13 +7442,13 @@ def _detect_sparse_subsection_tail_preservation_risk(
 
     plain_subsec_targets = sorted(
         {
-            int(op.target_paragraph)
+            int(op.target_cols.target_paragraph)
             for op in group_ops
             if (
-                op.op_type in ("REPLACE", "INSERT")
-                and op.target_paragraph is not None
-                and not op.target_item
-                and not op.target_special
+                op.op_type in (OpType.REPLACE, OpType.INSERT)
+                and op.target_cols.target_paragraph is not None
+                and not op.target_cols.target_item
+                and not op.target_cols.target_special
             )
         }
     )
@@ -7533,9 +7675,9 @@ def elaborate_payload_against_live(
         recodification_transfer_context=recodification_transfer_context,
         expected_heading_only=_container_pruning_is_expected_heading_only(group_ops),
         preserve_dense_new_container_payload=any(
-            op.op_type == "INSERT"
-            and op.target_unit_kind == target_unit_kind
-            and _norm_num_token(op.target_section or op.target_chapter or op.target_part or "")
+            op.op_type == OpType.INSERT
+            and op.target_cols.target_unit_kind == target_unit_kind
+            and _norm_num_token(op.target_cols.target_section or op.target_cols.target_chapter or op.target_cols.target_part or "")
             == target_norm
             for op in group_ops
         )
@@ -7747,8 +7889,8 @@ def elaborate_payload_against_live(
             normalized_item_like_target_rewrites.append(
                 {
                     "op_description": normalized.description(),
-                    "target_paragraph": normalized.target_paragraph,
-                    "target_item": normalized.target_item,
+                    "target_paragraph": normalized.target_cols.target_paragraph,
+                    "target_item": normalized.target_cols.target_item,
                 }
             )
     group_ops = normalized_group_ops

@@ -24,7 +24,7 @@ class TestStrictPayloadConfidence:
 
     def test_strict_clean_section(self) -> None:
         ssv = SectionStrictVerdict(
-            section_label="1", amendment_id="2020/100", status="strict_clean",
+            section_label="1", amendment_id="2020/100", verdict_status="strict_clean",
         )
         claims = _build_section_claims(
             section_results=[_make_section_result()],
@@ -36,7 +36,7 @@ class TestStrictPayloadConfidence:
         ssv = SectionStrictVerdict(
             section_label="1", amendment_id="2020/100",
             barrier_codes=("APPLY.SOURCE_INCOMPLETE",),
-            status="source_incomplete",
+            verdict_status="source_incomplete",
         )
         claims = _build_section_claims(
             section_results=[_make_section_result()],
@@ -48,7 +48,7 @@ class TestStrictPayloadConfidence:
         ssv = SectionStrictVerdict(
             section_label="1", amendment_id="2020/100",
             barrier_codes=("APPLY.UNCOVERED_BODY_RECOVERY",),
-            status="strict_blocked_by_recovery",
+            verdict_status="strict_blocked_by_recovery",
         )
         claims = _build_section_claims(
             section_results=[_make_section_result()],
@@ -65,7 +65,7 @@ class TestStrictPayloadConfidence:
 
     def test_unknown_when_section_not_in_verdicts(self) -> None:
         ssv = SectionStrictVerdict(
-            section_label="99", amendment_id="2020/100", status="strict_clean",
+            section_label="99", amendment_id="2020/100", verdict_status="strict_clean",
         )
         claims = _build_section_claims(
             section_results=[_make_section_result()],

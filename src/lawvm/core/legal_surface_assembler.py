@@ -187,8 +187,8 @@ def _validate_node_seed(seed: SurfaceNodeSeed, *, lens_id: str) -> None:
         f"allowed={sorted(NODE_KINDS)}",
     )
     _require(
-        seed.status in NODE_STATUSES,
-        f"lens {lens_id!r}: unknown node status {seed.status!r} "
+        seed.node_status in NODE_STATUSES,
+        f"lens {lens_id!r}: unknown node status {seed.node_status!r} "
         f"(node_kind={seed.node_kind!r}); allowed={sorted(NODE_STATUSES)}",
     )
     _require(
@@ -218,8 +218,8 @@ def _validate_edge_seed(seed: SurfaceEdgeSeed, *, origin: str) -> None:
         f"{origin}: unknown edge_kind {seed.edge_kind!r}; allowed={sorted(EDGE_KINDS)}",
     )
     _require(
-        seed.status in EDGE_STATUSES,
-        f"{origin}: unknown edge status {seed.status!r} "
+        seed.surface_edge_status in EDGE_STATUSES,
+        f"{origin}: unknown edge status {seed.surface_edge_status!r} "
         f"(edge_kind={seed.edge_kind!r}); allowed={sorted(EDGE_STATUSES)}",
     )
     _require(bool(seed.rule_id), f"{origin}: edge seed (kind={seed.edge_kind!r}) has empty rule_id")
@@ -270,7 +270,7 @@ def _mint_node_from_seed(
         source_ref=seed.source_ref,
         lens_id=lens_id,
         rule_id=seed.rule_id,
-        status=seed.status,
+        node_status=seed.node_status,
         payload_hash=payload_hash,
         payload=seed.payload,
     )
@@ -290,7 +290,7 @@ def _residual_to_node_seed(seed: SurfaceResidualSeed) -> SurfaceNodeSeed:
         source_ref=seed.source_ref,
         local_discriminator=seed.local_discriminator,
         rule_id=seed.rule_id,
-        status=seed.status,
+        node_status=seed.residual_status,
         payload=payload,
         authority_role="residual",
     )
@@ -370,7 +370,7 @@ def _mint_edge_from_seed(
         src=src,
         dst=dst,
         rule_id=seed.rule_id,
-        status=seed.status,
+        surface_edge_status=seed.surface_edge_status,
         payload_hash=compute_payload_hash(seed.payload),
         payload=seed.payload,
     )
@@ -469,7 +469,10 @@ def _dedup_edge(edges: dict[str, SurfaceEdge], edge: SurfaceEdge, *, origin: str
     if existing is None:
         edges[edge.edge_id] = edge
         return
-    if existing.payload_hash != edge.payload_hash or existing.status != edge.status:
+    if (
+        existing.payload_hash != edge.payload_hash
+        or existing.surface_edge_status != edge.surface_edge_status
+    ):
         raise SurfaceAssemblyError(
             f"{origin}: edge id collision with divergent payload/status for {edge.edge_id!r}"
         )

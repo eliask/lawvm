@@ -233,7 +233,7 @@ def _compile_amendment_ops_over_real_amendment() -> PhaseResult[list[ResolvedOp]
         parent_id="1985/336",
         source_model=source_model,
     )
-    ops = [op for op in phase.output if str(op.target_section) in {"29", "31"}]
+    ops = [op for op in phase.output if str(op.target_cols.target_section) in {"29", "31"}]
     return compile_amendment_ops(
         before.state,
         ops,

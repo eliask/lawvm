@@ -33,7 +33,7 @@ def test_observed_write_audit_clean_when_observed_and_receipt_paths_match() -> N
 
     audit = build_observed_write_audit(before, after, receipt)
 
-    assert audit.status == "clean"
+    assert audit.audit_status == "clean"
     assert audit.observed_changed_paths == ((("section", "1"),),)
     assert audit.receipt_declared_paths == ((("section", "1"),),)
     assert audit.undeclared_paths == ()
@@ -56,7 +56,7 @@ def test_observed_write_audit_qualified_for_named_relabel_parent_child_granulari
 
     audit = build_observed_write_audit(before, after, receipt)
 
-    assert audit.status == "qualified"
+    assert audit.audit_status == "qualified"
     assert audit.observed_changed_paths == ((),)
     assert audit.receipt_declared_paths == ((("section", "1"),), (("section", "2"),))
     assert audit.undeclared_paths == ()
@@ -78,7 +78,7 @@ def test_observed_write_audit_flags_declared_write_with_no_observed_change() -> 
 
     audit = build_observed_write_audit(before, after, receipt)
 
-    assert audit.status == "violation"
+    assert audit.audit_status == "violation"
     assert audit.observed_changed_paths == ()
     assert audit.receipt_declared_paths == ((("section", "1"),),)
     assert audit.undeclared_paths == ()
@@ -99,7 +99,7 @@ def test_observed_write_audit_flags_observed_write_outside_receipt() -> None:
 
     audit = build_observed_write_audit(before, after, receipt)
 
-    assert audit.status == "violation"
+    assert audit.audit_status == "violation"
     assert audit.observed_changed_paths == ((("section", "2"),),)
     assert audit.undeclared_paths == ((("section", "2"),),)
     assert audit.unobserved_declared_paths == ((("section", "1"),),)
@@ -113,5 +113,5 @@ def test_observed_write_audit_validates_qualified_rule_ids() -> None:
             receipt_declared_paths=(),
             undeclared_paths=(),
             unobserved_declared_paths=(),
-            status="qualified",
+            audit_status="qualified",
         )

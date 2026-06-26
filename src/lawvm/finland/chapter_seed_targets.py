@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, TypeAlias
+from typing import Iterable
 
 
 @dataclass(frozen=True, slots=True)
@@ -14,9 +14,9 @@ class ChapterSeedSkip:
     amendment_id: str
 
 
-LegacyChapterSeedSkip: TypeAlias = tuple[str, str]
-ChapterSeedSkipInput: TypeAlias = ChapterSeedSkip | LegacyChapterSeedSkip
-ChapterSeedSkipInputSet: TypeAlias = set[ChapterSeedSkipInput] | None
+type LegacyChapterSeedSkip = tuple[str, str]
+type ChapterSeedSkipInput = ChapterSeedSkip | LegacyChapterSeedSkip
+type ChapterSeedSkipInputSet = set[ChapterSeedSkipInput] | None
 
 
 def normalize_chapter_seed_skips(

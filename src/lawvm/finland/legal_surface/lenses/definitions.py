@@ -288,7 +288,7 @@ class DefinitionLens:
                     source_ref=ref,
                     local_discriminator=local_id,
                     rule_id=RULE_BINDING,
-                    status="asserted",
+                    node_status="asserted",
                     payload={
                         "term": binding.term,
                         "target_ref": binding.target_ref,
@@ -311,7 +311,7 @@ class DefinitionLens:
                         source_ref=None,
                         local_discriminator=term_id,
                         rule_id=RULE_TERM_SYMBOL,
-                        status="asserted",
+                        node_status="asserted",
                         payload={"term": binding.term.strip().lower()},
                         authority_role="entity_handle",
                     )
@@ -324,7 +324,7 @@ class DefinitionLens:
                     src_local=local_id,
                     dst_local=term_id,
                     rule_id=RULE_DEFINES_TERM,
-                    status="asserted",
+                    surface_edge_status="asserted",
                     payload={"term_id": term_id},
                 )
             )
@@ -367,7 +367,7 @@ class DefinitionLens:
                     source_ref=ref,
                     local_discriminator=local_id,
                     rule_id=RULE_TERM_USE,
-                    status=status,
+                    node_status=status,
                     payload={
                         "term_surface": use.term_surface,
                         "lemma": use.lemma,
@@ -392,7 +392,7 @@ class DefinitionLens:
                         src_local=local_id,
                         dst_local=binding_local,
                         rule_id=RULE_USES_TERM,
-                        status="asserted",
+                        surface_edge_status="asserted",
                         payload={
                             "term": use.binding.term,
                             "term_id": _canonical_term_id(use.binding.term),

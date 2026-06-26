@@ -27,7 +27,7 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.apply import apply_op
 from lawvm.finland.apply_events import ApplyMutationEvent
 from lawvm.finland.migration_ledger import MigrationLedger
-from lawvm.finland.ops import AmendmentOp, ResolvedOp
+from lawvm.finland.ops import OpType, AmendmentOp, ResolvedOp
 from lawvm.finland.statute import ReplayState, StatuteContext
 
 
@@ -626,7 +626,7 @@ def _make_relabel_rop(
 
     op = AmendmentOp(
         op_id="relabel_test",
-        op_type="RENUMBER",
+        op_type=OpType.RENUMBER,
         target_section=target_section,
         target_unit_kind=target_unit_kind,
         target_chapter=target_chapter,
@@ -647,9 +647,9 @@ def _make_relabel_rop(
         op_id=op.op_id,
         target_unit_kind="section",
         target_norm=target_section,
-        _op_type_seed="RENUMBER",
+        _op_type_seed=OpType.RENUMBER,
         _target_special_override=(
-            op.target_special if op.target_special not in {None, "otsikko", "johd"} else None
+            op.target_cols.target_special if op.target_cols.target_special not in {None, "otsikko", "johd"} else None
         ),
         sec1_body_johto_fallback=op.sec1_body_johto_fallback,
         uncovered_body_recovery=op.uncovered_body_recovery,
@@ -746,7 +746,7 @@ class TestMigrationLedgerIntegration:
 
         op = AmendmentOp(
             op_id="ch_relabel",
-            op_type="RENUMBER",
+            op_type=OpType.RENUMBER,
             target_section="3",
             target_unit_kind="chapter",
             source_statute="2021/10",
@@ -763,9 +763,9 @@ class TestMigrationLedgerIntegration:
             op_id=op.op_id,
             target_unit_kind="chapter",
             target_norm="3",
-            _op_type_seed="RENUMBER",
+            _op_type_seed=OpType.RENUMBER,
             _target_special_override=(
-                op.target_special if op.target_special not in {None, "otsikko", "johd"} else None
+                op.target_cols.target_special if op.target_cols.target_special not in {None, "otsikko", "johd"} else None
             ),
             sec1_body_johto_fallback=op.sec1_body_johto_fallback,
             uncovered_body_recovery=op.uncovered_body_recovery,
@@ -820,7 +820,7 @@ class TestMigrationLedgerIntegration:
         )
         op2 = AmendmentOp(
             op_id="relabel_2",
-            op_type="RENUMBER",
+            op_type=OpType.RENUMBER,
             target_section="5a",
             target_unit_kind="section",
             source_statute="2022/300",
@@ -837,9 +837,9 @@ class TestMigrationLedgerIntegration:
             op_id=op2.op_id,
             target_unit_kind="section",
             target_norm="5a",
-            _op_type_seed="RENUMBER",
+            _op_type_seed=OpType.RENUMBER,
             _target_special_override=(
-                op2.target_special if op2.target_special not in {None, "otsikko", "johd"} else None
+                op2.target_cols.target_special if op2.target_cols.target_special not in {None, "otsikko", "johd"} else None
             ),
             sec1_body_johto_fallback=op2.sec1_body_johto_fallback,
             uncovered_body_recovery=op2.uncovered_body_recovery,

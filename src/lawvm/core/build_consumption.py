@@ -440,7 +440,7 @@ class BuildTaintStatusFinding:
     """Per-build status from the four-state taint query."""
 
     build_id: str
-    status: BuildConsumptionStatus
+    taint_status: BuildConsumptionStatus
     findings: tuple[BuildTaintFinding, ...]
     detail: str = ""
 
@@ -489,7 +489,7 @@ def build_consumption_status(
     if build_id not in nodes:
         return BuildTaintStatusFinding(
             build_id=build_id,
-            status=BuildConsumptionStatus.BUILD_UNKNOWN,
+            taint_status=BuildConsumptionStatus.BUILD_UNKNOWN,
             findings=(),
             detail="no build node in graph; not taint-checkable (not clean)",
         )
@@ -497,7 +497,7 @@ def build_consumption_status(
     if record is None:
         return BuildTaintStatusFinding(
             build_id=build_id,
-            status=BuildConsumptionStatus.BUILD_CONSUMPTION_UNINSTRUMENTED,
+            taint_status=BuildConsumptionStatus.BUILD_CONSUMPTION_UNINSTRUMENTED,
             findings=(),
             detail="build node present but no BuildRecord content available (not clean)",
         )
@@ -510,7 +510,7 @@ def build_consumption_status(
     if not record.consumption_instrumented:
         return BuildTaintStatusFinding(
             build_id=build_id,
-            status=BuildConsumptionStatus.BUILD_CONSUMPTION_UNINSTRUMENTED,
+            taint_status=BuildConsumptionStatus.BUILD_CONSUMPTION_UNINSTRUMENTED,
             findings=(),
             detail="emitter did not instrument consumption (not clean)",
         )
@@ -518,7 +518,7 @@ def build_consumption_status(
     if edge_count != record.consumed_subject_count:
         return BuildTaintStatusFinding(
             build_id=build_id,
-            status=BuildConsumptionStatus.INVALID_CONSUMPTION,
+            taint_status=BuildConsumptionStatus.INVALID_CONSUMPTION,
             findings=(),
             detail=(
                 f"BuildRecord declares consumed_subject_count="
@@ -529,7 +529,7 @@ def build_consumption_status(
     if record.consumed_subject_count == 0:
         return BuildTaintStatusFinding(
             build_id=build_id,
-            status=BuildConsumptionStatus.CLEAN,
+            taint_status=BuildConsumptionStatus.CLEAN,
             findings=(),
             detail="instrumented build consumed zero assertions",
         )
@@ -537,12 +537,12 @@ def build_consumption_status(
     if findings:
         return BuildTaintStatusFinding(
             build_id=build_id,
-            status=BuildConsumptionStatus.TAINTED,
+            taint_status=BuildConsumptionStatus.TAINTED,
             findings=findings,
         )
     return BuildTaintStatusFinding(
         build_id=build_id,
-        status=BuildConsumptionStatus.CLEAN,
+        taint_status=BuildConsumptionStatus.CLEAN,
         findings=(),
         detail="no consumed assertion is retracted",
     )

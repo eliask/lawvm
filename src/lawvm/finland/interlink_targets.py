@@ -61,7 +61,7 @@ def build_fi_interlink_target_row(
 
     engine_id = engine_statute_id(target_ref.local_id)
     if not _looks_like_engine_statute_id(engine_id):
-        return _unsupported_fi_target_row(target_ref, status="unsupported_fi_target_id")
+        return _unsupported_fi_target_row(target_ref, preview_status="unsupported_fi_target_id")
     preview = _target_preview_payload(
         target_ref,
         engine_id=engine_id,
@@ -84,7 +84,7 @@ def build_fi_interlink_target_row(
         target_locator=target_ref.locator,
         target_url=target_url,
         target_links_json=json.dumps(links, ensure_ascii=False, sort_keys=True),
-        preview_status=str(preview.get("status") or ""),
+        preview_status=str(preview.get("preview_status") or ""),
         preview_source=str(preview.get("source") or ""),
         title=str(preview.get("title") or ""),
         locator_label=str(preview.get("locator_label") or ""),
@@ -202,7 +202,7 @@ def resolve_fi_interlink_target_row(
     context: InterlinkTargetPreviewContext,
 ) -> LawvmInterlinkTargetRow:
     if context.corpus is None:
-        return _unsupported_fi_target_row(target_ref, status="missing_local_corpus")
+        return _unsupported_fi_target_row(target_ref, preview_status="missing_local_corpus")
     return build_fi_interlink_target_row(
         target_ref,
         corpus=cast(_PreviewCorpus, context.corpus),
@@ -225,7 +225,7 @@ def _looks_like_engine_statute_id(engine_id: str) -> bool:
 def _unsupported_fi_target_row(
     target_ref: LawvmInterlinkTargetRef,
     *,
-    status: str,
+    preview_status: str,
 ) -> LawvmInterlinkTargetRow:
     return LawvmInterlinkTargetRow(
         target_key=target_ref.key,
@@ -236,13 +236,13 @@ def _unsupported_fi_target_row(
         target_locator=target_ref.locator,
         target_url=None,
         target_links_json="[]",
-        preview_status=status,
+        preview_status=preview_status,
         preview_source="",
         title="",
         locator_label=_locator_label(target_ref.locator),
         hierarchy_json="[]",
         preview_text="",
-        detail_json=json.dumps({"status": status}, ensure_ascii=False, sort_keys=True),
+        detail_json=json.dumps({"preview_status": preview_status}, ensure_ascii=False, sort_keys=True),
     )
 
 
@@ -293,7 +293,7 @@ def _target_preview_payload(
 ) -> dict[str, object]:
     locator_label = _locator_label(target_ref.locator)
     base_payload: dict[str, object] = {
-        "status": "unsupported",
+        "preview_status": "unsupported",
         "source": "",
         "title": "",
         "locator_label": locator_label,
@@ -310,11 +310,11 @@ def _target_preview_payload(
     if xml_bytes is None:
         source_xml = corpus.read_source(engine_id)
         if source_xml is None:
-            return {**base_payload, "status": "missing_local_corpus"}
+            return {**base_payload, "preview_status": "missing_local_corpus"}
         title = _doc_title(source_xml)
         return {
             **base_payload,
-            "status": "law_title_from_source_only",
+            "preview_status": "law_title_from_source_only",
             "source": "fi.read_source",
             "title": title,
         }
@@ -329,7 +329,7 @@ def _target_preview_payload(
     chapter_titles = header.chapter_titles
     payload = {
         **base_payload,
-        "status": "law_title_only",
+        "preview_status": "law_title_only",
         "source": "fi.read_oracle.latest_consolidated",
         "title": title,
         **identity,
@@ -368,7 +368,7 @@ def _target_preview_payload(
         hierarchy.append({"kind": "subsection", "label": subsection_label, "title": ""})
     return {
         **payload,
-        "status": "resolved_latest_local_oracle_preview",
+        "preview_status": "resolved_latest_local_oracle_preview",
         "locator_label": locator_label or matched_section.section_label,
         "hierarchy": hierarchy,
         "preview_text": _short_preview(matched_section.body_text),

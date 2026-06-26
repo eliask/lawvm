@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, TypeAlias
+from typing import Iterable
 
 from lawvm.core.elaboration_context import TargetUnitKind
 from lawvm.finland.helpers import _norm_num_token
-from lawvm.finland.ops import AmendmentOp, ScopeResolutionSource
+from lawvm.finland.ops import AmendmentOp, OpType, ScopeResolutionSource
 
 _SCOPE_CONFIDENCE_OVERRIDES_BODY_CHAPTER = frozenset(
     {
@@ -36,8 +36,8 @@ class StandaloneSectionTarget:
         object.__setattr__(self, "label", _norm_num_token(raw_label))
 
 
-StandaloneSectionTargetInput: TypeAlias = StandaloneSectionTarget
-StandaloneSectionTargetsInput: TypeAlias = Iterable[StandaloneSectionTarget] | None
+type StandaloneSectionTargetInput = StandaloneSectionTarget
+type StandaloneSectionTargetsInput = Iterable[StandaloneSectionTarget] | None
 
 
 def normalize_standalone_section_target(
@@ -69,7 +69,8 @@ def _effective_target_chapter(op: AmendmentOp) -> str | None:
         and witness.resolved_chapter
     ):
         return _norm_num_token(witness.resolved_chapter)
-    return _norm_num_token(op.target_chapter) if op.target_chapter else None
+    target_chapter = op.target_cols.target_chapter
+    return _norm_num_token(target_chapter) if target_chapter else None
 
 
 def build_standalone_section_targets(
@@ -84,16 +85,17 @@ def build_standalone_section_targets(
     """
     standalone_targets: set[StandaloneSectionTarget] = set()
     for op in ops:
-        if op.target_unit_kind != "section" or not op.target_section:
+        cols = op.target_cols
+        if cols.target_unit_kind != "section" or not cols.target_section:
             continue
-        if op.target_paragraph is not None or op.target_item or op.target_special:
+        if cols.target_paragraph is not None or cols.target_item or cols.target_special:
             continue
-        if op.target_chapter in (None, "") and op.op_type != "INSERT":
+        if cols.target_chapter in (None, "") and op.op_type != OpType.INSERT:
             continue
-        norm_label = _norm_num_token(op.target_section)
+        norm_label = _norm_num_token(cols.target_section)
         standalone_targets.add(
             StandaloneSectionTarget(
-                part=_norm_num_token(op.target_part) if op.target_part else None,
+                part=_norm_num_token(cols.target_part) if cols.target_part else None,
                 chapter=_effective_target_chapter(op),
                 label=norm_label,
             )
@@ -106,7 +108,7 @@ def build_standalone_section_targets(
             orig_chapter = tag.split(":", 1)[1]
             standalone_targets.add(
                 StandaloneSectionTarget(
-                    part=_norm_num_token(op.target_part) if op.target_part else None,
+                    part=_norm_num_token(cols.target_part) if cols.target_part else None,
                     chapter=_norm_num_token(orig_chapter),
                     label=norm_label,
                 )
@@ -128,12 +130,13 @@ def group_shadow_pruning_section_targets(
 
     out: set[str] = set()
     for op in ops:
-        section_label = _norm_num_token(op.target_section or "")
-        if op.target_unit_kind != "section" or not section_label:
+        cols = op.target_cols
+        section_label = _norm_num_token(cols.target_section or "")
+        if cols.target_unit_kind != "section" or not section_label:
             continue
         if section_label in duplicate_section_labels:
             continue
-        op_part = _norm_num_token(op.target_part) if op.target_part else None
+        op_part = _norm_num_token(cols.target_part) if cols.target_part else None
         op_chapter = _effective_target_chapter(op)
         if op_part == target_part and op_chapter == target_norm:
             continue
@@ -160,12 +163,13 @@ def group_shadow_pruning_foreign_scoped_section_targets(
 
     out: set[str] = set()
     for op in ops:
-        section_label = _norm_num_token(op.target_section or "")
-        if op.target_unit_kind != "section" or not section_label:
+        cols = op.target_cols
+        section_label = _norm_num_token(cols.target_section or "")
+        if cols.target_unit_kind != "section" or not section_label:
             continue
         # Only INSERT ops can shadow carry-forward content; REPLACE ops act on
         # already-existing sections and must not suppress container payload.
-        if op.op_type != "INSERT":
+        if op.op_type != OpType.INSERT:
             continue
         # Carry-forward INSERTs have inferred/stale chapter scope; they should
         # not shadow container payload since their chapter attribution is
@@ -177,7 +181,7 @@ def group_shadow_pruning_foreign_scoped_section_targets(
             continue
         if section_label in duplicate_section_labels:
             continue
-        op_part = _norm_num_token(op.target_part) if op.target_part else None
+        op_part = _norm_num_token(cols.target_part) if cols.target_part else None
         op_chapter = _effective_target_chapter(op)
         if op_part == target_part and op_chapter == target_norm:
             continue
@@ -203,12 +207,13 @@ def group_shadow_pruning_foreign_scoped_descendant_section_targets(
 
     out: set[str] = set()
     for op in ops:
-        section_label = _norm_num_token(op.target_section or "")
-        if op.target_unit_kind != "section" or not section_label:
+        cols = op.target_cols
+        section_label = _norm_num_token(cols.target_section or "")
+        if cols.target_unit_kind != "section" or not section_label:
             continue
-        if op.op_type != "INSERT":
+        if op.op_type != OpType.INSERT:
             continue
-        if op.target_paragraph is None and not op.target_item and not op.target_special:
+        if cols.target_paragraph is None and not cols.target_item and not cols.target_special:
             continue
         if (
             op.scope_confidence is not None
@@ -217,7 +222,7 @@ def group_shadow_pruning_foreign_scoped_descendant_section_targets(
             continue
         if section_label in duplicate_section_labels:
             continue
-        op_part = _norm_num_token(op.target_part) if op.target_part else None
+        op_part = _norm_num_token(cols.target_part) if cols.target_part else None
         op_chapter = _effective_target_chapter(op)
         if op_part == target_part and op_chapter == target_norm:
             continue
@@ -243,14 +248,15 @@ def group_shadow_pruning_foreign_scoped_replace_section_targets(
 
     out: set[str] = set()
     for op in ops:
-        section_label = _norm_num_token(op.target_section or "")
-        if op.target_unit_kind != "section" or not section_label:
+        cols = op.target_cols
+        section_label = _norm_num_token(cols.target_section or "")
+        if cols.target_unit_kind != "section" or not section_label:
             continue
-        if op.op_type != "REPLACE":
+        if op.op_type != OpType.REPLACE:
             continue
         if section_label in duplicate_section_labels:
             continue
-        op_part = _norm_num_token(op.target_part) if op.target_part else None
+        op_part = _norm_num_token(cols.target_part) if cols.target_part else None
         op_chapter = _effective_target_chapter(op)
         if op_part == target_part and op_chapter == target_norm:
             continue
@@ -276,14 +282,15 @@ def group_shadow_pruning_foreign_scoped_replace_section_target_scopes(
 
     out: set[StandaloneSectionTarget] = set()
     for op in ops:
-        section_label = _norm_num_token(op.target_section or "")
-        if op.target_unit_kind != "section" or not section_label:
+        cols = op.target_cols
+        section_label = _norm_num_token(cols.target_section or "")
+        if cols.target_unit_kind != "section" or not section_label:
             continue
-        if op.op_type != "REPLACE":
+        if op.op_type != OpType.REPLACE:
             continue
         if section_label in duplicate_section_labels:
             continue
-        op_part = _norm_num_token(op.target_part) if op.target_part else None
+        op_part = _norm_num_token(cols.target_part) if cols.target_part else None
         op_chapter = _effective_target_chapter(op)
         if op_part == target_part and op_chapter == target_norm:
             continue

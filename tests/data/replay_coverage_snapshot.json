@@ -1,0 +1,1389 @@
+{
+  "_doc": "Committed replay-coverage snapshot consumed by scripts/inventory_module_roles.py to emit per-module replay_exercised. Generated NOT declared: a module is replay_exercised iff it has >0 executed statements in a full-corpus lawvm replay-all run under coverage. Refresh (heavy, ~900s): see provenance.refresh_command. The cheap CI tier reads this committed snapshot; it does NOT re-run replay.",
+  "provenance": {
+    "source_artifact": "LawVM-census/.tmp/replay_pct.json",
+    "sha256": "f0db0c0bd69017023476fcd496acae0004546d6627cda4aebf11c1f3da349e73",
+    "source_mtime": "2026-06-24T19:47:13",
+    "corpus": "full farchive, 59,574 statutes (export-projections --corpus all enumeration)",
+    "replay_mode": "official_consolidation",
+    "module_count": 275,
+    "refresh_command": "COVERAGE_PROCESS_START=.coveragerc coverage run --source=src/lawvm/finland -m lawvm.tools.cli replay-all --workers 8 && coverage combine && then reduce .coverage to {module: {stmts,exec,pct}} via coverage.CoverageData (see scripts/inventory_module_roles.py docstring) and overwrite this file preserving _doc/provenance, then run --update-baseline."
+  },
+  "coverage": {
+    "lawvm.finland._compile": {
+      "stmts": 352,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.acquisition": {
+      "stmts": 294,
+      "exec": 149,
+      "pct": 50.7
+    },
+    "lawvm.finland.actor_mention_extractor": {
+      "stmts": 195,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.address_parse": {
+      "stmts": 44,
+      "exec": 16,
+      "pct": 36.4
+    },
+    "lawvm.finland.amendment_chapter_precreate": {
+      "stmts": 496,
+      "exec": 127,
+      "pct": 25.6
+    },
+    "lawvm.finland.amendment_index": {
+      "stmts": 423,
+      "exec": 83,
+      "pct": 19.6
+    },
+    "lawvm.finland.amendment_payload_lookup": {
+      "stmts": 201,
+      "exec": 98,
+      "pct": 48.8
+    },
+    "lawvm.finland.amendment_selection": {
+      "stmts": 126,
+      "exec": 50,
+      "pct": 39.7
+    },
+    "lawvm.finland.apply": {
+      "stmts": 16,
+      "exec": 9,
+      "pct": 56.2
+    },
+    "lawvm.finland.apply_events": {
+      "stmts": 86,
+      "exec": 62,
+      "pct": 72.1
+    },
+    "lawvm.finland.apply_group_replay": {
+      "stmts": 113,
+      "exec": 110,
+      "pct": 97.3
+    },
+    "lawvm.finland.apply_ir_ops": {
+      "stmts": 315,
+      "exec": 179,
+      "pct": 56.8
+    },
+    "lawvm.finland.apply_item_ops": {
+      "stmts": 874,
+      "exec": 397,
+      "pct": 45.4
+    },
+    "lawvm.finland.apply_legacy_dispatch": {
+      "stmts": 230,
+      "exec": 22,
+      "pct": 9.6
+    },
+    "lawvm.finland.apply_loop_state": {
+      "stmts": 34,
+      "exec": 33,
+      "pct": 97.1
+    },
+    "lawvm.finland.apply_ops_boundary": {
+      "stmts": 48,
+      "exec": 39,
+      "pct": 81.2
+    },
+    "lawvm.finland.apply_ops_executor": {
+      "stmts": 166,
+      "exec": 82,
+      "pct": 49.4
+    },
+    "lawvm.finland.apply_payload_ops": {
+      "stmts": 279,
+      "exec": 107,
+      "pct": 38.4
+    },
+    "lawvm.finland.apply_policy": {
+      "stmts": 275,
+      "exec": 189,
+      "pct": 68.7
+    },
+    "lawvm.finland.apply_resolved_op": {
+      "stmts": 242,
+      "exec": 75,
+      "pct": 31.0
+    },
+    "lawvm.finland.apply_runtime_support": {
+      "stmts": 2384,
+      "exec": 1298,
+      "pct": 54.4
+    },
+    "lawvm.finland.apply_structure_ops": {
+      "stmts": 1629,
+      "exec": 727,
+      "pct": 44.6
+    },
+    "lawvm.finland.apply_subsection_dispatch": {
+      "stmts": 313,
+      "exec": 194,
+      "pct": 62.0
+    },
+    "lawvm.finland.apply_subsection_ops": {
+      "stmts": 852,
+      "exec": 448,
+      "pct": 52.6
+    },
+    "lawvm.finland.apply_supplemental_recovery": {
+      "stmts": 185,
+      "exec": 139,
+      "pct": 75.1
+    },
+    "lawvm.finland.apply_typed_dispatch": {
+      "stmts": 779,
+      "exec": 427,
+      "pct": 54.8
+    },
+    "lawvm.finland.body_coverage": {
+      "stmts": 249,
+      "exec": 74,
+      "pct": 29.7
+    },
+    "lawvm.finland.body_coverage_findings": {
+      "stmts": 10,
+      "exec": 8,
+      "pct": 80.0
+    },
+    "lawvm.finland.body_pairing": {
+      "stmts": 518,
+      "exec": 215,
+      "pct": 41.5
+    },
+    "lawvm.finland.canonical_actor_registry": {
+      "stmts": 86,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.canonical_budget_line_registry": {
+      "stmts": 140,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.chapter_seed": {
+      "stmts": 260,
+      "exec": 176,
+      "pct": 67.7
+    },
+    "lawvm.finland.chapter_seed_targets": {
+      "stmts": 19,
+      "exec": 17,
+      "pct": 89.5
+    },
+    "lawvm.finland.citation_routing": {
+      "stmts": 239,
+      "exec": 89,
+      "pct": 37.2
+    },
+    "lawvm.finland.claim_kinds.inline_statute_resolution": {
+      "stmts": 153,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.claim_kinds.xml_manual_frontier": {
+      "stmts": 97,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.compile": {
+      "stmts": 2,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.compile_amendment": {
+      "stmts": 136,
+      "exec": 33,
+      "pct": 24.3
+    },
+    "lawvm.finland.compile_group": {
+      "stmts": 45,
+      "exec": 38,
+      "pct": 84.4
+    },
+    "lawvm.finland.compile_group_boundary": {
+      "stmts": 34,
+      "exec": 26,
+      "pct": 76.5
+    },
+    "lawvm.finland.compile_group_elaboration": {
+      "stmts": 218,
+      "exec": 133,
+      "pct": 61.0
+    },
+    "lawvm.finland.compile_group_lowering": {
+      "stmts": 82,
+      "exec": 56,
+      "pct": 68.3
+    },
+    "lawvm.finland.compile_group_scope_recovery": {
+      "stmts": 442,
+      "exec": 146,
+      "pct": 33.0
+    },
+    "lawvm.finland.compile_group_surface": {
+      "stmts": 156,
+      "exec": 63,
+      "pct": 40.4
+    },
+    "lawvm.finland.consolidated_artifacts": {
+      "stmts": 314,
+      "exec": 124,
+      "pct": 39.5
+    },
+    "lawvm.finland.consolidated_store": {
+      "stmts": 184,
+      "exec": 53,
+      "pct": 28.8
+    },
+    "lawvm.finland.constraints": {
+      "stmts": 496,
+      "exec": 313,
+      "pct": 63.1
+    },
+    "lawvm.finland.corpus": {
+      "stmts": 453,
+      "exec": 108,
+      "pct": 23.8
+    },
+    "lawvm.finland.corrigendum": {
+      "stmts": 1450,
+      "exec": 833,
+      "pct": 57.4
+    },
+    "lawvm.finland.corrigendum_records": {
+      "stmts": 159,
+      "exec": 70,
+      "pct": 44.0
+    },
+    "lawvm.finland.delegation": {
+      "stmts": 172,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.editorial_adjudication": {
+      "stmts": 125,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.effect_lowering": {
+      "stmts": 98,
+      "exec": 45,
+      "pct": 45.9
+    },
+    "lawvm.finland.elaborated_group": {
+      "stmts": 18,
+      "exec": 18,
+      "pct": 100.0
+    },
+    "lawvm.finland.fallback_op_ids": {
+      "stmts": 16,
+      "exec": 10,
+      "pct": 62.5
+    },
+    "lawvm.finland.finlex_api": {
+      "stmts": 330,
+      "exec": 51,
+      "pct": 15.5
+    },
+    "lawvm.finland.finlex_html": {
+      "stmts": 403,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.fixed_term_expiry": {
+      "stmts": 346,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.frontend_compile": {
+      "stmts": 2049,
+      "exec": 765,
+      "pct": 37.3
+    },
+    "lawvm.finland.frontend_observations": {
+      "stmts": 141,
+      "exec": 81,
+      "pct": 57.4
+    },
+    "lawvm.finland.future_repeal": {
+      "stmts": 24,
+      "exec": 23,
+      "pct": 95.8
+    },
+    "lawvm.finland.future_repeal_prescan": {
+      "stmts": 111,
+      "exec": 86,
+      "pct": 77.5
+    },
+    "lawvm.finland.graph": {
+      "stmts": 98,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.group_ops": {
+      "stmts": 173,
+      "exec": 115,
+      "pct": 66.5
+    },
+    "lawvm.finland.group_plan": {
+      "stmts": 98,
+      "exec": 68,
+      "pct": 69.4
+    },
+    "lawvm.finland.he_acquisition": {
+      "stmts": 555,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.he_branch_parser": {
+      "stmts": 323,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.helpers": {
+      "stmts": 199,
+      "exec": 89,
+      "pct": 44.7
+    },
+    "lawvm.finland.inline_repeal_stub": {
+      "stmts": 53,
+      "exec": 12,
+      "pct": 22.6
+    },
+    "lawvm.finland.interlink_targets": {
+      "stmts": 245,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.interlinks": {
+      "stmts": 2,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.johto_scope_mentions": {
+      "stmts": 261,
+      "exec": 57,
+      "pct": 21.8
+    },
+    "lawvm.finland.johtolause.affected_statute": {
+      "stmts": 185,
+      "exec": 84,
+      "pct": 45.4
+    },
+    "lawvm.finland.johtolause.annotations": {
+      "stmts": 39,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.johtolause.api": {
+      "stmts": 467,
+      "exec": 188,
+      "pct": 40.3
+    },
+    "lawvm.finland.johtolause.census_accounting": {
+      "stmts": 170,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.johtolause.clause_patterns": {
+      "stmts": 187,
+      "exec": 148,
+      "pct": 79.1
+    },
+    "lawvm.finland.johtolause.clause_surface": {
+      "stmts": 351,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.johtolause.construction_rules": {
+      "stmts": 45,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.johtolause.coverage_audit": {
+      "stmts": 166,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.johtolause.curated_cases": {
+      "stmts": 75,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.johtolause.diagnostics": {
+      "stmts": 57,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.johtolause.fallback_residue": {
+      "stmts": 95,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.johtolause.grammar.backrefs": {
+      "stmts": 104,
+      "exec": 70,
+      "pct": 67.3
+    },
+    "lawvm.finland.johtolause.grammar.combinators": {
+      "stmts": 157,
+      "exec": 75,
+      "pct": 47.8
+    },
+    "lawvm.finland.johtolause.grammar.containers": {
+      "stmts": 350,
+      "exec": 344,
+      "pct": 98.3
+    },
+    "lawvm.finland.johtolause.grammar.diff": {
+      "stmts": 72,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.johtolause.grammar.evidence": {
+      "stmts": 38,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.johtolause.grammar.headings": {
+      "stmts": 167,
+      "exec": 149,
+      "pct": 89.2
+    },
+    "lawvm.finland.johtolause.grammar.insertions": {
+      "stmts": 1180,
+      "exec": 423,
+      "pct": 35.8
+    },
+    "lawvm.finland.johtolause.grammar.jolloin": {
+      "stmts": 29,
+      "exec": 25,
+      "pct": 86.2
+    },
+    "lawvm.finland.johtolause.grammar.moves": {
+      "stmts": 228,
+      "exec": 156,
+      "pct": 68.4
+    },
+    "lawvm.finland.johtolause.grammar.parser": {
+      "stmts": 1437,
+      "exec": 669,
+      "pct": 46.6
+    },
+    "lawvm.finland.johtolause.grammar.sections": {
+      "stmts": 521,
+      "exec": 368,
+      "pct": 70.6
+    },
+    "lawvm.finland.johtolause.grammar.subref": {
+      "stmts": 299,
+      "exec": 128,
+      "pct": 42.8
+    },
+    "lawvm.finland.johtolause.grammar.tail": {
+      "stmts": 107,
+      "exec": 72,
+      "pct": 67.3
+    },
+    "lawvm.finland.johtolause.lexer": {
+      "stmts": 254,
+      "exec": 153,
+      "pct": 60.2
+    },
+    "lawvm.finland.johtolause.lexicon": {
+      "stmts": 197,
+      "exec": 87,
+      "pct": 44.2
+    },
+    "lawvm.finland.johtolause.lower_clause_ast": {
+      "stmts": 310,
+      "exec": 149,
+      "pct": 48.1
+    },
+    "lawvm.finland.johtolause.lower_surface": {
+      "stmts": 189,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.johtolause.meta_parse": {
+      "stmts": 22,
+      "exec": 20,
+      "pct": 90.9
+    },
+    "lawvm.finland.johtolause.parsed_op_clause_ast": {
+      "stmts": 125,
+      "exec": 15,
+      "pct": 12.0
+    },
+    "lawvm.finland.johtolause.rule_registry": {
+      "stmts": 152,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.johtolause.scan": {
+      "stmts": 819,
+      "exec": 464,
+      "pct": 56.7
+    },
+    "lawvm.finland.johtolause.sentinels": {
+      "stmts": 21,
+      "exec": 17,
+      "pct": 81.0
+    },
+    "lawvm.finland.johtolause.surface_model": {
+      "stmts": 192,
+      "exec": 97,
+      "pct": 50.5
+    },
+    "lawvm.finland.johtolause.surface_parse": {
+      "stmts": 3010,
+      "exec": 1499,
+      "pct": 49.8
+    },
+    "lawvm.finland.johtolause.surface_resolve": {
+      "stmts": 522,
+      "exec": 388,
+      "pct": 74.3
+    },
+    "lawvm.finland.johtolause.token_model": {
+      "stmts": 64,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.johtolause.totality": {
+      "stmts": 276,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.johtolause.types": {
+      "stmts": 52,
+      "exec": 37,
+      "pct": 71.2
+    },
+    "lawvm.finland.johtolause.views": {
+      "stmts": 70,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.johtolause_supplements": {
+      "stmts": 503,
+      "exec": 79,
+      "pct": 15.7
+    },
+    "lawvm.finland.kumotaan": {
+      "stmts": 260,
+      "exec": 131,
+      "pct": 50.4
+    },
+    "lawvm.finland.kumotaan_replay": {
+      "stmts": 387,
+      "exec": 146,
+      "pct": 37.7
+    },
+    "lawvm.finland.labels": {
+      "stmts": 166,
+      "exec": 59,
+      "pct": 35.5
+    },
+    "lawvm.finland.legal_surface.bundle": {
+      "stmts": 71,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.legal_surface.frame_lints": {
+      "stmts": 34,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.legal_surface.frame_passes": {
+      "stmts": 42,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.legal_surface.graph_build": {
+      "stmts": 108,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.legal_surface.lenses.actor_modal": {
+      "stmts": 45,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.legal_surface.lenses.definitions": {
+      "stmts": 109,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.legal_surface.lenses.delegation": {
+      "stmts": 44,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.legal_surface.lenses.exception_condition": {
+      "stmts": 128,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.legal_surface.lenses.procedure": {
+      "stmts": 52,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.legal_surface.lenses.references": {
+      "stmts": 198,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.legal_surface.lenses.sanction": {
+      "stmts": 51,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.legal_surface.lenses.temporal": {
+      "stmts": 39,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.legal_surface.lints": {
+      "stmts": 133,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.legal_surface.passes": {
+      "stmts": 49,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.legal_surface.projection": {
+      "stmts": 122,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.legal_surface.ref_lints": {
+      "stmts": 133,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.legal_surface.tokenize": {
+      "stmts": 78,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.llm_backends.qwen_local": {
+      "stmts": 108,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.lowering_scope_recovery": {
+      "stmts": 34,
+      "exec": 26,
+      "pct": 76.5
+    },
+    "lawvm.finland.merge": {
+      "stmts": 1400,
+      "exec": 727,
+      "pct": 51.9
+    },
+    "lawvm.finland.metadata": {
+      "stmts": 1033,
+      "exec": 367,
+      "pct": 35.5
+    },
+    "lawvm.finland.migration_ledger": {
+      "stmts": 129,
+      "exec": 37,
+      "pct": 28.7
+    },
+    "lawvm.finland.morphology.api": {
+      "stmts": 41,
+      "exec": 41,
+      "pct": 100.0
+    },
+    "lawvm.finland.morphology.classify": {
+      "stmts": 27,
+      "exec": 11,
+      "pct": 40.7
+    },
+    "lawvm.finland.morphology.generate": {
+      "stmts": 36,
+      "exec": 24,
+      "pct": 66.7
+    },
+    "lawvm.finland.morphology.gradation": {
+      "stmts": 33,
+      "exec": 10,
+      "pct": 30.3
+    },
+    "lawvm.finland.morphology.harmony": {
+      "stmts": 23,
+      "exec": 5,
+      "pct": 21.7
+    },
+    "lawvm.finland.morphology.heads": {
+      "stmts": 10,
+      "exec": 6,
+      "pct": 60.0
+    },
+    "lawvm.finland.morphology.lexical_residue": {
+      "stmts": 4,
+      "exec": 2,
+      "pct": 50.0
+    },
+    "lawvm.finland.morphology.paradigm": {
+      "stmts": 52,
+      "exec": 14,
+      "pct": 26.9
+    },
+    "lawvm.finland.morphology.plurals": {
+      "stmts": 92,
+      "exec": 43,
+      "pct": 46.7
+    },
+    "lawvm.finland.morphology.stems": {
+      "stmts": 59,
+      "exec": 29,
+      "pct": 49.2
+    },
+    "lawvm.finland.normalize": {
+      "stmts": 480,
+      "exec": 288,
+      "pct": 60.0
+    },
+    "lawvm.finland.ontology": {
+      "stmts": 57,
+      "exec": 46,
+      "pct": 80.7
+    },
+    "lawvm.finland.ops": {
+      "stmts": 1131,
+      "exec": 595,
+      "pct": 52.6
+    },
+    "lawvm.finland.oracle_comparison": {
+      "stmts": 493,
+      "exec": 39,
+      "pct": 7.9
+    },
+    "lawvm.finland.payload_normalize": {
+      "stmts": 3362,
+      "exec": 1406,
+      "pct": 41.8
+    },
+    "lawvm.finland.pool_mention_extractor": {
+      "stmts": 180,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.post_process": {
+      "stmts": 178,
+      "exec": 82,
+      "pct": 46.1
+    },
+    "lawvm.finland.process_acquisition": {
+      "stmts": 116,
+      "exec": 65,
+      "pct": 56.0
+    },
+    "lawvm.finland.process_apply_projection": {
+      "stmts": 34,
+      "exec": 33,
+      "pct": 97.1
+    },
+    "lawvm.finland.process_call": {
+      "stmts": 53,
+      "exec": 48,
+      "pct": 90.6
+    },
+    "lawvm.finland.process_compile_signals": {
+      "stmts": 78,
+      "exec": 43,
+      "pct": 55.1
+    },
+    "lawvm.finland.process_failed_op_governance": {
+      "stmts": 374,
+      "exec": 281,
+      "pct": 75.1
+    },
+    "lawvm.finland.process_findings": {
+      "stmts": 22,
+      "exec": 20,
+      "pct": 90.9
+    },
+    "lawvm.finland.process_frontend_normalization": {
+      "stmts": 53,
+      "exec": 37,
+      "pct": 69.8
+    },
+    "lawvm.finland.process_pipeline": {
+      "stmts": 212,
+      "exec": 116,
+      "pct": 54.7
+    },
+    "lawvm.finland.process_precompile_selection": {
+      "stmts": 74,
+      "exec": 58,
+      "pct": 78.4
+    },
+    "lawvm.finland.process_request": {
+      "stmts": 23,
+      "exec": 22,
+      "pct": 95.7
+    },
+    "lawvm.finland.process_result_builder": {
+      "stmts": 167,
+      "exec": 91,
+      "pct": 54.5
+    },
+    "lawvm.finland.process_route_rejection": {
+      "stmts": 152,
+      "exec": 100,
+      "pct": 65.8
+    },
+    "lawvm.finland.process_runtime": {
+      "stmts": 49,
+      "exec": 38,
+      "pct": 77.6
+    },
+    "lawvm.finland.process_structural_prepare": {
+      "stmts": 74,
+      "exec": 44,
+      "pct": 59.5
+    },
+    "lawvm.finland.process_temporal_authority": {
+      "stmts": 50,
+      "exec": 32,
+      "pct": 64.0
+    },
+    "lawvm.finland.process_temporal_postprocessing": {
+      "stmts": 375,
+      "exec": 120,
+      "pct": 32.0
+    },
+    "lawvm.finland.profile.normalize": {
+      "stmts": 1031,
+      "exec": 722,
+      "pct": 70.0
+    },
+    "lawvm.finland.projection_rows": {
+      "stmts": 9,
+      "exec": 5,
+      "pct": 55.6
+    },
+    "lawvm.finland.proof_surfaces": {
+      "stmts": 6,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.provision_ref_locator": {
+      "stmts": 37,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.references.actor_modal": {
+      "stmts": 144,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.references.broken_detection": {
+      "stmts": 191,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.references.by_name": {
+      "stmts": 409,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.references.cross_refs": {
+      "stmts": 373,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.references.defined_terms": {
+      "stmts": 335,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.references.definition_graph": {
+      "stmts": 96,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.references.delegation": {
+      "stmts": 77,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.references.eu_directive": {
+      "stmts": 196,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.references.eu_reference": {
+      "stmts": 166,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.references.exception_condition": {
+      "stmts": 53,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.references.inline_citation_extractor": {
+      "stmts": 199,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.references.interlinks": {
+      "stmts": 153,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.references.internal_refs": {
+      "stmts": 271,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.references.preparatory_reference_extractor": {
+      "stmts": 278,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.references.procedure": {
+      "stmts": 275,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.references.ref_mention_extractor": {
+      "stmts": 590,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.references.registries.eu_nickname": {
+      "stmts": 111,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.references.registries.statute_name": {
+      "stmts": 380,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.references.resolve": {
+      "stmts": 256,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.references.role_actors": {
+      "stmts": 14,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.references.sanction": {
+      "stmts": 187,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.references.sections": {
+      "stmts": 208,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.references.temporal": {
+      "stmts": 107,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.references.term_use": {
+      "stmts": 109,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.references.treaty": {
+      "stmts": 16,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.references.treaty_article": {
+      "stmts": 58,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.references.vague": {
+      "stmts": 16,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.relabel_identity": {
+      "stmts": 94,
+      "exec": 67,
+      "pct": 71.3
+    },
+    "lawvm.finland.replay_base_evidence": {
+      "stmts": 31,
+      "exec": 21,
+      "pct": 67.7
+    },
+    "lawvm.finland.replay_capture": {
+      "stmts": 86,
+      "exec": 15,
+      "pct": 17.4
+    },
+    "lawvm.finland.replay_entrypoint": {
+      "stmts": 89,
+      "exec": 53,
+      "pct": 59.6
+    },
+    "lawvm.finland.replay_evidence_projection": {
+      "stmts": 159,
+      "exec": 58,
+      "pct": 36.5
+    },
+    "lawvm.finland.replay_findings": {
+      "stmts": 128,
+      "exec": 46,
+      "pct": 35.9
+    },
+    "lawvm.finland.replay_fold_projection": {
+      "stmts": 51,
+      "exec": 30,
+      "pct": 58.8
+    },
+    "lawvm.finland.replay_history_emission": {
+      "stmts": 96,
+      "exec": 70,
+      "pct": 72.9
+    },
+    "lawvm.finland.replay_horizon": {
+      "stmts": 111,
+      "exec": 74,
+      "pct": 66.7
+    },
+    "lawvm.finland.replay_notices": {
+      "stmts": 12,
+      "exec": 11,
+      "pct": 91.7
+    },
+    "lawvm.finland.replay_pipeline": {
+      "stmts": 227,
+      "exec": 126,
+      "pct": 55.5
+    },
+    "lawvm.finland.replay_product_assembly": {
+      "stmts": 92,
+      "exec": 45,
+      "pct": 48.9
+    },
+    "lawvm.finland.replay_product_projection": {
+      "stmts": 86,
+      "exec": 48,
+      "pct": 55.8
+    },
+    "lawvm.finland.replay_products": {
+      "stmts": 942,
+      "exec": 237,
+      "pct": 25.2
+    },
+    "lawvm.finland.replay_request": {
+      "stmts": 136,
+      "exec": 71,
+      "pct": 52.2
+    },
+    "lawvm.finland.replay_tree_normalize": {
+      "stmts": 34,
+      "exec": 32,
+      "pct": 94.1
+    },
+    "lawvm.finland.restructure_plan": {
+      "stmts": 933,
+      "exec": 446,
+      "pct": 47.8
+    },
+    "lawvm.finland.restructure_plan_replay": {
+      "stmts": 145,
+      "exec": 66,
+      "pct": 45.5
+    },
+    "lawvm.finland.rulebook.atoms": {
+      "stmts": 36,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.rulebook.clause_rules": {
+      "stmts": 8,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.rulebook.common": {
+      "stmts": 81,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.rulebook.compare_policy_rules": {
+      "stmts": 9,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.rulebook.compare_policy_types": {
+      "stmts": 9,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.rulebook.export": {
+      "stmts": 25,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.rulebook.families": {
+      "stmts": 38,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.rulebook.payload_rules": {
+      "stmts": 11,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.rulebook.registries": {
+      "stmts": 61,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.rulebook.render": {
+      "stmts": 35,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.rulebook.rulebook": {
+      "stmts": 46,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.rulebook.source_rules": {
+      "stmts": 10,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.rulebook.temporal_rules": {
+      "stmts": 10,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.scope": {
+      "stmts": 953,
+      "exec": 420,
+      "pct": 44.1
+    },
+    "lawvm.finland.scoped_section_resolver": {
+      "stmts": 143,
+      "exec": 73,
+      "pct": 51.0
+    },
+    "lawvm.finland.section_resolver": {
+      "stmts": 104,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.section_text_extractor": {
+      "stmts": 107,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.source_adjudication": {
+      "stmts": 6,
+      "exec": 6,
+      "pct": 100.0
+    },
+    "lawvm.finland.source_normalization_kinds": {
+      "stmts": 22,
+      "exec": 21,
+      "pct": 95.5
+    },
+    "lawvm.finland.source_normalize": {
+      "stmts": 1780,
+      "exec": 535,
+      "pct": 30.1
+    },
+    "lawvm.finland.source_pathology": {
+      "stmts": 64,
+      "exec": 22,
+      "pct": 34.4
+    },
+    "lawvm.finland.source_providers.finlex_section": {
+      "stmts": 83,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.source_verb": {
+      "stmts": 11,
+      "exec": 10,
+      "pct": 90.9
+    },
+    "lawvm.finland.source_xml_label_policy_audit": {
+      "stmts": 83,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.standalone_targets": {
+      "stmts": 168,
+      "exec": 66,
+      "pct": 39.3
+    },
+    "lawvm.finland.statute": {
+      "stmts": 336,
+      "exec": 129,
+      "pct": 38.4
+    },
+    "lawvm.finland.statute_id": {
+      "stmts": 44,
+      "exec": 26,
+      "pct": 59.1
+    },
+    "lawvm.finland.strict_profile": {
+      "stmts": 5,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.target_kind": {
+      "stmts": 30,
+      "exec": 21,
+      "pct": 70.0
+    },
+    "lawvm.finland.telos_section_flag": {
+      "stmts": 71,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.temporal_arithmetic": {
+      "stmts": 37,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.temporal_lowering": {
+      "stmts": 113,
+      "exec": 35,
+      "pct": 31.0
+    },
+    "lawvm.finland.temporal_rewrites": {
+      "stmts": 393,
+      "exec": 215,
+      "pct": 54.7
+    },
+    "lawvm.finland.timeline_export_plan": {
+      "stmts": 76,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.transition_graph_profile": {
+      "stmts": 51,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.transition_graph_replay": {
+      "stmts": 21,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.transparent_store": {
+      "stmts": 403,
+      "exec": 60,
+      "pct": 14.9
+    },
+    "lawvm.finland.trigger_coverage": {
+      "stmts": 111,
+      "exec": 0,
+      "pct": 0.0
+    },
+    "lawvm.finland.uncovered_body_findings": {
+      "stmts": 36,
+      "exec": 34,
+      "pct": 94.4
+    },
+    "lawvm.finland.uncovered_body_recovery": {
+      "stmts": 57,
+      "exec": 34,
+      "pct": 59.6
+    },
+    "lawvm.finland.uncovered_chapter_scaffold": {
+      "stmts": 16,
+      "exec": 16,
+      "pct": 100.0
+    },
+    "lawvm.finland.uncovered_dispose": {
+      "stmts": 113,
+      "exec": 84,
+      "pct": 74.3
+    },
+    "lawvm.finland.uncovered_kumotaan_recovery": {
+      "stmts": 208,
+      "exec": 184,
+      "pct": 88.5
+    },
+    "lawvm.finland.uncovered_recovery_context": {
+      "stmts": 75,
+      "exec": 41,
+      "pct": 54.7
+    },
+    "lawvm.finland.uncovered_recovery_findings": {
+      "stmts": 97,
+      "exec": 90,
+      "pct": 92.8
+    },
+    "lawvm.finland.uncovered_recovery_iteration": {
+      "stmts": 68,
+      "exec": 33,
+      "pct": 48.5
+    },
+    "lawvm.finland.uncovered_recovery_prepare": {
+      "stmts": 175,
+      "exec": 133,
+      "pct": 76.0
+    },
+    "lawvm.finland.uncovered_recovery_runner": {
+      "stmts": 234,
+      "exec": 139,
+      "pct": 59.4
+    },
+    "lawvm.finland.uncovered_recovery_state": {
+      "stmts": 113,
+      "exec": 99,
+      "pct": 87.6
+    },
+    "lawvm.finland.uncovered_recovery_support": {
+      "stmts": 185,
+      "exec": 109,
+      "pct": 58.9
+    },
+    "lawvm.finland.uncovered_target_resolve": {
+      "stmts": 98,
+      "exec": 79,
+      "pct": 80.6
+    },
+    "lawvm.finland.unit_registry": {
+      "stmts": 4,
+      "exec": 4,
+      "pct": 100.0
+    },
+    "lawvm.finland.vts": {
+      "stmts": 430,
+      "exec": 247,
+      "pct": 57.4
+    },
+    "lawvm.finland.xml_ir": {
+      "stmts": 312,
+      "exec": 170,
+      "pct": 54.5
+    },
+    "lawvm.finland.xml_statute": {
+      "stmts": 84,
+      "exec": 0,
+      "pct": 0.0
+    }
+  }
+}

@@ -277,11 +277,11 @@ def _has_unresolved_named_row_targets(
     has_named_rows = any(op.named_row_targets for op in original_ops)
     if not has_named_rows:
         return False
-    return not any(op.named_row_targets and op.target_item for op in normalized_ops)
+    return not any(op.named_row_targets and op.target_cols.target_item for op in normalized_ops)
 
 
 def _named_row_debug_ops(ops: list[AmendmentOp]) -> list[AmendmentOp]:
-    item_ops = [op for op in ops if op.named_row_targets and op.target_item]
+    item_ops = [op for op in ops if op.named_row_targets and op.target_cols.target_item]
     if not item_ops:
         return []
     replace_ops = [op for op in item_ops if op.op_type == "REPLACE"]
@@ -290,7 +290,7 @@ def _named_row_debug_ops(ops: list[AmendmentOp]) -> list[AmendmentOp]:
         return replace_ops
 
     def sort_key(op: AmendmentOp) -> tuple[int, str, str]:
-        item = op.target_item or ""
+        item = op.target_cols.target_item or ""
         return (int(item) if item.isdigit() else 10**9, item, op.op_type)
 
     return sorted(item_ops, key=sort_key)

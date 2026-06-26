@@ -235,7 +235,7 @@ def compute_totality(
     owned_by_typed_reason: set[str] = set()
     for row in selection_rows:
         addr = row.get("address_id")
-        status = row.get("status")
+        status = row.get("selection_status")
         if not isinstance(addr, str):
             continue
         if status == "selected":

@@ -117,7 +117,7 @@ def lower_group(
 
     resolved: list[ResolvedOp] = []
     for op in sorted_ops:
-        resolved_target_chapter = op.target_chapter if op.target_chapter is not None else target_chapter
+        resolved_target_chapter = op.target_cols.target_chapter if op.target_cols.target_chapter is not None else target_chapter
         target_address = op.lo.target if op.lo is not None else None
         destination_address = (op.lo.destination if op.lo is not None else None) or (
             op.lo.anchor if op.lo is not None else None
@@ -125,22 +125,22 @@ def lower_group(
         if (
             op.target_version_statute_id
             and op.lo is not None
-            and op.target_unit_kind == "section"
-            and op.target_section
-            and tuple(op.lo.target.path) == (("section", op.target_section),)
+            and op.target_cols.target_unit_kind == "section"
+            and op.target_cols.target_section
+            and tuple(op.lo.target.path) == (("section", op.target_cols.target_section),)
             and master is not None
-            and _norm_num_token(op.target_section) not in master.duplicate_section_labels
+            and _norm_num_token(op.target_cols.target_section) not in master.duplicate_section_labels
         ):
-            cited_live_path = master.find_section_path(op.target_section, None, op.target_part)
+            cited_live_path = master.find_section_path(op.target_cols.target_section, None, op.target_cols.target_part)
             if cited_live_path is not None and any(kind in {"chapter", "part"} for kind, _label in cited_live_path):
                 target_address = LegalAddress(path=tuple(cited_live_path))
         if (
             op.move_clause_target_unit_kind is not None
             and op.lo is not None
-            and op.target_unit_kind == "section"
+            and op.target_cols.target_unit_kind == "section"
             and muutos_ir is None
         ):
-            source_path = master.find_section_path(op.target_section, None, op.target_part) if master is not None else None
+            source_path = master.find_section_path(op.target_cols.target_section, None, op.target_cols.target_part) if master is not None else None
             if source_path is not None:
                 target_address = LegalAddress(path=tuple(source_path))
             if target_address is not None:

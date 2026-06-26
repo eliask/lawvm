@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from lawvm.core.regex_safety import compile_classifier_regex
 from collections.abc import Mapping
 from typing import cast
 
@@ -11,7 +12,7 @@ from lawvm.finland.statute_id import canonical_statute_id, engine_statute_id
 from lawvm.tools.transition_graph_profile import TransitionGraphExportProfile
 
 _HE_HREF_RE = re.compile(r"/akn/fi/doc/government-proposal/(\d{4})/(\d{1,4}-\d{1,4}|\d{1,4})")
-_HE_TEXT_RE = re.compile(r"\bHE\s{1,4}(\d{1,4}-\d{1,4}|\d{1,4})/(\d{4})\s{0,4}vp", re.IGNORECASE)
+_HE_TEXT_RE = compile_classifier_regex(r"\bHE\s{1,4}(\d{1,4}-\d{1,4}|\d{1,4})/(\d{4})\s{0,4}vp", re.IGNORECASE, classifier_id="fi.transition_graph_profile.he_text_re")
 
 
 def fi_current_statute_url(_canonical_id: str, engine_id: str) -> str:

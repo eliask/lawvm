@@ -9,13 +9,11 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
-from typing import Generic, Iterable, TypeVar
-
-T = TypeVar("T")
+from typing import Iterable
 
 
 @dataclass(frozen=True, slots=True)
-class RejectedItem(Generic[T]):
+class RejectedItem[T]:
     item: T
     reason: str
     reason_code: str = ""
@@ -29,7 +27,7 @@ class RejectedItem(Generic[T]):
 
 
 @dataclass(frozen=True, slots=True)
-class FilterResult(Generic[T]):
+class FilterResult[T]:
     accepted_items: tuple[T, ...] = ()
     rejected_items: tuple[RejectedItem[T], ...] = ()
 
@@ -48,7 +46,7 @@ class FilterResult(Generic[T]):
         return dict(Counter(rejected.reason for rejected in self.rejected_items if rejected.reason))
 
 
-def filter_result_from_parts(
+def filter_result_from_parts[T](
     *,
     accepted_items: Iterable[T] = (),
     rejected_items: Iterable[RejectedItem[T]] = (),

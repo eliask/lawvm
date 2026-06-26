@@ -16,7 +16,7 @@ output to the legacy _build_proof_claims() path via to_legacy_claims().
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Mapping, Optional, TypeAlias
+from typing import Any, Dict, List, Mapping, Optional
 
 from lawvm.tools._evidence_helpers import (
     _build_support_lookup_maps,
@@ -39,7 +39,7 @@ from lawvm.tools.evidence_claims import _is_deterministic_sparse_oracle_stale_su
 # Core typed wrappers (spec §1)
 # ---------------------------------------------------------------------------
 
-StatuteClaim: TypeAlias = PositiveClaim | UnresolvedSink
+type StatuteClaim = PositiveClaim | UnresolvedSink
 
 
 @dataclass(frozen=True)

@@ -22,6 +22,7 @@ import calendar
 import datetime as dt
 import hashlib
 import re
+from lawvm.core.regex_safety import compile_classifier_regex
 from dataclasses import dataclass
 from typing import Callable, Mapping, Optional
 
@@ -126,26 +127,20 @@ class FixedTermExtraction:
 # "on voimassa toistaiseksi" without a hard cap is the permanent-law default
 # ("until further notice"), not a fixed-term form. With a cap ("ei kuitenkaan
 # kau(v)emmin kuin ...", "enintään ...") it states a real outer bound.
-_BARE_TOISTAISEKSI_RE = re.compile(r"\bon\s+voimassa\s+toistaiseksi\b", re.IGNORECASE)
-_TOISTAISEKSI_CAP_RE = re.compile(r"kau[uv]emmin\s+kuin|enintään", re.IGNORECASE)
+_BARE_TOISTAISEKSI_RE = compile_classifier_regex(r"\bon\s+voimassa\s+toistaiseksi\b", re.IGNORECASE, classifier_id="fi.fixed_term_expiry.bare_toistaiseksi_re")
+_TOISTAISEKSI_CAP_RE = compile_classifier_regex(r"kau[uv]emmin\s+kuin|enintään", re.IGNORECASE, classifier_id="fi.fixed_term_expiry.toistaiseksi_cap_re")
 
 # Commencement marker expected in a genuine voimaantulosäännös version.
 # (Single bounded gap, not \s+ then .{0,40}: adjacent variable repeats with
 # overlapping starts are a backtracking hazard the regex gate rejects.)
-_COMMENCEMENT_CONTEXT_RE = re.compile(
-    r"(?:tulee|tuli|astuu|astui)\s+voimaan|voimassa.{1,41}?päivästä",
-    re.IGNORECASE,
-)
+_COMMENCEMENT_CONTEXT_RE = compile_classifier_regex(r"(?:tulee|tuli|astuu|astui)\s+voimaan|voimassa.{1,41}?päivästä", re.IGNORECASE, classifier_id="fi.fixed_term_expiry.commencement_context_re")
 
 # Structural voimaantulosäännös marker: the carrying section's heading names
 # itself the entry-into-force provision ("7 § Voimaantulo", "Voimaantulo- ja
 # siirtymäsäännökset"). When this is present, the commencement-context guard
 # must NOT suppress — a recognised-but-unparseable clause in a structurally
 # known voimaantulosäännös stays blocking (Pro V5 asymmetry doctrine).
-_VOIMAANTULO_HEADING_RE = re.compile(
-    r"(?:^\s*|§\s+)voimaantulo",
-    re.IGNORECASE,
-)
+_VOIMAANTULO_HEADING_RE = compile_classifier_regex(r"(?:^\s*|§\s+)voimaantulo", re.IGNORECASE, classifier_id="fi.fixed_term_expiry.voimaantulo_heading_re")
 
 
 def _whole_law_expiry_clause_text(normalized_text: str) -> Optional[str]:
@@ -182,35 +177,18 @@ def _whole_law_subject_re_search(text: str) -> bool:
 
 # Dative end-date whose day number must validate against the calendar
 # ("31 päivään kesäkuuta 1995" — June has no day 31).
-_DATIVE_END_DATE_RE = re.compile(
-    r"(\d{1,2})\s*päivään\s+(\w+kuuta)\s+(\d{4})",
-    re.IGNORECASE,
-)
-_DECREE_SET_COMMENCEMENT_RE = re.compile(
-    r"asetuksella\s+säädettävänä\s+ajankohtana"
-    r"|asetuksella\s+erikseen\s+säädettävänä\s+ajankohtana",
-    re.IGNORECASE,
-)
-_EVENT_BOUND_RE = re.compile(
-    r"\bkunnes\b|siihen\s+päivään,?\s+jona|siihen\s+saakka,?\s+kun\b", re.IGNORECASE
-)
+_DATIVE_END_DATE_RE = compile_classifier_regex(r"(\d{1,2})\s*päivään\s+(\w+kuuta)\s+(\d{4})", re.IGNORECASE, classifier_id="fi.fixed_term_expiry.dative_end_date_re")
+_DECREE_SET_COMMENCEMENT_RE = compile_classifier_regex(r"asetuksella\s+säädettävänä\s+ajankohtana"
+    r"|asetuksella\s+erikseen\s+säädettävänä\s+ajankohtana", re.IGNORECASE, classifier_id="fi.fixed_term_expiry.decree_set_commencement_re")
+_EVENT_BOUND_RE = compile_classifier_regex(r"\bkunnes\b|siihen\s+päivään,?\s+jona|siihen\s+saakka,?\s+kun\b", re.IGNORECASE, classifier_id="fi.fixed_term_expiry.event_bound_re")
 # Does the event tail name a säädöskokoelma-discernible instrument (another
 # statute/decree/treaty whose entry into force is itself published)?
-_EVENT_INSTRUMENT_RE = re.compile(
-    r"sopimu|voimaansaatt|asetuk|asetus|\blain\b|\blaki\b|tulee\s+voimaan|säädet|§",
-    re.IGNORECASE,
-)
-_DURATION_FORM_RE = re.compile(
-    r"voimassa[^.]{0,40}?(?:vuoden|vuotta|kuukautta|kuukauden)\b", re.IGNORECASE
-)
-_ELIDED_YEAR_END_RE = re.compile(r"voimassa\s+vuoden\s+loppuun", re.IGNORECASE)
-_START_ONLY_RE = re.compile(r"voimassa\s+\d{1,2}\s*päivästä", re.IGNORECASE)
-_END_MARKER_RE = re.compile(
-    r"päivään|saakka|asti|loppuun|\bkunnes\b|enintään|\bajan\b", re.IGNORECASE
-)
-_REFERENTIAL_VOIMASSA_RE = re.compile(
-    r"on\s+voimassa,\s+mitä|sikäli\s+kuin[^.]{0,80}?on\s+voimassa", re.IGNORECASE
-)
+_EVENT_INSTRUMENT_RE = compile_classifier_regex(r"sopimu|voimaansaatt|asetuk|asetus|\blain\b|\blaki\b|tulee\s+voimaan|säädet|§", re.IGNORECASE, classifier_id="fi.fixed_term_expiry.event_instrument_re")
+_DURATION_FORM_RE = compile_classifier_regex(r"voimassa[^.]{0,40}?(?:vuoden|vuotta|kuukautta|kuukauden)\b", re.IGNORECASE, classifier_id="fi.fixed_term_expiry.duration_form_re")
+_ELIDED_YEAR_END_RE = compile_classifier_regex(r"voimassa\s+vuoden\s+loppuun", re.IGNORECASE, classifier_id="fi.fixed_term_expiry.elided_year_end_re")
+_START_ONLY_RE = compile_classifier_regex(r"voimassa\s+\d{1,2}\s*päivästä", re.IGNORECASE, classifier_id="fi.fixed_term_expiry.start_only_re")
+_END_MARKER_RE = compile_classifier_regex(r"päivään|saakka|asti|loppuun|\bkunnes\b|enintään|\bajan\b", re.IGNORECASE, classifier_id="fi.fixed_term_expiry.end_marker_re")
+_REFERENTIAL_VOIMASSA_RE = compile_classifier_regex(r"on\s+voimassa,\s+mitä|sikäli\s+kuin[^.]{0,80}?on\s+voimassa", re.IGNORECASE, classifier_id="fi.fixed_term_expiry.referential_voimassa_re")
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 
 
@@ -264,22 +242,13 @@ _DURATION_SPEC_RE = re.compile(
 # commencement. The mandatory voimaantulo tail keeps this from matching the
 # elided year-end idiom ("voimassa vuoden loppuun"). The owner words are an
 # enumerated flat alternation (not nested optional groups) for the regex gate.
-_BARE_YEAR_DURATION_RE = re.compile(
-    r"voimassa\s+vuoden\s+(?:voimaantulo|sen\s+voimaantulo|lain\s+voimaantulo"
-    r"|tämän\s+lain\s+voimaantulo|asetuksen\s+voimaantulo|päätöksen\s+voimaantulo)",
-    re.IGNORECASE,
-)
+_BARE_YEAR_DURATION_RE = compile_classifier_regex(r"voimassa\s+vuoden\s+(?:voimaantulo|sen\s+voimaantulo|lain\s+voimaantulo"
+    r"|tämän\s+lain\s+voimaantulo|asetuksen\s+voimaantulo|päätöksen\s+voimaantulo)", re.IGNORECASE, classifier_id="fi.fixed_term_expiry.bare_year_duration_re")
 # Concrete commencement date stated in a sentence ("tulee voimaan 15 päivänä
 # joulukuuta 1992" / "tulee voimaan 1.3.2015").
-_COMMENCEMENT_DATE_ESSIVE_RE = re.compile(
-    r"(?:tulee|tuli|astuu|astui)\s+voimaan\s+(\d{1,2})\.?\s*päivänä\s+"
-    r"([a-zäöå]+kuuta)\s+(\d{4})",
-    re.IGNORECASE,
-)
-_COMMENCEMENT_DATE_DOTTED_RE = re.compile(
-    r"(?:tulee|tuli|astuu|astui)\s+voimaan\s+(\d{1,2})\.\s?(\d{1,2})\.\s?(\d{4})",
-    re.IGNORECASE,
-)
+_COMMENCEMENT_DATE_ESSIVE_RE = compile_classifier_regex(r"(?:tulee|tuli|astuu|astui)\s+voimaan\s+(\d{1,2})\.?\s*päivänä\s+"
+    r"([a-zäöå]+kuuta)\s+(\d{4})", re.IGNORECASE, classifier_id="fi.fixed_term_expiry.commencement_date_essive_re")
+_COMMENCEMENT_DATE_DOTTED_RE = compile_classifier_regex(r"(?:tulee|tuli|astuu|astui)\s+voimaan\s+(\d{1,2})\.\s?(\d{1,2})\.\s?(\d{4})", re.IGNORECASE, classifier_id="fi.fixed_term_expiry.commencement_date_dotted_re")
 
 
 @dataclass(frozen=True)

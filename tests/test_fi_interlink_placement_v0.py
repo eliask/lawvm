@@ -131,7 +131,7 @@ def test_ladder_exact_unique() -> None:
     placements = place_occurrence_spans("5 §", "section:1", segs)
     assert len(placements) == 1
     p = placements[0]
-    assert p.status == "placed_exact_unique"
+    assert p.placement_status == "placed_exact_unique"
     assert (p.char_start, p.char_end) == (6, 9)
 
 
@@ -142,7 +142,7 @@ def test_ladder_normalized_unique_nbsp_maps_to_exact_coords() -> None:
     placements = place_occurrence_spans("28 tai 69 c §:ssä", "section:28a", segs)
     assert len(placements) == 1
     p = placements[0]
-    assert p.status == "placed_normalized_unique"
+    assert p.placement_status == "placed_normalized_unique"
     # Painted coordinates are EXACT rendered coords, not normalized coords.
     assert text[p.char_start:p.char_end] == "28 tai 69 c §:ssä"
 
@@ -153,7 +153,7 @@ def test_ladder_ambiguous_not_painted_by_default() -> None:
     segs = {"2020-01-01": [RenderedTextSegment("2020-01-01", "section:1", 0, text)]}
     placements = place_occurrence_spans("5 §", "section:1", segs)
     assert len(placements) == 1
-    assert placements[0].status == "unplaced_ambiguous"
+    assert placements[0].placement_status == "unplaced_ambiguous"
     assert placements[0].char_start == -1  # not painted
 
 
@@ -169,7 +169,7 @@ def test_ladder_ordinal_only_behind_experimental_flag() -> None:
         "5 §", "section:1", segs, enable_ordinal_experimental=True
     )
     assert len(placements) == 1
-    assert placements[0].status == "placed_ordinal_experimental"
+    assert placements[0].placement_status == "placed_ordinal_experimental"
     assert placements[0].char_start == 0  # first occurrence
 
 

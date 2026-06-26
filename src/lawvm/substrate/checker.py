@@ -1421,7 +1421,7 @@ class Checker:
     ) -> None:
         """L1.2 — every nontrivial row's candidate set is present + complete."""
         for row in rows:
-            status = row.get("status")
+            status = row.get("selection_status")
             if status in ("absent", "out_of_scope", "unsupported_profile"):
                 continue
             cs_hash = row.get("candidate_set_hash")
@@ -1511,7 +1511,7 @@ class Checker:
         ``ambiguous_missing_scope`` (never ``blocked``).
         """
         for row in rows:
-            if row.get("status") != "ambiguous_missing_scope":
+            if row.get("selection_status") != "ambiguous_missing_scope":
                 continue
             key = str(row.get("selection_key", "<unknown>"))
             cs_hash = row.get("candidate_set_hash")
@@ -1561,7 +1561,7 @@ class Checker:
             if r.get("blocking") is True and isinstance(r.get("kind"), str)
         }
         for row in rows:
-            if row.get("status") != "blocked":
+            if row.get("selection_status") != "blocked":
                 continue
             key = str(row.get("selection_key", "<unknown>"))
             reason = row.get("block_reason")
@@ -1603,7 +1603,7 @@ class Checker:
             tuple[str, str, str, str, str], list[tuple[str, tuple[str, str | None]]]
         ] = {}
         for row in rows:
-            if row.get("status") != "selected":
+            if row.get("selection_status") != "selected":
                 continue
             interval = _as_interval(row.get("effect_interval", None))
             if interval is None:
@@ -1709,7 +1709,7 @@ class Checker:
             if (body := _row_object(row)) is not None
             and body.get("schema") == "lawvm.residual.v1"
         ]
-        has_blocked = any(r.get("status") == "blocked" for r in rows)
+        has_blocked = any(r.get("selection_status") == "blocked" for r in rows)
         has_qualifying = any(
             r.get("blocking") is False for r in residuals
         )

@@ -353,7 +353,7 @@ def test_manual_claim_authorization_report_is_not_replay_authority(tmp_path):
     assert data["replay_claims"] is False
     assert data["rows"][0]["surface"] == "execution_authorization"
     assert data["rows"][0]["subject_id"] == assertion_id
-    assert data["rows"][0]["status"] == "evidence_policy_satisfied_non_executable"
+    assert data["rows"][0]["row_status"] == "evidence_policy_satisfied_non_executable"
     assert data["rows"][0]["replay_authorized"] is False
     assert data["rows"][0]["required_proofs"] == ["phase_local_replay_authorization"]
     assert (

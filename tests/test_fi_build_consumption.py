@@ -471,8 +471,8 @@ def test_declared_consumption_without_edges_is_invalid_never_clean(
     finding = build_consumption_status(
         graph, ref.build_id, _load_all_attestations(store), store.load_build_record_index()
     )
-    assert finding.status == BuildConsumptionStatus.INVALID_CONSUMPTION
-    assert finding.status != BuildConsumptionStatus.CLEAN
+    assert finding.taint_status == BuildConsumptionStatus.INVALID_CONSUMPTION
+    assert finding.taint_status != BuildConsumptionStatus.CLEAN
     assert "never clean" in finding.detail
 
     # validate_build_consumption refuses too
@@ -535,12 +535,12 @@ def test_four_state_machine_unknown_uninstrumented_clean(tmp_path: Path) -> None
         store.load_build_record_index(),
     )
     by_id = {f.build_id: f for f in findings}
-    assert by_id[clean_ref.build_id].status == BuildConsumptionStatus.CLEAN
+    assert by_id[clean_ref.build_id].taint_status == BuildConsumptionStatus.CLEAN
     assert (
-        by_id[unin_ref.build_id].status
+        by_id[unin_ref.build_id].taint_status
         == BuildConsumptionStatus.BUILD_CONSUMPTION_UNINSTRUMENTED
     )
-    assert by_id[ghost_ref.build_id].status == BuildConsumptionStatus.BUILD_UNKNOWN
+    assert by_id[ghost_ref.build_id].taint_status == BuildConsumptionStatus.BUILD_UNKNOWN
 
 
 def test_edge_payload_build_id_mismatch_refuses_query(tmp_path: Path) -> None:

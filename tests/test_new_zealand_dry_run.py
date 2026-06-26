@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from typing import Literal
 
 import pytest
 
@@ -123,13 +124,13 @@ def _repeal_row(
     operation: LegalOperation | None = None,
     amendment_date_iso: str = "2019-10-24",
     target_resolution_status: str = "",
-    status: str = "candidate_emitted",
+    status: Literal["candidate_emitted", "blocked"] = "candidate_emitted",
 ) -> NZCanonicalEffectCandidateRow:
     return NZCanonicalEffectCandidateRow(
         row_id="nz-effect-candidate-1",
         operation_row_id="nz-opw-1",
         effect_readiness_row_id="nz-readiness-1",
-        status=status,
+        candidate_status=status,
         action=str(StructuralAction.REPEAL),
         target_address="section:108",
         operation=operation if operation is not None else _repeal_operation(),
@@ -147,7 +148,7 @@ def _blocked_repeal_row() -> NZCanonicalEffectCandidateRow:
         row_id="nz-effect-candidate-2",
         operation_row_id="nz-opw-2",
         effect_readiness_row_id="nz-readiness-2",
-        status="blocked",
+        candidate_status="blocked",
         target_address="section:200",
         blocking_rule_id="nz_effect_candidate_not_ready",
         operation_family="repealed",
@@ -253,7 +254,7 @@ def test_dry_run_refuses_when_preflight_not_ready() -> None:
         row_id="nz-effect-candidate-2",
         operation_row_id="nz-opw-2",
         effect_readiness_row_id="nz-readiness-2",
-        status="blocked",
+        candidate_status="blocked",
         blocking_rule_id="nz_effect_candidate_not_ready",
     )
     preflight = _preflight_from_rows((_repeal_row(), blocked))
@@ -274,7 +275,7 @@ def test_dry_run_refuses_when_no_repeal_candidate_present() -> None:
         row_id="nz-effect-candidate-1",
         operation_row_id="nz-opw-1",
         effect_readiness_row_id="nz-readiness-1",
-        status="candidate_emitted",
+        candidate_status="candidate_emitted",
         action=str(StructuralAction.TEXT_REPLACE),
         target_address="section:108",
         operation=LegalOperation(
@@ -398,7 +399,7 @@ def test_selected_family_repeal_counts_non_repeal_family_as_not_in_scope() -> No
         row_id="nz-effect-candidate-3",
         operation_row_id="nz-opw-3",
         effect_readiness_row_id="nz-readiness-3",
-        status="candidate_emitted",
+        candidate_status="candidate_emitted",
         action=str(StructuralAction.TEXT_REPLACE),
         target_address="section:109",
         operation=LegalOperation(
@@ -561,7 +562,7 @@ def _def_repeal_row(*, term: str, row_index: int = 1) -> NZCanonicalEffectCandid
         row_id=f"nz-effect-candidate-{row_index}",
         operation_row_id=f"nz-opw-{row_index}",
         effect_readiness_row_id=f"nz-readiness-{row_index}",
-        status="candidate_emitted",
+        candidate_status="candidate_emitted",
         action=str(StructuralAction.REPEAL),
         target_address=f"section:2/subsection:1/definition:{term}",
         operation=operation,

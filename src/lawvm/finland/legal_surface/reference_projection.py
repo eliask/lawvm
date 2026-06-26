@@ -64,7 +64,12 @@ FOREST_UNOWNED_REFERENCE_FAMILIES: tuple[str, ...] = (
     "ref_element",  # lane 1: inline <ref> elements + finlex: metadata edges
     "affected_document",  # lane 2: <affectedDocument> AMENDS targets (preamble)
     "eu_text_pattern",  # lane 3: EU citations from text scan
-    "plain_text_fallback",  # lane 4 residue: regex fallback the construction missed
+    # lane 4 residue: legacy regex fallback the construction missed. RETIRED — the
+    # production residue lane was deleted after a whole-corpus census proved it
+    # emitted only mis-pivoted duplicate citations (see
+    # tests/test_fi_ref_legacy_regex_residue_census.py). Production no longer emits
+    # this lemma; the family is kept here for backward-tolerance of historical rows.
+    "plain_text_fallback",
     # lane 5: surface-grammar (treaty / vague / EU-nickname) phrase lemmas
     "treaty",
     "treaty_article",

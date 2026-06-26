@@ -1368,6 +1368,84 @@ def _whole_target_arm_boundary(scan: _Scan, hard: int) -> int:
     return hard
 
 
+# Anaphor pronouns (``sen`` / ``niiden`` …) that introduce the placement of a new
+# heading relative to the JUST-INSERTED section(s): ``[uusi N §] ja sen edelle uusi
+# väliotsikko``. The old parser consumes this tail but mints NO heading node for the
+# anaphoric form, dropping it entirely; the grammar driver's
+# ``_skip_anaphoric_heading_residue`` reproduces that drop after the section batch.
+_ANAPHOR_HEADING_LEMMAS = frozenset({"se", "sen", "ne", "niiden", "niitä"})
+
+
+def _trailing_anaphoric_heading_residue_start(scan: _Scan, hard: int) -> int | None:
+    """Start index of a trailing anaphoric heading residue running to ``hard``.
+
+    Detects the EXACT ``[, | ja | sekä] <anaphor> EDELLA [uusi] [N luvun]
+    (OTSIKKO | VALIOTSIKKO)`` tail that ends the clause (extends to ``hard`` — the
+    next VERB / END). Returns the index of the leading list separator (so the
+    structural OOS guard can stop scanning there), or ``None`` when no such
+    terminal anaphoric residue is present.
+
+    The ``uusi`` between ``EDELLA`` and the heading noun is OPTIONAL: both the
+    ``sen edelle uusi väliotsikko`` and the bare ``sen edelle väliotsikko`` forms
+    are the same anaphoric placement the old parser DROPS (it emits a single
+    section insertion and no heading node in either case — verified per-statute,
+    e.g. 1995/1387 ``lakiin uusi 5 a § ja sen edelle väliotsikko`` → one SECTION
+    insert of 5a, the väliotsikko dropped; the consolidated arvo-osuustililaki
+    827/1991 carries §5a preceded by a cross-heading, so the section is the
+    operative insert and the heading attribution is the legacy drop we reproduce).
+
+    Letting the whole-target arm parse the section insert and leaving this residue
+    for the driver's ``_skip_anaphoric_heading_residue`` is byte-identical to the
+    legacy fallback (verified per-statute). A non-anaphoric ``N §:n edelle …``
+    placement (an explicit §:GEN target before EDELLA) — for which the old parser
+    emits a REAL heading node — is NOT matched here (the token before EDELLA must
+    be an anaphor pronoun, never a structural noun).
+    """
+    toks = scan.cur.tokens
+    # Locate a single EDELLA before ``hard``.
+    edella_idx = None
+    for k in range(scan.pos, min(hard, len(toks))):
+        if toks[k].cat == "EDELLA":
+            if edella_idx is not None:
+                return None  # more than one EDELLA: not the simple residue
+            edella_idx = k
+    if edella_idx is None:
+        return None
+    # The token directly before EDELLA must be an anaphor pronoun WORD.
+    if edella_idx == 0:
+        return None
+    prev = toks[edella_idx - 1]
+    if prev.cat != "WORD" or (prev.lemma or prev.text).lower() not in _ANAPHOR_HEADING_LEMMAS:
+        return None
+    # Walk the heading payload after EDELLA: [uusi] [N [letter] luvun] (OTSIKKO|VALIOTSIKKO).
+    # ``uusi`` is OPTIONAL: the driver's ``_skip_anaphoric_heading_residue`` consumes
+    # either ``EDELLA uusi (väli|ala)otsikko`` or the bare ``EDELLA (väli|ala)otsikko``
+    # form, dropping the heading in both cases (the old parser does the same), so the
+    # recovered section insert is always followed by a residue the driver drops.
+    j = edella_idx + 1
+    if j < hard and toks[j].cat == "UUSI":
+        j += 1
+    if j < hard and toks[j].cat == "NUM":
+        j += 1
+        if j < hard and toks[j].cat == "LETTER":
+            j += 1
+        if j < hard and toks[j].cat == "LUKU" and toks[j].case == "GEN":
+            j += 1
+    if j >= hard or toks[j].cat not in ("OTSIKKO", "VALIOTSIKKO"):
+        return None
+    j += 1  # past the heading noun
+    # The residue must run to ``hard`` (the clause / verb-group boundary): nothing
+    # operative may follow, or this is not the terminal drop-tail.
+    if j != hard:
+        return None
+    # The residue starts at the separator immediately before the anaphor (``ja`` /
+    # ``sekä`` / ``,``), so the OOS guard stops there.
+    start = edella_idx - 1
+    if start > scan.pos and toks[start - 1].cat in ("COMMA", "CONJ", "SEKA"):
+        start -= 1
+    return start
+
+
 # Structural-authority token categories that may precede a citation-stamped
 # ``nojalla`` authority lead-in (``N §:n M momentin nojalla uusi …``).
 _AUTHORITY_CATS = frozenset(
@@ -1617,6 +1695,17 @@ def _dispatch(
                 return luvun_nodes
         scan.goto(saved_luvun)
 
+    # ``liitteeseen 5 uusi kohta 2 c, 4 b ja 4 c`` — a point insert inside a
+    # numbered appendix. The current surface model has appendix-level targets, not
+    # appendix item coordinates, so this consumes the item list as source witness
+    # and emits the owning appendix insertion. This must run before the broad
+    # LIITE out-of-scope guard below; otherwise an unsupported appendix tail makes
+    # the whole insertion list fall back to the legacy parser, which can drop
+    # earlier section insertions in the same list.
+    appendix_item = _try_appendix_ill_item_insert(scan)
+    if appendix_item is not None:
+        return appendix_item
+
     # Out-of-scope guard for the remaining (whole-target) arms. Two scans:
     #
     #   * Provenance markers (reinstatement / citation / tilalle spans) attach to
@@ -1630,7 +1719,18 @@ def _dispatch(
     arm_boundary = _whole_target_arm_boundary(scan, hard)
     if _phrase_has_oos_token(scan, arm_boundary, _OOS_PROVENANCE_CATS):
         return None
-    if _phrase_has_oos_token(scan, hard, _OOS_STRUCTURAL_CATS):
+    # A terminal anaphoric heading residue (``[uusi N §] ja sen edelle uusi
+    # väliotsikko``) is the ONE structural fold the old parser drops to nothing:
+    # it emits the section insert and mints no heading node. The grammar driver's
+    # ``_skip_anaphoric_heading_residue`` reproduces that drop after this batch, so
+    # the whole-target arm may own the section insert. Stop the structural OOS scan
+    # at the residue start so this shape is recovered; any OTHER heading / appendix
+    # / backref fold (which the old parser keeps) still trips the guard.
+    structural_scan_end = hard
+    residue_start = _trailing_anaphoric_heading_residue_start(scan, hard)
+    if residue_start is not None:
+        structural_scan_end = residue_start
+    if _phrase_has_oos_token(scan, structural_scan_end, _OOS_STRUCTURAL_CATS):
         return None
 
     # ── OSA:ILL-scoped insert: ``[N] OSA:ILL uusi numlist (§ | luku)`` ──────
@@ -1697,6 +1797,38 @@ def _try_osa_scoped(scan: _Scan, effective_part: str) -> Optional[list[InsNode]]
         return [InsNode(kind=kind, label=n + sf, chapter="", part=part_label) for n, sf in ins_nums]
     scan.goto(saved)
     return None
+
+
+def _try_appendix_ill_item_insert(scan: _Scan) -> Optional[list[InsNode]]:
+    """``LIITE:ILL num uusi KOHTA numlist`` — insertion into an appendix list.
+
+    The grammar owns the full source shape, including the inserted item labels,
+    but the surface target language currently represents appendix operations at
+    appendix granularity. Emitting one appendix-level insertion preserves the
+    supported target without letting the unsupported item-coordinate tail escape
+    as residue.
+    """
+    saved = scan.pos
+    if not _at_cat_case(scan, "LIITE", "ILL"):
+        return None
+    scan.advance()
+    appendix_nums = _number_list(scan)
+    if not appendix_nums or len(appendix_nums) != 1:
+        scan.goto(saved)
+        return None
+    appendix_label = appendix_nums[0][0] + appendix_nums[0][1]
+    if not _consume_uusi(scan):
+        scan.goto(saved)
+        return None
+    if not _at(scan, "KOHTA"):
+        scan.goto(saved)
+        return None
+    scan.advance()
+    item_nums = _number_list(scan)
+    if not item_nums:
+        scan.goto(saved)
+        return None
+    return [InsNode(kind=TargetKind.APPENDIX, label=appendix_label, chapter="", part="")]
 
 
 def _consume_sub_target_continuation(
@@ -1966,6 +2098,23 @@ def _try_luku_scoped(
     if _at(scan, "CITATION_SPAN"):
         scan.goto(saved)
         return None
+
+    # A PROVENANCE_SPAN between ``lukuun`` and ``uusi`` is the pure chapter
+    # provenance ``sellaisena kuin se on (siihen) myöhemmin tehtyine muutoksineen``
+    # — a self-contained appositive attributing the chapter's prior amendment
+    # history, with NO reinstated-slot / tilalle clause inside it. It does not
+    # change WHERE the new section lands: ``lisätään rikoslain 30 lukuun,
+    # sellaisena kuin se on siihen myöhemmin tehtyine muutoksineen, uusi 3 a §``
+    # inserts §3a INTO chapter 30 exactly as the citation-free ``N lukuun uusi M §``
+    # does. The OLD parser DROPS this insertion entirely (it emits zero ops for the
+    # whole ``N lukuun [PROV] uusi N §`` clause — a silent legacy drop verified
+    # per-statute), so recovering it with chapter=N is a STRICT improvement, not a
+    # legacy-byte-identity case. A REINST_SPAN / TILALLE reinstatement preamble is a
+    # distinct cat handled below; only the pure-provenance PROVENANCE_SPAN is
+    # skipped here. (An optional comma may close the span on either side.)
+    if _at(scan, "PROVENANCE_SPAN"):
+        scan.advance()
+        _optional_comma(scan)
 
     # Single tilalle / reinstatement span (the collapsed reinstatement preamble:
     # ``siitä lailla X kumotun K §:n tilalle``). CITATION_SPAN is excluded above.

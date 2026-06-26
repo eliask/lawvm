@@ -27,11 +27,14 @@ from lawvm.core.elaboration_context import TargetContext, ReplayLookups
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.ops import (
     AmendmentOp,
+    OpType,
     ResolvedOp,
     projection_scope_confidence,
 )
+from lawvm.finland.op_provenance import RecognizerId, has_recognizer
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.apply_ir_ops import _relabel_section_ir
+from lawvm.finland.target_selector_facades import replace_target
 
 if TYPE_CHECKING:
     pass
@@ -51,22 +54,22 @@ def normalize_group_ops_for_repeal_reenact(
     Multiple whole-section repeals in a group are pure repeals and must not be
     converted.
     """
-    whole_repeals = [o for o in group_ops if o.op_type == "REPEAL" and not o.target_paragraph]
+    whole_repeals = [o for o in group_ops if o.op_type == OpType.REPEAL and not o.target_cols.target_paragraph]
     other_ops = [o for o in group_ops if o not in whole_repeals]
     # Only convert when exactly one repeal exists and other ops target the same section
     if len(whole_repeals) == 1 and other_ops:
         repeal_op = whole_repeals[0]
         # Check that at least one other op targets the same section
-        repeal_target = (repeal_op.target_section or "").strip()
+        repeal_target = (repeal_op.target_cols.target_section or "").strip()
         same_section_ops = (
-            [o for o in other_ops if (o.target_section or "").strip() == repeal_target] if repeal_target else []
+            [o for o in other_ops if (o.target_cols.target_section or "").strip() == repeal_target] if repeal_target else []
         )
         if same_section_ops:
             new_lo = dc_replace(repeal_op.lo, action=StructuralAction.REPLACE) if repeal_op.lo else None
             return [
                 dc_replace(
                     repeal_op,
-                    op_type="REPLACE",
+                    op_type=OpType.REPLACE,
                     lo=new_lo,
                     extraction_provenance_tags=tuple(
                         dict.fromkeys((*repeal_op.extraction_provenance_tags, "repeal_reenact_normalized"))
@@ -122,11 +125,11 @@ def remap_body_root_replace_group_before_terminal_voimaantulo(
         or not re.fullmatch(r"\d+", target_norm)
         or not group_ops
         or any(
-            op.op_type != "REPLACE"
-            or op.target_paragraph
-            or op.target_item
-            or op.target_special
-            or not op.body_root_replace_fallback
+            op.op_type != OpType.REPLACE
+            or op.target_cols.target_paragraph
+            or op.target_cols.target_item
+            or op.target_cols.target_special
+            or not has_recognizer(op.provenance, RecognizerId.BODY_ROOT_REPLACE)
             for op in group_ops
         )
     ):
@@ -159,8 +162,8 @@ def remap_body_root_replace_group_before_terminal_voimaantulo(
     remapped_ops = [
         dc_replace(
             op,
-            op_type="INSERT",
-            target_section=insert_label,
+            op_type=OpType.INSERT,
+            **replace_target(op, target_section=insert_label),
         )
         for op in group_ops
     ]
@@ -182,13 +185,13 @@ class CompiledOpTargetScope:
     @classmethod
     def from_amendment_op(cls, op: AmendmentOp) -> "CompiledOpTargetScope":
         return cls(
-            target_unit_kind=op.target_unit_kind,
-            target_norm=_norm_num_token(op.target_section) if op.target_section else "",
-            target_chapter=_norm_num_token(op.target_chapter) if op.target_chapter else "",
-            target_part=_norm_num_token(op.target_part) if op.target_part else "",
-            target_paragraph=str(op.target_paragraph) if op.target_paragraph is not None else "",
-            target_item=str(op.target_item).strip() if op.target_item is not None else "",
-            target_special=str(op.target_special).strip() if op.target_special is not None else "",
+            target_unit_kind=op.target_cols.target_unit_kind,
+            target_norm=_norm_num_token(op.target_cols.target_section) if op.target_cols.target_section else "",
+            target_chapter=_norm_num_token(op.target_cols.target_chapter) if op.target_cols.target_chapter else "",
+            target_part=_norm_num_token(op.target_cols.target_part) if op.target_cols.target_part else "",
+            target_paragraph=str(op.target_cols.target_paragraph) if op.target_cols.target_paragraph is not None else "",
+            target_item=str(op.target_cols.target_item).strip() if op.target_cols.target_item is not None else "",
+            target_special=str(op.target_cols.target_special).strip() if op.target_cols.target_special is not None else "",
         )
 
     @classmethod
@@ -223,7 +226,7 @@ def _item_target_sort_key(item: Optional[str]) -> tuple[int, int, str]:
 
 
 def _op_apply_sort_key(op: AmendmentOp) -> tuple[int, tuple[int, int, str]]:
-    return (op.target_paragraph or 0, _item_target_sort_key(op.target_item))
+    return (op.target_cols.target_paragraph or 0, _item_target_sort_key(op.target_cols.target_item))
 
 
 def sort_group_ops_for_apply(
@@ -241,11 +244,11 @@ def sort_group_ops_for_apply(
         o
         for o in group_ops
         if (
-            o.target_unit_kind == "section"
-            and o.target_paragraph
-            and not o.target_item
-            and not o.target_special
-            and o.op_type in ("REPLACE", "INSERT")
+            o.target_cols.target_unit_kind == "section"
+            and o.target_cols.target_paragraph
+            and not o.target_cols.target_item
+            and not o.target_cols.target_special
+            and o.op_type in (OpType.REPLACE, OpType.INSERT)
         )
     ]
     if plain_moment_ops:
@@ -255,11 +258,11 @@ def sort_group_ops_for_apply(
         # before the later target lands. Run only that family in ascending
         # order; keep the broader reverse-order default for other pure REPLACE
         # groups so existing sparse merge behaviour stays stable.
-        if all(o.op_type == "REPLACE" for o in plain_moment_ops):
+        if all(o.op_type == OpType.REPLACE for o in plain_moment_ops):
             replace_targets = sorted(
-                int(str(o.target_paragraph))
+                int(str(o.target_cols.target_paragraph))
                 for o in plain_moment_ops
-                if o.target_paragraph is not None
+                if o.target_cols.target_paragraph is not None
             )
             sec = target_ctx.live_node
             live_labels = (
@@ -296,12 +299,12 @@ def sort_group_ops_for_apply(
         # This applies even when the group contains non-moment ops (e.g.
         # otsikko replaces) since those don't interact with subsection
         # ordering — they have target_paragraph=None and sort to the front.
-        if all(o.op_type == "INSERT" for o in plain_moment_ops):
+        if all(o.op_type == OpType.INSERT for o in plain_moment_ops):
             return sorted(group_ops, key=_op_apply_sort_key)
         if (
             len(plain_moment_ops) == len(group_ops)
-            and any(o.op_type == "INSERT" for o in plain_moment_ops)
-            and any(o.op_type == "REPLACE" for o in plain_moment_ops)
+            and any(o.op_type == OpType.INSERT for o in plain_moment_ops)
+            and any(o.op_type == OpType.REPLACE for o in plain_moment_ops)
         ):
             # Use target_ctx.live_node instead of master.find_section_path + resolve
             sec = target_ctx.live_node
@@ -312,14 +315,14 @@ def sort_group_ops_for_apply(
                     if child.kind == IRNodeKind.SUBSECTION and (child.label or "").isdigit()
                 }
                 insert_targets = [
-                    int(o.target_paragraph)
+                    int(o.target_cols.target_paragraph)
                     for o in plain_moment_ops
-                    if o.op_type == "INSERT" and o.target_paragraph is not None
+                    if o.op_type == OpType.INSERT and o.target_cols.target_paragraph is not None
                 ]
                 replace_targets = {
-                    int(o.target_paragraph)
+                    int(o.target_cols.target_paragraph)
                     for o in plain_moment_ops
-                    if o.op_type == "REPLACE" and o.target_paragraph is not None
+                    if o.op_type == OpType.REPLACE and o.target_cols.target_paragraph is not None
                 }
                 if insert_targets and live_labels and min(insert_targets) > max(live_labels):
                     return sorted(
@@ -331,7 +334,10 @@ def sort_group_ops_for_apply(
                         group_ops,
                         key=_op_apply_sort_key,
                     )
-    return sorted(group_ops, key=lambda o: (-(o.target_paragraph or 0), _item_target_sort_key(o.target_item)))
+    return sorted(
+        group_ops,
+        key=lambda o: (-(o.target_cols.target_paragraph or 0), _item_target_sort_key(o.target_cols.target_item)),
+    )
 
 
 def mixed_subsection_group_requires_insert_first(
@@ -350,38 +356,47 @@ def mixed_subsection_group_requires_insert_first(
     subsec_inserts = [
         o
         for o in ops
-        if o.op_type == "INSERT" and o.target_paragraph is not None and not o.target_item and not o.target_special
+        if o.op_type == OpType.INSERT
+        and o.target_cols.target_paragraph is not None
+        and not o.target_cols.target_item
+        and not o.target_cols.target_special
     ]
     subsec_replaces = [
         o
         for o in ops
-        if o.op_type == "REPLACE" and o.target_paragraph is not None and not o.target_item and not o.target_special
+        if o.op_type == OpType.REPLACE
+        and o.target_cols.target_paragraph is not None
+        and not o.target_cols.target_item
+        and not o.target_cols.target_special
     ]
     subsec_renumbers = [
         o
         for o in ops
-        if o.op_type == "RENUMBER" and o.target_paragraph is not None and not o.target_item and not o.target_special
+        if o.op_type == OpType.RENUMBER
+        and o.target_cols.target_paragraph is not None
+        and not o.target_cols.target_item
+        and not o.target_cols.target_special
     ]
     if not subsec_inserts or not subsec_replaces:
         return False
 
-    insert_targets = {int(o.target_paragraph or 0) for o in subsec_inserts}
-    renumber_targets = {int(o.target_paragraph or 0) for o in subsec_renumbers}
+    insert_targets = {int(o.target_cols.target_paragraph or 0) for o in subsec_inserts}
+    renumber_targets = {int(o.target_cols.target_paragraph or 0) for o in subsec_renumbers}
     if insert_targets & renumber_targets:
         for replace_op in subsec_replaces:
-            if "rebase_duplicate_target_shifted_replace" not in replace_op.target_guessing_provenance_tags:
+            if not has_recognizer(replace_op.provenance, RecognizerId.REBASE_DUPLICATE_TARGET_SHIFTED_REPLACE):
                 continue
-            replace_target = int(replace_op.target_paragraph or 0)
+            replace_target = int(replace_op.target_cols.target_paragraph or 0)
             if any(insert_target + 1 == replace_target for insert_target in insert_targets):
                 return True
 
     max_live_label = max(live_numeric_labels)
     for replace_op in subsec_replaces:
-        replace_target = int(replace_op.target_paragraph or 0)
+        replace_target = int(replace_op.target_cols.target_paragraph or 0)
         if replace_target in live_numeric_labels:
             continue
         insert_count_before_target = sum(
-            1 for insert_op in subsec_inserts if int(insert_op.target_paragraph or 0) <= replace_target
+            1 for insert_op in subsec_inserts if int(insert_op.target_cols.target_paragraph or 0) <= replace_target
         )
         if insert_count_before_target <= 0:
             continue
@@ -395,12 +410,18 @@ def stabilize_insert_order(ops: List[AmendmentOp], target_ctx: TargetContext) ->
     subsec_inserts = [
         o
         for o in ops
-        if o.op_type == "INSERT" and o.target_paragraph is not None and not o.target_item and not o.target_special
+        if o.op_type == OpType.INSERT
+        and o.target_cols.target_paragraph is not None
+        and not o.target_cols.target_item
+        and not o.target_cols.target_special
     ]
     subsec_replaces = [
         o
         for o in ops
-        if o.op_type == "REPLACE" and o.target_paragraph is not None and not o.target_item and not o.target_special
+        if o.op_type == OpType.REPLACE
+        and o.target_cols.target_paragraph is not None
+        and not o.target_cols.target_item
+        and not o.target_cols.target_special
     ]
     if not subsec_inserts or not subsec_replaces:
         return ops
@@ -409,19 +430,22 @@ def stabilize_insert_order(ops: List[AmendmentOp], target_ctx: TargetContext) ->
     ordered_replaces = [o for o in ops if o in subsec_replaces]
     ascending_inserts = sorted(
         subsec_inserts,
-        key=lambda o: (o.target_paragraph or 0, o.target_item or ""),
+        key=lambda o: (o.target_cols.target_paragraph or 0, o.target_cols.target_item or ""),
     )
     same_wave_shift_renumbers = [
         o
         for o in other_ops
         if (
-            o.op_type == "RENUMBER"
-            and o.target_paragraph is not None
-            and not o.target_item
-            and not o.target_special
-            and any(int(ins.target_paragraph or 0) == int(o.target_paragraph or 0) for ins in subsec_inserts)
+            o.op_type == OpType.RENUMBER
+            and o.target_cols.target_paragraph is not None
+            and not o.target_cols.target_item
+            and not o.target_cols.target_special
             and any(
-                "rebase_duplicate_target_shifted_replace" in rep.target_guessing_provenance_tags
+                int(ins.target_cols.target_paragraph or 0) == int(o.target_cols.target_paragraph or 0)
+                for ins in subsec_inserts
+            )
+            and any(
+                has_recognizer(rep.provenance, RecognizerId.REBASE_DUPLICATE_TARGET_SHIFTED_REPLACE)
                 for rep in subsec_replaces
             )
         )

@@ -14,6 +14,25 @@ def _clean(text: str) -> str:
     return re.sub(r"[^a-z0-9äöå]", "", text.lower())
 
 
+# Source-corruption markers: residual XML serialization artefacts that signal a
+# source-text bug rather than a substantive substitution.  Stray ``<`` / ``>``
+# (e.g. a half-stripped closing tag written as ``sitä>``) or un-escaped XML
+# entities left in the displayed text are the strongest witness available that a
+# high-overlap divergence is corruption-shaped instead of editorial / stale-oracle.
+# Pre-compiled because this is run inside the per-section classification hot path.
+_SOURCE_CORRUPTION_MARKER_RE = re.compile(
+    r"(?:"
+    r"[<>]"
+    r"|&lt;|&gt;|&amp;|&quot;|&apos;"
+    r")"
+)
+
+
+def has_source_corruption_marker(*texts: str) -> bool:
+    """True when at least one surface carries a visible source-corruption marker."""
+    return any(_SOURCE_CORRUPTION_MARKER_RE.search(text or "") for text in texts)
+
+
 def looks_like_bare_section_stub(text: str) -> bool:
     squashed = re.sub(r"\s+", " ", text).strip()
     if not squashed:
@@ -60,6 +79,13 @@ def high_overlap_text_corruption(
     same provision and one witness appears to have dropped or mangled a bounded
     phrase while preserving most of the section.  It must not be used to mutate
     replay output.
+
+    Indicator-gating policy: this predicate is *corruption-shaped*, not load-
+    bearing.  The classify caller in :mod:`lawvm.tools.oracle_check` decides when
+    firing is appropriate: the pre-existing ``not blame_op`` lane fires unguarded
+    (a high-overlap divergence that no amendment explains is itself the witness),
+    but a blamed lane fires it only when ``has_source_corruption_marker``
+    corroborates — see that helper's docstring for the rationale.
     """
     replay_clean = _clean(replay_text)
     oracle_clean = _clean(oracle_text)

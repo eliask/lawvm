@@ -11,7 +11,7 @@ semantic kernel and are intended for persisted/published artifact boundaries.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Generic, Literal, TypeVar
+from typing import Any, Literal
 
 
 StatusKind = Literal["complete", "partial", "blocked", "failed"]
@@ -47,11 +47,8 @@ class ProcessingStatus:
         }
 
 
-T = TypeVar("T")
-
-
 @dataclass(frozen=True)
-class ArtifactEnvelope(Generic[T]):
+class ArtifactEnvelope[T]:
     """Versioned wrapper for persisted or published artifacts."""
 
     schema: str

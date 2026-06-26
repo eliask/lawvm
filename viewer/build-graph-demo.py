@@ -56,7 +56,11 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from typing import TYPE_CHECKING
 from pathlib import Path
+
+if TYPE_CHECKING:
+    from lawvm.substrate.eu_ingest import IngestedEuWork
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
@@ -115,7 +119,7 @@ def build_fi_time_pack() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def build_eu_pack() -> object:
+def build_eu_pack() -> IngestedEuWork:
     """Ingest the GDPR consolidated Formex; return the IngestedEuWork index."""
     from lawvm.substrate.eu_ingest import export_eu_regulation_pack
 
@@ -207,14 +211,15 @@ def _anchor_address(surface_text: str, text_index: list[tuple[str, str]]) -> str
     return None
 
 
-def build_sidecar(work: object) -> dict[str, int]:
+def build_sidecar(work: IngestedEuWork | None) -> dict[str, int]:
     """Re-derive the folded FI edges WITH anchor metadata, resolve their GDPR
     targets against the ingested work, and write the viewer sidecar files.
     """
     from lawvm.finland.corpus import get_corpus_store
+    from lawvm.core.reference_mention import ReferenceMention
     from lawvm.finland.references.ref_mention_extractor import extract_all_reference_mentions
     from lawvm.finland.references.reference_sets import fold_reference_set
-    from lawvm.substrate.canonical_json import wrap_row
+    from lawvm.substrate.canonical_json import JsonValue, wrap_row
     from lawvm.substrate.eu_ingest import resolve_fi_eu_edge
     from lawvm.substrate.relation_edge_bridge import reference_set_to_relation_edge
 
@@ -223,11 +228,13 @@ def build_sidecar(work: object) -> dict[str, int]:
 
     store = get_corpus_store()
     xml_bytes = store.read_oracle(FI_WORK_ENGINE_ID)
+    if xml_bytes is None:
+        raise RuntimeError(f"Missing oracle XML for {FI_WORK_ENGINE_ID}")
     result = extract_all_reference_mentions(xml_bytes, FI_WORK_ENGINE_ID)
 
     # Group flattened mentions by their written surface, exactly as the exporter
     # does (one range/coordination folds into ONE set / ONE edge).
-    groups: dict[tuple[str, object], list[object]] = {}
+    groups: dict[tuple[str, object], list[ReferenceMention]] = {}
     order: list[tuple[str, object]] = []
     for idx, mention in enumerate(result.mentions):
         span = mention.source_span
@@ -243,7 +250,7 @@ def build_sidecar(work: object) -> dict[str, int]:
             order.append(key)
         groups[key].append(mention)
 
-    resolved_rows: list[dict[str, object]] = []
+    resolved_rows: list[dict[str, JsonValue]] = []
     anchors: dict[str, dict[str, object]] = {}
     n_celex = n_resolved = 0
 
@@ -256,10 +263,14 @@ def build_sidecar(work: object) -> dict[str, int]:
             corpus_version=cv,
             branch_id="actual",
         )
-        is_celex = any(str(t).startswith("celex:") for t in edge["target_set"])
+        target_set = edge.get("target_set")
+        is_celex = isinstance(target_set, list) and any(
+            isinstance(target, str) and target.startswith("celex:")
+            for target in target_set
+        )
         if is_celex:
             n_celex += 1
-        er = resolve_fi_eu_edge(edge, work, corpus_version=cv)  # type: ignore[arg-type]
+        er = resolve_fi_eu_edge(edge, work, corpus_version=cv)
         out_edge = er.edge
         if er.rewritten:
             n_resolved += 1

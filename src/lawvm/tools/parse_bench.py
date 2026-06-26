@@ -653,7 +653,7 @@ def run_nz(args) -> None:
                 "lowering_coverage_pct": round(coverage, 3),
                 "effect_readiness_status_counts": dict(status_ct),
                 "top_shapes": [
-                    {"status": s, "count": n} for s, n in blocked_ct.most_common(top)
+                    {"effect_readiness_status": s, "count": n} for s, n in blocked_ct.most_common(top)
                 ],
                 "worst_statutes": [
                     {"sid": r.work_id, "rows": r.rows, "ready": r.ready}

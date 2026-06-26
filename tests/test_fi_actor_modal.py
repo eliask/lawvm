@@ -34,7 +34,7 @@ def test_active_positive_frame() -> None:
     assert frame.modal.token == "voi"
     assert frame.modal.polarity == "positive"
     assert frame.modal.voice == "active"
-    assert frame.status == "surface_fact_only"
+    assert frame.actor_status == "surface_fact_only"
     assert frame.actor_surface == "Valtioneuvosto"
 
 
@@ -153,7 +153,7 @@ def test_no_legal_conclusion_vocabulary_ever() -> None:
     scan = recognize_actor_modal_frames(text)
     banned = {"duty", "discretion", "power", "obligation", "right_to", "velvollisuus"}
     for frame in scan.frames:
-        assert frame.status == "surface_fact_only"
+        assert frame.actor_status == "surface_fact_only"
         assert frame.modal.token not in banned
         # No field anywhere carries an interpretive conclusion string.
         for f in fields(frame):

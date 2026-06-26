@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from lxml import etree as ET
+from enum import StrEnum
 from typing import Any, NamedTuple, Optional, Sequence
 
 from lawvm.core.temporal_resolution import (
@@ -29,10 +30,29 @@ class UKAffectingInstrumentXML(NamedTuple):
     source_locator: str
 
 
+class UKCommencementMetadataStatus(StrEnum):
+    """Closed commencement-metadata extraction status for an affecting SI.
+
+    Produced deterministically by ``_instrument_commencement_metadata`` from the
+    instrument's ``ComingIntoForce``/``Made`` date metadata. The ``.value``
+    tokens are the stable wire shape carried into diagnostic rows
+    (``commencement_metadata_status``) and the SI commencement audit, so they
+    must not change. ``classify_si_commencement_metadata`` is total over this
+    set (compiler-enforced via ``match``/``assert_never``).
+    """
+
+    SINGLE_DATE = "single_date"
+    MULTIPLE_OR_TEXTUAL = "multiple_or_textual"
+    TEXTUAL_OR_MISSING_DATE = "textual_or_missing_date"
+    DEFAULT_COMMENCEMENT_MADE_DATE_CANDIDATE = "default_commencement_made_date_candidate"
+    SOURCE_XML_UNAVAILABLE = "source_xml_unavailable"
+    SOURCE_XML_PARSE_ERROR = "source_xml_parse_error"
+
+
 class UKCommencementMetadata(NamedTuple):
     effective_date: str
     source_locator: str
-    status: str
+    commencement_status: UKCommencementMetadataStatus
     dates: tuple[str, ...] = ()
     made_dates: tuple[str, ...] = ()
     parse_error: str = ""
@@ -47,7 +67,7 @@ def _instrument_commencement_metadata(
         return UKCommencementMetadata(
             effective_date="",
             source_locator="",
-            status="source_xml_unavailable",
+            commencement_status=UKCommencementMetadataStatus.SOURCE_XML_UNAVAILABLE,
         )
     try:
         root = ET.fromstring(xml_bytes)
@@ -55,7 +75,7 @@ def _instrument_commencement_metadata(
         return UKCommencementMetadata(
             effective_date="",
             source_locator=source_locator,
-            status="source_xml_parse_error",
+            commencement_status=UKCommencementMetadataStatus.SOURCE_XML_PARSE_ERROR,
             parse_error=str(exc),
         )
     dates = {
@@ -69,13 +89,17 @@ def _instrument_commencement_metadata(
         if str(elem.attrib.get("Date") or "").strip()
     }
     if len(dates) != 1:
-        status = "textual_or_missing_date" if not dates else "multiple_or_textual"
+        status = (
+            UKCommencementMetadataStatus.TEXTUAL_OR_MISSING_DATE
+            if not dates
+            else UKCommencementMetadataStatus.MULTIPLE_OR_TEXTUAL
+        )
         if not dates and len(made_dates) == 1:
-            status = "default_commencement_made_date_candidate"
+            status = UKCommencementMetadataStatus.DEFAULT_COMMENCEMENT_MADE_DATE_CANDIDATE
         return UKCommencementMetadata(
             effective_date="",
             source_locator=source_locator,
-            status=status,
+            commencement_status=status,
             dates=tuple(sorted(dates)),
             made_dates=tuple(sorted(made_dates)),
         )
@@ -83,7 +107,7 @@ def _instrument_commencement_metadata(
     return UKCommencementMetadata(
         effective_date=date,
         source_locator=source_locator,
-        status="single_date",
+        commencement_status=UKCommencementMetadataStatus.SINGLE_DATE,
         dates=(date,),
         made_dates=tuple(sorted(made_dates)),
     )
@@ -150,11 +174,12 @@ def _append_commencement_unresolved_observation(
 ) -> None:
     detail = {
         **_effect_detail(effect),
-        "commencement_metadata_status": metadata.status,
+        "commencement_metadata_status": metadata.commencement_status.value,
         "commencement_metadata_dates": metadata.dates,
         "commencement_metadata_made_dates": metadata.made_dates,
         "commencement_default_candidate": (
-            metadata.status == "default_commencement_made_date_candidate"
+            metadata.commencement_status
+            is UKCommencementMetadataStatus.DEFAULT_COMMENCEMENT_MADE_DATE_CANDIDATE
         ),
     }
     if metadata.parse_error:

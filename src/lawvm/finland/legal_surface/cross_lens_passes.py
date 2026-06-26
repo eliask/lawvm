@@ -161,7 +161,7 @@ def _colocation_seeds(
                     # CANDIDATE, never asserted: a surface co-location affordance,
                     # not a settled fact (§D5). The frame does not "govern" the
                     # child — they merely share text.
-                    status="candidate",
+                    surface_edge_status="candidate",
                     payload={
                         "char_distance": gap,
                         "window": window,

@@ -318,7 +318,7 @@ def _overlay_row(
         "label": label,
         "payload_json": payload_json,
         "links_json": links_json,
-        "status": status,
+        "overlay_status": status,
         "source_span_byte_offset": None,
         "source_span_byte_len": None,
         "rendered_statute_id": None,

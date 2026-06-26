@@ -41,6 +41,7 @@ removed:
 from __future__ import annotations
 
 import re
+from lawvm.core.regex_safety import PrefilteredPattern, compile_classifier_regex
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import List, Optional
@@ -274,14 +275,14 @@ _DELEGATION_PATTERNS = [
 @dataclass(frozen=True)
 class _NegativeDelegationPattern:
     rule_id: str
-    pattern: re.Pattern[str]
+    pattern: re.Pattern[str] | PrefilteredPattern
 
 
 _PAT_NEGATIVE = [
     # Commencement/transition: "asetuksen voimaantulosta säädetään"
     _NegativeDelegationPattern(
         "fi_delegation_commencement_reference_filtered",
-        re.compile(r'voimaan(?:tulosta|panosta)\s+säädetään', re.IGNORECASE),
+        compile_classifier_regex(r'voimaan(?:tulosta|panosta)\s+säädetään', re.IGNORECASE, classifier_id="fi.delegation.(negative)fi_delegation_commencement_reference_filtered"),
     ),
     # Repeal: "kumotaan ... asetuksella"
     _NegativeDelegationPattern(
@@ -291,7 +292,7 @@ _PAT_NEGATIVE = [
     # Reference to existing decree with ID: "(123/2004)"
     _NegativeDelegationPattern(
         "fi_delegation_existing_decree_reference_filtered",
-        re.compile(r'asetuksessa\s+\(\d{1,4}/\d{4}\)', re.IGNORECASE),
+        compile_classifier_regex(r'asetuksessa\s+\(\d{1,4}/\d{4}\)', re.IGNORECASE, classifier_id="fi.delegation.(negative)fi_delegation_existing_decree_reference_filtered"),
     ),
     # Parameter adjustment, not delegation
     _NegativeDelegationPattern(
@@ -301,7 +302,7 @@ _PAT_NEGATIVE = [
     # Reference to ANOTHER law's delegation authority ("on the basis of ... decree")
     _NegativeDelegationPattern(
         "fi_delegation_nojalla_reference_filtered",
-        re.compile(r'nojalla\s+annettavalla', re.IGNORECASE),
+        compile_classifier_regex(r'nojalla\s+annettavalla', re.IGNORECASE, classifier_id="fi.delegation.(negative)fi_delegation_nojalla_reference_filtered"),
     ),
     # Existing statute reference in nojalla construction (asetus ID already issued)
     _NegativeDelegationPattern(
@@ -348,7 +349,7 @@ _PAT_NEGATIVE = [
 # Bounded quantifiers (AGENTS.md §1.11): the name word is a single bounded
 # token; the section/momentti tails are bounded digit runs.
 # Clause-boundary tokenizer for the demoted legacy authority extractor.
-_NOJALLA_RE = re.compile(r'nojalla', re.IGNORECASE)
+_NOJALLA_RE = compile_classifier_regex(r'nojalla', re.IGNORECASE, classifier_id="fi.delegation.nojalla_re")
 _PAT_NOJALLA_CONJUNCT = re.compile(
     r'([A-Za-z\xe4\xf6\xe5\xc4\xd6\xc5\-]{1,60})?\s*'
     r'\((\d{1,5})\s*/\s*(\d{2,4})\)\s*'

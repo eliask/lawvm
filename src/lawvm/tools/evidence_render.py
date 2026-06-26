@@ -1121,7 +1121,7 @@ def _print_evidence_bundle(bundle: Dict) -> None:
     print(f"Statute      : {bundle['statute_id']}")
     print(f"Title        : {bundle['title']}")
     print(f"Mode         : {bundle['mode']}")
-    print(f"Contract     : {bundle['proof_contract']['version']} ({bundle['proof_contract']['status']})")
+    print(f"Contract     : {bundle['proof_contract']['version']} ({bundle['proof_contract']['proof_status']})")
     print(f"Scores       : overall={bundle['overall_score']:.3%}  section={bundle['section_score']:.3%}")
     strict_value = not bool(bundle.get("strict_fail_reasons") or [])
     print(f"Strict       : {'PASS' if strict_value else 'FAIL'}")

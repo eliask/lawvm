@@ -621,7 +621,7 @@ def test_bundle_emission_registers_taint_checkable_build(bundle_482: Path) -> No
         ),
     )
     (finding,) = query_retraction_taint_for_build_refs(graph, (build_ref,), {}, index)
-    assert finding.status == BuildConsumptionStatus.CLEAN
+    assert finding.taint_status == BuildConsumptionStatus.CLEAN
 
     # Cert-root cycle guard: the consumption record is an emission sidecar,
     # never inside the bundle (else certificate_root <-> graph cycle).

@@ -197,7 +197,7 @@ def test_procedure_colocated_divergent_frames_distinct(monkeypatch) -> None:
                 actor_span=actor_a,
                 deadline_span=None,
                 source_span=span,
-                status="surface_fact_only",
+                procedure_status="surface_fact_only",
                 rule_id="test.proc",
             ),
             ProcedureFrame(
@@ -205,7 +205,7 @@ def test_procedure_colocated_divergent_frames_distinct(monkeypatch) -> None:
                 actor_span=actor_b,  # divergent payload, same key+surface+offset
                 deadline_span=None,
                 source_span=span,
-                status="surface_fact_only",
+                procedure_status="surface_fact_only",
                 rule_id="test.proc",
             ),
         ),
@@ -228,7 +228,7 @@ def test_sanction_colocated_divergent_frames_distinct(monkeypatch) -> None:
                 target_actor_span=None,
                 trigger_span=trig_a,
                 source_span=span,
-                status="surface_fact_only",
+                sanction_status="surface_fact_only",
                 rule_id="test.sanc",
             ),
             SanctionFrame(
@@ -237,7 +237,7 @@ def test_sanction_colocated_divergent_frames_distinct(monkeypatch) -> None:
                 target_actor_span=None,
                 trigger_span=trig_b,  # divergent payload, same key+surface+offset
                 source_span=span,
-                status="surface_fact_only",
+                sanction_status="surface_fact_only",
                 rule_id="test.sanc",
             ),
         ),

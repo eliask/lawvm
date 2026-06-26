@@ -214,16 +214,16 @@ def _match(
 
 
 def _edge(
-    src: str, dst: str, status: str, *, extra: Mapping[str, object]
+    src: str, dst: str, comparison_status: str, *, extra: Mapping[str, object]
 ) -> SurfaceEdgeSeed:
-    payload: dict[str, object] = {"comparison_status": status, **dict(extra)}
+    payload: dict[str, object] = {"comparison_status": comparison_status, **dict(extra)}
     return SurfaceEdgeSeed(
         edge_kind="grammar_annotation_compared",
         src_local=src,
         dst_local=dst,
         rule_id=RULE_COMPARE,
         # NEUTRAL contrast, never an asserted fact (§14, §D7).
-        status="candidate",
+        surface_edge_status="candidate",
         payload=payload,
     )
 

@@ -27,7 +27,7 @@ from lawvm.core.timeline_lineage import current_address_from_migration_events
 @dataclass(frozen=True, slots=True)
 class MaterializationSelectionState:
     address: LegalAddress
-    status: Literal["selected", "inactive", "ambiguous_missing_scope"]
+    materialization_status: Literal["selected", "inactive", "ambiguous_missing_scope"]
     version: Optional[ProvisionVersion] = None
 
 
@@ -925,11 +925,11 @@ def project_materialization_selection_states(
         active_versions: dict[LegalAddress, ProvisionVersion] = {}
         ambiguous_addresses: list[LegalAddress] = []
         for state in selection_states:
-            if state.status == "ambiguous_missing_scope":
+            if state.materialization_status == "ambiguous_missing_scope":
                 active[state.address] = None
                 ambiguous_addresses.append(state.address)
                 continue
-            if state.status == "inactive":
+            if state.materialization_status == "inactive":
                 active[state.address] = None
                 continue
             if state.version is None:
@@ -961,13 +961,13 @@ def project_materialization_selection_states(
         if migrated_address != state.address:
             suppressed_source_addresses.add(state.address)
         bucket = projected.setdefault(migrated_address, _ProjectedBucket())
-        if state.status == "ambiguous_missing_scope":
+        if state.materialization_status == "ambiguous_missing_scope":
             bucket.ambiguous = True
             bucket.inactive = False
             bucket.selected_version = None
             bucket.selected_is_native = False
             continue
-        if state.status == "inactive":
+        if state.materialization_status == "inactive":
             if not bucket.ambiguous and bucket.selected_version is None:
                 bucket.inactive = True
             continue

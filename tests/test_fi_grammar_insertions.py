@@ -26,6 +26,7 @@ from lawvm.finland.johtolause.grammar.diff import (
 )
 from lawvm.finland.johtolause.grammar.parser import OutOfScope
 from lawvm.finland.johtolause.surface_model import (
+    SurfaceHeadingPlacement,
     SurfaceInsertion,
     SurfaceNode,
     SurfaceRenumberTail,
@@ -191,6 +192,60 @@ def test_conj_before_uusi_after_citation_is_owned() -> None:
 def test_terminal_anaphoric_heading_co_insert_is_zero_delta(text: str) -> None:
     report = compare_surface_parsers(text, surface_parse.parse, new_parser.parse)
     assert report.equal, report.summary()
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # The no-``uusi`` sibling of the residue above: ``uusi N § ja sen edelle
+        # väliotsikko`` (NO ``uusi`` before the heading noun). The old parser drops
+        # the väliotsikko and emits only the SECTION insert in BOTH forms; the new
+        # parser now owns this terminal no-``uusi`` form too, byte-identically.
+        # These are the two real corpus clauses (1995/1387, 1995/407) verbatim —
+        # the statute-name annotation makes them open on a CITATION_SPAN, the path
+        # the driver's anaphoric-heading-residue skip covers. 1995/407 also carries
+        # a leading ``N §:n nojalla`` authority basis (consumed by the existing
+        # authority-skip). Oracle: §5a exists in arvo-osuustililaki 827/1991 and
+        # §25a in esitutkinta-asetus 575/1988 (both behind a cross-heading).
+        (
+            "lisätään arvo-osuustileistä 17 päivänä toukokuuta 1991 annettuun lakiin "
+            "(827/91) uusi 5 a § ja sen edelle väliotsikko seuraavasti:"
+        ),
+        (
+            "lisätään 30 päivänä huhtikuuta 1987 annetun pakkokeinolain (450/87) 5 a "
+            "luvun 8 §:n nojalla, sellaisena kuin se on 24 päivänä maaliskuuta 1995 "
+            "annetussa laissa (402/95), esitutkinnasta ja pakkokeinoista 17 päivänä "
+            "kesäkuuta 1988 annettuun asetukseen (575/88) uusi 25 a § ja sen edellä "
+            "väliotsikko seuraavasti:"
+        ),
+    ],
+)
+def test_terminal_no_uusi_anaphoric_heading_co_insert_is_zero_delta(text: str) -> None:
+    report = compare_surface_parsers(text, surface_parse.parse, new_parser.parse)
+    assert report.equal, report.summary()
+    model = parse_text_with(text, new_parser.parse)
+    (vg,) = model.verb_groups
+    insertions = [n for n in vg.nodes if isinstance(n, SurfaceInsertion)]
+    assert len(insertions) == 1
+    assert insertions[0].kind == TargetKind.SECTION
+    # No heading node is minted for the dropped anaphoric väliotsikko.
+    assert all(not isinstance(n, SurfaceHeadingPlacement) for n in vg.nodes)
+
+
+def test_mid_clause_no_uusi_anaphoric_heading_still_declines() -> None:
+    # Decline-boundary control: the no-``uusi`` recovery is gated to a STRICTLY
+    # TERMINAL residue. A mid-clause no-``uusi`` heading residue (followed by a
+    # separator + further arms the grammar cannot reproduce) must STILL decline,
+    # so a complex multi-verb enumeration like 1996/581 is not parsed with a node
+    # set that diverges from legacy and is not oracle-verified. (The ``uusi`` form
+    # IS allowed mid-clause — see test_anaphoric_heading_between_doc_level_inserts
+    # _keeps_later_insert — this control fixes the no-``uusi`` form's tighter gate.)
+    text = (
+        "lisätään asetukseen uusi 9 b § ja sen edelle väliotsikko sekä asetukseen "
+        "uusi 118 b § seuraavasti:"
+    )
+    with pytest.raises(new_parser.OutOfScope):
+        parse_text_with(text, new_parser.parse)
 
 
 def test_anaphoric_heading_before_jolloin_renumber_keeps_tail() -> None:
@@ -589,6 +644,69 @@ def test_luku_scoped_citation_provenance_does_not_misscope() -> None:
     assert node.chapter == ""
 
 
+@pytest.mark.parametrize(
+    "text, chapter, labels",
+    [
+        # ``N lukuun, sellaisena kuin se on (siihen) myöhemmin tehtyine
+        # muutoksineen, uusi N §`` — a numbered-chapter-scoped section insert whose
+        # PROVENANCE_SPAN (pure ``sellaisena kuin … muutoksineen`` history, no
+        # reinstated-slot / tilalle clause) sits between ``lukuun`` and ``uusi``.
+        # The grammar must skip the provenance and scope the inserted section to the
+        # chapter (``chapter == N``). The LEGACY parser silently DROPS this whole
+        # insertion (emits zero ops), so this is a strict recovery, NOT a
+        # byte-identity case — assert the recovered ops directly.
+        (
+            "lisätään 19 päivänä joulukuuta 1889 annetun rikoslain ( 39/1889 ) "
+            "30 lukuun, sellaisena kuin se on siihen myöhemmin tehtyine "
+            "muutoksineen, uusi 3 a § seuraavasti:",
+            "30",
+            ["3a"],
+        ),
+        (
+            "lisätään 19 päivänä joulukuuta 1889 annetun rikoslain ( 39/1889 ) "
+            "34 lukuun, sellaisena kuin se on siihen myöhemmin tehtyine "
+            "muutoksineen, uusi 9 b ja 13 § seuraavasti:",
+            "34",
+            ["9b", "13"],
+        ),
+        (
+            "lisätään oikeudenkäymiskaaren 21 lukuun siihen myöhemmin tehtyine "
+            "muutoksineen uusi 8 d § seuraavasti:",
+            "21",
+            ["8d"],
+        ),
+    ],
+)
+def test_luku_scoped_provenance_section_insert_is_recovered(
+    text: str, chapter: str, labels: list[str]
+) -> None:
+    model = parse_text_with(text, new_parser.parse)
+    insertions = [_as_insertion(node) for node in model.verb_groups[0].nodes]
+    assert [node.label for node in insertions] == labels
+    assert {node.chapter for node in insertions} == {chapter}
+    assert all(node.kind == TargetKind.SECTION for node in insertions)
+
+
+def test_luku_scoped_citation_provenance_boundary_still_declines() -> None:
+    # DECLINE-BOUNDARY CONTROL for the recovery above. A CITATION_SPAN provenance
+    # (``sellaisena kuin se on laissa X`` — citing a SPECIFIC law, lexed as a
+    # CITATION_SPAN, not a PROVENANCE_SPAN) between ``lukuun`` and ``uusi`` is still
+    # NOT a clean chapter-scoped recovery: the chapter-scoped arm declines and the
+    # bare ``uusi N §`` arm scopes the section chapter-LESS, byte-identical to the
+    # old authority (the inserted section is NOT mis-scoped to the chapter). The
+    # PROVENANCE_SPAN recovery must not have widened to swallow this citation form.
+    text = (
+        "lisätään lain (610/2014) 3 lukuun, sellaisena kuin se on laissa 679/2003, "
+        "uusi 96 a § seuraavasti:"
+    )
+    report = compare_surface_parsers(text, surface_parse.parse, new_parser.parse)
+    assert report.equal, f"delta:\n{report.summary()}"
+    model = parse_text_with(text, new_parser.parse)
+    node = _as_insertion(model.verb_groups[0].nodes[0])
+    assert node.label == "96a"
+    assert node.chapter == ""
+
+
 def test_section_ref_kohta_without_uusi_is_not_an_insertion() -> None:
     # "12 §:n 2 momentin 3 kohta" (no "uusi") is a plain section reference, not an
     # insertion — the new parser must reproduce the old parser's SurfaceTargetRef.
@@ -631,6 +749,36 @@ def test_lisataan_section_ill_bare_momentti_continuations_are_insertions() -> No
         ("32", 3),
         ("44", 2),
         ("57", 2),
+    ]
+
+
+def test_lisataan_chain_survives_trailing_appendix_item_insert() -> None:
+    text = (
+        "lisätään 4 §:ään uusi 2 momentti, asetukseen uusi 7 a §, 9 §:ään uusi "
+        "3 momentti, 12 §:ään uusi 4 momentti, 13 §:ään uusi 2 momentti, uusi "
+        "14 e §, 19 §:ään 5 momentti, 24 §:ään uusi 6 – 9 kohta, 26 §:ään uusi "
+        "2 momentti sekä liitteeseen 5 uusi kohta 2 c, 4 b ja 4 c seuraavasti:"
+    )
+    model = parse_text_with(text, new_parser.parse)
+    insertions = [_as_insertion(node) for node in model.verb_groups[0].nodes]
+
+    assert [
+        (node.kind, node.label, node.sub_target.momentti if node.sub_target else 0, node.sub_target.item if node.sub_target else "")
+        for node in insertions
+    ] == [
+        (TargetKind.SECTION, "4", 2, ""),
+        (TargetKind.SECTION, "7a", 0, ""),
+        (TargetKind.SECTION, "9", 3, ""),
+        (TargetKind.SECTION, "12", 4, ""),
+        (TargetKind.SECTION, "13", 2, ""),
+        (TargetKind.SECTION, "14e", 0, ""),
+        (TargetKind.SECTION, "19", 5, ""),
+        (TargetKind.SECTION, "24", 1, "6"),
+        (TargetKind.SECTION, "24", 1, "7"),
+        (TargetKind.SECTION, "24", 1, "8"),
+        (TargetKind.SECTION, "24", 1, "9"),
+        (TargetKind.SECTION, "26", 2, ""),
+        (TargetKind.APPENDIX, "5", 0, ""),
     ]
 
 
@@ -757,21 +905,26 @@ def test_trailing_whole_part_carries_label_as_scope() -> None:
     assert by_label["97"].part == "V"
 
 
-def test_naista_second_arm_with_glued_provenance_word_is_declined() -> None:
-    # ``näistä N § [CITE], M § sellaisenakuin se on … laissa`` — the first arm is
-    # closed by a collapsed provenance span (the old anaphor-skip consumes it), but
-    # the second arm's ``§`` is closed by an UNCOLLAPSED glued ``sellaisenakuin``
-    # provenance word run. The old target loop re-parses that second ``§`` as a
-    # fresh duplicate node before stopping at the word run, so the new section path
-    # would silently drop it — the driver must DECLINE instead.
+def test_naista_second_arm_with_glued_provenance_word_is_owned_dedup() -> None:
+    # ``näistä N § [CITE], M § sellaisenakuin se on … laissa`` — a TWO-arm
+    # ``näistä`` re-mention: the first arm is closed by a collapsed provenance
+    # span, the second by an UNCOLLAPSED glued ``sellaisenakuin`` word run. Both
+    # arms only RE-STATE which already-listed head section a version attribution
+    # applies to (``15 a`` and ``15 b`` are both in the head list); the re-mention
+    # introduces NO new operative target. The old parser leaked the second arm's
+    # ``§`` as a duplicate node and the grammar declined the whole shape; the
+    # whole-provenance-run skip now OWNS it, consuming the entire ``näistä …`` run
+    # and emitting exactly the de-duplicated head list (no leaked duplicate).
     text = (
         "muutetaan 15 a, 15 b ja 16 §, näistä 15 a § sellaisena kuin se on laissa "
         "303/1961, 15 b § sellaisenakuin se on 9 päivänä kesäkuuta 1961 annetussa "
         "laissa"
     )
     tokens, _ = _tokenize(text)
-    with pytest.raises(OutOfScope):
-        new_parser.parse(tokens)
+    model = new_parser.parse(tokens)
+    (vg,) = model.verb_groups
+    labels = [n.label for n in vg.nodes if isinstance(n, SurfaceTargetRef)]
+    assert labels == ["15a", "15b", "16"]
 
 
 def test_naista_single_closed_arm_is_not_over_declined() -> None:
@@ -925,17 +1078,25 @@ def test_cross_verb_anaphoric_insert_resolves_prior_section() -> None:
 
 
 def test_cross_verb_whole_section_insert_is_not_claimed_as_anaphora() -> None:
-    # Control: ``… sekä lisätään … uusi 50 a §`` is a WHOLE-section insert, NOT a
-    # cross-group sub-target anaphora. The cross-verb fallback must NOT claim it
-    # (which would stamp the wrong ``fi.cross_verb_*`` witness in place of the old
-    # parser's ``fi.insertion_section``); the clause stays declined (2017/290).
+    # ``… sekä lisätään … uusi 50 a § ja sen edelle uusi väliotsikko`` is a
+    # WHOLE-section insert whose trailing anaphoric heading the old parser DROPS.
+    # The grammar now owns it byte-identically (the terminal ``[sen] edelle uusi
+    # väliotsikko`` residue is recovered by the driver's anaphoric-heading skip),
+    # and the insert must carry ``fi.insertion_section`` — NOT a cross-verb
+    # ``fi.cross_verb_*`` anaphora witness (2017/290).
     text = (
         "muutetaan maa- ja metsätalousministeriön työjärjestyksestä annetun maa- "
         "ja metsätalousministeriön asetuksen (658/2016) 15 ja 52 §, sekä lisätään "
         "työjärjestykseen uusi 50 a § ja sen edelle uusi väliotsikko seuraavasti:"
     )
-    with pytest.raises(OutOfScope):
-        parse_text_with(text, new_parser.parse)
+    report = compare_surface_parsers(text, surface_parse.parse, new_parser.parse)
+    assert report.equal, f"delta on {text!r}:\n{report.summary()}"
+    model = parse_text_with(text, new_parser.parse)
+    insert = _as_insertion(model.verb_groups[1].nodes[-1])
+    assert insert.kind == TargetKind.SECTION
+    assert insert.label == "50a"
+    assert insert.witness is not None
+    assert insert.witness.rule_id == "fi.insertion_section"
 
 
 def test_cross_verb_anaphora_without_prior_section_declines() -> None:
@@ -994,15 +1155,27 @@ def test_bare_uusi_end_terminated_section_emits_section_insertion() -> None:
     assert node.witness.rule_id == "fi.insertion_section"
 
 
-def test_bare_uusi_recovery_declines_on_downstream_heading_fold() -> None:
-    # Self-guard control: a leading ``uusi N §`` followed by a ``… edelle uusi
-    # väliotsikko`` heading-placement fold in the SAME batch must NOT be owned as a
-    # bare-section insert (that would silently DROP the heading arm the old parser
-    # folds into the batch). The clause stays declined (2017/290 shape).
+def test_bare_uusi_recovery_owns_trailing_anaphoric_heading_residue() -> None:
+    # A leading ``uusi N §`` followed by a TERMINAL anaphoric ``[sen] edelle uusi
+    # väliotsikko`` heading residue is now grammar-owned BYTE-IDENTICALLY: the old
+    # parser drops that anaphoric heading (it mints no node), and the grammar
+    # reproduces the drop via the driver's anaphoric-heading skip. The recovered
+    # insert is a whole-section insert (2017/290 shape).
     text = (
         "muutetaan asetuksen (658/2016) 15 ja 52 §, sekä lisätään "
         "työjärjestykseen uusi 50 a § ja sen edelle uusi väliotsikko seuraavasti:"
     )
+    report = compare_surface_parsers(text, surface_parse.parse, new_parser.parse)
+    assert report.equal, f"delta on {text!r}:\n{report.summary()}"
+
+
+def test_bare_uusi_recovery_declines_on_explicit_target_heading_fold() -> None:
+    # Self-guard control: the NON-anaphoric ``N §:n edelle uusi väliotsikko`` form
+    # (an explicit §:GEN target before EDELLA) is one the old parser folds into the
+    # batch and emits a REAL heading node for — the grammar cannot reproduce that
+    # placement here, so the clause must STAY declined rather than silently drop the
+    # heading. Only the anaphoric ``[sen] edelle …`` drop-form is recovered above.
+    text = "lisätään lakiin uusi 50 a § ja 12 §:n edelle uusi väliotsikko seuraavasti:"
     with pytest.raises(OutOfScope):
         parse_text_with(text, new_parser.parse)
 

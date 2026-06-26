@@ -5,7 +5,11 @@ import dataclasses
 import json
 
 from lawvm.core.frontier_work_item import FrontierWorkItem, validate_frontier_work_item
-from lawvm.new_zealand.effect_readiness import build_effect_readiness_surface
+from lawvm.new_zealand.effect_readiness import (
+    NZInstructionSemanticCandidateFamily,
+    NZInstructionSemanticCandidateStatus,
+    build_effect_readiness_surface,
+)
 from lawvm.new_zealand.frontier_work_items import (
     frontier_work_items,
     frontier_work_items_summary,
@@ -15,10 +19,18 @@ from lawvm.new_zealand.frontier_work_items import (
 from lawvm.new_zealand.instruction_workqueue import (
     NZInstructionWorkQueueReport,
     NZInstructionWorkQueueRow,
+    NZLatestOracleTextStatus,
+    NZStructuralSubfamily,
+    NZStructuralSubfamilyStatus,
+    NZWorkQueueStatus,
     build_instruction_workqueue,
 )
 from lawvm.new_zealand.operation_surface import build_operation_surface
-from lawvm.new_zealand.payload_surface import build_payload_surface
+from lawvm.new_zealand.payload_surface import (
+    NZPayloadInstructionSafety,
+    NZPayloadInstructionShape,
+    build_payload_surface,
+)
 from lawvm.new_zealand.source_tree import parse_nz_source_document
 from lawvm.tools.cli import _build_parser
 
@@ -28,24 +40,24 @@ def _blocked_schedule_indirection_row() -> NZInstructionWorkQueueRow:
         row_id="nz-instruction-workqueue-1",
         operation_row_id="nz-op-1",
         effect_readiness_row_id="nz-er-1",
-        queue_status="blocked",
+        queue_status=NZWorkQueueStatus.BLOCKED,
         operation_family="amended",
         target_address="section:12/subsection:3",
         effect_readiness_status="blocked_text_or_structural_amendment_semantics_not_extracted",
         blocking_rule_id="nz_effect_readiness_amendment_semantics_not_extracted",
         amending_work_id="act_public_2025_4",
         amending_provision_hrefs=("A7",),
-        instruction_semantic_candidate_status="blocked_instruction_indirection",
-        instruction_semantic_candidate_family="schedule_or_omnibus_indirection",
+        instruction_semantic_candidate_status=NZInstructionSemanticCandidateStatus.BLOCKED_INSTRUCTION_INDIRECTION,
+        instruction_semantic_candidate_family=NZInstructionSemanticCandidateFamily.SCHEDULE_OR_OMNIBUS_INDIRECTION,
         instruction_semantic_rule_id="nz_instruction_semantics_blocked_schedule_or_omnibus_indirection",
-        payload_instruction_shape="schedule_indirection",
-        payload_instruction_safety="unsafe_schedule_or_omnibus_indirection",
+        payload_instruction_shape=NZPayloadInstructionShape.SCHEDULE_INDIRECTION,
+        payload_instruction_safety=NZPayloadInstructionSafety.UNSAFE_SCHEDULE_OR_OMNIBUS_INDIRECTION,
         payload_match_headings=("Amendments to principal Act",),
         payload_text_snippets=("The Schedule amends the principal Act.",),
-        payload_structural_subfamily_status="blocked_schedule_indirection_payload",
-        payload_structural_subfamily="schedule_indirection_payload",
+        payload_structural_subfamily_status=NZStructuralSubfamilyStatus.BLOCKED_SCHEDULE_INDIRECTION_PAYLOAD,
+        payload_structural_subfamily=NZStructuralSubfamily.SCHEDULE_INDIRECTION_PAYLOAD,
         payload_structural_subfamily_rule_id="nz_instruction_structural_subfamily_schedule_indirection_payload_blocked",
-        latest_oracle_text_status="not_applicable_not_direct_text_substitution",
+        latest_oracle_text_status=NZLatestOracleTextStatus.NOT_APPLICABLE_NOT_DIRECT_TEXT_SUBSTITUTION,
         latest_oracle_text_rule_id="nz_instruction_latest_oracle_text_not_applicable",
     )
 
@@ -55,18 +67,18 @@ def _candidate_row() -> NZInstructionWorkQueueRow:
         row_id="nz-instruction-workqueue-2",
         operation_row_id="nz-op-2",
         effect_readiness_row_id="nz-er-2",
-        queue_status="candidate",
+        queue_status=NZWorkQueueStatus.CANDIDATE,
         operation_family="amended",
         target_address="section:1",
         effect_readiness_status="blocked_text_or_structural_amendment_semantics_not_extracted",
         blocking_rule_id="nz_effect_readiness_amendment_semantics_not_extracted",
         amending_work_id="act_public_2025_4",
         amending_provision_hrefs=("A3",),
-        instruction_semantic_candidate_status="candidate_only_instruction_semantics",
-        instruction_semantic_candidate_family="amend_instruction",
+        instruction_semantic_candidate_status=NZInstructionSemanticCandidateStatus.CANDIDATE_ONLY_INSTRUCTION_SEMANTICS,
+        instruction_semantic_candidate_family=NZInstructionSemanticCandidateFamily.AMEND_INSTRUCTION,
         instruction_semantic_rule_id="nz_instruction_semantics_candidate_direct_instruction",
-        payload_instruction_shape="direct_amended_by_instruction",
-        payload_instruction_safety="candidate_only_semantic_classification",
+        payload_instruction_shape=NZPayloadInstructionShape.DIRECT_AMENDED_BY_INSTRUCTION,
+        payload_instruction_safety=NZPayloadInstructionSafety.CANDIDATE_ONLY_SEMANTIC_CLASSIFICATION,
         payload_match_headings=("Amend",),
         payload_text_snippets=("Section 1 is amended by replacing Old with New.",),
     )

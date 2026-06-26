@@ -127,12 +127,12 @@ def _status_for_report(report: MutationInvariantReport) -> str:
     return "proved"
 
 
-def _rule_id_for_status(status: str) -> str:
-    if status == "proved":
+def _rule_id_for_status(proof_status: str) -> str:
+    if proof_status == "proved":
         return "mutation_boundary_path_set_proved"
-    if status == "proved_with_allowance":
+    if proof_status == "proved_with_allowance":
         return "mutation_boundary_path_set_proved_with_allowance"
-    if status == "unresolved":
+    if proof_status == "unresolved":
         return "mutation_boundary_path_set_unresolved"
     return "mutation_boundary_path_set_violated"
 

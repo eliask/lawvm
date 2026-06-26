@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any, Callable, Generic, Mapping, Protocol, Sequence, TypeVar
+from typing import Any, Callable, Mapping, Protocol, Sequence, TypeVar
 
 from lawvm.core.diagnostic_records import diagnostic_detail
 
@@ -23,7 +23,7 @@ SOURCE_VERSION_WINDOW_FAMILY = "source_version_window"
 
 
 @dataclass(frozen=True)
-class SourceVersionDateWindow(Generic[T]):
+class SourceVersionDateWindow[T]:
     requested_version_date: str
     on_or_before: T | None
     on_or_after: T | None
@@ -40,7 +40,7 @@ class SourceVersionDateWindow(Generic[T]):
 
 
 @dataclass(frozen=True)
-class SourceVersionChangeWindow(Generic[T]):
+class SourceVersionChangeWindow[T]:
     requested_version_date: str
     before: T | None
     on_or_after: T | None

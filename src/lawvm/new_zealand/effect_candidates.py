@@ -16,7 +16,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Literal, Mapping
 
 from lawvm.core.evidence_contracts import CorpusFindingEvidenceRow, CorpusOperationEvidenceRow, CorpusRowStatus
 from lawvm.core.ir import LegalAddress, LegalOperation, TextPatchSpec, TextSelector
@@ -43,6 +43,10 @@ from lawvm.new_zealand.source_tree import parse_nz_source_document
 from lawvm.new_zealand.text_comparison import normalized_nz_inline_occurrence_count
 from lawvm.new_zealand.version_diff import NZArchivedVersion, NZArchivedVersionDateWindow, archived_xml_version_date_window
 from lawvm.new_zealand.version_diff import archived_xml_version_change_window
+
+
+# A canonical-effect candidate row is either emitted as a candidate or blocked.
+NZCandidateStatus = Literal["candidate_emitted", "blocked"]
 
 
 NZ_EFFECT_CANDIDATE_REPLAY_BLOCKED_RULE_ID = "nz_effect_candidates_not_replayed"
@@ -95,7 +99,7 @@ _TEXT_REPLACE_OBSERVED_SOURCE_CHANGE_STATUSES = frozenset(
 
 @dataclass(frozen=True)
 class _RepealPayloadCorroboration:
-    status: str
+    corroboration_status: str
     rule_id: str
     cited_targets: tuple[str, ...] = ()
     blocking_rule_id: str = ""
@@ -103,7 +107,7 @@ class _RepealPayloadCorroboration:
 
 @dataclass(frozen=True)
 class _SourceChangeTextWitness:
-    status: str
+    witness_status: str
     rule_id: str
     truth_claim: str = "source_text_change_witness_not_replay_proof"
     change_window_rule_id: str = "nz_archived_xml_version_change_window_source_only"
@@ -125,7 +129,7 @@ class NZCanonicalEffectCandidateRow:
     row_id: str
     operation_row_id: str
     effect_readiness_row_id: str
-    status: str
+    candidate_status: NZCandidateStatus
     action: str = ""
     target_address: str = ""
     operation: LegalOperation | None = None
@@ -220,7 +224,7 @@ class NZCanonicalEffectCandidateRow:
             "row_id": self.row_id,
             "operation_row_id": self.operation_row_id,
             "effect_readiness_row_id": self.effect_readiness_row_id,
-            "status": self.status,
+            "candidate_status": self.candidate_status,
             "action": self.action,
             "target_address": self.target_address,
             "operation": _operation_jsonable(self.operation),
@@ -318,64 +322,64 @@ class NZCanonicalEffectCandidateReport:
     rows: tuple[NZCanonicalEffectCandidateRow, ...]
 
     def summary(self) -> dict[str, Any]:
-        status_counts = Counter(row.status for row in self.rows)
-        emitted_rows = tuple(row for row in self.rows if row.status == "candidate_emitted")
+        status_counts = Counter(row.candidate_status for row in self.rows)
+        emitted_rows = tuple(row for row in self.rows if row.candidate_status == "candidate_emitted")
         candidate_rows = tuple(row for row in emitted_rows if row.operation is not None)
         missing_operation_rows = tuple(row for row in emitted_rows if row.operation is None)
         action_counts = Counter(row.action or "__none__" for row in self.rows)
         operation_family_counts = Counter(row.operation_family or "__none__" for row in self.rows)
         blocked_operation_family_counts = Counter(
-            row.operation_family or "__none__" for row in self.rows if row.status != "candidate_emitted"
+            row.operation_family or "__none__" for row in self.rows if row.candidate_status != "candidate_emitted"
         )
-        blocker_counts = Counter(row.blocking_rule_id or "__none__" for row in self.rows if row.status != "candidate_emitted")
+        blocker_counts = Counter(row.blocking_rule_id or "__none__" for row in self.rows if row.candidate_status != "candidate_emitted")
         blocked_family_rule_counts = Counter(
             f"{row.operation_family or '__none__'}|{row.blocking_rule_id or '__none__'}"
             for row in self.rows
-            if row.status != "candidate_emitted"
+            if row.candidate_status != "candidate_emitted"
         )
         blocked_family_payload_shape_counts = Counter(
             f"{row.operation_family or '__none__'}|{row.payload_instruction_shape or '__none__'}"
             for row in self.rows
-            if row.status != "candidate_emitted"
+            if row.candidate_status != "candidate_emitted"
         )
         blocked_family_payload_safety_counts = Counter(
             f"{row.operation_family or '__none__'}|{row.payload_instruction_safety or '__none__'}"
             for row in self.rows
-            if row.status != "candidate_emitted"
+            if row.candidate_status != "candidate_emitted"
         )
         blocked_family_target_status_counts = Counter(
             f"{row.operation_family or '__none__'}|{row.operation_target_address_status or '__none__'}"
             for row in self.rows
-            if row.status != "candidate_emitted"
+            if row.candidate_status != "candidate_emitted"
         )
         instruction_status_counts = Counter(row.instruction_semantic_candidate_status or "__none__" for row in self.rows)
         blocked_family_instruction_status_counts = Counter(
             f"{row.operation_family or '__none__'}|{row.instruction_semantic_candidate_status or '__none__'}"
             for row in self.rows
-            if row.status != "candidate_emitted"
+            if row.candidate_status != "candidate_emitted"
         )
         blocked_family_instruction_subfamily_status_counts = Counter(
             f"{row.operation_family or '__none__'}|{row.instruction_subfamily_status or '__none__'}"
             for row in self.rows
-            if row.status != "candidate_emitted"
+            if row.candidate_status != "candidate_emitted"
         )
         candidate_witness_rule_counts = Counter(
-            _candidate_witness_rule_id(row) for row in self.rows if row.status == "candidate_emitted"
+            _candidate_witness_rule_id(row) for row in self.rows if row.candidate_status == "candidate_emitted"
         )
         candidate_action_witness_rule_counts = Counter(
             f"{row.action or '__none__'}|{_candidate_witness_rule_id(row)}"
             for row in self.rows
-            if row.status == "candidate_emitted"
+            if row.candidate_status == "candidate_emitted"
         )
         candidate_action_source_change_text_counts = Counter(
             f"{row.action or '__none__'}|{row.source_change_text_witness_status or '__none__'}"
             for row in self.rows
-            if row.status == "candidate_emitted"
+            if row.candidate_status == "candidate_emitted"
         )
         blocked_family_source_change_text_counts = Counter(
             f"{row.operation_family or '__none__'}|{row.source_change_text_witness_status or '__none__'}"
             for row in self.rows
-            if row.status != "candidate_emitted"
+            if row.candidate_status != "candidate_emitted"
         )
         instruction_family_counts = Counter(row.instruction_semantic_candidate_family or "__none__" for row in self.rows)
         instruction_subfamily_status_counts = Counter(row.instruction_subfamily_status or "__none__" for row in self.rows)
@@ -574,7 +578,7 @@ class NZCanonicalEffectCandidateReport:
     ) -> tuple[NZCanonicalEffectCandidateRow, ...]:
         filtered = self.rows
         if candidate_status:
-            filtered = tuple(row for row in filtered if row.status == candidate_status)
+            filtered = tuple(row for row in filtered if row.candidate_status == candidate_status)
         if action:
             filtered = tuple(row for row in filtered if row.action == action)
         if operation_family:
@@ -693,7 +697,7 @@ class NZEffectCandidatePreflightReport:
     candidate_report: NZCanonicalEffectCandidateReport
 
     def summary(self) -> dict[str, Any]:
-        emitted_rows = tuple(row for row in self.candidate_report.rows if row.status == "candidate_emitted")
+        emitted_rows = tuple(row for row in self.candidate_report.rows if row.candidate_status == "candidate_emitted")
         candidate_rows = tuple(row for row in emitted_rows if row.operation is not None)
         source_change_only_rows = tuple(row for row in candidate_rows if _source_change_only_candidate(row))
         target_recovery_rows = tuple(row for row in candidate_rows if _target_recovery_candidate(row))
@@ -703,7 +707,7 @@ class NZEffectCandidatePreflightReport:
             if not _source_change_only_candidate(row) and not _target_recovery_candidate(row)
         )
         missing_operation_rows = tuple(row for row in emitted_rows if row.operation is None)
-        explicit_blocked_rows = tuple(row for row in self.candidate_report.rows if row.status != "candidate_emitted")
+        explicit_blocked_rows = tuple(row for row in self.candidate_report.rows if row.candidate_status != "candidate_emitted")
         blocked_rows = _preflight_blocked_rows(self.candidate_report.rows)
         blocker_counts = Counter(row.blocking_rule_id or "nz_effect_candidate_not_ready" for row in explicit_blocked_rows)
         if missing_operation_rows:
@@ -847,7 +851,7 @@ def _preflight_blocked_rows(
     return tuple(
         row
         for row in rows
-        if row.status != "candidate_emitted"
+        if row.candidate_status != "candidate_emitted"
         or row.operation is None
         or _source_change_only_candidate(row)
         or _target_recovery_candidate(row)
@@ -868,7 +872,7 @@ def _preflight_row_blocking_rule_id(row: NZCanonicalEffectCandidateRow) -> str:
 
 def _preflight_row_blocking_rule_ids(row: NZCanonicalEffectCandidateRow) -> tuple[str, ...]:
     rule_ids: list[str] = []
-    if row.status == "candidate_emitted" and row.operation is None:
+    if row.candidate_status == "candidate_emitted" and row.operation is None:
         rule_ids.append(NZ_EFFECT_PREFLIGHT_CANDIDATE_OPERATION_MISSING_RULE_ID)
     if _source_change_only_candidate(row):
         rule_ids.append(NZ_EFFECT_PREFLIGHT_SOURCE_CHANGE_ONLY_CANDIDATES_RULE_ID)
@@ -881,7 +885,7 @@ def _preflight_row_blocking_rule_ids(row: NZCanonicalEffectCandidateRow) -> tupl
 
 def _source_change_only_candidate(row: NZCanonicalEffectCandidateRow) -> bool:
     return (
-        row.status == "candidate_emitted"
+        row.candidate_status == "candidate_emitted"
         and row.operation is not None
         and row.operation.witness_rule_id == NZ_TEXT_REPLACE_SOURCE_CHANGE_CANDIDATE_RULE_ID
     )
@@ -889,7 +893,7 @@ def _source_change_only_candidate(row: NZCanonicalEffectCandidateRow) -> bool:
 
 def _target_recovery_candidate(row: NZCanonicalEffectCandidateRow) -> bool:
     return (
-        row.status == "candidate_emitted"
+        row.candidate_status == "candidate_emitted"
         and row.operation is not None
         and row.action == str(StructuralAction.TEXT_REPLACE)
         and bool(row.latest_oracle_target_resolution_status)
@@ -927,7 +931,7 @@ def build_effect_candidate_surface(
                         row_id=f"nz-effect-candidate-{index}",
                         operation_row_id=readiness_row.operation_row_id,
                         effect_readiness_row_id=readiness_row.row_id,
-                        status="blocked",
+                        candidate_status="blocked",
                         target_address=readiness_row.target_address,
                         blocking_rule_id=corroboration.blocking_rule_id,
                         **_source_witness_fields(operation_row, source_version_date_windows),
@@ -940,7 +944,7 @@ def build_effect_candidate_surface(
                         instruction_semantic_candidate_status=readiness_row.instruction_semantic_candidate_status,
                         instruction_semantic_candidate_family=readiness_row.instruction_semantic_candidate_family,
                         instruction_semantic_rule_id=readiness_row.instruction_semantic_rule_id,
-                        repeal_payload_corroboration_status=corroboration.status,
+                        repeal_payload_corroboration_status=corroboration.corroboration_status,
                         repeal_payload_corroboration_rule_id=corroboration.rule_id,
                         repeal_payload_cited_targets=corroboration.cited_targets,
                         payload_match_count=readiness_row.payload_match_count,
@@ -955,7 +959,7 @@ def build_effect_candidate_surface(
                     row_id=f"nz-effect-candidate-{index}",
                     operation_row_id=operation_row.row_id,
                     effect_readiness_row_id=readiness_row.row_id,
-                    status="candidate_emitted",
+                    candidate_status="candidate_emitted",
                     action=str(StructuralAction.REPEAL),
                     target_address=str(operation.target),
                     operation=operation,
@@ -969,7 +973,7 @@ def build_effect_candidate_surface(
                     instruction_semantic_candidate_status=readiness_row.instruction_semantic_candidate_status,
                     instruction_semantic_candidate_family=readiness_row.instruction_semantic_candidate_family,
                     instruction_semantic_rule_id=readiness_row.instruction_semantic_rule_id,
-                    repeal_payload_corroboration_status=corroboration.status,
+                    repeal_payload_corroboration_status=corroboration.corroboration_status,
                     repeal_payload_corroboration_rule_id=corroboration.rule_id,
                     repeal_payload_cited_targets=corroboration.cited_targets,
                     payload_match_count=readiness_row.payload_match_count,
@@ -998,7 +1002,7 @@ def build_effect_candidate_surface(
                 row_id=f"nz-effect-candidate-{index}",
                 operation_row_id=readiness_row.operation_row_id,
                 effect_readiness_row_id=readiness_row.row_id,
-                status="blocked",
+                candidate_status="blocked",
                 target_address=readiness_row.target_address,
                 blocking_rule_id=readiness_row.blocking_rule_id or "nz_effect_candidate_not_ready",
                 **_source_witness_fields(operation_row, source_version_date_windows),
@@ -1183,12 +1187,12 @@ def _source_change_text_witness(
 ) -> _SourceChangeTextWitness:
     if not operation_row.amendment_date_iso:
         return _SourceChangeTextWitness(
-            status="missing_amendment_date_iso",
+            witness_status="missing_amendment_date_iso",
             rule_id="nz_source_change_text_missing_amendment_date_iso",
         )
     if not instruction_row.latest_oracle_target_source_path:
         return _SourceChangeTextWitness(
-            status="missing_target_source_path",
+            witness_status="missing_target_source_path",
             rule_id="nz_source_change_text_target_source_path_missing",
             requested_date=operation_row.amendment_date_iso,
         )
@@ -1199,7 +1203,7 @@ def _source_change_text_witness(
     )
     if window.before is None or window.on_or_after is None:
         return _SourceChangeTextWitness(
-            status="missing_change_window_witness",
+            witness_status="missing_change_window_witness",
             rule_id="nz_source_change_text_change_window_incomplete",
             change_window_truth_claim=window.truth_claim,
             requested_date=window.requested_version_date,
@@ -1223,7 +1227,7 @@ def _source_change_text_witness(
     )
     if before_document is None or after_document is None:
         return _SourceChangeTextWitness(
-            status="missing_change_window_xml",
+            witness_status="missing_change_window_xml",
             rule_id="nz_source_change_text_change_window_xml_missing",
             change_window_truth_claim=window.truth_claim,
             requested_date=window.requested_version_date,
@@ -1237,7 +1241,7 @@ def _source_change_text_witness(
     after_node = _single_node_by_path(after_document, instruction_row.latest_oracle_target_source_path)
     if before_node is None or after_node is None:
         return _SourceChangeTextWitness(
-            status="target_node_missing_in_change_window",
+            witness_status="target_node_missing_in_change_window",
             rule_id="nz_source_change_text_target_node_missing_in_change_window",
             change_window_truth_claim=window.truth_claim,
             requested_date=window.requested_version_date,
@@ -1260,7 +1264,7 @@ def _source_change_text_witness(
         is_deletion=not instruction_row.new_text.strip(),
     )
     return _SourceChangeTextWitness(
-        status=status,
+        witness_status=status,
         rule_id=f"nz_source_change_text_{status}",
         change_window_truth_claim=window.truth_claim,
         requested_date=window.requested_version_date,
@@ -1340,27 +1344,27 @@ def _repeal_payload_corroboration(
 ) -> _RepealPayloadCorroboration:
     if payload_row is None or payload_row.payload_instruction_shape != "direct_repeal_replace_instruction":
         return _RepealPayloadCorroboration(
-            status="not_required_non_direct_repeal_payload",
+            corroboration_status="not_required_non_direct_repeal_payload",
             rule_id=NZ_REPEAL_PAYLOAD_NOT_DIRECT_RULE_ID,
         )
     target_label = _section_label_from_target_address(operation_row.target_address_candidate.address)
     cited_targets = _repeal_payload_cited_section_labels(payload_row)
     if not target_label or not cited_targets:
         return _RepealPayloadCorroboration(
-            status="blocked_direct_repeal_payload_target_unparsed",
+            corroboration_status="blocked_direct_repeal_payload_target_unparsed",
             rule_id=NZ_REPEAL_PAYLOAD_UNPARSED_BLOCKED_RULE_ID,
             cited_targets=cited_targets,
             blocking_rule_id=NZ_REPEAL_PAYLOAD_UNPARSED_BLOCKED_RULE_ID,
         )
     if target_label not in cited_targets:
         return _RepealPayloadCorroboration(
-            status="blocked_direct_repeal_payload_target_mismatch",
+            corroboration_status="blocked_direct_repeal_payload_target_mismatch",
             rule_id=NZ_REPEAL_PAYLOAD_MISMATCH_BLOCKED_RULE_ID,
             cited_targets=cited_targets,
             blocking_rule_id=NZ_REPEAL_PAYLOAD_MISMATCH_BLOCKED_RULE_ID,
         )
     return _RepealPayloadCorroboration(
-        status="corroborated_direct_repeal_payload_target",
+        corroboration_status="corroborated_direct_repeal_payload_target",
         rule_id=NZ_REPEAL_PAYLOAD_CORROBORATED_RULE_ID,
         cited_targets=cited_targets,
     )
@@ -1475,7 +1479,7 @@ def _text_replace_candidate(
     )
     source_change_can_emit = (
         source_change_witness is not None
-        and source_change_witness.status in _TEXT_REPLACE_OBSERVED_SOURCE_CHANGE_STATUSES
+        and source_change_witness.witness_status in _TEXT_REPLACE_OBSERVED_SOURCE_CHANGE_STATUSES
         and _source_change_witness_matches_target(instruction_row, source_change_witness)
         and instruction_row.latest_oracle_target_resolution_status
         in _TEXT_REPLACE_SOURCE_CHANGE_CANDIDATE_TARGET_RESOLUTION_STATUSES
@@ -1490,7 +1494,7 @@ def _text_replace_candidate(
             row_id=f"nz-effect-candidate-{index}",
             operation_row_id=readiness_row.operation_row_id,
             effect_readiness_row_id=readiness_row.row_id,
-            status="blocked",
+            candidate_status="blocked",
             target_address=readiness_row.target_address,
             blocking_rule_id=NZ_TEXT_REPLACE_LATEST_ORACLE_WITNESS_BLOCKED_RULE_ID,
             **_source_witness_fields(operation_row, source_version_date_windows),
@@ -1528,7 +1532,7 @@ def _text_replace_candidate(
         row_id=f"nz-effect-candidate-{index}",
         operation_row_id=operation_row.row_id,
         effect_readiness_row_id=readiness_row.row_id,
-        status="candidate_emitted",
+        candidate_status="candidate_emitted",
         action=str(StructuralAction.TEXT_REPLACE),
         target_address=str(operation.target),
         operation=operation,
@@ -1630,7 +1634,7 @@ def _text_replace_witness_support_fields(
     source_change_text_witnesses: Mapping[str, _SourceChangeTextWitness] | None,
 ) -> dict[str, Any]:
     witness = source_change_text_witnesses.get(row.operation_row_id) if source_change_text_witnesses is not None else None
-    source_change_observed_status = witness is not None and witness.status in _TEXT_REPLACE_OBSERVED_SOURCE_CHANGE_STATUSES
+    source_change_observed_status = witness is not None and witness.witness_status in _TEXT_REPLACE_OBSERVED_SOURCE_CHANGE_STATUSES
     source_change_target_mismatch = (
         source_change_observed_status and not _source_change_witness_matches_target(row, witness)
     )
@@ -1770,7 +1774,7 @@ def _source_change_text_witness_fields(
             "source_change_text_witness_requested_date": row.amendment_date_iso,
         }
     return {
-        "source_change_text_witness_status": witness.status,
+        "source_change_text_witness_status": witness.witness_status,
         "source_change_text_witness_rule_id": witness.rule_id,
         "source_change_text_witness_truth_claim": witness.truth_claim,
         "source_change_text_change_window": _source_change_window_detail(witness),
@@ -1931,7 +1935,7 @@ def _operation_jsonable(operation: LegalOperation | None) -> dict[str, Any] | No
 def _candidate_operation_detail(row: NZCanonicalEffectCandidateRow) -> dict[str, Any]:
     if row.operation is None:
         return {
-            "candidate_operation_missing": row.status == "candidate_emitted",
+            "candidate_operation_missing": row.candidate_status == "candidate_emitted",
             "candidate_witness_rule_id": "",
             "candidate_provenance_tags": (),
         }
@@ -1953,7 +1957,7 @@ def _candidate_evidence_row(
     row: NZCanonicalEffectCandidateRow,
 ) -> CorpusOperationEvidenceRow:
     source_artifact_id = report.work_id or "new_zealand_effect_candidates"
-    if row.status == "candidate_emitted" and row.operation is not None:
+    if row.candidate_status == "candidate_emitted" and row.operation is not None:
         return CorpusOperationEvidenceRow(
             row_id=row.row_id,
             frontend_id="new_zealand",
@@ -1968,7 +1972,7 @@ def _candidate_evidence_row(
             strict_disposition="candidate_only",
             quirks_disposition="candidate_only",
             detail={
-                "status": row.status,
+                "candidate_status": row.candidate_status,
                 "reason": "candidate canonical effect emitted but not replayed",
                 "replay_blocking_rule_id": NZ_EFFECT_CANDIDATE_REPLAY_BLOCKED_RULE_ID,
                 "effect_readiness_row_id": row.effect_readiness_row_id,
@@ -2011,7 +2015,7 @@ def _candidate_evidence_row(
                 "payload_match_texts": row.payload_match_texts,
             },
         )
-    if row.status == "candidate_emitted" and row.operation is None:
+    if row.candidate_status == "candidate_emitted" and row.operation is None:
         return CorpusOperationEvidenceRow(
             row_id=row.row_id,
             frontend_id="new_zealand",
@@ -2026,7 +2030,6 @@ def _candidate_evidence_row(
             strict_disposition="block",
             quirks_disposition="record_blocked_candidate",
             detail={
-                "status": row.status,
                 "reason": NZ_EFFECT_CANDIDATE_OPERATION_MISSING_RULE_ID,
                 "effect_readiness_row_id": row.effect_readiness_row_id,
                 **_candidate_operation_detail(row),
@@ -2042,7 +2045,7 @@ def _candidate_evidence_row(
                 "payload_structural_subfamily_status": row.payload_structural_subfamily_status,
                 "payload_structural_subfamily": row.payload_structural_subfamily,
                 "payload_structural_subfamily_rule_id": row.payload_structural_subfamily_rule_id,
-                "candidate_status": row.status,
+                "candidate_status": row.candidate_status,
             },
         )
     return CorpusOperationEvidenceRow(
@@ -2057,7 +2060,7 @@ def _candidate_evidence_row(
         strict_disposition="block",
         quirks_disposition="record_blocked_candidate",
         detail={
-            "status": row.status,
+            "candidate_status": row.candidate_status,
             "reason": row.blocking_rule_id or "nz_effect_candidate_not_ready",
             "effect_readiness_row_id": row.effect_readiness_row_id,
             **_source_witness_detail(row),
@@ -2109,7 +2112,7 @@ def _preflight_operation_evidence_row(
     source_artifact_id = report.work_id or "new_zealand_effect_preflight"
     preflight_blocking_rule_id = str(report.summary()["blocking_rule_id"])
     if (
-        row.status == "candidate_emitted"
+        row.candidate_status == "candidate_emitted"
         and row.operation is not None
         and not _source_change_only_candidate(row)
         and not _target_recovery_candidate(row)
@@ -2128,7 +2131,7 @@ def _preflight_operation_evidence_row(
             strict_disposition="candidate_only_preflight",
             quirks_disposition="candidate_only_preflight",
             detail={
-                "status": "ready_candidate",
+                "preflight_status": "ready_candidate",
                 "candidate_row_id": row.row_id,
                 "effect_readiness_row_id": row.effect_readiness_row_id,
                 **_candidate_operation_detail(row),
@@ -2175,7 +2178,7 @@ def _preflight_operation_evidence_row(
     row_blocking_rule_ids = _preflight_row_blocking_rule_ids(row)
     reason = row.blocking_rule_id or "nz_effect_candidate_not_ready"
     detail_status = "blocked_batch_refused" if batch_blocked else "blocked_candidate"
-    if row.status == "candidate_emitted" and row.operation is None:
+    if row.candidate_status == "candidate_emitted" and row.operation is None:
         reason = _preflight_row_blocking_rule_id(row)
         detail_status = "blocked_candidate_operation_missing"
     elif _source_change_only_candidate(row) and _target_recovery_candidate(row):
@@ -2201,7 +2204,7 @@ def _preflight_operation_evidence_row(
         strict_disposition="block",
         quirks_disposition="record_blocked_preflight",
         detail={
-            "status": detail_status,
+            "preflight_status": detail_status,
             "candidate_row_id": row.row_id,
             "effect_readiness_row_id": row.effect_readiness_row_id,
             **_source_witness_detail(row),
@@ -2243,7 +2246,7 @@ def _preflight_operation_evidence_row(
             "reason": reason,
             "batch_blocking_rule_id": preflight_blocking_rule_id if batch_blocked else "",
             "row_blocking_rule_ids": row_blocking_rule_ids,
-            "candidate_status": row.status,
+            "candidate_status": row.candidate_status,
             "candidate_blocking_rule_id": row.blocking_rule_id,
             **_candidate_operation_detail(row),
         },
@@ -2372,7 +2375,7 @@ def main(args: Any) -> None:
         return
     for row in filtered_rows[: args.limit]:
         print(
-            f"{row.row_id}\t{row.operation_row_id}\t{row.status}\t"
+            f"{row.row_id}\t{row.operation_row_id}\t{row.candidate_status}\t"
             f"{row.action or '-'}\t{row.target_address or '-'}"
         )
     if len(filtered_rows) > args.limit:

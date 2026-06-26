@@ -91,11 +91,13 @@ UK_OPERATION_FAMILY_PROOF_SEMANTICS = frozenset(
         "relative_occurrence_scope_claim",
         "same_moment_cross_act_precedence_resolution",
         "savings_qualified_omission_applicability_scope",
+        "savings_qualified_structural_repeal_applicability_scope",
         "schedule_paragraph_range_to_part_source_destination_and_lineage",
         "schedule_list_entry_anchor_boundary_claim",
         "scoped_occurrence_exclusion_boundary_claim",
         "sentence_scoped_text_insert_boundary_claim",
         "source_feed_target_reconciliation_claim",
+        "source_payload_or_instruction_acquisition_claim",
         "source_carried_child_tail_boundary_claim",
         "source_carried_multi_subunit_boundary_claim",
         "source_carried_structured_payload_boundary_claim",
@@ -168,7 +170,7 @@ class _WorkqueueIndex(NamedTuple):
 class _WorkqueueMatch(NamedTuple):
     row: Mapping[str, Any] | None
     issues: tuple[str, ...]
-    status: str
+    workqueue_status: str
 
 
 class _LiveTargetIndex(NamedTuple):
@@ -327,8 +329,8 @@ def _asserts_authorization(value: Any) -> bool:
     return False
 
 
-def _is_forbidden_weak_validator_status(status: str) -> bool:
-    return status.strip().lower() in _FORBIDDEN_WEAK_VALIDATOR_CHECK_STATUSES
+def _is_forbidden_weak_validator_status(validator_status: str) -> bool:
+    return validator_status.strip().lower() in _FORBIDDEN_WEAK_VALIDATOR_CHECK_STATUSES
 
 
 def _workqueue_source_preview_sha256(row: Mapping[str, Any]) -> str:
@@ -4365,13 +4367,13 @@ def _match_workqueue(
             return _WorkqueueMatch(
                 row=None,
                 issues=(f"work_item_id {work_item_id} was not found",),
-                status="rejected_workqueue_missing",
+                workqueue_status="rejected_workqueue_missing",
             )
         return _WorkqueueMatch(
             row=match,
             issues=index.issues_by_work_item_id.get(work_item_id, ())
             + _workqueue_mismatch_issues(row, match),
-            status="rejected_workqueue_mismatch",
+            workqueue_status="rejected_workqueue_mismatch",
         )
     identity = _claim_identity(row)
     if not all(identity):
@@ -4380,7 +4382,7 @@ def _match_workqueue(
             issues=(
                 "claim must include work_item_id or statute_id/effect_id/manual_compile_rule_id",
             ),
-            status="rejected_workqueue_missing",
+            workqueue_status="rejected_workqueue_missing",
         )
     matches = index.by_identity.get(identity, ())
     if not matches:
@@ -4389,7 +4391,7 @@ def _match_workqueue(
             issues=(
                 "no workqueue row matched statute_id/effect_id/manual_compile_rule_id",
             ),
-            status="rejected_workqueue_missing",
+            workqueue_status="rejected_workqueue_missing",
         )
     matches = _deduplicated_workqueue_matches(matches)
     if len(matches) > 1:
@@ -4404,13 +4406,13 @@ def _match_workqueue(
                 "workqueue identity match is ambiguous; claim must include "
                 f"work_item_id; candidates: {candidates}",
             ),
-            status="rejected_workqueue_missing",
+            workqueue_status="rejected_workqueue_missing",
         )
     match = matches[0]
     return _WorkqueueMatch(
         row=match,
         issues=_workqueue_mismatch_issues(row, match),
-        status="rejected_workqueue_mismatch",
+        workqueue_status="rejected_workqueue_mismatch",
     )
 
 
@@ -5581,7 +5583,7 @@ def validate_semantic_claim_rows(
                 output.append(
                     _validation_row(
                         row,
-                        validator_status=workqueue_match.status,
+                        validator_status=workqueue_match.workqueue_status,
                         rule_id="uk_semantic_claim_workqueue_missing",
                         issues=workqueue_match.issues,
                         reason="Semantic claim does not match the supplied workqueue.",
@@ -5592,7 +5594,7 @@ def validate_semantic_claim_rows(
                 output.append(
                     _validation_row(
                         row,
-                        validator_status=workqueue_match.status,
+                        validator_status=workqueue_match.workqueue_status,
                         rule_id="uk_semantic_claim_workqueue_mismatch",
                         issues=workqueue_match.issues,
                         workqueue_row=workqueue_match.row,

@@ -203,7 +203,7 @@ def test_partitive_quality_rule() -> None:
 def test_classify_ambiguous_bare_i() -> None:
     """A bare ambiguous -i simplex returns ambiguous, never a silent paradigm."""
     c = classify("xoli")
-    assert c.status == "ambiguous"
+    assert c.classification_status == "ambiguous"
     assert c.morph_class is None
     assert len(c.candidates) >= 2
 
@@ -212,7 +212,7 @@ def test_classify_us_split_needs_flag() -> None:
     """classify must NOT resolve the -Us split without head-class info."""
     for surface in ("asetus", "oikeus"):
         c = classify(surface)
-        assert c.status == "needs_flag"
+        assert c.classification_status == "needs_flag"
         assert c.morph_class is None
         assert "-Us->-Ukse-" in c.candidates
         assert "-Uus->-Ude-" in c.candidates
@@ -414,8 +414,8 @@ def test_all_neutral_final_i_compound_is_a_classify_wall() -> None:
     ``ambiguous`` and is never routed to a paradigm, so the heuristic's known
     limitation cannot surface a wrong form.
     """
-    assert classify("kaivovesi").status == "ambiguous"
-    assert classify("vesi").status == "ambiguous"
+    assert classify("kaivovesi").classification_status == "ambiguous"
+    assert classify("vesi").classification_status == "ambiguous"
 
 
 # --------------------------------------------------------------------------- #

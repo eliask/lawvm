@@ -130,7 +130,7 @@ class EllipticalResolution:
     """
 
     mention: ReferenceMention
-    status: EllipticalStatus
+    elliptical_status: EllipticalStatus
     enclosing_section_label: Optional[str] = None
     candidate_subsections: Tuple[int, ...] = ()
 

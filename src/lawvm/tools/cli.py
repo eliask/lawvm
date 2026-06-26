@@ -8331,9 +8331,10 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
             "It FAILS CLOSED: a declared transition is materialized only when "
             "EVERY op in its change window is dry-run-verified; any unverified op "
             "blocks the whole transition with a distinct named diagnostic and "
-            "nothing is materialized for it (never a silent skip). Only the two "
-            "safest families are promotable: direct repeal and direct "
-            "single-occurrence text substitution. The output is a separate "
+            "nothing is materialized for it (never a silent skip). Only the four "
+            "safest families are promotable: direct repeal, direct "
+            "single-occurrence text substitution, structural whole-provision "
+            "replace, and structural whole-provision or nested insert. The output is a separate "
             "artifact from the official NZ XML, labeled candidate/replay/oracle; "
             "the archived oracle is what the replay is checked against, never the "
             "replay's payload authority. The actually-replayed transition count "
@@ -8354,8 +8355,9 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         metavar="SPEC",
         help=(
             "promotable families to actually replay: 'all' (default; repeal + "
-            "text_replace), or a comma-separated subset (e.g. 'repeal'). Only "
-            "repeal and text_replace are promotable; any other family is rejected."
+            "text_replace + replace + insert), or a comma-separated subset (e.g. "
+            "'repeal'). Only repeal, text_replace, replace, and insert are "
+            "promotable; any other family is rejected."
         ),
     )
     nz_replay_actual_p.add_argument(
@@ -8685,8 +8687,9 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         description=(
             "Pin the replay-coverage denominator to ground-truth amendment "
             "operation witnesses (history notes via the operation surface), run "
-            "every supported dry-run family (repeal + text_replace) over a work "
-            "population, and report the combined coverage fraction = the true "
+            "every supported dry-run family (repeal, text_replace, replace, "
+            "insert) over a work population, and report the combined coverage "
+            "fraction = the true "
             "percentage of NZ amendment operations we can replay-and-oracle-confirm. "
             "Non-executable-by-design operations (brought-into-force/editorial/"
             "expired) are reported separately, and the unsupported executable "
@@ -9557,6 +9560,52 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         default=None,
         metavar="PATH",
         help="HE projection output directory (default: data/fi/v1)",
+    )
+
+    # --- replay-all ---
+    ra_p = sub.add_parser(
+        "replay-all",
+        help="replay the full farchive corpus (every statute) through the FI pipeline",
+        description=(
+            "Enumerate EVERY statute id in the full farchive (the same corpus "
+            "source as 'export-projections --corpus all') and run the production "
+            "FI replay pipeline once per statute, including zero-amendment "
+            "statutes (no amendment filter). Robust to per-statute failures: "
+            "counts and continues. This is a measurement/ops command intended "
+            "for coverage instrumentation of src/lawvm/finland/; it does not "
+            "change replay semantics or write artifacts."
+        ),
+        parents=_P,
+    )
+    ra_p.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        metavar="N",
+        help="parallel worker processes (default: 1; use 1 for accurate coverage)",
+    )
+    ra_p.add_argument(
+        "--limit",
+        type=int,
+        metavar="N",
+        help="replay only the first N statutes (default: entire corpus)",
+    )
+    ra_p.add_argument(
+        "--mode",
+        default="official_consolidation",
+        type=replay_mode_argument,
+        choices=["official_consolidation", "legal_pit"],
+        help="replay mode (default: official_consolidation)",
+    )
+    ra_p.add_argument(
+        "--shard",
+        metavar="I/N",
+        help=(
+            "replay only shard I of N (stride sharding statute_ids[I::N]); "
+            "disjoint + exhaustive across I=0..N-1. Run N single-process "
+            "invocations in parallel for a correct combinable coverage map "
+            "without multiprocessing (default: whole corpus)"
+        ),
     )
 
     # --- fi-proposals ---
@@ -11057,6 +11106,20 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         action="store_true",
         help="emit the full typed report as JSON to stdout",
     )
+    dangling_refs_p.add_argument(
+        "--temporal-cause",
+        dest="temporal_cause",
+        action="store_true",
+        help=(
+            "additionally split the DANGLING set by temporal CAUSE: "
+            "DANGLING_REPEALED_TARGET (the cited provision is covered by an "
+            "in-place repeal note in the target act's consolidated text, citing "
+            "the amending act + date — evidenced) vs DANGLING_CAUSE_UNDETERMINED "
+            "(absent with no repeal note; the as-of-now oracle cannot distinguish "
+            "repealed-without-note / renumbered / never-existed — the honest "
+            "residual, NEVER claimed never-existed)"
+        ),
+    )
 
     # --- cross-ref-report ---
     cross_ref_report_p = sub.add_parser(
@@ -11127,6 +11190,98 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
             "max number of dangling witnesses rendered inline (the full count is "
             "always stated; default: 200)"
         ),
+    )
+
+    # --- eu-ref-report ---
+    eu_ref_report_p = sub.add_parser(
+        "eu-ref-report",
+        help=(
+            "corpus-wide SURFACE report of FI statutes referencing EU instruments "
+            "(directives/CELEX) + declared transposition relationships (fi)"
+        ),
+        description=(
+            "Read-only corpus scan that surfaces, as a category, the Finnish "
+            "statutes whose body text REFERENCES an EU instrument. Two surfaces, "
+            "both via the existing deterministic EU extractors (no new "
+            "recognition authority): (1) TRANSPOSITION declarations — the FI act's "
+            "own claim to transpose a named directive, bound to a CELEX via the "
+            "eu_nickname registry where determinable (an unbound named directive is "
+            "surfaced with an honest status, never a guessed CELEX); (2) general "
+            "EU-instrument CITATIONS — every recognised (EY/EU) N:o NNNN/YYYY / "
+            "year-first / bare-CELEX span in the body. A transposition edge means "
+            "the FI act SAYS it transposes the directive — NOT a verified "
+            "conformance. Surface fact, not a legal conclusion."
+        ),
+    )
+    eu_ref_report_p.add_argument(
+        "--out",
+        default=None,
+        metavar="PATH",
+        help="write the full typed report (counts + witnesses) to PATH as JSON",
+    )
+    eu_ref_report_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit the full typed report as JSON to stdout",
+    )
+    eu_ref_report_p.add_argument(
+        "--top",
+        type=int,
+        default=20,
+        help="number of witnesses shown in the text summary (default: 20)",
+    )
+    eu_ref_report_p.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        metavar="N",
+        help="scan only the first N statutes (for a fast representative slice)",
+    )
+
+    # --- reference-integrity-report ---
+    ref_integrity_p = sub.add_parser(
+        "reference-integrity-report",
+        help=(
+            "demo-grade FI reference-integrity Markdown: DANGLING three-way + "
+            "DANGLING-by-cause (repealed vs undetermined) + EU-directive category"
+        ),
+        description=(
+            "Compose the corpus DANGLING cross-reference claim, its split by "
+            "temporal CAUSE (references to already-repealed provisions — evidenced "
+            "by the repeal note naming the amending act/date — vs UNDETERMINED), "
+            "and the EU-directive/CELEX reference category into one neutral, "
+            "independently-verifiable Markdown report. Adds no new computation: it "
+            "reads the three typed claims and lays them out with their honesty "
+            "boundaries restated. Surface facts, not legal conclusions."
+        ),
+    )
+    ref_integrity_p.add_argument(
+        "--fi-refs",
+        dest="fi_refs",
+        default=None,
+        metavar="PATH",
+        help="path to the fi_refs projection (.jsonl/.parquet). Default: standard location.",
+    )
+    ref_integrity_p.add_argument(
+        "--scope-label",
+        dest="scope_label",
+        default=None,
+        metavar="TEXT",
+        help="free-text declaration of the corpus slice this run covers",
+    )
+    ref_integrity_p.add_argument(
+        "--eu-limit",
+        dest="eu_limit",
+        type=int,
+        default=None,
+        metavar="N",
+        help="scan only the first N statutes for EU references (default: whole corpus)",
+    )
+    ref_integrity_p.add_argument(
+        "--out",
+        default=None,
+        metavar="PATH",
+        help="write the Markdown report to PATH (default: stdout)",
     )
 
     # --- surface-graph ---
@@ -12769,6 +12924,15 @@ def _main_impl() -> None:
             from lawvm.tools.nz_bench import main as nz_bench_main
 
             nz_bench_main(args)
+        elif j == "no":
+            # ``no_bench`` imports trigger the comparator registration; the
+            # data-layer (curated corpus CSV + per-statute verify sweep) is
+            # multi-session work tracked in notes_internal/NO_AGENTS_MD_
+            # AUDIT.md. Until that lands, fail loud — never silently fall
+            # through to FI. The contract adapter test pins the mapping.
+            from lawvm.tools.no_bench import no_bench_main
+
+            no_bench_main(args)
         elif j == "us":
             # The US dry-run bench is fully implemented as a standalone entry
             # point (``python -m lawvm.us_federal.bench``). Reuse it verbatim by
@@ -13797,6 +13961,13 @@ def _main_impl() -> None:
 
         export_proj_main(args)
 
+    elif args.command == "replay-all":
+        from lawvm.tools.replay_all import main as replay_all_main
+
+        rc = replay_all_main(args)
+        if rc:
+            sys.exit(rc)
+
     elif args.command == "open-law":
         from lawvm.tools.open_law import main as open_law_main
 
@@ -13960,6 +14131,18 @@ def _main_impl() -> None:
         )
 
         cross_ref_report_main(args)
+
+    elif args.command == "eu-ref-report":
+        from lawvm.tools.eu_reference_report import main as eu_ref_report_main
+
+        eu_ref_report_main(args)
+
+    elif args.command == "reference-integrity-report":
+        from lawvm.tools.reference_integrity_demo_report import (
+            main as reference_integrity_report_main,
+        )
+
+        reference_integrity_report_main(args)
 
     elif args.command == "surface-graph":
         from lawvm.tools.surface_graph import main as surface_graph_main

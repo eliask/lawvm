@@ -143,7 +143,7 @@ def finland_corrigendum_provenance_evidence_surface(
     witnesses = source_witnesses or row_witnesses
     status_counts: dict[str, int] = {}
     for row in provenance_rows:
-        status = str(row.get("status") or "unknown")
+        status = str(row.get("provenance_status") or "unknown")
         status_counts[status] = status_counts.get(status, 0) + 1
     rows = tuple(
         (

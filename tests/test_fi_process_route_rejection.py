@@ -14,7 +14,7 @@ from lawvm.finland.process_route_rejection import (
     ProcessRouteRejectionContext,
     classify_route_rejection,
 )
-from lawvm.finland.ops import AmendmentOp
+from lawvm.finland.ops import OpType, AmendmentOp
 from lawvm.finland.replay_entrypoint import replay_xml
 from lawvm.finland.replay_request import ReplayXmlRequest
 from lawvm.finland.source_model import AmendmentSourceModel
@@ -172,7 +172,7 @@ def test_route_rejection_title_meta_repeal_does_not_emit_vts_parent_repeals() ->
             return [
                 AmendmentOp(
                     op_id="phantom_parent_repeal",
-                    op_type="REPEAL",
+                    op_type=OpType.REPEAL,
                     target_section="4a",
                     target_unit_kind="section",
                     voimaantulo_repeal=True,

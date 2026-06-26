@@ -216,8 +216,50 @@ def _source_payload_parent_instruction_context(
     payload_text = " ".join(str(extracted_text or "").split()).strip()
     if extracted_el is None or source_root is None or not payload_text:
         return {}
+    ancestor, context_text = _source_payload_parent_instruction_ancestor(
+        extracted_el=extracted_el,
+        source_root=source_root,
+        extracted_text=extracted_text,
+    )
+    if ancestor is None:
+        return {}
     ancestors = _source_ancestor_chain(source_root, extracted_el)
-    for ancestor_index, ancestor in enumerate(ancestors):
+    ancestor_index = next(
+        (i for i, a in enumerate(ancestors) if a is ancestor),
+        -1,
+    )
+    source_parent_id = str(ancestor.get("id") or ancestor.get("eId") or "")
+    if not source_parent_id:
+        source_parent_id = next(
+            (
+                str(candidate.get("id") or candidate.get("eId"))
+                for candidate in ancestors[ancestor_index + 1 :]
+                if candidate.get("id") or candidate.get("eId")
+            ),
+            "",
+        )
+    return {
+        "source_parent_id": source_parent_id,
+        "source_parent_context_preview": context_text[:500],
+    }
+
+
+def _source_payload_parent_instruction_ancestor(
+    *,
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
+    extracted_text: Optional[str],
+) -> tuple[Optional[ET._Element], str]:
+    """Return the nearest ancestor that supplies a complete amendment instruction.
+
+    The element and its full instruction text are returned so callers can augment
+    a bare payload fragment (e.g. one item of a multi-enumeration repeal list)
+    with the parent instruction and action verb.
+    """
+    payload_text = " ".join(str(extracted_text or "").split()).strip()
+    if extracted_el is None or source_root is None or not payload_text:
+        return None, ""
+    for ancestor in _source_ancestor_chain(source_root, extracted_el):
         instruction_text = " ".join(
             _instruction_text_before_amendment_container(ancestor).split()
         ).strip()
@@ -228,21 +270,83 @@ def _source_payload_parent_instruction_context(
             continue
         if _UK_OVERLAP_ACTION_WORD_RE.search(context_text) is None:
             continue
-        source_parent_id = str(ancestor.get("id") or ancestor.get("eId") or "")
-        if not source_parent_id:
-            source_parent_id = next(
-                (
-                    str(candidate.get("id") or candidate.get("eId"))
-                    for candidate in ancestors[ancestor_index + 1 :]
-                    if candidate.get("id") or candidate.get("eId")
-                ),
-                "",
-            )
-        return {
-            "source_parent_id": source_parent_id,
-            "source_parent_context_preview": context_text[:500],
-        }
-    return {}
+        return ancestor, context_text
+    return None, ""
+
+
+_UK_ENUMERATED_ITEM_PREFIX_RE = re.compile(
+    r"^\s*(?:[a-z]|[ivx]+|\d+)\s*[).]?\s+",
+    re.I,
+)
+
+
+def augment_extracted_text_with_instruction_context(
+    *,
+    extracted_text: Optional[str],
+    extracted_el: Optional[ET._Element],
+    source_root: Optional[ET._Element],
+) -> Optional[str]:
+    """Recover a complete instruction when only a payload fragment was extracted.
+
+    UK source extraction sometimes resolves a word-level amendment to a single
+    enumerated payload child of a multi-item instruction (e.g. one item of
+    ``omit— a ``X``; b ``Y`` ``).  The child text has no action verb, so the
+    overlap classifier rejects it as ``source_payload_without_instruction_context``.
+    When the parent container clearly supplies the missing verb and the child
+    is a recognisable continuation, prepend the parent instruction so normal
+    fragment parsing can proceed.
+
+    Returns ``None`` when no safe augmentation is possible, leaving the original
+    rejection path intact.
+    """
+    payload_text = " ".join(str(extracted_text or "").split()).strip()
+    if not payload_text:
+        return None
+    if _UK_OVERLAP_ACTION_WORD_RE.search(payload_text) is not None:
+        return None
+    ancestor, instruction_text = _source_payload_parent_instruction_ancestor(
+        extracted_el=extracted_el,
+        source_root=source_root,
+        extracted_text=extracted_text,
+    )
+    if not instruction_text:
+        return None
+    # Find overlap between instruction suffix and payload prefix so they are
+    # not duplicated when concatenated.
+    instruction_norm = " ".join(instruction_text.split())
+    payload_norm = " ".join(payload_text.split())
+    overlap_len = 0
+    for length in range(min(len(instruction_norm), len(payload_norm)), 0, -1):
+        if instruction_norm[-length:].lower() == payload_norm[:length].lower():
+            overlap_len = length
+            break
+    if overlap_len and len(instruction_norm) <= overlap_len + 2:
+        # The payload is essentially already covered by the instruction text;
+        # no augmentation needed and the raw payload is enough context.
+        return None
+    payload_part = payload_norm[overlap_len:].strip()
+    if not payload_part:
+        return None
+    # If the payload begins with a leading enumeration marker (``a ``,
+    # ``i )``, etc.) and the instruction ends with a dash or colon list
+    # introducer, drop the marker so the result reads as a single instruction.
+    stripped_payload = _UK_ENUMERATED_ITEM_PREFIX_RE.sub("", payload_part, count=1)
+    if stripped_payload == payload_part:
+        # No enumeration marker removed; keep the payload as-is but still
+        # prepend the instruction only when it is a list-introduction that
+        # clearly expects continuation.
+        if not re.search(r"[—:–-]\s*$", instruction_norm):
+            return None
+        candidate = f"{instruction_norm} {payload_part}"
+    else:
+        candidate = f"{instruction_norm} {stripped_payload}"
+    candidate = re.sub(r"\s+([,;:.])", r"\1", candidate)
+    candidate = " ".join(candidate.split())
+    if _UK_OVERLAP_ACTION_WORD_RE.search(candidate) is None:
+        return None
+    if candidate.lower() == payload_norm.lower():
+        return None
+    return candidate
 
 
 # Compiled at module scope per §1.11.

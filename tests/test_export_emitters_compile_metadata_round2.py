@@ -160,7 +160,7 @@ def _sample_statute_row() -> ParquetRow:
         "amendment_count": 5,
         "oracle_version": "2024-01-01",
         "score": 0.99,
-        "status": "OK",
+        "run_status": "OK",
         "diff_kind_summary": "identical:1",
     }
 

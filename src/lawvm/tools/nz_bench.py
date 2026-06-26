@@ -187,7 +187,9 @@ class _TransitionScore:
 class _WorkResult:
     work_id: str
     families: tuple[str, ...]
-    status: str
+    # Open-ended: "OK" or a runtime ``EXC:<type>:<msg>`` string captured at the
+    # bench boundary, so this stays typed-open rather than a closed Literal.
+    work_status: str
     transitions_replayed: int
     transitions_refused: int
     ops_replayed: int
@@ -213,7 +215,7 @@ class _WorkResult:
         return {
             "work_id": self.work_id,
             "families": list(self.families),
-            "status": self.status,
+            "work_status": self.work_status,
             "transitions_replayed": self.transitions_replayed,
             "transitions_refused": self.transitions_refused,
             "ops_replayed": self.ops_replayed,
@@ -308,7 +310,7 @@ def _score_one_work(archive: Any, work_id: str, db_path: Path) -> _WorkResult:
         return _WorkResult(
             work_id=work_id,
             families=(),
-            status=f"EXC:{type(exc).__name__}:{str(exc)[:80]}",
+            work_status=f"EXC:{type(exc).__name__}:{str(exc)[:80]}",
             transitions_replayed=0,
             transitions_refused=0,
             ops_replayed=0,
@@ -377,7 +379,7 @@ def _score_one_work(archive: Any, work_id: str, db_path: Path) -> _WorkResult:
     return _WorkResult(
         work_id=work_id,
         families=tuple(summary["families"]),
-        status="OK",
+        work_status="OK",
         transitions_replayed=summary["transitions_replayed"],
         transitions_refused=summary["transitions_refused"],
         ops_replayed=summary["ops_replayed"],
@@ -417,12 +419,12 @@ def nz_bench_unit_result(result: "_WorkResult") -> "BenchUnitResult":
     """Map an NZ ``_WorkResult`` onto a contract ``BenchUnitResult``."""
     from lawvm.core.bench_contract import BenchStatus, BenchUnitResult
 
-    if result.status != "OK":
+    if result.work_status != "OK":
         # "EXC:..." — a genuine failure.
         return BenchUnitResult(
             unit_id=result.work_id,
             status=BenchStatus.CRASH,
-            witnesses=(result.status,),
+            witnesses=(result.work_status,),
         )
     if result.slice_nodes <= 0:
         # No target slice nodes materialized — nothing to score against.
@@ -619,8 +621,8 @@ def _score_corpus(
 
 
 def _aggregate(results: list[_WorkResult]) -> dict[str, Any]:
-    ok = [r for r in results if r.status == "OK"]
-    errs = [r for r in results if r.status != "OK"]
+    ok = [r for r in results if r.work_status == "OK"]
+    errs = [r for r in results if r.work_status != "OK"]
     replayed_works = [r for r in ok if r.transitions_replayed > 0]
 
     total_transitions_replayed = sum(r.transitions_replayed for r in ok)
@@ -718,7 +720,7 @@ def _format_progress_line(
     cleanly as they scroll.
     """
 
-    if result.status != "OK":
+    if result.work_status != "OK":
         result_fragment = "ERROR"
     elif result.transitions_replayed == 0:
         # No transition materialized — surface WHY via the coverage lanes rather
@@ -736,7 +738,7 @@ def _format_progress_line(
         )
     return (
         f"  [{done}/{total}] {result.work_id:<30} "
-        f"{result_fragment} ({elapsed:.0f}s) status={result.status}"
+        f"{result_fragment} ({elapsed:.0f}s) status={result.work_status}"
     )
 
 
@@ -807,11 +809,11 @@ def _print_report(results: list[_WorkResult], agg: dict[str, Any], corpus: Path)
                 f"text={r.text_similarity:.1%} tree={r.tree_similarity:.1%} "
                 f"would+={r.would_replay_if_refusals_ignored}"
             )
-    errs = [r for r in results if r.status != "OK"]
+    errs = [r for r in results if r.work_status != "OK"]
     if errs:
         print(f"\nErrors ({len(errs)}):")
         for r in errs[:15]:
-            print(f"  {r.work_id}: {r.status}")
+            print(f"  {r.work_id}: {r.work_status}")
 
 
 # ---------------------------------------------------------------------------

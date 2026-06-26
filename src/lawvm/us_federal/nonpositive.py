@@ -45,6 +45,7 @@ import re
 import xml.etree.ElementTree as ET
 from collections import Counter
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Any, Iterable
 
 from lawvm.core.ir import LegalAddress
@@ -62,6 +63,30 @@ from lawvm.us_federal.sources import (
 )
 
 _USLM_NS = {"u": "http://schemas.gpo.gov/xml/uslm"}
+
+
+class NonPositiveResolveStatus(StrEnum):
+    """Closed set of act-section -> USC-address resolution outcomes.
+
+    A ``StrEnum`` so existing string consumers (f-strings, JSON dict keys,
+    ``Counter`` keys, test ``== "..."`` comparisons) keep working byte-for-byte
+    while the value set is closed and dispatch can be made exhaustive.
+    """
+
+    PAREN_HREF_AGREE = "paren_href_agree"
+    """Both the parenthetical and the structural href resolved and agree."""
+
+    HREF = "href"
+    """Resolved via the USLM structural href (sole channel, or canonical on disagreement)."""
+
+    PAREN = "paren"
+    """Resolved via the inline ``(N U.S.C. M)`` parenthetical only."""
+
+    NOTE_ONLY = "note_only"
+    """Only a ``note`` editorial cross-ref to an UNCODIFIED provision — unmapped."""
+
+    UNMAPPED = "unmapped"
+    """No reachable channel yielded a codified section (residual OLRC-table gap)."""
 
 # Witness / finding rule ids (stable).
 RULE_PAREN = "us_nonpositive_target_via_paren"
@@ -155,13 +180,13 @@ class NonPositiveTargetWitness:
     """Typed witness for a resolved (or unresolved) non-positive-title target.
 
     ``address`` is the resolved USC :class:`LegalAddress` (``None`` when
-    unmapped). ``status`` is one of ``paren_href_agree``, ``href``, ``paren``,
-    ``note_only``, ``unmapped``. ``rule_id`` is the stable witness/finding id.
-    ``paren_title``/``href_title`` record what each channel saw (for the
-    agreement audit). ``finding`` is implied by an unmapped/note_only status.
+    unmapped). ``status`` is a :class:`NonPositiveResolveStatus`. ``rule_id`` is
+    the stable witness/finding id. ``paren_title``/``href_title`` record what each
+    channel saw (for the agreement audit). ``finding`` is implied by an
+    unmapped/note_only status.
     """
 
-    status: str
+    status: NonPositiveResolveStatus
     rule_id: str
     address: LegalAddress | None
     paren_cite: str = ""
@@ -295,7 +320,7 @@ def resolve_nonpositive_target(
     if paren_addr is not None and href_addr is not None:
         if paren_addr.path == href_addr.path:
             return NonPositiveTargetWitness(
-                status="paren_href_agree",
+                status=NonPositiveResolveStatus.PAREN_HREF_AGREE,
                 rule_id=RULE_PAREN_HREF_AGREE,
                 address=href_addr,
                 paren_cite=paren_cite,
@@ -309,7 +334,7 @@ def resolve_nonpositive_target(
         # drafter's cite (can be coarser, e.g. section-only). Take the href but
         # flag the disagreement in the witness so review sees it.
         return NonPositiveTargetWitness(
-            status="href",
+            status=NonPositiveResolveStatus.HREF,
             rule_id=RULE_PAREN_HREF_DISAGREE,
             address=href_addr,
             paren_cite=paren_cite,
@@ -321,7 +346,7 @@ def resolve_nonpositive_target(
 
     if href_addr is not None:
         return NonPositiveTargetWitness(
-            status="href",
+            status=NonPositiveResolveStatus.HREF,
             rule_id=RULE_HREF,
             address=href_addr,
             href=target_href,
@@ -331,7 +356,7 @@ def resolve_nonpositive_target(
 
     if paren_addr is not None:
         return NonPositiveTargetWitness(
-            status="paren",
+            status=NonPositiveResolveStatus.PAREN,
             rule_id=RULE_PAREN,
             address=paren_addr,
             paren_cite=paren_cite,
@@ -344,7 +369,7 @@ def resolve_nonpositive_target(
     # distinctly from the bare no-signal case, but both stay unmapped.
     if note_only:
         return NonPositiveTargetWitness(
-            status="note_only",
+            status=NonPositiveResolveStatus.NOTE_ONLY,
             rule_id=NOTE_ONLY_FINDING_RULE_ID,
             address=None,
             href=target_href,
@@ -353,7 +378,7 @@ def resolve_nonpositive_target(
             target_phrase=target_phrase,
         )
     return NonPositiveTargetWitness(
-        status="unmapped",
+        status=NonPositiveResolveStatus.UNMAPPED,
         rule_id=UNMAPPED_FINDING_RULE_ID,
         address=None,
         target_phrase=target_phrase,

@@ -336,7 +336,7 @@ def test_totality_promotes_silent_unowned_to_unsupported(monkeypatch) -> None:
     assert forest.parse_status == "unsupported", forest.parse_status
     residual_nodes = forest.nodes_of_kind("residual_span")
     assert residual_nodes
-    assert all(n.status == "unsupported" for n in residual_nodes)
+    assert all(n.node_status == "unsupported" for n in residual_nodes)
 
 
 def test_graph_invariants_hold() -> None:

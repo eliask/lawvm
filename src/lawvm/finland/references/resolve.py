@@ -625,14 +625,14 @@ def _resolve_fi_name(
     # guessed instant. Re-check unfiltered: if the whole-timeline lookup still
     # yields candidates, the name stays AMBIGUOUS over those candidates (no pick,
     # fail-loud) instead of falsely reporting a coverage gap.
-    if as_of is not None and result.status == "none":
+    if as_of is not None and result.registry_status == "none":
         unfiltered = statute_registry.lookup(name, None)
-        if unfiltered.status != "none":
+        if unfiltered.registry_status != "none":
             result = unfiltered
 
     candidate_ids = tuple(c.statute_id for c in result.candidates)
 
-    if result.status == "single":
+    if result.registry_status == "single":
         work_id = candidate_ids[0]
         return ResolvedReference(
             mention=_rewrite_target_id(mention, work_id),
@@ -642,7 +642,7 @@ def _resolve_fi_name(
             rejected_candidates=(),
             finding=None,
         )
-    if result.status == "multiple":
+    if result.registry_status == "multiple":
         return ResolvedReference(
             mention=dataclasses.replace(
                 mention, cite_confidence=CiteConfidence.AMBIGUOUS
@@ -662,17 +662,17 @@ def _resolve_fi_name(
     # distinctive content stems, WHOLE-set match, no subset) and stays fail-loud:
     # single → resolved, multiple → ambiguous (never picked), none → fall through.
     cws_result = statute_registry.lookup_content_word_set(name, as_of)
-    if as_of is not None and cws_result.status == "none":
+    if as_of is not None and cws_result.registry_status == "none":
         # Same as-of-vs-known reconciliation as the exact lane: a window that
         # excludes every version is not a content miss if the whole timeline has
         # candidates — re-check unfiltered so a known-but-out-of-window name stays
         # AMBIGUOUS rather than falsely a coverage gap.
         unfiltered_cws = statute_registry.lookup_content_word_set(name, None)
-        if unfiltered_cws.status != "none":
+        if unfiltered_cws.registry_status != "none":
             cws_result = unfiltered_cws
-    if cws_result.status != "none":
+    if cws_result.registry_status != "none":
         cws_ids = tuple(c.statute_id for c in cws_result.candidates)
-        if cws_result.status == "single":
+        if cws_result.registry_status == "single":
             return ResolvedReference(
                 mention=_rewrite_target_id(
                     mention, cws_ids[0], phrase_lemma=_CWS_FALLBACK_PHRASE_LEMMA
@@ -743,10 +743,10 @@ def _resolve_fi_name_via_eu(
     Fail-loud: never invents a CELEX; a multi-CELEX nickname is always ambiguous.
     """
     result = eu_nickname.lookup(name)
-    if result.status is eu_nickname.RegistryStatus.NONE:
+    if result.registry_status is eu_nickname.RegistryStatus.NONE:
         return None
     candidate_ids = tuple(f"celex:{celex}" for celex in result.candidates)
-    if result.status is eu_nickname.RegistryStatus.SINGLE:
+    if result.registry_status is eu_nickname.RegistryStatus.SINGLE:
         work_id = candidate_ids[0]
         return ResolvedReference(
             mention=_rewrite_target_id(
@@ -777,7 +777,7 @@ def _resolve_eu_nickname(mention: ReferenceMention) -> ResolvedReference:
     result = eu_nickname.lookup(surface)
     candidate_ids = tuple(f"celex:{celex}" for celex in result.candidates)
 
-    if result.status is eu_nickname.RegistryStatus.SINGLE:
+    if result.registry_status is eu_nickname.RegistryStatus.SINGLE:
         work_id = candidate_ids[0]
         return ResolvedReference(
             mention=_rewrite_target_id(mention, work_id),
@@ -787,7 +787,7 @@ def _resolve_eu_nickname(mention: ReferenceMention) -> ResolvedReference:
             rejected_candidates=(),
             finding=None,
         )
-    if result.status is eu_nickname.RegistryStatus.MULTIPLE:
+    if result.registry_status is eu_nickname.RegistryStatus.MULTIPLE:
         return ResolvedReference(
             mention=dataclasses.replace(
                 mention, cite_confidence=CiteConfidence.AMBIGUOUS

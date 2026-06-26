@@ -162,7 +162,7 @@ class UnboundTermLintPass:
         index = _index(graph)
         lints: list[SurfaceLint] = []
         for use_id, use in _uses(index):
-            if use.status != "open":
+            if use.node_status != "open":
                 continue
             if index.use_out_bindings.get(use_id):
                 continue  # has a resolving edge → not unbound
@@ -181,7 +181,7 @@ class UnboundTermLintPass:
                         f"term {term!r} is used but has no definition reachable "
                         f"in this surface (open term use)"
                     ),
-                    status="active",
+                    lint_status="active",
                     forbidden_overclaims=_FORBIDDEN_OVERCLAIMS,
                 )
             )
@@ -216,7 +216,7 @@ class DeadDefinitionLintPass:
                         f"definition of {term!r} is never used in this surface "
                         f"(dead definition)"
                     ),
-                    status="active",
+                    lint_status="active",
                     forbidden_overclaims=_FORBIDDEN_OVERCLAIMS,
                 )
             )
@@ -257,7 +257,7 @@ class DuplicateDefinitionLintPass:
                         f"term {term!r} is defined {len(binding_ids)} times "
                         f"in this surface (duplicate definition)"
                     ),
-                    status="active",
+                    lint_status="active",
                     forbidden_overclaims=_FORBIDDEN_OVERCLAIMS,
                 )
             )
@@ -313,7 +313,7 @@ class UsedBeforeDefinitionLintPass:
                                 f"char {binding.source_ref.char_start} "
                                 f"(used before definition)"
                             ),
-                            status="active",
+                            lint_status="active",
                             forbidden_overclaims=_FORBIDDEN_OVERCLAIMS,
                         )
                     )
@@ -331,7 +331,7 @@ class AmbiguousTermUseLintPass:
         index = _index(graph)
         lints: list[SurfaceLint] = []
         for use_id, use in _uses(index):
-            if use.status != "ambiguous":
+            if use.node_status != "ambiguous":
                 continue
             term = _term_of(use)
             count = use.payload.get("candidate_count")
@@ -350,7 +350,7 @@ class AmbiguousTermUseLintPass:
                         f"term {term!r} matches {count_str}definitions; "
                         f"cannot pick one (ambiguous term use)"
                     ),
-                    status="active",
+                    lint_status="active",
                     forbidden_overclaims=_FORBIDDEN_OVERCLAIMS,
                 )
             )

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, NamedTuple, TypeAlias
+from typing import Any, NamedTuple
 
 from lawvm.uk_legislation.addressing import _uk_kind_value
 from lawvm.uk_legislation.mutable_ir import UKMutableNode
@@ -118,7 +118,7 @@ class _UKDescendantTableMatch:
     path: tuple[str, ...]
 
 
-ExpandedTableRows: TypeAlias = list[dict[int, UKMutableNode]]
+type ExpandedTableRows = list[dict[int, UKMutableNode]]
 
 
 class UKExpandedTableRow(NamedTuple):
@@ -126,7 +126,7 @@ class UKExpandedTableRow(NamedTuple):
     cells_by_column: dict[int, UKMutableNode]
 
 
-ExpandedTableRowsWithPhysicalIndex: TypeAlias = list[UKExpandedTableRow]
+type ExpandedTableRowsWithPhysicalIndex = list[UKExpandedTableRow]
 
 
 def strip_uk_identity_attrs_recursive(node: UKMutableNode) -> None:

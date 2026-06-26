@@ -1956,6 +1956,7 @@ def test_build_amendment_bundle_suppresses_temporary_amendment_notice(capsys) ->
 
 def test_serialize_scope_authority_parity_surfaces_runtime_projection_agreement() -> None:
     from lawvm.finland.ops import (
+    OpType,
         AmendmentOp,
         ScopeConfidence,
         ScopeResolutionConfidence,
@@ -1963,7 +1964,7 @@ def test_serialize_scope_authority_parity_surfaces_runtime_projection_agreement(
     )
 
     op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="23",
         target_chapter="7",

@@ -52,26 +52,26 @@ _QT = "in_force"
 _PINS: list[tuple[str, str, str, str, str]] = [
     # --- TRACK2_GROUNDING_FACTPACK_2026-06-10.md ---
     ("2011/805", "chapter:3/section:1", _AS_OF, _QT,
-     "ff1cea4df3163a3edb8492e270949ebcd847f2521b53766037fa4e1195134a74"),  # R1 esitutkintalaki 3 luku 1 §; re-pinned after same-parent subsection relabel ordering stopped skipping the 2026/269 2→3, 3→4 chain before inserting new 2 mom. Text remains source-owned by 2026/269 and oracle-perfect; prior pin captured the unstable relabel fold.
+     "5728007325c9d1c64a7aea0a821d73d6a7f0f5f21b566a4c57d08ad062beea5b"),  # R1 esitutkintalaki 3 luku 1 §; re-pinned after same-parent subsection relabel ordering stopped skipping the 2026/269 2→3, 3→4 chain before inserting new 2 mom. Text remains source-owned by 2026/269 and oracle-perfect; prior pin captured the unstable relabel fold.
     ("2009/273", "section:6", _AS_OF, _QT,
-     "68b1110d5f48a2cf3ad40585fb220135ae697baec96fc3399c58acbd92765eed"),  # R3 vaalirahoituslaki 6 §
+     "dc091ad938ef246a20540eba93330ab175aa97f03670b0af9972aba189a6d5ac"),  # R3 vaalirahoituslaki 6 §
     ("2009/273", "section:6a", _AS_OF, _QT,
-     "0d4b37c2f1313e7cf29563f08a56e4717ff954615071f3d3ffb5e57c6c0a36cc"),  # R4 vaalirahoituslaki 6 a § (survival witness)
+     "f0aae8ddd0a36fd69a53b2b7da5a9bfb2ae5ca8d20a4f2604d5192bff86538a7"),  # R4 vaalirahoituslaki 6 a § (survival witness)
     ("2009/273", "section:10", _AS_OF, _QT,
-     "7efdaefb6e5175d42fb047c8c83023a00ae85d3ea384ad5e8a98325a1cada1fd"),  # R5 vaalirahoituslaki 10 §; stale carried subsection-2 text removed
+     "84f47ddc3cbe0787e134be3ce67a4831e0955e1797df569f667589ced7ca9612"),  # R5 vaalirahoituslaki 10 §; stale carried subsection-2 text removed
     ("2024/482", "section:7", _AS_OF, _QT,
-     "36b895f84d205ec6c6982363972866f7a59c2c50da14a1933c2eb5c31b02b8fd"),  # R7 laki 482/2024 7 § (voimaantulo)
+     "fdae08152bf6424b68aad271d8f0eaaae3a90eb1194f28cabfa01a112870ef51"),  # R7 laki 482/2024 7 § (voimaantulo)
     # --- E1_LAWVM_ROUTE_GROUNDING_HANKINTALAKI.md (hankintalaki 1397/2016 + kilpailulaki 948/2011) ---
     ("2016/1397", "section:141", _AS_OF, _QT,
-     "36db41b746b5c4954ab0c00404207d88e61e2b31a9e1802e9477c44110c89263"),  # § 141 (2024 amendment version)
+     "3fc5276b4c9956e9968898440e8a6b943f42a6cd450360e4cae7efe66ba6af0e"),  # § 141 (2024 amendment version)
     ("2016/1397", "section:163", _AS_OF, _QT,
-     "9f2f3e81c8b8650ef570dfbb969363d832f227d11c188fd2b2c5cc084080d443"),  # § 163 (2021 amendment version)
+     "e2a1d2cbec86b96adb8a04c0d30735f0c46fe6fc82cfbb990b8d62fd1bb52127"),  # § 163 (2021 amendment version)
     ("2011/948", "section:30a", _AS_OF, _QT,
-     "11bb9ad6db2d85872e15bbbd3a2dd6bbf9bb798c1a618a03c01a9ba86c1e8f45"),  # kilpailulaki 30a §; re-pinned after 2021/546 chapter-start migration evidence was corrected from five bogus moves to one owned move; text/content hash and selected version stayed stable.
+     "30b540140108da7c8dc57482fb9411f2fbe436e44ed4a6bd965251379e8c562e"),  # kilpailulaki 30a §; re-pinned after 2021/546 chapter-start migration evidence was corrected from five bogus moves to one owned move; text/content hash and selected version stayed stable.
     ("2011/948", "section:30b", _AS_OF, _QT,
-     "d6e62f59a4dca2a20ea07acaf2fdd4a456f75db7ae0b098cca6affdcfdc7523c"),  # kilpailulaki 30b §; same 2011/948 lineage-count re-pin, no text-state drift.
+     "18f22106a672aeecd242bb2d2f227f94cf482ca29a3f7d56e0628f3f1111d900"),  # kilpailulaki 30b §; same 2011/948 lineage-count re-pin, no text-state drift.
     ("2011/948", "section:30c", _AS_OF, _QT,
-     "b33f8201311c1e4a9702d1c830e48e6f326a268b6e402f62be86b31f6306d85a"),  # kilpailulaki 30c §; same 2011/948 lineage-count re-pin, no text-state drift.
+     "e54944fd6d6c298664c87a977ed16421a48f0441f45ca99caae71db2df57569b"),  # kilpailulaki 30c §; same 2011/948 lineage-count re-pin, no text-state drift.
     # --- RE-CONVERGED original-enactment-base pins (see history note below) ---
     # These were a single instability class: every pin whose governing version is
     # the ORIGINAL-ENACTMENT BASE. The build briefly seeded base-provision
@@ -86,27 +86,27 @@ _PINS: list[tuple[str, str, str, str, str]] = [
     #   - laki 482/2024 §4: enacted 2024-07-16
     #   - hallintoprosessilaki 808/2019 §7: enacted 2019-07-05
     ("2016/1397", "section:75", _AS_OF, _QT,
-     "c6f65ea384dd7574aa849fae84a17d37b75b45792f9c5b5fa155b53958eeb7a4"),  # base, enacted 2016-12-29
+     "2fb2545240a170a101a93d9bad62ddae6a63554efcfd6841047071a8b69ef0dd"),  # base, enacted 2016-12-29
     ("2016/1397", "section:124", _AS_OF, _QT,
-     "90eb3b25ac8a9d8c6681e3dae7844f051581ee5c3cd16e26fba571ed720e5dcc"),  # base, enacted 2016-12-29
+     "aff9cbef8805548c72d661afa94caf3588ea40723936e48830c6f79b333452c9"),  # base, enacted 2016-12-29
     ("2016/1397", "section:132", _AS_OF, _QT,
-     "08a40ac776240a587cb6cc13fa623288b4987909c10aa205d4a306e680fe9e62"),  # base, enacted 2016-12-29
+     "081408162630503e3c3801d1b71a414272639e848a9d39fe892617640721f3ca"),  # base, enacted 2016-12-29
     ("2016/1397", "section:133", _AS_OF, _QT,
-     "2b94b2bcfdcf6b8a0725494d2da8a7f812feb51ac87e784b90aa49c2f952c2cc"),  # base, enacted 2016-12-29
+     "d6b1a51856203763501a6a6384c9a0ad769d36df87e40ec8c7353dabc64754be"),  # base, enacted 2016-12-29
     ("2016/1397", "section:134", _AS_OF, _QT,
-     "e4fb1b4d968ebc2d629487eaba015c14487085b13542c1fb904ea32865b2cb6b"),  # base, enacted 2016-12-29
+     "f7f179fd9bcecd864adc162cb81b13762f5dc38acbd2ff57a41b2d10e46e00f8"),  # base, enacted 2016-12-29
     ("2016/1397", "section:139", _AS_OF, _QT,
-     "8813f0ea0d64c8c20f3d76f99c6bf5d0edfadde1282e30f81446e95bb5e19c1b"),  # base, enacted 2016-12-29
+     "ce097e6e1e30d0d0ecd5c5a0231926e43c2f448938cf7c7a0ee5d364e9188cee"),  # base, enacted 2016-12-29
     ("2016/1397", "section:146", _AS_OF, _QT,
-     "004ff4a8b450af8b0a33f23a85f59253e7a366e96fe8d1d31a0f1d669b2b3ec2"),  # base, enacted 2016-12-29
+     "276be539bc5e011590904ee2c7f5197ae01b0af6f948a580bfa56b7e09e37f43"),  # base, enacted 2016-12-29
     ("2016/1397", "section:154", _AS_OF, _QT,
-     "4d9e2e72d0d318f6ad47991f94f871a0b67d117ded94dd16dcd510b67616df72"),  # base, enacted 2016-12-29
+     "35175973efa427ad627b220893f2737d3b8ddb5c74214c84c6ad626bc7ec5d9d"),  # base, enacted 2016-12-29
     ("2023/703", "section:17", _AS_OF, _QT,
-     "37fbd0c9796bca479b4af9e0d2123a7c0750cce23dc3a6eac3a3ac51a4f49e03"),  # base, enacted 2023-04-14; re-pinned after provision-state resolution returned canonical container-scoped address part:1/chapter:4/section:17 for the section-only query.
+     "cd032a684aeaa2525aed2e1bd829541243981f3cbb67252cd89f7473315b9c1a"),  # base, enacted 2023-04-14; re-pinned after provision-state resolution returned canonical container-scoped address part:1/chapter:4/section:17 for the section-only query.
     ("2024/482", "section:4", _AS_OF, _QT,
-     "90c93604d37d7c989e53f0b6a7d74339fa503bbffe4d7e2f76eb110acab2d8f7"),  # base, enacted 2024-07-16
+     "d78b126296f4b85a919684df9c89a03a35d0306613fc395fbd4644db7bab9725"),  # base, enacted 2024-07-16
     ("2019/808", "section:7", _AS_OF, _QT,
-     "090f887d35e156ab3537c20ab81d52643994f64be0e3ab108208e1f1e2503aef"),  # base, enacted 2019-07-05; re-pinned after provision-state resolution returned canonical container-scoped address chapter:2/section:7 for the section-only query.
+     "c6d31fb964f89bf6f33b23f154b237fcfad9d3291a8c901ec2aa4f5e3fde8536"),  # base, enacted 2019-07-05; re-pinned after provision-state resolution returned canonical container-scoped address chapter:2/section:7 for the section-only query.
 ]
 
 # KNOWN DIVERGENCES (xfail). Empty: the original-enactment-base date class has

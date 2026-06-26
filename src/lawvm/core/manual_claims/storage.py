@@ -189,7 +189,7 @@ def _dict_to_claim(d: Dict) -> ManualCompilationClaim:
 def _dict_to_state(d: Dict) -> ClaimState:
     return ClaimState(
         claim_id=d["claim_id"],
-        status=ClaimStatus(d["status"]),
+        claim_state_status=ClaimStatus(d["claim_state_status"]),
         review_status=ReviewStatus(d["review_status"]),
         validator_status=ValidatorStatus(d["validator_status"]),
         confidence=ClaimConfidence(d["confidence"]),

@@ -107,7 +107,7 @@ OVERLAY_ROW_COLUMNS: tuple[str, ...] = (
     "label",
     "payload_json",
     "links_json",
-    "status",
+    "overlay_status",
     *_SHARED_SPAN_COLUMNS,
 )
 
@@ -340,9 +340,9 @@ def _overlay_status(
             res_status = resolution.payload.get("resolution_status")
             if isinstance(res_status, str) and res_status:
                 return res_status
-        return str(node.status) if node.status else None
+        return str(node.node_status) if node.node_status else None
     # term_use
-    return str(node.status) if node.status else None
+    return str(node.node_status) if node.node_status else None
 
 
 # ── Stable identity ───────────────────────────────────────────────────────────
@@ -465,7 +465,7 @@ def graph_to_overlay_rows(
                 outgoing_edges_by_node,
                 overlay_id_by_node,
             ),
-            "status": _overlay_status(node, kind, resolution),
+            "overlay_status": _overlay_status(node, kind, resolution),
             **span_cols,
         }
         rows.append(row)

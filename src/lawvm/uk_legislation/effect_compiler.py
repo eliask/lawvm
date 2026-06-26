@@ -9,12 +9,17 @@ from typing import Any, Optional
 
 from lawvm.core.ir import LegalOperation
 from lawvm.core.semantic_types import StructuralAction
-from lawvm.uk_legislation.addressing import _uk_canonicalize_eid_letter_case
+from lawvm.uk_legislation.addressing import (
+    _action_name,
+    _addr_leaf_label,
+    _uk_canonicalize_eid_letter_case,
+)
 from lawvm.uk_legislation.effects import UKEffectRecord, _COMMENCEMENT_EFFECT_TYPES
 from lawvm.uk_legislation.effect_lowering_tail import (
     append_no_targets_rejection,
     append_source_parent_at_end_added_observation,
     append_unlowered_overlap_substitution_rejection,
+    augment_extracted_text_with_instruction_context,
     build_crossheading_insert_ops,
     build_trailing_repeal_ops,
     source_shape_blocks_before_text_patch_lowering,
@@ -82,14 +87,13 @@ from lawvm.uk_legislation.substitution_metadata import (
     UKSourceLabelChangingSubstitution,
     _source_replaced_sibling_count_from_substitution_text,
 )
-from lawvm.uk_legislation.target_parser import _split_metadata_provisions
+from lawvm.uk_legislation.target_parser import _parse_affected_target, _split_metadata_provisions
 from lawvm.uk_legislation.witness_builders import (
     _uk_effect_witness,
     _uk_extraction_witness,
 )
 from lawvm.uk_legislation.xml_helpers import _text_content
 from lawvm.uk_legislation.effect_target_prelude import canonicalize_uk_address
-from lawvm.uk_legislation.target_parser import _parse_affected_target
 from lawvm.uk_legislation.table_sources import (
     _uk_table_driven_fee_target_refinements,
     address_to_citation,
@@ -97,6 +101,10 @@ from lawvm.uk_legislation.table_sources import (
 
 
 _UK_EFFECT_FEE_TARGET_REFINEMENT_FAILED_RULE_ID = "uk_effect_fee_target_refinement_failed"
+
+UK_EFFECT_SAVINGS_REFERENCES_QUALIFIED_REPEAL_BLOCKED_RULE_ID = (
+    "uk_effect_savings_references_qualified_repeal_blocked"
+)
 
 
 @dataclass(frozen=True)
@@ -108,6 +116,94 @@ class _EffectTargetPrelude:
     replacement_leaf_override: Optional[str]
     replacement_leaf_kind: Optional[str]
     label_changing_substitutions: tuple[UKSourceLabelChangingSubstitution, ...]
+
+
+def _trailing_repeal_collides_with_replacement(
+    trailing_repeal_refs: list[str],
+    replacement_leaf_override: Optional[str],
+    label_changing_substitutions: tuple[UKSourceLabelChangingSubstitution, ...],
+) -> bool:
+    """Return True when a trailing repeal target label equals a new payload label.
+
+    When a label-changing substitution replaces old subsection 11 with a new
+    subsection 12, and the trailing repeal also targets subsection 12, the repeal
+    must run before the replace so the old subsection 12 is removed before the
+    new subsection 12 is created.  Otherwise replay resolves the repeal to the
+    newly inserted node and leaves the duplicate old node in place.
+    """
+    from lawvm.uk_legislation.uk_grafter import _clean_num
+
+    replacement_labels: set[str] = set()
+    if replacement_leaf_override:
+        replacement_labels.add(_clean_num(replacement_leaf_override))
+    for substitution in label_changing_substitutions:
+        replacement_labels.add(
+            _clean_num(_addr_leaf_label(substitution.replacement_target) or "")
+        )
+    if not replacement_labels:
+        return False
+    for ref in trailing_repeal_refs:
+        try:
+            target = _parse_affected_target(ref)
+        except ValueError:
+            continue
+        repeal_label = _clean_num(_addr_leaf_label(target) or "")
+        if repeal_label and repeal_label in replacement_labels:
+            return True
+    return False
+
+
+def _savings_qualified_structural_mutation_blocks_lowering(
+    effect: UKEffectRecord,
+    action: str,
+    *,
+    extracted_el: Optional[ET._Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> bool:
+    """Block lowering when a whole-target repeal is saved by an explicit schedule.
+
+    A UK effect feed entry that names ``ukm:Savings`` provisions is legally
+    qualified.  When the savings reference points at a schedule of the
+    affecting instrument (e.g. ``schedule-32``), the repeal is being held in
+    abeyance for everything covered by that savings schedule.  Until LawVM
+    resolves the exact savings scope, the safe default is to withhold the
+    deletion rather than remove the target.
+
+    Partial omissions and substitutions with savings references are not blocked
+    here; they are individually owned by text-patch lowering paths.  Savings
+    references that point at sections, regulations, or other non-schedule
+    provisions are treated as ordinary savings clauses and the repeal is left
+    to proceed.
+    """
+    if action != "repeal":
+        return False
+    if not any(
+        str(ref.get("ref") or "").startswith("schedule-")
+        for ref in effect.savings_references
+    ):
+        return False
+    _append_uk_effect_lowering_rejection(
+        lowering_rejections_out,
+        rule_id=UK_EFFECT_SAVINGS_REFERENCES_QUALIFIED_REPEAL_BLOCKED_RULE_ID,
+        family="applicability",
+        reason_code="savings_references_qualify_structural_mutation",
+        reason=(
+            "UK effect carries a savings reference to an explicit schedule of the "
+            "affecting instrument; the whole-target repeal is legally qualified and "
+            "is blocked from replay until the savings scope is resolved."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            "savings_references": effect.savings_references,
+            "lowering_action": action,
+            "strict_disposition": "block",
+            "quirks_disposition": "skip",
+        },
+    )
+    return True
 
 
 def _prepare_effect_target_prelude(
@@ -248,7 +344,21 @@ def _withhold_repeal_table_replacement_ops(
         effect=effect,
         extracted_el=extracted_el,
         extracted_text=extracted_text,
-        detail={"effect_type_normalized": effect_type, "withheld_op_count": len(withheld)},
+        detail={
+            "effect_type_normalized": effect_type,
+            "withheld_op_count": len(withheld),
+            # §1.8 receipt totality: name the withheld ops, not just count them.
+            # The filter's return list omits them; consumers must be able to inspect
+            # the rejected lane (op_id, action, target) without re-running lowering.
+            "withheld_ops": tuple(
+                {
+                    "op_id": str(op.op_id or ""),
+                    "action": _action_name(op.action),
+                    "target": str(op.target or ""),
+                }
+                for op in structural_replaces
+            ),
+        },
     )
     return [op for op in ops if id(op) not in withheld]
 
@@ -421,6 +531,16 @@ def _compile_effect_to_ir_ops_impl(
             lowering_rejections_out=lowering_rejections_out,
         )
         _mark_lower_phase("compile_lower_prepare")
+        return []
+
+    if _savings_qualified_structural_mutation_blocks_lowering(
+        effect,
+        action,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        lowering_rejections_out=lowering_rejections_out,
+    ):
+        _mark_lower_phase("compile_lower_savings_guard")
         return []
 
     use_metadata_fallback = (
@@ -772,11 +892,27 @@ def _compile_effect_to_ir_ops_impl(
     replacement_leaf_kind = target_prelude.replacement_leaf_kind
     label_changing_substitutions = target_prelude.label_changing_substitutions
 
+    # Some UK source extractions resolve to a bare payload fragment (e.g. one
+    # enumerated item of a multi-item repeal/insert list) while the parent
+    # amendment container supplies the missing instruction verb.  When we can
+    # safely reconstruct a complete instruction, augment extracted_text before
+    # shape classification and fragment parsing so the operation is not gated
+    # purely because the verb lives in the ancestor.
+    if action in {"replace", "text_replace"}:
+        augmented_extracted_text = augment_extracted_text_with_instruction_context(
+            extracted_text=extracted_text,
+            extracted_el=extracted_el,
+            source_root=source_root,
+        )
+        lowering_extracted_text = augmented_extracted_text or extracted_text
+    else:
+        lowering_extracted_text = extracted_text
+
     if (
         action in {"replace", "text_replace"}
         and is_word_level
         and source_shape_blocks_before_text_patch_lowering(
-            extracted_text,
+            lowering_extracted_text,
             original_targets_str,
         )
     ):
@@ -812,7 +948,7 @@ def _compile_effect_to_ir_ops_impl(
         ops.extend(crossheading_insert_ops)
     source_replaced_sibling_count = (
         _source_replaced_sibling_count_from_substitution_text(
-            extracted_text=extracted_text,
+            extracted_text=lowering_extracted_text,
             target_refs=targets_str,
         )
         if action == "replace"
@@ -844,6 +980,7 @@ def _compile_effect_to_ir_ops_impl(
                 extraction_witness=extraction_witness,
                 extracted_el=extracted_el,
                 extracted_text=extracted_text,
+                lowering_extracted_text=lowering_extracted_text,
                 source_root=source_root,
                 chained_insert_anchor=chained_insert_anchor,
                 lowering_rejections_out=lowering_rejections_out,
@@ -875,16 +1012,22 @@ def _compile_effect_to_ir_ops_impl(
             source_root=source_root,
         )
     if action == "replace" and trailing_repeal_refs:
-        ops.extend(
-            build_trailing_repeal_ops(
-                effect=effect,
-                sequence=sequence,
-                trailing_repeal_refs=trailing_repeal_refs,
-                effect_witness=effect_witness,
-                extraction_witness=extraction_witness,
-                original_targets_str=original_targets_str,
-                source_parent_substitution_range_payload=source_parent_substitution_range_payload,
-            )
+        trailing_repeal_ops = build_trailing_repeal_ops(
+            effect=effect,
+            sequence=sequence,
+            trailing_repeal_refs=trailing_repeal_refs,
+            effect_witness=effect_witness,
+            extraction_witness=extraction_witness,
+            original_targets_str=original_targets_str,
+            source_parent_substitution_range_payload=source_parent_substitution_range_payload,
         )
+        if _trailing_repeal_collides_with_replacement(
+            trailing_repeal_refs,
+            replacement_leaf_override,
+            label_changing_substitutions,
+        ):
+            ops = trailing_repeal_ops + ops
+        else:
+            ops.extend(trailing_repeal_ops)
     _mark_lower_phase("compile_lower_tail")
     return ops

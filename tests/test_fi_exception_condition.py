@@ -44,7 +44,7 @@ def test_exception_ei_kuitenkaan() -> None:
     cues = recognize_exception_condition_cues(text)
     c = _by_marker(cues, "ei kuitenkaan")
     assert c.cue_kind == "EXCEPTION"
-    assert c.status == "surface_fact_only"
+    assert c.exception_status == "surface_fact_only"
 
 
 def test_exception_poiketen_siita_mita_multiword() -> None:
@@ -229,7 +229,7 @@ def test_no_legal_conclusion_vocabulary_ever() -> None:
         "syrjäyttää",
     }
     for cue in cues:
-        assert cue.status == "surface_fact_only"
+        assert cue.exception_status == "surface_fact_only"
         assert cue.cue_kind in ("EXCEPTION", "CONDITION")
         for f in fields(cue):
             val = getattr(cue, f.name)

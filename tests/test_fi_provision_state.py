@@ -157,7 +157,7 @@ def test_provision_state_response_exposes_text_hash_and_temporal_pin() -> None:
     assert payload["source_locator"]["detail"]["source_witness"]["char_span_basis"] == (
         "OperationSource.raw_text after boundary whitespace trimming"
     )
-    assert payload["lineage"]["status"] == "self_only"
+    assert payload["lineage"]["lineage_status"] == "self_only"
     assert payload["lineage"]["address_chain"] == [payload["resolved_address"]]
     assert payload["engine"]["producer"] == "lawvm"
     assert payload["engine"]["interface"] == "lawvm provision-state"
@@ -696,7 +696,7 @@ def test_address_resolution_reports_ambiguous_suffix_without_order_dependent_cho
 
     resolution = resolve_address(timelines, "section:1")
 
-    assert resolution.status == "ambiguous_address"
+    assert resolution.resolution_status == "ambiguous_address"
     assert resolution.address is None
     assert tuple(str(candidate) for candidate in resolution.candidates) == (
         "chapter:1/section:1",
@@ -738,7 +738,7 @@ def test_query_address_resolution_prefers_unique_live_suffix_over_exact_tombston
         territory=None,
     )
 
-    assert resolution.status == "resolved"
+    assert resolution.resolution_status == "resolved"
     assert resolution.address == qualified
     assert resolution.mode == "unique_live_suffix_over_exact_tombstone"
 
@@ -793,7 +793,7 @@ def test_provision_state_response_exposes_lineage_chain_from_migration_events() 
         as_of="2021-01-01",
     )
 
-    assert payload["lineage"]["status"] == "migration_chain"
+    assert payload["lineage"]["lineage_status"] == "migration_chain"
     assert [entry["text"] for entry in payload["lineage"]["address_chain"]] == [
         "chapter:1/section:1",
         "chapter:1/section:2",
@@ -805,12 +805,12 @@ def test_provision_state_response_exposes_lineage_chain_from_migration_events() 
 
     address = LegalAddress(path=(("chapter", "1"), ("section", "1")))
     legacy_lineage = {
-        "status": payload["lineage"]["status"],
+        "lineage_status": payload["lineage"]["lineage_status"],
         "address_chain": payload["lineage"]["address_chain"],
         "migration_event_count_considered": payload["lineage"]["migration_event_count_considered"],
     }
     with_fingerprint = _hash_payload(
-        status="selected",
+        payload_status="selected",
         statute_id="2000/1",
         jurisdiction="fi",
         query=payload["query"],
@@ -820,7 +820,7 @@ def test_provision_state_response_exposes_lineage_chain_from_migration_events() 
         content_hash="",
     )
     without_fingerprint = _hash_payload(
-        status="selected",
+        payload_status="selected",
         statute_id="2000/1",
         jurisdiction="fi",
         query=payload["query"],
@@ -1385,7 +1385,7 @@ def test_resolve_address_nearby_suggestions_do_not_resolve_or_rewrite_query() ->
 
     resolution = resolve_address(timelines, "section:127a")
 
-    assert resolution.status == "address_not_found"
+    assert resolution.resolution_status == "address_not_found"
     assert resolution.address is None
     assert resolution.timeline is None
     assert resolution.candidates == ()

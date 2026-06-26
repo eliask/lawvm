@@ -106,7 +106,7 @@ def main(args: argparse.Namespace) -> None:
                 {
                     "statute_id": r["statute_id"],
                     "score": _float_or_zero(r.get(score_column)),
-                    "status": r.get("status", ""),
+                    "bench_status": r.get("status", ""),
                     "count": _int_or_zero(r.get(count_column)) if count_column else 0,
                     "elapsed_s": (
                         _float_or_zero(r.get(elapsed_column))

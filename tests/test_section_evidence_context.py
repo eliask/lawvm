@@ -155,7 +155,7 @@ class TestStrictVerdictAttachment:
         ssv = SectionStrictVerdict(
             section_label="1",
             amendment_id="2020/100",
-            status="strict_clean",
+            verdict_status="strict_clean",
         )
         contexts = build_section_contexts(
             section_results=[
@@ -173,7 +173,7 @@ class TestStrictVerdictAttachment:
         ssv = SectionStrictVerdict(
             section_label="1",
             amendment_id="2020/100",
-            status="source_incomplete",
+            verdict_status="source_incomplete",
         )
         contexts = build_section_contexts(
             section_results=[
@@ -189,7 +189,7 @@ class TestStrictVerdictAttachment:
         ssv = SectionStrictVerdict(
             section_label="1",
             amendment_id="2020/100",
-            status="strict_blocked_by_recovery",
+            verdict_status="strict_blocked_by_recovery",
         )
         contexts = build_section_contexts(
             section_results=[
@@ -205,7 +205,7 @@ class TestStrictVerdictAttachment:
         ssv = SectionStrictVerdict(
             section_label="1",
             amendment_id="2020/100",
-            status="internal_failure",
+            verdict_status="internal_failure",
         )
         contexts = build_section_contexts(
             section_results=[
@@ -239,7 +239,7 @@ class TestStrictVerdictAttachment:
                 "99": SectionStrictVerdict(
                     section_label="99",
                     amendment_id="2020/100",
-                    status="strict_clean",
+                    verdict_status="strict_clean",
                 )
             },
         )
@@ -251,7 +251,7 @@ class TestStrictVerdictAttachment:
             strict_verdict=SectionStrictVerdict(
                 section_label="1",
                 amendment_id="2020/100",
-                status="strict_blocked_by_recovery",
+                verdict_status="strict_blocked_by_recovery",
                 barrier_codes=(
                     "PARSE.EXTRACTION_FALLBACK",
                     "TIME.MISSING_EFFECTIVE_DATE",

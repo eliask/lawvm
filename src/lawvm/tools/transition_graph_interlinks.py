@@ -299,7 +299,7 @@ def default_interlink_target_row(target_ref: LawvmInterlinkTargetRef) -> LawvmIn
         locator_label=target_ref.locator or "",
         hierarchy_json="[]",
         preview_text="",
-        detail_json=json.dumps({"status": "unsupported"}, ensure_ascii=False, sort_keys=True),
+        detail_json=json.dumps({"preview_status": "unsupported"}, ensure_ascii=False, sort_keys=True),
     )
 
 
@@ -986,7 +986,7 @@ class OccurrencePlacement:
     segment_index: int
     char_start: int
     char_end: int
-    status: str
+    placement_status: str
     rule_id: str
     diagnostic: dict[str, object]
 
@@ -1056,7 +1056,7 @@ def place_occurrence_spans(
                     segment_index=segment.segment_index,
                     char_start=start,
                     char_end=start + len(surface_text),
-                    status="placed_exact_unique",
+                    placement_status="placed_exact_unique",
                     rule_id="lawvm.viewer_place.exact_unique.v1",
                     diagnostic={
                         "match_count": 1,
@@ -1083,7 +1083,7 @@ def place_occurrence_spans(
                         segment_index=segment.segment_index,
                         char_start=start,
                         char_end=start + len(surface_text),
-                        status="placed_ordinal_experimental",
+                        placement_status="placed_ordinal_experimental",
                         rule_id="lawvm.viewer_place.ordinal_experimental.v1",
                         diagnostic={
                             "match_count": len(exact_hits),
@@ -1102,7 +1102,7 @@ def place_occurrence_spans(
                         segment_index=exact_hits[0][0].segment_index,
                         char_start=-1,
                         char_end=-1,
-                        status="unplaced_ambiguous",
+                        placement_status="unplaced_ambiguous",
                         rule_id="lawvm.viewer_place.ambiguous.v1",
                         diagnostic={
                             "match_count": len(exact_hits),
@@ -1142,7 +1142,7 @@ def place_occurrence_spans(
                     segment_index=segment.segment_index,
                     char_start=offset_map[nstart] if offset_map is not None else nstart,
                     char_end=offset_map[nend] if offset_map is not None else nend,
-                    status="placed_normalized_unique",
+                    placement_status="placed_normalized_unique",
                     rule_id="lawvm.viewer_place.normalized_unique.v1",
                     diagnostic={
                         "match_count": 1,
@@ -1169,7 +1169,7 @@ def place_occurrence_spans(
                         segment_index=segment.segment_index,
                         char_start=offset_map[nstart] if offset_map is not None else nstart,
                         char_end=offset_map[nend] if offset_map is not None else nend,
-                        status="placed_ordinal_experimental",
+                        placement_status="placed_ordinal_experimental",
                         rule_id="lawvm.viewer_place.ordinal_experimental.v1",
                         diagnostic={
                             "match_count": len(norm_hits),
@@ -1188,7 +1188,7 @@ def place_occurrence_spans(
                         segment_index=norm_hits[0][0].segment_index,
                         char_start=-1,
                         char_end=-1,
-                        status="unplaced_ambiguous",
+                        placement_status="unplaced_ambiguous",
                         rule_id="lawvm.viewer_place.ambiguous.v1",
                         diagnostic={
                             "match_count": len(norm_hits),
@@ -1225,7 +1225,7 @@ def place_surface_text_spans(
         for segment in segments:
             by_addr_seg[(date, segment.address, segment.segment_index)] = segment
     for placement in placements:
-        if not placement.status.startswith("placed_"):
+        if not placement.placement_status.startswith("placed_"):
             continue
         segment = by_addr_seg.get(
             (placement.date, placement.address, placement.segment_index)
@@ -1433,10 +1433,10 @@ def place_lawvm_interlinks(
         # range/coordination defect).
         placed_outputs: list[LawvmInterlinkRow] = []
         for index, placement in enumerate(candidates):
-            if not placement.status.startswith("placed_"):
+            if not placement.placement_status.startswith("placed_"):
                 continue
             extra = dict(base_extra)
-            extra["placement_status"] = placement.status
+            extra["placement_status"] = placement.placement_status
             extra["placement_rule_id"] = placement.rule_id
             extra["placement_diagnostic_json"] = json.dumps(
                 placement.diagnostic, ensure_ascii=False, sort_keys=True
@@ -1463,7 +1463,11 @@ def place_lawvm_interlinks(
         # rows (unplaced) so analytics retain every target, annotated with the
         # grouping metadata + the (ambiguous/absent) status diagnostic.
         unplaced_status = next(
-            (p.status for p in candidates if not p.status.startswith("placed_")),
+            (
+                p.placement_status
+                for p in candidates
+                if not p.placement_status.startswith("placed_")
+            ),
             "unplaced_absent",
         )
         for member in members:

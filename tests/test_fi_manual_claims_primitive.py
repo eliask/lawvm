@@ -170,7 +170,7 @@ def test_review_status_mutation_preserves_claim_id():
     # Simulate the lifecycle: proposed → human_reviewed
     state_proposed = ClaimState(
         claim_id=claim.claim_id,
-        status=ClaimStatus.PROPOSED,
+        claim_state_status=ClaimStatus.PROPOSED,
         review_status=ReviewStatus.PROPOSED,
         validator_status=ValidatorStatus.UNVALIDATED,
         confidence=ClaimConfidence.MEDIUM,
@@ -179,7 +179,7 @@ def test_review_status_mutation_preserves_claim_id():
 
     state_reviewed = ClaimState(
         claim_id=claim.claim_id,
-        status=ClaimStatus.ACCEPTED,
+        claim_state_status=ClaimStatus.ACCEPTED,
         review_status=ReviewStatus.HUMAN_REVIEWED,
         validator_status=ValidatorStatus.UNVALIDATED,
         confidence=ClaimConfidence.MEDIUM,
@@ -276,7 +276,7 @@ def test_event_log_is_append_only(tmp_path: Path):
     # Project state from event log
     state = project_state(claim.claim_id, events)
     assert state is not None
-    assert state.status == ClaimStatus.ACCEPTED
+    assert state.claim_state_status == ClaimStatus.ACCEPTED
     assert state.review_status == ReviewStatus.HUMAN_REVIEWED
 
     # Append a third event — existing lines must be unchanged
@@ -316,7 +316,7 @@ def test_self_authorization_impossible():
     state = project_state(claim.claim_id, [propose_event])
 
     assert state is not None
-    assert state.status == ClaimStatus.PROPOSED
+    assert state.claim_state_status == ClaimStatus.PROPOSED
     assert state.review_status == ReviewStatus.PROPOSED
 
     # The claim_id itself does not encode review status
@@ -357,11 +357,11 @@ def test_state_is_frozen():
     """ClaimState is frozen."""
     state = ClaimState(
         claim_id="abc",
-        status=ClaimStatus.PROPOSED,
+        claim_state_status=ClaimStatus.PROPOSED,
         review_status=ReviewStatus.PROPOSED,
         validator_status=ValidatorStatus.UNVALIDATED,
         confidence=ClaimConfidence.MEDIUM,
         last_updated=datetime(2026, 6, 4, tzinfo=timezone.utc),
     )
     with pytest.raises((AttributeError, TypeError)):
-        cast(Any, state).status = ClaimStatus.ACCEPTED
+        cast(Any, state).claim_state_status = ClaimStatus.ACCEPTED

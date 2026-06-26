@@ -496,9 +496,11 @@ def lower_uk_text_fragment_rewrite(
     extracted_el: Optional[ET._Element],
     source_root: Optional[ET._Element],
     extracted_text: Optional[str],
+    lowering_extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> UKTextFragmentLowering:
     """Lower source-carried word fragments into typed text patch fields."""
+    fragment_parse_text = lowering_extracted_text or extracted_text
     if not extracted_text:
         return UKTextFragmentLowering(
             target=target,
@@ -684,6 +686,7 @@ def lower_uk_text_fragment_rewrite(
         extracted_el=extracted_el,
         source_root=source_root,
         extracted_text=extracted_text,
+        lowering_extracted_text=fragment_parse_text,
         lowering_rejections_out=lowering_rejections_out,
         allow_heading_source_parent_full_replacement=not is_word_level,
         allow_source_parent_at_end_text_insert=(
@@ -960,11 +963,13 @@ def _extract_text_fragment_substitutions(
     extracted_el: Optional[ET._Element],
     source_root: Optional[ET._Element],
     extracted_text: str,
+    lowering_extracted_text: Optional[str] = None,
     lowering_rejections_out: Optional[list[dict[str, Any]]] = None,
     allow_heading_source_parent_full_replacement: bool = True,
     allow_source_parent_at_end_text_insert: bool = False,
     allow_source_parent_word_range_substitution: bool = False,
 ) -> list[dict[str, Any]]:
+    fragment_parse_text = lowering_extracted_text or extracted_text
     heading_after_anchor_insert = (
         _heading_facet_after_anchor_insert_fragment(extracted_text) if heading_facet_target else None
     )
@@ -1558,6 +1563,26 @@ def _extract_text_fragment_substitutions(
         )
         if amendment_inserted_text_substitution is not None:
             subs = [amendment_inserted_text_substitution]
+    if not subs and fragment_parse_text != extracted_text:
+        subs = parse_fragment_substitution(fragment_parse_text)
+        if subs and lowering_rejections_out is not None:
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id="uk_effect_source_payload_instruction_context_augmented",
+                family="source_extraction_context",
+                reason_code="payload_fragment_augmented_with_parent_instruction",
+                reason=(
+                    "UK extracted source was a bare payload fragment with no amendment "
+                    "verb; lowering prepended the parent amendment-container instruction "
+                    "so the source text could be parsed into a typed text patch."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "augmented_text_preview": fragment_parse_text[:300],
+                },
+            )
     if subs:
         filtered_subs = []
         for sub in subs:

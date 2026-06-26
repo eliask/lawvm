@@ -83,6 +83,9 @@ from lawvm.uk_legislation.source_context import (
     UKAffectingSourceContext,
     evict_source_root_caches,
 )
+from lawvm.uk_legislation.prospective_commencement_witnesses import (
+    UKProspectiveCommencementStatus,
+)
 from lawvm.uk_legislation.prospective_effect_warrant import (
     prospective_effect_applied_observation,
 )
@@ -654,7 +657,7 @@ class UKReplayPipeline:
                         append_prospective_pit_commencement_observation(
                             effect_diagnostics_out,
                             effect=e,
-                            status="resolved_in_force",
+                            commencement_status=UKProspectiveCommencementStatus.RESOLVED_IN_FORCE,
                             start_dates=start_dates,
                             pit_date=pit_date,
                         )
@@ -664,7 +667,7 @@ class UKReplayPipeline:
                         append_prospective_pit_commencement_observation(
                             effect_diagnostics_out,
                             effect=e,
-                            status="resolved_future",
+                            commencement_status=UKProspectiveCommencementStatus.RESOLVED_FUTURE,
                             start_dates=start_dates,
                             pit_date=pit_date,
                         )
@@ -672,7 +675,7 @@ class UKReplayPipeline:
                     append_prospective_pit_commencement_observation(
                         effect_diagnostics_out,
                         effect=e,
-                        status="unresolved",
+                        commencement_status=UKProspectiveCommencementStatus.UNRESOLVED,
                         start_dates=start_dates,
                         pit_date=pit_date,
                     )
@@ -972,6 +975,7 @@ class UKReplayPipeline:
                     e,
                     compiled,
                     applicability_mode=applicability_mode,
+                    lowering_observations_out=lowering_rejections_out,
                 )
                 if not should_replay_compiled:
                     append_replay_applicability_filter_diagnostic(

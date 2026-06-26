@@ -21,6 +21,7 @@ from lawvm.finland.lowering_scope_recovery import (
 from lawvm.finland.ops import (
     AmendmentOp,
     FailedOp,
+    OpType,
     ScopeConfidence,
     ScopeResolutionConfidence,
     ScopeResolutionSource,
@@ -31,6 +32,7 @@ from lawvm.finland.ops import (
 )
 from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.statute import ReplayState
+from lawvm.finland.target_selector_facades import replace_target
 
 
 _REJECTED_OPERATION_MESSAGE = "operation rejected before apply"
@@ -117,7 +119,7 @@ def _group_has_explicit_chapter_scope(group_ops: list[AmendmentOp]) -> bool:
         witness = projection_scope_confidence(
             scope_confidence=op.scope_confidence,
             scope_provenance_tags=op.scope_provenance_tags,
-            resolved_chapter=op.target_chapter,
+            resolved_chapter=op.target_cols.target_chapter,
         )
         if witness is not None and witness.is_explicit and witness.resolved_chapter:
             return True
@@ -138,7 +140,7 @@ def _group_has_scope_that_overrides_body_wrapper(
         witness = projection_scope_confidence(
             scope_confidence=op.scope_confidence,
             scope_provenance_tags=op.scope_provenance_tags,
-            resolved_chapter=op.target_chapter,
+            resolved_chapter=op.target_cols.target_chapter,
         )
         if (
             witness is not None
@@ -166,13 +168,13 @@ def _group_has_live_scoped_target_path(
     matching_ops = [
         op
         for op in group_ops
-        if op.target_unit_kind == "section"
-        and _norm_num_token(op.target_section or "") == target_norm
+        if op.target_cols.target_unit_kind == "section"
+        and _norm_num_token(op.target_cols.target_section or "") == target_norm
     ]
     if not matching_ops:
         return False
     for op in matching_ops:
-        if op.target_chapter != target_chapter:
+        if op.target_cols.target_chapter != target_chapter:
             return False
         if op.lo is None:
             return False
@@ -184,12 +186,12 @@ def _group_has_live_scoped_target_path(
 
 def _group_has_whole_section_replace(group_ops: Sequence[AmendmentOp]) -> bool:
     return any(
-        op.op_type == "REPLACE"
-        and op.target_unit_kind == "section"
-        and bool(op.target_section)
-        and op.target_paragraph is None
-        and not op.target_item
-        and not op.target_special
+        op.op_type == OpType.REPLACE
+        and op.target_cols.target_unit_kind == "section"
+        and bool(op.target_cols.target_section)
+        and op.target_cols.target_paragraph is None
+        and not op.target_cols.target_item
+        and not op.target_cols.target_special
         for op in group_ops
     )
 
@@ -262,8 +264,11 @@ def _body_chapter_corrected_ops(
     return [
         dc_replace(
             op,
-            target_part=resolved_body_part if resolved_body_part is not None else op.target_part,
-            target_chapter=resolved_body_chapter,
+            **replace_target(
+                op,
+                target_part=resolved_body_part if resolved_body_part is not None else op.target_cols.target_part,
+                target_chapter=resolved_body_chapter,
+            ),
             body_chapter_move_from=body_chapter_move_from or op.body_chapter_move_from,
             scope_confidence=normalize_scope_confidence(
                 projection_scope_confidence(
@@ -276,7 +281,7 @@ def _body_chapter_corrected_ops(
             lo=(
                 _lo_with_path_update(
                     op.lo,
-                    part=resolved_body_part if resolved_body_part is not None else op.target_part,
+                    part=resolved_body_part if resolved_body_part is not None else op.target_cols.target_part,
                     chapter=resolved_body_chapter,
                 )
                 if op.lo is not None
@@ -284,9 +289,9 @@ def _body_chapter_corrected_ops(
             ),
         )
         if (
-            op.target_unit_kind == "section"
-            and _norm_num_token(op.target_section or "") == target_norm
-            and op.target_chapter == target_chapter
+            op.target_cols.target_unit_kind == "section"
+            and _norm_num_token(op.target_cols.target_section or "") == target_norm
+            and op.target_cols.target_chapter == target_chapter
         )
         else op
         for op in group_ops
@@ -303,20 +308,23 @@ def _replace_to_insert_ops(
     rewritten: list[AmendmentOp] = []
     for op in group_ops:
         if not (
-            op.target_unit_kind == "section"
-            and _norm_num_token(op.target_section or "") == target_norm
-            and op.target_chapter == target_chapter
-            and op.op_type == "REPLACE"
+            op.target_cols.target_unit_kind == "section"
+            and _norm_num_token(op.target_cols.target_section or "") == target_norm
+            and op.target_cols.target_chapter == target_chapter
+            and op.op_type == OpType.REPLACE
         ):
             rewritten.append(op)
             continue
         rewritten.append(
             dc_replace(
                 op,
-                op_type="INSERT",
-                target_chapter=replacement_chapter,
+                op_type=OpType.INSERT,
+                **replace_target(
+                    op,
+                    target_chapter=replacement_chapter,
+                    target_special=None,
+                ),
                 body_chapter_move_from=target_chapter,
-                target_special=None,
                 scope_confidence=normalize_scope_confidence(
                     projection_scope_confidence(
                         scope_confidence=op.scope_confidence,
@@ -349,10 +357,10 @@ def _replace_to_declared_move_ops(
     rewritten: list[AmendmentOp] = []
     for op in group_ops:
         if not (
-            op.target_unit_kind == "section"
-            and _norm_num_token(op.target_section or "") == target_norm
-            and op.target_chapter == target_chapter
-            and op.op_type == "REPLACE"
+            op.target_cols.target_unit_kind == "section"
+            and _norm_num_token(op.target_cols.target_section or "") == target_norm
+            and op.target_cols.target_chapter == target_chapter
+            and op.op_type == OpType.REPLACE
         ):
             rewritten.append(op)
             continue
@@ -370,10 +378,13 @@ def _replace_to_declared_move_ops(
         rewritten.append(
             dc_replace(
                 op,
-                target_chapter=replacement_chapter,
+                **replace_target(
+                    op,
+                    target_chapter=replacement_chapter,
+                    target_special=None,
+                ),
                 move_clause_target_unit_kind="chapter",
                 body_chapter_move_from=target_chapter,
-                target_special=None,
                 scope_confidence=normalize_scope_confidence(
                     projection_scope_confidence(
                         scope_confidence=op.scope_confidence,
@@ -401,17 +412,20 @@ def _retargeted_live_section_ops(
     rewritten: list[AmendmentOp] = []
     for op in group_ops:
         if not (
-            op.target_unit_kind == "section"
-            and _norm_num_token(op.target_section or "") == target_norm
-            and op.target_chapter == target_chapter
+            op.target_cols.target_unit_kind == "section"
+            and _norm_num_token(op.target_cols.target_section or "") == target_norm
+            and op.target_cols.target_chapter == target_chapter
         ):
             rewritten.append(op)
             continue
         rewritten.append(
             dc_replace(
                 op,
-                target_part=live_part,
-                target_chapter=live_chapter,
+                **replace_target(
+                    op,
+                    target_part=live_part,
+                    target_chapter=live_chapter,
+                ),
                 scope_confidence=(
                     ScopeConfidence(
                         tag="body_container_membership_rewrite",
@@ -576,14 +590,14 @@ def _item_as_subsection_rewritten_ops(
     rewritten: list[AmendmentOp] = []
     rewritten_op_ids: list[str] = []
     for op in result.group_ops:
-        item_label = _norm_num_token(op.target_item or "")
+        item_label = _norm_num_token(op.target_cols.target_item or "")
         if not (
-            op.target_unit_kind == "section"
-            and _norm_num_token(op.target_section or "") == request.target_norm
-            and op.target_item
-            and op.target_paragraph is not None
-            and op.target_subitem is None
-            and op.target_special is None
+            op.target_cols.target_unit_kind == "section"
+            and _norm_num_token(op.target_cols.target_section or "") == request.target_norm
+            and op.target_cols.target_item
+            and op.target_cols.target_paragraph is not None
+            and op.target_cols.target_subitem is None
+            and op.target_cols.target_special is None
             and _section_is_definition_entry_list(section)
             and _source_payload_has_subsection_label(
                 request.source_model,
@@ -595,14 +609,14 @@ def _item_as_subsection_rewritten_ops(
             and (
                 _section_has_subsection_label(section, item_label)
                 or (
-                    op.op_type == "INSERT"
+                    op.op_type == OpType.INSERT
                     and not _section_subsection_has_paragraph_children(
                         section,
-                        op.target_paragraph,
+                        op.target_cols.target_paragraph,
                     )
                 )
             )
-            and not _section_subsection_has_paragraph_children(section, op.target_paragraph)
+            and not _section_subsection_has_paragraph_children(section, op.target_cols.target_paragraph)
         ):
             rewritten.append(op)
             continue
@@ -614,9 +628,12 @@ def _item_as_subsection_rewritten_ops(
         rewritten.append(
             dc_replace(
                 op,
-                target_paragraph=None,
-                target_item=None,
-                target_subitem=None,
+                **replace_target(
+                    op,
+                    target_paragraph=None,
+                    target_item=None,
+                    target_subitem=None,
+                ),
                 lo=rewritten_lo,
             )
         )
@@ -671,14 +688,14 @@ def _body_chapter_is_stale_wrapper_for_unchaptered_letter_stem(
         or request.target_unit_kind != "section"
         or request.target_chapter is not None
         or not any(
-            op.op_type == "INSERT"
-            and op.target_unit_kind == "section"
-            and _norm_num_token(op.target_section or "") == request.target_norm
-            and op.target_chapter is None
-            and op.target_part == request.target_part
-            and not op.target_paragraph
-            and not op.target_item
-            and not op.target_special
+            op.op_type == OpType.INSERT
+            and op.target_cols.target_unit_kind == "section"
+            and _norm_num_token(op.target_cols.target_section or "") == request.target_norm
+            and op.target_cols.target_chapter is None
+            and op.target_cols.target_part == request.target_part
+            and not op.target_cols.target_paragraph
+            and not op.target_cols.target_item
+            and not op.target_cols.target_special
             for op in request.group_ops
         )
     ):
@@ -715,7 +732,7 @@ def _maybe_apply_body_chapter_insert_correction(
             witness := projection_scope_confidence(
                 scope_confidence=op.scope_confidence,
                 scope_provenance_tags=op.scope_provenance_tags,
-                resolved_chapter=op.target_chapter,
+                resolved_chapter=op.target_cols.target_chapter,
             )
         )
         is not None
@@ -814,12 +831,12 @@ def _maybe_apply_body_chapter_insert_correction(
         and not carry_forward_scoped
     )
     group_targets_whole_section = any(
-        op.target_unit_kind == "section"
-        and _norm_num_token(op.target_section or "") == request.target_norm
-        and op.target_chapter == request.target_chapter
-        and not op.target_paragraph
-        and not op.target_item
-        and not op.target_special
+        op.target_cols.target_unit_kind == "section"
+        and _norm_num_token(op.target_cols.target_section or "") == request.target_norm
+        and op.target_cols.target_chapter == request.target_chapter
+        and not op.target_cols.target_paragraph
+        and not op.target_cols.target_item
+        and not op.target_cols.target_special
         for op in request.group_ops
     )
     source_owned_existing_chapter_insert_scope = (
@@ -827,7 +844,7 @@ def _maybe_apply_body_chapter_insert_correction(
         and request.target_chapter is not None
         and body_chapter == request.target_chapter
         and group_targets_whole_section
-        and any(op.op_type == "INSERT" for op in request.group_ops)
+        and any(op.op_type == OpType.INSERT for op in request.group_ops)
         and not explicit_chapter_scoped
         and not same_amendment_stem_scoped
         and not live_stem_host_scoped
@@ -872,11 +889,11 @@ def _maybe_apply_body_chapter_insert_correction(
         and request.source_model.body_real_chapter_section_labels(body_chapter)
         == (_norm_num_token(request.target_norm),)
         and any(
-            op.target_unit_kind == "chapter"
-            and op.target_section
-            and _norm_num_token(op.target_section) == _norm_num_token(body_chapter)
-            and str(op.target_special or "").strip() == "otsikko"
-            and op.op_type in {"REPLACE", "INSERT"}
+            op.target_cols.target_unit_kind == "chapter"
+            and op.target_cols.target_section
+            and _norm_num_token(op.target_cols.target_section) == _norm_num_token(body_chapter)
+            and str(op.target_cols.target_special or "").strip() == "otsikko"
+            and op.op_type in {OpType.REPLACE, OpType.INSERT}
             for op in request.amendment_group_ops
         )
     )
@@ -895,18 +912,18 @@ def _maybe_apply_body_chapter_insert_correction(
         and body_chapter != request.target_chapter
         and live_stem_host_scoped
         and group_targets_whole_section
-        and any(op.op_type == "INSERT" for op in request.group_ops)
+        and any(op.op_type == OpType.INSERT for op in request.group_ops)
         and not explicit_chapter_scoped
         and not carry_forward_scoped
         and request.source_model.body_has_real_chapter_container(body_chapter)
         and request.source_model.body_has_section(request.target_norm, target_chapter=body_chapter)
         and body_chapter_has_target_stem
         and any(
-            op.target_unit_kind == "chapter"
-            and op.target_section
-            and _norm_num_token(op.target_section) == _norm_num_token(body_chapter)
-            and str(op.target_special or "").strip() == "otsikko"
-            and op.op_type in {"REPLACE", "INSERT"}
+            op.target_cols.target_unit_kind == "chapter"
+            and op.target_cols.target_section
+            and _norm_num_token(op.target_cols.target_section) == _norm_num_token(body_chapter)
+            and str(op.target_cols.target_special or "").strip() == "otsikko"
+            and op.op_type in {OpType.REPLACE, OpType.INSERT}
             for op in request.amendment_group_ops
         )
         and not body_wrapper_overridden_by_scope
@@ -932,7 +949,7 @@ def _maybe_apply_body_chapter_insert_correction(
         and body_chapter != request.target_chapter
         and live_stem_host_scoped
         and group_targets_whole_section
-        and any(op.op_type == "INSERT" for op in request.group_ops)
+        and any(op.op_type == OpType.INSERT for op in request.group_ops)
         and not explicit_chapter_scoped
         and not carry_forward_scoped
         and source_body_letter_run_scope_corroborated
@@ -1005,7 +1022,7 @@ def _maybe_apply_body_chapter_insert_correction(
         return PhaseResult(output=result)
     if (
         body_chapter is not None
-        and all(str(op.target_special or "").strip() == "otsikko" for op in result.group_ops)
+        and all(str(op.target_cols.target_special or "").strip() == "otsikko" for op in result.group_ops)
     ):
         resolved_body_chapter = request.source_model.retarget_heading_insert_body_chapter_from_close_live_sibling(
             section_norm=request.target_norm,
@@ -1130,13 +1147,13 @@ def _replacement_ops(
         op
         for op in group_ops
         if (
-            op.target_unit_kind == "section"
-            and _norm_num_token(op.target_section or "") == target_norm
-            and op.target_chapter == target_chapter
-            and op.op_type == "REPLACE"
-            and not op.target_paragraph
-            and not op.target_item
-            and not op.target_special
+            op.target_cols.target_unit_kind == "section"
+            and _norm_num_token(op.target_cols.target_section or "") == target_norm
+            and op.target_cols.target_chapter == target_chapter
+            and op.op_type == OpType.REPLACE
+            and not op.target_cols.target_paragraph
+            and not op.target_cols.target_item
+            and not op.target_cols.target_special
         )
     ]
 
@@ -1165,7 +1182,7 @@ def _maybe_apply_replace_to_insert_move(
     if (
         request.target_unit_kind != "section"
         or not request.target_chapter
-        or not any(op.op_type == "REPLACE" for op in request.group_ops)
+        or not any(op.op_type == OpType.REPLACE for op in request.group_ops)
     ):
         return PhaseResult(output=result)
     body_chapter = request.source_model.body_section_chapter(request.target_norm)
@@ -1284,12 +1301,12 @@ def _maybe_apply_replace_to_insert_move(
                     "placed the section under a new letter-suffix chapter"
                 ),
                 reason_code=_BODY_CHAPTER_MOVE_RULE_ID,
-                target_section=op.target_section or request.target_norm,
-                target_unit_kind=op.target_unit_kind,
+                target_section=op.target_cols.target_section or request.target_norm,
+                target_unit_kind=op.target_cols.target_unit_kind,
                 target_chapter=request.target_chapter,
                 target_part=request.target_part,
                 target_subsection=_op_target_subsection_label(op),
-                target_item=op.target_item,
+                target_item=op.target_cols.target_item,
             )
             for op in replacement_ops
         ]
@@ -1318,18 +1335,18 @@ def _maybe_apply_descendant_body_chapter_scope(
     if (
         request.target_unit_kind != "section"
         or not request.target_chapter
-        or not any(op.op_type == "REPLACE" for op in result.group_ops)
+        or not any(op.op_type == OpType.REPLACE for op in result.group_ops)
     ):
         return PhaseResult(output=result)
     descendant_replace_ops = [
         op
         for op in result.group_ops
         if (
-            op.op_type == "REPLACE"
-            and op.target_unit_kind == "section"
-            and _norm_num_token(op.target_section or "") == request.target_norm
-            and op.target_chapter == request.target_chapter
-            and (op.target_paragraph or op.target_item or op.target_special)
+            op.op_type == OpType.REPLACE
+            and op.target_cols.target_unit_kind == "section"
+            and _norm_num_token(op.target_cols.target_section or "") == request.target_norm
+            and op.target_cols.target_chapter == request.target_chapter
+            and (op.target_cols.target_paragraph or op.target_cols.target_item or op.target_cols.target_special)
         )
     ]
     if not descendant_replace_ops:
@@ -1416,12 +1433,12 @@ def _maybe_apply_descendant_body_chapter_scope(
                     "chapter container"
                 ),
                 reason_code=_BODY_CHAPTER_DESCENDANT_SCOPE_RULE_ID,
-                target_section=op.target_section or request.target_norm,
-                target_unit_kind=op.target_unit_kind,
+                target_section=op.target_cols.target_section or request.target_norm,
+                target_unit_kind=op.target_cols.target_unit_kind,
                 target_chapter=request.target_chapter,
                 target_part=request.target_part,
                 target_subsection=_op_target_subsection_label(op),
-                target_item=op.target_item,
+                target_item=op.target_cols.target_item,
             )
             for op in descendant_replace_ops
         ]
@@ -1453,11 +1470,11 @@ def _maybe_retarget_live_section(
     result: CompileGroupScopeRecoveryResult,
 ) -> PhaseResult[CompileGroupScopeRecoveryResult]:
     all_whole_section_inserts = all(
-        op.op_type == "INSERT"
-        and op.target_unit_kind == "section"
-        and not op.target_paragraph
-        and not op.target_item
-        and not op.target_special
+        op.op_type == OpType.INSERT
+        and op.target_cols.target_unit_kind == "section"
+        and not op.target_cols.target_paragraph
+        and not op.target_cols.target_item
+        and not op.target_cols.target_special
         for op in request.group_ops
     )
     if (
@@ -1501,12 +1518,12 @@ def _maybe_retarget_live_section(
     )
     sibling_consensus_live_scope: tuple[str | None, str] | None = None
     group_targets_whole_section = any(
-        op.target_unit_kind == "section"
-        and _norm_num_token(op.target_section or "") == request.target_norm
-        and op.target_chapter == request.target_chapter
-        and not op.target_paragraph
-        and not op.target_item
-        and not op.target_special
+        op.target_cols.target_unit_kind == "section"
+        and _norm_num_token(op.target_cols.target_section or "") == request.target_norm
+        and op.target_cols.target_chapter == request.target_chapter
+        and not op.target_cols.target_paragraph
+        and not op.target_cols.target_item
+        and not op.target_cols.target_special
         for op in request.group_ops
     )
     source_owned_existing_chapter_insert_scope = False
@@ -1517,7 +1534,7 @@ def _maybe_retarget_live_section(
             body_part == request.target_part
             and body_chapter == request.target_chapter
             and group_targets_whole_section
-            and any(op.op_type == "INSERT" for op in request.group_ops)
+            and any(op.op_type == OpType.INSERT for op in request.group_ops)
             and not group_has_scope_source(request.group_ops, "live_stem_host")
             and body_chapter is not None
             and request.source_model.body_has_real_chapter_container(body_chapter)
@@ -1610,17 +1627,17 @@ def _maybe_retarget_live_section(
                     "section path outside explicit source scope"
                 ),
                 reason_code=_LIVE_SECTION_RETARGET_RULE_ID,
-                target_section=op.target_section or request.target_norm,
-                target_unit_kind=op.target_unit_kind,
+                target_section=op.target_cols.target_section or request.target_norm,
+                target_unit_kind=op.target_cols.target_unit_kind,
                 target_chapter=request.target_chapter,
                 target_subsection=_op_target_subsection_label(op),
-                target_item=op.target_item,
+                target_item=op.target_cols.target_item,
             )
             for op in result.group_ops
             if (
-                op.target_unit_kind == "section"
-                and _norm_num_token(op.target_section or "") == request.target_norm
-                and op.target_chapter == request.target_chapter
+                op.target_cols.target_unit_kind == "section"
+                and _norm_num_token(op.target_cols.target_section or "") == request.target_norm
+                and op.target_cols.target_chapter == request.target_chapter
             )
         ]
         return PhaseResult(
@@ -1648,8 +1665,8 @@ def _maybe_retarget_live_section(
 
 def _body_chapter_insert_correction_candidate(group_ops: Sequence[AmendmentOp]) -> bool:
     return all(
-        op.op_type == "INSERT"
-        or (op.op_type == "REPLACE" and str(op.target_special or "").strip() == "otsikko")
+        op.op_type == OpType.INSERT
+        or (op.op_type == OpType.REPLACE and str(op.target_cols.target_special or "").strip() == "otsikko")
         for op in group_ops
     )
 

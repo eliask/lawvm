@@ -48,7 +48,7 @@ def test_score_one_pair_accepts_current_ir_node_kinds(monkeypatch) -> None:
 
     result = ee_bench._score_one_pair("g1", "base", "oracle", "Current IR", archive=None)
 
-    assert result.status == "OK"
+    assert result.bench_status == "OK"
     assert result.r_secs == 1
     assert result.o_secs == 1
     assert result.sec_match == 1.0
@@ -144,7 +144,7 @@ def test_score_one_pair_attaches_known_residual_summary(monkeypatch) -> None:
 
     result = ee_bench._score_one_pair("161988", "193936", "13336397", "Liiklusseadus", archive=None)
 
-    assert result.status == "OK"
+    assert result.bench_status == "OK"
     assert result.adjudicated_residual_count == 1
     assert result.matched_current_residual_count == 1
     assert result.adjudicated_bucket_counts == "source_oracle_drift=1"
@@ -189,7 +189,7 @@ def test_score_one_pair_marks_uninventoried_divergences_as_open(monkeypatch) -> 
 
     result = ee_bench._score_one_pair("g1", "base-open", "oracle-open", "Open Pair", archive=None)
 
-    assert result.status == "OK"
+    assert result.bench_status == "OK"
     assert result.adjudicated_residual_count == 0
     assert result.matched_current_residual_count == 0
     assert result.unknown_current_residual_count == 1
@@ -230,7 +230,7 @@ def test_score_one_pair_adjudicates_punctuation_whitespace_only_divergences(monk
 
     result = ee_bench._score_one_pair("g1", "base-open", "oracle-open", "Open Pair", archive=None)
 
-    assert result.status == "OK"
+    assert result.bench_status == "OK"
     assert result.adjudicated_residual_count == 1
     assert result.matched_current_residual_count == 1
     assert result.adjudicated_bucket_counts == "presentation_punctuation_whitespace=1"
@@ -265,7 +265,7 @@ def test_score_one_pair_uses_oracle_effective_date_as_cutoff(monkeypatch) -> Non
         "g1", "13247639", "131012012006", "Jälitustegevuse seadus", archive=None
     )
 
-    assert result.status == "OK"
+    assert result.bench_status == "OK"
     assert seen == {"as_of": "2012-02-01", "oracle_id": "131012012006"}
     assert result.source_basis == "pairwise_terviktekst_delta"
     assert result.benchmark_reporting_stratum == "EE_CORE_COMMENSURABLE"
@@ -291,7 +291,7 @@ def test_save_results_and_show_run_round_trips_adjudicated_residual_fields(
             sec_match=0.91,
             r_secs=852,
             o_secs=852,
-            status="OK",
+            bench_status="OK",
             source_basis="pairwise_terviktekst_delta",
             comparison_class="commensurable_delta",
             core_benchmark=True,
@@ -330,7 +330,7 @@ def test_print_report_prioritizes_open_unexplained_rows(capsys) -> None:
             sec_match=0.90,
             r_secs=852,
             o_secs=852,
-            status="OK",
+            bench_status="OK",
             comparison_class="commensurable_delta",
             core_benchmark=True,
             adjudicated_residual_count=7,
@@ -349,7 +349,7 @@ def test_print_report_prioritizes_open_unexplained_rows(capsys) -> None:
             sec_match=0.95,
             r_secs=10,
             o_secs=10,
-            status="OK",
+            bench_status="OK",
             comparison_class="commensurable_delta",
             core_benchmark=True,
             adjudicated_residual_count=2,
@@ -391,7 +391,7 @@ def test_unified_summary_renders_structural_only_headline(capsys) -> None:
             sec_match=0.90,
             r_secs=10,
             o_secs=10,
-            status="OK",
+            bench_status="OK",
             core_benchmark=True,
         ),
         ee_bench._BenchResult(
@@ -404,7 +404,7 @@ def test_unified_summary_renders_structural_only_headline(capsys) -> None:
             sec_match=0.0,
             r_secs=0,
             o_secs=0,
-            status="EMPTY_ORACLE",
+            bench_status="EMPTY_ORACLE",
         ),
         ee_bench._BenchResult(
             grupi_id="g3",
@@ -416,7 +416,7 @@ def test_unified_summary_renders_structural_only_headline(capsys) -> None:
             sec_match=0.0,
             r_secs=0,
             o_secs=0,
-            status="EXC:boom",
+            bench_status="EXC:boom",
         ),
     ]
 

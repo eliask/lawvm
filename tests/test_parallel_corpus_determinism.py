@@ -11,30 +11,24 @@ by driving the helper with a deterministic, order-sensitive fake projector.
 """
 from __future__ import annotations
 
-from typing import Any, cast, Dict, List, Tuple
+from typing import Any, List
 
 import pytest
 
 from lawvm.tools import _parallel_corpus
 from lawvm.tools._parallel_corpus import project_corpus_parallel, _make_shards
 
+# The projector lives in a real, importable fixtures module so a fresh worker
+# process can resolve it by (module, qualname). Under Python 3.14 the default
+# Linux multiprocessing start method is ``forkserver`` (not ``fork``), so a
+# worker re-imports the projector module from source — a runtime-injected
+# module attribute would not survive. See the fixtures module for detail.
+from tests.fixtures.parallel_corpus_projector import _fake_projector
 
-# A module-level projector so it is picklable for the process pool. It emits a
-# per-statute row whose value encodes the statute id, plus a variable number of
-# rows so that shard boundaries cannot be masked by uniform row counts.
-def _fake_projector(statute_id: str, store: Any) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    n = (int(statute_id) % 3) + 1  # 1..3 rows
-    rows = [{"sid": statute_id, "k": i} for i in range(n)]
-    diags = [{"sid": statute_id, "diag": True}]
-    return rows, diags
-
-
-# Register the fake projector on the module under a stable qualname so the
-# worker init can import it by (module, qualname).
-cast(Any, _parallel_corpus)._fake_projector = _fake_projector
+_PROJECTOR_REF = ("tests.fixtures.parallel_corpus_projector", "_fake_projector")
 
 
-def _expected_serial(statute_ids: List[str]) -> Tuple[list, list]:
+def _expected_serial(statute_ids: List[str]) -> tuple[list, list]:
     rows: list = []
     diags: list = []
     for sid in statute_ids:
@@ -47,7 +41,7 @@ def _expected_serial(statute_ids: List[str]) -> Tuple[list, list]:
 @pytest.mark.parametrize("workers", [2, 4, 8])
 def test_parallel_matches_serial_order(workers: int) -> None:
     statute_ids = [str(i) for i in range(500)]
-    ref = ("lawvm.tools._parallel_corpus", "_fake_projector")
+    ref = _PROJECTOR_REF
 
     serial_rows, serial_diags = project_corpus_parallel(
         statute_ids=statute_ids,
@@ -108,7 +102,7 @@ def test_workers_capped_to_max(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(_worker_pool, "managed_executor", _spy)
 
     statute_ids = [str(i) for i in range(200)]
-    ref = ("lawvm.tools._parallel_corpus", "_fake_projector")
+    ref = _PROJECTOR_REF
     par_rows, par_diags = project_corpus_parallel(
         statute_ids=statute_ids,
         projector_ref=ref,
@@ -128,7 +122,7 @@ def test_workers_capped_to_max(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_empty_corpus() -> None:
     rows, diags = project_corpus_parallel(
         statute_ids=[],
-        projector_ref=("lawvm.tools._parallel_corpus", "_fake_projector"),
+        projector_ref=_PROJECTOR_REF,
         serial_projector=_fake_projector,
         store=None,
         workers=8,

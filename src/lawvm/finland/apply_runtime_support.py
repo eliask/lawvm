@@ -155,68 +155,6 @@ def _container_kind_for_name(kind_name: str) -> IRNodeKind | None:
     return None
 
 
-def _legacy_dispatch_shell_for_rop(rop: "ResolvedOp") -> "AmendmentOp":
-    """Project a late-waist op onto the narrow legacy apply shell.
-
-    Keep this compatibility projection owned by the apply/runtime boundary,
-    not by generic `ResolvedOp` consumers.
-    """
-    from lawvm.finland.ops import AmendmentOp, OpType
-
-    scope = rop.resolved_target_scope_view
-    # Mirror the computation in apply_subsection_ops._subsection_apply_view_for_op
-    # so that subsection apply paths reading op.has_exact_bound_payload (legacy
-    # AmendmentOp branch) see the same value as paths that compute it directly
-    # from the ResolvedOp.  Without this the legacy shell projection silently
-    # leaves the field at its dataclass default (False), creating an asymmetric
-    # wiring gap between the two _subsection_apply_view_for_op input branches.
-    mapped = rop.slot_assignment.for_stable_op_id(rop.op_id) if rop.slot_assignment is not None else None
-    has_exact_bound_payload = (
-        rop.slot_assignment is not None
-        and rop.slot_assignment.has_owned_bound_payload_for_stable_op_id(rop.op_id)
-    ) or (
-        mapped is not None
-        and scope.target_paragraph is not None
-        and mapped.label is not None
-        and normalized_label_key(mapped.label) == str(scope.target_paragraph)
-    )
-
-    return AmendmentOp(
-        op_id=rop.op_id,
-        op_type=cast(OpType, rop.resolved_action_type),
-        target_section=_legacy_target_section_for_scope(scope, rop.target_unit_kind),
-        target_unit_kind=rop.target_unit_kind,
-        target_chapter=scope.target_chapter,
-        target_part=scope.target_part,
-        target_paragraph=scope.target_paragraph,
-        target_item=scope.target_item,
-        target_special=_legacy_target_special_for_scope(scope, rop.effective_target_special),
-        named_row_targets=rop.named_row_targets,
-        numbered_table_targets=rop.numbered_table_targets,
-        body_root_replace_fallback=rop.body_root_replace_fallback,
-        fallback_provenance=rop.fallback_provenance,
-        source_statute=rop.resolved_source_statute,
-        source_issue_date=rop.resolved_source_issue_date,
-        source_title=rop.resolved_source_title,
-        sec1_body_johto_fallback=rop.uses_sec1_body_johto_fallback,
-        move_clause_target_unit_kind=rop.move_clause_target_unit_kind,
-        uncovered_body_recovery=rop.uses_uncovered_body_recovery,
-        voimaantulo_repeal=rop.voimaantulo_repeal,
-        extraction_provenance_tags=rop.extraction_provenance_tags,
-        target_guessing_provenance_tags=rop.target_guessing_provenance_tags,
-        scope_provenance_tags=rop.scope_provenance_tags,
-        scope_confidence=rop.scope_confidence,
-        post_repeal_item_shift_label=rop.resolved_post_repeal_item_shift_label,
-        body_chapter_move_from=rop.body_chapter_move_from,
-        # Runtime dispatch shells must not carry parser-shell target authority.
-        lo=None,
-        is_temporary=temporary_signal_for_op(rop),
-        has_exact_bound_payload=has_exact_bound_payload,
-        temporal_activation=rop.temporal_activation,
-        witness_rule_id=rop.witness_rule_id,
-    )
-
-
 def _unique_substantive_section_path(
     state: "ReplayState",
     target_norm: str,

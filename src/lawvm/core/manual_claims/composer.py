@@ -347,7 +347,7 @@ def _derive(
         return _reject("deterministic_only_profile")
 
     # --- all other profiles: must be accepted status ---
-    if state.status != ClaimStatus.ACCEPTED:
+    if state.claim_state_status != ClaimStatus.ACCEPTED:
         return _reject("rejected_not_accepted_status")
 
     # --- exploratory: accept any accepted claim (semantic still needs replay_authorized) ---

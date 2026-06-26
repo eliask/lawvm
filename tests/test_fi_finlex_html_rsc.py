@@ -15,7 +15,6 @@ import json
 
 from lawvm.finland.finlex_html import (
     _escape_ctrl_in_strings,
-    _find_fi_block_legacy,
     _find_rsc_documenttocs_block,
     _is_chapter_heading_id,
     _is_section_heading_id,
@@ -380,9 +379,9 @@ def test_parse_html_headings_falls_back_gracefully_to_empty() -> None:
 def test_parse_html_headings_legacy_fin_marker_path() -> None:
     """Legacy FIN_MARKER path: page has \\\"fin\\\":[\\\"$\\\" but no documentToCs JSON.
 
-    The legacy strategy 1 in _find_fi_block_legacy looks for the FIN_MARKER
-    prefix and extracts up to the SWE_MARKER.  This tests that the _ENTRY_PATTERN
-    regex finds headings in such a block.
+    When the primary JSON path finds no documentToCs structure, the dispatcher
+    falls back to running the _ENTRY_PATTERN regex over the full page text.
+    This verifies that fallback finds headings in a FIN_MARKER-style block.
     """
     # Build a minimal FIN_MARKER style block that _ENTRY_PATTERN can parse.
     # The RSC text here uses single-backslash-escaped quotes (\") as in current pages.
@@ -483,26 +482,3 @@ def test_parse_html_heading_entries_returns_empty_for_empty_page() -> None:
     page = b'<html><body>Bot block</body></html>'
     entries = _parse_html_heading_entries(page)
     assert entries == []
-
-
-# ---------------------------------------------------------------------------
-# Tests: _find_fi_block_legacy (named fallback — verify it still works)
-# ---------------------------------------------------------------------------
-
-def test_find_fi_block_legacy_finds_fin_marker() -> None:
-    """Legacy function finds the FIN_MARKER in a minimal escaped block."""
-    text = (
-        'some prefix '
-        '\\"fin\\":[\\"$\\",[{\\"tagName\\":\\"num\\"}]]'
-        '\\"swe\\":[\\"$\\",[]]'
-        ' some suffix'
-    )
-    result = _find_fi_block_legacy(text)
-    assert result is not None
-    assert '\\"fin\\"' in result
-    assert '\\"swe\\"' not in result  # scoped to before swe marker
-
-
-def test_find_fi_block_legacy_returns_none_for_plain_page() -> None:
-    """Legacy function returns None for a page with no RSC markers."""
-    assert _find_fi_block_legacy('<html><body>No RSC here</body></html>') is None

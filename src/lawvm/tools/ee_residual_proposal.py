@@ -68,7 +68,7 @@ def _propose_for_pair(base_id: str, oracle_id: str, title: str = "") -> Residual
             "base_id": base_id,
             "oracle_id": oracle_id,
             "title": title or existing.statute_title,
-            "status": "already_inventoried",
+            "proposal_status": "already_inventoried",
             "existing_count": len(existing.residuals),
             "proposals": [],
         }
@@ -85,7 +85,7 @@ def _propose_for_pair(base_id: str, oracle_id: str, title: str = "") -> Residual
             "base_id": base_id,
             "oracle_id": oracle_id,
             "title": title,
-            "status": "error",
+            "proposal_status": "error",
             "error": result.error,
             "proposals": [],
         }
@@ -109,7 +109,7 @@ def _propose_for_pair(base_id: str, oracle_id: str, title: str = "") -> Residual
         "base_id": base_id,
         "oracle_id": oracle_id,
         "title": title or result.base_title,
-        "status": "proposed",
+        "proposal_status": "proposed",
         "as_of": as_of,
         "n_ops": result.n_ops,
         "n_divergences": len(result.divergences),
@@ -159,7 +159,7 @@ def _format_python(results: list[ResidualProposalRow]) -> str:
     """Format proposals as Python code for residual_inventory.py."""
     lines = []
     for r in results:
-        if r["status"] != "proposed" or not r["proposals"]:
+        if r["proposal_status"] != "proposed" or not r["proposals"]:
             continue
 
         lines.append(f'    ("{r["base_id"]}", "{r["oracle_id"]}"): EEPairResidualInventory(')
@@ -192,13 +192,13 @@ def _format_text(results: list[ResidualProposalRow]) -> str:
     for r in results:
         lines.append(f"\n=== {r.get('base_id', '?')} -> {r.get('oracle_id', '?')} ===")
         lines.append(f"  title  : {r.get('title', '')}")
-        lines.append(f"  status : {r['status']}")
+        lines.append(f"  status : {r['proposal_status']}")
 
-        if r["status"] == "already_inventoried":
+        if r["proposal_status"] == "already_inventoried":
             lines.append(f"  Already has {r['existing_count']} residual entries.")
             continue
 
-        if r["status"] == "error":
+        if r["proposal_status"] == "error":
             lines.append(f"  Error: {r.get('error', 'unknown')}")
             continue
 

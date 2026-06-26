@@ -234,7 +234,7 @@ class CorpusReferenceEdgePass:
                     src_local=node.node_id,
                     dst_local=entity_node_id,
                     rule_id=rule_id,
-                    status=status,
+                    surface_edge_status=status,
                     payload={"address_id": address_id},
                 )
             )
@@ -368,7 +368,7 @@ def _address_entity_node(
         source_ref=None,
         lens_id=None,
         rule_id=_RULE_CORPUS_REFERS_TO,
-        status="present",
+        node_status="present",
         payload_hash=_address_payload_hash(payload),
         payload=payload,
     )
@@ -468,7 +468,7 @@ def _directive_entity_node(
         source_ref=None,
         lens_id=None,
         rule_id=_RULE_CORPUS_TRANSPOSES,
-        status="present",
+        node_status="present",
         payload_hash=_address_payload_hash(payload),
         payload=payload,
     )
@@ -492,7 +492,7 @@ def _citing_work_entity_node(
         source_ref=None,
         lens_id=None,
         rule_id=_RULE_CORPUS_TRANSPOSES,
-        status="present",
+        node_status="present",
         payload_hash=_address_payload_hash(payload),
         payload=payload,
     )
@@ -587,7 +587,7 @@ class CorpusTranspositionEdgePass:
                     src_local=src_id,
                     dst_local=dst_id,
                     rule_id=_RULE_CORPUS_TRANSPOSES,
-                    status=status,
+                    surface_edge_status=status,
                     payload={
                         "directive_celex": claim.directive_celex,
                         "directive_surface": claim.directive_surface,
@@ -634,7 +634,10 @@ def _merge_edge(edges: dict[str, SurfaceEdge], edge: SurfaceEdge) -> None:
     if existing is None:
         edges[edge.edge_id] = edge
         return
-    if existing.payload_hash != edge.payload_hash or existing.status != edge.status:
+    if (
+        existing.payload_hash != edge.payload_hash
+        or existing.surface_edge_status != edge.surface_edge_status
+    ):
         raise SurfaceAssemblyError(
             f"corpus merge: edge id collision with divergent payload/status for "
             f"{edge.edge_id!r} (kind={edge.edge_kind!r})"
@@ -811,7 +814,7 @@ class Citation:
 
     edge_id: str
     edge_kind: str  # "refers_to" (asserted) | "has_candidate"
-    status: str
+    citation_status: str
     citing_node_id: str  # the reference_resolution node that cites the target
     citing_work_id: str | None  # the statute the citation lives in
 
@@ -842,7 +845,7 @@ def citations_of(
             Citation(
                 edge_id=edge.edge_id,
                 edge_kind=edge.edge_kind,
-                status=edge.status,
+                citation_status=edge.surface_edge_status,
                 citing_node_id=edge.src,
                 citing_work_id=citing_work_id,
             )

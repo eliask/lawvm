@@ -684,6 +684,42 @@ def _split_on_ellipsis(text: str) -> List[str]:
     return [p.strip() for p in _ELLIPSIS_RE.split(text) if p.strip()]
 
 
+def _strip_paired_context_ellipsis_patch(wrong: str, correct: str) -> tuple[str, str] | None:
+    """Return the concrete patch body for ``… wrong …`` / ``… correct …`` witnesses.
+
+    Some official corrigenda quote only a middle johtolause fragment and wrap it
+    in leading/trailing ellipses as context markers. Those markers are not source
+    text and must not be written into the XML.
+    """
+
+    def strip_context(value: str) -> str | None:
+        stripped = value.strip()
+        leading_marker = ""
+        for marker in ("...", "…"):
+            if stripped.startswith(marker):
+                leading_marker = marker
+                break
+        if not leading_marker:
+            return None
+        stripped = stripped[len(leading_marker):].strip()
+
+        trailing_marker = ""
+        for marker in ("...", "…"):
+            if stripped.endswith(marker):
+                trailing_marker = marker
+                break
+        if not trailing_marker:
+            return None
+        body = stripped[: -len(trailing_marker)].strip()
+        return body or None
+
+    wrong_body = strip_context(wrong)
+    correct_body = strip_context(correct)
+    if wrong_body is None or correct_body is None or wrong_body == correct_body:
+        return None
+    return wrong_body, correct_body
+
+
 _PREAMBLE_RE = re.compile(rb"(<preamble\b[^>]*>)(.*?)(</preamble>)", re.DOTALL | re.IGNORECASE)
 _TABLE_RE = re.compile(rb"(<table\b[^>]*>|<tblock\b[^>]*>)(.*?)(</table>|</tblock>)", re.DOTALL | re.IGNORECASE)
 
@@ -2236,6 +2272,9 @@ class CorrigendumPatchTable:
             correct_text = patch.replacement if patch is not None else ""
             if not wrong_text or not correct_text:
                 continue
+            context_patch = _strip_paired_context_ellipsis_patch(wrong_text, correct_text)
+            if context_patch is not None:
+                wrong_text, correct_text = context_patch
             wrong_b = wrong_text.encode("utf-8")
             count = fragment.count(wrong_b)
             if count > 1:

@@ -9,6 +9,7 @@ from __future__ import annotations
 import calendar
 import copy
 import re
+from lawvm.core.regex_safety import compile_classifier_regex
 import datetime as dt
 from dataclasses import dataclass
 from functools import lru_cache
@@ -96,11 +97,8 @@ class SeparateCommencementLawWitness:
     source_text: str
 
 
-_SEPARATE_COMMENCEMENT_LIST_RE = re.compile(
-    r'\bSeuraavat\s+lait\s+tulevat\s+voimaan\s+'
-    r'(?P<day>\d{1,2})\s+päivänä\s+(?P<month>[a-zäöå]+)\s+(?P<year>\d{4})\s*:',
-    flags=re.IGNORECASE,
-)
+_SEPARATE_COMMENCEMENT_LIST_RE = compile_classifier_regex(r'\bSeuraavat\s+lait\s+tulevat\s+voimaan\s+'
+    r'(?P<day>\d{1,2})\s+päivänä\s+(?P<month>[a-zäöå]+)\s+(?P<year>\d{4})\s*:', flags=re.IGNORECASE, classifier_id="fi.metadata.separate_commencement_list_re")
 _SEPARATE_COMMENCEMENT_INLINE_LIST_RE = re.compile(
     r'\b(?P<subjects>(?:Laki|Asetus|Päätös)\s+.{0,2000}?)\s+'
     r'tulevat\s+voimaan\s+'
@@ -233,16 +231,10 @@ def _repair_leading_section_marker_after_citation(text: str) -> str:
 # form converged on.  Match semantics are identical (verified by 400k-input
 # fuzz + a full Finlex corpus replay); the 400-char cap is load-bearing
 # (real johtolause citations sit up to exactly 400 chars after the §-ref).
-_CROSS_LAW_DESC_PAT = re.compile(
-    r'(?:§:[nä]|§:ss[aä])(?:(?!\(\s*\d{3,4}/\d{4}\s*\)).){0,400}+\(\s*(\d{3,4}/\d{4})\s*\)',
-    re.DOTALL,
-)
-_AS_AMENDED_QUALIFIER_PAT = re.compile(r"\bsellais(?:ena|ina)\s+kuin\b", re.IGNORECASE)
+_CROSS_LAW_DESC_PAT = compile_classifier_regex(r'(?:§:[nä]|§:ss[aä])(?:(?!\(\s*\d{3,4}/\d{4}\s*\)).){0,400}+\(\s*(\d{3,4}/\d{4})\s*\)', re.DOTALL, classifier_id="fi.metadata.cross_law_desc_pat")
+_AS_AMENDED_QUALIFIER_PAT = compile_classifier_regex(r"\bsellais(?:ena|ina)\s+kuin\b", re.IGNORECASE, classifier_id="fi.metadata.as_amended_qualifier_pat")
 _NOMINATIVE_TARGET_PAT = re.compile(r'\d+\s*(?:ja\s+\d+\s*)?§(?!\s*:)')
-_OPERATIVE_KEYWORD_PAT = re.compile(
-    r"\b(?:kumotaan|muutetaan|lisätään|poistetaan|siirretään)\b",
-    re.IGNORECASE,
-)
+_OPERATIVE_KEYWORD_PAT = compile_classifier_regex(r"\b(?:kumotaan|muutetaan|lisätään|poistetaan|siirretään)\b", re.IGNORECASE, classifier_id="fi.metadata.operative_keyword_pat")
 # Anti-backtracking: the old unbounded lazy gap ``(.+?)`` before the distant
 # ``tule…kuitenkin voimaan`` anchor expands to end-of-text from every subject
 # word (``Lain``/``Sen``/…) on non-matching input — O(N²)+ on long text with
@@ -1319,10 +1311,7 @@ _TEMPORARY_SECTION_CHARS = r"[\d\w\s,\-\u2013\u2015:§]"
 _TEMPORARY_SECTION_CHARS_SIMPLE = r"[\d\w\s,\-\u2013\u2015]"
 _TEMPORARY_SINGLE_SECTION_CHARS = r"[\dA-Za-zÄÖÅäöå\s]"
 _TEMPORARY_CESSATION_SECTION_CHARS = r"[\dA-Za-zÄÖÅäöå\s,\u2013]+"
-_TEMPORARY_CITED_COMMENCEMENT_RE = re.compile(
-    r"\(\s*(\d{1,4}/\d{4}|\d{4}/\d+)\s*\)\s+voimaantulosäänn",
-    re.IGNORECASE,
-)
+_TEMPORARY_CITED_COMMENCEMENT_RE = compile_classifier_regex(r"\(\s*(\d{1,4}/\d{4}|\d{4}/\d+)\s*\)\s+voimaantulosäänn", re.IGNORECASE, classifier_id="fi.metadata.temporary_cited_commencement_re")
 _TEMPORARY_SECTION_EXPIRY_RE = re.compile(
     rf"(?:Lain|Asetuksen|Päätöksen|Sen)\s+({_TEMPORARY_SECTION_CHARS}+?)\s*§"
     rf"(?:\s+ja\s+sen\s+edellä\s+oleva\s+väliotsikko)?"

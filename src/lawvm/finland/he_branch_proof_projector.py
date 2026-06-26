@@ -147,7 +147,7 @@ def _he_branch_impact_projection_row(
     )
     return {
         "surface": "he_branch_impact_projection",
-        "status": "branch_projection_not_enacted_authority",
+        "authority_status": "branch_projection_not_enacted_authority",
         "owner_phase": "branch_projection",
         "branch_id": branch_id,
         "source_he_id": he_id,
@@ -229,7 +229,7 @@ def _he_branch_proposed_op_row(op: Any) -> dict[str, Any]:
     )
     return {
         "surface": "he_branch_proposed_op",
-        "status": "proposed_branch_op_not_enacted_authority",
+        "authority_status": "proposed_branch_op_not_enacted_authority",
         "owner_phase": "surface_parse",
         "op_index": _nonnegative_int(_field(op, "op_index", 0)),
         "operation_kind": str(_field(op, "operation_kind", "")),
@@ -274,7 +274,7 @@ def _he_branch_finding_row(finding: Any) -> dict[str, Any]:
     )
     return {
         "surface": surface,
-        "status": "recorded",
+        "finding_status": "recorded",
         "owner_phase": owner_phase,
         "rule_id": rule_id,
         "op_index": _nonnegative_int(_field(finding, "op_index", 0)),

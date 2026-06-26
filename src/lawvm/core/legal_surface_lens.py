@@ -125,7 +125,7 @@ class SurfaceNodeSeed:
     source_ref: SourceSpanRef | None
     local_discriminator: str
     rule_id: str
-    status: str
+    node_status: str
     payload: Mapping[str, object]
     authority_role: AuthorityRole = "surface_fact"
 
@@ -145,7 +145,7 @@ class SurfaceEdgeSeed:
     src_local: str
     dst_local: str
     rule_id: str
-    status: str
+    surface_edge_status: str
     payload: Mapping[str, object]
 
 
@@ -163,7 +163,7 @@ class SurfaceResidualSeed:
     rule_id: str
     reason_code: str
     payload: Mapping[str, object]
-    status: str = "open"
+    residual_status: str = "open"
 
 
 @dataclass(frozen=True, slots=True)

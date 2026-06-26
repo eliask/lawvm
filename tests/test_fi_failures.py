@@ -382,7 +382,7 @@ def test_materialization_probe_marks_final_item_present() -> None:
 
     probe = failures._materialization_probe_for_failure(failure, cast(Any, master))
 
-    assert probe.status == "target_item_present"
+    assert probe.probe_status == "target_item_present"
     assert probe.target_present is True
 
 

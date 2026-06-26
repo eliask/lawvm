@@ -84,7 +84,7 @@ def test_norm_has_subject_binds_core_to_covering_actor() -> None:
         assert graph.nodes[edge.src].node_kind == "deontic_core"
         assert graph.nodes[edge.dst].node_kind == "actor_modal_frame"
         assert edge.payload.get("source") == "deontic_core_addressee"
-        assert edge.status in ("candidate", "ambiguous")
+        assert edge.surface_edge_status in ("candidate", "ambiguous")
         # the actor frame's span COVERS the core's addressee span
         actor_span = edge.payload["actor_span"]
         addressee = edge.payload["addressee_span"]
@@ -140,7 +140,7 @@ def test_governed_by_procedure_joins_core_to_co_sentence_procedure() -> None:
         assert graph.nodes[edge.src].payload.get("kind") in {"obligation", "power"}
         assert graph.nodes[edge.dst].node_kind == "procedure_frame"
         assert edge.payload.get("source") == "deontic_procedure_sentence_local"
-        assert edge.status in ("candidate", "ambiguous")
+        assert edge.surface_edge_status in ("candidate", "ambiguous")
         assert edge.surface_only is True
         assert edge.replay_authorized is False
 
@@ -210,7 +210,7 @@ def test_delegates_to_resolves_by_containment() -> None:
     graph = _build()
     delegs = _edges(graph, EDGE_DELEGATES_TO)
     assert delegs, "expected a delegates_to edge (P3 power core in delegation frame)"
-    resolved = [e for e in delegs if e.status == "asserted"]
+    resolved = [e for e in delegs if e.surface_edge_status == "asserted"]
     assert resolved, "the power core cue inside the delegation frame should RESOLVE"
     for edge in resolved:
         assert edge.payload.get("attachment") == "resolved_by_containment"
@@ -230,7 +230,7 @@ def test_new_edges_are_deterministic() -> None:
 
     def _keys(graph):
         return sorted(
-            (e.edge_id, e.edge_kind, e.src, e.dst, e.status, e.payload_hash)
+            (e.edge_id, e.edge_kind, e.src, e.dst, e.surface_edge_status, e.payload_hash)
             for e in graph.edges
             if e.edge_kind
             in {

@@ -144,7 +144,7 @@ def test_audit_invariants_uses_replay_findings_and_meta(monkeypatch) -> None:
     assert rows == [
         {
             "statute_id": "1994/1472",
-            "status": "violation",
+            "audit_status": "violation",
             "violation_type": "duplicate_label",
             "path": "body/section:3",
             "detail": "section:6",
@@ -163,7 +163,7 @@ def test_audit_invariants_uses_replay_findings_and_meta(monkeypatch) -> None:
         },
         {
             "statute_id": "1994/1472",
-            "status": "violation",
+            "audit_status": "violation",
             "violation_type": "duplicate_label",
             "path": "body/section:1",
             "detail": "section:5a",
@@ -182,7 +182,7 @@ def test_audit_invariants_uses_replay_findings_and_meta(monkeypatch) -> None:
         },
         {
             "statute_id": "1994/1472",
-            "status": "violation",
+            "audit_status": "violation",
             "violation_type": "sort_order",
             "path": "body/section:2",
             "detail": "section: 5 > 2",
@@ -310,7 +310,7 @@ def test_audit_invariants_error_row_marks_status_error(monkeypatch) -> None:
 
     rows = audit_invariants._audit_one("1994/1472")
 
-    assert rows[0]["status"] == "error"
+    assert rows[0]["audit_status"] == "error"
     assert rows[0]["violation_type"] == "ERROR"
 
 

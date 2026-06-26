@@ -170,10 +170,6 @@ def uk_source_state_wire_tuple(blob: bytes | None) -> tuple[str, int]:
     return classify_uk_source_blob(blob).as_legacy_tuple()
 
 
-def classify_uk_source_blob_legacy(blob: bytes | None) -> tuple[str, int]:
-    return uk_source_state_wire_tuple(blob)
-
-
 def classify_uk_statute_xml_content(blob: bytes | None) -> UKStatuteXmlContentState:
     """Classify whether an act-level XML blob contains replayable legal structure.
 

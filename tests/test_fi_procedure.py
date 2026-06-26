@@ -249,7 +249,7 @@ def test_no_legal_conclusion_vocabulary_in_output() -> None:
 def test_status_always_surface_fact_only() -> None:
     scan = scan_procedure("hakijan on toimitettava hakemus 30 päivän kuluessa")
     assert scan.frames  # non-empty
-    assert all(f.status == "surface_fact_only" for f in scan.frames)
+    assert all(f.procedure_status == "surface_fact_only" for f in scan.frames)
 
 
 def test_frames_are_frozen() -> None:
@@ -260,7 +260,7 @@ def test_frames_are_frozen() -> None:
     # read-only-property complaint from the type checker.
     assert frame.__dataclass_params__.frozen  # type: ignore[attr-defined]
     with pytest.raises(dataclasses.FrozenInstanceError):
-        frame.__setattr__("status", "mutated")
+        frame.__setattr__("procedure_status", "mutated")
 
 
 def test_empty_and_nonprocedural_text() -> None:

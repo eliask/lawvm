@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import functools
 import re
+from lawvm.core.regex_safety import compile_classifier_regex
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Set
 
@@ -25,7 +26,7 @@ from lawvm.finland.references.sections import (
 )
 
 
-_CHAPTER_MARKER_RE = re.compile(r'(\d{1,4}\s{1,4}[a-z]|\d{1,4})\s{1,8}luvun\b')
+_CHAPTER_MARKER_RE = compile_classifier_regex(r'(\d{1,4}\s{1,4}[a-z]|\d{1,4})\s{1,8}luvun\b', classifier_id="fi.kumotaan.chapter_marker_re")
 
 
 # Whole-section SITE ANCHOR (scaffold, NOT a structural parser): a bare ``§``
@@ -37,7 +38,7 @@ _CHAPTER_MARKER_RE = re.compile(r'(\d{1,4}\s{1,4}[a-z]|\d{1,4})\s{1,8}luvun\b')
 # väliotsikko`` are sub-provision/heading repeals, never whole-section repeals.
 # The anchor only delimits the run SURFACE; its section/range/coordination/
 # letter-suffix STRUCTURE is enumerated by the grammar (parse_body_provision_tail).
-_WHOLE_SECTION_SITE_RE = re.compile(r"§(?!:)")
+_WHOLE_SECTION_SITE_RE = compile_classifier_regex(r"§(?!:)", classifier_id="fi.kumotaan.whole_section_site_re")
 _WHOLE_SECTION_SITE_SCAN_WINDOW = 240
 _WS_RE = re.compile(r"\s+")
 

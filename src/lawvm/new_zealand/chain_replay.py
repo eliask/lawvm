@@ -500,7 +500,7 @@ def _enumerate_structural_ops(surface: Any, family: str) -> list[NZChainOp]:
     for row in surface.rows:
         if row.operation_family not in family_set:
             continue
-        if row.target_address_candidate.status != "candidate":
+        if row.target_address_candidate.target_address_status != "candidate":
             continue
         source_path = _source_path_for_tree_path(row.target_address_candidate.path)
         href = row.amending_provision_hrefs[0] if row.amending_provision_hrefs else ""

@@ -18,10 +18,10 @@ from typing_extensions import override
 import datetime as dt
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from dataclasses import replace as dc_replace
 from enum import StrEnum
-from typing import TYPE_CHECKING, Dict, Iterable, List, Literal, Optional, Tuple, cast
+from typing import TYPE_CHECKING, Dict, Iterable, List, Literal, Optional, Tuple, assert_never, cast
 
 from lawvm.core.ir import IRNode, LegalAddress, OperationSource, TextPatchSpec
 from lawvm.core.ir import LegalOperation as _LegalOperation
@@ -35,8 +35,26 @@ from lawvm.core.semantic_types import (
 )
 from lawvm.core.tree_ops import Path
 from lawvm.core.elaboration_context import TargetUnitKind
+from lawvm.core.target_selector import (
+    AddressSegment,
+    ScopeStatus,
+    TargetScope,
+    TargetSelector,
+)
 from lawvm.finland.helpers import _expand_section_range, _norm_num_token
+from lawvm.finland.op_provenance import (
+    OpProvenance,
+    Recovered,
+    RecognizerId,
+    dominant_surface,
+    dominant_tier,
+    has_recognizer,
+)
 from lawvm.finland.target_kind import TargetKind
+from lawvm.finland.target_selector_codec import (
+    AmendmentOpV1Record,
+    TargetSelectorCodecV1,
+)
 
 if TYPE_CHECKING:
     from lawvm.core.canonical_intent import CanonicalIntent
@@ -47,7 +65,20 @@ if TYPE_CHECKING:
 # Type aliases
 # ---------------------------------------------------------------------------
 
-OpType = Literal["REPLACE", "REPEAL", "INSERT", "RENUMBER"]
+class OpType(StrEnum):
+    """Finland amendment operation kind.
+
+    A ``StrEnum`` (not a bare ``Literal``) so that op-type comparisons are
+    member-vs-member and survive renames as a *type* error rather than a silent
+    string mismatch (Pro TargetSelector invariant). Members subclass ``str`` and
+    their ``value`` equals the legacy wire string, so ``OpType.REPLACE ==
+    "REPLACE"`` is ``True`` and serialization stays byte-identical.
+    """
+
+    REPLACE = "REPLACE"
+    REPEAL = "REPEAL"
+    INSERT = "INSERT"
+    RENUMBER = "RENUMBER"
 
 _SCOPE_PROVENANCE_TAGS = frozenset(
     {
@@ -68,6 +99,67 @@ _TARGET_GUESSING_PROVENANCE_TAGS = frozenset(
         "normalize_item_like_target",
     }
 )
+
+
+def _derive_op_provenance(
+    *,
+    fallback_provenance: bool,
+    body_root_replace_fallback: bool,
+    sec1_body_johto_fallback: bool,
+    uncovered_body_recovery: bool,
+    extraction_provenance_tags: Tuple[str, ...],
+    target_guessing_provenance_tags: Tuple[str, ...],
+    witness_rule_id: Optional[str],
+) -> OpProvenance | None:
+    """Derive the typed :class:`OpProvenance` from an op's recovery markers.
+
+    ADDITIVE (Phase-2 step 2): the legacy ``*_fallback`` / ``*_recovery`` booleans
+    and the ``*_provenance_tags`` string bags remain authoritative; this derives a
+    typed mirror so later steps can rekey readers onto
+    ``RecognizerId.X in op.provenance.recognizer_ids`` / ``isinstance(prov, Recovered)``.
+
+    An op carries the SET of every load-bearing recovery recognizer that touched
+    it. The result is :class:`Recovered` iff the op bears a recovery marker
+    (``fallback_provenance`` OR any recognizer membership); otherwise ``None``
+    (no recovery stamp — the op was not produced by a fallback recognizer). The
+    :class:`Parsed` arm is reserved for grammar-rule provenance wired in a later
+    phase; absence is represented as ``None`` here to stay additive.
+    """
+    ids: set[RecognizerId] = set()
+    if sec1_body_johto_fallback:
+        ids.add(RecognizerId.SEC1_BODY_JOHTO)
+    if body_root_replace_fallback:
+        ids.add(RecognizerId.BODY_ROOT_REPLACE)
+    if uncovered_body_recovery:
+        ids.add(RecognizerId.UNCOVERED_BODY)
+    if "extraction_fallback_heuristic" in extraction_provenance_tags:
+        ids.add(RecognizerId.EXTRACTION_FALLBACK_HEURISTIC)
+    if "jolloin_moment_renumber_supplement" in extraction_provenance_tags:
+        ids.add(RecognizerId.JOLLOIN_MOMENT_RENUMBER_SUPPLEMENT)
+    if "unique_item_label_subsection_fallback" in target_guessing_provenance_tags:
+        ids.add(RecognizerId.UNIQUE_ITEM_LABEL_SUBSECTION_FALLBACK)
+    if "normalize_item_like_target" in target_guessing_provenance_tags:
+        ids.add(RecognizerId.NORMALIZE_ITEM_LIKE_TARGET)
+    if "rebase_duplicate_target_shifted_replace" in target_guessing_provenance_tags:
+        ids.add(RecognizerId.REBASE_DUPLICATE_TARGET_SHIFTED_REPLACE)
+    if "rebase_replaced_renumber_source" in target_guessing_provenance_tags:
+        ids.add(RecognizerId.REBASE_REPLACED_RENUMBER_SOURCE)
+    if "chapter_scope_from_unique_live_section" in target_guessing_provenance_tags:
+        ids.add(RecognizerId.CHAPTER_SCOPE_FROM_UNIQUE_LIVE_SECTION)
+    if witness_rule_id == "fi.jolloin_renumber":
+        ids.add(RecognizerId.JOLLOIN_RENUMBER)
+    elif witness_rule_id == "fi.repeal_vts_voimaantulo":
+        ids.add(RecognizerId.REPEAL_VTS_VOIMAANTULO)
+
+    if not ids and not fallback_provenance:
+        return None
+
+    recognizer_ids = frozenset(ids)
+    return Recovered(
+        surface=dominant_surface(recognizer_ids),
+        recognizer_ids=recognizer_ids,
+        tier=dominant_tier(recognizer_ids),
+    )
 
 class ScopeResolutionConfidence(StrEnum):
     """Confidence rail for a Finland chapter-scope resolution witness.
@@ -323,7 +415,7 @@ def projection_scope_confidence_for_op(
         return projection_scope_confidence(
             scope_confidence=op.scope_confidence,
             scope_provenance_tags=op.scope_provenance_tags,
-            resolved_chapter=op.target_chapter,
+            resolved_chapter=op.target_cols.target_chapter,
         )
     return projection_scope_confidence(
         scope_confidence=op.scope_confidence,
@@ -458,8 +550,14 @@ def _format_operation_description(
     return description
 
 
-def _lo_target_fields(lo: _LegalOperation) -> Dict[str, object]:
-    """Eagerly unpack LegalOperation target path into AmendmentOp field values."""
+def _lo_target_record(lo: _LegalOperation) -> AmendmentOpV1Record:
+    """Unpack a LegalOperation target path into the legacy 8-column record shape.
+
+    This is the ``lo`` → target-columns derivation; ``AmendmentOp`` encodes the
+    resulting record to its stored :class:`TargetSelector` via the codec, so the
+    selector is the sole stored representation and the legacy columns are a
+    projection (``AmendmentOp.target_cols``) rather than stored state.
+    """
     pd = {k: v for k, v in lo.target.path}
     if "section" in pd:
         section = pd["section"]
@@ -481,7 +579,7 @@ def _lo_target_fields(lo: _LegalOperation) -> Dict[str, object]:
     sub_val = pd.get("subsection", "")
     special = lo.target.special
     if special == FacetKind.HEADING or str(special) == "heading":
-        ts = "otsikko"
+        ts: str | None = "otsikko"
     elif str(special) == "otsikko_edella":
         ts = "otsikko_edella"
     elif special == FacetKind.INTRO or str(special) == "intro":
@@ -494,7 +592,7 @@ def _lo_target_fields(lo: _LegalOperation) -> Dict[str, object]:
     # two segments here while exposing the alakohta separately.
     item_label = pd.get("item")
     subitem_label = pd.get("subitem")
-    return dict(
+    return AmendmentOpV1Record(
         target_section=section,
         target_unit_kind=target_unit_kind,
         target_chapter=chapter,
@@ -503,6 +601,54 @@ def _lo_target_fields(lo: _LegalOperation) -> Dict[str, object]:
         target_item=(f"{item_label}{subitem_label}" if item_label and subitem_label else item_label),
         target_subitem=subitem_label,
         target_special=ts,
+    )
+
+
+# Sentinel: ``AmendmentOp.__init__``'s ``target_selector`` parameter was not
+# explicitly supplied. Distinct from ``None`` so a caller could (in principle)
+# clear it, and so ``dataclasses.replace`` — which re-passes the stored selector
+# — is distinguishable from a fresh column-built construction.
+class _TargetSelectorUnset:
+    __slots__ = ()
+
+
+_TARGET_SELECTOR_UNSET: "_TargetSelectorUnset" = _TargetSelectorUnset()
+
+# Default selector for a bare ``AmendmentOp()`` (section focus, empty label,
+# unspecified scope) — matches the historical column defaults
+# (``target_section=""``, ``target_unit_kind="section"``) byte-for-byte under the
+# codec round-trip.
+_DEFAULT_TARGET_SELECTOR: TargetSelector = TargetSelector(
+    relative_path=(AddressSegment("section", ""),),
+    scope=TargetScope(scope_status=ScopeStatus.UNSPECIFIED),
+    special=None,
+    special_raw=None,
+)
+
+
+def _selector_from_columns(
+    *,
+    target_unit_kind: TargetUnitKind,
+    target_section: str,
+    target_chapter: str | None,
+    target_part: str | None,
+    target_paragraph: int | None,
+    target_item: str | None,
+    target_subitem: str | None,
+    target_special: str | None,
+) -> TargetSelector:
+    """Encode the legacy 8-column construction inputs to the stored selector."""
+    return TargetSelectorCodecV1.from_legacy(
+        AmendmentOpV1Record(
+            target_unit_kind=target_unit_kind,
+            target_section=target_section,
+            target_chapter=target_chapter,
+            target_part=target_part,
+            target_paragraph=target_paragraph,
+            target_item=target_item,
+            target_subitem=target_subitem,
+            target_special=target_special,
+        )
     )
 
 
@@ -649,15 +795,14 @@ class AmendmentOp:
     """
 
     op_id: str = ""
-    op_type: OpType = "REPLACE"
-    target_section: str = ""
-    target_unit_kind: TargetUnitKind = "section"
-    target_chapter: Optional[str] = None
-    target_part: Optional[str] = None
-    target_paragraph: Optional[int] = None
-    target_item: Optional[str] = None
-    target_subitem: Optional[str] = None
-    target_special: Optional[str] = None
+    op_type: OpType = OpType.REPLACE
+    # W6 Phase C: the 8 loosely-typed legacy ``target_*`` columns are GONE as
+    # stored state. The op's target is held once, as the typed cross-jurisdiction
+    # :class:`TargetSelector`; the legacy 8-column shape is a lossless codec
+    # projection exposed read-only via :attr:`target_cols`. Construction still
+    # accepts the legacy ``target_*`` kwargs (or an ``lo`` carrier); both are
+    # encoded to this single stored selector in ``__init__``.
+    target_selector: TargetSelector = _DEFAULT_TARGET_SELECTOR
     named_row_targets: Tuple[str, ...] = ()
     numbered_table_targets: Tuple[str, ...] = ()
     body_root_replace_fallback: bool = False
@@ -685,8 +830,51 @@ class AmendmentOp:
     preserve_explicit_heading_facet: bool = False
     # Parse-witness provenance (diagnostic only — zero replay semantics)
     witness_rule_id: Optional[str] = None
+    # Stored typed op-provenance (Phase-2 storage-collapse). NOT init-able: it is
+    # STAMPED in ``__init__`` from the recovery markers and RE-STAMPED at the
+    # frontend setattr sites that mutate those markers post-construction (via
+    # ``restamp_provenance``). ``dataclasses.replace`` re-runs ``__init__`` so a
+    # replaced op re-derives its stamp automatically. Excluded from the dataclass
+    # init contract so ``replace`` never tries to re-pass it.
+    _provenance: OpProvenance | None = field(default=None, init=False, repr=False, compare=False)
     if TYPE_CHECKING:
         target_kind: TargetKind
+
+    @property
+    def provenance(self) -> OpProvenance | None:
+        """Typed op-provenance consolidation target (Phase-2 storage-collapse).
+
+        STORED (no longer computed on access): the stamp is derived from the
+        recovery markers (the ``*_fallback`` / ``*_recovery`` booleans, the
+        ``*_provenance_tags`` membership, and the branched ``witness_rule_id``)
+        at construction in ``__init__`` and RE-STAMPED via
+        :meth:`restamp_provenance` at the frontend setattr sites that mutate
+        those markers in place. ``dataclasses.replace`` re-runs ``__init__``, so a
+        replaced op re-derives its stamp. ADDITIVE during the collapse: the
+        legacy flags/tags stay authoritative until they are deleted; the stamp is
+        kept byte-identical to the prior computed value.
+        """
+        return self._provenance
+
+    def restamp_provenance(self) -> None:
+        """Re-derive the stored provenance stamp from the current markers.
+
+        Called at the frontend setattr sites (``op.body_root_replace_fallback =
+        True``, ``op.extraction_provenance_tags = …``, ``op.sec1_body_johto_fallback
+        = True``, ``op.witness_rule_id = …``) that mutate recovery markers AFTER
+        construction, so the stored stamp stays in lockstep with the markers the
+        legacy readers used. Construction (``__init__``) and ``dataclasses.replace``
+        stamp on their own; this is only for in-place marker mutation.
+        """
+        self._provenance = _derive_op_provenance(
+            fallback_provenance=self.fallback_provenance,
+            body_root_replace_fallback=self.body_root_replace_fallback,
+            sec1_body_johto_fallback=self.sec1_body_johto_fallback,
+            uncovered_body_recovery=self.uncovered_body_recovery,
+            extraction_provenance_tags=self.extraction_provenance_tags,
+            target_guessing_provenance_tags=self.target_guessing_provenance_tags,
+            witness_rule_id=self.witness_rule_id,
+        )
 
     @property
     def resolved_scope_confidence(self) -> ScopeConfidence | None:
@@ -699,7 +887,7 @@ class AmendmentOp:
     def __init__(
         self,
         op_id: str = "",
-        op_type: OpType = "REPLACE",
+        op_type: OpType = OpType.REPLACE,
         target_section: str = "",
         target_unit_kind: TargetUnitKind | None = None,
         target_kind: TargetKind | None = None,
@@ -709,6 +897,7 @@ class AmendmentOp:
         target_item: Optional[str] = None,
         target_subitem: Optional[str] = None,
         target_special: Optional[str] = None,
+        target_selector: "TargetSelector | _TargetSelectorUnset" = _TARGET_SELECTOR_UNSET,
         named_row_targets: Tuple[str, ...] = (),
         numbered_table_targets: Tuple[str, ...] = (),
         body_root_replace_fallback: bool = False,
@@ -734,6 +923,12 @@ class AmendmentOp:
         preserve_explicit_heading_facet: bool = False,
         witness_rule_id: Optional[str] = None,
     ) -> None:
+        explicit_selector = (
+            target_selector
+            if not isinstance(target_selector, _TargetSelectorUnset)
+            else None
+        )
+
         if target_kind is not None:
             if not isinstance(target_kind, TargetKind):
                 raise TypeError(f"AmendmentOp target_kind seed must be TargetKind, got {type(target_kind).__name__}")
@@ -744,43 +939,48 @@ class AmendmentOp:
                     f"{target_kind!r} vs {target_unit_kind!r}"
                 )
             target_unit_kind = seeded_target_unit_kind
-        elif target_unit_kind is None and lo is None:
+        elif target_unit_kind is None and lo is None and explicit_selector is None:
             raise ValueError(
                 "AmendmentOp direct construction requires explicit target_unit_kind "
-                "unless lo or TargetKind target_kind seed is provided"
+                "unless lo, an explicit target_selector, or a TargetKind target_kind "
+                "seed is provided"
             )
         elif target_unit_kind is None and lo is not None:
-            lo_fields = _lo_target_fields(lo)
-            target_unit_kind = cast(TargetUnitKind, lo_fields["target_unit_kind"])
-            if not target_section:
-                target_section = str(lo_fields["target_section"])
-            if target_chapter is None:
-                target_chapter = cast(Optional[str], lo_fields["target_chapter"])
-            if target_part is None:
-                target_part = cast(Optional[str], lo_fields["target_part"])
-            if target_paragraph is None:
-                target_paragraph = cast(Optional[int], lo_fields["target_paragraph"])
-            if target_item is None:
-                target_item = cast(Optional[str], lo_fields["target_item"])
-            if target_subitem is None:
-                target_subitem = cast(Optional[str], lo_fields["target_subitem"])
-            if target_special is None:
-                target_special = cast(Optional[str], lo_fields["target_special"])
+            target_unit_kind = _lo_target_record(lo).target_unit_kind
 
-        if target_unit_kind is None:
-            raise ValueError("AmendmentOp target_unit_kind could not be resolved")
-        resolved_target_unit_kind: TargetUnitKind = target_unit_kind
+        # Resolve the SINGLE stored representation of this op's target — the typed
+        # selector. Precedence (W6 Phase C):
+        #   1. ``lo`` present → derive from the lo target path (lo is fully
+        #      authoritative for the target columns, matching the pre-W6 behavior
+        #      where the lo-sourced setattr loop overwrote all 8 columns).
+        #   2. else an explicit ``target_selector`` (e.g. from ``replace_target``
+        #      or ``dataclasses.replace`` re-passing the stored field) → use it.
+        #   3. else encode the legacy 8-column construction kwargs.
+        if lo is not None:
+            self.target_selector = TargetSelectorCodecV1.from_legacy(_lo_target_record(lo))
+        elif explicit_selector is not None:
+            self.target_selector = explicit_selector
+        else:
+            if target_unit_kind is None:
+                raise ValueError("AmendmentOp target_unit_kind could not be resolved")
+            self.target_selector = _selector_from_columns(
+                target_unit_kind=target_unit_kind,
+                target_section=target_section,
+                target_chapter=target_chapter,
+                target_part=target_part,
+                target_paragraph=target_paragraph,
+                target_item=target_item,
+                target_subitem=target_subitem,
+                target_special=target_special,
+            )
+
+        # The final chapter, sourced from the stored selector, drives the
+        # scope-confidence normalization below (the pre-W6 code read the
+        # post-overwrite ``self.target_chapter``).
+        final_chapter = self.target_cols.target_chapter
 
         self.op_id = op_id
         self.op_type = op_type
-        self.target_section = target_section
-        self.target_unit_kind = resolved_target_unit_kind
-        self.target_chapter = target_chapter
-        self.target_part = target_part
-        self.target_paragraph = target_paragraph
-        self.target_item = target_item
-        self.target_subitem = target_subitem
-        self.target_special = target_special
         self.named_row_targets = named_row_targets
         self.numbered_table_targets = numbered_table_targets
         self.body_root_replace_fallback = body_root_replace_fallback
@@ -794,7 +994,7 @@ class AmendmentOp:
         self.scope_provenance_tags = scope_provenance_tags
         self.scope_confidence = normalize_scope_confidence(
             scope_confidence,
-            resolved_chapter=target_chapter,
+            resolved_chapter=final_chapter,
         )
         self.source_statute = source_statute
         self.source_issue_date = source_issue_date
@@ -808,6 +1008,11 @@ class AmendmentOp:
         self.temporal_activation = temporal_activation
         self.preserve_explicit_heading_facet = preserve_explicit_heading_facet
         self.witness_rule_id = witness_rule_id
+
+        # Stamp the stored typed provenance from the recovery markers just set.
+        # All marker fields the stamp reads are assigned above; the remaining
+        # __init__ body only resolves move-clause/target identity (no markers).
+        self.restamp_provenance()
 
         derived_move_clause_target_unit_kind: TargetUnitKind | None = (
             cast(TargetUnitKind | None, self.lo.move_clause_target_unit_kind)
@@ -825,9 +1030,10 @@ class AmendmentOp:
             )
         self.move_clause_target_unit_kind = move_clause_target_unit_kind or derived_move_clause_target_unit_kind
 
-        if self.lo is not None:
-            for k, v in _lo_target_fields(self.lo).items():
-                object.__setattr__(self, k, v)
+        # W6 Phase C: the lo-sourced target columns are no longer stored — the
+        # stored ``target_selector`` was already derived from the lo target path
+        # above (lo authoritative). Only the lo-sourced PROVENANCE side-channels
+        # (scope tags / scope confidence / target-guessing tags) remain to fold.
         if self.lo is not None:
             lo_provenance_tags = self.lo.provenance_tags
             lo_scope_tags = tuple(note for note in lo_provenance_tags if note in _SCOPE_PROVENANCE_TAGS)
@@ -847,7 +1053,7 @@ class AmendmentOp:
                     "scope_confidence",
                     normalize_scope_confidence(
                         lo_scope_conf,
-                        resolved_chapter=self.target_chapter,
+                        resolved_chapter=final_chapter,
                     ),
                 )
             if lo_target_guessing_tags and not self.target_guessing_provenance_tags:
@@ -862,25 +1068,46 @@ class AmendmentOp:
                 "scope_confidence",
                 scope_confidence_from_tags(
                     self.scope_provenance_tags,
-                    resolved_chapter=self.target_chapter,
+                    resolved_chapter=final_chapter,
                 ),
             )
 
     def description(self) -> str:
+        cols = self.target_cols
         return _format_operation_description(
             action_type=self.op_type,
-            target_unit_kind=self.target_unit_kind,
-            target_label=self.target_section,
-            target_chapter=self.target_chapter,
-            target_paragraph=self.target_paragraph,
-            target_item=self.target_item,
-            target_special=self.target_special,
+            target_unit_kind=cols.target_unit_kind,
+            target_label=cols.target_section,
+            target_chapter=cols.target_chapter,
+            target_paragraph=cols.target_paragraph,
+            target_item=cols.target_item,
+            target_special=cols.target_special,
         )
 
     @property
     def target_kind(self) -> TargetKind:
         """Return the Finland legacy target enum as a compatibility projection."""
-        return legacy_target_kind_for_unit_kind(self.target_unit_kind)
+        return legacy_target_kind_for_unit_kind(self.target_cols.target_unit_kind)
+
+    @property
+    def target_cols(self) -> AmendmentOpV1Record:
+        """The 8 legacy ``target_*`` columns projected from the stored selector.
+
+        W6 Phase C: the loosely-typed ``target_*`` columns are no longer stored —
+        the typed :attr:`target_selector` is the sole stored representation. This
+        accessor re-projects it back to the legacy 8-tuple via
+        :meth:`TargetSelectorCodecV1.to_legacy`. The codec is lossless
+        (TARGET-03) and the corpus parity probe
+        (``scripts/w6_target_column_accessor_parity.py``) confirmed this
+        reproduces every former stored column byte-exactly on all compiled ops
+        across the full pinned corpus. Read sites use ``op.target_cols.target_<col>``.
+
+        Returns an :class:`AmendmentOpV1Record` (frozen): ``target_unit_kind``,
+        ``target_section``, ``target_chapter``, ``target_part``,
+        ``target_paragraph``, ``target_item``, ``target_subitem``,
+        ``target_special``.
+        """
+        return TargetSelectorCodecV1.to_legacy(self.target_selector)
 
     @classmethod
     def from_lo(cls, lo: _LegalOperation, idx: int) -> List[AmendmentOp]:
@@ -891,13 +1118,36 @@ class AmendmentOp:
         Section ranges (e.g. '12―14') are expanded into one op each.
         Target fields are derived from lo.target.
         """
+        # Every StructuralAction member is mapped EXPLICITLY (the map is exhaustive
+        # over StructuralAction) so that a future enum addition fails loud here
+        # rather than silently defaulting to a section-body REPLACE. HEADING_REPLACE
+        # compiles to the REPLACE op family on purpose: its heading scope is carried
+        # by the typed target facet (FacetKind.HEADING / target_special), not by the
+        # op-type axis. META and the text-level actions (TEXT_REPLACE / TEXT_REPEAL)
+        # also canonicalize to the REPLACE op family at this conversion: their meta /
+        # text-patch payload rides on the LegalOperation, and the downstream
+        # law-level-text-patch separate-lane diversion keys off that payload + target
+        # (not the op-type axis), so REPLACE is their established op_type here. An
+        # unmapped action can therefore only be a newly added StructuralAction member;
+        # fail loud with a self-evidencing diagnostic instead of defaulting silently.
         _ACTION_MAP: Dict[StructuralAction, OpType] = {
-            StructuralAction.REPLACE: "REPLACE",
-            StructuralAction.REPEAL: "REPEAL",
-            StructuralAction.INSERT: "INSERT",
-            StructuralAction.RENUMBER: "RENUMBER",
+            StructuralAction.REPLACE: OpType.REPLACE,
+            StructuralAction.REPEAL: OpType.REPEAL,
+            StructuralAction.INSERT: OpType.INSERT,
+            StructuralAction.RENUMBER: OpType.RENUMBER,
+            StructuralAction.HEADING_REPLACE: OpType.REPLACE,
+            StructuralAction.META: OpType.REPLACE,
+            StructuralAction.TEXT_REPLACE: OpType.REPLACE,
+            StructuralAction.TEXT_REPEAL: OpType.REPLACE,
         }
-        op_type: OpType = _ACTION_MAP.get(lo.action, "REPLACE")
+        op_type: OpType | None = _ACTION_MAP.get(lo.action)
+        if op_type is None:
+            raise ValueError(
+                "AmendmentOp.from_lo received a StructuralAction with no op-type "
+                "mapping: "
+                f"action={lo.action!r} op_id={lo.op_id!r}. _ACTION_MAP must be "
+                "exhaustive over StructuralAction — add the new member explicitly."
+            )
         base_id = lo.op_id or f"op_{idx}"
         move_clause_target_unit_kind = cast(TargetUnitKind | None, lo.move_clause_target_unit_kind)
         all_ops: List[AmendmentOp] = []
@@ -1086,7 +1336,7 @@ class ResolvedOp:
     op_id: str = ""
     # Transitional late-waist compatibility inputs. These are explicit
     # override hooks, not ordinary public runtime authority.
-    _op_type_seed: str = ""
+    _op_type_seed: OpType = OpType.REPLACE
     _target_special_override: Optional[str] = None
     sec1_body_johto_fallback: bool = False
     move_clause_target_unit_kind: TargetUnitKind | None = None
@@ -1122,6 +1372,26 @@ class ResolvedOp:
     # Optional during migration — None means "use legacy fields for dispatch".
     # See canonical_intent.py and PRO_RESPONSE_CANONICAL_OP_INTENT_TAXONOMY.md.
     intent: "CanonicalIntent | None" = None
+    # Stored typed op-provenance (Phase-2 storage-collapse). Derived in
+    # ``__post_init__`` from THIS ResolvedOp's forwarded markers (not the inner
+    # ``op``'s — see :attr:`provenance`). ``dataclasses.replace`` re-runs
+    # ``__post_init__`` so a replaced op re-derives. Excluded from init.
+    _provenance: OpProvenance | None = field(default=None, init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        # Stamp the stored provenance from the forwarded recovery markers. These
+        # are this ResolvedOp's own copies (forwarded at ``from_amendment_op``),
+        # which the legacy readers consumed — NOT the inner ``op``'s, which can
+        # carry a later-mutated tag set.
+        self._provenance = _derive_op_provenance(
+            fallback_provenance=self.fallback_provenance,
+            body_root_replace_fallback=self.body_root_replace_fallback,
+            sec1_body_johto_fallback=self.sec1_body_johto_fallback,
+            uncovered_body_recovery=self.uncovered_body_recovery,
+            extraction_provenance_tags=self.extraction_provenance_tags,
+            target_guessing_provenance_tags=self.target_guessing_provenance_tags,
+            witness_rule_id=self.witness_rule_id,
+        )
 
     @property
     def resolved_scope_confidence(self) -> ScopeConfidence | None:
@@ -1238,11 +1508,11 @@ class ResolvedOp:
             target_unit_kind=target_unit_kind,
             target_norm=target_norm,
             target_chapter=target_chapter,
-            target_part=op.target_part,
-            target_paragraph=op.target_paragraph,
-            target_item=op.target_item,
-            target_subitem=op.target_subitem,
-            target_special=op.target_special,
+            target_part=op.target_cols.target_part,
+            target_paragraph=op.target_cols.target_paragraph,
+            target_item=op.target_cols.target_item,
+            target_subitem=op.target_cols.target_subitem,
+            target_special=op.target_cols.target_special,
         )
         if (
             resolved_target_address is not None
@@ -1278,12 +1548,12 @@ class ResolvedOp:
                     target_unit_kind=target_unit_kind,
                     resolved_target_address=resolved_target_address,
                 )
-                else _target_special_override_for_address(op.target_special, resolved_target_address)
+                else _target_special_override_for_address(op.target_cols.target_special, resolved_target_address)
             ),
             sec1_body_johto_fallback=op.sec1_body_johto_fallback,
             move_clause_target_unit_kind=op.move_clause_target_unit_kind,
-            move_clause_target_chapter=op.target_chapter,
-            move_clause_target_part=op.target_part,
+            move_clause_target_chapter=op.target_cols.target_chapter,
+            move_clause_target_part=op.target_cols.target_part,
             uncovered_body_recovery=op.uncovered_body_recovery,
             post_repeal_item_shift_label=op.post_repeal_item_shift_label,
             body_chapter_move_from=op.body_chapter_move_from,
@@ -1503,7 +1773,7 @@ class ResolvedOp:
         return self._source_title_override or ""
 
     @property
-    def resolved_action_type(self) -> str:
+    def resolved_action_type(self) -> OpType:
         """Return the effective late-waist action family for replay/apply."""
         return self._op_type_seed
 
@@ -1528,12 +1798,28 @@ class ResolvedOp:
         return self.muutos_ir is not None or self.is_repeal_action or self.is_renumber_action
 
     @property
+    def provenance(self) -> OpProvenance | None:
+        """Typed op-provenance, STORED — stamped in ``__post_init__`` from THIS
+        ResolvedOp's forwarded markers.
+
+        Critically NOT delegated to ``self.op``: the late waist forwards its own
+        copies of the recovery markers (``sec1_body_johto_fallback``,
+        ``uncovered_body_recovery``, the ``*_provenance_tags`` bags, the
+        ``witness_rule_id``) at ``from_amendment_op`` time, and the legacy readers
+        consumed THOSE forwarded fields — not the inner ``op``'s, which can carry
+        a different (later-mutated) tag set. The stamp is derived from ``self`` in
+        ``__post_init__`` (re-run by ``dataclasses.replace``), keeping the typed
+        view in exact lockstep with the fields the old readers used.
+        """
+        return self._provenance
+
+    @property
     def uses_sec1_body_johto_fallback(self) -> bool:
-        return self.sec1_body_johto_fallback
+        return has_recognizer(self.provenance, RecognizerId.SEC1_BODY_JOHTO)
 
     @property
     def uses_uncovered_body_recovery(self) -> bool:
-        return self.uncovered_body_recovery
+        return has_recognizer(self.provenance, RecognizerId.UNCOVERED_BODY)
 
     @property
     def resolved_post_repeal_item_shift_label(self) -> str | None:
@@ -1640,9 +1926,10 @@ def _op_target_subsection_label(op: "AmendmentOp") -> Optional[str]:
     the subsection as a bare label so governance consumers can match it against
     structural path labels without re-parsing the rendered description.
     """
-    if op.target_paragraph is None:
+    target_paragraph = op.target_cols.target_paragraph
+    if target_paragraph is None:
         return None
-    return str(op.target_paragraph)
+    return str(target_paragraph)
 
 
 @dataclass
@@ -1911,30 +2198,31 @@ def _augment_replay_address_with_op_descendant_scope(
     """Preserve AmendmentOp child scope when a legacy LO only names a section."""
     if address is None or not address.path:
         return address
-    if op.target_unit_kind != "section":
+    cols = op.target_cols
+    if cols.target_unit_kind != "section":
         return address
     if any(kind in {"subsection", "item", "subitem"} for kind, _label in address.path):
         return address
     has_descendant = (
-        op.target_paragraph is not None
-        or op.target_item is not None
-        or op.target_subitem is not None
+        cols.target_paragraph is not None
+        or cols.target_item is not None
+        or cols.target_subitem is not None
     )
-    has_special = op.target_special is not None
+    has_special = cols.target_special is not None
     if not has_descendant and not has_special:
         return address
 
     path_parts = list(address.path)
-    if op.target_paragraph is not None:
-        path_parts.append(("subsection", str(op.target_paragraph)))
-    if op.target_item is not None:
-        item_text = str(op.target_item)
-        compound = re.fullmatch(r"(\d+)([a-z])", item_text) if op.target_subitem is None else None
-        if op.target_subitem is not None:
-            if item_text.endswith(str(op.target_subitem)):
-                item_text = item_text[: -len(str(op.target_subitem))]
+    if cols.target_paragraph is not None:
+        path_parts.append(("subsection", str(cols.target_paragraph)))
+    if cols.target_item is not None:
+        item_text = str(cols.target_item)
+        compound = re.fullmatch(r"(\d+)([a-z])", item_text) if cols.target_subitem is None else None
+        if cols.target_subitem is not None:
+            if item_text.endswith(str(cols.target_subitem)):
+                item_text = item_text[: -len(str(cols.target_subitem))]
             path_parts.append(("item", item_text))
-            path_parts.append(("subitem", str(op.target_subitem)))
+            path_parts.append(("subitem", str(cols.target_subitem)))
         elif compound is not None:
             path_parts.append(("item", compound.group(1)))
             path_parts.append(("subitem", compound.group(2)))
@@ -1943,9 +2231,9 @@ def _augment_replay_address_with_op_descendant_scope(
 
     special = address.special
     if special is None:
-        if op.target_special in {"otsikko", "otsikko_edella"}:
+        if cols.target_special in {"otsikko", "otsikko_edella"}:
             special = FacetKind.HEADING
-        elif op.target_special == "johd":
+        elif cols.target_special == "johd":
             special = FacetKind.INTRO
     return LegalAddress(path=tuple(path_parts), special=special)
 
@@ -2016,11 +2304,12 @@ def _section_payload_requires_root_replace(
     """
     if target_unit_kind != "section":
         return False
-    if op.op_type != "REPLACE":
+    if op.op_type != OpType.REPLACE:
         return False
     if resolved_target_address is None or resolved_target_address.special != FacetKind.HEADING:
         return False
-    if op.target_paragraph is not None or op.target_item is not None:
+    cols = op.target_cols
+    if cols.target_paragraph is not None or cols.target_item is not None:
         return False
     if op.preserve_explicit_heading_facet:
         return False
@@ -2184,71 +2473,79 @@ def _build_canonical_intent(rop: ResolvedOp) -> "CanonicalIntent | None":
             target = FacetTarget(host=host, facet=FacetKind.HEADING)
             validate_intent_target(target, FINLAND_REGISTRY)
 
-            if op_type == "REPLACE":
-                assert payload is not None
-                return Replace(
-                    kind=IntentKind.REPLACE,
-                    target=target,
-                    payload=cast(_IRNodeLike, payload),
-                    contract=ExecutionContract(
-                        occupancy=_replace_policy(),
-                        coverage=CoverageMode.EXACT,
-                    ),
-                )
-            elif op_type == "REPEAL":
-                return Repeal(
-                    kind=IntentKind.REPEAL,
-                    target=NodeTarget(address=host),
-                    contract=ExecutionContract(
-                        occupancy=OccupancyPolicy.repeal_to_tombstone(),
-                        coverage=CoverageMode.EXACT,
-                    ),
-                )
-            elif op_type == "INSERT":
-                # INSERT otsikko = add a heading to a section that had none.
-                # Modelled as a REPLACE so it works whether or not the heading
-                # already exists; tombstone headings are a legitimate reenact
-                # lane (allowed but non-primary).
-                if payload is None:
+            match op_type:
+                case OpType.REPLACE:
+                    assert payload is not None
+                    return Replace(
+                        kind=IntentKind.REPLACE,
+                        target=target,
+                        payload=cast(_IRNodeLike, payload),
+                        contract=ExecutionContract(
+                            occupancy=_replace_policy(),
+                            coverage=CoverageMode.EXACT,
+                        ),
+                    )
+                case OpType.REPEAL:
+                    return Repeal(
+                        kind=IntentKind.REPEAL,
+                        target=NodeTarget(address=host),
+                        contract=ExecutionContract(
+                            occupancy=OccupancyPolicy.repeal_to_tombstone(),
+                            coverage=CoverageMode.EXACT,
+                        ),
+                    )
+                case OpType.INSERT:
+                    # INSERT otsikko = add a heading to a section that had none.
+                    # Modelled as a REPLACE so it works whether or not the heading
+                    # already exists; tombstone headings are a legitimate reenact
+                    # lane (allowed but non-primary).
+                    if payload is None:
+                        return None
+                    return Replace(
+                        kind=IntentKind.REPLACE,
+                        target=target,
+                        payload=cast(_IRNodeLike, payload),
+                        contract=ExecutionContract(
+                            occupancy=_replace_policy(),
+                            coverage=CoverageMode.EXACT,
+                        ),
+                    )
+                case OpType.RENUMBER:
+                    # RENUMBER heading — uncommon, return None for graceful degradation
                     return None
-                return Replace(
-                    kind=IntentKind.REPLACE,
-                    target=target,
-                    payload=cast(_IRNodeLike, payload),
-                    contract=ExecutionContract(
-                        occupancy=_replace_policy(),
-                        coverage=CoverageMode.EXACT,
-                    ),
-                )
-            # RENUMBER heading — uncommon, return None for graceful degradation
-            return None
+                case _ as unreachable:
+                    assert_never(unreachable)
 
         if target_special == "johd":
             host = LegalAddress(path=address.path, special=None)
             target = FacetTarget(host=host, facet=FacetKind.INTRO)
             validate_intent_target(target, FINLAND_REGISTRY)
 
-            if op_type == "REPLACE":
-                assert payload is not None
-                return Replace(
-                    kind=IntentKind.REPLACE,
-                    target=target,
-                    payload=cast(_IRNodeLike, payload),
-                    contract=ExecutionContract(
-                        occupancy=_replace_policy(),
-                        coverage=CoverageMode.EXACT,
-                    ),
-                )
-            elif op_type == "REPEAL":
-                return Repeal(
-                    kind=IntentKind.REPEAL,
-                    target=NodeTarget(address=host),
-                    contract=ExecutionContract(
-                        occupancy=OccupancyPolicy.repeal_to_tombstone(),
-                        coverage=CoverageMode.EXACT,
-                    ),
-                )
-            return None
+            match op_type:
+                case OpType.REPLACE:
+                    assert payload is not None
+                    return Replace(
+                        kind=IntentKind.REPLACE,
+                        target=target,
+                        payload=cast(_IRNodeLike, payload),
+                        contract=ExecutionContract(
+                            occupancy=_replace_policy(),
+                            coverage=CoverageMode.EXACT,
+                        ),
+                    )
+                case OpType.REPEAL:
+                    return Repeal(
+                        kind=IntentKind.REPEAL,
+                        target=NodeTarget(address=host),
+                        contract=ExecutionContract(
+                            occupancy=OccupancyPolicy.repeal_to_tombstone(),
+                            coverage=CoverageMode.EXACT,
+                        ),
+                    )
+                case OpType.INSERT | OpType.RENUMBER:
+                    return None
+                case _ as unreachable:
+                    assert_never(unreachable)
 
         # --- NodeTarget cases ---
         node_addr = LegalAddress(path=address.path, special=None)
@@ -2287,74 +2584,71 @@ def _build_canonical_intent(rop: ResolvedOp) -> "CanonicalIntent | None":
                 ),
             )
 
-        if op_type == "REPLACE":
-            assert payload is not None
-            return Replace(
-                kind=IntentKind.REPLACE,
-                target=node_target,
-                payload=cast(_IRNodeLike, payload),
-                contract=ExecutionContract(
-                    occupancy=_replace_policy(),
-                    coverage=CoverageMode.EXACT,
-                ),
-            )
-
-        if op_type == "REPEAL":
-            return Repeal(
-                kind=IntentKind.REPEAL,
-                target=node_target,
-                contract=ExecutionContract(
-                    occupancy=OccupancyPolicy.repeal_to_tombstone(),
-                    coverage=CoverageMode.EXACT,
-                ),
-            )
-
-        if op_type == "INSERT":
-            assert payload is not None
-            return Insert(
-                kind=IntentKind.INSERT,
-                target=node_target,
-                payload=cast(_IRNodeLike, payload),
-                contract=ExecutionContract(
-                    occupancy=_insert_policy(),
-                    coverage=CoverageMode.EXACT,
-                    insert_order=InsertOrder.SORTED_FAMILY,
-                ),
-            )
-
-        if op_type == "RENUMBER":
-            # Relabel needs both source and destination addresses on the late
-            # execution waist. Missing destination is now a lowering bug or an
-            # intentional graceful-degradation case for older tests.
-            destination_address = rop.resolved_destination_address
-            if destination_address is not None:
-                # The legacy destination often carries only the new leaf label
-                # (for example ``section:3``), while Relabel requires the full
-                # parent path to stay identical to the source address.
-                source_address = rop.resolved_target_address
-                source_path = source_address.path if source_address is not None else ()
-                if source_path:
-                    dest_leaf_kind = source_path[-1][0]
-                    dest_path = source_path[:-1] + ((dest_leaf_kind, destination_address.leaf_label()),)
-                else:
-                    dest_path = destination_address.path
-                dest_target = NodeTarget(
-                    address=LegalAddress(path=dest_path, special=None),
-                )
-                return Relabel(
-                    kind=IntentKind.RELABEL,
-                    source=node_target,
-                    destination=dest_target,
+        match op_type:
+            case OpType.REPLACE:
+                assert payload is not None
+                return Replace(
+                    kind=IntentKind.REPLACE,
+                    target=node_target,
+                    payload=cast(_IRNodeLike, payload),
                     contract=ExecutionContract(
-                        occupancy=OccupancyPolicy.same_slot_replace(),
+                        occupancy=_replace_policy(),
                         coverage=CoverageMode.EXACT,
                     ),
                 )
-            # Cannot determine destination — graceful degradation
-            return None
-
-        # Unknown op_type — graceful degradation
-        return None
+            case OpType.REPEAL:
+                return Repeal(
+                    kind=IntentKind.REPEAL,
+                    target=node_target,
+                    contract=ExecutionContract(
+                        occupancy=OccupancyPolicy.repeal_to_tombstone(),
+                        coverage=CoverageMode.EXACT,
+                    ),
+                )
+            case OpType.INSERT:
+                assert payload is not None
+                return Insert(
+                    kind=IntentKind.INSERT,
+                    target=node_target,
+                    payload=cast(_IRNodeLike, payload),
+                    contract=ExecutionContract(
+                        occupancy=_insert_policy(),
+                        coverage=CoverageMode.EXACT,
+                        insert_order=InsertOrder.SORTED_FAMILY,
+                    ),
+                )
+            case OpType.RENUMBER:
+                # Relabel needs both source and destination addresses on the late
+                # execution waist. Missing destination is now a lowering bug or an
+                # intentional graceful-degradation case for older tests.
+                destination_address = rop.resolved_destination_address
+                if destination_address is not None:
+                    # The legacy destination often carries only the new leaf label
+                    # (for example ``section:3``), while Relabel requires the full
+                    # parent path to stay identical to the source address.
+                    source_address = rop.resolved_target_address
+                    source_path = source_address.path if source_address is not None else ()
+                    if source_path:
+                        dest_leaf_kind = source_path[-1][0]
+                        dest_path = source_path[:-1] + ((dest_leaf_kind, destination_address.leaf_label()),)
+                    else:
+                        dest_path = destination_address.path
+                    dest_target = NodeTarget(
+                        address=LegalAddress(path=dest_path, special=None),
+                    )
+                    return Relabel(
+                        kind=IntentKind.RELABEL,
+                        source=node_target,
+                        destination=dest_target,
+                        contract=ExecutionContract(
+                            occupancy=OccupancyPolicy.same_slot_replace(),
+                            coverage=CoverageMode.EXACT,
+                        ),
+                    )
+                # Cannot determine destination — graceful degradation
+                return None
+            case _ as unreachable:
+                assert_never(unreachable)
 
     except (NameError, TypeError, AttributeError):
         raise  # programming bugs — fail loud

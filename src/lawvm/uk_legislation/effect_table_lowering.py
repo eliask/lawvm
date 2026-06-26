@@ -86,6 +86,10 @@ from lawvm.uk_legislation.witnesses import (
 from lawvm.uk_legislation.xml_helpers import _tag
 
 
+UK_EFFECT_BROAD_CONTAINER_REPEAL_TABLE_FEED_DESCENDANT_REPEAL = (
+    "uk_effect_broad_container_repeal_table_feed_descendant_repeal"
+)
+
 _REPEAL_TABLE_EFFECT_TYPE_MARKERS = (
     "repeal",
     "revok",
@@ -125,6 +129,26 @@ def _is_repeal_table_effect_type_candidate(effect_type: str | None) -> bool:
     if any(marker in normalized for marker in _NON_REPEAL_TABLE_EFFECT_TYPE_MARKERS):
         return False
     return True
+
+
+def _uk_target_is_descendant_of_broad_container(
+    target: LegalAddress,
+    broad_container_target: str,
+) -> bool:
+    """Return True when *target* is the broad container or a descendant of it.
+
+    Repeal-table source sometimes names only the container (``In Schedule 7—``)
+    while the feed row carries the exact descendant.  This predicate lets us
+    accept the feed target as the source-authorized structural repeal when the
+    container has already been source-matched.
+    """
+    target_str = str(target).strip()
+    container_str = str(broad_container_target or "").strip()
+    if not container_str:
+        return False
+    if target_str == container_str:
+        return True
+    return target_str.startswith(container_str + "/")
 
 
 @dataclass(frozen=True)
@@ -1155,6 +1179,57 @@ def try_lower_repeal_table_effect(
             ),
         )
     if repeal_table_structural_repeal.recognized:
+        broad_container_target = str(
+            repeal_table_structural_repeal.broad_container_target or ""
+        ).strip()
+        if (
+            repeal_table_structural_repeal.reason_code
+            == "broad_container_repeal_requires_grouped_feed_compilation"
+            and broad_container_target
+            and _uk_target_is_descendant_of_broad_container(
+                target, broad_container_target
+            )
+        ):
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=UK_EFFECT_BROAD_CONTAINER_REPEAL_TABLE_FEED_DESCENDANT_REPEAL,
+                family="source_repeal_table_elaboration",
+                reason_code="broad_container_repeal_table_feed_descendant_derived",
+                reason=(
+                    "UK repeal-table source names a whole container repeal and "
+                    "the feed row explicitly targets a descendant inside that "
+                    "container; lowering emits a source-backed structural repeal "
+                    "of the feed target without requiring a unique exact row match."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": t_str,
+                    "target": str(target),
+                    "table_index": repeal_table_structural_repeal.table_index,
+                    "row_text": repeal_table_structural_repeal.row_text,
+                    "enactment_cell": repeal_table_structural_repeal.enactment_cell,
+                    "extent_cell": repeal_table_structural_repeal.extent_cell,
+                    "enactment_match_basis": repeal_table_structural_repeal.enactment_match_basis,
+                    "broad_container_target": broad_container_target,
+                },
+            )
+            return UKTableBatchLoweringResult(
+                handled=True,
+                ops=(
+                    _build_table_structural_repeal_op(
+                        effect=effect,
+                        sequence=sequence,
+                        target=target,
+                        effect_witness=effect_witness,
+                        extraction_witness=extraction_witness,
+                        original_targets_str=original_targets_str,
+                        t_str=t_str,
+                        witness_rule_id=UK_EFFECT_BROAD_CONTAINER_REPEAL_TABLE_FEED_DESCENDANT_REPEAL,
+                    ),
+                ),
+            )
         _append_uk_effect_lowering_rejection(
             lowering_rejections_out,
             rule_id=f"{repeal_table_structural_repeal.rule_id}_unresolved",

@@ -123,7 +123,7 @@ def build_row_from_phase_witness(
     oracle_or_editorial_witness_drift: str = "",
     fix_owner: str = "",
     regression_ids: str = "",
-    status: str = "open",
+    phase_status: str = "open",
     notes: str = "",
 ) -> dict[str, str]:
     acquisition = witness.get("acquisition") or {}
@@ -143,7 +143,7 @@ def build_row_from_phase_witness(
     row["source_lane_used"] = _normalize_scalar(acquisition.get("source_lane_used"))
     row["fix_owner"] = _normalize_scalar(fix_owner)
     row["regression_ids"] = _normalize_scalar(regression_ids) or _normalize_scalar(witness.get("source_id"))
-    row["status"] = _normalize_scalar(status)
+    row["status"] = _normalize_scalar(phase_status)
     row["notes"] = _normalize_scalar(notes)
     return row
 
@@ -188,7 +188,7 @@ def main(args: Any) -> None:
             oracle_or_editorial_witness_drift=str(getattr(args, "oracle_or_editorial_witness_drift", "") or ""),
             fix_owner=str(getattr(args, "fix_owner", "") or ""),
             regression_ids=str(getattr(args, "regression_ids", "") or ""),
-            status=str(getattr(args, "status", "open") or "open"),
+            phase_status=str(getattr(args, "status", "open") or "open"),
             notes=str(getattr(args, "notes", "") or ""),
         )
         if getattr(args, "json", False):

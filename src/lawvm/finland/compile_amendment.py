@@ -30,7 +30,7 @@ from lawvm.finland.group_plan import (
 )
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.johtolause.meta_parse import extract_meta_surface_clauses
-from lawvm.finland.ops import AmendmentOp, ResolvedOp, get_replay_profile
+from lawvm.finland.ops import AmendmentOp, OpType, ResolvedOp, get_replay_profile
 from lawvm.finland.sparse_tail_claims import build_sparse_omission_tail_claims
 from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.standalone_targets import (
@@ -171,16 +171,16 @@ def _op_coverage_gap_residual(*, owned: int, violation: int, total: int) -> Resi
 
 def _is_numbered_table_proxy_op(op: AmendmentOp) -> bool:
     return (
-        op.target_unit_kind == "section"
+        op.target_cols.target_unit_kind == "section"
         and bool(op.numbered_table_targets)
-        and op.target_paragraph is None
-        and not op.target_item
-        and not op.target_special
+        and op.target_cols.target_paragraph is None
+        and not op.target_cols.target_item
+        and not op.target_cols.target_special
     )
 
 
 def _has_child_target(op: AmendmentOp) -> bool:
-    return op.target_paragraph is not None or bool(op.target_item) or bool(op.target_special)
+    return op.target_cols.target_paragraph is not None or bool(op.target_cols.target_item) or bool(op.target_cols.target_special)
 
 
 def _split_numbered_table_child_group_ops(group_ops: list[AmendmentOp]) -> tuple[list[AmendmentOp], ...]:
@@ -208,13 +208,13 @@ def _numbered_table_child_group_split_finding(
     source_ref: str,
 ) -> Finding:
     table_op_ids = [
-        op.op_id or op.target_section
+        op.op_id or op.target_cols.target_section
         for group in subgroups
         for op in group
         if _is_numbered_table_proxy_op(op)
     ]
     child_op_ids = [
-        op.op_id or f"{op.target_section}:{op.target_paragraph or ''}:{op.target_item or ''}"
+        op.op_id or f"{op.target_cols.target_section}:{op.target_cols.target_paragraph or ''}:{op.target_cols.target_item or ''}"
         for group in subgroups
         for op in group
         if _has_child_target(op)
@@ -302,9 +302,9 @@ def compile_amendment_ops(
         find_body_section_chapter=source_model.first_body_section_chapter,
     )
     inserted_chapter_labels = {
-        _norm_num_token(op.target_section or "")
+        _norm_num_token(op.target_cols.target_section or "")
         for op in ops
-        if op.target_unit_kind == "chapter" and op.op_type == "INSERT" and op.target_section
+        if op.target_cols.target_unit_kind == "chapter" and op.op_type == OpType.INSERT and op.target_cols.target_section
     }
     inserted_chapter_labels.update(
         _norm_num_token(source_chapter.chapter_label)

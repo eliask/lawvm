@@ -231,9 +231,9 @@ def _vts_xml(repeal_text: str, parent_num: int = 925, parent_year: str = "1979")
 def test_extract_voimaantulo_repeals_single_section() -> None:
     xml = _vts_xml("28 §.")
     ops = extract_voimaantulo_repeals(xml, "1979/925")
-    labels = {op.target_section for op in ops}
+    labels = {op.target_cols.target_section for op in ops}
     assert "28" in labels
-    op = next(o for o in ops if o.target_section == "28")
+    op = next(o for o in ops if o.target_cols.target_section == "28")
     assert op.op_type == "REPEAL"
     assert op.target_kind == "P"
     assert op.voimaantulo_repeal is True
@@ -242,14 +242,14 @@ def test_extract_voimaantulo_repeals_single_section() -> None:
 def test_extract_voimaantulo_repeals_comma_list_of_sections() -> None:
     xml = _vts_xml("64, 66, 68 ja 69 §.")
     ops = extract_voimaantulo_repeals(xml, "1979/925")
-    labels = {op.target_section for op in ops}
+    labels = {op.target_cols.target_section for op in ops}
     assert {"64", "66", "68", "69"} == labels
 
 
 def test_extract_voimaantulo_repeals_section_range() -> None:
     xml = _vts_xml("12–14 §.")
     ops = extract_voimaantulo_repeals(xml, "1979/925")
-    labels = {op.target_section for op in ops}
+    labels = {op.target_cols.target_section for op in ops}
     assert labels == {"12", "13", "14"}
 
 
@@ -263,7 +263,7 @@ def test_extract_voimaantulo_repeals_keeps_trailing_section_range_after_genitive
         "1987/322",
         parent_title="Laki terveydenhuollon järjestämisestä puolustusvoimissa",
     )
-    labels = {op.target_section for op in ops if op.target_kind == "P" and op.target_section}
+    labels = {op.target_cols.target_section for op in ops if op.target_kind == "P" and op.target_cols.target_section}
     assert {"10a", "10b", "10c", "10d", "10e", "10f"} <= labels
 
 
@@ -279,11 +279,11 @@ def test_extract_voimaantulo_repeals_keeps_mixed_later_targets_after_genitive_re
     )
 
     section_ops = {
-        (op.target_section, op.target_paragraph, op.target_item)
+        (op.target_cols.target_section, op.target_cols.target_paragraph, op.target_cols.target_item)
         for op in ops
         if op.target_kind == "P"
     }
-    chapter_labels = {op.target_section for op in ops if op.target_kind == "L"}
+    chapter_labels = {op.target_cols.target_section for op in ops if op.target_kind == "L"}
 
     assert ("1", 2, None) in section_ops
     assert ("2", 1, "5") in section_ops
@@ -306,7 +306,7 @@ def test_extract_voimaantulo_repeals_matches_parent_title_with_citation_parenthe
     )
 
     got = {
-        (op.target_section, op.target_paragraph)
+        (op.target_cols.target_section, op.target_cols.target_paragraph)
         for op in ops
         if op.target_kind == "P"
     }
@@ -318,7 +318,7 @@ def test_extract_voimaantulo_repeals_chapter_repeal() -> None:
     xml = _vts_xml("3 luku.")
     ops = extract_voimaantulo_repeals(xml, "1979/925")
     chapter_ops = [o for o in ops if o.target_kind == "L"]
-    assert any(o.target_section == "3" for o in chapter_ops)
+    assert any(o.target_cols.target_section == "3" for o in chapter_ops)
 
 
 def test_extract_voimaantulo_repeals_returns_empty_when_no_match() -> None:
@@ -396,11 +396,11 @@ def test_extract_voimaantulo_repeals_paragraph_under_kumotaan_intro() -> None:
 
     ops = extract_voimaantulo_repeals(xml, "1978/611", parent_title="Veronkantolaki")
 
-    chapter_labels = {op.target_section for op in ops if op.target_unit_kind == "chapter"}
+    chapter_labels = {op.target_cols.target_section for op in ops if op.target_cols.target_unit_kind == "chapter"}
     subsection_targets = {
-        (op.target_section, op.target_paragraph)
+        (op.target_cols.target_section, op.target_cols.target_paragraph)
         for op in ops
-        if op.target_unit_kind == "section"
+        if op.target_cols.target_unit_kind == "section"
     }
     assert chapter_labels == {"2a", "3"}
     assert subsection_targets == {("30", 2), ("30", 3)}
@@ -465,7 +465,7 @@ def test_extract_voimaantulo_repeals_keeps_same_paragraph_citation_repeal_after_
         f'</act>'
     ).encode()
     ops = extract_voimaantulo_repeals(xml, "1994/201", parent_title="Kotikuntalaki")
-    assert [(op.target_section, op.target_paragraph, op.target_item) for op in ops] == [("3", None, None)]
+    assert [(op.target_cols.target_section, op.target_cols.target_paragraph, op.target_cols.target_item) for op in ops] == [("3", None, None)]
 
 
 def test_extract_voimaantulo_repeals_matches_bare_parent_title() -> None:
@@ -483,7 +483,7 @@ def test_extract_voimaantulo_repeals_matches_bare_parent_title() -> None:
         f'</act>'
     ).encode()
     ops = extract_voimaantulo_repeals(xml, "1982/710", parent_title="Sosiaalihuoltolaki")
-    labels = {op.target_section for op in ops}
+    labels = {op.target_cols.target_section for op in ops}
     assert labels == {"27a", "27b", "27c"}
 
 
@@ -493,7 +493,7 @@ def test_extract_voimaantulo_repeals_real_corpus_2018_253_does_not_false_repeal_
     if xml is None:
         return
     ops = extract_voimaantulo_repeals(xml, "1994/201", parent_title="Kotikuntalaki")
-    assert not any(op.target_section == "3" and op.target_chapter is None for op in ops)
+    assert not any(op.target_cols.target_section == "3" and op.target_cols.target_chapter is None for op in ops)
 
 
 def test_extract_voimaantulo_repeals_real_corpus_1998_532_governed_numbered_list() -> None:
@@ -504,11 +504,11 @@ def test_extract_voimaantulo_repeals_real_corpus_1998_532_governed_numbered_list
 
     ops = extract_voimaantulo_repeals(xml, "1978/611", parent_title="Veronkantolaki")
 
-    chapter_labels = {op.target_section for op in ops if op.target_unit_kind == "chapter"}
+    chapter_labels = {op.target_cols.target_section for op in ops if op.target_cols.target_unit_kind == "chapter"}
     subsection_targets = {
-        (op.target_section, op.target_paragraph)
+        (op.target_cols.target_section, op.target_cols.target_paragraph)
         for op in ops
-        if op.target_unit_kind == "section"
+        if op.target_cols.target_unit_kind == "section"
     }
     assert chapter_labels == {"2a", "3"}
     assert subsection_targets == {("30", 2), ("30", 3)}
@@ -574,8 +574,8 @@ def test_extract_voimaantulo_repeals_force_except_clause_marks_excluded_section(
     op = ops[0]
     assert op.op_type == "REPEAL"
     assert op.target_kind == "P"
-    assert op.target_section == "2"
-    assert op.target_paragraph is None
+    assert op.target_cols.target_section == "2"
+    assert op.target_cols.target_paragraph is None
     assert op.voimaantulo_repeal is True
 
 
@@ -599,7 +599,7 @@ def test_extract_voimaantulo_repeals_matches_conclusions_paragraph_repeal_clause
     )
     assert len(ops) == 1
     op = ops[0]
-    assert op.target_section == "6"
+    assert op.target_cols.target_section == "6"
     assert op.target_kind == "P"
     assert op.voimaantulo_repeal is True
 
@@ -619,7 +619,7 @@ def test_extract_voimaantulo_repeals_matches_parent_title_with_trailing_period()
         parent_title="Laki eräistä naapuruussuhteista.",
     )
     assert len(ops) == 1
-    assert ops[0].target_section == "6"
+    assert ops[0].target_cols.target_section == "6"
 
 
 def test_extract_voimaantulo_repeals_does_not_bleed_into_dated_other_statute_after_parent_title() -> None:
@@ -637,7 +637,7 @@ def test_extract_voimaantulo_repeals_does_not_bleed_into_dated_other_statute_aft
         "1920/26",
         parent_title="Laki eräistä naapuruussuhteista.",
     )
-    got = {(op.target_section, op.target_paragraph) for op in ops}
+    got = {(op.target_cols.target_section, op.target_cols.target_paragraph) for op in ops}
     assert got == {("6", None)}
 
 
@@ -689,7 +689,7 @@ def test_extract_voimaantulo_repeals_deduplicates_labels() -> None:
     # Construct XML where same section appears twice (e.g. range + single)
     xml = _vts_xml("3–5 § sekä 4 §.")
     ops = extract_voimaantulo_repeals(xml, "1979/925")
-    labels = [o.target_section for o in ops if o.target_kind == "P"]
+    labels = [o.target_cols.target_section for o in ops if o.target_kind == "P"]
     assert len(labels) == len(set(labels)), "Duplicate labels found"
 
 
@@ -699,9 +699,9 @@ def test_extract_voimaantulo_repeals_subsection_target() -> None:
     assert len(ops) == 1
     op = ops[0]
     assert op.target_kind == "P"
-    assert op.target_section == "6"
-    assert op.target_paragraph == 1
-    assert op.target_item is None
+    assert op.target_cols.target_section == "6"
+    assert op.target_cols.target_paragraph == 1
+    assert op.target_cols.target_item is None
     assert op.voimaantulo_repeal is True
 
 
@@ -711,9 +711,9 @@ def test_extract_voimaantulo_repeals_subsection_item_target() -> None:
     assert len(ops) == 1
     op = ops[0]
     assert op.target_kind == "P"
-    assert op.target_section == "6"
-    assert op.target_paragraph == 1
-    assert op.target_item == "3"
+    assert op.target_cols.target_section == "6"
+    assert op.target_cols.target_paragraph == 1
+    assert op.target_cols.target_item == "3"
 
 
 def test_extract_voimaantulo_repeals_records_skipped_alakohta_target() -> None:
@@ -756,9 +756,9 @@ def test_extract_voimaantulo_repeals_parses_kohta_without_momentin() -> None:
     assert len(ops) == 1
     op = ops[0]
     assert op.target_kind == "P"
-    assert op.target_section == "6"
-    assert op.target_paragraph is None
-    assert op.target_item == "3"
+    assert op.target_cols.target_section == "6"
+    assert op.target_cols.target_paragraph is None
+    assert op.target_cols.target_item == "3"
     assert op.voimaantulo_repeal is True
 
 
@@ -770,7 +770,7 @@ def test_extract_voimaantulo_repeals_keeps_chapter_scope_across_grouped_refs() -
     ops = extract_voimaantulo_repeals(xml, "1979/925")
 
     got = {
-        (op.target_section, op.target_chapter, op.target_paragraph)
+        (op.target_cols.target_section, op.target_cols.target_chapter, op.target_cols.target_paragraph)
         for op in ops
         if op.target_kind == "P"
     }
@@ -851,7 +851,7 @@ def test_extract_voimaantulo_repeals_title_only_laki_prefix_pattern() -> None:
         "2000/812",
         parent_title="Laki sosiaalihuollon asiakkaan asemasta ja oikeuksista",
     )
-    labels = {op.target_section for op in ops}
+    labels = {op.target_cols.target_section for op in ops}
     assert "24" in labels, f"24§ not in ops: {labels}"
     assert "24a" in labels, f"24a§ not in ops: {labels}"
 
@@ -878,8 +878,8 @@ def test_extract_voimaantulo_repeals_title_only_with_dated_annetun_lain_phrase()
     )
     assert len(ops) == 1
     op = ops[0]
-    assert op.target_section == "6"
-    assert op.target_paragraph == 1
+    assert op.target_cols.target_section == "6"
+    assert op.target_cols.target_paragraph == 1
 
 
 def test_extract_voimaantulo_repeals_does_not_bleed_into_following_sentence() -> None:
@@ -902,7 +902,7 @@ def test_extract_voimaantulo_repeals_does_not_bleed_into_following_sentence() ->
         "1929/235",
         parent_title="Laki avioliittolain voimaanpanosta",
     )
-    got = {(op.target_section, op.target_paragraph, op.target_item) for op in ops}
+    got = {(op.target_cols.target_section, op.target_cols.target_paragraph, op.target_cols.target_item) for op in ops}
     assert got == {("6", 1, None), ("6", 2, None)}
 
 
@@ -968,7 +968,7 @@ def test_extract_voimaantulo_repeals_ignores_amending_law_title_cited_by_number(
         parent_title="Laki tulotietojärjestelmästä",
     )
 
-    assert ops == [], f"phantom master repeal emitted: {[(o.op_type, o.target_section) for o in ops]}"
+    assert ops == [], f"phantom master repeal emitted: {[(o.op_type, o.target_cols.target_section) for o in ops]}"
 
 
 def test_extract_voimaantulo_repeals_still_extracts_genuine_master_section_repeal() -> None:
@@ -996,5 +996,5 @@ def test_extract_voimaantulo_repeals_still_extracts_genuine_master_section_repea
         parent_title="Laki tulotietojärjestelmästä",
     )
 
-    labels = {(op.op_type, op.target_section) for op in ops}
+    labels = {(op.op_type, op.target_cols.target_section) for op in ops}
     assert ("REPEAL", "13") in labels, f"genuine master §13 repeal lost: {labels}"

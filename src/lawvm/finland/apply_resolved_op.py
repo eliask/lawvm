@@ -130,7 +130,7 @@ class ApplyResolvedOpRequest:
 
 FI_APPLY_OP_WRITE_HELPER = "fi.apply.resolved_op_write"
 # Strict-mode blocking code for a landed write whose conservation receipt does
-# not cover the observed mutation footprint (ObservedWriteAudit.status ==
+# not cover the observed mutation footprint (ObservedWriteAudit.audit_status ==
 # "violation") or whose bound→landed divergence is unexplained. This reuses the
 # registered apply-boundary touch-outside-target violation code (coordinated
 # with the mutation-boundary guard-liveness lane) rather than minting a new one.
@@ -748,7 +748,7 @@ def _collect_op_write_receipt(
                     "barrier_code": WRITE_RECEIPT_VIOLATION_FINDING_CODE,
                     "op_id": rop.op_id or "",
                     "helper": undeclared_touch.helper or FI_APPLY_OP_WRITE_HELPER,
-                    "observed_write_status": audit.status,
+                    "observed_write_status": audit.audit_status,
                     "undeclared_touch_code": undeclared_touch.code,
                     "undeclared_paths": [
                         list(path) for path in undeclared_touch.out_of_scope_paths

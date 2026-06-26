@@ -255,6 +255,11 @@ _EE_RULE_SPECS: Dict[str, str] = {
     # --- Source-acquisition / parse failure provenance (failed-op lanes) --------------
     "ee_amendment_source_fetch_failed": "A failure to fetch an amendment's source is recorded as a visible failed-op, not a silent skip.",
     "ee_amendment_parse_failed": "A failure to parse a fetched amendment is recorded as a visible failed-op.",
+    "ee_pending_amendment_metapass_parse_failed": "A parse failure during the pending-amendment metapass that re-reads future-oracle amendments to live-update still-targeted text is recorded as a visible non-blocking adjudication rather than silently swallowed.",
+    "ee_extract_act_title_parse_failed": "A parse failure in the act-title prefilter helper (used to look up titles for cancelled-pending-ref and metapass matching) is recorded as a visible non-blocking adjudication instead of returning an empty string silently.",
+    "ee_extract_target_matching_paragraphs_parse_failed": "A parse failure in the target-matching-paragraph-numbers prefilter helper (used by the cancelled-pending-ref filter) is recorded as a visible non-blocking adjudication instead of returning an empty set silently.",
+    "ee_extract_repealed_source_paragraphs_parse_failed": "A parse failure in the repealed-source-paragraph-numbers prefilter helper (used by the cancelled-pending-ref filter to detect source-law repeals before commencement) is recorded as a visible non-blocking adjudication instead of returning an empty set silently.",
+    "ee_extract_rewritten_source_paragraphs_parse_failed": "A parse failure in the rewritten-source-paragraph-numbers prefilter helper (used by the cancelled-pending-ref filter to detect source-law rewrites before commencement) is recorded as a visible non-blocking adjudication instead of returning an empty set silently.",
     "ee_temporal_source_scan_failed": "A failure to scan an act for temporal/commencement data is recorded as a visible failed-op.",
     "ee_cancelled_pending_ref_source_fetch_failed": "A failure to fetch a cancelled-pending reference's source is recorded as a visible failed-op.",
     "ee_cancelled_pending_ref_metadata_parse_failed": "A failure to parse cancelled-pending reference metadata is recorded as a visible failed-op.",
@@ -296,7 +301,9 @@ _EE_RULE_SPECS: Dict[str, str] = {
     # --- Pair / oracle classification + feed-fetch lanes ------------------------------
     "ee_pair_classification": "An explicit base/oracle pair carries a classification of how replay and oracle differ on that pair.",
     "ee_oracle_fetch_failed": "A failure to fetch the oracle consolidation is recorded as a visible failure, not a silent pass.",
-    "ee_oracle_ref_extraction_failed": "A failure to extract amendment references from the oracle is recorded as a visible failure.",
+    "ee_oracle_ref_extraction_failed": "An unexpected crash while extracting amendment references from the oracle fails loud (EEOracleRefExtractionCrash, embedding oracle id + source snippet) rather than degrading to an empty oracle.",
+    "ee_oracle_parse_failed": "A failure to parse the RT oracle consolidation is recorded as a visible blocking adjudication (oracle id + exception + source snippet) so a replay left uncompared is never read as agreement.",
+    "ee_consistency_check_failed": "A crash in the replay/oracle consistency check is recorded as a visible blocking adjudication so an uncompared result (no divergences computed) is never read as agreement.",
     "ee_oracle_group_mismatch": "An oracle group that does not align with the replayed group is recorded as a mismatch.",
     "ee_redactions_feed_fetch_failed": "A failure to fetch the redactions feed is recorded as a visible source-lane failure.",
     "ee_pit": "A point-in-time materialization marker scopes the EE replay/compare to the oracle redaction's own effective date (living spec §31).",

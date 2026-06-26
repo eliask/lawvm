@@ -33,7 +33,7 @@ def test_seeded_alias_resolves_single() -> None:
     """``julkisuuslaki`` (not derivable from its title) resolves to 1999/621."""
     reg = build_registry([])  # no generated entries; aliases on by default
     res = reg.lookup("julkisuuslaki")
-    assert res.status == "single"
+    assert res.registry_status == "single"
     assert [c.statute_id for c in res.candidates] == ["1999/621"]
     # Provenance: the candidate carries the official title it abbreviates.
     assert res.candidates[0].canonical_title == (
@@ -46,7 +46,7 @@ def test_every_seeded_alias_resolves_single_to_its_mapped_id() -> None:
     reg = build_registry([])
     for alias in STATUTE_NAME_ALIASES:
         res = reg.lookup(alias.alias_key)
-        assert res.status == "single", (alias.alias_key, res.status)
+        assert res.registry_status == "single", (alias.alias_key, res.registry_status)
         assert [c.statute_id for c in res.candidates] == [alias.statute_id]
 
 
@@ -67,7 +67,7 @@ def test_alias_coexists_with_generated_surface() -> None:
         [("1996/1093", "Metsälaki", dt.date(1996, 1, 1), None)],
     )
     # Generated nominative surface still resolves.
-    assert reg.lookup("metsälaki").status == "single"
+    assert reg.lookup("metsälaki").registry_status == "single"
     assert reg.lookup("metsälaki").candidates[0].statute_id == "1996/1093"
     # Curated alias still resolves alongside it.
     assert reg.lookup("perustuslaki").candidates[0].statute_id == "1999/731"
@@ -87,14 +87,14 @@ def test_alias_colliding_with_a_different_generated_id_is_fail_loud() -> None:
         aliases=custom,
     )
     res = reg.lookup("perustuslaki")
-    assert res.status == "multiple"
+    assert res.registry_status == "multiple"
     assert {c.statute_id for c in res.candidates} == {"1999/731", "1919/94-001"}
 
 
 def test_aliases_can_be_disabled() -> None:
     """``aliases=None`` builds a generation-only registry (delta measurement)."""
     reg = build_registry([], aliases=None)
-    assert reg.lookup("julkisuuslaki").status == "none"
+    assert reg.lookup("julkisuuslaki").registry_status == "none"
 
 
 # ---------------------------------------------------------------------------

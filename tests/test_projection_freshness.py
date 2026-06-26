@@ -51,7 +51,7 @@ def test_fresh_when_recorded_hash_matches(tmp_path: Path) -> None:
         ),
     )
     verdict = pf.check_projection_freshness("ops", str(pdir))
-    assert verdict.status == "fresh"
+    assert verdict.freshness_status == "fresh"
     assert verdict.is_stale is False
 
 
@@ -75,7 +75,7 @@ def test_stale_when_farchive_changes(tmp_path: Path) -> None:
     _write_farchive(tmp_path, "finlex.farchive", b"v2-bigger-payload")
 
     verdict = pf.check_projection_freshness("ops", str(pdir))
-    assert verdict.status == "stale"
+    assert verdict.freshness_status == "stale"
     assert verdict.is_stale is True
     assert verdict.recorded_hash != verdict.current_hash
 
@@ -85,13 +85,13 @@ def test_no_state_when_sidecar_missing(tmp_path: Path) -> None:
     pdir = _projection_dir(tmp_path)
     (pdir / "ops.parquet").write_bytes(b"PAR1")
     verdict = pf.check_projection_freshness("ops", str(pdir))
-    assert verdict.status == "no_state"
+    assert verdict.freshness_status == "no_state"
 
 
 def test_unknown_when_unregistered_projection(tmp_path: Path) -> None:
     pdir = _projection_dir(tmp_path)
     verdict = pf.check_projection_freshness("not_a_real_projection", str(pdir))
-    assert verdict.status == "unknown"
+    assert verdict.freshness_status == "unknown"
 
 
 def test_unknown_when_no_farchive(tmp_path: Path) -> None:
@@ -99,7 +99,7 @@ def test_unknown_when_no_farchive(tmp_path: Path) -> None:
     pdir = _projection_dir(tmp_path)
     (pdir / "ops.parquet").write_bytes(b"PAR1")
     verdict = pf.check_projection_freshness("ops", str(pdir))
-    assert verdict.status == "unknown"
+    assert verdict.freshness_status == "unknown"
 
 
 def test_write_state_after_export_yields_fresh(tmp_path: Path) -> None:
@@ -116,7 +116,7 @@ def test_write_state_after_export_yields_fresh(tmp_path: Path) -> None:
         data_root=str(tmp_path),
     )
     verdict = pf.check_projection_freshness("ops", str(pdir))
-    assert verdict.status == "fresh"
+    assert verdict.freshness_status == "fresh"
 
 
 def test_warn_if_stale_emits_loud_warning(tmp_path: Path, capsys, monkeypatch) -> None:
@@ -217,7 +217,7 @@ def test_suppress_freshness_silences(tmp_path: Path, capsys, monkeypatch) -> Non
         ),
     )
     verdict = pf.warn_if_stale("ops", str(pdir))
-    assert verdict.status == "unknown"
+    assert verdict.freshness_status == "unknown"
     assert capsys.readouterr().err == ""
 
 

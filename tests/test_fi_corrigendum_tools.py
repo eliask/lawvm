@@ -546,7 +546,7 @@ def test_corrigendum_provenance_prints_summary(capsys, monkeypatch) -> None:
                     "correction_type": "johtolause",
                     "db_verified": 1,
                     "current_verified": True,
-                    "status": "source_verified",
+                    "provenance_status": "source_verified",
                     "source_pdf": "sk20160442_1.pdf",
                     "location_desc": "johtolause",
                 },
@@ -555,7 +555,7 @@ def test_corrigendum_provenance_prints_summary(capsys, monkeypatch) -> None:
                     "correction_type": "johtolause",
                     "db_verified": 0,
                     "current_verified": False,
-                    "status": "manual_override_exact",
+                    "provenance_status": "manual_override_exact",
                     "source_pdf": "sk20160442_1.pdf",
                     "location_desc": "johtolause",
                 },
@@ -697,7 +697,7 @@ def test_build_provenance_bundle_classifies_row_statuses(monkeypatch, tmp_path: 
     assert bundle["verified_count"] == 1
     assert bundle["manual_exact_count"] == 1
     assert bundle["open_manual_candidate_count"] == 0
-    assert [row["status"] for row in bundle["rows"]] == [
+    assert [row["provenance_status"] for row in bundle["rows"]] == [
         "source_verified",
         "manual_override_exact",
     ]

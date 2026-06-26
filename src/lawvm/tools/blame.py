@@ -251,12 +251,12 @@ class BlameRow:
     """One typed per-address blame record (the machine-readable shape)."""
 
     address: str
-    status: BlameStatus
+    blame_status: BlameStatus
     last_op: Optional[dict[str, Any]] = None
     broken_at: str = ""
 
     def to_wire(self) -> Dict[str, Any]:
-        wire: Dict[str, Any] = {"address": self.address, "status": self.status}
+        wire: Dict[str, Any] = {"address": self.address, "blame_status": self.blame_status}
         if self.last_op is not None:
             op = self.last_op
             wire["last_op"] = {
@@ -495,7 +495,7 @@ def _build_blame_result(
             address_break=addr_break,
         )
         result.sections.append(
-            (key, display, BlameRow(address=key, status=status, last_op=op, broken_at=broken_at))
+            (key, display, BlameRow(address=key, blame_status=status, last_op=op, broken_at=broken_at))
         )
 
     # --address requested but no IR section resolved: classify the requested
@@ -510,7 +510,7 @@ def _build_blame_result(
             statute_break=governing_statute_break,
             address_break=None,
         )
-        result.unresolved = BlameRow(address=addr_str, status=status, broken_at=broken_at)
+        result.unresolved = BlameRow(address=addr_str, blame_status=status, broken_at=broken_at)
 
     return master.title, result
 
@@ -604,7 +604,7 @@ def _blame_sync(
 
     if result.unresolved is not None:
         row = result.unresolved
-        if row.status == STATUS_OP_UNAPPLIED_OR_ENGINE_ERROR:
+        if row.blame_status == STATUS_OP_UNAPPLIED_OR_ENGINE_ERROR:
             print(
                 f"  {row.address}: UNVERIFIABLE after {row.broken_at} — the timeline"
                 " is broken, so 'address not found' is not provable."

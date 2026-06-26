@@ -5,7 +5,6 @@ from lawvm.uk_legislation.source_state import (
     UKSourceStatus,
     classify_uk_statute_xml_content,
     classify_uk_source_blob,
-    classify_uk_source_blob_legacy,
     uk_multiple_choice_candidate_data_urls,
     is_uk_affecting_act_xml_source_diagnostic,
     is_uk_affecting_act_xml_source_observation,
@@ -49,13 +48,6 @@ def test_uk_source_state_legacy_tuple_preserves_cli_wire_values() -> None:
         25,
     )
     assert uk_source_state_wire_tuple(b"x" * 100) == ("available", 100)
-    assert classify_uk_source_blob_legacy(None) == ("absent", 0)
-    assert classify_uk_source_blob_legacy(b"") == ("too_small", 0)
-    assert classify_uk_source_blob_legacy(b"HTTP 300 Multiple Choices") == (
-        "multiple_choices",
-        25,
-    )
-    assert classify_uk_source_blob_legacy(b"x" * 100) == ("available", 100)
 
 
 def test_uk_statute_xml_content_classifies_multiple_choices_html() -> None:

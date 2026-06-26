@@ -247,7 +247,7 @@ _SURFACE_VIOLATION_STATUSES: frozenset[str] = frozenset({"broken"})
 
 def _node_status_str(node: SurfaceNode) -> str:
     """A node's status as a plain string (handles enum-or-str carriers)."""
-    raw = node.status
+    raw = node.node_status
     return str(getattr(raw, "value", raw))
 
 

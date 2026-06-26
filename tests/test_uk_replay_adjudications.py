@@ -253,6 +253,163 @@ def test_replay_uk_ops_rescans_invariants_after_label_changing_replace() -> None
     )
 
 
+def _sort_order_statute() -> IRStatute:
+    return IRStatute(
+        statute_id="ukpga/2000/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                # Deliberately out of canonical label order; source inserts section:3 here.
+                IRNode(kind=IRNodeKind.SECTION, label="2", text="Section two."),
+                IRNode(kind=IRNodeKind.SECTION, label="1", text="Section one."),
+            ),
+        ),
+    )
+
+
+def _insertion_anchor_witness_attrs(*, preceding_eid: str) -> dict[str, Any]:
+    """Build a payload sidecar witness carrying a source insertion anchor.
+
+    Mirrors the dict shape that ``_witness_for_op`` rehydrates; the required
+    ``effect_witness``/``extraction_witness``/``target_expansion_witness`` keys
+    are present so the witness is recognised, and the insertion anchor records a
+    source-declared position (the source-order evidence the downgrade requires).
+    """
+    from lawvm.uk_legislation.witness_sidecars import _lowered_witness_to_payload_data
+    from lawvm.uk_legislation.witnesses import (
+        UKApplicabilityWitness,
+        UKEffectWitness,
+        UKInsertionAnchorWitness,
+        UKLoweredOperationWitness,
+        UKProvisionExtractionWitness,
+        UKTargetExpansionWitness,
+    )
+
+    witness = UKLoweredOperationWitness(
+        op_id="uk-test-sort-order-observation",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "3"),)),
+        payload=None,
+        source=_source(),
+        effect_witness=UKEffectWitness(
+            effect_id="e1",
+            affected_provisions_raw="",
+            affecting_provisions_raw="",
+            effect_type_raw="inserted",
+            comments_raw="",
+            authority_layer="EFFECT_FEED_INDEX",
+            applicability=UKApplicabilityWitness(
+                effective_date=None,
+                in_force_dates=(),
+                requires_applied=False,
+                applied=False,
+                effect_type_raw="inserted",
+            ),
+        ),
+        extraction_witness=UKProvisionExtractionWitness(
+            effect_id="e1",
+            authority_layer="EFFECT_FEED_INDEX",
+            extracted_tag=None,
+            extracted_text="",
+            extracted_source_present=True,
+            metadata_fallback_used=False,
+            extraction_failure_kind=None,
+        ),
+        target_expansion_witness=UKTargetExpansionWitness(
+            original_ref="s. 3",
+            expanded_refs=(),
+            expansion_source="effect",
+        ),
+        text_rewrite_witness=None,
+        insertion_anchor_witness=UKInsertionAnchorWitness(
+            preceding_eid=preceding_eid,
+            anchor_source="effect",
+        ),
+    )
+    return {"rewrite_witness": _lowered_witness_to_payload_data(witness)}
+
+
+def test_replay_uk_ops_classifies_witnessed_sort_order_as_source_anchored_observation() -> None:
+    """A sort-order invariant whose affected sibling carries a source insertion anchor
+    is owned as a (non-blocking) source-anchored observation, never the generic bug."""
+    from lawvm.uk_legislation.source_adjudication import classify_uk_replay_adjudication_bucket
+
+    statute = _sort_order_statute()
+    adjudications: list[CompileAdjudication] = []
+    op = LegalOperation(
+        op_id="uk-test-sort-order-observation",
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "3"),)),
+        payload=IRNode(
+            kind=IRNodeKind.SECTION,
+            label="3",
+            text="Section three.",
+            attrs=_insertion_anchor_witness_attrs(preceding_eid="section-2"),
+        ),
+        source=_source(),
+        sequence=1,
+    )
+
+    replay_uk_ops(statute, [op], adjudications_out=adjudications)
+
+    anchored_adjs = [
+        adjudication
+        for adjudication in adjudications
+        if adjudication.kind == "uk_replay_source_anchored_order_observed"
+    ]
+    assert len(anchored_adjs) == 1, [
+        adj.kind for adj in adjudications if "order" in adj.kind or "invariant" in adj.kind
+    ]
+    assert "section out of order:" in str(anchored_adjs[0].detail["violation"])
+    assert classify_uk_replay_adjudication_bucket(anchored_adjs[0].kind) == "nonblocking_observation"
+    assert anchored_adjs[0].detail["blocking"] is False
+    # Neither the generic sort-order downgrade nor the bug kind is emitted: the
+    # source anchor proves the order, so the witness-pertaining branch owns it.
+    assert not [
+        adjudication
+        for adjudication in adjudications
+        if adjudication.kind
+        in {"uk_replay_sort_order_observation", "uk_replay_tree_invariant_violation"}
+    ]
+
+
+def test_replay_uk_ops_classifies_unwitnessed_sort_order_as_bug() -> None:
+    """Without a source insertion-anchor witness for the affected siblings the order
+    claim is unprovable; the sort-order violation must stay classified as a bug."""
+    from lawvm.uk_legislation.source_adjudication import classify_uk_replay_adjudication_bucket
+
+    statute = _sort_order_statute()
+    adjudications: list[CompileAdjudication] = []
+    op = LegalOperation(
+        op_id="uk-test-sort-order-no-witness",
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "3"),)),
+        payload=IRNode(kind=IRNodeKind.SECTION, label="3", text="Section three."),
+        source=_source(),
+        sequence=1,
+    )
+
+    replay_uk_ops(statute, [op], adjudications_out=adjudications)
+
+    # No unfalsifiable "retained source insertion order" downgrade without evidence.
+    assert not [
+        adjudication
+        for adjudication in adjudications
+        if adjudication.kind
+        in {"uk_replay_sort_order_observation", "uk_replay_source_anchored_order_observed"}
+    ], [adj.kind for adj in adjudications if "order" in adj.kind or "invariant" in adj.kind]
+    bug_adjs = [
+        adjudication
+        for adjudication in adjudications
+        if adjudication.kind == "uk_replay_tree_invariant_violation"
+    ]
+    assert len(bug_adjs) == 1
+    assert "section out of order:" in str(bug_adjs[0].detail["violation"])
+    assert classify_uk_replay_adjudication_bucket(bug_adjs[0].kind) == "replay_bug"
+
+
 def test_replay_uk_ops_rescans_invariants_after_descendant_shape_replace() -> None:
     statute = IRStatute(
         statute_id="ukpga/2000/1",
@@ -11413,3 +11570,180 @@ def test_replay_uk_ops_collects_text_duplication_warnings() -> None:
     assert evidence_rows[0].blocking is False
     assert evidence_rows[0].strict_disposition == "record"
     assert evidence_rows[0].quirks_disposition == "record"
+
+
+def test_collect_renumber_before_insert_edges_matches_descendant_inserts() -> None:
+    """Renumber source path prefixes descendant insert targets -> edge recorded."""
+    from lawvm.uk_legislation.replay_prepare_ordering import _collect_renumber_before_insert_edges
+
+    insert_ahead = LegalOperation(
+        op_id="insert-subsection-2",
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "262"), ("subsection", "2"))),
+        source=_source(),
+        sequence=1,
+    )
+    insert_later = LegalOperation(
+        op_id="insert-subsection-3",
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "262"), ("subsection", "3"))),
+        source=_source(),
+        sequence=2,
+    )
+    renumber = LegalOperation(
+        op_id="renumber-section-262",
+        action=StructuralAction.RENUMBER,
+        target=LegalAddress(path=(("section", "262"),)),
+        destination=LegalAddress(path=(("section", "262"), ("subsection", "1"))),
+        source=_source(),
+        sequence=3,
+        witness_rule_id="uk_effect_metadata_renumber_lowered",
+    )
+    # Source order has inserts before renumber; edges must still point renumber->insert.
+    edges = _collect_renumber_before_insert_edges([insert_ahead, insert_later, renumber])
+    assert edges == {"renumber-section-262": {"insert-subsection-2", "insert-subsection-3"}}
+
+
+def test_order_ops_by_before_edges_respects_renumber_insert_edges() -> None:
+    """Topological order places the renumber op before its descendant inserts."""
+    from lawvm.uk_legislation.replay_prepare_ordering import _order_ops_by_before_edges
+
+    insert_sub_2 = LegalOperation(
+        op_id="insert-subsection-2",
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "262"), ("subsection", "2"))),
+        source=_source(),
+        sequence=1,
+    )
+    insert_sub_3 = LegalOperation(
+        op_id="insert-subsection-3",
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "262"), ("subsection", "3"))),
+        source=_source(),
+        sequence=2,
+    )
+    renumber = LegalOperation(
+        op_id="renumber-section-262",
+        action=StructuralAction.RENUMBER,
+        target=LegalAddress(path=(("section", "262"),)),
+        destination=LegalAddress(path=(("section", "262"), ("subsection", "1"))),
+        source=_source(),
+        sequence=3,
+        witness_rule_id="uk_effect_metadata_renumber_lowered",
+    )
+    ordered = _order_ops_by_before_edges(
+        [insert_sub_2, insert_sub_3, renumber],
+        {"renumber-section-262": {"insert-subsection-2", "insert-subsection-3"}},
+    )
+    ordered_ids = [op.op_id for op in ordered]
+    assert ordered_ids == ["renumber-section-262", "insert-subsection-2", "insert-subsection-3"]
+
+
+def test_prepare_replay_orders_renumber_before_descendant_inserts() -> None:
+    """Full prepare_replay_uk_ops reorders source-late renumber before descendant inserts."""
+    statute = IRStatute(
+        statute_id="ukpga/1988/1",
+        title="Income and Corporation Taxes Act 1988",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="262",
+                    text="Chargeable gains.",
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    # Source order from the Finance (No. 2) Act 1992: inserts precede the renumber.
+    ops = [
+        LegalOperation(
+            op_id="insert-subsection-2",
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("section", "262"), ("subsection", "2"))),
+            payload=IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="Inserted subsection 2."),
+            source=_source(),
+            sequence=1,
+        ),
+        LegalOperation(
+            op_id="insert-subsection-3",
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("section", "262"), ("subsection", "3"))),
+            payload=IRNode(kind=IRNodeKind.SUBSECTION, label="3", text="Inserted subsection 3."),
+            source=_source(),
+            sequence=2,
+        ),
+        LegalOperation(
+            op_id="insert-subsection-4",
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("section", "262"), ("subsection", "4"))),
+            payload=IRNode(kind=IRNodeKind.SUBSECTION, label="4", text="Inserted subsection 4."),
+            source=_source(),
+            sequence=3,
+        ),
+        LegalOperation(
+            op_id="renumber-section-262",
+            action=StructuralAction.RENUMBER,
+            target=LegalAddress(path=(("section", "262"),)),
+            destination=LegalAddress(path=(("section", "262"), ("subsection", "1"))),
+            source=_source(),
+            sequence=4,
+            witness_rule_id="uk_effect_metadata_renumber_lowered",
+        ),
+    ]
+    result = _prepare_replay_uk_ops(ops, base_ir=statute)
+    ordered_ids = [op.op_id for op in result.accepted_ops]
+    renumber_idx = ordered_ids.index("renumber-section-262")
+    for insert_op_id in ("insert-subsection-2", "insert-subsection-3", "insert-subsection-4"):
+        assert ordered_ids.index(insert_op_id) > renumber_idx, (
+            f"{insert_op_id} should run after the renumber that creates subsection:1"
+        )
+
+
+def test_prepare_replay_renumber_before_insert_prevents_nested_subsections() -> None:
+    """Putting renumber before inserts yields a flat section/subsection list."""
+    statute = IRStatute(
+        statute_id="ukpga/1988/1",
+        title="Income and Corporation Taxes Act 1988",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="262",
+                    text="Chargeable gains.",
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    ops = [
+        LegalOperation(
+            op_id="insert-subsection-2",
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("section", "262"), ("subsection", "2"))),
+            payload=IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="Inserted subsection 2."),
+            source=_source(),
+            sequence=1,
+        ),
+        LegalOperation(
+            op_id="renumber-section-262",
+            action=StructuralAction.RENUMBER,
+            target=LegalAddress(path=(("section", "262"),)),
+            destination=LegalAddress(path=(("section", "262"), ("subsection", "1"))),
+            source=_source(),
+            sequence=2,
+            witness_rule_id="uk_effect_metadata_renumber_lowered",
+        ),
+    ]
+    replayed = replay_uk_ops(statute, ops, mutation_events_out=[])
+    section = replayed.body.children[0]
+    assert all(child.kind == IRNodeKind.SUBSECTION for child in section.children), (
+        "section children should all be subsections after renumber-then-insert"
+    )
+    assert {child.label for child in section.children} == {"1", "2"}

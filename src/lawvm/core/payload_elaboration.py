@@ -397,7 +397,7 @@ def _payload_completeness_report_row(
         "surface": "payload_completeness_witness",
         "row_id": f"{data.get('result_id')}:payload_completeness",
         "subject_id": str(data.get("result_id") or ""),
-        "status": str(witness.get("kind") or "reported"),
+        "row_status": str(witness.get("kind") or "reported"),
         "jurisdiction": str(data.get("jurisdiction") or ""),
         "owner_phase": str(data.get("owner_phase") or ""),
         "completeness_kind": str(witness.get("kind") or ""),

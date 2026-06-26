@@ -84,7 +84,7 @@ def _missing_enacted_locator(act_id: str) -> str:
 
 
 def _affecting_acquisition_event(
-    *, affecting_act_id: str, url: str, status: str, rule_id: str, reason: str, blocking: bool
+    *, affecting_act_id: str, url: str, acquisition_status: str, rule_id: str, reason: str, blocking: bool
 ) -> dict[str, object]:
     return {
         "rule_id": rule_id,
@@ -93,7 +93,7 @@ def _affecting_acquisition_event(
         "affecting_act_id": affecting_act_id,
         "locator": _missing_enacted_locator(affecting_act_id),
         "url": url,
-        "status": status,
+        "acquisition_status": acquisition_status,
         "reason": reason,
         "blocking": blocking,
         "strict_disposition": "block" if blocking else "record",
@@ -270,9 +270,9 @@ def _cached_source_xml_status(archive: Farchive, url: str) -> UKSourceStatus:
     return _source_xml_status(archive.get(url))
 
 
-def _source_xml_fetch_error(data: bytes | None, status: int | None) -> str | None:
+def _source_xml_fetch_error(data: bytes | None, http_status: int | None) -> str | None:
     if not data:
-        return f"http_{status}" if status is not None else "transport_error"
+        return f"http_{http_status}" if http_status is not None else "transport_error"
     source_status = _source_xml_status(data)
     if source_status is not UKSourceStatus.AVAILABLE:
         return source_status.value
@@ -527,7 +527,7 @@ def do_affecting(
             n_fail += 1
             if diagnostics_out is not None:
                 diagnostics_out.append(_affecting_acquisition_event(
-                    affecting_act_id=aid, url=url, status="ambiguous",
+                    affecting_act_id=aid, url=url, acquisition_status="ambiguous",
                     rule_id="uk_acquire_affecting_enacted_multiple_choices",
                     reason="multiple_choices", blocking=True))
         elif data and source_error is None and _store_source_xml_if_available(archive, url, data):
@@ -537,14 +537,14 @@ def do_affecting(
             n_404 += 1
             if diagnostics_out is not None:
                 diagnostics_out.append(_affecting_acquisition_event(
-                    affecting_act_id=aid, url=url, status="permanent_missing_cached",
+                    affecting_act_id=aid, url=url, acquisition_status="permanent_missing_cached",
                     rule_id="uk_acquire_affecting_enacted_permanent_missing",
                     reason=f"http_{status}", blocking=False))
         else:
             n_fail += 1
             if diagnostics_out is not None:
                 diagnostics_out.append(_affecting_acquisition_event(
-                    affecting_act_id=aid, url=url, status="error",
+                    affecting_act_id=aid, url=url, acquisition_status="error",
                     rule_id="uk_acquire_affecting_enacted_fetch_failed",
                     reason=source_error or (
                         f"http_{status}" if status is not None else "transport_error"

@@ -112,7 +112,7 @@ def _make_claim(statute_id: str = "711/2022") -> ManualCompilationClaim:
 def _make_state(claim_id: str, status: ClaimStatus = ClaimStatus.PROPOSED) -> ClaimState:
     return ClaimState(
         claim_id=claim_id,
-        status=status,
+        claim_state_status=status,
         review_status=ReviewStatus.PROPOSED,
         validator_status=ValidatorStatus.UNVALIDATED,
         confidence=ClaimConfidence.MEDIUM,
@@ -175,7 +175,7 @@ class TestClaimStore:
         loaded = store.read_state(claim.claim_id)
         assert loaded is not None
         assert loaded.claim_id == claim.claim_id
-        assert loaded.status == ClaimStatus.PROPOSED
+        assert loaded.claim_state_status == ClaimStatus.PROPOSED
 
     def test_state_read_returns_none_when_absent(self, tmp_path: Path):
         store = ClaimStore(tmp_path / "mc")

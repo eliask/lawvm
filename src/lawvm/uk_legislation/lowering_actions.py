@@ -234,6 +234,7 @@ _UK_EFFECT_TYPE_ACTIONS = {
     "repealed": "repeal",
     "entry repealed": "repeal",
     "repealed in part": "replace",
+    "revoked in part": "replace",  # OPC drafting synonym: "repealed in part"
     "words repealed": "replace",
     "word repealed": "replace",
     "substituted": "replace",
@@ -271,6 +272,41 @@ def _uk_effect_type_action(
 def _is_uk_word_level_effect_type(effect_type: str) -> bool:
     """Return True for UK effects that describe an intra-node word-level edit."""
     return str(effect_type or "").strip().lower() in UK_WORD_LEVEL_EFFECT_TYPES
+
+
+# OPC Drafting Guidance 6.9 — non-textual modification verbs. An effect with one
+# of these heads is an applicability/extent overlay (the affected text is
+# *applied*, *modified*, *excluded*, *restricted*, or *disapplied* with or
+# without parentheses-suffix qualifications like ``(temp.)`` / ``(with
+# modifications)`` / ``(...) (as inserted)``). The modifier Schedule body carries
+# drafting verbs (omit / insert / substitute) but those describe the variant
+# body, not the principal-text mutation. Sniffing them into a structural
+# repeal/replace of the principal text is the forbidden §1.11 surface predicate.
+# Must stay in sync with ``source_adjudication._UK_NON_TEXTUAL_MODIFICATION_EFFECT_VERBS``.
+_UK_NON_TEXTUAL_MODIFICATION_EFFECT_VERBS = frozenset(
+    {"applied", "excluded", "disapplied", "modified", "restricted"}
+)
+
+
+def is_uk_non_textual_modification_effect_type(effect_type: str) -> bool:
+    """Return True if the effect_type's leading verb is a non-textual
+    modification verb (applied / excluded / disapplied / modified / restricted).
+
+    Mirrors the closed-vocabulary predicate at
+    ``source_adjudication._is_uk_non_textual_modification_effect_type``.
+    Parentheses-suffix qualifications like ``(temp.)`` / ``(with
+    modifications)`` / ``(as inserted)`` are stripped before checking the head;
+    the verb vocabulary is the closed discriminator (§1.11, no free-text
+    match).
+    """
+    norm = str(effect_type or "").strip().lower()
+    if not norm:
+        return False
+    # Strip parentheses-suffix qualifications: "modified (temp.)" → "modified"
+    # and "applied by ... (as inserted)" → "applied by ..." → "applied"
+    head = norm.split("(", 1)[0].strip()
+    first = head.split(maxsplit=1)[0] if head else ""
+    return first in _UK_NON_TEXTUAL_MODIFICATION_EFFECT_VERBS
 
 
 def _to_structural_action(action: str) -> StructuralAction:

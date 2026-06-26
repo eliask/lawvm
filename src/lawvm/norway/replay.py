@@ -146,6 +146,35 @@ def _normalize_base_id(base_id: str) -> str:
     raise ValueError(f"unsupported Norway base_id: {base_id!r}")
 
 
+def _no_ref_kind_and_date(norm_base_id: str) -> tuple[str, str, str]:
+    """Split a normalized Norway ``base_id`` into ``(no, ref_kind, date_part)``.
+
+    The canonical form is ``no/<ref_kind>/<YYYY-MM-DD-N>``; ``_normalize_base_id``
+    accepts any ``no/...`` prefix, but the downstream consumer
+    (``_no, ref_kind, date_part = norm_base_id.split("/", 2)``) silently crashed
+    with a raw :class:`ValueError` when fewer than three ``/``-segments were
+    present (e.g. ``no/lov``). The crash escaped the catch around
+    ``_normalize_base_id`` and surfaced to the CLI as a bare Python
+    traceback — the §1.10 invisible-silent-failure smell, just the loud side
+    of it.
+
+    This helper fails the same way ``_normalize_base_id`` does — raising a
+    typed :class:`ValueError` whose message names the malformed id — so the
+    surrounding ``try: ... except ValueError as exc: return NOReplayResult(error=...)``
+    in :func:`replay_no_to_pit` surfaces the bad shape as a typed
+    ``NOReplayResult.error`` rather than a raw crash.
+
+    The caller disciplines the ``raw_date_part`` further (the leading 4 digits
+    form the year); see the call site.
+    """
+    parts = norm_base_id.split("/", 2)
+    if len(parts) < 3:
+        raise ValueError(
+            f"unsupported Norway base_id (expected no/<kind>/<date>, got {norm_base_id!r})"
+        )
+    return parts[0], parts[1], parts[2]
+
+
 def _source_date_from_id(source_id: str) -> str:
     try:
         _no, _kind, date_part = source_id.split("/", 2)
@@ -183,11 +212,33 @@ def replay_no_to_pit(
         return NOReplayResult(base_id=base_id, as_of=as_of, error=str(exc))
 
     result = NOReplayResult(base_id=norm_base_id, as_of=as_of)
-    _no, ref_kind, date_part = norm_base_id.split("/", 2)
+    try:
+        _no, ref_kind, date_part = _no_ref_kind_and_date(norm_base_id)
+    except ValueError as exc:
+        # Surface a malformed ``no/<single-segment>`` shape (e.g. ``no/lov``)
+        # as a typed ``NOReplayResult.error`` rather than a bare Python
+        # traceback (§1.10: never silently crash; fail loud with a named
+        # diagnostic). Reaches here because ``_normalize_base_id`` accepts
+        # any ``no/...`` prefix; this helper narrows the accepted shape to
+        # the canonical ``no/<kind>/<date>``.
+        result.error = str(exc)
+        return result
     if ref_kind != "lov":
         result.error = f"unsupported Norway ref kind: {ref_kind}"
         return result
-    year = int(date_part[:4])
+    try:
+        year = int(date_part[:4])
+    except ValueError:
+        # ``date_part`` does not begin with a 4-digit year. The previous
+        # bare ``int(date_part[:4])`` would crash the whole replay path with
+        # a raw ValueError. Surface the malformed date_part as a typed
+        # error carrying the offending id so triage does not have to
+        # re-run replay to find it.
+        result.error = (
+            f"unsupported Norway base_id (date segment {date_part!r} in {norm_base_id!r} "
+            "does not begin with a 4-digit year)"
+        )
+        return result
     base_bytes = load_no_original_lti_bytes(norm_base_id, data_dir)
     if base_bytes is None:
         result.error = f"no original-act source available for {norm_base_id} (year {year})"

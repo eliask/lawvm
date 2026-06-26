@@ -1215,7 +1215,7 @@ class TestChainCompletenessBundleWiring:
                     section_label="section:1",
                     amendment_id="2020/100",
                     barrier_codes=("APPLY.SOURCE_INCOMPLETE",),
-                    status="source_incomplete",
+                    verdict_status="source_incomplete",
                 )
             }
 

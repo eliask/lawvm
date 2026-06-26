@@ -389,7 +389,7 @@ class FailureFrontierProjection:
 
 @dataclass(frozen=True, slots=True)
 class FailureMaterializationProbe:
-    status: str
+    probe_status: str
     target_present: bool
     detail: str
 
@@ -567,7 +567,7 @@ def _materialization_probe_for_failure(
 ) -> FailureMaterializationProbe:
     if master is None:
         return FailureMaterializationProbe(
-            status="unavailable_no_detail_master",
+            probe_status="unavailable_no_detail_master",
             target_present=False,
             detail="no replayed target statute master was available for final-tree probing",
         )
@@ -576,13 +576,13 @@ def _materialization_probe_for_failure(
     sec_node = master.find_section(failure.target_section, failure.target_chapter)
     if sec_node is None:
         return FailureMaterializationProbe(
-            status="target_section_absent",
+            probe_status="target_section_absent",
             target_present=False,
             detail="target section is absent from the final materialized tree",
         )
     if target_paragraph is None:
         return FailureMaterializationProbe(
-            status="target_section_present",
+            probe_status="target_section_present",
             target_present=True,
             detail="target section is present in the final materialized tree",
         )
@@ -590,14 +590,14 @@ def _materialization_probe_for_failure(
     subsecs = [c for c in sec_node.children if _node_kind_value(c) == "subsection"]
     if target_paragraph > len(subsecs):
         return FailureMaterializationProbe(
-            status="target_subsection_absent",
+            probe_status="target_subsection_absent",
             target_present=False,
             detail=f"target subsection {target_paragraph} absent from {len(subsecs)} final subsections",
         )
     target_sub = subsecs[target_paragraph - 1]
     if target_item is None:
         return FailureMaterializationProbe(
-            status="target_subsection_present",
+            probe_status="target_subsection_present",
             target_present=True,
             detail=f"target subsection {target_paragraph} is present in the final materialized tree",
         )
@@ -606,12 +606,12 @@ def _materialization_probe_for_failure(
     item_norm = normalized_label_key(target_item)
     if any(normalized_label_key(p.label or "") == item_norm for p in paras):
         return FailureMaterializationProbe(
-            status="target_item_present",
+            probe_status="target_item_present",
             target_present=True,
             detail=f"target item {target_item} is present in the final materialized tree",
         )
     return FailureMaterializationProbe(
-        status="target_item_absent",
+        probe_status="target_item_absent",
         target_present=False,
         detail=f"target item {target_item} absent from final labels {[p.label for p in paras]}",
     )
@@ -692,7 +692,7 @@ def _detail_row_record(row: FailureDetailRow) -> Dict[str, Any]:
         "owner_phase": projection.owner_phase,
         "frontier_family": projection.frontier_family,
         "frontier_status": projection.frontier_status,
-        "materialized_target_status": row.materialization_probe.status,
+        "materialized_target_status": row.materialization_probe.probe_status,
         "materialized_target_present": row.materialization_probe.target_present,
         "materialized_target_detail": row.materialization_probe.detail,
     }
@@ -701,7 +701,7 @@ def _detail_row_record(row: FailureDetailRow) -> Dict[str, Any]:
 def _print_detail_json(rows: List[FailureDetailRow]) -> None:
     records = [_detail_row_record(row) for row in rows]
     materialization_counts: Counter[str] = Counter(
-        row.materialization_probe.status for row in rows
+        row.materialization_probe.probe_status for row in rows
     )
     print(
         json.dumps(
@@ -727,7 +727,7 @@ def _print_detail_rows(rows: List[FailureDetailRow]) -> None:
         row.frontier_projection.required_claim_kind or "<none>" for row in rows
     )
     materialization_counts: Counter[str] = Counter(
-        row.materialization_probe.status for row in rows
+        row.materialization_probe.probe_status for row in rows
     )
 
     print(f"Total failures: {len(rows)}")
@@ -762,8 +762,8 @@ def _print_detail_rows(rows: List[FailureDetailRow]) -> None:
             else ""
         )
         materialized = (
-            f" materialized={row.materialization_probe.status}"
-            if row.materialization_probe.status
+            f" materialized={row.materialization_probe.probe_status}"
+            if row.materialization_probe.probe_status
             else ""
         )
         print(

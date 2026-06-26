@@ -12,7 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, replace
-from typing import Any, Iterable, Mapping, Protocol, TypeGuard
+from typing import Any, Iterable, Mapping, Protocol, TypeIs
 
 from lawvm.core.ir import (
     IRNode,
@@ -71,7 +71,7 @@ class TemporalWriteInterval:
 class TemporalScheduleDelta:
     """Read-model delta produced by scheduling a temporal write interval."""
 
-    status: str
+    schedule_status: str
     scheduled_version_id: str
     interval: TemporalWriteInterval
     diagnostic_code: str
@@ -80,7 +80,7 @@ class TemporalScheduleDelta:
 
     def to_wire(self) -> dict[str, Any]:
         return {
-            "status": self.status,
+            "schedule_status": self.schedule_status,
             "scheduled_version_id": self.scheduled_version_id,
             "diagnostic_code": self.diagnostic_code,
             "occupant_source_work_id": self.occupant_source_work_id,
@@ -134,7 +134,7 @@ _TIMELINE_BREAK_FIELDS = (
 )
 
 
-def _is_timeline_break_like(item: object) -> TypeGuard[_TimelineBreakLike]:
+def _is_timeline_break_like(item: object) -> TypeIs[_TimelineBreakLike]:
     return all(hasattr(item, field_name) for field_name in _TIMELINE_BREAK_FIELDS)
 
 
@@ -200,7 +200,7 @@ def materialize_temporal_write_windows(
         next_timelines[interval.target_address] = replace(timeline, versions=scheduled_versions)
         deltas.append(
             TemporalScheduleDelta(
-                status="materialized",
+                schedule_status="materialized",
                 scheduled_version_id=_scheduled_version_id(interval),
                 interval=interval,
                 diagnostic_code=str(item.diagnostic_code or ""),

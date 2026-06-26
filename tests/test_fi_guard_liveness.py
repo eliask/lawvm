@@ -66,7 +66,7 @@ from lawvm.finland.compile_group_surface import BuildGroupSurfaceRequest, build_
 from lawvm.finland.corpus import get_corpus_store
 from lawvm.finland.frontend_compile import normalize_and_compile_ops
 from lawvm.finland.metadata import get_johtolause
-from lawvm.finland.ops import AmendmentOp
+from lawvm.finland.ops import OpType, AmendmentOp
 from lawvm.finland.payload_normalize import elaborate_payload_against_live
 from lawvm.finland.replay_pipeline import (
     ReplayPlan,
@@ -236,6 +236,9 @@ def _drill_strict_rebound_apply(
     """
     from lawvm.finland.apply import apply_op as _apply_op
     from lawvm.finland.ops import AmendmentOp as _AmendmentOp
+    from lawvm.finland.ops import ResolvedOp as _ResolvedOp
+    from lawvm.finland.ops import _build_canonical_intent
+    from lawvm.core.ir import LegalAddress as _LegalAddress
     from lawvm.finland.strict_profile import default_finland_strict_profile
 
     def _content(text: str) -> IRNode:
@@ -274,23 +277,39 @@ def _drill_strict_rebound_apply(
     amend_sub = _sub("3", _content("Lisäksi on soveltuvin osin noudatettava, mitä rikoslain 10 luvussa säädetään."))
     op = _AmendmentOp(
         op_id="guard_liveness_strict_rebound",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="73",
         target_unit_kind="section",
         target_paragraph=3,
         source_statute="2001/880",
     )
     ctx = StatuteContext(id="0/0", title="", base_ir=state.ir, base_xml_bytes=b"<body/>")
+    # Apply requires a typed CanonicalIntent (the legacy field-dispatch fallback
+    # was removed as corpus-cold). Drive the production typed lane by projecting
+    # the op onto a ResolvedOp and building its intent via the same production
+    # op->intent map the live pipeline uses.
+    muutos_ir = _sec("73", amend_sub)
+    rop = _ResolvedOp.from_amendment_op(
+        op,
+        muutos_ir=muutos_ir,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="73",
+        target_chapter=None,
+        target_address=_LegalAddress(path=(("section", "73"), ("subsection", "3"))),
+    )
+    rop.amend_sub_ir = amend_sub
+    rop.intent = _build_canonical_intent(rop)
     result = _apply_op(
         state,
-        op,
+        None,
         ctx,
-        _sec("73", amend_sub),
-        amend_sub_ir=amend_sub,
+        None,
         replay_mode="legal_pit",
         failed_ops_out=failed_ops_out,
         source_pathologies_out=source_pathologies_out,
         strict_profile=default_finland_strict_profile(),
+        rop=rop,
     )
     # The strict guard refused the rebound: the live tree is left unmutated.
     assert result is state
@@ -380,7 +399,7 @@ def drill_leading_subsection_heading_payload_elaboration() -> None:
         ),
     )
     op = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="11a",
         target_chapter="1",
@@ -484,7 +503,7 @@ def drill_fold_single_insert_subsection_list_tail_payload_elaboration() -> None:
     )
     # Single "lisätään uusi 3 momentti": target == len(live_subsections) + 1.
     op = AmendmentOp(
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_kind=TargetKind.SECTION,
         target_section="12",
         target_paragraph=3,
@@ -665,7 +684,7 @@ def drill_fold_multi_target_subsection_list_wrapups_payload_elaboration() -> Non
 
     def _replace_moment(paragraph: int) -> AmendmentOp:
         return AmendmentOp(
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_kind=TargetKind.SECTION,
             target_section="5",
             target_paragraph=paragraph,
@@ -796,7 +815,7 @@ def drill_body_chapter_descendant_scope_correction_compile_group_recovery() -> N
     )
     replace_intro_op = AmendmentOp(
         op_id="replace_10b_intro",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="10b",
         target_chapter="2",
@@ -844,7 +863,7 @@ def drill_body_chapter_descendant_scope_correction_compile_group_recovery() -> N
     assert finding.detail["body_chapter"] == "2a"
     # The guard genuinely retargeted: the descendant op rebounds onto the body chapter.
     assert result.output.effective_target_chapter == "2a"
-    assert result.output.group_ops[0].target_chapter == "2a"
+    assert result.output.group_ops[0].target_cols.target_chapter == "2a"
 
 
 def drill_restore_heading_for_explicit_facet_group_elaboration() -> None:
@@ -914,7 +933,7 @@ def drill_restore_heading_for_explicit_facet_group_elaboration() -> None:
 
     body_op = AmendmentOp(
         op_id="replace_5_2",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="5",
         target_paragraph=2,
@@ -922,7 +941,7 @@ def drill_restore_heading_for_explicit_facet_group_elaboration() -> None:
     )
     heading_facet_op = AmendmentOp(
         op_id="replace_5_otsikko",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="5",
         target_special="otsikko",
@@ -995,7 +1014,7 @@ def drill_sparse_omission_tail_claim_group_surface() -> None:
     model = AmendmentSourceModel.from_tree(tree, source_ref="2099/1")
     carrier = AmendmentOp(
         op_id="replace_29",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="29",
         target_chapter="4",
@@ -1003,7 +1022,7 @@ def drill_sparse_omission_tail_claim_group_surface() -> None:
     )
     descendant = AmendmentOp(
         op_id="replace_31_3",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="31",
         target_chapter="4",
@@ -1062,7 +1081,7 @@ def drill_sparse_omission_tail_pruned_from_carrier_compile_surface() -> None:
         parent_id="1985/336",
         source_model=source_model,
     )
-    ops = [op for op in phase.output if str(op.target_section) in {"29", "31"}]
+    ops = [op for op in phase.output if str(op.target_cols.target_section) in {"29", "31"}]
 
     result = compile_amendment_ops(
         before.state,
@@ -1077,6 +1096,120 @@ def drill_sparse_omission_tail_pruned_from_carrier_compile_surface() -> None:
     finding_kinds = {finding.kind for finding in result.findings()}
     assert SPARSE_OMISSION_TAIL_CLAIM_RULE in finding_kinds
     assert SPARSE_OMISSION_TAIL_PRUNE_RULE in finding_kinds
+
+
+def drill_sparse_plain_subsection_shell_continuation_merge_payload_elaboration() -> None:
+    """ELAB.SPARSE_PLAIN_SUBSECTION_SHELL_CONTINUATION_MERGE reaches elaboration.
+
+    Production lane: ``elaborate_payload_against_live`` receives a sparse section
+    payload where the source XML split an explicitly targeted previous intro
+    and following plain subsection across three adjacent subsection slots.
+    """
+    live_sec = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="31a",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="31 a §"),
+            IRNode(kind=IRNodeKind.HEADING, text="Old heading"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="Old first moment."),),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="2",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="Old second moment."),),
+            ),
+        ),
+    )
+    ctx = PayloadElaborationContext(
+        target_unit_kind="section",
+        target_norm="31a",
+        target_chapter="6",
+        target_part=None,
+        live_node=live_sec,
+        parent_node=None,
+        subsection_slots=(),
+        live_subsections=tuple(child for child in live_sec.children if child.kind is IRNodeKind.SUBSECTION),
+        subsection_by_label={
+            str(child.label): child
+            for child in live_sec.children
+            if child.kind is IRNodeKind.SUBSECTION and child.label
+        },
+        item_index={},
+        row_anchor_index={},
+        container_member_labels=None,
+        lookups=ReplayLookups(
+            snapshot_rev=0,
+            unique_section_paths={},
+            chapter_members={},
+            part_members={},
+            all_section_labels=frozenset({"31a"}),
+        ),
+    )
+    heading_op = AmendmentOp(
+        op_type=OpType.REPLACE,
+        target_kind=TargetKind.SECTION,
+        target_section="31a",
+        target_chapter="6",
+        target_special="otsikko",
+        source_statute="2019/271",
+    )
+    intro_op = AmendmentOp(
+        op_type=OpType.REPLACE,
+        target_kind=TargetKind.SECTION,
+        target_section="31a",
+        target_chapter="6",
+        target_paragraph=1,
+        target_special="johd",
+        source_statute="2019/271",
+    )
+    subsection_op = AmendmentOp(
+        op_type=OpType.REPLACE,
+        target_kind=TargetKind.SECTION,
+        target_section="31a",
+        target_chapter="6",
+        target_paragraph=2,
+        source_statute="2019/271",
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="31a",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="31 a §"),
+            IRNode(kind=IRNodeKind.HEADING, text="New heading"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="New first moment."),),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="2",
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="This training shall consist of:"),),
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="3",
+                children=(
+                    IRNode(kind=IRNodeKind.CONTENT, text="Personnel are divided into categories."),
+                    IRNode(kind=IRNodeKind.TABLE, children=(IRNode(kind=IRNodeKind.ROW, text="Category"),)),
+                ),
+            ),
+        ),
+    )
+
+    result = elaborate_payload_against_live(
+        ctx,
+        [heading_op, intro_op, subsection_op],
+        muutos_ir,
+        set(),
+    )
+
+    kinds = {obs.kind for obs in result.elaboration_observations or ()}
+    assert "ELAB.SPARSE_PLAIN_SUBSECTION_SHELL_CONTINUATION_MERGE" in kinds
+    assert result.unassigned_sparse_payload_slots == ()
 
 
 def drill_rebase_replaced_renumber_source_inspect_bundle() -> None:
@@ -1327,7 +1460,7 @@ def _drill_renumber_rop():
     )
     op = AmendmentOp(
         op_id="renumber_73_to_61",
-        op_type="RENUMBER",
+        op_type=OpType.RENUMBER,
         target_section="73",
         target_unit_kind="section",
         target_chapter="7",
@@ -1753,7 +1886,7 @@ def drill_occupancy_policy_violation_finland_production() -> None:
 
     op = AmendmentOp(
         op_id="guard-liveness/occupancy",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="1",
         source_statute="1991/1",
@@ -1766,7 +1899,7 @@ def drill_occupancy_policy_violation_finland_production() -> None:
         op_id=op.op_id,
         target_unit_kind="section",
         target_norm="1",
-        _op_type_seed="REPLACE",
+        _op_type_seed=OpType.REPLACE,
         _source_statute_override="1991/1",
         _target_address_override=LegalAddress(path=(("section", "1"),)),
     )
@@ -1836,7 +1969,7 @@ def drill_occupancy_temporally_disjoint_insert_finland_production() -> None:
 
     op = AmendmentOp(
         op_id="guard-liveness/occupancy-disjoint",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="78c",
         target_chapter="8",
@@ -1850,7 +1983,7 @@ def drill_occupancy_temporally_disjoint_insert_finland_production() -> None:
         op_id=op.op_id,
         target_unit_kind="section",
         target_norm="78c",
-        _op_type_seed="INSERT",
+        _op_type_seed=OpType.INSERT,
         _source_statute_override="2022/1282",
         _target_address_override=LegalAddress(
             path=(("chapter", "8"), ("section", "78c"))
@@ -2290,7 +2423,7 @@ def drill_surface_orphan_entity_node_surface_totality() -> None:
             source_ref=None,
             lens_id="lens.def",
             rule_id="r",
-            status="asserted",
+            node_status="asserted",
             payload_hash="p",
             payload={"term": term},
         )
@@ -2305,7 +2438,7 @@ def drill_surface_orphan_entity_node_surface_totality() -> None:
         source_ref=None,
         lens_id="lens.def",
         rule_id="r",
-        status="resolved",
+        node_status="resolved",
         payload_hash="p",
         payload={},
     )
@@ -2315,7 +2448,7 @@ def drill_surface_orphan_entity_node_surface_totality() -> None:
         src="binding",
         dst="covered",  # only `covered` is an edge endpoint; `orphan` is not
         rule_id="r",
-        status="asserted",
+        surface_edge_status="asserted",
         payload_hash="p",
         payload={},
     )
@@ -2868,7 +3001,7 @@ def drill_mutation_boundary_finding_at_op_quirks_apply_lane() -> None:
 def _closure_rop(
     *,
     op_id: str = "op_closure_1",
-    op_type: str = "REPLACE",
+    op_type: OpType = OpType.REPLACE,
     target_paragraph: Any = None,
     target_item: Any = None,
     target_special: Any = None,
@@ -2964,7 +3097,7 @@ def drill_verb_conversion_unwitnessed_at_op_apply_lane() -> None:
     # Parsed action REPEAL (via lo) but resolved op_type REPLACE, no witness tag.
     rop = _closure_rop(
         op_id="op_ls06",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_address=LegalAddress(path=(("section", "1"),)),
         with_lo=True,
         lo_action=StructuralAction.REPEAL,
@@ -2984,7 +3117,7 @@ def drill_verb_conversion_unwitnessed_at_op_apply_lane() -> None:
     # Negative (clean) case: the same conversion WITH a named witness tag does not fire.
     witnessed = _closure_rop(
         op_id="op_ls06_clean",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_address=LegalAddress(path=(("section", "1"),)),
         extraction_provenance_tags=("semantic_collapse_move_renumber",),
         with_lo=True,
@@ -3434,6 +3567,9 @@ FIRE_DRILLS: Dict[str, Callable[[], None]] = {
     "ELAB.RESTORE_HEADING_FOR_EXPLICIT_FACET": drill_restore_heading_for_explicit_facet_group_elaboration,
     "ELAB.SPARSE_OMISSION_TAIL_CLAIM": drill_sparse_omission_tail_claim_group_surface,
     "ELAB.SPARSE_OMISSION_TAIL_PRUNED_FROM_CARRIER": drill_sparse_omission_tail_pruned_from_carrier_compile_surface,
+    "ELAB.SPARSE_PLAIN_SUBSECTION_SHELL_CONTINUATION_MERGE": (
+        drill_sparse_plain_subsection_shell_continuation_merge_payload_elaboration
+    ),
     "ELAB.REBASE_REPLACED_RENUMBER_SOURCE": drill_rebase_replaced_renumber_source_inspect_bundle,
     "PARSE.FRONTEND_INTERNAL_ERROR": drill_frontend_internal_error_parse_surface,
     "REPLAY_UNKNOWN_MUTATION_OUTCOME": drill_replay_unknown_mutation_outcome_apply_lane,

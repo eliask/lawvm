@@ -108,9 +108,9 @@ _SCORECARD_BUCKET_ORDER = tuple(
 )
 
 
-def _bucket_for_status(status: str) -> str:
+def _bucket_for_status(ref_status: str) -> str:
     """Map a CiteConfidence value to its scorecard success bucket ("other" if new)."""
-    return _SCORECARD_BUCKET.get(status, "other")
+    return _SCORECARD_BUCKET.get(ref_status, "other")
 
 
 def _scorecard_rows(
@@ -601,7 +601,7 @@ def run_fi(args) -> None:
                 "status_counts": dict(_ordered_status_items(status_ct)),
                 "kind_counts": dict(sorted(kind_ct.items())),
                 "top_residue_shapes": [
-                    {"status": st, "kind": kd, "count": n}
+                    {"ref_status": st, "kind": kd, "count": n}
                     for (st, kd), n in shape_ct.most_common(top)
                 ],
                 "top_rejected_rules": [

@@ -126,7 +126,7 @@ class ActorModalLens:
                         # NODE_STATUSES structural value: an owned, present surface
                         # fact (NOT a resolution outcome; the recognizer's own
                         # "surface_fact_only" is not a graph resolution status).
-                        status="asserted",
+                        node_status="asserted",
                         payload={
                             "actor_surface": frame.actor_surface,
                             "modal_token": frame.modal.token,
@@ -177,5 +177,5 @@ def _residual_seed(
             "surface_text": residual.surface_text,
             "detail": residual.detail,
         },
-        status="open",
+        residual_status="open",
     )

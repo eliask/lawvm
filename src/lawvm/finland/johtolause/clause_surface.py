@@ -559,20 +559,34 @@ def lower_to_ast(clause: SurfaceClause):
         VerbGroup,
     )
     from lawvm.core.semantic_types import StructuralAction
+    from lawvm.finland.johtolause.surface_model import VerbKind
 
-    _VERB_TO_ACTION = {
-        "M": StructuralAction.REPLACE,
-        "K": StructuralAction.REPEAL,
-        "L": StructuralAction.INSERT,
-        "S": StructuralAction.RENUMBER,
-        "META": StructuralAction.META,
+    # Exhaustive over every VerbKind member. SurfaceVerbGroup.verb carries a
+    # VerbKind.value string (M/K/L/S/META); VerbKind.from_code resolves it back
+    # to the enum (and itself fail-louds on a genuinely unknown string). An
+    # unmapped VerbKind can only be a newly added member; fail loud below with a
+    # self-evidencing diagnostic instead of silently coercing to REPLACE.
+    _VERB_TO_ACTION: dict[VerbKind, StructuralAction] = {
+        VerbKind.MUUTTAA: StructuralAction.REPLACE,
+        VerbKind.KUMOTA: StructuralAction.REPEAL,
+        VerbKind.LISATA: StructuralAction.INSERT,
+        VerbKind.SIIRTAA: StructuralAction.RENUMBER,
+        VerbKind.META: StructuralAction.META,
     }
 
     grouped = resolve_grouped(clause)
     verb_groups: list[VerbGroup] = []
 
     for vg, vg_ops in zip(clause.verb_groups, grouped, strict=True):
-        verb_enum = _VERB_TO_ACTION.get(vg.verb, StructuralAction.REPLACE)
+        verb_kind = VerbKind.from_code(vg.verb)
+        verb_enum = _VERB_TO_ACTION.get(verb_kind)
+        if verb_enum is None:
+            raise ValueError(
+                "lower_to_ast received a VerbKind with no structural-action "
+                f"mapping: verb={verb_kind!r} (source verb code {vg.verb!r}). "
+                "_VERB_TO_ACTION must be exhaustive over VerbKind — add the new "
+                "member explicitly."
+            )
         # Group consecutive same-chapter ops into ScopedBlocks
         nodes = _group_ops_by_chapter_for_ast(vg_ops)
         verb_groups.append(VerbGroup(verb=verb_enum, nodes=tuple(nodes)))

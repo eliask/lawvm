@@ -332,9 +332,10 @@ _FI_RULE_SPECS_SUPPLEMENT: Dict[str, str] = {
         "versions without hiding competing legal content."
     ),
     "fi.timeline.restructure_relabel_snapshot_shadow_collapse": (
-        "Timeline materialization collapses a restructure-relabel section snapshot "
-        "shadow only when a same-source semantic snapshot already owns the legal "
-        "content for the relabeled provision."
+        "Timeline materialization drops restructure-relabel snapshots from a "
+        "same-source version group when at least one real-payload version of the "
+        "same provision survives; the snapshot is an editing shadow, not competing "
+        "legal content."
     ),
     "fi.timeline.restructure_relabel_shell_shadow_collapse": (
         "Timeline materialization collapses an empty restructure-relabel shell shadow "

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import datetime as dt
 import re
+from lawvm.core.regex_safety import PrefilteredPattern, compile_classifier_regex
 from dataclasses import dataclass
 from typing import List, Literal, Optional
 
@@ -87,12 +88,9 @@ def _extract_fi_date(text: str) -> Optional[dt.date]:
     return None
 
 
-_CONTINGENT_PATTERNS = re.compile(
-    r"asetuksella\s+säädettävänä\s+ajankohtana"
+_CONTINGENT_PATTERNS = compile_classifier_regex(r"asetuksella\s+säädettävänä\s+ajankohtana"
     r"|valtioneuvoston\s+(?:asetuksella|päätöksellä)"
-    r"|erikseen\s+säädettävän[aä]",
-    re.IGNORECASE,
-)
+    r"|erikseen\s+säädettävän[aä]", re.IGNORECASE, classifier_id="fi.effect_lowering.contingent_patterns")
 
 
 def _lower_voimaantulo(raw: str) -> Optional[EffectIntent]:
@@ -170,31 +168,22 @@ def _unsupported_meta_clause_record(clause: MetaClause) -> UnsupportedMetaClause
     )
 
 
-_META_SENTENCE_PATTERNS: List[tuple[MetaClauseKind, re.Pattern[str]]] = [
+_META_SENTENCE_PATTERNS: List[tuple[MetaClauseKind, re.Pattern[str] | PrefilteredPattern]] = [
     (
         MetaClauseKind.TRANSITION,
-        re.compile(
-            r"soveltamiss[aä][äa]nn[öo]s"
+        compile_classifier_regex(r"soveltamiss[aä][äa]nn[öo]s"
             r"|siirtymäs[aä][äa]nn[öo]s"
             r"|tätä\s+lakia\s+sovelletaan"
-            r"|ennen\s+(?:tämän\s+lain|lain)\s+voimaantuloa\s+(?:vireille|käsitelty|myönnetty)",
-            re.IGNORECASE,
-        ),
+            r"|ennen\s+(?:tämän\s+lain|lain)\s+voimaantuloa\s+(?:vireille|käsitelty|myönnetty)", re.IGNORECASE, classifier_id="fi.effect_lowering.meta_sentence_patterns[transition]"),
     ),
     (
         MetaClauseKind.EXPIRY,
-        re.compile(
-            r"on\s+voimassa"
-            r"|voimassaoloaika",
-            re.IGNORECASE,
-        ),
+        compile_classifier_regex(r"on\s+voimassa"
+            r"|voimassaoloaika", re.IGNORECASE, classifier_id="fi.effect_lowering.meta_sentence_patterns[expiry]"),
     ),
     (
         MetaClauseKind.COMMENCEMENT,
-        re.compile(
-            r"(?:tulee|tuli)\s+voimaan",
-            re.IGNORECASE,
-        ),
+        compile_classifier_regex(r"(?:tulee|tuli)\s+voimaan", re.IGNORECASE, classifier_id="fi.effect_lowering.meta_sentence_patterns[commencement]"),
     ),
     (
         MetaClauseKind.DELEGATION,

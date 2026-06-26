@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
+from lawvm.core.regex_safety import compile_classifier_regex
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, List, Optional
 
@@ -27,36 +28,21 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 FI_CHAPTER_MEMBERSHIP_MIGRATION_RULE_ID = "fi.chapter_membership_migration_from_source_starts"
-_CHAPTER_HEADING_ANCHOR_RE = re.compile(
-    r"(?P<section>\d{1,4}[a-z]|\d{1,4}\s[a-z]|\d{1,4})\s{0,10}§:n\s+edelle\s+uusi\s+"
-    r"(?P<chapter>\d{1,4}[a-z]|\d{1,4}\s[a-z]|\d{1,4})\s+luvun\s+otsikko",
-    re.IGNORECASE,
-)
-_NEW_CHAPTER_AND_HEADING_ANCHOR_RE = re.compile(
-    r"uusi\s+(?P<chapter>\d{1,4}[a-z]|\d{1,4}\s[a-z]|\d{1,4})\s+luku\s+ja\s+"
+_CHAPTER_HEADING_ANCHOR_RE = compile_classifier_regex(r"(?P<section>\d{1,4}[a-z]|\d{1,4}\s[a-z]|\d{1,4})\s{0,10}§:n\s+edelle\s+uusi\s+"
+    r"(?P<chapter>\d{1,4}[a-z]|\d{1,4}\s[a-z]|\d{1,4})\s+luvun\s+otsikko", re.IGNORECASE, classifier_id="fi.amendment_chapter_precreate.chapter_heading_anchor_re")
+_NEW_CHAPTER_AND_HEADING_ANCHOR_RE = compile_classifier_regex(r"uusi\s+(?P<chapter>\d{1,4}[a-z]|\d{1,4}\s[a-z]|\d{1,4})\s+luku\s+ja\s+"
     r"luvun\s+otsikko\s+"
-    r"(?P<section>\d{1,4}[a-z]|\d{1,4}\s[a-z]|\d{1,4})\s{0,10}§:n\s+edelle",
-    re.IGNORECASE,
-)
-_UNNUMBERED_CHAPTER_HEADING_ANCHOR_RE = re.compile(
-    r"(?P<section>\d{1,4}[a-z]|\d{1,4}\s[a-z]|\d{1,4})\s{0,10}§:n\s+edelle\s+uusi\s+"
-    r"luvun\s+otsikko",
-    re.IGNORECASE,
-)
-_UNNUMBERED_CHAPTER_HEADING_ANCHOR_PHRASE_RE = re.compile(
-    r"§:n\s+edelle\s+uusi\s+luvun\s+otsikko",
-    re.IGNORECASE,
-)
+    r"(?P<section>\d{1,4}[a-z]|\d{1,4}\s[a-z]|\d{1,4})\s{0,10}§:n\s+edelle", re.IGNORECASE, classifier_id="fi.amendment_chapter_precreate.new_chapter_and_heading_anchor_re")
+_UNNUMBERED_CHAPTER_HEADING_ANCHOR_RE = compile_classifier_regex(r"(?P<section>\d{1,4}[a-z]|\d{1,4}\s[a-z]|\d{1,4})\s{0,10}§:n\s+edelle\s+uusi\s+"
+    r"luvun\s+otsikko", re.IGNORECASE, classifier_id="fi.amendment_chapter_precreate.unnumbered_chapter_heading_anchor_re")
+_UNNUMBERED_CHAPTER_HEADING_ANCHOR_PHRASE_RE = compile_classifier_regex(r"§:n\s+edelle\s+uusi\s+luvun\s+otsikko", re.IGNORECASE, classifier_id="fi.amendment_chapter_precreate.unnumbered_chapter_heading_anchor_phrase_re")
 _ANCHOR_LIST_TOKEN_RE = re.compile(
     r"\d{1,4}\s{0,3}[a-z](?![a-z])|\d{1,4}|,|\bja\b",
     re.IGNORECASE,
 )
-_SINGULAR_SAME_LABEL_MOVE_CLAUSE_RE = re.compile(
-    r"(?P<section>(?:\d{1,4}\s{0,3}[a-z]|\d{1,4}))\s{0,3}§\s{0,3},?\s{0,3}"
+_SINGULAR_SAME_LABEL_MOVE_CLAUSE_RE = compile_classifier_regex(r"(?P<section>(?:\d{1,4}\s{0,3}[a-z]|\d{1,4}))\s{0,3}§\s{0,3},?\s{0,3}"
     r"joka\s{1,8}(?:samalla\s{1,8}siirretään|siirretään)\s{1,8}"
-    r"(?P<chapter>(?:\d{1,4}\s{0,3}[a-z]|\d{1,4}))\s{1,8}lukuun",
-    re.IGNORECASE,
-)
+    r"(?P<chapter>(?:\d{1,4}\s{0,3}[a-z]|\d{1,4}))\s{1,8}lukuun", re.IGNORECASE, classifier_id="fi.amendment_chapter_precreate.singular_same_label_move_clause_re")
 
 
 @dataclass(frozen=True, slots=True)

@@ -21,11 +21,14 @@ metric and a stable cross-cycle baseline.
 
 History-note operation families are partitioned into pinned buckets:
 
-- ``supported`` families have a dry-run kernel today (repeal, text_replace) and
-  contribute to the combined north-star numerator/denominator;
-- ``frontier`` families are executable amendment operations we do not yet
-  support (inserted/added/replaced/substituted) — the explicit remaining work,
-  ordered by witness count;
+- ``supported`` families have a dry-run kernel today (repeal, text_replace,
+  replace, insert) and contribute to the combined north-star numerator/denominator;
+- ``frontier`` families are executable amendment operations we do not yet support
+  — the explicit remaining work, ordered by witness count. The frontier is
+  currently empty of pinned families; ``inserted``/``added`` moved to the
+  supported ``insert`` family this cycle and ``replaced``/``substituted`` to the
+  supported ``replace`` family, so any newly-surfaced unsupported family appears
+  here via the unbucketed default;
 - ``non_executable`` families are not replayable structural mutations by design
   (brought-into-force / editorial / expired) — reported separately, never as a
   coverage miss;

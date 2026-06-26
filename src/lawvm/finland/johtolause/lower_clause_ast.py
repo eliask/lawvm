@@ -217,22 +217,19 @@ def _build_target_address(
     if chapter:
         path.append(("chapter", chapter))
 
-    if kind == TargetKind.SECTION:
-        path.append(("section", label))
+    if kind is TargetKind.SECTION:
+        path.append((kind.leaf_kind(), label))
         if momentti:
             path.append(("subsection", str(momentti)))
             if item:
                 path.append(("item", item))
                 if subitem:
                     path.append(("subitem", subitem))
-    elif kind == TargetKind.CHAPTER:
-        path.append(("chapter", label))
-    elif kind == TargetKind.PART:
-        path.append(("part", label))
-    elif kind == TargetKind.NIMIKE:
-        path.append(("nimike", label))
-    elif kind == TargetKind.APPENDIX:
-        path.append(("appendix", label))
+    else:
+        # CHAPTER / PART / NIMIKE / APPENDIX: a single leaf segment keyed on
+        # the canonical leaf-kind. leaf_kind() is the exhaustive helper, so a
+        # new TargetKind member is a compile-time error, not a missing branch.
+        path.append((kind.leaf_kind(), label))
 
     addr_special: Optional[FacetKind] = None
     if special:
@@ -261,13 +258,9 @@ def _build_destination_address(
     if not renumber_dest and not renumber_dest_chapter and not renumber_dest_part and not source_label:
         return None
 
+    dest_kind: str
     if special and special.startswith("o"):
-        dest_kind = "section" if kind == TargetKind.SECTION else {
-            TargetKind.CHAPTER: "chapter",
-            TargetKind.PART: "part",
-            TargetKind.NIMIKE: "nimike",
-            TargetKind.APPENDIX: "appendix",
-        }.get(kind)
+        dest_kind = kind.leaf_kind()
     elif subitem:
         dest_kind = "subitem"
     elif item:
@@ -275,15 +268,7 @@ def _build_destination_address(
     elif momentti:
         dest_kind = "subsection"
     else:
-        dest_kind = {
-            TargetKind.SECTION: "section",
-            TargetKind.CHAPTER: "chapter",
-            TargetKind.PART: "part",
-            TargetKind.NIMIKE: "nimike",
-            TargetKind.APPENDIX: "appendix",
-        }.get(kind)
-    if dest_kind is None:
-        return None
+        dest_kind = kind.leaf_kind()
 
     effective_label = renumber_dest or source_label
 

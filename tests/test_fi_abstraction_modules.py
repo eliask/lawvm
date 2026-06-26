@@ -164,31 +164,31 @@ def test_finland_periodic_table_cells_resolve_promoted_modules() -> None:
     matrix = cell_by_id("invariant_surface_matrix")
     assert matrix is not None
     assert matrix.module == "lawvm.core.invariant_surface_matrix"
-    assert matrix.status == "filled"
+    assert matrix.cell_status == "filled"
     identity = cell_by_id("identity_ledger")
     assert identity is not None
-    assert identity.status == "filled"
+    assert identity.cell_status == "filled"
     assert identity.module == "lawvm.core.identity_ledger"
     grammar = cell_by_id("grammar_census")
     assert grammar is not None
-    assert grammar.status == "filled"
+    assert grammar.cell_status == "filled"
     strict_report = cell_by_id("strict_report_proof_projector")
     assert strict_report is not None
-    assert strict_report.status == "filled"
+    assert strict_report.cell_status == "filled"
     harvest = cell_by_id("invariant_harvest")
     assert harvest is not None
     assert harvest.module == "lawvm.tools.invariant_harvest"
     tombstone_mask = cell_by_id("chapter_part_inactive_tombstone_mask")
     assert tombstone_mask is not None
-    assert tombstone_mask.status == "filled"
+    assert tombstone_mask.cell_status == "filled"
     assert tombstone_mask.module == "lawvm.core.timeline"
     apply_facade = cell_by_id("apply_intent_facade")
     assert apply_facade is not None
-    assert apply_facade.status == "filled"
+    assert apply_facade.cell_status == "filled"
     assert apply_facade.module == "lawvm.finland.apply_intent_facade"
     timeline_hook = cell_by_id("timeline_invariants_hook")
     assert timeline_hook is not None
-    assert timeline_hook.status == "filled"
+    assert timeline_hook.cell_status == "filled"
 
 
 def test_finland_periodic_table_summary_groups_by_axis() -> None:

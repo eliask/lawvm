@@ -92,7 +92,7 @@ def test_reference_rows_carry_resolution_status() -> None:
     refs = [r for r in rows if r["kind"] == "reference"]
     assert refs, "expected at least one reference overlay"
     for ref in refs:
-        assert ref["status"], "reference overlay must carry a resolution status"
+        assert ref["overlay_status"], "reference overlay must carry a resolution status"
 
 
 def test_term_use_resolves_to_definition_link() -> None:

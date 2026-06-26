@@ -23,10 +23,11 @@ transition into an actual materialized replay. It is deliberately small:
   the whole transition is refused with a distinct named diagnostic and NOTHING
   is materialized for it. There is never a silent skip and never a guessed
   fallback.
-* It starts with the two safest families only — direct repeal and direct
-  single-occurrence text substitution. Source-diff-only / recovered-carrier
-  candidates never reach this surface: the dry-run kernel refuses them upstream
-  (target-recovery, source-change-only) so their proofs are never ``agrees``.
+* Four families are promotable: direct repeal, direct single-occurrence text
+  substitution, structural whole-provision replace, and structural whole-provision
+  or nested insert. Source-diff-only / recovered-carrier candidates never reach
+  this surface: the dry-run kernel refuses them upstream (target-recovery,
+  source-change-only) so their proofs are never ``agrees``.
 * Its output is a SEPARATE artifact from the official NZ XML, with explicit
   candidate / replay / oracle labels. The archived on-or-after XML is the
   oracle the materialized replay is *checked against*; it is never treated as
@@ -51,7 +52,9 @@ from lawvm.core.agreement_residual import (
 from lawvm.core.semantic_types import StructuralAction
 from lawvm.new_zealand.acquisition import open_farchive
 from lawvm.new_zealand.dry_run import (
+    NZ_DRY_RUN_REFUSED_NO_INSERT_CANDIDATE_RULE_ID,
     NZ_DRY_RUN_REFUSED_NO_REPEAL_CANDIDATE_RULE_ID,
+    NZ_DRY_RUN_REFUSED_NO_REPLACE_CANDIDATE_RULE_ID,
     NZ_DRY_RUN_REFUSED_PREFLIGHT_NOT_READY_RULE_ID,
     NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_INSERT,
     NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPEAL,
@@ -170,6 +173,8 @@ _FORBIDDEN_SHORTCUTS = (
 _FAMILY_LEVEL_DRY_RUN_REFUSALS = frozenset(
     {
         NZ_DRY_RUN_REFUSED_NO_REPEAL_CANDIDATE_RULE_ID,
+        NZ_DRY_RUN_REFUSED_NO_REPLACE_CANDIDATE_RULE_ID,
+        NZ_DRY_RUN_REFUSED_NO_INSERT_CANDIDATE_RULE_ID,
         NZ_DRY_RUN_REFUSED_PREFLIGHT_NOT_READY_RULE_ID,
     }
 )
@@ -661,6 +666,26 @@ def _partition_dry_run_outcomes(
     for proof in report.proofs:
         date = amendment_date_by_op_id.get(proof.op_id, "")
         if proof.oracle_match != "agrees":
+            actual_replay_refusal_detail: dict[str, Any] = {
+                "family": family,
+                "oracle_match": proof.oracle_match,
+                "oracle_match_rule_id": proof.oracle_match_rule_id,
+                "target_address": proof.target_address,
+            }
+            # Propagate the dry-run's target-level divergence classification
+            # (AGENTS §0 — every residual resolves to deterministic-gap /
+            # manual-compilation-frontier / oracle-suspect). The dry-run proof
+            # already classified the divergence; carrying it forward to the
+            # actual-replay refusal receipt keeps the source-truth-bucket signal
+            # visible at the promotion plane rather than forcing a downstream
+            # human to re-derive it from the dry-run plane. Strict-superset
+            # additive: no rule_id change, no fail-closed behaviour change.
+            if proof.divergence_class is not None:
+                actual_replay_refusal_detail["divergence_class"] = proof.divergence_class
+            if proof.divergence_sub_families:
+                actual_replay_refusal_detail["divergence_sub_families"] = list(
+                    proof.divergence_sub_families
+                )
             blocked_by_date.setdefault(date, []).append(
                 NZActualReplayRefusal(
                     rule_id=NZ_ACTUAL_REPLAY_REFUSED_OP_DRY_RUN_RESIDUAL_RULE_ID,
@@ -670,12 +695,7 @@ def _partition_dry_run_outcomes(
                     ),
                     amendment_date_iso=date,
                     op_ids=(proof.op_id,),
-                    detail={
-                        "family": family,
-                        "oracle_match": proof.oracle_match,
-                        "oracle_match_rule_id": proof.oracle_match_rule_id,
-                        "target_address": proof.target_address,
-                    },
+                    detail=actual_replay_refusal_detail,
                 )
             )
             continue
@@ -1016,6 +1036,7 @@ def _reconfirm_slice_agreement(
             derived_anchor_label=anchor_label,
             derived_anchor_kind=anchor_kind,
             derived_direction=proof.insert_direction,
+            co_inserted_block_labels=proof.insert_co_inserted_block_labels,
         )
         return match
     raise ValueError(
@@ -1070,11 +1091,11 @@ def _apply_verified_mutation(node: NZSourceNode, proof: NZMutationBoundaryProof)
             proof.text_new_text,
             count=-1 if proof.text_each_place else 1,
         )
-    # Defence in depth: only the two promotable families reach here (others are
+    # Defence in depth: only the four promotable families reach here (others are
     # refused before they can be verified). Fail loud rather than guess a kernel.
     raise ValueError(
         f"actual replay has no materialization kernel for action {proof.action!r}; "
-        "only repeal and text_replace are promotable"
+        "only repeal, text_replace, replace, and insert are promotable"
     )
 
 
@@ -1167,14 +1188,14 @@ def _refusal_residual(
         refusal_rule_id=refusal.rule_id,
         dry_run_refusal_rule_id=dry_run_refusal_rule_id,
     )
-    status: AgreementResidualStatus = _REFUSAL_FAMILY_STATUS.get(family, "blocked")
+    residual_status: AgreementResidualStatus = _REFUSAL_FAMILY_STATUS.get(family, "blocked")
     op_tag = refusal.op_ids[0] if refusal.op_ids else f"transition_{index}"
     return AgreementResidual(
         residual_id=f"{work_id}:{op_tag}:{refusal.rule_id}:{index}",
         jurisdiction="nz",
         agreement_surface="nz_actual_replay",
         family=family,
-        agreement_residual_status=status,
+        agreement_residual_status=residual_status,
         owner_phase="actual_replay",
         rule_id=refusal.rule_id,
         source_artifact_id=op_tag,

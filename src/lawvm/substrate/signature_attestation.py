@@ -174,8 +174,8 @@ class SignatureAttestation:
 
     v0 carries no verification logic: ``signature_bytes_ref`` /
     ``verification_material_refs`` / ``timestamp_refs`` are opaque locators a
-    future verifier resolves. ``status`` defaults to ``unverifiable`` because v0
-    cannot verify (honest — never claim ``active`` without checking).
+    future verifier resolves. ``attestation_status`` defaults to ``unverifiable``
+    because v0 cannot verify (honest — never claim ``active`` without checking).
     """
 
     subject: AttestationSubject
@@ -184,7 +184,7 @@ class SignatureAttestation:
     signature_profile: str
     signed_at: str
     signature_bytes_ref: str
-    status: str = "unverifiable"
+    attestation_status: str = "unverifiable"
     timestamp_refs: tuple[str, ...] = ()
     verification_material_refs: tuple[str, ...] = ()
     payload: Mapping[str, JsonValue] | None = None
@@ -199,9 +199,10 @@ class SignatureAttestation:
                 f"signature_profile must be one of {sorted(SIGNATURE_PROFILES)!r}, "
                 f"got {self.signature_profile!r}"
             )
-        if self.status not in ATTESTATION_STATUSES:
+        if self.attestation_status not in ATTESTATION_STATUSES:
             raise SignatureAttestationError(
-                f"status must be one of {sorted(ATTESTATION_STATUSES)!r}, got {self.status!r}"
+                f"attestation_status must be one of {sorted(ATTESTATION_STATUSES)!r}, "
+                f"got {self.attestation_status!r}"
             )
 
     def to_canonical_dict(self) -> dict[str, JsonValue]:
@@ -213,7 +214,7 @@ class SignatureAttestation:
             "signature_profile": self.signature_profile,
             "signed_at": self.signed_at,
             "signature_bytes_ref": self.signature_bytes_ref,
-            "status": self.status,
+            "attestation_status": self.attestation_status,
             "timestamp_refs": list(self.timestamp_refs),
             "verification_material_refs": list(self.verification_material_refs),
             "payload": dict(self.payload) if self.payload is not None else None,

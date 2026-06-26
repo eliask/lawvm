@@ -76,7 +76,7 @@ class _StubCandidate:
 
 class _StubLookupResult:
     def __init__(self, candidates: list[str]) -> None:
-        self.status = {0: "none", 1: "single"}.get(len(candidates), "multiple")
+        self.registry_status = {0: "none", 1: "single"}.get(len(candidates), "multiple")
         self.candidates = tuple(_StubCandidate(c) for c in candidates)
 
 

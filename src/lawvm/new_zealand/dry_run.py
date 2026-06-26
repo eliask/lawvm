@@ -69,6 +69,15 @@ NZ_DRY_RUN_NOT_REPLAY_AUTHORIZED_RULE_ID = "nz_dry_run_surface_not_replay_author
 
 NZ_DRY_RUN_REFUSED_PREFLIGHT_NOT_READY_RULE_ID = "nz_dry_run_refused_preflight_not_ready_for_dry_run"
 NZ_DRY_RUN_REFUSED_NO_REPEAL_CANDIDATE_RULE_ID = "nz_dry_run_refused_no_replayable_repeal_candidate"
+# Family-specific "no candidate row in this family's witness surface" refusals.
+# Kept as distinct diagnostics (rather than the historical reuse of the repeal
+# rule id for replace/insert) so the lane that produced the receipt is named, per
+# the AGENTS §1.10 distinguishability contract — a diagnostic that names the wrong
+# family's witness reader tells the wrong next-step and is indistinguishable from
+# a genuine repeal-lane miss. These are family-level refusals: a missing witness
+# row carries no per-op identity (only the work-id family-level receipt).
+NZ_DRY_RUN_REFUSED_NO_REPLACE_CANDIDATE_RULE_ID = "nz_dry_run_refused_no_replayable_replace_candidate"
+NZ_DRY_RUN_REFUSED_NO_INSERT_CANDIDATE_RULE_ID = "nz_dry_run_refused_no_replayable_insert_candidate"
 NZ_DRY_RUN_REFUSED_TARGET_RECOVERED_RULE_ID = "nz_dry_run_refused_target_recovered_not_exact"
 NZ_DRY_RUN_REFUSED_SOURCE_CHANGE_ONLY_RULE_ID = "nz_dry_run_refused_source_change_only_payload"
 NZ_DRY_RUN_REFUSED_MISSING_VERSION_WINDOW_RULE_ID = "nz_dry_run_refused_missing_before_after_version_window"
@@ -562,6 +571,13 @@ class NZMutationBoundaryProof:
     insert_anchor_digest_after: str = ""
     insert_candidate_subtree_digest: str = ""
     insert_oracle_subtree_digest: str = ""
+    # The co-inserted block-member labels the dry-run anchor-position arbiter
+    # admitted as oracle-confirmed position: members of the same (parent, kind)
+    # block this work also inserts and absent from the before tree. Carried so
+    # actual replay's slice re-confirm can apply the SAME carveout the dry-run
+    # verified under — never the proof-schema without it, which would falsely
+    # reject a verified block-insert (see ``NZ_DRY_RUN_INSERT_RESIDUAL_...``).
+    insert_co_inserted_block_labels: frozenset[str] = frozenset()
     # --- Auto-classified residual-divergence signal (residual proofs only). ----
     # ``divergence_class`` is the target-level fold of the per-node oracle-
     # divergence classifier: ``structural_nodeset`` / ``editorial`` /
@@ -663,6 +679,7 @@ class NZMutationBoundaryProof:
             "insert_anchor_digest_after": self.insert_anchor_digest_after,
             "insert_candidate_subtree_digest": self.insert_candidate_subtree_digest,
             "insert_oracle_subtree_digest": self.insert_oracle_subtree_digest,
+            "insert_co_inserted_block_labels": sorted(self.insert_co_inserted_block_labels),
             "divergence_class": self.divergence_class,
             "divergence_sub_families": list(self.divergence_sub_families),
             "non_commensurable_whole_node": self.non_commensurable_whole_node,
@@ -1151,7 +1168,7 @@ def _not_in_scope_reason(
     source_change_only: Any,
     target_recovery: Any,
 ) -> str:
-    if row.status != "candidate_emitted":
+    if row.candidate_status != "candidate_emitted":
         return NZ_DRY_RUN_NOT_IN_SCOPE_BLOCKED_OPERATION_WITNESS
     if row.operation is None:
         return NZ_DRY_RUN_NOT_IN_SCOPE_CANDIDATE_OPERATION_MISSING
@@ -1180,7 +1197,7 @@ def _replayable_repeal_rows(
 
     rows: list[NZCanonicalEffectCandidateRow] = []
     for row in preflight.candidate_report.rows:
-        if row.status != "candidate_emitted":
+        if row.candidate_status != "candidate_emitted":
             continue
         if row.operation is None:
             continue
@@ -1222,7 +1239,7 @@ def _replayable_text_replace_rows(
 
     rows: list[NZCanonicalEffectCandidateRow] = []
     for row in preflight.candidate_report.rows:
-        if row.status != "candidate_emitted":
+        if row.candidate_status != "candidate_emitted":
             continue
         if row.operation is None:
             continue
@@ -1248,7 +1265,7 @@ def _is_text_replace_witness(row: NZCanonicalEffectCandidateRow) -> bool:
     stable discriminator for the text_replace replay-coverage denominator.
     """
 
-    if row.status == "candidate_emitted":
+    if row.candidate_status == "candidate_emitted":
         return row.action == str(StructuralAction.TEXT_REPLACE)
     return row.blocking_rule_id == _NZ_TEXT_REPLACE_BLOCKED_RULE_ID
 
@@ -1302,7 +1319,7 @@ def _selected_family_text_replace_scope_completeness(
 
 
 def _text_replace_not_in_scope_reason(row: NZCanonicalEffectCandidateRow) -> str:
-    if row.status != "candidate_emitted":
+    if row.candidate_status != "candidate_emitted":
         return NZ_DRY_RUN_NOT_IN_SCOPE_BLOCKED_OPERATION_WITNESS
     if row.operation is None:
         return NZ_DRY_RUN_NOT_IN_SCOPE_CANDIDATE_OPERATION_MISSING
@@ -1976,7 +1993,7 @@ def build_dry_run_replace(
             refusals=(
                 NZDryRunRefusal(
                     op_id=work_id or "new_zealand",
-                    rule_id=NZ_DRY_RUN_REFUSED_NO_REPEAL_CANDIDATE_RULE_ID,
+                    rule_id=NZ_DRY_RUN_REFUSED_NO_REPLACE_CANDIDATE_RULE_ID,
                     message="dry-run structural-replace refused because no candidate replaced/substituted witness was found",
                 ),
             ),
@@ -2024,7 +2041,7 @@ def _replace_witness_rows(surface: Any) -> tuple[Any, ...]:
     for row in surface.rows:
         if row.operation_family not in _NZ_REPLACE_OPERATION_FAMILIES:
             continue
-        if row.target_address_candidate.status != "candidate":
+        if row.target_address_candidate.target_address_status != "candidate":
             continue
         rows.append(row)
     return tuple(rows)
@@ -2082,7 +2099,7 @@ def _selected_family_replace_scope_completeness(
 def _replace_not_in_scope_reason(row: Any) -> str:
     if row.operation_family not in _NZ_REPLACE_OPERATION_FAMILIES:
         return NZ_DRY_RUN_NOT_IN_SCOPE_NON_REPLACE_FAMILY
-    if row.target_address_candidate.status != "candidate":
+    if row.target_address_candidate.target_address_status != "candidate":
         return NZ_DRY_RUN_NOT_IN_SCOPE_REPLACE_TARGET_NOT_CANDIDATE
     # A candidate-target structural-replace witness not in the in-scope set would
     # contradict the in-scope filter. Name it distinctly so any future filter
@@ -2102,14 +2119,14 @@ def _dry_run_one_replace(
     target_address = row.target_address_candidate.address or row.amended_provision
     amendment_date_iso = row.amendment_date_iso
 
-    if row.target_address_candidate.status != "candidate":
+    if row.target_address_candidate.target_address_status != "candidate":
         return NZDryRunRefusal(
             op_id=op_id,
             rule_id=NZ_DRY_RUN_REFUSED_REPLACE_TARGET_NOT_CANDIDATE_RULE_ID,
             message="dry-run structural-replace refused because the target address is not an exact candidate",
             target_address=target_address,
             amendment_date_iso=amendment_date_iso,
-            detail={"target_address_status": row.target_address_candidate.status},
+            detail={"target_address_status": row.target_address_candidate.target_address_status},
         )
 
     if not row.amending_work_id or not row.amending_provision_hrefs:
@@ -2493,7 +2510,7 @@ def build_dry_run_insert(
             refusals=(
                 NZDryRunRefusal(
                     op_id=work_id or "new_zealand",
-                    rule_id=NZ_DRY_RUN_REFUSED_NO_REPEAL_CANDIDATE_RULE_ID,
+                    rule_id=NZ_DRY_RUN_REFUSED_NO_INSERT_CANDIDATE_RULE_ID,
                     message="dry-run structural-insert refused because no candidate inserted/added witness was found",
                 ),
             ),
@@ -2558,7 +2575,7 @@ def _insert_witness_rows(surface: Any) -> tuple[Any, ...]:
     for row in surface.rows:
         if row.operation_family not in _NZ_INSERT_OPERATION_FAMILIES:
             continue
-        if row.target_address_candidate.status != "candidate":
+        if row.target_address_candidate.target_address_status != "candidate":
             continue
         rows.append(row)
     return tuple(rows)
@@ -2636,7 +2653,7 @@ def _selected_family_insert_scope_completeness(
 def _insert_not_in_scope_reason(row: Any) -> str:
     if row.operation_family not in _NZ_INSERT_OPERATION_FAMILIES:
         return NZ_DRY_RUN_NOT_IN_SCOPE_NON_INSERT_FAMILY
-    if row.target_address_candidate.status != "candidate":
+    if row.target_address_candidate.target_address_status != "candidate":
         return NZ_DRY_RUN_NOT_IN_SCOPE_INSERT_TARGET_NOT_CANDIDATE
     return NZ_DRY_RUN_NOT_IN_SCOPE_NON_INSERT_FAMILY
 
@@ -2858,14 +2875,14 @@ def _dry_run_one_insert(
     target_address = row.target_address_candidate.address or row.amended_provision
     amendment_date_iso = row.amendment_date_iso
 
-    if row.target_address_candidate.status != "candidate":
+    if row.target_address_candidate.target_address_status != "candidate":
         return NZDryRunRefusal(
             op_id=op_id,
             rule_id=NZ_DRY_RUN_REFUSED_INSERT_TARGET_NOT_CANDIDATE_RULE_ID,
             message="dry-run structural-insert refused because the target address is not an exact candidate",
             target_address=target_address,
             amendment_date_iso=amendment_date_iso,
-            detail={"target_address_status": row.target_address_candidate.status},
+            detail={"target_address_status": row.target_address_candidate.target_address_status},
         )
 
     # The inserted node's own source path (where it will live). A single-segment
@@ -3248,6 +3265,7 @@ def _dry_run_one_insert(
         insert_anchor_digest_after=anchor_digest,
         insert_candidate_subtree_digest=candidate_subtree_digest,
         insert_oracle_subtree_digest=oracle_subtree_digest,
+        insert_co_inserted_block_labels=group_block_labels,
         temporal_window_unprovable=window_unprovable,
         temporal_window_unprovable_reason=window_reason,
         **divergence_fields,
@@ -4568,6 +4586,40 @@ def _nodes_at_path(document: NZSourceDocument, path: tuple[str, ...]) -> tuple[N
 _NON_BODY_SOURCE_ZONES = frozenset({"end_skeleton", "front_history", "end_history"})
 
 
+def _is_leading_part_segment(path_segment: str) -> bool:
+    """A node-path first segment that represents an enclosing ``<part>`` wrapper.
+
+    Two shapes the source-tree parser emits for the enclosing ``<part>`` of a
+    provision-bearing body:
+
+    * ``part:N`` -- the labeled shape (``<part><label>N</label>...``).
+    * ``part@DLM_xml_id`` -- the unlabeled fallback shape emitted when a
+      ``<part>`` element lacks a parseable ``<label>`` (the parser falls back
+      to the part's ``xml_id`` to disambiguate the wrapper). The legacy
+      ``act_public_1981_23_en_2007-09-03`` snapshot has ~199 nodes whose path
+      carries such an ``@``-keyed leading segment.
+
+    Accepting both as the leading-1-extra tolerance is a strict-superset additive
+    widening that mirrors the historical ``part:N`` semantics (a ``<part>``
+    wrapper present in the parsed body's path but absent in the address-derived
+    source_path); it closes the deterministic gap on the
+    ``amendment_skipped_target_absent`` bucket where a chain-replay op resolves
+    the clean ``prov:N``-form path but the carried tree (built off the earliest
+    archived snapshot) has the unlabeled-``part`` wrapper. See
+    ``notes/IMPLEMENTATION_DIVERGENCE_LEDGER.md``'s
+    ``amendment_skipped_target_absent -- classified 2026-06-22`` section.
+    """
+    if not path_segment:
+        return False
+    # ``part:N`` (label-keyed) shape: split(':',1)[0] yields 'part'.
+    if path_segment.split(":", 1)[0] == "part":
+        return True
+    # ``part@DLM_xml_id`` (xml_id-keyed fallback) shape: starts with ``part@``.
+    # The unlabeled-fallback segment carries no ':' so the prior narrow predicate
+    # silently rejected it.
+    return path_segment.startswith("part@")
+
+
 def _resolve_target_nodes(
     document: NZSourceDocument,
     source_path: tuple[str, ...],
@@ -4578,10 +4630,13 @@ def _resolve_target_nodes(
     (e.g. "Section 2(1)"), while the parsed body nests provisions under their
     part (``part:1/prov:2/subprov:1``). We therefore accept a node whose path
     equals the address path exactly OR equals it with one extra leading
-    ``part:`` segment, but only in the live body — never an end-of-document
-    skeleton copy, which would resolve substantively for a node that is in fact
-    repealed in the body. The caller still requires exactly one match; an empty
-    or ambiguous result is a typed refusal, never a coarse-parent fallback.
+    ``part`` wrapper segment (either the labeled ``part:N`` form OR the
+    unlabeled ``part@DLM_xml_id`` fallback form emitted when the ``<part>``
+    element lacks a parseable ``<label>`` -- see :func:`_is_leading_part_segment`),
+    but only in the live body -- never an end-of-document skeleton copy, which
+    would resolve substantively for a node that is in fact repealed in the
+    body. The caller still requires exactly one match; an empty or ambiguous
+    result is a typed refusal, never a coarse-parent fallback.
     """
     matches: list[NZSourceNode] = []
     for node in document.nodes:
@@ -4591,7 +4646,7 @@ def _resolve_target_nodes(
             matches.append(node)
         elif (
             len(node.path) == len(source_path) + 1
-            and node.path[0].split(":", 1)[0] == "part"
+            and _is_leading_part_segment(node.path[0])
             and node.path[1:] == source_path
         ):
             matches.append(node)

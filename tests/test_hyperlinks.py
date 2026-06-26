@@ -242,7 +242,7 @@ def _section_record() -> dict:
         "locator": "chapter:3/section:1",
         "query_type": "in_force",
         "in_force": {
-            "status": "selected",
+            "in_force_status": "selected",
             "text": "3 § text",
             "available": True,
             "source_amendment": "2026/269",

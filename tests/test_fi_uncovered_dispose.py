@@ -106,6 +106,28 @@ class _Op:
         self.target_section = section
         self.target_chapter = chapter
 
+    @property
+    def target_cols(self):
+        """Mirror AmendmentOp.target_cols so the shim satisfies the column-read API."""
+        from lawvm.finland.target_selector_codec import (
+            AmendmentOpV1Record,
+            TargetSelectorCodecV1,
+        )
+
+        record = AmendmentOpV1Record(
+            target_unit_kind=self.target_unit_kind,
+            target_section=self.target_section,
+            target_chapter=self.target_chapter,
+            target_part=None,
+            target_paragraph=None,
+            target_item=None,
+            target_subitem=None,
+            target_special=None,
+        )
+        return TargetSelectorCodecV1.to_legacy(
+            TargetSelectorCodecV1.from_legacy(record)
+        )
+
 
 def test_past_repeal_not_a_placeholder() -> None:
     from lawvm.finland.uncovered_dispose import evaluate_past_repeal_guard

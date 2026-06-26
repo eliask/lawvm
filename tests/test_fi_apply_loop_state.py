@@ -10,14 +10,14 @@ from __future__ import annotations
 import pytest
 
 from lawvm.finland.apply_loop_state import ApplyGroupState, ApplyOpAudit
-from lawvm.finland.ops import AmendmentOp, ResolvedGroupKeyView, ResolvedOp
+from lawvm.finland.ops import OpType, AmendmentOp, ResolvedGroupKeyView, ResolvedOp
 from lawvm.finland.target_kind import TargetKind
 
 
 def _rop(label: str) -> ResolvedOp:
     """A real ResolvedOp keyed by section label (op_id carries the label)."""
     op = AmendmentOp(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section=label,
         op_id=label,

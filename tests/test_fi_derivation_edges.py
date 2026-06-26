@@ -215,7 +215,7 @@ def test_conformance_pair_records_claim_and_absence_of_assessment() -> None:
 
     # The absence edge records that NO assessment exists — status open.
     assert absence["authority_plane"] == AuthorityPlane.OVERLAY.value
-    assert absence["status"] == "open"
+    assert absence["edge_status"] == "open"
     assert _scope(absence)["assessment_present"] is False
     assert _scope(absence)["means"] == "conformance_not_assessed"
 

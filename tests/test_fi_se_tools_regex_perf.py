@@ -510,6 +510,7 @@ def test_kumottu_stub_adversarial_large_whitespace_no_kumottu_is_fast() -> None:
 
 import re as _re
 
+from lawvm.core.regex_safety import PrefilteredPattern
 from lawvm.finland.metadata import (
     _CROSS_LAW_DESC_PAT,
     _SCOPED_COMMENCEMENT_RE,
@@ -530,7 +531,11 @@ _OLD_SCOPED_COMMENCEMENT_RE = _re.compile(
 )
 
 
-def _assert_same_match(old: "_re.Pattern[str]", new: "_re.Pattern[str]", text: str) -> None:
+def _assert_same_match(
+    old: "_re.Pattern[str] | PrefilteredPattern",
+    new: "_re.Pattern[str] | PrefilteredPattern",
+    text: str,
+) -> None:
     mo = old.search(text)
     mn = new.search(text)
     assert (mo is None) == (mn is None), f"presence diverged on {text!r}"

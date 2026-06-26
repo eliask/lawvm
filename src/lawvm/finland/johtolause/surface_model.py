@@ -33,7 +33,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, Tuple, Union
+from typing import Literal, Optional, Tuple, Union, assert_never
 
 from lawvm.core.elaboration_context import TargetUnitKind
 from lawvm.core.semantic_types import FacetKind, MetaClauseKind
@@ -122,6 +122,11 @@ class VerbKind(Enum):
 # TargetKind — the structural target types
 # ---------------------------------------------------------------------------
 
+# Canonical leaf-kind string for each structural target kind. This is the
+# single vocabulary that path segments, ParsedOp slots and feature tags are
+# all keyed on (e.g. ``path_dict["section"]``, the ``f"{leaf}_ref"`` feature).
+TargetLeafKind = Literal["section", "chapter", "part", "nimike", "appendix"]
+
 
 class TargetKind(Enum):
     """Finnish structural target type classification.
@@ -161,15 +166,27 @@ class TargetKind(Enum):
             "appendix": cls.APPENDIX,
         }.get(leaf_kind)
 
-    def leaf_kind(self) -> str:
-        """Return the canonical leaf kind for this structural target kind."""
-        return {
-            TargetKind.SECTION: "section",
-            TargetKind.CHAPTER: "chapter",
-            TargetKind.PART: "part",
-            TargetKind.NIMIKE: "nimike",
-            TargetKind.APPENDIX: "appendix",
-        }[self]
+    def leaf_kind(self) -> TargetLeafKind:
+        """Return the canonical leaf kind for this structural target kind.
+
+        Single ``match``+``assert_never`` dispatch over the closed 5-member
+        enum: this is the one shared lowering helper that all johtolause
+        TargetKind switches route through. Adding a 6th member becomes a
+        compile-time type error here (and at every routed call site) rather
+        than a silent mis-lowering at whichever site was forgotten.
+        """
+        match self:
+            case TargetKind.SECTION:
+                return "section"
+            case TargetKind.CHAPTER:
+                return "chapter"
+            case TargetKind.PART:
+                return "part"
+            case TargetKind.NIMIKE:
+                return "nimike"
+            case TargetKind.APPENDIX:
+                return "appendix"
+        assert_never(self)
 
 
 

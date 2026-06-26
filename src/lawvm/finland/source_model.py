@@ -78,13 +78,13 @@ class SourceBodyUnitQuery:
 class SourceBodyLookupResult:
     """Typed verdict for a source-body inventory lookup."""
 
-    status: Literal["unique", "missing", "ambiguous"]
+    lookup_status: Literal["unique", "missing", "ambiguous"]
     query: SourceBodyUnitQuery
     candidates: tuple[ObservedBodyUnit, ...]
 
     @property
     def unique_unit(self) -> ObservedBodyUnit | None:
-        if self.status != "unique":
+        if self.lookup_status != "unique":
             return None
         return self.candidates[0]
 
@@ -93,7 +93,7 @@ class SourceBodyLookupResult:
 class SourcePayloadLookupResult:
     """Typed payload lookup verdict for a source-body target."""
 
-    status: Literal["unique", "missing", "ambiguous"]
+    lookup_status: Literal["unique", "missing", "ambiguous"]
     query: SourceBodyUnitQuery
     body_lookup_status: Literal["unique", "missing", "ambiguous"]
     body_candidates: tuple[ObservedBodyUnit, ...]
@@ -106,7 +106,7 @@ class SourcePayloadLookupResult:
 class SourcePayloadTextLookupResult:
     """Typed text lookup verdict for source payload text consumers."""
 
-    status: Literal["unique", "missing", "ambiguous"]
+    lookup_status: Literal["unique", "missing", "ambiguous"]
     query: SourceBodyUnitQuery
     payload_lookup_status: Literal["unique", "missing", "ambiguous"]
     payload_basis: Literal["body_inventory", "coverage_payload_ref", "none"]
@@ -897,13 +897,13 @@ class AmendmentSourceModel:
             (),
         )
         if not candidates:
-            status: Literal["unique", "missing", "ambiguous"] = "missing"
+            lookup_status: Literal["unique", "missing", "ambiguous"] = "missing"
         elif len(candidates) == 1:
-            status = "unique"
+            lookup_status = "unique"
         else:
-            status = "ambiguous"
+            lookup_status = "ambiguous"
         return SourceBodyLookupResult(
-            status=status,
+            lookup_status=lookup_status,
             query=query,
             candidates=candidates,
         )
@@ -922,7 +922,7 @@ class AmendmentSourceModel:
                 target_norm,
                 target_chapter=target_chapter,
                 target_part=target_part,
-            ).status
+            ).lookup_status
             != "missing"
         )
 
@@ -1032,7 +1032,7 @@ class AmendmentSourceModel:
             target_chapter=target_chapter,
             target_part=target_part,
         )
-        if lookup.status != "missing":
+        if lookup.lookup_status != "missing":
             return True
         return str(target_unit_kind or "") == "section" and self.has_single_unlabeled_section_payload()
 
@@ -1057,11 +1057,11 @@ class AmendmentSourceModel:
                 target_chapter=key.chapter,
                 target_part=key.part,
             )
-            if body_lookup.status != "unique":
+            if body_lookup.lookup_status != "unique":
                 self._payload_ir_cache[key] = SourcePayloadLookupResult(
-                    status=body_lookup.status,
+                    lookup_status=body_lookup.lookup_status,
                     query=body_lookup.query,
-                    body_lookup_status=body_lookup.status,
+                    body_lookup_status=body_lookup.lookup_status,
                     body_candidates=body_lookup.candidates,
                     payload_basis="none",
                     payload_ir=None,
@@ -1076,15 +1076,15 @@ class AmendmentSourceModel:
                 else (None, None)
             )
             if payload_ir is not None:
-                status = "unique"
+                lookup_status = "unique"
                 payload_basis: Literal["body_inventory", "none"] = "body_inventory"
             else:
-                status = "missing"
+                lookup_status = "missing"
                 payload_basis = "none"
             self._payload_ir_cache[key] = SourcePayloadLookupResult(
-                status=status,
+                lookup_status=lookup_status,
                 query=body_lookup.query,
-                body_lookup_status=body_lookup.status,
+                body_lookup_status=body_lookup.lookup_status,
                 body_candidates=body_lookup.candidates,
                 payload_basis=payload_basis,
                 payload_ir=payload_ir,
@@ -1112,9 +1112,9 @@ class AmendmentSourceModel:
         )
         if len(matching_units) != 1:
             return SourcePayloadLookupResult(
-                status="missing",
+                lookup_status="missing",
                 query=query,
-                body_lookup_status=body_lookup.status,
+                body_lookup_status=body_lookup.lookup_status,
                 body_candidates=body_lookup.candidates,
                 payload_basis="none",
                 payload_ir=None,
@@ -1125,9 +1125,9 @@ class AmendmentSourceModel:
             source_ref.unit_id
         )
         return SourcePayloadLookupResult(
-            status="unique" if payload_ir is not None else "missing",
+            lookup_status="unique" if payload_ir is not None else "missing",
             query=query,
-            body_lookup_status=body_lookup.status,
+            body_lookup_status=body_lookup.lookup_status,
             body_candidates=body_lookup.candidates,
             payload_basis="coverage_payload_ref" if payload_ir is not None else "none",
             payload_ir=payload_ir,
@@ -1170,9 +1170,9 @@ class AmendmentSourceModel:
             else ""
         )
         return SourcePayloadTextLookupResult(
-            status=payload_lookup.status if payload_text else "missing",
+            lookup_status=payload_lookup.lookup_status if payload_text else "missing",
             query=payload_lookup.query,
-            payload_lookup_status=payload_lookup.status,
+            payload_lookup_status=payload_lookup.lookup_status,
             payload_basis=payload_lookup.payload_basis,
             text=payload_text,
         )
@@ -1573,15 +1573,17 @@ class AmendmentSourceModel:
 
     def has_uncovered_recovery_content_ops(self, ops: list["AmendmentOp"]) -> bool:
         """Whether section/chapter body recovery is content-authorized."""
+        from lawvm.finland.ops import OpType
+
         if any(
-            op.op_type in ("REPLACE", "INSERT")
-            and op.target_unit_kind == "section"
-            and op.target_special is None
+            op.op_type in (OpType.REPLACE, OpType.INSERT)
+            and op.target_cols.target_unit_kind == "section"
+            and op.target_cols.target_special is None
             for op in ops
         ):
             return True
         if any(
-            op.op_type in ("REPLACE", "INSERT") and op.target_unit_kind == "chapter"
+            op.op_type in (OpType.REPLACE, OpType.INSERT) and op.target_cols.target_unit_kind == "chapter"
             for op in ops
         ):
             return True

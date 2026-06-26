@@ -78,7 +78,7 @@ class ResolverBinding:
     op_label: str
     target_text: str
     target_path: TreePath | None
-    status: ResolverBindingStatus
+    binding_status: ResolverBindingStatus
     policy_id: str
     rung_id: str | None
     candidate_count: int | None = None
@@ -94,11 +94,11 @@ class ResolverBinding:
                 f"ResolverBinding rung_id {self.rung_id!r} is not a known rung; "
                 f"register it in lawvm.core.resolver_binding before use"
             )
-        if self.status == "resolved" and self.target_path is None:
+        if self.binding_status == "resolved" and self.target_path is None:
             raise ValueError("resolved binding requires a target_path")
-        if self.status != "resolved" and self.target_path is not None:
+        if self.binding_status != "resolved" and self.target_path is not None:
             raise ValueError(
-                f"{self.status} binding must not carry a target_path"
+                f"{self.binding_status} binding must not carry a target_path"
             )
         if self.rung_id in WIDENING_RUNG_IDS:
             if not self.fallback_used or not self.fallback_rule_id:

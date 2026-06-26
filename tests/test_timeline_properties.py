@@ -6157,7 +6157,7 @@ def test_select_active_version_ex_marks_missing_territory_scope() -> None:
 
     selection = select_active_version_ex(tl, "2012-01-01")
 
-    assert selection.status == "ambiguous_missing_scope"
+    assert selection.selection_status == "ambiguous_missing_scope"
     assert selection.version is None
     assert selection.required_dimensions == ("territory",)
     assert selection.certificate is not None
@@ -7204,11 +7204,11 @@ def test_compile_timelines_temporal_events_override_applicability() -> None:
     )
 
     ambiguous = select_active_version_ex(timelines[addr], "2011-01-01")
-    assert ambiguous.status == "ambiguous_missing_scope"
+    assert ambiguous.selection_status == "ambiguous_missing_scope"
     assert ambiguous.required_dimensions == ("territory",)
 
     selected = select_active_version_ex(timelines[addr], "2011-01-01", territory="AX")
-    assert selected.status == "selected"
+    assert selected.selection_status == "selected"
     assert selected.version is not None
     assert selected.version.content is not None
     assert selected.version.content.text == "Scoped text"
@@ -7276,10 +7276,10 @@ def test_compile_timelines_rejects_unsupported_applicability_predicates() -> Non
     assert timelines[addr].versions[-1].applicability == (territory_only,)
 
     ambiguous = select_active_version_ex(timelines[addr], "2011-01-01")
-    assert ambiguous.status == "ambiguous_missing_scope"
+    assert ambiguous.selection_status == "ambiguous_missing_scope"
 
     selected = select_active_version_ex(timelines[addr], "2011-01-01", territory="AX")
-    assert selected.status == "selected"
+    assert selected.selection_status == "selected"
     assert selected.version is not None
     assert selected.version.content is not None
     assert selected.version.content.text == "Scoped text"
@@ -7783,11 +7783,11 @@ def test_compile_timelines_temporal_date_events_preserve_existing_applicability(
     )
 
     ambiguous = select_active_version_ex(timelines[addr], "2011-02-01")
-    assert ambiguous.status == "ambiguous_missing_scope"
+    assert ambiguous.selection_status == "ambiguous_missing_scope"
     assert ambiguous.required_dimensions == ("territory",)
 
     selected = select_active_version_ex(timelines[addr], "2011-02-01", territory="ENG")
-    assert selected.status == "selected"
+    assert selected.selection_status == "selected"
     assert selected.version is not None
     assert selected.version.content is not None
     assert selected.version.content.text == "Scoped text"
@@ -7842,7 +7842,7 @@ def test_compile_timelines_heading_replace_is_not_dropped() -> None:
 
     assert heading_target not in timelines
     selected = select_active_version_ex(timelines[LegalAddress(path=(("section", "1"),))], "2011-01-01")
-    assert selected.status == "selected"
+    assert selected.selection_status == "selected"
     assert selected.version is not None
     assert selected.version.content is not None
     assert selected.version.content.text == ""

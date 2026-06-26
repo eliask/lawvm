@@ -8,7 +8,7 @@ from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core import tree_ops as _tops
 from lawvm.finland.helpers import _norm_num_token
-from lawvm.finland.ops import AmendmentOp
+from lawvm.finland.ops import AmendmentOp, OpType
 from lawvm.finland.source_model import AmendmentSourceModel
 
 
@@ -117,29 +117,30 @@ def build_sparse_omission_tail_claims(
     descendant_ops = [
         op
         for op in ops
-        if op.op_type in {"REPLACE", "INSERT"}
-        and op.target_unit_kind == "section"
-        and op.target_paragraph is not None
-        and not op.target_item
-        and not op.target_special
-        and source_model.lookup_payload_ir("section", op.target_section, None, None).status
+        if op.op_type in {OpType.REPLACE, OpType.INSERT}
+        and op.target_cols.target_unit_kind == "section"
+        and op.target_cols.target_paragraph is not None
+        and not op.target_cols.target_item
+        and not op.target_cols.target_special
+        and source_model.lookup_payload_ir("section", op.target_cols.target_section, None, None).lookup_status
         == "missing"
     ]
     carrier_ops = [
         op
         for op in ops
-        if op.op_type == "REPLACE"
-        and op.target_unit_kind == "section"
-        and op.target_paragraph is None
-        and not op.target_item
-        and not op.target_special
+        if op.op_type == OpType.REPLACE
+        and op.target_cols.target_unit_kind == "section"
+        and op.target_cols.target_paragraph is None
+        and not op.target_cols.target_item
+        and not op.target_cols.target_special
     ]
 
     candidates: list[SparseOmissionTailClaim] = []
     for carrier_op in carrier_ops:
+        carrier_cols = carrier_op.target_cols
         carrier_payload = source_model.lookup_payload_ir(
             "section",
-            carrier_op.target_section,
+            carrier_cols.target_section,
             None,
             None,
         )
@@ -157,15 +158,16 @@ def build_sparse_omission_tail_claims(
         if not tail_slots:
             continue
 
-        body_scope = source_model.body_section_scope(carrier_op.target_section)
+        body_scope = source_model.body_section_scope(carrier_cols.target_section)
         carrier_source_part, carrier_source_chapter = body_scope if body_scope is not None else (None, None)
         for desc_op in descendant_ops:
-            if desc_op is carrier_op or desc_op.target_paragraph is None:
+            desc_cols = desc_op.target_cols
+            if desc_op is carrier_op or desc_cols.target_paragraph is None:
                 continue
             matching_slots = [
                 (idx, slot)
                 for idx, slot in tail_slots
-                if _subsection_label_key(slot.label) == str(desc_op.target_paragraph)
+                if _subsection_label_key(slot.label) == str(desc_cols.target_paragraph)
             ]
             if len(matching_slots) != 1:
                 continue
@@ -173,15 +175,15 @@ def build_sparse_omission_tail_claims(
             candidates.append(
                 SparseOmissionTailClaim(
                     source_statute=str(desc_op.source_statute or carrier_op.source_statute or ""),
-                    carrier_section=_norm_num_token(carrier_op.target_section),
-                    carrier_target_chapter=_norm_opt(carrier_op.target_chapter),
-                    carrier_target_part=_norm_opt(carrier_op.target_part),
+                    carrier_section=_norm_num_token(carrier_cols.target_section),
+                    carrier_target_chapter=_norm_opt(carrier_cols.target_chapter),
+                    carrier_target_part=_norm_opt(carrier_cols.target_part),
                     carrier_source_chapter=carrier_source_chapter,
                     carrier_source_part=carrier_source_part,
-                    target_section=_norm_num_token(desc_op.target_section),
-                    target_chapter=_norm_opt(desc_op.target_chapter),
-                    target_part=_norm_opt(desc_op.target_part),
-                    target_paragraph=desc_op.target_paragraph,
+                    target_section=_norm_num_token(desc_cols.target_section),
+                    target_chapter=_norm_opt(desc_cols.target_chapter),
+                    target_part=_norm_opt(desc_cols.target_part),
+                    target_paragraph=desc_cols.target_paragraph,
                     payload_slot_label=str(slot.label or ""),
                     payload_slot_index=slot_idx,
                     payload_subsection=slot,

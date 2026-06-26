@@ -31,7 +31,7 @@ from lawvm.new_zealand.dry_run import (
     NZ_DRY_RUN_REFUSED_INSERT_PARENT_NOT_IN_BEFORE_RULE_ID,
     NZ_DRY_RUN_REFUSED_INSERT_PAYLOAD_NOT_EXTRACTABLE_RULE_ID,
     NZ_DRY_RUN_REFUSED_INSERT_TARGET_ALREADY_IN_BEFORE_RULE_ID,
-    NZ_DRY_RUN_REFUSED_NO_REPEAL_CANDIDATE_RULE_ID,
+    NZ_DRY_RUN_REFUSED_NO_INSERT_CANDIDATE_RULE_ID,
     NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_INSERT,
     _derive_insert_anchor,
     _derive_nested_insert_anchor,
@@ -178,8 +178,8 @@ def _archive(after_xml: bytes, *, amending_xml: bytes = _AMENDING_XML) -> _FakeA
 
 
 class _FakeTargetCandidate:
-    def __init__(self, status: str, address: str, path: tuple[tuple[str, str], ...]) -> None:
-        self.status = status
+    def __init__(self, target_address_status: str, address: str, path: tuple[tuple[str, str], ...]) -> None:
+        self.target_address_status = target_address_status
         self.address = address
         self.path = path
 
@@ -671,7 +671,9 @@ def test_insert_no_candidate_witness_refuses_whole_work() -> None:
     report = _run(_AFTER_XML_AGREES, (row,))
     assert report.proofs == ()
     assert len(report.refusals) == 1
-    assert report.refusals[0].rule_id == NZ_DRY_RUN_REFUSED_NO_REPEAL_CANDIDATE_RULE_ID
+    # The family-specific no-candidate rule (AGENTS §1.10 distinguishability): the
+    # receipt must name this family's witness reader, not the repeal lane's.
+    assert report.refusals[0].rule_id == NZ_DRY_RUN_REFUSED_NO_INSERT_CANDIDATE_RULE_ID
     completeness = report.scope_completeness
     assert completeness is not None
     assert completeness.not_in_scope_reason_counts.get(NZ_DRY_RUN_NOT_IN_SCOPE_NON_INSERT_FAMILY) == 1
@@ -1114,6 +1116,16 @@ def test_block_insert_co_member_predecessor_agrees() -> None:
     # oracle predecessor 7 is a co-inserted block member.
     assert by_label["prov:8"].oracle_match == "agrees"
     assert by_label["prov:8"].insert_anchor_source_path[-1] == "prov:6"
+    # The co-member labels the dry-run admitted for oracle-position must be
+    # carried on the proof so actual-replay's slice re-confirm can apply the SAME
+    # carveout the dry-run verified under (no proof-schema without it). The set
+    # is identity-only — labels, never payload — and contains the block members
+    # this work inserts that were absent from the before tree (7 and 8 here).
+    expected_co_labels = frozenset({"7", "8"})
+    assert by_label["prov:7"].insert_co_inserted_block_labels == expected_co_labels
+    assert by_label["prov:8"].insert_co_inserted_block_labels == expected_co_labels
+    assert "insert_co_inserted_block_labels" in by_label["prov:7"].to_jsonable()
+    assert by_label["prov:7"].to_jsonable()["insert_co_inserted_block_labels"] == sorted(expected_co_labels)
 
 
 def test_block_insert_non_co_member_intervening_sibling_stays_residual() -> None:
@@ -1583,3 +1595,21 @@ def test_schedule_indirection_refuses_unresolved_placeholder_payload() -> None:
         base_work_number="50",
     )
     assert result == NZ_STRUCTURAL_BLOCKED_SCHEDULE_UNRESOLVED_PLACEHOLDER
+
+
+def test_family_specific_no_candidate_rule_ids_are_distinguishable_lanes() -> None:
+    # AGENTS §1.10 distinguishability: a "no candidate in this family" diagnostic
+    # must name ITS family's witness reader, not the repeal lane's, so the receipt
+    # tells the right next-step (add an insert witness reader vs a repeal one) and
+    # is distinguishable from a genuine repeal-lane miss. The three rule_ids are
+    # distinct constants on the dry-run module surface.
+    from lawvm.new_zealand.dry_run import (
+        NZ_DRY_RUN_REFUSED_NO_INSERT_CANDIDATE_RULE_ID,
+        NZ_DRY_RUN_REFUSED_NO_REPEAL_CANDIDATE_RULE_ID,
+        NZ_DRY_RUN_REFUSED_NO_REPLACE_CANDIDATE_RULE_ID,
+    )
+
+    assert NZ_DRY_RUN_REFUSED_NO_INSERT_CANDIDATE_RULE_ID == "nz_dry_run_refused_no_replayable_insert_candidate"
+    assert NZ_DRY_RUN_REFUSED_NO_REPLACE_CANDIDATE_RULE_ID == "nz_dry_run_refused_no_replayable_replace_candidate"
+    assert NZ_DRY_RUN_REFUSED_NO_REPEAL_CANDIDATE_RULE_ID == "nz_dry_run_refused_no_replayable_repeal_candidate"
+    assert len({NZ_DRY_RUN_REFUSED_NO_INSERT_CANDIDATE_RULE_ID, NZ_DRY_RUN_REFUSED_NO_REPLACE_CANDIDATE_RULE_ID, NZ_DRY_RUN_REFUSED_NO_REPEAL_CANDIDATE_RULE_ID}) == 3

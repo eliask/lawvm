@@ -104,13 +104,13 @@ def test_nickname_citation_resolves_through_registry() -> None:
         ]
     )
     # The official-title surface still resolves.
-    assert reg.lookup("Laki verotusmenettelystä").status == "single"
+    assert reg.lookup("Laki verotusmenettelystä").registry_status == "single"
     # The compound nickname (cited form, genitive) now ALSO resolves.
     nom = reg.lookup("verotusmenettelylaki")
-    assert nom.status == "single"
+    assert nom.registry_status == "single"
     assert nom.candidates[0].statute_id == "1995/1558"
     gen = reg.lookup("verotusmenettelylain")
-    assert gen.status == "single"
+    assert gen.registry_status == "single"
     assert gen.candidates[0].statute_id == "1995/1558"
 
 
@@ -131,9 +131,9 @@ def test_irregular_title_introduces_no_resolution() -> None:
         ]
     )
     # The official title resolves; no nickname was synthesized.
-    assert reg.lookup("Laki kuntajaosta").status == "single"
-    assert reg.lookup("kuntajaolaki").status == "none"
-    assert reg.lookup("kuntajakolaki").status == "none"
+    assert reg.lookup("Laki kuntajaosta").registry_status == "single"
+    assert reg.lookup("kuntajaolaki").registry_status == "none"
+    assert reg.lookup("kuntajakolaki").registry_status == "none"
 
 
 def test_temporal_nickname_collision_is_ambiguous_not_silent() -> None:
@@ -160,11 +160,11 @@ def test_temporal_nickname_collision_is_ambiguous_not_silent() -> None:
         ]
     )
     res = reg.lookup("ajoneuvoverolaki")
-    assert res.status == "multiple"
+    assert res.registry_status == "multiple"
     assert {c.statute_id for c in res.candidates} == {"1996/1111", "2003/1281"}
     # The temporal filter still disambiguates a dated citation.
     dated = reg.lookup("ajoneuvoverolaki", as_of=dt.date(2010, 1, 1))
-    assert dated.status == "single"
+    assert dated.registry_status == "single"
     assert dated.candidates[0].statute_id == "2003/1281"
 
 
@@ -195,7 +195,7 @@ def test_eu_single_regulation_resolves_inflected() -> None:
     }
     for surface, celex in cases.items():
         res = eu_nickname.lookup(surface)
-        assert res.status is eu_nickname.RegistryStatus.SINGLE, surface
+        assert res.registry_status is eu_nickname.RegistryStatus.SINGLE, surface
         assert res.candidates == (celex,), surface
 
 
@@ -214,7 +214,7 @@ def test_eu_temporally_ambiguous_directives_are_multiple() -> None:
     }
     for surface, celexes in cases.items():
         res = eu_nickname.lookup(surface)
-        assert res.status is eu_nickname.RegistryStatus.MULTIPLE, surface
+        assert res.registry_status is eu_nickname.RegistryStatus.MULTIPLE, surface
         assert set(res.candidates) == celexes, surface
 
 
@@ -227,7 +227,7 @@ def test_eu_tietosuojadirektiivi_is_not_gdpr() -> None:
     must not appear among the candidates.
     """
     res = eu_nickname.lookup("tietosuojadirektiivin")
-    assert res.status is eu_nickname.RegistryStatus.MULTIPLE
+    assert res.registry_status is eu_nickname.RegistryStatus.MULTIPLE
     assert set(res.candidates) == {"31995L0046", "32016L0680"}
     assert "32016R0679" not in res.candidates
     # The GDPR *asetus* forms remain single and distinct.
@@ -244,9 +244,9 @@ def test_eu_cross_domain_directive_is_multiple() -> None:
     unambiguous *asetus* form (CRR), which stays single.
     """
     res = eu_nickname.lookup("vakavaraisuusdirektiivin")
-    assert res.status is eu_nickname.RegistryStatus.MULTIPLE
+    assert res.registry_status is eu_nickname.RegistryStatus.MULTIPLE
     assert set(res.candidates) == {"32013L0036", "32009L0138"}
-    assert eu_nickname.lookup("vakavaraisuusasetuksen").status is (
+    assert eu_nickname.lookup("vakavaraisuusasetuksen").registry_status is (
         eu_nickname.RegistryStatus.SINGLE
     )
 
@@ -301,8 +301,8 @@ def test_eu_bare_vesidirektiivi_is_ambiguous_not_single() -> None:
     ``vesipuitedirektiivi`` stays unambiguously single.
     """
     res = eu_nickname.lookup("vesidirektiivin")
-    assert res.status is eu_nickname.RegistryStatus.MULTIPLE
+    assert res.registry_status is eu_nickname.RegistryStatus.MULTIPLE
     assert set(res.candidates) == {"31998L0083", "32020L2184", "32000L0060"}
     qualified = eu_nickname.lookup("vesipuitedirektiivin")
-    assert qualified.status is eu_nickname.RegistryStatus.SINGLE
+    assert qualified.registry_status is eu_nickname.RegistryStatus.SINGLE
     assert qualified.candidates == ("32000L0060",)

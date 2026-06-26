@@ -226,13 +226,13 @@ class SourceBundlePolicy:
         if assertion.jurisdiction != self.jurisdiction:
             return self._blocked(
                 assertion,
-                status="jurisdiction_mismatch",
+                admission_status="jurisdiction_mismatch",
                 detail={"assertion_jurisdiction": assertion.jurisdiction},
             )
         if assertion.source_lane in self.blocked_source_lanes:
-            return self._blocked(assertion, status="source_lane_blocked")
+            return self._blocked(assertion, admission_status="source_lane_blocked")
         if assertion.source_lane not in self.admitted_source_lanes:
-            return self._blocked(assertion, status="source_lane_not_admitted")
+            return self._blocked(assertion, admission_status="source_lane_not_admitted")
 
         relevant = tuple(attestation for attestation in attestations if attestation.assertion_id == assertion.assertion_id)
         blocking_ids = tuple(
@@ -243,7 +243,7 @@ class SourceBundlePolicy:
         if blocking_ids:
             return self._blocked(
                 assertion,
-                status="source_attestation_blocked",
+                admission_status="source_attestation_blocked",
                 blocking_attestation_ids=blocking_ids,
             )
 
@@ -256,7 +256,7 @@ class SourceBundlePolicy:
         if missing:
             return self._blocked(
                 assertion,
-                status="source_attestation_missing",
+                admission_status="source_attestation_missing",
                 missing_attestation_kinds=missing,
             )
 
@@ -280,7 +280,7 @@ class SourceBundlePolicy:
         self,
         assertion: SourceAcquisitionAssertion,
         *,
-        status: str,
+        admission_status: str,
         missing_attestation_kinds: tuple[str, ...] = (),
         blocking_attestation_ids: tuple[str, ...] = (),
         detail: Mapping[str, Any] | None = None,
@@ -288,7 +288,7 @@ class SourceBundlePolicy:
         return SourceBundleAdmission(
             assertion_id=assertion.assertion_id,
             admitted=False,
-            admission_status=status,
+            admission_status=admission_status,
             policy_id=self.policy_id,
             source_lane=assertion.source_lane,
             missing_attestation_kinds=missing_attestation_kinds,

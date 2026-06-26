@@ -33,6 +33,9 @@ _NO_VERIFY_WS_RE = re.compile(r"\s+")
 _NO_VERIFY_PUNCT_RE = re.compile(r"\s+([,.;:])")
 _NO_VERIFY_PAREN_OPEN_RE = re.compile(r"\(\s+")
 _NO_VERIFY_REPEALED_RE = re.compile(r"^(?:§\s*[0-9A-Za-z-]+\.\s*)?\(Opphevet\)$", re.IGNORECASE)
+# Lovdata *Vedlegg* annex-token prefix on a section label (e.g. ``v22c`` for
+# EEA Agreement Annex XXII nr. 10c). Compiled module-scope per §2.4.
+_NO_ANNEX_TOKEN_RE = re.compile(r"v\d+[a-z]*", re.IGNORECASE)
 _NO_VERIFY_OTHER_LAWS_PLACEHOLDER_RE = re.compile(
     r"((?:gjøres følgende endringer(?: i andre lover)?|gjerast i andre lover|skal desse endringane gjerast i andre lover):)\s*(?:[-–—]\s*){2,}$",
     re.IGNORECASE,
@@ -188,6 +191,12 @@ class NOVerifyResult:
     source_signal: str | None = None
     replay: Optional[NOReplayResult] = None
     error: str | None = None
+    # Typed finding (or ``None`` when the base_id had a canonical year) emitted
+    # when :func:`_no_base_year` could not extract a year from the result's
+    # ``base_id``. Replaces the silent ``base_year = 0`` sentinel that used to
+    # swallow ``IndexError`` / ``ValueError`` on undocumented base_id shapes
+    # (§1.10 invisible-heuristic smell). ``None`` is the steady-state.
+    source_signal_diagnostic: Optional[dict[str, Any]] = None
 
 
 _NO_RELATION_CONTAINER_KINDS = {"part", "chapter"}
@@ -240,6 +249,43 @@ def _is_no_self_section_lead_shell(section_label: str | None, text: str) -> bool
     )
 
 
+def _no_base_year(base_id: str) -> tuple[int, dict | None]:
+    """Extract the enactment year from a Norway ``base_id`` with a typed finding.
+
+    A Norway ``base_id`` has the canonical form ``no/lov/YYYY-MM-DD-N`` (per
+    :func:`lawvm.norway.grafter.lovdata_path_to_address`). The enactment year
+    lives in the third ``/``-separated segment, first 4 chars. Returns ``(year,
+    None)`` on the canonical shape; ``(0, finding)`` when the shape is
+    unrecognized, with a typed ``rule_id=no_verify_source_signal_base_year_unresolved``
+    finding so the caller (or downstream JSON consumer) sees the
+    unmappable ``base_id`` rather than the bare ``0`` silent sentinel
+    previously produced by ``except (IndexError, ValueError): base_year = 0``,
+    which (per AGENTS.md §1.10) is exactly the kind of invisible heuristic
+    the spec forbids.
+
+    The finding carries the offending ``base_id`` so a triager can find the
+    malformed id without re-running extraction.
+    """
+    segments = base_id.split("/")
+    if len(segments) < 3 or len(segments[2]) < 4 or not segments[2][:4].isdigit():
+        return 0, {
+            "rule_id": "no_verify_source_signal_base_year_unresolved",
+            "phase": "verify",
+            "family": "source_pathology",
+            "reason": (
+                "Norway base_id does not carry a canonical no/lov/YYYY-MM-DD-N form; "
+                "source-signal inference cannot use an enactment year, falling through "
+                "the sparse-indexed-history branch unconditionally."
+            ),
+            "base_id": base_id,
+            "base_year": 0,
+            "blocking": False,
+            "strict_disposition": "warn",
+            "quirks_disposition": "record",
+        }
+    return int(segments[2][:4]), None
+
+
 def _infer_no_source_signal(
     *,
     divergence_count: int,
@@ -247,9 +293,20 @@ def _infer_no_source_signal(
     replay_op_count: int,
     base_year: int,
 ) -> str | None:
+    # §2.1 family witness: the ``sparse_indexed_history`` shape originally
+    # observed on no/lov/2006-06-30-50 (SCE-loven) — 1 indexed amendment,
+    # 3 replay ops, 212 primary divergences, 2006 base — extends to
+    # no/lov/2001-01-05-1 (Vaktvirksomhetsloven): 2 indexed amendments,
+    # 3 replay ops, 83 primary divergences, 2001 base. The acquisition
+    # ceiling is ``≤2`` indexing events for an EEA-implementing or
+    # guard-company regulation meant to track ~24 years of post-2000
+    # activity — not ``≤1``. The divergence_count gate (≥50 trigger-1,
+    # ≥15 trigger-2) AND ops_count AND base_year publish independently
+    # tuned shapes that bound the family; the ``indexed_amendment_count``
+    # bound is the only one widened in this revision.
     if (
         divergence_count >= 50
-        and indexed_amendment_count <= 1
+        and indexed_amendment_count <= 2
         and replay_op_count <= 5
         and base_year
         and base_year <= 2020
@@ -257,7 +314,7 @@ def _infer_no_source_signal(
         return "sparse_indexed_history"
     if (
         divergence_count >= 15
-        and indexed_amendment_count <= 1
+        and indexed_amendment_count <= 2
         and replay_op_count <= 2
         and base_year
         and base_year <= 2025
@@ -375,7 +432,13 @@ def collect_no_touched_path_counts(
     from lawvm.norway.grafter import iter_no_document_change_ops
     from lawvm.norway.sources import load_no_amendment_artifact_bytes
 
-    source_path = resolve_no_source_path(Path(index.data_dir) if getattr(index, "data_dir", None) else data_dir)
+    # ``NOAmendmentIndex.data_dir`` is a required field (declared in
+    # src/lawvm/norway/index.py); the previous ``getattr(index, "data_dir",
+    # None)`` defense was redundant §1.9 dynamic-shape over an already-typed
+    # object. The precedence (prefer the index's recorded source path, fall
+    # back to the explicit data_dir arg) is preserved unchanged — the original
+    # intent of preferring the path the index was built against is honored.
+    source_path = resolve_no_source_path(Path(index.data_dir) if index.data_dir else data_dir)
     norm_base_id = base_id if base_id.startswith("no/") else f"no/{base_id.removeprefix('lov/')}"
     touched_path_counts: Counter[TreePath] = Counter()
     touched_source_count = 0
@@ -397,12 +460,20 @@ def collect_no_touched_path_counts(
             for op in ops:
                 touched_op_count += 1
                 op_paths = {tuple(op.target.path)}
+                # ``op.targets`` is an *optional* multi-target view some IR
+                # node subtypes carry (not in the base ``LegalOperation``
+                # dataclass, hence getattr); ``op.anchor`` and
+                # ``op.destination`` are typed Optional fields on every
+                # LegalOperation, so the getattr defenses against them were
+                # §1.9 dynamic-shape over typed carriers. Direct attribute
+                # access now: the typed Optional[LegalAddress] = None default
+                # is the contract.
                 for candidate in getattr(op, "targets", []) or []:
                     op_paths.add(tuple(candidate.path))
-                anchor = getattr(op, "anchor", None)
+                anchor = op.anchor
                 if anchor is not None:
                     op_paths.add(tuple(anchor.path))
-                destination = getattr(op, "destination", None)
+                destination = op.destination
                 if destination is not None:
                     op_paths.add(tuple(destination.path))
                 if op_paths:
@@ -423,6 +494,11 @@ def build_no_verify_coverage_summary(
     index: NOAmendmentIndex,
     data_dir: Optional[Path] = None,
 ) -> dict[str, Any]:
+    # ``getattr`` defenses stay here because the test suite mocks
+    # ``verify_result`` with ``types.SimpleNamespace`` call sites that do
+    # not set the replay field explicitly. The §1.9 "typed carriers over
+    # dynamic shape" rule permits exactly this local exception — test
+    # scaffolding duck-typed assertions against a typed dataclass.
     replay = getattr(verify_result, "replay", None)
     replayed_body = replay.replayed.body if replay is not None and getattr(replay, "replayed", None) is not None else None
     touched_path_counts, touched_source_count, touched_op_count = collect_no_touched_path_counts(
@@ -781,6 +857,115 @@ def _is_chapter_relocation_pair(
     return left_path != right_path and _non_container_path(left_path) == _non_container_path(right_path)
 
 
+def _strip_annex_section_prefix(label: str) -> str:
+    """Strip a Lovdata *Vedlegg* annex-token prefix from a Norway section label.
+
+    Lovdata encodes EEA-agreement annexes as a top-level chapter whose
+    ``chapter`` step label is the annex token (e.g. ``v22c`` for *Vedlegg
+    22c*, EEA Agreement Annex XXII nr. 10c). Section labels inside that
+    annex-chapter carry the SAME token duplicated as a slash-prefix (e.g.
+    ``v22c/a1``), distinct from a normal section label (``a1``) that
+    addresses the same operative content in the canonical chapter body.
+
+    The strip is one-shot (only the leading ``<token>/`` is removed); ``a1``
+    has no slash and is returned unchanged. The label is also returned
+    unchanged when the prefix does not match the Lovdata annex-token shape
+    (``v\\d+[a-z]*``), so unrelated slash-bearing section labels are not
+    silently coerced into a false pairing.
+
+    §1.11 firewall: this is a comparison-plane *recognizer*, not a
+    legal-state authorization — it never mutates replay; it only routes
+    two divergences into a paired-partition receipt (§1.8 conservation).
+    """
+    if "/" not in label:
+        return label
+    prefix, _, rest = label.partition("/")
+    if not _NO_ANNEX_TOKEN_RE.fullmatch(prefix):
+        return label
+    return rest or label
+
+
+def _is_annex_prefixed_relocation_pair(
+    left: ConsistencyDivergence,
+    right: ConsistencyDivergence,
+) -> bool:
+    """Pair two byte-identical-text OPS_MISSING/CONSOLIDATED_MISSING divergences
+    whose non-container paths differ only by a Lovdata annex-token section-label prefix.
+
+    Distinct from :func:`_is_chapter_relocation_pair` because the chapter
+    labels are structurally paired by annex *encoding*, not by chapter-only
+    differences at the same address level: one side's chapter is the annex
+    token (e.g. ``v22c``), the other's is the canonical legislative body
+    (e.g. ``1``), and BOTH the chapter and the section label carry the token
+    (the section is ``v22c/a1`` versus ``a1``). The ``_non_container_path``
+    helper already strips the chapter step, so a plain chapter-only pairing
+    would not match the section-label prefix artifact and would leave both
+    divergences on the primary surface (counted as two separate mismatches).
+
+    §1.11 firewall: this predicate only *partitions* divergences on the
+    compare surface; it does not authorize legal state, mutation, lifecycle,
+    or target scope. Strict-mode behavior: ``proceed`` — partition is a
+    presentation receipt, not a mutation.
+
+    §1.8 conservation: every filtered pair emits two ``NOFilteredDivergence``
+    receipts (one per divergence) under the
+    ``no_verify.annex_prefixed_relocation_pair`` rule_id, so the suppression
+    is auditable.
+
+    Source witness: ``no/lov/2006-06-30-50`` (samvirkeforetaksloven — SCE-loven)
+    on the Norway compare surface — 215 paired OPS_MISSING/
+    CONSOLIDATED_MISSING entries across chapters I–IX whose text is
+    byte-identical modulo a single ``v22c/`` annex-token prefix on the
+    section label. The remaining ~104 entries carry Lovdata's
+    ``[ES]`` / ``[ES-stat]`` EEA-adaptation editorial annotations and do
+    NOT pair under this rule (text genuinely differs); they belong on the
+    cross-act-placement frontier as an owned claim, not a code fix.
+    """
+    kinds = {left.divergence_type, right.divergence_type}
+    if kinds != {"OPS_MISSING", "CONSOLIDATED_MISSING"}:
+        return False
+    left_text = normalize_no_comparison_text(left.ops_text or left.consolidated_text or "")
+    right_text = normalize_no_comparison_text(right.ops_text or right.consolidated_text or "")
+    if not left_text or left_text != right_text:
+        return False
+    left_path = tuple(left.address.path)
+    right_path = tuple(right.address.path)
+    if left_path == right_path:
+        return False
+    # Only fire when at least one paired section label carries an annex
+    # prefix that the stripping resolves to equality. This excludes pure
+    # chapter_relocation_pair cases (no section-label difference) so the
+    # two rules stay disjoint: the annex_prefix rule strictly owns the
+    # annex-encoded-relocation shape, and plain chapter relocations
+    # remain the chapter_relocation_pair's property.
+    def _has_annex_strip_candidate(path: TreePath) -> bool:
+        return any(
+            kind == "section" and _strip_annex_section_prefix(label) != label
+            for kind, label in path
+        )
+
+    if not (_has_annex_strip_candidate(left_path) or _has_annex_strip_candidate(right_path)):
+        return False
+
+    # The annex-normalized path drops the container steps (part/chapter —
+    # the same strip ``_non_container_path`` applies to ``chapter_
+    # relocation_pair``) AND additionally strips the annex-token prefix
+    # from any ``section`` step. Both transformations are required: the
+    # chapter strip resolves ``chapter:1`` vs ``chapter:v22c`` (Lovdata
+    # encodes the *Vedlegg* as a chapter), and the section strip resolves
+    # ``section:a1`` vs ``section:v22c/a1`` (Lovdata duplicates the same
+    # token on the section label inside that chapter). Subsection /
+    # item / sentence levels are kept untouched, so a true mismatch at a
+    # deeper level still surfaces as primary.
+    def _annex_normalized(path: TreePath) -> TreePath:
+        return tuple(
+            (kind, _strip_annex_section_prefix(label) if kind == "section" else label)
+            for kind, label in _non_container_path(path)
+        )
+
+    return _annex_normalized(left_path) == _annex_normalized(right_path)
+
+
 def _partition_primary_divergences(divergences: list[ConsistencyDivergence]) -> NOPrimaryDivergencePartition:
     primary_candidates: list[ConsistencyDivergence] = []
     filtered: list[NOFilteredDivergence] = []
@@ -800,8 +985,38 @@ def _partition_primary_divergences(divergences: list[ConsistencyDivergence]) -> 
 
     primary: list[ConsistencyDivergence] = []
     paired: set[int] = set()
+    # Pairing precedence: annex-prefixed relocation is tried first because the
+    # predicate is strict about an annex-token section-label prefix — every
+    # case it matches would NOT be matched by ``_is_chapter_relocation_pair``
+    # (which preserves section labels). Pure-chapter relocations fall through
+    # to the chapter_relocation_pair rule, so the two rules stay disjoint: a
+    # filtered divergence always carries the rule that actually explains its
+    # shape, never both.
     for idx, divergence in enumerate(primary_candidates):
         if idx in paired:
+            continue
+        partner_idx = next(
+            (
+                j
+                for j in range(idx + 1, len(primary_candidates))
+                if j not in paired and _is_annex_prefixed_relocation_pair(divergence, primary_candidates[j])
+            ),
+            None,
+        )
+        if partner_idx is not None:
+            paired.add(partner_idx)
+            for member in (divergence, primary_candidates[partner_idx]):
+                filtered.append(
+                    NOFilteredDivergence(
+                        divergence=member,
+                        rule_id="no_verify.annex_prefixed_relocation_pair",
+                        reason=(
+                            "Replay and current contain the same non-container provision text "
+                            "whose only path difference is a Lovdata annex-token prefix on the "
+                            "section label (e.g. chapter:v22c/section:v22c/a1 vs chapter:1/section:a1)."
+                        ),
+                    )
+                )
             continue
         partner_idx = next(
             (
@@ -965,11 +1180,9 @@ def verify_no_against_current(
     result.compare_projection_rule_counts = dict(Counter(projection.rule_id for projection in compare_projections))
     result.compare_projections = compare_projections
     result.divergences = primary
-    base_year = 0
-    try:
-        base_year = int(result.base_id.split("/")[2][:4])
-    except (IndexError, ValueError):
-        base_year = 0
+    base_year, base_year_finding = _no_base_year(result.base_id)
+    if base_year_finding is not None:
+        result.source_signal_diagnostic = base_year_finding
     result.source_signal = _infer_no_source_signal(
         divergence_count=result.divergence_count,
         indexed_amendment_count=result.indexed_amendment_count,

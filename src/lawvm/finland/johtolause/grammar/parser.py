@@ -103,6 +103,7 @@ from lawvm.finland.johtolause.grammar.tail import (
     recognize_postfix_insert,
 )
 from lawvm.finland.johtolause.lexicon import Token
+from lawvm.finland.johtolause.provenance_span import _skip_prov_span
 from lawvm.finland.johtolause.surface_model import (
     ScopeKind,
     SurfaceClause,
@@ -362,10 +363,8 @@ def _try_skip_provenance_anaphor_backref(scan: _Scan) -> bool:
         if t.cat == "PROV":
             # An uncollapsed PROV span (the normal pipeline collapses provenance
             # to CITATION_SPAN, so this branch is only reached for raw token
-            # streams); reuse the shared span-boundary helper, lazily imported to
-            # keep the new package free of a module-level surface_parse edge.
-            from lawvm.finland.johtolause.surface_parse import _skip_prov_span
-
+            # streams); reuse the shared span-boundary helper from the neutral
+            # provenance_span module (no legacy surface_parse edge).
             toks = list(scan.cur.tokens)
             scan.goto(_skip_prov_span(toks, scan.pos, len(toks)))
         else:
@@ -526,6 +525,140 @@ def _prov_rementtion_leaks(scan: _Scan) -> bool:
             ):
                 return True
     return False
+
+
+# Provenance-only cats permitted INSIDE a ``näistä/niistä/joista …`` re-mention
+# run (every cat a pure attribution span is built from once provenance prose is
+# collapsed to spans): the structural sub-noun cats the arms re-state, the list
+# separators that join them, and the closer / appositive spans that attribute
+# each arm. A run made EXCLUSIVELY of these (with at least one provenance closer)
+# carries no operative target — it only re-states which already-listed sections
+# the version attributions apply to.
+_PROV_REMENTTION_RUN_CATS = (
+    _PROV_RUN_CATS
+    | _SENTINEL_SPAN_CATS
+    | {"LUKU", "OSA", "SEKA", "PROV", "DOC"}
+)
+# Cats that TERMINATE a re-mention run by opening operative or terminal material:
+# the next verb group (``sekä lisätään …``), an insertion opener (``uusi``), or
+# the clause terminator (``seuraavasti`` / ``näin kuuluviksi``). The run-skipper
+# stops AT these without consuming them, so the outer driver re-enters and parses
+# any real continuation. (END_SENTINEL_SPAN is collapsed END trivia.)
+_PROV_REMENTTION_RUN_STOP_CATS = frozenset(
+    {"VERB", "UUSI", "END", "END_SENTINEL_SPAN"}
+)
+
+
+def _try_skip_whole_provenance_remention_run(scan: _Scan) -> bool:
+    """Consume an ENTIRE ``näistä/niistä/joista …`` multi-arm provenance run.
+
+    ``_try_skip_provenance_anaphor_backref`` (the faithful old-parser port)
+    consumes only ONE attribution arm closed by a single provenance trigger and
+    re-enters the loop; the old ``_target`` then RE-PARSES every following arm's
+    ``§`` into a duplicate operative node — the ``näistä/niistä provenance leak``
+    the leak detector declines on.
+
+    A ``näistä …`` re-mention is, semantically, pure version-attribution metadata
+    over the already-listed head targets: it introduces NO new operative units.
+    So when the WHOLE span from the re-mention anchor to the next verb group /
+    insertion opener / clause terminator is provenance-only (built exclusively of
+    structural sub-noun cats, list separators and provenance closer / appositive
+    spans, with at least one provenance closer present), this recognizer consumes
+    the whole run at once, leaving the cursor at the terminator / next verb group.
+    The section list then ends with NO leaked duplicate, and any real verb-led
+    continuation after the run is reached by the outer driver.
+
+    Returns True (cursor advanced past the whole provenance run) only when the
+    run is unambiguously provenance-only; otherwise restores the cursor and
+    returns False, leaving the existing skip / leak-decline path untouched.
+    """
+    saved = scan.pos
+    toks = scan.cur.tokens
+    n = len(toks)
+
+    # Locate the re-mention anchor, allowing only separators / sentinels between
+    # the cursor and it (mirrors ``_anchor_is_immediate``: an intervening
+    # structural token means the head list was truncated before the anchor).
+    i = scan.pos
+    while i < n and toks[i].cat in _ANCHOR_LEADIN_CATS:
+        i += 1
+    if not (
+        i < n
+        and toks[i].cat == "WORD"
+        and (toks[i].text or "").lower() in _PROV_REMENTTION_WORDS
+    ):
+        return False
+    anchor = i
+    i = anchor + 1
+
+    saw_structural = False
+    saw_closer = False
+    # A genuine operative continuation can follow the LAST provenance closer
+    # WITHOUT a verb (``…, näistä 5 §:n 4 momentti [CITE], sekä 7 §, seuraavasti``
+    # — the head verb ``muutetaan`` still governs the trailing ``7 §``). Such a
+    # trailing, UN-attributed structural arm is NOT part of the provenance run.
+    # Track the cursor just past the last closer (``safe_end``) and whether a
+    # structural arm has appeared since (``pending_structural``); if the run ends
+    # with a pending un-closed arm, stop the skip at ``safe_end`` so the outer
+    # driver re-enters and parses the continuation instead of swallowing it.
+    safe_end = anchor + 1
+    pending_structural = False
+    while i < n:
+        t = toks[i]
+        if t.cat in _PROV_REMENTTION_RUN_STOP_CATS:
+            break
+        if t.cat in _PROV_ARM_STRUCT_CATS:
+            saw_structural = True
+            pending_structural = True
+        if t.cat in _PROV_CLOSER_CATS or t.cat in _SENTINEL_SPAN_CATS:
+            # A closer attributes every structural arm seen since the previous
+            # closer; the run is provenance-only up to and including it.
+            saw_closer = True
+            pending_structural = False
+            i += 1
+            safe_end = i
+            continue
+        if t.cat in _PROV_REMENTTION_RUN_CATS:
+            i += 1
+            continue
+        if _is_provenance_lead_word(t):
+            # An uncollapsed ``sellaisena kuin …`` appositive opener; treat the
+            # remainder up to the run stop as provenance prose only if it carries
+            # no operative material (no further structural unit before the stop).
+            saw_closer = True
+            pending_structural = False
+            i += 1
+            safe_end = i
+            continue
+        if t.cat == "WORD":
+            # Trailing ``näin`` before ``kuuluviksi``, or provenance prose
+            # (``mainitussa`` / ``muutettuna`` / day-month words) the lexer left
+            # uncollapsed: benign provenance filler. A non-provenance WORD here
+            # would have to introduce an operative continuation, but operative
+            # continuations are verb-led / insertion-led (a STOP cat), so a bare
+            # WORD inside the run is always attribution prose.
+            i += 1
+            continue
+        # Any other cat (an unexpected operative shape) — do NOT fire; leave the
+        # existing skip / leak-decline path to handle it.
+        return False
+
+    # Require a genuine multi-component provenance run: at least one re-stated
+    # structural arm AND at least one provenance closer / sentinel. Without a
+    # closer the run is the operative target list itself, not an attribution.
+    if not (saw_structural and saw_closer):
+        scan.goto(saved)
+        return False
+
+    if pending_structural:
+        # A trailing structural arm with no attribution after the last closer is a
+        # real operative continuation (``…[CITE], sekä 7 §``): end the provenance
+        # run at the last closer so the outer driver parses the continuation.
+        scan.goto(safe_end)
+        return True
+
+    scan.goto(i)
+    return True
 
 
 # Lead-words of an uncollapsed ``sellaisena / sellaisina kuin …`` provenance
@@ -1199,13 +1332,19 @@ def _skip_heading_residue(
 def _skip_anaphoric_heading_residue(scan: _Scan) -> bool:
     """Consume an anaphoric heading-placement residue, minting no node.
 
-    Matches ``[<anaphor>] (edellä|edelle) uusi [N luvun] (väli|ala)otsikko`` — the
-    ``[uusi N §] ja sen edelle uusi väliotsikko`` tail. The old parser consumes
-    this arm but represents NO heading node for the anaphoric form (verified
-    byte-identical: a single SECTION insertion node with the whole clause
+    Matches ``[<anaphor>] (edellä|edelle) [uusi] [N luvun] (väli|ala)otsikko`` —
+    the ``[uusi N §] ja sen edelle [uusi] väliotsikko`` tail. The old parser
+    consumes this arm but represents NO heading node for the anaphoric form
+    (verified byte-identical: a single SECTION insertion node with the whole clause
     consumed), so the new outer loop swallows it the same way.
 
-    Position-gated: the ENTIRE ``[anaphor] EDELLA uusi [N luvun] OTSIKKO`` shape
+    The ``uusi`` between ``EDELLA`` and the heading noun is OPTIONAL: the
+    ``sen edelle uusi väliotsikko`` and the bare ``sen edelle väliotsikko`` forms
+    (e.g. 1995/1387) are the same anaphoric placement the old parser drops in both
+    cases — the only legacy node is the section insert, and the consolidated text
+    (arvo-osuustililaki 827/1991 §5a) confirms the section is the operative insert.
+
+    Position-gated: the ENTIRE ``[anaphor] EDELLA [uusi] [N luvun] OTSIKKO`` shape
     must match or the cursor is rewound, so a stray ``WORD`` / ``EDELLA`` is never
     swallowed. The non-anaphoric ``N §:n edelle uusi väliotsikko`` form (a §:GEN
     target before EDELLA) does not match here.
@@ -1220,10 +1359,10 @@ def _skip_anaphoric_heading_residue(scan: _Scan) -> bool:
         scan.goto(saved)
         return False
     scan.advance()  # edellä / edelle
-    if not ((t := scan.peek()) and t.cat == "UUSI"):
-        scan.goto(saved)
-        return False
-    scan.advance()
+    # Optional ``uusi`` before the (qualifier and) heading noun.
+    had_uusi = bool((t := scan.peek()) and t.cat == "UUSI")
+    if had_uusi:
+        scan.advance()
     # Optional ``N luvun`` chapter-genitive qualifier before the heading noun.
     saved_q = scan.pos
     if (t := scan.peek()) and t.cat == "NUM":
@@ -1239,14 +1378,26 @@ def _skip_anaphoric_heading_residue(scan: _Scan) -> bool:
     if (t := scan.peek()) and t.cat in ("OTSIKKO", "VALIOTSIKKO"):
         scan.advance()
         # A terminal anaphoric heading is the benign consume-and-drop form. The
-        # same residue may also be followed by a list separator and another clean
+        # ``uusi`` form may ALSO be followed by a list separator and another clean
         # insertion arm (``… 9 b § ja sen edelle uusi 2 a luvun otsikko sekä
         # asetukseen uusi 118 b §``); leave the separator for the outer loop.
         # Other trailing content (``, jolloin …`` renumber tail, a cross-verb
         # continuation) belongs to a complex clause the new parser must still
         # decline (1999/1001) — rewind so it is not silently swallowed.
+        #
+        # The no-``uusi`` form (``sen edelle väliotsikko``) is recovered ONLY when
+        # it is STRICTLY TERMINAL (clause end). A mid-clause no-``uusi`` heading
+        # residue sits inside a complex multi-verb enumeration (e.g. 1996/581's
+        # ``muutetaan … 4 § ja sen edellä oleva väliotsikko, 5 §, …``) whose other
+        # arms the new parser cannot reproduce; consuming it there would let the
+        # clause parse with a node set that diverges from legacy and is not
+        # oracle-verified. Restricting the no-``uusi`` recovery to the terminal tail
+        # keeps those complex clauses declining (honest residue) while still owning
+        # the clean terminal ``lakiin uusi N § ja sen edelle väliotsikko`` shape.
         nxt = scan.peek()
-        if nxt is None or nxt.cat in ("END_SENTINEL_SPAN", "COMMA", "CONJ", "SEKA"):
+        if nxt is None or nxt.cat == "END_SENTINEL_SPAN":
+            return True
+        if had_uusi and nxt.cat in ("COMMA", "CONJ", "SEKA"):
             return True
         scan.goto(saved)
         return False
@@ -1565,6 +1716,37 @@ def _recognize_one_target(
 
     scan.goto(doc_saved)
     raise OutOfScope("not a target at target position")
+
+
+def _starts_juxtaposed_section_target(scan: _Scan) -> bool:
+    """True iff the cursor sits on a fresh ``<NUM>[suffix] §`` / ``<NUM> luku``.
+
+    This is the cue for a MISSING-SEPARATOR juxtaposition: a transcription
+    artifact in (chiefly older) statutes where the comma between two operative
+    targets in a ``muutetaan``/``kumotaan`` list was lost, e.g.
+    ``13 §:n 1 momentti 15 §:n 2 momentti`` (note the absent comma before
+    ``15 §``). The legacy parser stops at the gap and silently drops every
+    following target; the construction grammar continues across it.
+
+    The cue is deliberately TIGHT — a real number run (``[NUM/LETTER/DASH]+``)
+    immediately followed by a ``PYKALA`` or ``LUKU`` structural noun, with no
+    intervening separator. Requiring the section/chapter noun (not ``MOMENTTI``/
+    ``KOHTA``) is what distinguishes a NEW target from a sub-noun continuation of
+    the PREVIOUS target (``§:n 1 momentti``), so the recovery never re-anchors a
+    momentti/kohta belonging to the target just consumed.
+    """
+    toks = scan.cur.tokens
+    n = len(toks)
+    i = scan.pos
+    j = i
+    while j < n and toks[j].cat in ("NUM", "LETTER", "DASH"):
+        j += 1
+    # Require a real number run (a bare ``§`` with no leading number is not a
+    # fresh section anchor) and a section/chapter noun right after it.
+    if j == i or j >= n or toks[j].cat not in ("PYKALA", "LUKU"):
+        return False
+    # The run must contain at least one NUM (a lone LETTER/DASH is not a number).
+    return any(toks[k].cat == "NUM" for k in range(i, j))
 
 
 def _try_valiotsikko(scan: _Scan, sep_saved: int) -> Optional[list[SurfaceNode]]:
@@ -2398,6 +2580,33 @@ def _parse_verb_group(
                         part = _extract_part(more, part)
                         continue
                     scan.goto(saved)
+            # MISSING-SEPARATOR juxtaposition recovery. A genuine transcription
+            # artifact: the comma between two operative targets in a section /
+            # container list was lost, so a fresh ``<NUM> §`` / ``<NUM> luku``
+            # target sits directly against the previous one with only whitespace
+            # between (``13 §:n 1 momentti 15 §:n 2 momentti``). No separator was
+            # consumed and no sentinel advanced us (``scan.pos == saved``), yet a
+            # new same-family target unambiguously begins here. The legacy parser
+            # stops at the gap and silently drops every following target; the
+            # grammar folds the target in and keeps reading the list — a
+            # correctness gain (strictly more operative targets, never fewer).
+            if (
+                kind in ("section", "container")
+                and scan.pos == saved
+                and _starts_juxtaposed_section_target(scan)
+            ):
+                try:
+                    more, more_kind = _recognize_one_target(scan, chapter, part, verb)
+                except OutOfScope:
+                    scan.goto(saved)
+                else:
+                    if more_kind in {"container", "section"}:
+                        nodes.extend(more)
+                        last_batch = list(more)
+                        chapter = _chapter_after_batch(scan, saved, more, chapter, verb)
+                        part = _extract_part(more, part)
+                        continue
+                    scan.goto(saved)
             # An ``mukaanluettuna N §:n edellä olevan väliotsikon`` included
             # preceding-heading arm directly follows a section range (no
             # separator); the old ``_target_list`` folds it in and keeps parsing
@@ -2608,6 +2817,15 @@ def _parse_verb_group(
             # is a corruption. ``_prov_rementtion_leaks`` (faithful to the old
             # skip + its re-parse loop) is exactly that leak/keep oracle: leak →
             # decline; otherwise skip the single closed arm and continue.
+            # When the WHOLE re-mention run (to the next verb group / insertion
+            # opener / clause terminator) is provenance-only, consume it as a unit
+            # FIRST: a ``näistä …`` re-mention introduces no operative target, so
+            # skipping it entirely produces the correct de-duplicated op list and
+            # leaves any real verb-led continuation for the outer driver. This
+            # supersedes the leak-decline below for the multi-arm shape that the
+            # old single-arm skip + re-parse leaked duplicates from.
+            if _try_skip_whole_provenance_remention_run(scan):
+                continue
             if _prov_rementtion_leaks(scan):
                 raise OutOfScope("section näistä/niistä provenance leak")
             if _try_skip_provenance_anaphor_backref(scan):
@@ -2685,7 +2903,11 @@ def _parse_verb_group(
             # the heading-change arm ``N §:n edellä … väliotsikko`` the old parser
             # keeps but the section recognizer cannot reach — decline on that.
             scan.goto(saved)
-            if kind == "insertion" and not _tail_is_benign(scan):
+            if (
+                kind == "insertion"
+                and not _tail_is_benign(scan)
+                and not _insertion_tail_is_appendix_drop(scan)
+            ):
                 raise OutOfScope("undecodable insertion continuation")
             if kind == "container" and _has_prov_anaphor_continuation(scan):
                 raise OutOfScope("container näistä/niistä provenance continuation")
@@ -3295,6 +3517,76 @@ _BENIGN_TAIL_CATS = frozenset(
         "VALIOTSIKKO",
     }
 )
+
+
+#: Structural-noun token categories that, if they appear in an insertion tail,
+#: mean a REAL further amendment target the old parser would emit a node for.
+#: Their presence disqualifies the appendix-drop tail (see
+#: ``_insertion_tail_is_appendix_drop``).
+_APPENDIX_DROP_DISQUALIFIERS = frozenset(
+    {"PYKALA", "MOMENTTI", "KOHTA", "LUKU", "OTSIKKO", "VERB"}
+)
+#: Filler categories allowed inside an appendix-drop tail. These carry no
+#: operative node on their own (anaphoric ``DOC`` anchors, statute-name ``WORD``
+#: runs, ``uusi`` markers, number/letter/dash label fragments, separators, and
+#: the benign trailing spans).
+_APPENDIX_DROP_FILLER = frozenset(
+    {
+        "CONJ",
+        "COMMA",
+        "DOC",
+        "WORD",
+        "UUSI",
+        "NUM",
+        "LETTER",
+        "DASH",
+        "OSA",
+        "SEKA",
+        "SEMICOLON",
+        "TEMPORAL",
+        "END_SENTINEL_SPAN",
+        "SENTINEL_SPAN",
+        "PROVENANCE_SPAN",
+        "CITATION_SPAN",
+        "REINST_SPAN",
+        "STATUTE_NAME_SPAN",
+    }
+)
+
+
+def _insertion_tail_is_appendix_drop(scan: _Scan) -> bool:
+    """True when an insertion tail is a whole-statute ``liite`` (appendix) tail
+    the OLD parser ALSO drops — so owning the clause (and dropping the tail) is
+    byte-identical to the legacy fallback rather than losing a node.
+
+    The shape is a trailing ``… sekä/ja [uusi] [DOC/WORD] liite[N][–N]`` arm with
+    no decodable target node: the old ``surface_parse`` has no appendix-insert
+    family, so it emits NOTHING for this tail and the outer loop swallows it. The
+    construction grammar likewise has no appendix node, so declining the WHOLE
+    clause over a tail that contributes zero operative nodes is pure noise.
+
+    Fail-loud and TIGHT: the tail must
+      * contain at least one ``LIITE`` token (it is genuinely an appendix arm),
+      * run to end-of-stream with NO further ``VERB`` (a later verb group is real
+        content, never benign), and
+      * contain NO further structural target noun (``§``/momentti/kohta/luku/
+        otsikko) — those would be real targets the old parser keeps, so the tail
+        is not a pure appendix drop and the clause must stay declined.
+    Everything else in the tail must be a known filler category; an unknown
+    category makes this return ``False`` (decline), never a guess.
+    """
+    toks = scan.cur.tokens
+    saw_liite = False
+    for i in range(scan.pos, len(toks)):
+        cat = toks[i].cat
+        if cat == "LIITE":
+            saw_liite = True
+            continue
+        if cat in _APPENDIX_DROP_DISQUALIFIERS:
+            return False
+        if cat not in _APPENDIX_DROP_FILLER:
+            return False
+    return saw_liite
 
 
 def _tail_is_benign(scan: _Scan) -> bool:

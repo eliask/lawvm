@@ -48,7 +48,7 @@ from lawvm.core.observation_registry import (
     strict_fail_codes_by_family,
 )
 from lawvm.core.semantic_types import IRNodeKind, TextPatchKindEnum
-from lawvm.finland.ops import AmendmentOp, FailedOp, classify_legal_operation_conversion_skip
+from lawvm.finland.ops import OpType, AmendmentOp, FailedOp, classify_legal_operation_conversion_skip
 from lawvm.finland.effect_lifecycle_projection import build_finland_effect_lifecycle
 from lawvm.finland.replay_products import ReplayProducts
 from lawvm.tools.section_keys import extract_ir_sections
@@ -128,12 +128,12 @@ def test_amendment_op_with_lo_derives_target_unit_without_section_default() -> N
         target=LegalAddress(path=(("part", "II"), ("chapter", "2"), ("section", "5"))),
     )
 
-    op = AmendmentOp(op_id="part-scoped-section", op_type="RENUMBER", lo=lo)
+    op = AmendmentOp(op_id="part-scoped-section", op_type=OpType.RENUMBER, lo=lo)
 
-    assert op.target_unit_kind == "section"
-    assert op.target_part == "II"
-    assert op.target_chapter == "2"
-    assert op.target_section == "5"
+    assert op.target_cols.target_unit_kind == "section"
+    assert op.target_cols.target_part == "II"
+    assert op.target_cols.target_chapter == "2"
+    assert op.target_cols.target_section == "5"
 
 
 def test_amendment_op_with_unsupported_lo_target_does_not_default_to_section() -> None:
@@ -145,7 +145,7 @@ def test_amendment_op_with_unsupported_lo_target_does_not_default_to_section() -
     )
 
     with pytest.raises(ValueError, match="no Finland-supported primary unit"):
-        AmendmentOp(op_id="descendant-only", op_type="REPEAL", lo=lo)
+        AmendmentOp(op_id="descendant-only", op_type=OpType.REPEAL, lo=lo)
 
 
 def get_johtolause(*args: Any, **kwargs: Any) -> Any:
@@ -901,15 +901,15 @@ def test_2020_1256_compile_keeps_vi_part_scope_for_chapter_26_28_renumbers() -> 
         str(op.lo.destination.path[-1][1]): op
         for op in phase.output
         if op.op_type == "RENUMBER"
-        and op.target_unit_kind == "chapter"
+        and op.target_cols.target_unit_kind == "chapter"
         and getattr(op, "lo", None) is not None
         and op.lo.destination is not None
         and str(op.lo.destination.path[-1][1]) in {"26", "27", "28"}
     }
 
-    assert by_dest["26"].target_part == "VI"
-    assert by_dest["27"].target_part == "VI"
-    assert by_dest["28"].target_part == "VI"
+    assert by_dest["26"].target_cols.target_part == "VI"
+    assert by_dest["27"].target_cols.target_part == "VI"
+    assert by_dest["28"].target_cols.target_part == "VI"
 
 
 def test_strict_fail_reasons_materializes_iterables_once() -> None:
@@ -1528,7 +1528,7 @@ def test_compile_artifacts_from_replay_treats_governed_invariant_violation_as_in
     )
 
     assert artifacts.verdict is not None
-    assert artifacts.verdict.status == "internal_failure"
+    assert artifacts.verdict.verdict_status == "internal_failure"
 
 
 def test_compile_fi_facade_from_replay_projects_rows_from_findings(monkeypatch) -> None:
@@ -3061,9 +3061,9 @@ def test_normalize_and_compile_ops_2021_1289_rehomes_reinstatement_list_to_prior
     )
 
     reinstated = {
-        op.target_section: op
+        op.target_cols.target_section: op
         for op in phase.output
-        if op.op_type == "INSERT" and op.target_section in {"6", "7", "16", "17"}
+        if op.op_type == "INSERT" and op.target_cols.target_section in {"6", "7", "16", "17"}
     }
 
     assert {label: op.description() for label, op in reinstated.items()} == {
@@ -3103,7 +3103,7 @@ def test_normalize_and_compile_ops_1734_4_keeps_chapter_scoped_reinstatement_in_
     section_17 = next(
         op
         for op in phase.output
-        if op.op_type == "INSERT" and op.target_section == "17" and op.target_unit_kind == "section"
+        if op.op_type == "INSERT" and op.target_cols.target_section == "17" and op.target_cols.target_unit_kind == "section"
     )
 
     assert section_17.description() == "INSERT 21 luku 17 §"
@@ -3133,7 +3133,7 @@ def test_normalize_and_compile_ops_1993_1054_keeps_lisataan_chapter_scoped_reins
     section_3 = next(
         op
         for op in phase.output
-        if op.op_type == "INSERT" and op.target_section == "3" and op.target_unit_kind == "section"
+        if op.op_type == "INSERT" and op.target_cols.target_section == "3" and op.target_cols.target_unit_kind == "section"
     )
 
     assert section_3.description() == "INSERT 7 luku 3 §"
@@ -3164,8 +3164,8 @@ def test_normalize_and_compile_ops_2016_1227_scopes_flat_79_replace_from_sibling
         op
         for op in phase.output
         if op.op_type == "REPLACE"
-        and op.target_unit_kind == "section"
-        and op.target_section == "79"
+        and op.target_cols.target_unit_kind == "section"
+        and op.target_cols.target_section == "79"
     ]
 
     assert [op.description() for op in section_79_ops] == ["REPLACE 8 luku 79 § 1 mom"]
@@ -3202,8 +3202,8 @@ def test_normalize_and_compile_ops_2004_485_scopes_flat_20a_replace_from_sibling
         op
         for op in phase.output
         if op.op_type == "REPLACE"
-        and op.target_unit_kind == "section"
-        and op.target_section == "20a"
+        and op.target_cols.target_unit_kind == "section"
+        and op.target_cols.target_section == "20a"
     ]
 
     assert [op.description() for op in section_20a_ops] == ["REPLACE 4 luku 20a §"]
@@ -3277,7 +3277,7 @@ def test_normalize_and_compile_ops_1979_1062_keeps_bare_lukuun_reinstatement_loc
     inserted_sections = {
         op.description()
         for op in phase.output
-        if op.op_type == "INSERT" and op.target_unit_kind == "section" and op.target_section in {"12", "13", "14"}
+        if op.op_type == "INSERT" and op.target_cols.target_unit_kind == "section" and op.target_cols.target_section in {"12", "13", "14"}
     }
 
     assert {
@@ -3289,7 +3289,7 @@ def test_normalize_and_compile_ops_1979_1062_keeps_bare_lukuun_reinstatement_loc
     assert all(
         op.lo is None or op.lo.witness_rule_id != "fi_reinstated_section_scope_from_prior_repeal_address"
         for op in phase.output
-        if op.op_type == "INSERT" and op.target_unit_kind == "section" and op.target_section in {"12", "13", "14"}
+        if op.op_type == "INSERT" and op.target_cols.target_unit_kind == "section" and op.target_cols.target_section in {"12", "13", "14"}
     )
 
 
@@ -3324,12 +3324,12 @@ def test_compile_amendment_ops_2004_1287_keeps_live_stem_inserts_in_chapter_2() 
     )
     target_labels = {"14a", "14b", "14c", "15a", "15b", "15c", "15d", "15e"}
     normalized_inserts = {
-        op.target_section: op
+        op.target_cols.target_section: op
         for op in phase.output
-        if op.op_type == "INSERT" and op.target_unit_kind == "section" and op.target_section in target_labels
+        if op.op_type == "INSERT" and op.target_cols.target_unit_kind == "section" and op.target_cols.target_section in target_labels
     }
     assert set(normalized_inserts) == target_labels
-    assert {op.target_chapter for op in normalized_inserts.values()} == {"2"}
+    assert {op.target_cols.target_chapter for op in normalized_inserts.values()} == {"2"}
 
     compiled_rows: list[dict[str, object]] = []
     compile_result = compile_amendment_ops(
@@ -3501,7 +3501,7 @@ def test_compile_amendment_ops_leaves_1977_18_sparse_payload_unrepaired_before_l
         strict_profile=None,
     )
     ops = phase2.output
-    sec2_ops = [op for op in ops if op.target_section == "2"]
+    sec2_ops = [op for op in ops if op.target_cols.target_section == "2"]
 
     result = compile_amendment_ops(
         before.state,
@@ -3548,7 +3548,7 @@ def test_1986_508_1996_755_body_only_fallback_binds_wrapper_orphan_subsections()
         strict_profile=None,
     )
     targets = {
-        (op.op_type, op.target_section, op.target_paragraph, op.target_item)
+        (op.op_type, op.target_cols.target_section, op.target_cols.target_paragraph, op.target_cols.target_item)
         for op in phase2.output
     }
     assert targets == {
@@ -3689,7 +3689,7 @@ def test_act_wide_body_section_replace_formula_uses_body_section_witness(
         strict_profile=None,
     )
 
-    assert [(op.op_type, op.target_section, op.target_paragraph, op.target_unit_kind) for op in phase2.output] == [
+    assert [(op.op_type, op.target_cols.target_section, op.target_cols.target_paragraph, op.target_cols.target_unit_kind) for op in phase2.output] == [
         ("REPLACE", "3", 3, "section"),
         ("REPLACE", "3", 4, "section"),
     ]
@@ -3754,7 +3754,7 @@ def test_2023_608_2026_159_act_wide_body_section_replace_regression() -> None:
         strict_profile=None,
     )
 
-    assert [(op.op_type, op.target_section, op.target_paragraph) for op in phase2.output] == [
+    assert [(op.op_type, op.target_cols.target_section, op.target_cols.target_paragraph) for op in phase2.output] == [
         ("REPLACE", "3", 3),
         ("REPLACE", "3", 4),
     ]
@@ -3785,9 +3785,9 @@ def test_normalize_and_compile_ops_parses_1980_1037_spaced_pykala_genitive_as_mo
         strict_profile=None,
     )
     ops = phase2.output
-    sec1_ops = [op for op in ops if op.target_section == "1"]
+    sec1_ops = [op for op in ops if op.target_cols.target_section == "1"]
 
-    assert [op.target_paragraph for op in sec1_ops] == [3]
+    assert [op.target_cols.target_paragraph for op in sec1_ops] == [3]
 
 
 def test_normalize_and_compile_ops_parses_1979_1032_reinstated_subsection_insert() -> None:
@@ -3811,7 +3811,7 @@ def test_normalize_and_compile_ops_parses_1979_1032_reinstated_subsection_insert
     ops = phase2.output
 
     sec6_insert_ops = [
-        op for op in ops if op.op_type == "INSERT" and op.target_section == "6" and op.target_paragraph == 4
+        op for op in ops if op.op_type == "INSERT" and op.target_cols.target_section == "6" and op.target_cols.target_paragraph == 4
     ]
 
     assert len(sec6_insert_ops) == 1
@@ -3836,9 +3836,9 @@ def test_normalize_and_compile_ops_2017_571_keeps_doc_ill_subsection_insert_targ
         strict_profile=None,
     )
     ops = phase2.output
-    sec1_insert_ops = [op for op in ops if op.op_type == "INSERT" and op.target_section == "1"]
+    sec1_insert_ops = [op for op in ops if op.op_type == "INSERT" and op.target_cols.target_section == "1"]
 
-    assert [(op.target_section, op.target_paragraph, op.target_item) for op in sec1_insert_ops] == [("1", 2, None)]
+    assert [(op.target_cols.target_section, op.target_cols.target_paragraph, op.target_cols.target_item) for op in sec1_insert_ops] == [("1", 2, None)]
 
 
 def test_normalize_and_compile_ops_2018_1330_keeps_late_grouped_insert_targets() -> None:
@@ -3862,7 +3862,7 @@ def test_normalize_and_compile_ops_2018_1330_keeps_late_grouped_insert_targets()
     ops = phase2.output
 
     grouped_inserts = {
-        (op.target_chapter, op.target_section, op.target_paragraph, op.target_item)
+        (op.target_cols.target_chapter, op.target_cols.target_section, op.target_cols.target_paragraph, op.target_cols.target_item)
         for op in ops
         if op.op_type == "INSERT"
     }
@@ -3950,7 +3950,7 @@ def test_normalize_and_compile_ops_strictly_rejects_late_fallback_chains(
 
     op = AmendmentOp(
         op_id="fallback-op",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="1",
         target_unit_kind="section",
         source_statute="2020/1",
@@ -4050,7 +4050,7 @@ def test_normalize_and_compile_ops_forwards_fallback_regex_coverage(
     )
 
     assert [
-        (op.op_type, op.target_section, op.target_paragraph)
+        (op.op_type, op.target_cols.target_section, op.target_cols.target_paragraph)
         for op in phase2.output
     ] == [("INSERT", "5", 2)]
     assert len(coverage_rows) == 1
@@ -4066,7 +4066,7 @@ def test_strip_impossible_chapter_scope_for_bare_body_section_op_clears_no_chapt
 
     op = AmendmentOp(
         op_id="ins-21",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="1",
         target_paragraph=1,
@@ -4090,7 +4090,7 @@ def test_strip_impossible_chapter_scope_for_bare_body_section_op_clears_no_chapt
     )
 
     assert patched is not None
-    assert patched.target_chapter is None
+    assert patched.target_cols.target_chapter is None
 
 
 def test_strip_impossible_chapter_scope_for_bare_body_section_op_keeps_real_chaptered_parent() -> None:
@@ -4099,7 +4099,7 @@ def test_strip_impossible_chapter_scope_for_bare_body_section_op_keeps_real_chap
 
     op = AmendmentOp(
         op_id="ins-21",
-        op_type="INSERT",
+        op_type=OpType.INSERT,
         target_unit_kind="section",
         target_section="1",
         target_paragraph=1,
@@ -4180,7 +4180,7 @@ def test_duplicate_section_scope_from_source_heading_binds_unique_live_duplicate
     )
     op = AmendmentOp(
         op_id="replace-17",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="17",
     )
@@ -4217,12 +4217,12 @@ def test_normalize_and_compile_ops_1993_1390_1995_64_scopes_duplicate_17_by_head
         op
         for op in phase2.output
         if op.op_type == "REPLACE"
-        and op.target_unit_kind == "section"
-        and op.target_section == "17"
-        and op.target_paragraph is None
+        and op.target_cols.target_unit_kind == "section"
+        and op.target_cols.target_section == "17"
+        and op.target_cols.target_paragraph is None
     ]
     assert len(section17) == 1
-    assert section17[0].target_chapter == "5"
+    assert section17[0].target_cols.target_chapter == "5"
     assert section17[0].witness_rule_id == "fi_duplicate_section_scope_from_source_heading"
 
 
@@ -4248,15 +4248,15 @@ def test_normalize_and_compile_ops_1996_627_does_not_leak_parent_title_chapter_s
     target_ops = [
         op
         for op in phase2.output
-        if op.target_unit_kind == "section" and op.target_section == "1"
+        if op.target_cols.target_unit_kind == "section" and op.target_cols.target_section == "1"
     ]
     assert target_ops
-    assert all(not op.target_chapter for op in target_ops)
+    assert all(not op.target_cols.target_chapter for op in target_ops)
     assert any(
         op.op_type == "INSERT"
-        and op.target_paragraph == 1
-        and op.target_item == "21"
-        and not op.target_chapter
+        and op.target_cols.target_paragraph == 1
+        and op.target_cols.target_item == "21"
+        and not op.target_cols.target_chapter
         for op in target_ops
     )
 
@@ -4281,32 +4281,32 @@ def test_normalize_and_compile_ops_1968_360_2019_308_does_not_leak_heading_chapt
     )
 
     inserted_subsections = {
-        op.target_section: op
+        op.target_cols.target_section: op
         for op in phase2.output
         if op.op_type == "INSERT"
-        and op.target_unit_kind == "section"
-        and op.target_paragraph == 2
-        and op.target_section in {"1", "2", "7"}
+        and op.target_cols.target_unit_kind == "section"
+        and op.target_cols.target_paragraph == 2
+        and op.target_cols.target_section in {"1", "2", "7"}
     }
-    assert inserted_subsections["1"].target_chapter is None
-    assert inserted_subsections["2"].target_chapter is None
-    assert inserted_subsections["7"].target_chapter == "2"
+    assert inserted_subsections["1"].target_cols.target_chapter is None
+    assert inserted_subsections["2"].target_cols.target_chapter is None
+    assert inserted_subsections["7"].target_cols.target_chapter == "2"
 
     scoped_whole_section_inserts = {
-        op.target_section: op.target_chapter
+        op.target_cols.target_section: op.target_cols.target_chapter
         for op in phase2.output
         if op.op_type == "INSERT"
-        and op.target_unit_kind == "section"
-        and op.target_paragraph is None
-        and op.target_section in {"42a"}
+        and op.target_cols.target_unit_kind == "section"
+        and op.target_cols.target_paragraph is None
+        and op.target_cols.target_section in {"42a"}
     }
     assert scoped_whole_section_inserts["42a"] == "3"
     assert any(
         op.op_type == "INSERT"
-        and op.target_unit_kind == "section"
-        and op.target_section == "53"
-        and op.target_paragraph == 3
-        and op.target_chapter == "3"
+        and op.target_cols.target_unit_kind == "section"
+        and op.target_cols.target_section == "53"
+        and op.target_cols.target_paragraph == 3
+        and op.target_cols.target_chapter == "3"
         for op in phase2.output
     )
 
@@ -4339,18 +4339,18 @@ def test_normalize_and_compile_ops_2014_120_2017_601_keeps_minus_range_subsectio
     )
 
     section3_inserts = sorted(
-        op.target_paragraph
+        op.target_cols.target_paragraph
         for op in phase2.output
         if op.op_type == "INSERT"
-        and op.target_unit_kind == "section"
-        and op.target_section == "3"
+        and op.target_cols.target_unit_kind == "section"
+        and op.target_cols.target_section == "3"
     )
     assert section3_inserts == [8, 9, 10]
     assert any(
         op.op_type == "INSERT"
-        and op.target_unit_kind == "section"
-        and op.target_section == "5a"
-        and op.target_paragraph is None
+        and op.target_cols.target_unit_kind == "section"
+        and op.target_cols.target_section == "5a"
+        and op.target_cols.target_paragraph is None
         for op in phase2.output
     )
 
@@ -4383,7 +4383,7 @@ def test_normalize_and_compile_ops_1734_3_1973_390_keeps_chapter_reinsert_sectio
     )
 
     assert [
-        (op.op_type, op.target_unit_kind, op.target_chapter, op.target_section)
+        (op.op_type, op.target_cols.target_unit_kind, op.target_cols.target_chapter, op.target_cols.target_section)
         for op in phase2.output
     ] == [
         ("REPLACE", "chapter", None, "12"),
@@ -4423,7 +4423,7 @@ def test_normalize_and_compile_ops_2011_516_2011_582_keeps_short_operative_pream
     )
 
     assert [
-        (op.op_type, op.target_unit_kind, op.target_section, op.sec1_body_johto_fallback)
+        (op.op_type, op.target_cols.target_unit_kind, op.target_cols.target_section, op.sec1_body_johto_fallback)
         for op in phase2.output
     ] == [("REPLACE", "section", "1", False)]
     assert phase2.output[0].source_statute == "2011/582"
@@ -4522,7 +4522,7 @@ def test_normalize_and_compile_ops_records_unowned_enacting_formula_body_section
         strict_profile=None,
     )
 
-    assert [op.target_section for op in phase2.output] == ["5a"]
+    assert [op.target_cols.target_section for op in phase2.output] == ["5a"]
     unowned = [
         finding
         for finding in phase2.findings()
@@ -4582,7 +4582,7 @@ def test_normalize_and_compile_ops_does_not_record_unowned_body_section_for_full
         strict_profile=None,
     )
 
-    assert [op.target_section for op in phase2.output] == ["5a"]
+    assert [op.target_cols.target_section for op in phase2.output] == ["5a"]
     assert [
         finding
         for finding in phase2.findings()
@@ -4662,10 +4662,10 @@ def test_normalize_and_compile_ops_keeps_sec1_keeper_act_repeal_list_on_peg_path
     assert [
         (
             op.op_type,
-            op.target_section,
-            op.target_paragraph,
-            op.target_item,
-            op.target_special,
+            op.target_cols.target_section,
+            op.target_cols.target_paragraph,
+            op.target_cols.target_item,
+            op.target_cols.target_special,
         )
         for op in phase2.output
     ] == [
@@ -4735,7 +4735,7 @@ def test_prefixed_source_codes_classify_as_source_incomplete() -> None:
         ["APPLY.SOURCE_CORRECTED_BY_PATCH"],
     ):
         verdict = compute_verdict_from_registry(profile, reasons)
-        assert verdict.status == "source_incomplete"
+        assert verdict.verdict_status == "source_incomplete"
 
 
 def test_strict_fail_reasons_detect_contingent_effective_date_findings() -> None:
@@ -5302,7 +5302,7 @@ def test_group_surface_uses_single_mislabeled_body_section_for_explicit_replace(
     )
     op = AmendmentOp(
         op_id="explicit-54",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="54",
         target_chapter="11",
         target_unit_kind="section",
@@ -5356,7 +5356,7 @@ def test_group_surface_does_not_reuse_payload_claimed_by_another_section_op() ->
     )
     current = AmendmentOp(
         op_id="explicit-2",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="2",
         target_unit_kind="section",
         source_statute="2000/464",
@@ -5364,7 +5364,7 @@ def test_group_surface_does_not_reuse_payload_claimed_by_another_section_op() ->
     )
     claimed = AmendmentOp(
         op_id="explicit-6",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_section="6",
         target_unit_kind="section",
         source_statute="2000/464",
@@ -5588,7 +5588,7 @@ def test_compute_verdict_from_registry_classifies_all_barrier_kinds() -> None:
             } for reason in reasons)
             else "strict_blocked_by_recovery"
         )
-        assert verdict.status == expected_status, f"Status mismatch for {reasons}: {verdict.status}"
+        assert verdict.verdict_status == expected_status, f"Status mismatch for {reasons}: {verdict.verdict_status}"
         assert list(verdict.barrier_codes) == reasons, f"Kind mismatch for {reasons}"
         expected_families: list[str] = []
         for reason in reasons:

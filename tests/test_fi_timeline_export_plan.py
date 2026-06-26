@@ -3,7 +3,7 @@ from __future__ import annotations
 from lawvm.core.ir import IRNode, LegalAddress
 from lawvm.core.payload_elaboration import PayloadCompletenessWitness
 from lawvm.core.semantic_types import IRNodeKind
-from lawvm.finland.ops import AmendmentOp, ResolvedOp
+from lawvm.finland.ops import OpType, AmendmentOp, ResolvedOp
 from lawvm.finland.timeline_export_plan import (
     ParentSnapshotProof,
     TimelineExportMode,
@@ -34,7 +34,7 @@ def _section(label: str, *children: IRNode) -> IRNode:
 def test_timeline_export_plan_prefers_exact_descendant_for_fragmentary_item_group() -> None:
     op = AmendmentOp(
         op_id="replace-section-2-subsection-1-item-13",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="2",
         target_paragraph=1,
@@ -68,7 +68,7 @@ def test_timeline_export_plan_prefers_exact_descendant_for_fragmentary_item_grou
 def test_timeline_export_plan_authorizes_parent_snapshot_for_complete_whole_section() -> None:
     op = AmendmentOp(
         op_id="replace-section-20",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="20",
     )
@@ -97,7 +97,7 @@ def test_timeline_export_plan_authorizes_parent_snapshot_for_complete_whole_sect
 def test_timeline_export_plan_keeps_temporary_group_in_compat_lane() -> None:
     op = AmendmentOp(
         op_id="temporary-section-5",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="5",
         is_temporary=True,

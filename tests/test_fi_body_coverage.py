@@ -68,6 +68,17 @@ def _op(
 
 @dataclass
 class _CoverageOpShim:
+    """Minimal duck-typed ``AmendmentOp`` stand-in for coverage-partition tests.
+
+    ``collect_coverage_claims_partition`` reads the op's target through the
+    typed ``op.target_cols`` projection (W6 Phase C: the 8 legacy columns are no
+    longer stored). This shim exposes the same ``target_cols`` accessor over its
+    raw fields so the partition's raw-validators — the empty ``target_section``
+    rejection and the ``unsupported_target_unit_kind`` rejection (this shim can
+    inject a kind outside the typed {section,chapter,part} literal to exercise
+    that defensive branch) — stay testable.
+    """
+
     op_id: str
     op_type: str
     target_section: str
@@ -76,6 +87,39 @@ class _CoverageOpShim:
     target_chapter: str | None = None
     fallback_provenance: bool = False
     body_root_replace_fallback: bool = False
+
+    @property
+    def provenance(self) -> Any:
+        # Mirror AmendmentOp.provenance: derive the typed view from the raw
+        # recovery markers this shim carries, so coverage readers that test
+        # ``isinstance(op.provenance, Recovered)`` / ``has_recognizer(...)`` see
+        # the same typed provenance the production op would.
+        from lawvm.finland.ops import _derive_op_provenance
+
+        return _derive_op_provenance(
+            fallback_provenance=self.fallback_provenance,
+            body_root_replace_fallback=self.body_root_replace_fallback,
+            sec1_body_johto_fallback=False,
+            uncovered_body_recovery=False,
+            extraction_provenance_tags=(),
+            target_guessing_provenance_tags=(),
+            witness_rule_id=None,
+        )
+
+    @property
+    def target_cols(self) -> Any:
+        from lawvm.finland.target_selector_codec import AmendmentOpV1Record
+
+        return AmendmentOpV1Record(
+            target_unit_kind=cast(Any, self.target_unit_kind),
+            target_section=self.target_section,
+            target_chapter=self.target_chapter,
+            target_part=None,
+            target_paragraph=None,
+            target_item=None,
+            target_subitem=None,
+            target_special=None,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -627,14 +671,14 @@ def test_collect_claims_prefers_target_unit_kind_over_target_kind() -> None:
     ops = [
         _CoverageOpShim(
             op_id="op_chapter",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="2",
             target_unit_kind="chapter",
             target_kind=TargetKind.SECTION,
         ),
         _CoverageOpShim(
             op_id="op_part",
-            op_type="REPLACE",
+            op_type=OpType.REPLACE,
             target_section="III",
             target_unit_kind="part",
             target_kind=TargetKind.SECTION,
@@ -685,14 +729,14 @@ def test_collect_coverage_claims_records_rejected_claims() -> None:
             [
                 _CoverageOpShim(
                     op_id="no_target",
-                    op_type="REPLACE",
+                    op_type=OpType.REPLACE,
                     target_section="",
                     target_unit_kind="section",
                     target_kind=TargetKind.SECTION,
                 ),
                 _CoverageOpShim(
                     op_id="unsupported_target_kind",
-                    op_type="REPLACE",
+                    op_type=OpType.REPLACE,
                     target_section="3",
                     target_unit_kind="item",
                     target_kind=TargetKind.SECTION,

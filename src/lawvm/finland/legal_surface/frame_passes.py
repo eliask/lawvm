@@ -97,7 +97,7 @@ class ActorTemporalColocationPass:
                         rule_id=RULE_COLOCATION,
                         # CANDIDATE, never asserted: this is an experimental
                         # affordance, not a settled fact (§D5).
-                        status="candidate",
+                        surface_edge_status="candidate",
                         payload={
                             "char_distance": gap,
                             "window": self.window,

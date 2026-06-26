@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing_extensions import override
+import sqlite3
 
 from dataclasses import dataclass, field
 import json
@@ -8,6 +9,7 @@ from typing import cast
 import pytest
 
 from lawvm.core.evidence_contracts import validate_corpus_finding_evidence_row
+from lawvm.core import tree_ops
 from lawvm.core.ir_helpers import ir_statute_from_dict
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.core.ir import (
@@ -24,6 +26,7 @@ from lawvm.core.ir import (
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.sweden.fetch import (
     _ArchiveLike,
+    _is_oracle_repeal_stub,
     _migrate_legacy_se_ir_blob,
     _normalize_compare_text,
     _se_oracle_version_relation,
@@ -66,6 +69,7 @@ from lawvm.sweden.fetch import (
     plan_se_older_base_rebuild,
     probe_se_public_source_status,
     rebuild_se_older_base_from_official_chain,
+    scan_se_official_replay_act,
     search_se_legacy_pdf_url,
     se_official_act_locator,
     se_official_base_ir_locator,
@@ -107,6 +111,7 @@ from lawvm.sweden.grafter import (
 )
 from lawvm.sweden.grafter import (
     apply_se_ops,
+    apply_se_ops_conserved,
     canonicalize_se_table_section_text,
     extract_se_current_section_texts,
     materialize_se_statute_as_of,
@@ -276,6 +281,26 @@ class _FakeArchive(_ArchiveLike):
 
     def locators(self, pattern: str = "%") -> list[str]:
         return [k for k in self.stored if pattern.replace("%", "") in k]
+
+
+@dataclass
+class _ReadonlyFakeArchive(_FakeArchive):
+    """In-memory fake that mimics a real readonly :class:`farchive.Farchive`.
+
+    Mirrors the failure shape of the coverage-scan worker: ``store`` raises
+    ``sqlite3.OperationalError`` exactly as a SQLite-backed Farchive does when
+    opened with ``readonly=True``. The ``_readonly`` attribute is exposed so
+    production helpers that probe writability before attempting a write
+    (``_se_archive_is_writable``) can exercise the same branch against the fake.
+    """
+
+    _readonly: bool = True
+    attempted_writes: list[tuple[str, bytes, str | None]] = field(default_factory=list)
+
+    @override
+    def store(self, locator: str, data: bytes, *, storage_class: str | None = None) -> str:
+        self.attempted_writes.append((locator, data, storage_class))
+        raise sqlite3.OperationalError("attempt to write a readonly database")
 
 
 @pytest.fixture(autouse=True)
@@ -1106,6 +1131,55 @@ def test_clean_se_pdf_text_drops_obvious_page_furniture() -> None:
     assert "2 § Andra paragrafen." in cleaned
 
 
+def test_clean_se_pdf_text_preserves_standalone_sfs_statute_citation_reference_line() -> None:
+    """Standalone SFS statute-citation reference lines MUST survive the cleanup.
+
+    A Swedish SFS statute citation wrapped in parentheses ("(1992:394).") or as
+    a bare bare statute-number line ("1985:1100.") is a legitimate cross-
+    reference that appears on its own wrapped line in ``pdftotext`` output. Its
+    shape (short: digits, colon, parens, period) matches the
+    ``_DIGIT_GARBAGE_RE`` page-furniture filter (lines composed exclusively of
+    digit/punctuation/whitespace, length >= 8), so the cleaner previously
+    silently stripped them as page furniture. That truncated the surrounding
+    provision's body when the citation wrapped onto its own line -- the suffix
+    line was dropped, the section's last paragraph terminated at the wrap
+    point, and downstream replay-vs-oracle comparison operated against a
+    truncated replacement text. Real-corpus witness: SFS 2001:223 §2a
+    replacement statement ends "...institut finnas i gymnasieförordningen\n
+    (1992:394)." -- the "(1992:394)." line was silently stripped.
+
+    Exempt the ``\\(?\\d{4}:\\d+\\)?\\.?`` shape from the garbage filter so the
+    citation reference survives the cleanup and stays in the section body. The
+    existing page-furniture lines (``1234567890:;``, ``Sida 2 av 3``) keep being
+    dropped because they do not look like SFS citations.
+    """
+    raw_with_paren_citation = (
+        "1 § Första stycket hänvisar här.\n"
+        "(1992:394).\n"
+        "2 § Andra paragrafens lydelse."
+    )
+    cleaned = clean_se_pdf_text(raw_with_paren_citation)
+    # The wrapped citation reference survived -- it stays part of §1's body.
+    assert "(1992:394)." in cleaned
+    # Either it sits on its own line (carried through as a separate paragraph,
+    # or the parser will fold it); either way it is NOT silently dropped.
+    # And §2 still comes through intact -- the cleanup did not eat the
+    # surrounding provision structure.
+    assert "1 § Första stycket hänvisar här." in cleaned
+    assert "2 § Andra paragrafens lydelse." in cleaned
+
+    # Bare citation reference without parens, with trailing period:
+    raw_bare_citation = "Det finns också en hänvisning.\n1985:1100.\nAvslutande rad."
+    cleaned_bare = clean_se_pdf_text(raw_bare_citation)
+    assert "1985:1100." in cleaned_bare
+
+    # Garbage-qualifying lines that are NOT statute citations stay filtered:
+    # the cleanup did not regress on its page-furniture scrub.
+    assert "1234567890:;" not in clean_se_pdf_text("Första rad.\n1234567890:;\nAndra rad.")
+    # The "Sida 2 av 3" page furniture line is still filtered:
+    assert "Sida 2 av 3" not in clean_se_pdf_text("Rad ett.\nSida 2 av 3\nRad två.")
+
+
 def test_parse_rk_issue_date_and_guess_pdf_url() -> None:
     html = '<span class="bold">Utfärdad:</span> 2025-05-22'
     issue_date = parse_se_rk_issue_date(html)
@@ -1155,6 +1229,336 @@ def test_parse_se_official_act_text_extracts_amendment_surface() -> None:
     assert [p.label for p in act.provisions] == ["2", "8", "11"]
     assert act.effective_clause == "Denna förordning träder i kraft den 15 april 2026."
     assert act.signatories == ("GUNNAR STRÖMMER", "Emelie Smiding", "(Justitiedepartementet)")
+
+
+def test_parse_se_official_act_text_extracts_publication_date_from_legacy_utkom_fran_trycket_header() -> None:
+    """Older SFS PDFs publish the date as a follow-up line under "Utkom från trycket".
+
+    The newer PDF layout uses a standalone ``Publicerad`` header followed by a date
+    line. Pre-2003 acts ship the older ``Utkom från trycket`` / ``den DD month YYYY``
+    two-line block instead; the parser previously did not recognize that header as a
+    publication-date block and folded both lines into the act title, leaving
+    ``published_date`` empty. Downstream, the analyze path then raised
+    ``ValueError("could not determine effective date for ...")`` for every older
+    act that lacked an explicit entry-into-force clause and had no amendment
+    register entry — covering a substantial slice of the 1999-2000 corpus.
+
+    Regression: the parser MUST recognize the legacy header, MUST extract
+    ``published_date`` from its follow-up line, and MUST NOT carry the header or
+    date into the act title.
+    """
+    text = (
+        "Svensk författningssamling\n"
+        "SFS 1999:1062\n\n"
+        "Lag\n"
+        "om ändring i lagen (1999:353) om rättspsykiatriskt\n"
+        "forskningsregister;\n\n"
+        "Utkom från trycket\n"
+        "den 13 december 1999\n\n"
+        "utfärdad den 2 december 1999.\n"
+        "Enligt riksdagens beslut1 föreskrivs att 5 § lagen (1999:353) om "
+        "rättspsykiatriskt forskningsregister skall ha följande lydelse.\n"
+        "5 § För varje person får uppgifter registreras.\n"
+        "På regeringens vägnar\n"
+        "LARS ENGQVIST\n"
+        "(Socialdepartementet)\n"
+    )
+
+    act = parse_se_official_act_text(text, sfs_id="1999:1062")
+
+    assert act.published_date == "1999-12-13"
+    # Header and date string must NOT leak into the title (they previously did,
+    # which masked the empty published_date field and prevented the analyze path
+    # from using it).
+    assert "Utkom" not in act.title
+    assert "13 december 1999" not in act.title
+    assert "trycket" not in act.title.lower()
+    # The title otherwise carries the original human-readable heading intact,
+    # modulo the traling semicolon stripping the parser already performs.
+    assert "rättspsykiatriskt forskningsregister" in act.title
+    # Issued-date handling unaffected: the legacy header occupies the same
+    # position as ``Publicerad`` does in the newer layout.
+    assert act.issued_date == "1999-12-02"
+
+
+def test_parse_se_official_act_text_folds_wrapped_cross_reference_continuation_into_current_section() -> None:
+    """Wrapped ``'<N> § första stycket och <M> §.'`` is a cross-reference, not a new section.
+
+    Real-corpus witness: SFS 2001:606 — Lag om ändring i förordningen (2000:308)
+    om fastighetsregister — amends sections 64, 72, 74. The officer's text of
+    section 72 wraps onto a new PDF text line that begins with ``64 § första
+    stycket och 67 §.`` (a cross-reference to two other sections inside §72's
+    prose, not a new §64). Without this guard the parser emits a duplicate
+    provision under label ``64`` — an unfalsified-looking fragment that
+    displaces the legitimate ``64`` replacement text in the per-act
+    ``official_provisions`` dict the replay-vs-oracle check consults. That made
+    a correct replay-vs-later-consolidation disagreement look like a LawVM-side
+    content_mismatch, since the lookup returned the wrong text.
+
+    Synthetic test (mirrors the original witness shape without depending on the
+    archived corpus): the parser MUST produce exactly one provision per
+    affected label, the cross-reference line MUST fold into the current
+    section's text, and the lookup for ``64`` MUST return the legitimate
+    replacement text — never the continuation fragment.
+    """
+    text = (
+        "Svensk författningssamling\n"
+        "Förordning\n"
+        "om ändring i förordningen (2000:308) om fastighetsregister\n\n"
+        "Publicerad\n"
+        "den 1 september 2001\n\n"
+        "Utfärdad den 16 augusti 2001\n"
+        "Regeringen föreskriver att 64, 72 och 74 §§ förordningen (2000:308) "
+        "om fastighetsregister skall ha följande lydelse.\n"
+        "64 § I taxeringsuppgiftsdelen skall redovisas uppgifter från "
+        "beskattningsdatabasen enligt lagen (2001:181).\n"
+        "72 § Sedan en underrättelse som avses i 74 § har kommit in, skall "
+        "Lantmäteriverket snarast möjligt i fastighetsregistret föra in de "
+        "uppgifter som avses i\n"
+        # The wrapped cross-reference continuation that previously masqueraded
+        # as a new section start.
+        "64 § första stycket och 67 §. Införingen av uppgifter från "
+        "beskattningsdatabasen skall ske senast i samband med årsskifte.\n"
+        "74 § Skattemyndigheten skall på upptagning för automatiserad behandling "
+        "underrätta Lantmäteriverket.\n"
+        "På regeringens vägnar\n"
+        "LARS ENGQVIST\n"
+        "(Finansdepartementet)\n"
+    )
+
+    act = parse_se_official_act_text(text, sfs_id="2001:606")
+
+    # Exactly one provision per affected label — the duplicate ``64`` provision
+    # MUST NOT exist.
+    labels = [p.label for p in act.provisions]
+    assert labels == ["64", "72", "74"], labels
+
+    # The wrapped cross-reference folded into §72's text, not §64's. The §64
+    # oracle text is the legitimate replacement, not the continuation fragment.
+    provisions_by_label = {p.label: p.text for p in act.provisions}
+    assert provisions_by_label["64"].startswith("I taxeringsuppgiftsdelen")
+    assert "första stycket och 67 §" in provisions_by_label["72"]
+    # And the fragment did not silently leak into §64 — the principal replay
+    # oracle lookup returns the legitimate replace text.
+    assert "Införingen av uppgifter från beskattningsdatabasen" not in provisions_by_label["64"]
+
+
+def test_coerce_se_official_act_folds_legacy_duplicate_label_provisions_into_host_section() -> None:
+    """Runtime coercion repairs legacy cached duplicate-label payloads.
+
+    Archaeic cached ``official.act.json`` rows (persisted before the parser fix
+    in :func:`parse_se_official_act_text` learned to fold wrapped cross-reference
+    continuations back into their host section) carry a duplicate provision whose
+    text begins with ``<ordinal> stycket`` — the row the live parser no longer
+    emits. The replay-vs-oracle lookup at the higher-level
+    :func:`check_se_official_replay` consults the cached ``official_act`` raw
+    dict, so without runtime coercion the duplicate label silently displaces the
+    legitimate oracle text and a correct replay-vs-later-consolidation
+    disagreement is misclassified as a LawVM-side ``content_mismatch``.
+
+    Real-corpus witnesses:
+      * SFS 2001:606 §64 — ``64 § första stycket och 67 §.`` line displaced the
+        legitimate §64 replacement text.
+      * SFS 2002:66 §14 — same wrapping idiom inside §1 of the same act.
+
+    Regression: the runtime coercion MUST fold the duplicate-label cross-reference
+    continuation into the prior provision's text and MUST NOT surface a duplicate
+    label in the coerced ``SEOfficialActText.provisions`` tuple. A second
+    duplicate label whose continuation shape is NOT recognised (e.g. two
+    non-cross-reference occurrences) stays visible as a typed
+    ``se_official_act_payload_row_duplicate_label`` diagnostic (no silent drop).
+    """
+    from lawvm.sweden.grafter import _coerce_official_act
+
+    legacy_payload = {
+        "sfs_id": "2001:606",
+        "title": "Förordning om ändring i förordningen (2000:308) om fastighetsregister",
+        "act_type": "förordning",
+        "amended_act_sfs_id": "2000:308",
+        "is_amending_act": True,
+        "published_date": "2001-09-01",
+        "issued_date": "2001-08-16",
+        "enacting_clause": (
+            "Regeringen föreskriver att 64, 72 och 74 §§ förordningen (2000:308) "
+            "om fastighetsregister skall ha följande lydelse."
+        ),
+        "effective_clause": "Denna förordning träder i kraft den 1 oktober 2001.",
+        "affected_section_labels": ["64", "72", "74"],
+        "provisions": [
+            {
+                "label": "64",
+                "text": (
+                    "I taxeringsuppgiftsdelen skall redovisas uppgifter från "
+                    "beskattningsdatabasen enligt lagen (2001:181)."
+                ),
+            },
+            {
+                "label": "72",
+                "text": (
+                    "Sedan en underrättelse som avses i 74 § har kommit in, skall "
+                    "Lantmäteriverket föra in de uppgifter som avses i"
+                ),
+            },
+            # Cached legacy duplicate-label payload — the wrapped cross-reference
+            # continuation that the live parser no longer emits.
+            {
+                "label": "64",
+                "text": (
+                    "första stycket och 67 §. Införingen av uppgifter från "
+                    "beskattningsdatabasen skall ske senast i samband med årsskifte."
+                ),
+            },
+            {"label": "74", "text": "Skattemyndigheten skall underrätta Lantmäteriverket."},
+        ],
+        "inserted_headings": [],
+        "appendices": [],
+        "signatories": [],
+        "footnotes": [],
+    }
+
+    diagnostics: list[dict] = []
+    coerced = _coerce_official_act(legacy_payload, diagnostics_out=diagnostics)
+
+    # No duplicate-label entry — only one provision per affected label.
+    labels = [p.label for p in coerced.provisions]
+    assert labels == ["64", "72", "74"], labels
+
+    # The cross-reference continuation folded into the prior provision's text
+    # (the host section, not the legitimate §64 replacement).
+    provisions_by_label = {p.label: p.text for p in coerced.provisions}
+    assert "första stycket och 67 §" in provisions_by_label["72"]
+    assert "Införingen av uppgifter från beskattningsdatabasen" in provisions_by_label["72"]
+    # And the legitimate §64 replacement text is NOT displaced.
+    assert provisions_by_label["64"].startswith("I taxeringsuppgiftsdelen")
+    assert "Införingen av uppgifter från beskattningsdatabasen" not in provisions_by_label["64"]
+    # The folding rule fired silently as a benign repair — no diagnostic emitted
+    # (a cached legacy payload reconstruction, not an active parse failure).
+    duplicate_rule_diagnostics = [
+        d for d in diagnostics
+        if d.get("rule_id") == "se_official_act_payload_row_duplicate_label"
+    ]
+    assert duplicate_rule_diagnostics == [], (
+        "cross-reference-continuation fold should NOT raise a duplicate-label "
+        "diagnostic — that diagnostic is reserved for genuinely ambiguous "
+        f"duplicate-label rows. Got: {duplicate_rule_diagnostics}"
+    )
+
+    # And a non-cross-reference duplicate label stays visible as a typed
+    # diagnostic — the fold is shape-specific, never a blanket dedupe.
+    ambiguous_payload = dict(legacy_payload)
+    ambiguous_payload["provisions"] = list(legacy_payload["provisions"]) + [
+        {"label": "64", "text": "En orelaterad tredje lydelse under samma etikett."}
+    ]
+    ambiguous_diagnostics: list[dict] = []
+    _coerce_se_official_act_ambiguous = _coerce_official_act(
+        ambiguous_payload, diagnostics_out=ambiguous_diagnostics
+    )
+    assert any(
+        d.get("rule_id") == "se_official_act_payload_row_duplicate_label"
+        for d in ambiguous_diagnostics
+    ), "non-cross-reference duplicate labels MUST surface a typed diagnostic"
+
+
+def test_coerce_se_official_act_drops_companion_ghost_inserted_heading_when_provision_folds() -> None:
+    """Plural-section citation wrap-continuation ghost heading companion drop.
+
+    The pre-fix parser emitted two paired artifacts when a paragraph across lines
+    wrapped so that the leading ``<N> §`` of one line crossed a ``<N> §§ <text>``
+    plural-citation wrap:
+
+    * a ghost provided with label ``N`` whose text is the wrapped citation tail
+      ``§ socialtjänstlagen (1980:620) samt åtgärder enligt lagen (1990:52) med...
+      `` (the live parser no longer emits this — folded by the parser-side
+      ``_is_cross_reference_continuation`` guard); and
+    * a ghost ``inserted_heading`` row whose ``before_label`` is the ghost
+      label ``N`` and whose text is the preceding paragraph's final line that
+      the parser mistook for a heading (e.g. ``umgänge med barn...``).
+
+    Real-corpus witness: SFS 2001:416 §11 — the §11 list-of-authorities wraps
+    across two PDF text lines ``...enligt 25–28, 30 och\n31 §§ socialtjänstlagen
+    (1980:620)`` and the OLD parser cached it as ``provisions=[{label:'11'},
+    {label:'31', text:'§ socialtjänstlagen...'}]`` and ``inserted_headings=
+    [{before_label:'31', text:'umgänge med barn...'}]``. Without dropping the
+    companion heading the runtime coercion leaves the inserted_heading intact,
+    the lowering emits a §31 INSERT op with empty payload, replay applies a
+    ghost modification, and check_se_official_replay reports a §31
+    ``content_mismatch`` row that is not real.
+
+    Regression: the runtime coercion MUST fold the ghost provision's text into
+    the prior provision AND MUST drop the companion inserted_heading silently
+    (no diagnostic — the fold is benign cached-act reconciliation). The coerced
+    act carries one provision per affected label and zero ghost headings.
+    """
+    from lawvm.sweden.grafter import _coerce_official_act
+
+    legacy_payload = {
+        "sfs_id": "2001:416",
+        "title": "Förordning om ändring i förordningen (1999:1134) om belastningsregister",
+        "act_type": "förordning",
+        "amended_act_sfs_id": "1999:1134",
+        "is_amending_act": True,
+        "published_date": "2001-06-07",
+        "issued_date": "2001-05-25",
+        "enacting_clause": (
+            "Regeringen föreskriver att 11 § förordningen (1999:1134) om "
+            "belastningsregister skall ha följande lydelse."
+        ),
+        "effective_clause": "Denna förordning träder i kraft den 1 juli 2001.",
+        "affected_section_labels": ["11"],
+        # Real §11 replacement text — truncated by the OLD parser at the wrap point.
+        "provisions": [
+            {
+                "label": "11",
+                "text": "Uppgifter ur belastningsregistret skall lämnas ut om det begärs av 1. Justitiekanslern.",
+            },
+            # Ghost §11-provision-tail row: the wrapped cross-reference
+            # continuation the OLD parser emitted under the label '31'.
+            {
+                "label": "31",
+                "text": (
+                    "§ socialtjänstlagen (1980:620) samt åtgärder enligt lagen "
+                    "(1990:52) med särskilda bestämmelser om vård av unga."
+                ),
+            },
+        ],
+        # Companion ghost inserted_heading: the OLD parser mistook the line
+        # just before the false `§ marker` line for a heading and labeled it
+        # with the ghost label as before_label.
+        "inserted_headings": [
+            {"before_label": "31", "text": "umgänge med barn, medgivande att ta emot barn m.m. enligt 25–28, 30 och"}
+        ],
+        "appendices": [],
+        "signatories": [],
+        "footnotes": [],
+    }
+
+    diagnostics: list[dict] = []
+    coerced = _coerce_official_act(legacy_payload, diagnostics_out=diagnostics)
+
+    # Provision labels — only the legitimate §11 survives; the ghost §31
+    # folded back into its host section.
+    assert [p.label for p in coerced.provisions] == ["11"]
+    provisions_by_label = {p.label: p.text for p in coerced.provisions}
+    assert "§ socialtjänstlagen (1980:620)" in provisions_by_label["11"]
+    # And the companion inserted_heading MUST be dropped silently — the
+    # before_label matching the folded ghost label signals the heading was
+    # the OLD-parser artifact, not an independent legit heading.
+    assert coerced.inserted_headings == (), coerced.inserted_headings
+    # No diagnostic — the fold is benign cached-act reconciliation, not a
+    # schema drift worth surfacing.
+    assert diagnostics == [], diagnostics
+    # And the inserted_heading DROP is fold-companion-specific: an unclaimed
+    # heading whose before_label is NOT a folded ghost is preserved (so the
+    # effect-plan can still surface it as an unclaimed-payload adjudication).
+    legacy_payload_with_unclaimed_heading = dict(legacy_payload)
+    legacy_payload_with_unclaimed_heading["inserted_headings"] = [
+        {"before_label": "9", "text": "Rubrik utan stöd i klausul"}
+    ]
+    coerced_with_unclaimed_heading = _coerce_official_act(legacy_payload_with_unclaimed_heading)
+    assert coerced_with_unclaimed_heading.inserted_headings != (), (
+        "the unclaimed-heading case (before_label NOT a folded ghost label) "
+        "MUST be preserved so the effect-plan can surface unclaimed payloads"
+    )
 
 
 def test_compile_se_official_ops_recover_base_act_id_from_enacting_clause() -> None:
@@ -2881,6 +3285,638 @@ def test_apply_se_ops_records_replay_failures_as_adjudications() -> None:
     assert replayed.metadata["applied_op_count"] == 0
 
 
+def test_apply_se_ops_conserved_returns_typed_filter_result_partition() -> None:
+    """Typed conservation receipt (AGENTS.md §1.8): every op ends up in exactly one lane.
+
+    The classic :func:`apply_se_ops` returns only the replayed IRStatute and
+    shuttles skipped-op evidence through an ``adjudications_out`` out-param;
+    a consumer that doesn't pass one silently loses track of which ops were
+    filtered. :func:`apply_se_ops_conserved` returns a typed
+    :class:`SEApplyResult` whose ``filter_result`` partitions every input op
+    into ``accepted_items`` (its binding landed in the output statute) or
+    ``rejected_items`` (:class:`RejectedItem[LegalOperation]` witness). Every
+    input op MUST land in exactly one lane — never silently dropped.
+    """
+    from lawvm.core.filter_result import FilterResult, RejectedItem
+
+    payload = {
+        "beteckning": "2026:999",
+        "rubrik": "Förordning (2026:999) om test",
+        "ikraftDateTime": "2026-01-01T00:00:00",
+        "ikraftOvergangsbestammelse": False,
+        "organisation": {"namn": "Socialdepartementet", "namnOchEnhet": "Socialdepartementet"},
+        "forfattningstypNamn": "Förordning",
+        "register": {"forarbeten": None},
+        "fulltext": {
+            "utfardadDateTime": "2025-12-01T00:00:00",
+            "andringInford": None,
+            "forfattningstext": "2 § Ursprunglig 2 §.",
+        },
+        "publiceradDateTime": "2026-01-01T00:00:00",
+        "andringsforfattningar": [],
+    }
+    statute = parse_se_statute(json.dumps(payload).encode("utf-8"))
+
+    ops: list[LegalOperation] = [
+        # op #1 — succeeds: REPLACE §2 with a valid section payload
+        LegalOperation(
+            op_id="replace-section-ok",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "2"),)),
+            payload=IRNode(kind=IRNodeKind.SECTION, label="2", text="Ny lydelse."),
+            source=OperationSource(statute_id="2026:999"),
+        ),
+        # op #2 — skipped: REPLACE §9, target not found in the statute body
+        LegalOperation(
+            op_id="replace-section-missing",
+            sequence=2,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "9"),)),
+            payload=IRNode(kind=IRNodeKind.SECTION, label="9", text="Nytt innehåll."),
+            source=OperationSource(statute_id="2026:999"),
+        ),
+        # op #3 — skipped: INSERT §2, target already exists (replay won't hijack)
+        LegalOperation(
+            op_id="insert-section-existing",
+            sequence=3,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("section", "2"),)),
+            payload=IRNode(kind=IRNodeKind.SECTION, label="2", text="Ny befintlig text."),
+            source=OperationSource(statute_id="2026:999"),
+        ),
+    ]
+    result = apply_se_ops_conserved(statute, ops)
+
+    # The returned statute IS the replayed IRStatute — §2's text was replaced.
+    assert "Ny lydelse" in result.statute.body.children[0].text
+
+    # Conservation contract: every input op appears in exactly one lane.
+    # No silent drops, no phantom duplicates.
+    assert len(result.applied_ops) == 1
+    assert result.applied_ops[0].op_id == "replace-section-ok"
+
+    assert len(result.skipped_items) == 2
+    rejected_by_id = {item.item.op_id: item for item in result.skipped_items}
+    assert "replace-section-missing" in rejected_by_id
+    assert "insert-section-existing" in rejected_by_id
+
+    # Each RejectedItem carries the typed witness: reason, reason_code, blocking.
+    for item in result.skipped_items:
+        assert isinstance(item, RejectedItem)
+        assert item.reason
+        assert item.reason_code
+        assert item.blocking is False  # SE skips are recorded, not blocking
+
+    # The filter_result is a contract FilterResult[LegalOperation]
+    assert isinstance(result.filter_result, FilterResult)
+    accepted_ids = {op.op_id for op in result.filter_result.accepted_items}
+    rejected_ids = {item.item.op_id for item in result.filter_result.rejected_items}
+    input_ids = {op.op_id for op in ops}
+    # Exactly the input — partition is total (no silent drops, no phantoms).
+    assert accepted_ids | rejected_ids == input_ids
+    assert accepted_ids & rejected_ids == set()  # disjoint
+
+    # Adjudications are also forwarded when the caller passes an out-param
+    # (the typed carrier does NOT replace the existing descriptive adjudication
+    # path; both share the same evidence ledger).
+    adjudications: list[CompileAdjudication] = []
+    result_with_adj = apply_se_ops_conserved(statute, ops, adjudications_out=adjudications)
+    assert len(adjudications) == 2  # the two skipped ops
+    assert result_with_adj.applied_ops[0].op_id == result.applied_ops[0].op_id
+
+
+def test_apply_se_ops_conserved_does_not_silently_accept_empty_op_id_skip() -> None:
+    """Regression (§1.8 conservation): a SKIPPED op with an empty op_id must
+    NOT silently land in the accepted lane.
+
+    Before the fix, the partition keyed on the op_id string and the skipped set
+    was ``{a.op_id for a in adjudications if a.op_id}`` — the ``if a.op_id``
+    filter drops a skipped op whose op_id is the default ``""``, so the
+    partition loop's ``op.op_id in skipped_op_ids`` was ``"" in set()`` ==
+    False, and the SKIPPED op fell through to ``accepted`` — a silent drop of
+    the rejection (violating "every input op lands in exactly one of
+    accepted/rejected"). The fix fails loud on empty op_ids instead of
+    mis-partitioning. (Empty op_ids cannot be a robust identity key.)
+    """
+    payload = {
+        "beteckning": "2026:999",
+        "rubrik": "Förordning (2026:999) om test",
+        "ikraftDateTime": "2026-01-01T00:00:00",
+        "ikraftOvergangsbestammelse": False,
+        "organisation": {"namn": "X", "namnOchEnhet": "X"},
+        "forfattningstypNamn": "Förordning",
+        "register": {"forarbeten": None},
+        "fulltext": {
+            "utfardadDateTime": "2025-12-01T00:00:00",
+            "andringInford": None,
+            "forfattningstext": "2 § Ursprunglig 2 §.",
+        },
+        "publiceradDateTime": "2026-01-01T00:00:00",
+        "andringsforfattningar": [],
+    }
+    statute = parse_se_statute(json.dumps(payload).encode("utf-8"))
+    ops = [
+        # SKIPPED op carrying the DEFAULT empty op_id (target §9 not found).
+        # Before the fix this op was filtered out of the skipped set and
+        # silently landed in `accepted` — a §1.8 conservation violation.
+        LegalOperation(
+            op_id="",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "9"),)),
+            payload=IRNode(kind=IRNodeKind.SECTION, label="9", text="Nytt."),
+            source=OperationSource(statute_id="2026:999"),
+        ),
+    ]
+    # The fix refuses to proceed (fail loud) rather than silently accepting a
+    # rejected op — the conservation invariant cannot be honored with an
+    # un-keyable identity, so the helper raises instead of dropping it.
+    with pytest.raises(ValueError, match="non-empty op_id"):
+        apply_se_ops_conserved(statute, ops)
+
+
+def test_apply_se_ops_conserved_rejects_duplicate_op_ids() -> None:
+    """Regression (§1.8 conservation): duplicate/shared op_ids mis-partition.
+
+    Two distinct ops sharing the same op_id cannot be partitioned by the op_id
+    string — if one is skipped, BOTH would be classed as skipped (or both
+    accepted), breaking the per-op accepted/rejected bijection. The fix fails
+    loud on duplicate op_ids rather than mis-partitioning.
+    """
+    payload = {
+        "beteckning": "2026:999",
+        "rubrik": "Förordning (2026:999) om test",
+        "ikraftDateTime": "2026-01-01T00:00:00",
+        "ikraftOvergangsbestammelse": False,
+        "organisation": {"namn": "X", "namnOchEnhet": "X"},
+        "forfattningstypNamn": "Förordning",
+        "register": {"forarbeten": None},
+        "fulltext": {
+            "utfardadDateTime": "2025-12-01T00:00:00",
+            "andringInford": None,
+            "forfattningstext": "2 § Ursprunglig 2 §.\n\n3 § Tredje.",
+        },
+        "publiceradDateTime": "2026-01-01T00:00:00",
+        "andringsforfattningar": [],
+    }
+    statute = parse_se_statute(json.dumps(payload).encode("utf-8"))
+    ops = [
+        LegalOperation(
+            op_id="dup",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "2"),)),
+            payload=IRNode(kind=IRNodeKind.SECTION, label="2", text="Ny 2."),
+            source=OperationSource(statute_id="2026:999"),
+        ),
+        LegalOperation(
+            op_id="dup",  # shared id with op #1 — not a robust identity
+            sequence=2,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "9"),)),  # skipped (not found)
+            payload=IRNode(kind=IRNodeKind.SECTION, label="9", text="Ny 9."),
+            source=OperationSource(statute_id="2026:999"),
+        ),
+    ]
+    with pytest.raises(ValueError, match="unique"):
+        apply_se_ops_conserved(statute, ops)
+
+
+def test_se_observed_replay_audit_reports_clean_for_target_bounded_replace() -> None:
+    """Observed-write-audit is clean when mutations stay inside the declared target.
+
+    The audit compares actual before/after IR tree diffs against the ops'
+    declared target regions (§2.3 receipt contract, §1.0 Mutation Boundary
+    Invariant). When every changed path falls within one op's declared
+    target, the audit status is ``clean`` — no mutation-boundary violation.
+    """
+    from lawvm.sweden.grafter import se_observed_replay_audit
+
+    payload = {
+        "beteckning": "2026:999",
+        "rubrik": "Förordning (2026:999) om audit test",
+        "ikraftDateTime": "2026-01-01T00:00:00",
+        "ikraftOvergangsbestammelse": False,
+        "organisation": {"namn": "Socialdepartementet", "namnOchEnhet": "Socialdepartementet"},
+        "forfattningstypNamn": "Förordning",
+        "register": {"forarbeten": None},
+        "fulltext": {
+            "utfardadDateTime": "2025-12-01T00:00:00",
+            "andringInford": None,
+            "forfattningstext": "1 § Gamla 1 §.\n\n2 § Oförändrad 2 §.",
+        },
+        "publiceradDateTime": "2026-01-01T00:00:00",
+        "andringsforfattningar": [],
+    }
+    before = parse_se_statute(json.dumps(payload).encode("utf-8"))
+    ops = [
+        LegalOperation(
+            op_id="se_official_replace_2026:999_1",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "1"),)),
+            payload=IRNode(kind=IRNodeKind.SECTION, label="1", text="Ny 1 §."),
+            source=OperationSource(statute_id="2026:999"),
+        ),
+    ]
+    result = apply_se_ops(before, ops)
+    audit = se_observed_replay_audit(before, result, ops)
+
+    assert audit.op_count == 1
+    assert audit.is_clean is True
+    assert audit.status == "clean"
+    assert audit.unexplained_paths == ()
+    # The observed changed paths include the §1 section node (replace touched it).
+    assert len(audit.observed_changed_paths) > 0
+
+
+def test_se_observed_replay_audit_flags_violation_for_unexplained_mutation() -> None:
+    """Audit status is ``violation`` when a mutation falls outside the declared target.
+
+    If a REPRICE op declares target=§1 but the replay also secretly changes §2's
+    text (e.g., via an invisible heuristic that accidentally touches a sibling),
+    the audit catches it: the changed §2 path is NOT within the §1 declared
+    boundary, so ``unexplained_paths`` is non-empty and ``status == "violation"``.
+
+    Regression: simulate an off-target mutation by running the audit against
+    a before/after pair where §2 was manually altered to differ — the audit
+    MUST flag it as a violation of §1.0 Mutation Boundary Invariant.
+    """
+    from lawvm.sweden.grafter import se_observed_replay_audit
+
+    payload = {
+        "beteckning": "2026:999",
+        "rubrik": "Förordning (2026:999) om audit test",
+        "ikraftDateTime": "2026-01-01T00:00:00",
+        "ikraftOvergangsbestammelse": False,
+        "organisation": {"namn": "Socialdepartementet", "namnOchEnhet": "Socialdepartementet"},
+        "forfattningstypNamn": "Förordning",
+        "register": {"forarbeten": None},
+        "fulltext": {
+            "utfardadDateTime": "2025-12-01T00:00:00",
+            "andringInford": None,
+            "forfattningstext": "1 § Gamla 1 §.\n\n2 § Oförändrad 2 §.",
+        },
+        "publiceradDateTime": "2026-01-01T00:00:00",
+        "andringsforfattningar": [],
+    }
+    before = parse_se_statute(json.dumps(payload).encode("utf-8"))
+    ops = [
+        LegalOperation(
+            op_id="se_official_replace_2026:999_1",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "1"),)),
+            payload=IRNode(kind=IRNodeKind.SECTION, label="1", text="Ny 1 §."),
+            source=OperationSource(statute_id="2026:999"),
+        ),
+    ]
+    # Apply the legitimate replace (target=§1, stays in boundary)
+    result = apply_se_ops(before, ops)
+    # Simulate an invisible mutation: manually alter §2's text in the result tree
+    # so the audit catches it as an unexplained mutation outside the declared
+    # boundary (§1's target region). The audit is the independent observer that
+    # catches what the apply helper did NOT declare.
+    section2_path = tree_ops.find(result.body, "section", "2")
+    assert section2_path is not None
+    section2_node = tree_ops.resolve(result.body, section2_path)
+    assert section2_node is not None
+    mutated_section2 = IRNode(
+        kind=section2_node.kind,
+        label=section2_node.label,
+        text="Mutated 2 §.",
+        attrs=dict(section2_node.attrs),
+        children=section2_node.children,
+    )
+    contaminated_result = tree_ops.replace_at(result.body, section2_path, mutated_section2)
+    from lawvm.core.ir import IRStatute as _IS
+    contaminated_statute = _IS(
+        statute_id=result.statute_id,
+        title=result.title,
+        body=contaminated_result,
+        supplements=list(result.supplements),
+        metadata=dict(result.metadata),
+    )
+    audit = se_observed_replay_audit(before, contaminated_statute, ops)
+
+    assert audit.status == "violation"
+    assert audit.unexplained_paths != ()
+    # The unexplained path includes section:2 (which is NOT the declared §1 target)
+    assert any(
+        any(kind == "section" and label == "2" for kind, label in path)
+        for path in audit.unexplained_paths
+    ), audit.unexplained_paths
+
+
+def test_se_replay_write_receipts_emits_typed_receipt_per_applied_op() -> None:
+    """Per-op WriteReceipt emission (§2.3 receipt contract, second step).
+
+    :func:`se_replay_write_receipts` applies ops one at a time, snapshots
+    before/after body trees, and synthesizes a contract :class:`WriteReceipt`
+    per applied op. The receipt carries the typed §2.3 fields: op_id /
+    helper / action / bound_target_path / landed_primary_path / categorized
+    mutation footprint (created/replaced/removed/renumbered) / pre & post
+    structural subtree hashes.
+
+    Regression (synthetic; exercises every op action family that the SE
+    apply path supports):
+      * REPLACE §1: receipt shows ``replaced_paths = (('section', '1'),)`` and
+        both pre/post hashes non-empty (the section existed before AND after).
+      * INSERT §3a: receipt shows ``created_paths = (('section', '3a'),)`` and
+        pre_hash = "" / post_hash non-empty (the section was absent before,
+        present after — the receipt's hash signal is the opposite of REPEAL).
+      * REPEAL §2: receipt shows ``removed_paths = (('section', '2'),)`` and
+        pre_hash non-empty / post_hash = "" (the section existed before,
+        absent after).
+
+    Skipped ops emit no receipt (the FilterResult's rejected_items lane
+    carries them instead — the conservation partition + receipt are dual
+    lanes, not doubles).
+    """
+    from lawvm.sweden.grafter import se_replay_write_receipts
+    from lawvm.core.write_receipt import WriteReceipt, receipt_address_string
+
+    payload = {
+        "beteckning": "2026:999",
+        "rubrik": "Förordning (2026:999) om receipt-test",
+        "ikraftDateTime": "2026-01-01T00:00:00",
+        "ikraftOvergangsbestammelse": False,
+        "organisation": {"namn": "X", "namnOchEnhet": "X"},
+        "forfattningstypNamn": "Förordning",
+        "register": {"forarbeten": None},
+        "fulltext": {
+            "utfardadDateTime": "2025-12-01T00:00:00",
+            "andringInford": None,
+            "forfattningstext": "1 § Gamla.\n\n2 § Other.\n\n3 § Third.",
+        },
+        "publiceradDateTime": "2026-01-01T00:00:00",
+        "andringsforfattningar": [],
+    }
+    before = parse_se_statute(json.dumps(payload).encode("utf-8"))
+    # 3 ops: REPLACE §1, INSERT §3a, REPEAL §2
+    ops: list[LegalOperation] = [
+        LegalOperation(
+            op_id="se-replace-1",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "1"),)),
+            payload=IRNode(kind=IRNodeKind.SECTION, label="1", text="Ny 1."),
+            source=OperationSource(statute_id="2026:999"),
+        ),
+        LegalOperation(
+            op_id="se-insert-3a",
+            sequence=2,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("section", "3a"),)),
+            payload=IRNode(kind=IRNodeKind.SECTION, label="3a", text="Ny 3a."),
+            source=OperationSource(statute_id="2026:999"),
+        ),
+        LegalOperation(
+            op_id="se-repeal-2",
+            sequence=3,
+            action=StructuralAction.REPEAL,
+            target=LegalAddress(path=(("section", "2"),)),
+            source=OperationSource(statute_id="2026:999"),
+        ),
+    ]
+    final, receipts = se_replay_write_receipts(before, ops)
+
+    # All 3 ops applied — 3 receipts emitted.
+    assert len(receipts) == 3, [r.op_id for r in receipts]
+    for r in receipts:
+        assert isinstance(r, WriteReceipt)
+    # The final body should have §1 (replaced text), §3 (unchanged),
+    # §3a (inserted). §2 (repealed) is removed.
+    sections_after = {child.label for child in final.body.children if child.kind is IRNodeKind.SECTION}
+    assert sections_after == {"1", "3", "3a"}, sections_after
+
+    # Categorize by op action family
+    by_op = {r.op_id: r for r in receipts}
+
+    # REPLACE §1: replaced_paths = (('section','1'),), pre/post non-empty
+    r_replace = by_op["se-replace-1"]
+    assert r_replace.action == "replace"
+    assert r_replace.bound_target_path == (("section", "1"),)
+    assert r_replace.replaced_paths == ((("section", "1"),),)
+    assert r_replace.created_paths == ()
+    assert r_replace.removed_paths == ()
+    assert r_replace.landed_primary_path == (("section", "1"),)
+    # pre/post hashes non-empty (section exists before AND after)
+    pre_values = list(r_replace.pre_hashes.values())
+    post_values = list(r_replace.post_hashes.values())
+    assert pre_values and pre_values[0], r_replace.pre_hashes
+    assert post_values and post_values[0], r_replace.post_hashes
+    # The hash changed (replaced)
+    assert pre_values[0] != post_values[0]
+
+    # INSERT §3a: created_paths = (('section','3a'),), pre_hash "" (absent
+    # before), post_hash non-empty (present after)
+    r_insert = by_op["se-insert-3a"]
+    assert r_insert.action == "insert"
+    assert r_insert.created_paths == ((("section", "3a"),),)
+    assert r_insert.replaced_paths == ()
+    assert r_insert.removed_paths == ()
+    pre_insert = list(r_insert.pre_hashes.values())[0]
+    post_insert = list(r_insert.post_hashes.values())[0]
+    assert pre_insert == "", r_insert.pre_hashes  # absent before = empty hash
+    assert post_insert != "", r_insert.post_hashes  # present after
+
+    # REPEAL §2: removed_paths = (('section','2'),), pre_hash non-empty
+    # (present before), post_hash "" (absent after)
+    r_repeal = by_op["se-repeal-2"]
+    assert r_repeal.action == "repeal"
+    assert r_repeal.removed_paths == ((("section", "2"),),)
+    assert r_repeal.created_paths == ()
+    assert r_repeal.replaced_paths == ()
+    pre_repeal = list(r_repeal.pre_hashes.values())[0]
+    post_repeal = list(r_repeal.post_hashes.values())[0]
+    assert pre_repeal != "", r_repeal.pre_hashes  # present before
+    assert post_repeal == "", r_repeal.post_hashes  # absent after
+
+    # The hash key for pre/post is the receipt_address_string of the
+    # landed primary path.
+    expected_key_replace = receipt_address_string((("section", "1"),))
+    assert expected_key_replace in r_replace.pre_hashes
+    assert expected_key_replace in r_replace.post_hashes
+
+
+def test_se_replay_write_receipts_emits_no_receipt_for_skipped_ops() -> None:
+    """Skipped ops emit no receipt; the FilterResult rejected_items lane carries them.
+
+    Dual-lane design (§1.8 + §2.3): the FilterResult[LegalOperation]
+    ``rejected_items`` lane is the typed-conservation record (what was
+    rejected and why); the WriteReceipt lane is the typed-write record
+    (what was written and to what covering region). A skipped op is in
+    the rejected lane (no write happened); an applied op is in the
+    receipt lane (no rejected reason). The two are mutually exclusive per
+    op — a non-empty receipt set means the op applied, a non-empty
+    rejected_items set means the op was skipped.
+    """
+    from lawvm.sweden.grafter import se_replay_write_receipts, apply_se_ops_conserved
+
+    payload = {
+        "beteckning": "2026:999",
+        "rubrik": "Förordning (2026:999) om receipt-test",
+        "ikraftDateTime": "2026-01-01T00:00:00",
+        "ikraftOvergangsbestammelse": False,
+        "organisation": {"namn": "X", "namnOchEnhet": "X"},
+        "forfattningstypNamn": "Förordning",
+        "register": {"forarbeten": None},
+        "fulltext": {
+            "utfardadDateTime": "2025-12-01T00:00:00",
+            "andringInford": None,
+            "forfattningstext": "1 § En §.\n\n2 § Annan §.",
+        },
+        "publiceradDateTime": "2026-01-01T00:00:00",
+        "andringsforfattningar": [],
+    }
+    before = parse_se_statute(json.dumps(payload).encode("utf-8"))
+    ops = [
+        # Successful: REPLACE §1 with valid payload
+        LegalOperation(
+            op_id="se-replace-1",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "1"),)),
+            payload=IRNode(kind=IRNodeKind.SECTION, label="1", text="Ny 1."),
+            source=OperationSource(statute_id="2026:999"),
+        ),
+        # Skipped: REPLACE §9 (target not found)
+        LegalOperation(
+            op_id="se-replace-9-missing",
+            sequence=2,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "9"),)),
+            payload=IRNode(kind=IRNodeKind.SECTION, label="9", text="Ny."),
+            source=OperationSource(statute_id="2026:999"),
+        ),
+    ]
+    final, receipts = se_replay_write_receipts(before, ops)
+    assert len(receipts) == 1, [r.op_id for r in receipts]
+    assert receipts[0].op_id == "se-replace-1"
+
+    # Cross-check: the conserved FilterResult one-receipt-per-applied-op
+    # invariant holds -- the rejected lane carries the skipped op.
+    conserved = apply_se_ops_conserved(before, ops)
+    assert len(conserved.applied_ops) == 1
+    assert conserved.applied_ops[0].op_id == "se-replace-1"
+    assert len(conserved.skipped_items) == 1
+    assert conserved.skipped_items[0].item.op_id == "se-replace-9-missing"
+
+    # Cross-check: the file-state match -- `final` statute (from the per-op
+    # receipt-emitting pass) must equal what `apply_se_ops` returns for the
+    # full op list (the per-op apply is associative and order-preserving for
+    # SE's REPLACE family, which this fixture exercises).
+    assert se_statute_from_before_final_match(final, conserved.statute)
+
+
+def se_statute_from_before_final_match(a: IRStatute, b: IRStatute) -> bool:
+    """Helper: compare two IRStatute bodies for full content + order equivalence.
+
+    The earlier version compared only the top-level child ``{(kind, label)}``
+    SETS — that would pass even if per-op replay diverged in body TEXT or in
+    child ORDER (the "associative and order-preserving" claim was therefore not
+    actually exercised). This compares the canonical structural subtree hash of
+    each whole body, which is order-sensitive and content-sensitive (text,
+    attrs, and the full recursive child structure), so divergence in any of
+    those fails the match.
+    """
+    from lawvm.core.ir_helpers import structural_subtree_hash
+
+    return structural_subtree_hash(a.body) == structural_subtree_hash(b.body)
+
+
+def test_se_replay_write_receipts_renumber_receipt_is_well_formed() -> None:
+    """Regression (§2.3 receipt): a RENUMBER must emit a MEANINGFUL receipt.
+
+    A RENUMBER removes the source section and re-inserts it under the
+    destination label — both are parent children-list changes, so the
+    identity-pruned diff reports the body-level change as a single empty-path
+    tuple ``((),)`` (a tuple holding an empty path, NOT a coordinate).
+
+    Before the fix, the RENUMBER branch did the equivalent of
+    ``replaced_paths = changed`` (== ``((),)``) and
+    ``landed_primary_path = changed[0]`` (== ``()``). Result: ``replaced_paths``
+    carried the bogus empty path, and ``landed_primary_path == ()`` is falsy so
+    the ``if landed_primary_path:`` guard skipped the pre/post hashes entirely
+    — the receipt was malformed (empty footprint + empty hashes), exactly the
+    INSERT/REPEAL empty-diff problem that those branches already special-case.
+
+    The fix mirrors INSERT/REPEAL: the receipt's footprint is the typed
+    ``renumbered_paths = ((from, to),)`` pair, ``landed_primary_path`` is the
+    destination coordinate (where the section landed), and the pre/post hashes
+    resolve against that destination subtree. ``replaced_paths`` no longer
+    carries the bogus empty path.
+    """
+    from lawvm.sweden.grafter import se_replay_write_receipts
+
+    payload = {
+        "beteckning": "2026:999",
+        "rubrik": "Förordning (2026:999) om renumber-receipt-test",
+        "ikraftDateTime": "2026-01-01T00:00:00",
+        "ikraftOvergangsbestammelse": False,
+        "organisation": {"namn": "X", "namnOchEnhet": "X"},
+        "forfattningstypNamn": "Förordning",
+        "register": {"forarbeten": None},
+        "fulltext": {
+            "utfardadDateTime": "2025-12-01T00:00:00",
+            "andringInford": None,
+            "forfattningstext": "2 § Flyttbar text.\n\n5 § Annan.",
+        },
+        "publiceradDateTime": "2026-01-01T00:00:00",
+        "andringsforfattningar": [],
+    }
+    before = parse_se_statute(json.dumps(payload).encode("utf-8"))
+    # RENUMBER §2 -> §4 (a non-colliding destination, so the op applies).
+    ops = [
+        LegalOperation(
+            op_id="se-renumber-2-to-4",
+            sequence=1,
+            action=StructuralAction.RENUMBER,
+            target=LegalAddress(path=(("section", "2"),)),
+            destination=LegalAddress(path=(("section", "4"),)),
+            source=OperationSource(statute_id="2026:999"),
+        ),
+    ]
+    final, receipts = se_replay_write_receipts(before, ops)
+
+    # The renumber applied: §2 gone, §4 (with §2's text) present.
+    section_map = se_section_text_map(final)
+    assert set(section_map) == {"4", "5"}, section_map
+    assert "Flyttbar text" in section_map["4"]
+
+    assert len(receipts) == 1, [r.op_id for r in receipts]
+    r = receipts[0]
+    assert r.action == "renumber"
+
+    # The footprint is the typed (from_path, to_path) pair — NOT a bogus
+    # empty path. renumbered_paths is a tuple of (from, to) leg pairs.
+    from_path = (("section", "2"),)
+    to_path = (("section", "4"),)
+    assert r.renumbered_paths == ((from_path, to_path),)
+    # The bug signature: `replaced_paths` must NOT carry the empty-path tuple.
+    assert r.replaced_paths == ()
+    assert () not in r.replaced_paths
+    # Neither renumber leg is the bogus empty path.
+    for leg_from, leg_to in r.renumbered_paths:
+        assert leg_from != () and leg_to != ()
+
+    # landed_primary_path is the destination coordinate (a real coordinate),
+    # not the empty path `()` that the old `changed[0]` produced.
+    assert r.landed_primary_path == (("section", "4"),)
+    assert r.landed_primary_path  # truthy — the hash guard now fires
+
+    # pre/post hashes are populated (the malformed receipt left these empty).
+    # The destination §4 was ABSENT before (pre = "") and PRESENT after.
+    assert r.pre_hashes, r.pre_hashes
+    assert r.post_hashes, r.post_hashes
+    pre = list(r.pre_hashes.values())[0]
+    post = list(r.post_hashes.values())[0]
+    assert pre == "", r.pre_hashes  # §4 absent before
+    assert post != "", r.post_hashes  # §4 present after
+
+
 def test_apply_se_ops_records_renumber_and_heading_skip_adjudications() -> None:
     payload = {
         "beteckning": "2026:998",
@@ -3370,6 +4406,480 @@ def test_check_se_official_replay_matches_table_section() -> None:
     assert result["rows"][0]["classification"] == "table_rows_match"
 
 
+def test_check_se_official_replay_repeal_section_classifies_oracle_stub_as_match() -> None:
+    """Editorial repeal-stub vs empty replay is an editorial-stub match, not mismatch.
+
+    The SFS current-text oracle keeps a one-line tombstone "Har upphävts genom
+    <förordning|lag> (YEAR:N)." in place of a repealed section, while the
+    replay-fold (correctly) produces no section text after a structural
+    REPEAL — the section is gone. Classifying this as a ``content_mismatch``
+    inflates the genuine-mismatch rate without flagging any replay defect; the
+    two surfaces agree on the fact of the repeal.
+
+    Real-corpus witness: SFS 2002:12 §17 (the section was repealed by 2002:12
+    itself, and the official consolidation carries the section's title set
+    populated with the repeal-stub line). Previously misclassified as
+    ``content_mismatch`` (genuine_mismatch bucket); now classified as
+    ``repeal_stub_oracle_only`` (genuine_match bucket).
+
+    Regression (synthetic; mirrors the witness shape so it does not depend on
+    the archived corpus): the row MUST be match=True, classification MUST be
+    ``repeal_stub_oracle_only``, and the row's ``bucket_*`` aggregation MUST
+    count it as a genuine_match (not a genuine_mismatch).
+    """
+    base_payload = {
+        "beteckning": "2026:106",
+        "rubrik": "Förordning (2026:106) om något",
+        "ikraftDateTime": "2026-04-01T00:00:00",
+        "ikraftOvergangsbestammelse": False,
+        "organisation": {"namn": "Justitiedepartementet", "namnOchEnhet": "Justitiedepartementet"},
+        "forfattningstypNamn": "Förordning",
+        "register": {"forarbeten": None},
+        "fulltext": {
+            "utfardadDateTime": "2026-02-26T00:00:00",
+            "andringInford": None,
+            # The current-text oracle's post-amendment state carries a repeal-stub
+            # for §17 (SFS editorial convention: the section's tombstone line).
+            "forfattningstext": "17 § Har upphävts genom förordning (2026:286).\n",
+        },
+        "publiceradDateTime": "2026-03-23T12:17:32",
+        "andringsforfattningar": [],
+    }
+    official_act = {
+        "sfs_id": "2026:286",
+        "title": "Förordning om ändring i förordningen (2026:106) om något",
+        "act_type": "förordning",
+        "amended_act_sfs_id": "2026:106",
+        "is_amending_act": True,
+        "published_date": "2026-03-24",
+        "issued_date": "2026-03-19",
+        # Repeal enacting clause — compiles to ``REPEAL section:17`` op, so the
+        # replay-fold produces no §17 in the post-materialized tree.
+        "enacting_clause": (
+            "Regeringen föreskriver att 17 § förordningen (2026:106) om något "
+            "skall upphöra att gälla."
+        ),
+        "effective_clause": "Denna förordning träder i kraft den 15 april 2026.",
+        "affected_section_labels": ["17"],
+        "provisions": [],
+        "signatories": [],
+        "footnotes": [],
+    }
+    archive = _FakeArchive(
+        stored={
+            "se://sfs/2026:106/rk.current.json": json.dumps(base_payload, ensure_ascii=False).encode("utf-8"),
+            "se://sfs/2026:286/official.act.json": json.dumps(official_act, ensure_ascii=False).encode("utf-8"),
+        }
+    )
+
+    result = check_se_official_replay(archive, "2026:286")
+
+    assert result["match_count"] == 1
+    section_row = result["rows"][0]
+    assert section_row["section"] == "17"
+    assert section_row["match"] is True
+    assert section_row["classification"] == "repeal_stub_oracle_only"
+    # The replay produced no text for §17 (the section was structurally repealed)
+    # and the oracle's post-state carries the "Har upphävts genom..." tombstone.
+    assert (section_row["replay_text"] or "").strip() == ""
+    assert "Har upphävts genom förordning (2026:286)" in section_row["post_text"]
+
+    # Aggregated bucket assignments honor the editorial-stub classification:
+    # it MUST count toward the genuine_match bucket, not the genuine_mismatch
+    # bucket.
+    summary = scan_se_official_replay_act(archive, "2026:286")
+    assert summary["bucket_genuine_match_count"] == 1
+    assert summary["bucket_genuine_mismatch_count"] == 0
+
+
+def test_check_se_official_replay_repeal_then_later_readded_classifies_as_oracle_version_mismatch() -> None:
+    """Repealed-in-this-act + later-reinstated section is oracle_version_mismatch.
+
+    Real-corpus witness: SFS 2001:920 §5 — the amending act structurally
+    repeals §5 ("5 § förordningen (...) skall upphöra att gälla vid utgången
+    av år 2001."), so the replay-fold produces an empty §5 at the act's
+    effective date. The official current-surface oracle carries a §5 with
+    non-stub text because a *later* amendment re-introduced the section after
+    2001:920 (the post text references "I 4 a kap. förordningen (2007:572)
+    om värdepappersmarknaden..." — 2007:572 is strictly later than 2001:920).
+
+    Both surfaces are correct at their different time points: replay
+    deterministically reflects the post-2001:920 repeal state; the oracle
+    reflects the post-2007:572-reinstatement consolidated state. The replay
+    is provably correct (REPEAL op + strictly-later consolidation stamp), so
+    the row MUST classify as match=True with the
+    ``repeal_then_later_replaced_oracle_only`` shape, NOT ``content_mismatch``
+    (genuine_mismatch).
+
+    Regression: a synthetic fixture pinning the shape — an amending act that
+    REPEALS §5, a base act whose current-text oracle carries a different
+    post-2001:920 §5 body sourced from a strictly-later amendment, and a
+    consolidation stamp strictly later than 2001:920's effective date.
+    """
+    base_payload = {
+        "beteckning": "1999:146",
+        "rubrik": "Förordning (1999:146) om värdepappersmarknaden",
+        "ikraftDateTime": "1999-01-01T00:00:00",
+        "ikraftOvergangsbestammelse": False,
+        "organisation": {"namn": "Finansdepartementet", "namnOchEnhet": "Finansdepartementet"},
+        "forfattningstypNamn": "Förordning",
+        "register": {"forarbeten": None},
+        "fulltext": {
+            "utfardadDateTime": "1999-01-01T00:00:00",
+            # Later consolidation -- post-text reflects a strictly-later
+            # amendment reintroducing §5 with different content from 2001:920.
+            "andringInford": "t.o.m. SFS 2007:572",
+            "forfattningstext": (
+                "5 § /Upphör att gälla U:2001-12-31/\n"
+                "Gammal §5 lydelse före 2001:920.\n\n"
+                # Later amendment reintroduced §5 with different content
+                # observed by 2007:572 consolidation. The post-stamp names
+                # a strictly later amendment (2007 > 2001).
+                "5 § /Träder i kraft I:2007-XX-XX/\n"
+                "I 4 a kap. förordningen (2007:572) om värdepappersmarknaden finns bestämmelser."
+            ),
+        },
+        "publiceradDateTime": "2001-12-31T12:00:00",
+        "andringsforfattningar": [],
+    }
+    official_act = {
+        "sfs_id": "2001:920",
+        "title": "Förordning om ändring i förordningen (1999:146) om värdepappersmarknaden",
+        "act_type": "förordning",
+        "amended_act_sfs_id": "1999:146",
+        "is_amending_act": True,
+        "published_date": "2001-11-30",
+        "issued_date": "2001-11-15",
+        # Repeal-only enacting clause -- compiles to ``REPEAL section:5`` op,
+        # so the replay-fold produces no §5 in the materialized post-tree.
+        "enacting_clause": (
+            "Regeringen föreskriver att 5 § förordningen (1999:146) om "
+            "värdepappersmarknaden skall upphöra att gälla vid utgången av år 2001."
+        ),
+        "effective_clause": "Denna förordning träder i kraft den 1 januari 2002.",
+        "affected_section_labels": ["5"],
+        "provisions": [],
+        "signatories": [],
+        "footnotes": [],
+    }
+    archive = _FakeArchive(
+        stored={
+            "se://sfs/1999:146/rk.current.json": json.dumps(base_payload, ensure_ascii=False).encode("utf-8"),
+            "se://sfs/2001:920/official.act.json": json.dumps(official_act, ensure_ascii=False).encode("utf-8"),
+        }
+    )
+
+    result = check_se_official_replay(archive, "2001:920")
+
+    assert result["match_count"] == 1, [r for r in result["rows"]]
+    section_row = result["rows"][0]
+    assert section_row["section"] == "5"
+    # The replay produced no text for §5 (structurally repealed) -- the
+    # classification MUST NOT be ``content_mismatch`` (the previous behavior,
+    # when the comparator diffed the empty replay against the later-oracle's
+    # readded §5 text).
+    assert section_row["match"] is True
+    assert section_row["classification"] == "repeal_then_later_replaced_oracle_only"
+
+    # Aggregated bucket: the row MUST count toward the oracle_version_mismatch
+    # bucket (correct replay measured against a later consolidation), NOT the
+    # genuine_mismatch bucket.
+    summary = scan_se_official_replay_act(archive, "2001:920")
+    assert summary["bucket_oracle_version_mismatch_count"] == 1, summary
+    assert summary["bucket_genuine_mismatch_count"] == 0, summary
+
+
+def test_check_se_official_replay_repeal_stub_pattern_is_narrow() -> None:
+    """The repeal-stub matcher MUST NOT fire on adjacent-but-different phrasings.
+
+    The classification is shape-specific: only the bare "Har upphävts genom
+    <förordning|lag> (YEAR:N)." tombstone matches. A neighboring phrasing that
+    mentions a repeal but carries additional sentence content (`Har upphävts
+    i sin helhet genom förordning (2026:286).` or a sentence describing the
+    repeal as part of a broader paragraph) does NOT match — those remain
+    content_mismatch candidates for the regular classifier to handle.
+    """
+    assert _is_oracle_repeal_stub("Har upphävts genom förordning (2026:286).") is True
+    assert _is_oracle_repeal_stub("Har upphävts genom lag (1999:353).") is True
+    assert _is_oracle_repeal_stub("Har upphävts genom förordning (2026:286)") is True  # tolerant of missing trailing period
+    # Phrasings that mention a repeal but are NOT the bare tombstone convention.
+    assert _is_oracle_repeal_stub("Har upphävts i sin helhet genom förordning (2026:286).") is False
+    assert _is_oracle_repeal_stub("Avsd Kristen paragrafen har upphävts genom förordning (2026:286).") is False
+    assert _is_oracle_repeal_stub("") is False
+    assert _is_oracle_repeal_stub("Vanlig lydelse som inte är en upphävst stub.") is False
+
+
+def test_check_se_official_replay_regenerates_cached_ops_with_truncated_payload_text() -> None:
+    """Stale cached ops with truncated REPLACE payloads MUST force a recompile.
+
+    Real-corpus witness: SFS 2001:606 §72 — the cached ``official.ops.json`` was
+    built before the parser learned to fold wrapped cross-reference
+    continuations back into their host section. The cached §72 REPLACE op's
+    payload carried only the truncated provision body (``child_text_len=148``,
+    the snapshot stopped mid-sentence at ``...avses in``) while the runtime-
+    coerced official act's §72 provision now carries the full text
+    (``len=995``, including the folded wrap-continuation ``första stycket och
+    67 §. Införingen av uppgifter...``).
+
+    Without a recompile trigger the replay-vs-oracle lookup returned the
+    truncated text and the row was misclassified as ``content_mismatch``
+    (genuine_mismatch bucket). After the staleness fix, the cached-ops
+    material-text shortfall against the coerced provision fires an in-memory
+    recompile; the fresh compile uses the coerced act's folded provisions and
+    produces the full-body §72 payload; the replay-vs-oracle lookup now
+    matches the post-state via the official-act oracle and classifies the row
+    as ``official_oracle_version_mismatch`` match=True.
+
+    Regression (synthetic; mirrors the witness shape). The fixture carries a
+    §72 REPLACE op with a deliberately truncated payload; the
+    ``apply_se_states``-equivalent runtime path used by ``check_se_official_replay``
+    MUST detect the staleness, force a fresh in-memory compile against the
+    coerced act's full-body §72 text, and apply the full payload.
+    """
+    full_body = (
+        "Sedan en underrättelse som avses i 74 § har kommit in, skall "
+        "Lantmäteriverket snarast möjligt i fastighetsregistret föra in de "
+        "uppgifter som avses i första stycket och 67 §. Införingen av "
+        "uppgifter från beskattningsdatabasen skall med beaktande av 64 § "
+        "andra stycket ske senast i samband med årsskifte."
+    )
+    truncated_body = (
+        "Sedan en underrättelse som avses i 74 § har kommit in, skall "
+        "Lantmäteriverket snarast möjligt i fastighetsregistret föra in de "
+        "uppgifter som avses in"
+    )
+    base_payload = {
+        "beteckning": "2000:308",
+        "rubrik": "Förordning (2000:308) om fastighetsregister",
+        "ikraftDateTime": "2000-05-01T00:00:00",
+        "ikraftOvergangsbestammelse": False,
+        "organisation": {"namn": "Finansdepartementet", "namnOchEnhet": "Finansdepartementet"},
+        "forfattningstypNamn": "Förordning",
+        "register": {"forarbeten": None},
+        "fulltext": {
+            "utfardadDateTime": "2001-08-16T00:00:00",
+            # Later-consolidation stamp so the replay-vs-cached-official
+            # fallback path can fire after the staleness-triggered recompile.
+            "andringInford": "t.o.m. SFS 2003:500",
+            "forfattningstext": (
+                # §72 was repealed-and-replaced at 2001:606's effective date
+                # and stayed in the same shape through 2003:500.
+                "72 § /Upphör att gälla U:2001-10-01/\n"
+                f"{truncated_body}\n\n"
+                "72 § /Träder i kraft I:2001-10-01/\n"
+                f"{full_body}\n"
+                "Förordning (2001:606)."
+            ),
+        },
+        "publiceradDateTime": "2001-08-31T12:00:00",
+        "andringsforfattningar": [],
+    }
+    official_act = {
+        "sfs_id": "2001:606",
+        "title": "Förordning om ändring i förordningen (2000:308) om fastighetsregister",
+        "act_type": "förordning",
+        "amended_act_sfs_id": "2000:308",
+        "is_amending_act": True,
+        "published_date": "2001-09-01",
+        "issued_date": "2001-08-16",
+        "enacting_clause": (
+            "Regeringen föreskriver att 72 § förordningen (2000:308) om "
+            "fastighetsregister skall ha följande lydelse."
+        ),
+        "effective_clause": "Denna förordning träder i kraft den 1 oktober 2001.",
+        "affected_section_labels": ["72"],
+        # The coerced-provision §72 text carries the FULL body — the
+        # runtime coercion folds the wrap-continuation back into §72's text.
+        "provisions": [{"label": "72", "text": full_body}],
+        "inserted_headings": [],
+        "appendices": [],
+        "signatories": [],
+        "footnotes": [],
+    }
+    # Stale cached ops built before the parser fix: the cached §72 REPLACE
+    # op's payload carries the truncated body the pre-fix parser left at the
+    # wrap break (the rest folded away into a duplicate-label ghost).
+    stale_cached_op = {
+        "op_id": "se_official_2001:606_72",
+        "sequence": 1,
+        "action": "replace",
+        "target": {"path": [["section", "72"]], "special": None},
+        "targets": [{"path": [["section", "72"]], "special": None}],
+        "payload": {
+            "kind": "section",
+            "label": "72",
+            "text": "",
+            "attrs": {},
+            # Truncated to the half before the wrap; the cross-reference
+            # continuation was never folded into this cached payload.
+            "children": [{"kind": "subsection", "label": "1", "text": truncated_body, "attrs": {}, "children": []}],
+        },
+        "anchor": None,
+        "destination": None,
+        "source": {
+            "statute_id": "2001:606",
+            "title": official_act["title"],
+            "enacted": "2001-08-16",
+            "effective": "2001-10-01",
+            "expires": "",
+            "raw_text": official_act["enacting_clause"],
+            "corrected_by": "",
+            "commencement_source": "",
+            "commencement_title": "",
+        },
+        "applicability": [],
+        "provenance_tags": [],
+        "text_match": None,
+        "text_replacement": None,
+        "text_occurrence": 0,
+        "group_id": None,
+    }
+    archive = _FakeArchive(
+        stored={
+            "se://sfs/2000:308/rk.current.json": json.dumps(base_payload, ensure_ascii=False).encode("utf-8"),
+            "se://sfs/2001:606/official.act.json": json.dumps(official_act, ensure_ascii=False).encode("utf-8"),
+            "se://sfs/2001:606/official.ops.json": json.dumps([stale_cached_op], ensure_ascii=False).encode("utf-8"),
+        }
+    )
+
+    result = check_se_official_replay(archive, "2001:606")
+
+    # The §72 row MUST now match: the cached ops' truncated-payload staleness
+    # was detected and a fresh in-memory compile filled the §72 replacement
+    # with the full body. After applying the fresh REPLACE op, the replayed
+    # §72 text equals the official-act oracle (the cached raw provision's
+    # full body), and the current-surface disagreement is a strictly later
+    # consolidation (oracle_version_mismatch), NOT a ``content_mismatch``
+    # (the pre-fix behavior where the truncated replay was diffed against
+    # the full oracle text).
+    assert result["match_count"] == 1
+    section_row = result["rows"][0]
+    assert section_row["section"] == "72"
+    assert section_row["match"] is True, section_row
+    assert section_row["classification"] != "content_mismatch", section_row["classification"]
+    # And the replayed §72 text now contains the wrap-continuation fragment,
+    # proving the cached truncated-payload was replaced by the fresh full-body
+    # compile rather than silently reused.
+    assert "första stycket och 67 §" in section_row["replay_text"]
+    assert "Införingen av uppgifter" in section_row["replay_text"]
+
+
+def test_check_se_official_replay_regenerates_cached_ops_with_duplicate_target() -> None:
+    """Stale cached ops with a duplicate (kind, label) REPLACE MUST force a recompile.
+
+    Real-corpus witness: SFS 2001:606 — the cached ``official.ops.json`` was
+    built before the parser learned to fold duplicate-label wrapped cross-
+    reference continuations back into their host section. The cached ops file
+    contained TWO REPLACE §64 ops (one for the legitimate §64 text, one for
+    the wrap-continuation ghost whose label collided with §64). The current
+    compiler no longer emits duplicate-target REPLACE ops — the runtime
+    coercion folds the wrap-continuation silently — so a cached duplicate
+    is a strong staleness signal.
+
+    Regression (synthetic; mirrors the witness shape). The fixture carries
+    two cached REPLACE §1 ops; re-running ``check_se_official_replay``
+    forces a fresh compile that emits a single REPLACE §1 op whose payload
+    carries the legitimate provision body.
+    """
+    base_payload = {
+        "beteckning": "2026:106",
+        "rubrik": "Förordning (2026:106) om något",
+        "ikraftDateTime": "2026-04-01T00:00:00",
+        "ikraftOvergangsbestammelse": False,
+        "organisation": {"namn": "Justitiedepartementet", "namnOchEnhet": "Justitiedepartementet"},
+        "forfattningstypNamn": "Förordning",
+        "register": {"forarbeten": None},
+        "fulltext": {
+            "utfardadDateTime": "2026-02-26T00:00:00",
+            "andringInford": "t.o.m. SFS 2027:999",  # later consolidation -> version_mismatch
+            "forfattningstext": (
+                "1 § /Upphör att gälla U:2026-04-15/\n"
+                "Gammal lydelse.\n\n"
+                "1 § /Träder i kraft I:2026-04-15/\n"
+                "Ny lydelse för §1."
+            ),
+        },
+        "publiceradDateTime": "2026-03-23T12:17:32",
+        "andringsforfattningar": [],
+    }
+    new_section_text = "Ny lydelse för §1."
+    official_act = {
+        "sfs_id": "2026:286",
+        "title": "Förordning om ändring i förordningen (2026:106) om något",
+        "act_type": "förordning",
+        "amended_act_sfs_id": "2026:106",
+        "is_amending_act": True,
+        "published_date": "2026-03-24",
+        "issued_date": "2026-03-19",
+        "enacting_clause": "Regeringen föreskriver att 1 § förordningen (2026:106) om något ska ha följande lydelse.",
+        "effective_clause": "Denna förordning träder i kraft den 15 april 2026.",
+        "affected_section_labels": ["1"],
+        "provisions": [{"label": "1", "text": new_section_text}],
+        "signatories": [],
+        "footnotes": [],
+    }
+    # TWO cached REPLACE §1 ops — pre-fix compiler emitted one per cached
+    # duplicate-label provision. Both carry the same payload text because
+    # the pre-fix lower function did a `next()` lookup-by-label that always
+    # returned the first matching cached provision.
+    def cached_op(seq: int) -> dict:
+        return {
+            "op_id": f"se_official_replace_2026:286_1_{seq}",
+            "sequence": seq,
+            "action": "replace",
+            "target": {"path": [["section", "1"]], "special": None},
+            "targets": [{"path": [["section", "1"]], "special": None}],
+            "payload": {
+                "kind": "section",
+                "label": "1",
+                "text": "",
+                "attrs": {},
+                "children": [{"kind": "subsection", "label": "1", "text": new_section_text, "attrs": {}, "children": []}],
+            },
+            "anchor": None,
+            "destination": None,
+            "source": {
+                "statute_id": "2026:286",
+                "title": official_act["title"],
+                "enacted": "2026-03-19",
+                "effective": "2026-04-15",
+                "expires": "",
+                "raw_text": official_act["enacting_clause"],
+                "corrected_by": "",
+                "commencement_source": "",
+                "commencement_title": "",
+            },
+            "applicability": [],
+            "provenance_tags": [],
+            "text_match": None,
+            "text_replacement": None,
+            "text_occurrence": 0,
+            "group_id": None,
+        }
+
+    archive = _FakeArchive(
+        stored={
+            "se://sfs/2026:106/rk.current.json": json.dumps(base_payload, ensure_ascii=False).encode("utf-8"),
+            "se://sfs/2026:286/official.act.json": json.dumps(official_act, ensure_ascii=False).encode("utf-8"),
+            "se://sfs/2026:286/official.ops.json": json.dumps([cached_op(1), cached_op(2)], ensure_ascii=False).encode("utf-8"),
+        }
+    )
+
+    result = check_se_official_replay(archive, "2026:286")
+
+    # The duplicate-target cached ops triggered a fresh in-memory recompile;
+    # the replay produced exactly one REPLACE §1 op row, the material §1
+    # text matches the official-provision oracle (modulo whatever editorial
+    # presentation drift the regular classifier falls back to), and NO row
+    # carries a stale-cache-only artifact. Pre-fix behavior was two §1 rows
+    # (one per duplicate cached op); post-fix the duplicate is folded
+    # silently at the source, surfaced as a single cohesive replay.
+    section_rows = [row for row in result["rows"] if row.get("section") == "1"]
+    assert len(section_rows) == 1, section_rows
+    assert section_rows[0]["match"] is True, section_rows[0]
+    assert section_rows[0]["classification"] != "content_mismatch", section_rows[0]
+
+
 def test_check_se_official_replay_collects_skipped_replay_ops_as_adjudications() -> None:
     base_payload = {
         "beteckning": "2026:777",
@@ -3540,6 +5050,77 @@ def test_check_se_official_replay_missing_stamp_is_version_unknown() -> None:
     assert result["rows"][0]["classification"] == "official_oracle_match_version_unknown"
 
 
+def test_check_se_official_replay_successful_path_carries_typed_replay_feasible_outcome() -> None:
+    """Structured outcome field on the successful path (no exception-driven control flow).
+
+    The previous behavior raised ``NotImplementedError`` for the
+    contamination-older-base path; this test pins the new contract: when
+    replay succeeds, the result dict carries ``outcome == "replay_feasible"``
+    alongside the existing fields. Callers dispatch on the typed ``outcome``
+    field rather than catching exceptions / substring-matching messages.
+    """
+    base_payload = {
+        "beteckning": "2026:106",
+        "rubrik": "Förordning (2026:106) om något",
+        "ikraftDateTime": "2026-04-01T00:00:00",
+        "ikraftOvergangsbestammelse": False,
+        "organisation": {"namn": "Justitiedepartementet", "namnOchEnhet": "Justitiedepartementet"},
+        "forfattningstypNamn": "Förordning",
+        "register": {"forarbeten": None},
+        "fulltext": {
+            "utfardadDateTime": "2026-02-26T00:00:00",
+            "andringInford": None,
+            "forfattningstext": (
+                "11 § /Upphör att gälla U:2026-04-15/\n"
+                "Gammal 11 §.\n\n"
+                "11 § /Träder i kraft I:2026-04-15/\n"
+                "Ny 11 §.\n"
+                "Förordning (2026:286)."
+            ),
+        },
+        "publiceradDateTime": "2026-03-23T12:17:32",
+        "andringsforfattningar": [],
+    }
+    official_act = {
+        "sfs_id": "2026:286",
+        "title": "Förordning om ändring i förordningen (2026:106) om något",
+        "act_type": "förordning",
+        "amended_act_sfs_id": "2026:106",
+        "is_amending_act": True,
+        "published_date": "2026-03-24",
+        "issued_date": "2026-03-19",
+        "enacting_clause": "Regeringen föreskriver att 11 § förordningen (2026:106) om något ska ha följande lydelse.",
+        "effective_clause": "Denna förordning träder i kraft den 15 april 2026.",
+        "affected_section_labels": ["11"],
+        "provisions": [{"label": "11", "text": "Ny 11 §."}],
+        "signatories": [],
+        "footnotes": [],
+    }
+    archive = _FakeArchive(
+        stored={
+            "se://sfs/2026:106/rk.current.json": json.dumps(base_payload, ensure_ascii=False).encode("utf-8"),
+            "se://sfs/2026:286/official.act.json": json.dumps(official_act, ensure_ascii=False).encode("utf-8"),
+        }
+    )
+
+    result = check_se_official_replay(archive, "2026:286")
+
+    assert result["outcome"] == "replay_feasible"
+    assert result["match_count"] == 1
+    # The existing successful-path fields all survive.
+    assert "rows" in result
+    assert "target_count" in result
+    assert "recovery_mode" in result
+
+    # Scan-summary propagation: the typed outcome propagates to
+    # :func:`scan_se_official_replay_act` as the legacy top-level ``outcome``
+    # for aggregate-compat, AND the structured fields are not present on the
+    # successful path (outcome-only signal is enough when replay succeeds).
+    summary = scan_se_official_replay_act(archive, "2026:286")
+    assert summary["outcome"] == "replay_ok"
+    assert "typed_outcome" not in summary  # no extra structured fields when feasible
+
+
 def test_check_se_official_replay_recompiles_stale_ops_without_effective_date() -> None:
     base_payload = {
         "beteckning": "2026:106",
@@ -3643,6 +5224,104 @@ def test_check_se_official_replay_recompiles_stale_ops_without_effective_date() 
     assert refreshed_ops[0]["source"]["effective"] == "2026-04-15"
 
 
+def test_analyze_se_official_replay_feasibility_compiles_in_memory_on_readonly_archive() -> None:
+    """Regression — coverage-scan worker previously crashed writing surfaces.
+
+    The scan worker opens the shared ``sweden.farchive`` readonly (Farchive
+    default). The analyze entry point used to call
+    :func:`compile_se_official_ops_to_archive`, which writes the typed waists
+    (clause/payload/elaboration/effects-plan/ops/adjudications) — a write that
+    fails with ``sqlite3.OperationalError: attempt to write a readonly
+    database`` on every cache-miss scan. With no cached ops in the readonly
+    archive, an entire scan corpus would surface nothing but that error and a
+    single ``aggregate_se_official_coverage`` row.
+
+    The analyze path now (a) probes writability via ``_se_archive_is_writable``
+    and (b) when the archive is read-only, compiles ops in memory using the
+    existing ``compile_se_official_act_ops`` pure path instead of attempting
+    the mutating cache-refresh. This test pins the new contract against any
+    future regression: the analyze path MUST drive a readonly archive without
+    crashing, MUST still return a non-empty ops set, and MUST NOT attempt to
+    persist any cache rows that would fail.
+    """
+    base_payload = {
+        "beteckning": "2026:106",
+        "rubrik": "Förordning (2026:106) om något",
+        "ikraftDateTime": "2026-04-01T00:00:00",
+        "ikraftOvergangsbestammelse": False,
+        "organisation": {"namn": "Justitiedepartementet", "namnOchEnhet": "Justitiedepartementet"},
+        "forfattningstypNamn": "Förordning",
+        "register": {"forarbeten": None},
+        "fulltext": {
+            "utfardadDateTime": "2026-02-26T00:00:00",
+            "andringInford": None,
+            "forfattningstext": (
+                "11 § /Upphör att gälla U:2026-04-14/\n"
+                "Nedan angivna myndigheter ska lämna uppgifter.\n\n"
+                "1. Polismyndigheten\tBeslut i nådeärenden.\n\n"
+                "11 § /Träder i kraft I:2026-04-15/\n"
+                "Nedan angivna myndigheter ska lämna uppgifter.\n\n"
+                "1. Polismyndigheten\tBeslut i nådeärenden.\n\n"
+                "Förordning (2026:286)."
+            ),
+        },
+        "publiceradDateTime": "2026-03-23T12:17:32",
+        "andringsforfattningar": [],
+    }
+    official_act = {
+        "sfs_id": "2026:286",
+        "title": "Förordning om ändring i förordningen (2026:106) om något",
+        "act_type": "förordning",
+        "amended_act_sfs_id": "2026:106",
+        "is_amending_act": True,
+        "published_date": "2026-03-24",
+        "issued_date": "2026-03-19",
+        "enacting_clause": "Regeringen föreskriver att 11 § förordningen (2026:106) om något ska ha följande lydelse.",
+        "effective_clause": "Denna förordning träder i kraft den 15 april 2026.",
+        "affected_section_labels": ["11"],
+        "provisions": [
+            {
+                "label": "11",
+                "text": "Nedan angivna myndigheter ska lämna uppgifter.\n\n1. Polismyndigheten\n\nBeslut i nådeärenden.",
+            }
+        ],
+        "signatories": [],
+        "footnotes": [],
+    }
+    archive = _ReadonlyFakeArchive(
+        stored={
+            "se://sfs/2026:106/rk.current.json": json.dumps(base_payload, ensure_ascii=False).encode("utf-8"),
+            "se://sfs/2026:286/official.act.json": json.dumps(official_act, ensure_ascii=False).encode("utf-8"),
+            # No cached ops/adjudications/surfaces: the readonly path MUST be
+            # able to compile without reading a pre-existing cache.
+        }
+    )
+
+    result = analyze_se_official_replay_feasibility(archive, "2026:286")
+
+    # The cache-miss was bridged in memory: ops were computed from the official
+    # act surface even though no cache entry existed.
+    assert result["op_count"] == 1
+    assert isinstance(result["ops_json"], list)
+    assert result["ops_json"][0]["target"]["path"][0] == ["section", "11"]
+    # The persist side-effect must NOT fire on a readonly archive: no
+    # attempted writes (the prior failure mode of crashing coverage-scan
+    # workers). This signature also ratifies the writability probe is read
+    # before any store(): the exception was raised from inside the store call.
+    assert archive.attempted_writes == []
+    # And the higher-level entry that escalates the readonly scan picks up the
+    # in-memory ops set deterministically through the analysis dict (not by
+    # re-loading from the empty cache). The fixture's base carries the
+    # post-amendment text already, so the act falls into the
+    # older_base_required lane rather than replay_ok — the regression point is
+    # that the readonly scan returns a classified outcome instead of crashing
+    # on the first cache-miss `archive.store` call, not that this specific
+    # fixture produces a replay match.
+    scan_summary = scan_se_official_replay_act(archive, "2026:286")
+    assert scan_summary["outcome"] != "error"
+    assert scan_summary["outcome"] in {"replay_ok", "older_base_required"}
+
+
 def test_check_se_official_replay_matches_inline_numbering_only_difference() -> None:
     base_payload = {
         "beteckning": "2015:284",
@@ -3702,6 +5381,117 @@ def test_check_se_official_replay_matches_inline_numbering_only_difference() -> 
 
     assert result["match_count"] == 1
     assert result["rows"][0]["classification"] == "inline_numbering_only"
+
+
+def test_check_se_official_replay_matches_inline_numbering_before_capital_letter() -> None:
+    """Inline list markers before capital-letter body text MUST normalize.
+
+    Real-corpus witness: SFS 1999:1134 (2001:1004 amended by it) §2 carries an
+    enumerated list "...Väg 1. En sådan väg, gata, torg..." whose body begins
+    with a capital letter. The replay IR-walk renderer (``se_section_text_map``)
+    parses the provision body into IR ITEM children whose ``.text`` drops the
+    leading ``1.`` enumerator prefix. The cached official-act ``provisions`` raw
+    text (from ``parse_se_official_act_text``) keeps that prefix verbatim
+    because it is the raw provision text. The existing
+    ``se_compare_inline_list_numbering`` normalization rule matched enumerators
+    only before lowercase body text. Markers followed by capital-letter body
+    fell through, so the replay-vs-cached-official fallback classified the row
+    as ``content_mismatch`` even when the replayed body matched the post-stock
+    consolidation exactly (real witness: 2001:1004 §2 was ``content_mismatch``
+    pre-fit, now ``official_oracle_version_mismatch`` match=True).
+
+    Regression: the normalization MUST now accept capital-letter body too, so
+    a section body containing inline ``<N>. <Capital>`` enumerators matches the
+    cached official text.
+    """
+    from lawvm.sweden.fetch import _normalize_compare_text
+
+    # The comparison-time normalization pairs the cached provision text
+    # (markers preserved as plain text) with the replay-rendered text (markers
+    # stripped). Both should normalize to the same canonical form.
+    cached_official = "Väg 1. En sådan väg, gata, torg och annan allmän plats."
+    replay_rendered = "Väg En sådan väg, gata, torg och annan allmän plats."
+    assert _normalize_compare_text(cached_official) == _normalize_compare_text(replay_rendered), (
+        "the replayed text (markers stripped) MUST equal the cached official text "
+        "(markers preserved) after the inline-list-numbering normalization fires "
+        "for capital-letter body"
+    )
+
+    # And the broader end-to-end replay-vs-cached-oracle check matches the
+    # capital-letter enumerator case (no trailing attribution so the
+    # ``editorial_attribution_only`` classifier branch does not steal the row).
+    archive = _FakeArchive(
+        stored={
+            "se://sfs/1999:1134/rk.current.json": json.dumps(
+                {
+                    "beteckning": "1999:1134",
+                    "rubrik": "Förordning (1999:1134) om belastningsregister",
+                    "ikraftDateTime": "1999-01-01T00:00:00",
+                    "ikraftOvergangsbestammelse": False,
+                    "organisation": {"namn": "Justitiedepartementet", "namnOchEnhet": "Justitiedepartementet"},
+                    "forfattningstypNamn": "Förordning",
+                    "register": {"forarbeten": None},
+                    "fulltext": {
+                        "utfardadDateTime": "1999-01-01T00:00:00",
+                        "andringInford": "t.o.m. SFS 2003:500",  # later consolidation -> version_mismatch
+                        "forfattningstext": (
+                            "2 § /Upphör att gälla U:2002-01-01/\n"
+                            "Gammal lydelse.\n\n"
+                            "2 § /Träder i kraft I:2002-01-01/\n"
+                            "Väg 1. En sådan väg, gata, torg och annan allmän plats."
+                        ),
+                    },
+                    "publiceradDateTime": "2001-12-31T12:00:00",
+                    "andringsforfattningar": [],
+                },
+                ensure_ascii=False,
+            ).encode("utf-8"),
+            "se://sfs/2001:1004/official.act.json": json.dumps(
+                {
+                    "sfs_id": "2001:1004",
+                    "title": "Förordning om ändring i förordningen (1999:1134) om belastningsregister",
+                    "act_type": "förordning",
+                    "amended_act_sfs_id": "1999:1134",
+                    "is_amending_act": True,
+                    "published_date": "2001-09-01",
+                    "issued_date": "2001-08-15",
+                    "enacting_clause": "Regeringen föreskriver att 2 § förordningen (1999:1134) om belastningsregister skall ha följande lydelse.",
+                    "effective_clause": "Denna förordning träder i kraft den 1 januari 2002.",
+                    "affected_section_labels": ["2"],
+                    "provisions": [
+                        {
+                            "label": "2",
+                            "text": (
+                                "Väg 1. En sådan väg, gata, torg och annan allmän plats."
+                            ),
+                        }
+                    ],
+                    "inserted_headings": [],
+                    "appendices": [],
+                    "signatories": [],
+                    "footnotes": [],
+                },
+                ensure_ascii=False,
+            ).encode("utf-8"),
+        }
+    )
+
+    result = check_se_official_replay(archive, "2001:1004")
+
+    assert result["match_count"] == 1
+    section_row = result["rows"][0]
+    assert section_row["section"] == "2"
+    # The replay reproduced the §2 replace body and that state equals the
+    # cached official text (modulo the inline-list-numbering normalization).
+    # The current surface carries a strictly later consolidation stamp
+    # ("t.o.m. SFS 2003:500") -> ``official_oracle_version_mismatch`` match=True,
+    # NOT a ``content_mismatch``.
+    assert section_row["match"] is True
+    # After normalization both surfaces match exactly -- ``exact`` is the strongest
+    # match classification. The key assertion: this row is NOT a ``content_mismatch``
+    # (the bug that previously fired when inline ``<N>. <Capital>`` enumerators
+    # were preserved in cached text but stripped in replay text).
+    assert section_row["classification"] != "content_mismatch", section_row["classification"]
 
 
 def test_check_se_official_replay_matches_mixed_section_heading_and_appendix_family() -> None:
@@ -3765,13 +5555,28 @@ def test_check_se_official_replay_matches_mixed_section_heading_and_appendix_fam
     )
 
     try:
-        check_se_official_replay(archive, "2026:290")
-    except NotImplementedError as exc:
-        message = str(exc)
-    else:
-        raise AssertionError("expected NotImplementedError")
+        result = check_se_official_replay(archive, "2026:290")
+    except NotImplementedError:
+        raise AssertionError(
+            "check_se_official_replay must surface the unresolved replay state as a typed "
+            "outcome, not raise NotImplementedError (the exception-driven control flow was "
+            "retired; the structured outcome field now carries the typed signal)."
+        )
 
-    assert "section:7a:preexisting_insert_target" in message
+    # The structured outcome surfaces the unresolved replay state without
+    # raising: ``outcome`` is one of ``older_base_required`` /
+    # ``precondition_issues_blocking`` (both are non-fatal replay-frontier
+    # states), and the typed reason_code names the specific unresolved
+    # shape. This fixture triggers the precondition_issues_blocking path
+    # (the recovered pre_statute lacks structural targets the ops require).
+    # The previous NotImplementedError string now lives in the structured
+    # ``message`` / ``outcome_detail`` fields so callers can read the typed
+    # signal without catching exceptions + substring-matching.
+    assert result["outcome"] in {
+        "older_base_required",
+        "precondition_issues_blocking",
+    }
+    assert "section:7a:preexisting_insert_target" in result["message"]
 
 
 def test_check_se_official_replay_reports_current_surface_contamination_for_old_insert_family() -> None:
@@ -3824,16 +5629,23 @@ def test_check_se_official_replay_reports_current_surface_contamination_for_old_
     )
 
     try:
-        check_se_official_replay(archive, "2018:1381", as_of="2018-08-01")
-    except NotImplementedError as exc:
-        message = str(exc)
-    else:
-        raise AssertionError("expected NotImplementedError")
+        result = check_se_official_replay(archive, "2018:1381", as_of="2018-08-01")
+    except NotImplementedError:
+        raise AssertionError(
+            "check_se_official_replay must surface older_base_required as a typed outcome, "
+            "not raise NotImplementedError (the exception-driven control flow was retired; "
+            "the structured outcome field now carries the typed signal)."
+        )
 
-    assert "historical replay requires an older base surface or reverse patching" in message
-    assert "section:16:preexisting_renumber_destination" in message
-    assert "section:17:preexisting_insert_target" in message
-    assert "section:18a:preexisting_insert_target" in message
+    # Structured-typed-outcome surface (replacing the previous
+    # NotImplementedError raise): the contamination-not-recoverable path
+    # returns outcome=older_base_required + reason_code.
+    assert result["outcome"] == "older_base_required"
+    assert result["reason_code"] == "se_replay_base_surface_contains_post_amendment_targets"
+    assert "historical replay requires an older base surface or reverse patching" in result["message"]
+    assert "section:16:preexisting_renumber_destination" in result["message"]
+    assert "section:17:preexisting_insert_target" in result["message"]
+    assert "section:18a:preexisting_insert_target" in result["message"]
 
 
 def test_analyze_se_official_replay_feasibility_reports_contamination() -> None:
@@ -4585,6 +6397,86 @@ def test_plan_se_older_base_rebuild_attaches_public_source_probe(monkeypatch) ->
         "resolved_pdf_url": "",
         "public_source_viable": False,
     }
+
+
+def test_plan_se_older_base_rebuild_surfaces_fetch_missing_failure_as_typed_diagnostic(monkeypatch) -> None:
+    # Guard-liveness (§2.9): ``fetch_missing=True`` is a best-effort acquisition
+    # lane, but a fetch failure MUST NOT vanish silently — §1.10 forbids the
+    # ``except Exception: return`` shape that would let replay proceed against
+    # an empty base_seed with ``official_act_available=False`` and no diagnostic,
+    # disguising an acquisition fault as "no archived act." Drive a known-
+    # raising ``fetch_se_official_artifacts`` through the production path and
+    # assert the failure surfaces as a named diagnostic on ``base_seed``.
+    base_payload = {
+        "beteckning": "2015:284",
+        "rubrik": "Förordning (2015:284) om något",
+        "ikraftDateTime": "2015-01-01T00:00:00",
+        "ikraftOvergangsbestammelse": False,
+        "organisation": {"namn": "Socialdepartementet", "namnOchEnhet": "Socialdepartementet"},
+        "forfattningstypNamn": "Förordning",
+        "register": {"forarbeten": None},
+        "fulltext": {
+            "utfardadDateTime": "2015-01-01T00:00:00",
+            "andringInford": None,
+            "forfattningstext": "16 § Test.\n17 § Test.\n",
+        },
+        "publiceradDateTime": "2015-01-01T00:00:00",
+        "andringsforfattningar": [
+            {
+                "beteckning": "2018:1381",
+                "rubrik": "Förordning om ändring i förordningen (2015:284) om något",
+                "anteckningar": "ny 17 §",
+                "ikraftDateTime": "2018-08-01T00:00:00",
+            },
+        ],
+    }
+    target_act = {
+        "sfs_id": "2018:1381",
+        "title": "Förordning om ändring i förordningen (2015:284) om något",
+        "act_type": "förordning",
+        "amended_act_sfs_id": "2015:284",
+        "is_amending_act": True,
+        "published_date": "2018-07-31",
+        "issued_date": "2018-07-26",
+        "enacting_clause": (
+            "Regeringen föreskriver i fråga om förordningen (2015:284) om något "
+            "att den nya 17 § ska ha följande lydelse."
+        ),
+        "effective_clause": "",
+        "affected_section_labels": ["17"],
+        "provisions": [{"label": "17", "text": "Ny 17 §."}],
+        "signatories": [],
+        "footnotes": [],
+    }
+    archive = _FakeArchive(
+        stored={
+            "se://sfs/2015:284/rk.current.json": json.dumps(base_payload, ensure_ascii=False).encode("utf-8"),
+            "se://sfs/2018:1381/official.act.json": json.dumps(target_act, ensure_ascii=False).encode("utf-8"),
+        }
+    )
+
+    def _raise_fetch_failure(sfs_id, archive_obj, force_reextract=False):
+        raise ConnectionError(f"simulated cloudflare block for sfs://{sfs_id}")
+
+    monkeypatch.setattr("lawvm.sweden.fetch.fetch_se_official_artifacts", _raise_fetch_failure)
+
+    result = plan_se_older_base_rebuild(archive, "2018:1381", fetch_missing=True)
+
+    # §1.10 named diagnostic: an identifiable failure record (not a generic
+    # "missing act" 404), carrying the sfs_id + exception type + message so
+    # the acquisition fault is observable downstream instead of disguised
+    # as "no archived act."
+    failures = result["base_seed"].get("official_act_acquisition_failures")
+    assert failures, "fetch_missing acquisition failure did not surface on base_seed (§1.10 silent swallow regression)"
+    assert any(
+        failure.get("rule_id") == "se_official_artifacts_fetch_failed"
+        and failure.get("sfs_id") == "2015:284"
+        and failure.get("error_type") == "ConnectionError"
+        and "simulated cloudflare block" in failure.get("error_message", "")
+        for failure in failures
+    ), f"acquisition failure diagnostic missing required fields: {failures}"
+    # And the surface lane still records the unavailability honestly.
+    assert result["base_seed"]["official_act_available"] is False
 
 
 def test_plan_se_older_base_rebuild_reports_base_seed_when_available() -> None:

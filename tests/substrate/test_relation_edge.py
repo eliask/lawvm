@@ -62,7 +62,7 @@ def _surface_citation() -> dict[str, JsonValue]:
         authority_plane=AuthorityPlane.SURFACE,
         verification_level=VerificationLevel.REGISTRY_RESOLVED,
         replay_authorized=False,
-        status=EdgeStatus.RESOLVED,
+        edge_status=EdgeStatus.RESOLVED,
         effective_scope={"corpus_version": CV, "branch_id": "actual"},
         corpus_version=CV,
         policy_id="lawvm.resolution.body_xref.v0",
@@ -79,7 +79,7 @@ def _legal_state_derivation() -> dict[str, JsonValue]:
         authority_plane=AuthorityPlane.LEGAL_STATE,
         verification_level=VerificationLevel.REPLAY_VERIFIED,
         replay_authorized=True,
-        status=EdgeStatus.RESOLVED,
+        edge_status=EdgeStatus.RESOLVED,
         effective_scope={"corpus_version": CV, "branch_id": "actual"},
         corpus_version=CV,
     )
@@ -102,7 +102,7 @@ def test_edge_schema_round_trip_and_edge_id_independent_recompute() -> None:
     # edge_id is a function of CONTENT — changing a field changes the id.
     other = dict(edge)
     other.pop("edge_id")
-    other["status"] = EdgeStatus.QUALIFIED.value
+    other["edge_status"] = EdgeStatus.QUALIFIED.value
     assert leaf_hash("legal_relation_edge", other) != declared
 
 
@@ -116,7 +116,7 @@ def test_edge_id_is_byte_stable_under_ref_order() -> None:
         authority_plane=AuthorityPlane.SURFACE,
         verification_level=VerificationLevel.REGISTRY_RESOLVED,
         replay_authorized=False,
-        status=EdgeStatus.RESOLVED,
+        edge_status=EdgeStatus.RESOLVED,
         effective_scope={"corpus_version": CV},
         corpus_version=CV,
         evidence_refs=("sha256:e2", "sha256:e1"),
@@ -129,7 +129,7 @@ def test_edge_id_is_byte_stable_under_ref_order() -> None:
         authority_plane=AuthorityPlane.SURFACE,
         verification_level=VerificationLevel.REGISTRY_RESOLVED,
         replay_authorized=False,
-        status=EdgeStatus.RESOLVED,
+        edge_status=EdgeStatus.RESOLVED,
         effective_scope={"corpus_version": CV},
         corpus_version=CV,
         evidence_refs=("sha256:e1", "sha256:e2"),
@@ -160,7 +160,7 @@ def test_matrix_rejects_legal_state_with_induced_similarity() -> None:
         authority_plane=AuthorityPlane.LEGAL_STATE,
         verification_level=VerificationLevel.INDUCED_SIMILARITY,
         replay_authorized=False,
-        status=EdgeStatus.RESOLVED,
+        edge_status=EdgeStatus.RESOLVED,
         effective_scope={"corpus_version": CV},
         corpus_version=CV,
     )
@@ -179,7 +179,7 @@ def test_matrix_rejects_source_asserted_on_legal_state() -> None:
         authority_plane=AuthorityPlane.LEGAL_STATE,
         verification_level=VerificationLevel.SOURCE_ASSERTED,
         replay_authorized=False,
-        status=EdgeStatus.RESOLVED,
+        edge_status=EdgeStatus.RESOLVED,
         effective_scope={"corpus_version": CV},
         corpus_version=CV,
     )
@@ -209,7 +209,7 @@ def test_matrix_rejects_weak_class_claiming_replay() -> None:
         authority_plane=AuthorityPlane.SURFACE,
         verification_level=VerificationLevel.UNVERIFIED,
         replay_authorized=True,
-        status=EdgeStatus.OPEN,
+        edge_status=EdgeStatus.OPEN,
         effective_scope={"corpus_version": CV},
         corpus_version=CV,
     )
@@ -306,7 +306,7 @@ def test_checker_fires_on_illegal_edge_authority() -> None:
         authority_plane=AuthorityPlane.LEGAL_STATE,
         verification_level=VerificationLevel.INDUCED_SIMILARITY,
         replay_authorized=False,
-        status=EdgeStatus.RESOLVED,
+        edge_status=EdgeStatus.RESOLVED,
         effective_scope={"corpus_version": CV},
         corpus_version=CV,
     )
@@ -325,7 +325,7 @@ def test_checker_fires_on_tampered_edge_id() -> None:
     """A stale edge_id (body mutated after id computed) → INVALID_EDGE_AUTHORITY."""
     edge = _surface_citation()
     tampered = dict(edge)
-    tampered["status"] = EdgeStatus.BLOCKED.value  # mutate body, keep stale edge_id
+    tampered["edge_status"] = EdgeStatus.BLOCKED.value  # mutate body, keep stale edge_id
     pack = _edges_only_pack([tampered])
     verdict = check_pack(pack, mode=CheckMode.BROWSE)
     assert verdict.has_code(ViolationCode.INVALID_EDGE_AUTHORITY)
@@ -340,7 +340,7 @@ def test_existing_cross_work_resolution_carries_typed_edge_fields() -> None:
     )
     # Backward-compatible: still a lawvm.overlay.v1 with its resolution_id/status.
     assert res["schema"] == "lawvm.overlay.v1"
-    assert res["status"] == "resolved"
+    assert res["resolution_status"] == "resolved"
     assert isinstance(res["resolution_id"], str)
     # Now also carries the typed relation-edge mirror fields, matrix-legal.
     assert res["authority_plane"] == AuthorityPlane.SURFACE.value

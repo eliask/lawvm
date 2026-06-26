@@ -321,7 +321,7 @@ def _classify_commencement_row(
                 "commencement refused because the witness carries no determinate "
                 "ISO effective date to record an in-force status against"
             ),
-            target_address_status=row.target_address_candidate.status,
+            target_address_status=row.target_address_candidate.target_address_status,
             target_surface_status=row.target_surface_status,
             commencement_date_iso="",
             witness_text=row.witness_text,
@@ -330,15 +330,15 @@ def _classify_commencement_row(
     # Target determinacy: record only against a determinate target-address
     # candidate; never guess an address for a non-current skeleton node or an
     # unparsed target hint.
-    if row.target_address_candidate.status != "candidate":
+    if row.target_address_candidate.target_address_status != "candidate":
         return NZCommencementRefusal(
             row_id=row.row_id,
             rule_id=NZ_COMMENCEMENT_REFUSED_TARGET_NOT_DETERMINATE_RULE_ID,
             message=(
                 "commencement refused because the target provision address is not a "
-                f"determinate candidate (status={row.target_address_candidate.status})"
+                f"determinate candidate (status={row.target_address_candidate.target_address_status})"
             ),
-            target_address_status=row.target_address_candidate.status,
+            target_address_status=row.target_address_candidate.target_address_status,
             target_surface_status=row.target_surface_status,
             commencement_date_iso=row.amendment_date_iso,
             witness_text=row.witness_text,

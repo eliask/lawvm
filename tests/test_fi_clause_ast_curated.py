@@ -339,7 +339,7 @@ class TestMoveCases:
         ]
         assert moved_legal_ops
         assert all(
-            op.target_chapter == "5"
+            op.target_cols.target_chapter == "5"
             for lo in moved_legal_ops
             for op in AmendmentOp.from_lo(lo, 0)
         )
@@ -362,7 +362,7 @@ class TestMoveCases:
         ]
         assert moved_legal_ops
         assert all(
-            op.target_part == "I"
+            op.target_cols.target_part == "I"
             for lo in moved_legal_ops
             for op in AmendmentOp.from_lo(lo, 0)
         )

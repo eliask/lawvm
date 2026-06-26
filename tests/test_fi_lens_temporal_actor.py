@@ -76,8 +76,8 @@ def test_temporal_node_payload_and_date_value() -> None:
     assert "commencement" in by_kind
     fixed = by_kind["fixed_date"]
     assert fixed.payload["date_value"] == "2027-01-01"
-    assert fixed.payload["status"] == "resolved"
-    assert fixed.status == "resolved"
+    assert fixed.payload["node_status"] == "resolved"
+    assert fixed.node_status == "resolved"
     # commencement is resolved but carries no calendar date
     assert by_kind["commencement"].payload["date_value"] is None
 
@@ -91,7 +91,7 @@ def test_actor_modal_node_payload() -> None:
     assert frame.payload["modal_token"] == "antaa"
     assert frame.payload["polarity"] == "positive"
     assert frame.payload["voice"] == "active"
-    assert frame.status == "asserted"
+    assert frame.node_status == "asserted"
     # object span is a [start, end] pair into raw_text
     assert isinstance(frame.payload["object_span"], list)
     assert len(frame.payload["object_span"]) == 2
@@ -131,7 +131,7 @@ def test_spans_slice_back_to_surface() -> None:
 def test_statuses_are_valid() -> None:
     _bundle, graph = _build_graph()
     for node in graph.nodes.values():
-        assert node.status in NODE_STATUSES
+        assert node.node_status in NODE_STATUSES
 
 
 def test_firewall_holds_no_edges() -> None:

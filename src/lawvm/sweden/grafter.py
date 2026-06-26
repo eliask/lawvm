@@ -1,39 +1,49 @@
 """Sweden frontend helpers for LawVM.
 
 This first Sweden slice is intentionally source-layered rather than replay-first.
-It consumes structured RK beta/RK-style JSON documents and exposes:
+It consumes structured RK beta/RK-style JSON documents, the official SFS PDF +
+PDF-derived text, and the consolidated sfst HTML current surface, and exposes:
 
 - `SESourceRecord`: source/provenance metadata for one SFS act
 - `SEAmendmentRegisterEntry`: structured amendment-register rows
 - `parse_se_statute()`: current-text IR parser for Swedish consolidated text
+- `parse_se_official_act_text()` / `compile_se_official_act_ops()`: SFS PDF/text
+  acquisition and amendment-op compilation (the canonical-ops waist)
+- `apply_se_ops()` / `materialize_se_statute_as_of()`: replay + point-in-time
+  materialization over the IR
 
-Original-SFS PDF acquisition and amendment-op compilation are separate later
-phases. The current code keeps those entry points explicit but unimplemented.
+Acquisition, op-compile, replay, and PIT materialization are all wired and
+corpus-exercised; SE is bounded by source-data availability (point-in-time
+oracle snapshots), not by engine gaps — see `notes/SWEDEN_LAWVM_STATUS.md`.
 
 Architectural observations
 --------------------------
-- Sweden is intentionally source-layered right now, which is coherent for the
-  current maturity level.
-- The main architectural gap is that the shared waists are not yet explicit
-  here: clause surface, payload surface, and direct core adjudication ownership
-  are still mostly future work rather than enforced seams.
-
-TODO
-----
-- Introduce an explicit clause/effect surface for Swedish enacting clauses
-  before replay-specific heuristics accumulate.
-- Converge replay findings toward shared/core adjudication vocab instead of
-  leaving them wrapper-only.
+- Sweden is intentionally source-layered: the SFST-derived current surface is the
+  oracle and replay runs as consistency-verification against it, not as the
+  authoritative forward consolidation. This is coherent for SE's data shape
+  (single-version oracle — no historical PIT snapshots exposed by the source).
+- Waists that are now typed in SE: clause surface (`SEClauseSurface`/parsed
+  clause records), payload surface (`SEPayloadSurface`/`SEAmendmentRegisterEntry`),
+  canonical ops (`core.LegalOperation` via `compile_se_official_act_ops`), and the
+  apply waist (`apply_se_ops` / `apply_se_ops_conserved` returning a typed
+  `SEApplyResult` with a `FilterResult[LegalOperation]` partition per §1.8).
+- The remaining architectural gap (per `notes_internal/SWEDEN_STATE_SURVEY.md`)
+  is that the replay-vs-oracle classification residual is emitted as a
+  dict-shaped ``classification`` string rather than the shared typed
+  ``agreement_residual`` object FI/UK/EE use; promotion is a documented
+  parity item, not an open question.
 
 Actionables
 -----------
 - Keep source acquisition/provenance concerns separate from semantic lowering.
-- When official-act op compilation deepens, establish the waist boundaries
-  early instead of letting `LegalOperation` become another long-lived catch-all.
+- When widening the replay residual classification, emit the shared typed
+  ``agreement_residual`` (closing the dict-shape gap above) rather than
+  extending the local ``classification`` string enumeration.
 """
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import asdict, dataclass, field, replace
 from enum import Enum
 import json
@@ -46,6 +56,7 @@ from urllib.parse import quote, urljoin
 
 from lawvm.core import tree_ops
 from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.filter_result import FilterResult, RejectedItem
 from lawvm.core.ir import (
     IRNode,
     IRStatute,
@@ -55,14 +66,46 @@ from lawvm.core.ir import (
     TextPatchSpec,
     TextSelector,
 )
-from lawvm.core.ir_helpers import irnode_from_dict
+from lawvm.core.ir_helpers import irnode_from_dict, structural_subtree_hash
+from lawvm.core.mutation_boundary import (
+    TreePath,
+    TreePaths,
+    diff_ir_paths_identity_pruned,
+    unexplained_changed_paths,
+)
 from lawvm.core.semantic_types import FacetKind, IRNodeKind, StructuralAction, TextPatchKindEnum
 from lawvm.replay_adjudication import CompileAdjudication
+from lawvm.core.write_receipt import WriteReceipt, receipt_address_string
 
 _SFS_ID_RE = re.compile(r"\b(\d{4}:\d+)\b")
 _DATE_RE = re.compile(r"(\d{4}-\d{2}-\d{2})")
 _CHAPTER_RE = re.compile(r"^(?P<label>\d+[a-z]?|[IVXLC]+)\s{1,5}kap\.\s{0,5}(?P<title>.{0,500})$", re.IGNORECASE)
 _SECTION_RE = re.compile(r"^(?P<label>\d+\s*[a-z]?)\s*§(?P<tail>.*)$", re.IGNORECASE)
+# Cross-reference continuation idiom — a Swedish drafting shape in which one
+# section's text wraps onto a new line that begins with ``<N> § <ordinal>
+# stycket`` (e.g. ``64 § första stycket och 67 §.``). The ``<N> §`` there is a
+# cross-reference *inside* the previous paragraph, not a new section start;
+# without this guard the parser emits a duplicate provision under label ``N``
+# that silently overwrites the legitimate one in the ``official_provisions``
+# dict the replay-vs-oracle check consults (real corpus witness: 2001:606
+# §64, where the wrapping "64 § första stycket och 67 §." line displaced the
+# real §64 oracle text).
+_SE_CROSS_REFERENCE_STYCKET_RE = re.compile(
+    r"^(?:första|andra|tredje|fjärde|femte|sjätte|sjunde|åttonde|nionde|tionde)\s+stycket\b",
+    re.IGNORECASE,
+)
+# Multi-section plural-citation continuation idiom: a Swedish drafting shape in
+# which a citation to several sections shares one ``§§`` symbol and wraps
+# across lines so that the tail of the leading ``<N> §`` line starts with
+# ``§ <text>`` (one additional section symbol). The shape is
+# ``enligt 25–28, 30 och\n31 §§ socialtjänstlagen (1980:620)`` — the parser
+# would otherwise match the wrapped line as a new section start ``label='31'``
+# whose tail starts with ``§ socialtjänstlagen...`` (real corpus witness:
+# 2001:416 §11, where §31 §§ socialtjänstlagen wraps and is misfolded as a
+# separate provision, displacing the actual §11 oracle text). The signal is the
+# leading additional ``§`` in the tail — a legitimate section start would
+# never carry that, because the section marker comes before the text, not after.
+_SE_CROSS_REFERENCE_PLURAL_SECTION_RE = re.compile(r"^\s*§", re.IGNORECASE)
 _ITEM_RE = re.compile(r"^(?P<label>\d+|[a-z])[\.\)]\s{1,5}(?P<text>.{1,2000})$", re.IGNORECASE)
 _APPENDIX_RE = re.compile(r"^(Bilaga)(\s{0,5}\*\s{0,5}|\s{1,5}|)(?P<label>\d+[a-z]|\d+|[A-Z]|)\s{0,5}(?P<title>.{0,500})$", re.IGNORECASE)
 _MARKER_RE = re.compile(r"/(?P<phrase>[^/\n]{1,200}) (?P<kind>[IU]):(?P<date>\d{4}-\d{2}-\d{2})/")
@@ -1407,6 +1450,23 @@ def _is_bare_official_section_citation(text: str) -> bool:
     return bool(re.fullmatch(r"\d{4}:\d+\.?", text))
 
 
+def _is_cross_reference_continuation(tail: str) -> bool:
+    """Detect a wrapped-paragraph cross-reference of form `'<ordinal> stycket...'`.
+
+    When a section's sentence wraps onto a new line whose tail (the text after
+    the ``<N> §`` section-marker) begins with ``<ordinal> stycket`` (första / andra
+    / tredje / ...), that ``<N> §`` is a cross-reference *inside* the previous
+    paragraph, not a new section start. Folding the line back into the current
+    section's text avoids emitting a duplicate provision under label ``N`` that
+    would otherwise displace the legitimate one in the provision dict.
+    """
+    normalized_tail = _normalize_space(tail)
+    return bool(
+        _SE_CROSS_REFERENCE_STYCKET_RE.match(normalized_tail)
+        or _SE_CROSS_REFERENCE_PLURAL_SECTION_RE.match(normalized_tail)
+    )
+
+
 def parse_se_statute(payload: bytes | str | dict[str, Any], statute_id: Optional[str] = None) -> IRStatute:
     """Parse Sweden current-text JSON into the shared IRStatute tree.
 
@@ -1627,7 +1687,8 @@ def parse_se_official_act_text(text: str, sfs_id: str) -> SEOfficialActText:
         if not line:
             i += 1
             continue
-        if line.lower() == "publicerad" or line.lower().startswith("utfärdad den "):
+        lower = line.lower()
+        if lower == "publicerad" or lower.startswith("utfärdad den ") or lower == "utkom från trycket":
             break
         title_lines.append(line)
         i += 1
@@ -1643,6 +1704,20 @@ def parse_se_official_act_text(text: str, sfs_id: str) -> SEOfficialActText:
     if i < len(lines) and lines[i].lower() == "publicerad":
         if i + 1 < len(lines):
             published_date = _parse_swedish_date_text(lines[i + 1])
+        i += 2
+    elif (
+        i < len(lines)
+        and lines[i].lower() == "utkom från trycket"
+        and i + 1 < len(lines)
+    ):
+        # Older SFS PDFs publish the date on the line following the
+        # "Utkom från trycket" header (e.g. "den 13 december 1999"). Newer
+        # layouts use a standalone "Publicerad" line instead. Recognizing the
+        # older shape keeps the publication date out of the title and lets the
+        # typed act surface carry it where downstream date inference can see it.
+        published_date = _parse_swedish_date_text(lines[i + 1]) or _parse_swedish_date_text(
+            f"{lines[i]} {lines[i + 1]}"
+        )
         i += 2
     while i < len(lines) and not lines[i]:
         i += 1
@@ -1733,6 +1808,15 @@ def parse_se_official_act_text(text: str, sfs_id: str) -> SEOfficialActText:
             next_label = _label_norm(match.group("label"))
             tail = _clean_official_section_tail(line, match.group("tail") or "")
             if _is_bare_official_section_citation(tail):
+                continue
+            if _is_cross_reference_continuation(tail):
+                # The "<N> § <ordinal> stycket" idiom is a wrapped cross-reference
+                # inside the previous section's text, not a new section start:
+                # fold the line back into the current section's text instead of
+                # emitting a duplicate provision under ``next_label`` (which would
+                # otherwise displace the legitimate oracle text for that label).
+                if current_label is not None:
+                    current_lines.append(line)
                 continue
             if current_label is not None and next_label == current_label:
                 current_lines.append(line)
@@ -1847,6 +1931,15 @@ def _coerce_official_act(
     document = _coerce_document(payload)
     sfs_id = str(document.get("sfs_id") or "")
     provisions: list[SEOfficialProvisionText] = []
+    seen_labels: set[str] = set()
+    # Labels absorbed as cross-reference continuation ghosts during the
+    # provisions loop and dropped silently (their text folds into the prior
+    # legitimate provision's text). The companion inserted_heading rows whose
+    # ``before_label`` matches one of these labels MUST also be dropped — the
+    # heading was a parser artifact of the same wrap (the line just before the
+    # false ``<N> §§`` section-marker match) and its ``before_label`` no longer
+    # names an extant section in the coerced act.
+    folded_ghost_labels: set[str] = set()
     for index, provision in enumerate(document.get("provisions", [])):
         if not isinstance(provision, dict):
             _record_se_official_act_payload_row_diagnostic(
@@ -1869,12 +1962,55 @@ def _coerce_official_act(
                 row_index=index,
             )
             continue
-        provisions.append(
-            SEOfficialProvisionText(
-                label=label,
-                text=str(provision.get("text") or ""),
+        text = str(provision.get("text") or "")
+        if _is_cross_reference_continuation(text) and provisions:
+            # Cached legacy payloads (built before the parser learned to fold
+            # wrapped cross-reference continuations back into their host
+            # section) can carry a separate "ghost" provision whose text is the
+            # tail of a wrapped cross-reference continuation — the row the live
+            # parser no longer emits. Two shapes to recognize here:
+            # (1) ``<ordinal> stycket`` continuation under a duplicate label
+            #     (e.g. 2001:606 §64: ``64 § första stycket och 67 §.`` was
+            #     cached as a separate provision under label ``64``).
+            # (2) ``§ <text>`` continuation under a NEW label (e.g. 2001:416
+            #     §11: ``31 §§ socialtjänstlagen (1980:620)`` wrapped to
+            #     ``31 §`` + ``§ socialtjänstlagen...`` was cached as a
+            #     separate provision under label ``31``).
+            # A legitimate SFS replacement-provision body would never start with
+            # the leftover section symbol ``§`` or an ``<ordinal> stycket``
+            # idiom — both are wrap-leftover shapes. Recognize them and fold
+            # the text into the prior provision's text (its original host)
+            # rather than admit a ghost provision whose label is not in the
+            # enacting clause's affected-section enumeration. This way the
+            # downstream replay-vs-oracle lookup returns the legitimate replace
+            # text instead of an artifact row.
+            last = provisions[-1]
+            provisions[-1] = SEOfficialProvisionText(
+                label=last.label,
+                text=_join_preserving_paragraphs([last.text, text]) if text else last.text,
             )
-        )
+            # Record the absorbed label so the companion inserted_heading (whose
+            # before_label matches this ghost-provision label) is dropped below
+            # — without recording, only the ghost provision gets folded and the
+            # heading keeps its before_label as if it were a legitimate unclaimed
+            # inserted_heading the effect-plan would surface through adjudication.
+            folded_ghost_labels.add(label)
+            continue
+        if label in seen_labels:
+            # Genuinely ambiguous duplicate label that is NOT a cross-reference
+            # continuation — fold stays visible as a typed diagnostic so the
+            # adjudication lane can catch a real schema drift.
+            _record_se_official_act_payload_row_diagnostic(
+                diagnostics_out,
+                rule_id="se_official_act_payload_row_duplicate_label",
+                reason="Sweden official act provision payload row was skipped because its label duplicates an earlier provision in the same act.",
+                sfs_id=sfs_id,
+                row_family="provisions",
+                row_index=index,
+            )
+            continue
+        seen_labels.add(label)
+        provisions.append(SEOfficialProvisionText(label=label, text=text))
     inserted_headings: list[SEOfficialHeadingText] = []
     for index, heading in enumerate(document.get("inserted_headings", [])):
         if not isinstance(heading, dict):
@@ -1897,6 +2033,19 @@ def _coerce_official_act(
                 row_family="inserted_headings",
                 row_index=index,
             )
+            continue
+        # Ghost-heading companion to a folded cross-reference continuation: the
+        # OLD pre-fix parser emitted both a ghost heading (whose text was the
+        # preceding paragraph's final line that the parser mistook as a heading)
+        # AND a ghost provision (the wrapped cross-reference continuation). The
+        # folded cross-reference continuation can leave the heading orphaned —
+        # before_label matches a section label that no longer has a credible
+        # provision entry. Drop the orphan silently: it was bundled with the
+        # ghost provision the runtime-coercion just folded, never a legitimate
+        # heading (real witness: 2001:416 — the §11-prose line that wrapped
+        # onto a `31 §§ socialtjänstlagen` cross-reference was cached as an
+        # inserted_heading with before_label='31').
+        if before_label in folded_ghost_labels:
             continue
         inserted_headings.append(
             SEOfficialHeadingText(
@@ -3565,3 +3714,403 @@ def apply_se_ops(
         supplements=supplements,
         metadata=metadata,
     )
+
+
+# ---------------------------------------------------------------------------
+# Typed apply-result carrier (AGENTS.md §1.8 — replay conservation contract).
+#
+# The classic ``apply_se_ops`` returns only the mutated :class:`IRStatute` and
+# shuttles skipped-op evidence through an ``adjudications_out`` out-parameter.
+# The AGENTS.md §1.8 contract requires the apply path to return accepted AND
+# rejected carriers (``FilterResult`` shape) so a downstream consumer cannot
+# silently lose track of filtered ops. ``apply_se_ops_conserved`` is the
+# typed wrapper that mirrors ``apply_se_ops``'s behaviour and surfaces both
+# lanes via the contract-shape FilterResult[LegalOperation].
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class SEApplyResult:
+    """Typed apply-resultconservation carrier (AGENTS.md §1.8).
+
+    Mirrors the FilterResult contract shape: every op in the input set is
+    either in ``applied_ops`` (its binding landed in the output statute) or
+    surfaces as a :class:`RejectedItem[LegalOperation]` witness in
+    ``skipped_items`` with a ``reason`` / ``reason_code`` and ``blocking``
+    disposition. The mutation footprint (the IRStatute returned by
+    :func:`apply_se_ops`) is the ``statute`` field.
+
+    The ``filter_result`` field is the canonical ``FilterResult`` projection
+    of the same accepted/rejected partition, so callers that already consume
+    the shared core type can reuse it without unpacking ``applied_ops`` /
+    ``skipped_items`` separately.
+    """
+
+    statute: IRStatute
+    filter_result: "FilterResult[LegalOperation]"
+
+    @property
+    def applied_ops(self) -> tuple["LegalOperation", ...]:
+        return self.filter_result.accepted_items
+
+    @property
+    def skipped_items(self) -> tuple["RejectedItem[LegalOperation]", ...]:
+        return self.filter_result.rejected_items
+
+
+def apply_se_ops_conserved(
+    statute: IRStatute,
+    ops: list[LegalOperation] | tuple["LegalOperation", ...],
+    *,
+    adjudications_out: list[CompileAdjudication] | None = None,
+) -> SEApplyResult:
+    """Apply a Sweden op set with a typed conservation receipt (§1.8).
+
+    Mirrors :func:`apply_se_ops` exactly (same replay semantics, same
+    ``adjudications_out`` side channel — when the caller passes one, both the
+    conserved typed result AND the existing descriptive adjudications are
+    populated). Returns a :class:`SEApplyResult` whose ``filter_result``
+    partitions every input op into accepted (its replay applied) or rejected
+    (its replay skipped, with a witness adjudication carrying the reason).
+    The contract is monotone: every input op ends up either accepted or
+    rejected, never silently dropped.
+    """
+    ops_list = list(ops)
+    # Conservation requires a robust op IDENTITY for the accepted/rejected
+    # partition. The op_id string is NOT a safe identity key: it defaults to
+    # "" (a SKIPPED op with an empty op_id would be filtered out of the
+    # skipped set and silently land in the accepted lane — a §1.8
+    # "never silently dropped" violation) and it is not guaranteed unique
+    # (a duplicate/shared op_id mis-partitions both ops). Fail loud on either
+    # degenerate case so the op_id-keyed partition below is provably bijective.
+    op_ids = [op.op_id for op in ops_list]
+    if any(not op_id for op_id in op_ids):
+        empty_positions = [i for i, op_id in enumerate(op_ids) if not op_id]
+        raise ValueError(
+            "apply_se_ops_conserved requires every op to carry a non-empty op_id "
+            "(the conservation partition keys on op_id and an empty op_id would be "
+            f"silently dropped from the skipped lane). Empty op_id at positions {empty_positions}."
+        )
+    if len(set(op_ids)) != len(op_ids):
+        counts = Counter(op_ids)
+        duplicates = sorted(op_id for op_id, n in counts.items() if n > 1)
+        raise ValueError(
+            "apply_se_ops_conserved requires op_ids to be unique (the conservation "
+            "partition keys on op_id and duplicate op_ids would mis-partition). "
+            f"Duplicate op_ids: {duplicates}."
+        )
+    adjudications: list[CompileAdjudication] = list(adjudications_out or [])
+    applied = apply_se_ops(statute, ops_list, adjudications_out=adjudications)
+    skipped_op_ids = {a.op_id for a in adjudications if a.op_id}
+    accepted: list[LegalOperation] = []
+    rejected: list[RejectedItem[LegalOperation]] = []
+    for op in ops_list:
+        if op.op_id in skipped_op_ids:
+            matching = [a for a in adjudications if a.op_id == op.op_id]
+            reason = matching[0].message if matching else "Sweden replay op skipped without a typed reason."
+            reason_code = matching[0].kind if matching else "se_replay_skipped_unspecified"
+            rejected.append(
+                RejectedItem(
+                    item=op,
+                    reason=reason,
+                    reason_code=reason_code,
+                    blocking=False,
+                )
+            )
+        else:
+            accepted.append(op)
+    # If the caller passed their own adjudications_out, surface there too --
+    # the existing descriptive adjudications path is NOT replaced by the typed
+    # carrier; both share the same evidence ledger.
+    if adjudications_out is not None:
+        adjudications_out.clear()
+        adjudications_out.extend(adjudications)
+    return SEApplyResult(
+        statute=applied,
+        filter_result=FilterResult(accepted_items=tuple(accepted), rejected_items=tuple(rejected)),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Statute-level observed-write-audit (AGENTS.md §2.3 — receipt contract
+# integration, first step).
+#
+# This is the independent before/after diff that catches mutation-boundary
+# violations at the statute level. It does NOT require per-op WriteReceipts
+# (that's a larger migration); instead, it computes the actual changed paths
+# from the before/after IRStatute trees using core's identity-pruned diff,
+# then cross-checks them against the ops' declared target regions using
+# core's mutation_boundary infrastructure. Any changed path outside every
+# op's declared target region is flagged as an unexplained mutation
+# (§1.0 Mutation Boundary Invariant check).
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class SEObservedReplayAudit:
+    """Independent before/after audit for a Sweden replay fold (§2.3 receipt contract).
+
+    Compares the actual changed paths (from the IR tree diff) against the
+    ops' declared target regions and reports any unexplained mutations —
+    paths that changed but were NOT covered by any op's declared target.
+    This is the "ObservedWriteAudit" side of the receipt contract at the
+    statute level: the receipt (what the apply helper claimed it wrote)
+    is the ops' target regions; the audit reads the actual tree diff.
+    """
+
+    observed_changed_paths: TreePaths
+    declared_target_paths: TreePaths
+    unexplained_paths: TreePaths
+    op_count: int
+
+    @property
+    def status(self) -> str:
+        """``clean`` — no unexplained mutations. ``violation`` — paths outside boundaries."""
+        return "clean" if not self.unexplained_paths else "violation"
+
+    @property
+    def is_clean(self) -> bool:
+        return not self.unexplained_paths
+
+
+def _se_op_target_paths(ops: list[LegalOperation]) -> TreePaths:
+    """Flatten every op's declared target path into a list of allowed prefixes.
+
+    Each op's ``target.path`` is a tuple of ``(kind, label)`` pairs from
+    :class:`LegalAddress`. These become the declared mutation-boundary prefixes
+    that :func:`unexplained_changed_paths` cross-checks against the actual
+    tree diff.
+    """
+    paths: list[TreePath] = []
+    for op in ops:
+        for (kind, label) in op.target.path:
+            paths.append(((str(kind), str(label)),))
+        # RENUMBER ops also declare a destination path — include it so the
+        # destination node's relabel is also covered by the boundary.
+        if op.destination is not None:
+            for (kind, label) in op.destination.path:
+                paths.append(((str(kind), str(label)),))
+    return tuple(paths)
+
+
+def se_observed_replay_audit(
+    before: IRStatute,
+    after: IRStatute,
+    ops: list[LegalOperation],
+) -> SEObservedReplayAudit:
+    """Build an independent before/after replay audit (§2.3 receipt contract).
+
+    Computes the actual changed paths by diffing ``before.body`` against
+    ``after.body`` (identity-pruned for performance on persistent trees),
+    then cross-checks every changed path against the ops' declared target
+    regions using :func:`unexplained_changed_paths`. Unexplained paths are
+    mutations that happened outside every op's declared mutation boundary
+    — a §1.0 Mutation Boundary Invariant violation.
+
+    The audit's ``status`` field is ``clean`` when every observed changed
+    path falls within at least one op's declared target region, and
+    ``violation`` when one or more changed paths are unexplained. A clean
+    audit does NOT prove the replay is semantically correct — it only proves
+    that the mutations stayed within the declared boundary (the structural
+    invariant from §1.0). Semantic correctness is the replay-vs-oracle
+    comparison's job.
+    """
+    changed = diff_ir_paths_identity_pruned(before.body, after.body)
+    declared = _se_op_target_paths(ops)
+    unexplained = unexplained_changed_paths(changed, declared) if changed and declared else changed
+    return SEObservedReplayAudit(
+        observed_changed_paths=changed,
+        declared_target_paths=declared,
+        unexplained_paths=unexplained,
+        op_count=len(ops),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Per-op WriteReceipt emission (AGENTS.md §2.3 — receipt contract, second step).
+#
+# An opt-in wrapper around `apply_se_ops` that applies ops one at a time,
+# snapshots the before/after body trees, and synthesizes a `WriteReceipt`
+# per *applied* op (skipped ops emit no receipt). The receipt carries the
+# full §2.3 contract shape:
+#   - op_id / helper / action / bound_target_path / landed_primary_path
+#   - categorized mutation footprint (created/replaced/removed/renumbered)
+#   - pre/post structural subtree hashes for the covering region
+#
+# A consumer that wants both the conserved FilterResult AND per-op receipts
+# calls `apply_se_ops_with_receipts` (a thin wrapper that runs both passively).
+# The default `apply_se_ops_conserved` stays receipt-free so existing callers
+# do not pay the per-op-replay overhead.
+# ---------------------------------------------------------------------------
+
+
+def _se_legal_path_to_tree_path(addr: LegalAddress) -> TreePath:
+    """Coerce a LegalAddress path into the core TreePath shape.
+
+    ``LegalAddress.path`` is a tuple of ``(kind, label | None)`` pairs; the
+    core ``TreePath`` shape requires ``str`` labels (empty string for the
+    root or None labels, matching the Sweden replay's never-None leaf-label
+    invariant — every leaf-level target carries a non-None label).
+    """
+    return tuple((str(kind), str(label or "")) for kind, label in addr.path)
+
+
+def _se_emit_one_op_receipt(
+    before_body: IRNode,
+    after_body: IRNode,
+    op: LegalOperation,
+) -> WriteReceipt | None:
+    """Emit a :class:`WriteReceipt` for one op's apply, or ``None`` when skipped.
+
+    The receipt synthesizes the typed §2.3 contract fields from the actual
+    before/after IR tree diff (computed via core's identity-pruned diff) and
+    the op's declared target. The mutation footprint is categorized by
+    ``op.action.value`` — REPLACE/text-replace → ``replaced_paths``; INSERT →
+    ``created_paths``; REPEAL → ``removed_paths``; RENUMBER → ``renumbered_paths``
+    sourced from ``op.target.path`` and ``op.destination.path``.
+
+    Pre/post hashes are taken at the landed primary path's covering region
+    using :func:`structural_subtree_hash` (the canonical recipe from
+    CERTIFIED_TREE_TRANSITION_TRACE_V0.md §2.2). For REPEAL the pre hash is
+    the section-body subtree hash that existed before; the post hash is ``""``
+    (the hash of an absent subtree).
+    """
+    changed = diff_ir_paths_identity_pruned(before_body, after_body)
+    if not changed:
+        # The op was filtered/skipped (the apply path emitted an adjudication).
+        # No receipt — the conserved FilterResult's rejected_items lane will
+        # carry the witness instead.
+        return None
+
+    action_value = op.action.value if op.action else "unknown"
+    leaf_kind = op.target.leaf_kind() or "unknown"
+    helper = f"apply_se_ops::{action_value}::{leaf_kind}"
+    bound_target_path = _se_legal_path_to_tree_path(op.target)
+
+    # Landed primary path: for INSERT and REPEAL the diff's identity-pruned
+    # output reports the body-level change (children list) rather than the
+    # created/removed node itself — the diff algorithm returns an empty-path
+    # tuple because the change happened at the parent's children list, not
+    # inside any one surviving child. Use the op's declared bound target
+    # path directly for these action families so the receipt points at the
+    # legible section coordinate, and so the pre/post hash resolves against
+    # the right subtree (the section that was inserted or removed, not the
+    # body's whole children list).
+    if action_value in {"insert", "repeal"}:
+        landed_primary_path: TreePath | None = bound_target_path or None
+    elif action_value == "renumber":
+        # RENUMBER removes the source section and re-inserts it under the
+        # destination label — both are parent children-list changes, so the
+        # identity-pruned diff reports the body-level change as a single
+        # empty-path tuple ``((),)`` rather than any surviving coordinate.
+        # Mirror the INSERT/REPEAL empty-diff handling: the section LANDED at
+        # the destination, so point the receipt (and its pre/post hash) at the
+        # destination path. Using ``changed[0]`` here would yield the empty
+        # path ``()`` (a non-coordinate), which is falsy and would silently
+        # blank the pre/post hashes — a malformed receipt.
+        landed_destination_path = (
+            _se_legal_path_to_tree_path(op.destination) if op.destination is not None else None
+        )
+        landed_primary_path = landed_destination_path or None
+    else:
+        landed_primary_path = changed[0] if changed else None
+
+    created_paths: TreePaths = ()
+    replaced_paths: TreePaths = ()
+    removed_paths: TreePaths = ()
+    renumbered_paths: tuple[tuple[TreePath, TreePath], ...] = ()
+
+    # Same reasoning as landed_primary_path above: INSERT/REPEAL categorize
+    # via the declared bound_target_path (the targeted section is the one
+    # that was created/removed), not the diff's body-level change pair.
+    if action_value in {"replace", "text_replace"}:
+        replaced_paths = changed
+    elif action_value == "insert":
+        created_paths = (bound_target_path,) if bound_target_path else ()
+    elif action_value == "repeal":
+        removed_paths = (bound_target_path,) if bound_target_path else ()
+    elif action_value == "renumber":
+        if op.destination is not None:
+            destination_path = _se_legal_path_to_tree_path(op.destination)
+            # The RENUMBER footprint is (from_path, to_path). The from_path
+            # comes from the op's declared target; the to_path from the
+            # destination. Both cover the section node's identity relabel
+            # (the from_path is removed; the to_path is created with the
+            # source's subtree content).
+            renumbered_paths = ((bound_target_path, destination_path),)
+        # Do NOT fold ``changed`` into replaced_paths here. A RENUMBER is a
+        # parent children-list change (source removed, destination inserted),
+        # so the identity-pruned diff reports it as a single empty-path tuple
+        # ``((),)`` rather than any surviving coordinate. Assigning
+        # ``replaced_paths = changed`` would put the bogus empty path ``()``
+        # into the receipt footprint (a non-coordinate). The meaningful
+        # RENUMBER footprint is the typed (from, to) pair carried by
+        # ``renumbered_paths`` above — mirroring how INSERT/REPEAL source
+        # their footprint from the declared bound target, not the body-level
+        # diff pair.
+    # Other action families (e.g. TextPatchKindEnum-driven sets) currently
+    # surface as ``replaced_paths`` by default — a conservative first step
+    # that categorizes every observed change as a replacement. A finer-grained
+    # categorization can be added incrementally as new action families land.
+
+    # pre/post hashes at the covering region of the landed primary path.
+    # For REPEAL, the landed path's post node is absent -> post_hash is "".
+    pre_hashes: dict[str, str] = {}
+    post_hashes: dict[str, str] = {}
+    if landed_primary_path:
+        key = receipt_address_string(landed_primary_path)
+        before_node = tree_ops.resolve(before_body, list(landed_primary_path))
+        after_node = tree_ops.resolve(after_body, list(landed_primary_path))
+        pre_hashes[key] = structural_subtree_hash(before_node) if before_node is not None else ""
+        post_hashes[key] = structural_subtree_hash(after_node) if after_node is not None else ""
+
+    return WriteReceipt(
+        op_id=op.op_id or "",
+        helper=helper,
+        action=action_value,
+        bound_target_path=bound_target_path,
+        landed_primary_path=landed_primary_path,
+        created_paths=created_paths,
+        replaced_paths=replaced_paths,
+        removed_paths=removed_paths,
+        renumbered_paths=renumbered_paths,
+        pre_hashes=pre_hashes,
+        post_hashes=post_hashes,
+    )
+
+
+def se_replay_write_receipts(
+    statute: IRStatute,
+    ops: list[LegalOperation] | tuple[LegalOperation, ...],
+) -> tuple[IRStatute, tuple[WriteReceipt, ...]]:
+    """Apply ops one at a time and emit per-op :class:`WriteReceipt` records (§2.3).
+
+    For each op, applies it via :func:`apply_se_ops` to a single-op list,
+    snapshots the before/after body trees, and synthesizes a
+    :class:`WriteReceipt` using core's identity-pruned diff +
+    :func:`structural_subtree_hash`. Skipped ops (those that resulted in no
+    tree change — the adjudication ledger recorded the skip) emit no receipt.
+
+    The final statute matches the result of :func:`apply_se_ops` applied to
+    the full op list (the per-op apply is associative and order-preserving
+    for Sweden's REPLACE/INSERT/REPEAL/RENUMBER op families, assuming the
+    replay fold does not branch on multi-op invariants).
+
+    Returns ``(final_statute, receipts_tuple)``. Consumers that want both the
+    typed FilterResult conservation receipt (§1.8) AND per-op write receipts
+    (§2.3) call this; callers that only need the apply fold itself keep using
+    the cheaper :func:`apply_se_ops_conserved`.
+    """
+    current = statute
+    receipts: list[WriteReceipt] = []
+    for op in ops:
+        adjudications: list[CompileAdjudication] = []
+        next_statute = apply_se_ops(current, [op], adjudications_out=adjudications)
+        if not adjudications:
+            # Op applied — emit a receipt from the before/after body diff.
+            receipt = _se_emit_one_op_receipt(current.body, next_statute.body, op)
+            if receipt is not None:
+                receipts.append(receipt)
+        # If adjudications is non-empty, op was skipped — no receipt.
+        current = next_statute
+    return current, tuple(receipts)

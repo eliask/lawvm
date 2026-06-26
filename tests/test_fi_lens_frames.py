@@ -98,9 +98,9 @@ def test_frame_statuses_in_closed_vocabulary() -> None:
     frame_nodes = [n for n in graph.nodes.values() if n.node_kind in frame_kinds]
     assert frame_nodes  # at least one of each was asserted above; not empty
     for node in frame_nodes:
-        assert node.status in NODE_STATUSES
+        assert node.node_status in NODE_STATUSES
         # Phase 8 surface facts are asserted, not resolution outcomes.
-        assert node.status == "asserted"
+        assert node.node_status == "asserted"
 
 
 def test_frame_spans_slice_back_to_surface() -> None:

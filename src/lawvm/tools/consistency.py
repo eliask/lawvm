@@ -214,7 +214,7 @@ def _selection_detail(selection: object) -> dict[str, Any]:
     """Extract ambiguity-preserving metadata from a selection result."""
     certificate = getattr(selection, "certificate", None)
     return {
-        "selection_status": getattr(selection, "status", ""),
+        "selection_status": getattr(selection, "selection_status", ""),
         "required_dimensions": tuple(getattr(selection, "required_dimensions", ()) or ()),
         "candidate_count": getattr(certificate, "candidate_count", 0) if certificate is not None else 0,
     }
@@ -243,9 +243,9 @@ def _section_versions_from_timelines(
         if addr.path and addr.path[-1][0] == "section":
             key = _addr_str(addr.path)
             selection = select_active_version_ex(tl, as_of="9999-12-31")
-            if selection.status == "selected" and selection.version is not None:
+            if selection.selection_status == "selected" and selection.version is not None:
                 tl_sections[key] = selection.version
-            elif selection.status == "ambiguous_missing_scope":
+            elif selection.selection_status == "ambiguous_missing_scope":
                 selection_notes[key] = _selection_note(selection)
     return tl_sections, selection_notes
 

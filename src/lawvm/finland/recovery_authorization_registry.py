@@ -33,6 +33,16 @@ class FinlandRecoveryAuthorizationRule:
     forbidden_shortcuts: tuple[str, ...] = _RECOVERY_AUTHORIZATION_FORBIDDEN_SHORTCUTS
     safe_default: str = "treat_recovery_projection_as_diagnostic_not_replay_authorization"
 
+    def blocks_in_strict(self) -> bool:
+        """Whether strict acceptance blocks this recovery finding.
+
+        Typed replacement for the stringly ``rule.strict_disposition == "block"``
+        comparison at the projector call sites. The serialized
+        ``strict_disposition`` string is unchanged; this method is the canonical
+        way to ask the policy question, so consumers stop matching the literal.
+        """
+        return self.strict_disposition == "block"
+
 
 RECOVERY_AUTHORIZATION_RULES: dict[str, FinlandRecoveryAuthorizationRule] = {
     "PARSE.EXTRACTION_FALLBACK": FinlandRecoveryAuthorizationRule(

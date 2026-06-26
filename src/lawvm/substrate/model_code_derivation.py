@@ -360,7 +360,7 @@ def build_kinship_edge(
         authority_plane=AuthorityPlane.OVERLAY,
         verification_level=VerificationLevel.INDUCED_SIMILARITY,
         replay_authorized=False,
-        status=EdgeStatus.QUALIFIED,
+        edge_status=EdgeStatus.QUALIFIED,
         effective_scope={"branch_id": "actual", "title_skeleton": skeleton},
         corpus_version=corpus_version,
     )
@@ -388,7 +388,7 @@ def build_incorporation_edge(
         authority_plane=AuthorityPlane.EVIDENCE,
         verification_level=VerificationLevel.SOURCE_ASSERTED,
         replay_authorized=False,
-        status=EdgeStatus.RESOLVED,
+        edge_status=EdgeStatus.RESOLVED,
         effective_scope={"branch_id": "actual", "orc_section": orc_section},
         corpus_version=corpus_version,
     )
@@ -441,7 +441,7 @@ def build_verified_derivation_edge(
         authority_plane=AuthorityPlane.LEGAL_STATE,
         verification_level=VerificationLevel.DELTA_VERIFIED,
         replay_authorized=authorization.replay_authorized,
-        status=EdgeStatus.RESOLVED,
+        edge_status=EdgeStatus.RESOLVED,
         effective_scope={
             "branch_id": "actual",
             "edit_script_id": script.edit_script_id,

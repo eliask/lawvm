@@ -292,11 +292,11 @@ def test_finland_temporal_lowering_exports_only_live_helpers() -> None:
 
 def test_finland_ops_temporary_signal_is_coarse_and_live() -> None:
     from lawvm.finland import ops as finland_ops
-    from lawvm.finland.ops import AmendmentOp, temporary_signal_for_op
+    from lawvm.finland.ops import OpType, AmendmentOp, temporary_signal_for_op
 
     op = AmendmentOp(
         op_id="tmp-op",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_unit_kind="section",
         target_section="5",
         is_temporary=True,
@@ -358,56 +358,56 @@ class TestResolutionFactConstruction:
 
     def test_resolved(self) -> None:
         fact = ResolutionFact(
-            status="resolved",
+            resolution_status="resolved",
             resolved_effective="2027-06-01",
             authority_source="VN/2027/50",
         )
-        assert fact.status == "resolved"
+        assert fact.resolution_status == "resolved"
         assert fact.resolved_effective == "2027-06-01"
         assert fact.authority_source == "VN/2027/50"
 
     def test_resolved_requires_effective(self) -> None:
         with pytest.raises(ValueError, match="requires a non-empty resolved_effective"):
-            ResolutionFact(status="resolved")
+            ResolutionFact(resolution_status="resolved")
 
     def test_unresolved(self) -> None:
-        fact = ResolutionFact(status="unresolved")
-        assert fact.status == "unresolved"
+        fact = ResolutionFact(resolution_status="unresolved")
+        assert fact.resolution_status == "unresolved"
         assert fact.resolved_effective == ""
 
     def test_untriggered_certified(self) -> None:
         fact = ResolutionFact(
-            status=UNTRIGGERED_CERTIFIED_STATUS,
+            resolution_status=UNTRIGGERED_CERTIFIED_STATUS,
             coverage_certificate_id="coverage-1",
         )
-        assert fact.status == "untriggered_certified"
+        assert fact.resolution_status == "untriggered_certified"
         assert fact.coverage_certificate_id == "coverage-1"
 
     def test_untriggered_certified_requires_evidence_pointer(self) -> None:
         with pytest.raises(ValueError, match="coverage_certificate_id"):
-            ResolutionFact(status=UNTRIGGERED_CERTIFIED_STATUS)
+            ResolutionFact(resolution_status=UNTRIGGERED_CERTIFIED_STATUS)
 
     def test_superseded(self) -> None:
         fact = ResolutionFact(
-            status="superseded",
+            resolution_status="superseded",
             authority_source="2027/200",
         )
-        assert fact.status == "superseded"
+        assert fact.resolution_status == "superseded"
         assert fact.authority_source == "2027/200"
 
     def test_frozen(self) -> None:
-        fact = ResolutionFact(status="unresolved")
+        fact = ResolutionFact(resolution_status="unresolved")
         with pytest.raises(AttributeError):
             _set_runtime_attr(fact, "status", "resolved")
 
     def test_status_predicates_reflect_current_status(self) -> None:
-        resolved = ResolutionFact(status="resolved", resolved_effective="2027-06-01")
-        unresolved = ResolutionFact(status="unresolved")
+        resolved = ResolutionFact(resolution_status="resolved", resolved_effective="2027-06-01")
+        unresolved = ResolutionFact(resolution_status="unresolved")
         untriggered = ResolutionFact(
-            status=UNTRIGGERED_CERTIFIED_STATUS,
+            resolution_status=UNTRIGGERED_CERTIFIED_STATUS,
             coverage_certificate_id="coverage-1",
         )
-        superseded = ResolutionFact(status="superseded")
+        superseded = ResolutionFact(resolution_status="superseded")
 
         assert resolved.is_resolved is True
         assert resolved.is_unresolved is False
@@ -459,13 +459,13 @@ class TestDeriveTemporalStatus:
 
     def test_pending_decree_unresolved_is_pending(self) -> None:
         rule = ActivationRule(kind="pending_decree")
-        res = ResolutionFact(status="unresolved")
+        res = ResolutionFact(resolution_status="unresolved")
         assert derive_temporal_status(rule, res, "2026-04-07") == "pending_external_resolution"
 
     def test_pending_decree_resolved_past_is_active(self) -> None:
         rule = ActivationRule(kind="pending_decree")
         res = ResolutionFact(
-            status="resolved",
+            resolution_status="resolved",
             resolved_effective="2026-01-01",
             authority_source="VN/2026/10",
         )
@@ -474,7 +474,7 @@ class TestDeriveTemporalStatus:
     def test_pending_decree_resolved_future_is_scheduled(self) -> None:
         rule = ActivationRule(kind="pending_decree")
         res = ResolutionFact(
-            status="resolved",
+            resolution_status="resolved",
             resolved_effective="2027-06-01",
             authority_source="VN/2027/50",
         )
@@ -483,7 +483,7 @@ class TestDeriveTemporalStatus:
     def test_pending_decree_superseded_is_inactive(self) -> None:
         rule = ActivationRule(kind="pending_decree")
         res = ResolutionFact(
-            status="superseded",
+            resolution_status="superseded",
             authority_source="2027/200",
         )
         assert derive_temporal_status(rule, res, "2026-04-07") == "inactive"
@@ -491,7 +491,7 @@ class TestDeriveTemporalStatus:
     def test_pending_decree_certified_untriggered_is_inactive(self) -> None:
         rule = ActivationRule(kind="pending_decree")
         res = ResolutionFact(
-            status=UNTRIGGERED_CERTIFIED_STATUS,
+            resolution_status=UNTRIGGERED_CERTIFIED_STATUS,
             coverage_certificate_id="coverage-1",
         )
         assert derive_temporal_status(rule, res, "2026-04-07") == "inactive"
@@ -503,7 +503,7 @@ class TestDeriveTemporalStatus:
     def test_pending_condition_resolved(self) -> None:
         rule = ActivationRule(kind="pending_condition", condition_ref="laki X")
         res = ResolutionFact(
-            status="resolved",
+            resolution_status="resolved",
             resolved_effective="2025-06-01",
         )
         assert derive_temporal_status(rule, res, "2026-04-07") == "active"
@@ -550,20 +550,20 @@ class TestProjectTemporalStatus:
             ActivationRule(kind="fixed_date", effective_date="2028-01-01"),
         ]
         resolutions = [
-            ResolutionFact(status="resolved", resolved_effective="2025-01-01"),
+            ResolutionFact(resolution_status="resolved", resolved_effective="2025-01-01"),
         ]
         assert project_temporal_status(rules, resolutions, "2026-04-07") == "active"
 
     def test_all_inactive(self) -> None:
         rules = [ActivationRule(kind="pending_decree")]
-        resolutions = [ResolutionFact(status="superseded", authority_source="2027/1")]
+        resolutions = [ResolutionFact(resolution_status="superseded", authority_source="2027/1")]
         assert project_temporal_status(rules, resolutions, "2026-04-07") == "inactive"
 
     def test_certified_untriggered_projects_inactive(self) -> None:
         rules = [ActivationRule(kind="pending_decree")]
         resolutions = [
             ResolutionFact(
-                status=UNTRIGGERED_CERTIFIED_STATUS,
+                resolution_status=UNTRIGGERED_CERTIFIED_STATUS,
                 coverage_certificate_id="coverage-1",
             )
         ]
@@ -576,7 +576,7 @@ class TestProjectTemporalStatus:
             ActivationRule(kind="pending_decree"),
         ]
         resolutions = [
-            ResolutionFact(status="resolved", resolved_effective="2025-01-01"),
+            ResolutionFact(resolution_status="resolved", resolved_effective="2025-01-01"),
         ]
         # First rule resolved+active, second rule has no resolution → pending dominates
         assert project_temporal_status(rules, resolutions, "2026-04-07") == "pending_external_resolution"

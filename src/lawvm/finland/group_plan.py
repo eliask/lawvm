@@ -17,6 +17,7 @@ from lawvm.finland.ops import (
     scope_confidence_from_tags,
 )
 from lawvm.finland.helpers import _norm_num_token
+from lawvm.finland.target_selector_facades import replace_target
 
 _GROUP_KEY_NON_WORD_RE = re.compile(r"[^\d\w]")
 
@@ -90,18 +91,19 @@ def target_group_key(op: AmendmentOp) -> GroupTargetKey:
     # For osa/part targets, use _norm_num_token which converts Roman numerals
     # to Arabic (III→3, V→5). The master tree stores parts with Arabic labels
     # but the PEG parser emits Roman numeral labels from the johtolause.
+    cols = op.target_cols
     section_norm = (
-        _norm_num_token(op.target_section)
-        if op.target_unit_kind == "part" and op.target_section
-        else norm(op.target_section)
+        _norm_num_token(cols.target_section)
+        if cols.target_unit_kind == "part" and cols.target_section
+        else norm(cols.target_section)
     )
-    chapter = norm(op.target_chapter) if op.target_unit_kind == "section" and op.target_chapter else None
+    chapter = norm(cols.target_chapter) if cols.target_unit_kind == "section" and cols.target_chapter else None
     part = (
-        _norm_num_token(op.target_part)
-        if op.target_unit_kind in {"section", "chapter"} and op.target_part
+        _norm_num_token(cols.target_part)
+        if cols.target_unit_kind in {"section", "chapter"} and cols.target_part
         else None
     )
-    return GroupTargetKey(IRNodeKind(op.target_unit_kind), section_norm, chapter, part)
+    return GroupTargetKey(IRNodeKind(cols.target_unit_kind), section_norm, chapter, part)
 
 
 def normalize_group_target_key(
@@ -138,15 +140,16 @@ def coalesce_same_target_mixed_scope_section_groups(
     buckets: dict[tuple[str, Optional[str]], list[GroupTargetKey]] = defaultdict(list)
 
     def _op_merge_signature(op: AmendmentOp) -> tuple[object, ...]:
+        cols = op.target_cols
         return (
             op.op_type,
-            op.target_unit_kind,
-            _norm_num_token(op.target_section or ""),
-            _norm_num_token(op.target_chapter or "") if op.target_chapter else "",
-            _norm_num_token(op.target_part or "") if op.target_part else "",
-            op.target_paragraph,
-            leaf_label_identity_key(op.target_item or "") if op.target_item else "",
-            str(op.target_special or "").strip(),
+            cols.target_unit_kind,
+            _norm_num_token(cols.target_section or ""),
+            _norm_num_token(cols.target_chapter or "") if cols.target_chapter else "",
+            _norm_num_token(cols.target_part or "") if cols.target_part else "",
+            cols.target_paragraph,
+            leaf_label_identity_key(cols.target_item or "") if cols.target_item else "",
+            str(cols.target_special or "").strip(),
         )
 
     for key in section_keys:
@@ -190,7 +193,7 @@ def coalesce_same_target_mixed_scope_section_groups(
             )
             tagged_op = dc_replace(
                 op,
-                target_chapter=scoped_chapter,
+                **replace_target(op, target_chapter=scoped_chapter),
                 scope_provenance_tags=tuple(op.scope_provenance_tags) + ("mixed_scope_group_merge",),
                 scope_confidence=merged_scope_confidence,
                 lo=_lo_with_path_update(op.lo, chapter=scoped_chapter) if op.lo is not None else op.lo,
@@ -206,7 +209,7 @@ def coalesce_same_target_mixed_scope_section_groups(
             [*scoped_ops, *unique_tagged_unscoped_ops],
             key=lambda op: (
                 op.lo.sequence if op.lo is not None else 10**9,
-                op.target_paragraph or 0,
+                op.target_cols.target_paragraph or 0,
             ),
         )
         del merged[unscoped_key]

@@ -26,7 +26,7 @@ Design (per the rewrite contract):
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Callable, Generic, Optional, Sequence, TypeVar, cast
+from typing import Callable, Optional, Sequence, TypeVar, cast
 
 from lawvm.finland.johtolause.lexicon import Token
 
@@ -108,7 +108,7 @@ class Cursor:
 # ParseResult — the transactional success/failure value.
 # ---------------------------------------------------------------------------
 @dataclass(frozen=True, slots=True)
-class ParseResult(Generic[T]):
+class ParseResult[T]:
     """The outcome of running a parser at a cursor.
 
     Exactly one of (``ok`` true / false) holds. On success ``value`` and ``next``

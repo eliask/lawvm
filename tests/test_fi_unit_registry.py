@@ -274,7 +274,11 @@ def _make_minimal_rop(
             "chapter" if target_kind == TargetKind.CHAPTER else "part" if target_kind == TargetKind.PART else "section"
         ),
         target_norm=target_norm,
-        _op_type_seed=op_type,
+        # This helper deliberately accepts a non-OpType string (see
+        # test_build_canonical_intent_returns_none_does_not_crash, which feeds
+        # "UNKNOWN_FUTURE_OP") to exercise the unknown-op graceful-degradation
+        # path; production seeds are always a real OpType.
+        _op_type_seed=cast(OpType, op_type),
         _target_special_override=(
             target_special if target_special not in {None, "otsikko", "johd"} else None
         ),
@@ -292,7 +296,7 @@ def test_build_canonical_intent_valid_replace_no_warning(caplog):
     """_build_canonical_intent for a standard REPLACE emits no validation warning."""
     from lawvm.finland.ops import _build_canonical_intent
 
-    rop = _make_minimal_rop(op_type="REPLACE", target_kind=TargetKind.SECTION, target_norm="5")
+    rop = _make_minimal_rop(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_norm="5")
     with caplog.at_level(logging.WARNING, logger="lawvm.core.unit_registry"):
         intent = _build_canonical_intent(rop)
 
@@ -310,7 +314,7 @@ def test_build_canonical_intent_payloadless_replace_returns_none() -> None:
     """Payloadless REPLACE ops should degrade explicitly instead of building invalid core intent."""
     from lawvm.finland.ops import _build_canonical_intent
 
-    rop = _make_minimal_rop(op_type="REPLACE", target_kind=TargetKind.SECTION, target_norm="5")
+    rop = _make_minimal_rop(op_type=OpType.REPLACE, target_kind=TargetKind.SECTION, target_norm="5")
     rop.muutos_ir = None
 
     assert _build_canonical_intent(rop) is None
@@ -321,7 +325,7 @@ def test_build_canonical_intent_heading_replace_no_warning(caplog):
     from lawvm.finland.ops import _build_canonical_intent
 
     rop = _make_minimal_rop(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_norm="5",
         target_special="otsikko",
@@ -343,7 +347,7 @@ def test_build_canonical_intent_intro_replace_no_warning(caplog):
     from lawvm.finland.ops import _build_canonical_intent
 
     rop = _make_minimal_rop(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_norm="3",
         target_special="johd",
@@ -363,7 +367,7 @@ def test_build_canonical_intent_subsection_intro_replace_no_warning(caplog):
     from lawvm.finland.ops import _build_canonical_intent
 
     rop = _make_minimal_rop(
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_norm="13",
         target_paragraph=1,
@@ -395,7 +399,7 @@ def test_build_canonical_intent_uses_resolvedop_addresses_without_lo() -> None:
 
     op = AmendmentOp(
         op_id="renumber_without_lo",
-        op_type="RENUMBER",
+        op_type=OpType.RENUMBER,
         target_kind=TargetKind.SECTION,
         target_section="73",
     )
@@ -407,9 +411,9 @@ def test_build_canonical_intent_uses_resolvedop_addresses_without_lo() -> None:
         op_id=op.op_id,
         target_unit_kind="section",
         target_norm="73",
-        _op_type_seed="RENUMBER",
+        _op_type_seed=OpType.RENUMBER,
         _target_special_override=(
-            op.target_special if op.target_special not in {None, "otsikko", "johd"} else None
+            op.target_cols.target_special if op.target_cols.target_special not in {None, "otsikko", "johd"} else None
         ),
         sec1_body_johto_fallback=op.sec1_body_johto_fallback,
         uncovered_body_recovery=op.uncovered_body_recovery,
@@ -435,7 +439,7 @@ def test_build_canonical_intent_without_target_address_gracefully_returns_none()
 
     op = AmendmentOp(
         op_id="missing_target_address",
-        op_type="REPLACE",
+        op_type=OpType.REPLACE,
         target_kind=TargetKind.SECTION,
         target_section="5",
     )
@@ -447,9 +451,9 @@ def test_build_canonical_intent_without_target_address_gracefully_returns_none()
         op_id=op.op_id,
         target_unit_kind="section",
         target_norm="5",
-        _op_type_seed="REPLACE",
+        _op_type_seed=OpType.REPLACE,
         _target_special_override=(
-            op.target_special if op.target_special not in {None, "otsikko", "johd"} else None
+            op.target_cols.target_special if op.target_cols.target_special not in {None, "otsikko", "johd"} else None
         ),
         sec1_body_johto_fallback=op.sec1_body_johto_fallback,
         uncovered_body_recovery=op.uncovered_body_recovery,
@@ -544,10 +548,17 @@ def test_get_identity_class_known_units():
     assert FINLAND_REGISTRY.get_identity_class("row") == "implicit_ordinal"
 
 
-def test_get_identity_class_unknown_returns_stable_label():
-    """get_identity_class returns 'stable_label' as safe default for unknown unit kinds."""
-    assert FINLAND_REGISTRY.get_identity_class("widget") == "stable_label"
-    assert FINLAND_REGISTRY.get_identity_class("") == "stable_label"
+def test_get_identity_class_unknown_fails_loud():
+    """get_identity_class fails loud (self-evidencing) for unregistered unit kinds.
+
+    Previously an unregistered kind silently defaulted to 'stable_label' --
+    a guessed lifecycle policy. It now raises IntentTargetValidationError with
+    the offending unit_kind embedded.
+    """
+    with pytest.raises(IntentTargetValidationError, match="widget"):
+        FINLAND_REGISTRY.get_identity_class("widget")
+    with pytest.raises(IntentTargetValidationError, match="get_identity_class"):
+        FINLAND_REGISTRY.get_identity_class("")
 
 
 def test_allows_suffix_insertion():
@@ -556,7 +567,8 @@ def test_allows_suffix_insertion():
         assert FINLAND_REGISTRY.allows_suffix_insertion(kind), f"{kind!r}: expected allows_suffix_insertion=True"
     for kind in _IMPLICIT_ORDINAL_KINDS:
         assert not FINLAND_REGISTRY.allows_suffix_insertion(kind), f"{kind!r}: expected allows_suffix_insertion=False"
-    assert not FINLAND_REGISTRY.allows_suffix_insertion("widget")
+    with pytest.raises(IntentTargetValidationError, match="widget"):
+        FINLAND_REGISTRY.allows_suffix_insertion("widget")
 
 
 def test_allows_ordinal_shift():
@@ -565,16 +577,22 @@ def test_allows_ordinal_shift():
         assert FINLAND_REGISTRY.allows_ordinal_shift(kind), f"{kind!r}: expected allows_ordinal_shift=True"
     for kind in _STABLE_LABEL_KINDS:
         assert not FINLAND_REGISTRY.allows_ordinal_shift(kind), f"{kind!r}: expected allows_ordinal_shift=False"
-    assert not FINLAND_REGISTRY.allows_ordinal_shift("widget")
+    with pytest.raises(IntentTargetValidationError, match="widget"):
+        FINLAND_REGISTRY.allows_ordinal_shift("widget")
 
 
 def test_repeal_compacts_siblings_always_false():
-    """repeal_compacts_siblings returns False for every Finnish unit and unknown units."""
-    all_kinds = list(FINLAND_REGISTRY.unit_specs.keys()) + ["widget", ""]
-    for kind in all_kinds:
+    """repeal_compacts_siblings is False for every registered Finnish unit.
+
+    Unregistered kinds fail loud rather than defaulting to False.
+    """
+    for kind in FINLAND_REGISTRY.unit_specs.keys():
         assert not FINLAND_REGISTRY.repeal_compacts_siblings(kind), (
             f"{kind!r}: repeal_compacts_siblings should be False"
         )
+    for kind in ("widget", ""):
+        with pytest.raises(IntentTargetValidationError, match="repeal_compacts_siblings"):
+            FINLAND_REGISTRY.repeal_compacts_siblings(kind)
 
 
 def test_crossheading_is_registered_and_stable_label():

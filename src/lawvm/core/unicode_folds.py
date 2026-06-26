@@ -110,5 +110,6 @@ PD_DASH_CPS: frozenset[int] = frozenset({
     0xFE58,   # SMALL EM DASH
     0xFE63,   # SMALL HYPHEN-MINUS
     0xFF0D,   # FULLWIDTH HYPHEN-MINUS
+    0x10D6E,  # GARAY HYPHEN (Unicode 16.0; bundled with Python 3.14)
     0x10EAD,  # YEZIDI HYPHENATION MARK
 })

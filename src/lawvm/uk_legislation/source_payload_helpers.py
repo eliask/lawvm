@@ -45,6 +45,9 @@ def infer_source_payload_from_target(
     schedule_paragraph = None
     schedule_subparagraph = None
     schedule_items: list[str] = []
+    target_subsection: Optional[str] = None
+    target_subparagraph: Optional[str] = None
+    target_item: Optional[str] = None
     if container == "schedule":
         schedule_levels = _schedule_target_levels(target)
         schedule_paragraph = schedule_levels.paragraph
@@ -54,13 +57,33 @@ def infer_source_payload_from_target(
         target_item = schedule_items[-1] if schedule_items else None
     else:
         paragraphs = [label for kind, label in target.path if kind == "paragraph"]
+        subparagraphs = [label for kind, label in target.path if kind == "subparagraph"]
         subsection_field = _addr_field(target, "subsection")
+        target_subsection = None
+        target_subparagraph = None
         if subsection_field:
             target_subsection = subsection_field
+            # A subparagraph leaf may walk together with a subsection step (the
+            # original body order: section/subsection/paragraph/subparagraph);
+            # keep it here too so inserts address the deepest carried level.
+            target_subparagraph = subparagraphs[0] if subparagraphs else None
             target_item = paragraphs[0] if paragraphs else None
         else:
-            target_subsection = paragraphs[0] if paragraphs else None
-            target_item = paragraphs[1] if len(paragraphs) >= 2 else None
+            # Body path with no subsection step, e.g.
+            # ``section:158/paragraph:a/subparagraph:vi``.  The carrying level
+            # for the insert is the subparagraph, not the paragraph: previously
+            # this branch misread ``paragraph:a`` as ``subsection:a`` (a §1.3
+            # granularity escalation that produced an ``unexpected subsection
+            # inside paragraph`` tree-shape violation).
+            target_subsection = None
+            target_subparagraph = subparagraphs[0] if subparagraphs else None
+            # When the path lacks a subparagraph step, fall back to the
+            # ``section/paragraph`` contract the prior code intended (treat the
+            # first paragraph label as the inferred subsection?), except that
+            # would also be a granularity escalation.  We keep the paragraph
+            # label around only as a fallback target_item; the inferred_kind
+            # branch below prefers the subparagraph when present.
+            target_item = paragraphs[0] if paragraphs else None
 
     if container == "schedule" and not target_subsection and not target_item:
         if schedule_paragraph:
@@ -75,6 +98,15 @@ def infer_source_payload_from_target(
     elif container == "schedule" and target_subsection:
         inferred_kind = "subparagraph"
         inferred_label = target_subsection
+    elif target_subparagraph:
+        # Plain-text insert payload that should be carried by the deepest
+        # ``_addr`` leaf (the subparagraph itself), not by its paragraph parent
+        # (e.g. ``after subparagraph (v) insert`` where the source names
+        # ``s. 158(a)(vi)``).  Fixes the §1.3 escalation that produced the
+        # ``unexpected subsection inside paragraph`` violation on
+        # ``asp/2003/13`` s.158 introduced by ``ssi/2004/533`` art. 2(4)(b).
+        inferred_kind = "subparagraph"
+        inferred_label = target_subparagraph
     elif target_item:
         inferred_kind = "paragraph"
         inferred_label = target_item

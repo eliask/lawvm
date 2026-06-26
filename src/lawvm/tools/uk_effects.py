@@ -650,7 +650,7 @@ def summarize_uk_effect(
         start_index=lowering_rejection_count_before,
     )
     candidate = (
-        manual_frontier["status"] != "non_textual_or_out_of_scope"
+        manual_frontier["manual_frontier_status"] != "non_textual_or_out_of_scope"
         and is_core_uk_effect_source_candidate(source_pathology)
         and is_core_uk_effect_compare_candidate(compare_shape)
         and not has_blocking_lowering_rejection(lowering_rejections)
@@ -679,11 +679,11 @@ def summarize_uk_effect(
         replay_applicable=effect.is_applicable_for_replay(applicability_mode=applicability_mode),
         structural_for_replay=structural_for_replay,
         applicability_mode=applicability_mode,
-        manual_compile_status=manual_frontier["status"],
+        manual_compile_status=manual_frontier["manual_frontier_status"],
         manual_compile_rule_id=manual_frontier["rule_id"],
         manual_compile_reason=manual_frontier["reason"],
         manual_compile_owner_phase=uk_phase_owner_for_manual_frontier(
-            manual_compile_status=manual_frontier["status"],
+            manual_compile_status=manual_frontier["manual_frontier_status"],
             manual_compile_rule_id=manual_frontier["rule_id"],
             source_pathology=source_pathology,
         ),
@@ -1558,7 +1558,7 @@ def _effect_report_row_jsonable(
         "compare_shape": summary.compare_shape or "",
         "text_patch_evidence": _text_patch_evidence_jsonable(summary),
         "manual_compile_frontier": {
-            "status": summary.manual_compile_status or "",
+            "manual_frontier_status": summary.manual_compile_status or "",
             "rule_id": summary.manual_compile_rule_id or "",
             "reason": summary.manual_compile_reason or "",
             "owner_phase": owner_phase,

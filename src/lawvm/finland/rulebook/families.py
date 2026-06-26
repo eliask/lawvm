@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Generic, Protocol, TypeVar
+from typing import Protocol
 
 from lawvm.finland.rulebook.common import (
     EmitRef,
@@ -17,9 +17,6 @@ from lawvm.finland.rulebook.common import (
 
 class _HeaderedRule(Protocol):
     header: RuleHeader
-
-
-RuleT = TypeVar("RuleT", bound=_HeaderedRule)
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,7 +52,7 @@ class SourceRule:
 
 
 @dataclass(frozen=True, slots=True)
-class RuleFamily(Generic[RuleT]):
+class RuleFamily[RuleT: _HeaderedRule]:
     family_id: RuleFamilyId
     rules: tuple[RuleT, ...]
     description: str = ""

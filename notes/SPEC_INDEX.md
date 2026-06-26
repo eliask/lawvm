@@ -76,14 +76,15 @@ the architecture, keep it explanatory.
 ## Other Frontends
 
 - [ESTONIA_FRONTEND_LIVING_SPEC.md](ESTONIA_FRONTEND_LIVING_SPEC.md)
+- [ESTONIA_GUARD_LIVENESS_DISCIPLINE.md](ESTONIA_GUARD_LIVENESS_DISCIPLINE.md) — EE guard-liveness ratchet: every blocking CompileAdjudication rule_id is partitioned into fire-drills or a debt allowlist with a monotone-decreasing ceiling
 - [UK_FRONTEND_ELABORATION_ARCHITECTURE.md](UK_FRONTEND_ELABORATION_ARCHITECTURE.md)
 - [UK_REPLAY_LIVING_SPEC.md](UK_REPLAY_LIVING_SPEC.md)
 - [UK_REPLAY_REGIME_CONTRACT.md](UK_REPLAY_REGIME_CONTRACT.md)
 - [UK_OFFICIAL_DRAFTING_SOURCE_LEDGER.md](UK_OFFICIAL_DRAFTING_SOURCE_LEDGER.md) — per-statute UK official drafting-source rules
 - [US_LAWVM_STATUS.md](US_LAWVM_STATUS.md) — U.S. federal frontend status/limits/roadmap: witness-anchored dry-run over keyless govinfo PLAW USLM source + USC annual-edition htm oracle; coverage, lowering-gap residual classes, geo-block reality
+- [SWEDEN_LAWVM_STATUS.md](SWEDEN_LAWVM_STATUS.md) — Sweden frontend status/limits/roadmap: official SFS PDF → clause surface → payload surface → elaboration → effects plan → lowering → replay with typed recovery ladder; unified bench comparator; typed conservation receipt (§1.8 FilterResult); observed-write-audit (§2.3 receipt contract, first step); structured replay outcome; ~1% genuine mismatch on 500-act sample, 0% error rate
 - [NEW_ZEALAND_LAWVM_STATUS.md](NEW_ZEALAND_LAWVM_STATUS.md) — New Zealand frontend status/limits/roadmap
 - [NORWAY_LAWVM_STATUS.md](NORWAY_LAWVM_STATUS.md) — Norway frontend status/limits/roadmap
-- [SWEDEN_LAWVM_STATUS.md](SWEDEN_LAWVM_STATUS.md) — Sweden frontend status/limits/roadmap
 - [OPEN_LAW_FRONTEND_SPEC.md](OPEN_LAW_FRONTEND_SPEC.md)
 - [OPEN_LAW_REGIME.md](OPEN_LAW_REGIME.md)
 
