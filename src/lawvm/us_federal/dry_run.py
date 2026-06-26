@@ -1287,7 +1287,14 @@ def _token_count_in_text(text: str, match_text: str) -> int:
     return text.count(match_text)
 
 
-def _replace_token_in_text(text: str, match_text: str, replacement: str, count: int) -> str:
+def _replace_token_in_text(
+    text: str,
+    match_text: str,
+    replacement: str,
+    count: int,
+    *,
+    last_occurrence: bool = False,
+) -> str:
     """Apply a text patch with word-boundary safety for alphabetic tokens.
 
     When a quoted amendatory token is a single alphabetic word (``'or'``,
@@ -1298,7 +1305,32 @@ def _replace_token_in_text(text: str, match_text: str, replacement: str, count: 
 
     Non-alphabetic tokens (``120``, ``15-year``, ``; or``) keep the existing
     literal semantics so phrase-shape patches continue to work unchanged.
+
+    ``last_occurrence=True`` overrides the legacy ``count=-1`` ALL semantics
+    (``str.replace(count=-1)`` and ``re.sub(count=0)`` both mean EVERY match —
+    silently multiplying the op's effect across every period in a multi-sentence
+    section). Set by ``_apply_text_patch_with_tail_dispatch`` when the op's
+    ``TextSelector.occurrence_mode == "Last"`` (terminal-punct edits that name a
+    single "the period at the end" anchor, not every period — AGENTS.md §0: no
+    silent mutation beyond the target region).
     """
+    if last_occurrence:
+        if match_text.isalpha():
+            pattern = _word_boundary_pattern(match_text)
+            matches = list(pattern.finditer(text))
+        else:
+            matches = [
+                (m.start(), m.end())
+                for m in re.finditer(re.escape(match_text), text)
+            ]
+        if not matches:
+            return text
+        last_start, last_end = (
+            (matches[-1].start(), matches[-1].end())
+            if not isinstance(matches[-1], tuple)
+            else matches[-1]
+        )
+        return text[:last_start] + (replacement or "") + text[last_end:]
     if match_text.isalpha():
         pattern = _word_boundary_pattern(match_text)
         new_text = pattern.sub(replacement or "", text, count=count if count != -1 else 0)
@@ -1417,7 +1449,13 @@ def _apply_text_patch_with_tail_dispatch(
         )
     if RULE_STRIKE_INSERT_TAIL in operation.provenance_tags:
         return _replace_token_tail_in_text(text, match_text, replacement, count)
-    return _replace_token_in_text(text, match_text, replacement, count)
+    last_occurrence = (
+        operation.text_patch is not None
+        and operation.text_patch.selector.occurrence_mode == "Last"
+    )
+    return _replace_token_in_text(
+        text, match_text, replacement, count, last_occurrence=last_occurrence
+    )
 
 
 def _subtree_overrides(

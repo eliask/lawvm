@@ -2401,6 +2401,7 @@ def test_insert_before_period_at_the_end_lowers_to_terminal_text_replace():
     patch = _patch(instr)
     assert patch.selector.match_text == "."
     assert patch.selector.occurrence == -1
+    assert patch.selector.occurrence_mode == "Last"
     assert patch.replacement == " and section 507(d)."
 
 
@@ -2443,6 +2444,7 @@ def test_insert_before_period_at_the_end_the_following_lowers_to_terminal_text_r
     patch = _patch(instr)
     assert patch.selector.match_text == "."
     assert patch.selector.occurrence == -1
+    assert patch.selector.occurrence_mode == "Last"
     assert patch.replacement == " and section 507(d)."
 
 

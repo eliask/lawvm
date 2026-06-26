@@ -82,7 +82,19 @@ class ScopePredicate:
 
 @dataclass(frozen=True, slots=True)
 class TextSelector:
-    """Typed selector for text-level operations."""
+    """Typed selector for text-level operations.
+
+    ``occurrence_mode`` disambiguates the *kind* of occurrence the op targets,
+    resolving the silent conflation between EACH_PLACE (replace every match,
+    str.replace(count=-1) semantics) and LAST/terminal (replace rightmost match
+    ONCE — the terminal-punct edits ``RULE_INSERT_END_PUNCT`` /
+    ``RULE_STRIKE_INSERT_END_PUNCT`` that name a single "the period at the end"
+    anchor). Carried distinct from ``occurrence`` to stay backward-compatible
+    with frontends whose ops still express each-place via ``occurrence=-1``
+    alone: when ``occurrence_mode`` is the default ``"Auto"``, the materializer
+    maps ``occurrence=-1`` to ALL (preserving existing each-place behavior);
+    when it is ``"Last"``, the materializer replaces the rightmost match once.
+    """
 
     match_text: str
     occurrence: int = 0
@@ -96,6 +108,11 @@ class TextSelector:
     # (``occurrence``) apply unchanged, so this field is purely additive for
     # frontends that do not need it.
     end_match_text: Optional[str] = None
+    # When provided, overrides the legacy ``occurrence=-1`` ALL interpretation
+    # in the materializer. ``"Last"`` forces treating the op as terminal-anchor:
+    # replace the W-rightmost occurrence once (the period at the end of the
+    # target node, not every period in the section).
+    occurrence_mode: Literal["Auto", "Last"] = "Auto"
 
     def __post_init__(self) -> None:
         if not self.match_text:
@@ -104,6 +121,10 @@ class TextSelector:
             raise ValueError("TextSelector.occurrence must be >= -1")
         if self.end_occurrence < 0:
             raise ValueError("TextSelector.end_occurrence must be >= 0")
+        if self.occurrence_mode not in ("Auto", "Last"):
+            raise ValueError(
+                f"TextSelector.occurrence_mode must be 'Auto' or 'Last', got {self.occurrence_mode!r}"
+            )
 
 
 @dataclass(frozen=True, slots=True)

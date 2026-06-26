@@ -2602,7 +2602,11 @@ def _lower_instruction(
                 rule_id=RULE_STRIKE_INSERT_END_PUNCT,
                 text_patch=TextPatchSpec(
                     kind=TextPatchKindEnum.REPLACE,
-                    selector=TextSelector(match_text=old, occurrence=-1),
+                    selector=TextSelector(
+                        match_text=old,
+                        occurrence=-1,
+                        occurrence_mode="Last",
+                    ),
                     replacement=replacement or "",
                 ),
                 target=strike_target,
@@ -2670,7 +2674,11 @@ def _lower_instruction(
                     rule_id=RULE_INSERT_END_PUNCT,
                     text_patch=TextPatchSpec(
                         kind=TextPatchKindEnum.REPLACE,
-                        selector=TextSelector(match_text=punct, occurrence=-1),
+                        selector=TextSelector(
+                            match_text=punct,
+                            occurrence=-1,
+                            occurrence_mode="Last",
+                        ),
                         replacement=replacement,
                     ),
                     target=_text_strike_target,
