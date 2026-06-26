@@ -142,9 +142,49 @@ class NOBackfillLane(StrEnum):
     """No candidate surfaced in any lane."""
 
 
+class NOBackfillHintStatus(StrEnum):
+    """Closed set of next-source recommendation states for a NO backfill hint.
+
+    Derived from the recommended backfill lane (``NOBackfillLane``). A
+    ``StrEnum`` so it flows through the serialized ``hint_status`` dict key /
+    advisory output and test comparisons byte-for-byte while the value set is
+    closed.
+    """
+
+    NEEDS_EXTERNAL_OFFICIAL_SOURCE = "needs_external_official_source"
+    """No local_corpus/statsrad candidate surfaced — search external channels."""
+
+    COMPARE_EXISTING_LANES = "compare_existing_lanes"
+    """Both local_corpus and statsrad produced candidates — compare them."""
+
+    STATSRAD_FIRST = "statsrad_first"
+    """Only statsrad candidates surfaced — start there."""
+
+    LOCAL_CORPUS_FIRST = "local_corpus_first"
+    """Only local_corpus candidates surfaced — start there."""
+
+
+class NOBackfillPlanStatus(StrEnum):
+    """Closed set of per-source-plan-item states for a NO backfill plan.
+
+    A ``StrEnum`` so it flows through the serialized ``plan_status`` dict key /
+    advisory output and test comparisons byte-for-byte while the value set is
+    closed.
+    """
+
+    CANDIDATE = "candidate"
+    """A surfaced candidate source family to search/compare."""
+
+    NEXT_OFFICIAL_SOURCE = "next_official_source"
+    """An external official publication channel to search next."""
+
+    FALLBACK_HISTORY = "fallback_history"
+    """A deeper historical layer to fall back to."""
+
+
 @dataclass(frozen=True)
 class NOEffectiveDate:
-    status: NOEffectiveStatus
+    effective_status: NOEffectiveStatus
     effective_date: Optional[str] = None
     raw_text: str = ""
 
@@ -259,10 +299,10 @@ def effective_date_from_amendment(html_bytes: bytes, source_date: str = "") -> N
     if not dates:
         lowered = raw.lower()
         if not raw:
-            return NOEffectiveDate(status=NOEffectiveStatus.MISSING, raw_text="")
+            return NOEffectiveDate(effective_status=NOEffectiveStatus.MISSING, raw_text="")
         if "straks" in lowered and source_date:
             return NOEffectiveDate(
-                status=NOEffectiveStatus.IMMEDIATE, effective_date=source_date, raw_text=raw
+                effective_status=NOEffectiveStatus.IMMEDIATE, effective_date=source_date, raw_text=raw
             )
         contingent_markers = (
             "kongen bestemmer",
@@ -272,10 +312,10 @@ def effective_date_from_amendment(html_bytes: bytes, source_date: str = "") -> N
             "fra den tid",
         )
         if any(marker in lowered for marker in contingent_markers):
-            return NOEffectiveDate(status=NOEffectiveStatus.CONTINGENT, raw_text=raw)
-        return NOEffectiveDate(status=NOEffectiveStatus.UNKNOWN, raw_text=raw)
+            return NOEffectiveDate(effective_status=NOEffectiveStatus.CONTINGENT, raw_text=raw)
+        return NOEffectiveDate(effective_status=NOEffectiveStatus.UNKNOWN, raw_text=raw)
     return NOEffectiveDate(
-        status=NOEffectiveStatus.DATED, effective_date=min(dates), raw_text=raw
+        effective_status=NOEffectiveStatus.DATED, effective_date=min(dates), raw_text=raw
     )
 
 

@@ -576,7 +576,7 @@ def test_effective_date_from_amendment_marks_contingent_force() -> None:
 
     effective = _effective_date_from_amendment(xml, source_date="2025-02-02")
 
-    assert effective.status == "contingent"
+    assert effective.effective_status == "contingent"
     assert effective.effective_date is None
 
 
@@ -585,7 +585,7 @@ def test_effective_date_from_amendment_uses_source_date_for_straks() -> None:
 
     effective = _effective_date_from_amendment(xml, source_date="2025-02-02")
 
-    assert effective.status == "immediate"
+    assert effective.effective_status == "immediate"
     assert effective.effective_date == "2025-02-02"
 
 

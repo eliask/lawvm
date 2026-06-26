@@ -1430,7 +1430,7 @@ def test_no_commencement_backfill_artifact_includes_action_hints(tmp_path, monke
             "display_name": "local_corpus",
             "priority": 1,
             "mode": "compare",
-            "status": "candidate",
+            "plan_status": "candidate",
             "why": "Local corpus candidates exist and should be compared with statsrad.",
             "candidate_group_summary": [{"candidate_source": "local_corpus", "candidate_count": 1}],
         },
@@ -1439,12 +1439,12 @@ def test_no_commencement_backfill_artifact_includes_action_hints(tmp_path, monke
             "display_name": "statsrad",
             "priority": 2,
             "mode": "compare",
-            "status": "candidate",
+            "plan_status": "candidate",
             "why": "Statsrad candidates exist and should be compared against local corpus.",
             "candidate_group_summary": [{"candidate_source": "statsrad", "candidate_count": 1}],
         },
     ]
-    assert item["next_source_hint"]["status"] == "compare_existing_lanes"
+    assert item["next_source_hint"]["hint_status"] == "compare_existing_lanes"
     assert item["next_source_hint"]["primary_source_family"] == "local_corpus_and_statsrad"
 
 
@@ -1522,7 +1522,7 @@ def test_no_commencement_backfill_artifact_marks_unresolved_next_source(tmp_path
 
     item = artifact["backfill_items"][0]
     assert item["recommended_lane"] == "unresolved"
-    assert item["next_source_hint"]["status"] == "needs_external_official_source"
+    assert item["next_source_hint"]["hint_status"] == "needs_external_official_source"
     assert item["next_source_hint"]["primary_source_family"] == "other_official_publication_channels"
     assert "Offisielt fra statsråd" in item["next_source_hint"]["suggested_sources"][0]
     assert "candidate_artifact" not in item
@@ -1532,7 +1532,7 @@ def test_no_commencement_backfill_artifact_marks_unresolved_next_source(tmp_path
             "display_name": "Offisielt fra statsråd",
             "priority": 1,
             "mode": "search",
-            "status": "next_official_source",
+            "plan_status": "next_official_source",
             "why": "No local_corpus or statsrad candidate surfaced for this source.",
             "search_targets": [
                 "regjeringen.no/no/aktuelt/offisielt-fra-statsrad/",
@@ -1544,7 +1544,7 @@ def test_no_commencement_backfill_artifact_marks_unresolved_next_source(tmp_path
             "display_name": "ministerial regulations / delegated commencement decisions",
             "priority": 2,
             "mode": "search",
-            "status": "next_official_source",
+            "plan_status": "next_official_source",
             "why": "Some contingent provisions are resolved by ministerial or delegated publication channels.",
             "search_targets": ["ministerial regulations", "delegated commencement decisions"],
         },
@@ -1553,7 +1553,7 @@ def test_no_commencement_backfill_artifact_marks_unresolved_next_source(tmp_path
             "display_name": "Lovdata Pro historical layers",
             "priority": 3,
             "mode": "search",
-            "status": "fallback_history",
+            "plan_status": "fallback_history",
             "why": "Deeper historical layers may contain the missing commencement context.",
             "search_targets": ["historical version / expression layer", "oldest accessible base or amendment chain"],
         },
@@ -1608,7 +1608,7 @@ def test_no_commencement_backfill_tool_prints_action_hints(monkeypatch, capsys) 
                             "display_name": "local_corpus",
                             "priority": 1,
                             "mode": "compare",
-                            "status": "candidate",
+                            "plan_status": "candidate",
                             "why": "Local corpus candidates exist and should be compared with statsrad.",
                             "candidate_group_summary": [{"candidate_source": "local_corpus", "candidate_count": 1}],
                         },
@@ -1617,7 +1617,7 @@ def test_no_commencement_backfill_tool_prints_action_hints(monkeypatch, capsys) 
                             "display_name": "statsrad",
                             "priority": 2,
                             "mode": "compare",
-                            "status": "candidate",
+                            "plan_status": "candidate",
                             "why": "Statsrad candidates exist and should be compared against local corpus.",
                             "candidate_group_summary": [{"candidate_source": "statsrad", "candidate_count": 1}],
                         },
@@ -1676,7 +1676,7 @@ def test_no_commencement_backfill_tool_prints_next_source_hint(monkeypatch, caps
                         "candidate_snapshots": [],
                     },
                     "next_source_hint": {
-                        "status": "needs_external_official_source",
+                        "hint_status": "needs_external_official_source",
                         "primary_source_family": "other_official_publication_channels",
                         "suggested_sources": [
                             "Offisielt fra statsråd on regjeringen.no",
@@ -1689,7 +1689,7 @@ def test_no_commencement_backfill_tool_prints_next_source_hint(monkeypatch, caps
                             "display_name": "Offisielt fra statsråd",
                             "priority": 1,
                             "mode": "search",
-                            "status": "next_official_source",
+                            "plan_status": "next_official_source",
                             "why": "No local_corpus or statsrad candidate surfaced for this source.",
                             "search_targets": [
                                 "regjeringen.no/no/aktuelt/offisielt-fra-statsrad/",
@@ -1701,7 +1701,7 @@ def test_no_commencement_backfill_tool_prints_next_source_hint(monkeypatch, caps
                             "display_name": "ministerial regulations / delegated commencement decisions",
                             "priority": 2,
                             "mode": "search",
-                            "status": "next_official_source",
+                            "plan_status": "next_official_source",
                             "why": "Some contingent provisions are resolved by ministerial or delegated publication channels.",
                             "search_targets": ["ministerial regulations", "delegated commencement decisions"],
                         },
@@ -1710,7 +1710,7 @@ def test_no_commencement_backfill_tool_prints_next_source_hint(monkeypatch, caps
                             "display_name": "Lovdata Pro historical layers",
                             "priority": 3,
                             "mode": "search",
-                            "status": "fallback_history",
+                            "plan_status": "fallback_history",
                             "why": "Deeper historical layers may contain the missing commencement context.",
                             "search_targets": ["historical version / expression layer", "oldest accessible base or amendment chain"],
                         },
@@ -1796,7 +1796,7 @@ def test_no_commencement_external_evidence_plan_artifact_is_unresolved_only(tmp_
                     ],
                     "candidate_count": 0,
                     "action_hint": {"next_steps": []},
-                    "next_source_hint": {"status": "needs_external_official_source"},
+                    "next_source_hint": {"hint_status": "needs_external_official_source"},
                     "next_source_plan": [
                         {
                             "source_family": "offisielt_fra_statsrad",
@@ -1841,7 +1841,7 @@ def test_no_commencement_external_evidence_plan_artifact_is_unresolved_only(tmp_
         "offisielt_fra_statsrad": 1,
     }
     item = artifact["plan_items"][0]
-    assert item["next_source_hint"]["status"] == "needs_external_official_source"
+    assert item["next_source_hint"]["hint_status"] == "needs_external_official_source"
     assert [packet["source_family"] for packet in item["source_packets"]] == [
         "offisielt_fra_statsrad",
         "ministerial_regulations",
@@ -1983,7 +1983,7 @@ def test_no_commencement_evidence_plan_tool_writes_artifact(tmp_path, monkeypatc
                     "sole_blocker_current_law_count": 1,
                     "sole_blocker_executable_current_law_count": 1,
                     "next_source_hint": {
-                        "status": "needs_external_official_source",
+                        "hint_status": "needs_external_official_source",
                         "primary_source_family": "other_official_publication_channels",
                     },
                     "next_source_plan": [
@@ -1992,7 +1992,7 @@ def test_no_commencement_evidence_plan_tool_writes_artifact(tmp_path, monkeypatc
                             "display_name": "Offisielt fra statsråd",
                             "priority": 1,
                             "mode": "search",
-                            "status": "next_official_source",
+                            "plan_status": "next_official_source",
                             "why": "No local_corpus or statsrad candidate surfaced for this source.",
                             "search_targets": [
                                 "regjeringen.no/no/aktuelt/offisielt-fra-statsrad/",
@@ -2006,7 +2006,7 @@ def test_no_commencement_evidence_plan_tool_writes_artifact(tmp_path, monkeypatc
                             "display_name": "Offisielt fra statsråd",
                             "priority": 1,
                             "mode": "search",
-                            "status": "next_official_source",
+                            "plan_status": "next_official_source",
                             "packet_note": "No local_corpus or statsrad candidate surfaced for this source.",
                             "search_targets": [
                                 "regjeringen.no/no/aktuelt/offisielt-fra-statsrad/",
@@ -2042,7 +2042,7 @@ def test_no_commencement_evidence_plan_tool_writes_artifact(tmp_path, monkeypatc
     assert data["artifact_kind"] == "commencement_external_evidence_plan_artifact"
     assert data["unresolved_count"] == 1
     assert data["external_source_family_counts"] == artifact["external_source_family_counts"]
-    assert artifact["plan_items"][0]["next_source_hint"]["status"] == "needs_external_official_source"
+    assert artifact["plan_items"][0]["next_source_hint"]["hint_status"] == "needs_external_official_source"
     assert artifact["plan_items"][0]["source_packets"][0]["source_family"] == "offisielt_fra_statsrad"
 
 
@@ -2100,7 +2100,7 @@ def test_no_commencement_evidence_plan_tool_prints_source_packets(tmp_path, monk
                     "sole_blocker_current_law_count": 1,
                     "sole_blocker_executable_current_law_count": 1,
                     "next_source_hint": {
-                        "status": "needs_external_official_source",
+                        "hint_status": "needs_external_official_source",
                         "primary_source_family": "other_official_publication_channels",
                     },
                     "source_packets": [
@@ -2109,7 +2109,7 @@ def test_no_commencement_evidence_plan_tool_prints_source_packets(tmp_path, monk
                             "display_name": "Offisielt fra statsråd",
                             "priority": 1,
                             "mode": "search",
-                            "status": "next_official_source",
+                            "plan_status": "next_official_source",
                             "packet_note": "No local_corpus or statsrad candidate surfaced for this source.",
                             "search_targets": [
                                 "regjeringen.no/no/aktuelt/offisielt-fra-statsrad/",
@@ -2123,7 +2123,7 @@ def test_no_commencement_evidence_plan_tool_prints_source_packets(tmp_path, monk
                             "display_name": "Offisielt fra statsråd",
                             "priority": 1,
                             "mode": "search",
-                            "status": "next_official_source",
+                            "plan_status": "next_official_source",
                             "why": "No local_corpus or statsrad candidate surfaced for this source.",
                             "search_targets": [
                                 "regjeringen.no/no/aktuelt/offisielt-fra-statsrad/",

@@ -101,7 +101,7 @@ def _no_replay_temporal_skip_adjudication(
         rule_id=kind,
         phase="temporal",
         reason=message,
-        status=temporal_status,
+        temporal_evidence_status=temporal_status,
         blocking=blocking,
         effective_date=effective_date,
         as_of=as_of,
