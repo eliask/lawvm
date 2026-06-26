@@ -379,6 +379,42 @@ def test_bag_tags_reconstructs_each_serialized_column() -> None:
     assert bag_tags(frozenset({RecognizerId.BODY_ROOT_REPLACE}), ProvenanceBag.EXTRACTION) == ()
 
 
+def test_representative_scope_tag_is_deterministic_and_order_free() -> None:
+    """The display-tag picker depends only on the typed SET, not insertion order.
+
+    Order-free replacement for the positional ``scope_provenance_tags[0]`` read:
+    the same recognizer set always yields the same representative scope tag, by a
+    fixed precedence (explicit chunk > carry-forward), and a non-scope provenance
+    yields ``None``.
+    """
+    from lawvm.finland.op_provenance import (
+        ConfidenceTier,
+        Parsed,
+        Recovered,
+        RecoverySurface,
+        representative_scope_tag,
+    )
+
+    both = frozenset(
+        {RecognizerId.SCOPE_FROM_PREAMBLE, RecognizerId.SCOPE_FROM_EXPLICIT_CHUNK}
+    )
+    rec = Recovered(
+        surface=RecoverySurface.SCOPE, recognizer_ids=both, tier=ConfidenceTier.ANCHORED
+    )
+    # Highest-precedence scope recognizer wins, irrespective of set member order.
+    assert representative_scope_tag(rec) == "chapter_scope_from_explicit_chunk"
+    # A Recovered carrying only a non-scope (boolean-flag) recognizer has no scope tag.
+    non_scope = Recovered(
+        surface=RecoverySurface.BODY,
+        recognizer_ids=frozenset({RecognizerId.BODY_ROOT_REPLACE}),
+        tier=ConfidenceTier.HEURISTIC,
+    )
+    assert representative_scope_tag(non_scope) is None
+    # Parsed / None provenance never carry a scope display tag.
+    assert representative_scope_tag(Parsed(grammar_rule_id="r")) is None
+    assert representative_scope_tag(None) is None
+
+
 def test_amendment_op_provenance_is_replace_durable() -> None:
     """``provenance`` is STORED and CARRIED through ``dataclasses.replace``.
 

@@ -617,6 +617,46 @@ def bag_tags(
     )
 
 
+# Deterministic display precedence over the SCOPE-bag recognizers, strongest /
+# most-explicit scope source first. Used to pick ONE representative scope tag for
+# a witness DISPLAY field when the typed scope carrier left its ``tag`` empty, so
+# the chosen tag does not depend on any (now order-free) tag-bag ordering. The
+# order mirrors ``scope_confidence_from_tags``' precedence (explicit chunk >
+# carry-forward > preamble > same-amendment stem > grouped part > grouped chapter)
+# and then covers the remaining scope tags; it is presentation-only and changes no
+# replay behaviour.
+_SCOPE_TAG_DISPLAY_PRECEDENCE: tuple[RecognizerId, ...] = (
+    RecognizerId.SCOPE_FROM_EXPLICIT_CHUNK,
+    RecognizerId.SCOPE_CARRY_FORWARD,
+    RecognizerId.SCOPE_FROM_PREAMBLE,
+    RecognizerId.SCOPE_FROM_SAME_AMENDMENT_STEM,
+    RecognizerId.SCOPE_GROUPED_PART,
+    RecognizerId.SCOPE_GROUPED_CHAPTER,
+    RecognizerId.SCOPE_MIXED_GROUP_MERGE,
+    RecognizerId.CHAPTER_SCOPE_FROM_UNIQUE_LIVE_SECTION,
+    RecognizerId.SCOPE_CHAPTER_SEED,
+    RecognizerId.SCOPE_IDENTITY_RENUMBER_ABSENT_TARGET_TO_INSERT,
+)
+
+
+def representative_scope_tag(provenance: OpProvenance | None) -> str | None:
+    """Return one deterministic scope tag for a display witness, or ``None``.
+
+    Picks the highest-precedence SCOPE-bag recognizer present in ``provenance``
+    by the fixed :data:`_SCOPE_TAG_DISPLAY_PRECEDENCE`, so a witness DISPLAY tag
+    derived from the typed set is stable and free of any tag-bag ordering. This
+    is the order-free replacement for the positional ``scope_provenance_tags[0]``
+    read: the ``obs_kind`` / semantics are decided elsewhere (off the typed scope
+    ``source``), so this only governs the cosmetic ``detail["tag"]`` value.
+    """
+    if not isinstance(provenance, Recovered):
+        return None
+    for recognizer in _SCOPE_TAG_DISPLAY_PRECEDENCE:
+        if recognizer in provenance.recognizer_ids:
+            return recognizer.value
+    return None
+
+
 __all__ = [
     "AcceptanceMode",
     "ConfidenceTier",
@@ -636,4 +676,5 @@ __all__ = [
     "provenance_from_witness_and_tags",
     "recognizer_bag",
     "recognizer_for_tag",
+    "representative_scope_tag",
 ]
