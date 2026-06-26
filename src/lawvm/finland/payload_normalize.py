@@ -4483,12 +4483,11 @@ def _container_pruning_is_expected_frontend_split(
 
 
 _ORIGINAL_SPARSE_SUBSECTION_LABEL_ATTR = "original_sparse_subsection_label"
-_HISTORICAL_TOP_LEVEL_KOHTA_SUBSECTION_RULE_ID = "fi.historical_top_level_kohta_as_subsection"
 
 
 def _has_historical_top_level_kohta_subsection_ops(group_ops: Iterable[AmendmentOp]) -> bool:
     return any(
-        _HISTORICAL_TOP_LEVEL_KOHTA_SUBSECTION_RULE_ID in op.extraction_provenance_tags
+        has_recognizer(op.provenance, RecognizerId.HISTORICAL_TOP_LEVEL_KOHTA_AS_SUBSECTION)
         for op in group_ops
     )
 
@@ -4513,7 +4512,9 @@ def _split_historical_top_level_kohta_payload_ir(
             op.target_cols.target_paragraph is not None
             and not op.target_cols.target_item
             and not op.target_cols.target_special
-            and _HISTORICAL_TOP_LEVEL_KOHTA_SUBSECTION_RULE_ID in op.extraction_provenance_tags
+            and has_recognizer(
+                op.provenance, RecognizerId.HISTORICAL_TOP_LEVEL_KOHTA_AS_SUBSECTION
+            )
         )
     }
     if not target_labels:

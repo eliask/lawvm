@@ -36,6 +36,7 @@ from lawvm.finland.scope import (
     infer_letter_suffix_section_chapter_from_stem_host,
     source_names_descendant_scope_below_section,
 )
+from lawvm.finland.op_provenance import RecognizerId, has_recognizer
 from lawvm.finland.ops import AmendmentOp, ResolvedOp, ResolvedTargetScopeView, temporary_signal_for_op
 from lawvm.finland.replay_capture import ReplayLegalOperationCaptureList
 from lawvm.finland.standalone_targets import StandaloneSectionTargetsInput
@@ -2562,9 +2563,8 @@ def _emit_section_snapshot(
             if amend_sub is None or amend_sub.kind is not IRNodeKind.SUBSECTION:
                 return None
             relabelled = _relabel_subsection_payload(amend_sub, target_norm)
-            target_already_rebased = (
-                "rebase_duplicate_target_shifted_replace"
-                in rop.target_guessing_provenance_tags
+            target_already_rebased = has_recognizer(
+                rop.provenance, RecognizerId.REBASE_DUPLICATE_TARGET_SHIFTED_REPLACE
             )
             pending_subsection_payloads.append(
                 _PendingSubsectionSnapshotPayload(
