@@ -18000,7 +18000,22 @@ def test_compile_preserves_explicit_whole_act_repeal_effect_type() -> None:
     assert len(ops) == 1
     assert ops[0].action is StructuralAction.REPEAL
     assert str(ops[0].target) == "/whole_act"
-    assert lowering_rejections == []
+    # The generic single-target lowering path synthesises a spurious
+    # ``IRNode(kind=SECTION, text='The whole Act is repealed.')`` payload from
+    # ``content_ir`` even for a repeal.  Repeals never carry content, so the
+    # repeal-payload=None guard coerces it to None and records a self-evidencing
+    # observation naming the dropped payload kind/label.
+    assert ops[0].payload is None
+    dropped = [
+        record
+        for record in lowering_rejections
+        if record["rule_id"] == "uk_effect_repeal_payload_dropped"
+    ]
+    assert len(dropped) == 1
+    assert dropped[0]["family"] == "payload_normalization"
+    assert dropped[0]["reason_code"] == "repeal_payload_dropped_to_none"
+    assert dropped[0]["action"] == "repeal"
+    assert dropped[0]["dropped_payload_kind"] == "section"
 
 
 def test_compile_words_inserted_after_definition_child_with_block_payload() -> None:

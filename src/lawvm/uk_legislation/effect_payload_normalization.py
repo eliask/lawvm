@@ -67,6 +67,11 @@ _UK_EFFECT_PAYLOAD_KIND_REALIGNED_TO_TARGET_LEAF_RULE_ID = (
 )
 
 
+_UK_EFFECT_REPEAL_PAYLOAD_DROPPED_RULE_ID = (
+    "uk_effect_repeal_payload_dropped"
+)
+
+
 _UK_EFFECT_SCHEDULE_PART_P1GROUP_WRAPPER_RULE_ID = (
     "uk_effect_schedule_part_paragraph_p1group_wrapper_lowered"
 )
@@ -915,6 +920,45 @@ def prepare_uk_operation_payload_node(
             lowering_records_out=lowering_rejections_out,
             allow_payload_identity_synthesis=allow_payload_identity_synthesis,
         )
+
+    if payload_node_mut is not None and curr_action in ("repeal", "text_repeal"):
+        # The generic single-target lowering path synthesises a payload from
+        # ``content_ir`` for every action and only gates null-rejection for
+        # insert/replace, so a REPEAL/TEXT_REPEAL can carry a spurious payload
+        # into the operation builder (e.g. ``ukpga/2020/1`` Sch.1 para.1, a
+        # whole-act repeal, synthesised an ``IRNode(kind=SECTION, text='The
+        # whole Act is repealed.')``).  Materialization forces ``content=None``
+        # for repeals regardless of payload, so this is inert at replay; we drop
+        # the synthesised content here so the repeal-payload=None invariant is
+        # structurally enforced and the closed hole stays auditable.
+        dropped_kind = payload_node_mut.kind.value
+        dropped_label = payload_node_mut.label or ""
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=_UK_EFFECT_REPEAL_PAYLOAD_DROPPED_RULE_ID,
+            family="payload_normalization",
+            reason_code="repeal_payload_dropped_to_none",
+            reason=(
+                "UK repeal/text_repeal lowering carried a synthesised structural "
+                f"payload (kind={dropped_kind!r}, label={dropped_label!r}) into the "
+                "generic single-target mint boundary; repeals never carry content, "
+                "so lowering coerced the payload to None to keep the "
+                "repeal-payload=None invariant structurally enforced."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "action": curr_action,
+                "dropped_payload_kind": dropped_kind,
+                "dropped_payload_label": dropped_label,
+                "strict_disposition": "record",
+                "quirks_disposition": "apply",
+            },
+        )
+        payload_node_mut = None
 
     if reject_non_substantive_structural_payload(
         effect=effect,
