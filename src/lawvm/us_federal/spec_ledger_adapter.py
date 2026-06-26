@@ -46,6 +46,7 @@ from lawvm.tools.spec_ledger import (
     StatuteLedgerInput,
     WitnessDisposition,
     build_ledger,
+    disposition_for,
 )
 from lawvm.tools.spec_ledger_us_catalog import (
     _US_RULE_SPECS,
@@ -88,7 +89,7 @@ _US_DISPOSITION: Dict[str, WitnessDisposition] = {
 
 
 def _disposition_for(raw: str) -> WitnessDisposition:
-    return _US_DISPOSITION.get(raw, "unknown")
+    return disposition_for(raw, _US_DISPOSITION)
 
 
 def _amendatory_witness_firings(

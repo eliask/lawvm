@@ -1230,6 +1230,11 @@
       "exec": 0,
       "pct": 0.0
     },
+    "lawvm.finland.spec_ledger_adapter": {
+      "stmts": 52,
+      "exec": 0,
+      "pct": 0.0
+    },
     "lawvm.finland.standalone_targets": {
       "stmts": 168,
       "exec": 66,

@@ -20,11 +20,13 @@ from pathlib import Path
 import pytest
 
 from lawvm.tools.spec_ledger import (
-    _UK_DIAGNOSIS_DISPOSITION,
     DivergenceRow,
     StatuteLedgerInput,
     build_ledger,
     run_ledger,
+)
+from lawvm.uk_legislation.spec_ledger_adapter import (
+    _UK_DIAGNOSIS_DISPOSITION,
     uk_ledger_inputs,
 )
 from lawvm.tools.uk_oracle_check import (
@@ -171,8 +173,10 @@ def test_uk_ledger_inputs_skips_errored_statute(monkeypatch):
 # run_ledger dispatch
 # ---------------------------------------------------------------------------
 
-def test_run_ledger_dispatches_uk(monkeypatch):
-    import lawvm.tools.spec_ledger as sled
+def test_run_ledger_dispatches_uk():
+    import dataclasses
+
+    from lawvm.tools.spec_ledger import get_ledger_adapter, register_ledger_adapter
 
     synthetic = [
         StatuteLedgerInput(
@@ -190,8 +194,16 @@ def test_run_ledger_dispatches_uk(monkeypatch):
             ],
         )
     ]
-    monkeypatch.setattr(sled, "uk_ledger_inputs", lambda sids, mode: iter(synthetic))
-    led = run_ledger("uk", ["ukpga/2000/1"], "official_consolidation")
+    # Re-register a UK adapter whose ledger_inputs is the synthetic stream; restore the
+    # real adapter after the test so registry state does not leak.
+    original = get_ledger_adapter("uk")
+    register_ledger_adapter(
+        dataclasses.replace(original, ledger_inputs=lambda sids, mode: iter(synthetic))
+    )
+    try:
+        led = run_ledger("uk", ["ukpga/2000/1"], "official_consolidation")
+    finally:
+        register_ledger_adapter(original)
     assert led.jurisdiction == "uk"
     assert led.statutes == 1
     assert led.statute_errors == 0
@@ -320,7 +332,7 @@ def test_whole_statute_noncommensurable_wall_is_demoted():
     """A statute that is overwhelmingly unattributed deterministic-gaps (one
     EID-scheme mismatch, e.g. ukpga/1907/51) is demoted out of the falsifying
     bucket so it cannot masquerade as thousands of real bugs."""
-    from lawvm.tools.spec_ledger import (
+    from lawvm.uk_legislation.spec_ledger_adapter import (
         _NONCOMMENSURABLE_DIAGNOSIS,
         _demote_whole_statute_noncommensurable,
     )
@@ -352,7 +364,9 @@ def _attr_gap_row(sid: str, i: int) -> DivergenceRow:
 
 def test_noncommensurable_demotion_is_conservative():
     """Small statutes and statutes below the wall fraction are never demoted."""
-    from lawvm.tools.spec_ledger import _demote_whole_statute_noncommensurable
+    from lawvm.uk_legislation.spec_ledger_adapter import (
+        _demote_whole_statute_noncommensurable,
+    )
 
     # below the row floor -> untouched even if all are unattributed gaps
     small = [_gap_row("x/1", i) for i in range(10)]

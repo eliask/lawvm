@@ -12669,6 +12669,37 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         "--json-out", default="", metavar="PATH", help="also write the ledger JSON here"
     )
 
+    spec_ledger_p = sub.add_parser(
+        "spec-ledger",
+        help="build the FI/UK/EE witness-attribution spec-discovery ledger",
+        description=(
+            "Build the per-rule discovered-spec ledger for a registry-dispatched "
+            "frontend (-j fi/uk/ee): rank every witness rule by how often the "
+            "oracle corroborates vs contradicts its believed_spec. Thin shim over "
+            "lawvm.tools.spec_ledger; read-only, never authorizes replay or mutates "
+            "the archive. (US/NZ have their own us-spec-ledger / nz-corpus "
+            "spec-ledger commands.)"
+        ),
+    )
+    spec_ledger_p.add_argument("sids", nargs="*", help="statute ids, e.g. 1958/370")
+    spec_ledger_p.add_argument(
+        "-j", "--jurisdiction", default="fi", help="frontend adapter (fi/uk/ee)"
+    )
+    spec_ledger_p.add_argument(
+        "--corpus-bench", action="store_true", help="use the jurisdiction bench corpus"
+    )
+    spec_ledger_p.add_argument(
+        "--corpus-full", action="store_true", help="[-j ee] use the full replayable corpus"
+    )
+    spec_ledger_p.add_argument(
+        "--mode",
+        default="official_consolidation",
+        choices=["official_consolidation", "legal_pit"],
+    )
+    spec_ledger_p.add_argument(
+        "--json", default="", metavar="PATH", help="write full ledger JSON to this path"
+    )
+
     us_evidence_pack_p = sub.add_parser(
         "us-evidence-pack",
         help="export U.S. federal dry-run residuals as auditable evidence-pack JSONL",
@@ -14627,6 +14658,31 @@ def _main_impl() -> None:
                     )
                 print("statutory_text:")
                 print(_sec.statutory_text)
+
+    elif args.command == "spec-ledger":
+        # Importing each adapter module self-registers it into the spec_ledger
+        # registry (the module-level register_ledger_adapter call) — the exact
+        # registration tools.spec_ledger.main triggers lazily via its
+        # jurisdiction->module map. Doing it here with LITERAL imports keeps the
+        # jurisdiction-neutral core (tools.spec_ledger) import-free of the
+        # jurisdiction packages while giving each adapter a traceable production
+        # consumer edge (mirrors the us-spec-ledger / nz-corpus spec-ledger
+        # handlers). Behavior-identical: the registry overwrites idempotently.
+        import lawvm.estonia.spec_ledger_adapter  # noqa: F401  (self-registers ee)
+        import lawvm.finland.spec_ledger_adapter  # noqa: F401  (self-registers fi)
+        import lawvm.uk_legislation.spec_ledger_adapter  # noqa: F401  (self-registers uk)
+        from lawvm.tools.spec_ledger import main as spec_ledger_main
+
+        _argv = ["-j", args.jurisdiction]
+        if getattr(args, "corpus_bench", False):
+            _argv.append("--corpus-bench")
+        if getattr(args, "corpus_full", False):
+            _argv.append("--corpus-full")
+        _argv += ["--mode", args.mode]
+        if getattr(args, "json", ""):
+            _argv += ["--json", args.json]
+        _argv += list(getattr(args, "sids", []) or [])
+        sys.exit(spec_ledger_main(_argv))
 
     elif args.command == "us-spec-ledger":
         import json

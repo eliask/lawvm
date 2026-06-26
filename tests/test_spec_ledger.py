@@ -6,8 +6,8 @@ directly. The corpus-backed FI path is intentionally not exercised here.
 """
 from __future__ import annotations
 
+from lawvm.finland.spec_ledger_adapter import _FI_DIAGNOSIS_DISPOSITION
 from lawvm.tools.spec_ledger import (
-    _FI_DIAGNOSIS_DISPOSITION,
     DivergenceRow,
     StatuteLedgerInput,
     build_ledger,
