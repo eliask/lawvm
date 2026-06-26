@@ -496,6 +496,7 @@ def _supplement_jolloin_moment_renumber_ops(
                 ),
                 _JOLLOIN_MOMENT_RENUMBER_SUPPLEMENT_TAG,
             )
+            op.restamp_provenance()
         supplemented.extend(renumber_ops)
         for moment in clause.inserted_moments:
             insert_already_present = any(

@@ -4621,6 +4621,7 @@ def normalize_and_compile_ops(
             # real parser-rule id already carried by an upstream rule.
             if not op.witness_rule_id:
                 op.witness_rule_id = FI_FALLBACK_EXTRACTION_RECOVERY_RULE_ID
+            op.restamp_provenance()
         enriched_fallback_ops, rejected_overbroad_fallback_repeals = _reject_overbroad_section_repeals_for_deep_targets(
             enriched_fallback_ops,
             johto=johto,
@@ -4726,6 +4727,7 @@ def normalize_and_compile_ops(
                     op.extraction_provenance_tags = tuple(
                         dict.fromkeys((*op.extraction_provenance_tags, "extraction_body_root_replace"))
                     )
+                    op.restamp_provenance()
                 frontend_findings_out.extend(
                     _accepted_fallback_op_findings(
                         ops,
@@ -4769,6 +4771,7 @@ def normalize_and_compile_ops(
                     op.extraction_provenance_tags = tuple(
                         dict.fromkeys((*op.extraction_provenance_tags, "extraction_enacting_formula_body_replace"))
                     )
+                    op.restamp_provenance()
                 frontend_findings_out.extend(
                     _accepted_fallback_op_findings(
                         ops,
@@ -4812,6 +4815,7 @@ def normalize_and_compile_ops(
                     op.extraction_provenance_tags = tuple(
                         dict.fromkeys((*op.extraction_provenance_tags, "extraction_ceremonial_body_only"))
                     )
+                    op.restamp_provenance()
                 frontend_findings_out.extend(
                     _accepted_fallback_op_findings(
                         ops,
@@ -4860,6 +4864,7 @@ def normalize_and_compile_ops(
                     op.extraction_provenance_tags = tuple(
                         dict.fromkeys((*op.extraction_provenance_tags, "extraction_act_wide_body_section_replace"))
                     )
+                    op.restamp_provenance()
                 frontend_findings_out.extend(
                     _act_wide_body_section_replace_findings(
                         ops,
@@ -4905,6 +4910,7 @@ def normalize_and_compile_ops(
                     op.extraction_provenance_tags = tuple(
                         dict.fromkeys((*op.extraction_provenance_tags, "extraction_title_fallback"))
                     )
+                    op.restamp_provenance()
                 frontend_findings_out.extend(
                     _accepted_fallback_op_findings(
                         ops,
@@ -4958,6 +4964,7 @@ def normalize_and_compile_ops(
                     op.extraction_provenance_tags = tuple(
                         dict.fromkeys((*op.extraction_provenance_tags, "extraction_enacting_formula_body_insert"))
                     )
+                    op.restamp_provenance()
                 frontend_findings_out.extend(
                     _accepted_fallback_op_findings(
                         ops,
@@ -4982,6 +4989,7 @@ def normalize_and_compile_ops(
             op.extraction_provenance_tags = tuple(
                 dict.fromkeys((*op.extraction_provenance_tags, "extraction_preamble_body"))
             )
+            op.restamp_provenance()
     if ops:
         reinstated_scope_ops: list[AmendmentOp] = []
         for op in ops:

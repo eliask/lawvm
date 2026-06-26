@@ -18,7 +18,7 @@ from typing_extensions import override
 import datetime as dt
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from dataclasses import replace as dc_replace
 from enum import StrEnum
 from typing import TYPE_CHECKING, Dict, Iterable, List, Literal, Optional, Tuple, assert_never, cast
@@ -830,23 +830,43 @@ class AmendmentOp:
     preserve_explicit_heading_facet: bool = False
     # Parse-witness provenance (diagnostic only — zero replay semantics)
     witness_rule_id: Optional[str] = None
+    # Stored typed op-provenance (Phase-2 storage-collapse). NOT init-able: it is
+    # STAMPED in ``__init__`` from the recovery markers and RE-STAMPED at the
+    # frontend setattr sites that mutate those markers post-construction (via
+    # ``restamp_provenance``). ``dataclasses.replace`` re-runs ``__init__`` so a
+    # replaced op re-derives its stamp automatically. Excluded from the dataclass
+    # init contract so ``replace`` never tries to re-pass it.
+    _provenance: OpProvenance | None = field(default=None, init=False, repr=False, compare=False)
     if TYPE_CHECKING:
         target_kind: TargetKind
 
     @property
     def provenance(self) -> OpProvenance | None:
-        """Typed op-provenance consolidation target (Phase-2).
+        """Typed op-provenance consolidation target (Phase-2 storage-collapse).
 
-        Computed on access from the authoritative recovery markers (the
-        ``*_fallback`` / ``*_recovery`` booleans, the ``*_provenance_tags``
-        membership, and the branched ``witness_rule_id``). A property — never a
-        stored field — because those markers are mutated post-construction at the
-        frontend (e.g. ``op.body_root_replace_fallback = True``), so a stored
-        mirror would go stale; deriving on access keeps the typed view exactly in
-        lockstep with the flags. ADDITIVE: the legacy flags/tags stay
-        authoritative.
+        STORED (no longer computed on access): the stamp is derived from the
+        recovery markers (the ``*_fallback`` / ``*_recovery`` booleans, the
+        ``*_provenance_tags`` membership, and the branched ``witness_rule_id``)
+        at construction in ``__init__`` and RE-STAMPED via
+        :meth:`restamp_provenance` at the frontend setattr sites that mutate
+        those markers in place. ``dataclasses.replace`` re-runs ``__init__``, so a
+        replaced op re-derives its stamp. ADDITIVE during the collapse: the
+        legacy flags/tags stay authoritative until they are deleted; the stamp is
+        kept byte-identical to the prior computed value.
         """
-        return _derive_op_provenance(
+        return self._provenance
+
+    def restamp_provenance(self) -> None:
+        """Re-derive the stored provenance stamp from the current markers.
+
+        Called at the frontend setattr sites (``op.body_root_replace_fallback =
+        True``, ``op.extraction_provenance_tags = …``, ``op.sec1_body_johto_fallback
+        = True``, ``op.witness_rule_id = …``) that mutate recovery markers AFTER
+        construction, so the stored stamp stays in lockstep with the markers the
+        legacy readers used. Construction (``__init__``) and ``dataclasses.replace``
+        stamp on their own; this is only for in-place marker mutation.
+        """
+        self._provenance = _derive_op_provenance(
             fallback_provenance=self.fallback_provenance,
             body_root_replace_fallback=self.body_root_replace_fallback,
             sec1_body_johto_fallback=self.sec1_body_johto_fallback,
@@ -988,6 +1008,11 @@ class AmendmentOp:
         self.temporal_activation = temporal_activation
         self.preserve_explicit_heading_facet = preserve_explicit_heading_facet
         self.witness_rule_id = witness_rule_id
+
+        # Stamp the stored typed provenance from the recovery markers just set.
+        # All marker fields the stamp reads are assigned above; the remaining
+        # __init__ body only resolves move-clause/target identity (no markers).
+        self.restamp_provenance()
 
         derived_move_clause_target_unit_kind: TargetUnitKind | None = (
             cast(TargetUnitKind | None, self.lo.move_clause_target_unit_kind)
@@ -1347,6 +1372,26 @@ class ResolvedOp:
     # Optional during migration — None means "use legacy fields for dispatch".
     # See canonical_intent.py and PRO_RESPONSE_CANONICAL_OP_INTENT_TAXONOMY.md.
     intent: "CanonicalIntent | None" = None
+    # Stored typed op-provenance (Phase-2 storage-collapse). Derived in
+    # ``__post_init__`` from THIS ResolvedOp's forwarded markers (not the inner
+    # ``op``'s — see :attr:`provenance`). ``dataclasses.replace`` re-runs
+    # ``__post_init__`` so a replaced op re-derives. Excluded from init.
+    _provenance: OpProvenance | None = field(default=None, init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        # Stamp the stored provenance from the forwarded recovery markers. These
+        # are this ResolvedOp's own copies (forwarded at ``from_amendment_op``),
+        # which the legacy readers consumed — NOT the inner ``op``'s, which can
+        # carry a later-mutated tag set.
+        self._provenance = _derive_op_provenance(
+            fallback_provenance=self.fallback_provenance,
+            body_root_replace_fallback=self.body_root_replace_fallback,
+            sec1_body_johto_fallback=self.sec1_body_johto_fallback,
+            uncovered_body_recovery=self.uncovered_body_recovery,
+            extraction_provenance_tags=self.extraction_provenance_tags,
+            target_guessing_provenance_tags=self.target_guessing_provenance_tags,
+            witness_rule_id=self.witness_rule_id,
+        )
 
     @property
     def resolved_scope_confidence(self) -> ScopeConfidence | None:
@@ -1754,25 +1799,19 @@ class ResolvedOp:
 
     @property
     def provenance(self) -> OpProvenance | None:
-        """Typed op-provenance, derived from THIS ResolvedOp's forwarded markers.
+        """Typed op-provenance, STORED — stamped in ``__post_init__`` from THIS
+        ResolvedOp's forwarded markers.
 
         Critically NOT delegated to ``self.op``: the late waist forwards its own
         copies of the recovery markers (``sec1_body_johto_fallback``,
         ``uncovered_body_recovery``, the ``*_provenance_tags`` bags, the
         ``witness_rule_id``) at ``from_amendment_op`` time, and the legacy readers
         consumed THOSE forwarded fields — not the inner ``op``'s, which can carry
-        a different (later-mutated) tag set. Deriving from ``self`` keeps the
-        typed view in exact lockstep with the fields the old readers used.
+        a different (later-mutated) tag set. The stamp is derived from ``self`` in
+        ``__post_init__`` (re-run by ``dataclasses.replace``), keeping the typed
+        view in exact lockstep with the fields the old readers used.
         """
-        return _derive_op_provenance(
-            fallback_provenance=self.fallback_provenance,
-            body_root_replace_fallback=self.body_root_replace_fallback,
-            sec1_body_johto_fallback=self.sec1_body_johto_fallback,
-            uncovered_body_recovery=self.uncovered_body_recovery,
-            extraction_provenance_tags=self.extraction_provenance_tags,
-            target_guessing_provenance_tags=self.target_guessing_provenance_tags,
-            witness_rule_id=self.witness_rule_id,
-        )
+        return self._provenance
 
     @property
     def uses_sec1_body_johto_fallback(self) -> bool:
