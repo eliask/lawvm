@@ -3762,6 +3762,105 @@ def test_emit_section_snapshot_rebases_sparse_item_replace_and_repeal_group() ->
     assert "old fifteen" in rendered
 
 
+def test_emit_section_snapshot_drops_collapsed_moment_paragraphs_for_explicit_subsection_replaces() -> None:
+    """Section snapshots must not keep base moment text collapsed under 1 mom.
+
+    2021/895 has a base section where logical moments 2 and 3 are positional
+    paragraph children under ``1 mom``. 2022/1351 then replaces ``1 §:n 2`` and
+    ``3 momentti`` with explicit subsection payloads. Timeline export must
+    consume the carried old paragraphs rather than materialize old+new pairs.
+    """
+    old_second = (
+        "Edellä 1 momentissa tarkoitettuihin avustuksiin sovelletaan vanhaa "
+        "tukikelpoisuussääntöä."
+    )
+    old_third = (
+        "Jos avustuksen rahoittamiseen käytetään Euroopan unionin varoja, "
+        "sovelletaan vanhaa rahoitussääntöä."
+    )
+    new_second = (
+        "Edellä 1 momentissa tarkoitettuihin avustuksiin sovelletaan uutta "
+        "tukikelpoisuussääntöä ja brexit-poikkeusta."
+    )
+    new_third = (
+        "Jos avustuksen rahoittamiseen käytetään Euroopan unionin varoja, "
+        "sovelletaan uutta rahoitussääntöä ja brexit-poikkeusta."
+    )
+    base_section = _sec(
+        "1",
+        IRNode(kind=IRNodeKind.NUM, text="1 §"),
+        _sub(
+            "1",
+            _intro("First logical moment."),
+            _para("1", old_second),
+            _para("2", old_third),
+        ),
+    )
+    final_section = _sec(
+        "1",
+        IRNode(kind=IRNodeKind.NUM, text="1 §"),
+        _sub(
+            "1",
+            _intro("First logical moment."),
+            _para("1", old_second),
+            _para("2", old_third),
+        ),
+        _sub("2", _content(new_second)),
+        _sub("3", _content(new_third)),
+    )
+    lo_ops: list[LegalOperation] = []
+
+    def _replace_subsection_rop(label: int, text: str) -> ResolvedOp:
+        amendment_subsection = _sub(str(label), _content(text))
+        rop = ResolvedOp.from_amendment_op(
+            _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=label),
+            muutos_ir=_sec("1", amendment_subsection),
+            cross_ir=None,
+            target_unit_kind="section",
+            target_norm="1",
+            target_chapter=None,
+            target_address=LegalAddress(path=(("section", "1"), ("subsection", str(label)))),
+        )
+        rop.amend_sub_ir = amendment_subsection
+        return rop
+
+    pathologies: list[SourcePathology] = []
+    _emit_section_snapshot(
+        _make_state(_body(final_section)),
+        "section",
+        "1",
+        None,
+        None,
+        [_replace_subsection_rop(2, new_second), _replace_subsection_rop(3, new_third)],
+        lo_ops,
+        "2022/1351",
+        "explicit subsection replacements",
+        _DATE,
+        _DATE,
+        base_ir=_body(base_section),
+        source_pathologies_out=pathologies,
+    )
+
+    section_snapshot = next(op for op in lo_ops if op.op_id == "snapshot_section_1")
+    assert section_snapshot.payload is not None
+    subsection_texts = {
+        child.label: irnode_to_text(child)
+        for child in section_snapshot.payload.children
+        if child.kind is IRNodeKind.SUBSECTION
+    }
+    assert subsection_texts["1"] == "First logical moment."
+    assert subsection_texts["2"] == new_second
+    assert subsection_texts["3"] == new_third
+    rendered = irnode_to_text(section_snapshot.payload)
+    assert old_second not in rendered
+    assert old_third not in rendered
+    assert any(
+        pathology.detail.get("recovery_kind")
+        == "section_snapshot_drop_carried_target_subsection_text"
+        for pathology in pathologies
+    )
+
+
 def test_emit_section_snapshot_does_not_double_shift_rebased_subsection_replace() -> None:
     base_section = _sec(
         "32",
