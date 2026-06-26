@@ -367,6 +367,8 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_se_agreement_residuals.py",
         # SE coverage-scan universe — committed content-addressed corpus root.
         "test_se_coverage_universe.py",
+        # SE archive-write monotonicity ledger (KNOW-01 + §1.6).
+        "test_se_overwrite_event_ledger.py",
     ),
     "evidence_reports": (
         "test_fi_explain_facade.py",

@@ -34,6 +34,10 @@ from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.sweden.grafter import SESourceRecord, parse_se_source_record, parse_se_statute
 from lawvm.sweden.se_agreement_residuals import se_replay_agreement_residuals
 from lawvm.sweden.se_coverage_universe import se_coverage_universe_entry, se_coverage_universe_root
+from lawvm.sweden.se_overwrite_event_ledger import (
+    SEOverwriteEvent,
+    se_store_with_overwrite_event,
+)
 from lawvm.sweden.grafter import (
     apply_se_ops,
     build_se_official_base_statute,
@@ -1171,6 +1175,7 @@ def fetch_se_official_artifacts(
     force_reextract: bool = False,
     pdf_url_override: str | None = None,
     diagnostics_out: list[dict[str, Any]] | None = None,
+    overwrite_events_out: list[SEOverwriteEvent] | None = None,
 ) -> Optional[SEOfficialArtifacts]:
     """Fetch Sweden official doc page + PDF and archive extracted text.
 
@@ -1329,8 +1334,30 @@ def fetch_se_official_artifacts(
     elif existing_text is None or force_reextract or existing_cleaned is None:
         pdf_text = se_pdf_bytes_to_text(pdf_bytes)
         if pdf_text:
-            archive.store(text_url, pdf_text.encode("utf-8"), storage_class="text")
-            archive.store(cleaned_text_url, clean_se_pdf_text(pdf_text).encode("utf-8"), storage_class="text")
+            # KNOW-01 monotonicity wrap: the force_reextract path overwrites
+            # prior text/cleaned bytes (the cached source-footing mutates).
+            # Pass through se_store_with_overwrite_event so the prior bytes'
+            # sha256 lands in the caller-passed overwrite_events_out ledger
+            # (when provided); the wrapper transparently stores + emits.
+            source_trigger = "force_reextract" if force_reextract else "manual_reingest"
+            se_store_with_overwrite_event(
+                archive,
+                text_url,
+                pdf_text.encode("utf-8"),
+                sfs_id=sfs_id,
+                source_trigger=source_trigger,
+                events_out=overwrite_events_out,
+                storage_class="text",
+            )
+            se_store_with_overwrite_event(
+                archive,
+                cleaned_text_url,
+                clean_se_pdf_text(pdf_text).encode("utf-8"),
+                sfs_id=sfs_id,
+                source_trigger=source_trigger,
+                events_out=overwrite_events_out,
+                storage_class="text",
+            )
         else:
             _record_se_official_artifacts_diagnostic(
                 diagnostics_out,

@@ -78,6 +78,7 @@ _SE_RULE_SPECS: Dict[str, str] = {
     "se_official_base_ir_build_failed": "A base act for which the non-amending IR seed fails to construct is a typed acquisition failure, not a silent empty body.",
     "se_official_pdf_source_lane_fallback": "When the official SFS PDF is unreachable over HTTP, the acquisition falls back to the legacy SFS PDF index with a typed source-lane note.",
     "se_official_pdf_text_extraction_failed": "When pdftotext fails to extract text from a valid SFS PDF, the row is a typed extraction-failure residual, not a silent empty buffer.",
+    "se_official_artifacts_force_reextract_overwrite": "When ``--force-reextract`` overlays prior bytes at a cached locator, the prior+new content hashes are recorded as a typed SEOverwriteEvent in the caller accumulator — never a silent in-place mutation (KNOW-01 monotonicity + §1.6 no unstated migration at the archive-write boundary).",
 
     # --- Clause-surface parse findings ---------------------------------------------------
     "se_official_clause_renumber_arity_mismatch": "A renumber enacting clause whose source-label list and destination-label list have different arities is a typed parse diagnostic, not a silent best-effort zip.",
