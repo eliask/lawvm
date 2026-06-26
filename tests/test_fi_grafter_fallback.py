@@ -26,6 +26,11 @@ from lawvm.core.elaboration_context import (
 )
 from lawvm.core.payload_elaboration import PayloadCompletenessWitness
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
+from lawvm.finland.op_provenance import (
+    ProvenanceBag,
+    serialized_provenance_bag,
+    serialized_provenance_from_bags,
+)
 from lawvm.finland.target_kind import TargetKind
 from lawvm.finland.apply_events import ApplyMutationEvent
 from lawvm.core.phase_result import Finding, PhaseResult
@@ -8502,9 +8507,7 @@ def test_append_compiled_group_ops_serializes_resolved_scope_confidence() -> Non
             "action": "replace",
             "source_statute": "",
             "source_title": None,
-            "extraction_provenance_tags": [],
-            "target_guessing_provenance_tags": [],
-            "scope_provenance_tags": ["chapter_scope_from_preamble"],
+            "provenance": serialized_provenance_from_bags(scope_tags=("chapter_scope_from_preamble",)),
             "witness_rule_id": None,
             "target_unit_kind": "section",
             "target_norm": "4",
@@ -8547,7 +8550,7 @@ def test_append_compiled_group_ops_prefers_stored_scope_confidence_over_sidecar_
 
     append_compiled_group_ops(compiled_ops, [rop])
 
-    assert compiled_ops[0]["scope_provenance_tags"] == ["grouped_chapter_scope"]
+    assert serialized_provenance_bag(compiled_ops[0]["provenance"], ProvenanceBag.SCOPE) == ("grouped_chapter_scope",)
     assert compiled_ops[0]["scope_source"] == "explicit_chunk"
     assert compiled_ops[0]["scope_confidence"] == "explicit"
 

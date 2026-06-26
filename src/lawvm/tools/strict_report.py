@@ -37,6 +37,7 @@ from lawvm.core.compile_views import (
     projection_rows_from_findings,
     source_pathology_rows_from_findings,
 )
+from lawvm.finland.op_provenance import ProvenanceBag, serialized_provenance_bag
 from lawvm.finland.pathology_failed_op_projector import (
     failed_operation_proof_surface_rows,
     source_pathology_proof_surface_rows,
@@ -78,15 +79,13 @@ _SOURCE_COMPLETENESS_ISSUE_KINDS: frozenset[str] = frozenset({
 def _compiled_op_display_tag(op_dict: dict[str, Any], *, is_recovered: bool) -> str:
     """Display typed compiled-op provenance, else fall back to op class only."""
     typed_tags: list[str] = []
-    extraction_tags = op_dict.get("extraction_provenance_tags")
-    if isinstance(extraction_tags, list):
-        typed_tags.extend(str(tag).strip() for tag in extraction_tags if str(tag).strip())
-    target_guessing_tags = op_dict.get("target_guessing_provenance_tags")
-    if isinstance(target_guessing_tags, list):
-        typed_tags.extend(str(tag).strip() for tag in target_guessing_tags if str(tag).strip())
-    scope_tags = op_dict.get("scope_provenance_tags")
-    if isinstance(scope_tags, list):
-        typed_tags.extend(str(tag).strip() for tag in scope_tags if str(tag).strip())
+    serialized_provenance = op_dict.get("provenance")
+    for bag in (
+        ProvenanceBag.EXTRACTION,
+        ProvenanceBag.TARGET_GUESSING,
+        ProvenanceBag.SCOPE,
+    ):
+        typed_tags.extend(serialized_provenance_bag(serialized_provenance, bag))
     if op_dict.get("voimaantulo_repeal"):
         typed_tags.append("voimaantulo_repeal")
     typed_tags = list(dict.fromkeys(typed_tags))

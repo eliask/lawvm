@@ -17,6 +17,7 @@ from lawvm.core.phase_result import Finding
 from lawvm.core.ir import LegalAddress, LegalOperation, OperationSource, StructuralAction
 from lawvm.tools.evidence_claims import _build_section_claims
 from lawvm.finland.strict_profile import default_finland_strict_profile
+from lawvm.finland.op_provenance import serialized_provenance_from_bags
 
 
 def _make_op(
@@ -34,7 +35,7 @@ def _make_op(
         "target_kind": "section",
         "target_section": target_section,
         "target_chapter": "",
-        "extraction_provenance_tags": list(extraction_provenance_tags or []),
+        "provenance": serialized_provenance_from_bags(extraction_tags=tuple(extraction_provenance_tags or ())),
     }
     lo = LegalOperation(
         op_id=f"op_{statute_id}_{target_section}",
@@ -245,7 +246,7 @@ class TestComputeSectionStrictVerdicts:
             "target_norm": "7",
             "target_section": "7",
             "target_chapter": "",
-            "extraction_provenance_tags": ["extraction_fallback_heuristic"],
+            "provenance": serialized_provenance_from_bags(extraction_tags=("extraction_fallback_heuristic",)),
         }
         lo = LegalOperation(
             op_id="op_2020_100_ch7",

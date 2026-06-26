@@ -259,6 +259,12 @@ def test_recognizer_id_namespace_is_exhaustive_over_serialized_tag_bags() -> Non
         "chapter_seed",
         "mixed_scope_group_merge",
         "identity_renumber_absent_target_to_insert",
+        # scope_provenance_tags explicit-scope-rewrite witnesses (read by the
+        # compile_result scope-witness legacy fallback + scope_confidence_from_tags).
+        "chapter_scope_stripped_subsection_insert",
+        "chapter_scope_stripped_section_facet_insert",
+        "chapter_scope_stripped_unique_section",
+        "chapter_scope_stripped_duplicate_label_outside_stated_chapter",
         # Branched witness_rule_id values.
         "fi.jolloin_renumber",
         "fi.repeal_vts_voimaantulo",

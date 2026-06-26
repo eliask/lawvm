@@ -50,9 +50,10 @@ without an import cycle).
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from lawvm.core.compile_result import StrictProfile
@@ -222,6 +223,28 @@ class RecognizerId(Enum):
     )
     """Identity-renumber against an absent target lowered to insert
     (frontend_compile); stamped into the scope bag."""
+
+    # --- scope_provenance_tags: explicit-scope-rewrite witnesses ---
+    # These mark an explicit chapter-scope rewrite that scope.py stamps onto a
+    # ``LegalOperation``'s ``provenance_tags`` (``lo_with_added_scope_tag``). The
+    # ``compile_result`` scope-witness legacy fallback and
+    # ``ops.scope_confidence_from_tags`` both key on them as EXPLICIT_SCOPE_REWRITE
+    # scope tags, so they are part of the SCOPE-bag consumer surface and the codec
+    # must carry them through the typed provenance.
+    SCOPE_STRIPPED_SUBSECTION_INSERT = "chapter_scope_stripped_subsection_insert"
+    """Explicit scope rewrite: chapter scope stripped on a subsection insert."""
+
+    SCOPE_STRIPPED_SECTION_FACET_INSERT = "chapter_scope_stripped_section_facet_insert"
+    """Explicit scope rewrite: chapter scope stripped on a section-facet insert."""
+
+    SCOPE_STRIPPED_UNIQUE_SECTION = "chapter_scope_stripped_unique_section"
+    """Explicit scope rewrite: chapter scope stripped on a unique section."""
+
+    SCOPE_STRIPPED_DUPLICATE_LABEL_OUTSIDE_STATED_CHAPTER = (
+        "chapter_scope_stripped_duplicate_label_outside_stated_chapter"
+    )
+    """Explicit scope rewrite: chapter scope stripped on a duplicate label outside
+    the stated chapter."""
 
 
 class RecoverySurface(Enum):
@@ -565,6 +588,10 @@ _RECOGNIZER_BAG: dict[RecognizerId, ProvenanceBag] = {
     RecognizerId.SCOPE_CHAPTER_SEED: ProvenanceBag.SCOPE,
     RecognizerId.SCOPE_MIXED_GROUP_MERGE: ProvenanceBag.SCOPE,
     RecognizerId.SCOPE_IDENTITY_RENUMBER_ABSENT_TARGET_TO_INSERT: ProvenanceBag.SCOPE,
+    RecognizerId.SCOPE_STRIPPED_SUBSECTION_INSERT: ProvenanceBag.SCOPE,
+    RecognizerId.SCOPE_STRIPPED_SECTION_FACET_INSERT: ProvenanceBag.SCOPE,
+    RecognizerId.SCOPE_STRIPPED_UNIQUE_SECTION: ProvenanceBag.SCOPE,
+    RecognizerId.SCOPE_STRIPPED_DUPLICATE_LABEL_OUTSIDE_STATED_CHAPTER: ProvenanceBag.SCOPE,
 }
 
 # Reverse index: literal tag string -> RecognizerId, for every member that has a
@@ -615,6 +642,202 @@ def bag_tags(
             if _RECOGNIZER_BAG[member] is bag
         )
     )
+
+
+# --- Row-level serialization of the typed provenance (the schema cut) ---
+#
+# The compiled-op transport row no longer carries the three raw string bags
+# (``extraction_provenance_tags`` / ``target_guessing_provenance_tags`` /
+# ``scope_provenance_tags``). It carries ONE typed ``provenance`` field instead,
+# serialized by :func:`serialize_provenance` and reconstructed by
+# :func:`deserialize_provenance`. A reader that still wants a per-bag tag-set view
+# of a row reconstructs it with :func:`serialized_bag_tags` (the codec, fed by the
+# serialized provenance), so the three columns become DERIVED views of the typed
+# field rather than stored data.
+
+
+def serialize_provenance(provenance: OpProvenance | None) -> dict[str, object] | None:
+    """Serialize a typed :class:`OpProvenance` into a JSON-safe transport dict.
+
+    ``None`` (no recovery stamp) serializes to ``None`` so a canonical
+    grammar-produced op carries no ``provenance`` field. A :class:`Parsed` op
+    serializes its grammar rule id; a :class:`Recovered` op serializes the SET of
+    recognizer-id strings plus its surface / tier / coverage / fallback bit.
+    """
+    if provenance is None:
+        return None
+    if isinstance(provenance, Parsed):
+        return {"kind": "parsed", "grammar_rule_id": provenance.grammar_rule_id}
+    return {
+        "kind": "recovered",
+        "surface": provenance.surface.value,
+        "tier": provenance.tier.value,
+        "recognizer_ids": sorted(member.value for member in provenance.recognizer_ids),
+        "from_fallback_provenance": provenance.from_fallback_provenance,
+        "recognized_spans": [list(span) for span in provenance.coverage.recognized_spans],
+        "skipped_spans": [list(span) for span in provenance.coverage.skipped_spans],
+        # Per-bag tag views, DERIVED from recognizer_ids by the codec at serialize
+        # time. A cross-jurisdiction (``core``) consumer that needs the
+        # extraction-vs-target-guessing-vs-scope split reads these without
+        # importing the FI codec; the typed ``recognizer_ids`` set above stays the
+        # single source of truth (these views are reconstructible from it).
+        "bags": {
+            ProvenanceBag.EXTRACTION.value: list(
+                bag_tags(provenance.recognizer_ids, ProvenanceBag.EXTRACTION)
+            ),
+            ProvenanceBag.TARGET_GUESSING.value: list(
+                bag_tags(provenance.recognizer_ids, ProvenanceBag.TARGET_GUESSING)
+            ),
+            ProvenanceBag.SCOPE.value: list(
+                bag_tags(provenance.recognizer_ids, ProvenanceBag.SCOPE)
+            ),
+        },
+    }
+
+
+def serialized_provenance_from_bags(
+    *,
+    extraction_tags: tuple[str, ...] = (),
+    target_guessing_tags: tuple[str, ...] = (),
+    scope_tags: tuple[str, ...] = (),
+) -> dict[str, object] | None:
+    """Build a serialized ``provenance`` row field from raw per-bag tag lists.
+
+    The bag-thinking entry point: a producer (or test) that has the three raw
+    provenance-tag lists rebuilds the canonical serialized provenance field from
+    them. Known tags fold into the typed ``recognizer_ids`` (and the derived
+    ``bags`` views echo each tag back); the supplied lists are also preserved
+    verbatim as the ``bags`` views so a serialized consumer that keys on a tag
+    string outside the closed namespace (e.g. the ``compile_result``
+    extraction-fallback filter's dead supplement tags) still sees it. Returns
+    ``None`` when all bags are empty (no recovery stamp).
+    """
+    if not (extraction_tags or target_guessing_tags or scope_tags):
+        return None
+    ids: set[RecognizerId] = set()
+    for bag, tags in (
+        (ProvenanceBag.EXTRACTION, extraction_tags),
+        (ProvenanceBag.TARGET_GUESSING, target_guessing_tags),
+        (ProvenanceBag.SCOPE, scope_tags),
+    ):
+        for tag in tags:
+            recognizer = recognizer_for_tag(bag, tag)
+            if recognizer is not None:
+                ids.add(recognizer)
+    recognizer_ids = frozenset(ids)
+    serialized = serialize_provenance(
+        Recovered(
+            surface=dominant_surface(recognizer_ids),
+            recognizer_ids=recognizer_ids,
+            tier=dominant_tier(recognizer_ids),
+        )
+    )
+    assert serialized is not None  # recognizer_ids may be empty but bags are not
+    # Preserve the supplied tag lists verbatim (covers out-of-namespace tags a
+    # serialized consumer's own filter still keys on).
+    serialized["bags"] = {
+        ProvenanceBag.EXTRACTION.value: list(extraction_tags),
+        ProvenanceBag.TARGET_GUESSING.value: list(target_guessing_tags),
+        ProvenanceBag.SCOPE.value: list(scope_tags),
+    }
+    return serialized
+
+
+def serialized_provenance_bag(serialized: object, bag: ProvenanceBag) -> tuple[str, ...]:
+    """Return one bag's tag list from a serialized provenance dict.
+
+    Prefers the pre-derived ``bags`` view embedded at serialize time; falls back
+    to reconstructing from ``recognizer_ids`` via the codec. Either way the result
+    equals ``bag_tags(provenance.recognizer_ids, bag)``.
+    """
+    if isinstance(serialized, Mapping):
+        bags = cast(Mapping[str, Any], serialized).get("bags")
+        if isinstance(bags, Mapping):
+            view = cast(Mapping[str, Any], bags).get(bag.value)
+            if isinstance(view, (list, tuple)):
+                return tuple(
+                    str(tag).strip()
+                    for tag in cast("list[Any] | tuple[Any, ...]", view)
+                    if str(tag).strip()
+                )
+    return serialized_bag_tags(serialized, bag)
+
+
+def _coerce_spans(value: object) -> tuple[tuple[int, int], ...]:
+    if not isinstance(value, (list, tuple)):
+        return ()
+    spans: list[tuple[int, int]] = []
+    for entry in cast("list[Any] | tuple[Any, ...]", value):
+        if isinstance(entry, (list, tuple)) and len(entry) == 2:
+            pair = cast("list[Any] | tuple[Any, ...]", entry)
+            spans.append((int(pair[0]), int(pair[1])))
+    return tuple(spans)
+
+
+def deserialize_provenance(data: object) -> OpProvenance | None:
+    """Reconstruct a typed :class:`OpProvenance` from a serialized transport dict.
+
+    Inverse of :func:`serialize_provenance`. ``None`` / a malformed value yields
+    ``None`` (no recovery stamp). Unknown recognizer strings are dropped (they are
+    outside the closed namespace by construction); the codec stays total over the
+    serialized namespace.
+    """
+    if not isinstance(data, Mapping):
+        return None
+    mapping = cast(Mapping[str, Any], data)
+    kind = mapping.get("kind")
+    if kind == "parsed":
+        rule_id = mapping.get("grammar_rule_id")
+        if not isinstance(rule_id, str):
+            return None
+        return Parsed(grammar_rule_id=rule_id)
+    if kind != "recovered":
+        return None
+    raw_ids = mapping.get("recognizer_ids")
+    ids: set[RecognizerId] = set()
+    if isinstance(raw_ids, (list, tuple)):
+        for value in raw_ids:
+            try:
+                ids.add(RecognizerId(str(value)))
+            except ValueError:
+                continue
+    recognizer_ids = frozenset(ids)
+    surface_value = mapping.get("surface")
+    tier_value = mapping.get("tier")
+    try:
+        surface = RecoverySurface(str(surface_value))
+    except ValueError:
+        surface = dominant_surface(recognizer_ids)
+    try:
+        tier = ConfidenceTier(str(tier_value))
+    except ValueError:
+        tier = dominant_tier(recognizer_ids)
+    coverage = RecognitionCoverage(
+        recognized_spans=_coerce_spans(mapping.get("recognized_spans")),
+        skipped_spans=_coerce_spans(mapping.get("skipped_spans")),
+    )
+    return Recovered(
+        surface=surface,
+        recognizer_ids=recognizer_ids,
+        tier=tier,
+        coverage=coverage,
+        from_fallback_provenance=bool(mapping.get("from_fallback_provenance")),
+    )
+
+
+def serialized_bag_tags(serialized: object, bag: ProvenanceBag) -> tuple[str, ...]:
+    """Reconstruct one serialized bag column's tag list from a row's provenance field.
+
+    The derived-view codec for serialized consumers: a reader that today did
+    ``row.get("extraction_provenance_tags")`` asks
+    ``serialized_bag_tags(row.get("provenance"), ProvenanceBag.EXTRACTION)``
+    instead. Only :class:`Recovered` provenance contributes bag tags; ``None`` /
+    :class:`Parsed` yield an empty tuple.
+    """
+    provenance = deserialize_provenance(serialized)
+    if not isinstance(provenance, Recovered):
+        return ()
+    return bag_tags(provenance.recognizer_ids, bag)
 
 
 # Deterministic display precedence over the SCOPE-bag recognizers, strongest /
@@ -669,6 +892,7 @@ __all__ = [
     "RecoverySurface",
     "admits",
     "bag_tags",
+    "deserialize_provenance",
     "dominant_surface",
     "dominant_tier",
     "has_recognizer",
@@ -677,4 +901,8 @@ __all__ = [
     "recognizer_bag",
     "recognizer_for_tag",
     "representative_scope_tag",
+    "serialize_provenance",
+    "serialized_bag_tags",
+    "serialized_provenance_bag",
+    "serialized_provenance_from_bags",
 ]
