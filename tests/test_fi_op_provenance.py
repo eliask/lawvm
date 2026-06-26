@@ -269,6 +269,116 @@ def test_recognizer_id_namespace_is_exhaustive_over_serialized_tag_bags() -> Non
     assert len(actual_values) == len(list(RecognizerId))
 
 
+def test_recognizer_bag_classification_is_total_and_partitions_namespace() -> None:
+    """Every ``RecognizerId`` has a bag; the bagged members partition the namespace.
+
+    The serialized provenance columns are reconstructed FROM the typed recognizer
+    set via the bag classification, so the classification must be TOTAL over the
+    closed namespace (no recognizer without a bag) and each bagged member must
+    round-trip its literal back to itself in its own bag (and nowhere else).
+    """
+    from lawvm.finland.op_provenance import (
+        ProvenanceBag,
+        recognizer_bag,
+        recognizer_for_tag,
+    )
+
+    bagged = 0
+    for member in RecognizerId:
+        bag = recognizer_bag(member)  # raises KeyError if a member is unclassified
+        if bag is ProvenanceBag.NONE:
+            # Boolean-flag / witness members synthesize no serialized bag tag.
+            for serialized_bag in (
+                ProvenanceBag.EXTRACTION,
+                ProvenanceBag.TARGET_GUESSING,
+                ProvenanceBag.SCOPE,
+            ):
+                assert recognizer_for_tag(serialized_bag, member.value) is None
+            continue
+        bagged += 1
+        # The literal round-trips to its member in its own bag only.
+        assert recognizer_for_tag(bag, member.value) is member
+        for other in (
+            ProvenanceBag.EXTRACTION,
+            ProvenanceBag.TARGET_GUESSING,
+            ProvenanceBag.SCOPE,
+        ):
+            if other is not bag:
+                assert recognizer_for_tag(other, member.value) is None
+    # Exactly the boolean-flag (3) + witness (2) members are unbagged.
+    assert bagged == len(list(RecognizerId)) - 5
+
+
+def test_derive_op_provenance_folds_every_serialized_bag_tag() -> None:
+    """COMPLETENESS PIN: every serialized tag a write-site emits is captured.
+
+    The migration replaces the three raw string bag columns with the typed
+    provenance, so the derived ``recognizer_ids`` must losslessly capture every
+    tag string the closed namespace can carry — including the Step-A members that
+    earlier folds dropped (the ``extraction_*`` / scope / ``repeal_reenact_*``
+    families). This fails loudly if a typed tag stops being folded (a silent
+    serialization-content loss).
+    """
+    from lawvm.finland.op_provenance import ProvenanceBag, recognizer_bag
+    from lawvm.finland.ops import _derive_op_provenance
+
+    extraction = tuple(
+        m.value for m in RecognizerId if recognizer_bag(m) is ProvenanceBag.EXTRACTION
+    )
+    target_guessing = tuple(
+        m.value
+        for m in RecognizerId
+        if recognizer_bag(m) is ProvenanceBag.TARGET_GUESSING
+    )
+    scope = tuple(
+        m.value for m in RecognizerId if recognizer_bag(m) is ProvenanceBag.SCOPE
+    )
+
+    prov = _derive_op_provenance(
+        fallback_provenance=False,
+        body_root_replace_fallback=True,
+        sec1_body_johto_fallback=True,
+        uncovered_body_recovery=True,
+        extraction_provenance_tags=extraction,
+        target_guessing_provenance_tags=target_guessing,
+        scope_provenance_tags=scope,
+        witness_rule_id=RecognizerId.JOLLOIN_RENUMBER.value,
+    )
+    assert isinstance(prov, Recovered)
+    # Every member except the second witness (only one witness_rule_id per op)
+    # is present: all bagged tags + the three booleans + the supplied witness.
+    expected = {
+        m
+        for m in RecognizerId
+        if m is not RecognizerId.REPEAL_VTS_VOIMAANTULO
+    }
+    assert prov.recognizer_ids == frozenset(expected)
+
+
+def test_bag_tags_reconstructs_each_serialized_column() -> None:
+    """The serialization codec round-trips a recognizer set back to bag columns."""
+    from lawvm.finland.op_provenance import ProvenanceBag, bag_tags
+
+    rids = frozenset(
+        {
+            RecognizerId.EXTRACTION_FALLBACK_HEURISTIC,
+            RecognizerId.REPEAL_REENACT_NORMALIZED,
+            RecognizerId.NORMALIZE_ITEM_LIKE_TARGET,
+            RecognizerId.SCOPE_CARRY_FORWARD,
+            # Boolean-flag member: contributes to NO serialized bag.
+            RecognizerId.BODY_ROOT_REPLACE,
+        }
+    )
+    assert bag_tags(rids, ProvenanceBag.EXTRACTION) == (
+        "extraction_fallback_heuristic",
+        "repeal_reenact_normalized",
+    )
+    assert bag_tags(rids, ProvenanceBag.TARGET_GUESSING) == ("normalize_item_like_target",)
+    assert bag_tags(rids, ProvenanceBag.SCOPE) == ("chapter_scope_carry_forward",)
+    # Boolean-flag member never lands in a serialized column.
+    assert bag_tags(frozenset({RecognizerId.BODY_ROOT_REPLACE}), ProvenanceBag.EXTRACTION) == ()
+
+
 def test_amendment_op_provenance_is_replace_durable() -> None:
     """``provenance`` is STORED and CARRIED through ``dataclasses.replace``.
 

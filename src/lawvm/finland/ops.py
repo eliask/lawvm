@@ -44,11 +44,13 @@ from lawvm.core.target_selector import (
 from lawvm.finland.helpers import _expand_section_range, _norm_num_token
 from lawvm.finland.op_provenance import (
     OpProvenance,
+    ProvenanceBag,
     Recovered,
     RecognizerId,
     dominant_surface,
     dominant_tier,
     has_recognizer,
+    recognizer_for_tag,
 )
 from lawvm.finland.target_kind import TargetKind
 from lawvm.finland.target_selector_codec import (
@@ -109,6 +111,7 @@ def _derive_op_provenance(
     uncovered_body_recovery: bool,
     extraction_provenance_tags: Tuple[str, ...],
     target_guessing_provenance_tags: Tuple[str, ...],
+    scope_provenance_tags: Tuple[str, ...],
     witness_rule_id: Optional[str],
 ) -> OpProvenance | None:
     """Derive the typed :class:`OpProvenance` from an op's recovery markers.
@@ -117,6 +120,16 @@ def _derive_op_provenance(
     and the ``*_provenance_tags`` string bags remain authoritative; this derives a
     typed mirror so later steps can rekey readers onto
     ``RecognizerId.X in op.provenance.recognizer_ids`` / ``isinstance(prov, Recovered)``.
+
+    The fold is now TOTAL over the serialized bags: every tag string the three
+    bags can carry (the closed :class:`RecognizerId` namespace, pinned by
+    ``recognizer_for_tag``) lands in ``recognizer_ids``, keyed per-bag so a tag is
+    honored only in the column it is written to. So the typed set losslessly
+    captures the serialized bag content — the migration's serialization cut
+    (replacing the three raw string columns with the typed provenance) can
+    reconstruct each bag from the set via ``op_provenance.bag_tags``. The boolean
+    ``*_fallback`` flags and the branched ``witness_rule_id`` values (which carry
+    no serialized bag tag) fold in separately.
 
     An op carries the SET of every load-bearing recovery recognizer that touched
     it. The result is :class:`Recovered` iff the op bears a recovery marker
@@ -132,23 +145,19 @@ def _derive_op_provenance(
         ids.add(RecognizerId.BODY_ROOT_REPLACE)
     if uncovered_body_recovery:
         ids.add(RecognizerId.UNCOVERED_BODY)
-    if "extraction_fallback_heuristic" in extraction_provenance_tags:
-        ids.add(RecognizerId.EXTRACTION_FALLBACK_HEURISTIC)
-    if "jolloin_moment_renumber_supplement" in extraction_provenance_tags:
-        ids.add(RecognizerId.JOLLOIN_MOMENT_RENUMBER_SUPPLEMENT)
-    if "unique_item_label_subsection_fallback" in target_guessing_provenance_tags:
-        ids.add(RecognizerId.UNIQUE_ITEM_LABEL_SUBSECTION_FALLBACK)
-    if "normalize_item_like_target" in target_guessing_provenance_tags:
-        ids.add(RecognizerId.NORMALIZE_ITEM_LIKE_TARGET)
-    if "rebase_duplicate_target_shifted_replace" in target_guessing_provenance_tags:
-        ids.add(RecognizerId.REBASE_DUPLICATE_TARGET_SHIFTED_REPLACE)
-    if "rebase_replaced_renumber_source" in target_guessing_provenance_tags:
-        ids.add(RecognizerId.REBASE_REPLACED_RENUMBER_SOURCE)
-    if "chapter_scope_from_unique_live_section" in target_guessing_provenance_tags:
-        ids.add(RecognizerId.CHAPTER_SCOPE_FROM_UNIQUE_LIVE_SECTION)
-    if witness_rule_id == "fi.jolloin_renumber":
+    # Total per-bag fold: every serialized tag string -> its typed recognizer.
+    for bag, tags in (
+        (ProvenanceBag.EXTRACTION, extraction_provenance_tags),
+        (ProvenanceBag.TARGET_GUESSING, target_guessing_provenance_tags),
+        (ProvenanceBag.SCOPE, scope_provenance_tags),
+    ):
+        for tag in tags:
+            recognizer = recognizer_for_tag(bag, tag)
+            if recognizer is not None:
+                ids.add(recognizer)
+    if witness_rule_id == RecognizerId.JOLLOIN_RENUMBER.value:
         ids.add(RecognizerId.JOLLOIN_RENUMBER)
-    elif witness_rule_id == "fi.repeal_vts_voimaantulo":
+    elif witness_rule_id == RecognizerId.REPEAL_VTS_VOIMAANTULO.value:
         ids.add(RecognizerId.REPEAL_VTS_VOIMAANTULO)
 
     if not ids and not fallback_provenance:
@@ -888,6 +897,7 @@ class AmendmentOp:
             uncovered_body_recovery=self.uncovered_body_recovery,
             extraction_provenance_tags=self.extraction_provenance_tags,
             target_guessing_provenance_tags=self.target_guessing_provenance_tags,
+            scope_provenance_tags=self.scope_provenance_tags,
             witness_rule_id=self.witness_rule_id,
         )
 
@@ -1439,6 +1449,7 @@ class ResolvedOp:
             uncovered_body_recovery=self.uncovered_body_recovery,
             extraction_provenance_tags=self.extraction_provenance_tags,
             target_guessing_provenance_tags=self.target_guessing_provenance_tags,
+            scope_provenance_tags=self.scope_provenance_tags,
             witness_rule_id=self.witness_rule_id,
         )
 

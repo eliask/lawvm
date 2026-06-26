@@ -103,6 +103,7 @@ class _CoverageOpShim:
             uncovered_body_recovery=False,
             extraction_provenance_tags=(),
             target_guessing_provenance_tags=(),
+            scope_provenance_tags=(),
             witness_rule_id=None,
         )
 

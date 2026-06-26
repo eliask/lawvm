@@ -491,19 +491,149 @@ def dominant_tier(recognizer_ids: frozenset[RecognizerId]) -> ConfidenceTier:
     return ConfidenceTier.ANCHORED
 
 
+# --- Serialized bag classification (lossless tag<->recognizer codec) ---
+
+
+class ProvenanceBag(Enum):
+    """Which serialized provenance column a recovery tag belongs to.
+
+    The three string bags an ``AmendmentOp`` carries today
+    (``extraction_provenance_tags`` / ``target_guessing_provenance_tags`` /
+    ``scope_provenance_tags``) are semantically DISTINCT to the serialized
+    consumers: ``core.compile_result`` raises ``PARSE.TARGET_GUESSING`` from the
+    target-guessing bag and ``PARSE.EXTRACTION_FALLBACK`` from the extraction
+    bag, and ``_compile`` keys its target-guessing finding off the
+    target-guessing bag specifically. So the bag a tag lives in is load-bearing,
+    not free: a flat recognizer set must remember each recognizer's bag to
+    reconstruct the columns. The two boolean-flag / witness members that never
+    reach a serialized string bag map to :attr:`NONE`.
+    """
+
+    EXTRACTION = "extraction_provenance_tags"
+    TARGET_GUESSING = "target_guessing_provenance_tags"
+    SCOPE = "scope_provenance_tags"
+    NONE = ""
+
+
+# Every ``RecognizerId`` -> the serialized bag its ``.value`` string is written
+# into. Verified per write-site against the FI source. ``NONE`` is for the
+# recognizers that ride on a boolean ``AmendmentOp`` flag (``SEC1_BODY_JOHTO``,
+# ``BODY_ROOT_REPLACE``, ``UNCOVERED_BODY``) or a ``witness_rule_id`` value
+# (``JOLLOIN_RENUMBER``, ``REPEAL_VTS_VOIMAANTULO``) rather than a string bag, so
+# they have no serialized-bag home and must not synthesize a bag tag.
+_RECOGNIZER_BAG: dict[RecognizerId, ProvenanceBag] = {
+    # Boolean recovery flags: no serialized string-bag home.
+    RecognizerId.SEC1_BODY_JOHTO: ProvenanceBag.NONE,
+    RecognizerId.BODY_ROOT_REPLACE: ProvenanceBag.NONE,
+    RecognizerId.UNCOVERED_BODY: ProvenanceBag.NONE,
+    # Branched witness_rule_id values: carried on witness_rule_id, not a bag.
+    RecognizerId.JOLLOIN_RENUMBER: ProvenanceBag.NONE,
+    RecognizerId.REPEAL_VTS_VOIMAANTULO: ProvenanceBag.NONE,
+    # extraction_provenance_tags.
+    RecognizerId.EXTRACTION_FALLBACK_HEURISTIC: ProvenanceBag.EXTRACTION,
+    RecognizerId.JOLLOIN_MOMENT_RENUMBER_SUPPLEMENT: ProvenanceBag.EXTRACTION,
+    RecognizerId.EXTRACTION_BODY_ROOT_REPLACE: ProvenanceBag.EXTRACTION,
+    RecognizerId.EXTRACTION_ENACTING_FORMULA_BODY_REPLACE: ProvenanceBag.EXTRACTION,
+    RecognizerId.EXTRACTION_ENACTING_FORMULA_BODY_INSERT: ProvenanceBag.EXTRACTION,
+    RecognizerId.EXTRACTION_CEREMONIAL_BODY_ONLY: ProvenanceBag.EXTRACTION,
+    RecognizerId.EXTRACTION_ACT_WIDE_BODY_SECTION_REPLACE: ProvenanceBag.EXTRACTION,
+    RecognizerId.EXTRACTION_TITLE_FALLBACK: ProvenanceBag.EXTRACTION,
+    RecognizerId.EXTRACTION_PREAMBLE_BODY: ProvenanceBag.EXTRACTION,
+    RecognizerId.REPEAL_REENACT_NORMALIZED: ProvenanceBag.EXTRACTION,
+    RecognizerId.NUMBERED_TABLE_TARGET: ProvenanceBag.EXTRACTION,
+    RecognizerId.ITEM_AND_MOMENT_TARGET_SUPPLEMENT: ProvenanceBag.EXTRACTION,
+    RecognizerId.MIXED_EXPLICIT_TARGET_SUPPLEMENT: ProvenanceBag.EXTRACTION,
+    RecognizerId.SPARSE_OSALTA_ROW_OMISSION_REPEAL: ProvenanceBag.EXTRACTION,
+    RecognizerId.HISTORICAL_TOP_LEVEL_KOHTA_AS_SUBSECTION: ProvenanceBag.EXTRACTION,
+    # target_guessing_provenance_tags.
+    RecognizerId.UNIQUE_ITEM_LABEL_SUBSECTION_FALLBACK: ProvenanceBag.TARGET_GUESSING,
+    RecognizerId.NORMALIZE_ITEM_LIKE_TARGET: ProvenanceBag.TARGET_GUESSING,
+    RecognizerId.REBASE_DUPLICATE_TARGET_SHIFTED_REPLACE: ProvenanceBag.TARGET_GUESSING,
+    RecognizerId.REBASE_REPLACED_RENUMBER_SOURCE: ProvenanceBag.TARGET_GUESSING,
+    RecognizerId.REBASE_SPARSE_STALE_PREDECESSOR: ProvenanceBag.TARGET_GUESSING,
+    RecognizerId.NUMBERED_TABLE_XML_SUBSECTION_OFFSET: ProvenanceBag.TARGET_GUESSING,
+    RecognizerId.FOLLOW_SAME_WAVE_MIGRATION: ProvenanceBag.TARGET_GUESSING,
+    # scope_provenance_tags (and the core LegalOperation provenance_tags that the
+    # scope authority reads as a scope tag).
+    RecognizerId.CHAPTER_SCOPE_FROM_UNIQUE_LIVE_SECTION: ProvenanceBag.SCOPE,
+    RecognizerId.SCOPE_CARRY_FORWARD: ProvenanceBag.SCOPE,
+    RecognizerId.SCOPE_FROM_EXPLICIT_CHUNK: ProvenanceBag.SCOPE,
+    RecognizerId.SCOPE_FROM_PREAMBLE: ProvenanceBag.SCOPE,
+    RecognizerId.SCOPE_FROM_SAME_AMENDMENT_STEM: ProvenanceBag.SCOPE,
+    RecognizerId.SCOPE_GROUPED_CHAPTER: ProvenanceBag.SCOPE,
+    RecognizerId.SCOPE_GROUPED_PART: ProvenanceBag.SCOPE,
+    RecognizerId.SCOPE_CHAPTER_SEED: ProvenanceBag.SCOPE,
+    RecognizerId.SCOPE_MIXED_GROUP_MERGE: ProvenanceBag.SCOPE,
+    RecognizerId.SCOPE_IDENTITY_RENUMBER_ABSENT_TARGET_TO_INSERT: ProvenanceBag.SCOPE,
+}
+
+# Reverse index: literal tag string -> RecognizerId, for every member that has a
+# serialized-bag home. Witness/boolean members are excluded (they have no bag).
+_TAG_VALUE_TO_RECOGNIZER: dict[str, RecognizerId] = {
+    member.value: member
+    for member, bag in _RECOGNIZER_BAG.items()
+    if bag is not ProvenanceBag.NONE
+}
+
+
+def recognizer_bag(recognizer: RecognizerId) -> ProvenanceBag:
+    """Return the serialized provenance bag ``recognizer`` is written into.
+
+    :attr:`ProvenanceBag.NONE` for the boolean-flag / witness recognizers that
+    never reach a serialized string bag.
+    """
+    return _RECOGNIZER_BAG[recognizer]
+
+
+def recognizer_for_tag(bag: ProvenanceBag, tag: str) -> RecognizerId | None:
+    """Return the recognizer a serialized ``tag`` in ``bag`` denotes, or ``None``.
+
+    The inverse of :func:`recognizer_bag` at the string level: a serialized
+    reader translates a raw tag string back to its typed recognizer, checking the
+    bag matches so a tag is only honored in the column it is written to.
+    """
+    recognizer = _TAG_VALUE_TO_RECOGNIZER.get(tag)
+    if recognizer is None or _RECOGNIZER_BAG[recognizer] is not bag:
+        return None
+    return recognizer
+
+
+def bag_tags(
+    recognizer_ids: frozenset[RecognizerId], bag: ProvenanceBag
+) -> tuple[str, ...]:
+    """Return the sorted serialized tag strings ``recognizer_ids`` contributes to ``bag``.
+
+    The serialization codec: reconstructs one bag column's tag list from the
+    typed recognizer set. Sorted for a deterministic column ordering (the
+    consumers are membership-only — see ``core.compile_result`` /
+    ``finland._compile`` — so ordering is a free presentation choice).
+    """
+    return tuple(
+        sorted(
+            member.value
+            for member in recognizer_ids
+            if _RECOGNIZER_BAG[member] is bag
+        )
+    )
+
+
 __all__ = [
     "AcceptanceMode",
     "ConfidenceTier",
     "OpProvenance",
     "Parsed",
+    "ProvenanceBag",
     "RecognitionCoverage",
     "RecognizerId",
     "Recovered",
     "RecoverySurface",
     "admits",
+    "bag_tags",
     "dominant_surface",
     "dominant_tier",
     "has_recognizer",
     "mode_for",
     "provenance_from_witness_and_tags",
+    "recognizer_bag",
+    "recognizer_for_tag",
 ]
