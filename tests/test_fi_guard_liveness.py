@@ -3215,14 +3215,40 @@ def drill_verb_conversion_unwitnessed_at_op_apply_lane() -> None:
         "record LOWER.VERB_CONVERSION_UNWITNESSED_AT_OP from the production sweep"
     )
     # Negative (clean) case: the same conversion WITH a named witness tag does not fire.
+    #
+    # RETENTION PROOF (FI_OP_PROVENANCE_CONSOLIDATION_SPEC §2.1): the suppressing
+    # tag ``semantic_collapse_move_renumber`` is DELIBERATELY OUTSIDE the closed
+    # ``RecognizerId`` namespace — it is a conversion-witness tag, not a recovery
+    # recognizer. The whole-bag ``_has_conversion_witness`` read therefore CANNOT be
+    # collapsed onto the typed ``OpProvenance`` (``isinstance(Recovered)`` /
+    # ``has_recognizer``): an op carrying only this witness tag has NO typed
+    # ``Recovered`` provenance, so a typed-only check would mis-fire the sweep. This
+    # is the committed load-bearing proof that the three ``*_provenance_tags`` bags
+    # are RETAINED (not deletable) for the dual-purpose witness reads.
+    from lawvm.finland.op_provenance import RecognizerId, Recovered as _Recovered
+
+    _conversion_witness_tag = "semantic_collapse_move_renumber"
+    _recognizer_values = {m.value for m in RecognizerId}
+    assert _conversion_witness_tag not in _recognizer_values, (
+        "the conversion-witness tag gained a RecognizerId home; the bag retention "
+        "rationale (§2.1) no longer holds — re-evaluate whether the witness reads "
+        "can now route through the typed provenance"
+    )
     witnessed = _closure_rop(
         op_id="op_ls06_clean",
         op_type=OpType.REPLACE,
         target_address=LegalAddress(path=(("section", "1"),)),
-        extraction_provenance_tags=("semantic_collapse_move_renumber",),
+        extraction_provenance_tags=(_conversion_witness_tag,),
         with_lo=True,
         lo_action=StructuralAction.REPEAL,
         lo_target=LegalAddress(path=(("section", "1"),)),
+    )
+    # The witness tag carries NO typed Recovered provenance (it is outside the
+    # closed namespace), so the suppression below rides ONLY on the whole-bag read.
+    assert not isinstance(witnessed.provenance, _Recovered), (
+        "an out-of-namespace conversion-witness tag synthesized a typed Recovered "
+        "provenance; the whole-bag witness read would then be collapsible and the "
+        "bag retention would be unnecessary"
     )
     clean_findings = _drive_per_op_apply_gate(
         rop=witnessed, new_ir=landed, state=ReplayState(ir=IRNode(kind=IRNodeKind.BODY)), strict=False
