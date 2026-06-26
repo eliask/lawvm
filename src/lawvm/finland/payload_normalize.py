@@ -4799,7 +4799,7 @@ def _rebase_item_targets_to_sparse_slot_labels(
             # Preserve explicit source paragraph authority. This rebase rail is
             # only for item-like targets that were already heuristically
             # normalized into subsection/item shape earlier in elaboration.
-            if "normalize_item_like_target" not in op.target_guessing_provenance_tags:
+            if not has_recognizer(op.provenance, RecognizerId.NORMALIZE_ITEM_LIKE_TARGET):
                 rebased.append(op)
                 continue
             if len(sibling_plain_targets) != 1 or sibling_plain_targets[0] == int(op.target_cols.target_paragraph):
