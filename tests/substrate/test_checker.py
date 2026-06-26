@@ -100,7 +100,7 @@ def _selection_row(
         "scope_query_id": "scope:unspecified",
         "effect_interval": effect_interval,
         "account_interval": ["corpus:2026-06-21", None],
-        "status": status,
+        "selection_status": status,
         "selected_node_version_id": selected_node_version_id,
         "candidate_set_hash": candidate_set_hash,
         "required_scope_dimensions": [],
@@ -616,7 +616,7 @@ def test_drill_6_flip_block_reason_row_to_selected() -> None:
         key_field="selection_key",
         key_value="sha256:key_b",
         updates={
-            "status": "blocked",
+            "selection_status": "blocked",
             "block_reason": "expiry_unverified",
             "selected_node_version_id": None,
         },
@@ -833,7 +833,7 @@ def test_ambiguous_scope_unwitnessed_flagged() -> None:
         schema="lawvm.selection_row.v1",
         key_field="selection_key",
         key_value="sha256:key_a",
-        updates={"status": "ambiguous_missing_scope", "selected_node_version_id": None},
+        updates={"selection_status": "ambiguous_missing_scope", "selected_node_version_id": None},
     )
     pack = _rewrap_state(pack)
     verdict = Checker().check(pack)

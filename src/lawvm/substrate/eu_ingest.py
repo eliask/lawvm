@@ -729,7 +729,7 @@ def export_eu_regulation_pack(
     # -- work + selection profiles + total scope ----------------------------- #
     base_w.write(_work_body(work_id, work_title, JURISDICTION, corpus_version))
 
-    total_scope = ScopePredicate(dimensions={}, status="total")
+    total_scope = ScopePredicate(dimensions={}, scope_status="total")
     scope_predicate_id = total_scope.scope_predicate_id
     scope_predicate_hashes = [state_w.write(total_scope.to_canonical_dict())]
 
@@ -834,7 +834,7 @@ def export_eu_regulation_pack(
             effect_interval=(ingest_date, None),
             account_interval=(corpus_version, None),
             source_policy_id="archival_exact",
-            status="selected",
+            selection_status="selected",
             candidate_set_hash=cs_object_hash,
             selected_node_version_id=nv_id,
             decision_basis=DecisionBasis(

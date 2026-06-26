@@ -303,7 +303,7 @@ def test_c_edges_layer_is_genuinely_checked(two_work_packs: tuple[Path, Path]) -
     edges_files = list((out / "edges").rglob("edges.jsonl"))
     assert len(edges_files) == 1
     rows = [json.loads(line) for line in edges_files[0].read_text().splitlines() if line.strip()]
-    rows[0]["object"]["status"] = "broken"  # mutate body, leave object_hash stale
+    rows[0]["object"]["resolution_status"] = "broken"  # mutate body, leave object_hash stale
     edges_files[0].write_text(
         json.dumps(rows[0], ensure_ascii=True, sort_keys=True, separators=(",", ":")) + "\n",
         encoding="utf-8",

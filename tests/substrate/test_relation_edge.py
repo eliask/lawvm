@@ -340,7 +340,7 @@ def test_existing_cross_work_resolution_carries_typed_edge_fields() -> None:
     )
     # Backward-compatible: still a lawvm.overlay.v1 with its resolution_id/status.
     assert res["schema"] == "lawvm.overlay.v1"
-    assert res["status"] == "resolved"
+    assert res["resolution_status"] == "resolved"
     assert isinstance(res["resolution_id"], str)
     # Now also carries the typed relation-edge mirror fields, matrix-legal.
     assert res["authority_plane"] == AuthorityPlane.SURFACE.value

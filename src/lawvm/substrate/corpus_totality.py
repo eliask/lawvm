@@ -104,44 +104,45 @@ UNIVERSE_KINDS: frozenset[str] = frozenset(
 class WorkInventoryRow:
     """``lawvm.work_inventory_row.v1`` — one work's typed membership (design §23.x A).
 
-    ``status`` is a closed :data:`WORK_INVENTORY_STATUSES` value; a non-``included``
-    work MUST carry a ``reason_detail`` so the exclusion is owned, never silent
-    (the corpus analogue of the within-work "no silent drop"). ``pack_id`` is set
-    iff ``status == "included"`` (it points at the member pack); for any other
-    status it is ``None`` (there is no member pack).
+    ``inventory_status`` is a closed :data:`WORK_INVENTORY_STATUSES` value; a
+    non-``included`` work MUST carry a ``reason_detail`` so the exclusion is
+    owned, never silent (the corpus analogue of the within-work "no silent
+    drop"). ``pack_id`` is set iff ``inventory_status == "included"`` (it points
+    at the member pack); for any other status it is ``None`` (no member pack).
     """
 
     work_id: str
-    status: str
+    inventory_status: str
     reason_detail: str = ""
     pack_id: str | None = None
 
     def __post_init__(self) -> None:
-        if self.status not in WORK_INVENTORY_STATUSES:
+        if self.inventory_status not in WORK_INVENTORY_STATUSES:
             raise CorpusTotalityError(
-                f"WorkInventoryRow.status must be one of {sorted(WORK_INVENTORY_STATUSES)!r}, "
-                f"got {self.status!r}"
+                f"WorkInventoryRow.inventory_status must be one of "
+                f"{sorted(WORK_INVENTORY_STATUSES)!r}, got {self.inventory_status!r}"
             )
-        if self.status == "included" and not self.pack_id:
+        if self.inventory_status == "included" and not self.pack_id:
             raise CorpusTotalityError(
                 f"an 'included' work ({self.work_id!r}) must carry its member pack_id"
             )
-        if self.status != "included" and self.pack_id:
+        if self.inventory_status != "included" and self.pack_id:
             raise CorpusTotalityError(
-                f"a non-included ({self.status!r}) work must not carry a pack_id "
-                f"(there is no member pack to point at)"
+                f"a non-included ({self.inventory_status!r}) work must not carry a "
+                f"pack_id (there is no member pack to point at)"
             )
-        if self.status != "included" and not self.reason_detail:
+        if self.inventory_status != "included" and not self.reason_detail:
             raise CorpusTotalityError(
-                f"a non-included ({self.status!r}) work ({self.work_id!r}) must carry a "
-                f"reason_detail so the exclusion is OWNED, never a silent omission"
+                f"a non-included ({self.inventory_status!r}) work ({self.work_id!r}) "
+                f"must carry a reason_detail so the exclusion is OWNED, never a "
+                f"silent omission"
             )
 
     def to_canonical_dict(self) -> dict[str, JsonValue]:
         return {
             "schema": _SCHEMA_WORK_INVENTORY_ROW,
             "work_id": self.work_id,
-            "status": self.status,
+            "inventory_status": self.inventory_status,
             "reason_detail": nfc(self.reason_detail),
             "pack_id": self.pack_id,
         }
@@ -237,10 +238,14 @@ class CorpusTotality:
         return self.work_inventory_root
 
     def _root_over(self, inventory_status: str, domain: str) -> str:
-        """MapRoot over the subset of works carrying ``status`` (typed partition)."""
+        """MapRoot over the subset of works carrying ``inventory_status`` (typed partition)."""
         return map_root(
             domain,
-            {r.work_id: r.row_id for r in self.work_inventory if r.status == inventory_status},
+            {
+                r.work_id: r.row_id
+                for r in self.work_inventory
+                if r.inventory_status == inventory_status
+            },
         )
 
     def roots(self) -> dict[str, JsonValue]:
@@ -252,10 +257,14 @@ class CorpusTotality:
         convention).
         """
         included = {
-            r.work_id: r.row_id for r in self.work_inventory if r.status == "included"
+            r.work_id: r.row_id
+            for r in self.work_inventory
+            if r.inventory_status == "included"
         }
         nonincluded = {
-            r.work_id: r.row_id for r in self.work_inventory if r.status != "included"
+            r.work_id: r.row_id
+            for r in self.work_inventory
+            if r.inventory_status != "included"
         }
         return {
             "work_inventory_root": self.work_inventory_root,
@@ -280,7 +289,7 @@ class CorpusTotality:
     def counts(self) -> dict[str, JsonValue]:
         tally: dict[str, int] = {status: 0 for status in WORK_INVENTORY_STATUSES}
         for row in self.work_inventory:
-            tally[row.status] += 1
+            tally[row.inventory_status] += 1
         return {
             "included": tally["included"],
             "excluded_by_policy": tally["excluded_by_policy"],
@@ -346,7 +355,7 @@ def build_corpus_totality(
     signed Finlex enumeration).
     """
     rows: list[WorkInventoryRow] = [
-        WorkInventoryRow(work_id=m.work_id, status="included", pack_id=m.pack_id)
+        WorkInventoryRow(work_id=m.work_id, inventory_status="included", pack_id=m.pack_id)
         for m in included
     ]
     rows.extend(excluded)

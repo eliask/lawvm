@@ -194,19 +194,20 @@ class ScopePredicate:
 
     ``dimensions`` maps each of :data:`SCOPE_DIMENSIONS` to a sorted, deduped
     list of admitted values; an absent/empty dimension is the wildcard "any".
-    ``status`` is one of :data:`SCOPE_PREDICATE_STATUSES`. A browser must never
-    silently evaluate an ``unsupported`` predicate — that surfaces as ambiguity
-    or a ``scope_predicate_unsupported`` block at selection time, never a guess.
+    ``scope_status`` is one of :data:`SCOPE_PREDICATE_STATUSES`. A browser must
+    never silently evaluate an ``unsupported`` predicate — that surfaces as
+    ambiguity or a ``scope_predicate_unsupported`` block at selection time, never
+    a guess.
     """
 
     dimensions: Mapping[str, Sequence[str]]
-    status: str = "total"
+    scope_status: str = "total"
 
     def __post_init__(self) -> None:
-        if self.status not in SCOPE_PREDICATE_STATUSES:
+        if self.scope_status not in SCOPE_PREDICATE_STATUSES:
             raise SelectionError(
-                f"ScopePredicate.status must be one of {sorted(SCOPE_PREDICATE_STATUSES)!r}, "
-                f"got {self.status!r}"
+                f"ScopePredicate.scope_status must be one of "
+                f"{sorted(SCOPE_PREDICATE_STATUSES)!r}, got {self.scope_status!r}"
             )
         normalized: dict[str, tuple[str, ...]] = {}
         for key, raw in self.dimensions.items():
@@ -214,8 +215,8 @@ class ScopePredicate:
                 raise SelectionError(
                     f"ScopePredicate dimension {key!r} is not closed-set "
                     f"{SCOPE_DIMENSIONS!r}; an open/unsupported dimension must be "
-                    f"declared via status='unsupported', never smuggled as a key "
-                    f"(design §21 #5)"
+                    f"declared via scope_status='unsupported', never smuggled as a "
+                    f"key (design §21 #5)"
                 )
             if isinstance(raw, str):
                 raise SelectionError(
@@ -230,7 +231,7 @@ class ScopePredicate:
         return {
             "schema": _SCHEMA_SCOPE_PREDICATE,
             "dimensions": {dim: list(self.dimensions.get(dim, ())) for dim in SCOPE_DIMENSIONS},
-            "status": self.status,
+            "scope_status": self.scope_status,
         }
 
     @property
@@ -438,8 +439,8 @@ class SelectionRow:
     Status discipline (§5): ``absent`` = no node version exists at this
     address/date/profile; ``out_of_scope`` = versions exist but none match the
     scope query (these are DISTINCT — keep both). ``block_reason`` is set iff
-    ``status == "blocked"``. ``selected_node_version_id`` is set iff
-    ``status == "selected"``.
+    ``selection_status == "blocked"``. ``selected_node_version_id`` is set iff
+    ``selection_status == "selected"``.
     """
 
     work_id: str
@@ -450,7 +451,7 @@ class SelectionRow:
     effect_interval: Interval
     account_interval: Interval
     source_policy_id: str
-    status: str
+    selection_status: str
     candidate_set_hash: str | None = None
     selected_node_version_id: str | None = None
     required_scope_dimensions: tuple[str, ...] = ()
@@ -458,31 +459,32 @@ class SelectionRow:
     decision_basis: DecisionBasis | None = None
 
     def __post_init__(self) -> None:
-        if self.status not in SELECTION_STATUSES:
+        if self.selection_status not in SELECTION_STATUSES:
             raise SelectionError(
-                f"SelectionRow.status must be one of {sorted(SELECTION_STATUSES)!r}, "
-                f"got {self.status!r}"
+                f"SelectionRow.selection_status must be one of "
+                f"{sorted(SELECTION_STATUSES)!r}, got {self.selection_status!r}"
             )
-        if self.status == "selected" and not self.selected_node_version_id:
+        if self.selection_status == "selected" and not self.selected_node_version_id:
             raise SelectionError(
                 "a 'selected' row must carry selected_node_version_id (§3.2)"
             )
-        if self.status != "selected" and self.selected_node_version_id:
+        if self.selection_status != "selected" and self.selected_node_version_id:
             raise SelectionError(
-                f"a non-selected ({self.status!r}) row must not carry "
+                f"a non-selected ({self.selection_status!r}) row must not carry "
                 f"selected_node_version_id (§5)"
             )
-        if self.status == "blocked" and self.block_reason is None:
+        if self.selection_status == "blocked" and self.block_reason is None:
             raise SelectionError("a 'blocked' row must carry a block_reason (§5)")
-        if self.status != "blocked" and self.block_reason is not None:
+        if self.selection_status != "blocked" and self.block_reason is not None:
             raise SelectionError(
-                f"block_reason is only valid when status=='blocked', got status={self.status!r} (§5)"
+                f"block_reason is only valid when selection_status=='blocked', "
+                f"got selection_status={self.selection_status!r} (§5)"
             )
         if self.block_reason is not None and self.block_reason not in BLOCK_REASONS:
             raise SelectionError(
                 f"block_reason must be one of {sorted(BLOCK_REASONS)!r}, got {self.block_reason!r}"
             )
-        if self.status == "ambiguous_missing_scope" and not self.required_scope_dimensions:
+        if self.selection_status == "ambiguous_missing_scope" and not self.required_scope_dimensions:
             raise SelectionError(
                 "an 'ambiguous_missing_scope' row must name the required_scope_dimensions "
                 "that disambiguate it (§3.4) — never 'prefer broader/latest'"
@@ -505,7 +507,7 @@ class SelectionRow:
             "effect_interval": _interval(self.effect_interval, field_name="effect_interval"),
             "account_interval": _interval(self.account_interval, field_name="account_interval"),
             "source_policy_id": self.source_policy_id,
-            "status": self.status,
+            "selection_status": self.selection_status,
             "selected_node_version_id": self.selected_node_version_id,
             "candidate_set_hash": self.candidate_set_hash,
             "required_scope_dimensions": list(self.required_scope_dimensions),

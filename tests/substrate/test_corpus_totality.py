@@ -74,9 +74,9 @@ def test_counts_tally_by_status() -> None:
         jurisdiction="fi",
         included=[IncludedMember("fi:act:1/1", "sha256:p")],
         excluded=[
-            WorkInventoryRow("fi:act:2/2", status="superseded", reason_detail="replaced"),
+            WorkInventoryRow("fi:act:2/2", inventory_status="superseded", reason_detail="replaced"),
             WorkInventoryRow(
-                "fi:act:3/3", status="unavailable_source", reason_detail="no bytes"
+                "fi:act:3/3", inventory_status="unavailable_source", reason_detail="no bytes"
             ),
         ],
     )
@@ -88,19 +88,19 @@ def test_counts_tally_by_status() -> None:
 
 def test_included_row_requires_pack_id() -> None:
     with pytest.raises(CorpusTotalityError):
-        WorkInventoryRow("fi:act:1/1", status="included")  # no pack_id
+        WorkInventoryRow("fi:act:1/1", inventory_status="included")  # no pack_id
 
 
 def test_nonincluded_row_requires_reason() -> None:
     """A non-included work must OWN its exclusion — no silent non-inclusion."""
     with pytest.raises(CorpusTotalityError):
-        WorkInventoryRow("fi:act:1/1", status="withdrawn")  # no reason_detail
+        WorkInventoryRow("fi:act:1/1", inventory_status="withdrawn")  # no reason_detail
 
 
 def test_nonincluded_row_must_not_carry_pack_id() -> None:
     with pytest.raises(CorpusTotalityError):
         WorkInventoryRow(
-            "fi:act:1/1", status="withdrawn", reason_detail="r", pack_id="sha256:p"
+            "fi:act:1/1", inventory_status="withdrawn", reason_detail="r", pack_id="sha256:p"
         )
 
 
