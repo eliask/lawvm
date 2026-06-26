@@ -637,6 +637,30 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         action="store_true",
         help="emit JSON (includes full per-step detail)",
     )
+    invariant_bisect_p.add_argument(
+        "--as-of",
+        dest="as_of",
+        default="",
+        metavar="YYYY-MM-DD",
+        help=(
+            "EE bisect: target date for amendments effective on or before "
+            "this date. Defaults to today when -j ee and --as-of is omitted. "
+            "Ignored by -j fi / -j uk."
+        ),
+    )
+    invariant_bisect_p.add_argument(
+        "--oracle-id",
+        dest="oracle_id",
+        default="",
+        metavar="AKT_VIIDE",
+        help=(
+            "EE bisect: explicit consolidated oracle aktViide marking the "
+            "end of the amendment scan window (effective amendments between "
+            "base_effective and oracle_effective are scanned). When omitted "
+            "EE tries to auto-resolve an oracle from grupi_id for as_of. "
+            "Ignored by -j fi / -j uk."
+        ),
+    )
 
     # --- self-consistency ---
     self_consistency_p = sub.add_parser(
