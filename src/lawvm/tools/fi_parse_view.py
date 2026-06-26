@@ -161,7 +161,7 @@ def build_forest_view(
             "char_start": n.char_start,
             "char_end": n.char_end,
             "families": list(n.families),
-            "node_status": n.status,
+            "node_status": n.node_status,
             "text": body[n.char_start : n.char_end],
             "edges": edges,
         }

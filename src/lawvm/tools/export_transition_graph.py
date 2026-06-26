@@ -1170,7 +1170,7 @@ CREATE TABLE lawvm_surface_overlays (
     label                   TEXT,  -- short display surface
     payload_json            TEXT,  -- typed surface facts
     links_json              TEXT,  -- co-located overlay/node affordances
-    status                  TEXT,  -- resolution status (reference/term_use only)
+    overlay_status          TEXT,  -- resolution status (reference/term_use only)
     source_span_byte_offset INTEGER,
     source_span_byte_len     INTEGER,
     rendered_statute_id     TEXT,
