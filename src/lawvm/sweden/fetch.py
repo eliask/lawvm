@@ -9,13 +9,14 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, replace
 from datetime import date, timedelta
+from enum import StrEnum
 import html as _html
 import json
 import re
 import time
 from pathlib import Path
 import subprocess
-from typing import Any, Callable, Literal, Protocol, Optional, cast
+from typing import Any, Callable, Literal, Protocol, Optional, assert_never, cast
 from urllib.parse import urlencode, urljoin
 
 from lawvm.core.comparison_normalization import ComparisonNormalizationRule, normalize_comparison_text
@@ -68,6 +69,27 @@ from lawvm.sweden.grafter import (
 _DEFAULT_CACHE = Path(__file__).parent.parent.parent.parent / "data" / "sweden.farchive"
 _IMMUTABLE_CACHE_HOURS = float("inf")
 _CURRENT_SURFACE_CACHE_HOURS = 24.0
+
+
+class SeOpsStatus(StrEnum):
+    """Closed set of per-act ops-compilation outcomes for a rebuild-chain step.
+
+    A ``StrEnum`` so the value flows through the serialized ``ops_status`` dict
+    key / persisted rows / test ``== "..."`` comparisons byte-for-byte while the
+    value set is closed and rebuild-chain dispatch can be made exhaustive.
+    """
+
+    COMPILED = "compiled"
+    """The prior act compiled into replayable operations."""
+
+    MISSING_OFFICIAL_ACT = "missing_official_act"
+    """The prior amendment's official act is unavailable (acquisition gap)."""
+
+    UNSUPPORTED = "unsupported"
+    """The act uses an effect shape not yet lowerable."""
+
+    INVALID_OFFICIAL_ACT = "invalid_official_act"
+    """The act could not be parsed into replayable operations."""
 
 
 class _ArchiveLike(Protocol):
@@ -2547,26 +2569,39 @@ def _older_base_chain_entries(
 
 
 def _se_rebuild_chain_blocker_diagnostic(row: dict[str, Any]) -> dict[str, Any] | None:
-    ops_status = str(row.get("ops_status") or "")
-    if ops_status == "compiled":
+    raw_ops_status = str(row.get("ops_status") or "")
+    # The row arrives deserialized from JSON, so coerce to the closed enum. An
+    # unrecognized value is schema drift, surfaced as a typed "unknown" diagnostic
+    # (§1.10 named-failure discipline) rather than silently dropped; the recognized
+    # set below is then exhaustive (assert_never).
+    try:
+        ops_status: SeOpsStatus | None = SeOpsStatus(raw_ops_status)
+    except ValueError:
+        ops_status = None
+    if ops_status is SeOpsStatus.COMPILED:
         return None
-    match ops_status:
-        case "missing_official_act":
-            rule_id = "se_official_rebuild_chain_missing_official_act"
-            phase = "acquisition"
-            reason = "prior Sweden amendment official act is unavailable"
-        case "unsupported":
-            rule_id = "se_official_rebuild_chain_ops_unsupported"
-            phase = "lowering"
-            reason = "prior Sweden amendment official act uses unsupported effect shape"
-        case "invalid_official_act":
-            rule_id = "se_official_rebuild_chain_invalid_official_act"
-            phase = "extraction"
-            reason = "prior Sweden amendment official act could not be parsed into replayable operations"
-        case _:
-            rule_id = "se_official_rebuild_chain_unknown_ops_status"
-            phase = "replay_planning"
-            reason = "prior Sweden amendment has an unknown rebuild-chain status"
+    if ops_status is None:
+        rule_id = "se_official_rebuild_chain_unknown_ops_status"
+        phase = "replay_planning"
+        reason = "prior Sweden amendment has an unknown rebuild-chain status"
+    else:
+        match ops_status:
+            case SeOpsStatus.MISSING_OFFICIAL_ACT:
+                rule_id = "se_official_rebuild_chain_missing_official_act"
+                phase = "acquisition"
+                reason = "prior Sweden amendment official act is unavailable"
+            case SeOpsStatus.UNSUPPORTED:
+                rule_id = "se_official_rebuild_chain_ops_unsupported"
+                phase = "lowering"
+                reason = "prior Sweden amendment official act uses unsupported effect shape"
+            case SeOpsStatus.INVALID_OFFICIAL_ACT:
+                rule_id = "se_official_rebuild_chain_invalid_official_act"
+                phase = "extraction"
+                reason = "prior Sweden amendment official act could not be parsed into replayable operations"
+            case SeOpsStatus.COMPILED:  # handled above; kept for exhaustiveness
+                return None
+            case _ as unreachable:
+                assert_never(unreachable)
     return diagnostic_detail(
         rule_id=rule_id,
         phase=phase,
@@ -2576,7 +2611,7 @@ def _se_rebuild_chain_blocker_diagnostic(row: dict[str, Any]) -> dict[str, Any] 
         sfs_id=str(row.get("sfs_id") or ""),
         effective_date=str(row.get("effective_date") or ""),
         scope_text=str(row.get("scope_text") or ""),
-        ops_status=ops_status,
+        ops_status=raw_ops_status,
         error=str(row.get("error") or ""),
     )
 
@@ -2657,7 +2692,7 @@ def plan_se_older_base_rebuild(
         official_act_available = loaded_act is not None
         pdf_available = has_valid_se_official_pdf(archive, sfs_id)
         doc_available = archive.get(se_official_doc_locator(sfs_id)) is not None
-        ops_status = "missing_official_act"
+        ops_status = SeOpsStatus.MISSING_OFFICIAL_ACT
         op_count = 0
         error = ""
         if official_act_available:
@@ -2677,16 +2712,16 @@ def plan_se_older_base_rebuild(
                         ]
                 except FileNotFoundError as exc:
                     error = str(exc)
-                    ops_status = "missing_official_act"
+                    ops_status = SeOpsStatus.MISSING_OFFICIAL_ACT
                 except NotImplementedError as exc:
                     error = str(exc)
-                    ops_status = "unsupported"
+                    ops_status = SeOpsStatus.UNSUPPORTED
                 except ValueError as exc:
                     error = str(exc)
-                    ops_status = "invalid_official_act"
+                    ops_status = SeOpsStatus.INVALID_OFFICIAL_ACT
             if ops_json is not None:
                 op_count = len(ops_json)
-                ops_status = "compiled"
+                ops_status = SeOpsStatus.COMPILED
         chain_rows.append(
             {
                 **item,
@@ -2698,7 +2733,7 @@ def plan_se_older_base_rebuild(
                 "error": error,
             }
         )
-        if probe_sources and ops_status == "missing_official_act":
+        if probe_sources and ops_status is SeOpsStatus.MISSING_OFFICIAL_ACT:
             chain_rows[-1]["public_source_probe"] = probe_se_public_source_status(sfs_id)
 
     compiled_count = sum(1 for item in chain_rows if item["ops_status"] == "compiled")
