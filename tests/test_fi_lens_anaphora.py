@@ -50,10 +50,10 @@ def test_anaphora_resolved_emits_expr_and_resolution() -> None:
 
     expr = exprs[0]
     assert expr.payload["anaphor_surface"] == "Mainitun lain"
-    assert expr.status == "resolved"
+    assert expr.node_status == "resolved"
 
     resolution = resolutions[0]
-    assert resolution.status == "resolved"
+    assert resolution.node_status == "resolved"
     # The recognizer bound the anaphor to its in-text antecedent (the named act).
     assert resolution.payload["target_provision_ref"] is not None
     assert "ympäristönsuojelulaki" in str(resolution.payload["target_provision_ref"])
@@ -63,7 +63,7 @@ def test_anaphora_resolved_emits_expr_and_resolution() -> None:
     assert len(edges) == 1
     assert edges[0].src_local == resolution.local_discriminator
     assert edges[0].dst_local == expr.local_discriminator
-    assert edges[0].status == "asserted"
+    assert edges[0].surface_edge_status == "asserted"
 
 
 def test_anaphora_open_emits_expr_and_open_resolution_not_dropped() -> None:
@@ -73,8 +73,8 @@ def test_anaphora_open_emits_expr_and_open_resolution_not_dropped() -> None:
     # An OPEN anaphor still emits BOTH nodes — never a silent drop.
     assert len(exprs) == 1
     assert len(resolutions) == 1
-    assert exprs[0].status == "open"
-    assert resolutions[0].status == "open"
+    assert exprs[0].node_status == "open"
+    assert resolutions[0].node_status == "open"
     # No target is fabricated for an unresolvable discourse reference.
     assert resolutions[0].payload["target_provision_ref"] is None
     # And the intrinsic resolution_of edge is still present.
