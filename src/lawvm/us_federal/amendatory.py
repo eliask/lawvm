@@ -68,6 +68,14 @@ RULE_STRIKE_UNIT = "us_amend_strike_structural_unit"
 RULE_STRIKE_UNIT_LIST = "us_amend_strike_structural_unit_list"
 RULE_REDESIGNATE_RANGE = "us_amend_redesignate_range"
 RULE_REDESIGNATE_PAIRS = "us_amend_redesignate_pairs"
+# 'redesignating the sections as described in the table' — the section-to-section
+# mappings are NOT named in the enactment prose but in a sibling <xhtml:table>
+# element inside the parent subsection. One RENUMBER per table row's
+# (before, after) section columns. Source witness: PL 115-282 §103(b) — the
+# Title-14 sections 1-5 (and 652) are redesignated to 101-106 in one compound
+# instruction. Without the table parse, the whole family (17 instructions across
+# the same PL) was held out as `UNLOWERED_FINDING_RULE_ID`.
+RULE_REDESIGNATE_TABLE = "us_amend_redesignate_table"
 RULE_INSERT_NODE_AFTER = "us_amend_insert_node_after_unit"
 # Terminal punctuation edits where the struck anchor is described positionally:
 # "striking the period at the end and inserting '; and'" / "inserting 'X' before
@@ -2183,6 +2191,74 @@ def _redesignate_pairs(raw_text: str, target: LegalAddress) -> tuple[tuple[Legal
     return tuple(pairs)
 
 
+def _redesignate_table_pairs(
+    unit_element: ET.Element,
+    section_element: ET.Element,
+) -> tuple[tuple[str, str], ...] | None:
+    """Extract ``(before, after)`` section-number pairs from a sibling
+    ``<xhtml:table>`` for the ``redesignating the sections as described in the
+    table`` amendatory family.
+
+    The instruction element (``unit``) lives at a sub-unit ID like
+    ``/us/pl/115/282/tI/s103/b/1/A`` -- a subparagraph inside paragraph (1)
+    inside subsection (b). The table lives in a SIBLING paragraph (e.g.
+    ``/s103/b/2``) inside the SAME subsection ``b``. Walking up two segments
+    of the unit identifier gives the parent subsection identifier; searching
+    the section subtree for that subsection element scopes the table scan to
+    the same parent (no cross-section leakage -- §1.1 no silent target
+    hijacking).
+
+    The table's columns are typically:
+      1. ``Title X section number before redesignation``
+      2. ``Section heading (provided for identification purposes only - not amended)``
+      3. ``Title X section number after redesignation``
+
+    Returns ``None`` when no data rows are extractable -- the caller falls
+    through to ``UNLOWERED_FINDING_RULE_ID`` so the residual stays visible.
+
+    Source witness: PL 115-282 §103(b) — title-14 sections 1, 2, 3, 652, 4, 5
+    are redesignated to 101, 102, 103, 104, 105, 106 respectively in a 6-row
+    table.
+    """
+    unit_id = unit_element.get("identifier")
+    if not unit_id:
+        return None
+    parts = unit_id.rstrip("/").split("/")
+    if len(parts) < 3:
+        return None
+    subsection_id = "/".join(parts[:-2])
+    sub_el: ET.Element | None = None
+    for e in section_element.iter():
+        if e.get("identifier") == subsection_id:
+            sub_el = e
+            break
+    if sub_el is None:
+        return None
+    pairs: list[tuple[str, str]] = []
+    for tbl in sub_el.iter():
+        if _localname(tbl.tag).lower() != "table":
+            continue
+        for tr in tbl.iter():
+            if _localname(tr.tag).lower() != "tr":
+                continue
+            cells = [c for c in tr if _localname(c.tag).lower() in ("td", "th")]
+            if not cells:
+                continue
+            # Header rows use <th> exclusively; data rows use <td>.
+            if all(_localname(c.tag).lower() == "th" for c in cells):
+                continue
+            td_cells: list[ET.Element] = [
+                c for c in cells if _localname(c.tag).lower() == "td"
+            ]
+            if len(td_cells) < 3:
+                continue
+            before = (td_cells[0].text or "").strip()
+            after = (td_cells[2].text or "").strip()
+            if before and after:
+                pairs.append((before, after))
+    return tuple(pairs) if pairs else None
+
+
 # A quoted "add at the end" payload that OPENS with a new section / chapter head —
 # "§ 2328. Mandatory forfeiture…", "CHAPTER 37—NONPOSTAL SERVICES", "SUBCHAPTER V…"
 # — is a whole-new-unit CREATE, not an append to the inherited section's body. The
@@ -2270,6 +2346,7 @@ def _lower_instruction(
     inherited_via_classification: bool = False,
     plaw_title_scope: str = "",
     proof_title: str = "11",
+    table_redesignate_pairs: tuple[tuple[str, str], ...] = (),
 ) -> USAmendmentInstruction:
     effective = _parse_effective_date(effective_text or raw_text, enacted)
     expires = _parse_sunset_expiry(expires_text or raw_text, enacted)
@@ -3014,6 +3091,42 @@ def _lower_instruction(
                 else:
                     extra_ops.append(node_op)
             witness_rule_id = RULE_REDESIGNATE_PAIRS
+        elif table_redesignate_pairs:
+            # 'redesignating the sections as described in the table' — the
+            # (before, after) section-number pairs come from a sibling
+            # <xhtml:table> in the parent subsection. The pairs are inherently
+            # title-level RENUMBER ops (section:X -> section:Y at the title
+            # root); even if the resolved `address` is deeper than title-level
+            # (e.g. when the ref pointed to a specific section for context),
+            # strip the address to title-level since the table contains ALL
+            # section-number changes under the title, not sub-section edits.
+            title_segments = tuple(p for p in address.path if p[0] == "title")
+            if len(title_segments) != 1:
+                finding = _finding(
+                    UNLOWERED_FINDING_RULE_ID,
+                    "table-form redesignation: resolved target has ambiguous "
+                    f"title scope (path={address.path}); needs exactly one title",
+                )
+            else:
+                title_path = title_segments[0]
+                for idx, (before, after) in enumerate(table_redesignate_pairs):
+                    from_addr = LegalAddress(path=(title_path, ("section", before)))
+                    to_addr = LegalAddress(path=(title_path, ("section", after)))
+                    node_op = LegalOperation(
+                        op_id=f"{instruction_id}#t{idx}",
+                        sequence=sequence,
+                        action=StructuralAction.RENUMBER,
+                        target=from_addr,
+                        destination=to_addr,
+                        source=source,
+                        witness_rule_id=RULE_REDESIGNATE_TABLE,
+                        provenance_tags=("us_amendatory", f"target_resolution:{resolution_status}", *_metadata_provenance),
+                    )
+                    if op is None:
+                        op = node_op
+                    else:
+                        extra_ops.append(node_op)
+                witness_rule_id = RULE_REDESIGNATE_TABLE
         else:
             finding = _finding(
                 UNLOWERED_FINDING_RULE_ID,
@@ -3631,6 +3744,7 @@ def lower_plaw_amendatory(
             bool,
             str,
             str,
+            ET.Element,
         ]
     ] = []
     for section in main.iter():
@@ -3684,6 +3798,7 @@ def lower_plaw_amendatory(
                     inherited_via_classification,
                     sec_phrase,
                     sec_href,
+                    section,
                 )
             )
 
@@ -3703,7 +3818,7 @@ def lower_plaw_amendatory(
         )
         plaw_title_scope = ""
 
-    for unit_id, unit, inherited_address, effective_text, expires_text, inherited_via_classification, sec_phrase, sec_href in unit_records:
+    for unit_id, unit, inherited_address, effective_text, expires_text, inherited_via_classification, sec_phrase, sec_href, section in unit_records:
         actions = _amending_actions(unit)
         unit_phrase, unit_href = _first_usc_ref(unit)
         # The leaf's OWN ref/prose is canonical; the section-level ref is only a
@@ -3714,6 +3829,19 @@ def lower_plaw_amendatory(
         raw_text = _text_of(unit)
         quoted = _quoted_texts(unit)
         payload_node = _quoted_content_node(unit)
+        # The 'redesignating the sections as described in the table' amendatory
+        # form names no labels in its prose; the (before, after) section-number
+        # pairs live in a sibling <xhtml:table> in the parent subsection. Only
+        # compute when the raw_text matches the table-form shape — cheap prefilter
+        # avoids walking siblings for the common redesignate instruction.
+        table_redesignate_pairs: tuple[tuple[str, str], ...] = ()
+        if (
+            "redesignate" in actions
+            and "described in the table" in raw_text.lower()
+        ):
+            extracted = _redesignate_table_pairs(unit, section)
+            if extracted is not None:
+                table_redesignate_pairs = extracted
         sequence += 1
         instr = _lower_instruction(
             statute_id=statute_id,
@@ -3732,6 +3860,7 @@ def lower_plaw_amendatory(
             inherited_via_classification=inherited_via_classification,
             plaw_title_scope=plaw_title_scope,
             proof_title=proof_title,
+            table_redesignate_pairs=table_redesignate_pairs,
         )
         instructions.append(instr)
         if instr.finding is not None:

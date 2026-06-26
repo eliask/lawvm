@@ -32,6 +32,7 @@ from lawvm.us_federal.amendatory import (
     RULE_INSERT_NODE_AFTER,
     RULE_REDESIGNATE_PAIRS,
     RULE_REDESIGNATE_RANGE,
+    RULE_REDESIGNATE_TABLE,
     RULE_STRIKE_INSERT,
     RULE_STRIKE_INSERT_END_PUNCT,
     RULE_STRIKE_INSERT_PUNCT_WORD,
@@ -1581,6 +1582,52 @@ def test_paired_redesignation_with_list_conjunction():
     assert len(renumbers) == 2
     labels = sorted((o.target.leaf_label(), (o.destination.leaf_label() if o.destination else "")) for o in renumbers)
     assert labels == [("1", "2"), ("2", "3")]
+
+
+def test_redesignate_table_form_lowers_one_renumber_per_row():
+    # 'redesignating the sections as described in the table' — the section-number
+    # pairs live in a sibling <xhtml:table> in the parent subsection. The lowerer
+    # walks the table's <tr> rows, extracting (before, after) from the first and
+    # third <td> columns, and emits one RENUMBER per row. Source witness: PL
+    # 115-282 §103(b) — title-14 sections 1-5 (and 652) → 101-106.
+    body = (
+        '<section identifier="/us/pl/116/900/s1" role="instruction"><num value="1">SEC. 1. </num>'
+        "<content>"
+        '<ref href="/us/usc/t11/s101">Title 11, United States Code</ref> is amended—'
+        '<subsection identifier="/us/pl/116/900/s1/a"><num value="a">(a) </num><content>'
+        '<paragraph identifier="/us/pl/116/900/s1/a/1"><num value="1">(1) </num>'
+        "<content>The sections identified in the table in paragraph (2) are amended—</content>"
+        '<subparagraph identifier="/us/pl/116/900/s1/a/1/A" role="instruction"><num value="A">(A) </num>'
+        '<content>by <amendingAction type="redesignate">redesignating</amendingAction> the sections as described in the table; and</content>'
+        "</subparagraph>"
+        '<subparagraph identifier="/us/pl/116/900/s1/a/1/B"><num value="B">(B) </num>'
+        '<content>by transferring the sections, as necessary.</content>'
+        "</subparagraph></paragraph>"
+        '<paragraph identifier="/us/pl/116/900/s1/a/2"><num value="2">(2) </num>'
+        '<content>The table referred to in paragraph (1) is the following:'
+        '<xhtml:table xmlns:xhtml="http://www.w3.org/1999/xhtml">'
+        '<xhtml:thead><xhtml:tr><xhtml:th>Before</xhtml:th><xhtml:th>Heading</xhtml:th><xhtml:th>After</xhtml:th></xhtml:tr></xhtml:thead>'
+        '<xhtml:tbody>'
+        '<xhtml:tr><xhtml:td>1</xhtml:td><xhtml:td>First</xhtml:td><xhtml:td>101</xhtml:td></xhtml:tr>'
+        '<xhtml:tr><xhtml:td>2</xhtml:td><xhtml:td>Second</xhtml:td><xhtml:td>102</xhtml:td></xhtml:tr>'
+        '<xhtml:tr><xhtml:td>3</xhtml:td><xhtml:td>Third</xhtml:td><xhtml:td>103</xhtml:td></xhtml:tr>'
+        "</xhtml:tbody></xhtml:table></content></paragraph>"
+        "</content></subsection></content></section>"
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    table_instrs = [i for i in report.instructions if i.witness_rule_id == RULE_REDESIGNATE_TABLE]
+    assert len(table_instrs) == 1
+    instr = table_instrs[0]
+    assert instr.operation is not None
+    ops = [instr.operation, *instr.extra_operations]
+    assert len(ops) == 3
+    for o in ops:
+        assert o.action is StructuralAction.RENUMBER
+        assert o.destination is not None
+    renumbers = sorted(
+        (o.target.leaf_label(), o.destination.leaf_label() if o.destination else "") for o in ops
+    )
+    assert renumbers == [("1", "101"), ("2", "102"), ("3", "103")]
 
 
 def test_flat_relative_head_inherits_title_from_section_classification():

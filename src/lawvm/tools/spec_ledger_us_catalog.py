@@ -199,6 +199,12 @@ _US_RULE_SPECS: Dict[str, str] = {
         "instruction maps in source order and emits one RENUMBER per pair, relabelling "
         "only each node's leading enumerator."
     ),
+    "us_amend_redesignate_table": (
+        "A 'redesignating the sections as described in the table' instruction emits "
+        "one RENUMBER per (before, after) section-number row extracted from a sibling "
+        "<xhtml:table> in the parent subsection; the enacted text names no labels in "
+        "its prose."
+    ),
     "us_amend_strike_structural_unit": (
         "A 'strike subsection/paragraph (X)' instruction repeals the named structural "
         "node from the section body; striking an absent node is a typed no-op refusal, "
@@ -537,6 +543,7 @@ _US_RULE_CONFIDENCE: Dict[str, str] = {
     "us_amend_redesignate": US_CONFIDENCE_HEURISTIC,
     "us_amend_redesignate_range": US_CONFIDENCE_HEURISTIC,
     "us_amend_redesignate_pairs": US_CONFIDENCE_HEURISTIC,
+    "us_amend_redesignate_table": US_CONFIDENCE_HEURISTIC,
     "us_amend_strike_structural_unit": US_CONFIDENCE_HEURISTIC,
     "us_amend_strike_structural_unit_list": US_CONFIDENCE_HEURISTIC,
     "us_amend_insert_node_after_unit": US_CONFIDENCE_HEURISTIC,
