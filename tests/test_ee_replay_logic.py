@@ -11,7 +11,10 @@ import pytest
 from lawvm.estonia import fetch as ee_fetch
 from lawvm.estonia import replay as ee_replay_module
 from lawvm.estonia.fetch import AmendmentRef
-from lawvm.estonia.ee_instruction_waist import make_section_selection_meta
+from lawvm.estonia.ee_instruction_waist import (
+    encode_ee_selection_meta_note,
+    make_section_selection_meta,
+)
 from lawvm.estonia.grafter import (
     EETextRewriteSpec,
     _ee_apply_text_replace_value,
@@ -1066,15 +1069,14 @@ def test_apply_ee_ops_expands_plain_section_repeal_ranges_over_live_superscript_
         sequence=1,
         action=StructuralAction.REPEAL,
         target=LegalAddress(path=(("section", "8"),)),
-        payload=IRNode(
-            kind=IRNodeKind.CONTENT,
-            text="",
-            attrs={
-                "section_selection_meta": make_section_selection_meta(
+        payload=None,
+        provenance_tags=(
+            encode_ee_selection_meta_note(
+                make_section_selection_meta(
                     explicit_labels=("8", "9"),
                     plain_numeric_ranges=(("8", "9"),),
                 )
-            },
+            ),
         ),
         source=OperationSource(
             statute_id="ee/test-amendment",

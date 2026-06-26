@@ -1764,16 +1764,10 @@ def _extract_flat_sectionless_singleton_item_repeals(
             sequence=seq,
             action=StructuralAction.REPEAL,
             target=LegalAddress(path=(("section", "1"), ("subsection", "1"), ("item", label))),
-            payload=IRNode(
-                kind=IRNodeKind.CONTENT,
-                text="",
-                attrs={
-                    "source_family": _EE_FLAT_SECTIONLESS_SINGLETON_ITEM_REPEAL_RULE,
-                    "scope_confidence": "inferred_from_live_unique",
-                    "source_item_label": label,
-                    "inferred_singleton_path": "section:1/subsection:1",
-                },
-            ),
+            # R1: repeal op carries no payload; the rule id + scope_confidence
+            # already ride in provenance_tags (no production reader pulled the
+            # PROV attrs off the payload).
+            payload=None,
             source=source,
             provenance_tags=(
                 clean[:200],
@@ -4720,6 +4714,7 @@ def extract_ee_ops(
         for addr in target_addrs:
             payload = None
             _rewrite_witness = None
+            _selection_meta_note: Optional[str] = None
             if action == "text_replace" and new_t:
                 payload = IRNode(kind=IRNodeKind.CONTENT, text=new_t)
                 payload, _rewrite_witness = _set_text_replace_payload_attrs(
@@ -4736,11 +4731,12 @@ def extract_ee_ops(
                     payload = IRNode(kind=IRNodeKind.CONTENT, text=payload_text)
                     payload = _set_sentence_replace_payload_attrs(payload, clean)
             elif action == "repeal" and section_selection_meta is not None:
-                payload = IRNode(
-                    kind=IRNodeKind.CONTENT,
-                    text="",
-                    attrs={"section_selection_meta": section_selection_meta},
-                )
+                # R2: repeal carries no payload; section selection meta rides as
+                # a serialized provenance note.
+                from lawvm.estonia.ee_instruction_waist import encode_ee_selection_meta_note
+
+                payload = None
+                _selection_meta_note = encode_ee_selection_meta_note(section_selection_meta)
             ops.append(LegalOperation(
                 op_id=f"ee-{action}-sect-{addr.path[-1][1]}-{source.statute_id}",
                 sequence=seq,
@@ -4752,6 +4748,7 @@ def extract_ee_ops(
                 provenance_tags=(
                     clean[:200],
                     *((multi_target_text_replace_rule,) if multi_target_text_replace_rule else ()),
+                    *((_selection_meta_note,) if _selection_meta_note is not None else ()),
                 ),
                 witness_rule_id=multi_target_text_replace_rule or None,
             ))
@@ -4764,13 +4761,19 @@ def extract_ee_ops(
                 plain_numeric_ranges,
                 label_ranges,
             ) in _extract_secondary_subsection_repeal_groups(clean):
-                from lawvm.estonia.ee_instruction_waist import make_subsection_selection_meta
+                from lawvm.estonia.ee_instruction_waist import (
+                    encode_ee_selection_meta_note,
+                    make_subsection_selection_meta,
+                )
 
                 subsection_selection_meta = make_subsection_selection_meta(
                     explicit_labels=labels,
                     plain_numeric_ranges=plain_numeric_ranges,
                     label_ranges=label_ranges,
                 )
+                # R3: repeal carries no payload; subsection selection meta rides
+                # as a serialized provenance note.
+                _selection_meta_note = encode_ee_selection_meta_note(subsection_selection_meta)
                 for sub_label in labels:
                     sub_path = (("section", sect_label), ("subsection", sub_label))
                     if sub_path in seen_sub_paths:
@@ -4780,13 +4783,9 @@ def extract_ee_ops(
                         sequence=seq,
                         action=_to_structural_action("repeal"),
                         target=LegalAddress(path=sub_path),
-                        payload=IRNode(
-                            kind=IRNodeKind.CONTENT,
-                            text="",
-                            attrs={"subsection_selection_meta": subsection_selection_meta},
-                        ),
+                        payload=None,
                         source=source,
-                        provenance_tags=(clean[:200],),
+                        provenance_tags=(clean[:200], _selection_meta_note),
                     ))
                     seen_sub_paths.add(sub_path)
                     seq += 1
@@ -5305,22 +5304,25 @@ def extract_ee_ops(
                         provenance_tags=(clean[:200], local_sentence_note),
                     ))
                 else:
+                    from lawvm.estonia.ee_instruction_waist import encode_ee_selection_meta_note
+
+                    # R4: repeal carries no payload; subsection selection meta
+                    # rides as a serialized provenance note.
                     ops.append(LegalOperation(
                         op_id=f"ee-repeal-sub-{section_label}-{subsection_label}-{source.statute_id}",
                         sequence=seq,
                         action=_to_structural_action("repeal"),
                         target=target,
-                        payload=IRNode(
-                            kind=IRNodeKind.CONTENT,
-                            text="",
-                            attrs={
-                                "subsection_selection_meta": make_subsection_selection_meta(
+                        payload=None,
+                        source=source,
+                        provenance_tags=(
+                            clean[:200],
+                            encode_ee_selection_meta_note(
+                                make_subsection_selection_meta(
                                     explicit_labels=tuple(labels_by_section.get(section_label, ()))
                                 )
-                            },
+                            ),
                         ),
-                        source=source,
-                        provenance_tags=(clean[:200],),
                     ))
                 seq += 1
             return ops
@@ -5469,6 +5471,7 @@ def extract_ee_ops(
         for addr in target_addrs:
             payload = None
             _rewrite_witness = None
+            _selection_meta_note: Optional[str] = None
             if action == "text_replace" and new_t:
                 payload = IRNode(kind=IRNodeKind.CONTENT, text=new_t)
                 payload, _rewrite_witness = _set_text_replace_payload_attrs(payload, clean, old_t, new_t)
@@ -5501,11 +5504,12 @@ def extract_ee_ops(
                         children=tuple(payload.children),
                     )
             elif action == "repeal" and subsection_selection_meta is not None:
-                payload = IRNode(
-                    kind=IRNodeKind.CONTENT,
-                    text="",
-                    attrs={"subsection_selection_meta": subsection_selection_meta},
-                )
+                # R5: repeal carries no payload; subsection selection meta rides
+                # as a serialized provenance note.
+                from lawvm.estonia.ee_instruction_waist import encode_ee_selection_meta_note
+
+                payload = None
+                _selection_meta_note = encode_ee_selection_meta_note(subsection_selection_meta)
             ops.append(LegalOperation(
                 op_id=f"ee-{action}-{str(addr)}-{source.statute_id}",
                 sequence=seq,
@@ -5519,7 +5523,11 @@ def extract_ee_ops(
                     if payload is not None
                     and payload.attrs.get("source_family")
                     == _EE_PLURAL_SUBSECTION_REPLACE_EXTRA_PAYLOAD_LABEL_RULE
-                    else (clean[:200],)
+                    else (
+                        (clean[:200], _selection_meta_note)
+                        if _selection_meta_note is not None
+                        else (clean[:200],)
+                    )
                 ),
                 witness_rule_id=(
                     _EE_PLURAL_SUBSECTION_REPLACE_EXTRA_PAYLOAD_LABEL_RULE
@@ -5592,13 +5600,19 @@ def extract_ee_ops(
                     plain_numeric_ranges,
                     label_ranges,
                 ) in _extract_secondary_subsection_repeal_groups(clean):
-                    from lawvm.estonia.ee_instruction_waist import make_subsection_selection_meta
+                    from lawvm.estonia.ee_instruction_waist import (
+                        encode_ee_selection_meta_note,
+                        make_subsection_selection_meta,
+                    )
 
                     subsection_selection_meta = make_subsection_selection_meta(
                         explicit_labels=labels,
                         plain_numeric_ranges=plain_numeric_ranges,
                         label_ranges=label_ranges,
                     )
+                    # R6: repeal carries no payload; subsection selection meta
+                    # rides as a serialized provenance note.
+                    _selection_meta_note = encode_ee_selection_meta_note(subsection_selection_meta)
                     for extra_sub in labels:
                         sub_path = (("section", extra_sect), ("subsection", extra_sub))
                         if sub_path in seen_sub_paths:
@@ -5608,13 +5622,9 @@ def extract_ee_ops(
                             sequence=seq,
                             action=_to_structural_action("repeal"),
                             target=LegalAddress(path=sub_path),
-                            payload=IRNode(
-                                kind=IRNodeKind.CONTENT,
-                                text="",
-                                attrs={"subsection_selection_meta": subsection_selection_meta},
-                            ),
+                            payload=None,
                             source=source,
-                            provenance_tags=(clean[:200],),
+                            provenance_tags=(clean[:200], _selection_meta_note),
                         ))
                         seen_sub_paths.add(sub_path)
                         seq += 1
@@ -6006,24 +6016,27 @@ def extract_ee_ops(
                     range_item = (start, end)
                     if range_item not in ranges:
                         ranges.append(range_item)
+                from lawvm.estonia.ee_instruction_waist import encode_ee_selection_meta_note
+
                 for extra_sect, extra_sub in extra_same_section_sub_repeals:
+                    # R7: repeal carries no payload; subsection selection meta
+                    # rides as a serialized provenance note.
                     ops.append(LegalOperation(
                         op_id=f"ee-repeal-sub-{extra_sect}-{extra_sub}-{source.statute_id}",
                         sequence=seq,
                         action=_to_structural_action("repeal"),
                         target=LegalAddress(path=(("section", extra_sect), ("subsection", extra_sub))),
-                        payload=IRNode(
-                            kind=IRNodeKind.CONTENT,
-                            text="",
-                            attrs={
-                                "subsection_selection_meta": make_subsection_selection_meta(
+                        payload=None,
+                        source=source,
+                        provenance_tags=(
+                            clean[:200],
+                            encode_ee_selection_meta_note(
+                                make_subsection_selection_meta(
                                     explicit_labels=extra_same_section_labels_by_section.get(extra_sect, ()),
                                     label_ranges=extra_same_section_ranges_by_section.get(extra_sect, ()),
                                 )
-                            },
+                            ),
                         ),
-                        source=source,
-                        provenance_tags=(clean[:200],),
                     ))
                     seq += 1
 
@@ -6064,43 +6077,45 @@ def extract_ee_ops(
                     if extra_sub not in labels:
                         labels.append(extra_sub)
                 for extra_sect, extra_sub in subsection_repeals:
+                    # R8: repeal carries no payload; subsection selection meta
+                    # rides as a serialized provenance note.
                     ops.append(LegalOperation(
                         op_id=f"ee-repeal-sub-{extra_sect}-{extra_sub}-{source.statute_id}",
                         sequence=seq,
                         action=_to_structural_action("repeal"),
                         target=LegalAddress(path=(("section", extra_sect), ("subsection", extra_sub))),
-                        payload=IRNode(
-                            kind=IRNodeKind.CONTENT,
-                            text="",
-                            attrs={
-                                "subsection_selection_meta": make_subsection_selection_meta(
+                        payload=None,
+                        source=source,
+                        provenance_tags=(
+                            clean[:200],
+                            encode_ee_selection_meta_note(
+                                make_subsection_selection_meta(
                                     explicit_labels=secondary_subsection_labels_by_section.get(extra_sect, ())
                                 )
-                            },
+                            ),
                         ),
-                        source=source,
-                        provenance_tags=(clean[:200],),
                     ))
                     seq += 1
                 for extra_sect, extra_sub in companion_subsection_repeals:
                     if (extra_sect, extra_sub) in subsection_repeals:
                         continue
+                    # R9: repeal carries no payload; subsection selection meta
+                    # rides as a serialized provenance note.
                     ops.append(LegalOperation(
                         op_id=f"ee-repeal-sub-{extra_sect}-{extra_sub}-{source.statute_id}",
                         sequence=seq,
                         action=_to_structural_action("repeal"),
                         target=LegalAddress(path=(("section", extra_sect), ("subsection", extra_sub))),
-                        payload=IRNode(
-                            kind=IRNodeKind.CONTENT,
-                            text="",
-                            attrs={
-                                "subsection_selection_meta": make_subsection_selection_meta(
+                        payload=None,
+                        source=source,
+                        provenance_tags=(
+                            clean[:200],
+                            encode_ee_selection_meta_note(
+                                make_subsection_selection_meta(
                                     explicit_labels=secondary_subsection_labels_by_section.get(extra_sect, ())
                                 )
-                            },
+                            ),
                         ),
-                        source=source,
-                        provenance_tags=(clean[:200],),
                     ))
                     seq += 1
 
@@ -6430,21 +6445,46 @@ def extract_ee_ops(
                     seq += 1
                 return ops
         # Could not identify a provision target — return unknown op for diagnostics
-        ops.append(LegalOperation(
-            op_id=f"ee-unknown-{seq}-{source.statute_id}",
-            sequence=seq,
-            action=_to_structural_action(action),
-            target=LegalAddress(path=()),
-            payload=IRNode(
+        unparsed_action = _to_structural_action(action)
+        # R11: when the unparsed clause classifies as a REPEAL, the repeal op
+        # carries no payload; the unparsed-clause diagnostic rides as a
+        # serialized provenance note instead.  Non-repeal classifications
+        # (text_replace/replace/insert/meta) keep the IRNode payload because the
+        # meta handler in the grafter + target_resolution read off it.
+        unparsed_provenance_tags: tuple[str, ...] = (
+            f"no_target: {clean[:200]}",
+            _EE_UNPARSED_OPERATION_CLAUSE_RULE,
+        )
+        if unparsed_action is StructuralAction.REPEAL:
+            from lawvm.estonia.ee_instruction_waist import (
+                EEUnparsedClauseDiagnostic,
+                encode_ee_diagnostic_clause_note,
+            )
+
+            unparsed_payload = None
+            unparsed_provenance_tags = (
+                *unparsed_provenance_tags,
+                encode_ee_diagnostic_clause_note(
+                    EEUnparsedClauseDiagnostic(clause_text=clean, parser_action=action)
+                ),
+            )
+        else:
+            unparsed_payload = IRNode(
                 kind=IRNodeKind.CONTENT,
                 text=clean,
                 attrs={
                     "source_family": _EE_UNPARSED_OPERATION_CLAUSE_RULE,
                     "parser_action": action,
                 },
-            ),
+            )
+        ops.append(LegalOperation(
+            op_id=f"ee-unknown-{seq}-{source.statute_id}",
+            sequence=seq,
+            action=unparsed_action,
+            target=LegalAddress(path=()),
+            payload=unparsed_payload,
             source=source,
-            provenance_tags=(f"no_target: {clean[:200]}", _EE_UNPARSED_OPERATION_CLAUSE_RULE),
+            provenance_tags=unparsed_provenance_tags,
             witness_rule_id=_EE_UNPARSED_OPERATION_CLAUSE_RULE,
         ))
         return ops
@@ -7476,28 +7516,32 @@ def extract_ee_ops(
             ))
             seen_sub_paths.add(sub_path)
             seq += 1
-        from lawvm.estonia.ee_instruction_waist import make_subsection_selection_meta
+        from lawvm.estonia.ee_instruction_waist import (
+            encode_ee_selection_meta_note,
+            make_subsection_selection_meta,
+        )
 
         for extra_sect, extra_sub in companion_subsection_repeals:
             sub_path = (("section", extra_sect), ("subsection", extra_sub))
             if sub_path in seen_sub_paths:
                 continue
+            # R10: repeal carries no payload; subsection selection meta rides as
+            # a serialized provenance note.
             ops.append(LegalOperation(
                 op_id=f"ee-repeal-sub-{extra_sect}-{extra_sub}-{source.statute_id}",
                 sequence=seq,
                 action=_to_structural_action("repeal"),
                 target=LegalAddress(path=sub_path),
-                payload=IRNode(
-                    kind=IRNodeKind.CONTENT,
-                    text="",
-                    attrs={
-                        "subsection_selection_meta": make_subsection_selection_meta(
+                payload=None,
+                source=source,
+                provenance_tags=(
+                    clean[:200],
+                    encode_ee_selection_meta_note(
+                        make_subsection_selection_meta(
                             explicit_labels=companion_labels_by_section.get(extra_sect, ())
                         )
-                    },
+                    ),
                 ),
-                source=source,
-                provenance_tags=(clean[:200],),
             ))
             seen_sub_paths.add(sub_path)
             seq += 1
