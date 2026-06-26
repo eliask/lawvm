@@ -179,6 +179,22 @@ _NAMED_BLOCKING_HELPERS = frozenset(
 _HARD_BLOCKING_HELPERS = _NAMED_BLOCKING_HELPERS | {
     "_append_ee_replay_adjudication",  # blocking behavior keyed on kind= value
 }
+# Forwarding blockers: helpers that take ``blocking=`` as a parameter and
+# forward it verbatim to the internal ``CompileAdjudication(blocking=...)``.
+# For these, the blocking disposition comes from the CALL SITE (not the
+# helper body): a call site that passes ``blocking=True`` and a resolved
+# ``kind=`` is a blocking emit. A call site that omits ``blocking=`` falls
+# through to the helper default (typically ``False``) and is non-blocking.
+#
+# Witness commit: ``00f778fc EE replay: fail-loud broad-except audit`` introduced
+# ``_ee_orchestration_adjudication`` along with two new blocking rule_ids
+# (``ee_oracle_parse_failed``, ``ee_consistency_check_failed``) that flow
+# through it.
+_FORWARDING_BLOCKING_HELPERS = frozenset(
+    {
+        "_ee_orchestration_adjudication",
+    }
+)
 
 
 def _scan_ee_blocking_emit_sites() -> set[str]:
@@ -228,8 +244,9 @@ def _scan_ee_blocking_emit_sites() -> set[str]:
             elif isinstance(fn, ast.Name):
                 name = fn.id
             is_blocking_helper = name in _HARD_BLOCKING_HELPERS
+            is_forwarding_helper = name in _FORWARDING_BLOCKING_HELPERS
             is_direct_ca = name == "CompileAdjudication"
-            if not (is_blocking_helper or is_direct_ca):
+            if not (is_blocking_helper or is_forwarding_helper or is_direct_ca):
                 continue
             kind_val: str | None = None
             blocking_val: bool | None = None
@@ -247,9 +264,16 @@ def _scan_ee_blocking_emit_sites() -> set[str]:
             # Direct CompileAdjudication: only count when blocking is literally True.
             if is_direct_ca and blocking_val is True and kind_val:
                 discovered.add(kind_val)
-            # Wrapping helpers that hardcode blocking=True internally:
+            # Hard-blocker helpers that hardcode blocking=True internally:
             # every kind passed in goes blocking.
             if is_blocking_helper and kind_val:
+                discovered.add(kind_val)
+            # Forwarding helpers (``_ee_orchestration_adjudication`` etc.) take
+            # ``blocking=`` as a parameter and forward it verbatim to the
+            # internal ``CompileAdjudication(blocking=...)``; the disposition
+            # comes from the CALL SITE. Only count call sites that explicitly
+            # pass ``blocking=True`` (the helper default is typically False).
+            if is_forwarding_helper and blocking_val is True and kind_val:
                 discovered.add(kind_val)
         # Loop-body variant: ``rule_id = "ee_*"`` assigned inside a ``for``
         # body, then a sibling ``CompileAdjudication(kind=rule_id, ..., blocking=True)``

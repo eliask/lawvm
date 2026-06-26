@@ -97,6 +97,21 @@ EE_BLOCKING_RULE_IDS: Final[FrozenSet[str]] = frozenset(
         "ee_replay_statute_title_noop",
         "ee_replay_meta_non_body_skipped",
         "ee_replay_unparsed_operation_skipped",
+        # --- source-lane orchestration failures (via _ee_orchestration_*) ------
+        # The fail-loud broad-except audits in commits 0d60710e (pair-planning)
+        # + 00f778fc (replay) added explicit blocking adjudications for source
+        # fetch / parse / consistency-check failures that previously crashed
+        # silently. Each forwards ``blocking=True`` and a kind= through
+        # ``_ee_orchestration_adjudication`` (a pass-through helper — the
+        # caller's ``blocking=`` flows to the inner CompileAdjudication).
+        "ee_oracle_parse_failed",
+        "ee_consistency_check_failed",
+        "ee_amendment_parse_failed",
+        "ee_amendment_source_fetch_failed",
+        "ee_cancelled_pending_ref_metadata_parse_failed",
+        "ee_cancelled_pending_ref_source_fetch_failed",
+        "ee_pending_source_act_commencement_source_fetch_failed",
+        "ee_temporal_source_scan_failed",
     }
 )
 
@@ -257,6 +272,58 @@ EE_NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
         f"unparsed op skipped during replay; {_EE_DRILL_FAMILY_HINT}; "
         f"locate statute with an opaque/unmodeled op variant.",
         "2026-06-24",
+    ),
+    # Source-lane orchestration failures (added by fail-loud broad-except audits
+    # in commits 0d60710e + 00f778fc). These are blocking adjudications emitted
+    # through the pass-through ``_ee_orchestration_adjudication`` helper, so the
+    # caller's ``blocking=True`` kwarg flows to ``CompileAdjudication``.
+    "ee_oracle_parse_failed": (
+        f"RT oracle consolidation could not be parsed (consistency check "
+        f"skipped, replay left uncompared); {_EE_DRILL_FAMILY_HINT}; locate "
+        f"EE pair whose oracle XML triggers an xml.etree parse failure.",
+        "2026-06-26",
+    ),
+    "ee_consistency_check_failed": (
+        f"replay/oracle consistency check crashed (no divergences computed, "
+        f"uncompared); {_EE_DRILL_FAMILY_HINT}; induce the check to crash by "
+        f"pointing the replay at a malformed oracle IR.",
+        "2026-06-26",
+    ),
+    "ee_amendment_parse_failed": (
+        f"an amendment act XML failed to parse into LegalOperation list; "
+        f"{_EE_DRILL_FAMILY_HINT}; locate corpus pair with malformed "
+        f"amendment XML.",
+        "2026-06-26",
+    ),
+    "ee_amendment_source_fetch_failed": (
+        f"fetching an amendment source XML raised an unexpected exception "
+        f"(not in the expected-source-unavailable set); {_EE_DRILL_FAMILY_HINT}; "
+        f"force a network/decode exception inside the amendment fetch path.",
+        "2026-06-26",
+    ),
+    "ee_cancelled_pending_ref_metadata_parse_failed": (
+        f"the cancelled-pending-ref metapass could not parse pending-amendment "
+        f"metadata XML unexpectedly; {_EE_DRILL_FAMILY_HINT}; locate pair with "
+        f"malformed pending-amendment metadata XML.",
+        "2026-06-26",
+    ),
+    "ee_cancelled_pending_ref_source_fetch_failed": (
+        f"the cancelled-pending-ref metapass could not fetch a source XML "
+        f"unexpectedly; {_EE_DRILL_FAMILY_HINT}; force a fetch exception in "
+        f"the pending-ref lane.",
+        "2026-06-26",
+    ),
+    "ee_pending_source_act_commencement_source_fetch_failed": (
+        f"fetching a pending-source-act commencement source XML raised an "
+        f"unexpected exception; {_EE_DRILL_FAMILY_HINT}; monkey-patch the RT "
+        f"fetch helper to raise in the commencement metapass.",
+        "2026-06-26",
+    ),
+    "ee_temporal_source_scan_failed": (
+        f"scanning a temporal (expiry-relevant) source act raised an "
+        f"unexpected exception; {_EE_DRILL_FAMILY_HINT}; force an exception "
+        f"in the temporal-source scan path.",
+        "2026-06-26",
     ),
 }
 
