@@ -18,6 +18,7 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.tree_ops import normalized_label_key
 
 from lawvm.finland.helpers import _is_omission_ir, _norm_num_token
+from lawvm.finland.op_provenance import RecognizerId, has_recognizer
 from lawvm.finland.ops import AmendmentOp, ResolvedOp
 from lawvm.finland.apply_ir_ops import _relabel_paragraph_ir
 
@@ -429,7 +430,7 @@ def _make_item_repeal_placeholder_ir(paragraph: IRNode, op: AmendmentOp | Resolv
     op_target_item = op.effective_target_item_label if isinstance(op, ResolvedOp) else op.target_cols.target_item
     label = paragraph.label or (op_target_item or "")
     attrs = {"lawvm_repeal_placeholder": "1"}
-    if "unique_item_label_subsection_fallback" in op.target_guessing_provenance_tags:
+    if has_recognizer(op.provenance, RecognizerId.UNIQUE_ITEM_LABEL_SUBSECTION_FALLBACK):
         attrs["lawvm_restore_materialized_stale_item_slot"] = "1"
     placeholder = IRNode(
         kind=IRNodeKind.PARAGRAPH,
