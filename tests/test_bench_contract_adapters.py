@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
 from lawvm.core.bench_comparator_registry import has_bench_comparator
@@ -9,6 +11,9 @@ from lawvm.core.bench_contract import (
     BenchStatus,
     check_residue_reconciliation,
 )
+
+if TYPE_CHECKING:
+    from lawvm.us_federal.bench import WindowStatus
 
 
 # ---------------------------------------------------------------------------
@@ -322,7 +327,7 @@ def _us_window():
 
 def _us_result(
     *,
-    status: str = "evaluated",
+    status: "WindowStatus | None" = None,
     oracle_changed: int = 10,
     agreements: int = 7,
     lawvm_wrong: int = 2,
@@ -334,7 +339,7 @@ def _us_result(
 
     return us_bench.WindowResult(
         window=_us_window(),
-        status=status,
+        status=status if status is not None else us_bench.WindowStatus.EVALUATED,
         oracle_changed=oracle_changed,
         agreements=agreements,
         lawvm_wrong=lawvm_wrong,
@@ -388,7 +393,7 @@ def test_us_unaccounted_non_agreement_is_typed() -> None:
 def test_us_skipped_is_non_scored() -> None:
     from lawvm.us_federal import bench as us_bench
 
-    r = us_bench.us_bench_unit_result(_us_result(status="skipped"))
+    r = us_bench.us_bench_unit_result(_us_result(status=us_bench.WindowStatus.SKIPPED))
     assert r.status is BenchStatus.NO_TRUTH
     assert not r.is_failure
 

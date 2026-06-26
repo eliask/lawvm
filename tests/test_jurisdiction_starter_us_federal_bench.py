@@ -29,6 +29,7 @@ from lawvm.us_federal.bench import (
     BenchReport,
     BenchWindow,
     WindowResult,
+    WindowStatus,
     derive_window_law_locators,
     evaluate_window,
     load_corpus,
@@ -218,7 +219,7 @@ def test_report_shape_is_stable_and_never_authorizes_replay() -> None:
 def test_window_result_skip_jsonable_omits_evaluation_scalars() -> None:
     result = WindowResult(
         window=_synthetic_window(),
-        status="skipped",
+        status=WindowStatus.SKIPPED,
         skip_rule_id=US_BENCH_WINDOW_EMPTY_DELTA_RULE_ID,
     )
     payload = result.to_jsonable()
