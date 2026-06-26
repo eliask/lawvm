@@ -1578,6 +1578,24 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "source-monotonicity, never INVALID (absent bytes => cannot "
                 "check, not a violation)",
                 ("provenance", "negative"), role="observation"),
+    # D7 / LS-23 COMMENCEMENT.EFFECT_TOTALITY (audit_impl_D7): every LegalOperation
+    # reaching compile-timelines is temporally authorized — a commence/revive
+    # TemporalEvent matches via group_id + scope, OR the op carries an explicit
+    # pending/unresolved/manual-frontier classification. An op that is neither
+    # is a PIT-correctness risk: replay must not silently choose an effective
+    # date. Owner module: core.commencement_totality_audit. The audit function
+    # emits Observation carriers only (role=observation; never raises, never
+    # mutates legal state) — a strict-profile consumer may flip the finding to
+    # a strict barrier via this default_enforcement; the audit itself just
+    # records the gap and continues. Mirrors the precedent
+    # APPLY.UNCOVERED_BODY_SECTION registry code (strict_fail + observation:
+    # strict barrier in strict mode, observation in quirks).
+    FindingSpec("COMMENCEMENT.OP_WITHOUT_TEMPORAL_AUTHORIZATION", "compile-timelines",
+                "audit", "strict_fail", "commencement_totality_audit",
+                "A LegalOperation reached timeline compilation without a matching "
+                "commencement TemporalEvent and without a pending/unresolved/"
+                "manual-frontier classification.",
+                ("temporal_selection", "strictness"), role="observation"),
 )}
 
 

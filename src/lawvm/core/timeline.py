@@ -105,6 +105,7 @@ from lawvm.core.timeline_temporal_events import (
     temporal_event_execution_date as _temporal_event_execution_date,
     temporal_overrides_for_op as _temporal_overrides_for_op,
 )
+from lawvm.core.commencement_totality_audit import assert_effect_totality
 
 # Compatibility re-exports while timeline address helpers migrate out.
 _TIMELINE_ADDRESS_COMPAT_EXPORTS = (_iter_nodes_with_address,)
@@ -585,6 +586,35 @@ def compile_timelines(
             emit_warnings=emit_warnings,
         )
     temporal_events = tuple(executable_temporal_events)
+    # D7 / LS-23 COMMENCEMENT.EFFECT_TOTALITY (audit_impl_D7): assert every
+    # executable op is temporally authorized (matching commence/revive event)
+    # or carries an explicit pending/unresolved/manual-frontier classification
+    # — never a silent default-effective-date. The audit emits Observation
+    # carriers only; we route each one to the issue_sink as a TimelineIssue
+    # (kind mirrored on the TimelineIssueKind closed vocabulary) so consumers
+    # that don't read PhaseResult.Observations still see the gap, plus the
+    # Observations are forwarded to result.observations below (so a strict-
+    # profile consumer can flip the finding to a strict barrier).
+    _commencement_findings = assert_effect_totality(
+        executable_ops,
+        temporal_events,
+        source_statute=base.statute_id,
+    )
+    for _finding in _commencement_findings:
+        _record_timeline_issue(
+            issue_sink,
+            kind="commencement_op_without_temporal_authorization",
+            message=(
+                "compile_timelines: op reached timeline compilation without "
+                "a matching commencement TemporalEvent and without a "
+                f"pending/unresolved/manual-frontier classification (op_id="
+                f"{_finding.detail.get('op_id', '?')}, group_id="
+                f"{_finding.detail.get('group_id', '?')}, "
+                f"target={_finding.detail.get('target', '?')}, "
+                f"action={_finding.detail.get('action', '?')})"
+            ),
+            source_statute=_finding.source_statute,
+        )
     temporal_events_by_group_id: Dict[str, Tuple[TemporalEvent, ...]] = {}
     if temporal_events:
         grouped_events: Dict[str, List[TemporalEvent]] = {}

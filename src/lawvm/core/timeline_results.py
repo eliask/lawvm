@@ -213,6 +213,13 @@ TimelineIssueKind = Literal[
     "duplicate_same_label_child_carried_continuity",
     "duplicate_same_label_child_stale_source_shadow",
     "duplicate_same_label_child_unresolved",
+    # D7 / LS-23 COMMENCEMENT.EFFECT_TOTALITY: an op reached compile-timelines
+    # without a matching commence/revive TemporalEvent and without a
+    # pending/unresolved/manual-frontier classification. Mirrors the
+    # registry code COMMENCEMENT.OP_WITHOUT_TEMPORAL_AUTHORIZATION; surfaced
+    # as a TimelineIssue here so a compile_timelines consumer that does not
+    # route PhaseResult.Observations still sees it on the issue_sink.
+    "commencement_op_without_temporal_authorization",
 ]
 
 
