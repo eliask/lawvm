@@ -55,7 +55,7 @@ def _ref(
         "node_id": node_id,
         "surface_text": surface,
         "cite_kind": cite_kind,
-        "status": status,
+        "ref_status": status,
         "phrase_lemma": phrase_lemma,
         "edge_subtype": "xml_ref",
         "target_id": target_id,

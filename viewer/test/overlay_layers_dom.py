@@ -106,7 +106,7 @@ FIXTURE = """(() => {
     links_json: JSON.stringify([]),
   }));
   surfaceOverlays.push(mk('term_use', spans.term_use[0], spans.term_use[1], {
-    status: 'resolved', payload_json: JSON.stringify({ term: 'paatos' }),
+    overlay_status: 'resolved', payload_json: JSON.stringify({ term: 'paatos' }),
     links_json: JSON.stringify([{ rel: 'defines', target_overlay_id: 'ov1' }]),
   }));
   surfaceOverlays.push(mk('temporal', spans.temporal[0], spans.temporal[1], {

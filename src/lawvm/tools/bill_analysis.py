@@ -174,7 +174,7 @@ def _span_text(node: "SurfaceNode", body: str) -> str:
 
 def _status_str(node: "SurfaceNode") -> str:
     """The node's status as a plain string (handles enum-or-str)."""
-    return str(getattr(node.status, "value", node.status))
+    return str(getattr(node.node_status, "value", node.node_status))
 
 
 # ---------------------------------------------------------------------------

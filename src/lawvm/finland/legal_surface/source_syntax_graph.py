@@ -168,7 +168,7 @@ SYNTAX_EDGE_KINDS: frozenset[str] = frozenset(
     }
 )
 
-#: Per-node status (grammar6 SyntaxNode.status). A construction leaf the family
+#: Per-node status (grammar6 SyntaxNode.node_status). A construction leaf the family
 #: owned is ``parsed``; a structural segment is ``parsed``; a residual span is
 #: ``open`` (surfaced, awaiting a grammar that owns it) or ``unsupported`` (under
 #: ``LAWVM_PARSE_TOTALITY`` a silent-unowned cheap signal is a hard failure).
@@ -205,7 +205,7 @@ class SyntaxNode:
         kind:       A member of :data:`SYNTAX_NODE_KINDS`.
         char_start: 0-based inclusive offset into the provision body text.
         char_end:   0-based exclusive offset.
-        status:     A member of :data:`SYNTAX_NODE_STATUSES`.
+        node_status: A member of :data:`SYNTAX_NODE_STATUSES`.
         families:   For a construction leaf: the family ids that own this span
                     (>=2 ⇒ multi-family coordination). ``()`` for structural /
                     residual nodes.
@@ -221,7 +221,7 @@ class SyntaxNode:
     kind: str
     char_start: int
     char_end: int
-    status: str
+    node_status: str
     families: tuple[str, ...] = ()
     residual_reason: str = ""
     residual_text: str = ""
@@ -229,8 +229,8 @@ class SyntaxNode:
     def __post_init__(self) -> None:
         if self.kind not in SYNTAX_NODE_KINDS:
             raise ValueError(f"unknown syntax node kind: {self.kind!r}")
-        if self.status not in SYNTAX_NODE_STATUSES:
-            raise ValueError(f"unknown syntax node status: {self.status!r}")
+        if self.node_status not in SYNTAX_NODE_STATUSES:
+            raise ValueError(f"unknown syntax node status: {self.node_status!r}")
         if self.char_start < 0:
             raise ValueError("SyntaxNode.char_start must be >= 0")
         if self.char_end < self.char_start:
@@ -1019,7 +1019,7 @@ def _emit_structural_nodes(
             kind=seg.kind,
             char_start=seg.char_start,
             char_end=seg.char_end,
-            status=_structural_status(),
+            node_status=_structural_status(),
         )
         seg_node_id.append(nid)
 
@@ -1117,7 +1117,7 @@ def _emit_construction_leaves(
                 kind=kind,
                 char_start=start,
                 char_end=end,
-                status="parsed",
+                node_status="parsed",
                 families=tuple(sorted(families)),
             )
             seg_i = _next_segment_index_for_span(start, end)
@@ -1275,7 +1275,7 @@ def _emit_residual_nodes(
     locating it within its context window in ``body``.
     """
     residuals: list[SyntaxResidual] = []
-    status = "unsupported" if totality else "open"
+    node_status = "unsupported" if totality else "open"
     for ex in unowned_examples:
         span = _locate_span(body, ex.text)
         if span is None:
@@ -1304,7 +1304,7 @@ def _emit_residual_nodes(
             kind="residual_span",
             char_start=start,
             char_end=end,
-            status=status,
+            node_status=node_status,
             residual_reason=f"unowned_cheap_signal:{ex.shape}",
             residual_text=ex.text,
         )

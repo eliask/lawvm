@@ -167,7 +167,7 @@ class SanctionLens:
             rule_id=frame.rule_id,
             # NODE_STATUSES structural value: an owned, present surface fact
             # (NOT a resolution outcome).
-            status="asserted",
+            node_status="asserted",
             payload={
                 "sanction_kind": sanction_kind,
                 "marker_surface": frame.marker_surface,
@@ -203,5 +203,5 @@ def _residual_seed(
             "surface_text": residual.surface_text,
             "detail": residual.detail,
         },
-        status="open",
+        residual_status="open",
     )

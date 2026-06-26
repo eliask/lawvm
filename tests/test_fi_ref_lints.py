@@ -86,7 +86,7 @@ def test_open_reference_lint_fires_e2e() -> None:
     graph = build_legal_surface_graph(xml, "1/2020")
     # precondition: at least one open reference_resolution node exists
     assert any(
-        n.node_kind == "reference_resolution" and n.status == "open"
+        n.node_kind == "reference_resolution" and n.node_status == "open"
         for n in graph.nodes.values()
     )
     report = lint_surface_graph(graph)
@@ -201,7 +201,7 @@ def _ref_pair_result(
                 source_ref=span,
                 local_discriminator=expr_local,
                 rule_id="fi.references.v0.reference_expr",
-                status=status,
+                node_status=status,
                 payload=exprp,
                 authority_role="surface_fact",
             ),
@@ -210,7 +210,7 @@ def _ref_pair_result(
                 source_ref=span,
                 local_discriminator=res_local,
                 rule_id="fi.references.v0.reference_resolution",
-                status=status,
+                node_status=status,
                 payload=resp,
                 authority_role="surface_fact",
             ),
@@ -221,7 +221,7 @@ def _ref_pair_result(
                 src_local=res_local,
                 dst_local=expr_local,
                 rule_id="fi.references.v0.resolution_of",
-                status="asserted",
+                surface_edge_status="asserted",
                 payload={},
             ),
         ),

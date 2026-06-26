@@ -595,7 +595,7 @@ class ConditionAttachmentPass:
                     src_local=src_id,
                     dst_local=nid,
                     rule_id=RULE_EXCEPTION,
-                    status=edge_status,
+                    surface_edge_status=edge_status,
                     payload=payload,
                 )
             )
@@ -642,7 +642,7 @@ class ConditionAttachmentPass:
             src_local=src_id,
             dst_local=dst_id,
             rule_id=rule_id,
-            status=edge_status,
+            surface_edge_status=edge_status,
             payload=payload,
         )
 
@@ -974,7 +974,7 @@ class DeonticFrameAttachmentPass:
                         src_local=core_id,
                         dst_local=frame_id,
                         rule_id=rule_id,
-                        status="asserted",
+                        surface_edge_status="asserted",
                         payload={
                             "core_kind": core_kind,
                             "core_span": core_span,
@@ -1013,7 +1013,7 @@ class DeonticFrameAttachmentPass:
                     src_local=core_id,
                     dst_local=frame_id,
                     rule_id=rule_id,
-                    status=edge_status,
+                    surface_edge_status=edge_status,
                     payload=payload,
                 )
             )
@@ -1185,7 +1185,7 @@ class DelegationInstrumentPass:
                     src_local=frame_id,
                     dst_local=instr_id,
                     rule_id=RULE_DELEGATION_GRANTS_INSTRUMENT,
-                    status=edge_status,
+                    surface_edge_status=edge_status,
                     payload=payload,
                 )
             )
@@ -1485,7 +1485,7 @@ class SanctionReferencePass:
                     src_local=sanction_id,
                     dst_local=rid,
                     rule_id=RULE_SANCTION_DEFERS,
-                    status=edge_status,
+                    surface_edge_status=edge_status,
                     payload=payload,
                 )
             )
@@ -1708,7 +1708,7 @@ class NormSubjectAttachmentPass:
                     src_local=core_id,
                     dst_local=actor_id,
                     rule_id=RULE_NORM_HAS_SUBJECT,
-                    status=edge_status,
+                    surface_edge_status=edge_status,
                     payload=payload_out,
                 )
             )
@@ -1886,7 +1886,7 @@ class ProcedureGovernancePass:
                     src_local=core_id,
                     dst_local=frame_id,
                     rule_id=RULE_GOVERNED_BY_PROCEDURE,
-                    status=edge_status,
+                    surface_edge_status=edge_status,
                     payload=payload,
                 )
             )
@@ -2217,7 +2217,7 @@ class EnclosingAnaphoraPass:
                     src_local=cue_node_id,
                     dst_local=nid,
                     rule_id=rule_id,
-                    status=edge_status,
+                    surface_edge_status=edge_status,
                     payload=edge_payload,
                 )
             )
@@ -2525,7 +2525,7 @@ class ForestStructuralAttachmentPass:
                         src_local=src_id,
                         dst_local=dst_id,
                         rule_id=_KIND_RULE_FOREST[q.kind],
-                        status=edge_status,
+                        surface_edge_status=edge_status,
                         payload=payload,
                     )
                 )

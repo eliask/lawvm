@@ -308,7 +308,7 @@ class ExceptionConditionLens:
                             f"{kind}|{marker_text}|{m_start}|{len(node_seeds)}"
                         ),
                         rule_id=_RULE_ID,
-                        status="asserted",
+                        node_status="asserted",
                         payload={
                             "cue_kind": kind,
                             "marker_text": marker_text,

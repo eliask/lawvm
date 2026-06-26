@@ -153,7 +153,7 @@ def _entity(node_id: str, *, kind: str = "term_symbol_entity", term: str = "x") 
         source_ref=None,
         lens_id="lens.def",
         rule_id="r",
-        status="asserted",
+        node_status="asserted",
         payload_hash="p",
         payload={"term": term},
     )
@@ -168,7 +168,7 @@ def _surface_fact(node_id: str) -> SurfaceNode:
         source_ref=None,
         lens_id="lens.def",
         rule_id="r",
-        status="resolved",
+        node_status="resolved",
         payload_hash="p",
         payload={},
     )
@@ -194,7 +194,7 @@ def _defines_edge(src: str, dst: str) -> SurfaceEdge:
         src=src,
         dst=dst,
         rule_id="r",
-        status="asserted",
+        surface_edge_status="asserted",
         payload_hash="p",
         payload={},
     )
@@ -238,7 +238,7 @@ def test_orphan_entity_counts_src_endpoint_as_covering() -> None:
         src="e",
         dst="o",
         rule_id="r",
-        status="asserted",
+        surface_edge_status="asserted",
         payload_hash="p",
         payload={},
     )

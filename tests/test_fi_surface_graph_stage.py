@@ -153,7 +153,7 @@ def _node(
         source_ref=span,
         lens_id="test",
         rule_id="test",
-        status=status,
+        node_status=status,
         payload_hash="ph",
         payload=payload,
     )

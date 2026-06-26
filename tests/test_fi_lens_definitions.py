@@ -201,7 +201,7 @@ def test_unbound_term_lint_fires_on_orphan_open_use() -> None:
         source_ref=orphan_ref,
         local_discriminator="orphan-open-use",
         rule_id="test.orphan_use",
-        status="open",
+        node_status="open",
         payload={
             "term_surface": "orpotermi",
             "lemma": "orpotermi",

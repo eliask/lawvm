@@ -66,7 +66,7 @@ def _ref_expr_seed(payload: dict[str, object] | None = None) -> SurfaceNodeSeed:
         source_ref=_span(),
         local_discriminator="ref:laki 301/2004:citation",
         rule_id="fi.references.v0",
-        status="resolved",
+        node_status="resolved",
         payload=payload if payload is not None else {"surface_text": "lain 301/2004 5 §"},
     )
 
@@ -77,7 +77,7 @@ def _work_entity_seed() -> SurfaceNodeSeed:
         source_ref=None,
         local_discriminator="work:fi:act:301/2004",
         rule_id="fi.entity.v0",
-        status="present",
+        node_status="present",
         payload={"work_id": "fi:act:301/2004"},
         authority_role="entity_handle",
     )
@@ -166,7 +166,7 @@ def test_edge_to_nonexistent_node_errors() -> None:
         src_local=expr.local_discriminator,
         dst_local="ghost:does-not-exist",
         rule_id="fi.references.v0",
-        status="asserted",
+        surface_edge_status="asserted",
         payload={},
     )
     with pytest.raises(SurfaceAssemblyError, match="does not resolve to any node"):
@@ -181,7 +181,7 @@ def test_edge_between_existing_nodes_resolves() -> None:
         src_local=expr.local_discriminator,
         dst_local=work.local_discriminator,
         rule_id="fi.references.v0",
-        status="asserted",
+        surface_edge_status="asserted",
         payload={},
     )
     g = _assemble((_lens_result((expr, work), (edge,)),))
@@ -203,7 +203,7 @@ def test_assembler_refuses_replay_authorized_node() -> None:
         source_ref=_span(),
         lens_id="fi.references.v0",
         rule_id="fi.references.v0",
-        status="resolved",
+        node_status="resolved",
         payload_hash="ph",
         payload={},
         replay_authorized=True,
@@ -221,7 +221,7 @@ def test_assembler_refuses_non_surface_only_node() -> None:
         source_ref=_span(),
         lens_id="fi.references.v0",
         rule_id="fi.references.v0",
-        status="resolved",
+        node_status="resolved",
         payload_hash="ph",
         payload={},
         surface_only=False,
@@ -237,7 +237,7 @@ def test_assembler_refuses_replay_authorized_edge() -> None:
         src="n1",
         dst="n2",
         rule_id="r",
-        status="asserted",
+        surface_edge_status="asserted",
         payload_hash="ph",
         payload={},
         replay_authorized=True,
@@ -286,7 +286,7 @@ def test_unknown_node_kind_rejected() -> None:
         source_ref=_span(),
         local_discriminator="x",
         rule_id="r",
-        status="resolved",
+        node_status="resolved",
         payload={},
     )
     with pytest.raises(SurfaceAssemblyError, match="unknown node_kind"):
@@ -299,7 +299,7 @@ def test_unknown_status_rejected() -> None:
         source_ref=_span(),
         local_discriminator="x",
         rule_id="r",
-        status="totally_invalid_status",
+        node_status="totally_invalid_status",
         payload={},
     )
     with pytest.raises(SurfaceAssemblyError, match="unknown node status"):
@@ -312,7 +312,7 @@ def test_source_fact_seed_requires_source_ref() -> None:
         source_ref=None,
         local_discriminator="x",
         rule_id="r",
-        status="resolved",
+        node_status="resolved",
         payload={},
     )
     with pytest.raises(SurfaceAssemblyError, match="requires a source_ref"):

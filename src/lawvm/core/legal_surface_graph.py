@@ -411,7 +411,7 @@ class SurfaceNode:
     source_ref: SourceSpanRef | None
     lens_id: str | None
     rule_id: str | None
-    status: ResolutionStatus | str
+    node_status: ResolutionStatus | str
     payload_hash: str
     payload: Mapping[str, object]
     surface_only: bool = True
@@ -430,7 +430,7 @@ class SurfaceEdge:
     src: str
     dst: str
     rule_id: str
-    status: str
+    surface_edge_status: str
     payload_hash: str
     payload: Mapping[str, object]
     surface_only: bool = True

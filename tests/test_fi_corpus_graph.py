@@ -131,7 +131,7 @@ def test_two_cross_statute_refers_to_into_shared_node() -> None:
     ]
     # one asserted refers_to from A, one from C — both into the shared node
     assert len(refers) == 2
-    assert {e.status for e in refers} == {"asserted"}
+    assert {e.surface_edge_status for e in refers} == {"asserted"}
     citing_works = set()
     for e in refers:
         src = graph.nodes[e.src]
@@ -148,7 +148,7 @@ def test_citations_of_returns_both_citers() -> None:
     assert len(cites) == 2
     assert {c.citing_work_id for c in cites} == {_A_ID, _C_ID}
     assert {c.edge_kind for c in cites} == {"refers_to"}
-    assert {c.status for c in cites} == {"asserted"}
+    assert {c.citation_status for c in cites} == {"asserted"}
 
 
 def test_act_level_citation_is_not_a_provision_address() -> None:

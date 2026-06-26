@@ -183,7 +183,7 @@ class EnclosingAnaphoraLens:
                             f"{kind}|{det_noun}|{scope}|{m.start()}"
                         ),
                         rule_id=_RULE_ID,
-                        status="asserted",
+                        node_status="asserted",
                         payload={
                             "qualifier_kind": kind,
                             "cue": det_noun,

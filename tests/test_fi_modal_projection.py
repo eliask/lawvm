@@ -286,7 +286,7 @@ def test_forest_deontic_core_seed_projection_matches_independent_scan() -> None:
             seed.node_kind,
             seed.local_discriminator,
             seed.rule_id,
-            seed.status,
+            seed.node_status,
             None if ref is None else (ref.char_start, ref.char_end, ref.text_hash),
             payload,
         )

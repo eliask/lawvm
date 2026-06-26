@@ -84,7 +84,7 @@ def _edges(graph):
 def test_single_deferral_reference_resolves_asserted() -> None:
     graph = _build()
     edges = _edges(graph)
-    asserted = [e for e in edges if e.status == "asserted"]
+    asserted = [e for e in edges if e.surface_edge_status == "asserted"]
     assert asserted, "expected resolved (asserted) penal-deferral edges (P1/P2)"
     for edge in asserted:
         assert graph.nodes[edge.src].node_kind in _SANCTION_KINDS
@@ -102,7 +102,7 @@ def test_single_deferral_reference_resolves_asserted() -> None:
 
 def test_multi_reference_emits_full_candidate_set_not_a_pick() -> None:
     graph = _build()
-    amb = [e for e in _edges(graph) if e.status == "ambiguous"]
+    amb = [e for e in _edges(graph) if e.surface_edge_status == "ambiguous"]
     assert amb, "expected ambiguous penal-deferral edges (P3 two refs)"
     for edge in amb:
         cand = edge.payload.get("candidate_reference_spans")
@@ -147,7 +147,7 @@ def test_penal_deferral_edges_obey_the_firewall() -> None:
     for edge in edges:
         assert edge.surface_only is True
         assert edge.replay_authorized is False
-        assert edge.status in ("asserted", "ambiguous")
+        assert edge.surface_edge_status in ("asserted", "ambiguous")
 
 
 # ── (f) determinism ──────────────────────────────────────────────────────────
@@ -159,7 +159,7 @@ def test_penal_deferral_composition_is_deterministic() -> None:
 
     def _keys(graph):
         return sorted(
-            (e.edge_id, e.edge_kind, e.src, e.dst, e.status, e.payload_hash)
+            (e.edge_id, e.edge_kind, e.src, e.dst, e.surface_edge_status, e.payload_hash)
             for e in _edges(graph)
         )
 
@@ -241,4 +241,4 @@ def test_sanctioned_by_co_occurrence_is_preserved() -> None:
     for edge in sancts:
         # co-occurrence stays candidate/ambiguous — never silently upgraded to
         # asserted (cue-containment for sanctions is spurious, see module docstring).
-        assert edge.status in ("candidate", "ambiguous")
+        assert edge.surface_edge_status in ("candidate", "ambiguous")

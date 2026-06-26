@@ -218,7 +218,7 @@ class DelegatedInstrumentLens:
                         rule_id=_LENS_ID,
                         # Structural NODE_STATUSES value: an owned, present surface
                         # fact (NOT a resolution outcome).
-                        status="asserted",
+                        node_status="asserted",
                         payload=_instrument_payload(grant, instrument_surface),
                         authority_role="surface_fact",
                     )
@@ -274,5 +274,5 @@ def _residual_seed(
             "surface_text": surface,
             "detail": residual.reason,
         },
-        status="open",
+        residual_status="open",
     )

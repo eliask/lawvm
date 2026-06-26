@@ -235,7 +235,7 @@ def _seed_fp(seed) -> tuple:
         seed.node_kind,
         seed.local_discriminator,
         seed.rule_id,
-        seed.status,
+        seed.node_status,
         seed.authority_role,
         None if ref is None else (ref.char_start, ref.char_end, ref.text_hash),
         payload,

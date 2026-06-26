@@ -2423,7 +2423,7 @@ def drill_surface_orphan_entity_node_surface_totality() -> None:
             source_ref=None,
             lens_id="lens.def",
             rule_id="r",
-            status="asserted",
+            node_status="asserted",
             payload_hash="p",
             payload={"term": term},
         )
@@ -2438,7 +2438,7 @@ def drill_surface_orphan_entity_node_surface_totality() -> None:
         source_ref=None,
         lens_id="lens.def",
         rule_id="r",
-        status="resolved",
+        node_status="resolved",
         payload_hash="p",
         payload={},
     )
@@ -2448,7 +2448,7 @@ def drill_surface_orphan_entity_node_surface_totality() -> None:
         src="binding",
         dst="covered",  # only `covered` is an edge endpoint; `orphan` is not
         rule_id="r",
-        status="asserted",
+        surface_edge_status="asserted",
         payload_hash="p",
         payload={},
     )

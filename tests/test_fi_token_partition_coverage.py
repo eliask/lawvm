@@ -82,7 +82,7 @@ def _forest(
             kind="modal_predicate",
             char_start=lo,
             char_end=hi,
-            status="parsed",
+            node_status="parsed",
             families=("modal",),
         )
     for i, (lo, hi, shape, text) in enumerate(violation_spans):
@@ -92,7 +92,7 @@ def _forest(
             kind="residual_span",
             char_start=lo,
             char_end=hi,
-            status="open",
+            node_status="open",
             residual_reason=f"unowned_cheap_signal:{shape}",
             residual_text=text,
         )
@@ -150,7 +150,7 @@ def _surface_node(
         ),
         lens_id=lens_id,
         rule_id="r",
-        status="resolved",
+        node_status="resolved",
         payload_hash="p",
         payload={},
     )
@@ -312,7 +312,7 @@ def test_coverage_certifier_skips_nodes_without_span() -> None:
         source_ref=None,
         lens_id=None,
         rule_id=None,
-        status="resolved",
+        node_status="resolved",
         payload_hash="p",
         payload={},
     )

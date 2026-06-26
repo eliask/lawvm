@@ -56,7 +56,7 @@ def test_actor_temporal_colocation_candidate_edge_appears() -> None:
     assert coloc, "expected an experimental colocation candidate edge"
     for edge in coloc:
         # CANDIDATE, never asserted (§D5).
-        assert edge.status == "candidate"
+        assert edge.surface_edge_status == "candidate"
         assert edge.payload.get("experimental") is True
         assert isinstance(edge.payload.get("char_distance"), int)
         # endpoints resolve to the right node kinds
@@ -118,7 +118,7 @@ def _delegation_seed(instrument_kind: str | None) -> SurfaceNodeSeed:
         source_ref=_span(0, 30),
         local_discriminator=f"Valtioneuvosto|{instrument_kind}|0",
         rule_id="fi.delegation.v0",
-        status="asserted",
+        node_status="asserted",
         payload=payload,
         authority_role="surface_fact",
     )
@@ -187,7 +187,7 @@ def test_frame_affordances_firewall_and_candidate_status() -> None:
         assert edge.replay_authorized is False
         # the experimental cross-frame affordance is never asserted
         if edge.edge_kind == "actor_modal_temporal_colocated":
-            assert edge.status == "candidate"
+            assert edge.surface_edge_status == "candidate"
 
 
 def test_lint_pass_registered_in_defaults() -> None:

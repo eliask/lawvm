@@ -204,7 +204,7 @@ class ExceptionScopesFramePass:
                         # affordance, not a settled fact (§D5). The exception does
                         # not "govern" the frame — they merely share text and the
                         # cue precedes/overlaps the frame.
-                        status="candidate",
+                        surface_edge_status="candidate",
                         payload={
                             "char_distance": gap,
                             "window": self.window,
@@ -274,7 +274,7 @@ class FrameActorColocationPass:
                         # affordance, not a settled fact (§D5). The actor is not
                         # claimed to be the frame's legal subject — the spans
                         # merely share text.
-                        status="candidate",
+                        surface_edge_status="candidate",
                         payload={
                             "char_distance": gap,
                             "window": self.window,

@@ -150,7 +150,7 @@ def mint_deontic_core_seed(
         rule_id=_LENS_ID,
         # Structural NODE_STATUSES value: an owned, present surface fact (NOT a
         # resolution outcome).
-        status="asserted",
+        node_status="asserted",
         payload=_core_payload(core, base),
         authority_role="surface_fact",
     )

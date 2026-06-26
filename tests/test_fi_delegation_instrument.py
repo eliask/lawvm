@@ -81,7 +81,7 @@ def test_resolved_frame_grants_one_instrument() -> None:
     graph = build_legal_surface_graph(_XML_RESOLVED, "100/2025")
     edges = _instr_edges(graph)
     assert edges, "expected a delegation_grants_instrument edge"
-    asserted = [e for e in edges if e.status == "asserted"]
+    asserted = [e for e in edges if e.surface_edge_status == "asserted"]
     assert asserted, "the single-instrument frame must yield an asserted edge"
     for edge in asserted:
         assert graph.nodes[edge.src].node_kind == "delegation_frame"
@@ -108,7 +108,7 @@ def test_instrument_node_payload_and_containment() -> None:
         assert n.source_ref is not None
     # every asserted edge: the instrument span lies inside the frame span
     for edge in _instr_edges(graph):
-        if edge.status != "asserted":
+        if edge.surface_edge_status != "asserted":
             continue
         fref = graph.nodes[edge.src].source_ref
         iref = graph.nodes[edge.dst].source_ref
@@ -122,7 +122,7 @@ def test_instrument_node_payload_and_containment() -> None:
 
 def test_coordinated_grant_is_ambiguous_with_full_set() -> None:
     graph = build_legal_surface_graph(_XML_AMBIGUOUS, "101/2025")
-    amb = [e for e in _instr_edges(graph) if e.status == "ambiguous"]
+    amb = [e for e in _instr_edges(graph) if e.surface_edge_status == "ambiguous"]
     assert amb, "a coordinated two-instrument grant must produce ambiguous edges"
     for edge in amb:
         assert edge.payload.get("attachment") == "ambiguous_by_containment"
@@ -158,7 +158,7 @@ def test_ohje_frame_is_anchored_after_canonical_cutover() -> None:
         and n.payload.get("instrument_kind") == "ohje"
     ]
     assert instr, "the canonical parser now mints an ohje delegated_instrument node"
-    edges = [e for e in _instr_edges(graph) if e.status == "asserted"]
+    edges = [e for e in _instr_edges(graph) if e.surface_edge_status == "asserted"]
     assert edges, "the ohje frame is now anchored -> a real containment edge"
     # no NO_INSTRUMENT_IN_FRAME diagnostic remains for the (now anchored) ohje frame
     bundle = build_surface_bundle(_XML_DIAGNOSTIC, "102/2025")
@@ -181,7 +181,7 @@ def test_instrument_nodes_and_edges_obey_the_firewall() -> None:
     for edge in edges:
         assert edge.surface_only is True
         assert edge.replay_authorized is False
-        assert edge.status in ("asserted", "ambiguous")
+        assert edge.surface_edge_status in ("asserted", "ambiguous")
 
 
 # ── (f) determinism ──────────────────────────────────────────────────────────
@@ -193,7 +193,7 @@ def test_delegation_instrument_is_deterministic() -> None:
 
     def _keys(graph):
         return sorted(
-            (e.edge_id, e.edge_kind, e.src, e.dst, e.status, e.payload_hash)
+            (e.edge_id, e.edge_kind, e.src, e.dst, e.surface_edge_status, e.payload_hash)
             for e in _instr_edges(graph)
         )
 

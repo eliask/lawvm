@@ -367,7 +367,7 @@ const OVERLAY_KINDS = {
   reference: {},
   defined_term: {},
   term_use: {
-    statusCls(p) { const s = String(p.status || '').toLowerCase(); return s ? ' ov-status-' + s : ''; },
+    statusCls(p) { const s = String(p.overlay_status || '').toLowerCase(); return s ? ' ov-status-' + s : ''; },
     // Navigate back to the defining-term overlay this use points at.
     nav(p) {
       const defLink = overlayLinks(p).find(l => l.rel === 'defines' || l.rel === 'definition' || l.rel === 'defined_by');
@@ -1073,8 +1073,8 @@ function overlayHovercardHtml(row) {
   let h = `<div class="hc-title">${escHtml(title)}</div>`;
   h += `<div class="hc-status-row">`
     + `<span class="hc-status hc-overlay-${escAttr(kind)}">${escHtml(tr('overlayLayer_' + kind) || kind)}</span>`;
-  if (kind === 'term_use' && row.status) {
-    h += `<span class="hc-citekind">${escHtml(row.status)}</span>`;
+  if (kind === 'term_use' && row.overlay_status) {
+    h += `<span class="hc-citekind">${escHtml(row.overlay_status)}</span>`;
   }
   h += `</div>`;
   // defined_term: surface usage count when the lane supplied it.

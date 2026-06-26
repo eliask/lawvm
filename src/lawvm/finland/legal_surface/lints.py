@@ -162,7 +162,7 @@ class UnboundTermLintPass:
         index = _index(graph)
         lints: list[SurfaceLint] = []
         for use_id, use in _uses(index):
-            if use.status != "open":
+            if use.node_status != "open":
                 continue
             if index.use_out_bindings.get(use_id):
                 continue  # has a resolving edge → not unbound
@@ -331,7 +331,7 @@ class AmbiguousTermUseLintPass:
         index = _index(graph)
         lints: list[SurfaceLint] = []
         for use_id, use in _uses(index):
-            if use.status != "ambiguous":
+            if use.node_status != "ambiguous":
                 continue
             term = _term_of(use)
             count = use.payload.get("candidate_count")

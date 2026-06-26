@@ -223,7 +223,7 @@ def _edge(
         dst_local=dst,
         rule_id=RULE_COMPARE,
         # NEUTRAL contrast, never an asserted fact (§14, §D7).
-        status="candidate",
+        surface_edge_status="candidate",
         payload=payload,
     )
 

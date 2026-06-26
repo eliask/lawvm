@@ -195,7 +195,7 @@ class AnaphoraLens:
                         src_local=resolution_local,
                         dst_local=expr_local,
                         rule_id=_RULE_RESOLUTION_OF,
-                        status="asserted",
+                        surface_edge_status="asserted",
                         payload={},
                     )
                 )
@@ -242,7 +242,7 @@ class AnaphoraLens:
             source_ref=source_ref,
             local_discriminator=local,
             rule_id=_RULE_EXPR,
-            status=resolution_status,
+            node_status=resolution_status,
             payload=payload,
             authority_role="surface_fact",
         )
@@ -274,7 +274,7 @@ class AnaphoraLens:
             source_ref=source_ref,
             local_discriminator=local,
             rule_id=_RULE_RESOLUTION,
-            status=resolution_status,
+            node_status=resolution_status,
             payload=payload,
             authority_role="surface_fact",
         )

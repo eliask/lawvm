@@ -187,7 +187,7 @@ class BrokenReferenceLintPass:
         index = _index(graph)
         lints: list[SurfaceLint] = []
         for res_id, res in _resolutions(index):
-            if res.status != "broken":
+            if res.node_status != "broken":
                 continue
             expr_pair = _expr_for(index, res_id)
             support = (expr_pair[0],) if expr_pair is not None else ()
@@ -226,7 +226,7 @@ class OpenReferenceLintPass:
         index = _index(graph)
         lints: list[SurfaceLint] = []
         for res_id, res in _resolutions(index):
-            if res.status != "open":
+            if res.node_status != "open":
                 continue
             expr_pair = _expr_for(index, res_id)
             support = (expr_pair[0],) if expr_pair is not None else ()
@@ -264,7 +264,7 @@ class StatuteOnlyMissLintPass:
         index = _index(graph)
         lints: list[SurfaceLint] = []
         for res_id, res in _resolutions(index):
-            if res.status != "statute_only":
+            if res.node_status != "statute_only":
                 continue
             if _resolved_to_target(index, res_id, res):
                 continue  # the registry resolved it; not a coverage gap
@@ -306,7 +306,7 @@ class AmbiguousReferenceLintPass:
         index = _index(graph)
         lints: list[SurfaceLint] = []
         for res_id, res in _resolutions(index):
-            if res.status != "ambiguous":
+            if res.node_status != "ambiguous":
                 continue
             expr_pair = _expr_for(index, res_id)
             support = (expr_pair[0],) if expr_pair is not None else ()
