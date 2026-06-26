@@ -119,6 +119,110 @@ class RecognizerId(Enum):
     REPEAL_VTS_VOIMAANTULO = "fi.repeal_vts_voimaantulo"
     """Voimaantulo repeal VTS witness (apply_subsection_dispatch)."""
 
+    # ===================================================================
+    # Step A: FULL serialized tag namespace.
+    #
+    # The members above are the recovery recognizers an APPLY/COMPILE site
+    # branches on. The members below complete the closed namespace so that
+    # EVERY tag string ever written into the three serialized provenance bags
+    # (``extraction_provenance_tags`` / ``target_guessing_provenance_tags`` /
+    # ``scope_provenance_tags``) has a typed home whose ``.value`` is the exact
+    # literal serialized string. Membership was established by an EXHAUSTIVE
+    # whole-corpus census (59,574 statutes, ``official_consolidation`` replay)
+    # of the FINAL compiled-op rows, unioned with the static write-site literals
+    # that are written-then-stripped before serialization (so the write site is
+    # still typed). The census is the authoritative T-relevance selector: a tag
+    # that reaches a serialized golden column is, by construction, load-bearing.
+    #
+    # These members are NOT (yet) all branched on at apply sites; they exist so
+    # the serialized columns can be reconstructed FROM ``provenance`` (Step C)
+    # and so adding/removing a tag is a typed change, not a silent string edit.
+    # ===================================================================
+
+    # --- extraction_provenance_tags: remaining serialized tags ---
+    EXTRACTION_BODY_ROOT_REPLACE = "extraction_body_root_replace"
+    """Whole-section body root replace fallback (frontend_compile)."""
+
+    EXTRACTION_ENACTING_FORMULA_BODY_REPLACE = "extraction_enacting_formula_body_replace"
+    """Enacting-formula body replace fallback (frontend_compile)."""
+
+    EXTRACTION_ENACTING_FORMULA_BODY_INSERT = "extraction_enacting_formula_body_insert"
+    """Enacting-formula body insert fallback (frontend_compile)."""
+
+    EXTRACTION_CEREMONIAL_BODY_ONLY = "extraction_ceremonial_body_only"
+    """Ceremonial body-only extraction fallback (frontend_compile)."""
+
+    EXTRACTION_ACT_WIDE_BODY_SECTION_REPLACE = "extraction_act_wide_body_section_replace"
+    """Act-wide body section replace fallback (frontend_compile)."""
+
+    EXTRACTION_TITLE_FALLBACK = "extraction_title_fallback"
+    """Title-only extraction fallback (frontend_compile)."""
+
+    EXTRACTION_PREAMBLE_BODY = "extraction_preamble_body"
+    """Preamble-body extraction fallback (frontend_compile)."""
+
+    REPEAL_REENACT_NORMALIZED = "repeal_reenact_normalized"
+    """Repeal+re-enact normalized to a single replace (group_ops)."""
+
+    NUMBERED_TABLE_TARGET = "numbered_table_target"
+    """Numbered-table target supplement (johtolause_supplements)."""
+
+    ITEM_AND_MOMENT_TARGET_SUPPLEMENT = "item_and_moment_target_supplement"
+    """Item+moment target supplement (johtolause_supplements)."""
+
+    MIXED_EXPLICIT_TARGET_SUPPLEMENT = "mixed_explicit_target_supplement"
+    """Mixed-explicit target supplement (johtolause_supplements)."""
+
+    SPARSE_OSALTA_ROW_OMISSION_REPEAL = "sparse_osalta_row_omission_repeal"
+    """Sparse `osalta` row-omission repeal supplement (johtolause_supplements)."""
+
+    HISTORICAL_TOP_LEVEL_KOHTA_AS_SUBSECTION = "fi.historical_top_level_kohta_as_subsection"
+    """Historical top-level kohta retargeted as subsection (frontend_compile);
+    the witness rule id doubles as the extraction-bag tag."""
+
+    # --- target_guessing_provenance_tags: remaining serialized tags ---
+    REBASE_SPARSE_STALE_PREDECESSOR = "rebase_sparse_stale_predecessor"
+    """Replace rebased off a sparse stale predecessor (payload_normalize)."""
+
+    NUMBERED_TABLE_XML_SUBSECTION_OFFSET = "numbered_table_xml_subsection_offset"
+    """Numbered-table XML subsection offset rebind (payload_normalize)."""
+
+    FOLLOW_SAME_WAVE_MIGRATION = "follow_same_wave_migration"
+    """Target followed a same-wave migration (apply_subsection_dispatch).
+    Written into the target-guessing bag, then stripped before serialization;
+    typed here so the write site is covered by the closed namespace."""
+
+    # --- scope_provenance_tags: serialized tags ---
+    SCOPE_CARRY_FORWARD = "chapter_scope_carry_forward"
+    """Chapter scope carried forward from a prior op (scope resolution)."""
+
+    SCOPE_FROM_EXPLICIT_CHUNK = "chapter_scope_from_explicit_chunk"
+    """Chapter scope from an explicit johtolause chunk (johtolause_supplements)."""
+
+    SCOPE_FROM_PREAMBLE = "chapter_scope_from_preamble"
+    """Chapter scope from the amendment preamble (scope resolution)."""
+
+    SCOPE_FROM_SAME_AMENDMENT_STEM = "chapter_scope_from_same_amendment_stem"
+    """Chapter scope from a same-amendment letter-suffix stem (scope resolution)."""
+
+    SCOPE_GROUPED_CHAPTER = "grouped_chapter_scope"
+    """Chapter scope from a grouped-chapter merge (group scope)."""
+
+    SCOPE_GROUPED_PART = "grouped_part_scope"
+    """Part scope from a grouped-part merge (group scope)."""
+
+    SCOPE_CHAPTER_SEED = "chapter_seed"
+    """Scope tag stamped on a chapter-seed compiled op (replay_pipeline)."""
+
+    SCOPE_MIXED_GROUP_MERGE = "mixed_scope_group_merge"
+    """Scope tag stamped on a mixed-scope group merge (group_plan)."""
+
+    SCOPE_IDENTITY_RENUMBER_ABSENT_TARGET_TO_INSERT = (
+        "identity_renumber_absent_target_to_insert"
+    )
+    """Identity-renumber against an absent target lowered to insert
+    (frontend_compile); stamped into the scope bag."""
+
 
 class RecoverySurface(Enum):
     """Which surface a recovery recognizer read to guess the op."""
@@ -195,12 +299,21 @@ class Recovered:
 
     ``scope_confidence`` is deliberately NOT here: it is orthogonal to recovery
     (it rides on ``Parsed`` ops too) and stays a separate op-level field.
+
+    ``from_fallback_provenance`` is the typed home for the distinct
+    ``AmendmentOp.fallback_provenance`` bit. That boolean is a SEPARATE marker
+    from any single tag string: a frontend extraction fallback stamps BOTH an
+    ``extraction_*`` tag AND ``fallback_provenance=True`` on the same op, and a
+    downstream reader (``body_coverage``) keys on the bit alone. It is therefore
+    not a ``RecognizerId`` member (it names no serialized bag tag); it rides here
+    as an intrinsic facet of the ``Recovered`` provenance.
     """
 
     surface: RecoverySurface
     recognizer_ids: frozenset[RecognizerId]
     tier: ConfidenceTier
     coverage: RecognitionCoverage = field(default_factory=RecognitionCoverage)
+    from_fallback_provenance: bool = False
 
 
 OpProvenance = Parsed | Recovered

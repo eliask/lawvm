@@ -159,6 +159,7 @@ def _derive_op_provenance(
         surface=dominant_surface(recognizer_ids),
         recognizer_ids=recognizer_ids,
         tier=dominant_tier(recognizer_ids),
+        from_fallback_provenance=fallback_provenance,
     )
 
 class ScopeResolutionConfidence(StrEnum):

@@ -206,3 +206,64 @@ def test_blocks_in_strict_typed_method_matches_disposition() -> None:
     assert blocking is not None and blocking.blocks_in_strict() is True
     nonblocking = recovery_authorization_rule("APPLY.LEGACY_DISPATCH_FALLBACK")
     assert nonblocking is not None and nonblocking.blocks_in_strict() is False
+
+
+def test_recognizer_id_namespace_is_exhaustive_over_serialized_tag_bags() -> None:
+    """Pin the full closed ``RecognizerId`` namespace (Step A census).
+
+    Every tag string a whole-corpus census (59,574 statutes,
+    ``official_consolidation`` replay) observed in the three serialized
+    provenance bags — unioned with the static write-site literals that are
+    written-then-stripped before serialization — has a typed ``RecognizerId``
+    member whose ``.value`` is the exact literal. This guard fails loudly if a
+    new tag string is added to a bag without a typed home (silent string growth)
+    OR a member is renamed/dropped (serialized-identity drift).
+    """
+    expected_values = {
+        # Boolean recovery flags on AmendmentOp.
+        "sec1_body_johto_fallback",
+        "body_root_replace_fallback",
+        "uncovered_body_recovery",
+        # extraction_provenance_tags serialized + write-site set.
+        "extraction_fallback_heuristic",
+        "extraction_body_root_replace",
+        "extraction_enacting_formula_body_replace",
+        "extraction_enacting_formula_body_insert",
+        "extraction_ceremonial_body_only",
+        "extraction_act_wide_body_section_replace",
+        "extraction_title_fallback",
+        "extraction_preamble_body",
+        "jolloin_moment_renumber_supplement",
+        "repeal_reenact_normalized",
+        "numbered_table_target",
+        "item_and_moment_target_supplement",
+        "mixed_explicit_target_supplement",
+        "sparse_osalta_row_omission_repeal",
+        "fi.historical_top_level_kohta_as_subsection",
+        # target_guessing_provenance_tags serialized + write-site set.
+        "unique_item_label_subsection_fallback",
+        "normalize_item_like_target",
+        "rebase_duplicate_target_shifted_replace",
+        "rebase_replaced_renumber_source",
+        "rebase_sparse_stale_predecessor",
+        "numbered_table_xml_subsection_offset",
+        "follow_same_wave_migration",
+        # scope_provenance_tags serialized + closed read/write set.
+        "chapter_scope_from_unique_live_section",
+        "chapter_scope_carry_forward",
+        "chapter_scope_from_explicit_chunk",
+        "chapter_scope_from_preamble",
+        "chapter_scope_from_same_amendment_stem",
+        "grouped_chapter_scope",
+        "grouped_part_scope",
+        "chapter_seed",
+        "mixed_scope_group_merge",
+        "identity_renumber_absent_target_to_insert",
+        # Branched witness_rule_id values.
+        "fi.jolloin_renumber",
+        "fi.repeal_vts_voimaantulo",
+    }
+    actual_values = {m.value for m in RecognizerId}
+    assert actual_values == expected_values
+    # No enum aliasing collapsed two members onto one value.
+    assert len(actual_values) == len(list(RecognizerId))
