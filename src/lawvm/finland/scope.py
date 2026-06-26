@@ -21,6 +21,11 @@ from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.finland.body_pairing import ObservedBodyUnit, build_observed_body_inventory
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.johto_scope_mentions import collect_johto_chapter_scope_mentions
+from lawvm.finland.op_provenance import (
+    RecognizerId,
+    has_recognizer,
+    provenance_from_witness_and_tags,
+)
 from lawvm.finland.ops import (
     ScopeConfidence,
     ScopeResolutionConfidence,
@@ -1740,18 +1745,22 @@ def _assign_jolloin_renumber_scope_from_companion_targets(
 
     source_counts: dict[tuple[object | None, Optional[str]], int] = {}
     for lo in los:
-        if lo.action is StructuralAction.RENUMBER and lo.witness_rule_id == "fi.jolloin_renumber":
+        lo_prov = provenance_from_witness_and_tags(lo.witness_rule_id, lo.provenance_tags)
+        if lo.action is StructuralAction.RENUMBER and has_recognizer(
+            lo_prov, RecognizerId.JOLLOIN_RENUMBER
+        ):
             key = (lo.source, lo.group_id)
             source_counts[key] = source_counts.get(key, 0) + 1
 
     for i, lo in enumerate(tuple(los)):
         if lo.action is not StructuralAction.RENUMBER:
             continue
-        if lo.witness_rule_id != "fi.jolloin_renumber":
+        lo_prov = provenance_from_witness_and_tags(lo.witness_rule_id, lo.provenance_tags)
+        if not has_recognizer(lo_prov, RecognizerId.JOLLOIN_RENUMBER):
             continue
         if source_counts.get((lo.source, lo.group_id), 0) != 1:
             continue
-        if "chapter_scope_from_unique_live_section" in lo.provenance_tags:
+        if has_recognizer(lo_prov, RecognizerId.CHAPTER_SCOPE_FROM_UNIQUE_LIVE_SECTION):
             continue
         target_pd = _lo_path_dict(lo)
         section = target_pd.get("section")

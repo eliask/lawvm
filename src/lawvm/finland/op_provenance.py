@@ -228,6 +228,54 @@ def has_recognizer(provenance: OpProvenance | None, recognizer: RecognizerId) ->
     return isinstance(provenance, Recovered) and recognizer in provenance.recognizer_ids
 
 
+# Recognizers that ride on a core ``LegalOperation`` (not an ``AmendmentOp``):
+# the branched ``witness_rule_id`` values and the ``provenance_tags`` entries a
+# scope-resolution site keys on. Their ``value`` is the literal string used at
+# the site, so this map is a closed, exhaustive translation of those literals.
+_WITNESS_RULE_RECOGNIZERS: dict[str, RecognizerId] = {
+    RecognizerId.JOLLOIN_RENUMBER.value: RecognizerId.JOLLOIN_RENUMBER,
+    RecognizerId.REPEAL_VTS_VOIMAANTULO.value: RecognizerId.REPEAL_VTS_VOIMAANTULO,
+}
+_PROVENANCE_TAG_RECOGNIZERS: dict[str, RecognizerId] = {
+    RecognizerId.CHAPTER_SCOPE_FROM_UNIQUE_LIVE_SECTION.value: (
+        RecognizerId.CHAPTER_SCOPE_FROM_UNIQUE_LIVE_SECTION
+    ),
+}
+
+
+def provenance_from_witness_and_tags(
+    witness_rule_id: str | None,
+    provenance_tags: tuple[str, ...],
+) -> OpProvenance | None:
+    """Derive typed provenance from a core ``LegalOperation``'s raw fields.
+
+    Step 3c (FI-LOCAL): a scope-resolution site that branches on a core
+    ``LegalOperation``'s ``witness_rule_id`` or ``provenance_tags`` membership
+    routes the read through this helper instead, so the literal-string test
+    becomes ``has_recognizer(prov, RecognizerId.X)``. The core
+    ``LegalOperation`` carries no ``provenance`` facet (it is a cross-jurisdiction
+    type), so the typed set is reconstructed inline from the op's existing fields
+    here -- no core change. Exact equivalence: only the recognizers a scope site
+    keys on are translated; any other witness/tag yields ``None``.
+    """
+    ids: set[RecognizerId] = set()
+    recognizer = _WITNESS_RULE_RECOGNIZERS.get(witness_rule_id or "")
+    if recognizer is not None:
+        ids.add(recognizer)
+    for tag in provenance_tags:
+        tag_recognizer = _PROVENANCE_TAG_RECOGNIZERS.get(tag)
+        if tag_recognizer is not None:
+            ids.add(tag_recognizer)
+    if not ids:
+        return None
+    recognizer_ids = frozenset(ids)
+    return Recovered(
+        surface=dominant_surface(recognizer_ids),
+        recognizer_ids=recognizer_ids,
+        tier=dominant_tier(recognizer_ids),
+    )
+
+
 def admits(mode: AcceptanceMode, provenance: OpProvenance) -> bool:
     """Return whether ``mode`` accepts an op with ``provenance``.
 
@@ -344,4 +392,5 @@ __all__ = [
     "dominant_tier",
     "has_recognizer",
     "mode_for",
+    "provenance_from_witness_and_tags",
 ]
