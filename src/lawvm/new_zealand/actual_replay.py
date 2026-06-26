@@ -152,6 +152,17 @@ NZ_ACTUAL_REPLAY_REFUSED_STRUCTURAL_MATERIALIZATION_FAILED_RULE_ID = (
 NZ_ACTUAL_REPLAY_REFUSED_SURFACE_MISSING_RULE_ID = (
     "nz_actual_replay_refused_operation_surface_missing_for_structural_family"
 )
+# Receipt-track (NOT a fail-closed refusal) for family-level dry-run refusals
+# carried onto the actual-replay plane. The four dry-run family-level refusals
+# (no candidate for repeal/replace/insert, preflight not ready) declare the
+# family had NOTHING to replay — they are not per-op blocks and MUST NOT create
+# a phantom blocked transition. Filtering them silently (the prior behaviour)
+# violated AGENTS §1.8 (every filtered op stays visible with a receipt);
+# this rule_id is the work-level receipt that surfaces their count without
+# inflating ``transitions_refused`` or affecting fail-closed semantics.
+NZ_ACTUAL_REPLAY_CARRIED_FAMILY_LEVEL_DRY_RUN_REFUSAL_RULE_ID = (
+    "nz_actual_replay_carried_family_level_dry_run_refusal"
+)
 
 # Agreement / replay rule ids.
 NZ_ACTUAL_REPLAY_TRANSITION_MATERIALIZED_RULE_ID = (
@@ -310,6 +321,18 @@ class NZActualReplayReport:
     # per-transition refusals — they declared nothing — so they are reported
     # separately and never inflate the fail-closed-blocked transition count.
     families_not_attempted: tuple[NZActualReplayRefusal, ...] = ()
+    # Family-level dry-run refusals (no candidate for repeal/replace/insert,
+    # preflight not ready) carried onto the actual-replay plane as receipts.
+    # These are NOT per-op block refusals — they declare the family had nothing
+    # to replay — so they NEVER contribute to ``transitions_refused`` or to
+    # fail-closed blocking. Surfaced as a work-level count so a benchmark can
+    # distinguish "the work had nothing to replay in this family" (honest
+    # receipt — per AGENTS §1.8 — the family declared nothing) from "the work
+    # had candidates but they all failed verification" (a real replay gap
+    # counted in ``refusals``). See ``Roadmap`` in NOTES that called this
+    # "tighten the pre-cutoff-no-candidate accounting so the family-level
+    # refusals' work-level receipt is observable on the actual-replay plane".
+    family_level_dry_run_refusals: tuple[NZActualReplayRefusal, ...] = ()
     forbidden_shortcuts: tuple[str, ...] = _FORBIDDEN_SHORTCUTS
 
     def replayed_mutation_count(self) -> int:
@@ -347,6 +370,20 @@ class NZActualReplayReport:
             # operation surface). Separate from the fail-closed transition count.
             "families_not_attempted": _counts(
                 refusal.detail.get("family", "") for refusal in self.families_not_attempted
+            ),
+            # Work-level receipt count of family-level dry-run refusals (no
+            # candidate / preflight-not-ready) carried onto the actual-replay
+            # plane — these declared nothing (honest residue per AGENTS §1.8),
+            # never fail-closed-blocked a transition, and are surfaced here so a
+            # benchmark can distinguish "family declared nothing" from "family
+            # had candidates but they all failed verification" (the latter is
+            # in ``refusals`` above). The count is ``(rule_id -> n)`` so the
+            # carried-forward dry-run refusal id stays observable — the four
+            # ids in ``_FAMILY_LEVEL_DRY_RUN_REFUSALS`` — distinguishing which
+            # family (repeal/replace/insert/preflight) declared nothing.
+            "family_level_dry_run_refusal_counts": _counts(
+                refusal.detail.get("dry_run_refusal_rule_id", "")
+                for refusal in self.family_level_dry_run_refusals
             ),
             # This surface DOES claim actual replay — for the transitions it
             # materialized and verified against the archived oracle.
@@ -396,7 +433,7 @@ class NZActualReplayReport:
                         },
                     )
                 )
-        for index, refusal in enumerate(self.refusals + self.families_not_attempted):
+        for index, refusal in enumerate(self.refusals + self.families_not_attempted + self.family_level_dry_run_refusals):
             residuals.append(_refusal_residual(self.work_id, index, refusal, classify_refusal_family))
         return tuple(residuals)
 
@@ -450,6 +487,9 @@ class NZActualReplayReport:
         payload["refusals"] = [refusal.to_jsonable() for refusal in self.refusals]
         payload["families_not_attempted"] = [
             refusal.to_jsonable() for refusal in self.families_not_attempted
+        ]
+        payload["family_level_dry_run_refusals"] = [
+            refusal.to_jsonable() for refusal in self.family_level_dry_run_refusals
         ]
         payload["agreement_surface"] = self.agreement_surface()
         return payload
@@ -520,6 +560,11 @@ def build_actual_replay(
     verified_by_date: dict[str, list[_VerifiedOp]] = {}
     blocked_by_date: dict[str, list[NZActualReplayRefusal]] = {}
     surface_refusals: list[NZActualReplayRefusal] = []
+    # Family-level dry-run refusals (no candidate / preflight not ready) — these
+    # declare nothing-to-replay rather than per-op blocks; they are carried as
+    # work-level receipts (NOT in ``blocked_by_date`` — they do not block any
+    # transition), surfaced separately on the actual-replay summary.
+    family_level_dry_run_refusals: list[NZActualReplayRefusal] = []
 
     # The amendment date that defines a proof's change window is carried by the
     # candidate row, not the proof. Index op_id -> amendment date from BOTH the
@@ -555,7 +600,12 @@ def build_actual_replay(
             )
         dry_run_reports.append(report)
         _partition_dry_run_outcomes(
-            report, family, amendment_date_by_op_id, verified_by_date, blocked_by_date
+            report,
+            family,
+            amendment_date_by_op_id,
+            verified_by_date,
+            blocked_by_date,
+            family_level_dry_run_refusals,
         )
 
     transitions: list[NZActualReplayedTransition] = []
@@ -613,6 +663,7 @@ def build_actual_replay(
         refusals=tuple(refusals),
         dry_run_reports=tuple(dry_run_reports),
         families_not_attempted=tuple(surface_refusals),
+        family_level_dry_run_refusals=tuple(family_level_dry_run_refusals),
     )
 
 
@@ -628,6 +679,7 @@ def _partition_dry_run_outcomes(
     amendment_date_by_op_id: dict[str, str],
     verified_by_date: dict[str, list[_VerifiedOp]],
     blocked_by_date: dict[str, list[NZActualReplayRefusal]],
+    family_level_dry_run_refusals: list[NZActualReplayRefusal],
 ) -> None:
     """Split a dry-run report into verified ops and fail-closed refusals.
 
@@ -635,15 +687,49 @@ def _partition_dry_run_outcomes(
     mutation preserved its neighbours. Any other proof, and every dry-run
     refusal, becomes a distinct named actual-replay refusal so nothing is
     silently dropped.
+
+    Family-level dry-run refusals (no candidates / preflight not ready) are NOT
+    per-op transition blocks — they mean the family had nothing to declare —
+    so they are NOT added to ``blocked_by_date`` (which would create a phantom
+    blocked transition). They ARE still carried forward onto the actual-replay
+    plane as work-level receipts in ``family_level_dry_run_refusals`` so the
+    count is observable per AGENTS §1.8 (every filtered lane stays visible with
+    a receipt; "the family declared nothing" is not the same as silently
+    dropping it). The receipt carries the original dry-run refusal rule_id in
+    ``detail["dry_run_refusal_rule_id"]`` so the family (repeal/replace/insert/
+    preflight) that declared nothing stays distinguishable from a benchmark
+    surface.
     """
 
     # Every per-op dry-run refusal is carried forward as a blocked declared op.
     # Family-level refusals (no candidates / preflight not ready) are NOT per-op
     # transition blocks — they mean the family had nothing to declare — so they
-    # never create a phantom blocked transition. The family simply contributes no
-    # ops; if no other family contributes either, the work has zero transitions.
+    # never create a phantom blocked transition. They are still surfaced as a
+    # work-level receipt in ``family_level_dry_run_refusals`` per AGENTS §1.8
+    # (silently filtering them violates receipt-conservation — a benchmark
+    # cannot distinguish "the family had no candidates" from "the family's
+    # candidates all failed verification" without the receipt count).
     for refusal in report.refusals:
         if refusal.rule_id in _FAMILY_LEVEL_DRY_RUN_REFUSALS:
+            family_level_dry_run_refusals.append(
+                NZActualReplayRefusal(
+                    rule_id=(
+                        NZ_ACTUAL_REPLAY_CARRIED_FAMILY_LEVEL_DRY_RUN_REFUSAL_RULE_ID
+                    ),
+                    message=(
+                        "actual replay received a family-level dry-run refusal — the "
+                        "family declared nothing to replay (no candidate / preflight "
+                        "not ready); the family is not attempted and never blocks a "
+                        "transition; surfaced as a receipt so the family-level "
+                        "no-candidate event stays observable per AGENTS §1.8."
+                    ),
+                    amendment_date_iso=refusal.amendment_date_iso,
+                    detail={
+                        "family": family,
+                        "dry_run_refusal_rule_id": refusal.rule_id,
+                    },
+                )
+            )
             continue
         date = refusal.amendment_date_iso or amendment_date_by_op_id.get(refusal.op_id, "")
         blocked_by_date.setdefault(date, []).append(

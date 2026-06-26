@@ -169,3 +169,124 @@ def test_replay_actual_smoke_corpus_pins_structural_invariants() -> None:
         "structural-divergence case it grounded (witness: act_public_1992_122 should "
         "emit several residual_replacement_mismatch refusals carrying divergence_class=structural_nodeset)."
     )
+
+
+@pytest.mark.skipif(not _REAL_DB.exists(), reason="archived NZ farchive not present")
+@pytest.mark.skipif(not _SMOKE_CORPUS.exists(), reason="NZ smoke corpus CSV not present")
+@pytest.mark.slow
+def test_replay_actual_surfaces_family_level_dry_run_refusals_as_receipt() -> None:
+    """Family-level dry-run refusals (no candidate for repeal/replace/insert,
+    preflight not ready) MUST be carried onto the actual-replay plane as a
+    work-level receipt (NOT a fail-closed refusal that blocks a transition).
+
+    Pins the §1.8 receipt-conservation contract surfaced in this cycle:
+    before the fix, ``_partition_dry_run_outcomes`` silently ``continue``-d
+    past family-level dry-run refusals (they declared nothing-to-replay rather
+    than per-op blocks, so they could be skipped without breaking the
+    fail-closed invariant). Filtering them silently violated the
+    receipt-conservation law (AGENTS §1.8 — every filtered lane stays visible
+    with a receipt) AND made a benchmark unable to distinguish "the family
+    declared nothing" from "the family had candidates but they all failed
+    verification" (the latter IS observable in ``refusals``; the former was
+    invisible).
+
+    The receipt's contract pinned here:
+
+    * Invariant A (emission liveness): at least one work in the smoke corpus
+      surfaces ``family_level_dry_run_refusals`` non-empty (the
+      ``act_public_1858_*`` family of unamended works carries no-candidate
+      dry-run refusals across all four promotable families).
+    * Invariant B (rule_id-only-carried): the per-op fail-closed ``refusals``
+      tuple does NOT contain the carried receipt rule_id
+      ``nz_actual_replay_carried_family_level_dry_run_refusal`` — that rule_id
+      lives ONLY in ``family_level_dry_run_refusals`` and the
+      agreement-residual projection (typed as ``accepted_non_executable_frontier``
+      per ``classify_refusal_family``: family declared nothing → no mutation →
+      not a ``replay_bug``, not ``temporal_mismatch``, not ``source_footing_gap``).
+    * Invariant C (family-attribution): every carried receipt carries the
+      original dry-run refusal rule_id in ``detail["dry_run_refusal_rule_id"]``
+      so a benchmark can attribute the "nothing to replay" event to the right
+      family (repeal/replace/insert/preflight) without re-running the dry-run.
+
+    Guard-liveness (AGENTS §2.9): Invariant A is the failure-surface —
+    reverting ``_partition_dry_run_outcomes``'s family-level carry branch to
+    the old silent ``continue`` makes ``family_level_dry_run_refusal_counts``
+    empty for every work, failing Invariant A.
+    """
+    from lawvm.new_zealand.actual_replay import (
+        NZ_ACTUAL_REPLAY_CARRIED_FAMILY_LEVEL_DRY_RUN_REFUSAL_RULE_ID,
+    )
+    from lawvm.new_zealand.dry_run_oracle import classify_refusal_family
+
+    works = [row["work_id"] for row in csv.DictReader(_SMOKE_CORPUS.open())]
+    assert works, "smoke corpus CSV present but had no work rows"
+
+    any_family_level_receipt_emitted = False
+    for work_id in works:
+        report = build_archived_work_actual_replay(
+            _REAL_DB, work_id=work_id, families=NZ_ACTUAL_REPLAY_DEFAULT_FAMILIES
+        )
+
+        # Invariant B (per-op refusal-rule_id isolation): the carry rule_id
+        # appears ONLY in family_level_dry_run_refusals, NEVER in the per-op
+        # fail-closed `refusals` tuple (which would inflate transitions_refused).
+        carry_rule_id = NZ_ACTUAL_REPLAY_CARRIED_FAMILY_LEVEL_DRY_RUN_REFUSAL_RULE_ID
+        per_op_rule_ids = {ref.rule_id for ref in report.refusals}
+        assert carry_rule_id not in per_op_rule_ids, (
+            f"{work_id}: the carry rule_id `{carry_rule_id}` appeared in `report.refusals` "
+            f"-- it MUST live ONLY in `report.family_level_dry_run_refusals` so it never "
+            f"inflates the fail-closed transition count (§1.8 receipts vs §1.12 fail-closed)."
+        )
+
+        # Invariant B': carried-refusal rule_id isolation. Every entry in
+        # `family_level_dry_run_refusals` is the carry rule_id (no other rule_id
+        # accidentally lands in the work-level receipt bucket).
+        carried_rule_ids = {ref.rule_id for ref in report.family_level_dry_run_refusals}
+        assert carried_rule_ids <= {carry_rule_id}, (
+            f"{work_id}: `family_level_dry_run_refusals` carries rule_ids "
+            f"{carried_rule_ids - {carry_rule_id}} that are NOT the carry rule_id; "
+            f"only `nz_actual_replay_carried_family_level_dry_run_refusal` should appear here."
+        )
+
+        # Invariant C (family-attribution): each carried receipt has the
+        # dry_run_refusal_rule_id + family in detail, and classifies as
+        # `accepted_non_executable_frontier`.
+        for carried_ref in report.family_level_dry_run_refusals:
+            drr = carried_ref.detail.get("dry_run_refusal_rule_id", "")
+            family = carried_ref.detail.get("family", "")
+            assert drr, (
+                f"{work_id}: a family_level_dry_run_refusal is missing "
+                f"`detail.dry_run_refusal_rule_id` -- required so a benchmark can "
+                f"attribute the nothing-to-replay event without re-running the dry-run."
+            )
+            assert family in {"repeal", "text_replace", "replace", "insert"}, (
+                f"{work_id}: family_level_dry_run_refusal carries `detail.family={family!r}` "
+                f"-- expected one of repeal/text_replace/replace/insert."
+            )
+            residual_family = classify_refusal_family(
+                refusal_rule_id=carried_ref.rule_id,
+                dry_run_refusal_rule_id=drr,
+            )
+            assert residual_family == "accepted_non_executable_frontier", (
+                f"{work_id}: family_level_dry_run_refusal classified as "
+                f"{residual_family!r} -- expected `accepted_non_executable_frontier` "
+                f"because the family declared nothing-to-replay (no mutation, not a "
+                f"replay_bug; the source is well-formed, this is the manual-frontier class)."
+            )
+
+        if report.family_level_dry_run_refusals:
+            any_family_level_receipt_emitted = True
+
+    # Invariant A (emission liveness): the `act_public_1858_*` and
+    # `act_public_1875_*` family of unamended works surface the receipt across
+    # multiple promotable families -- without this evidence, the carry path is
+    # dead code (a regression that silently swallows the receipt would make
+    # this check fail).
+    assert any_family_level_receipt_emitted, (
+        "smoke corpus pin: no work surfaces a family_level_dry_run_refusal receipt. "
+        "The `_partition_dry_run_outcomes` carry branch has regressed to silent `continue` "
+        "OR the smoke corpus lost the unamended-act witnesses it grounded (the "
+        "`act_public_1858_*` and `act_public_1875_*` family of works MUST surface at "
+        "least one carried receipt each -- they declare nothing to replay across multiple "
+        "promotable families per the smoke corpus scan on 2026-06-24)."
+    )
