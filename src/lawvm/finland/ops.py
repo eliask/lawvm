@@ -106,7 +106,6 @@ _TARGET_GUESSING_PROVENANCE_TAGS = frozenset(
 def _derive_op_provenance(
     *,
     fallback_provenance: bool,
-    uncovered_body_recovery: bool,
     extraction_provenance_tags: Tuple[str, ...],
     target_guessing_provenance_tags: Tuple[str, ...],
     scope_provenance_tags: Tuple[str, ...],
@@ -138,8 +137,6 @@ def _derive_op_provenance(
     phase; absence is represented as ``None`` here to stay additive.
     """
     ids: set[RecognizerId] = set()
-    if uncovered_body_recovery:
-        ids.add(RecognizerId.UNCOVERED_BODY)
     # Total per-bag fold: every serialized tag string -> its typed recognizer.
     for bag, tags in (
         (ProvenanceBag.EXTRACTION, extraction_provenance_tags),
@@ -831,7 +828,6 @@ class AmendmentOp:
     numbered_table_targets: Tuple[str, ...] = ()
     fallback_provenance: bool = False
     move_clause_target_unit_kind: Optional[TargetUnitKind] = None
-    uncovered_body_recovery: bool = False
     voimaantulo_repeal: bool = False
     extraction_provenance_tags: Tuple[str, ...] = ()
     target_guessing_provenance_tags: Tuple[str, ...] = ()
@@ -904,7 +900,6 @@ class AmendmentOp:
         """Derive the stamp from THIS op's current recovery markers + stamps."""
         return _derive_op_provenance(
             fallback_provenance=self.fallback_provenance,
-            uncovered_body_recovery=self.uncovered_body_recovery,
             extraction_provenance_tags=self.extraction_provenance_tags,
             target_guessing_provenance_tags=self.target_guessing_provenance_tags,
             scope_provenance_tags=self.scope_provenance_tags,
@@ -965,7 +960,6 @@ class AmendmentOp:
         numbered_table_targets: Tuple[str, ...] = (),
         fallback_provenance: bool = False,
         move_clause_target_unit_kind: TargetUnitKind | None = None,
-        uncovered_body_recovery: bool = False,
         voimaantulo_repeal: bool = False,
         extraction_provenance_tags: Tuple[str, ...] = (),
         target_guessing_provenance_tags: Tuple[str, ...] = (),
@@ -1048,7 +1042,6 @@ class AmendmentOp:
         self.numbered_table_targets = numbered_table_targets
         self.fallback_provenance = fallback_provenance
         self.move_clause_target_unit_kind = move_clause_target_unit_kind
-        self.uncovered_body_recovery = uncovered_body_recovery
         self.voimaantulo_repeal = voimaantulo_repeal
         self.extraction_provenance_tags = extraction_provenance_tags
         self.target_guessing_provenance_tags = target_guessing_provenance_tags
@@ -1423,7 +1416,6 @@ class ResolvedOp:
     move_clause_target_unit_kind: TargetUnitKind | None = None
     move_clause_target_chapter: Optional[str] = None
     move_clause_target_part: Optional[str] = None
-    uncovered_body_recovery: bool = False
     post_repeal_item_shift_label: Optional[str] = None
     body_chapter_move_from: Optional[str] = None
     named_row_targets: tuple[str, ...] = ()
@@ -1475,7 +1467,6 @@ class ResolvedOp:
     def _derive_provenance_from_markers(self) -> OpProvenance | None:
         return _derive_op_provenance(
             fallback_provenance=self.fallback_provenance,
-            uncovered_body_recovery=self.uncovered_body_recovery,
             extraction_provenance_tags=self.extraction_provenance_tags,
             target_guessing_provenance_tags=self.target_guessing_provenance_tags,
             scope_provenance_tags=self.scope_provenance_tags,
@@ -1661,7 +1652,6 @@ class ResolvedOp:
             move_clause_target_unit_kind=op.move_clause_target_unit_kind,
             move_clause_target_chapter=op.target_cols.target_chapter,
             move_clause_target_part=op.target_cols.target_part,
-            uncovered_body_recovery=op.uncovered_body_recovery,
             post_repeal_item_shift_label=op.post_repeal_item_shift_label,
             body_chapter_move_from=op.body_chapter_move_from,
             named_row_targets=op.named_row_targets,
@@ -1910,10 +1900,9 @@ class ResolvedOp:
         ResolvedOp's forwarded markers.
 
         Critically NOT delegated to ``self.op``: the late waist forwards its own
-        copies of the recovery markers (``uncovered_body_recovery``, the
-        ``*_provenance_tags`` bags, the ``witness_rule_id``, and the
-        ``_stamped_recognizers`` carrier) at ``from_amendment_op`` time, and the
-        legacy readers
+        copies of the recovery markers (the ``*_provenance_tags`` bags, the
+        ``witness_rule_id``, and the ``_stamped_recognizers`` carrier) at
+        ``from_amendment_op`` time, and the legacy readers
         consumed THOSE forwarded fields — not the inner ``op``'s, which can carry
         a different (later-mutated) tag set. The stamp is derived from ``self`` in
         ``__post_init__`` (re-run by ``dataclasses.replace``), keeping the typed

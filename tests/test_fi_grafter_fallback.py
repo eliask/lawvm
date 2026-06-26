@@ -28,6 +28,8 @@ from lawvm.core.payload_elaboration import PayloadCompletenessWitness
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.finland.op_provenance import (
     ProvenanceBag,
+    RecognizerId,
+    has_recognizer,
     serialized_provenance_bag,
     serialized_provenance_from_bags,
 )
@@ -1307,7 +1309,7 @@ def test_process_muutoslaki_preserves_source_pathologies_from_uncovered_apply(mo
             target_section="7",
             target_unit_kind="section",
             source_statute="1996/1261",
-            uncovered_body_recovery=True,
+            _stamped_recognizers=frozenset({RecognizerId.UNCOVERED_BODY}),
         ),
         muutos_ir=IRNode(kind=IRNodeKind.SECTION, label="7"),
         cross_ir=None,
@@ -9336,7 +9338,7 @@ def test_uncovered_body_insert_accepts_spaced_lettered_sibling_section_refs() ->
     got = state
     for rop in rops:
         assert rop.intent is not None
-        assert rop.op.uncovered_body_recovery is True
+        assert has_recognizer(rop.op.provenance, RecognizerId.UNCOVERED_BODY)
         got = apply_op(got, None, ctx, None, replay_mode="official_consolidation", rop=rop)
 
     assert got.find_section("4a") is not None
@@ -11163,7 +11165,7 @@ def test_uncovered_body_insert_overrides_chapter_when_family_base_in_different_c
     insert_rop = [r for r in rops if r.op.op_id == "uncovered_insert_32a"]
     assert len(insert_rop) == 1
     assert insert_rop[0].op.target_cols.target_chapter == "7"
-    assert insert_rop[0].op.uncovered_body_recovery is True
+    assert has_recognizer(insert_rop[0].op.provenance, RecognizerId.UNCOVERED_BODY)
 
 
 def test_uncovered_body_insert_keeps_explicit_existing_chapter_ownership() -> None:
@@ -11234,7 +11236,7 @@ def test_uncovered_body_insert_keeps_explicit_existing_chapter_ownership() -> No
     assert len(rops) == 1
     assert rops[0].op.op_id == "uncovered_insert_37a"
     assert rops[0].op.target_cols.target_chapter == "6"
-    assert rops[0].op.uncovered_body_recovery is True
+    assert has_recognizer(rops[0].op.provenance, RecognizerId.UNCOVERED_BODY)
 
 
 def test_retarget_stale_body_chapter_scope_ignores_typed_scope_confidence_tags() -> None:

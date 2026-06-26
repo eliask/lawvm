@@ -15674,7 +15674,10 @@ def test_typed_replace_section_emits_mutation_event() -> None:
 def test_uncovered_body_replace_declares_recovery_allowance_on_mutation_event() -> None:
     state = _make_state(_body(_sec("3", _sub("1", _content("old")))))
     payload = _sec("3", _sub("1", _content("new")))
-    op = dc_replace(_op(op_type=OpType.REPLACE, target_section="3"), uncovered_body_recovery=True)
+    op = dc_replace(
+        _op(op_type=OpType.REPLACE, target_section="3"),
+        _stamped_recognizers=frozenset({RecognizerId.UNCOVERED_BODY}),
+    )
     intent = _make_replace_intent("3", payload)
     rop = _make_rop(op, intent, muutos_ir=payload)
     ctx = _ctx(_body())
@@ -17159,7 +17162,7 @@ def test_partial_section_replace_diagnostics_use_typed_uncovered_body_carrier() 
     assert diag.get("suspicious") is True
 
     recovered_diag = _partial_section_replace_diagnostics_ir(
-        dc_replace(op, uncovered_body_recovery=True),
+        dc_replace(op, _stamped_recognizers=frozenset({RecognizerId.UNCOVERED_BODY})),
         master_sec,
         amend_sec,
     )

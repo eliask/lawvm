@@ -172,7 +172,6 @@ def _rop(op: AmendmentOp) -> ResolvedOp:
             op.target_cols.target_special if op.target_cols.target_special not in {None, "otsikko", "johd"} else None
         ),
         _stamped_recognizers=op._stamped_recognizers,
-        uncovered_body_recovery=op.uncovered_body_recovery,
         post_repeal_item_shift_label=op.post_repeal_item_shift_label,
         _source_statute_override=op.source_statute,
         _source_issue_date_override=op.source_issue_date,

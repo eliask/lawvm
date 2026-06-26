@@ -652,7 +652,6 @@ def _make_relabel_rop(
             op.target_cols.target_special if op.target_cols.target_special not in {None, "otsikko", "johd"} else None
         ),
         _stamped_recognizers=op._stamped_recognizers,
-        uncovered_body_recovery=op.uncovered_body_recovery,
         post_repeal_item_shift_label=op.post_repeal_item_shift_label,
         _source_statute_override="2020/500",
         _source_issue_date_override=op.source_issue_date,
@@ -768,8 +767,7 @@ class TestMigrationLedgerIntegration:
                 op.target_cols.target_special if op.target_cols.target_special not in {None, "otsikko", "johd"} else None
             ),
             _stamped_recognizers=op._stamped_recognizers,
-            uncovered_body_recovery=op.uncovered_body_recovery,
-            post_repeal_item_shift_label=op.post_repeal_item_shift_label,
+                post_repeal_item_shift_label=op.post_repeal_item_shift_label,
             _source_statute_override="2021/10",
             _source_issue_date_override=op.source_issue_date,
             _source_title_override=op.source_title,
@@ -842,7 +840,6 @@ class TestMigrationLedgerIntegration:
                 op2.target_cols.target_special if op2.target_cols.target_special not in {None, "otsikko", "johd"} else None
             ),
             _stamped_recognizers=op2._stamped_recognizers,
-            uncovered_body_recovery=op2.uncovered_body_recovery,
             post_repeal_item_shift_label=op2.post_repeal_item_shift_label,
             _source_statute_override="2022/300",
             _source_issue_date_override=op2.source_issue_date,

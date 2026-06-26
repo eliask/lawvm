@@ -342,7 +342,6 @@ def test_derive_op_provenance_folds_every_serialized_bag_tag() -> None:
 
     prov = _derive_op_provenance(
         fallback_provenance=False,
-        uncovered_body_recovery=True,
         extraction_provenance_tags=extraction,
         target_guessing_provenance_tags=target_guessing,
         scope_provenance_tags=scope,
@@ -351,7 +350,11 @@ def test_derive_op_provenance_folds_every_serialized_bag_tag() -> None:
         # (their legacy booleans were deleted in the M2 inversion), so they arrive
         # via ``stamped_recognizers``.
         stamped_recognizers=frozenset(
-            {RecognizerId.SEC1_BODY_JOHTO, RecognizerId.BODY_ROOT_REPLACE}
+            {
+                RecognizerId.SEC1_BODY_JOHTO,
+                RecognizerId.BODY_ROOT_REPLACE,
+                RecognizerId.UNCOVERED_BODY,
+            }
         ),
     )
     assert isinstance(prov, Recovered)
