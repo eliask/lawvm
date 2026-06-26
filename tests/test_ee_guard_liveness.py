@@ -21,9 +21,12 @@ from __future__ import annotations
 import ast
 import re
 from pathlib import Path
+from typing import Dict
 
 import pytest
 
+from lawvm.core.ir import IRStatute, IRNode, LegalAddress, LegalOperation, OperationSource
+from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.estonia.guard_liveness import (
     EE_BLOCKING_RULE_IDS,
     EE_FIRE_DRILL_COVERAGE,
@@ -31,8 +34,69 @@ from lawvm.estonia.guard_liveness import (
     EE_NO_FIRE_DRILL_YET,
     enumerate_ee_blocking_rule_ids,
 )
+from lawvm.estonia.grafter import apply_ee_ops
+from lawvm.replay_adjudication import CompileAdjudication
 
 EE_SRC = Path(__file__).resolve().parent.parent / "src" / "lawvm" / "estonia"
+
+
+def _body_with_section(section_label: str, subsection_label: str, text: str) -> IRNode:
+    """Minimal IRNode body for synthetic fire-drills: a single chapter →
+    section → subsection tree. Small enough that the unsupported-action
+    dispatch is the only code path likely to fire on a drill op."""
+    return IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="1",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label=section_label,
+                        children=(IRNode(kind=IRNodeKind.SUBSECTION, label=subsection_label, text=text),),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+
+def _drill_statute(section_label: str = "1", subsection_label: str = "1") -> IRStatute:
+    """A minimal IRStatute suitable for synthetic dispatch drills."""
+    body = _body_with_section(section_label, subsection_label, "drill body.")
+    return IRStatute(
+        statute_id="ee/fire_drill",
+        title="Fire Drill Base",
+        body=body,
+    )
+
+
+def _unsupported_action_op(
+    *,
+    sequence: int = 1,
+    target_path: tuple = (("section", "1"),),
+) -> LegalOperation:
+    """Construct a LegalOperation with an action ``apply_ee_ops`` does not
+    dispatch (HEADING_REPLACE). The op carries a non-statute-title target so
+    the statute-title branch does not absorb it; it falls through to the
+    ``ee_replay_unsupported_action`` blocking emit at
+    ``src/lawvm/estonia/grafter.py:10360``.
+    """
+    return LegalOperation(
+        op_id="ee_fire_drill_unsupported_action",
+        sequence=sequence,
+        action=StructuralAction.HEADING_REPLACE,
+        target=LegalAddress(path=target_path),
+        source=OperationSource(
+            statute_id="ee/fire_drill_amendment",
+            title="Fire Drill Amendment",
+            enacted="2025-01-01",
+            effective="2025-01-01",
+            raw_text="",
+        ),
+        payload=None,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -383,4 +447,85 @@ def test_ee_blocking_rule_id_in_catalog(rule_id: str) -> None:
     assert rule_id in _EE_RULE_SPECS, (
         f"Blocking rule_id {rule_id!r} is not in the EE believed-spec "
         "catalog (_EE_RULE_SPECS). Add a falsifiable hypothesis entry."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Fire-drills: production-path tests driving each EE_FIRE_DRILL_COVERAGE code
+# ---------------------------------------------------------------------------
+
+
+def _fire_drills_target_registered_codes() -> Dict[str, str]:
+    """Stable enumeration of the drilling test names in this module that
+    ``EE_FIRE_DRILL_COVERAGE`` claims cover a blocking rule_id. A drill's
+    registration here is a one-(code, drill_name) tuple; the parset set is
+    checked as part of the partition ratchet (a drill that targets an
+    unregistered code would silently unblock the inventory).
+    """
+    return {
+        "ee_replay_unsupported_action": "test_ee_fire_drill_replay_unsupported_action_blocks",
+    }
+
+
+def test_ee_fire_drills_are_named_in_coverage_registry() -> None:
+    """Every code in EE_FIRE_DRILL_COVERAGE must have a registered drill test
+    name in ``_fire_drills_target_registered_codes``."""
+    registry = _fire_drills_target_registered_codes()
+    assert set(registry.keys()) == EE_FIRE_DRILL_COVERAGE, (
+        "EE_FIRE_DRILL_COVERAGE and the registered-drills set disagree:\n"
+        f"  in coverage only: {EE_FIRE_DRILL_COVERAGE - set(registry.keys())}\n"
+        f"  in registry only: {set(registry.keys()) - EE_FIRE_DRILL_COVERAGE}"
+    )
+
+
+def test_ee_fire_drill_replay_unsupported_action_blocks() -> None:
+    """Fire-drill for ``ee_replay_unsupported_action``:
+
+    Drive a known-violating op (a ``LegalOperation`` whose ``action`` is
+    outside the dispatcher's whitelist: replace, repeal, insert, renumber,
+    text_replace — here: ``HEADING_REPLACE``) through the full production
+    ``apply_ee_ops`` dispatch and assert the blocking adjudication
+    ``ee_replay_unsupported_action`` fires with ``blocking=True`` and the
+    expected message.
+
+    Pre-drill: ``ee_replay_unsupported_action`` was a debt row in
+    ``EE_NO_FIRE_DRILL_YET`` from the baseline at
+    commit ``3528f2c4``. This drill removes it from the debt allowlist and
+    moves it into ``EE_FIRE_DRILL_COVERAGE``, paying the debt down by one
+    (and correspondingly decrementing ``EE_NO_FIRE_DRILL_CEILING``).
+
+    Source emission: src/lawvm/estonia/grafter.py:10360 in ``apply_ee_ops``,
+    via the hard-blocker helper ``_append_ee_replay_adjudication``. The
+    production lane reaches this emit site via the ``action not in (=)``
+    branch of the dispatcher, not via any synthetic hook.
+    """
+    statute = _drill_statute()
+    op = _unsupported_action_op()
+    adjudications: list[CompileAdjudication] = []
+    updated = apply_ee_ops(statute, [op], adjudications_out=adjudications)
+    # Tree should be unchanged by the skipped op (over-retention is the safe
+    # wrong per AGENTS.md §0): the body still has one chapter, one section,
+    # one subsection.
+    assert updated.body is statute.body, (
+        "Unsupported-action dispatch MUST leave the tree unchanged (over-retention); "
+        "the drill op is a no-op at structure time. Saw a body mutation."
+    )
+    # Find the matching blocking adjudication.
+    matches = [adj for adj in adjudications if adj.kind == "ee_replay_unsupported_action"]
+    assert matches, (
+        "Expected a blocking adjudication with kind "
+        f"'ee_replay_unsupported_action' to fire for the HEADING_REPLACE op, "
+        f"got: {[(a.kind, a.blocking) for a in adjudications]}"
+    )
+    emit = matches[0]
+    assert emit.blocking is True, (
+        f"ee_replay_unsupported_action must emit blocking=True; "
+        f"got blocking={emit.blocking!r}"
+    )
+    assert emit.phase == "replay", (
+        f"ee_replay_unsupported_action must declare phase='replay'; "
+        f"got phase={emit.phase!r}"
+    )
+    assert emit.op_id == op.op_id, (
+        f"adjudication op_id mismatch: emit={emit.op_id!r} expected={op.op_id!r}"
     )

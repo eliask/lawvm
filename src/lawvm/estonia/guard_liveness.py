@@ -89,6 +89,11 @@ EE_BLOCKING_RULE_IDS: Final[FrozenSet[str]] = frozenset(
         "ee_implicit_division_sequence_relabel_after_high_jagu_insert",
         # --- generic replay-time guard adjudications --------------------------
         # Broadcast via ``_append_ee_replay_adjudication``.
+        # ``ee_replay_unsupported_action`` is drilled out of the debt list by
+        # ``tests/test_ee_guard_liveness.py::test_ee_fire_drill_replay_unsupported_action_blocks``
+        # (drives a HEADING_REPLACE op through ``apply_ee_ops`` and asserts
+        # the blocking adjudication fires); the remaining ``ee_replay_*`` codes
+        # below stay debt-admitted until their individual drills land.
         "ee_replay_unsupported_action",
         "ee_replay_unsupported_heading_target",
         "ee_replay_unsupported_statute_title_action",
@@ -128,7 +133,16 @@ EE_BLOCKING_RULE_IDS: Final[FrozenSet[str]] = frozenset(
 # ``tests/test_ee_guard_liveness.py`` under the names recorded here, so the
 # ratchet gate (every blocking code is either in DRILLS or in DEBT) is
 # machine-enforced and the inspection surface is small.
-EE_FIRE_DRILL_COVERAGE: Final[FrozenSet[str]] = frozenset()
+EE_FIRE_DRILL_COVERAGE: Final[FrozenSet[str]] = frozenset(
+    {
+        # Drilled by ``tests/test_ee_guard_liveness.py::test_ee_fire_drill_replay_unsupported_action_blocks``
+        # (drives a HEADING_REPLACE op through ``apply_ee_ops`` and asserts the
+        # blocking adjudication fires). Production lane is the
+        # ``action not in (replace, repeal, insert, renumber, text_replace)`` arm
+        # of the ``apply_ee_ops`` dispatcher at ``grafter.py:10360``.
+        "ee_replay_unsupported_action",
+    }
+)
 
 
 # ---------------------------------------------------------------------------
@@ -232,12 +246,6 @@ EE_NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
         "2026-06-24",
     ),
     # generic replay-time guard adjudications
-    "ee_replay_unsupported_action": (
-        "unhandled IR action in _ee_apply_op falls to the explicit raise+block "
-        f"branch; {_EE_DRILL_FAMILY_HINT}; synthetic op with action='split' "
-        f"or other unknown verbatim.",
-        "2026-06-24",
-    ),
     "ee_replay_unsupported_heading_target": (
         f"replay hits an unsupported heading target; {_EE_DRILL_FAMILY_HINT}; "
         f"locate statute whose heading target shape is not modeled.",
