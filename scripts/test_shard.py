@@ -232,6 +232,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_filter_conservation_ratchet.py",
         "test_scope_source_ratchet.py",
         "test_fi_post_process_repeal_consolidation.py",
+        "test_fi_repeal_payload_invariant.py",
         "test_fi_uncovered_dispose.py",
         "test_fi_uncovered_recovery_helpers.py",
         "test_fi_uncovered_target_resolve.py",

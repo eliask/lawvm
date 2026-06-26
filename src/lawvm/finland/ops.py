@@ -82,6 +82,75 @@ class OpType(StrEnum):
     INSERT = "INSERT"
     RENUMBER = "RENUMBER"
 
+
+# ---------------------------------------------------------------------------
+# Finland repeal-payload invariant (FI-LOCAL — NOT a core LegalOperation rule)
+# ---------------------------------------------------------------------------
+#
+# A Finland REPEAL / TEXT_REPEAL operation deletes a provision; it does not
+# install replacement content. So a FI repeal op must carry NO substantive
+# content payload. The single legitimate exception is the repeal TOMBSTONE: the
+# move-repeal snapshot site (``apply_runtime_support._build_repeal_placeholder_*``)
+# attaches an empty placeholder section whose ``attrs[lawvm_repeal_placeholder]``
+# is ``"1"`` so the materialized tree records "this provision was repealed here".
+#
+# This convention is enforced HERE, at the Finland op-construction boundary —
+# NOT on the shared ``core.ir.LegalOperation`` carrier. A near-identical check
+# once lived on ``LegalOperation.__post_init__`` and broke Estonia (whose repeal
+# ops legitimately attach selection-meta payloads); it was reverted. The lesson:
+# "repeal carries no content" is a FINLAND drafting convention, not a universal
+# property of the cross-jurisdiction operation type. Keep it inside ``finland/``.
+_FI_REPEAL_ACTIONS: frozenset[StructuralAction] = frozenset(
+    {StructuralAction.REPEAL, StructuralAction.TEXT_REPEAL}
+)
+
+
+class FinlandRepealPayloadError(ValueError):
+    """A Finland repeal op carries a substantive (non-tombstone) content payload.
+
+    Self-evidencing: the message embeds the offending op id, action, and the
+    shape of the illegal payload (kind / label / child count) so the failing op
+    is identifiable from the diagnostic alone, without re-running.
+    """
+
+
+def _payload_is_repeal_tombstone(payload: "IRNode") -> bool:
+    """Return True for the allowed FI repeal tombstone placeholder payload."""
+    return payload.attrs.get("lawvm_repeal_placeholder") == "1"
+
+
+def validate_fi_repeal_payload(lo: _LegalOperation) -> None:
+    """Enforce the Finland repeal-payload invariant on one LegalOperation.
+
+    A FI op whose ``action`` is REPEAL or TEXT_REPEAL must carry ``payload =
+    None`` OR a repeal tombstone (a payload with
+    ``attrs[lawvm_repeal_placeholder] == "1"``). Any other payload is an illegal
+    state and raises :class:`FinlandRepealPayloadError`.
+
+    This is the Finland op-construction boundary check: it is invoked from
+    :meth:`AmendmentOp.from_lo`, the single conversion every Finland
+    ``LegalOperation`` destined to become an executable amendment op passes
+    through. It only forbids an already-absent illegal state (per the
+    repeal-payload census, every FI repeal producer emits ``payload=None`` or
+    the tombstone), so it changes no replay output — it locks the convention in
+    as a type-level fail-loud instead of a silent assumption.
+    """
+    if lo.action not in _FI_REPEAL_ACTIONS:
+        return
+    payload = lo.payload
+    if payload is None or _payload_is_repeal_tombstone(payload):
+        return
+    raise FinlandRepealPayloadError(
+        "Finland repeal op carries a substantive (non-tombstone) content "
+        "payload, which is an illegal state: a REPEAL/TEXT_REPEAL deletes a "
+        "provision and must carry payload=None or a tombstone payload "
+        '(attrs["lawvm_repeal_placeholder"] == "1"). '
+        f"op_id={lo.op_id!r} action={lo.action!r} "
+        f"payload(kind={payload.kind!r}, label={payload.label!r}, "
+        f"children={len(payload.children)})."
+    )
+
+
 _SCOPE_PROVENANCE_TAGS = frozenset(
     {
         "grouped_chapter_scope",
@@ -1239,6 +1308,11 @@ class AmendmentOp:
                 f"action={lo.action!r} op_id={lo.op_id!r}. _ACTION_MAP must be "
                 "exhaustive over StructuralAction — add the new member explicitly."
             )
+        # Finland op-construction boundary: a FI repeal op may not carry a
+        # substantive content payload (tombstone or None only). This is the
+        # narrowest single point every FI LegalOperation passes through on the
+        # way to an executable amendment op. See validate_fi_repeal_payload.
+        validate_fi_repeal_payload(lo)
         base_id = lo.op_id or f"op_{idx}"
         move_clause_target_unit_kind = cast(TargetUnitKind | None, lo.move_clause_target_unit_kind)
         all_ops: List[AmendmentOp] = []
