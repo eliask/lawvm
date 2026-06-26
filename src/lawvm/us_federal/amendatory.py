@@ -32,7 +32,8 @@ import xml.etree.ElementTree as ET
 from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-from typing import Any, Iterable, Mapping
+from enum import StrEnum
+from typing import Any, Iterable, Mapping, assert_never
 
 from lawvm.core.ir import (
     IRNode,
@@ -841,17 +842,36 @@ class USAmendatoryFinding:
         }
 
 
+class USInstructionStatus(StrEnum):
+    """Closed set of lowered-instruction outcomes.
+
+    A ``StrEnum`` so existing string consumers (JSON dict keys, ``Counter``
+    aggregation, test ``== "..."`` comparisons) keep working byte-for-byte while
+    the value set is closed and dispatch can be made exhaustive.
+    """
+
+    ACCEPTED = "accepted"
+    """Op present and target resolved on the proof title."""
+
+    UNSUPPORTED = "unsupported"
+    """Form not lowerable, or target unresolved (see ``finding``)."""
+
+    NEEDS_REVIEW = "needs_review"
+    """Lowered but the target/payload is partial, off-title, or corroboration-only."""
+
+
 @dataclass(frozen=True)
 class USAmendmentInstruction:
     """One lowered (or unlowered) amendatory instruction.
 
-    ``status`` is ``accepted`` (op present and target resolved), ``unsupported``
-    (form not lowerable; see ``finding``), or ``needs_review`` (lowered but the
-    target or payload is partial / corroboration-only).
+    ``status`` is a :class:`USInstructionStatus`: ``accepted`` (op present and
+    target resolved), ``unsupported`` (form not lowerable; see ``finding``), or
+    ``needs_review`` (lowered but the target or payload is partial /
+    corroboration-only).
     """
 
     instruction_id: str
-    status: str
+    status: USInstructionStatus
     witness_rule_id: str
     action: str = ""
     target_phrase: str = ""
@@ -903,9 +923,17 @@ class USAmendatoryReport:
     def coverage(self) -> dict[str, Any]:
         total = len(self.instructions)
         lowered = sum(1 for i in self.instructions if i.operation is not None)
-        accepted = sum(1 for i in self.instructions if i.status == "accepted")
-        unsupported = sum(1 for i in self.instructions if i.status == "unsupported")
-        needs_review = sum(1 for i in self.instructions if i.status == "needs_review")
+        accepted = unsupported = needs_review = 0
+        for i in self.instructions:
+            match i.status:
+                case USInstructionStatus.ACCEPTED:
+                    accepted += 1
+                case USInstructionStatus.UNSUPPORTED:
+                    unsupported += 1
+                case USInstructionStatus.NEEDS_REVIEW:
+                    needs_review += 1
+                case _ as unreachable:
+                    assert_never(unreachable)
         action_counts = Counter(i.action or "__none__" for i in self.instructions)
         witness_rule_counts = Counter(i.witness_rule_id for i in self.instructions)
         finding_rule_counts = Counter(f.rule_id for f in self.findings)
@@ -1586,6 +1614,13 @@ def _resolve_target(
     Returns ``(address, resolution_status)`` where status is one of
     ``prose``, ``href``, ``prose_href_agree``, ``nonpositive_<status>``,
     ``relative_prose``, ``inherited``, or ``unresolved``.
+
+    NOTE: ``resolution_status`` is left a typed-OPEN ``str`` (not a closed
+    ``StrEnum``) on purpose: it is an OPEN serialized provenance vocabulary —
+    one branch composes ``f"nonpositive_{witness.status}"`` dynamically from the
+    non-positive lane, so the value set is not statically closed, and it flows
+    into provenance tags (``target_resolution:<status>``) rather than driving an
+    exhaustive dispatch.
 
     Resolution order (each strictly more specific than the next):
 
@@ -2268,7 +2303,7 @@ def _lower_instruction(
         )
         return USAmendmentInstruction(
             instruction_id=instruction_id,
-            status="unsupported",
+            status=USInstructionStatus.UNSUPPORTED,
             witness_rule_id=UNLOWERED_FINDING_RULE_ID,
             action=family,
             target_phrase=target_phrase,
@@ -2292,7 +2327,7 @@ def _lower_instruction(
     op: LegalOperation | None = None
     extra_ops: list[LegalOperation] = []
     witness_rule_id = UNLOWERED_FINDING_RULE_ID
-    status = "unsupported"
+    status = USInstructionStatus.UNSUPPORTED
     finding: USAmendatoryFinding | None = None
 
     # Tagged provenance suffix for target resolutions that used a non-local source
@@ -2936,7 +2971,11 @@ def _lower_instruction(
                 "target title supplied from PLAW short-title preamble "
                 f"({plaw_title_scope}); section had no explicit 'of title N' or sidenote ref",
             )
-        status = "accepted" if on_title_11 else "needs_review"
+        status = (
+            USInstructionStatus.ACCEPTED
+            if on_title_11
+            else USInstructionStatus.NEEDS_REVIEW
+        )
         if not on_title_11:
             non_title_finding = _finding(
                 NON_TITLE_TARGET_RULE_ID,

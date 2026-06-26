@@ -36,8 +36,9 @@ import json
 import os
 import sys
 from dataclasses import dataclass, field
+from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterable, Sequence
+from typing import TYPE_CHECKING, Any, Iterable, Sequence, assert_never
 
 if TYPE_CHECKING:
     from lawvm.core.bench_contract import BenchUnitResult
@@ -97,12 +98,27 @@ class BenchWindow:
         return f"title{self.title}:{self.before_year}->{self.after_year}"
 
 
+class WindowStatus(StrEnum):
+    """Closed set of per-window bench outcomes.
+
+    A ``StrEnum`` so existing string consumers (JSON dict keys, test
+    ``== "..."`` comparisons) keep working byte-for-byte while the value set is
+    closed and dispatch can be made exhaustive.
+    """
+
+    EVALUATED = "evaluated"
+    """The window was scored against the oracle."""
+
+    SKIPPED = "skipped"
+    """The window was skipped (see ``skip_rule_id``)."""
+
+
 @dataclass
 class WindowResult:
     """The per-window evaluation outcome (or a typed skip)."""
 
     window: BenchWindow
-    status: str  # "evaluated" | "skipped"
+    status: WindowStatus
     skip_rule_id: str = ""
     derived_window_laws: tuple[str, ...] = ()
     report: USDryRunReport | None = None
@@ -126,10 +142,15 @@ class WindowResult:
             "after_year": self.window.after_year,
             "status": self.status,
         }
-        if self.status == "skipped":
-            payload["skip_rule_id"] = self.skip_rule_id
-            payload["derived_window_law_count"] = len(self.derived_window_laws)
-            return payload
+        match self.status:
+            case WindowStatus.SKIPPED:
+                payload["skip_rule_id"] = self.skip_rule_id
+                payload["derived_window_law_count"] = len(self.derived_window_laws)
+                return payload
+            case WindowStatus.EVALUATED:
+                pass
+            case _ as unreachable:
+                assert_never(unreachable)
         payload.update(
             {
                 "derived_window_laws": list(self.derived_window_laws),
@@ -166,7 +187,7 @@ def us_bench_unit_result(result: "WindowResult") -> "BenchUnitResult":
     from lawvm.core.bench_contract import BenchStatus, BenchUnitResult
 
     unit_id = result.window.key
-    if result.status != "evaluated":
+    if result.status is not WindowStatus.EVALUATED:
         # Typed skip — non-scored, not a failure (mirrors the US aggregate, which
         # only scores evaluated windows).
         return BenchUnitResult(unit_id=unit_id, status=BenchStatus.NO_TRUTH)
@@ -247,10 +268,10 @@ class BenchReport:
     results: list[WindowResult] = field(default_factory=list)
 
     def evaluated(self) -> list[WindowResult]:
-        return [r for r in self.results if r.status == "evaluated"]
+        return [r for r in self.results if r.status is WindowStatus.EVALUATED]
 
     def skipped(self) -> list[WindowResult]:
-        return [r for r in self.results if r.status == "skipped"]
+        return [r for r in self.results if r.status is WindowStatus.SKIPPED]
 
     def aggregate(self) -> dict[str, Any]:
         ev = self.evaluated()
@@ -456,13 +477,13 @@ def evaluate_window(archive: UsArchiveReader, window: BenchWindow) -> WindowResu
     if locators is None:
         return WindowResult(
             window=window,
-            status="skipped",
+            status=WindowStatus.SKIPPED,
             skip_rule_id=US_BENCH_WINDOW_EDITION_MISSING_RULE_ID,
         )
     if not locators:
         return WindowResult(
             window=window,
-            status="skipped",
+            status=WindowStatus.SKIPPED,
             skip_rule_id=US_BENCH_WINDOW_EMPTY_DELTA_RULE_ID,
         )
 
@@ -480,7 +501,7 @@ def evaluate_window(archive: UsArchiveReader, window: BenchWindow) -> WindowResu
         # window loudly, recorded as a typed skip carrying the kernel's rule id.
         return WindowResult(
             window=window,
-            status="skipped",
+            status=WindowStatus.SKIPPED,
             skip_rule_id=exc.rule_id,
             derived_window_laws=tuple(locators),
         )
@@ -490,7 +511,7 @@ def evaluate_window(archive: UsArchiveReader, window: BenchWindow) -> WindowResu
     disp = summary["residual_disposition_counts"]
     return WindowResult(
         window=window,
-        status="evaluated",
+        status=WindowStatus.EVALUATED,
         derived_window_laws=tuple(locators),
         report=report,
         oracle_changed=ns["oracle_changed_section_count"],
@@ -518,7 +539,7 @@ def run_bench(
             report.results.append(
                 WindowResult(
                     window=window,
-                    status="skipped",
+                    status=WindowStatus.SKIPPED,
                     skip_rule_id=US_BENCH_WINDOW_EMPTY_DELTA_RULE_ID,
                 )
             )
@@ -598,7 +619,7 @@ def _worker_run_shard(
         if not window.include:
             result = WindowResult(
                 window=window,
-                status="skipped",
+                status=WindowStatus.SKIPPED,
                 skip_rule_id=US_BENCH_WINDOW_EMPTY_DELTA_RULE_ID,
             )
         else:
