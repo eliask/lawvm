@@ -145,6 +145,15 @@ EE_FIRE_DRILL_COVERAGE: Final[FrozenSet[str]] = frozenset(
         # section through apply_ee_ops. See
         # ``test_ee_fire_drill_replay_target_not_found_blocks``.
         "ee_replay_target_not_found",
+        # ``ee_replay_statute_title_noop`` — drives a REPLACE op targeting the
+        # statute-title address whose payload text equals the current title.
+        # See ``test_ee_fire_drill_replay_statute_title_noop_blocks``.
+        "ee_replay_statute_title_noop",
+        # ``ee_replay_unsupported_statute_title_action`` — drives a REPEAL op
+        # targeting the statute-title address (a non-replace action against
+        # the statute title). See
+        # ``test_ee_fire_drill_replay_unsupported_statute_title_action_blocks``.
+        "ee_replay_unsupported_statute_title_action",
         # === Existing-tests-registered drills (verified production-path) ===
         # Each rule_id below is driven through the full production path by an
         # existing EE test (apply_ee_ops / parse_ee_amendment_ops / replay_ee_to_pit /
@@ -252,26 +261,14 @@ EE_FIRE_DRILL_COVERAGE: Final[FrozenSet[str]] = frozenset(
 _EE_DRILL_FAMILY_HINT = "drill needs a known-violator witness statute + replay_ee_to_pit run asserting the blocking adjudication fires"
 
 EE_NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
-    # The four blocking codes for which a production-path fire-drill has not
-    # yet been written or located; the rest of the inventory baseline (24 +
-    # 4 self-authored = 28 entries) is covered by existing EE tests
-    # registered in ``EE_FIRE_DRILL_COVERAGE`` above (cross-referenced by
-    # ``notes_internal/_cross_ref_drills.py`` AST scan, 2026-06-26).
+    # The two blocking codes for which a production-path fire-drill has not
+    # yet been written or located; the rest of the inventory baseline (28
+    # first wave + 2 self-authored statute-title drills = 30 entries) is
+    # covered by existing EE tests registered in ``EE_FIRE_DRILL_COVERAGE``
+    # above (cross-referenced by ``notes_internal/_cross_ref_drills.py`` AST
+    # scan, 2026-06-26).
     #
     # Each row carries the concrete route to a corresponding drill:
-    "ee_replay_unsupported_statute_title_action": (
-        f"replay hits an unsupported statute-title-level action; "
-        f"{_EE_DRILL_FAMILY_HINT}; locate statute whose title-level rewrite "
-        f"action is not modeled (replace at a statute_title address with a "
-        f"non-replace action).",
-        "2026-06-26",
-    ),
-    "ee_replay_statute_title_noop": (
-        f"replay statute-title noop (replace at statute_title address whose "
-        f"new_surface equals the current title); {_EE_DRILL_FAMILY_HINT}; "
-        f"locate statute whose title rewrite resolves to a no-op.",
-        "2026-06-26",
-    ),
     # Source-lane orchestration failures added by fail-loud broad-except audits
     # in commits 0d60710e + 00f778fc. These are blocking adjudications emitted
     # through the pass-through ``_ee_orchestration_adjudication`` helper, so the

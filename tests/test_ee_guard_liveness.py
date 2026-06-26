@@ -127,6 +127,69 @@ def _target_not_found_op(
     )
 
 
+def _statute_title_noop_op(
+    *,
+    sequence: int = 1,
+    statute_title: str,
+) -> LegalOperation:
+    """Construct a LegalOperation that REPLACEs the statute-title address
+    with a payload whose text equals the current statute title.
+
+    This triggers the ``ee_replay_statute_title_noop`` blocking emit at
+    ``src/lawvm/estonia/grafter.py:10351``: the dispatcher reaches the
+    ``is_statute_title_address`` branch, applies the title replacement,
+    detects ``new_title == old_title``, and emits the blocking noop.
+    """
+    from lawvm.core.statute_facets import statute_title_address
+
+    return LegalOperation(
+        op_id="ee_fire_drill_statute_title_noop",
+        sequence=sequence,
+        action=StructuralAction.REPLACE,
+        target=statute_title_address(),
+        source=OperationSource(
+            statute_id="ee/fire_drill_amendment",
+            title="Fire Drill Amendment",
+            enacted="2025-01-01",
+            effective="2025-01-01",
+            raw_text="",
+        ),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text=statute_title,
+        ),
+    )
+
+
+def _statute_title_unsupported_action_op(
+    *,
+    sequence: int = 1,
+) -> LegalOperation:
+    """Construct a LegalOperation that targets the statute-title address
+    with a non-replace action (REPEAL — ``repeal`` is in the whitelist but
+    not at the statute-title address). The dispatcher hits the
+    ``is_statute_title_address`` branch, falls into the ``action != replace``
+    sub-branch, and emits ``ee_replay_unsupported_statute_title_action`` at
+    ``src/lawvm/estonia/grafter.py:10338``.
+    """
+    from lawvm.core.statute_facets import statute_title_address
+
+    return LegalOperation(
+        op_id="ee_fire_drill_statute_title_unsupported",
+        sequence=sequence,
+        action=StructuralAction.REPEAL,
+        target=statute_title_address(),
+        source=OperationSource(
+            statute_id="ee/fire_drill_amendment",
+            title="Fire Drill Amendment",
+            enacted="2025-01-01",
+            effective="2025-01-01",
+            raw_text="",
+        ),
+        payload=IRNode(kind=IRNodeKind.CONTENT, text="impossible title-repeal"),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Partition: every blocking code is either drilled or debt-admitted
 # ---------------------------------------------------------------------------
@@ -510,6 +573,8 @@ def _fire_drills_target_registered_codes() -> Dict[str, str]:
         # === Self-authored drills in this test file ===
         "ee_replay_unsupported_action": "test_ee_fire_drill_replay_unsupported_action_blocks",
         "ee_replay_target_not_found": "test_ee_fire_drill_replay_target_not_found_blocks",
+        "ee_replay_statute_title_noop": "test_ee_fire_drill_replay_statute_title_noop_blocks",
+        "ee_replay_unsupported_statute_title_action": "test_ee_fire_drill_replay_unsupported_statute_title_action_blocks",
         # === Existing production-path drills in tests/test_ee_apply_semantics.py ===
         "ee_ambiguous_single_occurrence_text_replace": (
             "test_exact_target_insert_after_with_repeated_source_surface_emits_ambiguity"
@@ -693,3 +758,97 @@ def test_ee_fire_drill_replay_target_not_found_blocks() -> None:
     assert emit.op_id == op.op_id, (
         f"adjudication op_id mismatch: emit={emit.op_id!r} expected={op.op_id!r}"
     )
+
+
+def test_ee_fire_drill_replay_statute_title_noop_blocks() -> None:
+    """Fire-drill for ``ee_replay_statute_title_noop``:
+
+    Drive a REPLACE op targeting the statute-title address with payload
+    text equal to the current statute title. The dispatcher reaches the
+    ``is_statute_title_address`` branch, applies the title replacement,
+    detects ``new_title == old_title``, and emits the blocking noop.
+
+    Pre-drill: ``ee_replay_statute_title_noop`` was a debt row admitted
+    in commit ``5e2e972c``. This drill removes it from the debt allowlist
+    and moves it into ``EE_FIRE_DRILL_COVERAGE`` (decrementing the ceiling
+    by one).
+
+    Source emission: src/lawvm/estonia/grafter.py:10351 (``if not new_title
+    or new_title == old_title:`` arm), via the hard-blocker helper
+    ``_append_ee_replay_adjudication``.
+    """
+    statute = _drill_statute()  # title = "Fire Drill Base"
+    op = _statute_title_noop_op(statute_title=statute.title)
+    adjudications: list[CompileAdjudication] = []
+    apply_ee_ops(statute, [op], adjudications_out=adjudications)
+    matches = [adj for adj in adjudications if adj.kind == "ee_replay_statute_title_noop"]
+    assert matches, (
+        "Expected a blocking adjudication with kind "
+        "'ee_replay_statute_title_noop' to fire for a title-replace op whose "
+        f"new text equals the current title; got: "
+        f"{[(a.kind, a.blocking) for a in adjudications]}"
+    )
+    emit = matches[0]
+    assert emit.blocking is True, (
+        f"ee_replay_statute_title_noop must emit blocking=True; "
+        f"got blocking={emit.blocking!r}"
+    )
+    assert emit.phase == "replay", (
+        f"ee_replay_statute_title_noop must declare phase='replay'; "
+        f"got phase={emit.phase!r}"
+    )
+    assert emit.op_id == op.op_id
+
+
+def test_ee_fire_drill_replay_unsupported_statute_title_action_blocks() -> None:
+    """Fire-drill for ``ee_replay_unsupported_statute_title_action``:
+
+    Drive a REPEAL op targeting the statute-title address. The dispatcher
+    hits the ``is_statute_title_address`` branch, falls into the
+    ``action != replace`` sub-branch, and emits the blocking
+    ``ee_replay_unsupported_statute_title_action``.
+
+    Pre-drill: ``ee_replay_unsupported_statute_title_action`` was a debt
+    row admitted in commit ``3528f2c4``. This drill removes it from the
+    debt allowlist and moves it into ``EE_FIRE_DRILL_COVERAGE``.
+
+    Source emission: src/lawvm/estonia/grafter.py:10338 (``if action !=
+    replace or op.payload is None:`` arm), via the hard-blocker helper
+    ``_append_ee_replay_adjudication``.
+
+    Discipline (AGENTS.md §0): an unsupported action targeting the
+    statute title MUST NOT mutate the body — uncertainty is preserved
+    rather than guessed. The drill asserts the body is unchanged (over-
+    retention is the safe wrong) AND that the blocking adjudication
+    surfaces the unsupported action.
+    """
+    statute = _drill_statute()  # title = "Fire Drill Base"
+    op = _statute_title_unsupported_action_op()
+    adjudications: list[CompileAdjudication] = []
+    updated = apply_ee_ops(statute, [op], adjudications_out=adjudications)
+    # Body MUST be unchanged — a non-replace action against the statute
+    # title is a no-op at structure time (over-retention per §0).
+    assert updated.body is statute.body, (
+        "ee_replay_unsupported_statute_title_action dispatch MUST leave the "
+        "tree unchanged (over-retention per AGENTS.md §0); saw a body mutation."
+    )
+    matches = [
+        adj for adj in adjudications
+        if adj.kind == "ee_replay_unsupported_statute_title_action"
+    ]
+    assert matches, (
+        "Expected a blocking adjudication with kind "
+        "'ee_replay_unsupported_statute_title_action' to fire for a REPEAL op "
+        f"targeting the statute-title address; got: "
+        f"{[(a.kind, a.blocking) for a in adjudications]}"
+    )
+    emit = matches[0]
+    assert emit.blocking is True, (
+        f"ee_replay_unsupported_statute_title_action must emit blocking=True; "
+        f"got blocking={emit.blocking!r}"
+    )
+    assert emit.phase == "replay", (
+        f"ee_replay_unsupported_statute_title_action must declare phase='replay'; "
+        f"got phase={emit.phase!r}"
+    )
+    assert emit.op_id == op.op_id
