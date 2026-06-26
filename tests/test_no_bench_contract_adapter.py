@@ -925,3 +925,46 @@ def test_render_history_returns_0_when_history_empty(tmp_path) -> None:
     rc = _render_history(args)
 
     assert rc == 0
+
+
+# ---------------------------------------------------------------------------
+# §1.9 NOReplayStatus enum closure invariant — every bench-classified replay
+# status must be a member of the typed set; no raw strings escape the enum.
+# ---------------------------------------------------------------------------
+
+
+def test_no_bench_source_unavailable_set_is_enum_closure() -> None:
+    # Positive: the bench's SOURCE_UNAVAILABLE-tier frozenset is owned by
+    # the typed ``NOReplayStatus`` enum (single source of truth), every
+    # member of the frozenset is a NOReplayStatus member. A regression
+    # that re-introduced a parallel raw-string frozenset in the bench would
+    # show up because the comparison here pins the typed-enum-membership
+    # shape, not just the str-equality shape.
+    from lawvm.norway.sources import (
+        NO_BENCH_SOURCE_UNAVAILABLE_STATUSES,
+        NOReplayStatus,
+    )
+
+    assert all(
+        isinstance(member, NOReplayStatus) for member in NO_BENCH_SOURCE_UNAVAILABLE_STATUSES
+    )
+
+
+def test_no_bench_source_unavailable_set_excludes_error_replayed_no_amendments() -> None:
+    # §2.9 paired negative for the SOURCE_UNAVAILABLE status set: the
+    # endpoint statuses that route to OTHER bench tiers must NOT leak into
+    # the SOURCE_UNAVAILABLE set. A regression that added ``replayed`` or
+    # ``error`` to the ceiling-status set would silently start non-scoring
+    # real replays / crashes and lie about the bench headline.
+    from lawvm.norway.sources import (
+        NO_BENCH_SOURCE_UNAVAILABLE_STATUSES,
+        NOReplayStatus,
+    )
+
+    excluded = {
+        NOReplayStatus.ERROR,
+        NOReplayStatus.REPLAYED,
+        NOReplayStatus.NO_AMENDMENTS,
+        NOReplayStatus.FULLY_REPLAYABLE,
+    }
+    assert excluded.isdisjoint(NO_BENCH_SOURCE_UNAVAILABLE_STATUSES)
