@@ -236,7 +236,7 @@ class ActorModalFrame:
     modal: SurfaceModality
     object_span: Optional[SourceSpan]
     source_span: SourceSpan
-    status: Literal["surface_fact_only"]
+    actor_status: Literal["surface_fact_only"]
     rule_id: str
 
 
@@ -468,7 +468,7 @@ def _scan_tape(tape: TokenTape, source_file: str) -> ActorModalScan:
                 modal=modal,
                 object_span=object_span,
                 source_span=_span(source_file, actor_m.char_start, frame_end),
-                status="surface_fact_only",
+                actor_status="surface_fact_only",
                 rule_id=_RULE_ID,
             )
         )

@@ -44,7 +44,7 @@ def _fixture_registry():
 def test_known_single_name_resolves() -> None:
     reg = _fixture_registry()
     res = reg.lookup("Holhouslaki")
-    assert res.status == "single"
+    assert res.registry_status == "single"
     assert [c.statute_id for c in res.candidates] == ["1898/34-001"]
 
 
@@ -56,12 +56,12 @@ def test_inflected_genitive_resolves_via_generated_forms() -> None:
     """
     reg = _fixture_registry()
     res = reg.lookup("Holhouslain")
-    assert res.status == "single"
+    assert res.registry_status == "single"
     assert res.candidates[0].statute_id == "1898/34-001"
 
     # Inessive too (``Ulosottolaissa``), and on a multi-word title.
-    assert reg.lookup("Ulosottolaissa").status == "single"
-    assert reg.lookup("Vesiasetuksen").status == "single"
+    assert reg.lookup("Ulosottolaissa").registry_status == "single"
+    assert reg.lookup("Vesiasetuksen").registry_status == "single"
     assert reg.lookup("Vesiasetuksen").candidates[0].statute_id == "1962/282"
 
 
@@ -69,21 +69,21 @@ def test_two_version_name_without_as_of_is_multiple() -> None:
     """Fail-loud: a name covering two acts over time is ``multiple``, not newest."""
     reg = _fixture_registry()
     res = reg.lookup("Kuntalaki")
-    assert res.status == "multiple"
+    assert res.registry_status == "multiple"
     assert {c.statute_id for c in res.candidates} == {"1995/365", "2015/410"}
 
     # Same fail-loud behaviour on an inflected surface.
-    assert reg.lookup("Kuntalain").status == "multiple"
+    assert reg.lookup("Kuntalain").registry_status == "multiple"
 
 
 def test_two_version_name_with_as_of_disambiguates() -> None:
     reg = _fixture_registry()
     old = reg.lookup("Kuntalaki", as_of=dt.date(2000, 1, 1))
-    assert old.status == "single"
+    assert old.registry_status == "single"
     assert old.candidates[0].statute_id == "1995/365"
 
     new = reg.lookup("Kuntalaki", as_of=dt.date(2020, 1, 1))
-    assert new.status == "single"
+    assert new.registry_status == "single"
     assert new.candidates[0].statute_id == "2015/410"
 
     # The boundary day belongs to the new act (valid_to is exclusive).
@@ -95,11 +95,11 @@ def test_two_version_name_with_as_of_disambiguates() -> None:
 
 def test_unknown_name_is_none() -> None:
     reg = _fixture_registry()
-    assert reg.lookup("Tämmöistälakiaeiole").status == "none"
-    assert reg.lookup("Holhouslaki").status == "single"  # sanity: registry works
+    assert reg.lookup("Tämmöistälakiaeiole").registry_status == "none"
+    assert reg.lookup("Holhouslaki").registry_status == "single"  # sanity: registry works
 
     # A known name with no act in force at ``as_of`` is also ``none``.
-    assert reg.lookup("Kuntalaki", as_of=dt.date(1990, 1, 1)).status == "none"
+    assert reg.lookup("Kuntalaki", as_of=dt.date(1990, 1, 1)).registry_status == "none"
 
 
 def test_repealed_version_dropped_by_as_of_citing() -> None:
@@ -128,32 +128,32 @@ def test_repealed_version_dropped_by_as_of_citing() -> None:
         ],
     )
     # Whole-timeline lookup stays ambiguous (no silent newest pick).
-    assert reg.lookup("Esitutkintalaki").status == "multiple"
+    assert reg.lookup("Esitutkintalaki").registry_status == "multiple"
 
     # Recent body: old version is past its repeal -> single, the in-force act.
     recent = reg.lookup("Esitutkintalaissa", as_of=dt.date(2019, 3, 15))
-    assert recent.status == "single"
+    assert recent.registry_status == "single"
     assert recent.candidates[0].statute_id == "2011/805"
 
     # Old-era body (before the new act existed): the old version.
     old = reg.lookup("Esitutkintalaki", as_of=dt.date(1990, 1, 1))
-    assert old.status == "single"
+    assert old.registry_status == "single"
     assert old.candidates[0].statute_id == "1987/449"
 
     # Overlap (new enacted 2011, old not repealed until 2014): both validly in
     # force -> fail-loud AMBIGUOUS, never a silent pick.
     overlap = reg.lookup("Esitutkintalaki", as_of=dt.date(2012, 1, 1))
-    assert overlap.status == "multiple"
+    assert overlap.registry_status == "multiple"
     assert {c.statute_id for c in overlap.candidates} == {"1987/449", "2011/805"}
 
 
 def test_build_registry_accepts_two_tuple() -> None:
     reg = build_registry([("1889/39-001", "Rikoslaki")])
     res = reg.lookup("Rikoslaki")
-    assert res.status == "single"
+    assert res.registry_status == "single"
     assert res.candidates[0].statute_id == "1889/39-001"
     # Untimed entry => no as_of filter ever excludes it.
-    assert reg.lookup("Rikoslain", as_of=dt.date(2020, 1, 1)).status == "single"
+    assert reg.lookup("Rikoslain", as_of=dt.date(2020, 1, 1)).registry_status == "single"
 
 
 # ---------------------------------------------------------------------------
@@ -170,10 +170,10 @@ def test_trailing_period_title_inflects_and_resolves() -> None:
     """
     reg = build_registry([StatuteNameEntry("1960/465", "Palolaki.")])
     # The nominative without the period resolves.
-    assert reg.lookup("Palolaki").status == "single"
+    assert reg.lookup("Palolaki").registry_status == "single"
     # An inflected (genitive) period-free citation resolves via generated forms.
     res = reg.lookup("palolain")
-    assert res.status == "single"
+    assert res.registry_status == "single"
     assert res.candidates[0].statute_id == "1960/465"
 
 
@@ -193,7 +193,7 @@ def test_trailing_period_twin_acts_are_ambiguous_not_false_single() -> None:
         ]
     )
     res = reg.lookup("huoneenvuokralain")
-    assert res.status == "multiple"
+    assert res.registry_status == "multiple"
     assert {c.statute_id for c in res.candidates} == {"1925/166", "1987/653"}
 
 
@@ -218,12 +218,12 @@ def test_content_word_set_resolves_inflection_difference() -> None:
         ]
     )
     # exact surface (sg) hits the normal index
-    assert reg.lookup("laki maatalousyrittäjien luopumiskorvauksesta").status == "single"
+    assert reg.lookup("laki maatalousyrittäjien luopumiskorvauksesta").registry_status == "single"
     # plural premodifier MISSES the exact index ...
-    assert reg.lookup("laki maatalousyrittäjien luopumiskorvauksista").status == "none"
+    assert reg.lookup("laki maatalousyrittäjien luopumiskorvauksista").registry_status == "none"
     # ... but the content-word-set fallback resolves it to the unique id.
     res = reg.lookup_content_word_set("laki maatalousyrittäjien luopumiskorvauksista")
-    assert res.status == "single"
+    assert res.registry_status == "single"
     assert res.candidates[0].statute_id == "1992/1330"
 
 
@@ -238,12 +238,12 @@ def test_content_word_set_head_must_match() -> None:
     )
     # The asetus act resolves under an asetus cite (head matches, sg/pl collapse).
     assert (
-        reg.lookup_content_word_set("asetus valtiontalouden tarkastuksista").status
+        reg.lookup_content_word_set("asetus valtiontalouden tarkastuksista").registry_status
         == "single"
     )
     # A laki cite of the same subject does NOT resolve to the asetus act.
     assert (
-        reg.lookup_content_word_set("laki valtiontalouden tarkastuksista").status
+        reg.lookup_content_word_set("laki valtiontalouden tarkastuksista").registry_status
         == "none"
     )
 
@@ -257,7 +257,7 @@ def test_content_word_set_multiple_is_ambiguous_never_picked() -> None:
         ]
     )
     res = reg.lookup_content_word_set("laki valtiontalouden tarkastuksista")
-    assert res.status == "multiple"
+    assert res.registry_status == "multiple"
     assert {c.statute_id for c in res.candidates} == {"1990/100", "1993/267"}
 
 
@@ -270,9 +270,9 @@ def test_content_word_set_garbage_complement_declined() -> None:
     reg = build_registry(
         [StatuteNameEntry("2018/1", "Laki finanssivalvonnan järjestämisestä")]
     )
-    assert reg.lookup_content_word_set("laki kun finanssivalvonnasta").status == "none"
+    assert reg.lookup_content_word_set("laki kun finanssivalvonnasta").registry_status == "none"
     assert (
-        reg.lookup_content_word_set("laki mitä finanssivalvonnasta").status == "none"
+        reg.lookup_content_word_set("laki mitä finanssivalvonnasta").registry_status == "none"
     )
 
 
@@ -284,7 +284,7 @@ def test_content_word_set_single_stem_too_generic_declined() -> None:
     over-broad match.
     """
     reg = build_registry([StatuteNameEntry("2000/1", "Laki edistämisestä")])
-    assert reg.lookup_content_word_set("laki edistämisestä").status == "none"
+    assert reg.lookup_content_word_set("laki edistämisestä").registry_status == "none"
 
 
 def test_content_word_set_amendment_title_not_indexed() -> None:
@@ -302,4 +302,4 @@ def test_content_word_set_amendment_title_not_indexed() -> None:
         ]
     )
     # Even the amendment's own exact body should not be a content target.
-    assert reg.lookup_content_word_set("laki virvoitusjuomaverosta").status == "none"
+    assert reg.lookup_content_word_set("laki virvoitusjuomaverosta").registry_status == "none"

@@ -42,7 +42,7 @@ def test_valtioneuvoston_asetuksella_saadetaan_is_must():
     assert f.delegate_actor.lower().startswith("valtioneuvosto")
     assert f.instrument_kind == "asetus"
     assert f.binding_strength == "must"
-    assert f.status == "surface_fact_only"
+    assert f.delegation_status == "surface_fact_only"
     assert f.rule_id == "fi.surface.delegation.v1"
 
 
@@ -221,7 +221,7 @@ def test_no_legal_conclusion_vocabulary_emitted():
 
     # The status literal itself is the only verdict, and it is surface-only.
     (f,) = _frames(texts[0])
-    assert f.status == "surface_fact_only"
+    assert f.delegation_status == "surface_fact_only"
 
 
 def test_binding_strength_is_closed_vocab():

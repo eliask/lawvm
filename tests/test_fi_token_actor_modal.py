@@ -37,7 +37,7 @@ def test_actor_modal_frame_spans_are_token_aligned() -> None:
     assert fr.modal.voice == "active"
     m = fr.modal.source_span
     assert text[m.byte_offset : m.byte_offset + m.byte_len] == "voi"
-    assert fr.status == "surface_fact_only"
+    assert fr.actor_status == "surface_fact_only"
 
 
 def test_actor_modal_object_span_is_surface_only() -> None:

@@ -1,6 +1,6 @@
 """Surface -> morph_class assignment, fail-loud on the genuine walls.
 
-``classify`` returns a :class:`Classification` whose ``status`` is one of:
+``classify`` returns a :class:`Classification` whose ``classification_status`` is one of:
 
 * ``resolved``   --- a single categorical rule fired; ``morph_class`` is set.
 * ``ambiguous``  --- several plausible classes; ALL are listed in
@@ -17,13 +17,16 @@ The two non-negotiable walls (spec): the ``-Us`` adjective-vs-verb split
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Literal
+
+ClassificationStatus = Literal["resolved", "ambiguous", "needs_flag", "unsupported"]
 
 
 @dataclass(frozen=True, slots=True)
 class Classification:
     """Result of classifying a surface into a morph_class."""
 
-    status: str  # resolved | ambiguous | needs_flag | unsupported
+    classification_status: ClassificationStatus
     morph_class: str | None = None
     candidates: tuple[str, ...] = ()
     reason: str = ""
@@ -36,23 +39,23 @@ def classify(surface: str) -> Classification:
 
     # -nen -> Kotus 38.
     if s.endswith("nen"):
-        return Classification(status="resolved", morph_class="-nen")
+        return Classification(classification_status="resolved", morph_class="-nen")
 
     # -Uus / -ous quality abstracts: oikeus, vapaus, mahdollisuus -> -Ude-.
     # These are the -us TRAP's resolvable side ONLY when the -uu-/-Vu- shape
     # disambiguates; a bare -us after a consonant is the wall (see below).
     if s.endswith(("uus", "yys")):
-        return Classification(status="resolved", morph_class="-Uus->-Ude-")
+        return Classification(classification_status="resolved", morph_class="-Uus->-Ude-")
 
     # -sto / -sto (collective) and -io / -io: plain vowel-final, no gradation.
     if s.endswith(("sto", "stö", "io", "iö")):
-        return Classification(status="resolved", morph_class="vowel_final")
+        return Classification(classification_status="resolved", morph_class="vowel_final")
 
     # -Us / -Os after a consonant or short vowel is THE WALL: deverbal -Ukse-
     # (asetus) vs quality -Ude- (oikeus) cannot be told apart from the surface.
     if s.endswith(("us", "ys", "os", "ös")):
         return Classification(
-            status="needs_flag",
+            classification_status="needs_flag",
             candidates=("-Us->-Ukse-", "-Uus->-Ude-"),
             reason=(
                 "the -Us/-Os ending is the deverbal/quality wall; head-class or "
@@ -65,7 +68,7 @@ def classify(surface: str) -> Classification:
     # (pankki), or old -i/-e (vesi) -> all plausible, never a silent pick.
     if s.endswith("i"):
         return Classification(
-            status="ambiguous",
+            classification_status="ambiguous",
             candidates=("vowel_final", "e_contract"),
             reason=(
                 "bare -i simplex: loan-stable vs gradating vs historic -te "
@@ -75,15 +78,15 @@ def classify(surface: str) -> Classification:
 
     # -e finals: contracted -ee (Tampere/-e nouns).
     if s.endswith("e"):
-        return Classification(status="resolved", morph_class="e_contract")
+        return Classification(classification_status="resolved", morph_class="e_contract")
 
     # Other vowel-final lemmas (-o/-u/-y/-a/-ä/-ö) are plain vowel_final, but
     # gradation occurrence still needs a flag if a gradating cluster is present.
     if s and s[-1] in "aäoöuy":
-        return Classification(status="resolved", morph_class="vowel_final")
+        return Classification(classification_status="resolved", morph_class="vowel_final")
 
     return Classification(
-        status="unsupported",
+        classification_status="unsupported",
         reason=f"no categorical rule for ending of {surface!r}",
     )
 

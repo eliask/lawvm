@@ -142,7 +142,7 @@ def test_enumerated_entries_build_a_resolving_registry() -> None:
     assert head_bearing, "expected at least one '...laki' title in a 3000-slice"
     probe = head_bearing[0]
     res = reg.lookup(probe.canonical_title)
-    assert res.status in ("single", "multiple")
+    assert res.registry_status in ("single", "multiple")
     assert probe.statute_id in {c.statute_id for c in res.candidates}
 
 

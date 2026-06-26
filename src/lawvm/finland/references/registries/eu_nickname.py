@@ -186,13 +186,13 @@ class RegistryResult:
 
     Attributes:
         candidates: The CELEX ids that match (length 0 / 1 / >1).
-        status:     ``single`` / ``multiple`` / ``none`` per :class:`RegistryStatus`.
+        registry_status: ``single`` / ``multiple`` / ``none`` per :class:`RegistryStatus`.
         lemma:      The matched nickname lemma (nominative), or "" on a miss.
         matched_surface: The surface that triggered the match (possibly inflected).
     """
 
     candidates: tuple[str, ...]
-    status: RegistryStatus
+    registry_status: RegistryStatus
     lemma: str = ""
     matched_surface: str = ""
 
@@ -258,7 +258,7 @@ def _word_case_forms(word: str) -> Optional[dict[MorphCase, set[str]]]:
         head_forms.setdefault(MorphCase.NOM, set()).add(word)
         return head_forms
     cls = classify(word)
-    if cls.status != "resolved" or not cls.morph_class:
+    if cls.classification_status != "resolved" or not cls.morph_class:
         return None
     entry = MorphEntry(
         lemma_id=f"nickname-word:{word}",
@@ -394,11 +394,11 @@ def lookup(nickname_surface: str, as_of: object = None) -> RegistryResult:
     del as_of  # reserved; see docstring
     key = nickname_surface.strip().lower()
     if not key:
-        return RegistryResult(candidates=(), status=RegistryStatus.NONE)
+        return RegistryResult(candidates=(), registry_status=RegistryStatus.NONE)
 
     lemma = _INFLECTED_INDEX.get(key)
     if lemma is None:
-        return RegistryResult(candidates=(), status=RegistryStatus.NONE)
+        return RegistryResult(candidates=(), registry_status=RegistryStatus.NONE)
 
     candidates = _SEED[lemma]
     if len(candidates) == 1:
@@ -407,7 +407,7 @@ def lookup(nickname_surface: str, as_of: object = None) -> RegistryResult:
         status = RegistryStatus.MULTIPLE
     return RegistryResult(
         candidates=candidates,
-        status=status,
+        registry_status=status,
         lemma=lemma,
         matched_surface=nickname_surface.strip(),
     )

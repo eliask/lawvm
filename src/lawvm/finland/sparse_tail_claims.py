@@ -122,7 +122,7 @@ def build_sparse_omission_tail_claims(
         and op.target_cols.target_paragraph is not None
         and not op.target_cols.target_item
         and not op.target_cols.target_special
-        and source_model.lookup_payload_ir("section", op.target_cols.target_section, None, None).status
+        and source_model.lookup_payload_ir("section", op.target_cols.target_section, None, None).lookup_status
         == "missing"
     ]
     carrier_ops = [

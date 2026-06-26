@@ -31,7 +31,7 @@ def test_delegation_frame_fields_and_token_aligned_span() -> None:
     assert fr.delegate_actor == "Valtioneuvoston"
     assert fr.instrument_kind == "asetus"
     assert fr.binding_strength == "must"
-    assert fr.status == "surface_fact_only"
+    assert fr.delegation_status == "surface_fact_only"
     # whole-frame (clause) span is whole-token aligned
     s = fr.source_span
     clause = text[s.byte_offset : s.byte_offset + s.byte_len]

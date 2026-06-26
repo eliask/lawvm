@@ -107,7 +107,7 @@ class PayloadAssignment:
     """Assignment result for one body unit."""
 
     body_unit_id: str
-    status: Literal["claimed_current", "claimed_foreign", "unmatched"]
+    pairing_status: Literal["claimed_current", "claimed_foreign", "unmatched"]
     claim: Optional[ClauseClaim] = None
 
 
@@ -723,13 +723,13 @@ def assign_body_units(
 
         if matched_claim is not None:
             if matched_claim.target_statute != target_statute_id:
-                status: Literal["claimed_current", "claimed_foreign", "unmatched"] = "claimed_foreign"
+                pairing_status: Literal["claimed_current", "claimed_foreign", "unmatched"] = "claimed_foreign"
             else:
-                status = "claimed_current"
+                pairing_status = "claimed_current"
             assignments.append(
                 PayloadAssignment(
                     body_unit_id=unit.unit_id,
-                    status=status,
+                    pairing_status=pairing_status,
                     claim=matched_claim,
                 )
             )
@@ -737,7 +737,7 @@ def assign_body_units(
             assignments.append(
                 PayloadAssignment(
                     body_unit_id=unit.unit_id,
-                    status="unmatched",
+                    pairing_status="unmatched",
                     claim=None,
                 )
             )
@@ -896,7 +896,7 @@ def assign_body_units_subtree_aware(
         if unit is None or unit.kind != "section" or not unit.chapter_label:
             continue
         chapter_key = (unit.part_label, unit.chapter_label)
-        if assignment.status == "claimed_current" and assignment.claim is not None:
+        if assignment.pairing_status == "claimed_current" and assignment.claim is not None:
             if chapter_key not in chapters_with_claimed_sections:
                 chapters_with_claimed_sections[chapter_key] = assignment.claim
         else:
@@ -916,7 +916,7 @@ def assign_body_units_subtree_aware(
     # parent adoption rule.
     result: List[PayloadAssignment] = []
     for assignment in assignments:
-        if assignment.status != "unmatched":
+        if assignment.pairing_status != "unmatched":
             result.append(assignment)
             continue
 
@@ -930,7 +930,7 @@ def assign_body_units_subtree_aware(
             result.append(
                 PayloadAssignment(
                     body_unit_id=assignment.body_unit_id,
-                    status="claimed_current",
+                    pairing_status="claimed_current",
                     claim=part_insert_claims[matching_unit.label],
                 )
             )
@@ -942,7 +942,7 @@ def assign_body_units_subtree_aware(
             result.append(
                 PayloadAssignment(
                     body_unit_id=assignment.body_unit_id,
-                    status="claimed_current",
+                    pairing_status="claimed_current",
                     claim=part_insert_claims[matching_unit.part_label],
                 )
             )
@@ -954,7 +954,7 @@ def assign_body_units_subtree_aware(
             result.append(
                 PayloadAssignment(
                     body_unit_id=assignment.body_unit_id,
-                    status="claimed_current",
+                    pairing_status="claimed_current",
                     claim=part_insert_claims[matching_unit.part_label],
                 )
             )
@@ -969,7 +969,7 @@ def assign_body_units_subtree_aware(
             result.append(
                 PayloadAssignment(
                     body_unit_id=assignment.body_unit_id,
-                    status="claimed_current",
+                    pairing_status="claimed_current",
                     claim=chapter_claim,
                 )
             )
@@ -985,7 +985,7 @@ def assign_body_units_subtree_aware(
             result.append(
                 PayloadAssignment(
                     body_unit_id=assignment.body_unit_id,
-                    status="claimed_current",
+                    pairing_status="claimed_current",
                     claim=representative_claim,
                 )
             )
@@ -1068,11 +1068,11 @@ def enforce_pairing_invariants(
     for assignment in assignments:
         unit_chapter, unit_label = _parse_unit_id(assignment.body_unit_id)
         if assignment.body_unit_id.startswith("section:") and unit_chapter:
-            chapter_statuses.setdefault(unit_chapter, []).append(assignment.status)
-        elif assignment.body_unit_id.startswith("chapter:") and assignment.status == "unmatched":
+            chapter_statuses.setdefault(unit_chapter, []).append(assignment.pairing_status)
+        elif assignment.body_unit_id.startswith("chapter:") and assignment.pairing_status == "unmatched":
             unmatched_chapters.add(unit_label)
 
-        if assignment.status == "claimed_foreign":
+        if assignment.pairing_status == "claimed_foreign":
             claim_detail = ""
             if assignment.claim is not None:
                 claim_detail = (
@@ -1092,7 +1092,7 @@ def enforce_pairing_invariants(
                     blocking=True,
                 )
             )
-        elif assignment.status == "unmatched":
+        elif assignment.pairing_status == "unmatched":
             findings.append(
                 PairingFinding(
                     body_unit_id=assignment.body_unit_id,
@@ -1168,12 +1168,12 @@ def should_use_body_section(
             continue
 
         # Found a matching assignment
-        if assignment.status == "claimed_foreign":
+        if assignment.pairing_status == "claimed_foreign":
             return False
 
         # Claimed_current but REPEAL — payload should not be used
         if (
-            assignment.status == "claimed_current"
+            assignment.pairing_status == "claimed_current"
             and assignment.claim is not None
             and assignment.claim.claim_kind == "REPEAL"
         ):
@@ -1293,15 +1293,15 @@ def analyze_amendment_pairing(
     findings = enforce_pairing_invariants(assignments, statute_id, amendment_id)
 
     # Count statuses
-    n_current = sum(1 for a in assignments if a.status == "claimed_current")
-    n_foreign = sum(1 for a in assignments if a.status == "claimed_foreign")
-    n_unmatched = sum(1 for a in assignments if a.status == "unmatched")
+    n_current = sum(1 for a in assignments if a.pairing_status == "claimed_current")
+    n_foreign = sum(1 for a in assignments if a.pairing_status == "claimed_foreign")
+    n_unmatched = sum(1 for a in assignments if a.pairing_status == "unmatched")
 
     # Count repeal-blocked sections (claimed_current but REPEAL claim)
     n_repeal_blocked = sum(
         1
         for a in assignments
-        if a.status == "claimed_current" and a.claim is not None and a.claim.claim_kind == "REPEAL"
+        if a.pairing_status == "claimed_current" and a.claim is not None and a.claim.claim_kind == "REPEAL"
     )
 
     return AmendmentPairingResult(

@@ -10155,7 +10155,7 @@ def test_uncovered_body_chapter_payload_ownership_requires_subtree_claim(monkeyp
         return [
             PayloadAssignment(
                 body_unit_id="section:5/20",
-                status="claimed_current",
+                pairing_status="claimed_current",
                 claim=ClauseClaim(
                     target_statute=ctx.id,
                     target_address="20",

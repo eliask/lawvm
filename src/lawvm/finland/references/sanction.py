@@ -309,7 +309,7 @@ class SanctionFrame:
     target_actor_span: Optional[SourceSpan]
     trigger_span: Optional[SourceSpan]
     source_span: SourceSpan
-    status: Literal["surface_fact_only"]
+    sanction_status: Literal["surface_fact_only"]
     rule_id: str
 
 
@@ -529,7 +529,7 @@ def _build_frame(
         target_actor_span=target_span,
         trigger_span=trigger_span,
         source_span=_span(source_file, min(frame_lo, marker_lo), frame_hi),
-        status="surface_fact_only",
+        sanction_status="surface_fact_only",
         rule_id=_RULE_ID,
     )
 

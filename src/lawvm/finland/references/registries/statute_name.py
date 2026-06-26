@@ -113,7 +113,7 @@ class Candidate:
 class RegistryResult:
     """Typed outcome of :meth:`StatuteNameRegistry.lookup`.
 
-    ``status`` is the fail-loud control signal:
+    ``registry_status`` is the fail-loud control signal:
 
     * ``single``   --- exactly one candidate survives the ``as_of`` filter.
     * ``multiple`` --- the surface names more than one act (over time); ALL are
@@ -122,7 +122,7 @@ class RegistryResult:
       ``as_of``).
     """
 
-    status: str  # single | multiple | none
+    registry_status: str  # single | multiple | none
     candidates: tuple[Candidate, ...] = ()
     surface: str = ""
     as_of: Optional[dt.date] = None
@@ -248,11 +248,11 @@ def _verify_generates_elative(candidate: str, target_word_folded: str) -> bool:
     The candidate nominative is classified and run forward through the SG case
     generator; if any deterministically generated surface (harmony-folded) equals
     the title's elative word (harmony-folded) the reverse step is confirmed.  An
-    unclassifiable candidate (``status != "resolved"``) returns False — we never
+    unclassifiable candidate (``classification_status != "resolved"``) returns False — we never
     index an unverified nickname.
     """
     cls = classify(candidate)
-    if cls.status != "resolved" or cls.morph_class is None:
+    if cls.classification_status != "resolved" or cls.morph_class is None:
         return False
     entry = MorphEntry(
         lemma_id=candidate,
@@ -669,7 +669,7 @@ class StatuteNameRegistry:
         else:
             status = "multiple"
         return RegistryResult(
-            status=status,
+            registry_status=status,
             candidates=candidates,
             surface=surface,
             as_of=as_of,
@@ -689,7 +689,7 @@ class StatuteNameRegistry:
         key = _normalize_key(name_surface)
         bucket = self._index.get(key)
         if not bucket:
-            return RegistryResult(status="none", surface=name_surface, as_of=as_of)
+            return RegistryResult(registry_status="none", surface=name_surface, as_of=as_of)
         return self._result_from_bucket(bucket, name_surface, as_of)
 
     def lookup_content_word_set(
@@ -723,10 +723,10 @@ class StatuteNameRegistry:
         """
         content_key = citation_content_key(fi_name_key)
         if content_key is None:
-            return RegistryResult(status="none", surface=fi_name_key, as_of=as_of)
+            return RegistryResult(registry_status="none", surface=fi_name_key, as_of=as_of)
         bucket = self._content_index.get(content_key)
         if not bucket:
-            return RegistryResult(status="none", surface=fi_name_key, as_of=as_of)
+            return RegistryResult(registry_status="none", surface=fi_name_key, as_of=as_of)
         return self._result_from_bucket(bucket, fi_name_key, as_of)
 
 

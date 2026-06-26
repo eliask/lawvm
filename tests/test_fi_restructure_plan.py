@@ -583,7 +583,7 @@ class TestAssignBodyUnitsSubtreeAware:
             ClauseClaim(target_statute="1994/1280", target_address="3", claim_kind="REPLACE"),
         ]
         assignments = assign_body_units_subtree_aware(inventory, claims, "1994/1280")
-        statuses = {a.body_unit_id: a.status for a in assignments}
+        statuses = {a.body_unit_id: a.pairing_status for a in assignments}
         assert statuses["section:3"] == "claimed_current"
         assert statuses["section:5"] == "unmatched"
 
@@ -598,7 +598,7 @@ class TestAssignBodyUnitsSubtreeAware:
         claims = [_make_chapter_insert_claim("3")]
 
         assignments = assign_body_units_subtree_aware(inventory, claims, "1994/1280")
-        statuses = {a.body_unit_id: a.status for a in assignments}
+        statuses = {a.body_unit_id: a.pairing_status for a in assignments}
 
         # Chapter itself should be claimed_current via the chapter INSERT claim
         assert statuses["chapter:3"] == "claimed_current"
@@ -623,7 +623,7 @@ class TestAssignBodyUnitsSubtreeAware:
         )
         claims = [foreign_claim]
         assignments = assign_body_units_subtree_aware(inventory, claims, "1994/1280")
-        statuses = {a.body_unit_id: a.status for a in assignments}
+        statuses = {a.body_unit_id: a.pairing_status for a in assignments}
         # Chapter is claimed_foreign (matches a foreign claim)
         assert statuses["chapter:3"] == "claimed_foreign"
         # Section has no current-statute claim, should be unmatched (no subtree adoption)
@@ -647,7 +647,7 @@ class TestAssignBodyUnitsSubtreeAware:
         assignments = assign_body_units_subtree_aware(inventory, claims, "1994/1280")
         # Section already claimed_current via individual claim — status should be claimed_current
         sec20_assign = next(a for a in assignments if a.body_unit_id == "section:3/20")
-        assert sec20_assign.status == "claimed_current"
+        assert sec20_assign.pairing_status == "claimed_current"
         # The individual REPLACE claim should be preserved, not overwritten by INSERT
         assert sec20_assign.claim is not None
         assert sec20_assign.claim.claim_kind == "REPLACE"

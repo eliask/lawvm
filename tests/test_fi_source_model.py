@@ -146,18 +146,18 @@ def test_source_model_body_lookup_returns_typed_verdicts() -> None:
     model = AmendmentSourceModel.from_tree(tree, source_ref="2000/1")
 
     ambiguous = model.body_section_lookup("5")
-    assert ambiguous.status == "ambiguous"
+    assert ambiguous.lookup_status == "ambiguous"
     assert ambiguous.unique_unit is None
     assert tuple(unit.chapter_label for unit in ambiguous.candidates) == ("1", "2")
     assert model.first_body_section_chapter("5") == "1"
 
     unique = model.body_section_lookup("5", target_chapter="2")
-    assert unique.status == "unique"
+    assert unique.lookup_status == "unique"
     assert unique.unique_unit is not None
     assert unique.unique_unit.chapter_label == "2"
 
     missing = model.body_section_lookup("6")
-    assert missing.status == "missing"
+    assert missing.lookup_status == "missing"
     assert missing.candidates == ()
 
 
@@ -608,13 +608,13 @@ def test_source_model_payload_lookup_matches_direct_xml_lookup() -> None:
         "2",
         "5",
     )
-    assert payload_lookup.status == "missing"
+    assert payload_lookup.lookup_status == "missing"
     assert payload_lookup.body_lookup_status == "missing"
     assert payload_lookup.payload_basis == "none"
     assert payload_lookup.payload_ir is None
     assert payload_lookup.cross_heading_ir is None
     assert model.find_payload_ir("section", "5", "2", "5") == (None, None)
-    assert inventory_payload_lookup.status == "unique"
+    assert inventory_payload_lookup.lookup_status == "unique"
     assert inventory_payload_lookup.body_lookup_status == "unique"
     assert inventory_payload_lookup.payload_basis == "body_inventory"
     assert inventory_payload_lookup.payload_ir == direct_ir
@@ -646,7 +646,7 @@ def test_source_model_payload_lookup_keeps_chapter_scope_after_plain_cross_headi
     lookup = model.lookup_payload_ir("section", "60", target_chapter="4")
 
     assert [unit.unit_id for unit in lookup.body_candidates] == ["section:4/60"]
-    assert lookup.status == "unique"
+    assert lookup.lookup_status == "unique"
     assert lookup.payload_basis == "body_inventory"
     assert lookup.payload_ir is not None
 
@@ -683,7 +683,7 @@ def test_source_model_real_chapter_payload_lookup_uses_current_source_unit(
 
     lookup = model.lookup_payload_ir("chapter", "2")
 
-    assert lookup.status == "unique"
+    assert lookup.lookup_status == "unique"
     assert lookup.payload_basis == "body_inventory"
     assert lookup.payload_ir is not None
     assert lookup.payload_ir.kind is IRNodeKind.CHAPTER
@@ -756,7 +756,7 @@ def test_source_model_chapter_payload_lookup_uses_logical_pseudo_chapter_segment
     chapter_16a = model.lookup_payload_ir("chapter", "16a")
     chapter_16b = model.lookup_payload_ir("chapter", "16b")
 
-    assert chapter_16a.status == "unique"
+    assert chapter_16a.lookup_status == "unique"
     assert chapter_16a.payload_ir is not None
     assert chapter_16a.payload_ir.kind is IRNodeKind.CHAPTER
     assert chapter_16a.payload_ir.label == "16a"
@@ -769,7 +769,7 @@ def test_source_model_chapter_payload_lookup_uses_logical_pseudo_chapter_segment
         if child.kind is IRNodeKind.SECTION
     )
 
-    assert chapter_16b.status == "unique"
+    assert chapter_16b.lookup_status == "unique"
     assert chapter_16b.payload_ir is not None
     assert chapter_16b.payload_ir.kind is IRNodeKind.CHAPTER
     assert chapter_16b.payload_ir.label == "16b"
@@ -788,7 +788,7 @@ def test_source_model_chapter_payload_lookup_salvages_marker_only_pseudo_chapter
 
     lookup = model.lookup_payload_ir("chapter", "8a")
 
-    assert lookup.status == "unique"
+    assert lookup.lookup_status == "unique"
     assert lookup.payload_basis == "body_inventory"
     assert lookup.payload_ir is not None
     assert lookup.payload_ir.kind is IRNodeKind.CHAPTER
@@ -816,7 +816,7 @@ def test_source_model_section_payload_text_uses_typed_payload_ir() -> None:
 
     result = model.lookup_section_payload_text("5")
 
-    assert result.status == "unique"
+    assert result.lookup_status == "unique"
     assert result.payload_lookup_status == "unique"
     assert result.payload_basis == "body_inventory"
     assert "Vuodelta 1984 toimitettavassa verotuksessa" in result.text
@@ -845,19 +845,19 @@ def test_source_model_payload_lookup_does_not_xml_fallback_for_non_unique_body_v
     monkeypatch.setattr(AmendmentSourceModel, "find_xml_node", fail_xml_lookup, raising=False)
 
     ambiguous = model.lookup_payload_ir("section", "5")
-    assert ambiguous.status == "ambiguous"
+    assert ambiguous.lookup_status == "ambiguous"
     assert ambiguous.body_lookup_status == "ambiguous"
     assert ambiguous.payload_basis == "none"
     assert ambiguous.payload_ir is None
 
     missing = model.lookup_payload_ir("section", "6")
-    assert missing.status == "missing"
+    assert missing.lookup_status == "missing"
     assert missing.body_lookup_status == "missing"
     assert missing.payload_basis == "none"
     assert missing.payload_ir is None
 
     scoped_mismatch = model.lookup_payload_ir("section", "5", target_chapter="3")
-    assert scoped_mismatch.status == "missing"
+    assert scoped_mismatch.lookup_status == "missing"
     assert scoped_mismatch.body_lookup_status == "missing"
     assert scoped_mismatch.payload_basis == "none"
     assert scoped_mismatch.payload_ir is None
@@ -891,12 +891,12 @@ def test_source_model_payload_lookup_resolves_duplicate_coverage_refs_by_unit_id
     first = model.lookup_payload_ir_for_coverage_ref(source_refs[0])
     second = model.lookup_payload_ir_for_coverage_ref(source_refs[1])
 
-    assert first.status == "unique"
+    assert first.lookup_status == "unique"
     assert first.body_lookup_status == "ambiguous"
     assert first.payload_basis == "coverage_payload_ref"
     assert first.payload_ir is not None
     assert "foo" in irnode_to_text(first.payload_ir)
-    assert second.status == "unique"
+    assert second.lookup_status == "unique"
     assert second.body_lookup_status == "ambiguous"
     assert second.payload_basis == "coverage_payload_ref"
     assert second.payload_ir is not None
@@ -919,7 +919,7 @@ def test_source_model_payload_lookup_exposes_missing_and_ambiguous_verdicts() ->
     model = AmendmentSourceModel.from_tree(tree, source_ref="2000/10")
 
     ambiguous = model.lookup_payload_ir("section", "5")
-    assert ambiguous.status == "ambiguous"
+    assert ambiguous.lookup_status == "ambiguous"
     assert ambiguous.body_lookup_status == "ambiguous"
     assert ambiguous.payload_basis == "none"
     assert tuple(unit.chapter_label for unit in ambiguous.body_candidates) == ("1", "2")
@@ -927,7 +927,7 @@ def test_source_model_payload_lookup_exposes_missing_and_ambiguous_verdicts() ->
     assert ambiguous.cross_heading_ir is None
 
     missing = model.lookup_payload_ir("section", "6")
-    assert missing.status == "missing"
+    assert missing.lookup_status == "missing"
     assert missing.body_lookup_status == "missing"
     assert missing.payload_basis == "none"
     assert missing.payload_ir is None

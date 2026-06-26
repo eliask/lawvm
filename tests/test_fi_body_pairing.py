@@ -539,7 +539,7 @@ class TestAssignBodyUnits:
         ]
         assignments = assign_body_units(inventory, claims, "1994/1280")
         assert len(assignments) == 1
-        assert assignments[0].status == "claimed_current"
+        assert assignments[0].pairing_status == "claimed_current"
         assert assignments[0].claim is not None
 
     def test_foreign_statute(self) -> None:
@@ -555,7 +555,7 @@ class TestAssignBodyUnits:
         ]
         assignments = assign_body_units(inventory, claims, "1994/1280")
         assert len(assignments) == 1
-        assert assignments[0].status == "claimed_foreign"
+        assert assignments[0].pairing_status == "claimed_foreign"
 
     def test_unmatched(self) -> None:
         inventory = [
@@ -570,7 +570,7 @@ class TestAssignBodyUnits:
         ]
         assignments = assign_body_units(inventory, claims, "1994/1280")
         assert len(assignments) == 1
-        assert assignments[0].status == "unmatched"
+        assert assignments[0].pairing_status == "unmatched"
 
     def test_repeal_claim_still_current(self) -> None:
         """A REPEAL claim marks the section as claimed_current --
@@ -587,7 +587,7 @@ class TestAssignBodyUnits:
         ]
         assignments = assign_body_units(inventory, claims, "1994/1280")
         assert len(assignments) == 1
-        assert assignments[0].status == "claimed_current"
+        assert assignments[0].pairing_status == "claimed_current"
         assert assignments[0].claim is not None
         assert assignments[0].claim.claim_kind == "REPEAL"
 
@@ -624,12 +624,12 @@ class TestAssignBodyUnits:
 
         # Section in chapter 2 should be claimed
         ch2 = next(a for a in assignments if a.body_unit_id == "section:2/5")
-        assert ch2.status == "claimed_current"
+        assert ch2.pairing_status == "claimed_current"
 
         # Section in chapter 3 must NOT be claimed — the claim is scoped to
         # chapter 2 only.  Cross-chapter misrouting prevention.
         ch3 = next(a for a in assignments if a.body_unit_id == "section:3/5")
-        assert ch3.status == "unmatched"
+        assert ch3.pairing_status == "unmatched"
 
     def test_no_claims_all_unmatched(self) -> None:
         inventory = [
@@ -638,7 +638,7 @@ class TestAssignBodyUnits:
         ]
         assignments = assign_body_units(inventory, [], "1994/1280")
         assert len(assignments) == 2
-        assert all(a.status == "unmatched" for a in assignments)
+        assert all(a.pairing_status == "unmatched" for a in assignments)
 
 
 # ---------------------------------------------------------------------------
@@ -651,7 +651,7 @@ class TestEnforcePairingInvariants:
         assignments = [
             PayloadAssignment(
                 body_unit_id="section:5",
-                status="claimed_current",
+                pairing_status="claimed_current",
                 claim=ClauseClaim(
                     target_statute="1994/1280",
                     target_address="5",
@@ -666,7 +666,7 @@ class TestEnforcePairingInvariants:
         assignments = [
             PayloadAssignment(
                 body_unit_id="section:5",
-                status="claimed_foreign",
+                pairing_status="claimed_foreign",
                 claim=ClauseClaim(
                     target_statute="OTHER/LAW",
                     target_address="5",
@@ -683,7 +683,7 @@ class TestEnforcePairingInvariants:
         assignments = [
             PayloadAssignment(
                 body_unit_id="section:99",
-                status="unmatched",
+                pairing_status="unmatched",
                 claim=None,
             ),
         ]
@@ -696,7 +696,7 @@ class TestEnforcePairingInvariants:
         assignments = [
             PayloadAssignment(
                 body_unit_id="section:1",
-                status="claimed_current",
+                pairing_status="claimed_current",
                 claim=ClauseClaim(
                     target_statute="1994/1280",
                     target_address="1",
@@ -705,7 +705,7 @@ class TestEnforcePairingInvariants:
             ),
             PayloadAssignment(
                 body_unit_id="section:5",
-                status="claimed_foreign",
+                pairing_status="claimed_foreign",
                 claim=ClauseClaim(
                     target_statute="OTHER",
                     target_address="5",
@@ -714,7 +714,7 @@ class TestEnforcePairingInvariants:
             ),
             PayloadAssignment(
                 body_unit_id="section:99",
-                status="unmatched",
+                pairing_status="unmatched",
                 claim=None,
             ),
         ]
@@ -734,7 +734,7 @@ class TestShouldUseBodySection:
         assignments = [
             PayloadAssignment(
                 body_unit_id="section:5",
-                status="claimed_current",
+                pairing_status="claimed_current",
                 claim=ClauseClaim(
                     target_statute="1994/1280",
                     target_address="5",
@@ -749,7 +749,7 @@ class TestShouldUseBodySection:
         assignments = [
             PayloadAssignment(
                 body_unit_id="section:3",
-                status="claimed_current",
+                pairing_status="claimed_current",
                 claim=ClauseClaim(
                     target_statute="1994/1280",
                     target_address="3",
@@ -763,7 +763,7 @@ class TestShouldUseBodySection:
         assignments = [
             PayloadAssignment(
                 body_unit_id="section:5",
-                status="claimed_foreign",
+                pairing_status="claimed_foreign",
                 claim=ClauseClaim(
                     target_statute="OTHER",
                     target_address="5",
@@ -778,7 +778,7 @@ class TestShouldUseBodySection:
         assignments = [
             PayloadAssignment(
                 body_unit_id="section:99",
-                status="unmatched",
+                pairing_status="unmatched",
                 claim=None,
             ),
         ]
@@ -789,7 +789,7 @@ class TestShouldUseBodySection:
         assignments = [
             PayloadAssignment(
                 body_unit_id="section:5",
-                status="claimed_current",
+                pairing_status="claimed_current",
                 claim=ClauseClaim(
                     target_statute="1994/1280",
                     target_address="5",
@@ -804,7 +804,7 @@ class TestShouldUseBodySection:
         assignments = [
             PayloadAssignment(
                 body_unit_id="section:2/5",
-                status="claimed_current",
+                pairing_status="claimed_current",
                 claim=ClauseClaim(
                     target_statute="1994/1280",
                     target_address="5",
@@ -814,7 +814,7 @@ class TestShouldUseBodySection:
             ),
             PayloadAssignment(
                 body_unit_id="section:3/5",
-                status="claimed_foreign",
+                pairing_status="claimed_foreign",
                 claim=ClauseClaim(
                     target_statute="OTHER",
                     target_address="5",
@@ -867,7 +867,7 @@ class TestIntegrationRepealAmendment:
         # Assign: all should be claimed_current (REPEAL)
         assignments = assign_body_units(inventory, claims, "1994/1280")
         assert len(assignments) == 3
-        assert all(a.status == "claimed_current" for a in assignments)
+        assert all(a.pairing_status == "claimed_current" for a in assignments)
 
         # No enforcement findings (all are claimed_current)
         findings = enforce_pairing_invariants(assignments, "1994/1280", "2000/172")
@@ -923,15 +923,15 @@ class TestIntegrationRepealAmendment:
 
         # Section 1 → claimed_current
         sec1 = next(a for a in assignments if a.body_unit_id == "section:1")
-        assert sec1.status == "claimed_current"
+        assert sec1.pairing_status == "claimed_current"
 
         # Section 5 → claimed_foreign
         sec5 = next(a for a in assignments if a.body_unit_id == "section:5")
-        assert sec5.status == "claimed_foreign"
+        assert sec5.pairing_status == "claimed_foreign"
 
         # Section 2 → unmatched
         sec2 = next(a for a in assignments if a.body_unit_id == "section:2")
-        assert sec2.status == "unmatched"
+        assert sec2.pairing_status == "unmatched"
 
         # Invariant enforcement: both foreign and unmatched produce findings
         findings = enforce_pairing_invariants(assignments, "1994/1280", "2000/172")
@@ -1196,7 +1196,7 @@ class TestCrossChapterInsertMisrouting:
         assignments = assign_body_units(inventory, claims, "2008/521")
         assert len(assignments) == 1
         a = assignments[0]
-        assert a.status == "claimed_current"
+        assert a.pairing_status == "claimed_current"
         assert a.claim is not None
         # The body unit in chapter 5 must match the chapter 5 INSERT claim,
         # NOT the chapter 2 REPLACE claim.
@@ -1237,13 +1237,13 @@ class TestCrossChapterInsertMisrouting:
         assert len(assignments) == 2
 
         ch2 = next(a for a in assignments if a.body_unit_id == "section:2/18a")
-        assert ch2.status == "claimed_current"
+        assert ch2.pairing_status == "claimed_current"
         assert ch2.claim is not None
         assert ch2.claim.chapter == "2"
         assert ch2.claim.claim_kind == "REPLACE"
 
         ch5 = next(a for a in assignments if a.body_unit_id == "section:5/18a")
-        assert ch5.status == "claimed_current"
+        assert ch5.pairing_status == "claimed_current"
         assert ch5.claim is not None
         assert ch5.claim.chapter == "5"
         assert ch5.claim.claim_kind == "INSERT"
@@ -1268,7 +1268,7 @@ class TestCrossChapterInsertMisrouting:
         ]
         assignments = assign_body_units(inventory, claims, "2008/521")
         assert len(assignments) == 1
-        assert assignments[0].status == "claimed_current"
+        assert assignments[0].pairing_status == "claimed_current"
 
     def test_scoped_claim_does_not_cross_chapter(self) -> None:
         """A claim scoped to chapter 5 must NOT match a body unit in chapter 2."""
@@ -1291,7 +1291,7 @@ class TestCrossChapterInsertMisrouting:
         assignments = assign_body_units(inventory, claims, "2008/521")
         assert len(assignments) == 1
         # The body unit in chapter 2 must NOT be claimed by the chapter 5 INSERT
-        assert assignments[0].status == "unmatched"
+        assert assignments[0].pairing_status == "unmatched"
 
     def test_flat_body_unit_matches_scoped_claim(self) -> None:
         """A body unit without chapter context matches a chapter-scoped claim.
@@ -1318,7 +1318,7 @@ class TestCrossChapterInsertMisrouting:
         assignments = assign_body_units(inventory, claims, "2008/521")
         assert len(assignments) == 1
         # Flat body unit should match the chapter-scoped claim (fallback)
-        assert assignments[0].status == "claimed_current"
+        assert assignments[0].pairing_status == "claimed_current"
         assert assignments[0].claim is not None
         assert assignments[0].claim.chapter == "5"
 
@@ -1366,11 +1366,11 @@ class TestCrossChapterInsertMisrouting:
         ch2_a = next(a for a in sec_assignments if "2/" in a.body_unit_id)
         ch5_a = next(a for a in sec_assignments if "5/" in a.body_unit_id)
 
-        assert ch2_a.status == "claimed_current"
+        assert ch2_a.pairing_status == "claimed_current"
         assert ch2_a.claim is not None
         assert ch2_a.claim.chapter == "2"
 
-        assert ch5_a.status == "claimed_current"
+        assert ch5_a.pairing_status == "claimed_current"
         assert ch5_a.claim is not None
         assert ch5_a.claim.chapter == "5"
 
@@ -1415,8 +1415,8 @@ class TestCrossChapterInsertMisrouting:
         iv_sec = next(u for u in sec_units if u.part_label == "4")
         v_sec = next(u for u in sec_units if u.part_label == "5")
 
-        assert by_id[iv_sec.unit_id].status == "unmatched"
-        assert by_id[v_sec.unit_id].status == "claimed_current"
+        assert by_id[iv_sec.unit_id].pairing_status == "unmatched"
+        assert by_id[v_sec.unit_id].pairing_status == "claimed_current"
         v_claim = by_id[v_sec.unit_id].claim
         assert v_claim is not None
         assert v_claim.part == "5"
@@ -1460,13 +1460,13 @@ class TestCrossChapterInsertMisrouting:
         chapter_units = [u for u in inventory if u.kind == IRNodeKind.CHAPTER.value]
         section_units = [u for u in inventory if u.kind == IRNodeKind.SECTION.value]
 
-        assert by_id[part_unit.unit_id].status == "claimed_current"
+        assert by_id[part_unit.unit_id].pairing_status == "claimed_current"
         part_claim = by_id[part_unit.unit_id].claim
         assert part_claim is not None
         assert part_claim.target_address == "5"
 
-        assert all(by_id[u.unit_id].status == "claimed_current" for u in chapter_units)
-        assert all(by_id[u.unit_id].status == "claimed_current" for u in section_units)
+        assert all(by_id[u.unit_id].pairing_status == "claimed_current" for u in chapter_units)
+        assert all(by_id[u.unit_id].pairing_status == "claimed_current" for u in section_units)
 
 
 # ---------------------------------------------------------------------------
@@ -1516,17 +1516,17 @@ class TestTilalleRangeInsertParentAdoption:
         # Without subtree awareness: chapter is unmatched
         basic_assignments = assign_body_units(inventory, claims, "2008/521")
         ch_assignment = next(a for a in basic_assignments if a.body_unit_id == "chapter:25")
-        assert ch_assignment.status == "unmatched"
+        assert ch_assignment.pairing_status == "unmatched"
 
         # With subtree awareness: chapter is promoted to claimed_current
         subtree_assignments = assign_body_units_subtree_aware(inventory, claims, "2008/521")
         ch_assignment = next(a for a in subtree_assignments if a.body_unit_id == "chapter:25")
-        assert ch_assignment.status == "claimed_current"
+        assert ch_assignment.pairing_status == "claimed_current"
 
         # All section assignments remain claimed_current
         for s in ["4", "5", "6", "7", "8"]:
             sec = next(a for a in subtree_assignments if a.body_unit_id == f"section:25/{s}")
-            assert sec.status == "claimed_current"
+            assert sec.pairing_status == "claimed_current"
             assert sec.claim is not None
             assert sec.claim.claim_kind == "INSERT"
 
@@ -1557,7 +1557,7 @@ class TestTilalleRangeInsertParentAdoption:
 
         assignments = assign_body_units_subtree_aware(inventory, claims, "2008/521")
         ch_assignment = next(a for a in assignments if a.body_unit_id == "chapter:3")
-        assert ch_assignment.status == "claimed_current"
+        assert ch_assignment.pairing_status == "claimed_current"
         findings = enforce_pairing_invariants(assignments, "2008/521", "2020/100")
         assert findings == []
 
@@ -1588,11 +1588,11 @@ class TestTilalleRangeInsertParentAdoption:
         # All 3 chapters should be claimed_current (via parent adoption)
         for ch in ["1", "25", "30"]:
             ch_a = next(a for a in assignments if a.body_unit_id == f"chapter:{ch}")
-            assert ch_a.status == "claimed_current", f"chapter:{ch} should be claimed_current"
+            assert ch_a.pairing_status == "claimed_current", f"chapter:{ch} should be claimed_current"
 
         # All sections should be claimed_current
         for a in assignments:
-            assert a.status == "claimed_current", f"{a.body_unit_id} should be claimed_current"
+            assert a.pairing_status == "claimed_current", f"{a.body_unit_id} should be claimed_current"
 
         # No findings
         findings = enforce_pairing_invariants(assignments, "2008/521", "2015/303")
@@ -1610,7 +1610,7 @@ class TestTilalleRangeInsertParentAdoption:
         assignments = assign_body_units_subtree_aware(inventory, claims, "2008/521")
 
         ch_assignment = next(a for a in assignments if a.body_unit_id == "chapter:25")
-        assert ch_assignment.status == "unmatched"
+        assert ch_assignment.pairing_status == "unmatched"
 
     def test_chapter_not_adopted_when_sections_are_foreign(self) -> None:
         """Chapter stays unmatched when its sections are claimed by a foreign statute."""
@@ -1631,10 +1631,10 @@ class TestTilalleRangeInsertParentAdoption:
         assignments = assign_body_units_subtree_aware(inventory, claims, "2008/521")
 
         ch_assignment = next(a for a in assignments if a.body_unit_id == "chapter:25")
-        assert ch_assignment.status == "unmatched"
+        assert ch_assignment.pairing_status == "unmatched"
 
         sec_assignment = next(a for a in assignments if a.body_unit_id == "section:25/4")
-        assert sec_assignment.status == "claimed_foreign"
+        assert sec_assignment.pairing_status == "claimed_foreign"
 
     def test_chapter_not_adopted_when_some_child_sections_are_unmatched(self) -> None:
         """Parent adoption requires full current-statute section coverage."""
@@ -1654,13 +1654,13 @@ class TestTilalleRangeInsertParentAdoption:
         assignments = assign_body_units_subtree_aware(inventory, claims, "2008/521")
 
         ch_assignment = next(a for a in assignments if a.body_unit_id == "chapter:25")
-        assert ch_assignment.status == "unmatched"
+        assert ch_assignment.pairing_status == "unmatched"
 
         sec4_assignment = next(a for a in assignments if a.body_unit_id == "section:25/4")
-        assert sec4_assignment.status == "claimed_current"
+        assert sec4_assignment.pairing_status == "claimed_current"
 
         sec5_assignment = next(a for a in assignments if a.body_unit_id == "section:25/5")
-        assert sec5_assignment.status == "unmatched"
+        assert sec5_assignment.pairing_status == "unmatched"
 
         findings = enforce_pairing_invariants(assignments, "2008/521", "2015/303")
         assert any(f.kind == "chapter_parent_adoption_mixed_children" for f in findings)

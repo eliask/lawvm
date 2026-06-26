@@ -162,7 +162,7 @@ def _entry_for_term(term: str) -> Optional[MorphEntry]:
 
     # Simplex: classify the whole term.
     cls = classify(t)
-    if cls.status == "resolved" and cls.morph_class is not None:
+    if cls.classification_status == "resolved" and cls.morph_class is not None:
         return MorphEntry(
             lemma_id=f"term:{low}",
             lemma=t,

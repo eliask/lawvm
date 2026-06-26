@@ -65,7 +65,7 @@ def test_eu_head_detected_in_plural_adessive() -> None:
 
 def test_registry_single_inflected() -> None:
     res = eu_nickname.lookup("teollisuuspäästödirektiivin")
-    assert res.status is eu_nickname.RegistryStatus.SINGLE
+    assert res.registry_status is eu_nickname.RegistryStatus.SINGLE
     assert res.candidates == ("32010L0075",)
 
 
@@ -73,19 +73,19 @@ def test_registry_multiword_inflected() -> None:
     # Both the adjective (yleinen->yleisen) and the head (asetus->asetuksen)
     # inflect; the morphology-backed index must still resolve.
     res = eu_nickname.lookup("yleisen tietosuoja-asetuksen")
-    assert res.status is eu_nickname.RegistryStatus.SINGLE
+    assert res.registry_status is eu_nickname.RegistryStatus.SINGLE
     assert res.candidates == ("32016R0679",)
 
 
 def test_registry_unknown_is_none() -> None:
     res = eu_nickname.lookup("foobardirektiivin")
-    assert res.status is eu_nickname.RegistryStatus.NONE
+    assert res.registry_status is eu_nickname.RegistryStatus.NONE
     assert res.candidates == ()
 
 
 def test_registry_ambiguous_multiple() -> None:
     res = eu_nickname.lookup("jätedirektiivin")
-    assert res.status is eu_nickname.RegistryStatus.MULTIPLE
+    assert res.registry_status is eu_nickname.RegistryStatus.MULTIPLE
     assert set(res.candidates) == {"32008L0098", "32006L0012"}
 
 

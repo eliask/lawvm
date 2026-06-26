@@ -199,7 +199,7 @@ class ExceptionConditionCue:
     marker_text: str
     scope_hint: Optional[SourceSpan]
     source_span: SourceSpan
-    status: Literal["surface_fact_only"]
+    exception_status: Literal["surface_fact_only"]
     rule_id: str
 
 
@@ -266,7 +266,7 @@ def _scan(
                 marker_text=norm_marker,
                 scope_hint=scope_hint,
                 source_span=_span(source_file, m.start(), m.end()),
-                status="surface_fact_only",
+                exception_status="surface_fact_only",
                 rule_id=_RULE_ID,
             )
         )

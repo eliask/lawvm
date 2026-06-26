@@ -142,11 +142,11 @@ def test_build_serialize_load_roundtrip_resolves_inflected(tmp_path) -> None:
     # the head was never stored literally).
     reg = load_statute_name_registry(path)
     res = reg.lookup("Holhouslain")
-    assert res.status == "single"
+    assert res.registry_status == "single"
     assert res.candidates[0].statute_id == "1898/34-001"
 
     # Temporal disambiguation survives the round-trip.
-    assert reg.lookup("Kuntalaki").status == "multiple"
+    assert reg.lookup("Kuntalaki").registry_status == "multiple"
     assert (
         reg.lookup("Kuntalaki", as_of=dt.date(2000, 1, 1)).candidates[0].statute_id
         == "1995/365"

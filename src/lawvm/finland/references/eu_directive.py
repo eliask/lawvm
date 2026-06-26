@@ -535,7 +535,7 @@ def _find_nickname(
         resolved: Optional[tuple[int, str, eu_nickname.RegistryResult]] = None
         for start, surface in candidates_surfaces:
             res = eu_nickname.lookup(surface)
-            if res.status is not eu_nickname.RegistryStatus.NONE:
+            if res.registry_status is not eu_nickname.RegistryStatus.NONE:
                 resolved = (start, surface, res)
                 break
         if resolved is None and local_aliases is not None:
@@ -549,7 +549,7 @@ def _find_nickname(
                         surface,
                         eu_nickname.RegistryResult(
                             candidates=(celex,),
-                            status=eu_nickname.RegistryStatus.SINGLE,
+                            registry_status=eu_nickname.RegistryStatus.SINGLE,
                             lemma=surface.lower(),
                             matched_surface=surface,
                         ),
@@ -563,7 +563,7 @@ def _find_nickname(
                 head,
                 eu_nickname.RegistryResult(
                     candidates=(),
-                    status=eu_nickname.RegistryStatus.NONE,
+                    registry_status=eu_nickname.RegistryStatus.NONE,
                 ),
             )
         # Prefer the match whose head sits closest to the article phrase (largest
@@ -605,9 +605,9 @@ def _is_named_eu_instrument(surface: str) -> bool:
 
 def _status_for(res: eu_nickname.RegistryResult) -> tuple[CiteConfidence, tuple[str, ...]]:
     """Map a registry result to a (confidence, celex_candidates) pair."""
-    if res.status is eu_nickname.RegistryStatus.SINGLE:
+    if res.registry_status is eu_nickname.RegistryStatus.SINGLE:
         return CiteConfidence.EXACT, res.candidates
-    if res.status is eu_nickname.RegistryStatus.MULTIPLE:
+    if res.registry_status is eu_nickname.RegistryStatus.MULTIPLE:
         return CiteConfidence.AMBIGUOUS, res.candidates
     return CiteConfidence.STATUTE_ONLY, ()
 

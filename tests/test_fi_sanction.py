@@ -39,7 +39,7 @@ def test_rangaistus_rangaistaan() -> None:
     scan = recognize_sanction_frames(text)
     frames = _frames_of_kind(scan, SanctionKind.RANGAISTUS)
     assert frames, f"no RANGAISTUS frame; got {[f.sanction_kind for f in scan.frames]}"
-    assert frames[0].status == "surface_fact_only"
+    assert frames[0].sanction_status == "surface_fact_only"
     assert "rangais" in frames[0].marker_surface.lower()
 
 
@@ -231,7 +231,7 @@ def test_no_legal_conclusion_vocabulary_ever() -> None:
     }
     assert scan.frames, "fixture must produce frames"
     for frame in scan.frames:
-        assert frame.status == "surface_fact_only"
+        assert frame.sanction_status == "surface_fact_only"
         # The closed kind enum values carry no conclusion vocabulary.
         assert frame.sanction_kind.value not in banned
         for f in fields(frame):

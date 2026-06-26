@@ -381,11 +381,11 @@ class _VersionedStubRegistry:
 class _StubLookupResult:
     def __init__(self, candidates: list[str]) -> None:
         if len(candidates) == 0:
-            self.status = "none"
+            self.registry_status = "none"
         elif len(candidates) == 1:
-            self.status = "single"
+            self.registry_status = "single"
         else:
-            self.status = "multiple"
+            self.registry_status = "multiple"
         self.candidates = tuple(_StubCandidate(c) for c in candidates)
 
 

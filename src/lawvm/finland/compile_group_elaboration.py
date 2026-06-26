@@ -172,7 +172,7 @@ def _restore_source_heading_for_explicit_heading_facet(
     return restored, {
         "target_unit_kind": target_unit_kind,
         "target_norm": target_norm,
-        "source_payload_status": lookup.status,
+        "source_payload_status": lookup.lookup_status,
         "heading_text_chars": len(str(source_heading.text or "")),
     }
 

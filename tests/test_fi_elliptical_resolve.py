@@ -118,7 +118,7 @@ def test_bare_kohta_resolves_to_unique_momentti_with_kohta() -> None:
         subsection_num=None, item_label="1", enclosing_section="5", surface="1 kohdassa"
     )
     res = resolve_elliptical_mention(m, structures)
-    assert res.status is EllipticalStatus.RESOLVED
+    assert res.elliptical_status is EllipticalStatus.RESOLVED
     tgt = res.mention.target_provision_ref
     assert tgt is not None
     # Resolves to the ENCLOSING section 5, momentti 2 (NOT the root, NOT momentti 1).
@@ -135,7 +135,7 @@ def test_bare_momentti_resolves_to_enclosing_section() -> None:
         subsection_num=2, item_label=None, enclosing_section="5", surface="2 momentissa"
     )
     res = resolve_elliptical_mention(m, structures)
-    assert res.status is EllipticalStatus.RESOLVED
+    assert res.elliptical_status is EllipticalStatus.RESOLVED
     tgt = res.mention.target_provision_ref
     assert tgt is not None
     assert tgt.section_label == "5"  # the enclosing section, NOT empty / root
@@ -162,7 +162,7 @@ def test_bare_kohta_with_two_kohta_carrying_moments_is_ambiguous() -> None:
         subsection_num=None, item_label="1", enclosing_section="9", surface="1 kohdassa"
     )
     res = resolve_elliptical_mention(m, structures)
-    assert res.status is EllipticalStatus.AMBIGUOUS
+    assert res.elliptical_status is EllipticalStatus.AMBIGUOUS
     # Both kohta-carrying moments are listed; none is picked.
     assert res.candidate_subsections == (1, 2)
     assert res.mention.cite_confidence is CiteConfidence.AMBIGUOUS
@@ -179,7 +179,7 @@ def test_bare_ref_outside_any_section_is_open() -> None:
         subsection_num=2, item_label=None, enclosing_section="", surface="2 momentissa"
     )
     res = resolve_elliptical_mention(m, structures)
-    assert res.status is EllipticalStatus.OPEN
+    assert res.elliptical_status is EllipticalStatus.OPEN
     assert res.mention.cite_confidence is CiteConfidence.OPEN
 
 
@@ -200,7 +200,7 @@ def test_already_anchored_internal_ref_passes_through() -> None:
         surface_text="5 §:n 2 momentissa",
     )
     res = resolve_elliptical_mention(m, structures)
-    assert res.status is EllipticalStatus.NOT_ELLIPTICAL
+    assert res.elliptical_status is EllipticalStatus.NOT_ELLIPTICAL
     assert res.mention is m  # unchanged pass-through
 
 
@@ -221,7 +221,7 @@ def test_resolve_mentions_batch_preserves_order_and_passes_non_internal() -> Non
         surface_text="jonkin lain",
     )
     out = resolve_elliptical_mentions([bare_kohta, cross], _STATUTE_XML)
-    assert [r.status for r in out] == [
+    assert [r.elliptical_status for r in out] == [
         EllipticalStatus.RESOLVED,
         EllipticalStatus.NOT_ELLIPTICAL,
     ]
@@ -301,4 +301,4 @@ def test_no_eid_section_resolves_via_num_ancestry() -> None:
     assert tgt.subsection_num == 1
     assert bare[0].mention.cite_confidence is CiteConfidence.EXACT
     # And nothing in this statute fell to OPEN.
-    assert not any(r.status is EllipticalStatus.OPEN for r in out)
+    assert not any(r.elliptical_status is EllipticalStatus.OPEN for r in out)

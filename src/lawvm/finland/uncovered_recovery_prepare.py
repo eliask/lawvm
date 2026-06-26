@@ -277,7 +277,7 @@ def _prepare_body_pairing(
     inventory_by_id = {unit.unit_id: unit for unit in inventory}
     chapter_payload_owned_sections: set[UncoveredSectionKey] = set()
     for assignment in assignments:
-        if assignment.status != "claimed_current" or assignment.claim is None:
+        if assignment.pairing_status != "claimed_current" or assignment.claim is None:
             continue
         unit = inventory_by_id.get(assignment.body_unit_id)
         if unit is None or unit.kind != "section" or not unit.chapter_label:

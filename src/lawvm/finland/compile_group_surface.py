@@ -168,7 +168,7 @@ def _single_conflicting_section_payload(
         unit_chapter,
         unit_part,
     )
-    if observed_payload.status != "unique" or observed_payload.payload_ir is None:
+    if observed_payload.lookup_status != "unique" or observed_payload.payload_ir is None:
         return None
     if not irnode_to_text(observed_payload.payload_ir).strip():
         return None

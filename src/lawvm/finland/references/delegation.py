@@ -207,7 +207,7 @@ class DelegationFrame:
     binding_strength: BindingStrength
     subject_span: Optional[SourceSpan]
     source_span: SourceSpan
-    status: Literal["surface_fact_only"]
+    delegation_status: Literal["surface_fact_only"]
     rule_id: str
 
 
@@ -366,7 +366,7 @@ def _scan_tape(tape: TokenTape, source_file: str) -> DelegationScan:
                 source_span=_span(
                     source_file, grant.frame_start, grant.frame_end
                 ),
-                status="surface_fact_only",
+                delegation_status="surface_fact_only",
                 rule_id=_RULE_ID,
             )
         )

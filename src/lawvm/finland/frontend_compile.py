@@ -3281,7 +3281,7 @@ def _body_text_for_temporary_op(
 
     if source_model is not None:
         result = source_model.lookup_section_payload_text(target_label)
-        return result.text if result.status == "unique" else ""
+        return result.text if result.lookup_status == "unique" else ""
 
     if muutos_tree is None:
         return ""
