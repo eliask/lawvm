@@ -50,6 +50,7 @@ from lawvm.core.compile_result import StrictProfile
 from lawvm.core.phase_result import Finding
 from lawvm.core.statute_validity import expires_on_from_valid_until
 from lawvm.core.temporal import ActivationRule, TemporalEvent, TemporalScope
+from lawvm.finland.op_provenance import RecognizerId, has_recognizer
 from lawvm.finland.ops import AmendmentOp, OpType
 from lawvm.finland.ops import FailedOp
 from lawvm.finland.ops import ScopeConfidence
@@ -169,7 +170,7 @@ def _ambiguous_unscoped_additive_fallback_insert_observation(
         or fallback_op.target_cols.target_paragraph is None
         or fallback_op.target_cols.target_item is None
         or fallback_op.target_cols.target_special is not None
-        or "extraction_fallback_heuristic" not in fallback_op.extraction_provenance_tags
+        or not has_recognizer(fallback_op.provenance, RecognizerId.EXTRACTION_FALLBACK_HEURISTIC)
     ):
         return None
 
@@ -260,7 +261,7 @@ def _single_payload_already_owned_fallback_insert_observation(
         or fallback_op.target_cols.target_paragraph is None
         or fallback_op.target_cols.target_item is not None
         or fallback_op.target_cols.target_special is not None
-        or "extraction_fallback_heuristic" not in fallback_op.extraction_provenance_tags
+        or not has_recognizer(fallback_op.provenance, RecognizerId.EXTRACTION_FALLBACK_HEURISTIC)
     ):
         return None
 
