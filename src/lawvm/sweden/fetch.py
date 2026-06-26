@@ -33,6 +33,7 @@ from lawvm.core.adjudication_evidence import adjudication_finding_evidence_rows
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.sweden.grafter import SESourceRecord, parse_se_source_record, parse_se_statute
 from lawvm.sweden.se_agreement_residuals import se_replay_agreement_residuals
+from lawvm.sweden.se_coverage_universe import se_coverage_universe_entry, se_coverage_universe_root
 from lawvm.sweden.grafter import (
     apply_se_ops,
     build_se_official_base_statute,
@@ -3798,9 +3799,19 @@ def aggregate_se_official_coverage(
     bucket_genuine_mismatch = 0
     bucket_unknown = 0
     error_examples: dict[str, list[str]] = {}
+    # Per-act typed entries for the committed universe root. Building one entry
+    # per scanned act so adding/dropping an act or flipping its outcome
+    # materially changes the root (pro-note §6 UniverseSpec — "no hidden
+    # universe": the omitted-act signal is detectable on a second run).
+    coverage_universe_entries: list[dict[str, Any]] = []
     for summary in act_summaries:
         outcome = str(summary.get("outcome") or "error")
         outcome_counts[outcome] = outcome_counts.get(outcome, 0) + 1
+        # Build the committed-entry fields BEFORE the outcome branch so a
+        # non-replay_ok act still contributes its (sfs_id, outcome, recovery_mode)
+        # to the universe — a missing/surplus act is detectable even when no
+        # bucket counts exist for it. Raises KeyError if outcome is non-empty
+        # and outside the closed set (se_coverage_universe_entry validates).
         if outcome == "replay_ok":
             total_targets += int(summary.get("target_count") or 0)
             total_matches += int(summary.get("match_count") or 0)
@@ -3818,6 +3829,18 @@ def aggregate_se_official_coverage(
             bucket = error_examples.setdefault(key, [])
             if len(bucket) < 5:
                 bucket.append(str(summary.get("amending_sfs_id") or ""))
+        coverage_universe_entries.append(
+            se_coverage_universe_entry(
+                str(summary.get("amending_sfs_id") or ""),
+                base_sfs_id=str(summary.get("base_sfs_id") or ""),
+                outcome=outcome,
+                bucket_genuine_match_count=int(summary.get("bucket_genuine_match_count") or 0),
+                bucket_oracle_version_mismatch_count=int(summary.get("bucket_oracle_version_mismatch_count") or 0),
+                bucket_genuine_mismatch_count=int(summary.get("bucket_genuine_mismatch_count") or 0),
+                bucket_unknown_count=int(summary.get("bucket_unknown_count") or 0),
+                recovery_mode=str(summary.get("recovery_mode") or ""),
+            )
+        )
 
     def _rate(numerator: int, denominator: int) -> float:
         return round(numerator / denominator, 4) if denominator else 0.0
@@ -3853,6 +3876,13 @@ def aggregate_se_official_coverage(
         },
         "classification_counts": dict(sorted(classification_counts.items())),
         "error_examples": {key: error_examples[key] for key in sorted(error_examples)},
+        # Committed content-addressed universe root over the per-act entries
+        # (pro-note §6 UniverseSpec). Adding/dropping an SFS id, or changing
+        # any per-act outcome/bucket, materially changes the root — so a
+        # missing or surplus scanned act is re-detectable on a subsequent
+        # run. The empty-scan case is a committed empty SetRoot (the v0
+        # "declares nothing" omission is committed to, not skipped).
+        "coverage_universe_root": se_coverage_universe_root(coverage_universe_entries),
     }
 
 

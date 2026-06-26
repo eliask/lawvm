@@ -365,6 +365,8 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_se_assumptions.py",
         # SE agreement-residual projector (typed evidence-plane dossier).
         "test_se_agreement_residuals.py",
+        # SE coverage-scan universe — committed content-addressed corpus root.
+        "test_se_coverage_universe.py",
     ),
     "evidence_reports": (
         "test_fi_explain_facade.py",

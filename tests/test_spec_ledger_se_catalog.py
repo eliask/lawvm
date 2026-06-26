@@ -73,6 +73,11 @@ _NON_RULE_LITERALS: frozenset[str] = frozenset(
         # function names exported from se_agreement_residuals
         "se_replay_agreement_residuals",
         "se_replay_row_agreement_residual",
+        # function names exported from se_coverage_universe
+        "se_coverage_universe_entry",
+        "se_coverage_universe_root",
+        # domain/schema string constants (evidence-plane domain labels, not rule_id hypotheses)
+        "se_coverage_scan_universe",
         # agreement-surface name passthrough — the projector's _SE_AGREEMENT_SURFACE
         # constant names the surface, not a rule_id hypothesis
         "se_official_replay",
