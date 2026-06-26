@@ -300,7 +300,7 @@ def _load_accepted_inline_statute_claims(
         claim = store.read_claim(claim_id)
         events = list(store.read_events(claim_id))
         state = project_state(claim_id, events)
-        if state is not None and state.status == ClaimStatus.ACCEPTED:
+        if state is not None and state.claim_state_status == ClaimStatus.ACCEPTED:
             pairs.append((claim, state))
     return pairs
 
@@ -797,7 +797,7 @@ def _check_no_retracted_claims_in_strict(
     from lawvm.core.manual_claims.primitive import ClaimStatus
 
     for claim, state in accepted_claims:
-        if state.status == ClaimStatus.RETRACTED:
+        if state.claim_state_status == ClaimStatus.RETRACTED:
             raise SystemExit(
                 f"error: strict profile refuses retracted claim {claim.claim_id[:32]}... "
                 "Retract the claim and rebuild to produce a clean artifact."

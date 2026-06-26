@@ -673,7 +673,7 @@ def _apply_intent_section_level(
             ctx_label,
             _binding.binding_id,
             _binding.rung_id,
-            _binding.status,
+            _binding.binding_status,
             _binding.candidate_count,
         )
     except ValueError as exc:

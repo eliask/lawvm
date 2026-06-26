@@ -144,7 +144,7 @@ def build_product_debug_bundle(
         # Find active version at cutoff
         try:
             sel = select_active_version_ex(tl, as_of=cutoff_str)
-            active_status = sel.status
+            active_status = sel.selection_status
             active_source = ""
             if sel.version is not None and sel.version.source:
                 active_source = sel.version.source.statute_id or ""

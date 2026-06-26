@@ -231,7 +231,7 @@ def _coverage_report_row(row: Mapping[str, Any]) -> dict[str, Any]:
         "row_id": str(row.get("coverage_id") or ""),
         "coverage_ref": str(row.get("coverage_id") or ""),
         "recognizer_id": str(row.get("recognizer_id") or ""),
-        "status": str(row.get("coverage_status") or ""),
+        "row_status": str(row.get("coverage_status") or ""),
         "coverage_status": str(row.get("coverage_status") or ""),
         "owner_phase": str(row.get("owner_phase") or ""),
         "source_artifact_id": str(row.get("source_artifact_id") or ""),

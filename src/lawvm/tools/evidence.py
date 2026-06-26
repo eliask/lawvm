@@ -3878,7 +3878,7 @@ def build_evidence_bundle(
                 label: {
                     "section_label": getattr(v, "section_label", label),
                     "amendment_id": getattr(v, "amendment_id", ""),
-                    "status": getattr(v, "status", ""),
+                    "status": getattr(v, "verdict_status", ""),
                     "barrier_kinds": sorted(getattr(v, "barrier_kinds", set())),
                 }
                 for label, v in (_section_strict_verdicts or {}).items()

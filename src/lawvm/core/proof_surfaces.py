@@ -227,6 +227,7 @@ def _row_status(row: Mapping[str, Any]) -> str:
     return _first_present(
         row,
         (
+            "row_status",
             "status",
             "proof_status",
             "projection_status",

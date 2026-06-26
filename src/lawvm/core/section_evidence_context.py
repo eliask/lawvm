@@ -191,7 +191,7 @@ class SectionEvidenceContext:
         """Strict verdict status or an empty value when unavailable."""
         if self.strict_verdict is None:
             return ""
-        return self.strict_verdict.status
+        return self.strict_verdict.verdict_status
 
     @property
     def strict_amendment_id(self) -> str:
@@ -249,7 +249,7 @@ def _compute_strict_payload_confidence(
     ssv = section_strict_verdicts.get(section_label)
     if ssv is None:
         return "unknown"
-    status = ssv.status
+    status = ssv.verdict_status
     if status == "strict_clean":
         return "strict_clean"
     if status == "source_incomplete":

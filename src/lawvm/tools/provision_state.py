@@ -367,7 +367,7 @@ def _mask_descendant_selection_by_ancestor_tombstone(
     the materialized statute while its child sections remain directly readable.
     """
 
-    if address is None or selection.status != "selected" or selection.version is None:
+    if address is None or selection.selection_status != "selected" or selection.version is None:
         return selection
     child_version = selection.version
     for depth in range(len(address.path) - 1, 0, -1):
@@ -396,7 +396,7 @@ def _mask_descendant_selection_by_ancestor_tombstone(
             continue
         ancestor_certificate = ancestor_selection.certificate
         return VersionSelectionResult(
-            status="selected",
+            selection_status="selected",
             version=replace(ancestor_version, content=None, content_hash=""),
             certificate=VersionSelectionCoverage(
                 address=address,
@@ -1118,7 +1118,7 @@ def _selected_response(
     elif blocked:
         status = "expiry_unverified"
     else:
-        status = "selected" if version is not None else selection.status
+        status = "selected" if version is not None else selection.selection_status
     expiry_block = _expiry_block(overlay, statute_id, address)
     lineage = _lineage_payload(
         jurisdiction=jurisdiction,
@@ -1486,7 +1486,7 @@ def _selection_payload(selection: VersionSelectionResult) -> dict[str, Any]:
             "required_dimensions": list(certificate.required_dimensions),
         }
     return {
-        "status": selection.status,
+        "status": selection.selection_status,
         "required_dimensions": list(selection.required_dimensions),
         "certificate": cert_payload,
     }

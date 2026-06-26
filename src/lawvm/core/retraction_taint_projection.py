@@ -116,12 +116,12 @@ def render_retraction_taint(projection: RetractionTaintProjection) -> str:
     tainted = [
         b
         for b in projection.builds
-        if b.status_finding.status == BuildConsumptionStatus.TAINTED
+        if b.status_finding.taint_status == BuildConsumptionStatus.TAINTED
     ]
     not_clean = [
         b
         for b in projection.builds
-        if b.status_finding.status
+        if b.status_finding.taint_status
         not in (BuildConsumptionStatus.TAINTED, BuildConsumptionStatus.CLEAN)
     ]
     lines: list[str] = []
@@ -139,7 +139,7 @@ def render_retraction_taint(projection: RetractionTaintProjection) -> str:
     for build in projection.builds:
         sf = build.status_finding
         lines.append(f"  build: {sf.build_id}")
-        lines.append(f"    status: {sf.status.value}")
+        lines.append(f"    status: {sf.taint_status.value}")
         if sf.detail:
             lines.append(f"    detail: {sf.detail}")
         for finding in sf.findings:

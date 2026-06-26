@@ -1789,7 +1789,7 @@ class TestCompileVerdictRail:
             CompileVerdict(
                 mode="strict",
                 profile="test",
-                status="strict_clean",
+                verdict_status="strict_clean",
                 barrier_codes=("APPLY.TREE_INVARIANT_VIOLATION",),
             )
 
@@ -1798,7 +1798,7 @@ class TestCompileVerdictRail:
             CompileVerdict(
                 mode="strict",
                 profile="test",
-                status=cast(Any, "last_write_wins"),
+                verdict_status=cast(Any, "last_write_wins"),
             )
 
     def test_section_strict_verdict_rejects_clean_status_with_barriers(self) -> None:
@@ -1806,7 +1806,7 @@ class TestCompileVerdictRail:
             SectionStrictVerdict(
                 section_label="1",
                 amendment_id="2024/1",
-                status="strict_clean",
+                verdict_status="strict_clean",
                 barrier_codes=("APPLY.TREE_INVARIANT_VIOLATION",),
             )
 
@@ -1815,7 +1815,7 @@ class TestCompileVerdictRail:
         verdict = CompileVerdict(
             mode="strict",
             profile="test",
-            status="strict_blocked_by_recovery",
+            verdict_status="strict_blocked_by_recovery",
             barrier_codes=("APPLY.TREE_INVARIANT_VIOLATION",),
         )
         violation = Finding(

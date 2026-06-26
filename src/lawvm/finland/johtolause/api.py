@@ -951,7 +951,7 @@ def _build_parsed_ops_compatibility_artifact(
         source_artifact_id=f"fi:johtolause:{source_hash}:clause_ast",
         source_artifact_kind="ClauseAST",
         derivation_phase="parsed_ops_compat",
-        status="derived_compatibility_projection",
+        phase_status="derived_compatibility_projection",
         lossy=True,
         preserved_fields=(
             "operation_kind",

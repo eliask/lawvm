@@ -396,7 +396,7 @@ class CorpusGraph:
                 for addr, tl in tl_for_statute.items():
                     if any(k == "section" and v == e.source_section for k, v in addr.path):
                         selection = select_active_version_ex(tl, as_of)
-                        if selection.status == "ambiguous_missing_scope":
+                        if selection.selection_status == "ambiguous_missing_scope":
                             candidate_statuses.append(None)
                             selection_status = "ambiguous_missing_scope"
                         else:

@@ -287,7 +287,7 @@ def _source_witness_report_row(row: Mapping[str, Any], *, index: int) -> dict[st
         "surface": "source_witness",
         "row_id": row_id,
         "subject_id": str(row.get("artifact_id") or row_id),
-        "status": source_witness_digest_coverage(row),
+        "row_status": source_witness_digest_coverage(row),
         "witness_ref": row_id,
         "forbidden_shortcuts": _SOURCE_WITNESS_REPORT_FORBIDDEN_SHORTCUTS,
     }

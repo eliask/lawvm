@@ -208,7 +208,7 @@ class BrokenReferenceLintPass:
                         f"repealed or renumbered after the citation "
                         f"(broken reference)"
                     ),
-                    status="active",
+                    lint_status="active",
                     forbidden_overclaims=_FORBIDDEN_OVERCLAIMS,
                 )
             )
@@ -246,7 +246,7 @@ class OpenReferenceLintPass:
                         f"reference {surface!r} is a vague catch-all that names "
                         f"no concrete target (open reference)"
                     ),
-                    status="active",
+                    lint_status="active",
                     forbidden_overclaims=_FORBIDDEN_OVERCLAIMS,
                 )
             )
@@ -288,7 +288,7 @@ class StatuteOnlyMissLintPass:
                         f"registry could not resolve to an identifier "
                         f"(unresolved by-name reference; registry coverage gap)"
                     ),
-                    status="active",
+                    lint_status="active",
                     forbidden_overclaims=_FORBIDDEN_OVERCLAIMS,
                 )
             )
@@ -329,7 +329,7 @@ class AmbiguousReferenceLintPass:
                         f"reference {surface!r} matches {count_str}candidate "
                         f"targets; none was picked (ambiguous reference)"
                     ),
-                    status="active",
+                    lint_status="active",
                     forbidden_overclaims=_FORBIDDEN_OVERCLAIMS,
                 )
             )

@@ -57,7 +57,7 @@ def test_version_selection_coverage_rejects_negative_candidate_count() -> None:
 
 def test_version_selection_result_rejects_selected_without_version() -> None:
     with pytest.raises(ValueError, match="requires a version"):
-        VersionSelectionResult(status="selected")
+        VersionSelectionResult(selection_status="selected")
 
 
 def test_version_selection_result_rejects_certificate_version_drift() -> None:
@@ -73,17 +73,17 @@ def test_version_selection_result_rejects_certificate_version_drift() -> None:
     )
 
     with pytest.raises(ValueError, match="selected_effective"):
-        VersionSelectionResult(status="selected", version=version, certificate=cert)
+        VersionSelectionResult(selection_status="selected", version=version, certificate=cert)
 
 
 def test_version_selection_result_rejects_ambiguous_without_scope_dimensions() -> None:
     with pytest.raises(ValueError, match="required_dimensions"):
-        VersionSelectionResult(status="ambiguous_missing_scope")
+        VersionSelectionResult(selection_status="ambiguous_missing_scope")
 
 
 def test_version_selection_result_rejects_absent_with_version() -> None:
     with pytest.raises(ValueError, match="non-selected"):
-        VersionSelectionResult(status="absent", version=_version())
+        VersionSelectionResult(selection_status="absent", version=_version())
 
 
 def test_materialize_pit_validates_selection_query_once(monkeypatch: pytest.MonkeyPatch) -> None:

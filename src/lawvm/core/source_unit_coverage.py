@@ -221,7 +221,7 @@ def _source_unit_coverage_report_row(row: Mapping[str, Any]) -> dict[str, Any]:
         "surface": "source_unit_coverage",
         "row_id": coverage_id,
         "subject_id": str(row.get("source_unit_id") or coverage_id),
-        "status": str(row.get("coverage_status") or ""),
+        "row_status": str(row.get("coverage_status") or ""),
         "forbidden_shortcuts": list(row.get("forbidden_shortcuts") or ()),
     }
 

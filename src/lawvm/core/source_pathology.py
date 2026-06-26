@@ -227,7 +227,7 @@ def _source_pathology_report_row(projection: SourcePathologyProjection) -> dict[
         "surface": "source_pathology",
         "row_id": data["pathology_id"],
         "subject_id": data["source_artifact_id"],
-        "status": "blocking" if data["blocks_execution"] else "reported",
+        "row_status": "blocking" if data["blocks_execution"] else "reported",
         "replay_authorized": False,
         **data,
     }

@@ -872,7 +872,7 @@ class WriteOutcome:
 
     The pair is inseparable by construction: the witnessed primitives return
     this, so no caller can take ``tree`` without also taking ``receipt`` and
-    ``audit``. ``audit.status == "violation"`` means the receipt did not cover
+    ``audit``. ``audit.audit_status == "violation"`` means the receipt did not cover
     the observed mutation footprint — strict mode must block on it.
     """
 

@@ -116,7 +116,7 @@ def test_replace_at_witnessed_yields_receipt_and_clean_audit() -> None:
     assert outcome.receipt.action == "replace"
     # Audit is clean: the receipt footprint equals the observed diff.
     assert isinstance(outcome.audit, ObservedWriteAudit)
-    assert outcome.audit.status == "clean"
+    assert outcome.audit.audit_status == "clean"
     assert outcome.audit.undeclared_paths == ()
     assert outcome.audit.unobserved_declared_paths == ()
 
@@ -126,7 +126,7 @@ def test_remove_at_witnessed_yields_receipt_and_clean_audit() -> None:
     outcome = remove_at_witnessed(tree, (("section", "2"),), op_id="remove_2")
     assert [c.label for c in outcome.tree.children] == ["1"]
     assert outcome.receipt.action == "remove"
-    assert outcome.audit.status == "clean"
+    assert outcome.audit.audit_status == "clean"
 
 
 def test_insert_sorted_witnessed_yields_receipt_and_clean_audit() -> None:
@@ -139,7 +139,7 @@ def test_insert_sorted_witnessed_yields_receipt_and_clean_audit() -> None:
     )
     assert [c.label for c in outcome.tree.children] == ["1", "2", "3"]
     assert outcome.receipt.action == "insert"
-    assert outcome.audit.status == "clean"
+    assert outcome.audit.audit_status == "clean"
 
 
 def test_witnessed_writes_receipt_count_equals_landed_write_count() -> None:
@@ -164,7 +164,7 @@ def test_witnessed_writes_receipt_count_equals_landed_write_count() -> None:
     # three landed writes, three receipts, three audits, all clean.
     assert len(receipts) == 3
     assert len(audits) == 3
-    assert all(a.status == "clean" for a in audits)
+    assert all(a.audit_status == "clean" for a in audits)
     sec2 = next(c for c in o3.tree.children if c.label == "2")
     assert (sec2.children[0].text or "") == "TWO"
 
@@ -294,7 +294,7 @@ def test_collect_op_write_receipt_strict_clean_write_no_finding() -> None:
     assert len(sinks.write_audits_out) == 1
     # the op-level receipt records the observed footprint, so the audit is clean
     # and no blocking finding fires.
-    assert sinks.write_audits_out[0].status == "clean"
+    assert sinks.write_audits_out[0].audit_status == "clean"
     assert not any(f.blocking for f in findings)
 
 
@@ -443,4 +443,4 @@ def test_receipt_from_diff_records_landed_reality() -> None:
     assert changed, "expected at least one changed-hash path"
     # declared footprint covers the observed change ⇒ a clean audit.
     audit = _tops.build_observed_write_audit(before, after, receipt)
-    assert audit.status == "clean"
+    assert audit.audit_status == "clean"

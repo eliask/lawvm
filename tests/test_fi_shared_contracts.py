@@ -295,7 +295,7 @@ def test_ownership_closure_coverage_closes_only_zero_unowned_slice() -> None:
     assert report["rows"][0]["surface"] == "ownership_closure_coverage"
     assert report["rows"][0]["row_id"] == "closure-fi-demo"
     assert report["rows"][0]["subject_id"] == "fi-demo-slice"
-    assert report["rows"][0]["status"] == "closed"
+    assert report["rows"][0]["row_status"] == "closed"
     assert (
         "ownership_closure_coverage_as_full_corpus_omniscience"
         in report["rows"][0]["forbidden_shortcuts"]
@@ -367,7 +367,7 @@ def test_ownership_closure_report_summarizes_open_slices_without_replay_claims()
     assert report["summary"]["unowned_counts"] == {"potential_ops_without_status": 2}
     assert report["summary"]["owned_counts"] == {"failed_ops_visible": 1}
     assert report["rows"][0]["closure_status"] == "open"
-    assert report["rows"][0]["status"] == "open"
+    assert report["rows"][0]["row_status"] == "open"
     assert "open_ownership_closure_as_compile_failure" in report["forbidden_shortcuts"]
 
     proof_surface = proof_surface_from_evidence_report(report).to_dict()
@@ -432,7 +432,7 @@ def test_source_completeness_status_is_passive_authorization_row() -> None:
 
     data = status.to_dict()
 
-    assert data["status"] == "incomplete"
+    assert data["row_status"] == "incomplete"
     assert data["row_id"] == "fi:2001/1234:source-completeness"
     assert data["subject_id"] == "2001/1234"
     assert data["counts"]["missing_sources"] == 1
@@ -1107,7 +1107,7 @@ def test_derived_compatibility_artifact_declares_non_authority_boundary() -> Non
         source_artifact_id="fi:demo:clause_ast",
         source_artifact_kind="ClauseAST",
         derivation_phase="parsed_ops_compat",
-        status="derived_compatibility_projection",
+        phase_status="derived_compatibility_projection",
         lossy=True,
         preserved_fields=("operation_kind",),
         lost_fields=("native_clause_ast_node_identity",),
@@ -1992,7 +1992,7 @@ def test_frontier_work_item_report_enforces_canonical_report_edge_fields() -> No
     assert row["surface"] == "frontier_work_item"
     assert row["row_id"] == "fi-frontier-canonical"
     assert row["subject_id"] == "2020/1"
-    assert row["status"] == "manual_claim_needed"
+    assert row["row_status"] == "manual_claim_needed"
     assert row["frontier_ref"] == "fi-frontier-canonical"
 
 
@@ -2568,7 +2568,7 @@ def test_source_witness_evidence_report_is_passive_shared_surface() -> None:
         "affecting_source:ukpga_2025_1:section_2:"
     )
     assert data["rows"][0]["subject_id"] == "ukpga/2025/1"
-    assert data["rows"][0]["status"] == "artifact_and_preview_digest"
+    assert data["rows"][0]["row_status"] == "artifact_and_preview_digest"
     assert data["rows"][0]["witness_ref"] == data["rows"][0]["row_id"]
     assert "source_witness_as_replay_authorization" in data["forbidden_shortcuts"]
 
@@ -2626,7 +2626,7 @@ def test_source_witness_row_ids_distinguish_preview_only_same_unit_witnesses() -
     row_ids = [row["row_id"] for row in data["rows"]]
 
     assert len(set(row_ids)) == 2
-    assert all(row["status"] == "preview_digest" for row in data["rows"])
+    assert all(row["row_status"] == "preview_digest" for row in data["rows"])
     assert [row["row_id"] for row in proof_surface["rows"]] == row_ids
 
 
@@ -2987,7 +2987,7 @@ def test_candidate_set_evidence_report_is_passive_shared_surface() -> None:
     assert row["surface"] == "candidate_set_coverage"
     assert row["row_id"] == "fi:demo:source-unit-enumeration"
     assert row["subject_id"] == "fi:demo:source-unit-enumeration"
-    assert row["status"] == "complete"
+    assert row["row_status"] == "complete"
     assert "candidate_set_coverage_as_replay_authorization" in row["forbidden_shortcuts"]
     assert "candidate_set_coverage_as_replay_authorization" in report["forbidden_shortcuts"]
 
@@ -3045,13 +3045,13 @@ def test_potential_operation_evidence_report_is_passive_shared_surface() -> None
     }
     assert report["rows"][0]["surface"] == "potential_operation"
     assert report["rows"][0]["row_id"] == "canonical-op:lo-1"
-    assert report["rows"][0]["status"] == "compiled"
+    assert report["rows"][0]["row_status"] == "compiled"
     assert "potential_operation_as_replay_authorization" in report["rows"][0]["forbidden_shortcuts"]
     assert report["rows"][1]["source_anchor"]["basis"] == (
         "failed_operation_frontier_source_witness"
     )
     assert "replay_authorization" in report["rows"][1]["source_anchor"]["does_not_claim"]
-    assert report["rows"][1]["status"] == "failed"
+    assert report["rows"][1]["row_status"] == "failed"
 
 
 def test_potential_operation_evidence_report_rejects_invalid_mapping_fields() -> None:
@@ -3122,7 +3122,7 @@ def test_source_unit_coverage_evidence_report_is_passive_shared_surface() -> Non
     assert report["summary"]["frontier_witnessed_count"] == 1
     assert report["rows"][0]["surface"] == "source_unit_coverage"
     assert report["rows"][0]["row_id"] == "fi:2001/1234:source-unit-coverage:abc"
-    assert report["rows"][0]["status"] == "lineage_witnessed"
+    assert report["rows"][0]["row_status"] == "lineage_witnessed"
     assert "source_unit_coverage_as_replay_authorization" in report["rows"][0]["forbidden_shortcuts"]
     assert "source_unit_coverage_as_complete_source_enumeration" in report["forbidden_shortcuts"]
 
@@ -3166,7 +3166,7 @@ def test_regex_recognition_coverage_reports_unclassified_skipped_spans() -> None
     assert report["summary"]["coverage_status_counts"] == {"unclassified_gap": 1}
     projected = report["rows"][0]
     assert projected["surface"] == "regex_recognition_coverage"
-    assert projected["status"] == "unclassified_gap"
+    assert projected["row_status"] == "unclassified_gap"
     assert projected["ignored_spans"][0]["could_alter_meaning"] is True
     assert "bounded_wildcard_as_semantic_proof" in projected["forbidden_shortcuts"]
     assert "regex_coverage_as_replay_authorization" in report["forbidden_shortcuts"]

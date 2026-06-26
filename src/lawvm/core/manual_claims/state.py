@@ -149,7 +149,7 @@ def project_state(
     assert last_updated is not None
     return ClaimState(
         claim_id=claim_id,
-        status=ClaimStatus(current_status),
+        claim_state_status=ClaimStatus(current_status),
         review_status=current_review_status,
         validator_status=current_validator_status,
         confidence=current_confidence,

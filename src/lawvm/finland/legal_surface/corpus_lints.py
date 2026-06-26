@@ -446,7 +446,7 @@ def lint_corpus_type_mismatches(
                     support_node_ids=(target_entity_id,),
                     source_refs=source_refs,
                     message=message,
-                    status="active",
+                    lint_status="active",
                     forbidden_overclaims=_FORBIDDEN_OVERCLAIMS,
                 )
             )

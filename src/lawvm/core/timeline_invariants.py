@@ -914,7 +914,7 @@ def _selection_detail(selection: VersionSelectionResult) -> SelectionDetail:
     """Extract ambiguity-preserving metadata from a selection result."""
     certificate = selection.certificate
     return {
-        "selection_status": selection.status,
+        "selection_status": selection.selection_status,
         "required_dimensions": tuple(selection.required_dimensions),
         "candidate_count": certificate.candidate_count if certificate is not None else 0,
     }
@@ -946,9 +946,9 @@ def _active_versions_with_selection_notes(
     selection_notes: Dict[LegalAddress, SelectionDetail] = {}
     for address, tl in timelines.items():
         selection = select_active_version_ex(tl, pit_date)
-        if selection.status == "selected" and selection.version is not None:
+        if selection.selection_status == "selected" and selection.version is not None:
             active_versions[address] = selection.version
-        elif selection.status == "ambiguous_missing_scope":
+        elif selection.selection_status == "ambiguous_missing_scope":
             selection_notes[address] = _selection_detail(selection)
     return active_versions, selection_notes
 

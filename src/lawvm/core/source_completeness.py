@@ -155,7 +155,7 @@ class SourceCompletenessStatus:
                 "jurisdiction": self.jurisdiction,
                 "statute_id": self.statute_id,
                 "counts": self.counts,
-                "status": self.status,
+                "row_status": self.status,
             },
         )
 
@@ -167,7 +167,7 @@ class SourceCompletenessStatus:
             "subject_id": self.statute_id or self.row_id,
             "jurisdiction": self.jurisdiction,
             "statute_id": self.statute_id,
-            "status": self.status,
+            "row_status": self.status,
             "owner_phase": self.owner_phase,
             "counts": self.counts,
             "executable": False,

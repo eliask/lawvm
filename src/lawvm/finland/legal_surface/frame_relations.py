@@ -378,7 +378,7 @@ class SanctionConditionLintPass:
                         "nearby exception_condition_cue). Surface observation "
                         "only; NOT a legal conclusion."
                     ),
-                    status="active",
+                    lint_status="active",
                     forbidden_overclaims=_SANCTION_FORBIDDEN_OVERCLAIMS,
                 )
             )

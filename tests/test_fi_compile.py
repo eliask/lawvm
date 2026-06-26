@@ -1528,7 +1528,7 @@ def test_compile_artifacts_from_replay_treats_governed_invariant_violation_as_in
     )
 
     assert artifacts.verdict is not None
-    assert artifacts.verdict.status == "internal_failure"
+    assert artifacts.verdict.verdict_status == "internal_failure"
 
 
 def test_compile_fi_facade_from_replay_projects_rows_from_findings(monkeypatch) -> None:
@@ -4735,7 +4735,7 @@ def test_prefixed_source_codes_classify_as_source_incomplete() -> None:
         ["APPLY.SOURCE_CORRECTED_BY_PATCH"],
     ):
         verdict = compute_verdict_from_registry(profile, reasons)
-        assert verdict.status == "source_incomplete"
+        assert verdict.verdict_status == "source_incomplete"
 
 
 def test_strict_fail_reasons_detect_contingent_effective_date_findings() -> None:
@@ -5588,7 +5588,7 @@ def test_compute_verdict_from_registry_classifies_all_barrier_kinds() -> None:
             } for reason in reasons)
             else "strict_blocked_by_recovery"
         )
-        assert verdict.status == expected_status, f"Status mismatch for {reasons}: {verdict.status}"
+        assert verdict.verdict_status == expected_status, f"Status mismatch for {reasons}: {verdict.verdict_status}"
         assert list(verdict.barrier_codes) == reasons, f"Kind mismatch for {reasons}"
         expected_families: list[str] = []
         for reason in reasons:

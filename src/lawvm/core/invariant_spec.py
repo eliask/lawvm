@@ -128,7 +128,7 @@ class InvariantSpec:
     * ``root_membership`` — the named root the invariant's universe/evidence is
       committed to (e.g. ``"universe_root"``), or "".
     * ``bucket`` — the terminal bucket (must be in :data:`ALL_BUCKETS`).
-    * ``status`` — IMPL/PART/OPEN/DEFER cross-referenced to the audit registry.
+    * ``invariant_status`` — IMPL/PART/OPEN/DEFER cross-referenced to the audit registry.
     * ``audit_registry_ref`` — the registry row id this binds to (NOT a fork), or "".
     """
 
@@ -143,7 +143,7 @@ class InvariantSpec:
     checker_ref: str = ""
     finding_code: str = ""
     root_membership: str = ""
-    status: InvariantStatus = "OPEN"
+    invariant_status: InvariantStatus = "OPEN"
     audit_registry_ref: str = ""
 
     def __post_init__(self) -> None:
@@ -201,7 +201,7 @@ class InvariantSpec:
             "checker_ref": nfc(self.checker_ref),
             "finding_code": nfc(self.finding_code),
             "root_membership": nfc(self.root_membership),
-            "status": nfc(self.status),
+            "invariant_status": nfc(self.invariant_status),
             "audit_registry_ref": nfc(self.audit_registry_ref),
         }
 
@@ -307,7 +307,7 @@ _INV_BENCH_PROJECTION_FIREWALL = InvariantSpec(
     checker_ref="lawvm.finland.bench_bundle_proof_projector:finland_bench_run_evidence_surface",
     finding_code="",
     root_membership="",
-    status="IMPL",
+    invariant_status="IMPL",
     audit_registry_ref="(bench evidence-surface firewall; see PROJ plane)",
 )
 _INV_BENCH_NOT_SOURCE_TRUTH = InvariantSpec(
@@ -325,7 +325,7 @@ _INV_BENCH_NOT_SOURCE_TRUTH = InvariantSpec(
     checker_ref="lawvm.core.claim_surface_manifest:CLAIM_BENCH_AGREEMENT",
     finding_code="",
     root_membership="assumption_register_root",
-    status="IMPL",
+    invariant_status="IMPL",
     audit_registry_ref="",
 )
 
@@ -347,7 +347,7 @@ _INV_MATERIALIZATION_NO_SILENT_DROP = InvariantSpec(
     checker_ref="lawvm.finland.materialization_totality:check_materialization_totality",
     finding_code="SILENTLY_DROPPED_UNIT",
     root_membership="universe_root",
-    status="IMPL",
+    invariant_status="IMPL",
     audit_registry_ref="LS-04",
 )
 _INV_MATERIALIZATION_RELATIVE_TO_ABSENCES = InvariantSpec(
@@ -366,7 +366,7 @@ _INV_MATERIALIZATION_RELATIVE_TO_ABSENCES = InvariantSpec(
     checker_ref="lawvm.finland.materialization_totality.UniverseSpec",
     finding_code="",
     root_membership="assumption_register_root",
-    status="IMPL",
+    invariant_status="IMPL",
     audit_registry_ref="LS-04",
 )
 
@@ -388,7 +388,7 @@ _INV_REFERENCE_CLASSIFICATION = InvariantSpec(
     checker_ref="lawvm.finland.references.surface_totality:sweep_citation_totality",
     finding_code="REFERENCE.UNCLASSIFIED_REFERENCE",
     root_membership="",
-    status="IMPL",
+    invariant_status="IMPL",
     audit_registry_ref="SURF-05",
 )
 _INV_REFERENCE_SURFACE_NOT_AUTHORITY = InvariantSpec(
@@ -407,7 +407,7 @@ _INV_REFERENCE_SURFACE_NOT_AUTHORITY = InvariantSpec(
     checker_ref="lawvm.core.claim_surface_manifest:CLAIM_REFERENCE_CLASSIFICATION",
     finding_code="",
     root_membership="assumption_register_root",
-    status="IMPL",
+    invariant_status="IMPL",
     audit_registry_ref="SURF-05",
 )
 
@@ -428,7 +428,7 @@ _INV_KNOW_MONOTONICITY = InvariantSpec(
     checker_ref="lawvm.core.know_invariants:check_source_monotonicity",
     finding_code="EVID.SOURCE_LOCATOR_DIGEST_CONFLICT",
     root_membership="",
-    status="IMPL",
+    invariant_status="IMPL",
     audit_registry_ref="SRC-06",
 )
 _INV_KNOW_DEFERRED = InvariantSpec(
@@ -447,7 +447,7 @@ _INV_KNOW_DEFERRED = InvariantSpec(
     checker_ref="lawvm.core.know_invariants",
     finding_code="",
     root_membership="",
-    status="PART",
+    invariant_status="PART",
     audit_registry_ref="",
 )
 
@@ -469,7 +469,7 @@ _INV_EU_TRANSPOSITION_TIMELINESS = InvariantSpec(
     checker_ref="lawvm.finland.references.eu_transposition_edges:build_transposition_edges",
     finding_code="",
     root_membership="",
-    status="IMPL",
+    invariant_status="IMPL",
     audit_registry_ref="",
 )
 _INV_EU_TRANSPOSITION_NOT_CONFORMANCE = InvariantSpec(
@@ -488,7 +488,7 @@ _INV_EU_TRANSPOSITION_NOT_CONFORMANCE = InvariantSpec(
     checker_ref="lawvm.finland.references.eu_transposition_edges:TranspositionEdge",
     finding_code="",
     root_membership="",
-    status="IMPL",
+    invariant_status="IMPL",
     audit_registry_ref="",
 )
 
@@ -510,7 +510,7 @@ _INV_DERIVATION_KINDS_DISTINCT = InvariantSpec(
     checker_ref="lawvm.finland.references.derivation_edges:build_textual_edge",
     finding_code="",
     root_membership="",
-    status="IMPL",
+    invariant_status="IMPL",
     audit_registry_ref="",
 )
 _INV_DERIVATION_CLOSED_KIND_SET = InvariantSpec(
@@ -530,7 +530,7 @@ _INV_DERIVATION_CLOSED_KIND_SET = InvariantSpec(
     checker_ref="lawvm.finland.references.derivation_edges:DerivationEdgeSet.kind_of",
     finding_code="",
     root_membership="",
-    status="IMPL",
+    invariant_status="IMPL",
     audit_registry_ref="",
 )
 _INV_DERIVATION_DEDUP_NOT_AUTHORITY = InvariantSpec(
@@ -549,7 +549,7 @@ _INV_DERIVATION_DEDUP_NOT_AUTHORITY = InvariantSpec(
     checker_ref="lawvm.finland.references.derivation_edges:DerivationKind",
     finding_code="",
     root_membership="",
-    status="IMPL",
+    invariant_status="IMPL",
     audit_registry_ref="",
 )
 
@@ -576,7 +576,7 @@ _INV_COUNTERFACTUAL_TIERS = InvariantSpec(
     checker_ref="lawvm.tools.bill_counterfactual_effects:build_counterfactual_report",
     finding_code="",
     root_membership="",
-    status="IMPL",
+    invariant_status="IMPL",
     audit_registry_ref="",
 )
 _INV_COUNTERFACTUAL_UNCOMPUTED = InvariantSpec(
@@ -599,7 +599,7 @@ _INV_COUNTERFACTUAL_UNCOMPUTED = InvariantSpec(
     checker_ref="lawvm.tools.bill_counterfactual_effects:build_tier_3_boundary",
     finding_code="",
     root_membership="",
-    status="IMPL",
+    invariant_status="IMPL",
     audit_registry_ref="",
 )
 
@@ -620,7 +620,7 @@ _INV_XJUR_GENERALITY = InvariantSpec(
     checker_ref="lawvm.core.materialization_universe:check_materialization_totality",
     finding_code="SILENTLY_DROPPED_UNIT",
     root_membership="universe_root",
-    status="IMPL",
+    invariant_status="IMPL",
     audit_registry_ref="LS-04",
 )
 _INV_XJUR_BOUNDARY = InvariantSpec(
@@ -639,7 +639,7 @@ _INV_XJUR_BOUNDARY = InvariantSpec(
     checker_ref="lawvm.core.materialization_universe:UniverseSpec",
     finding_code="",
     root_membership="",
-    status="IMPL",
+    invariant_status="IMPL",
     audit_registry_ref="LS-04",
 )
 
@@ -667,7 +667,7 @@ _INV_DANGLING_TOTALITY = InvariantSpec(
     checker_ref="lawvm.tools.dangling_references:build_dangling_report",
     finding_code="",
     root_membership="",
-    status="IMPL",
+    invariant_status="IMPL",
     audit_registry_ref="",
 )
 # CLOSURE: the three-way status set is CLOSED by construction. DanglingReferenceRow
@@ -690,7 +690,7 @@ _INV_DANGLING_CLOSURE = InvariantSpec(
     checker_ref="lawvm.tools.dangling_references:DanglingReferenceRow",
     finding_code="",
     root_membership="",
-    status="IMPL",
+    invariant_status="IMPL",
     audit_registry_ref="",
 )
 # NON_GUARANTEE_COVERAGE: the dangling claim's declared boundaries — the existence
@@ -717,7 +717,7 @@ _INV_DANGLING_BOUNDARY = InvariantSpec(
     checker_ref="lawvm.core.claim_surface_manifest:CLAIM_DANGLING_REFERENCE",
     finding_code="",
     root_membership="",
-    status="IMPL",
+    invariant_status="IMPL",
     audit_registry_ref="",
 )
 
@@ -745,7 +745,7 @@ _INV_FIXED_TERM_RESOLVED_OR_STRICT = InvariantSpec(
     checker_ref="lawvm.finland.fixed_term_expiry:extract_fixed_term_bounds",
     finding_code="TEMPORAL.FIXED_TERM_EXPIRY_UNPARSEABLE",
     root_membership="",
-    status="IMPL",
+    invariant_status="IMPL",
     audit_registry_ref="",
 )
 # CLOSURE/REFUSAL: the bound carrier itself refuses a malformed bound — the
@@ -773,7 +773,7 @@ _INV_FIXED_TERM_BOUND_REFUSAL = InvariantSpec(
     checker_ref="lawvm.core.statute_validity:StatuteValidityBound",
     finding_code="",
     root_membership="",
-    status="IMPL",
+    invariant_status="IMPL",
     audit_registry_ref="",
 )
 # NON_GUARANTEE_COVERAGE: the declared boundaries of the fixed-term claim.
@@ -796,7 +796,7 @@ _INV_FIXED_TERM_BOUNDARY = InvariantSpec(
     checker_ref="lawvm.core.claim_surface_manifest:CLAIM_FIXED_TERM_EXPIRY",
     finding_code="",
     root_membership="",
-    status="IMPL",
+    invariant_status="IMPL",
     audit_registry_ref="",
 )
 
@@ -824,7 +824,7 @@ _INV_TIMELINE_INTEGRITY_TYPED = InvariantSpec(
     checker_ref="lawvm.core.timeline_invariants:check_all_timeline_invariants_typed",
     finding_code="",
     root_membership="",
-    status="IMPL",
+    invariant_status="IMPL",
     audit_registry_ref="",
 )
 # NON_GUARANTEE_COVERAGE: the declared boundaries of the timeline-integrity claim.
@@ -847,7 +847,7 @@ _INV_TIMELINE_INTEGRITY_BOUNDARY = InvariantSpec(
     checker_ref="lawvm.core.claim_surface_manifest:CLAIM_TIMELINE_INTEGRITY",
     finding_code="",
     root_membership="",
-    status="IMPL",
+    invariant_status="IMPL",
     audit_registry_ref="",
 )
 
@@ -876,7 +876,7 @@ _INV_LSG_MERGE_TOTALITY = InvariantSpec(
     checker_ref="lawvm.finland.legal_surface.corpus_graph:build_corpus_surface_graph",
     finding_code="",
     root_membership="",
-    status="IMPL",
+    invariant_status="IMPL",
     audit_registry_ref="",
 )
 # AUTHORITY_FIREWALL: every cross-statute edge is minted through the assembler's
@@ -904,7 +904,7 @@ _INV_LSG_AUTHORITY_FIREWALL = InvariantSpec(
     checker_ref="lawvm.core.legal_surface_assembler:run_edge_passes",
     finding_code="",
     root_membership="",
-    status="IMPL",
+    invariant_status="IMPL",
     audit_registry_ref="",
 )
 # NON_GUARANTEE_COVERAGE: the declared boundaries of the corpus-graph claim — the
@@ -935,7 +935,7 @@ _INV_LSG_BOUNDARY = InvariantSpec(
     checker_ref="lawvm.core.claim_surface_manifest:CLAIM_LEGAL_SURFACE_GRAPH",
     finding_code="",
     root_membership="",
-    status="IMPL",
+    invariant_status="IMPL",
     audit_registry_ref="",
 )
 # TRANSPOSITION_NOT_CONFORMANCE: the new ``transposes`` edge family carries a
@@ -970,7 +970,7 @@ _INV_LSG_TRANSPOSITION_NOT_CONFORMANCE = InvariantSpec(
     ),
     finding_code="",
     root_membership="",
-    status="IMPL",
+    invariant_status="IMPL",
     audit_registry_ref="",
 )
 
@@ -1005,7 +1005,7 @@ _INV_EE_CONSERR_TOTALITY = InvariantSpec(
     ),
     finding_code="",
     root_membership="",
-    status="IMPL",
+    invariant_status="IMPL",
     audit_registry_ref="",
 )
 # CLOSURE: the tier set {strong, triage} is CLOSED by construction. The builder
@@ -1037,7 +1037,7 @@ _INV_EE_CONSERR_CLOSURE = InvariantSpec(
     ),
     finding_code="",
     root_membership="",
-    status="IMPL",
+    invariant_status="IMPL",
     audit_registry_ref="",
 )
 # NON_GUARANTEE_COVERAGE: the declared boundaries of the candidate claim — a
@@ -1067,7 +1067,7 @@ _INV_EE_CONSERR_BOUNDARY = InvariantSpec(
     ),
     finding_code="",
     root_membership="",
-    status="IMPL",
+    invariant_status="IMPL",
     audit_registry_ref="",
 )
 

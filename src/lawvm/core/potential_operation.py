@@ -228,7 +228,7 @@ def _potential_operation_report_row(row: Mapping[str, Any]) -> dict[str, Any]:
         "surface": "potential_operation",
         "row_id": operation_id,
         "subject_id": str(row.get("source_unit_id") or operation_id),
-        "status": str(row.get("classification") or ""),
+        "row_status": str(row.get("classification") or ""),
         "forbidden_shortcuts": list(row.get("forbidden_shortcuts") or ()),
     }
 

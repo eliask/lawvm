@@ -355,7 +355,7 @@ def _authorization_report_row(row: Mapping[str, Any], *, index: int) -> dict[str
         "surface": "execution_authorization",
         "row_id": row_id,
         "subject_id": subject_id,
-        "status": str(row.get("authorization_status") or "reported"),
+        "row_status": str(row.get("authorization_status") or "reported"),
         "authorization_ref": str(row.get("authorization_rule_id") or ""),
         "authorization_rule_id": str(row.get("authorization_rule_id") or ""),
         "owner_phase": str(row.get("owner_phase") or ""),

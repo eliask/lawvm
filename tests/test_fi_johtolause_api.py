@@ -280,7 +280,7 @@ def test_parse_clause_exports_typed_phase_surface_authority_boundary() -> None:
     artifact = result.compatibility_artifacts[0].to_dict()
     assert artifact["artifact_kind"] == "ParsedOp"
     assert artifact["source_artifact_kind"] == "ClauseAST"
-    assert artifact["status"] == "derived_compatibility_projection"
+    assert artifact["phase_status"] == "derived_compatibility_projection"
     assert artifact["lossy"] is True
     assert artifact["semantic_authority"] is False
     assert artifact["replay_authorized"] is False

@@ -628,7 +628,7 @@ def _frontier_report_row(row: Mapping[str, Any]) -> dict[str, Any]:
         "surface": "frontier_work_item",
         "row_id": str(row.get("work_item_id") or ""),
         "subject_id": str(row.get("source_artifact_id") or ""),
-        "status": str(row.get("frontier_status") or ""),
+        "row_status": str(row.get("frontier_status") or ""),
         "frontier_ref": str(row.get("work_item_id") or ""),
         "forbidden_shortcuts": tuple(
             dict.fromkeys(

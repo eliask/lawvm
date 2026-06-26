@@ -414,7 +414,7 @@ def _phase_row_report_row(row: Mapping[str, Any], *, data: Mapping[str, Any]) ->
 def _diagnostic_report_row(row: Mapping[str, Any], *, data: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "surface": "frontend_diagnostic",
-        "status": "blocking" if bool(row.get("blocking")) else str(row.get("severity") or "reported"),
+        "row_status": "blocking" if bool(row.get("blocking")) else str(row.get("severity") or "reported"),
         "row_id": str(row.get("diagnostic_id") or ""),
         "subject_id": _phase_subject_id(data, str(row.get("phase") or "diagnostic")),
         "source_ref": str(data.get("source_hash") or ""),

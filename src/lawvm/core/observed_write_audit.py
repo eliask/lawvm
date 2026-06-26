@@ -33,7 +33,7 @@ class ObservedWriteAudit:
     receipt_declared_paths: TreePaths
     undeclared_paths: TreePaths
     unobserved_declared_paths: TreePaths
-    status: ObservedWriteAuditStatus
+    audit_status: ObservedWriteAuditStatus
     matched_rule_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
@@ -41,9 +41,9 @@ class ObservedWriteAudit:
         _validate_paths(self.receipt_declared_paths, field_name="receipt declared path")
         _validate_paths(self.undeclared_paths, field_name="undeclared path")
         _validate_paths(self.unobserved_declared_paths, field_name="unobserved declared path")
-        if self.status not in {"clean", "qualified", "violation"}:
-            raise ValueError("ObservedWriteAudit.status must be clean, qualified, or violation")
-        if self.status == "qualified" and not self.matched_rule_ids:
+        if self.audit_status not in {"clean", "qualified", "violation"}:
+            raise ValueError("ObservedWriteAudit.audit_status must be clean, qualified, or violation")
+        if self.audit_status == "qualified" and not self.matched_rule_ids:
             raise ValueError("ObservedWriteAudit.qualified requires matched_rule_ids")
 
 
@@ -60,13 +60,13 @@ def build_observed_write_audit(
     unobserved_declared = _unrelated_declared_paths(declared, observed)
     exact_clean = dedupe_tree_paths(observed) == dedupe_tree_paths(declared)
     if exact_clean:
-        status: ObservedWriteAuditStatus = "clean"
+        audit_status: ObservedWriteAuditStatus = "clean"
         matched_rule_ids: tuple[str, ...] = ()
     elif not undeclared and not unobserved_declared and receipt.named_rule_ids:
-        status = "qualified"
+        audit_status = "qualified"
         matched_rule_ids = receipt.named_rule_ids
     else:
-        status = "violation"
+        audit_status = "violation"
         matched_rule_ids = ()
     return ObservedWriteAudit(
         op_id=receipt.op_id,
@@ -74,7 +74,7 @@ def build_observed_write_audit(
         receipt_declared_paths=declared,
         undeclared_paths=undeclared,
         unobserved_declared_paths=unobserved_declared,
-        status=status,
+        audit_status=audit_status,
         matched_rule_ids=matched_rule_ids,
     )
 

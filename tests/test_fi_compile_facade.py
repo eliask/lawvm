@@ -157,7 +157,7 @@ class TestFromPhaseResult:
         verdict = CompileVerdict(
             mode="strict",
             profile=FINLAND_INGESTION_V1.name,
-            status="strict_clean",
+            verdict_status="strict_clean",
         )
         with pytest.raises(ValueError, match="verdict.profile must match"):
             CompileFacade.from_phase_result(
@@ -1248,7 +1248,7 @@ class TestStrictness:
         verdict = CompileVerdict(
             mode="strict",
             profile=FINLAND_INGESTION_V1.name,
-            status="strict_clean",
+            verdict_status="strict_clean",
         )
         obl = _obl("ELAB.STRICT_REJECTED_SOURCE_PATHOLOGY", blocking=True)
         pr = _pr(output=None, obligations=[obl])
@@ -1466,7 +1466,7 @@ class TestFindingProjection:
         verdict = CompileVerdict(
             mode="strict",
             profile=FINLAND_INGESTION_V1.name,
-            status="strict_blocked_by_recovery",
+            verdict_status="strict_blocked_by_recovery",
             barrier_codes=(),
         )
         pr = _pr(output=None, obligations=[_obl("ELAB.STRICT_REJECTED_SOURCE_PATHOLOGY")])
@@ -1484,7 +1484,7 @@ class TestFindingProjection:
         verdict = CompileVerdict(
             mode="strict",
             profile=FINLAND_INGESTION_V1.name,
-            status="strict_blocked_by_recovery",
+            verdict_status="strict_blocked_by_recovery",
             barrier_codes=(),
         )
         vio = Violation(

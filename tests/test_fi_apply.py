@@ -589,7 +589,7 @@ def test_apply_op_typed_section_relabel_relabels_and_resorts_within_chapter() ->
     assert len(write_audits) == 1
     audit = write_audits[0]
     assert audit.op_id == "renumber_73_to_61"
-    assert audit.status == "qualified"
+    assert audit.audit_status == "qualified"
     assert audit.undeclared_paths == ()
     assert audit.unobserved_declared_paths == ()
     assert audit.matched_rule_ids == ("section_relabel_renumber",)
@@ -6234,7 +6234,7 @@ class TestApplyContainerInsert:
         assert len(bindings) == 1
         binding = bindings[0]
         assert binding.policy_id == "fi.container_target.v0"
-        assert binding.status == "not_found"
+        assert binding.binding_status == "not_found"
         assert binding.target_path is None
         assert binding.rung_id is None
         assert binding.candidate_count == 1  # part 4's chapter 2 is visible but out of scope
@@ -6289,7 +6289,7 @@ class TestApplyContainerInsert:
         assert len(bindings) == 1
         binding = bindings[0]
         assert binding.policy_id == "fi.container_target.v0"
-        assert binding.status == "blocked_by_policy"
+        assert binding.binding_status == "blocked_by_policy"
         assert binding.target_path is None
         assert binding.target_text == "part:5/chapter:2"
         assert binding.rejection_reasons == ("resolver_binding_contract_error",)
@@ -6335,7 +6335,7 @@ class TestApplyContainerInsert:
 
         assert len(bindings) == 1
         binding = bindings[0]
-        assert binding.status == "resolved"
+        assert binding.binding_status == "resolved"
         assert binding.rung_id == "scoped_find"
         assert binding.target_path == (("part", "4"), ("chapter", "2"))
         assert binding.candidate_count == 1
@@ -6399,7 +6399,7 @@ class TestApplyContainerInsert:
         assert receipt.post_hashes[addr] == structural_subtree_hash(landed_node)
         assert receipt.post_hashes[addr] != ""
         audit = build_observed_write_audit(state.ir, result.ir, receipt)
-        assert audit.status == "qualified"
+        assert audit.audit_status == "qualified"
         assert audit.undeclared_paths == ()
         assert audit.unobserved_declared_paths == ()
         assert audit.matched_rule_ids == ("container_insert_parent_placement",)
@@ -9494,7 +9494,7 @@ def test_section_ladder_rung_provenance_scoped_find_and_binding() -> None:
     assert resolution.rung_id == "scoped_find"
 
     binding = section_resolver_binding(rop, resolution, "[2020/1] REPLACE 4 §")
-    assert binding.status == "resolved"
+    assert binding.binding_status == "resolved"
     assert binding.rung_id == "scoped_find"
     assert binding.fallback_used is False
     assert binding.fallback_rule_id is None
@@ -9524,7 +9524,7 @@ def test_section_ladder_rung_provenance_not_found_binding() -> None:
     assert resolution.rung_id is None
 
     binding = section_resolver_binding(rop, resolution, "[2020/1] REPEAL 99 §")
-    assert binding.status == "not_found"
+    assert binding.binding_status == "not_found"
     assert binding.target_path is None
     assert binding.fallback_used is False
 
@@ -9571,7 +9571,7 @@ def test_section_ladder_rung_provenance_placeholder_shadow_is_named_widening_fal
     assert resolution.global_candidate_count == 2
 
     binding = section_resolver_binding(rop, resolution, "[2018/1313] REPLACE 8 §")
-    assert binding.status == "resolved"
+    assert binding.binding_status == "resolved"
     assert binding.fallback_used is True
     assert binding.fallback_rule_id == "live_unique_substantive_over_placeholder"
     assert binding.candidate_count == 2
@@ -9596,19 +9596,19 @@ def test_resolver_binding_contract_validators_reject_malformed_bindings() -> Non
         )
 
     with _pytest.raises(ValueError, match="not a known rung"):
-        _binding(target_path=None, status="not_found", rung_id="bogus_rung")
+        _binding(target_path=None, binding_status="not_found", rung_id="bogus_rung")
     with _pytest.raises(ValueError, match="requires a target_path"):
-        _binding(target_path=None, status="resolved", rung_id=RUNG_SCOPED_FIND)
+        _binding(target_path=None, binding_status="resolved", rung_id=RUNG_SCOPED_FIND)
     with _pytest.raises(ValueError, match="named fallback_rule_id"):
         _binding(
             target_path=(("section", "1"),),
-            status="resolved",
+            binding_status="resolved",
             rung_id=RUNG_UNIQUE_GLOBAL_FALLBACK,
         )
     with _pytest.raises(ValueError, match="must not carry a target_path"):
         _binding(
             target_path=(("section", "1"),),
-            status="not_found",
+            binding_status="not_found",
             rung_id=RUNG_SCOPED_FIND,
         )
 
@@ -9632,7 +9632,7 @@ def test_section_ladder_uncovered_ambiguity_maps_to_ambiguous_binding() -> None:
     )
 
     binding = section_resolver_binding(rop, resolution, "[2020/2] REPLACE 7 §")
-    assert binding.status == "ambiguous"
+    assert binding.binding_status == "ambiguous"
     assert binding.rejection_reasons == (
         "duplicate_section_label_across_chapters",
     )
@@ -16801,7 +16801,7 @@ def test_typed_move_stops_without_legacy_dispatch() -> None:
     assert len(write_audits) == 1
     audit = write_audits[0]
     assert audit.op_id == "test_op"
-    assert audit.status == "qualified"
+    assert audit.audit_status == "qualified"
     assert audit.undeclared_paths == ()
     assert audit.unobserved_declared_paths == ()
     assert audit.matched_rule_ids == ("move_reparent",)

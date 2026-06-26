@@ -1325,7 +1325,7 @@ def _container_resolver_contract_error_binding(
         op_label=ctx_label,
         target_text=target_text,
         target_path=None,
-        status="blocked_by_policy",
+        binding_status="blocked_by_policy",
         policy_id=CONTAINER_TARGET_POLICY_ID,
         rung_id=None,
         candidate_count=resolution.candidate_count,
@@ -1511,7 +1511,7 @@ def _apply_container_op(
             ctx_label,
             container_binding.binding_id,
             container_binding.rung_id,
-            container_binding.status,
+            container_binding.binding_status,
             container_binding.candidate_count,
         )
     path = (

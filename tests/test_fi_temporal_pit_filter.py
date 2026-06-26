@@ -157,7 +157,7 @@ def test_select_active_version_ex_single_permanent_version_selected() -> None:
         "2021-01-01",
     )
 
-    assert selection.status == "selected"
+    assert selection.selection_status == "selected"
     assert selection.version is version
     assert selection.certificate is not None
     assert selection.certificate.selected_rail == "background"
@@ -178,7 +178,7 @@ def test_select_active_version_ex_single_temporary_version_selected() -> None:
         "2021-01-01",
     )
 
-    assert selection.status == "selected"
+    assert selection.selection_status == "selected"
     assert selection.version is version
     assert selection.certificate is not None
     assert selection.certificate.selected_rail == "overlay"
@@ -200,13 +200,13 @@ def test_select_active_version_ex_single_scoped_version_requires_scope() -> None
     selected = select_active_version_ex(timeline, "2021-01-01", territory="AX")
     absent = select_active_version_ex(timeline, "2021-01-01", territory="FI")
 
-    assert ambiguous.status == "ambiguous_missing_scope"
+    assert ambiguous.selection_status == "ambiguous_missing_scope"
     assert ambiguous.required_dimensions == ("territory",)
     assert ambiguous.certificate is not None
     assert ambiguous.certificate.candidate_count == 1
-    assert selected.status == "selected"
+    assert selected.selection_status == "selected"
     assert selected.version is version
-    assert absent.status == "absent"
+    assert absent.selection_status == "absent"
     assert absent.certificate is not None
     assert absent.certificate.candidate_count == 1
 
@@ -225,7 +225,7 @@ def test_select_active_version_ex_single_future_tombstone_absent_under_detached_
         expires_as_of="2025-12-22",
     )
 
-    assert selection.status == "absent"
+    assert selection.selection_status == "absent"
     assert selection.certificate is not None
     assert selection.certificate.candidate_count == 1
 
@@ -244,7 +244,7 @@ def test_timeline_selection_preserves_base_date_sentinel() -> None:
 
     selected = select_active_version_ex(timeline, "0000-00-00")
 
-    assert selected.status == "selected"
+    assert selected.selection_status == "selected"
     assert selected.version is not None
     assert selected.version.effective == "0000-00-00"
 
@@ -334,9 +334,9 @@ def test_standalone_applicability_event_restricts_existing_section() -> None:
         ),
     )
 
-    assert select_active_version_ex(timelines[addr], "2009-01-01").status == "selected"
-    assert select_active_version_ex(timelines[addr], "2011-01-01").status == "ambiguous_missing_scope"
-    assert select_active_version_ex(timelines[addr], "2011-01-01", territory="AX").status == "selected"
+    assert select_active_version_ex(timelines[addr], "2009-01-01").selection_status == "selected"
+    assert select_active_version_ex(timelines[addr], "2011-01-01").selection_status == "ambiguous_missing_scope"
+    assert select_active_version_ex(timelines[addr], "2011-01-01", territory="AX").selection_status == "selected"
 
 
 def test_standalone_revive_event_restores_expired_section() -> None:
@@ -879,7 +879,7 @@ def test_decoupled_expiry_horizon_keeps_permanent_background_over_future_repeal_
     assert bg is not None
     assert bg.content is not None
     assert bg.content.label == "29h"
-    assert active.status == "selected"
+    assert active.selection_status == "selected"
     assert active.version is not None
     assert active.version.content is not None
     assert active.version.content.label == "29h"
@@ -910,7 +910,7 @@ def test_decoupled_expiry_horizon_ignores_future_permanent_tombstone() -> None:
     assert bg is not None
     assert bg.content is not None
     assert bg.content.label == "29h"
-    assert active.status == "selected"
+    assert active.selection_status == "selected"
     assert active.version is not None
     assert active.version.content is not None
     assert active.version.content.label == "29h"
@@ -940,7 +940,7 @@ def test_decoupled_expiry_horizon_applies_same_day_permanent_tombstone() -> None
 
     assert bg is not None
     assert bg.content is None
-    assert active.status == "selected"
+    assert active.selection_status == "selected"
     assert active.version is not None
     assert active.version.content is None
 
@@ -974,7 +974,7 @@ def test_plain_horizon_keeps_permanent_background_over_future_repeal_placeholder
     assert bg is not None
     assert bg.content is not None
     assert bg.content.label == "29h"
-    assert active.status == "selected"
+    assert active.selection_status == "selected"
     assert active.version is not None
     assert active.version.content is not None
     assert active.version.content.label == "29h"

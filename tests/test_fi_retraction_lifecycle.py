@@ -136,7 +136,7 @@ def _make_and_accept_claim(
     ))
     store.write_state(ClaimState(
         claim_id=claim_id,
-        status=ClaimStatus.ACCEPTED,
+        claim_state_status=ClaimStatus.ACCEPTED,
         review_status=ReviewStatus.HUMAN_REVIEWED,
         validator_status=ValidatorStatus.SPAN_VERIFIED,
         confidence=ClaimConfidence.HIGH,
@@ -194,7 +194,7 @@ def test_strict_rebuild_refuses_retracted_claim(tmp_path: Path):
     from lawvm.tools.export_fi_refs import _check_no_retracted_claims_in_strict
     from lawvm.core.manual_claims.primitive import ClaimStatus
 
-    # Build a (claim, state) pair where state.status = RETRACTED
+    # Build a (claim, state) pair where state.claim_state_status = RETRACTED
     # (simulates what _load_accepted_inline_statute_claims might return if
     # the filter was removed — we test the guard function directly)
     store = ClaimStore(tmp_path / "manual_claims")
@@ -214,7 +214,7 @@ def test_strict_rebuild_refuses_retracted_claim(tmp_path: Path):
     ))
     store.write_state(ClaimState(
         claim_id=claim_id,
-        status=ClaimStatus.RETRACTED,
+        claim_state_status=ClaimStatus.RETRACTED,
         review_status=ReviewStatus.HUMAN_REVIEWED,
         validator_status=ValidatorStatus.SPAN_VERIFIED,
         confidence=ClaimConfidence.HIGH,
