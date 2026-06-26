@@ -49,6 +49,7 @@ from lawvm.finland.helpers import (
     _section_sort_key,
     _previous_item_token,
 )
+from lawvm.finland.op_provenance import RecognizerId, has_recognizer
 from lawvm.finland.ops import AmendmentOp, FailedOp, OpType, ReplayProfile, ResolvedOp, _op_target_subsection_label
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.scope import source_targets_plain_subsection_moment
@@ -2445,11 +2446,10 @@ def _partial_section_replace_diagnostics_ir(
     # (no-omission guard, no-subsection-loss guard).  Skip the suspicious-partial
     # heuristic for them so routing through apply_op does not change semantics.
     # NOTE: ``op`` here is sometimes a ``_StructureApplyView`` cast to the op
-    # union (apply_structure_ops:2715). The view already carries its
-    # ``uncovered_body_recovery`` bool sourced from the typed provenance at
-    # construction, so this stays a polymorphic flag read until the view itself
-    # carries a typed provenance facet.
-    if op.uses_uncovered_body_recovery if isinstance(op, ResolvedOp) else op.uncovered_body_recovery:
+    # union (apply_structure_ops:2715). All three op shapes (AmendmentOp,
+    # ResolvedOp, _StructureApplyView) carry a typed ``provenance`` facet, so the
+    # recovery marker is read uniformly off it.
+    if has_recognizer(op.provenance, RecognizerId.UNCOVERED_BODY):
         return {}
     master_paras = _paragraph_signatures_ir(master_sec)
     amend_paras = _paragraph_signatures_ir(amend_sec)

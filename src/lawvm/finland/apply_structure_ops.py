@@ -25,7 +25,7 @@ from lawvm.core.ir_helpers import _kind_str, structural_subtree_hash
 from lawvm.core.resolver_binding import RUNG_SCOPED_FIND, ResolverBinding, binding_id_for
 from lawvm.core.write_receipt import WriteReceipt, receipt_address_string
 
-from lawvm.finland.op_provenance import RecognizerId, has_recognizer
+from lawvm.finland.op_provenance import OpProvenance, RecognizerId, has_recognizer
 from lawvm.finland.ops import (
     AmendmentOp,
     ContainerPathResolution,
@@ -1166,7 +1166,7 @@ class _StructureApplyView:
     target_unit_kind: TargetUnitKind
     target_section: str
     op_type: str
-    uncovered_body_recovery: bool
+    provenance: "OpProvenance | None"
     target_paragraph: int | None
     target_item: str | None
     target_special: str | None
@@ -1230,7 +1230,7 @@ def _structure_apply_view_for_op(op: AmendmentOp | ResolvedOp) -> _StructureAppl
         target_unit_kind=op.target_unit_kind if isinstance(op, ResolvedOp) else op.target_cols.target_unit_kind,
         target_section=target_section,
         op_type=op_type,
-        uncovered_body_recovery=op.uses_uncovered_body_recovery if isinstance(op, ResolvedOp) else has_recognizer(op.provenance, RecognizerId.UNCOVERED_BODY),
+        provenance=op.provenance,
         target_paragraph=target_paragraph,
         target_item=target_item,
         target_special=target_special,
@@ -3593,7 +3593,7 @@ def _apply_whole_section_op(
             )
             if parent_path is None:
                 scaffolded_parent = None
-                if view.uncovered_body_recovery and _target_part and _target_chapter:
+                if has_recognizer(view.provenance, RecognizerId.UNCOVERED_BODY) and _target_part and _target_chapter:
                     scaffolded_parent = _insert_missing_chapter_scaffold_under_part(
                         state,
                         target_part=_target_part,
