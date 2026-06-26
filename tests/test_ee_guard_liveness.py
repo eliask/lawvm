@@ -484,15 +484,95 @@ def test_ee_blocking_rule_id_in_catalog(rule_id: str) -> None:
 
 
 def _fire_drills_target_registered_codes() -> Dict[str, str]:
-    """Stable enumeration of the drilling test names in this module that
-    ``EE_FIRE_DRILL_COVERAGE`` claims cover a blocking rule_id. A drill's
-    registration here is a one-(code, drill_name) tuple; the parset set is
-    checked as part of the partition ratchet (a drill that targets an
-    unregistered code would silently unblock the inventory).
+    """Stable enumeration of the drilling test names in this module (and in
+    other EE test files) that ``EE_FIRE_DRILL_COVERAGE`` claims cover a
+    blocking rule_id.
+
+    Each entry is a one-(code, drill_name) pair; the partition ratchet gates
+    check (a) every code in EE_FIRE_DRILL_COVERAGE has a registered
+    drill_name here, and (b) every name here targets a code in
+    EE_FIRE_DRILL_COVERAGE. A drill that targets an unregistered code would
+    silently unblock the inventory; a registered name targeting an
+    unregistered code would be a dead string.
+
+    The 26 `existing-tests-registered` entries were cross-referenced
+    manually against the EE test corpus via the
+    ``notes_internal/_cross_ref_drills.py`` AST scan (2026-06-26): each
+    selected test drives a known-violator input through the production
+    path (``apply_ee_ops`` / ``parse_ee_amendment_ops`` /
+    ``replay_ee_to_pit`` / ``_ee_filter_cancelled_pending_refs`` etc.)
+    AND asserts a CompileAdjudication carrying ``kind == "<rule_id>"`` is
+    produced. Hardcoded-CompileAdjudication literal tests (carrier /
+    taxonomy self-checks) were excluded as non-drills; their asserts
+    check payload shape, not guard reachability.
     """
     return {
+        # === Self-authored drills in this test file ===
         "ee_replay_unsupported_action": "test_ee_fire_drill_replay_unsupported_action_blocks",
         "ee_replay_target_not_found": "test_ee_fire_drill_replay_target_not_found_blocks",
+        # === Existing production-path drills in tests/test_ee_apply_semantics.py ===
+        "ee_ambiguous_single_occurrence_text_replace": (
+            "test_exact_target_insert_after_with_repeated_source_surface_emits_ambiguity"
+        ),
+        "ee_flat_part_repeal_span": "test_repeal_flat_part_marker_removes_owned_section_run_until_next_part",
+        "ee_implicit_division_sequence_relabel_after_high_jagu_insert": (
+            "test_high_division_insert_relabels_unique_duplicate_division_suffix_with_adjudication"
+        ),
+        "ee_inline_item_replace_singleton_subsection": (
+            "test_replace_section_item_recovers_inline_singleton_subsection_item"
+        ),
+        "ee_labelled_item_replacement_payload_selection": (
+            "test_replace_item_selects_matching_label_from_multi_item_payload"
+        ),
+        "ee_overbroad_container_replace_blocked": "test_replace_blocks_child_payload_from_overwriting_part_container",
+        "ee_plural_item_replace_range_omits_inserted_labels": (
+            "test_plural_item_replace_range_removes_omitted_inserted_item_labels"
+        ),
+        "ee_plural_subsection_replace_extra_payload_label": (
+            "test_replace_extra_plural_subsection_payload_label_inserts_absent_subsection"
+        ),
+        "ee_replay_meta_non_body_skipped": "test_apply_ee_ops_records_meta_as_non_body_skip_not_unsupported",
+        "ee_replay_noop": "test_apply_ee_ops_records_unresolved_target_and_noop",
+        "ee_replay_unparsed_operation_skipped": (
+            "test_apply_ee_ops_records_unparsed_meta_as_coverage_skip_not_non_body"
+        ),
+        "ee_replay_unsupported_heading_target": (
+            "test_ee_apply_unsupported_heading_target_records_adjudication_not_warning"
+        ),
+        "ee_section_item_replace_unique_descendant_item": (
+            "test_apply_ee_ops_resolves_section_item_replace_to_unique_descendant_item"
+        ),
+        "ee_source_case_only_text_replace": "test_apply_ee_ops_records_case_only_source_text_recovery",
+        "ee_subsection_table_only_replace_preserve_intro": "test_subsection_table_only_replace_preserves_existing_intro",
+        "ee_text_replace_numbered_subsection_for_item_target_by_old_text": (
+            "test_apply_ee_ops_retargets_section_item_text_replace_to_same_number_subsection_old_text"
+        ),
+        "ee_text_replace_unique_descendant_item_by_old_text": (
+            "test_apply_ee_ops_retargets_section_item_text_replace_to_unique_descendant_old_text"
+        ),
+        # === Existing production-path drills in tests/test_ee_parser_normalization.py ===
+        "ee_parse_old_format_unparsed_meta_rejected": (
+            "test_old_format_lower_op_texts_records_rejected_unparsed_meta"
+        ),
+        "ee_ref_slice_operation_filtered": (
+            "test_parse_old_format_ref_slice_drop_uses_ref_slice_filtered_adjudication"
+        ),
+        "ee_source_local_global_text_replace_selector_exclusion_inferred": (
+            "test_parse_ee_amendment_ops_keeps_selector_exclusion_out_of_global_replay_scope"
+        ),
+        # === Existing production-path drills in tests/test_ee_replay_logic.py ===
+        "ee_amendment_parse_failed": "test_replay_ee_to_pit_adjudicates_amendment_parse_failure",
+        "ee_amendment_source_fetch_failed": "test_replay_ee_to_pit_adjudicates_amendment_fetch_failure",
+        "ee_cancelled_pending_ref_metadata_parse_failed": (
+            "test_filter_cancelled_pending_refs_records_metadata_parse_failure_and_retains_ref"
+        ),
+        "ee_cancelled_pending_ref_source_fetch_failed": (
+            "test_filter_cancelled_pending_refs_records_source_fetch_failure_and_retains_ref"
+        ),
+        "ee_pending_source_act_commencement_source_fetch_failed": (
+            "test_precompose_pending_source_act_commencement_records_fetch_failure"
+        ),
+        "ee_temporal_source_scan_failed": "test_replay_ee_to_pit_adjudicates_temporal_source_scan_failure",
     }
 
 
