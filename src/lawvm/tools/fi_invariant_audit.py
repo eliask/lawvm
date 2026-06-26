@@ -109,7 +109,7 @@ def _detector_family_for(row: dict[str, str]) -> str:
 
 
 def _record_from_audit_row(row: dict[str, str]) -> InvariantHarvestRecord:
-    severity = "warning" if row.get("status") == "warning" else "violation"
+    severity = "warning" if row.get("audit_status") == "warning" else "violation"
     return InvariantHarvestRecord(
         violation_type=str(row.get("violation_type") or ""),
         path=str(row.get("path") or ""),
@@ -229,7 +229,7 @@ def audit_one_statute(norm_id: str) -> list[dict[str, str]]:
         short_err = " | ".join(line.strip() for line in tb[-2:] if line.strip())
         return [{
             "statute_id": norm_id,
-            "status": "error",
+            "audit_status": "error",
             "violation_type": "ERROR",
             "path": "",
             "detail": short_err[:400],

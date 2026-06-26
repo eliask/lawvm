@@ -322,7 +322,7 @@ def test_run_single_statute_finds_pair_by_base_id(monkeypatch, capsys) -> None:
         ee_bench,
         "_score_one_pair",
         lambda gid, bid, oid, title, archive: SimpleNamespace(
-            status="OK",
+            bench_status="OK",
             comparison_class="commensurable_delta",
             core_benchmark=True,
             n_ops=5,

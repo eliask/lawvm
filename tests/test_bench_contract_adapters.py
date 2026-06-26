@@ -171,7 +171,7 @@ def _ee_result(
         sec_match=sec_match,
         r_secs=r_secs,
         o_secs=o_secs,
-        status=status,
+        bench_status=status,
     )
 
 

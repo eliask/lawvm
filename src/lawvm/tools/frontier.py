@@ -408,7 +408,7 @@ def _run_score_refresh_parallel(
                 print(f"  score-refresh [{done}/{total}]...", flush=True)
             results[score_sid] = {
                 "similarity": sim,
-                "status": status,
+                "refresh_status": status,
             }
 
     return results
@@ -425,7 +425,7 @@ def _apply_refreshed_scores(
     for item in bench_data:
         sid = item["statute_id"]
         refreshed = refreshed_scores.get(sid)
-        if refreshed and refreshed.get("status") == "OK" and refreshed.get("similarity", -1.0) >= 0:
+        if refreshed and refreshed.get("refresh_status") == "OK" and refreshed.get("similarity", -1.0) >= 0:
             out.append(
                 {
                     **item,

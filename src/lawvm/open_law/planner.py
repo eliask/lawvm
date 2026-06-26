@@ -12,7 +12,7 @@ from lawvm.open_law.models import OpenLawFinding, OpenLawOperation
 class OpenLawFilePlan:
     """Plan for auditing one operation against before/after XML files."""
 
-    status: str
+    plan_status: str
     xml_path: str = ""
     path_prefix: Tuple[str, ...] = ()
     finding: OpenLawFinding | None = None
@@ -37,7 +37,7 @@ def plan_maryland_comar_operation(op: OpenLawOperation) -> OpenLawFilePlan:
     if len(op.path) == 2 and op.path[1] == "heading":
         title = op.path[0]
         return OpenLawFilePlan(
-            status="planned",
+            plan_status="planned",
             xml_path=f"us/md/exec/comar/{title}/index.xml",
             path_prefix=(),
         )
@@ -50,13 +50,13 @@ def plan_maryland_comar_operation(op: OpenLawOperation) -> OpenLawFilePlan:
     if len(op.path) == 3 and op.path[2] == "heading":
         title, subtitle = op.path[:2]
         return OpenLawFilePlan(
-            status="planned",
+            plan_status="planned",
             xml_path=f"us/md/exec/comar/{title}/{subtitle}/index.xml",
             path_prefix=(title,),
         )
     title, subtitle, chapter = op.path[:3]
     return OpenLawFilePlan(
-        status="planned",
+        plan_status="planned",
         xml_path=f"us/md/exec/comar/{title}/{subtitle}/{chapter}.xml",
         path_prefix=(title, subtitle),
     )
@@ -64,7 +64,7 @@ def plan_maryland_comar_operation(op: OpenLawOperation) -> OpenLawFilePlan:
 
 def _planning_failure(op: OpenLawOperation, kind: str, message: str) -> OpenLawFilePlan:
     return OpenLawFilePlan(
-        status="failed",
+        plan_status="failed",
         finding=OpenLawFinding(
             kind=kind,
             message=message,

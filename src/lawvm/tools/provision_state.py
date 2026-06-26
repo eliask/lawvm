@@ -106,7 +106,7 @@ class FixedTermSeamOverlay:
 class AddressResolution:
     """Resolved timeline address, preserving ambiguity as data."""
 
-    status: str
+    resolution_status: str
     requested: str
     address: LegalAddress | None = None
     timeline: ProvisionTimeline | None = None
@@ -254,13 +254,13 @@ def build_provision_state_response(
         as_of=as_of,
     )
     tl_marker, tl_block, tl_blocking = _timeline_integrity_payloads(relevant_breaks, as_of)
-    if resolution.status != "resolved":
-        status = "timeline_unverified" if tl_blocking else resolution.status
+    if resolution.resolution_status != "resolved":
+        status = "timeline_unverified" if tl_blocking else resolution.resolution_status
         if tl_block is not None:
             # Preserve the resolution outcome as data: a blocking break means
             # even "address_not_found" is unprovable (the breaking amendment
             # could have created or renumbered the address).
-            tl_block = {**tl_block, "resolution_status": resolution.status}
+            tl_block = {**tl_block, "resolution_status": resolution.resolution_status}
         payload: dict[str, Any] = {
             "schema": SCHEMA,
             "spec_version": SPEC_VERSION,
@@ -748,7 +748,7 @@ def _timeline_integrity_payloads(
         "diagnostic_code": anchor.diagnostic_code,
     }
     block: dict[str, Any] = {
-        "status": "timeline_broken",
+        "timeline_status": "timeline_broken",
         "blocking": blocking,
         "broken_at": anchor.to_wire(),
         "breaks": [item.to_wire() for item in relevant_breaks],
@@ -778,7 +778,7 @@ def _temporal_schedule_payload(
     if not deltas:
         return None
     return {
-        "status": "materialized",
+        "materialization_status": "materialized",
         "scheduler": "temporal_write_interval_stage_1",
         "hash_role": "excluded_from_derived_state_hash",
         "deltas": [delta.to_wire() for delta in deltas],
@@ -949,11 +949,11 @@ def resolve_address(
 
     target = _parse_addr(provision)
     if target is None:
-        return AddressResolution(status="invalid_address", requested=provision)
+        return AddressResolution(resolution_status="invalid_address", requested=provision)
     timeline = timelines.get(target)
     if timeline is not None:
         return AddressResolution(
-            status="resolved",
+            resolution_status="resolved",
             requested=provision,
             address=target,
             timeline=timeline,
@@ -964,7 +964,7 @@ def resolve_address(
     if len(candidates) == 1:
         address = candidates[0]
         return AddressResolution(
-            status="resolved",
+            resolution_status="resolved",
             requested=provision,
             address=address,
             timeline=timelines[address],
@@ -972,12 +972,12 @@ def resolve_address(
         )
     if candidates:
         return AddressResolution(
-            status="ambiguous_address",
+            resolution_status="ambiguous_address",
             requested=provision,
             candidates=tuple(sorted(candidates, key=str)),
         )
     return AddressResolution(
-        status="address_not_found",
+        resolution_status="address_not_found",
         requested=provision,
         suggestions=_nearby_address_suggestions(timelines, target),
     )
@@ -1000,7 +1000,7 @@ def resolve_address_for_query(
     """
 
     resolution = resolve_address(timelines, provision)
-    if resolution.status != "resolved" or resolution.address is None or resolution.timeline is None:
+    if resolution.resolution_status != "resolved" or resolution.address is None or resolution.timeline is None:
         return resolution
     target = _parse_addr(provision)
     if target is None or len(target.path) != 1 or target.path[0][0] != "section":
@@ -1029,7 +1029,7 @@ def resolve_address_for_query(
         return resolution
     address = live_candidates[0]
     return AddressResolution(
-        status="resolved",
+        resolution_status="resolved",
         requested=provision,
         address=address,
         timeline=timelines[address],
@@ -1381,7 +1381,7 @@ def _fi_section_suggestion(number: str, letter: str | None) -> str:
 
 
 def _address_resolution_diagnostic(resolution: AddressResolution) -> dict[str, Any] | None:
-    if resolution.status != "address_not_found" or not resolution.suggestions:
+    if resolution.resolution_status != "address_not_found" or not resolution.suggestions:
         return None
     return {
         "code": "LAWVM_PROVISION_ADDRESS_NOT_FOUND",
@@ -1486,7 +1486,7 @@ def _selection_payload(selection: VersionSelectionResult) -> dict[str, Any]:
             "required_dimensions": list(certificate.required_dimensions),
         }
     return {
-        "status": selection.selection_status,
+        "selection_status": selection.selection_status,
         "required_dimensions": list(selection.required_dimensions),
         "certificate": cert_payload,
     }
@@ -1502,7 +1502,7 @@ def _lineage_payload(
 ) -> dict[str, Any]:
     if address is None:
         payload = {
-            "status": "unresolved_address",
+            "lineage_status": "unresolved_address",
             "address_chain": [],
             "migration_event_count_considered": len(migration_events),
         }
@@ -1519,7 +1519,7 @@ def _lineage_payload(
     )
     status = "migration_chain" if len(chain) > 1 else "self_only"
     payload = {
-        "status": status,
+        "lineage_status": status,
         "address_chain": [_address_wire(chain_address) for chain_address in chain],
         "migration_event_count_considered": len(migration_events),
     }
@@ -1557,7 +1557,7 @@ def _lineage_hash_input(lineage: Mapping[str, Any] | None) -> dict[str, Any] | N
     if lineage is None:
         return None
     return {
-        "status": lineage.get("status"),
+        "lineage_status": lineage.get("lineage_status"),
         "address_chain": lineage.get("address_chain", []),
         "migration_event_count_considered": lineage.get("migration_event_count_considered", 0),
     }
@@ -1688,7 +1688,7 @@ def _hash_payload(
     structured_content_hash = _structured_content_hash(version)
     derived_input = {
         "schema": SCHEMA,
-        "status": payload_status,
+        "provision_status": payload_status,
         "jurisdiction": jurisdiction,
         "statute_id": statute_id,
         "query": query,

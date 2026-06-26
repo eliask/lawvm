@@ -299,7 +299,7 @@ def default_interlink_target_row(target_ref: LawvmInterlinkTargetRef) -> LawvmIn
         locator_label=target_ref.locator or "",
         hierarchy_json="[]",
         preview_text="",
-        detail_json=json.dumps({"status": "unsupported"}, ensure_ascii=False, sort_keys=True),
+        detail_json=json.dumps({"preview_status": "unsupported"}, ensure_ascii=False, sort_keys=True),
     )
 
 

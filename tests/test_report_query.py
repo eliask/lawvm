@@ -18,7 +18,7 @@ def test_report_query_filters_nested_operation_evidence_row(tmp_path) -> None:
     path.write_text(
         json.dumps({
             "op_id": "local-op-1",
-            "status": "metadata_matched",
+            "audit_status": "metadata_matched",
             "evidence_row": {
                 "row_id": "row-1",
                 "frontend_id": "open_law_maryland",
@@ -51,7 +51,7 @@ def test_report_query_filters_nested_operation_evidence_row(tmp_path) -> None:
     selected = filter_report_query_records(
         records,
         ReportQueryFilters(
-            status="matched",
+            evidence_status="matched",
             locator="10|27|02|annos",
             detail=(("operation_family", "replace"), ("changed_paths", "10|27|02|10|27|03")),
         ),

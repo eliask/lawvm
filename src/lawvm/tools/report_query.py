@@ -31,7 +31,7 @@ class ReportQueryFilters:
     """Shared evidence-row filters."""
 
     row_id: str = ""
-    status: str = ""
+    evidence_status: str = ""
     rule_id: str = ""
     phase: str = ""
     source_artifact: str = ""
@@ -140,7 +140,7 @@ def main(args: Any) -> None:
     records = load_report_query_records(paths, validate=bool(getattr(args, "validate", False)))
     filters = ReportQueryFilters(
         row_id=str(getattr(args, "row_id", "") or ""),
-        status=str(getattr(args, "status", "") or ""),
+        evidence_status=str(getattr(args, "status", "") or ""),
         rule_id=str(getattr(args, "rule_id", "") or ""),
         phase=str(getattr(args, "phase", "") or ""),
         source_artifact=str(getattr(args, "source_artifact", "") or ""),
@@ -164,7 +164,7 @@ def main(args: Any) -> None:
 def _matches(row: Mapping[str, Any], filters: ReportQueryFilters) -> bool:
     if filters.row_id and filters.row_id not in {_scalar(row.get("row_id")), _scalar(row.get("finding_id"))}:
         return False
-    if filters.status and _scalar(row.get("evidence_status")) != filters.status:
+    if filters.evidence_status and _scalar(row.get("evidence_status")) != filters.evidence_status:
         return False
     if filters.rule_id and filters.rule_id not in _rule_ids(row):
         return False

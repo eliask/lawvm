@@ -161,7 +161,7 @@ class TestExportParquet:
 
         result = _project_one_statute("2099/1", 3)
 
-        assert result["statute"][0]["status"] == "OK"
+        assert result["statute"][0]["run_status"] == "OK"
         assert result["sections"] == []
         assert len(result["findings"]) == 1
         finding = result["findings"][0]
@@ -171,7 +171,7 @@ class TestExportParquet:
         assert finding["blocking"] is False
         assert finding["strict_disposition"] == "record"
         assert finding["quirks_disposition"] == "record"
-        assert finding["status"] == "section_diff_failed"
+        assert finding["section_diff_status"] == "section_diff_failed"
         assert finding["error_type"] == "RuntimeError"
         assert "synthetic section diff failure" in finding["detail"]
 

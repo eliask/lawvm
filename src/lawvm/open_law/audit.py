@@ -105,7 +105,7 @@ def _apply_replace(
         )
         return current
     resolved = resolve_open_law_path(current, op.path)
-    if resolved.status != "resolved":
+    if resolved.path_status != "resolved":
         findings.append(_target_finding(op, resolved))
         return current
     resolve_required(current, resolved.tree_path)
@@ -144,7 +144,7 @@ def _apply_replace_or_insert(
         )
         return current
     target = resolve_open_law_path(current, op.path)
-    if target.status == "resolved":
+    if target.path_status == "resolved":
         findings.append(
             OpenLawFinding(
                 kind="open_law_replace_or_insert_replaced_existing_target",
@@ -155,14 +155,14 @@ def _apply_replace_or_insert(
             )
         )
         return _apply_replace(current, op, mutations, findings)
-    if target.status == "ambiguous":
+    if target.path_status == "ambiguous":
         findings.append(_target_finding(op, target))
         return current
     parent = resolve_open_law_path(current, op.path[:-1])
-    if parent.status != "resolved":
+    if parent.path_status != "resolved":
         findings.append(
             OpenLawFinding(
-                kind=f"open_law_parent_{parent.status}",
+                kind=f"open_law_parent_{parent.path_status}",
                 message=parent.message,
                 op_id=op.op_id,
                 path=op.path,
@@ -250,7 +250,7 @@ def _payload_insert_target_mismatch_finding(op: OpenLawOperation) -> OpenLawFind
 
 def _target_finding(op: OpenLawOperation, resolved: "OpenLawResolvedPath") -> OpenLawFinding:
     return OpenLawFinding(
-        kind=f"open_law_target_{resolved.status}",
+        kind=f"open_law_target_{resolved.path_status}",
         message=resolved.message,
         op_id=op.op_id,
         path=op.path,
@@ -412,7 +412,7 @@ def _tree_has_annotations(node: IRNode) -> bool:
 class OpenLawResolvedPath:
     """Result of resolving an Open Law pipe-delimited path against an IR tree."""
 
-    status: str
+    path_status: str
     tree_path: TreePath = ()
     message: str = ""
 
@@ -431,18 +431,18 @@ def resolve_open_law_path(tree: IRNode, open_law_path: Sequence[str]) -> OpenLaw
         matches = _segment_matches(current, segment)
         if not matches:
             return OpenLawResolvedPath(
-                status="missing",
+                path_status="missing",
                 message=f"Open Law path segment {segment!r} was not found under {tuple(open_law_path)!r}.",
             )
         if len(matches) > 1:
             return OpenLawResolvedPath(
-                status="ambiguous",
+                path_status="ambiguous",
                 message=f"Open Law path segment {segment!r} matched {len(matches)} siblings under {tuple(open_law_path)!r}.",
             )
         child = matches[0]
         tree_path.append((_kind_str(child.kind), child.label or ""))
         current = child
-    return OpenLawResolvedPath(status="resolved", tree_path=tuple(tree_path))
+    return OpenLawResolvedPath(path_status="resolved", tree_path=tuple(tree_path))
 
 
 def _segment_matches(current: IRNode, segment: str) -> Tuple[IRNode, ...]:

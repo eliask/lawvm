@@ -29,7 +29,7 @@ from lawvm.tools.solver_slot_assignment import (
 
 def test_single_slot_single_live_unique():
     witness = solve_slot_assignment(["2"], ["2"])
-    assert witness.status == "unique"
+    assert witness.solver_status == "unique"
     assert witness.selected_assignment == {0: 0}
     assert witness.payload_slot_count == 1
     assert witness.live_slot_count == 1
@@ -44,7 +44,7 @@ def test_single_slot_single_live_unique():
 
 def test_two_slots_exact_match_unique():
     witness = solve_slot_assignment(["1", "3"], ["1", "2", "3"])
-    assert witness.status == "unique"
+    assert witness.solver_status == "unique"
     assert witness.selected_assignment is not None
     # payload 0 ("1") -> live 0 ("1"), payload 1 ("3") -> live 2 ("3")
     assert witness.selected_assignment[0] == 0
@@ -64,7 +64,7 @@ def test_two_identical_labels_ambiguous():
     solutions exist -> ambiguous.
     """
     witness = solve_slot_assignment(["2", "2"], ["2", "2", "2"])
-    assert witness.status == "ambiguous"
+    assert witness.solver_status == "ambiguous"
     assert witness.alternative_model_count >= 2
     assert witness.selected_assignment is not None
 
@@ -76,7 +76,7 @@ def test_two_identical_labels_with_monotone_tiebreak():
     (weight 3) makes {0:0, 1:1} uniquely optimal.
     """
     witness = solve_slot_assignment(["2", "2"], ["2", "2"])
-    assert witness.status == "unique"
+    assert witness.solver_status == "unique"
     assert witness.selected_assignment == {0: 0, 1: 1}
 
 
@@ -87,14 +87,14 @@ def test_two_identical_labels_with_monotone_tiebreak():
 def test_incompatible_labels_infeasible():
     """Payload label "5" cannot match any live label ["1", "2"]."""
     witness = solve_slot_assignment(["5"], ["1", "2"])
-    assert witness.status == "infeasible"
+    assert witness.solver_status == "infeasible"
     assert witness.selected_assignment is None
 
 
 def test_more_payload_than_live_infeasible():
     """3 payload slots but only 1 compatible live slot -> infeasible."""
     witness = solve_slot_assignment(["1", "2", "3"], ["1"])
-    assert witness.status == "infeasible"
+    assert witness.solver_status == "infeasible"
     assert witness.selected_assignment is None
 
 
@@ -109,7 +109,7 @@ def test_monotone_order_preference():
     The exact-match assignment is {0: 0, 1: 1}, which is also monotone.
     """
     witness = solve_slot_assignment(["1", "2"], ["1", "2", "3"])
-    assert witness.status == "unique"
+    assert witness.solver_status == "unique"
     assert witness.selected_assignment == {0: 0, 1: 1}
 
 
@@ -133,7 +133,7 @@ def test_monotone_preference_with_positional():
     # The status depends on whether monotone bonus creates a unique optimum.
     # 0->0, 1->1 gets mono bonus of 3. 0->1, 1->0 gets 0.
     # So the unique optimal is 0->0, 1->1.
-    assert witness.status == "unique"
+    assert witness.solver_status == "unique"
 
 
 # ---------------------------------------------------------------------------
@@ -146,7 +146,7 @@ def test_normalized_label_match():
     "2 §." normalizes to "2", matching live "2".
     """
     witness = solve_slot_assignment(["2 §."], ["1", "2", "3"])
-    assert witness.status == "unique"
+    assert witness.solver_status == "unique"
     assert witness.selected_assignment == {0: 1}
 
 
@@ -161,7 +161,7 @@ def test_custom_normalizer():
         ["1", "2", "3"],
         label_normalizer=strip_prefix,
     )
-    assert witness.status == "unique"
+    assert witness.solver_status == "unique"
     assert witness.selected_assignment == {0: 0, 1: 2}
 
 
@@ -209,21 +209,21 @@ def test_diagnose_infeasible():
 
 def test_empty_payload_trivial_unique():
     witness = solve_slot_assignment([], ["1", "2", "3"])
-    assert witness.status == "unique"
+    assert witness.solver_status == "unique"
     assert witness.selected_assignment == {}
     assert witness.payload_slot_count == 0
 
 
 def test_empty_both_trivial_unique():
     witness = solve_slot_assignment([], [])
-    assert witness.status == "unique"
+    assert witness.solver_status == "unique"
     assert witness.selected_assignment == {}
 
 
 def test_empty_live_with_payload_infeasible():
     """Payload slots exist but no live slots to assign to."""
     witness = solve_slot_assignment(["1"], [])
-    assert witness.status == "infeasible"
+    assert witness.solver_status == "infeasible"
 
 
 # ---------------------------------------------------------------------------
@@ -234,20 +234,20 @@ def test_witness_is_frozen():
     """SlotAssignmentWitness is immutable."""
     witness = solve_slot_assignment(["1"], ["1"])
     with pytest.raises(AttributeError):
-        cast(Any, witness).status = "ambiguous"
+        cast(Any, witness).solver_status = "ambiguous"
 
 
 def test_three_payload_three_live_distinct():
     """Three distinct labels map uniquely to three lives."""
     witness = solve_slot_assignment(["1", "2", "3"], ["1", "2", "3"])
-    assert witness.status == "unique"
+    assert witness.solver_status == "unique"
     assert witness.selected_assignment == {0: 0, 1: 1, 2: 2}
 
 
 def test_sparse_assignment_skips_live_slots():
     """Two payload slots into five live slots, labels match non-adjacent."""
     witness = solve_slot_assignment(["2", "4"], ["1", "2", "3", "4", "5"])
-    assert witness.status == "unique"
+    assert witness.solver_status == "unique"
     assert witness.selected_assignment == {0: 1, 1: 3}
 
 
@@ -258,4 +258,4 @@ def test_solve_time_is_reasonable():
         ["1", "2", "3", "4", "5", "6", "7"],
     )
     assert witness.solve_time_ms < 1000
-    assert witness.status == "unique"
+    assert witness.solver_status == "unique"

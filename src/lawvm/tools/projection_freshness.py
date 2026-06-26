@@ -50,13 +50,13 @@ class FreshnessVerdict:
     """
 
     projection_name: str
-    status: str
+    freshness_status: str
     recorded_hash: str
     current_hash: str
 
     @property
     def is_stale(self) -> bool:
-        return self.status == "stale"
+        return self.freshness_status == "stale"
 
 
 # ---------------------------------------------------------------------------
@@ -281,7 +281,7 @@ def warn_if_stale(
         # Freshness is advisory; never let it break a real query.
         return FreshnessVerdict(stem, "unknown", "", "")
 
-    if verdict.status not in ("stale", "no_state"):
+    if verdict.freshness_status not in ("stale", "no_state"):
         return verdict
 
     key = (stem, str(Path(data_dir).resolve()))
@@ -292,7 +292,7 @@ def warn_if_stale(
     rebuild_cmd = _rebuild_command(stem, jurisdiction)
     strict = _truthy(os.environ.get("LAWVM_STRICT_FRESHNESS"))
 
-    if verdict.status == "stale":
+    if verdict.freshness_status == "stale":
         lines = [
             "",
             "=" * 72,
@@ -320,7 +320,7 @@ def warn_if_stale(
 
     if strict:
         print(
-            f"error: LAWVM_STRICT_FRESHNESS set and {stem} is {verdict.status}.",
+            f"error: LAWVM_STRICT_FRESHNESS set and {stem} is {verdict.freshness_status}.",
             file=sys.stderr,
         )
         sys.exit(2)
@@ -373,5 +373,5 @@ def stale_projection_names(
     return tuple(
         name
         for name, v in verdicts.items()
-        if v.status in ("stale", "no_state")
+        if v.freshness_status in ("stale", "no_state")
     )

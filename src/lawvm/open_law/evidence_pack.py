@@ -43,7 +43,7 @@ class EvidenceRowSummary(TypedDict):
     action: str
     codify_path: str
     xml_path: str
-    status: str
+    audit_status: str
     snapshot_matches_replay: bool
     changed_path_count: int
     unexplained_path_count: int
@@ -104,11 +104,11 @@ def write_maryland_evidence_pack(
 def _pick_exemplars(rows: Tuple[OpenLawOperationAuditRow, ...]) -> dict[str, EvidenceRowSummary]:
     exemplars: dict[str, EvidenceRowSummary] = {}
     wanted = (
-        ("clean_replace", lambda row: row.status == "matched" and row.action == "replace"),
-        ("replace_or_insert", lambda row: row.status == "matched" and row.action == "replace-or-insert"),
-        ("metadata_lane", lambda row: row.status == "metadata_matched"),
-        ("lifecycle_lane", lambda row: row.status == "lifecycle_unsupported"),
-        ("divergence", lambda row: row.status == "diverged"),
+        ("clean_replace", lambda row: row.audit_status == "matched" and row.action == "replace"),
+        ("replace_or_insert", lambda row: row.audit_status == "matched" and row.action == "replace-or-insert"),
+        ("metadata_lane", lambda row: row.audit_status == "metadata_matched"),
+        ("lifecycle_lane", lambda row: row.audit_status == "lifecycle_unsupported"),
+        ("divergence", lambda row: row.audit_status == "diverged"),
     )
     for name, predicate in wanted:
         for row in rows:
@@ -126,7 +126,7 @@ def _row_summary(row: OpenLawOperationAuditRow) -> EvidenceRowSummary:
         "action": row.action,
         "codify_path": "|".join(row.codify_path),
         "xml_path": row.xml_path,
-        "status": row.status,
+        "audit_status": row.audit_status,
         "snapshot_matches_replay": row.snapshot_matches_replay,
         "changed_path_count": row.changed_path_count,
         "unexplained_path_count": row.unexplained_path_count,
@@ -217,7 +217,7 @@ def _summary_markdown(
                 f"- action: `{row['action']}`",
                 f"- codify path: `{row['codify_path']}`",
                 f"- XML file: `{row['xml_path']}`",
-                f"- status: `{row['status']}`",
+                f"- status: `{row['audit_status']}`",
                 f"- findings: `{', '.join(row['findings']) or '-'}`",
                 "",
             ]

@@ -44,7 +44,7 @@ def build_pair_status_payload(base_id: str, oracle_id: str, title: str = "") -> 
         "base_id": result.base_id,
         "oracle_id": result.oracle_id,
         "title": result.title,
-        "status": result.status,
+        "bench_status": result.bench_status,
         "source_basis": planning.plan.source_basis.value,
         "comparison_class": result.comparison_class,
         "benchmark_reporting_stratum": reporting_summary["benchmark_reporting_stratum"],
@@ -79,7 +79,7 @@ def main(args: "argparse.Namespace") -> None:
     print(f"  base_id    : {payload['base_id']}")
     print(f"  oracle_id  : {payload['oracle_id']}")
     print(f"  title      : {payload['title']}")
-    print(f"  status     : {payload['status']}")
+    print(f"  status     : {payload['bench_status']}")
     print(f"  basis      : {payload['source_basis']}")
     print(f"  compare    : {payload['comparison_class']}")
     print(

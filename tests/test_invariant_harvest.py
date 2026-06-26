@@ -86,7 +86,7 @@ def test_harvest_replay_invariants_prefers_typed_meta() -> None:
         ("flattened_sublist_mixed_family", "body/section:4/subsection:1", "replay_meta_lint"),
     ]
     assert audit_rows[0]["replay_profile_id"] == "core_replay_strict_v1"
-    assert audit_rows[2]["status"] == "warning"
+    assert audit_rows[2]["audit_status"] == "warning"
 
     assert {row["signal_type"] for row in self_rows} == {
         "invariant_violation",
@@ -164,7 +164,7 @@ def test_harvest_replay_invariants_includes_finding_ledger() -> None:
     records = harvest_replay_invariants(replay_meta={}, findings=findings)
     rows = records_to_audit_rows("1994/1472", records)
 
-    assert [(row["violation_type"], row["source"], row["status"]) for row in rows] == [
+    assert [(row["violation_type"], row["source"], row["audit_status"]) for row in rows] == [
         ("duplicate_label", "finding_ledger", "violation"),
         ("label_sequence_gap", "finding_ledger_lint", "warning"),
     ]

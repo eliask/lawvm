@@ -201,7 +201,7 @@ def test_ee_pair_status_main_prints_matched_and_open(capsys, monkeypatch) -> Non
             oracle_id=oracle_id,
             title=title,
             as_of="2011-03-17",
-            status="OK",
+            bench_status="OK",
             comparison_class="commensurable_delta",
             core_benchmark=True,
             n_ops=217,

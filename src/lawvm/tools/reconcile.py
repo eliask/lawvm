@@ -354,7 +354,7 @@ def _result_to_jsonable(r: ReconcileResult) -> dict[str, Any]:
         "scope": r.scope,
         "scope_note": r.scope_note,
         "replay": {
-            "status": r.replay_status,
+            "replay_status": r.replay_status,
             "available": r.replay_available,
             "text": r.replay_text,
             "version": r.replay_version,
@@ -446,7 +446,7 @@ def main(args: Any) -> None:
 
     if jurisdiction != "fi":
         print(
-            json.dumps({"status": "unsupported_jurisdiction", "jurisdiction": jurisdiction})
+            json.dumps({"reconcile_status": "unsupported_jurisdiction", "jurisdiction": jurisdiction})
             if getattr(args, "json", False)
             else f"reconcile currently supports jurisdiction 'fi' only (got {jurisdiction!r})",
             file=sys.stderr if not getattr(args, "json", False) else sys.stdout,

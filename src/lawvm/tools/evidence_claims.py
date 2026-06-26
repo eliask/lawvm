@@ -724,7 +724,7 @@ def _build_section_claims(
                                 "observation_sources": ["compile_result", "section_strict_lineage"],
                                 "support": {
                                     "amendment_id": getattr(_ssv, "amendment_id", ""),
-                                    "status": getattr(_ssv, "verdict_status", ""),
+                                    "verdict_status": getattr(_ssv, "verdict_status", ""),
                                     "barrier_kinds": sorted(_barrier_kinds),
                                     "barrier_families": sorted(_barrier_families),
                                 },
@@ -742,7 +742,7 @@ def _build_section_claims(
                                 "observation_sources": ["compile_result", "section_strict_lineage"],
                                 "support": {
                                     "amendment_id": getattr(_ssv, "amendment_id", ""),
-                                    "status": getattr(_ssv, "verdict_status", ""),
+                                    "verdict_status": getattr(_ssv, "verdict_status", ""),
                                     "barrier_kinds": sorted(_barrier_kinds),
                                     "barrier_families": sorted(_barrier_families),
                                 },

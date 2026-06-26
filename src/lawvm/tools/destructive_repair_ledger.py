@@ -24,7 +24,7 @@ class DestructiveRepairLedgerEntry:
     finding_emitted: str
     strict_barrier: str
     known_corpus_examples: tuple[str, ...]
-    status: str
+    ledger_status: str
 
 
 LEDGER_ENTRIES: tuple[DestructiveRepairLedgerEntry, ...] = (
@@ -38,7 +38,7 @@ LEDGER_ENTRIES: tuple[DestructiveRepairLedgerEntry, ...] = (
         finding_emitted="ELAB.REJECTED_OPERATION / ELAB.STRICT_REJECTED_OPERATION",
         strict_barrier="ELAB.STRICT_REJECTED_OPERATION",
         known_corpus_examples=("strict fallback gating", "typed rejected constraint families"),
-        status="safe",
+        ledger_status="safe",
     ),
     DestructiveRepairLedgerEntry(
         family="explicit_scope_rewrite",
@@ -55,7 +55,7 @@ LEDGER_ENTRIES: tuple[DestructiveRepairLedgerEntry, ...] = (
             "chapter_scope_stripped_subsection_insert",
             "chapter_scope_stripped_section_facet_insert",
         ),
-        status="safe",
+        ledger_status="safe",
     ),
     DestructiveRepairLedgerEntry(
         family="apply_mutation_boundary",
@@ -75,7 +75,7 @@ LEDGER_ENTRIES: tuple[DestructiveRepairLedgerEntry, ...] = (
             "REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET"
         ),
         known_corpus_examples=("boundary violation event stream",),
-        status="should_fail",
+        ledger_status="should_fail",
     ),
     DestructiveRepairLedgerEntry(
         family="uncovered_body_skip",
@@ -91,7 +91,7 @@ LEDGER_ENTRIES: tuple[DestructiveRepairLedgerEntry, ...] = (
             "future_repeal",
             "duplicate_recovered_candidate",
         ),
-        status="safe",
+        ledger_status="safe",
     ),
     DestructiveRepairLedgerEntry(
         family="body_coverage_ignored_or_rejected",
@@ -103,7 +103,7 @@ LEDGER_ENTRIES: tuple[DestructiveRepairLedgerEntry, ...] = (
         finding_emitted="COVERAGE.BODY_UNIT_IGNORED / COVERAGE.CLAIM_REJECTED / COVERAGE.UNRESOLVED_BODY_GAP",
         strict_barrier="COVERAGE.UNRESOLVED_BODY_GAP",
         known_corpus_examples=("missing_num", "unsupported_target_unit_kind", "ambiguous_uncovered"),
-        status="safe",
+        ledger_status="safe",
     ),
     DestructiveRepairLedgerEntry(
         family="partial_whole_section_replace_skip",
@@ -118,7 +118,7 @@ LEDGER_ENTRIES: tuple[DestructiveRepairLedgerEntry, ...] = (
             "PARTIAL_WHOLE_SECTION_REPLACE_REJECTED",
             "STALE_WHOLE_SECTION_SHELL_REJECTED",
         ),
-        status="safe",
+        ledger_status="safe",
     ),
     DestructiveRepairLedgerEntry(
         family="base_editorial_strip",
@@ -130,7 +130,7 @@ LEDGER_ENTRIES: tuple[DestructiveRepairLedgerEntry, ...] = (
         finding_emitted="BASE_EDITORIAL_STRIP",
         strict_barrier="",
         known_corpus_examples=("image block removal", "editorial note stripping"),
-        status="safe",
+        ledger_status="safe",
     ),
     DestructiveRepairLedgerEntry(
         family="base_numbering_repair",
@@ -142,7 +142,7 @@ LEDGER_ENTRIES: tuple[DestructiveRepairLedgerEntry, ...] = (
         finding_emitted="BASE_NUMBERING_REPAIR",
         strict_barrier="",
         known_corpus_examples=("gap witness",),
-        status="safe",
+        ledger_status="safe",
     ),
     DestructiveRepairLedgerEntry(
         family="base_duplicate_sibling_drop",
@@ -154,7 +154,7 @@ LEDGER_ENTRIES: tuple[DestructiveRepairLedgerEntry, ...] = (
         finding_emitted="BASE_DUPLICATE_SIBLING_DROP",
         strict_barrier="",
         known_corpus_examples=("duplicate sibling drop",),
-        status="safe",
+        ledger_status="safe",
     ),
     DestructiveRepairLedgerEntry(
         family="base_digit_reset_split",
@@ -166,7 +166,7 @@ LEDGER_ENTRIES: tuple[DestructiveRepairLedgerEntry, ...] = (
         finding_emitted="BASE_DIGIT_RESET_SPLIT",
         strict_barrier="",
         known_corpus_examples=("digit reset split",),
-        status="safe",
+        ledger_status="safe",
     ),
     DestructiveRepairLedgerEntry(
         family="base_duplicate_tail_split",
@@ -178,7 +178,7 @@ LEDGER_ENTRIES: tuple[DestructiveRepairLedgerEntry, ...] = (
         finding_emitted="BASE_DUPLICATE_TAIL_SPLIT",
         strict_barrier="",
         known_corpus_examples=("duplicated-tail split",),
-        status="safe",
+        ledger_status="safe",
     ),
 )
 
@@ -232,7 +232,7 @@ def render_markdown(entries: tuple[DestructiveRepairLedgerEntry, ...]) -> str:
                     entry.finding_emitted or "-",
                     entry.strict_barrier or "-",
                     examples or "-",
-                    entry.status,
+                    entry.ledger_status,
                 ]
             )
             + " |"

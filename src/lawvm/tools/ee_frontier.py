@@ -32,7 +32,7 @@ class EEFrontierRow:
     n_ops: int
     n_divs: int
     sec_match: float
-    status: str
+    frontier_status: str
     comparison_class: str
     source_basis: str
     core_benchmark: bool
@@ -160,7 +160,7 @@ def _load_rows(path: Path) -> list[EEFrontierRow]:
                     n_ops=_to_int(row.get("n_ops")),
                     n_divs=n_divs,
                     sec_match=_to_float(row.get("sec_match")),
-                    status=row.get("status", ""),
+                    frontier_status=row.get("bench_status", ""),
                     comparison_class=row.get("comparison_class", ""),
                     source_basis=row.get("source_basis", ""),
                     core_benchmark=row.get("core_benchmark", "1") in ("1", "True", "true"),
@@ -212,7 +212,7 @@ def build_frontier_payload(
                     n_ops=row.n_ops,
                     n_divs=row.n_divs,
                     sec_match=row.sec_match,
-                    status=row.status,
+                    frontier_status=row.frontier_status,
                     comparison_class=row.comparison_class,
                     source_basis=source_basis,
                     core_benchmark=row.core_benchmark,
@@ -237,7 +237,7 @@ def build_frontier_payload(
 
         open_rows = [
             row for row in rows
-            if row.status == "OK" and row.frontier_bucket == "open"
+            if row.frontier_status == "OK" and row.frontier_bucket == "open"
         ]
         open_rows.sort(key=_open_frontier_rank)
         open_headline_rows = [
@@ -251,13 +251,13 @@ def build_frontier_payload(
 
         adjudicated_rows = [
             row for row in rows
-            if row.status == "OK" and row.frontier_bucket == "adjudicated_nonzero"
+            if row.frontier_status == "OK" and row.frontier_bucket == "adjudicated_nonzero"
         ]
         adjudicated_rows.sort(key=lambda row: (row.sec_match, -row.n_divs))
 
         legacy_rows = [
             row for row in rows
-            if row.status == "OK" and row.frontier_bucket == "legacy_unclassified_nonzero"
+            if row.frontier_status == "OK" and row.frontier_bucket == "legacy_unclassified_nonzero"
         ]
         legacy_rows.sort(key=lambda row: (row.sec_match, -row.n_divs))
 

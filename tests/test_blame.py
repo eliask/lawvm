@@ -313,7 +313,7 @@ def test_blame_latest_unique_suffix_op_beats_older_exact_container_op(monkeypatc
 
     payload = _json.loads(capsys.readouterr().out)
     [row] = payload["provisions"]
-    assert row["status"] == "modified_by_op"
+    assert row["blame_status"] == "modified_by_op"
     assert row["last_op"]["source_statute"] == "2026/200"
     assert row["last_op"]["op_id"] == "op_new"
 
@@ -500,7 +500,7 @@ def test_status_unmodified_base_text(monkeypatch, capsys) -> None:
         monkeypatch, capsys, statute_id="2014/1429", address="section:30", fake_replay=fake_replay
     )
     [row] = payload["provisions"]
-    assert row["status"] == "unmodified_base_text"
+    assert row["blame_status"] == "unmodified_base_text"
     assert "last_op" not in row
     assert "broken_at" not in row
 
@@ -526,7 +526,7 @@ def test_status_modified_by_op(monkeypatch, capsys) -> None:
         monkeypatch, capsys, statute_id="2014/1429", address="section:30", fake_replay=fake_replay
     )
     [row] = payload["provisions"]
-    assert row["status"] == "modified_by_op"
+    assert row["blame_status"] == "modified_by_op"
     assert row["last_op"]["source_statute"] == "2025/1382"
     assert row["last_op"]["op_id"] == "op_0"
     assert "broken_at" not in row
@@ -578,7 +578,7 @@ def test_status_modified_by_op_ignores_later_skipped_apply_event(monkeypatch, ca
         monkeypatch, capsys, statute_id="2014/1429", address="section:30", fake_replay=fake_replay
     )
     [row] = payload["provisions"]
-    assert row["status"] == "modified_by_op"
+    assert row["blame_status"] == "modified_by_op"
     assert row["last_op"]["op_id"] == "op_0"
     assert row["last_op"]["action"] == "insert"
 
@@ -629,7 +629,7 @@ def test_status_modified_by_op_prefers_same_source_content_touch_over_relabel(mo
         monkeypatch, capsys, statute_id="2014/1429", address="section:30", fake_replay=fake_replay
     )
     [row] = payload["provisions"]
-    assert row["status"] == "modified_by_op"
+    assert row["blame_status"] == "modified_by_op"
     assert row["last_op"]["op_id"] == "op_0"
     assert row["last_op"]["action"] == "insert"
 
@@ -642,7 +642,7 @@ def test_status_op_unapplied_address_scope_failed_op(monkeypatch, capsys) -> Non
         monkeypatch, capsys, statute_id="2010/1326", address="section:30", fake_replay=fake_replay
     )
     [row] = payload["provisions"]
-    assert row["status"] == "op_unapplied_or_engine_error"
+    assert row["blame_status"] == "op_unapplied_or_engine_error"
     assert row["broken_at"] == "2022/378"
 
 
@@ -675,7 +675,7 @@ def test_status_op_unapplied_precedence_over_modified_by_op(monkeypatch, capsys)
         monkeypatch, capsys, statute_id="2014/1429", address="section:30", fake_replay=fake_replay
     )
     [row] = payload["provisions"]
-    assert row["status"] == "op_unapplied_or_engine_error"
+    assert row["blame_status"] == "op_unapplied_or_engine_error"
     assert row["broken_at"] == "2025/1382"
     # the proven 2020 modification is still carried
     assert row["last_op"]["source_statute"] == "2020/100"
@@ -689,7 +689,7 @@ def test_status_address_unresolved(monkeypatch, capsys) -> None:
         monkeypatch, capsys, statute_id="2014/1429", address="section:999", fake_replay=fake_replay
     )
     [row] = payload["provisions"]
-    assert row["status"] == "address_unresolved"
+    assert row["blame_status"] == "address_unresolved"
     assert row["address"] == "section:999"
 
 
@@ -710,7 +710,7 @@ def test_status_address_unresolved_prefers_unverifiable_under_break(monkeypatch,
         monkeypatch, capsys, statute_id="2014/1429", address="section:999", fake_replay=fake_replay
     )
     [row] = payload["provisions"]
-    assert row["status"] == "op_unapplied_or_engine_error"
+    assert row["blame_status"] == "op_unapplied_or_engine_error"
     assert row["broken_at"] == "2025/1382"
 
 
@@ -805,7 +805,7 @@ def test_specimen_status_2014_1429_section_30_modified_by_op(capsys) -> None:
     payload = _json.loads(capsys.readouterr().out)
     assert payload["timeline_breaks"] == []
     [row] = payload["provisions"]
-    assert row["status"] == "modified_by_op"
+    assert row["blame_status"] == "modified_by_op"
     assert "broken_at" not in row
     assert row["last_op"]["source_statute"] == "2025/1382"
 
@@ -830,7 +830,7 @@ def test_specimen_blame_2023_703_section_9_attributes_2026_376(capsys) -> None:
     payload = _json.loads(capsys.readouterr().out)
     [row] = payload["provisions"]
     assert row["address"] == "part:1/chapter:2/section:9"
-    assert row["status"] == "modified_by_op"
+    assert row["blame_status"] == "modified_by_op"
     assert row["last_op"]["source_statute"] == "2026/376"
     assert row["last_op"]["action"] == "insert"
 
@@ -856,7 +856,7 @@ def test_specimen_blame_1997_1412_section_11_attributes_later_child_op(capsys) -
     payload = _json.loads(capsys.readouterr().out)
     [row] = payload["provisions"]
     assert row["address"] == "chapter:2/section:11"
-    assert row["status"] == "modified_by_op"
+    assert row["blame_status"] == "modified_by_op"
     assert row["last_op"]["source_statute"] == "2026/26"
     assert row["last_op"]["action"] == "replace"
     assert row["last_op"]["op_id"] == "op_8"
@@ -878,5 +878,5 @@ def test_specimen_status_unbroken_statute_unmodified_base_text(capsys) -> None:
     payload = _json.loads(capsys.readouterr().out)
     assert payload["timeline_breaks"] == []
     [row] = payload["provisions"]
-    assert row["status"] == "unmodified_base_text"
+    assert row["blame_status"] == "unmodified_base_text"
     assert "last_op" not in row

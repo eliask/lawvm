@@ -260,7 +260,7 @@ def _print_explain(args: Namespace) -> None:
         print("no matching Open Law audit rows")
         return
     for row in selected:
-        print(f"{row['op_id']} {row['status']} {row['action']} {'|'.join(row['codify_path'])}")
+        print(f"{row['op_id']} {row['audit_status']} {row['action']} {'|'.join(row['codify_path'])}")
         print(f"  transition: {row['before_branch']} -> {row['after_branch']}")
         print(f"  action file: {row['action_path']}")
         if row.get("xml_path"):
@@ -531,7 +531,7 @@ def _human_summary_provenance_issues(report_dir: Path, artifact_manifest: Mappin
 
 
 def _count_status(records: tuple[Any, ...], row_status: str) -> int:
-    return sum(1 for record in records if record.original.get("status") == row_status)
+    return sum(1 for record in records if record.original.get("audit_status") == row_status)
 
 
 def _int_field(value: object) -> int:
@@ -549,7 +549,7 @@ def _select_explain_rows(
     for row in rows:
         if op_id and row.get("op_id") != op_id:
             continue
-        if row_status and row.get("status") != row_status:
+        if row_status and row.get("audit_status") != row_status:
             continue
         selected.append(row)
         if len(selected) >= limit:

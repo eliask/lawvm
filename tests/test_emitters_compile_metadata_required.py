@@ -130,7 +130,7 @@ def test_export_parquet_raises_without_compile_metadata(tmp_path: Path) -> None:
         "amendment_count": 1,
         "oracle_version": "",
         "score": 1.0,
-        "status": "OK",
+        "run_status": "OK",
         "diff_kind_summary": "",
     }
     with pytest.raises(ValueError, match="CompileMetadata is required"):

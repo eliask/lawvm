@@ -253,7 +253,7 @@ def _rebuild_projection(
         "name": spec.name,
         "row_count": 0,
         "elapsed": 0.0,
-        "status": "ok",
+        "rebuild_status": "ok",
         "error": None,
     }
 
@@ -282,7 +282,7 @@ def _rebuild_projection(
         write_state(parquet_out, state)
 
     except Exception as exc:
-        result["status"] = "error"
+        result["rebuild_status"] = "error"
         result["error"] = str(exc)
         print(f"  ERROR {spec.name}: {exc}", file=sys.stderr)
 
@@ -700,7 +700,7 @@ def rebuild_indexes(
             workers=workers,
         )
 
-        if res["status"] == "ok":
+        if res["rebuild_status"] == "ok":
             rebuilt.append(spec.name)
             print(
                 f"    -> {res['row_count']:,} rows in {res['elapsed']:.1f}s"
@@ -753,11 +753,11 @@ def _run_freshness_check(
         jurisdiction=jurisdiction,
         schema_version=schema_version,
     )
-    stale = [n for n, v in verdicts.items() if v.status in ("stale", "no_state")]
+    stale = [n for n, v in verdicts.items() if v.freshness_status in ("stale", "no_state")]
     print(f"freshness check: {jurisdiction}/{schema_version} ({projection_dir})")
     for name in sorted(verdicts):
         v = verdicts[name]
-        print(f"  {name:<22} {v.status}")
+        print(f"  {name:<22} {v.freshness_status}")
     if stale:
         print(
             f"\n{len(stale)} projection(s) stale/missing-state: {', '.join(sorted(stale))}",

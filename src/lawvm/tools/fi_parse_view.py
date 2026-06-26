@@ -161,7 +161,7 @@ def build_forest_view(
             "char_start": n.char_start,
             "char_end": n.char_end,
             "families": list(n.families),
-            "status": n.status,
+            "node_status": n.status,
             "text": body[n.char_start : n.char_end],
             "edges": edges,
         }
@@ -239,8 +239,8 @@ def render_forest_view(view: dict[str, Any], statute_id: str) -> str:
         fam = "  {" + "|".join(node["families"]) + "}" if node["families"] else ""
         status = (
             ""
-            if node["status"] in ("ok", "owned", "covered")
-            else f"  <{node['status']}>"
+            if node["node_status"] in ("ok", "owned", "covered")
+            else f"  <{node['node_status']}>"
         )
         extra = ""
         if node["kind"] == "residual_span":

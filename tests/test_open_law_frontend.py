@@ -84,7 +84,7 @@ def test_parse_open_law_xml_preserves_direct_path_labels() -> None:
 
     resolved = resolve_open_law_path(tree, ("10", "41", "02", ".04"))
 
-    assert resolved.status == "resolved"
+    assert resolved.path_status == "resolved"
     assert resolved.tree_path == (
         ("hcontainer", "10"),
         ("hcontainer", "41"),
@@ -313,7 +313,7 @@ def test_open_law_finding_evidence_row_uses_shared_disposition_envelope() -> Non
         action="replace",
         codify_path=("10", "41", "02", ".04"),
         xml_path="10/41/02.xml",
-        status="diverged",
+        audit_status="diverged",
     )
     blocking_finding = OpenLawFinding(
         kind="open_law_publication_snapshot_mismatch",
@@ -415,7 +415,7 @@ def test_explicit_path_prefix_wraps_partial_subtree_without_guessing() -> None:
     wrapped = wrap_open_law_body_with_prefix(partial, ("10", "41"))
     resolved = resolve_open_law_path(wrapped, ("10", "41", "02", ".04"))
 
-    assert resolved.status == "resolved"
+    assert resolved.path_status == "resolved"
     assert resolved.tree_path == (
         ("hcontainer", "10"),
         ("hcontainer", "41"),
@@ -457,8 +457,8 @@ def test_heading_and_annotations_resolve_as_explicit_path_segments() -> None:
 
     wrapped = wrap_open_law_body_with_prefix(tree, ("10", "27"))
 
-    assert resolve_open_law_path(wrapped, ("10", "27", "02", "heading")).status == "resolved"
-    assert resolve_open_law_path(wrapped, ("10", "27", "02", "annos")).status == "resolved"
+    assert resolve_open_law_path(wrapped, ("10", "27", "02", "heading")).path_status == "resolved"
+    assert resolve_open_law_path(wrapped, ("10", "27", "02", "annos")).path_status == "resolved"
 
 
 def test_corpus_transition_uses_only_new_after_branch_actions(tmp_path) -> None:
@@ -571,7 +571,7 @@ def test_corpus_audit_replays_annotation_metadata_targets_without_body_claim(tmp
     report = audit_maryland_transition("publication/before", "publication/after-with-body", repos=make_maryland_repos(source_repo, codified_repo))
 
     assert report.summary["metadata_matched"] == 1
-    assert report.operation_rows[0].status == "metadata_matched"
+    assert report.operation_rows[0].audit_status == "metadata_matched"
     assert [finding.kind for finding in report.operation_rows[0].findings] == ["open_law_metadata_target_replayed"]
 
 
@@ -732,7 +732,7 @@ def test_corpus_audit_records_register_expire_as_lifecycle_lane(tmp_path) -> Non
     report = audit_maryland_transition("publication/before", "publication/after", repos=make_maryland_repos(source_repo, codified_repo))
 
     assert report.summary["lifecycle_unsupported"] == 1
-    assert report.operation_rows[0].status == "lifecycle_unsupported"
+    assert report.operation_rows[0].audit_status == "lifecycle_unsupported"
     assert report.operation_rows[0].expire_date == "2026-11-20"
 
 
@@ -1090,7 +1090,7 @@ def test_open_law_explain_text_includes_evidence_dispositions(tmp_path, capsys) 
     report_dir.mkdir()
     row = {
         "op_id": "editorial-actions/example.xml:1",
-        "status": "lifecycle_unsupported",
+        "audit_status": "lifecycle_unsupported",
         "action": "expire",
         "codify_path": ["regulations", "emergency", "25-138-E"],
         "before_branch": "publication/before",
@@ -1206,7 +1206,7 @@ def test_planning_failure_is_marked_source_pathology() -> None:
 
     plan = plan_maryland_comar_operation(ops[0])
 
-    assert plan.status == "failed"
+    assert plan.plan_status == "failed"
     assert plan.finding is not None
     assert plan.finding.source_pathology is True
 
@@ -1381,12 +1381,12 @@ def test_corpus_body_lane_projects_annotations_when_action_mixes_body_and_metada
 
     body_row = next(row for row in report.operation_rows if row.codify_path[-1] == ".04")
     metadata_row = next(row for row in report.operation_rows if row.codify_path[-1] == "annos")
-    assert body_row.status == "matched"
+    assert body_row.audit_status == "matched"
     assert body_row.unexplained_path_count == 0
     assert "open_law_publication_snapshot_mismatch" not in [finding.kind for finding in body_row.findings]
     assert "open_law_unexplained_publication_mutation" not in [finding.kind for finding in body_row.findings]
     assert "open_law_annotation_lane_policy_unset" not in [finding.kind for finding in body_row.findings]
-    assert metadata_row.status == "metadata_matched"
+    assert metadata_row.audit_status == "metadata_matched"
 
 
 def _chapter_xml(text: str) -> str:

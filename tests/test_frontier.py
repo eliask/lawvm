@@ -284,8 +284,8 @@ def test_apply_refreshed_scores_replaces_stale_similarity() -> None:
     refreshed = _apply_refreshed_scores(
         bench_data,
         {
-            "2003/605": {"similarity": 1.0, "status": "OK"},
-            "1994/1472": {"similarity": -1.0, "status": "ERR"},
+            "2003/605": {"similarity": 1.0, "refresh_status": "OK"},
+            "1994/1472": {"similarity": -1.0, "refresh_status": "ERR"},
         },
     )
 
@@ -1716,7 +1716,7 @@ def test_frontier_main_refresh_all_scores_overrides_large_pool(monkeypatch, caps
         "lawvm.tools.frontier._run_score_refresh_parallel",
         lambda sids, workers, mode="official_consolidation", progress=True: (
             refreshed_calls.append(list(sids))
-            or {sid: {"similarity": 0.99, "status": "OK"} for sid in sids}
+            or {sid: {"similarity": 0.99, "refresh_status": "OK"} for sid in sids}
         ),
     )
     monkeypatch.setattr(

@@ -13,7 +13,7 @@ Stable JSON shape, schema ``lawvm.provenance.v1``::
       "as_of": "2026-06-09",
       "query_type": "in_force",
       "in_force": {
-        "status": "selected",
+        "in_force_status": "selected",
         "text": "...",
         "available": true,
         "version": {
@@ -257,7 +257,7 @@ def build_provenance(
         "as_of": as_of_value,
         "query_type": query_type,
         "in_force": {
-            "status": payload.get("provision_status"),
+            "in_force_status": payload.get("provision_status"),
             "text": text.get("rendered") or "",
             "available": bool(text.get("available", False)),
             "version": {
@@ -528,7 +528,7 @@ def _render_human(record: dict[str, Any], *, link: bool = False) -> str:
     lines.append(f"locator           : {record['locator']}")
     lines.append(f"query             : {record['query_type']}")
     in_force = record["in_force"]
-    lines.append(f"status            : {in_force['status']}")
+    lines.append(f"status            : {in_force['in_force_status']}")
     lines.append("")
     if in_force["available"] and in_force["text"]:
         lines.append(in_force["text"])

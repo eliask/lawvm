@@ -48,7 +48,7 @@ from lawvm.tools.section_keys import (
 class SectionResult:
     """Per-section comparison outcome."""
     key: str          # normalised section num key
-    status: str       # "match" | "content_drift" | "replay_extra" | "replay_missing"
+    section_status: str       # "match" | "content_drift" | "replay_extra" | "replay_missing"
     score: float      # Levenshtein similarity (1.0 for match/missing, -1.0 for extra)
     has_failed_op: bool = False   # a FailedOp targeted this section
     has_recovery_finding: bool = False  # a replay recovery finding targeted this section
@@ -324,14 +324,14 @@ def _run_single(
         if r_node is None:
             # In oracle, not in replay
             section_results.append(SectionResult(
-                key=key, status="replay_missing", score=0.0,
+                key=key, section_status="replay_missing", score=0.0,
                 has_failed_op=has_failed, has_recovery_finding=has_recovery,
             ))
             n_missing += 1
         elif o_el is None:
             # In replay, not in oracle
             section_results.append(SectionResult(
-                key=key, status="replay_extra", score=-1.0,
+                key=key, section_status="replay_extra", score=-1.0,
                 has_failed_op=has_failed, has_recovery_finding=has_recovery,
             ))
             n_extra += 1
@@ -352,7 +352,7 @@ def _run_single(
                 status = "content_drift"
                 n_drift += 1
             section_results.append(SectionResult(
-                key=key, status=status, score=score,
+                key=key, section_status=status, score=score,
                 has_failed_op=has_failed, has_recovery_finding=has_recovery,
             ))
 
@@ -361,7 +361,7 @@ def _run_single(
 
     # --- Attribution ---
     # Diverging sections: anything that is not a perfect match
-    diverging = [s for s in section_results if s.status != "match"]
+    diverging = [s for s in section_results if s.section_status != "match"]
     n_diverging = len(diverging)
 
     if n_diverging == 0:
@@ -372,13 +372,13 @@ def _run_single(
     else:
         # REPLAY_EXTRA: LawVM has sections oracle doesn't — Finlex is behind LawVM.
         # This is an oracle/source issue, not an extraction or application miss.
-        oracle_issue = sum(1 for s in diverging if s.status == "replay_extra")
+        oracle_issue = sum(1 for s in diverging if s.section_status == "replay_extra")
 
         # Application miss: REPLAY_MISSING or CONTENT_DRIFT where we have a
         # FailedOp targeting that section — the op was parsed but couldn't apply.
         application_miss = sum(
             1 for s in diverging
-            if s.status in ("replay_missing", "content_drift") and s.has_failed_op
+            if s.section_status in ("replay_missing", "content_drift") and s.has_failed_op
         )
 
         # Extraction miss: CONTENT_DRIFT or REPLAY_MISSING where a replay
@@ -386,7 +386,7 @@ def _run_single(
         # (Exclude sections already counted as application_miss to avoid double-count.)
         extraction_miss = sum(
             1 for s in diverging
-            if s.status in ("replay_missing", "content_drift")
+            if s.section_status in ("replay_missing", "content_drift")
             and s.has_recovery_finding
             and not s.has_failed_op
         )
@@ -467,7 +467,7 @@ def _print_single(result: StepAttributionResult, verbose: bool) -> None:
     print()
 
     if verbose and result.section_results:
-        divs = [s for s in result.section_results if s.status != "match"]
+        divs = [s for s in result.section_results if s.section_status != "match"]
         if divs:
             print(f"  Diverging sections ({len(divs)}):")
             for s in sorted(divs, key=lambda x: _section_sort_key(x.key)):
@@ -477,11 +477,11 @@ def _print_single(result: StepAttributionResult, verbose: bool) -> None:
                 if s.has_recovery_finding:
                     flags.append("recovery_finding")
                 flag_str = "  [" + ", ".join(flags) + "]" if flags else ""
-                if s.status == "content_drift":
+                if s.section_status == "content_drift":
                     print(f"    {s.key:<10}  CONTENT_DRIFT  score={s.score:.2%}{flag_str}")
-                elif s.status == "replay_extra":
+                elif s.section_status == "replay_extra":
                     print(f"    {s.key:<10}  REPLAY_EXTRA{flag_str}")
-                elif s.status == "replay_missing":
+                elif s.section_status == "replay_missing":
                     print(f"    {s.key:<10}  REPLAY_MISSING{flag_str}")
             print()
 
