@@ -31,6 +31,7 @@ from lawvm.finland.ops import (
     ResolvedOp,
     projection_scope_confidence,
 )
+from lawvm.finland.op_provenance import RecognizerId, has_recognizer
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.apply_ir_ops import _relabel_section_ir
 from lawvm.finland.target_selector_facades import replace_target
@@ -128,7 +129,7 @@ def remap_body_root_replace_group_before_terminal_voimaantulo(
             or op.target_cols.target_paragraph
             or op.target_cols.target_item
             or op.target_cols.target_special
-            or not op.body_root_replace_fallback
+            or not has_recognizer(op.provenance, RecognizerId.BODY_ROOT_REPLACE)
             for op in group_ops
         )
     ):

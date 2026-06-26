@@ -265,7 +265,7 @@ def _has_conversion_witness(rop: ResolvedOp) -> bool:
         or rop.target_guessing_provenance_tags
         or rop.scope_provenance_tags
         or rop.fallback_provenance
-        or rop.uncovered_body_recovery
+        or rop.uses_uncovered_body_recovery
         or rop.witness_rule_id
     )
 

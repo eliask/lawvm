@@ -25,6 +25,7 @@ from lawvm.core.ir_helpers import _kind_str, structural_subtree_hash
 from lawvm.core.resolver_binding import RUNG_SCOPED_FIND, ResolverBinding, binding_id_for
 from lawvm.core.write_receipt import WriteReceipt, receipt_address_string
 
+from lawvm.finland.op_provenance import RecognizerId, has_recognizer
 from lawvm.finland.ops import (
     AmendmentOp,
     ContainerPathResolution,
@@ -1229,7 +1230,7 @@ def _structure_apply_view_for_op(op: AmendmentOp | ResolvedOp) -> _StructureAppl
         target_unit_kind=op.target_unit_kind if isinstance(op, ResolvedOp) else op.target_cols.target_unit_kind,
         target_section=target_section,
         op_type=op_type,
-        uncovered_body_recovery=op.uses_uncovered_body_recovery if isinstance(op, ResolvedOp) else op.uncovered_body_recovery,
+        uncovered_body_recovery=op.uses_uncovered_body_recovery if isinstance(op, ResolvedOp) else has_recognizer(op.provenance, RecognizerId.UNCOVERED_BODY),
         target_paragraph=target_paragraph,
         target_item=target_item,
         target_special=target_special,

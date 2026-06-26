@@ -2444,6 +2444,11 @@ def _partial_section_replace_diagnostics_ir(
     # Uncovered-body recovery ops are pre-validated by _recover_uncovered_body_ops
     # (no-omission guard, no-subsection-loss guard).  Skip the suspicious-partial
     # heuristic for them so routing through apply_op does not change semantics.
+    # NOTE: ``op`` here is sometimes a ``_StructureApplyView`` cast to the op
+    # union (apply_structure_ops:2715). The view already carries its
+    # ``uncovered_body_recovery`` bool sourced from the typed provenance at
+    # construction, so this stays a polymorphic flag read until the view itself
+    # carries a typed provenance facet.
     if op.uses_uncovered_body_recovery if isinstance(op, ResolvedOp) else op.uncovered_body_recovery:
         return {}
     master_paras = _paragraph_signatures_ir(master_sec)

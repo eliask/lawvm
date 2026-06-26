@@ -217,6 +217,17 @@ class AcceptanceMode(Enum):
     """Records-with-finding; admits all provenance."""
 
 
+def has_recognizer(provenance: OpProvenance | None, recognizer: RecognizerId) -> bool:
+    """Return whether ``provenance`` carries ``recognizer`` in its set.
+
+    The migration seam: an apply site that today tests a boolean
+    ``*_fallback`` flag or a literal ``*_provenance_tags`` membership asks this
+    instead. Only :class:`Recovered` provenance can carry a recognizer; ``None``
+    and :class:`Parsed` never do.
+    """
+    return isinstance(provenance, Recovered) and recognizer in provenance.recognizer_ids
+
+
 def admits(mode: AcceptanceMode, provenance: OpProvenance) -> bool:
     """Return whether ``mode`` accepts an op with ``provenance``.
 
@@ -259,6 +270,66 @@ def mode_for(profile: "StrictProfile | None", provenance: OpProvenance) -> Accep
     return AcceptanceMode.STRICT if forbidden else AcceptanceMode.QUIRKS
 
 
+# --- Recognizer-id classification (which surface/tier a recognizer implies) ---
+
+# Recognizers grouped by the recovery surface they read. A single op may carry
+# several recognizers across surfaces; the dominant surface is picked by the
+# fixed precedence below.
+_BODY_RECOGNIZERS: frozenset[RecognizerId] = frozenset(
+    {
+        RecognizerId.SEC1_BODY_JOHTO,
+        RecognizerId.BODY_ROOT_REPLACE,
+        RecognizerId.UNCOVERED_BODY,
+        RecognizerId.EXTRACTION_FALLBACK_HEURISTIC,
+    }
+)
+_PAYLOAD_RECOGNIZERS: frozenset[RecognizerId] = frozenset(
+    {
+        RecognizerId.JOLLOIN_MOMENT_RENUMBER_SUPPLEMENT,
+        RecognizerId.UNIQUE_ITEM_LABEL_SUBSECTION_FALLBACK,
+        RecognizerId.NORMALIZE_ITEM_LIKE_TARGET,
+        RecognizerId.REBASE_DUPLICATE_TARGET_SHIFTED_REPLACE,
+        RecognizerId.REBASE_REPLACED_RENUMBER_SOURCE,
+    }
+)
+_SCOPE_RECOGNIZERS: frozenset[RecognizerId] = frozenset(
+    {
+        RecognizerId.CHAPTER_SCOPE_FROM_UNIQUE_LIVE_SECTION,
+        RecognizerId.JOLLOIN_RENUMBER,
+        RecognizerId.REPEAL_VTS_VOIMAANTULO,
+    }
+)
+
+
+def dominant_surface(recognizer_ids: frozenset[RecognizerId]) -> RecoverySurface:
+    """Pick the recovery surface for a set of co-occurring recognizers.
+
+    Precedence BODY > PAYLOAD > SCOPE: a body-text recovery is the broadest
+    guess (it reconstructs the op's existence), so it dominates a narrower
+    payload/scope refinement that may ride on the same op. The precedence is a
+    presentation choice only — the authoritative recovery markers are the full
+    set in ``recognizer_ids``; it does not change which markers are present.
+    """
+    if recognizer_ids & _BODY_RECOGNIZERS:
+        return RecoverySurface.BODY
+    if recognizer_ids & _PAYLOAD_RECOGNIZERS:
+        return RecoverySurface.PAYLOAD
+    return RecoverySurface.SCOPE
+
+
+def dominant_tier(recognizer_ids: frozenset[RecognizerId]) -> ConfidenceTier:
+    """Pick the confidence tier for a set of co-occurring recognizers.
+
+    A scope/witness recognizer is context-resolved against live structure
+    (ANCHORED); a body-extraction or payload guess is a bare HEURISTIC. When a
+    body/payload recognizer co-occurs with an anchored one, the weaker tier
+    governs (the op still rode a heuristic guess).
+    """
+    if recognizer_ids & (_BODY_RECOGNIZERS | _PAYLOAD_RECOGNIZERS):
+        return ConfidenceTier.HEURISTIC
+    return ConfidenceTier.ANCHORED
+
+
 __all__ = [
     "AcceptanceMode",
     "ConfidenceTier",
@@ -269,5 +340,8 @@ __all__ = [
     "Recovered",
     "RecoverySurface",
     "admits",
+    "dominant_surface",
+    "dominant_tier",
+    "has_recognizer",
     "mode_for",
 ]

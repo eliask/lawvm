@@ -42,6 +42,14 @@ from lawvm.core.target_selector import (
     TargetSelector,
 )
 from lawvm.finland.helpers import _expand_section_range, _norm_num_token
+from lawvm.finland.op_provenance import (
+    OpProvenance,
+    Recovered,
+    RecognizerId,
+    dominant_surface,
+    dominant_tier,
+    has_recognizer,
+)
 from lawvm.finland.target_kind import TargetKind
 from lawvm.finland.target_selector_codec import (
     AmendmentOpV1Record,
@@ -91,6 +99,67 @@ _TARGET_GUESSING_PROVENANCE_TAGS = frozenset(
         "normalize_item_like_target",
     }
 )
+
+
+def _derive_op_provenance(
+    *,
+    fallback_provenance: bool,
+    body_root_replace_fallback: bool,
+    sec1_body_johto_fallback: bool,
+    uncovered_body_recovery: bool,
+    extraction_provenance_tags: Tuple[str, ...],
+    target_guessing_provenance_tags: Tuple[str, ...],
+    witness_rule_id: Optional[str],
+) -> OpProvenance | None:
+    """Derive the typed :class:`OpProvenance` from an op's recovery markers.
+
+    ADDITIVE (Phase-2 step 2): the legacy ``*_fallback`` / ``*_recovery`` booleans
+    and the ``*_provenance_tags`` string bags remain authoritative; this derives a
+    typed mirror so later steps can rekey readers onto
+    ``RecognizerId.X in op.provenance.recognizer_ids`` / ``isinstance(prov, Recovered)``.
+
+    An op carries the SET of every load-bearing recovery recognizer that touched
+    it. The result is :class:`Recovered` iff the op bears a recovery marker
+    (``fallback_provenance`` OR any recognizer membership); otherwise ``None``
+    (no recovery stamp — the op was not produced by a fallback recognizer). The
+    :class:`Parsed` arm is reserved for grammar-rule provenance wired in a later
+    phase; absence is represented as ``None`` here to stay additive.
+    """
+    ids: set[RecognizerId] = set()
+    if sec1_body_johto_fallback:
+        ids.add(RecognizerId.SEC1_BODY_JOHTO)
+    if body_root_replace_fallback:
+        ids.add(RecognizerId.BODY_ROOT_REPLACE)
+    if uncovered_body_recovery:
+        ids.add(RecognizerId.UNCOVERED_BODY)
+    if "extraction_fallback_heuristic" in extraction_provenance_tags:
+        ids.add(RecognizerId.EXTRACTION_FALLBACK_HEURISTIC)
+    if "jolloin_moment_renumber_supplement" in extraction_provenance_tags:
+        ids.add(RecognizerId.JOLLOIN_MOMENT_RENUMBER_SUPPLEMENT)
+    if "unique_item_label_subsection_fallback" in target_guessing_provenance_tags:
+        ids.add(RecognizerId.UNIQUE_ITEM_LABEL_SUBSECTION_FALLBACK)
+    if "normalize_item_like_target" in target_guessing_provenance_tags:
+        ids.add(RecognizerId.NORMALIZE_ITEM_LIKE_TARGET)
+    if "rebase_duplicate_target_shifted_replace" in target_guessing_provenance_tags:
+        ids.add(RecognizerId.REBASE_DUPLICATE_TARGET_SHIFTED_REPLACE)
+    if "rebase_replaced_renumber_source" in target_guessing_provenance_tags:
+        ids.add(RecognizerId.REBASE_REPLACED_RENUMBER_SOURCE)
+    if "chapter_scope_from_unique_live_section" in target_guessing_provenance_tags:
+        ids.add(RecognizerId.CHAPTER_SCOPE_FROM_UNIQUE_LIVE_SECTION)
+    if witness_rule_id == "fi.jolloin_renumber":
+        ids.add(RecognizerId.JOLLOIN_RENUMBER)
+    elif witness_rule_id == "fi.repeal_vts_voimaantulo":
+        ids.add(RecognizerId.REPEAL_VTS_VOIMAANTULO)
+
+    if not ids and not fallback_provenance:
+        return None
+
+    recognizer_ids = frozenset(ids)
+    return Recovered(
+        surface=dominant_surface(recognizer_ids),
+        recognizer_ids=recognizer_ids,
+        tier=dominant_tier(recognizer_ids),
+    )
 
 class ScopeResolutionConfidence(StrEnum):
     """Confidence rail for a Finland chapter-scope resolution witness.
@@ -763,6 +832,29 @@ class AmendmentOp:
     witness_rule_id: Optional[str] = None
     if TYPE_CHECKING:
         target_kind: TargetKind
+
+    @property
+    def provenance(self) -> OpProvenance | None:
+        """Typed op-provenance consolidation target (Phase-2).
+
+        Computed on access from the authoritative recovery markers (the
+        ``*_fallback`` / ``*_recovery`` booleans, the ``*_provenance_tags``
+        membership, and the branched ``witness_rule_id``). A property — never a
+        stored field — because those markers are mutated post-construction at the
+        frontend (e.g. ``op.body_root_replace_fallback = True``), so a stored
+        mirror would go stale; deriving on access keeps the typed view exactly in
+        lockstep with the flags. ADDITIVE: the legacy flags/tags stay
+        authoritative.
+        """
+        return _derive_op_provenance(
+            fallback_provenance=self.fallback_provenance,
+            body_root_replace_fallback=self.body_root_replace_fallback,
+            sec1_body_johto_fallback=self.sec1_body_johto_fallback,
+            uncovered_body_recovery=self.uncovered_body_recovery,
+            extraction_provenance_tags=self.extraction_provenance_tags,
+            target_guessing_provenance_tags=self.target_guessing_provenance_tags,
+            witness_rule_id=self.witness_rule_id,
+        )
 
     @property
     def resolved_scope_confidence(self) -> ScopeConfidence | None:
@@ -1661,12 +1753,22 @@ class ResolvedOp:
         return self.muutos_ir is not None or self.is_repeal_action or self.is_renumber_action
 
     @property
+    def provenance(self) -> OpProvenance | None:
+        """Typed op-provenance, delegated to the source AmendmentOp.
+
+        One source of truth: the inner ``op``'s flags are authoritative, so this
+        never goes stale even when ``ResolvedOp`` is rebuilt via
+        ``dataclasses.replace`` around a re-derived ``op``.
+        """
+        return self.op.provenance
+
+    @property
     def uses_sec1_body_johto_fallback(self) -> bool:
-        return self.sec1_body_johto_fallback
+        return has_recognizer(self.op.provenance, RecognizerId.SEC1_BODY_JOHTO)
 
     @property
     def uses_uncovered_body_recovery(self) -> bool:
-        return self.uncovered_body_recovery
+        return has_recognizer(self.op.provenance, RecognizerId.UNCOVERED_BODY)
 
     @property
     def resolved_post_repeal_item_shift_label(self) -> str | None:
