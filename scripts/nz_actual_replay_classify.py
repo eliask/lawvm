@@ -56,6 +56,9 @@ def main() -> None:
                 "residual_family_counts": summary["residual_family_counts"],
                 "residual_status_counts": summary["residual_status_counts"],
                 "families_not_attempted": summary["families_not_attempted"],
+                "family_level_dry_run_refusal_counts": summary.get(
+                    "family_level_dry_run_refusal_counts", {}
+                ),
             }, ensure_ascii=False) + "\n")
 
     print(f"sweep: {len(rows)} works  replayed={n_replayed}  refused={n_refused}  neither={n_neither}")
