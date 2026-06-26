@@ -70,6 +70,12 @@ _NON_RULE_LITERALS: frozenset[str] = frozenset(
         "se_official_act_text_to_dict",
         "se_pdf_text_locator",
         "se_pdf_cleanup_locator",
+        # function names exported from se_agreement_residuals
+        "se_replay_agreement_residuals",
+        "se_replay_row_agreement_residual",
+        # agreement-surface name passthrough — the projector's _SE_AGREEMENT_SURFACE
+        # constant names the surface, not a rule_id hypothesis
+        "se_official_replay",
         # locator string constants (archive path conventions)
         "se_official_ops_locator",
         "se_official_payload_surface_locator",

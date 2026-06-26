@@ -32,6 +32,7 @@ from lawvm.core import tree_ops
 from lawvm.core.adjudication_evidence import adjudication_finding_evidence_rows
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.sweden.grafter import SESourceRecord, parse_se_source_record, parse_se_statute
+from lawvm.sweden.se_agreement_residuals import se_replay_agreement_residuals
 from lawvm.sweden.grafter import (
     apply_se_ops,
     build_se_official_base_statute,
@@ -3572,6 +3573,24 @@ def check_se_official_replay(
         "adjudications": [asdict(item) for item in replay_adjudications],
         "evidence": {
             "finding_rows": [row.to_dict() for row in finding_rows],
+            # Typed evidence-plane residuals (§2.10 projection re-derivable
+            # from a committed dossier). Each replay row's classification is
+            # projected to a content-addressed AgreementResidual carrying
+            # family + status + missing_proofs; the residual_id is stable
+            # across reruns so a missing or surplus residual between two
+            # runs becomes detectable. The CLI/aggregate dict above is the
+            # projection; this list IS the evidence-plane dossier it is
+            # re-derived FROM.
+            "agreement_residuals": [
+                r.to_dict()
+                for r in se_replay_agreement_residuals(
+                    {
+                        "amending_sfs_id": amending_sfs_id,
+                        "base_sfs_id": resolved_base_sfs_id,
+                        "rows": rows,
+                    }
+                )
+            ],
         },
         "rows": rows,
     }

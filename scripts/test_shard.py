@@ -363,6 +363,8 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # Declared non-guarantees as root-committed evidence-plane objects.
         "test_assumption_register.py",
         "test_se_assumptions.py",
+        # SE agreement-residual projector (typed evidence-plane dossier).
+        "test_se_agreement_residuals.py",
     ),
     "evidence_reports": (
         "test_fi_explain_facade.py",

@@ -111,6 +111,7 @@ _SE_RULE_SPECS: Dict[str, str] = {
 
     # --- Replay outcome typed signals (§1.0 Mutation Boundary Invariant failures) ----------
     "se_replay_base_surface_contains_post_amendment_targets": "When the contaminated base current surface has post-amendment targets before the amending act's effective date and reverse-patching plateaued, the replay outcome is ``older_base_required`` (a typed frontier signal), not a silent replay.",
+    "se_replay_classification_to_agreement_residual": "Each check_se_official_replay row classification is projected to a typed AgreementResidual carrying residual_id, family, status, missing_proofs — the evidence-plane dossier the CLI/aggregate dict is re-derived FROM (§2.10 projection plane). Closed-vocabulary classification→family mapping; an unknown class raises (§1.10 fail-loud), not a silent drop.",
     "se_replay_destination_missing": "A RENUMBER op whose destination address is absent is a typed replay-skip adjudication, not a silent no-op.",
     "se_replay_payload_missing": "A REPLACE/INSERT op whose payload is missing or wrong-kind is a typed replay-skip adjudication, not a silent default.",
     "se_replay_recovered_base_lacks_required_targets": "When the recovered older-base rebuild still lacks a replay target the amending act needs, the replay outcome is ``precondition_issues_blocking``, not a silent mismatch.",
