@@ -267,3 +267,43 @@ def test_recognizer_id_namespace_is_exhaustive_over_serialized_tag_bags() -> Non
     assert actual_values == expected_values
     # No enum aliasing collapsed two members onto one value.
     assert len(actual_values) == len(list(RecognizerId))
+
+
+def test_amendment_op_provenance_is_replace_durable() -> None:
+    """``provenance`` is STORED and CARRIED through ``dataclasses.replace``.
+
+    Step B inversion: ``_provenance`` is an init field, so a non-marker-mutating
+    ``replace`` carries the stored stamp (not a fresh re-derivation), while a
+    marker-mutating ``replace`` re-derives so the stamp stays in lockstep with
+    the markers (byte-identical while the markers remain authoritative).
+    """
+    from dataclasses import replace as dc_replace
+
+    from lawvm.finland.op_provenance import has_recognizer
+    from lawvm.finland.ops import AmendmentOp
+
+    op = AmendmentOp(
+        target_unit_kind="section",
+        target_section="5",
+        extraction_provenance_tags=("extraction_fallback_heuristic",),
+        fallback_provenance=True,
+    )
+    assert has_recognizer(op.provenance, RecognizerId.EXTRACTION_FALLBACK_HEURISTIC)
+
+    # Non-marker-mutating replace CARRIES the same stamp object value.
+    carried = dc_replace(op, op_id="renamed")
+    assert carried.provenance == op.provenance
+
+    # Marker-mutating replace re-derives, composing the new recognizer in.
+    mutated = dc_replace(
+        op, target_guessing_provenance_tags=("normalize_item_like_target",)
+    )
+    assert has_recognizer(mutated.provenance, RecognizerId.NORMALIZE_ITEM_LIKE_TARGET)
+    assert has_recognizer(
+        mutated.provenance, RecognizerId.EXTRACTION_FALLBACK_HEURISTIC
+    )
+
+    # A non-recovery op has no stamp, and the absence carries too.
+    plain = AmendmentOp(target_unit_kind="section", target_section="7")
+    assert plain.provenance is None
+    assert dc_replace(plain, op_id="x").provenance is None
