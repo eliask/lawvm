@@ -99,7 +99,7 @@ def test_resolved_single_maps_to_registry_resolved_surface() -> None:
     assert edge["schema"] == SCHEMA_RELATION_EDGE
     assert edge["relation_kind"] == "citation"
     assert edge["target_set_semantics"] == TargetSetSemantics.SINGLE.value
-    assert edge["status"] == EdgeStatus.RESOLVED.value
+    assert edge["edge_status"] == EdgeStatus.RESOLVED.value
     assert edge["authority_plane"] == AuthorityPlane.SURFACE.value
     assert edge["verification_level"] == VerificationLevel.REGISTRY_RESOLVED.value
     assert edge["replay_authorized"] is False
@@ -118,7 +118,7 @@ def test_ambiguous_maps_to_source_asserted_surface() -> None:
         ]
     )
     assert edge["target_set_semantics"] == TargetSetSemantics.CANDIDATE_AMBIGUITY.value
-    assert edge["status"] == EdgeStatus.AMBIGUOUS.value
+    assert edge["edge_status"] == EdgeStatus.AMBIGUOUS.value
     assert edge["authority_plane"] == AuthorityPlane.SURFACE.value
     assert edge["verification_level"] == VerificationLevel.SOURCE_ASSERTED.value
     assert edge["replay_authorized"] is False
@@ -136,7 +136,7 @@ def test_open_maps_to_open_source_asserted_surface() -> None:
         ]
     )
     assert edge["target_set_semantics"] == TargetSetSemantics.OPEN.value
-    assert edge["status"] == EdgeStatus.OPEN.value
+    assert edge["edge_status"] == EdgeStatus.OPEN.value
     assert edge["verification_level"] == VerificationLevel.SOURCE_ASSERTED.value
     assert edge["target_set"] == []  # open: referent named, not enumerated
     assert edge_authority_violation(edge) is None
@@ -153,7 +153,7 @@ def test_unresolved_no_extension_maps_to_unsupported() -> None:
         ]
     )
     assert edge["target_set_semantics"] == TargetSetSemantics.NO_ENUMERABLE_EXTENSION.value
-    assert edge["status"] == EdgeStatus.UNSUPPORTED.value
+    assert edge["edge_status"] == EdgeStatus.UNSUPPORTED.value
     assert edge["verification_level"] == VerificationLevel.SOURCE_ASSERTED.value
     assert edge_authority_violation(edge) is None
 
@@ -170,7 +170,7 @@ def test_range_folds_to_one_all_valid_edge_with_multiple_targets() -> None:
     edge = _bridge([r.mention for r in refs])
     # …but the bridge produces ONE edge.
     assert edge["target_set_semantics"] == TargetSetSemantics.ALL_VALID.value
-    assert edge["status"] == EdgeStatus.RESOLVED.value
+    assert edge["edge_status"] == EdgeStatus.RESOLVED.value
     targets = edge["target_set"]
     assert isinstance(targets, list)
     assert len(targets) == 3
@@ -290,7 +290,7 @@ def test_checker_rejects_misbuilt_legal_state_citation() -> None:
         authority_plane=AuthorityPlane.LEGAL_STATE,  # the lie
         verification_level=VerificationLevel.SOURCE_ASSERTED,
         replay_authorized=False,
-        status=EdgeStatus.RESOLVED,
+        edge_status=EdgeStatus.RESOLVED,
         effective_scope={"branch_id": "actual"},
         corpus_version=CV,
     )

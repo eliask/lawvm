@@ -372,7 +372,7 @@ class SubstratePack {
 function proofGrade(edge) {
   const plane = edge.authority_plane;
   const level = edge.verification_level;
-  const status = edge.status;
+  const status = edge.edge_status;
 
   // legal_state + a strong derivation = a verified legal derivation.
   if (plane === "legal_state") {

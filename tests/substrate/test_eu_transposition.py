@@ -94,7 +94,7 @@ def test_claimed_transposition_is_matrix_legal_evidence_edge() -> None:
     assert edge["authority_plane"] == AuthorityPlane.EVIDENCE.value
     assert edge["verification_level"] == VerificationLevel.SOURCE_ASSERTED.value
     assert edge["replay_authorized"] is False
-    assert edge["status"] == EdgeStatus.RESOLVED.value
+    assert edge["edge_status"] == EdgeStatus.RESOLVED.value
     assert edge["target_set"] == ["celex:32010L0075"]
     # Matrix-legal by construction.
     assert edge_authority_violation(edge) is None
@@ -122,7 +122,7 @@ def test_unbound_claim_preserves_surface_and_drops_no_directive() -> None:
     # The named-but-unbound directive surface is preserved (tag, don't guess);
     # the target carries the nickname, never a fabricated CELEX.
     assert edge["target_set"] == ["eu-nickname:päästökattodirektiivin"]
-    assert edge["status"] == EdgeStatus.QUALIFIED.value
+    assert edge["edge_status"] == EdgeStatus.QUALIFIED.value
     scope = _effective_scope(edge)
     assert scope["binding_status"] == "statute_only"
 
@@ -138,7 +138,7 @@ def test_timeliness_late_when_commencement_after_deadline() -> None:
     assert edge["verification_level"] == VerificationLevel.DATE_COMPUTABLE.value
     assert edge["authority_plane"] == AuthorityPlane.EVIDENCE.value
     assert edge["replay_authorized"] is False
-    assert edge["status"] == EdgeStatus.RESOLVED.value
+    assert edge["edge_status"] == EdgeStatus.RESOLVED.value
     scope = _effective_scope(edge)
     assert scope["timeliness_verdict"] == "late"
     assert scope["transposition_deadline"] == "2013-01-07"
@@ -149,7 +149,7 @@ def test_timeliness_on_time_when_commencement_before_deadline() -> None:
     edge = timeliness_edge(_claim(), commencement_date="2012-06-01", corpus_version=CV)
     scope = _effective_scope(edge)
     assert scope["timeliness_verdict"] == "on_time"
-    assert edge["status"] == EdgeStatus.RESOLVED.value
+    assert edge["edge_status"] == EdgeStatus.RESOLVED.value
 
 
 def test_timeliness_open_when_deadline_unknown_no_fabricated_date() -> None:
@@ -157,7 +157,7 @@ def test_timeliness_open_when_deadline_unknown_no_fabricated_date() -> None:
     edge = timeliness_edge(
         _claim(celex="32099L9999"), commencement_date="2020-01-01", corpus_version=CV
     )
-    assert edge["status"] == EdgeStatus.OPEN.value
+    assert edge["edge_status"] == EdgeStatus.OPEN.value
     scope = _effective_scope(edge)
     assert scope["timeliness_verdict"] == "deadline_unknown"
     assert scope["transposition_deadline"] is None  # never fabricated
@@ -170,7 +170,7 @@ def test_timeliness_open_when_directive_unbound() -> None:
         commencement_date="2020-01-01",
         corpus_version=CV,
     )
-    assert edge["status"] == EdgeStatus.OPEN.value
+    assert edge["edge_status"] == EdgeStatus.OPEN.value
     scope = _effective_scope(edge)
     assert scope["timeliness_verdict"] == "deadline_unknown"
 
@@ -191,7 +191,7 @@ def test_conformance_is_always_not_assessed_residual() -> None:
         )
         assert edge["relation_kind"] == RelationKind.CONFORMANCE_ASSESSMENT.value
         # The absence of an assessment — open, overlay, external_assessment.
-        assert edge["status"] == EdgeStatus.OPEN.value
+        assert edge["edge_status"] == EdgeStatus.OPEN.value
         assert edge["authority_plane"] == AuthorityPlane.OVERLAY.value
         assert edge["verification_level"] == VerificationLevel.EXTERNAL_ASSESSMENT.value
         assert edge["replay_authorized"] is False
@@ -210,10 +210,10 @@ def test_no_positive_conformance_edge_is_ever_produced() -> None:
         e for e in edges if e["relation_kind"] == RelationKind.CONFORMANCE_ASSESSMENT.value
     ]
     assert len(conformance) == 1
-    assert conformance[0]["status"] == EdgeStatus.OPEN.value
+    assert conformance[0]["edge_status"] == EdgeStatus.OPEN.value
     # No conformance edge is ever RESOLVED (a resolved conformance would be a
     # substantive correct/incorrect-transposition conclusion — forbidden §25.8).
-    assert all(c["status"] != EdgeStatus.RESOLVED.value for c in conformance)
+    assert all(c["edge_status"] != EdgeStatus.RESOLVED.value for c in conformance)
 
 
 def test_claim_yields_exactly_three_edge_kinds() -> None:
@@ -322,7 +322,7 @@ def test_checker_rejects_misbuilt_legal_state_transposition() -> None:
         authority_plane=AuthorityPlane.LEGAL_STATE,  # the lie
         verification_level=VerificationLevel.DATE_COMPUTABLE,
         replay_authorized=False,  # legal_state requires replay=true → illegal
-        status=EdgeStatus.RESOLVED,
+        edge_status=EdgeStatus.RESOLVED,
         effective_scope={"branch_id": "actual"},
         corpus_version=CV,
     )

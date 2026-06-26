@@ -594,7 +594,7 @@ def resolve_fi_eu_edge(
         authority_plane=AuthorityPlane.SURFACE,
         verification_level=VerificationLevel.REGISTRY_RESOLVED,
         replay_authorized=False,
-        status=EdgeStatus.RESOLVED,
+        edge_status=EdgeStatus.RESOLVED,
         effective_scope=cast("dict[str, JsonValue]", edge.get("effective_scope", {"branch_id": _BRANCH_ID})),
         corpus_version=corpus_version,
         branch_id=str(edge.get("branch_id", _BRANCH_ID)),

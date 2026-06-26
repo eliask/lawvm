@@ -405,7 +405,7 @@ def build_textual_edge(
         authority_plane=AuthorityPlane.LEGAL_STATE,
         verification_level=VerificationLevel.DELTA_VERIFIED,
         replay_authorized=authorization.replay_authorized,
-        status=EdgeStatus.RESOLVED,
+        edge_status=EdgeStatus.RESOLVED,
         effective_scope={
             "branch_id": "actual",
             "derivation_kind": DerivationKind.TEXTUAL.value,
@@ -448,7 +448,7 @@ def build_model_code_kinship_edge(
         authority_plane=AuthorityPlane.OVERLAY,
         verification_level=VerificationLevel.INDUCED_SIMILARITY,
         replay_authorized=False,
-        status=EdgeStatus.QUALIFIED,
+        edge_status=EdgeStatus.QUALIFIED,
         effective_scope={
             "branch_id": "actual",
             "derivation_kind": DerivationKind.MODEL_CODE.value,
@@ -491,7 +491,7 @@ def build_conformance_absence_edge(
         authority_plane=AuthorityPlane.OVERLAY,
         verification_level=VerificationLevel.EXTERNAL_ASSESSMENT,
         replay_authorized=False,
-        status=EdgeStatus.OPEN,
+        edge_status=EdgeStatus.OPEN,
         effective_scope={
             "branch_id": "actual",
             "derivation_kind": DerivationKind.CONFORMANCE.value,
@@ -535,7 +535,7 @@ def build_conformance_claim_edge(
         authority_plane=AuthorityPlane.EVIDENCE,
         verification_level=VerificationLevel.SOURCE_ASSERTED,
         replay_authorized=False,
-        status=(
+        edge_status=(
             EdgeStatus.RESOLVED if directive_celex else EdgeStatus.OPEN
         ),
         effective_scope={
@@ -578,7 +578,7 @@ def build_citation_edge(
         authority_plane=AuthorityPlane.SURFACE,
         verification_level=level,
         replay_authorized=False,
-        status=(EdgeStatus.RESOLVED if target_resolved else EdgeStatus.OPEN),
+        edge_status=(EdgeStatus.RESOLVED if target_resolved else EdgeStatus.OPEN),
         effective_scope={
             "branch_id": "actual",
             "derivation_kind": DerivationKind.CITATION.value,

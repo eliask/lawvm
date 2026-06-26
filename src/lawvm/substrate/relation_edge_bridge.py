@@ -167,7 +167,7 @@ def reference_set_to_relation_edge(
         authority_plane=AuthorityPlane.SURFACE,
         verification_level=verification,
         replay_authorized=False,
-        status=status,
+        edge_status=status,
         effective_scope={"branch_id": branch_id},
         corpus_version=corpus_version,
         branch_id=branch_id,

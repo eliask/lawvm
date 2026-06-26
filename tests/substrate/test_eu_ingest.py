@@ -223,7 +223,7 @@ def _opaque_edge(target: str, *, semantics: TargetSetSemantics = TargetSetSemant
         authority_plane=AuthorityPlane.SURFACE,
         verification_level=VerificationLevel.REGISTRY_RESOLVED,
         replay_authorized=False,
-        status=EdgeStatus.RESOLVED,
+        edge_status=EdgeStatus.RESOLVED,
         effective_scope={"branch_id": "actual"},
         corpus_version="fi:corpus:test",
     )
@@ -235,7 +235,7 @@ def test_edge_rewritten_to_resolved_node() -> None:
     er = resolve_fi_eu_edge(edge, work, corpus_version="fi:corpus:test")
     assert er.rewritten
     assert er.edge["target_set"] == [_entity("089.002")]
-    assert er.edge["status"] == EdgeStatus.RESOLVED.value
+    assert er.edge["edge_status"] == EdgeStatus.RESOLVED.value
     assert er.edge["verification_level"] == VerificationLevel.REGISTRY_RESOLVED.value
     assert er.edge["authority_plane"] == AuthorityPlane.SURFACE.value
     # The opaque CELEX string is GONE from the resolved target_set.
@@ -279,7 +279,7 @@ def test_coordination_edge_all_targets_resolved() -> None:
         authority_plane=AuthorityPlane.SURFACE,
         verification_level=VerificationLevel.REGISTRY_RESOLVED,
         replay_authorized=False,
-        status=EdgeStatus.RESOLVED,
+        edge_status=EdgeStatus.RESOLVED,
         effective_scope={"branch_id": "actual"},
         corpus_version="fi:corpus:test",
     )

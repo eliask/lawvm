@@ -116,7 +116,7 @@ def claimed_transposition_edge(
         authority_plane=AuthorityPlane.EVIDENCE,
         verification_level=VerificationLevel.SOURCE_ASSERTED,
         replay_authorized=False,
-        status=edge_status,
+        edge_status=edge_status,
         effective_scope={
             "branch_id": branch_id,
             "claim_surface": claim.claim_surface,
@@ -176,7 +176,7 @@ def timeliness_edge(
         authority_plane=AuthorityPlane.EVIDENCE,
         verification_level=VerificationLevel.DATE_COMPUTABLE,
         replay_authorized=False,
-        status=status,
+        edge_status=status,
         effective_scope=scope,
         corpus_version=corpus_version,
         branch_id=branch_id,
@@ -207,7 +207,7 @@ def conformance_not_assessed_edge(
         authority_plane=AuthorityPlane.OVERLAY,
         verification_level=VerificationLevel.EXTERNAL_ASSESSMENT,
         replay_authorized=False,
-        status=EdgeStatus.OPEN,
+        edge_status=EdgeStatus.OPEN,
         effective_scope={
             "branch_id": branch_id,
             "conformance": "not_assessed",

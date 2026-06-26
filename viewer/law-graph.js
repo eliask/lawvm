@@ -524,7 +524,7 @@ function renderEdgeAnchor(edge) {
   const hasEu = euTargets.length > 0;
 
   const badge = `<span class="grade-badge grade-${grade.grade}" title="${escAttr(grade.planeLevel)}"><span class="gb-icon">${grade.icon}</span></span>`;
-  const statusChip = `<span class="status-chip status-${escAttr(edge.status)}">${escHtml(edge.status)}</span>`;
+  const statusChip = `<span class="status-chip status-${escAttr(edge.edge_status)}">${escHtml(edge.edge_status)}</span>`;
   const rangeChip = isRange
     ? `<span class="range-chip" title="${escAttr(edge.target_set_semantics)}">${targets.length} kohdetta</span>`
     : "";
@@ -545,7 +545,7 @@ function edgeCardHtml(edge) {
   let html = `<div class="edge-card-head">`;
   html += `<span class="grade-badge grade-${grade.grade}"><span class="gb-icon">${grade.icon}</span>${escHtml(grade.label)}</span>`;
   html += `<span class="ec-plane">${escHtml(grade.planeLevel)}</span>`;
-  html += `<span class="status-chip status-${escAttr(edge.status)}">${escHtml(edge.status)}</span>`;
+  html += `<span class="status-chip status-${escAttr(edge.edge_status)}">${escHtml(edge.edge_status)}</span>`;
   html += `</div>`;
   html += `<div class="ec-semantics">${escHtml(semanticsLabel(edge.target_set_semantics))} · ${edge.target_set.length} kohde(tta)</div>`;
   html += `<ul class="ec-targets">`;
