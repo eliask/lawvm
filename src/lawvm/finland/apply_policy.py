@@ -447,7 +447,7 @@ def same_wave_migration_follow_is_allowed(rop: ResolvedOp) -> bool:
     """
     if (
         has_recognizer(rop.provenance, RecognizerId.REBASE_DUPLICATE_TARGET_SHIFTED_REPLACE)
-        or "rebase_replaced_renumber_source" in rop.target_guessing_provenance_tags
+        or has_recognizer(rop.provenance, RecognizerId.REBASE_REPLACED_RENUMBER_SOURCE)
     ):
         return False
     if rop.resolved_action_type != "INSERT":
