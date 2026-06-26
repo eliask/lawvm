@@ -37,7 +37,7 @@ from lawvm.core.phase_result import Finding, PhaseResult
 from lawvm.finland.apply_ops_executor import _apply_ops_to_tree_typed
 from lawvm.finland.compile_amendment import compile_amendment_ops as _real_compile_amendment_ops
 from lawvm.finland.frontend_compile import normalize_and_compile_ops
-from lawvm.finland.op_provenance import RecognizerId, has_recognizer
+from lawvm.finland.op_provenance import Recovered, RecognizerId, has_recognizer
 from lawvm.finland.ops import OpType, AmendmentOp, ResolvedOp
 from lawvm.finland.process_pipeline import process_muutoslaki
 from lawvm.finland.post_process import post_process_tree
@@ -1171,7 +1171,10 @@ class TestNormalizeAndCompileOps:
             ).output
 
         assert ops
-        assert all(op.fallback_provenance is True for op in ops)
+        assert all(
+            isinstance(op.provenance, Recovered) and op.provenance.from_fallback_provenance
+            for op in ops
+        )
         assert all("extraction_fallback_heuristic" in op.extraction_provenance_tags for op in ops)
 
     def test_title_fallback_provenance_is_typed_without_hint(self) -> None:
@@ -1193,7 +1196,7 @@ class TestNormalizeAndCompileOps:
         assert ops[0].op_type == "REPEAL"
         assert ops[0].target_kind == "L"
         assert ops[0].target_cols.target_section == "5"
-        assert ops[0].fallback_provenance is True
+        assert isinstance(ops[0].provenance, Recovered) and ops[0].provenance.from_fallback_provenance
         assert "extraction_title_fallback" in ops[0].extraction_provenance_tags
 
     def test_amendment_op_target_kind_projection_is_read_only(self) -> None:

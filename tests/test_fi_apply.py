@@ -318,12 +318,12 @@ def _op(
         target_special=target_special,
         move_clause_target_unit_kind=move_clause_target_unit_kind,
         named_row_targets=named_row_targets,
+        _from_fallback=fallback_provenance,
         _stamped_recognizers=(
             frozenset({RecognizerId.BODY_ROOT_REPLACE})
             if body_root_replace_fallback
             else frozenset()
         ),
-        fallback_provenance=fallback_provenance,
         voimaantulo_repeal=voimaantulo_repeal,
         extraction_provenance_tags=extraction_provenance_tags,
         target_guessing_provenance_tags=target_guessing_provenance_tags,
@@ -1132,7 +1132,6 @@ def test_apply_materialization_prefers_typed_action_over_mutated_legacy_shell_ac
         target_special=None,
         move_clause_target_unit_kind=None,
         named_row_targets=(),
-        fallback_provenance=False,
         voimaantulo_repeal=False,
         extraction_provenance_tags=(),
         target_guessing_provenance_tags=(),

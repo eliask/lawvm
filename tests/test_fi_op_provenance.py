@@ -341,7 +341,7 @@ def test_derive_op_provenance_folds_every_serialized_bag_tag() -> None:
     )
 
     prov = _derive_op_provenance(
-        fallback_provenance=False,
+        from_fallback=False,
         extraction_provenance_tags=extraction,
         target_guessing_provenance_tags=target_guessing,
         scope_provenance_tags=scope,
@@ -445,7 +445,7 @@ def test_amendment_op_provenance_is_replace_durable() -> None:
         target_unit_kind="section",
         target_section="5",
         extraction_provenance_tags=("extraction_fallback_heuristic",),
-        fallback_provenance=True,
+        _from_fallback=True,
     )
     assert has_recognizer(op.provenance, RecognizerId.EXTRACTION_FALLBACK_HEURISTIC)
 

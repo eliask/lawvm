@@ -62,7 +62,7 @@ def _op(
         target_section=target_section,
         target_kind=cast(TargetKind, target_kind),
         target_chapter=target_chapter,
-        fallback_provenance=fallback_provenance,
+        _from_fallback=fallback_provenance,
         _stamped_recognizers=(
             frozenset({RecognizerId.BODY_ROOT_REPLACE})
             if body_root_replace_fallback
@@ -103,7 +103,7 @@ class _CoverageOpShim:
         from lawvm.finland.ops import _derive_op_provenance
 
         return _derive_op_provenance(
-            fallback_provenance=self.fallback_provenance,
+            from_fallback=self.fallback_provenance,
             extraction_provenance_tags=(),
             target_guessing_provenance_tags=(),
             scope_provenance_tags=(),

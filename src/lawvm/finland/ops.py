@@ -105,7 +105,7 @@ _TARGET_GUESSING_PROVENANCE_TAGS = frozenset(
 
 def _derive_op_provenance(
     *,
-    fallback_provenance: bool,
+    from_fallback: bool,
     extraction_provenance_tags: Tuple[str, ...],
     target_guessing_provenance_tags: Tuple[str, ...],
     scope_provenance_tags: Tuple[str, ...],
@@ -157,7 +157,7 @@ def _derive_op_provenance(
     # op (whose legacy marker has already been deleted) still yields ``Recovered``.
     ids |= stamped_recognizers
 
-    if not ids and not fallback_provenance:
+    if not ids and not from_fallback:
         return None
 
     recognizer_ids = frozenset(ids)
@@ -165,7 +165,7 @@ def _derive_op_provenance(
         surface=dominant_surface(recognizer_ids),
         recognizer_ids=recognizer_ids,
         tier=dominant_tier(recognizer_ids),
-        from_fallback_provenance=fallback_provenance,
+        from_fallback_provenance=from_fallback,
     )
 
 class ScopeResolutionConfidence(StrEnum):
@@ -826,7 +826,6 @@ class AmendmentOp:
     target_selector: TargetSelector = _DEFAULT_TARGET_SELECTOR
     named_row_targets: Tuple[str, ...] = ()
     numbered_table_targets: Tuple[str, ...] = ()
-    fallback_provenance: bool = False
     move_clause_target_unit_kind: Optional[TargetUnitKind] = None
     voimaantulo_repeal: bool = False
     extraction_provenance_tags: Tuple[str, ...] = ()
@@ -876,6 +875,10 @@ class AmendmentOp:
     _stamped_recognizers: frozenset["RecognizerId"] = field(
         default=frozenset(), repr=False, compare=False
     )
+    # M2 inversion carrier for the distinct ``fallback_provenance`` bit (the typed
+    # home for it is ``Recovered.from_fallback_provenance``, NOT a RecognizerId).
+    # REPLACE-DURABLE init field, stamped by :meth:`stamp_fallback_provenance`.
+    _from_fallback: bool = field(default=False, repr=False, compare=False)
     if TYPE_CHECKING:
         target_kind: TargetKind
 
@@ -899,7 +902,7 @@ class AmendmentOp:
     def _derive_provenance_from_markers(self) -> OpProvenance | None:
         """Derive the stamp from THIS op's current recovery markers + stamps."""
         return _derive_op_provenance(
-            fallback_provenance=self.fallback_provenance,
+            from_fallback=self._from_fallback,
             extraction_provenance_tags=self.extraction_provenance_tags,
             target_guessing_provenance_tags=self.target_guessing_provenance_tags,
             scope_provenance_tags=self.scope_provenance_tags,
@@ -918,6 +921,19 @@ class AmendmentOp:
         did, so deleting the marker is byte-identical at the provenance level.
         """
         self._stamped_recognizers = self._stamped_recognizers | {recognizer}
+        self.restamp_provenance()
+
+    def stamp_fallback_provenance(self) -> None:
+        """Stamp the distinct fallback-provenance bit into the durable provenance.
+
+        The M2 inversion seam for the ``fallback_provenance`` boolean: a write
+        site that today set ``op.fallback_provenance = True`` calls this instead.
+        The bit is the typed ``Recovered.from_fallback_provenance`` facet (it
+        names no serialized bag tag, so it is not a :class:`RecognizerId`); it
+        rides the durable :attr:`_from_fallback` carrier and survives
+        ``dataclasses.replace`` as the boolean did.
+        """
+        self._from_fallback = True
         self.restamp_provenance()
 
     def restamp_provenance(self) -> None:
@@ -958,7 +974,6 @@ class AmendmentOp:
         target_selector: "TargetSelector | _TargetSelectorUnset" = _TARGET_SELECTOR_UNSET,
         named_row_targets: Tuple[str, ...] = (),
         numbered_table_targets: Tuple[str, ...] = (),
-        fallback_provenance: bool = False,
         move_clause_target_unit_kind: TargetUnitKind | None = None,
         voimaantulo_repeal: bool = False,
         extraction_provenance_tags: Tuple[str, ...] = (),
@@ -979,6 +994,7 @@ class AmendmentOp:
         witness_rule_id: Optional[str] = None,
         _provenance: "OpProvenance | None | _ProvenanceUnset" = _PROVENANCE_UNSET,
         _stamped_recognizers: frozenset["RecognizerId"] = frozenset(),
+        _from_fallback: bool = False,
     ) -> None:
         explicit_selector = (
             target_selector
@@ -1040,7 +1056,6 @@ class AmendmentOp:
         self.op_type = op_type
         self.named_row_targets = named_row_targets
         self.numbered_table_targets = numbered_table_targets
-        self.fallback_provenance = fallback_provenance
         self.move_clause_target_unit_kind = move_clause_target_unit_kind
         self.voimaantulo_repeal = voimaantulo_repeal
         self.extraction_provenance_tags = extraction_provenance_tags
@@ -1062,9 +1077,10 @@ class AmendmentOp:
         self.temporal_activation = temporal_activation
         self.preserve_explicit_heading_facet = preserve_explicit_heading_facet
         self.witness_rule_id = witness_rule_id
-        # REPLACE-DURABLE M2 inversion carrier — assigned before the provenance
-        # stamp below so the derive sees the carried recognizer stamps.
+        # REPLACE-DURABLE M2 inversion carriers — assigned before the provenance
+        # stamp below so the derive sees the carried recognizer stamps / bit.
         self._stamped_recognizers = _stamped_recognizers
+        self._from_fallback = _from_fallback
 
         # Stamp the stored typed provenance (storage-collapse, REPLACE-DURABLE).
         # All marker fields the stamp reads are assigned above; the remaining
@@ -1420,7 +1436,6 @@ class ResolvedOp:
     body_chapter_move_from: Optional[str] = None
     named_row_targets: tuple[str, ...] = ()
     numbered_table_targets: tuple[str, ...] = ()
-    fallback_provenance: bool = False
     voimaantulo_repeal: bool = False
     extraction_provenance_tags: tuple[str, ...] = ()
     target_guessing_provenance_tags: tuple[str, ...] = ()
@@ -1463,10 +1478,13 @@ class ResolvedOp:
     _stamped_recognizers: frozenset["RecognizerId"] = field(
         default=frozenset(), repr=False, compare=False
     )
+    # M2 inversion carrier for the distinct ``fallback_provenance`` bit, forwarded
+    # from the inner ``op`` at ``from_amendment_op`` (mirrors AmendmentOp).
+    _from_fallback: bool = field(default=False, repr=False, compare=False)
 
     def _derive_provenance_from_markers(self) -> OpProvenance | None:
         return _derive_op_provenance(
-            fallback_provenance=self.fallback_provenance,
+            from_fallback=self._from_fallback,
             extraction_provenance_tags=self.extraction_provenance_tags,
             target_guessing_provenance_tags=self.target_guessing_provenance_tags,
             scope_provenance_tags=self.scope_provenance_tags,
@@ -1656,7 +1674,7 @@ class ResolvedOp:
             body_chapter_move_from=op.body_chapter_move_from,
             named_row_targets=op.named_row_targets,
             numbered_table_targets=op.numbered_table_targets,
-            fallback_provenance=op.fallback_provenance,
+            _from_fallback=op._from_fallback,
             voimaantulo_repeal=op.voimaantulo_repeal,
             extraction_provenance_tags=op.extraction_provenance_tags,
             target_guessing_provenance_tags=op.target_guessing_provenance_tags,
