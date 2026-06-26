@@ -154,6 +154,15 @@ EE_FIRE_DRILL_COVERAGE: Final[FrozenSet[str]] = frozenset(
         # the statute title). See
         # ``test_ee_fire_drill_replay_unsupported_statute_title_action_blocks``.
         "ee_replay_unsupported_statute_title_action",
+        # === Crash-path drills (via monkeypatched replay_ee_to_pit) ===
+        # ``ee_oracle_parse_failed`` — monkeypatches parse_ee_statute to raise
+        # on oracle XML; asserts the blocking adjudication fires.
+        # See ``test_ee_fire_drill_oracle_parse_failed_blocks``.
+        "ee_oracle_parse_failed",
+        # ``ee_consistency_check_failed`` — monkeypatches verify_consistency to
+        # raise; asserts the blocking adjudication fires.
+        # See ``test_ee_fire_drill_consistency_check_failed_blocks``.
+        "ee_consistency_check_failed",
         # === Existing-tests-registered drills (verified production-path) ===
         # Each rule_id below is driven through the full production path by an
         # existing EE test (apply_ee_ops / parse_ee_amendment_ops / replay_ee_to_pit /
@@ -261,30 +270,14 @@ EE_FIRE_DRILL_COVERAGE: Final[FrozenSet[str]] = frozenset(
 _EE_DRILL_FAMILY_HINT = "drill needs a known-violator witness statute + replay_ee_to_pit run asserting the blocking adjudication fires"
 
 EE_NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
-    # The two blocking codes for which a production-path fire-drill has not
-    # yet been written or located; the rest of the inventory baseline (28
-    # first wave + 2 self-authored statute-title drills = 30 entries) is
-    # covered by existing EE tests registered in ``EE_FIRE_DRILL_COVERAGE``
-    # above (cross-referenced by ``notes_internal/_cross_ref_drills.py`` AST
-    # scan, 2026-06-26).
-    #
-    # Each row carries the concrete route to a corresponding drill:
-    # Source-lane orchestration failures added by fail-loud broad-except audits
-    # in commits 0d60710e + 00f778fc. These are blocking adjudications emitted
-    # through the pass-through ``_ee_orchestration_adjudication`` helper, so the
-    # caller's ``blocking=True`` kwarg flows to ``CompileAdjudication``.
-    "ee_oracle_parse_failed": (
-        f"RT oracle consolidation could not be parsed (consistency check "
-        f"skipped, replay left uncompared); {_EE_DRILL_FAMILY_HINT}; locate "
-        f"EE pair whose oracle XML triggers an xml.etree parse failure.",
-        "2026-06-26",
-    ),
-    "ee_consistency_check_failed": (
-        f"replay/oracle consistency check crashed (no divergences computed, "
-        f"uncompared); {_EE_DRILL_FAMILY_HINT}; induce the check to crash by "
-        f"pointing the replay at a malformed oracle IR.",
-        "2026-06-26",
-    ),
+    # The EE guard-liveness ratchet has achieved 100% fire-drill coverage:
+    # every blocking rule_id in ``EE_BLOCKING_RULE_IDS`` is registered in
+    # ``EE_FIRE_DRILL_COVERAGE``. This dict is empty at baseline. New
+    # blocking codes that land in source without a corresponding drill
+    # must be added here as a conscious debt-admission (with a stated
+    # reason and last-reviewed date) — the partition ratchet gate
+    # (``test_ee_blocking_code_inventory_is_fully_partitioned``) catches
+    # any blocking code that violates this invariant.
 }
 
 # Committed monotone-decreasing ceiling over the NO_FIRE_DRILL_YET debt

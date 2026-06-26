@@ -575,6 +575,8 @@ def _fire_drills_target_registered_codes() -> Dict[str, str]:
         "ee_replay_target_not_found": "test_ee_fire_drill_replay_target_not_found_blocks",
         "ee_replay_statute_title_noop": "test_ee_fire_drill_replay_statute_title_noop_blocks",
         "ee_replay_unsupported_statute_title_action": "test_ee_fire_drill_replay_unsupported_statute_title_action_blocks",
+        "ee_oracle_parse_failed": "test_ee_fire_drill_oracle_parse_failed_blocks",
+        "ee_consistency_check_failed": "test_ee_fire_drill_consistency_check_failed_blocks",
         # === Existing production-path drills in tests/test_ee_apply_semantics.py ===
         "ee_ambiguous_single_occurrence_text_replace": (
             "test_exact_target_insert_after_with_repeated_source_surface_emits_ambiguity"
@@ -852,3 +854,161 @@ def test_ee_fire_drill_replay_unsupported_statute_title_action_blocks() -> None:
         f"got phase={emit.phase!r}"
     )
     assert emit.op_id == op.op_id
+
+
+# ---------------------------------------------------------------------------
+# Crash-path fire-drills: drive replay_ee_to_pit through the source-lane
+# crash boundaries via monkeypatch (mirrors test_ee_replay_logic.py pattern).
+# ---------------------------------------------------------------------------
+
+
+def _patch_replay_for_crash_drill(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    oracle_is_base: bool = False,
+    oracle_id: str = "oracle",
+    oracle_xml: bytes | None = b"<oracle-xml/>",
+    parse_ee_statute_fn=None,
+    verify_consistency_fn=None,
+) -> None:
+    """Minimal ``replay_ee_to_pit`` monkeypatch — mirrors the
+    ``_patch_minimal_ee_replay_pipeline`` pattern in
+    ``tests/test_ee_replay_logic.py`` but with oracle-path support so the
+    ``ee_oracle_parse_failed`` and ``ee_consistency_check_failed`` crash
+    paths are reachable.
+    """
+    from types import SimpleNamespace
+
+    from lawvm.estonia import replay as ee_replay
+
+    base = IRStatute(
+        statute_id="ee/base",
+        title="Test",
+        body=IRNode(kind=IRNodeKind.BODY),
+    )
+    oracle = IRStatute(
+        statute_id=f"ee/{oracle_id}",
+        title="Oracle",
+        body=IRNode(kind=IRNodeKind.BODY),
+    )
+
+    pair_plan = SimpleNamespace(
+        grupi_id="g1",
+        oracle_id=oracle_id if not oracle_is_base else None,
+        source_basis=SimpleNamespace(value="pairwise_terviktekst_delta"),
+        comparison_class="commensurable_delta",
+        source_adjudication=None,
+        oracle_is_base=oracle_is_base,
+        oracle_refs=[],
+        amendments_to_apply=[],
+        base_is_consolidated=True,
+        base_refs=[],
+    )
+
+    if parse_ee_statute_fn is None:
+        def parse_ee_statute_fn(xml, statute_id):
+            return oracle if "oracle" in statute_id else base
+
+    if verify_consistency_fn is None:
+        def verify_consistency_fn(*a, **kw):
+            return []
+
+    monkeypatch.setattr(ee_replay, "parse_ee_statute", parse_ee_statute_fn)
+    monkeypatch.setattr(ee_replay, "fetch_rt_xml", lambda akt_viide, archive: b"<base-xml/>")
+    monkeypatch.setattr(
+        ee_replay,
+        "plan_ee_oracle_pair",
+        lambda **kw: SimpleNamespace(plan=pair_plan, oracle_xml=oracle_xml),
+    )
+    monkeypatch.setattr(ee_replay, "_ee_filter_cancelled_pending_refs", lambda refs, **kw: refs)
+    monkeypatch.setattr(
+        ee_replay,
+        "_ee_precompose_pending_source_act_commencements",
+        lambda refs, **kw: (tuple(refs), ()),
+    )
+    monkeypatch.setattr(ee_replay, "parse_ee_amendment_ops", lambda *a, **kw: [])
+    monkeypatch.setattr(ee_replay, "apply_ee_ops", lambda statute, ops, **kw: statute)
+    monkeypatch.setattr(ee_replay, "compile_timelines", lambda base_ir, lo_ops_out, temporal_events=(): {})
+    monkeypatch.setattr(ee_replay, "materialize_pit", lambda timelines, as_of, base: base)
+    monkeypatch.setattr(ee_replay, "ingest_consolidated", lambda oracle, as_of: oracle)
+    monkeypatch.setattr(ee_replay, "verify_consistency", verify_consistency_fn)
+
+
+def test_ee_fire_drill_oracle_parse_failed_blocks(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fire-drill for ``ee_oracle_parse_failed``:
+
+    Drive ``replay_ee_to_pit`` through the oracle-parse crash path.
+    Monkeypatch ``parse_ee_statute`` to raise ValueError when parsing the
+    oracle XML; the replay path catches the exception at
+    ``src/lawvm/estonia/replay.py:1519`` and emits the blocking
+    ``ee_oracle_parse_failed`` adjudication.
+    """
+    from lawvm.estonia.replay import replay_ee_to_pit
+
+    def fake_parse(xml, statute_id: str):
+        if "oracle" in statute_id:
+            raise ValueError("malformed oracle XML")
+        return IRStatute(
+            statute_id=statute_id,
+            title="Base",
+            body=IRNode(kind=IRNodeKind.BODY),
+        )
+
+    _patch_replay_for_crash_drill(
+        monkeypatch,
+        oracle_is_base=False,
+        oracle_id="oracle-crash",
+        oracle_xml=b"<bad-oracle-xml>",
+        parse_ee_statute_fn=fake_parse,
+    )
+
+    result = replay_ee_to_pit("base", "2025-01-01", archive=object())
+
+    matches = [adj for adj in result.adjudications if adj.kind == "ee_oracle_parse_failed"]
+    assert matches, (
+        "Expected ee_oracle_parse_failed blocking adjudication to fire when "
+        "parse_ee_statute raises on the oracle XML; got: "
+        f"{[(a.kind, a.blocking) for a in result.adjudications]}"
+    )
+    emit = matches[0]
+    assert emit.blocking is True
+    assert emit.phase == "parse"
+    assert emit.detail.get("rule_id") == "ee_oracle_parse_failed"
+    assert emit.detail.get("blocking") is True
+
+
+def test_ee_fire_drill_consistency_check_failed_blocks(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fire-drill for ``ee_consistency_check_failed``:
+
+    Drive ``replay_ee_to_pit`` through the consistency-check crash path.
+    Monkeypatch ``verify_consistency`` to raise RuntimeError; the replay
+    path catches the exception at
+    ``src/lawvm/estonia/replay.py:1911`` and emits the blocking
+    ``ee_consistency_check_failed`` adjudication.
+    """
+    from lawvm.estonia.replay import replay_ee_to_pit
+
+    def crash_verify(*args, **kwargs):
+        raise RuntimeError("consistency check exploded")
+
+    _patch_replay_for_crash_drill(
+        monkeypatch,
+        oracle_is_base=False,
+        oracle_id="oracle-ok",
+        oracle_xml=b"<good-oracle/>",
+        verify_consistency_fn=crash_verify,
+    )
+
+    result = replay_ee_to_pit("base", "2025-01-01", archive=object())
+
+    matches = [adj for adj in result.adjudications if adj.kind == "ee_consistency_check_failed"]
+    assert matches, (
+        "Expected ee_consistency_check_failed blocking adjudication to fire when "
+        "verify_consistency raises; got: "
+        f"{[(a.kind, a.blocking) for a in result.adjudications]}"
+    )
+    emit = matches[0]
+    assert emit.blocking is True
+    assert emit.phase == "compare"
+    assert emit.detail.get("rule_id") == "ee_consistency_check_failed"
+    assert emit.detail.get("blocking") is True
