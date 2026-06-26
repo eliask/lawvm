@@ -49,7 +49,11 @@ from lawvm.core.observation_registry import (
 )
 from lawvm.core.semantic_types import IRNodeKind, TextPatchKindEnum
 from lawvm.finland.ops import OpType, AmendmentOp, FailedOp, classify_legal_operation_conversion_skip
-from lawvm.finland.op_provenance import serialized_provenance_from_bags
+from lawvm.finland.op_provenance import (
+    RecognizerId,
+    has_recognizer,
+    serialized_provenance_from_bags,
+)
 from lawvm.finland.effect_lifecycle_projection import build_finland_effect_lifecycle
 from lawvm.finland.replay_products import ReplayProducts
 from lawvm.tools.section_keys import extract_ir_sections
@@ -4426,7 +4430,12 @@ def test_normalize_and_compile_ops_2011_516_2011_582_keeps_short_operative_pream
     )
 
     assert [
-        (op.op_type, op.target_cols.target_unit_kind, op.target_cols.target_section, op.sec1_body_johto_fallback)
+        (
+            op.op_type,
+            op.target_cols.target_unit_kind,
+            op.target_cols.target_section,
+            has_recognizer(op.provenance, RecognizerId.SEC1_BODY_JOHTO),
+        )
         for op in phase2.output
     ] == [("REPLACE", "section", "1", False)]
     assert phase2.output[0].source_statute == "2011/582"

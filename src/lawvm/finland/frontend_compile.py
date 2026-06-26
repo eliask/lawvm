@@ -4985,11 +4985,12 @@ def normalize_and_compile_ops(
     # Tag sec1 body-text fallback on all ops from this amendment
     if used_preamble_body_fallback and ops:
         for op in ops:
-            op.sec1_body_johto_fallback = True
             op.extraction_provenance_tags = tuple(
                 dict.fromkeys((*op.extraction_provenance_tags, "extraction_preamble_body"))
             )
-            op.restamp_provenance()
+            # M2: stamp the recognizer directly (replaces the deleted
+            # ``sec1_body_johto_fallback`` boolean). ``stamp_recognizer`` restamps.
+            op.stamp_recognizer(RecognizerId.SEC1_BODY_JOHTO)
     if ops:
         reinstated_scope_ops: list[AmendmentOp] = []
         for op in ops:

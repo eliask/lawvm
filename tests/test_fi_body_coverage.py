@@ -99,7 +99,6 @@ class _CoverageOpShim:
         return _derive_op_provenance(
             fallback_provenance=self.fallback_provenance,
             body_root_replace_fallback=self.body_root_replace_fallback,
-            sec1_body_johto_fallback=False,
             uncovered_body_recovery=False,
             extraction_provenance_tags=(),
             target_guessing_provenance_tags=(),

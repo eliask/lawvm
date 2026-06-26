@@ -37,6 +37,7 @@ from lawvm.core.phase_result import Finding, PhaseResult
 from lawvm.finland.apply_ops_executor import _apply_ops_to_tree_typed
 from lawvm.finland.compile_amendment import compile_amendment_ops as _real_compile_amendment_ops
 from lawvm.finland.frontend_compile import normalize_and_compile_ops
+from lawvm.finland.op_provenance import RecognizerId, has_recognizer
 from lawvm.finland.ops import OpType, AmendmentOp, ResolvedOp
 from lawvm.finland.process_pipeline import process_muutoslaki
 from lawvm.finland.post_process import post_process_tree
@@ -1082,7 +1083,7 @@ class TestNormalizeAndCompileOps:
         ).output
 
         for op in ops:
-            assert op.sec1_body_johto_fallback is True
+            assert has_recognizer(op.provenance, RecognizerId.SEC1_BODY_JOHTO)
             assert "extraction_preamble_body" in op.extraction_provenance_tags
 
     def test_body_root_replace_tag_propagated(self) -> None:

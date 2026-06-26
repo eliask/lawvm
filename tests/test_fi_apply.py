@@ -122,6 +122,7 @@ from lawvm.finland.standalone_targets import (
 from tests.corpus_pin_helpers import pinned_replay
 from lawvm.finland.metadata import get_johtolause
 from lawvm.finland.merge import _merge_section_with_omission_ir, _partial_section_replace_diagnostics_ir
+from lawvm.finland.op_provenance import RecognizerId
 from lawvm.finland.ops import (
     AmendmentOp,
     FailedOp,
@@ -1838,7 +1839,7 @@ def test_emit_section_snapshot_uses_typed_sec1_fallback_for_absent_whole_section
                     op_type=OpType.REPEAL,
                     target_section="1",
                     target_unit_kind="section",
-                    sec1_body_johto_fallback=True,
+                    _stamped_recognizers=frozenset({RecognizerId.SEC1_BODY_JOHTO}),
                     source_statute="2022/955",
                     source_issue_date=_DATE,
                 ),

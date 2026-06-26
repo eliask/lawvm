@@ -107,12 +107,12 @@ def _derive_op_provenance(
     *,
     fallback_provenance: bool,
     body_root_replace_fallback: bool,
-    sec1_body_johto_fallback: bool,
     uncovered_body_recovery: bool,
     extraction_provenance_tags: Tuple[str, ...],
     target_guessing_provenance_tags: Tuple[str, ...],
     scope_provenance_tags: Tuple[str, ...],
     witness_rule_id: Optional[str],
+    stamped_recognizers: frozenset["RecognizerId"] = frozenset(),
 ) -> OpProvenance | None:
     """Derive the typed :class:`OpProvenance` from an op's recovery markers.
 
@@ -139,8 +139,6 @@ def _derive_op_provenance(
     phase; absence is represented as ``None`` here to stay additive.
     """
     ids: set[RecognizerId] = set()
-    if sec1_body_johto_fallback:
-        ids.add(RecognizerId.SEC1_BODY_JOHTO)
     if body_root_replace_fallback:
         ids.add(RecognizerId.BODY_ROOT_REPLACE)
     if uncovered_body_recovery:
@@ -159,6 +157,11 @@ def _derive_op_provenance(
         ids.add(RecognizerId.JOLLOIN_RENUMBER)
     elif witness_rule_id == RecognizerId.REPEAL_VTS_VOIMAANTULO.value:
         ids.add(RecognizerId.REPEAL_VTS_VOIMAANTULO)
+
+    # M2 inversion: recognizers stamped directly by a write site (in place of the
+    # legacy marker it set) union in here BEFORE the None check, so a stamp-only
+    # op (whose legacy marker has already been deleted) still yields ``Recovered``.
+    ids |= stamped_recognizers
 
     if not ids and not fallback_provenance:
         return None
@@ -831,7 +834,6 @@ class AmendmentOp:
     numbered_table_targets: Tuple[str, ...] = ()
     body_root_replace_fallback: bool = False
     fallback_provenance: bool = False
-    sec1_body_johto_fallback: bool = False
     move_clause_target_unit_kind: Optional[TargetUnitKind] = None
     uncovered_body_recovery: bool = False
     voimaantulo_repeal: bool = False
@@ -868,6 +870,20 @@ class AmendmentOp:
     _provenance: "OpProvenance | None | _ProvenanceUnset" = field(
         default=_PROVENANCE_UNSET, repr=False, compare=False
     )
+    # M2 inversion carrier (private migration journal — NOT a public authority
+    # plane). REPLACE-DURABLE: an init field re-passed by ``dataclasses.replace``
+    # so an explicitly stamped recognizer survives a replace exactly as the legacy
+    # markers did. A write site that today set a legacy recovery marker instead
+    # calls :meth:`stamp_recognizer`, which adds the recognizer here and restamps;
+    # the recognizer then folds into ``_provenance`` via
+    # :meth:`_derive_provenance_from_markers` (unioned into the derived id set
+    # BEFORE the no-recovery None check). Once a legacy marker is deleted there is
+    # nothing left to derive it from, so this stamp is the sole carrier. Consumed
+    # ONLY by ``_derive_provenance_from_markers``; no apply/read site inspects it.
+    # Excluded from ``repr``/``compare`` so it never perturbs op identity.
+    _stamped_recognizers: frozenset["RecognizerId"] = field(
+        default=frozenset(), repr=False, compare=False
+    )
     if TYPE_CHECKING:
         target_kind: TargetKind
 
@@ -889,26 +905,40 @@ class AmendmentOp:
         return prov
 
     def _derive_provenance_from_markers(self) -> OpProvenance | None:
-        """Derive the stamp from THIS op's current recovery markers."""
+        """Derive the stamp from THIS op's current recovery markers + stamps."""
         return _derive_op_provenance(
             fallback_provenance=self.fallback_provenance,
             body_root_replace_fallback=self.body_root_replace_fallback,
-            sec1_body_johto_fallback=self.sec1_body_johto_fallback,
             uncovered_body_recovery=self.uncovered_body_recovery,
             extraction_provenance_tags=self.extraction_provenance_tags,
             target_guessing_provenance_tags=self.target_guessing_provenance_tags,
             scope_provenance_tags=self.scope_provenance_tags,
             witness_rule_id=self.witness_rule_id,
+            stamped_recognizers=self._stamped_recognizers,
         )
+
+    def stamp_recognizer(self, recognizer: "RecognizerId") -> None:
+        """Stamp a recovery recognizer directly into the durable provenance.
+
+        The M2 inversion seam: a write site that today set a legacy recovery
+        marker (a ``*_fallback`` boolean) calls this instead, adding the
+        recognizer to the durable :attr:`_stamped_recognizers` carrier and
+        restamping :attr:`_provenance`. The recognizer then survives a
+        ``dataclasses.replace`` via the carried stamp set exactly as the marker
+        did, so deleting the marker is byte-identical at the provenance level.
+        """
+        self._stamped_recognizers = self._stamped_recognizers | {recognizer}
+        self.restamp_provenance()
 
     def restamp_provenance(self) -> None:
         """Re-derive the stored provenance stamp from the current markers.
 
         Called at the frontend setattr sites (``op.body_root_replace_fallback =
-        True``, ``op.extraction_provenance_tags = …``, ``op.sec1_body_johto_fallback
-        = True``, ``op.witness_rule_id = …``) that mutate recovery markers AFTER
-        construction, so the stored stamp stays in lockstep with the markers the
-        legacy readers used. Fresh construction stamps via this method; a
+        True``, ``op.extraction_provenance_tags = …``, ``op.witness_rule_id = …``)
+        and by :meth:`stamp_recognizer` (the M2 inversion seam) that mutate
+        recovery markers / stamps AFTER construction, so the stored stamp stays in
+        lockstep with the markers the legacy readers used. Fresh construction
+        stamps via this method; a
         ``dataclasses.replace`` CARRIES the stored stamp (re-deriving only on a
         marker-mutating replace — see ``__init__``).
         """
@@ -940,7 +970,6 @@ class AmendmentOp:
         numbered_table_targets: Tuple[str, ...] = (),
         body_root_replace_fallback: bool = False,
         fallback_provenance: bool = False,
-        sec1_body_johto_fallback: bool = False,
         move_clause_target_unit_kind: TargetUnitKind | None = None,
         uncovered_body_recovery: bool = False,
         voimaantulo_repeal: bool = False,
@@ -961,6 +990,7 @@ class AmendmentOp:
         preserve_explicit_heading_facet: bool = False,
         witness_rule_id: Optional[str] = None,
         _provenance: "OpProvenance | None | _ProvenanceUnset" = _PROVENANCE_UNSET,
+        _stamped_recognizers: frozenset["RecognizerId"] = frozenset(),
     ) -> None:
         explicit_selector = (
             target_selector
@@ -1024,7 +1054,6 @@ class AmendmentOp:
         self.numbered_table_targets = numbered_table_targets
         self.body_root_replace_fallback = body_root_replace_fallback
         self.fallback_provenance = fallback_provenance
-        self.sec1_body_johto_fallback = sec1_body_johto_fallback
         self.move_clause_target_unit_kind = move_clause_target_unit_kind
         self.uncovered_body_recovery = uncovered_body_recovery
         self.voimaantulo_repeal = voimaantulo_repeal
@@ -1047,6 +1076,9 @@ class AmendmentOp:
         self.temporal_activation = temporal_activation
         self.preserve_explicit_heading_facet = preserve_explicit_heading_facet
         self.witness_rule_id = witness_rule_id
+        # REPLACE-DURABLE M2 inversion carrier — assigned before the provenance
+        # stamp below so the derive sees the carried recognizer stamps.
+        self._stamped_recognizers = _stamped_recognizers
 
         # Stamp the stored typed provenance (storage-collapse, REPLACE-DURABLE).
         # All marker fields the stamp reads are assigned above; the remaining
@@ -1395,7 +1427,6 @@ class ResolvedOp:
     # override hooks, not ordinary public runtime authority.
     _op_type_seed: OpType = OpType.REPLACE
     _target_special_override: Optional[str] = None
-    sec1_body_johto_fallback: bool = False
     move_clause_target_unit_kind: TargetUnitKind | None = None
     move_clause_target_chapter: Optional[str] = None
     move_clause_target_part: Optional[str] = None
@@ -1440,17 +1471,25 @@ class ResolvedOp:
     _provenance: "OpProvenance | None | _ProvenanceUnset" = field(
         default=_PROVENANCE_UNSET, repr=False, compare=False
     )
+    # REPLACE-DURABLE M2 inversion carrier, forwarded from the inner ``op`` at
+    # ``from_amendment_op``. Mirrors ``AmendmentOp._stamped_recognizers``: the
+    # recognizers a write site stamped directly (in place of a deleted legacy
+    # marker) fold into the derived provenance here too, so the late-waist stamp
+    # stays in lockstep with the op's. Excluded from ``repr``/``compare``.
+    _stamped_recognizers: frozenset["RecognizerId"] = field(
+        default=frozenset(), repr=False, compare=False
+    )
 
     def _derive_provenance_from_markers(self) -> OpProvenance | None:
         return _derive_op_provenance(
             fallback_provenance=self.fallback_provenance,
             body_root_replace_fallback=self.body_root_replace_fallback,
-            sec1_body_johto_fallback=self.sec1_body_johto_fallback,
             uncovered_body_recovery=self.uncovered_body_recovery,
             extraction_provenance_tags=self.extraction_provenance_tags,
             target_guessing_provenance_tags=self.target_guessing_provenance_tags,
             scope_provenance_tags=self.scope_provenance_tags,
             witness_rule_id=self.witness_rule_id,
+            stamped_recognizers=self._stamped_recognizers,
         )
 
     def __post_init__(self) -> None:
@@ -1628,7 +1667,6 @@ class ResolvedOp:
                 )
                 else _target_special_override_for_address(op.target_cols.target_special, resolved_target_address)
             ),
-            sec1_body_johto_fallback=op.sec1_body_johto_fallback,
             move_clause_target_unit_kind=op.move_clause_target_unit_kind,
             move_clause_target_chapter=op.target_cols.target_chapter,
             move_clause_target_part=op.target_cols.target_part,
@@ -1660,6 +1698,7 @@ class ResolvedOp:
             target_version_statute_id=op.target_version_statute_id,
             slot_assignment=slot_assignment,
             payload_completeness=payload_completeness,
+            _stamped_recognizers=op._stamped_recognizers,
         )
         rop.intent = _build_canonical_intent(rop)
         return rop
@@ -1881,9 +1920,10 @@ class ResolvedOp:
         ResolvedOp's forwarded markers.
 
         Critically NOT delegated to ``self.op``: the late waist forwards its own
-        copies of the recovery markers (``sec1_body_johto_fallback``,
-        ``uncovered_body_recovery``, the ``*_provenance_tags`` bags, the
-        ``witness_rule_id``) at ``from_amendment_op`` time, and the legacy readers
+        copies of the recovery markers (``uncovered_body_recovery``, the
+        ``*_provenance_tags`` bags, the ``witness_rule_id``, and the
+        ``_stamped_recognizers`` carrier) at ``from_amendment_op`` time, and the
+        legacy readers
         consumed THOSE forwarded fields — not the inner ``op``'s, which can carry
         a different (later-mutated) tag set. The stamp is derived from ``self`` in
         ``__post_init__`` (re-run by ``dataclasses.replace``), keeping the typed
