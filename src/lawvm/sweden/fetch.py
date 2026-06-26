@@ -1376,9 +1376,22 @@ def fetch_se_official_artifacts(
             cleaned_bytes.decode("utf-8", errors="replace"),
             sfs_id=sfs_id,
         )
-        archive.store(
+        # KNOW-01 wrap (downstream-derived): act_json is derived from
+        # cleaned_bytes (which force_reextract just (re-)stored), so a re-extract
+        # of the cleaned text also re-store()s the cached parsed act text — and
+        # if a prior act_json occupies the locator it is overwritten in place.
+        # The wrapper mirrors the force_reextract branch above: when force_reextract
+        # did NOT fire (e.g. existing_cleaned was None triggering re-derivation
+        # without force_reextract), still scribe the overwrite with the
+        # "manual_reingest" trigger so the audit is complete — the prior content
+        # is recorded either way.
+        se_store_with_overwrite_event(
+            archive,
             act_json_url,
             _json_bytes(se_official_act_text_to_dict(act_text)),
+            sfs_id=sfs_id,
+            source_trigger="force_reextract" if force_reextract else "manual_reingest",
+            events_out=overwrite_events_out,
             storage_class="json",
         )
         if not act_text.is_amending_act:
@@ -1397,9 +1410,16 @@ def fetch_se_official_artifacts(
                     exception_type=type(exc).__name__,
                 )
             else:
-                archive.store(
+                # KNOW-01 wrap (downstream-derived): the base_ir locator is
+                # written from the act text just (re-)derived above. Same
+                # force-reextract / manual-reingest trigger semantics as act_json.
+                se_store_with_overwrite_event(
+                    archive,
                     se_official_base_ir_locator(sfs_id),
                     _json_bytes(base_statute.to_jsonable_dict()),
+                    sfs_id=sfs_id,
+                    source_trigger="force_reextract" if force_reextract else "manual_reingest",
+                    events_out=overwrite_events_out,
                     storage_class="json",
                 )
 

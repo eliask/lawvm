@@ -7038,3 +7038,132 @@ def test_hydrate_se_bundle_live_archives_bundle_and_official_artifacts(monkeypat
     archived_bundle = load_se_bundle_from_archive(archive, "2025:399")
     assert archived_bundle is not None
     assert archived_bundle["official_artifacts"]["pdf_url"] == bundle.official_artifacts.pdf_url
+
+
+# --------------------------------------------------------------------------- #
+# §2.9 production-path fire-drills for the KNOW-01 overwrite_event_ledger.     #
+# --------------------------------------------------------------------------- #
+
+
+def test_fetch_se_official_artifacts_force_reextract_fires_overwrite_events(monkeypatch) -> None:
+    """§2.9 guard-liveness production-path fire-drill for the KNOW-01 overwrite
+    ledger wired at fetch_se_official_artifacts.
+
+    The worst failure class: a check that exists and is registered but
+    unreachable from the production lane. The wrapper at
+    ``se_store_with_overwrite_event`` is wired at the pdf_text +
+    cleaned_text + act_json + base_ir overwrite sites INSIDE
+    fetch_se_official_artifacts — but a unit test of the wrapper alone
+    cannot prove that. This test drives a real overwrite through the
+    production lane:
+
+    * seeds prior bytes at the pdf.text / cleaned.txt / official.act.json
+      locators so re-extraction overlays existing manifestations;
+    * monkeypatches the lower-level fetch + parse helpers (no network);
+    * force_reextract=True through the production function;
+    * asserts the accumulator receives events at the text + cleaned + act_json
+      locators with the seeded prior content's hash as prior_bytes_sha256
+      (NOT blank — the prior manifestation was overwritten; KNOW-01 demands
+      its hash be recorded or the mutation is silent).
+    """
+    import hashlib
+
+    from lawvm.sweden.se_overwrite_event_ledger import SEOverwriteEvent
+
+    sfs_id = "2026:286"
+    doc_url = "https://svenskforfattningssamling.se/doc/2026286.html"
+    pdf_url = "https://svenskforfattningssamling.se/sites/default/files/sfs/2026-03/SFS2026-286.pdf"
+    prior_text = b"prior body text"
+    prior_cleaned = b"prior cleaned text"
+    prior_act_json = b'{"prior_act": true}'
+
+    text_locator = "se://sfs/2026:286/official.pdf.txt"
+    cleaned_locator = "se://sfs/2026:286/official.cleaned.txt"
+    act_json_locator = "se://sfs/2026:286/official.act.json"
+
+    archive = _FakeArchive(
+        fetched={
+            doc_url: b'<a href="/sites/default/files/sfs/2026-03/SFS2026-286.pdf">PDF</a>',
+            pdf_url: b"%PDF-1.7 fake",
+        },
+        stored={
+            text_locator: prior_text,
+            cleaned_locator: prior_cleaned,
+            act_json_locator: prior_act_json,
+        },
+    )
+    monkeypatch.setattr(
+        "lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes: "New extracted PDF text"
+    )
+
+    overwrite_events: list[SEOverwriteEvent] = []
+    bundle = fetch_se_official_artifacts(
+        "2026:286",
+        archive,
+        force_reextract=True,
+        overwrite_events_out=overwrite_events,
+    )
+
+    assert bundle is not None
+    # §2.9: the wrapper actually FIRED (parameter not dead).
+    assert overwrite_events, (
+        "force_reextract=True drive through fetch_se_official_artifacts emitted "
+        "NO overwrite events — overwrite_events_out is unreachable from the "
+        "production lane (§2.9 guard-liveness failure)."
+    )
+    events_by_locator = {event.locator: event for event in overwrite_events}
+
+    # KNOW-01 load-bearing: prior manifestation hash recorded for the text locator.
+    assert text_locator in events_by_locator
+    text_event = events_by_locator[text_locator]
+    assert text_event.prior_bytes_sha256 == "sha256:" + hashlib.sha256(prior_text).hexdigest()
+    assert archive.get(text_locator) == b"New extracted PDF text"
+    assert text_event.source_trigger == "force_reextract"
+    assert text_event.rule_id == "se_official_artifacts_force_reextract_overwrite"
+
+    # Downstream-derived site: act_json must carry the prior act_json's hash
+    # (KNOW-01 for the parsed-act-text manifestation).
+    assert act_json_locator in events_by_locator
+    act_json_event = events_by_locator[act_json_locator]
+    assert (
+        act_json_event.prior_bytes_sha256
+        == "sha256:" + hashlib.sha256(prior_act_json).hexdigest()
+    )
+
+
+def test_fetch_se_official_artifacts_force_reextract_blank_prior_on_first_write(monkeypatch) -> None:
+    """Negative discipline: when force_reextract re-extracts text at a locator
+    with NO prior bytes (fresh first-write inside the re-extract branch), the
+    event's prior_bytes_sha256 is blank — the event records "new manifestation
+    created" rather than "matter mutated". Proves the wrapper's read-before-
+    write discipline (it doesn't silently emit a stale hash on a fresh locator)."""
+    from lawvm.sweden.se_overwrite_event_ledger import SEOverwriteEvent
+
+    sfs_id = "2026:999"
+    doc_url = "https://svenskforfattningssamling.se/doc/2026999.html"
+    pdf_url = "https://svenskforfattningssamling.se/sites/default/files/sfs/2026-12/SFS2026-999.pdf"
+    archive = _FakeArchive(
+        fetched={
+            doc_url: b'<a href="/sites/default/files/sfs/2026-12/SFS2026-999.pdf">PDF</a>',
+            pdf_url: b"%PDF-1.7 fake",
+        }
+    )
+    monkeypatch.setattr(
+        "lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes: "First extracted text"
+    )
+
+    overwrite_events: list[SEOverwriteEvent] = []
+    bundle = fetch_se_official_artifacts(
+        "2026:999",
+        archive,
+        force_reextract=True,
+        overwrite_events_out=overwrite_events,
+    )
+    assert bundle is not None
+
+    text_locator = "se://sfs/2026:999/official.pdf.txt"
+    events_by_locator = {event.locator: event for event in overwrite_events}
+    assert events_by_locator[text_locator].prior_bytes_sha256 == "", (
+        "force_reextract on a fresh locator emitted a non-empty prior_bytes_sha256 — "
+        "the wrapper's read-before-write discipline is broken."
+    )

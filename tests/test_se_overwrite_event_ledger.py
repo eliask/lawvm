@@ -225,10 +225,13 @@ def test_root_empty_set_is_well_defined() -> None:
 
 
 def test_fetch_se_official_artifacts_with_overwrite_events_still_runs() -> None:
-    """Guard-liveness (§2.9): the new overwrite_events_out parameter is in the
-    production signature — we don't drive a real PDF fetch here (that needs
-    @network), but the smoke check asserts the function accepts the parameter
-    without raising TypeErrors."""
+    """Guard-liveness smoke (§2.9 entry-level): the new overwrite_events_out
+    parameter is in the production signature — assert the function accepts the
+    parameter without TypeErrors. The full production-path fire-drill that
+    drives an actual overwrite through the lane lives in
+    tests/test_sweden_fetch.py alongside the other fetch_se_official_artifacts
+    fixture-driven tests (shares _FakeArchive cleanly without cross-shard
+    fixture coupling)."""
     import inspect
 
     from lawvm.sweden.fetch import fetch_se_official_artifacts
