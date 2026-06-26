@@ -13,6 +13,7 @@ from dataclasses import replace as dc_replace
 from typing import TYPE_CHECKING, List, Optional, Set, Tuple
 
 from lawvm.core.phase_result import Finding
+from lawvm.finland.op_provenance import representative_scope_tag
 from lawvm.finland.ops import AmendmentOp, OpType, projection_scope_confidence
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.johtolause import parse_clause, derive_features
@@ -366,8 +367,16 @@ def _scope_anchor_dependence_observations(
         )
         if witness is None:
             continue
-        if not witness.tag and op.scope_provenance_tags:
-            witness = dc_replace(witness, tag=op.scope_provenance_tags[0])
+        if not witness.tag:
+            # Order-free display fallback: when the typed scope carrier left its
+            # ``tag`` empty, pick ONE deterministic representative scope tag from
+            # the op's typed provenance set by a fixed precedence, instead of the
+            # positional ``scope_provenance_tags[0]`` (which would depend on the
+            # now order-free tag-bag ordering). Cosmetic only — the obs_kind is
+            # decided below off ``witness.source``, not this tag.
+            display_tag = representative_scope_tag(op.provenance)
+            if display_tag is not None:
+                witness = dc_replace(witness, tag=display_tag)
         if witness.source == "carry_forward":
             obs_kind = "LOWER.SCOPE_CARRY_FORWARD"
         elif witness.source in {"preamble", "grouped_part", "grouped_chapter"}:

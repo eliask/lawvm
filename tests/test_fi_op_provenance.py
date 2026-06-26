@@ -206,3 +206,256 @@ def test_blocks_in_strict_typed_method_matches_disposition() -> None:
     assert blocking is not None and blocking.blocks_in_strict() is True
     nonblocking = recovery_authorization_rule("APPLY.LEGACY_DISPATCH_FALLBACK")
     assert nonblocking is not None and nonblocking.blocks_in_strict() is False
+
+
+def test_recognizer_id_namespace_is_exhaustive_over_serialized_tag_bags() -> None:
+    """Pin the full closed ``RecognizerId`` namespace (Step A census).
+
+    Every tag string a whole-corpus census (59,574 statutes,
+    ``official_consolidation`` replay) observed in the three serialized
+    provenance bags — unioned with the static write-site literals that are
+    written-then-stripped before serialization — has a typed ``RecognizerId``
+    member whose ``.value`` is the exact literal. This guard fails loudly if a
+    new tag string is added to a bag without a typed home (silent string growth)
+    OR a member is renamed/dropped (serialized-identity drift).
+    """
+    expected_values = {
+        # Boolean recovery flags on AmendmentOp.
+        "sec1_body_johto_fallback",
+        "body_root_replace_fallback",
+        "uncovered_body_recovery",
+        # extraction_provenance_tags serialized + write-site set.
+        "extraction_fallback_heuristic",
+        "extraction_body_root_replace",
+        "extraction_enacting_formula_body_replace",
+        "extraction_enacting_formula_body_insert",
+        "extraction_ceremonial_body_only",
+        "extraction_act_wide_body_section_replace",
+        "extraction_title_fallback",
+        "extraction_preamble_body",
+        "jolloin_moment_renumber_supplement",
+        "repeal_reenact_normalized",
+        "numbered_table_target",
+        "item_and_moment_target_supplement",
+        "mixed_explicit_target_supplement",
+        "sparse_osalta_row_omission_repeal",
+        "fi.historical_top_level_kohta_as_subsection",
+        # target_guessing_provenance_tags serialized + write-site set.
+        "unique_item_label_subsection_fallback",
+        "normalize_item_like_target",
+        "rebase_duplicate_target_shifted_replace",
+        "rebase_replaced_renumber_source",
+        "rebase_sparse_stale_predecessor",
+        "numbered_table_xml_subsection_offset",
+        "follow_same_wave_migration",
+        # scope_provenance_tags serialized + closed read/write set.
+        "chapter_scope_from_unique_live_section",
+        "chapter_scope_carry_forward",
+        "chapter_scope_from_explicit_chunk",
+        "chapter_scope_from_preamble",
+        "chapter_scope_from_same_amendment_stem",
+        "grouped_chapter_scope",
+        "grouped_part_scope",
+        "chapter_seed",
+        "mixed_scope_group_merge",
+        "identity_renumber_absent_target_to_insert",
+        # scope_provenance_tags explicit-scope-rewrite witnesses (read by the
+        # compile_result scope-witness legacy fallback + scope_confidence_from_tags).
+        "chapter_scope_stripped_subsection_insert",
+        "chapter_scope_stripped_section_facet_insert",
+        "chapter_scope_stripped_unique_section",
+        "chapter_scope_stripped_duplicate_label_outside_stated_chapter",
+        # Branched witness_rule_id values.
+        "fi.jolloin_renumber",
+        "fi.repeal_vts_voimaantulo",
+    }
+    actual_values = {m.value for m in RecognizerId}
+    assert actual_values == expected_values
+    # No enum aliasing collapsed two members onto one value.
+    assert len(actual_values) == len(list(RecognizerId))
+
+
+def test_recognizer_bag_classification_is_total_and_partitions_namespace() -> None:
+    """Every ``RecognizerId`` has a bag; the bagged members partition the namespace.
+
+    The serialized provenance columns are reconstructed FROM the typed recognizer
+    set via the bag classification, so the classification must be TOTAL over the
+    closed namespace (no recognizer without a bag) and each bagged member must
+    round-trip its literal back to itself in its own bag (and nowhere else).
+    """
+    from lawvm.finland.op_provenance import (
+        ProvenanceBag,
+        recognizer_bag,
+        recognizer_for_tag,
+    )
+
+    bagged = 0
+    for member in RecognizerId:
+        bag = recognizer_bag(member)  # raises KeyError if a member is unclassified
+        if bag is ProvenanceBag.NONE:
+            # Boolean-flag / witness members synthesize no serialized bag tag.
+            for serialized_bag in (
+                ProvenanceBag.EXTRACTION,
+                ProvenanceBag.TARGET_GUESSING,
+                ProvenanceBag.SCOPE,
+            ):
+                assert recognizer_for_tag(serialized_bag, member.value) is None
+            continue
+        bagged += 1
+        # The literal round-trips to its member in its own bag only.
+        assert recognizer_for_tag(bag, member.value) is member
+        for other in (
+            ProvenanceBag.EXTRACTION,
+            ProvenanceBag.TARGET_GUESSING,
+            ProvenanceBag.SCOPE,
+        ):
+            if other is not bag:
+                assert recognizer_for_tag(other, member.value) is None
+    # Exactly the boolean-flag (3) + witness (2) members are unbagged.
+    assert bagged == len(list(RecognizerId)) - 5
+
+
+def test_derive_op_provenance_folds_every_serialized_bag_tag() -> None:
+    """COMPLETENESS PIN: every serialized tag a write-site emits is captured.
+
+    The migration replaces the three raw string bag columns with the typed
+    provenance, so the derived ``recognizer_ids`` must losslessly capture every
+    tag string the closed namespace can carry — including the Step-A members that
+    earlier folds dropped (the ``extraction_*`` / scope / ``repeal_reenact_*``
+    families). This fails loudly if a typed tag stops being folded (a silent
+    serialization-content loss).
+    """
+    from lawvm.finland.op_provenance import ProvenanceBag, recognizer_bag
+    from lawvm.finland.ops import _derive_op_provenance
+
+    extraction = tuple(
+        m.value for m in RecognizerId if recognizer_bag(m) is ProvenanceBag.EXTRACTION
+    )
+    target_guessing = tuple(
+        m.value
+        for m in RecognizerId
+        if recognizer_bag(m) is ProvenanceBag.TARGET_GUESSING
+    )
+    scope = tuple(
+        m.value for m in RecognizerId if recognizer_bag(m) is ProvenanceBag.SCOPE
+    )
+
+    prov = _derive_op_provenance(
+        fallback_provenance=False,
+        body_root_replace_fallback=True,
+        sec1_body_johto_fallback=True,
+        uncovered_body_recovery=True,
+        extraction_provenance_tags=extraction,
+        target_guessing_provenance_tags=target_guessing,
+        scope_provenance_tags=scope,
+        witness_rule_id=RecognizerId.JOLLOIN_RENUMBER.value,
+    )
+    assert isinstance(prov, Recovered)
+    # Every member except the second witness (only one witness_rule_id per op)
+    # is present: all bagged tags + the three booleans + the supplied witness.
+    expected = {
+        m
+        for m in RecognizerId
+        if m is not RecognizerId.REPEAL_VTS_VOIMAANTULO
+    }
+    assert prov.recognizer_ids == frozenset(expected)
+
+
+def test_bag_tags_reconstructs_each_serialized_column() -> None:
+    """The serialization codec round-trips a recognizer set back to bag columns."""
+    from lawvm.finland.op_provenance import ProvenanceBag, bag_tags
+
+    rids = frozenset(
+        {
+            RecognizerId.EXTRACTION_FALLBACK_HEURISTIC,
+            RecognizerId.REPEAL_REENACT_NORMALIZED,
+            RecognizerId.NORMALIZE_ITEM_LIKE_TARGET,
+            RecognizerId.SCOPE_CARRY_FORWARD,
+            # Boolean-flag member: contributes to NO serialized bag.
+            RecognizerId.BODY_ROOT_REPLACE,
+        }
+    )
+    assert bag_tags(rids, ProvenanceBag.EXTRACTION) == (
+        "extraction_fallback_heuristic",
+        "repeal_reenact_normalized",
+    )
+    assert bag_tags(rids, ProvenanceBag.TARGET_GUESSING) == ("normalize_item_like_target",)
+    assert bag_tags(rids, ProvenanceBag.SCOPE) == ("chapter_scope_carry_forward",)
+    # Boolean-flag member never lands in a serialized column.
+    assert bag_tags(frozenset({RecognizerId.BODY_ROOT_REPLACE}), ProvenanceBag.EXTRACTION) == ()
+
+
+def test_representative_scope_tag_is_deterministic_and_order_free() -> None:
+    """The display-tag picker depends only on the typed SET, not insertion order.
+
+    Order-free replacement for the positional ``scope_provenance_tags[0]`` read:
+    the same recognizer set always yields the same representative scope tag, by a
+    fixed precedence (explicit chunk > carry-forward), and a non-scope provenance
+    yields ``None``.
+    """
+    from lawvm.finland.op_provenance import (
+        ConfidenceTier,
+        Parsed,
+        Recovered,
+        RecoverySurface,
+        representative_scope_tag,
+    )
+
+    both = frozenset(
+        {RecognizerId.SCOPE_FROM_PREAMBLE, RecognizerId.SCOPE_FROM_EXPLICIT_CHUNK}
+    )
+    rec = Recovered(
+        surface=RecoverySurface.SCOPE, recognizer_ids=both, tier=ConfidenceTier.ANCHORED
+    )
+    # Highest-precedence scope recognizer wins, irrespective of set member order.
+    assert representative_scope_tag(rec) == "chapter_scope_from_explicit_chunk"
+    # A Recovered carrying only a non-scope (boolean-flag) recognizer has no scope tag.
+    non_scope = Recovered(
+        surface=RecoverySurface.BODY,
+        recognizer_ids=frozenset({RecognizerId.BODY_ROOT_REPLACE}),
+        tier=ConfidenceTier.HEURISTIC,
+    )
+    assert representative_scope_tag(non_scope) is None
+    # Parsed / None provenance never carry a scope display tag.
+    assert representative_scope_tag(Parsed(grammar_rule_id="r")) is None
+    assert representative_scope_tag(None) is None
+
+
+def test_amendment_op_provenance_is_replace_durable() -> None:
+    """``provenance`` is STORED and CARRIED through ``dataclasses.replace``.
+
+    Step B inversion: ``_provenance`` is an init field, so a non-marker-mutating
+    ``replace`` carries the stored stamp (not a fresh re-derivation), while a
+    marker-mutating ``replace`` re-derives so the stamp stays in lockstep with
+    the markers (byte-identical while the markers remain authoritative).
+    """
+    from dataclasses import replace as dc_replace
+
+    from lawvm.finland.op_provenance import has_recognizer
+    from lawvm.finland.ops import AmendmentOp
+
+    op = AmendmentOp(
+        target_unit_kind="section",
+        target_section="5",
+        extraction_provenance_tags=("extraction_fallback_heuristic",),
+        fallback_provenance=True,
+    )
+    assert has_recognizer(op.provenance, RecognizerId.EXTRACTION_FALLBACK_HEURISTIC)
+
+    # Non-marker-mutating replace CARRIES the same stamp object value.
+    carried = dc_replace(op, op_id="renamed")
+    assert carried.provenance == op.provenance
+
+    # Marker-mutating replace re-derives, composing the new recognizer in.
+    mutated = dc_replace(
+        op, target_guessing_provenance_tags=("normalize_item_like_target",)
+    )
+    assert has_recognizer(mutated.provenance, RecognizerId.NORMALIZE_ITEM_LIKE_TARGET)
+    assert has_recognizer(
+        mutated.provenance, RecognizerId.EXTRACTION_FALLBACK_HEURISTIC
+    )
+
+    # A non-recovery op has no stamp, and the absence carries too.
+    plain = AmendmentOp(target_unit_kind="section", target_section="7")
+    assert plain.provenance is None
+    assert dc_replace(plain, op_id="x").provenance is None

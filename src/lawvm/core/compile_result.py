@@ -962,15 +962,41 @@ def _string_set_from_row_list(row: Mapping[str, Any], key: str) -> frozenset[str
     return frozenset(str(part).strip() for part in value if str(part).strip())
 
 
+def _provenance_bag_view(row: Mapping[str, Any], bag_key: str) -> list[str]:
+    """Return a compiled-op row's per-bag provenance tag view.
+
+    The serialized schema carries a single typed ``provenance`` field instead of
+    the three raw bag columns; the per-bag tag lists are derived (by the FI codec
+    at serialize time) under ``provenance["bags"]``. This reader stays in ``core``
+    (no jurisdiction import) by reading those pre-derived views, so the
+    extraction / target-guessing / scope tag sets a strict-finding consumer keys
+    on are reconstructed from the typed field.
+    """
+    provenance = row.get("provenance")
+    if not isinstance(provenance, Mapping):
+        return []
+    bags = provenance.get("bags")
+    if not isinstance(bags, Mapping):
+        return []
+    view = bags.get(bag_key)
+    if not isinstance(view, (list, tuple)):
+        return []
+    return [str(part).strip() for part in view if str(part).strip()]
+
+
+def _provenance_bag_set(row: Mapping[str, Any], bag_key: str) -> frozenset[str]:
+    return frozenset(_provenance_bag_view(row, bag_key))
+
+
 def _compiled_op_evidence_row(row: Mapping[str, Any]) -> CompiledOpEvidenceRow:
     scope_source = row.get("scope_source")
     scope_confidence = row.get("scope_confidence")
     return CompiledOpEvidenceRow(
         source_statute=_compiled_op_source_statute(row),
         provenance_tags=CompiledOpProvenanceTags(
-            extraction_tags=_string_set_from_row_list(row, "extraction_provenance_tags"),
-            target_guessing_tags=_string_set_from_row_list(row, "target_guessing_provenance_tags"),
-            scope_tags=_string_set_from_row_list(row, "scope_provenance_tags"),
+            extraction_tags=_provenance_bag_set(row, "extraction_provenance_tags"),
+            target_guessing_tags=_provenance_bag_set(row, "target_guessing_provenance_tags"),
+            scope_tags=_provenance_bag_set(row, "scope_provenance_tags"),
             scope_sources=(
                 frozenset({scope_source.strip()})
                 if isinstance(scope_source, str) and scope_source.strip()
@@ -996,12 +1022,7 @@ def _compiled_op_scope_witness(row: Mapping[str, Any]) -> CompiledOpScopeWitness
 
     scope_source = row.get("scope_source")
     scope_confidence = row.get("scope_confidence")
-    scope_tags = row.get("scope_provenance_tags")
-    scope_tag_list = (
-        [str(part).strip() for part in scope_tags if str(part).strip()]
-        if isinstance(scope_tags, list)
-        else []
-    )
+    scope_tag_list = _provenance_bag_view(row, "scope_provenance_tags")
 
     source_value = str(scope_source).strip() if isinstance(scope_source, str) else ""
     confidence_value = str(scope_confidence).strip() if isinstance(scope_confidence, str) else ""

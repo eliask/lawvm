@@ -12,6 +12,7 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.phase_result import Finding, PhaseResult
 from lawvm.core.tree_ops import check_invariants
 from lawvm.finland.chapter_seed import ChapterSeedDiagnostic
+from lawvm.finland.op_provenance import serialized_provenance_from_bags
 from lawvm.finland.future_repeal_prescan import (
     PRESCAN_REPEAL_TARGET_DIAGNOSTIC_RULE_ID,
     PreScanRepealDiagnostic,
@@ -337,9 +338,7 @@ def test_execute_replay_plan_records_chapter_seed_repair_findings() -> None:
             "action": "seed",
             "source_statute": "1991/1",
             "source_title": None,
-            "extraction_provenance_tags": [],
-            "target_guessing_provenance_tags": [],
-            "scope_provenance_tags": ["chapter_seed"],
+            "provenance": serialized_provenance_from_bags(scope_tags=("chapter_seed",)),
             "witness_rule_id": "fi_chapter_seed_inserted_from_amendment_body",
             "target_unit_kind": "chapter",
             "target_norm": "7",

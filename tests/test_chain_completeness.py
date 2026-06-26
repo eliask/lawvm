@@ -27,6 +27,7 @@ from lawvm.core.chain_completeness import (
 )
 from lawvm.core.compile_result import SectionStrictVerdict
 from lawvm.core.section_evidence_context import SectionEvidenceContext
+from lawvm.finland.op_provenance import serialized_provenance_from_bags
 from lawvm.tools.evidence_claim_algebra import (
     ProofTier,
     resolve,
@@ -401,7 +402,7 @@ class TestComputeChainCompleteness:
                     "target_kind": "L",
                     "target_section": "3",
                     "source_statute": "2020/100",
-                    "extraction_provenance_tags": ["root_insert_supplement"],
+                    "provenance": serialized_provenance_from_bags(extraction_tags=("root_insert_supplement",)),
                 },
             ],
         )
@@ -634,7 +635,7 @@ class TestComputeChainCompleteness:
                     "target_unit_kind": "chapter",
                     "target_norm": "3",
                     "source_statute": "2020/100",
-                    "extraction_provenance_tags": ["root_insert_supplement"],
+                    "provenance": serialized_provenance_from_bags(extraction_tags=("root_insert_supplement",)),
                 },
             ],
         )
@@ -654,7 +655,7 @@ class TestComputeChainCompleteness:
             compiled_ops=[
                 {
                     "source_statute": "2020/100",
-                    "extraction_provenance_tags": ["root_insert_supplement"],
+                    "provenance": serialized_provenance_from_bags(extraction_tags=("root_insert_supplement",)),
                     "target_unit_kind": "part",
                     "target_norm": "I",
                 },
@@ -675,7 +676,7 @@ class TestComputeChainCompleteness:
             compiled_ops=[
                 {
                     "source_statute": "2020/100",
-                    "extraction_provenance_tags": ["root_insert_supplement"],
+                    "provenance": serialized_provenance_from_bags(extraction_tags=("root_insert_supplement",)),
                     "target_unit_kind": "part",
                     "target_section": "II",
                 },
@@ -695,7 +696,7 @@ class TestComputeChainCompleteness:
             compiled_ops=[
                 {
                     "source_statute": "2020/100",
-                    "extraction_provenance_tags": ["root_insert_supplement"],
+                    "provenance": serialized_provenance_from_bags(extraction_tags=("root_insert_supplement",)),
                     "target_unit_kind": "part",
                     "target_norm": "II",
                     "target_kind": "O",
@@ -811,7 +812,7 @@ class TestComputeChainCompleteness:
                 {
                     "target_section": "section:1",
                     "source_statute": "2020/100",
-                    "extraction_provenance_tags": ["extraction_fallback_heuristic"],
+                    "provenance": serialized_provenance_from_bags(extraction_tags=("extraction_fallback_heuristic",)),
                 },
             ],
         )

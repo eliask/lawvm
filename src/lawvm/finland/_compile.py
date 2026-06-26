@@ -34,6 +34,7 @@ from lawvm.core.phase_result import Finding
 from lawvm.core.observation_registry import get_finding_spec
 from lawvm.core.target_scope import NeutralTargetUnitKind, resolve_internal_target_scope
 from lawvm.core.temporal import TemporalEvent
+from lawvm.finland.op_provenance import ProvenanceBag, serialized_provenance_bag
 from lawvm.finland.strict_profile import default_finland_strict_profile
 from lawvm.finland.source_adjudication import build_source_adjudication
 from lawvm.finland.effect_lifecycle_projection import build_finland_effect_lifecycle
@@ -409,8 +410,10 @@ def _compile_findings(
     for row in compiled_ops:
         source_statute = str(row.get("source_statute") or "")
         target_scope = _CompiledOpTargetScope.from_row(row)
-        target_guessing_tags = row.get("target_guessing_provenance_tags")
-        if isinstance(target_guessing_tags, list):
+        target_guessing_tags = serialized_provenance_bag(
+            row.get("provenance"), ProvenanceBag.TARGET_GUESSING
+        )
+        if target_guessing_tags:
             for tag in (str(part).strip() for part in target_guessing_tags if str(part).strip()):
                 kind = target_guessing_hint_to_kind.get(tag)
                 if kind is None:

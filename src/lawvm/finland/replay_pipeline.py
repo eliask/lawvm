@@ -28,6 +28,13 @@ from lawvm.core.tree_ops import resort_children as _resort_children
 from lawvm.finland.amendment_selection import AmendmentSourcePathology
 from lawvm.finland.apply_events import ApplyMutationEvent
 from lawvm.finland.chapter_seed import ChapterSeedDiagnostic
+from lawvm.finland.op_provenance import (
+    ConfidenceTier,
+    Recovered,
+    RecognizerId,
+    RecoverySurface,
+    serialize_provenance,
+)
 from lawvm.finland.effect_lifecycle_signals import EffectLifecycleOverride
 from lawvm.finland.future_repeal_prescan import (
     PreScanRepealDiagnostic,
@@ -515,9 +522,17 @@ def append_chapter_seed_compiled_ops(
                 "action": "seed",
                 "source_statute": diagnostic.source_statute,
                 "source_title": None,
-                "extraction_provenance_tags": [],
-                "target_guessing_provenance_tags": [],
-                "scope_provenance_tags": ["chapter_seed"],
+                # Typed provenance (canonical schema): a chapter-seed scaffold op
+                # carries the SCOPE_CHAPTER_SEED scope recognizer. The serialized
+                # form supersedes the three raw bag columns; serialized_bag_tags
+                # reconstructs scope_provenance_tags == ("chapter_seed",) from it.
+                "provenance": serialize_provenance(
+                    Recovered(
+                        surface=RecoverySurface.SCOPE,
+                        recognizer_ids=frozenset({RecognizerId.SCOPE_CHAPTER_SEED}),
+                        tier=ConfidenceTier.ANCHORED,
+                    )
+                ),
                 "witness_rule_id": diagnostic.rule_id,
                 "target_unit_kind": "chapter",
                 "target_norm": chapter_label,

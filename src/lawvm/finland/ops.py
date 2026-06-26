@@ -44,11 +44,13 @@ from lawvm.core.target_selector import (
 from lawvm.finland.helpers import _expand_section_range, _norm_num_token
 from lawvm.finland.op_provenance import (
     OpProvenance,
+    ProvenanceBag,
     Recovered,
     RecognizerId,
     dominant_surface,
     dominant_tier,
     has_recognizer,
+    recognizer_for_tag,
 )
 from lawvm.finland.target_kind import TargetKind
 from lawvm.finland.target_selector_codec import (
@@ -109,6 +111,7 @@ def _derive_op_provenance(
     uncovered_body_recovery: bool,
     extraction_provenance_tags: Tuple[str, ...],
     target_guessing_provenance_tags: Tuple[str, ...],
+    scope_provenance_tags: Tuple[str, ...],
     witness_rule_id: Optional[str],
 ) -> OpProvenance | None:
     """Derive the typed :class:`OpProvenance` from an op's recovery markers.
@@ -117,6 +120,16 @@ def _derive_op_provenance(
     and the ``*_provenance_tags`` string bags remain authoritative; this derives a
     typed mirror so later steps can rekey readers onto
     ``RecognizerId.X in op.provenance.recognizer_ids`` / ``isinstance(prov, Recovered)``.
+
+    The fold is now TOTAL over the serialized bags: every tag string the three
+    bags can carry (the closed :class:`RecognizerId` namespace, pinned by
+    ``recognizer_for_tag``) lands in ``recognizer_ids``, keyed per-bag so a tag is
+    honored only in the column it is written to. So the typed set losslessly
+    captures the serialized bag content — the migration's serialization cut
+    (replacing the three raw string columns with the typed provenance) can
+    reconstruct each bag from the set via ``op_provenance.bag_tags``. The boolean
+    ``*_fallback`` flags and the branched ``witness_rule_id`` values (which carry
+    no serialized bag tag) fold in separately.
 
     An op carries the SET of every load-bearing recovery recognizer that touched
     it. The result is :class:`Recovered` iff the op bears a recovery marker
@@ -132,23 +145,19 @@ def _derive_op_provenance(
         ids.add(RecognizerId.BODY_ROOT_REPLACE)
     if uncovered_body_recovery:
         ids.add(RecognizerId.UNCOVERED_BODY)
-    if "extraction_fallback_heuristic" in extraction_provenance_tags:
-        ids.add(RecognizerId.EXTRACTION_FALLBACK_HEURISTIC)
-    if "jolloin_moment_renumber_supplement" in extraction_provenance_tags:
-        ids.add(RecognizerId.JOLLOIN_MOMENT_RENUMBER_SUPPLEMENT)
-    if "unique_item_label_subsection_fallback" in target_guessing_provenance_tags:
-        ids.add(RecognizerId.UNIQUE_ITEM_LABEL_SUBSECTION_FALLBACK)
-    if "normalize_item_like_target" in target_guessing_provenance_tags:
-        ids.add(RecognizerId.NORMALIZE_ITEM_LIKE_TARGET)
-    if "rebase_duplicate_target_shifted_replace" in target_guessing_provenance_tags:
-        ids.add(RecognizerId.REBASE_DUPLICATE_TARGET_SHIFTED_REPLACE)
-    if "rebase_replaced_renumber_source" in target_guessing_provenance_tags:
-        ids.add(RecognizerId.REBASE_REPLACED_RENUMBER_SOURCE)
-    if "chapter_scope_from_unique_live_section" in target_guessing_provenance_tags:
-        ids.add(RecognizerId.CHAPTER_SCOPE_FROM_UNIQUE_LIVE_SECTION)
-    if witness_rule_id == "fi.jolloin_renumber":
+    # Total per-bag fold: every serialized tag string -> its typed recognizer.
+    for bag, tags in (
+        (ProvenanceBag.EXTRACTION, extraction_provenance_tags),
+        (ProvenanceBag.TARGET_GUESSING, target_guessing_provenance_tags),
+        (ProvenanceBag.SCOPE, scope_provenance_tags),
+    ):
+        for tag in tags:
+            recognizer = recognizer_for_tag(bag, tag)
+            if recognizer is not None:
+                ids.add(recognizer)
+    if witness_rule_id == RecognizerId.JOLLOIN_RENUMBER.value:
         ids.add(RecognizerId.JOLLOIN_RENUMBER)
-    elif witness_rule_id == "fi.repeal_vts_voimaantulo":
+    elif witness_rule_id == RecognizerId.REPEAL_VTS_VOIMAANTULO.value:
         ids.add(RecognizerId.REPEAL_VTS_VOIMAANTULO)
 
     if not ids and not fallback_provenance:
@@ -159,6 +168,7 @@ def _derive_op_provenance(
         surface=dominant_surface(recognizer_ids),
         recognizer_ids=recognizer_ids,
         tier=dominant_tier(recognizer_ids),
+        from_fallback_provenance=fallback_provenance,
     )
 
 class ScopeResolutionConfidence(StrEnum):
@@ -614,6 +624,20 @@ class _TargetSelectorUnset:
 
 _TARGET_SELECTOR_UNSET: "_TargetSelectorUnset" = _TargetSelectorUnset()
 
+
+# Sentinel: ``AmendmentOp.__init__``'s ``provenance`` parameter was not
+# explicitly carried. Distinct from ``None`` (which is a real provenance value
+# meaning "no recovery stamp"). ``dataclasses.replace`` re-passes the STORED
+# ``_provenance`` (now an init field), so a replaced op CARRIES its stamp
+# instead of re-deriving it — the storage-collapse inversion (markers ->
+# provenance). A fresh column/lo construction omits the param, hitting the
+# sentinel, so the stamp is derived from the recovery markers exactly once.
+class _ProvenanceUnset:
+    __slots__ = ()
+
+
+_PROVENANCE_UNSET: "_ProvenanceUnset" = _ProvenanceUnset()
+
 # Default selector for a bare ``AmendmentOp()`` (section focus, empty label,
 # unspecified scope) — matches the historical column defaults
 # (``target_section=""``, ``target_unit_kind="section"``) byte-for-byte under the
@@ -830,31 +854,52 @@ class AmendmentOp:
     preserve_explicit_heading_facet: bool = False
     # Parse-witness provenance (diagnostic only — zero replay semantics)
     witness_rule_id: Optional[str] = None
-    # Stored typed op-provenance (Phase-2 storage-collapse). NOT init-able: it is
-    # STAMPED in ``__init__`` from the recovery markers and RE-STAMPED at the
-    # frontend setattr sites that mutate those markers post-construction (via
-    # ``restamp_provenance``). ``dataclasses.replace`` re-runs ``__init__`` so a
-    # replaced op re-derives its stamp automatically. Excluded from the dataclass
-    # init contract so ``replace`` never tries to re-pass it.
-    _provenance: OpProvenance | None = field(default=None, init=False, repr=False, compare=False)
+    # Stored typed op-provenance (Phase-2 storage-collapse). REPLACE-DURABLE:
+    # this is now an init field so ``dataclasses.replace`` re-passes the STORED
+    # stamp from the source op, CARRYING it through instead of re-deriving. The
+    # custom ``__init__`` takes the carried value via its ``provenance`` param
+    # (sentinel-defaulted): on a fresh column/lo construction it is derived from
+    # the recovery markers once; on a ``replace`` it is carried, and re-derived
+    # only when the markers passed to that ``replace`` would yield a DIFFERENT
+    # stamp (a marker-mutating replace). This inverts the source of truth from
+    # markers -> provenance: once the markers are deleted (Step D) there is
+    # nothing to re-derive from, so the carry is the sole mechanism. Excluded
+    # from ``repr``/``compare`` so it does not perturb op identity/serialization.
+    _provenance: "OpProvenance | None | _ProvenanceUnset" = field(
+        default=_PROVENANCE_UNSET, repr=False, compare=False
+    )
     if TYPE_CHECKING:
         target_kind: TargetKind
 
     @property
     def provenance(self) -> OpProvenance | None:
-        """Typed op-provenance consolidation target (Phase-2 storage-collapse).
+        """Typed op-provenance consolidation target (storage-collapse).
 
-        STORED (no longer computed on access): the stamp is derived from the
-        recovery markers (the ``*_fallback`` / ``*_recovery`` booleans, the
-        ``*_provenance_tags`` membership, and the branched ``witness_rule_id``)
-        at construction in ``__init__`` and RE-STAMPED via
+        STORED and REPLACE-DURABLE: the stamp is derived from the recovery
+        markers once at fresh construction and then CARRIED through
+        ``dataclasses.replace`` (the ``_provenance`` field is now an init field
+        that ``replace`` re-passes). It is RE-STAMPED via
         :meth:`restamp_provenance` at the frontend setattr sites that mutate
-        those markers in place. ``dataclasses.replace`` re-runs ``__init__``, so a
-        replaced op re-derives its stamp. ADDITIVE during the collapse: the
-        legacy flags/tags stay authoritative until they are deleted; the stamp is
-        kept byte-identical to the prior computed value.
+        recovery markers in place. The stored value is always a real
+        ``OpProvenance | None`` after ``__init__`` resolves the carry sentinel.
         """
-        return self._provenance
+        prov = self._provenance
+        if isinstance(prov, _ProvenanceUnset):  # pragma: no cover - resolved in __init__
+            return None
+        return prov
+
+    def _derive_provenance_from_markers(self) -> OpProvenance | None:
+        """Derive the stamp from THIS op's current recovery markers."""
+        return _derive_op_provenance(
+            fallback_provenance=self.fallback_provenance,
+            body_root_replace_fallback=self.body_root_replace_fallback,
+            sec1_body_johto_fallback=self.sec1_body_johto_fallback,
+            uncovered_body_recovery=self.uncovered_body_recovery,
+            extraction_provenance_tags=self.extraction_provenance_tags,
+            target_guessing_provenance_tags=self.target_guessing_provenance_tags,
+            scope_provenance_tags=self.scope_provenance_tags,
+            witness_rule_id=self.witness_rule_id,
+        )
 
     def restamp_provenance(self) -> None:
         """Re-derive the stored provenance stamp from the current markers.
@@ -863,18 +908,11 @@ class AmendmentOp:
         True``, ``op.extraction_provenance_tags = …``, ``op.sec1_body_johto_fallback
         = True``, ``op.witness_rule_id = …``) that mutate recovery markers AFTER
         construction, so the stored stamp stays in lockstep with the markers the
-        legacy readers used. Construction (``__init__``) and ``dataclasses.replace``
-        stamp on their own; this is only for in-place marker mutation.
+        legacy readers used. Fresh construction stamps via this method; a
+        ``dataclasses.replace`` CARRIES the stored stamp (re-deriving only on a
+        marker-mutating replace — see ``__init__``).
         """
-        self._provenance = _derive_op_provenance(
-            fallback_provenance=self.fallback_provenance,
-            body_root_replace_fallback=self.body_root_replace_fallback,
-            sec1_body_johto_fallback=self.sec1_body_johto_fallback,
-            uncovered_body_recovery=self.uncovered_body_recovery,
-            extraction_provenance_tags=self.extraction_provenance_tags,
-            target_guessing_provenance_tags=self.target_guessing_provenance_tags,
-            witness_rule_id=self.witness_rule_id,
-        )
+        self._provenance = self._derive_provenance_from_markers()
 
     @property
     def resolved_scope_confidence(self) -> ScopeConfidence | None:
@@ -922,6 +960,7 @@ class AmendmentOp:
         temporal_activation: Optional["ActivationRule"] = None,
         preserve_explicit_heading_facet: bool = False,
         witness_rule_id: Optional[str] = None,
+        _provenance: "OpProvenance | None | _ProvenanceUnset" = _PROVENANCE_UNSET,
     ) -> None:
         explicit_selector = (
             target_selector
@@ -1009,10 +1048,28 @@ class AmendmentOp:
         self.preserve_explicit_heading_facet = preserve_explicit_heading_facet
         self.witness_rule_id = witness_rule_id
 
-        # Stamp the stored typed provenance from the recovery markers just set.
+        # Stamp the stored typed provenance (storage-collapse, REPLACE-DURABLE).
         # All marker fields the stamp reads are assigned above; the remaining
         # __init__ body only resolves move-clause/target identity (no markers).
-        self.restamp_provenance()
+        #
+        # Carry semantics:
+        #   * fresh construction (no ``_provenance`` carried) -> derive from the
+        #     recovery markers exactly once (``restamp_provenance``);
+        #   * ``dataclasses.replace`` re-passes the source op's stored stamp ->
+        #     CARRY it, UNLESS the markers handed to this construction would
+        #     derive a DIFFERENT stamp (a marker-mutating replace), in which case
+        #     the fresh markers win so the stamp stays in lockstep. While the
+        #     markers remain authoritative this re-derive-on-mismatch is exactly
+        #     equal to the carried value for a non-mutating replace, so replay is
+        #     byte-identical; once the markers are deleted (Step D) there are no
+        #     markers to mismatch and the carry is the sole source of truth.
+        if isinstance(_provenance, _ProvenanceUnset):
+            self.restamp_provenance()
+        else:
+            self._provenance = _provenance
+            derived = self._derive_provenance_from_markers()
+            if derived != _provenance:
+                self._provenance = derived
 
         derived_move_clause_target_unit_kind: TargetUnitKind | None = (
             cast(TargetUnitKind | None, self.lo.move_clause_target_unit_kind)
@@ -1372,26 +1429,47 @@ class ResolvedOp:
     # Optional during migration — None means "use legacy fields for dispatch".
     # See canonical_intent.py and PRO_RESPONSE_CANONICAL_OP_INTENT_TAXONOMY.md.
     intent: "CanonicalIntent | None" = None
-    # Stored typed op-provenance (Phase-2 storage-collapse). Derived in
-    # ``__post_init__`` from THIS ResolvedOp's forwarded markers (not the inner
-    # ``op``'s — see :attr:`provenance`). ``dataclasses.replace`` re-runs
-    # ``__post_init__`` so a replaced op re-derives. Excluded from init.
-    _provenance: OpProvenance | None = field(default=None, init=False, repr=False, compare=False)
+    # Stored typed op-provenance (storage-collapse, REPLACE-DURABLE). Now an
+    # init field with a sentinel default so ``dataclasses.replace`` re-passes
+    # the source op's stored stamp, CARRYING it through. ``__post_init__``
+    # resolves the sentinel: fresh construction derives from THIS ResolvedOp's
+    # forwarded markers (not the inner ``op``'s — see :attr:`provenance`); a
+    # ``replace`` carries the stamp, re-deriving only when the forwarded markers
+    # on this construction would yield a different stamp. Excluded from
+    # ``repr``/``compare``.
+    _provenance: "OpProvenance | None | _ProvenanceUnset" = field(
+        default=_PROVENANCE_UNSET, repr=False, compare=False
+    )
 
-    def __post_init__(self) -> None:
-        # Stamp the stored provenance from the forwarded recovery markers. These
-        # are this ResolvedOp's own copies (forwarded at ``from_amendment_op``),
-        # which the legacy readers consumed — NOT the inner ``op``'s, which can
-        # carry a later-mutated tag set.
-        self._provenance = _derive_op_provenance(
+    def _derive_provenance_from_markers(self) -> OpProvenance | None:
+        return _derive_op_provenance(
             fallback_provenance=self.fallback_provenance,
             body_root_replace_fallback=self.body_root_replace_fallback,
             sec1_body_johto_fallback=self.sec1_body_johto_fallback,
             uncovered_body_recovery=self.uncovered_body_recovery,
             extraction_provenance_tags=self.extraction_provenance_tags,
             target_guessing_provenance_tags=self.target_guessing_provenance_tags,
+            scope_provenance_tags=self.scope_provenance_tags,
             witness_rule_id=self.witness_rule_id,
         )
+
+    def __post_init__(self) -> None:
+        # Stamp the stored provenance (storage-collapse, REPLACE-DURABLE). The
+        # markers read here are this ResolvedOp's own forwarded copies (set at
+        # ``from_amendment_op``), which the legacy readers consumed — NOT the
+        # inner ``op``'s, which can carry a later-mutated tag set.
+        #   * fresh construction (sentinel) -> derive from the forwarded markers;
+        #   * ``dataclasses.replace`` carries the source op's stamp, UNLESS the
+        #     forwarded markers on this construction would derive a different
+        #     stamp (a marker-mutating replace), in which case the fresh markers
+        #     win so the stamp stays in lockstep. Byte-identical while markers
+        #     remain authoritative; the carry is the sole truth post-deletion.
+        carried = self._provenance
+        if isinstance(carried, _ProvenanceUnset):
+            self._provenance = self._derive_provenance_from_markers()
+        else:
+            derived = self._derive_provenance_from_markers()
+            self._provenance = carried if derived == carried else derived
 
     @property
     def resolved_scope_confidence(self) -> ScopeConfidence | None:
@@ -1810,8 +1888,15 @@ class ResolvedOp:
         a different (later-mutated) tag set. The stamp is derived from ``self`` in
         ``__post_init__`` (re-run by ``dataclasses.replace``), keeping the typed
         view in exact lockstep with the fields the old readers used.
+
+        STORED and REPLACE-DURABLE: ``dataclasses.replace`` carries the stamp
+        (the ``_provenance`` field is an init field re-passed by ``replace``);
+        ``__post_init__`` resolves the carry sentinel to a real value.
         """
-        return self._provenance
+        prov = self._provenance
+        if isinstance(prov, _ProvenanceUnset):  # pragma: no cover - resolved in __post_init__
+            return None
+        return prov
 
     @property
     def uses_sec1_body_johto_fallback(self) -> bool:

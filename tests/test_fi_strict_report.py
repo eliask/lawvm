@@ -12,6 +12,7 @@ from lawvm.core.regex_recognition_coverage import (
 from lawvm.finland.ops import FailedOp
 from lawvm.finland.strict_profile import FINLAND_INGESTION_V1
 from lawvm.tools import strict_report
+from lawvm.finland.op_provenance import serialized_provenance_from_bags
 
 
 def test_load_strict_run_reads_source_pathology_codes(tmp_path, monkeypatch) -> None:
@@ -690,17 +691,17 @@ def test_format_report_verbose_prefers_typed_provenance_tags() -> None:
             {
                 "op_id": "op-1",
                 "description": "typed extraction op",
-                "extraction_provenance_tags": ["extraction_fallback_heuristic"],
+                "provenance": serialized_provenance_from_bags(extraction_tags=("extraction_fallback_heuristic",)),
             },
             {
                 "op_id": "op-2",
                 "description": "typed scope op",
-                "scope_provenance_tags": ["chapter_scope_from_preamble"],
+                "provenance": serialized_provenance_from_bags(scope_tags=("chapter_scope_from_preamble",)),
             },
             {
                 "op_id": "op-3",
                 "description": "typed target op",
-                "target_guessing_provenance_tags": ["normalize_item_like_target"],
+                "provenance": serialized_provenance_from_bags(target_guessing_tags=("normalize_item_like_target",)),
             },
         ],
     }
