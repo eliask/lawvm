@@ -19,6 +19,7 @@ from lawvm.core.ir import LegalOperation as _LegalOperation
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core import tree_ops as _tops
 from lawvm.core.tree_ops import Path, normalized_label_key
+from lawvm.finland.op_provenance import RecognizerId, has_recognizer
 from lawvm.finland.ops import AmendmentOp, ReplayProfile, ResolvedOp, _rebind_resolved_target_address
 from lawvm.finland.target_selector_facades import replace_target
 from lawvm.core.compile_result import StrictProfile
@@ -329,7 +330,6 @@ def _rebound_item_only_target_to_unique_subsection(
         target_section = original.resolved_target_section_label or ""
         source_statute = original.resolved_source_statute
         action = original.resolved_action_type
-        witness_rule_id = original.witness_rule_id
     else:
         original_cols = original.target_cols
         target_paragraph = original_cols.target_paragraph
@@ -337,10 +337,9 @@ def _rebound_item_only_target_to_unique_subsection(
         target_section = original_cols.target_section or ""
         source_statute = original.source_statute or ""
         action = original.op_type
-        witness_rule_id = original.witness_rule_id
     if action != "REPEAL":
         return original
-    if witness_rule_id != "fi.repeal_vts_voimaantulo":
+    if not has_recognizer(original.provenance, RecognizerId.REPEAL_VTS_VOIMAANTULO):
         return original
     if target_paragraph is not None or not target_item:
         return original
