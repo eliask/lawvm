@@ -89,15 +89,17 @@ EE_BLOCKING_RULE_IDS: Final[FrozenSet[str]] = frozenset(
         "ee_implicit_division_sequence_relabel_after_high_jagu_insert",
         # --- generic replay-time guard adjudications --------------------------
         # Broadcast via ``_append_ee_replay_adjudication``.
-        # ``ee_replay_unsupported_action`` is drilled out of the debt list by
-        # ``tests/test_ee_guard_liveness.py::test_ee_fire_drill_replay_unsupported_action_blocks``
-        # (drives a HEADING_REPLACE op through ``apply_ee_ops`` and asserts
-        # the blocking adjudication fires); the remaining ``ee_replay_*`` codes
-        # below stay debt-admitted until their individual drills land.
+        # ``ee_replay_unsupported_action`` and ``ee_replay_target_not_found``
+        # are drilled out of the debt list by
+        # ``tests/test_ee_guard_liveness.py`` (drives a HEADING_REPLACE op /
+        # a REPLACE op against a non-existent target through ``apply_ee_ops``
+        # and asserts the blocking adjudication fires); the remaining
+        # ``ee_replay_*`` codes below stay debt-admitted until their
+        # individual drills land.
         "ee_replay_unsupported_action",
+        "ee_replay_target_not_found",
         "ee_replay_unsupported_heading_target",
         "ee_replay_unsupported_statute_title_action",
-        "ee_replay_target_not_found",
         "ee_replay_noop",
         "ee_replay_statute_title_noop",
         "ee_replay_meta_non_body_skipped",
@@ -141,6 +143,11 @@ EE_FIRE_DRILL_COVERAGE: Final[FrozenSet[str]] = frozenset(
         # ``action not in (replace, repeal, insert, renumber, text_replace)`` arm
         # of the ``apply_ee_ops`` dispatcher at ``grafter.py:10360``.
         "ee_replay_unsupported_action",
+        # Drilled by ``tests/test_ee_guard_liveness.py::test_ee_fire_drill_replay_target_not_found_blocks``
+        # (drives a REPLACE op whose target path resolves to no body node).
+        # Production lane is the ``if not target_resolved:`` arm of the
+        # ``apply_ee_ops`` dispatcher at ``grafter.py:10427``.
+        "ee_replay_target_not_found",
     }
 )
 
@@ -254,11 +261,6 @@ EE_NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
     "ee_replay_unsupported_statute_title_action": (
         f"replay hits an unsupported statute-title-level action; {_EE_DRILL_FAMILY_HINT}; "
         f"locate statute whose title-level rewrite is not modeled.",
-        "2026-06-24",
-    ),
-    "ee_replay_target_not_found": (
-        f"replay target not found in tree; {_EE_DRILL_FAMILY_HINT}; "
-        f"locate statute whose target label is absent elsewhere.",
         "2026-06-24",
     ),
     "ee_replay_noop": (

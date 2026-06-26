@@ -99,6 +99,34 @@ def _unsupported_action_op(
     )
 
 
+def _target_not_found_op(
+    *,
+    sequence: int = 1,
+) -> LegalOperation:
+    """Construct a LegalOperation whose REPLACE target path resolves to no
+    node in the fixture body (section:999 — the body only has section:1).
+    The op is dispatched (action=REPLACE is in the whitelist), then
+    ``_ee_apply_op`` is a no-op on the unresolvable target, then
+    ``target_resolved = _ee_resolve_full_path(pre_op_body, target_path) is
+    None`` triggers the ``ee_replay_target_not_found`` blocking emit at
+    ``src/lawvm/estonia/grafter.py:10427``.
+    """
+    return LegalOperation(
+        op_id="ee_fire_drill_target_not_found",
+        sequence=sequence,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "999"),)),
+        source=OperationSource(
+            statute_id="ee/fire_drill_amendment",
+            title="Fire Drill Amendment",
+            enacted="2025-01-01",
+            effective="2025-01-01",
+            raw_text="",
+        ),
+        payload=IRNode(kind=IRNodeKind.SECTION, label="999", text="drilled replacement"),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Partition: every blocking code is either drilled or debt-admitted
 # ---------------------------------------------------------------------------
@@ -464,6 +492,7 @@ def _fire_drills_target_registered_codes() -> Dict[str, str]:
     """
     return {
         "ee_replay_unsupported_action": "test_ee_fire_drill_replay_unsupported_action_blocks",
+        "ee_replay_target_not_found": "test_ee_fire_drill_replay_target_not_found_blocks",
     }
 
 
@@ -524,6 +553,61 @@ def test_ee_fire_drill_replay_unsupported_action_blocks() -> None:
     )
     assert emit.phase == "replay", (
         f"ee_replay_unsupported_action must declare phase='replay'; "
+        f"got phase={emit.phase!r}"
+    )
+    assert emit.op_id == op.op_id, (
+        f"adjudication op_id mismatch: emit={emit.op_id!r} expected={op.op_id!r}"
+    )
+
+
+def test_ee_fire_drill_replay_target_not_found_blocks() -> None:
+    """Fire-drill for ``ee_replay_target_not_found``:
+
+    Drive a ``REPLACE`` op whose target path (section:999) resolves to no
+    node in the fixture body (the body only has section:1) through the full
+    production ``apply_ee_ops`` dispatch and assert the blocking
+    adjudication ``ee_replay_target_not_found`` fires with ``blocking=True``.
+
+    Pre-drill: ``ee_replay_target_not_found`` was a debt row in the baseline
+    at commit ``3528f2c4``. This drill (the second in the EE guard-liveness
+    suite) moves it from ``EE_NO_FIRE_DRILL_YET`` to
+    ``EE_FIRE_DRILL_COVERAGE`` — paying the debt down by one and decrementing
+    the ceiling by one (31 -> 30).
+
+    Source emission: src/lawvm/estonia/grafter.py:10427 in ``apply_ee_ops``,
+    via the hard-blocker helper ``_append_ee_replay_adjudication``. The
+    production lane reaches this emit site via the
+    ``if not target_resolved:`` arm of the dispatcher, where
+    ``target_resolved = _ee_resolve_full_path(pre_op_body, target_path) is not None``
+    is False because the target section:999 is absent from the body.
+
+    Discipline (AGENTS.md §0): an op whose stated target does not resolve
+    MUST NOT mutate the body — uncertainty is preserved rather than guessed.
+    The drill asserts the body is unchanged (over-retention is the safe
+    wrong) AND that the blocking adjudication surfaces the unresolved target.
+    """
+    statute = _drill_statute()
+    op = _target_not_found_op()
+    adjudications: list[CompileAdjudication] = []
+    updated = apply_ee_ops(statute, [op], adjudications_out=adjudications)
+    # Body MUST be unchanged — a non-resolving target is a structural no-op.
+    assert updated.body is statute.body, (
+        "ee_replay_target_not_found dispatch MUST leave the tree unchanged "
+        "(over-retention per AGENTS.md §0); saw a body mutation."
+    )
+    matches = [adj for adj in adjudications if adj.kind == "ee_replay_target_not_found"]
+    assert matches, (
+        "Expected a blocking adjudication with kind "
+        "'ee_replay_target_not_found' to fire for the section:999 REPLACE op, "
+        f"got: {[(a.kind, a.blocking) for a in adjudications]}"
+    )
+    emit = matches[0]
+    assert emit.blocking is True, (
+        f"ee_replay_target_not_found must emit blocking=True; "
+        f"got blocking={emit.blocking!r}"
+    )
+    assert emit.phase == "replay", (
+        f"ee_replay_target_not_found must declare phase='replay'; "
         f"got phase={emit.phase!r}"
     )
     assert emit.op_id == op.op_id, (
