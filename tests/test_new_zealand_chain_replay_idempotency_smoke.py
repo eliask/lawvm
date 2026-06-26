@@ -391,3 +391,187 @@ def test_chain_replay_target_absent_no_in_oracle_prov_level_after_part_at_xml_id
         f"`_is_leading_part_segment`). amendment_date, source_path for the offenders: "
         f"{in_oracle_section[:8]}"
     )
+
+
+@pytest.mark.skipif(not _REAL_DB.exists(), reason="archived NZ farchive not present")
+@pytest.mark.skipif(not _SMOKE_CORPUS.exists(), reason="NZ smoke corpus CSV not present")
+@pytest.mark.slow
+def test_chain_replay_in_oracle_prov_level_target_absent_has_structural_residue_cause() -> None:
+    """Every post-widening `amendment_skipped_target_absent` skip on a
+    prov-level section path whose `source_path` STILL resolves in the work's
+    FINAL archived oracle MUST be backed by a structural-archival cause.
+
+    Asserts the structural residue classification (AGENTS §2.9 — structural
+    invariant, NOT a fragile exact count) for the open `target_absent` lane
+    documented in `notes/IMPLEMENTATION_DIVERGENCE_LEDGER.md`'s
+    "`amendment_skipped_target_absent -- classified 2026-06-22 (partial)" + the
+    "Family A — insert-op-skipped" + "Family B — omnibus-reparent" sections.
+
+    Two structural causes exhaustively cover the post-widening honest residue:
+
+    * (A) Upstream INSERT/repeal-skip residue: the section IS present in the
+      archived snapshot dated AT OR BEFORE the op's amendment_date (i.e.,
+      the archived before-tree at the op's transition step DID carry the
+      section -- the carried tree simply diverged from the archived state
+      because an upstream chain op got `payload_not_extractable` /
+      `insert_anchor_*` skipped, OR was not enumerated at all). Honest
+      residue per AGENTS §1.8 receipt-conservation; NOT a silent drop.
+
+    * (B) Omnibus-reparent: the section moved between ``<part>`` containers
+      between at least one consecutive pair of archived snapshots. The
+      reparenting is identity-preserving for human readers but not address-
+      continuity-preserving on the carried tree, so the chain's
+      `_resolve_target_nodes` correctly skips the op. (Manual-compilation
+      frontier per AGENTS §0+§2.8 — the open migration-emitter task in the
+      ledger closes this lane.)
+
+    A ``target_absent`` skip on a prov-level section path whose source_path
+    resolves in the FINAL oracle is a candidate for honest-residue regression
+    (the `part@xml_id` widening closed most of them; the survivors are Family
+    A+B). If a future change introduces an in-oracle prov-level target_absent
+    skip WITHOUT either cause -- e.g. a chain op misclassifies an op family,
+    a new op-shape regression, or a bug in the part@xml_id widening re-narrowing
+    on a snapshot shape this test doesn't see -- this pin fails, surfacing the
+    offender with its work_id and amendment_date exactly.
+
+    Tested @slow because the corpus sweep drives a per-work chain-replay end-
+    to-end PLUS walks every archived version's parsed source-tree to detect
+    the structural cause (Family A "section present in archived snapshot
+    dated at-or-before the op's amendment_date" vs Family B "moved parts")
+    per skip.
+
+    AGENTS §0 (conservation law) + §1.8 (every filtered op stays visible) +
+    §2.9 (a new invariant becomes a failing regression test with a witness).
+    """
+    works = [row["work_id"] for row in csv.DictReader(_SMOKE_CORPUS.open())]
+    archive = open_farchive(_REAL_DB)
+    try:
+        unexplained: list[tuple[str, str, str, tuple[str, ...], str]] = []
+        for work_id in works:
+            result = subprocess.run(
+                ["uv", "run", "lawvm", "nz-corpus", "replay-chain",
+                 "--work-id", work_id, "--json"],
+                capture_output=True, text=True, cwd=str(_REPO_ROOT),
+            )
+            if result.returncode != 0:
+                continue
+            try:
+                report = json.loads(result.stdout)
+            except ValueError:
+                continue
+            versions = archived_xml_versions_for_work(archive, work_id)
+            if not versions:
+                continue
+            # versions newest-first; archive-walk both ways
+            versions_asc = tuple(reversed(versions))
+            docs_asc_with_date = [
+                (v.version_date, _parse_archived_version(archive, v, {}))
+                for v in versions_asc
+            ]
+            docs_asc_with_date = [
+                (d, doc) for d, doc in docs_asc_with_date if doc is not None
+            ]
+            latest_doc = docs_asc_with_date[-1][1] if docs_asc_with_date else None
+            if latest_doc is None:
+                continue
+
+            for skip in report.get("skips", ()):
+                if skip.get("bucket") != "amendment_skipped_target_absent":
+                    continue
+                src_path = tuple(skip.get("source_path", ()))
+                if not _is_prov_level_path(src_path):
+                    continue
+                # Precondition: source_path resolves in the FINAL oracle
+                # (only those skips are the honest-residue candidates).
+                if not _resolve_target_nodes(latest_doc, src_path):
+                    continue
+
+                # Extract the prov:N label from the source_path
+                label = _prov_label(src_path)
+                if label is None:
+                    continue
+
+                # (A) Family A -- Upstream INSERT/repeal-skip residue:
+                # the section IS present in the archived snapshot dated AT
+                # OR BEFORE the op's amendment_date (i.e. the archived
+                # before-tree at this transition step DID carry the section
+                # -- the carried tree diverged from that archival state).
+                op_date = skip.get("amendment_date_iso", "")
+                family_a = any(
+                    cnt > 0
+                    for vdate, doc in docs_asc_with_date
+                    if vdate <= op_date
+                    for cnt in [sum(
+                        1 for n in doc.nodes if n.kind == "prov" and n.label == label
+                    )]
+                )
+
+                # (B) Family B -- Omnibus-reparent: the section's leading
+                # ``part:N`` segment differs across at least one
+                # consecutive snapshot pair.
+                family_b = False
+                for i in range(1, len(docs_asc_with_date)):
+                    _, prev_doc = docs_asc_with_date[i - 1]
+                    _, curr_doc = docs_asc_with_date[i]
+                    parts_prev = {n.path[0] for n in prev_doc.nodes
+                                  if n.kind == "prov" and n.label == label
+                                  and n.path and (n.path[0].split(":", 1)[0] == "part"
+                                                  or n.path[0].startswith("part@"))}
+                    parts_curr = {n.path[0] for n in curr_doc.nodes
+                                  if n.kind == "prov" and n.label == label
+                                  and n.path and (n.path[0].split(":", 1)[0] == "part"
+                                                  or n.path[0].startswith("part@"))}
+                    if parts_prev and parts_curr and parts_prev != parts_curr:
+                        family_b = True
+                        break
+
+                if not (family_a or family_b):
+                    unexplained.append((
+                        work_id,
+                        skip.get("amendment_date_iso", ""),
+                        skip.get("amending_work_id", ""),
+                        src_path,
+                        f"family_a={family_a} family_b={family_b}",
+                    ))
+    finally:
+        archive.close()
+
+    assert not unexplained, (
+        f"structural residue invariant pin: {len(unexplained)} in-oracle "
+        f"prov-level `amendment_skipped_target_absent` skip(s) have NEITHER (A) "
+        f"'section present in an archived snapshot dated at-or-before the op's "
+        f"amendment_date' (Family-A upstream INSERT/repeal-skip residue) NOR "
+        f"(B) 'section moved between parts across archived versions' (Family-B "
+        f"omnibus-reparent). Per the 2026-06-24 classification every such skip "
+        f"resolves to one of those two causes; either classification drifted OR "
+        f"a NEW structural-shape regression silently introduced target_absent "
+        f"skips without an honest-residue explanation. work_id, amendment_date, "
+        f"amending_work_id, source_path, flag for the offenders: {unexplained[:8]}"
+    )
+
+
+def _is_prov_level_path(path: tuple[str, ...]) -> bool:
+    head = path[0]
+    if head.split(":", 1)[0] == "prov" and not any(
+        p.split(":", 1)[0] in ("subprov", "para", "def-para", "item")
+        for p in path[1:]
+    ):
+        return True
+    if (
+        (head.split(":", 1)[0] == "part" or head.startswith("part@"))
+        and len(path) >= 2
+        and path[1].split(":", 1)[0] == "prov"
+        and not any(
+            p.split(":", 1)[0] in ("subprov", "para", "def-para", "item")
+            for p in path[2:]
+        )
+    ):
+        return True
+    return False
+
+
+def _prov_label(path: tuple[str, ...]) -> str | None:
+    for seg in path:
+        if seg.split(":", 1)[0] == "prov":
+            return seg.split(":", 1)[1] if ":" in seg else None
+    return None
