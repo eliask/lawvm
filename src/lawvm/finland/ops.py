@@ -1754,21 +1754,33 @@ class ResolvedOp:
 
     @property
     def provenance(self) -> OpProvenance | None:
-        """Typed op-provenance, delegated to the source AmendmentOp.
+        """Typed op-provenance, derived from THIS ResolvedOp's forwarded markers.
 
-        One source of truth: the inner ``op``'s flags are authoritative, so this
-        never goes stale even when ``ResolvedOp`` is rebuilt via
-        ``dataclasses.replace`` around a re-derived ``op``.
+        Critically NOT delegated to ``self.op``: the late waist forwards its own
+        copies of the recovery markers (``sec1_body_johto_fallback``,
+        ``uncovered_body_recovery``, the ``*_provenance_tags`` bags, the
+        ``witness_rule_id``) at ``from_amendment_op`` time, and the legacy readers
+        consumed THOSE forwarded fields — not the inner ``op``'s, which can carry
+        a different (later-mutated) tag set. Deriving from ``self`` keeps the
+        typed view in exact lockstep with the fields the old readers used.
         """
-        return self.op.provenance
+        return _derive_op_provenance(
+            fallback_provenance=self.fallback_provenance,
+            body_root_replace_fallback=self.body_root_replace_fallback,
+            sec1_body_johto_fallback=self.sec1_body_johto_fallback,
+            uncovered_body_recovery=self.uncovered_body_recovery,
+            extraction_provenance_tags=self.extraction_provenance_tags,
+            target_guessing_provenance_tags=self.target_guessing_provenance_tags,
+            witness_rule_id=self.witness_rule_id,
+        )
 
     @property
     def uses_sec1_body_johto_fallback(self) -> bool:
-        return has_recognizer(self.op.provenance, RecognizerId.SEC1_BODY_JOHTO)
+        return has_recognizer(self.provenance, RecognizerId.SEC1_BODY_JOHTO)
 
     @property
     def uses_uncovered_body_recovery(self) -> bool:
-        return has_recognizer(self.op.provenance, RecognizerId.UNCOVERED_BODY)
+        return has_recognizer(self.provenance, RecognizerId.UNCOVERED_BODY)
 
     @property
     def resolved_post_repeal_item_shift_label(self) -> str | None:
