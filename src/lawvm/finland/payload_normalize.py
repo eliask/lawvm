@@ -50,6 +50,7 @@ from lawvm.finland.merge import (
     _drop_suspicious_partial_whole_section_replaces,
     _pre_resolve_omissions,
 )
+from lawvm.finland.op_provenance import RecognizerId, has_recognizer
 from lawvm.finland.ops import AmendmentOp, FailedOp, OpType, _lo_with_path_update, _op_target_subsection_label
 from lawvm.finland.sparse_tail_claims import (
     SPARSE_OMISSION_TAIL_PRUNE_RULE,
@@ -2052,7 +2053,7 @@ def _destination_subsection_label_for_renumber(op: AmendmentOp) -> str:
 
 
 def _renumber_consumes_source_payload(op: AmendmentOp) -> bool:
-    return "jolloin_moment_renumber_supplement" not in op.extraction_provenance_tags
+    return not has_recognizer(op.provenance, RecognizerId.JOLLOIN_MOMENT_RENUMBER_SUPPLEMENT)
 
 
 def _assign_renumber_destination_slot_ops(
