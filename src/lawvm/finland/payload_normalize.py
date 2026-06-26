@@ -5152,7 +5152,7 @@ def _rebase_replaced_renumber_sources_to_destinations(
             or op.target_cols.target_paragraph is None
             or op.target_cols.target_item
             or op.target_cols.target_special
-            or "rebase_duplicate_target_shifted_replace" in op.target_guessing_provenance_tags
+            or has_recognizer(op.provenance, RecognizerId.REBASE_DUPLICATE_TARGET_SHIFTED_REPLACE)
         ):
             rebased_ops.append(op)
             continue

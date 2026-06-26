@@ -384,7 +384,7 @@ def mixed_subsection_group_requires_insert_first(
     renumber_targets = {int(o.target_cols.target_paragraph or 0) for o in subsec_renumbers}
     if insert_targets & renumber_targets:
         for replace_op in subsec_replaces:
-            if "rebase_duplicate_target_shifted_replace" not in replace_op.target_guessing_provenance_tags:
+            if not has_recognizer(replace_op.provenance, RecognizerId.REBASE_DUPLICATE_TARGET_SHIFTED_REPLACE):
                 continue
             replace_target = int(replace_op.target_cols.target_paragraph or 0)
             if any(insert_target + 1 == replace_target for insert_target in insert_targets):
@@ -445,7 +445,7 @@ def stabilize_insert_order(ops: List[AmendmentOp], target_ctx: TargetContext) ->
                 for ins in subsec_inserts
             )
             and any(
-                "rebase_duplicate_target_shifted_replace" in rep.target_guessing_provenance_tags
+                has_recognizer(rep.provenance, RecognizerId.REBASE_DUPLICATE_TARGET_SHIFTED_REPLACE)
                 for rep in subsec_replaces
             )
         )
