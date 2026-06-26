@@ -1108,6 +1108,14 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "a state-mutating op landed without resolving an ExecutionAuthorization "
                 "(rule_id + required proofs) under strict mode",
                 ("safety_invariant",), role="violation"),
+    # AM-01 (strict-blocking): a Recovered (guessed) op rejected at the typed
+    # acceptance boundary under a StrictProfile that forbids its recovery surface.
+    FindingSpec("APPLY.RECOVERED_OP_REJECTED_IN_STRICT", "apply",
+                "recovery", "hard_fail", "apply_resolved_op",
+                "typed acceptance gate: a strict profile rejected a Recovered (guessed) "
+                "op via mode_for/admits over its OpProvenance, so a certified/strict "
+                "claim rests only on grammar-recognized (Parsed) ops",
+                ("safety_invariant", "provenance"), role="violation"),
     # --- Wave-2 apply-authority closure: per-op + whole-tree sweeps ---
     # LS-07 (strict-blocking): a descendant-granularity op whose resolved address
     # carries no descendant slot would overwrite its host whole-unit.

@@ -2882,6 +2882,106 @@ def _per_op_gate_rop(*, op_id: str = "replace_1", with_lo: bool = False) -> Any:
     )
 
 
+def drill_recovered_op_rejected_in_strict_apply_lane() -> None:
+    """APPLY.RECOVERED_OP_REJECTED_IN_STRICT fires from the production apply lane (AM-01).
+
+    M3 typed-acceptance wiring: an op whose typed ``OpProvenance`` is ``Recovered``
+    (here via the ``extraction_fallback_heuristic`` recovery tag, a BODY-surface
+    recovery) is rejected at the PRODUCTION per-op apply gate
+    (``_gate_provenance_acceptance_at_op``) under the default strict profile, which
+    forbids target guessing. Acceptance is decided by ``mode_for`` / ``admits`` over
+    the typed provenance, so the rejection is the type boundary firing, not an
+    ad-hoc tag check.
+    """
+    from lawvm.core.ir import LegalAddress
+    from lawvm.finland.apply_resolved_op import (
+        RECOVERED_OP_REJECTED_IN_STRICT_FINDING_CODE,
+    )
+    from lawvm.finland.op_provenance import Recovered
+
+    state = ReplayState(ir=IRNode(kind=IRNodeKind.BODY))
+    landed = IRNode(
+        kind=IRNodeKind.BODY, children=(IRNode(kind=IRNodeKind.SECTION, label="1"),)
+    )
+    rop = _closure_rop(
+        op_id="op_am01",
+        target_address=LegalAddress(path=(("section", "1"),)),
+        extraction_provenance_tags=("extraction_fallback_heuristic",),
+    )
+    # Precondition: the op genuinely carries a Recovered typed provenance.
+    assert isinstance(rop.provenance, Recovered)
+    findings = _drive_per_op_apply_gate(rop=rop, new_ir=landed, state=state, strict=True)
+    hits = [
+        f
+        for f in findings
+        if f.kind == RECOVERED_OP_REJECTED_IN_STRICT_FINDING_CODE and f.blocking
+    ]
+    assert hits, (
+        "strict path did not reject a Recovered op at the typed-acceptance gate "
+        "(AM-01); mode_for/admits wiring is not live at the production apply lane"
+    )
+
+
+def test_recovered_op_acceptance_is_strict_only_at_apply_lane() -> None:
+    """AM-01: strict rejects a ``Recovered`` op; quirks admits it; Parsed always admitted.
+
+    The strict-blocking arm is drilled by
+    ``drill_recovered_op_rejected_in_strict_apply_lane``; this complements it with
+    the QUIRKS-admit and Parsed-admit arms, proving a certified/strict claim rests
+    only on grammar-recognized (``Parsed``) ops and the gate is 0-delta on the
+    permissive bench/corpus replay.
+    """
+    from lawvm.core.ir import LegalAddress
+    from lawvm.finland.apply_resolved_op import (
+        RECOVERED_OP_REJECTED_IN_STRICT_FINDING_CODE,
+    )
+    from lawvm.finland.op_provenance import Recovered
+
+    landed = IRNode(
+        kind=IRNodeKind.BODY, children=(IRNode(kind=IRNodeKind.SECTION, label="1"),)
+    )
+
+    # The strict-blocking arm itself (so this test also fails if wiring regresses).
+    drill_recovered_op_rejected_in_strict_apply_lane()
+
+    recovered_rop = _closure_rop(
+        op_id="op_am01_quirks",
+        target_address=LegalAddress(path=(("section", "1"),)),
+        extraction_provenance_tags=("extraction_fallback_heuristic",),
+    )
+    assert isinstance(recovered_rop.provenance, Recovered)
+    # QUIRKS (permissive profile) -> the SAME recovered op is admitted: 0-delta.
+    quirks_findings = _drive_per_op_apply_gate(
+        rop=recovered_rop,
+        new_ir=landed,
+        state=ReplayState(ir=IRNode(kind=IRNodeKind.BODY)),
+        strict=False,
+    )
+    assert not [
+        f
+        for f in quirks_findings
+        if f.kind == RECOVERED_OP_REJECTED_IN_STRICT_FINDING_CODE
+    ], "quirks path rejected a Recovered op (AM-01 should only block under strict)"
+
+    # A grammar-recognized (Parsed/None-provenance) op is admitted under STRICT.
+    parsed_rop = _closure_rop(
+        op_id="op_am01_parsed",
+        target_address=LegalAddress(path=(("section", "1"),)),
+    )
+    assert parsed_rop.provenance is None
+    parsed_findings = _drive_per_op_apply_gate(
+        rop=parsed_rop,
+        new_ir=landed,
+        state=ReplayState(ir=IRNode(kind=IRNodeKind.BODY)),
+        strict=True,
+    )
+    assert not [
+        f
+        for f in parsed_findings
+        if f.kind == RECOVERED_OP_REJECTED_IN_STRICT_FINDING_CODE
+    ], "strict path rejected a non-recovered op (AM-01 must admit Parsed/None provenance)"
+
+
 def drill_mutation_boundary_violation_at_op_apply_lane() -> None:
     """APPLY.MUTATION_BOUNDARY_VIOLATION_AT_OP fires from the production apply lane.
 
@@ -3581,6 +3681,8 @@ FIRE_DRILLS: Dict[str, Callable[[], None]] = {
     "APPLY.MUTATION_BOUNDARY_VIOLATION_AT_OP": drill_mutation_boundary_violation_at_op_apply_lane,
     "APPLY.OCCUPANCY_TRANSITION_BLOCKED": drill_occupancy_transition_blocked_apply_lane,
     "EVID.REPLAY_AUTHORIZATION_PROOF_REQUIRED": drill_replay_authorization_proof_required_apply_lane,
+    # AM-01: typed-acceptance gate rejects a Recovered op under a strict profile.
+    "APPLY.RECOVERED_OP_REJECTED_IN_STRICT": drill_recovered_op_rejected_in_strict_apply_lane,
     # Wave-2 apply-authority closure (blocking arms).
     "APPLY.GRANULARITY_ESCALATION_AT_OP": drill_granularity_escalation_at_op_apply_lane,
     "EVID.UNKNOWN_ATTESTATION_POLICY": drill_unknown_attestation_policy_at_op_apply_lane,
