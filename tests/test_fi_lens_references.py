@@ -151,7 +151,7 @@ def test_e2e_with_registry_resolves_target() -> None:
     assert any(s.payload.get("work_id") == "2022/711" for s in entity_seeds)
     assert any(e.payload.get("work_id") == "2022/711" for e in refers_to)
     # resolved endpoints assert refers_to, never has_candidate, for that mention
-    assert all(e.status == "asserted" for e in refers_to)
+    assert all(e.surface_edge_status == "asserted" for e in refers_to)
 
     graph = _assemble(bundle, result)
     # the minted entity node exists and the refers_to edge resolves to it
@@ -177,7 +177,7 @@ def test_e2e_ambiguous_emits_candidates_not_refers_to() -> None:
 
     has_candidate = [e for e in result.edge_seeds if e.edge_kind == "has_candidate"]
     assert has_candidate
-    assert all(e.status == "candidate" for e in has_candidate)
+    assert all(e.surface_edge_status == "candidate" for e in has_candidate)
     candidate_ids = {e.payload.get("candidate_id") for e in has_candidate}
     assert {"1999/123", "1888/77"} <= candidate_ids
 

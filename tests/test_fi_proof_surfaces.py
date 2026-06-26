@@ -644,12 +644,12 @@ def test_finland_corrigendum_provenance_projects_source_diagnostic_envelope() ->
             "rows": [
                 {
                     "stable_id": "sk20160442_1.pdf#0",
-                    "status": "source_verified",
+                    "provenance_status": "source_verified",
                     "source_witness": witness,
                 },
                 {
                     "stable_id": "sk20160442_1.pdf#1",
-                    "status": "manual_override_exact",
+                    "provenance_status": "manual_override_exact",
                     "source_witness": witness,
                 },
             ],
