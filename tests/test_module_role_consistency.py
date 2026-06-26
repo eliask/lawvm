@@ -39,13 +39,7 @@ _SCRIPT_PATH = _REPO_ROOT / "scripts" / "inventory_module_roles.py"
 # the monotone rule already forbids growth.  This allowlist exists so a module
 # can be intentionally retained dead WITHOUT re-baselining (e.g. a freshly added
 # frontier module pending wiring), with the reason recorded here.
-DEAD_ALLOWLIST: dict[str, str] = {
-    # OpProvenance typed substrate (Parsed|Recovered, ConfidenceTier, AcceptanceMode)
-    # per notes/FI_OP_PROVENANCE_CONSOLIDATION_SPEC.md. Phase 1 lands the type module;
-    # its production consumers (folding the AmendmentOp provenance flags) land in
-    # Phase 2. Pending wiring — remove from this allowlist when Phase 2 wires it.
-    "lawvm.finland.op_provenance": "Phase-1 typed substrate; production consumers land in Phase 2 (flag retirement).",
-}
+DEAD_ALLOWLIST: dict[str, str] = {}
 
 
 def _load_inventory_module() -> Any:
