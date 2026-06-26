@@ -41,7 +41,7 @@ def test_grounding_json_parses_and_is_nonempty():
 def test_every_entry_has_valid_status_key_kind_and_source_ref():
     grounding = load_uk_authority_grounding()
     for rule_id, entry in grounding.items():
-        assert entry.status in VALID_STATUSES, (rule_id, entry.status)
+        assert entry.authority_status in VALID_STATUSES, (rule_id, entry.authority_status)
         assert entry.key_kind in VALID_KEY_KINDS, (rule_id, entry.key_kind)
         assert entry.source_ref.strip(), f"empty source_ref for {rule_id}"
         # authority_tier is int or a split-tier string like "1/2"; never empty.
@@ -59,7 +59,7 @@ def test_loader_round_trips_against_raw_json():
         entry = grounding[row["rule_id"]]
         assert entry.authority_tier == row["authority_tier"]
         assert entry.source_ref == row["source_ref"]
-        assert entry.status == row["status"]
+        assert entry.authority_status == row["status"]
         assert entry.key_kind == row.get("key_kind", "witness_rule_id")
 
 
@@ -119,7 +119,7 @@ def test_render_grounding_column_for_known_and_unknown():
     grounding = load_uk_authority_grounding()
     known = next(iter(grounding))
     rendered = render_grounding_column(known, grounding)
-    assert grounding[known].status in rendered
+    assert grounding[known].authority_status in rendered
     assert grounding[known].source_ref in rendered
     assert render_grounding_column("definitely_not_a_rule_id", grounding) == "-"
 
@@ -128,7 +128,7 @@ def test_honest_grounding_keeps_gap_and_spec_statuses():
     """The point of the bridge is faithful grounding: GAP/SPEC rules from the
     note must survive as GAP/SPEC, not be inflated to HAVE."""
     grounding = load_uk_authority_grounding()
-    statuses = {e.status for e in grounding.values()}
+    statuses = {e.authority_status for e in grounding.values()}
     assert "GAP" in statuses
     assert "SPEC" in statuses
     assert "HAVE" in statuses

@@ -423,11 +423,11 @@ def run_analysis(
                 # original key from candidates is not needed for counting.
                 pass
             total_mentions += 1
-            if res.status is ResolutionStatus.RESOLVED:
+            if res.resolution_status is ResolutionStatus.RESOLVED:
                 resolved += 1
-            elif res.status is ResolutionStatus.AMBIGUOUS:
+            elif res.resolution_status is ResolutionStatus.AMBIGUOUS:
                 ambiguous += 1
-            elif res.status is ResolutionStatus.STATUTE_ONLY:
+            elif res.resolution_status is ResolutionStatus.STATUTE_ONLY:
                 statute_only += 1
                 # The target id still carries the fi-name placeholder on a miss.
                 placeholder = res.mention.target_provision_ref

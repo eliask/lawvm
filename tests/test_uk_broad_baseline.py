@@ -962,7 +962,7 @@ def test_mutation_boundary_diagnostics_reports_unexplained_paths() -> None:
             "operation_id": "op-1",
             "owner_phase": "replay_invariants",
             "rule_id": "mutation_boundary_path_set_violated",
-            "status": "violated",
+            "boundary_proof_status": "violated",
             "helper": "replace_text",
             "outcome": "replaced_node",
             "selected_target_paths": ["body/section:1"],

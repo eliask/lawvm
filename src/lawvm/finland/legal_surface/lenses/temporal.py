@@ -119,7 +119,7 @@ def mint_temporal_expr_seed(
     )
     temporal_kind = expr.kind.value
     date_value = expr.bound.isoformat() if expr.bound is not None else None
-    node_status = _STATUS_MAP[expr.status]
+    node_status = _STATUS_MAP[expr.temporal_status]
     return SurfaceNodeSeed(
         node_kind="temporal_expr",
         source_ref=ref,

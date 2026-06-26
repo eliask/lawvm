@@ -58,7 +58,7 @@ def test_uk_scored_axes_and_residue() -> None:
     from lawvm.tools import uk_bench
 
     r = uk_bench.uk_bench_unit_result(_uk_result(text_score=0.9))
-    assert r.status is BenchStatus.SCORED
+    assert r.bench_unit_status is BenchStatus.SCORED
     assert r.structural_err == pytest.approx(1 - 8 / 12)
     assert r.text_err == pytest.approx(0.1)
     assert dict(r.residue_buckets) == {"eid_only_in_enacted": 2, "eid_only_in_oracle": 4}
@@ -141,14 +141,14 @@ def test_uk_no_oracle_is_non_scored() -> None:
     from lawvm.tools import uk_bench
 
     r = uk_bench.uk_bench_unit_result(_uk_result(status="NO_ORACLE"))
-    assert r.status is BenchStatus.NO_TRUTH
+    assert r.bench_unit_status is BenchStatus.NO_TRUTH
 
 
 def test_uk_err_is_crash() -> None:
     from lawvm.tools import uk_bench
 
     r = uk_bench.uk_bench_unit_result(_uk_result(status="ERR", error="boom"))
-    assert r.status is BenchStatus.CRASH
+    assert r.bench_unit_status is BenchStatus.CRASH
     assert r.witnesses == ("boom",)
 
 
@@ -190,7 +190,7 @@ def test_ee_scored_no_text_axis() -> None:
     from lawvm.tools import ee_bench
 
     r = ee_bench.ee_bench_unit_result(_ee_result(sec_match=0.8, o_secs=10))
-    assert r.status is BenchStatus.SCORED
+    assert r.bench_unit_status is BenchStatus.SCORED
     assert r.structural_err == pytest.approx(0.2)
     assert r.text_err is None
     assert dict(r.residue_buckets) == {"section_mismatch": 2}
@@ -210,14 +210,14 @@ def test_ee_empty_oracle_is_non_scored() -> None:
     from lawvm.tools import ee_bench
 
     r = ee_bench.ee_bench_unit_result(_ee_result(status="EMPTY_ORACLE", o_secs=0, sec_match=0.0))
-    assert r.status is BenchStatus.NO_TRUTH
+    assert r.bench_unit_status is BenchStatus.NO_TRUTH
 
 
 def test_ee_exception_is_crash() -> None:
     from lawvm.tools import ee_bench
 
     r = ee_bench.ee_bench_unit_result(_ee_result(status="EXC:boom", o_secs=0, sec_match=0.0))
-    assert r.status is BenchStatus.CRASH
+    assert r.bench_unit_status is BenchStatus.CRASH
     assert r.is_failure
     assert r.witnesses == ("EXC:boom",)
 
@@ -272,7 +272,7 @@ def test_nz_dual_axes_and_residue() -> None:
     from lawvm.tools import nz_bench
 
     r = nz_bench.nz_bench_unit_result(_nz_result())
-    assert r.status is BenchStatus.SCORED
+    assert r.bench_unit_status is BenchStatus.SCORED
     assert r.structural_err == pytest.approx(0.2)
     assert r.text_err == pytest.approx(0.1)
     assert r.residue_buckets["slice_disagreement"] == 2
@@ -295,14 +295,14 @@ def test_nz_no_slice_nodes_is_non_scored() -> None:
     from lawvm.tools import nz_bench
 
     r = nz_bench.nz_bench_unit_result(_nz_result(slice_nodes=0))
-    assert r.status is BenchStatus.NO_TRUTH
+    assert r.bench_unit_status is BenchStatus.NO_TRUTH
 
 
 def test_nz_exception_is_crash() -> None:
     from lawvm.tools import nz_bench
 
     r = nz_bench.nz_bench_unit_result(_nz_result(work_status="EXC:boom"))
-    assert r.status is BenchStatus.CRASH
+    assert r.bench_unit_status is BenchStatus.CRASH
     assert r.is_failure
 
 
@@ -339,7 +339,7 @@ def _us_result(
 
     return us_bench.WindowResult(
         window=_us_window(),
-        status=status if status is not None else us_bench.WindowStatus.EVALUATED,
+        window_status=status if status is not None else us_bench.WindowStatus.EVALUATED,
         oracle_changed=oracle_changed,
         agreements=agreements,
         lawvm_wrong=lawvm_wrong,
@@ -360,7 +360,7 @@ def test_us_scored_count_based_no_text_axis() -> None:
     from lawvm.us_federal import bench as us_bench
 
     r = us_bench.us_bench_unit_result(_us_result())
-    assert r.status is BenchStatus.SCORED
+    assert r.bench_unit_status is BenchStatus.SCORED
     assert r.structural_err == pytest.approx(0.3)
     assert r.text_err is None
     assert dict(r.residue_buckets) == {"lawvm_wrong": 2, "oracle_suspect": 1}
@@ -394,7 +394,7 @@ def test_us_skipped_is_non_scored() -> None:
     from lawvm.us_federal import bench as us_bench
 
     r = us_bench.us_bench_unit_result(_us_result(status=us_bench.WindowStatus.SKIPPED))
-    assert r.status is BenchStatus.NO_TRUTH
+    assert r.bench_unit_status is BenchStatus.NO_TRUTH
     assert not r.is_failure
 
 
@@ -402,7 +402,7 @@ def test_us_no_oracle_change_is_non_scored() -> None:
     from lawvm.us_federal import bench as us_bench
 
     r = us_bench.us_bench_unit_result(_us_result(oracle_changed=0, agreements=0))
-    assert r.status is BenchStatus.NO_TRUTH
+    assert r.bench_unit_status is BenchStatus.NO_TRUTH
 
 
 # ---------------------------------------------------------------------------
@@ -454,7 +454,7 @@ def test_se_scored_perfect_no_residue() -> None:
             bucket_genuine_match_count=5,
         )
     )
-    assert r.status is BenchStatus.SCORED
+    assert r.bench_unit_status is BenchStatus.SCORED
     assert r.structural_err == 0.0
     assert r.text_err is None
     assert dict(r.residue_buckets) == {}
@@ -485,7 +485,7 @@ def test_se_scored_non_error_oracle_buckes_do_not_pollute_residue() -> None:
             bucket_oracle_version_mismatch_count=2,
         )
     )
-    assert r.status is BenchStatus.SCORED
+    assert r.bench_unit_status is BenchStatus.SCORED
     assert r.structural_err == 0.0
     assert dict(r.residue_buckets) == {}
     check_residue_reconciliation(r)
@@ -505,7 +505,7 @@ def test_se_genuine_mismatch_drives_structural_err_and_residue() -> None:
             bucket_genuine_mismatch_count=1,
         )
     )
-    assert r.status is BenchStatus.SCORED
+    assert r.bench_unit_status is BenchStatus.SCORED
     assert r.structural_err == pytest.approx(0.1)  # 1/10
     assert r.residue_buckets["genuine_mismatch"] == 1
     check_residue_reconciliation(r)
@@ -530,7 +530,7 @@ def test_se_older_base_required_is_source_unavailable() -> None:
             error_detail="base current surface for 1999:332 already contains...",
         )
     )
-    assert r.status is BenchStatus.SOURCE_UNAVAILABLE
+    assert r.bench_unit_status is BenchStatus.SOURCE_UNAVAILABLE
     assert not r.is_failure
     assert r.residue_buckets["recovery_mode_older_base_required"] == 1
 
@@ -540,7 +540,7 @@ def test_se_no_targets_is_no_truth() -> None:
     from lawvm.tools import se_bench
 
     r = se_bench.se_bench_unit_result(_se_summary(target_count=0, match_count=0))
-    assert r.status is BenchStatus.NO_TRUTH
+    assert r.bench_unit_status is BenchStatus.NO_TRUTH
     assert not r.is_failure
 
 
@@ -556,7 +556,7 @@ def test_se_error_outcome_is_crash_with_witnesses() -> None:
             error_detail="could not determine effective date for 2026:999",
         )
     )
-    assert r.status is BenchStatus.CRASH
+    assert r.bench_unit_status is BenchStatus.CRASH
     assert r.is_failure
     assert "ValueError" in r.witnesses
     assert any("could not determine effective date" in w for w in r.witnesses)

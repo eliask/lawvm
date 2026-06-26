@@ -423,12 +423,12 @@ def nz_bench_unit_result(result: "_WorkResult") -> "BenchUnitResult":
         # "EXC:..." — a genuine failure.
         return BenchUnitResult(
             unit_id=result.work_id,
-            status=BenchStatus.CRASH,
+            bench_unit_status=BenchStatus.CRASH,
             witnesses=(result.work_status,),
         )
     if result.slice_nodes <= 0:
         # No target slice nodes materialized — nothing to score against.
-        return BenchUnitResult(unit_id=result.work_id, status=BenchStatus.NO_TRUTH)
+        return BenchUnitResult(unit_id=result.work_id, bench_unit_status=BenchStatus.NO_TRUTH)
 
     disagreements = max(0, result.slice_nodes - result.slice_agreements)
     structural_err = disagreements / result.slice_nodes
@@ -445,7 +445,7 @@ def nz_bench_unit_result(result: "_WorkResult") -> "BenchUnitResult":
     text_err = min(1.0, max(0.0, text_err))
     return BenchUnitResult(
         unit_id=result.work_id,
-        status=BenchStatus.SCORED,
+        bench_unit_status=BenchStatus.SCORED,
         structural_err=structural_err,
         text_err=text_err,
         residue_buckets=residue,

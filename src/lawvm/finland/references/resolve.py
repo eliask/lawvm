@@ -128,7 +128,7 @@ class ResolvedReference:
             mention (via ``dataclasses.replace``) whose target id is the real
             statute/CELEX id; in every other case it is the input mention,
             unmutated.
-        status: The resolution outcome (:class:`ResolutionStatus`).
+        resolution_status: The resolution outcome (:class:`ResolutionStatus`).
         work_id: The resolved statute/CELEX id, or ``None`` when not a single
             unambiguous resolution.
         candidates: All candidate ids the registry returned for this mention
@@ -143,7 +143,7 @@ class ResolvedReference:
     """
 
     mention: ReferenceMention
-    status: ResolutionStatus
+    resolution_status: ResolutionStatus
     work_id: Optional[str]
     candidates: tuple[str, ...]
     rejected_candidates: tuple[str, ...]
@@ -284,7 +284,7 @@ def build_defined_term_table(
             target_ref=b.target_ref,
             binding_offset=offset,
             term_surface=key,
-            morphology_ok=(b.status == STATUS_OK),
+            morphology_ok=(b.binding_status == STATUS_OK),
         )
         targets = by_key.setdefault(key, {})
         prior = targets.get(b.target_ref)
@@ -596,7 +596,7 @@ def _resolve_fi_name(
                 mention=_rewrite_target_id(
                     mention, bound, phrase_lemma=_LOCAL_BINDING_PHRASE_LEMMA
                 ),
-                status=ResolutionStatus.RESOLVED,
+                resolution_status=ResolutionStatus.RESOLVED,
                 work_id=bound,
                 candidates=(bound,),
                 rejected_candidates=(),
@@ -610,7 +610,7 @@ def _resolve_fi_name(
                 mention=_rewrite_target_id(
                     mention, bound, phrase_lemma=_NAME_ANAPHORA_PHRASE_LEMMA
                 ),
-                status=ResolutionStatus.RESOLVED,
+                resolution_status=ResolutionStatus.RESOLVED,
                 work_id=bound,
                 candidates=(bound,),
                 rejected_candidates=(),
@@ -636,7 +636,7 @@ def _resolve_fi_name(
         work_id = candidate_ids[0]
         return ResolvedReference(
             mention=_rewrite_target_id(mention, work_id),
-            status=ResolutionStatus.RESOLVED,
+            resolution_status=ResolutionStatus.RESOLVED,
             work_id=work_id,
             candidates=candidate_ids,
             rejected_candidates=(),
@@ -647,7 +647,7 @@ def _resolve_fi_name(
             mention=dataclasses.replace(
                 mention, cite_confidence=CiteConfidence.AMBIGUOUS
             ),
-            status=ResolutionStatus.AMBIGUOUS,
+            resolution_status=ResolutionStatus.AMBIGUOUS,
             work_id=None,
             candidates=candidate_ids,
             rejected_candidates=(),
@@ -677,7 +677,7 @@ def _resolve_fi_name(
                 mention=_rewrite_target_id(
                     mention, cws_ids[0], phrase_lemma=_CWS_FALLBACK_PHRASE_LEMMA
                 ),
-                status=ResolutionStatus.RESOLVED,
+                resolution_status=ResolutionStatus.RESOLVED,
                 work_id=cws_ids[0],
                 candidates=cws_ids,
                 rejected_candidates=(),
@@ -688,7 +688,7 @@ def _resolve_fi_name(
             mention=dataclasses.replace(
                 mention, cite_confidence=CiteConfidence.AMBIGUOUS
             ),
-            status=ResolutionStatus.AMBIGUOUS,
+            resolution_status=ResolutionStatus.AMBIGUOUS,
             work_id=None,
             candidates=cws_ids,
             rejected_candidates=(),
@@ -710,7 +710,7 @@ def _resolve_fi_name(
     # A genuine registry miss: the act is textual, the id is pending.
     return ResolvedReference(
         mention=mention,
-        status=ResolutionStatus.STATUTE_ONLY,
+        resolution_status=ResolutionStatus.STATUTE_ONLY,
         work_id=None,
         candidates=(),
         rejected_candidates=(),
@@ -752,7 +752,7 @@ def _resolve_fi_name_via_eu(
             mention=_rewrite_target_id(
                 mention, work_id, phrase_lemma=_EU_FALLBACK_PHRASE_LEMMA
             ),
-            status=ResolutionStatus.RESOLVED,
+            resolution_status=ResolutionStatus.RESOLVED,
             work_id=work_id,
             candidates=candidate_ids,
             rejected_candidates=(),
@@ -761,7 +761,7 @@ def _resolve_fi_name_via_eu(
     # MULTIPLE — a genuinely ambiguous EU nickname: list all, never pick.
     return ResolvedReference(
         mention=dataclasses.replace(mention, cite_confidence=CiteConfidence.AMBIGUOUS),
-        status=ResolutionStatus.AMBIGUOUS,
+        resolution_status=ResolutionStatus.AMBIGUOUS,
         work_id=None,
         candidates=candidate_ids,
         rejected_candidates=(),
@@ -781,7 +781,7 @@ def _resolve_eu_nickname(mention: ReferenceMention) -> ResolvedReference:
         work_id = candidate_ids[0]
         return ResolvedReference(
             mention=_rewrite_target_id(mention, work_id),
-            status=ResolutionStatus.RESOLVED,
+            resolution_status=ResolutionStatus.RESOLVED,
             work_id=work_id,
             candidates=candidate_ids,
             rejected_candidates=(),
@@ -792,7 +792,7 @@ def _resolve_eu_nickname(mention: ReferenceMention) -> ResolvedReference:
             mention=dataclasses.replace(
                 mention, cite_confidence=CiteConfidence.AMBIGUOUS
             ),
-            status=ResolutionStatus.AMBIGUOUS,
+            resolution_status=ResolutionStatus.AMBIGUOUS,
             work_id=None,
             candidates=candidate_ids,
             rejected_candidates=(),
@@ -801,7 +801,7 @@ def _resolve_eu_nickname(mention: ReferenceMention) -> ResolvedReference:
     # NONE — nickname-shaped but unknown to the registry: id pending.
     return ResolvedReference(
         mention=mention,
-        status=ResolutionStatus.STATUTE_ONLY,
+        resolution_status=ResolutionStatus.STATUTE_ONLY,
         work_id=None,
         candidates=(),
         rejected_candidates=(),
@@ -821,7 +821,7 @@ def _passthrough(mention: ReferenceMention) -> ResolvedReference:
     if conf is CiteConfidence.OPEN:
         return ResolvedReference(
             mention=mention,
-            status=ResolutionStatus.OPEN,
+            resolution_status=ResolutionStatus.OPEN,
             work_id=None,
             candidates=(),
             rejected_candidates=(),
@@ -830,7 +830,7 @@ def _passthrough(mention: ReferenceMention) -> ResolvedReference:
     if conf is CiteConfidence.BROKEN:
         return ResolvedReference(
             mention=mention,
-            status=ResolutionStatus.BROKEN,
+            resolution_status=ResolutionStatus.BROKEN,
             work_id=None,
             candidates=(),
             rejected_candidates=(),
@@ -840,7 +840,7 @@ def _passthrough(mention: ReferenceMention) -> ResolvedReference:
     work_id = target.statute_id if target is not None else None
     return ResolvedReference(
         mention=mention,
-        status=ResolutionStatus.UNCHANGED,
+        resolution_status=ResolutionStatus.UNCHANGED,
         work_id=work_id,
         candidates=(work_id,) if work_id else (),
         rejected_candidates=(),

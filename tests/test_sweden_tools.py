@@ -1139,8 +1139,8 @@ def test_sweden_probe_base_command_uses_amendment_register(monkeypatch, capsys) 
                 }
             )
             or [
-                {"sfs_id": sfs_ids[0], "status": "ok", "match_count": 1, "target_count": 1, "op_count": 2, "base_sfs_id": "2015:284", "classifications": ["exact"]},
-                {"sfs_id": sfs_ids[1], "status": "error", "error": "NotImplementedError: unsupported"},
+                {"sfs_id": sfs_ids[0], "row_status": "ok", "match_count": 1, "target_count": 1, "op_count": 2, "base_sfs_id": "2015:284", "classifications": ["exact"]},
+                {"sfs_id": sfs_ids[1], "row_status": "error", "error": "NotImplementedError: unsupported"},
             ]
         ),
     )
@@ -1389,7 +1389,7 @@ def test_sweden_hydrate_bulk_command_reports_current_diagnostics(monkeypatch, ca
     payload = json.loads(capsys.readouterr().out)
     row = payload["rows"][0]
 
-    assert row["status"] == "ok"
+    assert row["row_status"] == "ok"
     assert row["official_fetched"] is False
     assert row["official_diagnostic_count"] == 1
     assert row["official_diagnostics"][0]["rule_id"] == "se_official_artifacts_unavailable"
@@ -1741,7 +1741,7 @@ def test_sweden_backfill_official_command_records_error_kind_counts(monkeypatch,
             "family": "source_pathology",
             "reason": "Sweden official backfill recorded a source acquisition or compilation error.",
             "sfs_id": "1999:1",
-            "status": "error",
+            "row_status": "error",
             "error_kind": "RuntimeError",
             "error": "RuntimeError: temporary failure",
             "frontier_classification": "",

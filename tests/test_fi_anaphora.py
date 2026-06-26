@@ -27,7 +27,7 @@ def test_mainitun_lain_resolves_to_preceding_named_act() -> None:
     refs = recognize_anaphoric_refs(text)
     assert len(refs) == 1
     r = refs[0]
-    assert r.status is AnaphorStatus.RESOLVED
+    assert r.anaphor_status is AnaphorStatus.RESOLVED
     assert r.surface_text == "Mainitun lain"
     assert r.mention.cite_kind is CiteKind.CROSS_STATUTE
     assert r.mention.target_provision_ref is not None
@@ -40,7 +40,7 @@ def test_kyseisen_lain_also_resolves_to_named_antecedent() -> None:
     text = "Ympäristönsuojelulaissa säädetään. Kyseisen lain nojalla annetaan."
     refs = recognize_anaphoric_refs(text)
     assert len(refs) == 1
-    assert refs[0].status is AnaphorStatus.RESOLVED
+    assert refs[0].anaphor_status is AnaphorStatus.RESOLVED
     assert refs[0].mention.target_provision_ref is not None
     assert (
         refs[0].mention.target_provision_ref.statute_id
@@ -52,7 +52,7 @@ def test_edella_mainitun_lain_fronted_cue_resolves() -> None:
     text = "Jätelaissa säädetään jätteistä. Edellä mainitun lain mukaisesti toimitaan."
     refs = recognize_anaphoric_refs(text)
     assert len(refs) == 1
-    assert refs[0].status is AnaphorStatus.RESOLVED
+    assert refs[0].anaphor_status is AnaphorStatus.RESOLVED
     assert refs[0].surface_text.lower().startswith("edellä mainitun lain")
     assert refs[0].mention.target_provision_ref is not None
     assert refs[0].mention.target_provision_ref.statute_id == "fi-name:jätelaki"
@@ -66,7 +66,7 @@ def test_mainitussa_pykalassa_resolves_to_preceding_section() -> None:
     refs = recognize_anaphoric_refs(text, statute_id="1/2020")
     assert len(refs) == 1
     r = refs[0]
-    assert r.status is AnaphorStatus.RESOLVED
+    assert r.anaphor_status is AnaphorStatus.RESOLVED
     assert r.mention.cite_kind is CiteKind.INTERNAL
     assert r.mention.target_provision_ref is not None
     assert r.mention.target_provision_ref.statute_id == "1/2020"
@@ -81,7 +81,7 @@ def test_taman_lain_resolves_to_citing_statute() -> None:
     refs = recognize_anaphoric_refs(text, statute_id="123/2020")
     assert len(refs) == 1
     r = refs[0]
-    assert r.status is AnaphorStatus.RESOLVED
+    assert r.anaphor_status is AnaphorStatus.RESOLVED
     assert r.surface_text == "Tämän lain"
     assert r.mention.cite_kind is CiteKind.INTERNAL
     assert r.mention.cite_confidence is CiteConfidence.EXACT
@@ -94,7 +94,7 @@ def test_taman_lain_resolves_self_even_without_known_id() -> None:
     # still INTERNAL (empty-id self), never OPEN.
     refs = recognize_anaphoric_refs("Tämän lain mukaan toimitaan.")
     assert len(refs) == 1
-    assert refs[0].status is AnaphorStatus.RESOLVED
+    assert refs[0].anaphor_status is AnaphorStatus.RESOLVED
     assert refs[0].mention.cite_kind is CiteKind.INTERNAL
     assert refs[0].mention.target_provision_ref is not None
     assert refs[0].mention.target_provision_ref.statute_id == ""
@@ -108,7 +108,7 @@ def test_anaphor_without_antecedent_is_open() -> None:
     refs = recognize_anaphoric_refs(text)
     assert len(refs) == 1
     r = refs[0]
-    assert r.status is AnaphorStatus.OPEN
+    assert r.anaphor_status is AnaphorStatus.OPEN
     assert r.mention.cite_confidence is CiteConfidence.OPEN
     assert r.mention.target_provision_ref is None
     assert r.candidates == ()
@@ -119,7 +119,7 @@ def test_provision_anaphor_with_only_act_antecedent_is_open() -> None:
     text = "Luonnonsuojelulaissa säädetään. Mainitussa pykälässä tarkoitettu."
     refs = recognize_anaphoric_refs(text, statute_id="1/2020")
     assert len(refs) == 1
-    assert refs[0].status is AnaphorStatus.OPEN
+    assert refs[0].anaphor_status is AnaphorStatus.OPEN
     assert refs[0].mention.target_provision_ref is None
 
 
@@ -133,7 +133,7 @@ def test_two_competing_antecedents_are_ambiguous() -> None:
     refs = recognize_anaphoric_refs(text, statute_id="1/2020")
     assert len(refs) == 1
     r = refs[0]
-    assert r.status is AnaphorStatus.AMBIGUOUS
+    assert r.anaphor_status is AnaphorStatus.AMBIGUOUS
     assert r.mention.target_provision_ref is None
     assert {c.serialized() for c in r.candidates} == {"1/2020/6", "1/2020/8"}
     assert r.finding is not None
@@ -151,7 +151,7 @@ def test_anaphor_binds_to_nearest_not_earliest_act() -> None:
     )
     refs = recognize_anaphoric_refs(text)
     assert len(refs) == 1
-    assert refs[0].status is AnaphorStatus.RESOLVED
+    assert refs[0].anaphor_status is AnaphorStatus.RESOLVED
     assert refs[0].mention.target_provision_ref is not None
     # Nearest preceding act is luonnonsuojelulaki, NOT the earlier jätelaki.
     assert (

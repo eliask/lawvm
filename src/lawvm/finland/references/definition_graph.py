@@ -223,7 +223,7 @@ def _compute_lints(
     # learn the positions — this never refers to a binding not produced by the
     # binder, so it cannot fabricate a definition (AGENTS.md §1.8).
     for use in uses:
-        if use.status == STATUS_OPEN:
+        if use.use_status == STATUS_OPEN:
             lemma = use.lemma.strip().lower()
             surf = use.term_surface.strip().lower()
             matching = [
@@ -260,7 +260,7 @@ def _compute_lints(
                         term=use.term_surface,
                     )
                 )
-        elif use.status == STATUS_AMBIGUOUS:
+        elif use.use_status == STATUS_AMBIGUOUS:
             cand = ", ".join(sorted({b.term for b in use.bindings}))
             lints.append(
                 Lint(
@@ -368,7 +368,7 @@ def build_definition_graph(
     edges = tuple(
         DefinitionEdge(binding=u.binding, use=u)
         for u in uses
-        if u.status == STATUS_RESOLVED and u.binding is not None
+        if u.use_status == STATUS_RESOLVED and u.binding is not None
     )
 
     lints = _compute_lints(

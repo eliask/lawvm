@@ -5261,6 +5261,11 @@ def _ownership_rows_from_value(
     if isinstance(value, Mapping):
         for ownership_id, status in value.items():
             if isinstance(ownership_id, str) and ownership_id:
+                # `"status"` is the external UK semantic-claim document schema
+                # field (``ownership_claims[].status``, authored by claim writers
+                # and read back via ``_optional_string(row, "status")``). This
+                # normalizes the ``{ownership_id: status}`` shorthand into that
+                # canonical schema shape; the key mirrors the input format 1:1.
                 rows.append((ownership_id, {"status": status}))
         return tuple(rows)
     if not isinstance(value, list | tuple):
@@ -5337,6 +5342,11 @@ def _validator_check_rows_from_value(
     if isinstance(value, Mapping):
         for check_id, status in value.items():
             if isinstance(check_id, str) and check_id:
+                # `"status"` is the external UK semantic-claim document schema
+                # field (``validator_checks[].status``, authored by claim writers
+                # and read back via ``_optional_string(row, "status")``). This
+                # normalizes the ``{check_id: status}`` shorthand into that
+                # canonical schema shape; the key mirrors the input format 1:1.
                 rows.append((check_id, {"status": status}))
         return tuple(rows)
     if not isinstance(value, list | tuple):

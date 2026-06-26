@@ -364,7 +364,7 @@ def test_unbound_directive_is_candidate_not_invented() -> None:
         claim_surface="pannaan täytäntöön",
         char_start=0,
         char_end=10,
-        status=TranspositionStatus.STATUTE_ONLY,
+        transposition_status=TranspositionStatus.STATUTE_ONLY,
     )
     enriched = _inject_transposition_entities(graph, [claim])
     from lawvm.core.legal_surface_assembler import run_edge_passes

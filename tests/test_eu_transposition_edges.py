@@ -63,7 +63,7 @@ def _ysl_claim():
     # Sanity: the extractor binds the IED CELEX (this is the prerequisite the
     # edge layer projects — not re-tested deeply here, that is the extractor's
     # own test suite).
-    assert claim.status is TranspositionStatus.RESOLVED
+    assert claim.transposition_status is TranspositionStatus.RESOLVED
     assert claim.directive_celex == _IED_CELEX
     return claim
 
@@ -124,7 +124,7 @@ def test_unknown_enactment_when_no_fi_date_and_it_dominates() -> None:
     unbound = replace(
         claim,
         directive_celex=None,
-        status=TranspositionStatus.STATUTE_ONLY,
+        transposition_status=TranspositionStatus.STATUTE_ONLY,
     )
     edge2 = transposition_edge_for_claim(unbound, fi_enactment_date=None)
     assert edge2.timeliness is Timeliness.UNKNOWN_ENACTMENT

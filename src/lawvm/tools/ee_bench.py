@@ -406,7 +406,7 @@ def ee_bench_unit_result(result: _BenchResult) -> "BenchUnitResult":
     if result.bench_status == "OK":
         if result.o_secs <= 0:
             # OK row but oracle has no body sections — nothing to score against.
-            return BenchUnitResult(unit_id=unit_id, status=BenchStatus.NO_TRUTH)
+            return BenchUnitResult(unit_id=unit_id, bench_unit_status=BenchStatus.NO_TRUTH)
         structural_err = 1.0 - result.sec_match
         mismatched = round(result.o_secs * structural_err)
         residue: dict[str, int] = {}
@@ -416,16 +416,16 @@ def ee_bench_unit_result(result: _BenchResult) -> "BenchUnitResult":
             residue["section_mismatch"] = 1
         return BenchUnitResult(
             unit_id=unit_id,
-            status=BenchStatus.SCORED,
+            bench_unit_status=BenchStatus.SCORED,
             structural_err=structural_err,
             text_err=None,
             residue_buckets=residue,
         )
     if result.bench_status == "EMPTY_ORACLE":
-        return BenchUnitResult(unit_id=unit_id, status=BenchStatus.NO_TRUTH)
+        return BenchUnitResult(unit_id=unit_id, bench_unit_status=BenchStatus.NO_TRUTH)
     # "ERR" (replay error set) or "EXC:..." (caught exception) — a genuine failure.
     witnesses = (result.bench_status,) if result.bench_status.startswith("EXC") else ()
-    return BenchUnitResult(unit_id=unit_id, status=BenchStatus.CRASH, witnesses=witnesses)
+    return BenchUnitResult(unit_id=unit_id, bench_unit_status=BenchStatus.CRASH, witnesses=witnesses)
 
 
 def _register_ee_bench_comparator() -> None:

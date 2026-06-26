@@ -1060,7 +1060,7 @@ def test_mutation_boundary_reports_project_shared_proof_rows() -> None:
     assert proof["materialization_surface"] == "finland_strict_report"
     assert proof["owner_phase"] == "replay_apply"
     assert proof["operation_id"] == "op-1"
-    assert proof["status"] == "proved"
+    assert proof["boundary_proof_status"] == "proved"
     assert proof["path_set_invariant_holds"] is True
     assert "mutation_boundary_report_as_replay_authorization" in proof["forbidden_shortcuts"]
 
@@ -1090,7 +1090,7 @@ def test_serialized_mutation_boundary_reports_project_shared_proof_rows() -> Non
 
     proof = rows[0]
     assert proof["operation_id"] == "op-2"
-    assert proof["status"] == "violated"
+    assert proof["boundary_proof_status"] == "violated"
     assert proof["source_artifact_id"] == "2010/100"
     assert proof["result_codes"] == ["REPLAY_FAILED_OP_MUTATED_TREE"]
 

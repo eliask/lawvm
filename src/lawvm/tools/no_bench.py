@@ -122,7 +122,7 @@ def no_bench_unit_result(result: "NOVerifyResult") -> BenchUnitResult:
     if result.error:
         return BenchUnitResult(
             unit_id=unit_id,
-            status=BenchStatus.CRASH,
+            bench_unit_status=BenchStatus.CRASH,
             witnesses=(result.error,),
         )
 
@@ -133,7 +133,7 @@ def no_bench_unit_result(result: "NOVerifyResult") -> BenchUnitResult:
     if status in _NO_BENCH_SOURCE_UNAVAILABLE_STATUSES:
         return BenchUnitResult(
             unit_id=unit_id,
-            status=BenchStatus.SOURCE_UNAVAILABLE,
+            bench_unit_status=BenchStatus.SOURCE_UNAVAILABLE,
             witnesses=(status,),
         )
 
@@ -141,7 +141,7 @@ def no_bench_unit_result(result: "NOVerifyResult") -> BenchUnitResult:
     # window). There is no replay-vs-current divergence to score; today's
     # NOVerifyResult does not classify "no_amendments" as SCORED-consistent.
     if status == "no_amendments":
-        return BenchUnitResult(unit_id=unit_id, status=BenchStatus.NO_TRUTH)
+        return BenchUnitResult(unit_id=unit_id, bench_unit_status=BenchStatus.NO_TRUTH)
 
     # sparse_indexed_history: the replayed body diverges from the current
     # consolidated law with so many primary divergences (≥50 or ≥15 set in
@@ -157,7 +157,7 @@ def no_bench_unit_result(result: "NOVerifyResult") -> BenchUnitResult:
     if result.source_signal == "sparse_indexed_history":
         return BenchUnitResult(
             unit_id=unit_id,
-            status=BenchStatus.SOURCE_UNAVAILABLE,
+            bench_unit_status=BenchStatus.SOURCE_UNAVAILABLE,
             witnesses=(
                 "sparse_indexed_history "
                 f"(divergences={int(result.divergence_count or 0)}, "
@@ -178,7 +178,7 @@ def no_bench_unit_result(result: "NOVerifyResult") -> BenchUnitResult:
     if replayed_body is None:
         return BenchUnitResult(
             unit_id=unit_id,
-            status=BenchStatus.CRASH,
+            bench_unit_status=BenchStatus.CRASH,
             witnesses=("replayed body missing on status=" + str(status),),
         )
 
@@ -188,7 +188,7 @@ def no_bench_unit_result(result: "NOVerifyResult") -> BenchUnitResult:
     # If the replayed body has zero sections, there is no oracle to score
     # against — consistent or not, an empty replay body has no comparable truth.
     if n_replay_sections == 0:
-        return BenchUnitResult(unit_id=unit_id, status=BenchStatus.NO_TRUTH)
+        return BenchUnitResult(unit_id=unit_id, bench_unit_status=BenchStatus.NO_TRUTH)
 
     divergence_count = int(result.divergence_count or 0)
     residue = _residue_buckets_for(result.divergence_counts)
@@ -198,7 +198,7 @@ def no_bench_unit_result(result: "NOVerifyResult") -> BenchUnitResult:
     if divergence_count == 0:
         scored = BenchUnitResult(
             unit_id=unit_id,
-            status=BenchStatus.SCORED,
+            bench_unit_status=BenchStatus.SCORED,
             structural_err=0.0,
             text_err=None,
             residue_buckets={},
@@ -214,7 +214,7 @@ def no_bench_unit_result(result: "NOVerifyResult") -> BenchUnitResult:
 
     scored = BenchUnitResult(
         unit_id=unit_id,
-        status=BenchStatus.SCORED,
+        bench_unit_status=BenchStatus.SCORED,
         structural_err=structural_err,
         text_err=None,
         residue_buckets=residue,
@@ -759,7 +759,7 @@ def _persist_per_statute_results(
                 writer.writerow(
                     [
                         r.unit_id,
-                        r.status.value,
+                        r.bench_unit_status.value,
                         "" if r.structural_err is None else f"{r.structural_err:.6f}",
                         "" if r.text_err is None else f"{r.text_err:.6f}",
                         "" if r.headline_error() is None else f"{r.headline_error():.6f}",
@@ -860,7 +860,7 @@ def _no_bench_score_one_worker(row: tuple[str, str, str]) -> BenchUnitResult:
         # in the partition-by-status breakdown the summary renders.
         mapped = BenchUnitResult(
             unit_id=base_id,
-            status=BenchStatus.CRASH,
+            bench_unit_status=BenchStatus.CRASH,
             witnesses=(f"{type(exc).__name__}: {exc}",),
         )
     return mapped

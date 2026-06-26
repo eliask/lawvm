@@ -229,8 +229,8 @@ def build_eu_reference_report(
         for claim in recognize_transposition_claims(text, citing_engine_id=sid):
             transposition_claims += 1
             transposition_acts.add(sid)
-            status_counts[claim.status.value] += 1
-            if claim.status is TranspositionStatus.RESOLVED and claim.directive_celex:
+            status_counts[claim.transposition_status.value] += 1
+            if claim.transposition_status is TranspositionStatus.RESOLVED and claim.directive_celex:
                 transposition_bound += 1
             else:
                 transposition_unbound += 1
@@ -245,7 +245,7 @@ def build_eu_reference_report(
                         citing_statute_id=sid,
                         directive_celex=claim.directive_celex,
                         directive_surface=claim.directive_surface,
-                        binding_status=claim.status.value,
+                        binding_status=claim.transposition_status.value,
                         transposition_deadline=deadline,
                         claim_surface=claim.claim_surface,
                     )

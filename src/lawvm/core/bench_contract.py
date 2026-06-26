@@ -73,7 +73,7 @@ class BenchUnitResult:
     ----------
     unit_id:
         Stable identifier for the unit (statute id, work id, window id, …).
-    status:
+    bench_unit_status:
         :class:`BenchStatus`. Only ``SCORED`` units carry axis errors.
     structural_err:
         Structural divergence error in ``[0, 1]`` (``0`` = structurally
@@ -91,7 +91,7 @@ class BenchUnitResult:
     """
 
     unit_id: str
-    status: BenchStatus
+    bench_unit_status: BenchStatus
     structural_err: float | None = None
     text_err: float | None = None
     residue_buckets: Mapping[str, int] = field(default_factory=dict)
@@ -100,24 +100,24 @@ class BenchUnitResult:
     def __post_init__(self) -> None:
         _validate_axis("structural_err", self.structural_err)
         _validate_axis("text_err", self.text_err)
-        if self.status is not BenchStatus.SCORED:
+        if self.bench_unit_status is not BenchStatus.SCORED:
             # Non-scored / crashed units must not carry axis errors — that would
             # silently leak them into aggregates. Fail loud.
             if self.structural_err is not None or self.text_err is not None:
                 raise BenchContractError(
-                    f"unit {self.unit_id!r} has status {self.status.value!r} but carries "
+                    f"unit {self.unit_id!r} has status {self.bench_unit_status.value!r} but carries "
                     f"axis errors (structural={self.structural_err!r}, text={self.text_err!r}); "
                     "only SCORED units may carry errors"
                 )
 
     @property
     def is_scored(self) -> bool:
-        return self.status is BenchStatus.SCORED
+        return self.bench_unit_status is BenchStatus.SCORED
 
     @property
     def is_failure(self) -> bool:
         """A genuine failure (crash), as opposed to a non-scored exclusion."""
-        return self.status is BenchStatus.CRASH
+        return self.bench_unit_status is BenchStatus.CRASH
 
     @property
     def attempted_axes(self) -> tuple[float, ...]:
@@ -159,7 +159,7 @@ def check_residue_reconciliation(result: BenchUnitResult) -> None:
 
     Raises :class:`BenchContractError` on violation.
     """
-    if result.status is not BenchStatus.SCORED:
+    if result.bench_unit_status is not BenchStatus.SCORED:
         return
     if result.structural_err is None:
         return

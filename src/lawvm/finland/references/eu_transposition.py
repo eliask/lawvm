@@ -158,7 +158,7 @@ class TranspositionClaim:
             evidence the claim rests on).
         char_start:       Char offset of the claim phrase in the scanned prose.
         char_end:         Char offset one past the claim/directive span.
-        status:           Why the binding resolved as it did (§0.3 fail-loud).
+        transposition_status: Why the binding resolved as it did (§0.3 fail-loud).
     """
 
     citing_engine_id: str
@@ -167,7 +167,7 @@ class TranspositionClaim:
     claim_surface: str
     char_start: int
     char_end: int
-    status: TranspositionStatus
+    transposition_status: TranspositionStatus
 
 
 _TAG_RE = re.compile(r"<[^>]+>")
@@ -285,7 +285,7 @@ def recognize_transposition_claims(
                 claim_surface=claim_surface,
                 char_start=m.start(),
                 char_end=fwd_end,
-                status=status,
+                transposition_status=status,
             )
         )
     return out

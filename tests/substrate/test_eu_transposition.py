@@ -79,7 +79,7 @@ def _claim(
         claim_surface="täytäntöönpanemiseksi",
         char_start=0,
         char_end=10,
-        status=status,
+        transposition_status=status,
     )
 
 

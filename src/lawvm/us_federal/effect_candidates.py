@@ -101,7 +101,7 @@ class USTitleEffectCandidateReport:
             if r.report
         )
         accepted = sum(
-            sum(1 for i in r.report.instructions if i.status == "accepted")
+            sum(1 for i in r.report.instructions if i.instruction_status == "accepted")
             for r in targeting
             if r.report
         )

@@ -124,9 +124,9 @@ class TemporalExpr:
         kind:         The recognised :class:`TemporalKind`.
         surface_text: The exact matched substring (verbatim from the source).
         source_span:  Provenance back to the byte range in the source text.
-        bound:        The parsed calendar date, present ONLY when ``status`` is
-                      ``resolved``; ``None`` for every residual status.
-        status:       The :class:`TemporalStatus` — ``resolved`` iff ``bound``
+        bound:        The parsed calendar date, present ONLY when ``temporal_status``
+                      is ``resolved``; ``None`` for every residual status.
+        temporal_status: The :class:`TemporalStatus` — ``resolved`` iff ``bound``
                       is not None.
         rule_id:      Stable id of the recognizer rule that fired (for audit /
                       witness attribution).
@@ -136,7 +136,7 @@ class TemporalExpr:
     surface_text: str
     source_span: SourceSpan
     bound: Optional[date]
-    status: TemporalStatus
+    temporal_status: TemporalStatus
     rule_id: str
 
     def __post_init__(self) -> None:
@@ -145,13 +145,13 @@ class TemporalExpr:
         # carry one (a recognised date that didn't parse is a residual, not a
         # resolved-with-no-date). A RESOLVED non-date cue (COMMENCEMENT) is
         # determinate yet legitimately dateless, so bound=None is allowed there.
-        if self.bound is not None and self.status is not TemporalStatus.RESOLVED:
+        if self.bound is not None and self.temporal_status is not TemporalStatus.RESOLVED:
             raise ValueError(
                 "residual TemporalExpr must not carry a bound (no guessed dates)"
             )
         if (
             self.kind is TemporalKind.FIXED_DATE
-            and self.status is TemporalStatus.RESOLVED
+            and self.temporal_status is TemporalStatus.RESOLVED
             and self.bound is None
         ):
             raise ValueError("RESOLVED FIXED_DATE must carry a parsed bound")
@@ -330,7 +330,7 @@ def recognize_temporal_exprs(text: str) -> List[TemporalExpr]:
                 surface_text=m.group(0),
                 source_span=_span(text, m.start(), m.end()),
                 bound=d,
-                status=(
+                temporal_status=(
                     TemporalStatus.RESOLVED if d is not None else TemporalStatus.UNSUPPORTED
                 ),
                 rule_id="fixed_date.long_form",
@@ -352,7 +352,7 @@ def recognize_temporal_exprs(text: str) -> List[TemporalExpr]:
                 surface_text=m.group(0),
                 source_span=_span(text, m.start(), m.end()),
                 bound=d,
-                status=(
+                temporal_status=(
                     TemporalStatus.RESOLVED if d is not None else TemporalStatus.UNSUPPORTED
                 ),
                 rule_id="fixed_date.numeric",
@@ -367,7 +367,7 @@ def recognize_temporal_exprs(text: str) -> List[TemporalExpr]:
                 surface_text=m.group(0),
                 source_span=_span(text, m.start(), m.end()),
                 bound=None,
-                status=TemporalStatus.RESOLVED,
+                temporal_status=TemporalStatus.RESOLVED,
                 rule_id="commencement.cue",
             )
         )
@@ -380,7 +380,7 @@ def recognize_temporal_exprs(text: str) -> List[TemporalExpr]:
                 surface_text=m.group(0),
                 source_span=_span(text, m.start(), m.end()),
                 bound=None,
-                status=TemporalStatus.UNSUPPORTED,
+                temporal_status=TemporalStatus.UNSUPPORTED,
                 rule_id="duration_from_commencement.anchor",
             )
         )
@@ -416,7 +416,7 @@ def recognize_temporal_exprs(text: str) -> List[TemporalExpr]:
                     surface_text=m.group(0),
                     source_span=_span(text, m.start(), m.end()),
                     bound=d,
-                    status=(
+                    temporal_status=(
                         TemporalStatus.RESOLVED
                         if d is not None
                         else TemporalStatus.UNSUPPORTED
@@ -437,7 +437,7 @@ def recognize_temporal_exprs(text: str) -> List[TemporalExpr]:
                 surface_text=m.group(0),
                 source_span=_span(text, m.start(), m.end()),
                 bound=None,
-                status=TemporalStatus.OPEN,
+                temporal_status=TemporalStatus.OPEN,
                 rule_id="validity_open.cue",
             )
         )
@@ -450,7 +450,7 @@ def recognize_temporal_exprs(text: str) -> List[TemporalExpr]:
                 surface_text=m.group(0).rstrip(),
                 source_span=_span(text, m.start(), len(m.group(0).rstrip()) + m.start()),
                 bound=None,
-                status=TemporalStatus.EVENT_BOUND,
+                temporal_status=TemporalStatus.EVENT_BOUND,
                 rule_id="event_bound.kunnes",
             )
         )

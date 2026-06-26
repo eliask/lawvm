@@ -161,7 +161,7 @@ def _mutation_boundary_proof_row_from_report(
         "operation_id": report.op_id,
         "owner_phase": "replay_apply",
         "rule_id": _rule_id_for_status(status),
-        "status": status,
+        "boundary_proof_status": status,
         "helper": report.helper,
         "outcome": report.outcome,
         "selected_target_paths": _path_strings(report.allowed_roots),

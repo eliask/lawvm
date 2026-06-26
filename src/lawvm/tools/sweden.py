@@ -171,7 +171,7 @@ def _se_backfill_year_buckets(rows: list[dict[str, Any]]) -> tuple[dict[str, int
         if not year:
             continue
         year_counts[year] += 1
-        status = str(row.get("status") or "")
+        status = str(row.get("row_status") or "")
         if year not in year_status_counts:
             year_status_counts[year] = Counter()
         if status:
@@ -467,7 +467,7 @@ def _store_se_backfill_checkpoint(
     frontier_classification_counts: dict[str, int] = {}
     frontier_detail_counts: dict[str, int] = {}
     for row in rows:
-        status = str(row.get("status") or "")
+        status = str(row.get("row_status") or "")
         if status:
             status_counts[status] = status_counts.get(status, 0) + 1
         error_kind = str(row.get("error_kind") or "")
@@ -507,7 +507,7 @@ def _store_se_backfill_checkpoint(
             "rows": [
                 {
                     "sfs_id": str(row.get("sfs_id") or ""),
-                    "status": str(row.get("status") or ""),
+                    "row_status": str(row.get("row_status") or ""),
                     "error_kind": str(row.get("error_kind") or ""),
                     "frontier_classification": str(row.get("frontier_classification") or ""),
                     "frontier_detail": str(row.get("frontier_detail") or ""),
@@ -521,7 +521,7 @@ def _store_se_backfill_checkpoint(
 def _se_backfill_non_ok_rows(rows: list[dict[str, Any]]) -> list[dict[str, str]]:
     result: list[dict[str, str]] = []
     for row in rows:
-        status = str(row.get("status") or "")
+        status = str(row.get("row_status") or "")
         if status == "ok" or not status:
             continue
         if status == "skipped_complete":
@@ -539,7 +539,7 @@ def _se_backfill_non_ok_rows(rows: list[dict[str, Any]]) -> list[dict[str, str]]
                 "family": family,
                 "reason": reason,
                 "sfs_id": str(row.get("sfs_id") or ""),
-                "status": status,
+                "row_status": status,
                 "error_kind": str(row.get("error_kind") or ""),
                 "error": str(row.get("error") or ""),
                 "frontier_classification": str(row.get("frontier_classification") or ""),
@@ -786,7 +786,7 @@ def _store_se_backfill_completeness(
         if not year:
             continue
         chunk_year_counts[year] += 1
-        status = str(row.get("status") or "")
+        status = str(row.get("row_status") or "")
         if year not in chunk_year_status_counts:
             chunk_year_status_counts[year] = Counter()
         if status:
@@ -895,13 +895,13 @@ def _hydrate_se_bulk(
             and (before["rk_current"] or not hydrate_current)
         )
         if skip_complete and fully_complete_before:
-            row["status"] = "skipped_complete"
+            row["row_status"] = "skipped_complete"
             row["after"] = before
             rows.append(row)
             if checkpoint_callback is not None:
                 checkpoint_callback(idx, total, sfs_id, row, rows)
             if status_callback is not None:
-                status_callback(idx, total, sfs_id, "DONE", "completed", str(row.get("status") or ""), str(row.get("error_kind") or ""))
+                status_callback(idx, total, sfs_id, "DONE", "completed", str(row.get("row_status") or ""), str(row.get("error_kind") or ""))
             if progress_callback is not None:
                 progress_callback(f"[{idx}/{total}] {sfs_id} SKIP complete")
             continue
@@ -957,7 +957,7 @@ def _hydrate_se_bulk(
                 else:
                     row["compiled_ops"] = None
             row["after"] = _se_archive_presence_row(archive, sfs_id)
-            row["status"] = "ok"
+            row["row_status"] = "ok"
             if progress_callback is not None:
                 compiled_ops = row.get("compiled_ops")
                 compiled_text = "-"
@@ -971,7 +971,7 @@ def _hydrate_se_bulk(
                     f"rk={'yes' if row.get('after', {}).get('rk_current') else 'no'}"
                 )
         except Exception as exc:
-            row["status"] = "error"
+            row["row_status"] = "error"
             row["error_kind"] = type(exc).__name__
             row["error"] = f"{type(exc).__name__}: {exc}"
             row["after"] = _se_archive_presence_row(archive, sfs_id)
@@ -993,7 +993,7 @@ def _hydrate_se_bulk(
                     sfs_id,
                     "ERROR",
                     "error",
-                    str(row.get("status") or ""),
+                    str(row.get("row_status") or ""),
                     str(row.get("error_kind") or ""),
                 )
             if progress_callback is not None:
@@ -1004,14 +1004,14 @@ def _hydrate_se_bulk(
                         frontier_text += f" detail={row['frontier_detail']}"
                 progress_callback(f"[{idx}/{total}] {sfs_id} ERROR {row['error_kind']}{frontier_text} {row['error']}")
         rows.append(row)
-        if status_callback is not None and row.get("status") == "ok":
+        if status_callback is not None and row.get("row_status") == "ok":
             status_callback(
                 idx,
                 total,
                 sfs_id,
                 "DONE",
                 "completed",
-                str(row.get("status") or ""),
+                str(row.get("row_status") or ""),
                 str(row.get("error_kind") or ""),
             )
         if checkpoint_callback is not None:
@@ -1024,7 +1024,7 @@ def _print_hydrate_bulk_rows(rows: list[dict[str, Any]], *, as_json: bool) -> No
         print(json.dumps(rows, ensure_ascii=False, indent=2))
         return
     for row in rows:
-        status = str(row.get("status") or "")
+        status = str(row.get("row_status") or "")
         sfs_id = str(row.get("sfs_id") or "")
         if status == "ok":
             compiled_ops = row.get("compiled_ops")
@@ -1109,9 +1109,9 @@ def _cmd_hydrate_bulk(args: "argparse.Namespace") -> None:
     if ingest_summary is not None:
         print(f"Scrape imported:    {ingest_summary['imported_count']}")
         print(f"Parsed PDF links:   {ingest_summary['resolved_pdf_link_count']}")
-    print(f"Completed:          {sum(1 for row in rows if row.get('status') == 'ok')}")
-    print(f"Skipped complete:   {sum(1 for row in rows if row.get('status') == 'skipped_complete')}")
-    print(f"Errors:             {sum(1 for row in rows if row.get('status') == 'error')}")
+    print(f"Completed:          {sum(1 for row in rows if row.get('row_status') == 'ok')}")
+    print(f"Skipped complete:   {sum(1 for row in rows if row.get('row_status') == 'skipped_complete')}")
+    print(f"Errors:             {sum(1 for row in rows if row.get('row_status') == 'error')}")
     error_kind_counts: dict[str, int] = {}
     for row in rows:
         error_kind = str(row.get("error_kind") or "")
@@ -1221,15 +1221,15 @@ def _cmd_backfill_official(args: "argparse.Namespace") -> None:
                 total_candidates=total,
                 next_index=initial_offset + idx,
                 last_sfs_id=sfs_id,
-                last_status=str(row.get("status") or ""),
+                last_status=str(row.get("row_status") or ""),
                 rows=rows,
             ),
         )
         checkpoint_locator = se_backfill_official_checkpoint_locator()
         history_locator = se_backfill_official_history_locator()
-        completed_count = sum(1 for row in rows if row.get("status") == "ok")
-        skipped_count = sum(1 for row in rows if row.get("status") == "skipped_complete")
-        error_count = sum(1 for row in rows if row.get("status") == "error")
+        completed_count = sum(1 for row in rows if row.get("row_status") == "ok")
+        skipped_count = sum(1 for row in rows if row.get("row_status") == "skipped_complete")
+        error_count = sum(1 for row in rows if row.get("row_status") == "error")
         error_kind_counts: dict[str, int] = {}
         frontier_classification_counts: dict[str, int] = {}
         frontier_detail_counts: dict[str, int] = {}
@@ -1301,12 +1301,12 @@ def _cmd_backfill_official(args: "argparse.Namespace") -> None:
                 "checkpoint_locator": checkpoint_locator,
                 "status_locator": se_backfill_official_status_locator(),
                 "last_sfs_id": str(last_row.get("sfs_id") or ""),
-                "last_status": str(last_row.get("status") or ""),
+                "last_status": str(last_row.get("row_status") or ""),
                 "last_error_kind": str(last_row.get("error_kind") or ""),
                 "rows_tail": [
                     {
                         "sfs_id": str(row.get("sfs_id") or ""),
-                        "status": str(row.get("status") or ""),
+                        "row_status": str(row.get("row_status") or ""),
                         "error_kind": str(row.get("error_kind") or ""),
                         "frontier_classification": str(row.get("frontier_classification") or ""),
                         "frontier_detail": str(row.get("frontier_detail") or ""),
@@ -1363,9 +1363,9 @@ def _cmd_backfill_official(args: "argparse.Namespace") -> None:
     print(f"Year range:         {int(getattr(args, 'year_start', 1999) or 1999)}..{int(getattr(args, 'year_end', 2026) or 2026)}")
     print(f"Max number/year:    {int(getattr(args, 'max_number', 2100) or 2100)}")
     print(f"Chunk size:         {len(sfs_ids)}")
-    print(f"Completed:          {sum(1 for row in rows if row.get('status') == 'ok')}")
-    print(f"Skipped complete:   {sum(1 for row in rows if row.get('status') == 'skipped_complete')}")
-    print(f"Errors:             {sum(1 for row in rows if row.get('status') == 'error')}")
+    print(f"Completed:          {sum(1 for row in rows if row.get('row_status') == 'ok')}")
+    print(f"Skipped complete:   {sum(1 for row in rows if row.get('row_status') == 'skipped_complete')}")
+    print(f"Errors:             {sum(1 for row in rows if row.get('row_status') == 'error')}")
     error_kind_counts: dict[str, int] = {}
     frontier_classification_counts: dict[str, int] = {}
     frontier_detail_counts: dict[str, int] = {}
@@ -1380,9 +1380,9 @@ def _cmd_backfill_official(args: "argparse.Namespace") -> None:
         if frontier_detail:
             frontier_detail_counts[frontier_detail] = frontier_detail_counts.get(frontier_detail, 0) + 1
     if rows:
-        completed_count = sum(1 for row in rows if row.get("status") == "ok")
-        skipped_count = sum(1 for row in rows if row.get("status") == "skipped_complete")
-        error_count = sum(1 for row in rows if row.get("status") == "error")
+        completed_count = sum(1 for row in rows if row.get("row_status") == "ok")
+        skipped_count = sum(1 for row in rows if row.get("row_status") == "skipped_complete")
+        error_count = sum(1 for row in rows if row.get("row_status") == "error")
         outcome_kind = _se_backfill_outcome_kind(
             completed_count=completed_count,
             skipped_count=skipped_count,
@@ -1482,7 +1482,7 @@ def _probe_sfs_ids(
             row["recovery_strategy"] = analysis.get("recovery_strategy")
             row["later_chain_hints"] = list(analysis.get("later_chain_hints") or [])
             if not bool(analysis.get("replay_feasible")):
-                row["status"] = "historical_blocked"
+                row["row_status"] = "historical_blocked"
                 row["error"] = "historical base unrecoverable from current surface"
             else:
                 replay = check_se_official_replay(
@@ -1493,9 +1493,9 @@ def _probe_sfs_ids(
                 row["match_count"] = replay["match_count"]
                 row["target_count"] = replay["target_count"]
                 row["classifications"] = sorted({str(item["classification"]) for item in replay["rows"]})
-                row["status"] = "ok"
+                row["row_status"] = "ok"
         except Exception as exc:
-            row["status"] = "error"
+            row["row_status"] = "error"
             row["error"] = f"{type(exc).__name__}: {exc}"
         rows.append(row)
     return rows
@@ -1506,7 +1506,7 @@ def _print_probe_rows(rows: list[dict[str, Any]], *, as_json: bool) -> None:
         print(json.dumps(rows, ensure_ascii=False, indent=2))
         return
     for row in rows:
-        status = str(row.get("status") or "")
+        status = str(row.get("row_status") or "")
         sfs_id = str(row.get("sfs_id") or "")
         if status == "ok":
             print(

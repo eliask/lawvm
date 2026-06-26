@@ -107,7 +107,7 @@ def test_fi_name_single_resolves_and_rewrites_id() -> None:
     [rr] = resolve_mentions(
         [original], statute_registry=reg, eu_registry=eu_nickname
     )
-    assert rr.status is ResolutionStatus.RESOLVED
+    assert rr.resolution_status is ResolutionStatus.RESOLVED
     assert rr.work_id == "1096/1996"
     assert rr.candidates == ("1096/1996",)
     assert rr.finding is None
@@ -129,7 +129,7 @@ def test_fi_name_multiple_temporal_versions_is_ambiguous() -> None:
         statute_registry=reg,
         eu_registry=eu_nickname,
     )
-    assert rr.status is ResolutionStatus.AMBIGUOUS
+    assert rr.resolution_status is ResolutionStatus.AMBIGUOUS
     assert rr.work_id is None
     assert set(rr.candidates) == {"86/2000", "527/2014"}
     # Never picks: target id stays the placeholder, confidence becomes AMBIGUOUS.
@@ -151,7 +151,7 @@ def test_fi_name_as_of_filter_narrows_to_single() -> None:
         eu_registry=eu_nickname,
         as_of=dt.date(2020, 6, 1),
     )
-    assert rr.status is ResolutionStatus.RESOLVED
+    assert rr.resolution_status is ResolutionStatus.RESOLVED
     assert rr.work_id == "527/2014"
 
 
@@ -199,7 +199,7 @@ def test_mention_validity_interval_narrows_multitemporal_to_single() -> None:
         eu_registry=eu_nickname,
         use_mention_validity=True,
     )
-    assert rr.status is ResolutionStatus.RESOLVED
+    assert rr.resolution_status is ResolutionStatus.RESOLVED
     assert rr.work_id == "364/1963"
     assert rr.finding is None
 
@@ -218,7 +218,7 @@ def test_open_interval_stays_ambiguous_under_mention_validity() -> None:
         eu_registry=eu_nickname,
         use_mention_validity=True,
     )
-    assert rr.status is ResolutionStatus.AMBIGUOUS
+    assert rr.resolution_status is ResolutionStatus.AMBIGUOUS
     assert rr.work_id is None
     assert set(rr.candidates) == {"364/1963", "1224/2004"}
     assert rr.finding is not None
@@ -238,7 +238,7 @@ def test_mention_interval_not_disambiguating_stays_ambiguous() -> None:
         eu_registry=eu_nickname,
         use_mention_validity=True,
     )
-    assert rr.status is ResolutionStatus.AMBIGUOUS
+    assert rr.resolution_status is ResolutionStatus.AMBIGUOUS
     assert rr.work_id is None
     assert set(rr.candidates) == {"364/1963", "1224/2004"}
 
@@ -262,7 +262,7 @@ def test_mention_interval_before_all_versions_stays_ambiguous_not_miss() -> None
         eu_registry=eu_nickname,
         use_mention_validity=True,
     )
-    assert rr.status is ResolutionStatus.AMBIGUOUS
+    assert rr.resolution_status is ResolutionStatus.AMBIGUOUS
     assert set(rr.candidates) == {"364/1963", "1224/2004"}
 
 
@@ -279,7 +279,7 @@ def test_mention_validity_off_by_default_keeps_whole_timeline() -> None:
         statute_registry=reg,
         eu_registry=eu_nickname,
     )
-    assert rr.status is ResolutionStatus.AMBIGUOUS
+    assert rr.resolution_status is ResolutionStatus.AMBIGUOUS
     assert set(rr.candidates) == {"364/1963", "1224/2004"}
 
 
@@ -300,7 +300,7 @@ def test_explicit_as_of_overrides_mention_validity() -> None:
     )
     # 2010 covers BOTH versions -> ambiguous, even though the interval start (1990)
     # alone would have resolved to the 1963 version.
-    assert rr.status is ResolutionStatus.AMBIGUOUS
+    assert rr.resolution_status is ResolutionStatus.AMBIGUOUS
     assert set(rr.candidates) == {"364/1963", "1224/2004"}
 
 
@@ -312,7 +312,7 @@ def test_fi_name_miss_is_statute_only_not_silent_resolve() -> None:
         statute_registry=reg,
         eu_registry=eu_nickname,
     )
-    assert rr.status is ResolutionStatus.STATUTE_ONLY
+    assert rr.resolution_status is ResolutionStatus.STATUTE_ONLY
     assert rr.work_id is None
     assert rr.candidates == ()
     assert rr.finding is None
@@ -340,7 +340,7 @@ def test_eu_nickname_single_resolves_to_celex() -> None:
         statute_registry=reg,
         eu_registry=eu_nickname,
     )
-    assert rr.status is ResolutionStatus.RESOLVED
+    assert rr.resolution_status is ResolutionStatus.RESOLVED
     assert rr.work_id == "celex:32010L0075"
     assert rr.mention.target_provision_ref is not None
     assert rr.mention.target_provision_ref.statute_id == "celex:32010L0075"
@@ -356,7 +356,7 @@ def test_eu_nickname_multiple_is_ambiguous() -> None:
         statute_registry=reg,
         eu_registry=eu_nickname,
     )
-    assert rr.status is ResolutionStatus.AMBIGUOUS
+    assert rr.resolution_status is ResolutionStatus.AMBIGUOUS
     assert rr.work_id is None
     assert set(rr.candidates) == {"celex:32008L0098", "celex:32006L0012"}
     assert rr.finding is not None
@@ -374,7 +374,7 @@ def test_eu_nickname_miss_is_statute_only() -> None:
         statute_registry=reg,
         eu_registry=eu_nickname,
     )
-    assert rr.status is ResolutionStatus.STATUTE_ONLY
+    assert rr.resolution_status is ResolutionStatus.STATUTE_ONLY
     assert rr.work_id is None
     assert rr.candidates == ()
 
@@ -398,7 +398,7 @@ def test_fi_name_miss_falls_back_to_eu_nickname_single() -> None:
         statute_registry=reg,
         eu_registry=eu_nickname,
     )
-    assert rr.status is ResolutionStatus.RESOLVED
+    assert rr.resolution_status is ResolutionStatus.RESOLVED
     assert rr.work_id == "celex:32009R1069"
     assert rr.mention.target_provision_ref is not None
     assert rr.mention.target_provision_ref.statute_id == "celex:32009R1069"
@@ -415,7 +415,7 @@ def test_fi_name_miss_eu_fallback_multiple_is_ambiguous() -> None:
         statute_registry=reg,
         eu_registry=eu_nickname,
     )
-    assert rr.status is ResolutionStatus.AMBIGUOUS
+    assert rr.resolution_status is ResolutionStatus.AMBIGUOUS
     assert rr.work_id is None
     assert set(rr.candidates) == {"celex:31995L0046", "celex:32016L0680"}
     assert rr.finding is not None
@@ -429,7 +429,7 @@ def test_fi_name_miss_not_an_eu_nickname_stays_statute_only() -> None:
         statute_registry=reg,
         eu_registry=eu_nickname,
     )
-    assert rr.status is ResolutionStatus.STATUTE_ONLY
+    assert rr.resolution_status is ResolutionStatus.STATUTE_ONLY
     assert rr.work_id is None
     # The placeholder is left intact — no EU CELEX was fabricated for it.
     assert rr.mention.target_provision_ref is not None
@@ -448,7 +448,7 @@ def test_fi_name_hit_not_shadowed_by_eu_fallback() -> None:
         statute_registry=reg,
         eu_registry=eu_nickname,
     )
-    assert rr.status is ResolutionStatus.RESOLVED
+    assert rr.resolution_status is ResolutionStatus.RESOLVED
     assert rr.work_id == "1096/1996"
     assert rr.mention.phrase_lemma != "eu_nickname_fallback_from_fi_name"
 
@@ -472,7 +472,7 @@ def test_explicit_id_mention_is_unchanged() -> None:
         statute_registry=reg,
         eu_registry=eu_nickname,
     )
-    assert rr.status is ResolutionStatus.UNCHANGED
+    assert rr.resolution_status is ResolutionStatus.UNCHANGED
     assert rr.work_id == "646/2011"
     assert rr.candidates == ("646/2011",)
     assert rr.finding is None
@@ -497,7 +497,7 @@ def test_internal_reference_is_unchanged() -> None:
         statute_registry=reg,
         eu_registry=eu_nickname,
     )
-    assert rr.status is ResolutionStatus.UNCHANGED
+    assert rr.resolution_status is ResolutionStatus.UNCHANGED
 
 
 def test_open_mention_passes_through_open() -> None:
@@ -512,7 +512,7 @@ def test_open_mention_passes_through_open() -> None:
     [rr] = resolve_mentions(
         [open_mention], statute_registry=reg, eu_registry=eu_nickname
     )
-    assert rr.status is ResolutionStatus.OPEN
+    assert rr.resolution_status is ResolutionStatus.OPEN
     assert rr.work_id is None
     assert rr.candidates == ()
     assert rr.finding is None
@@ -528,7 +528,7 @@ def test_order_and_mixed_batch_preserved() -> None:
         _mention("fi-name:tuntematonlaki"),
     ]
     results = resolve_mentions(batch, statute_registry=reg, eu_registry=eu_nickname)
-    assert [r.status for r in results] == [
+    assert [r.resolution_status for r in results] == [
         ResolutionStatus.RESOLVED,
         ResolutionStatus.UNCHANGED,
         ResolutionStatus.STATUTE_ONLY,
@@ -605,9 +605,9 @@ def test_name_id_anaphora_bare_repeat_resolves_to_earlier_id() -> None:
     ]
     results = resolve_mentions(batch, statute_registry=reg, eu_registry=eu_nickname)
     # antecedent passes through UNCHANGED (already a concrete id)
-    assert results[0].status is ResolutionStatus.UNCHANGED
+    assert results[0].resolution_status is ResolutionStatus.UNCHANGED
     # bare repeat resolves to the antecedent's id via name anaphora
-    assert results[1].status is ResolutionStatus.RESOLVED
+    assert results[1].resolution_status is ResolutionStatus.RESOLVED
     assert results[1].work_id == "55/2001"
     tgt = results[1].mention.target_provision_ref
     assert tgt is not None and tgt.statute_id == "55/2001" and tgt.section_label == "3"
@@ -622,7 +622,7 @@ def test_name_id_anaphora_use_before_binding_stays_statute_only() -> None:
         _id_anchored("55/2001", surface="työsopimuslain (55/2001)", offset=100),
     ]
     results = resolve_mentions(batch, statute_registry=reg, eu_registry=eu_nickname)
-    assert results[0].status is ResolutionStatus.STATUTE_ONLY
+    assert results[0].resolution_status is ResolutionStatus.STATUTE_ONLY
     tgt = results[0].mention.target_provision_ref
     assert tgt is not None and tgt.statute_id == "fi-name:työsopimuslaki"
 
@@ -636,7 +636,7 @@ def test_name_id_anaphora_ambiguous_two_ids_stays_statute_only() -> None:
         _bare_name("työsopimuslaki", surface="työsopimuslain 3 §:ssä", offset=400, section_label="3"),
     ]
     results = resolve_mentions(batch, statute_registry=reg, eu_registry=eu_nickname)
-    assert results[2].status is ResolutionStatus.STATUTE_ONLY
+    assert results[2].resolution_status is ResolutionStatus.STATUTE_ONLY
     tgt = results[2].mention.target_provision_ref
     assert tgt is not None and tgt.statute_id == "fi-name:työsopimuslaki"
 
@@ -651,7 +651,7 @@ def test_name_id_anaphora_generic_head_establishes_no_binding() -> None:
     results = resolve_mentions(batch, statute_registry=reg, eu_registry=eu_nickname)
     # the bare repeat has no in-statute name binding (lain != työsopimuslaki) and
     # the registry does not know the colloquial name -> statute_only (fail-loud)
-    assert results[1].status is ResolutionStatus.STATUTE_ONLY
+    assert results[1].resolution_status is ResolutionStatus.STATUTE_ONLY
 
 
 def test_name_id_anaphora_no_span_use_stays_statute_only() -> None:
@@ -662,7 +662,7 @@ def test_name_id_anaphora_no_span_use_stays_statute_only() -> None:
         _bare_name("työsopimuslaki", surface="työsopimuslain 3 §:ssä", offset=None, section_label="3"),
     ]
     results = resolve_mentions(batch, statute_registry=reg, eu_registry=eu_nickname)
-    assert results[1].status is ResolutionStatus.STATUTE_ONLY
+    assert results[1].resolution_status is ResolutionStatus.STATUTE_ONLY
 
 
 def test_name_id_anaphora_can_be_disabled() -> None:
@@ -675,7 +675,7 @@ def test_name_id_anaphora_can_be_disabled() -> None:
     results = resolve_mentions(
         batch, statute_registry=reg, eu_registry=eu_nickname, resolve_name_id_anaphora=False
     )
-    assert results[1].status is ResolutionStatus.STATUTE_ONLY
+    assert results[1].resolution_status is ResolutionStatus.STATUTE_ONLY
 
 
 def test_build_name_id_anaphora_table_keys_recovered_name() -> None:
@@ -737,7 +737,7 @@ def test_name_id_anaphora_beats_registry_with_explicit_source_id() -> None:
         _bare_name("opintotukilaki", surface="opintotukilain 3 §:ssä", offset=400, section_label="3"),
     ]
     results = resolve_mentions(batch, statute_registry=reg, eu_registry=eu_nickname)
-    assert results[1].status is ResolutionStatus.RESOLVED
+    assert results[1].resolution_status is ResolutionStatus.RESOLVED
     assert results[1].work_id == "28/1972"
 
 
@@ -766,7 +766,7 @@ def test_fi_name_content_word_set_fallback_resolves_inflection_diff() -> None:
         surface_text="maatalousyrittäjien luopumiskorvauksista annetun lain",
     )
     [rr] = resolve_mentions([m], statute_registry=reg, eu_registry=eu_nickname)
-    assert rr.status is ResolutionStatus.RESOLVED
+    assert rr.resolution_status is ResolutionStatus.RESOLVED
     assert rr.work_id == "1992/1330"
     assert rr.mention.cite_confidence is CiteConfidence.EXACT
     assert (
@@ -784,7 +784,7 @@ def test_fi_name_content_word_set_multiple_is_ambiguous() -> None:
     )
     m = _mention("fi-name:laki valtiontalouden tarkastuksista")
     [rr] = resolve_mentions([m], statute_registry=reg, eu_registry=eu_nickname)
-    assert rr.status is ResolutionStatus.AMBIGUOUS
+    assert rr.resolution_status is ResolutionStatus.AMBIGUOUS
     assert rr.work_id is None
     assert set(rr.candidates) == {"1990/100", "1993/267"}
     assert rr.finding is not None
@@ -797,7 +797,7 @@ def test_fi_name_content_word_set_garbage_complement_stays_statute_only() -> Non
     )
     m = _mention("fi-name:laki kun finanssivalvonnasta")
     [rr] = resolve_mentions([m], statute_registry=reg, eu_registry=eu_nickname)
-    assert rr.status is ResolutionStatus.STATUTE_ONLY
+    assert rr.resolution_status is ResolutionStatus.STATUTE_ONLY
     assert rr.work_id is None
 
 
@@ -817,7 +817,7 @@ def test_fi_name_content_word_set_does_not_override_exact_match() -> None:
     # exact (sg) surface — resolves via the normal index, NOT the fallback tag
     m = _mention("fi-name:laki maatalousyrittäjien luopumiskorvauksesta")
     [rr] = resolve_mentions([m], statute_registry=reg, eu_registry=eu_nickname)
-    assert rr.status is ResolutionStatus.RESOLVED
+    assert rr.resolution_status is ResolutionStatus.RESOLVED
     assert rr.work_id == "1992/1330"
     assert rr.mention.phrase_lemma != "statute_name_content_word_set_fallback"
 
@@ -827,5 +827,5 @@ def test_trailing_period_title_resolves_inflected_cite_through_projection() -> N
     reg = build_registry([StatuteNameEntry("1960/465", "Palolaki.")])
     m = _mention("fi-name:palolaki", section_label="26")
     [rr] = resolve_mentions([m], statute_registry=reg, eu_registry=eu_nickname)
-    assert rr.status is ResolutionStatus.RESOLVED
+    assert rr.resolution_status is ResolutionStatus.RESOLVED
     assert rr.work_id == "1960/465"

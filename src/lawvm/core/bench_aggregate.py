@@ -101,9 +101,9 @@ def partition_by_status(
     non_scored: list[BenchUnitResult] = []
     crashed: list[BenchUnitResult] = []
     for r in results:
-        if r.status is BenchStatus.SCORED:
+        if r.bench_unit_status is BenchStatus.SCORED:
             scored.append(r)
-        elif r.status in NON_SCORED_STATUSES:
+        elif r.bench_unit_status in NON_SCORED_STATUSES:
             non_scored.append(r)
         else:
             crashed.append(r)
@@ -123,7 +123,7 @@ def aggregate_residue_buckets(
     """Sum typed residue families across *results* (scored units only)."""
     totals: Counter[str] = Counter()
     for r in results:
-        if r.status is not BenchStatus.SCORED:
+        if r.bench_unit_status is not BenchStatus.SCORED:
             continue
         for family, count in r.residue_buckets.items():
             totals[family] += int(count)

@@ -120,7 +120,7 @@ class AnaphoricRef:
         surface_text:  The matched anaphor surface (``mainitun lain``).
         char_offset:   0-based char offset of the anaphor in the input text.
         head_kind:     ANTECEDENT kind the head selects (ACT vs PROVISION).
-        status:        RESOLVED / AMBIGUOUS / OPEN.
+        anaphor_status: RESOLVED / AMBIGUOUS / OPEN.
         mention:       The emitted :class:`ReferenceMention`. For RESOLVED it
                        carries the bound antecedent target; for AMBIGUOUS / OPEN
                        it carries ``target_provision_ref=None``.
@@ -131,7 +131,7 @@ class AnaphoricRef:
     surface_text: str
     char_offset: int
     head_kind: "_HeadKind"
-    status: AnaphorStatus
+    anaphor_status: AnaphorStatus
     mention: ReferenceMention
     candidates: Tuple[ProvisionRef, ...] = ()
     finding: Optional[AmbiguousReferenceFinding] = field(default=None)
@@ -515,7 +515,7 @@ def recognize_anaphoric_refs(
                     surface_text=surface,
                     char_offset=offset,
                     head_kind=head_kind,
-                    status=AnaphorStatus.RESOLVED,
+                    anaphor_status=AnaphorStatus.RESOLVED,
                     mention=mention,
                 )
             )
@@ -530,7 +530,7 @@ def recognize_anaphoric_refs(
                     surface_text=surface,
                     char_offset=offset,
                     head_kind=head_kind,
-                    status=AnaphorStatus.OPEN,
+                    anaphor_status=AnaphorStatus.OPEN,
                     mention=_unbound_mention(surface, CiteConfidence.OPEN),
                 )
             )
@@ -565,7 +565,7 @@ def recognize_anaphoric_refs(
                     surface_text=surface,
                     char_offset=offset,
                     head_kind=head_kind,
-                    status=AnaphorStatus.RESOLVED,
+                    anaphor_status=AnaphorStatus.RESOLVED,
                     mention=_resolved_mention(nearest[0].mention, distinct[0], surface),
                 )
             )
@@ -586,7 +586,7 @@ def recognize_anaphoric_refs(
                     surface_text=surface,
                     char_offset=offset,
                     head_kind=head_kind,
-                    status=AnaphorStatus.AMBIGUOUS,
+                    anaphor_status=AnaphorStatus.AMBIGUOUS,
                     # The ReferenceMention type forbids a None target under
                     # AMBIGUOUS confidence; the verdict + candidate list live on
                     # the AnaphoricRef/finding, so the mention itself is the

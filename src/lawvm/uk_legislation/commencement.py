@@ -308,7 +308,7 @@ def commencement_eid_set(
                             rule_id=_UK_COMMENCEMENT_UNDATED_EFFECTS_RULE_ID,
                             phase="commencement_filter",
                             reason="missing_replay_applicable_effective_date",
-                            status=TEMPORAL_UNKNOWN_EFFECTIVE_DATE,
+                            temporal_evidence_status=TEMPORAL_UNKNOWN_EFFECTIVE_DATE,
                             family=TEMPORAL_RECOVERY_FAMILY,
                             blocking=False,
                         ).to_diagnostic_detail(),

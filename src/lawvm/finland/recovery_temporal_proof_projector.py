@@ -48,7 +48,7 @@ def temporal_resolution_evidence_rows_from_projection_rows(
                 rule_id=temporal_resolution_rule_id(kind),
                 phase="temporal_elaboration",
                 reason=str(row.get("message") or temporal_resolution_reason(kind)),
-                status=temporal_resolution_status(kind),
+                temporal_evidence_status=temporal_resolution_status(kind),
                 family=TEMPORAL_RECOVERY_FAMILY,
                 blocking=kind in fail_reason_set,
                 source_locator=str(row.get("source") or ""),

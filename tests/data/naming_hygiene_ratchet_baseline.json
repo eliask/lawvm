@@ -1,28 +1,8 @@
 {
   "_doc": "Monotone naming-hygiene ratchet baseline (Gate 46a, Pro §14). Locks the #46/#47 rename gains. THREE ratchets, all one-way: (1) certified_symbols — the SET of `certif`-stem code identifiers; a NEW member fails CI (use `*Coverage` or consciously extend the set). (2) bare_status_counts — per-file count of bare-`status` SURFACE sites (a `\"status\":` dict key or an annotated `status` field/param). HEURISTIC: a surface proxy, NOT a public/internal classifier; it over-includes internal sites so it never fails on a pre-existing internal status. The lock is `no NEW bare status surface`. (3) public_schemas — the SET of `lawvm.<name>.vN` schema-id strings; a NEW id fails (conscious registration). The full plane/seam + source-root declaration check (Pro §14 lints 3+4) is DEFERRED; see DEFERRED_SPEC in scripts/inventory_naming_hygiene.py. Regenerate with `uv run python scripts/inventory_naming_hygiene.py --update-baseline`. See tests/test_naming_hygiene_ratchet.py and notes/ARCHITECTURE_LEAK_LEDGER.md.",
   "bare_status_counts": {
-    "src/lawvm/core/bench_contract.py": 1,
-    "src/lawvm/core/mutation_boundary_proof.py": 3,
-    "src/lawvm/core/temporal_resolution.py": 1,
-    "src/lawvm/estonia/ee_authority_grounding.py": 1,
     "src/lawvm/finland/finlex_api.py": 2,
-    "src/lawvm/finland/mutation_boundary_proof_projector.py": 1,
-    "src/lawvm/finland/references/anaphora.py": 1,
-    "src/lawvm/finland/references/defined_terms.py": 1,
-    "src/lawvm/finland/references/eu_transposition.py": 1,
-    "src/lawvm/finland/references/resolve.py": 1,
-    "src/lawvm/finland/references/temporal.py": 1,
-    "src/lawvm/finland/references/term_use.py": 1,
-    "src/lawvm/norway/commencement.py": 12,
-    "src/lawvm/norway/sources.py": 1,
-    "src/lawvm/tools/ee_publication_db.py": 2,
-    "src/lawvm/tools/spec_authority.py": 1,
-    "src/lawvm/tools/sweden.py": 3,
-    "src/lawvm/tools/uk_semantic_claims.py": 2,
-    "src/lawvm/us_federal/amendatory.py": 2,
-    "src/lawvm/us_federal/bench.py": 2,
-    "src/lawvm/us_federal/dry_run.py": 2,
-    "src/lawvm/us_federal/nonpositive.py": 3
+    "src/lawvm/tools/uk_semantic_claims.py": 2
   },
   "certified_symbol_count": 69,
   "certified_symbols": [
@@ -256,5 +236,5 @@
     "lawvm.work.v1",
     "lawvm.work_inventory_row.v0"
   ],
-  "total_bare_status": 45
+  "total_bare_status": 4
 }

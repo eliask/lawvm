@@ -92,7 +92,7 @@ def test_loader_round_trips() -> None:
     for row in raw["groundings"]:
         entry = table[row["rule_id"]]
         assert isinstance(entry, EEAuthorityGrounding)
-        assert entry.status == row["status"]
+        assert entry.authority_grounding_status == row["status"]
         assert entry.authority_kind == row["authority_kind"]
         assert entry.source_ref == row["source_ref"]
         assert entry.ledger_section == row.get("ledger_section", "")

@@ -2256,7 +2256,7 @@ def drill_definition_orphan_reference_surface_totality() -> None:
         lemma="sivutuote",
         binding=None,
         source_span=SourceSpan(source_file="drill", byte_offset=5, byte_len=15),
-        status=STATUS_OPEN,
+        use_status=STATUS_OPEN,
         rule_id=RULE_BEFORE_BINDING,
     )
     findings = sweep_definition_totality_from_bindings(

@@ -119,7 +119,7 @@ def test_no_bench_crashes_when_verify_error_is_set() -> None:
 
     mapped = no_bench_unit_result(result)
 
-    assert mapped.status is BenchStatus.CRASH
+    assert mapped.bench_unit_status is BenchStatus.CRASH
     assert mapped.is_failure is True
     assert mapped.witnesses == ("boom: replay exploded",)
     # A CRASH must not invent axis errors or residue — silence better than fake.
@@ -139,7 +139,7 @@ def test_no_bench_source_unavailable_for_data_ceiling_statuses(blocked_status: s
 
     mapped = no_bench_unit_result(result)
 
-    assert mapped.status is BenchStatus.SOURCE_UNAVAILABLE
+    assert mapped.bench_unit_status is BenchStatus.SOURCE_UNAVAILABLE
     assert mapped.is_failure is False  # not a failure, a non-scored data ceiling
     assert mapped.witnesses == (blocked_status,)
     assert mapped.structural_err is None
@@ -174,7 +174,7 @@ def test_no_bench_source_unavailable_for_sparse_indexed_history_signal() -> None
     mapped = no_bench_unit_result(result)
 
     # Surface as a documented data ceiling — NOT a saturated-1.0 SCORED.
-    assert mapped.status is BenchStatus.SOURCE_UNAVAILABLE
+    assert mapped.bench_unit_status is BenchStatus.SOURCE_UNAVAILABLE
     assert mapped.is_failure is False
     # Witness names the signal + upstream-count triad so the user can
     # filter / inspect without re-running verify.
@@ -209,7 +209,7 @@ def test_no_bench_sparse_indexed_history_fires_even_when_replay_succeeded() -> N
 
     mapped = no_bench_unit_result(result)
 
-    assert mapped.status is BenchStatus.SOURCE_UNAVAILABLE
+    assert mapped.bench_unit_status is BenchStatus.SOURCE_UNAVAILABLE
     assert mapped.is_failure is False
 
 
@@ -233,7 +233,7 @@ def test_no_bench_scored_when_source_signal_absent() -> None:
 
     mapped = no_bench_unit_result(result)
 
-    assert mapped.status is BenchStatus.SCORED
+    assert mapped.bench_unit_status is BenchStatus.SCORED
     assert mapped.is_failure is False
     assert mapped.witnesses == ()
 
@@ -257,7 +257,7 @@ def test_no_bench_scored_when_unknown_source_signal_string() -> None:
 
     mapped = no_bench_unit_result(result)
 
-    assert mapped.status is BenchStatus.SCORED
+    assert mapped.bench_unit_status is BenchStatus.SCORED
     assert mapped.is_failure is False
 
 
@@ -271,7 +271,7 @@ def test_no_bench_no_truth_when_no_amendments_in_window() -> None:
 
     mapped = no_bench_unit_result(result)
 
-    assert mapped.status is BenchStatus.NO_TRUTH
+    assert mapped.bench_unit_status is BenchStatus.NO_TRUTH
     assert mapped.is_failure is False
     assert mapped.structural_err is None
     assert mapped.text_err is None
@@ -293,7 +293,7 @@ def test_no_bench_scored_consistent_replay_is_perfect_with_no_residue() -> None:
 
     mapped = no_bench_unit_result(result)
 
-    assert mapped.status is BenchStatus.SCORED
+    assert mapped.bench_unit_status is BenchStatus.SCORED
     assert mapped.structural_err == 0.0
     assert mapped.text_err is None
     assert dict(mapped.residue_buckets) == {}
@@ -317,7 +317,7 @@ def test_no_bench_scored_divergent_replay_carries_typed_residue() -> None:
 
     mapped = no_bench_unit_result(result)
 
-    assert mapped.status is BenchStatus.SCORED
+    assert mapped.bench_unit_status is BenchStatus.SCORED
     # 6 divergences / 6 sections = 1.0 — saturated, capped to [0, 1].
     assert mapped.structural_err == pytest.approx(1.0)
     assert mapped.text_err is None
@@ -343,7 +343,7 @@ def test_no_bench_scored_divergent_replay_caps_structural_err_at_one() -> None:
 
     mapped = no_bench_unit_result(result)
 
-    assert mapped.status is BenchStatus.SCORED
+    assert mapped.bench_unit_status is BenchStatus.SCORED
     assert mapped.structural_err == 1.0
     assert dict(mapped.residue_buckets) == {"structural:MISMATCH": 4}
     check_residue_reconciliation(mapped)
@@ -362,7 +362,7 @@ def test_no_bench_scored_divergent_replay_uses_replay_section_count_as_denominat
 
     mapped = no_bench_unit_result(result)
 
-    assert mapped.status is BenchStatus.SCORED
+    assert mapped.bench_unit_status is BenchStatus.SCORED
     assert mapped.structural_err == pytest.approx(0.5)
     assert dict(mapped.residue_buckets) == {"structural:MISMATCH": 3}
     check_residue_reconciliation(mapped)
@@ -386,7 +386,7 @@ def test_no_bench_no_truth_when_replayed_body_has_zero_sections() -> None:
 
     mapped = no_bench_unit_result(result)
 
-    assert mapped.status is BenchStatus.NO_TRUTH
+    assert mapped.bench_unit_status is BenchStatus.NO_TRUTH
     assert mapped.structural_err is None  # not SCORED → axes are None
     assert dict(mapped.residue_buckets) == {}
 
@@ -399,7 +399,7 @@ def test_no_bench_crashes_when_scored_path_lacks_replayed_body() -> None:
 
     mapped = no_bench_unit_result(result)
 
-    assert mapped.status is BenchStatus.CRASH
+    assert mapped.bench_unit_status is BenchStatus.CRASH
     assert mapped.witnesses  # carries the diagnostic
     assert mapped.structural_err is None
     assert dict(mapped.residue_buckets) == {}
@@ -432,7 +432,7 @@ def test_no_bench_does_not_invent_phantom_residue_when_divergence_count_is_zero(
     # with empty residue, regardless of spurious divergence_counts. This protects
     # §7 — the alternative (taking counts at face value) would create phantom
     # residue the structural_err cannot reconcile against.
-    assert mapped.status is BenchStatus.SCORED
+    assert mapped.bench_unit_status is BenchStatus.SCORED
     assert mapped.structural_err == 0.0
     assert dict(mapped.residue_buckets) == {}
     check_residue_reconciliation(mapped)  # does not raise
@@ -479,7 +479,7 @@ def test_no_bench_comparator_round_trip_through_registry() -> None:
     )
     mapped = run_bench_comparator("no", result)
     assert isinstance(mapped, BenchUnitResult)
-    assert mapped.status is BenchStatus.SCORED
+    assert mapped.bench_unit_status is BenchStatus.SCORED
 
 
 # ---------------------------------------------------------------------------

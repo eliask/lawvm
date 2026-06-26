@@ -625,7 +625,7 @@ def finland_strict_report_ownership_closure_coverage(
         statute_id=statute_id,
     )
     unproved_mutation_boundaries = tuple(
-        row for row in mutation_boundary_proofs if str(row.get("status") or "") != "proved"
+        row for row in mutation_boundary_proofs if str(row.get("boundary_proof_status") or "") != "proved"
     )
     incomplete_candidate_sets = tuple(
         row

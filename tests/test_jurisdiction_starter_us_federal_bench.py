@@ -134,7 +134,7 @@ def test_window_law_derivation_returns_none_for_a_missing_edition() -> None:
 
 def test_evaluate_window_produces_the_witness_anchored_row() -> None:
     result = evaluate_window(_synthetic_archive(), _synthetic_window())
-    assert result.status == "evaluated"
+    assert result.window_status == "evaluated"
     assert result.derived_window_laws == ("PL 99-2",)
     # The synthetic window: 2 oracle-changed sections (§10 amended, §30 after-only);
     # §10 materializes in agreement; §30 is the missing-source gap.
@@ -156,14 +156,14 @@ def test_empty_witness_delta_is_a_typed_skip_not_a_zero_evaluation() -> None:
         }
     )
     result = evaluate_window(archive, _synthetic_window())
-    assert result.status == "skipped"
+    assert result.window_status == "skipped"
     assert result.skip_rule_id == US_BENCH_WINDOW_EMPTY_DELTA_RULE_ID
 
 
 def test_missing_edition_is_a_typed_skip() -> None:
     archive = _FakeArchive({"us://usc/2023/title99.htm": BEFORE_HTM})
     result = evaluate_window(archive, _synthetic_window())
-    assert result.status == "skipped"
+    assert result.window_status == "skipped"
     assert result.skip_rule_id == US_BENCH_WINDOW_EDITION_MISSING_RULE_ID
 
 
@@ -212,18 +212,18 @@ def test_report_shape_is_stable_and_never_authorizes_replay() -> None:
     # Each window row is self-describing.
     win = payload["windows"][0]
     assert win["window"] == "title99:2023->2024"
-    assert win["status"] == "evaluated"
+    assert win["window_status"] == "evaluated"
     assert "coverage_fraction" in win
 
 
 def test_window_result_skip_jsonable_omits_evaluation_scalars() -> None:
     result = WindowResult(
         window=_synthetic_window(),
-        status=WindowStatus.SKIPPED,
+        window_status=WindowStatus.SKIPPED,
         skip_rule_id=US_BENCH_WINDOW_EMPTY_DELTA_RULE_ID,
     )
     payload = result.to_jsonable()
-    assert payload["status"] == "skipped"
+    assert payload["window_status"] == "skipped"
     assert payload["skip_rule_id"] == US_BENCH_WINDOW_EMPTY_DELTA_RULE_ID
     assert "coverage_fraction" not in payload
 
@@ -367,7 +367,7 @@ def test_unified_render_summary_is_the_default_us_headline() -> None:
     unit_results = [us_bench_unit_result(r) for r in report.results]
     # One window evaluates (1 agreement / 2 oracle-changed = structural_err 0.5);
     # the excluded window is a typed non-scored skip, not a failure.
-    scored = [u for u in unit_results if u.status is BenchStatus.SCORED]
+    scored = [u for u in unit_results if u.bench_unit_status is BenchStatus.SCORED]
     assert len(scored) == 1
     assert scored[0].structural_err == pytest.approx(0.5)
     assert scored[0].text_err is None  # US has no text axis

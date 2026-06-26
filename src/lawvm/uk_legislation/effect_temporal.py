@@ -156,7 +156,7 @@ def _append_commencement_override_observation(
                 "but omitted an effect-level in-force date; LawVM used the single "
                 "official instrument commencement date from affecting-act metadata."
             ),
-            status=TEMPORAL_SOURCE_BACKED_OVERRIDE,
+            temporal_evidence_status=TEMPORAL_SOURCE_BACKED_OVERRIDE,
             blocking=False,
             effective_date=metadata.effective_date,
             source_locator=metadata.source_locator,
@@ -195,7 +195,7 @@ def _append_commencement_unresolved_observation(
                 "commencement fallback because the affecting instrument metadata "
                 "does not expose exactly one commencement date."
             ),
-            status=TEMPORAL_UNKNOWN_EFFECTIVE_DATE,
+            temporal_evidence_status=TEMPORAL_UNKNOWN_EFFECTIVE_DATE,
             blocking=False,
             source_locator=metadata.source_locator,
             authority_layer="AFFECTING_ACT_METADATA" if metadata.source_locator else "",

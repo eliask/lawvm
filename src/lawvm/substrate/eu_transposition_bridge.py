@@ -87,10 +87,10 @@ def _directive_target(claim: TranspositionClaim) -> tuple[str, TargetSetSemantic
     """
     if claim.directive_celex is not None:
         return f"celex:{claim.directive_celex}", TargetSetSemantics.SINGLE, EdgeStatus.RESOLVED
-    semantics = _BIND_TO_SEMANTICS[claim.status]
+    semantics = _BIND_TO_SEMANTICS[claim.transposition_status]
     edge_status = (
         EdgeStatus.AMBIGUOUS
-        if claim.status is TranspositionStatus.AMBIGUOUS
+        if claim.transposition_status is TranspositionStatus.AMBIGUOUS
         else EdgeStatus.QUALIFIED
     )
     return f"eu-nickname:{claim.directive_surface}", semantics, edge_status
@@ -121,7 +121,7 @@ def claimed_transposition_edge(
             "branch_id": branch_id,
             "claim_surface": claim.claim_surface,
             "directive_surface": claim.directive_surface,
-            "binding_status": claim.status.value,
+            "binding_status": claim.transposition_status.value,
         },
         corpus_version=corpus_version,
         branch_id=branch_id,

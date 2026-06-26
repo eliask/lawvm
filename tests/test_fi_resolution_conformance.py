@@ -198,7 +198,7 @@ def test_t1_resolved_explicit_id_passes_through_unchanged():
     )
     (res,) = resolve_mentions([m], statute_registry=_empty_registry())
 
-    assert res.status is ResolutionStatus.UNCHANGED
+    assert res.resolution_status is ResolutionStatus.UNCHANGED
     assert res.work_id == "2014/527"
     assert res.candidates == ("2014/527",)
     assert res.finding is None
@@ -217,7 +217,7 @@ def test_t1_statute_only_bare_section_no_id_no_registry_hit():
     m = _fi_name_placeholder("tuntematonlaki", surface="tuntemattomassa laissa")
     (res,) = resolve_mentions([m], statute_registry=_empty_registry())
 
-    assert res.status is ResolutionStatus.STATUTE_ONLY
+    assert res.resolution_status is ResolutionStatus.STATUTE_ONLY
     assert res.work_id is None
     assert res.candidates == ()
     assert res.finding is None
@@ -241,7 +241,7 @@ def test_t1_broken_passthrough_documented_bitemporal_elsewhere():
     m = _mention(target=None, confidence=CiteConfidence.BROKEN, surface="3 §")
     (res,) = resolve_mentions([m], statute_registry=_empty_registry())
 
-    assert res.status is ResolutionStatus.BROKEN
+    assert res.resolution_status is ResolutionStatus.BROKEN
     assert res.work_id is None
     assert res.finding is None
     assert res.mention is m
@@ -264,7 +264,7 @@ def test_t2_resolved_by_name_single_candidate():
     reg = _single_candidate_registry()
     (res,) = resolve_mentions([m], statute_registry=reg)
 
-    assert res.status is ResolutionStatus.RESOLVED
+    assert res.resolution_status is ResolutionStatus.RESOLVED
     assert res.work_id == "1096/1996"
     assert res.candidates == ("1096/1996",)
     assert res.finding is None
@@ -288,7 +288,7 @@ def test_t2_ambiguous_by_name_two_candidates_never_picks():
     reg = _ambiguous_registry()
     (res,) = resolve_mentions([m], statute_registry=reg, as_of=None)
 
-    assert res.status is ResolutionStatus.AMBIGUOUS
+    assert res.resolution_status is ResolutionStatus.AMBIGUOUS
     assert res.work_id is None  # never picks
     assert set(res.candidates) == {"365/1995", "410/2015"}
     assert res.finding is not None
@@ -309,7 +309,7 @@ def test_t2_statute_only_by_name_registry_miss():
     m = _fi_name_placeholder("merilaki", surface="merilaissa")
     (res,) = resolve_mentions([m], statute_registry=_empty_registry())
 
-    assert res.status is ResolutionStatus.STATUTE_ONLY
+    assert res.resolution_status is ResolutionStatus.STATUTE_ONLY
     assert res.work_id is None
     assert res.candidates == ()
     assert res.finding is None
@@ -324,7 +324,7 @@ def test_t2_resolved_eu_nickname_single_celex():
     m = _eu_nickname_placeholder("teollisuuspäästödirektiivin")
     (res,) = resolve_mentions([m], statute_registry=_empty_registry())
 
-    assert res.status is ResolutionStatus.RESOLVED
+    assert res.resolution_status is ResolutionStatus.RESOLVED
     assert res.work_id == "celex:32010L0075"
     assert res.candidates == ("celex:32010L0075",)
     assert res.finding is None
@@ -339,7 +339,7 @@ def test_t2_ambiguous_eu_nickname_multi_celex_never_picks():
     m = _eu_nickname_placeholder("jätedirektiivi")
     (res,) = resolve_mentions([m], statute_registry=_empty_registry())
 
-    assert res.status is ResolutionStatus.AMBIGUOUS
+    assert res.resolution_status is ResolutionStatus.AMBIGUOUS
     assert res.work_id is None
     assert set(res.candidates) == {"celex:32008L0098", "celex:32006L0012"}
     assert res.finding is not None
@@ -354,7 +354,7 @@ def test_t2_statute_only_eu_nickname_not_in_registry():
     m = _eu_nickname_placeholder("kuvitteellinendirektiivi")
     (res,) = resolve_mentions([m], statute_registry=_empty_registry())
 
-    assert res.status is ResolutionStatus.STATUTE_ONLY
+    assert res.resolution_status is ResolutionStatus.STATUTE_ONLY
     assert res.work_id is None
     assert res.candidates == ()
     assert res.finding is None
@@ -379,7 +379,7 @@ def test_t3_open_vague_marker_carries_no_target():
     )
     (res,) = resolve_mentions([m], statute_registry=_empty_registry())
 
-    assert res.status is ResolutionStatus.OPEN
+    assert res.resolution_status is ResolutionStatus.OPEN
     assert res.work_id is None
     assert res.candidates == ()
     assert res.finding is None
@@ -401,7 +401,7 @@ def _alias_binding(*, term: str, target_ref: str, byte_offset: int):
         scope="statute",
         source_span=SourceSpan(_SOURCE_FILE, byte_offset, len(term)),
         binding_kind=BINDING_PARENTHETICAL_ALIAS,
-        status=STATUS_OK,
+        binding_status=STATUS_OK,
     )
 
 
@@ -426,7 +426,7 @@ def test_defined_term_alias_resolves_after_binding():
         defined_terms=table,
     )
 
-    assert res.status is ResolutionStatus.RESOLVED
+    assert res.resolution_status is ResolutionStatus.RESOLVED
     assert res.work_id == "32009R1069"
     assert res.candidates == ("32009R1069",)
     assert res.finding is None
@@ -457,7 +457,7 @@ def test_defined_term_use_before_binding_does_not_resolve():
         defined_terms=table,
     )
 
-    assert res.status is ResolutionStatus.STATUTE_ONLY
+    assert res.resolution_status is ResolutionStatus.STATUTE_ONLY
     assert res.work_id is None
     assert res.candidates == ()
 
@@ -553,10 +553,10 @@ def test_each_status_is_actually_produced_by_resolve():
     produced = set()
     for expected, mention, reg in cases:
         (res,) = resolve_mentions([mention], statute_registry=cast(StatuteNameRegistry, reg))
-        assert res.status is expected, (
-            f"expected {expected.name}, got {res.status.name}"
+        assert res.resolution_status is expected, (
+            f"expected {expected.name}, got {res.resolution_status.name}"
         )
-        produced.add(res.status)
+        produced.add(res.resolution_status)
 
     assert produced == set(ResolutionStatus)
 

@@ -113,7 +113,7 @@ def _coerce_grounding_value(value: object) -> GroundingRow:
     ):
         row = cast("AuthorityGrounding", value)
         tier = str(row.authority_tier)
-        status = str(row.status)
+        status = str(row.authority_status)
     elif isinstance(value, dict):
         vd = cast(Dict[object, object], value)
         tier = str(vd.get("authority_tier") or vd.get("tier") or "")

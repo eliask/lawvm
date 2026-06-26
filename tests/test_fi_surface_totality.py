@@ -134,7 +134,7 @@ def test_orphan_reference_fires() -> None:
         lemma="sivutuote",
         binding=None,
         source_span=SourceSpan(source_file="synthetic/2", byte_offset=30, byte_len=15),
-        status=STATUS_OPEN,
+        use_status=STATUS_OPEN,
         rule_id=RULE_BEFORE_BINDING,
     )
     direct = sweep_definition_totality_from_bindings(

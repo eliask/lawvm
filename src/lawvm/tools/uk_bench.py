@@ -1131,7 +1131,7 @@ def uk_bench_unit_result(result: "_BenchResult", *, has_commencement: bool = Fal
         score = _bench_primary_score(result, has_commencement=has_commencement)
         if score < 0:
             # Commencement lane not attempted and no base score — non-scored.
-            return BenchUnitResult(unit_id=result.statute_id, status=BenchStatus.NO_TRUTH)
+            return BenchUnitResult(unit_id=result.statute_id, bench_unit_status=BenchStatus.NO_TRUTH)
         structural_err = 1.0 - score
         # The residue MUST reconcile with the SAME lens that produced the score.
         # The plain symmetric-difference EID counts (n_enacted_eids / n_oracle_eids
@@ -1166,17 +1166,17 @@ def uk_bench_unit_result(result: "_BenchResult", *, has_commencement: bool = Fal
         text_err = None if result.text_score < 0 else 1.0 - result.text_score
         return BenchUnitResult(
             unit_id=result.statute_id,
-            status=BenchStatus.SCORED,
+            bench_unit_status=BenchStatus.SCORED,
             structural_err=structural_err,
             text_err=text_err,
             residue_buckets=residue,
         )
     if status in {"NO_ENACTED", "NO_ORACLE"}:
-        return BenchUnitResult(unit_id=result.statute_id, status=BenchStatus.NO_TRUTH)
+        return BenchUnitResult(unit_id=result.statute_id, bench_unit_status=BenchStatus.NO_TRUTH)
     # "ERR" or any other status — a genuine crash.
     witnesses = (result.error,) if result.error else ()
     return BenchUnitResult(
-        unit_id=result.statute_id, status=BenchStatus.CRASH, witnesses=witnesses
+        unit_id=result.statute_id, bench_unit_status=BenchStatus.CRASH, witnesses=witnesses
     )
 
 

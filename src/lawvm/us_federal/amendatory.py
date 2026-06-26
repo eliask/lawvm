@@ -864,14 +864,14 @@ class USInstructionStatus(StrEnum):
 class USAmendmentInstruction:
     """One lowered (or unlowered) amendatory instruction.
 
-    ``status`` is a :class:`USInstructionStatus`: ``accepted`` (op present and
-    target resolved), ``unsupported`` (form not lowerable; see ``finding``), or
-    ``needs_review`` (lowered but the target or payload is partial /
-    corroboration-only).
+    ``instruction_status`` is a :class:`USInstructionStatus`: ``accepted`` (op
+    present and target resolved), ``unsupported`` (form not lowerable; see
+    ``finding``), or ``needs_review`` (lowered but the target or payload is
+    partial / corroboration-only).
     """
 
     instruction_id: str
-    status: USInstructionStatus
+    instruction_status: USInstructionStatus
     witness_rule_id: str
     action: str = ""
     target_phrase: str = ""
@@ -889,7 +889,7 @@ class USAmendmentInstruction:
     def to_jsonable(self) -> dict[str, Any]:
         return {
             "instruction_id": self.instruction_id,
-            "status": self.status,
+            "instruction_status": self.instruction_status,
             "witness_rule_id": self.witness_rule_id,
             "action": self.action,
             "target_phrase": self.target_phrase,
@@ -925,7 +925,7 @@ class USAmendatoryReport:
         lowered = sum(1 for i in self.instructions if i.operation is not None)
         accepted = unsupported = needs_review = 0
         for i in self.instructions:
-            match i.status:
+            match i.instruction_status:
                 case USInstructionStatus.ACCEPTED:
                     accepted += 1
                 case USInstructionStatus.UNSUPPORTED:
@@ -1617,7 +1617,7 @@ def _resolve_target(
 
     NOTE: ``resolution_status`` is left a typed-OPEN ``str`` (not a closed
     ``StrEnum``) on purpose: it is an OPEN serialized provenance vocabulary —
-    one branch composes ``f"nonpositive_{witness.status}"`` dynamically from the
+    one branch composes ``f"nonpositive_{witness.resolve_status}"`` dynamically from the
     non-positive lane, so the value set is not statically closed, and it flows
     into provenance tags (``target_resolution:<status>``) rather than driving an
     exhaustive dispatch.
@@ -1672,7 +1672,7 @@ def _resolve_target(
             target_href=target_href,
         )
         if witness.address is not None:
-            return witness.address, f"nonpositive_{witness.status}"
+            return witness.address, f"nonpositive_{witness.resolve_status}"
         # No codified channel for this non-positive target (note-only / unmapped):
         # held out as the uncodified residual, never guessed onto a section or
         # container through the positive-law target parser.
@@ -1737,7 +1737,7 @@ def _resolve_target(
                     target_href="",
                 )
                 if witness.address is not None:
-                    return witness.address, f"nonpositive_{witness.status}"
+                    return witness.address, f"nonpositive_{witness.resolve_status}"
                 return None, "unresolved"
             return _refine_with_leading_subunit_anchor(direct_from_raw, raw_prefix), "prose"
 
@@ -2303,7 +2303,7 @@ def _lower_instruction(
         )
         return USAmendmentInstruction(
             instruction_id=instruction_id,
-            status=USInstructionStatus.UNSUPPORTED,
+            instruction_status=USInstructionStatus.UNSUPPORTED,
             witness_rule_id=UNLOWERED_FINDING_RULE_ID,
             action=family,
             target_phrase=target_phrase,
@@ -2988,7 +2988,7 @@ def _lower_instruction(
 
     return USAmendmentInstruction(  # noqa: B035
         instruction_id=instruction_id,
-        status=status,
+        instruction_status=status,
         witness_rule_id=witness_rule_id,
         action=family,
         target_phrase=target_phrase,

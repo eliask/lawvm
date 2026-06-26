@@ -163,7 +163,7 @@ def _result(
 ) -> WindowResult:
     return WindowResult(
         window=_window(report.title if report else 99),
-        status=status,
+        window_status=status,
         report=report,
     )
 
@@ -197,7 +197,7 @@ def _synthetic_report() -> USDryRunReport:
             action="TEXT_REPLACE",
             target_address="11:10",
             section_key="11:10",
-            status=USDryRunRowStatus.AGREE,
+            row_status=USDryRunRowStatus.AGREE,
             rule_id=US_DRY_RUN_SECTION_AGREES_RULE_ID,
             oracle_changed=True,
         ),
@@ -206,7 +206,7 @@ def _synthetic_report() -> USDryRunReport:
             action="TEXT_REPLACE",
             target_address="11:20",
             section_key="11:20",
-            status=USDryRunRowStatus.RESIDUAL,
+            row_status=USDryRunRowStatus.RESIDUAL,
             rule_id=US_DRY_RUN_RESIDUAL_TEXT_MISMATCH_RULE_ID,
             disposition=DISPOSITION_LAWVM_WRONG,
             oracle_changed=True,
@@ -217,7 +217,7 @@ def _synthetic_report() -> USDryRunReport:
             action="TEXT_REPLACE",
             target_address="11:40",
             section_key="11:40",
-            status=USDryRunRowStatus.RESIDUAL,
+            row_status=USDryRunRowStatus.RESIDUAL,
             rule_id="us_dry_run_residual_not_a_real_cataloged_rule",
             disposition=DISPOSITION_ORACLE_SUSPECT,
             oracle_changed=True,

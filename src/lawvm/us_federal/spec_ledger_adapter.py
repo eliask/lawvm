@@ -172,7 +172,7 @@ def us_ledger_inputs_from_reports(
     inputs: List[StatuteLedgerInput] = []
     for result in results:
         report = result.report
-        if result.status != "evaluated" or report is None:
+        if result.window_status != "evaluated" or report is None:
             continue
         sid = result.window.key
         firings: Dict[str, int] = defaultdict(int)
@@ -185,7 +185,7 @@ def us_ledger_inputs_from_reports(
         # 1. Per-section materialized-vs-oracle rows.
         for row in report.rows:
             firings[row.rule_id] += 1
-            if row.status == "agree":
+            if row.row_status == "agree":
                 continue
             divergences.append(
                 DivergenceRow(

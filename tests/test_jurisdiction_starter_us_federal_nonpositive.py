@@ -127,7 +127,7 @@ def test_resolve_paren_href_agree() -> None:
         target_phrase="Section 5 of the Securities Act of 1933 (15 U.S.C. 77e)",
         target_href="/us/usc/t15/s77e",
     )
-    assert w.status == "paren_href_agree"
+    assert w.resolve_status == "paren_href_agree"
     assert w.rule_id == RULE_PAREN_HREF_AGREE
     assert w.resolved
     assert w.address is not None
@@ -139,7 +139,7 @@ def test_resolve_href_only() -> None:
         target_phrase="Section 1402 of the Patient Protection and Affordable Care Act",
         target_href="/us/usc/t42/s18071/f",
     )
-    assert w.status == "href"
+    assert w.resolve_status == "href"
     assert w.rule_id == RULE_HREF
     assert w.resolved
     assert w.address is not None
@@ -151,7 +151,7 @@ def test_resolve_paren_only() -> None:
         target_phrase="Section 303 of the Family Violence Act (42 U.S.C. 10403)",
         target_href="",
     )
-    assert w.status == "paren"
+    assert w.resolve_status == "paren"
     assert w.rule_id == RULE_PAREN
     assert w.resolved
     assert w.address is not None
@@ -165,7 +165,7 @@ def test_resolve_disagree_takes_href() -> None:
         target_phrase="Section 636 of the Small Business Act (15 U.S.C. 636)",
         target_href="/us/usc/t15/s636/a/36/D",
     )
-    assert w.status == "href"
+    assert w.resolve_status == "href"
     assert w.rule_id == RULE_PAREN_HREF_DISAGREE
     assert w.address is not None
     assert w.address.path[-1] == ("subparagraph", "D")
@@ -178,7 +178,7 @@ def test_resolve_note_only_unmapped() -> None:
         target_href="/us/usc/t7/s2011/note",
     )
     assert not w.resolved
-    assert w.status == "note_only"
+    assert w.resolve_status == "note_only"
     assert w.rule_id == NOTE_ONLY_FINDING_RULE_ID
     assert w.address is None
 
@@ -190,7 +190,7 @@ def test_resolve_unmapped_no_signal() -> None:
         target_href="",
     )
     assert not w.resolved
-    assert w.status == "unmapped"
+    assert w.resolve_status == "unmapped"
     assert w.rule_id == UNMAPPED_FINDING_RULE_ID
     assert w.address is None
 

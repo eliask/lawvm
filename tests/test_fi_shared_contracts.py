@@ -2207,7 +2207,7 @@ def test_mutation_boundary_proof_projects_passive_accounting() -> None:
 
     data = proof.to_dict()
 
-    assert data["status"] == "violated"
+    assert data["boundary_proof_status"] == "violated"
     assert data["rule_id"] == "mutation_boundary_path_set_violated"
     assert data["selected_target_paths"] == ["body/section:1"]
     assert data["unexplained_changed_paths"] == ["body/section:2"]
@@ -2223,7 +2223,7 @@ def test_mutation_boundary_evidence_report_is_passive_shared_surface() -> None:
         operation_id="op-1",
         owner_phase="replay_apply",
         rule_id="mutation_boundary_path_set_violated",
-        status="violated",
+        boundary_proof_status="violated",
         selected_target_paths=((("section", "1"),),),
         changed_paths=((("section", "2"),),),
         unexplained_changed_paths=((("section", "2"),),),
@@ -2239,7 +2239,7 @@ def test_mutation_boundary_evidence_report_is_passive_shared_surface() -> None:
         operation_id="op-2",
         owner_phase="replay_apply",
         rule_id="mutation_boundary_path_set_proved",
-        status="proved",
+        boundary_proof_status="proved",
         selected_target_paths=((("section", "2"),),),
         changed_paths=((("section", "2"),),),
         covered_changed_paths=((("section", "2"),),),
@@ -2270,7 +2270,7 @@ def test_mutation_boundary_evidence_report_is_passive_shared_surface() -> None:
     assert row["row_id"] == "proof-violated"
     assert row["subject_id"] == "op-1"
     assert row["proof_ref"] == "proof-violated"
-    assert row["status"] == "violated"
+    assert row["boundary_proof_status"] == "violated"
     assert "mutation_boundary_proof_as_replay_authorization" in row["forbidden_shortcuts"]
     assert "mutation_boundary_proof_as_replay_authorization" in report["forbidden_shortcuts"]
 
@@ -2284,7 +2284,7 @@ def test_mutation_boundary_report_projects_to_proof_surface_rows() -> None:
             operation_id="op-2",
             owner_phase="replay_apply",
             rule_id="mutation_boundary_path_set_proved",
-            status="proved",
+            boundary_proof_status="proved",
             selected_target_paths=((("section", "2"),),),
             changed_paths=((("section", "2"),),),
             covered_changed_paths=((("section", "2"),),),
@@ -2315,7 +2315,7 @@ def test_mutation_boundary_report_rejects_invalid_mapping_rows() -> None:
                 "operation_id": "op-1",
                 "owner_phase": "replay_apply",
                 "rule_id": "bad",
-                "status": "done",
+                "boundary_proof_status": "done",
                 "safe_default": "classify",
                 "forbidden_shortcuts": ["shortcut"],
             },
@@ -2332,7 +2332,7 @@ def test_mutation_boundary_proof_requires_safe_default_and_forbidden_shortcuts()
             operation_id="op-1",
             owner_phase="replay_invariants",
             rule_id="rule",
-            status="proved",
+            boundary_proof_status="proved",
             forbidden_shortcuts=("shortcut",),
         )
     with pytest.raises(ValueError, match="MutationBoundaryProof.forbidden_shortcuts"):
@@ -2343,7 +2343,7 @@ def test_mutation_boundary_proof_requires_safe_default_and_forbidden_shortcuts()
             operation_id="op-1",
             owner_phase="replay_invariants",
             rule_id="rule",
-            status="proved",
+            boundary_proof_status="proved",
             safe_default="classify",
         )
 

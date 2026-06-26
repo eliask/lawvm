@@ -27,7 +27,7 @@ def _binding(term: str, target_ref: str | None) -> DefinedTermBinding:
         scope="statute",
         source_span=SourceSpan("x", 0, len(term)),
         binding_kind=BINDING_PARENTHETICAL_ALIAS,
-        status=STATUS_OK,
+        binding_status=STATUS_OK,
     )
 
 

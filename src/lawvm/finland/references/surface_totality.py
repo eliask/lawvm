@@ -205,7 +205,7 @@ def sweep_definition_totality_from_bindings(
     # remains usable). That IS "a reference to a term with no resolvable
     # definition" — the SURF-04 orphan cell.
     for use in uses:
-        if use.status != STATUS_OPEN:
+        if use.use_status != STATUS_OPEN:
             continue
         findings.append(
             DefinitionTotalityFinding(

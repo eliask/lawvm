@@ -51,7 +51,7 @@ def test_fi_adapter_scored_maps_axes_and_residue(monkeypatch) -> None:
 
     result = bench.fi_bench_unit_result("2000/1")
 
-    assert result.status is BenchStatus.SCORED
+    assert result.bench_unit_status is BenchStatus.SCORED
     assert result.structural_err == pytest.approx(0.2)
     assert result.text_err == pytest.approx(0.05)
     # Residue comes from the PENALIZED events, not all events.
@@ -103,7 +103,7 @@ def test_fi_adapter_fast_path_has_no_structural_axis(monkeypatch) -> None:
     monkeypatch.setattr(bench, "_lev_sim_fast", lambda _sid, _master: 0.9)
 
     result = bench.fi_bench_unit_result("2000/1", fast=True)
-    assert result.status is BenchStatus.SCORED
+    assert result.bench_unit_status is BenchStatus.SCORED
     assert result.structural_err is None
     assert result.text_err == pytest.approx(0.1)
 
@@ -121,14 +121,14 @@ def test_fi_adapter_no_truth_is_non_scored(monkeypatch) -> None:
         ),
     )
     result = bench.fi_bench_unit_result("2000/1")
-    assert result.status is BenchStatus.NO_TRUTH
+    assert result.bench_unit_status is BenchStatus.NO_TRUTH
     assert result.structural_err is None
 
 
 def test_fi_adapter_source_unavailable(monkeypatch) -> None:
     monkeypatch.setattr(bench, "is_known_missing_source", lambda _sid: True)
     result = bench.fi_bench_unit_result("1987/182")
-    assert result.status is BenchStatus.SOURCE_UNAVAILABLE
+    assert result.bench_unit_status is BenchStatus.SOURCE_UNAVAILABLE
 
 
 def test_fi_adapter_crash_is_failure(monkeypatch) -> None:
@@ -139,7 +139,7 @@ def test_fi_adapter_crash_is_failure(monkeypatch) -> None:
 
     monkeypatch.setattr(bench, "_run_replay_with_bench_warning_capture", boom)
     result = bench.fi_bench_unit_result("2000/1")
-    assert result.status is BenchStatus.CRASH
+    assert result.bench_unit_status is BenchStatus.CRASH
     assert result.is_failure
     assert result.witnesses == ("boom",)
 

@@ -36,7 +36,7 @@ def test_fixed_date_numeric_parses_iso() -> None:
     fixed = _by_kind(text, TemporalKind.FIXED_DATE)
     assert len(fixed) == 1
     expr = fixed[0]
-    assert expr.status is TemporalStatus.RESOLVED
+    assert expr.temporal_status is TemporalStatus.RESOLVED
     assert expr.bound == date(2027, 1, 1)
     assert expr.surface_text == "1.1.2027"
     assert expr.rule_id == "fixed_date.numeric"
@@ -54,7 +54,7 @@ def test_fixed_date_impossible_is_unsupported_not_guessed() -> None:
     # 32.13.2027 is calendrically impossible: fail loud (residual), never a guess.
     text = "alkaen 32.13.2027"
     expr = _by_kind(text, TemporalKind.FIXED_DATE)[0]
-    assert expr.status is TemporalStatus.UNSUPPORTED
+    assert expr.temporal_status is TemporalStatus.UNSUPPORTED
     assert expr.bound is None
 
 
@@ -68,7 +68,7 @@ def test_fixed_date_long_form_parses_iso() -> None:
     fixed = _by_kind(text, TemporalKind.FIXED_DATE)
     assert len(fixed) == 1
     expr = fixed[0]
-    assert expr.status is TemporalStatus.RESOLVED
+    assert expr.temporal_status is TemporalStatus.RESOLVED
     assert expr.bound == date(2027, 1, 1)
     assert expr.surface_text == "1 päivänä tammikuuta 2027"
     assert expr.rule_id == "fixed_date.long_form"
@@ -98,7 +98,7 @@ def test_commencement_tulee_voimaan() -> None:
     com = _by_kind(text, TemporalKind.COMMENCEMENT)
     assert len(com) == 1
     expr = com[0]
-    assert expr.status is TemporalStatus.RESOLVED
+    assert expr.temporal_status is TemporalStatus.RESOLVED
     assert expr.bound is None
     assert "tulee voimaan" in expr.surface_text.lower()
     assert expr.rule_id == "commencement.cue"
@@ -121,7 +121,7 @@ def test_duration_from_commencement_is_unsupported_residual() -> None:
     dur = _by_kind(text, TemporalKind.DURATION_FROM_COMMENCEMENT)
     assert len(dur) >= 1
     expr = dur[0]
-    assert expr.status is TemporalStatus.UNSUPPORTED
+    assert expr.temporal_status is TemporalStatus.UNSUPPORTED
     assert expr.bound is None
     assert expr.rule_id == "duration_from_commencement.anchor"
 
@@ -136,7 +136,7 @@ def test_event_bound_kunnes_no_date() -> None:
     ev = _by_kind(text, TemporalKind.EVENT_BOUND)
     assert len(ev) == 1
     expr = ev[0]
-    assert expr.status is TemporalStatus.EVENT_BOUND
+    assert expr.temporal_status is TemporalStatus.EVENT_BOUND
     assert expr.bound is None
     assert expr.surface_text.lower().startswith("kunnes")
     assert expr.rule_id == "event_bound.kunnes"
@@ -152,7 +152,7 @@ def test_validity_open_on_voimassa() -> None:
     op = _by_kind(text, TemporalKind.VALIDITY_OPEN)
     assert len(op) == 1
     expr = op[0]
-    assert expr.status is TemporalStatus.OPEN
+    assert expr.temporal_status is TemporalStatus.OPEN
     assert expr.bound is None
     assert expr.rule_id == "validity_open.cue"
 
@@ -170,7 +170,7 @@ def test_validity_with_long_form_end_is_fixed_term_not_open() -> None:
     fixed = _by_kind(text, TemporalKind.FIXED_TERM_EXPIRY)
     assert len(fixed) == 1
     expr = fixed[0]
-    assert expr.status is TemporalStatus.RESOLVED
+    assert expr.temporal_status is TemporalStatus.RESOLVED
     assert expr.bound == date(2025, 12, 31)
     assert expr.rule_id == "fixed_term_expiry.long_form"
 
@@ -181,7 +181,7 @@ def test_validity_with_numeric_end_asti_is_fixed_term_not_open() -> None:
     fixed = _by_kind(text, TemporalKind.FIXED_TERM_EXPIRY)
     assert len(fixed) == 1
     expr = fixed[0]
-    assert expr.status is TemporalStatus.RESOLVED
+    assert expr.temporal_status is TemporalStatus.RESOLVED
     assert expr.bound == date(2027, 1, 1)
     assert expr.rule_id == "fixed_term_expiry.numeric"
 
@@ -193,7 +193,7 @@ def test_validity_until_event_stays_open_not_fixed_term() -> None:
     assert _by_kind(text, TemporalKind.FIXED_TERM_EXPIRY) == []
     op = _by_kind(text, TemporalKind.VALIDITY_OPEN)
     assert len(op) == 1
-    assert op[0].status is TemporalStatus.OPEN
+    assert op[0].temporal_status is TemporalStatus.OPEN
     # and the until-event cue is still reported as an EVENT_BOUND residual
     assert len(_by_kind(text, TemporalKind.EVENT_BOUND)) == 1
 
@@ -245,7 +245,7 @@ def test_resolved_requires_bound_invariant() -> None:
             surface_text="x",
             source_span=SourceSpan(source_file="", byte_offset=0, byte_len=1),
             bound=None,
-            status=TemporalStatus.RESOLVED,
+            temporal_status=TemporalStatus.RESOLVED,
             rule_id="test",
         )
 
@@ -255,7 +255,7 @@ def test_resolved_requires_bound_invariant() -> None:
             surface_text="x",
             source_span=SourceSpan(source_file="", byte_offset=0, byte_len=1),
             bound=date(2027, 1, 1),
-            status=TemporalStatus.EVENT_BOUND,
+            temporal_status=TemporalStatus.EVENT_BOUND,
             rule_id="test",
         )
 

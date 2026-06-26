@@ -514,7 +514,7 @@ class USDryRunRowStatus(StrEnum):
 class USDryRunSectionRow:
     """One claimed-section outcome: materialized text vs oracle after-text.
 
-    ``status`` is a :class:`USDryRunRowStatus` (``agree`` or ``residual``);
+    ``row_status`` is a :class:`USDryRunRowStatus` (``agree`` or ``residual``);
     ``disposition`` is empty on agreement and carries the witness-side gap on a
     residual.
     """
@@ -523,7 +523,7 @@ class USDryRunSectionRow:
     action: str
     target_address: str
     section_key: str
-    status: USDryRunRowStatus
+    row_status: USDryRunRowStatus
     rule_id: str
     disposition: str = ""
     match_text: str = ""
@@ -539,7 +539,7 @@ class USDryRunSectionRow:
             "action": self.action,
             "target_address": self.target_address,
             "section_key": self.section_key,
-            "status": self.status,
+            "row_status": self.row_status,
             "rule_id": self.rule_id,
             "disposition": self.disposition,
             "match_text": self.match_text,
@@ -630,10 +630,10 @@ class USDryRunReport:
     # --- agreement / residual partitions -------------------------------------
 
     def agreeing_rows(self) -> tuple[USDryRunSectionRow, ...]:
-        return tuple(r for r in self.rows if r.status is USDryRunRowStatus.AGREE)
+        return tuple(r for r in self.rows if r.row_status is USDryRunRowStatus.AGREE)
 
     def residual_rows(self) -> tuple[USDryRunSectionRow, ...]:
-        return tuple(r for r in self.rows if r.status is not USDryRunRowStatus.AGREE)
+        return tuple(r for r in self.rows if r.row_status is not USDryRunRowStatus.AGREE)
 
     def agreeing_sections(self) -> tuple[str, ...]:
         # Distinct sections materialized in agreement with the oracle after-text.
@@ -675,7 +675,7 @@ class USDryRunReport:
         """Project per-section rows into a typed agreement surface (core reuse)."""
         residuals: list[AgreementResidual] = []
         for row in self.rows:
-            match row.status:
+            match row.row_status:
                 case USDryRunRowStatus.AGREE:
                     is_agreement = True
                 case USDryRunRowStatus.RESIDUAL:
@@ -864,7 +864,7 @@ class USDryRunReport:
             ],
             "sunset_finding_count": len(self.sunset_findings),
             "north_star": self.north_star(),
-            "boundary_status": self.boundary_proof.status,
+            "boundary_status": self.boundary_proof.boundary_proof_status,
             # Dry-run gate: replay stays blocked here.
             "replay_authorized": self.replay_authorized,
             "replay_claims": False,
@@ -2343,7 +2343,7 @@ def build_us_dry_run(
                     action=row_action,
                     target_address=target_address,
                     section_key=section_key,
-                    status=USDryRunRowStatus.RESIDUAL,
+                    row_status=USDryRunRowStatus.RESIDUAL,
                     rule_id=rule_id,
                     disposition=disposition,
                     match_text=row_match,
@@ -2364,7 +2364,7 @@ def build_us_dry_run(
                     action=row_action,
                     target_address=target_address,
                     section_key=section_key,
-                    status=USDryRunRowStatus.AGREE,
+                    row_status=USDryRunRowStatus.AGREE,
                     rule_id=US_DRY_RUN_SECTION_AGREES_RULE_ID,
                     match_text=row_match,
                     replacement=row_replacement,
@@ -2385,7 +2385,7 @@ def build_us_dry_run(
                     action=row_action,
                     target_address=target_address,
                     section_key=section_key,
-                    status=USDryRunRowStatus.RESIDUAL,
+                    row_status=USDryRunRowStatus.RESIDUAL,
                     rule_id=US_DRY_RUN_RESIDUAL_TEXT_MISMATCH_RULE_ID,
                     disposition=DISPOSITION_ORACLE_SUSPECT,
                     match_text=row_match,
@@ -2407,7 +2407,7 @@ def build_us_dry_run(
                     action=row_action,
                     target_address=target_address,
                     section_key=section_key,
-                    status=USDryRunRowStatus.RESIDUAL,
+                    row_status=USDryRunRowStatus.RESIDUAL,
                     rule_id=US_DRY_RUN_RESIDUAL_SOURCE_TRUNCATED_PAYLOAD_RULE_ID,
                     disposition=DISPOSITION_ORACLE_SUSPECT,
                     match_text=row_match,
@@ -2433,7 +2433,7 @@ def build_us_dry_run(
                     action=row_action,
                     target_address=target_address,
                     section_key=section_key,
-                    status=USDryRunRowStatus.RESIDUAL,
+                    row_status=USDryRunRowStatus.RESIDUAL,
                     rule_id=rule_id,
                     disposition=DISPOSITION_LAWVM_WRONG,
                     match_text=row_match,
@@ -2579,7 +2579,7 @@ def _build_boundary_proof(
             if boundary_holds
             else "us_dry_run_changed_section_set_diverges_from_oracle"
         ),
-        status=status,
+        boundary_proof_status=status,
         outcome="changed_section_set_boundary",
         selected_target_paths=selected_paths,
         changed_paths=changed_paths,

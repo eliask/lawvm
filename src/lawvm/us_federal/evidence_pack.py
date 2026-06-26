@@ -88,7 +88,7 @@ def _address_tuple(section_key: str) -> list[list[str]]:
 
 
 def _section_row_status(row: USDryRunSectionRow) -> CorpusRowStatus:
-    if row.status == "agree":
+    if row.row_status == "agree":
         return CorpusRowStatus.MATCHED
     return CorpusRowStatus.DIVERGED
 
@@ -138,7 +138,7 @@ def _operation_row(report: USDryRunReport, row: USDryRunSectionRow) -> CorpusOpe
         blocking=False,
         strict_disposition=_STRICT_WARN,
         quirks_disposition=_QUIRKS_RECORD,
-        finding_ids=(row.rule_id,) if row.status != "agree" else (),
+        finding_ids=(row.rule_id,) if row.row_status != "agree" else (),
         detail=detail,
     )
 

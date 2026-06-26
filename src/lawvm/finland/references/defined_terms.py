@@ -149,7 +149,7 @@ class DefinedTermBinding:
                       text.
         binding_kind: One of ``parenthetical_alias`` / ``jaljempana`` /
                       ``tarkoitetaan``.
-        status:       ``"ok"`` when the term's morphology is supported (single
+        binding_status: ``"ok"`` when the term's morphology is supported (single
                       word or final-head compound), else
                       ``"unsupported_morphology"`` (target known, inflection not
                       guessed).
@@ -161,7 +161,7 @@ class DefinedTermBinding:
     scope: str
     source_span: SourceSpan
     binding_kind: str
-    status: str = STATUS_OK
+    binding_status: str = STATUS_OK
 
 
 # ---------------------------------------------------------------------------
@@ -1068,7 +1068,7 @@ def _recognize_jaljempana(text: str, source_file: str) -> list[DefinedTermBindin
                 scope=_SCOPE_STATUTE,
                 source_span=SourceSpan(source_file, m.start(), m.end() - m.start()),
                 binding_kind=BINDING_JALJEMPANA,
-                status=status,
+                binding_status=status,
             )
         )
     return out
@@ -1119,7 +1119,7 @@ def _recognize_parenthetical_alias(
                 scope=_SCOPE_STATUTE,
                 source_span=SourceSpan(source_file, m.start(), m.end() - m.start()),
                 binding_kind=BINDING_PARENTHETICAL_ALIAS,
-                status=status,
+                binding_status=status,
             )
         )
     return out
@@ -1182,7 +1182,7 @@ def _recognize_tarkoitetaan(text: str, source_file: str) -> list[DefinedTermBind
                     scope=entry.scope,
                     source_span=SourceSpan(source_file, match_start, match_end - match_start),
                     binding_kind=BINDING_TARKOITETAAN,
-                    status=status,
+                    binding_status=status,
                 )
             )
         cursor = verb_pos + len(_GUARD_TARKOITETAAN)
@@ -1259,7 +1259,7 @@ def _recognize_enumerated_definitions(
                         source_file, abs_start, abs_end - abs_start
                     ),
                     binding_kind=BINDING_TARKOITETAAN,
-                    status=status,
+                    binding_status=status,
                 )
             )
     return out

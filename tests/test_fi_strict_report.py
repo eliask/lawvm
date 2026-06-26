@@ -1539,7 +1539,7 @@ def test_to_json_exports_mutation_boundary_proofs() -> None:
     proofs = payload["mutation_boundary_proofs"]
     assert len(proofs) == 1
     assert proofs[0]["operation_id"] == "op-1"
-    assert proofs[0]["status"] == "proved"
+    assert proofs[0]["boundary_proof_status"] == "proved"
     assert proofs[0]["owner_phase"] == "replay_apply"
     report = payload["evidence_surface_report"]
     assert report["summary"]["mutation_boundary_proof_count"] == 1
