@@ -17,6 +17,7 @@ import os
 import re
 import tarfile
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import Any, Iterator, Optional, cast
 
@@ -46,9 +47,104 @@ class NOLocatedArtifact:
     payload: bytes
 
 
+class NOEffectiveStatus(StrEnum):
+    """Closed set of commencement (in-force) resolution outcomes for a NO act.
+
+    A ``StrEnum`` so the value flows through the serialized ``effective_status``
+    dict/field and test ``== "..."`` comparisons byte-for-byte while the value
+    set is closed.
+    """
+
+    DATED = "dated"
+    """A concrete in-force date was resolved."""
+
+    IMMEDIATE = "immediate"
+    """In force on the source/promulgation date."""
+
+    OVERRIDE = "override"
+    """An explicit commencement override supplied the in-force date."""
+
+    CONTINGENT = "contingent"
+    """In force on a condition / future delegated commencement (unresolved)."""
+
+    MISSING = "missing"
+    """No in-force signal present in the source."""
+
+    UNKNOWN = "unknown"
+    """An in-force signal was present but not interpretable."""
+
+
+# Statuses that count as a RESOLVED in-force date (replayable). The complement
+# (contingent/missing/unknown) blocks deterministic replay.
+NO_RESOLVED_EFFECTIVE_STATUSES: frozenset[NOEffectiveStatus] = frozenset(
+    {NOEffectiveStatus.DATED, NOEffectiveStatus.IMMEDIATE, NOEffectiveStatus.OVERRIDE}
+)
+NO_UNRESOLVED_EFFECTIVE_STATUSES: frozenset[NOEffectiveStatus] = frozenset(
+    {NOEffectiveStatus.CONTINGENT, NOEffectiveStatus.MISSING, NOEffectiveStatus.UNKNOWN}
+)
+
+
+class NOReplayStatus(StrEnum):
+    """Closed set of per-base-law replayability classifications.
+
+    Derived from the in-force statuses of a base law's amendments. A ``StrEnum``
+    so it flows through serialized status maps / test comparisons byte-for-byte.
+    """
+
+    NO_AMENDMENTS = "no_amendments"
+    """The base law has no amendments to replay."""
+
+    FULLY_REPLAYABLE = "fully_replayable"
+    """Every amendment has a resolved in-force date."""
+
+    BLOCKED_CONTINGENT = "blocked_contingent"
+    """At least one amendment is contingent (future/conditional commencement)."""
+
+    BLOCKED_UNKNOWN = "blocked_unknown"
+    """At least one amendment has a missing/unknown in-force status."""
+
+
+def no_base_replay_status_from_statuses(
+    statuses: list[NOEffectiveStatus] | list[str],
+) -> NOReplayStatus:
+    """Classify a base law's replayability from its amendments' in-force statuses.
+
+    Single source of truth for the rule shared by the inventory and the
+    commencement report (was duplicated in both).
+    """
+    if not statuses:
+        return NOReplayStatus.NO_AMENDMENTS
+    if any(status == NOEffectiveStatus.CONTINGENT for status in statuses):
+        return NOReplayStatus.BLOCKED_CONTINGENT
+    if any(status not in NO_RESOLVED_EFFECTIVE_STATUSES for status in statuses):
+        return NOReplayStatus.BLOCKED_UNKNOWN
+    return NOReplayStatus.FULLY_REPLAYABLE
+
+
+class NOBackfillLane(StrEnum):
+    """Closed set of recommended source-acquisition lanes for a NO backfill.
+
+    Derived from which candidate-source families surfaced. A ``StrEnum`` so it
+    flows through serialized ``recommended_lane`` dict keys / advisory output and
+    test comparisons byte-for-byte.
+    """
+
+    MIXED = "mixed"
+    """Both local_corpus and statsrad produced candidates."""
+
+    STATSRAD = "statsrad"
+    """Only statsrad candidates surfaced."""
+
+    LOCAL_CORPUS = "local_corpus"
+    """Only local_corpus candidates surfaced."""
+
+    UNRESOLVED = "unresolved"
+    """No candidate surfaced in any lane."""
+
+
 @dataclass(frozen=True)
 class NOEffectiveDate:
-    status: str
+    status: NOEffectiveStatus
     effective_date: Optional[str] = None
     raw_text: str = ""
 
@@ -163,9 +259,11 @@ def effective_date_from_amendment(html_bytes: bytes, source_date: str = "") -> N
     if not dates:
         lowered = raw.lower()
         if not raw:
-            return NOEffectiveDate(status="missing", raw_text="")
+            return NOEffectiveDate(status=NOEffectiveStatus.MISSING, raw_text="")
         if "straks" in lowered and source_date:
-            return NOEffectiveDate(status="immediate", effective_date=source_date, raw_text=raw)
+            return NOEffectiveDate(
+                status=NOEffectiveStatus.IMMEDIATE, effective_date=source_date, raw_text=raw
+            )
         contingent_markers = (
             "kongen bestemmer",
             "kongen fastset",
@@ -174,9 +272,11 @@ def effective_date_from_amendment(html_bytes: bytes, source_date: str = "") -> N
             "fra den tid",
         )
         if any(marker in lowered for marker in contingent_markers):
-            return NOEffectiveDate(status="contingent", raw_text=raw)
-        return NOEffectiveDate(status="unknown", raw_text=raw)
-    return NOEffectiveDate(status="dated", effective_date=min(dates), raw_text=raw)
+            return NOEffectiveDate(status=NOEffectiveStatus.CONTINGENT, raw_text=raw)
+        return NOEffectiveDate(status=NOEffectiveStatus.UNKNOWN, raw_text=raw)
+    return NOEffectiveDate(
+        status=NOEffectiveStatus.DATED, effective_date=min(dates), raw_text=raw
+    )
 
 
 def archive_year_span(archive_path: Path) -> Optional[tuple[int, int]]:

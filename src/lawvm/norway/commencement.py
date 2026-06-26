@@ -11,9 +11,15 @@ from typing import Any
 
 from lawvm.norway.index import NOAmendmentIndex
 from lawvm.norway.sources import (
+    NO_RESOLVED_EFFECTIVE_STATUSES,
+    NO_UNRESOLVED_EFFECTIVE_STATUSES,
+    NOBackfillLane,
+    NOEffectiveStatus,
+    NOReplayStatus,
     load_available_lti_law_ids,
     load_no_current_law_ids,
     load_no_current_law_titles,
+    no_base_replay_status_from_statuses,
     resolve_no_source_path,
 )
 
@@ -157,7 +163,7 @@ def apply_no_commencement_overrides(
         updated_entries.append(
             dc_replace(
                 entry,
-                effective_status="override",
+                effective_status=NOEffectiveStatus.OVERRIDE,
                 effective_date=effective_date,
                 raw_date_in_force=(
                     f"{entry.raw_date_in_force} | override:{effective_date}"
@@ -182,16 +188,6 @@ def _load_no_executable_current_law_ids(data_dir: Path) -> set[str]:
     return load_no_current_law_ids(data_dir) & load_available_lti_law_ids(data_dir)
 
 
-def _base_replay_status_from_statuses(statuses: list[str]) -> str:
-    if not statuses:
-        return "no_amendments"
-    if any(status == "contingent" for status in statuses):
-        return "blocked_contingent"
-    if any(status not in {"dated", "immediate", "override"} for status in statuses):
-        return "blocked_unknown"
-    return "fully_replayable"
-
-
 def _build_unresolved_blockers_by_current_law(
     index: NOAmendmentIndex,
     *,
@@ -199,7 +195,7 @@ def _build_unresolved_blockers_by_current_law(
 ) -> dict[str, list[dict[str, Any]]]:
     blockers_by_current_law: dict[str, list[dict[str, Any]]] = {}
     for entry in index.entries:
-        if entry.effective_status not in {"contingent", "missing", "unknown"}:
+        if entry.effective_status not in NO_UNRESOLVED_EFFECTIVE_STATUSES:
             continue
         blocker_item = {
             "source_id": entry.source_id,
@@ -248,7 +244,7 @@ def build_no_commencement_report(
             "member_name": entry.member_name,
         }
         for entry in index.entries
-        if entry.effective_status in {"contingent", "missing", "unknown"}
+        if entry.effective_status in NO_UNRESOLVED_EFFECTIVE_STATUSES
         and (not phrase_filter or normalize_no_commencement_phrase(entry.raw_date_in_force) == phrase_filter)
     ]
     if base_id is not None:
@@ -443,16 +439,16 @@ def build_no_law_report(
         )
     entries.sort(
         key=lambda item: (
-            item["effective_status"] not in {"contingent", "missing", "unknown"},
+            item["effective_status"] not in NO_UNRESOLVED_EFFECTIVE_STATUSES,
             -int(item["n_ops"]),
             str(item["source_id"]),
         )
     )
 
-    unresolved_entries = [item for item in entries if item["effective_status"] in {"contingent", "missing", "unknown"}]
-    replay_status = _base_replay_status_from_statuses(statuses)
-    if replay_status in {"blocked_contingent", "blocked_unknown"}:
-        executable_replay_status = replay_status
+    unresolved_entries = [item for item in entries if item["effective_status"] in NO_UNRESOLVED_EFFECTIVE_STATUSES]
+    replay_status = no_base_replay_status_from_statuses(statuses)
+    if replay_status in {NOReplayStatus.BLOCKED_CONTINGENT, NOReplayStatus.BLOCKED_UNKNOWN}:
+        executable_replay_status: str = replay_status
     elif base_id not in current_law_ids:
         executable_replay_status = "not_current_law"
     elif base_id not in executable_current_law_ids:
@@ -603,16 +599,16 @@ def build_no_commencement_candidate_artifact(
     return artifact
 
 
-def _recommend_no_backfill_lane(candidate_source_counts: dict[str, int]) -> str:
+def _recommend_no_backfill_lane(candidate_source_counts: dict[str, int]) -> NOBackfillLane:
     local_count = int(candidate_source_counts.get("local_corpus", 0))
     statsrad_count = int(candidate_source_counts.get("statsrad", 0))
     if local_count and statsrad_count:
-        return "mixed"
+        return NOBackfillLane.MIXED
     if statsrad_count:
-        return "statsrad"
+        return NOBackfillLane.STATSRAD
     if local_count:
-        return "local_corpus"
-    return "unresolved"
+        return NOBackfillLane.LOCAL_CORPUS
+    return NOBackfillLane.UNRESOLVED
 
 
 def _build_no_backfill_action_hint(
@@ -1079,18 +1075,18 @@ def build_no_commencement_external_evidence_plan_artifact(
         next_source_plan = _build_no_backfill_source_plan(
             source_id=source_id,
             title=title,
-            recommended_lane="unresolved",
+            recommended_lane=NOBackfillLane.UNRESOLVED,
             candidate_groups=[],
         )
         next_source_hint = _build_no_backfill_next_source_hint(
             source_id=source_id,
             title=title,
-            recommended_lane="unresolved",
+            recommended_lane=NOBackfillLane.UNRESOLVED,
             candidate_groups=[],
         )
         action_hint = _build_no_backfill_action_hint(
             source_id=source_id,
-            recommended_lane="unresolved",
+            recommended_lane=NOBackfillLane.UNRESOLVED,
             candidate_groups=[],
             candidates=[],
         )
@@ -1181,7 +1177,7 @@ def build_no_commencement_phrase_report(
     unresolved_entries = [
         entry
         for entry in index.entries
-        if entry.effective_status in {"contingent", "missing", "unknown"}
+        if entry.effective_status in NO_UNRESOLVED_EFFECTIVE_STATUSES
         and (not phrase_filter or normalize_no_commencement_phrase(entry.raw_date_in_force) == phrase_filter)
     ]
 
@@ -1418,7 +1414,7 @@ def build_no_blocked_law_report(
 
     blockers: dict[str, list[dict[str, Any]]] = {}
     for entry in index.entries:
-        if entry.effective_status not in {"contingent", "missing", "unknown"}:
+        if entry.effective_status not in NO_UNRESOLVED_EFFECTIVE_STATUSES:
             continue
         affected = [candidate for candidate in entry.base_ids if candidate in current_law_ids]
         if base_id_filter is not None:
@@ -1539,7 +1535,7 @@ def validate_no_commencement_overrides(
             resolved_with_evidence.append(source_id)
         else:
             resolved_missing_evidence.append(source_id)
-        if entry.effective_status in {"dated", "immediate", "override"}:
+        if entry.effective_status in NO_RESOLVED_EFFECTIVE_STATUSES:
             redundant_sources.append(source_id)
         else:
             resolvable_sources.append(source_id)
@@ -1547,7 +1543,7 @@ def validate_no_commencement_overrides(
     missing_contingent_sources = sorted(
         entry.source_id
         for entry in index.entries
-        if entry.effective_status == "contingent" and entry.source_id not in overrides
+        if entry.effective_status == NOEffectiveStatus.CONTINGENT and entry.source_id not in overrides
     )
 
     return {
