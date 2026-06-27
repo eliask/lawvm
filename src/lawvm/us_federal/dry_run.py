@@ -1494,7 +1494,21 @@ def _running_subtree_text(
                     if candidate in running:
                         own = candidate
     if own is None or own not in running:
-        return None
+        # Prefix-match fallback for stale parent text (composition drift):
+        # when a sibling op's ancestor refresh shifted the parent's text in
+        # the running text, re-locate by the leading 60 chars (which include
+        # the enumerator marker). §0-safe: use the ACTUAL running text.
+        if own is not None:
+            prefix_len = min(60, len(own))
+            prefix = own[:prefix_len]
+            start = running.find(prefix)
+            if start != -1:
+                end = min(start + len(own), len(running))
+                own = running[start:end]
+            else:
+                return None
+        else:
+            return None
     spans: list[tuple[int, int]] = [(running.find(own), running.find(own) + len(own))]
     descendant_texts: set[str] = set()
     if node_overrides is not None:
@@ -1521,6 +1535,15 @@ def _running_subtree_text(
                 descendant_texts.add(node.text)
     for text in descendant_texts:
         if text not in running:
+            # Prefix-match fallback for stale descendant text (composition
+            # drift): same approach as the parent-node fallback above.
+            prefix_len = min(60, len(text))
+            prefix = text[:prefix_len]
+            start = running.find(prefix)
+            if start == -1:
+                continue
+            end = min(start + len(text), len(running))
+            spans.append((start, end))
             continue
         start = running.find(text)
         spans.append((start, start + len(text)))
