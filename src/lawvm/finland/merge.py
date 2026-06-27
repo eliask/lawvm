@@ -2279,7 +2279,30 @@ def _merge_sparse_alakohta_replace_ir(
         labels = [normalized_label_key(c.label) for c in anchor_sparse_letters]
         prefix_labels = [chr(ord("a") + idx) for idx in range(len(labels))]
         if len(labels) >= 2 and labels == prefix_labels:
-            return None
+            # Hypothesis regression 2026-06-27: the contiguous-prefix guard
+            # over-rejects when ``amend_sub`` carries an OMISSION SIBLING after
+            # the anchor paragraph. The OMISSION sibling (typical of Finnish
+            # ``h alakohta`` drafting where the amend body cites only the
+            # touched subparagraphs and a tail-omission marker) signals that
+            # the amend's subsection-level silence on the remaining master
+            # subparagraphs means "preserve them" (sparse merge), not "drop
+            # them wholesale" — the master's non-prefix subparagraphs MUST be
+            # preserved (§0 over-retention-safe direction).
+            #
+            # ONLY fall through to wholesale-replace (return None → caller
+            # takes the regular replace path that drops the master's stale
+            # extra subparagraphs, par test_replace_full_item_payload_retires_
+            # stale_nested_subparagraph_tail at tests/test_fi_apply.py:12562)
+            # when amend_sub has NO sibling OMISSION — i.e. the amend fully
+            # replaces the anchor paragraph (carries the new full prefix set
+            # + the master's stale extras must retire).
+            amend_sub_has_omission_sibling = any(
+                _is_omission_ir(c)
+                for c in amend_sub.children
+                if c is not anchor
+            )
+            if not amend_sub_has_omission_sibling:
+                return None
     sparse_letters: List[IRNode] = list(anchor_sparse_letters)
     if not sparse_letters:
         sparse_letters = [
