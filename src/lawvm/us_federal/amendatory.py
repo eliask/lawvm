@@ -1785,10 +1785,22 @@ def _resolve_target(
 # Hoisted per AGENTS.md §2.4 backtracking discipline and routed through
 # compile_classifier_regex (AGENTS.md §2.4 safety lint + prefilter).
 _IS_REPEALED_PROSE_RE = compile_classifier_regex(
-    r"\bis\s+repealed\b",
+    r"\bis\s+repealed\b|\bby\s+repealing\b",
     re.IGNORECASE,
     classifier_id="us_amendatory_is_repealed_prose",
 )
+
+
+# Formatting-only amendment shapes: "moving X ems to the left/right",
+# "aligning the margin of ...", "indenting appropriately". These change
+# the OLRC rendering, NOT the statutory text — LawVM's text-level op set
+# has no INDENT. They are correctly held out as a named typed finding
+# (per AGENTS.md §2.1) rather than falling to us_amendatory_unrecognized_form.
+_FORMATTING_ONLY_RE = re.compile(
+    r"\bmoving\b.{0,200}?\bems?\b|\baligning\s+the\s+margin\b|\bindenting\s+(?:the\s+)?(?:margins?\s+)?appropriately\b",
+    re.IGNORECASE,
+)
+FORMATTING_ONLY_FINDING_RULE_ID = "us_amendatory_formatting_only_not_text_representable"
 
 
 def _classify_action(actions: list[str], raw_text: str) -> str:
@@ -1827,7 +1839,7 @@ def _classify_action(actions: list[str], raw_text: str) -> str:
         "redesignat" in lowered and not (has_strike or has_insert)
     ):
         return "redesignate"
-    if ("amend" in has and "to read" in lowered) or "to read as follows" in lowered:
+    if ("amend" in has and "to read" in lowered) or "to read as follows" in lowered or "reads as follows" in lowered:
         return "amend_to_read"
     if has_insert and has_anchor and not has_strike:
         if _END_PUNCT_INSERT_RE.search(raw_text) is not None:
@@ -1835,8 +1847,15 @@ def _classify_action(actions: list[str], raw_text: str) -> str:
         return "insert_after"
     if "add" in has and "at the end" in lowered:
         return "add_at_end"
+    if ("add" in lowered and ("the following" in lowered or "at the end" in lowered)) or "adding at the end" in lowered:
+        return "add_at_end"
     if "add" in has or "insert" in has:
         return "add_at_end"
+    # Formatting-only amendments (ems/margin moves, indenting) change the OLRC
+    # rendering, NOT the statutory text. LawVM's text-level op set has no INDENT;
+    # the instruction is correctly held out as a typed finding per §2.1.
+    if _FORMATTING_ONLY_RE.search(lowered) is not None:
+        return "formatting_only"
     return "unknown"
 
 
@@ -3102,6 +3121,13 @@ def _lower_instruction(
     elif family == "repeal":
         op = _make_op(StructuralAction.REPEAL, rule_id=RULE_REPEAL)
         witness_rule_id = RULE_REPEAL
+    elif family == "formatting_only":
+        finding = _finding(
+            FORMATTING_ONLY_FINDING_RULE_ID,
+            "amendment is a formatting-only directive (margin/ems move, indenting) "
+            "that changes the OLRC rendering, not the statutory text; LawVM's "
+            "text-level op set has no INDENT",
+        )
     elif family == "redesignate":
         pair = _redesignate_destination(raw_text, address)
         range_pairs = None if pair is not None else _redesignate_range(raw_text, address)

@@ -260,6 +260,11 @@ _US_RULE_SPECS: Dict[str, str] = {
         "A 'strike <anchor> and all that follows' instruction is an open-ended tail "
         "deletion not representable as a bounded text patch."
     ),
+    "us_amendatory_formatting_only_not_text_representable": (
+        "A 'moving X ems to the left/right' or 'aligning the margin' or 'indenting "
+        "appropriately' formatting directive changes the OLRC rendering, not the "
+        "statutory text; LawVM's text-level op set has no INDENT."
+    ),
     "us_amendatory_through_tail_strike_not_section_representable": (
         "A 'strike <anchor> and all that follows through <end>' instruction deletes a "
         "bounded span, not a simple first-occurrence text replace."
