@@ -22,6 +22,7 @@ from lawvm.core.branch_projection import BranchImpactProjection, branch_impact_p
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.execution_authorization import ExecutionAuthorization
 from lawvm.finland.proof_surface_row_helpers import field as _field
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 if TYPE_CHECKING:
     from lawvm.finland.he_branch_parser import HEParsedBranch
@@ -216,7 +217,7 @@ def _he_branch_proposed_op_row(op: Any) -> dict[str, Any]:
         authorization_rule_id="fi_he_branch_proposal_surface_only",
         owner_phase="surface_parse",
         strict_disposition="record",
-        quirks_disposition="record",
+        quirks_disposition=QuirksDisposition.RECORD,
         validator_status="not_validated_for_replay_promotion",
         required_proofs=_HE_BRANCH_REQUIRED_PROOFS,
         safe_default="record_as_future_law_diagnostic_without_replay_promotion",
@@ -261,7 +262,7 @@ def _he_branch_finding_row(finding: Any) -> dict[str, Any]:
         authorization_rule_id="fi_he_branch_finding_surface_only",
         owner_phase=owner_phase,
         strict_disposition=str(_field(finding, "strict_disposition", "record") or "record"),
-        quirks_disposition="record",
+        quirks_disposition=QuirksDisposition.RECORD,
         validator_status="not_validated_for_replay_promotion",
         required_proofs=_HE_BRANCH_REQUIRED_PROOFS,
         safe_default="record_finding_and_preserve_uncertainty",

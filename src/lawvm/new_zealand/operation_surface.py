@@ -33,6 +33,7 @@ from lawvm.core.target_resolution import (
 from lawvm.new_zealand.acquisition import open_farchive
 from lawvm.new_zealand.dependencies import latest_xml_locator_for_work
 from lawvm.new_zealand.source_tree import NZHistoryWitness, NZSourceDocument, NZSourceNode, parse_archived_work_latest
+from lawvm.core.quirks_disposition import QuirksDisposition, coerce_quirks_disposition
 
 
 NZ_OPERATION_EFFECT_BLOCKED_RULE_ID = "nz_operation_surface_effect_lowering_not_implemented"
@@ -855,7 +856,7 @@ def _finding(
         reason=reason,
         blocking=blocking,
         strict_disposition="block" if blocking else "warn",
-        quirks_disposition="skip_with_finding" if blocking else "warn",
+        quirks_disposition=QuirksDisposition.SKIP_WITH_FINDING if blocking else QuirksDisposition.WARN,
         row_id=row_id,
         source_xml_id=source_xml_id,
         detail=detail,
@@ -900,7 +901,7 @@ def _target_resolution_evidence(
         scope_confidence=scope_confidence or (SCOPE_CONFIDENCE_FALLBACK if resolution_status == TARGET_RECOVERED else ""),
         blocking=blocking,
         strict_disposition="block" if blocking else "warn",
-        quirks_disposition="skip_with_finding" if blocking else "warn",
+        quirks_disposition=QuirksDisposition.SKIP_WITH_FINDING if blocking else QuirksDisposition.WARN,
         detail={
             "jurisdiction_status": candidate.target_address_status,
             "target_surface_status": row.target_surface_status,
@@ -936,7 +937,7 @@ def _operation_evidence_row(
         evidence_status=CorpusRowStatus.UNSUPPORTED,
         blocking=True,
         strict_disposition="block",
-        quirks_disposition="record_witness_only",
+        quirks_disposition=QuirksDisposition.RECORD_WITNESS_ONLY,
         finding_ids=finding_ids,
         detail={
             "reason": NZ_OPERATION_EFFECT_BLOCKED_RULE_ID,
@@ -970,7 +971,7 @@ def _finding_evidence_row(report: NZOperationSurfaceReport, finding: dict[str, A
         related_row_ids=(row_id,) if row_id else (),
         blocking=bool(finding.get("blocking", False)),
         strict_disposition=str(finding.get("strict_disposition", "")),
-        quirks_disposition=str(finding.get("quirks_disposition", "")),
+        quirks_disposition=coerce_quirks_disposition(finding.get("quirks_disposition", QuirksDisposition.UNSET)),
         evidence={
             "row_id": row_id,
             "source_xml_id": str(finding.get("source_xml_id", "")),

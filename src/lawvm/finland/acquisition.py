@@ -21,6 +21,7 @@ from lawvm.finland.metadata import (
     get_operative_body_repeal_candidate_from_tree,
 )
 from lawvm.finland.scope import fi_statute_citation_spans, restrict_sec1_fallback_to_parent
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 _OPERATIVE_BODY_TAGS = {
     "section",
@@ -75,7 +76,7 @@ class AcquisitionDiagnostic:
     strict_profile: str
     blocking: bool
     strict_disposition: str
-    quirks_disposition: str
+    quirks_disposition: QuirksDisposition
 
 
 @dataclass(frozen=True)
@@ -150,7 +151,7 @@ def operative_lane_selection_evidence(result: AmendmentAcquisitionResult) -> dic
         attempts=attempts,
         blocking=False,
         strict_disposition="record",
-        quirks_disposition="record",
+        quirks_disposition=QuirksDisposition.RECORD,
         detail=selection_detail,
     ).to_diagnostic_detail()
 
@@ -576,7 +577,7 @@ def build_amendment_acquisition_result(
                 strict_profile=strict_profile.name if strict_profile is not None else "",
                 blocking=True,
                 strict_disposition="block",
-                quirks_disposition="record",
+                quirks_disposition=QuirksDisposition.RECORD,
             )
         )
     if post_routing_sec1_blocked:
@@ -590,7 +591,7 @@ def build_amendment_acquisition_result(
                 strict_profile=strict_profile.name if strict_profile is not None else "",
                 blocking=True,
                 strict_disposition="block",
-                quirks_disposition="record",
+                quirks_disposition=QuirksDisposition.RECORD,
             )
         )
     if body_lead_pre_routing_blocked:
@@ -604,7 +605,7 @@ def build_amendment_acquisition_result(
                 strict_profile=strict_profile.name if strict_profile is not None else "",
                 blocking=True,
                 strict_disposition="block",
-                quirks_disposition="record",
+                quirks_disposition=QuirksDisposition.RECORD,
             )
         )
     if preamble_body_lead_combine_blocked:
@@ -618,7 +619,7 @@ def build_amendment_acquisition_result(
                 strict_profile=strict_profile.name if strict_profile is not None else "",
                 blocking=True,
                 strict_disposition="block",
-                quirks_disposition="record",
+                quirks_disposition=QuirksDisposition.RECORD,
             )
         )
 

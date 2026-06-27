@@ -144,6 +144,7 @@ from lawvm.core.verification_contracts import (
     VerifySummary,
     current_text_verification_matrix_from_mapping,
 )
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 
 def test_execution_authorization_allows_explicit_replay_authorized_rows() -> None:
@@ -3696,7 +3697,7 @@ def test_corpus_operation_evidence_row_to_dict_preserves_unsupported_status() ->
         evidence_status=CorpusRowStatus.UNSUPPORTED,
         blocking=True,
         strict_disposition="block",
-        quirks_disposition="record_unsupported",
+        quirks_disposition=QuirksDisposition.RECORD_UNSUPPORTED,
         finding_ids=("open_law_expire_lifecycle_not_replayed",),
     )
 
@@ -3716,7 +3717,7 @@ def test_corpus_finding_evidence_row_to_dict_is_json_friendly() -> None:
         phase="lifecycle",
         message="recorded",
         strict_disposition="block",
-        quirks_disposition="record",
+        quirks_disposition=QuirksDisposition.RECORD,
         blocking=True,
         evidence={"path": ("a", "b")},
     )
@@ -3743,7 +3744,7 @@ def test_evidence_contracts_freeze_detail_lanes() -> None:
         evidence_status=CorpusRowStatus.UNSUPPORTED,
         blocking=True,
         strict_disposition="block",
-        quirks_disposition="record",
+        quirks_disposition=QuirksDisposition.RECORD,
         detail=op_detail,
     )
     finding_evidence = {"path": ["a", "b"]}
@@ -3755,7 +3756,7 @@ def test_evidence_contracts_freeze_detail_lanes() -> None:
         phase="parse",
         message="recorded",
         strict_disposition="record",
-        quirks_disposition="record",
+        quirks_disposition=QuirksDisposition.RECORD,
         evidence=finding_evidence,
     )
 
@@ -3795,7 +3796,7 @@ def test_corpus_operation_evidence_row_rejects_invalid_construction() -> None:
             evidence_status=CorpusRowStatus.UNSUPPORTED,
             blocking=True,
             strict_disposition="block",
-            quirks_disposition="record",
+            quirks_disposition=QuirksDisposition.RECORD,
         )
 
 
@@ -3825,7 +3826,7 @@ def test_corpus_finding_evidence_row_rejects_invalid_construction() -> None:
             phase="P1",
             message="bad",
             strict_disposition="record",
-            quirks_disposition="record",
+            quirks_disposition=QuirksDisposition.RECORD,
         )
 
 
@@ -3856,7 +3857,7 @@ def test_evidence_rule_ids_extracts_stable_detail_rule_ids() -> None:
         source_artifact_id="act_public_2020_1",
         evidence_status=CorpusRowStatus.ACCEPTED,
         strict_disposition="candidate_only",
-        quirks_disposition="candidate_only",
+        quirks_disposition=QuirksDisposition.CANDIDATE_ONLY,
         finding_ids=("nz_existing_finding",),
         detail={
             "reason": "candidate canonical effect emitted but not replayed",
@@ -3891,7 +3892,7 @@ def test_evidence_rule_ids_allows_stable_reason_rule_ids() -> None:
         evidence_status=CorpusRowStatus.UNSUPPORTED,
         blocking=True,
         strict_disposition="block",
-        quirks_disposition="record",
+        quirks_disposition=QuirksDisposition.RECORD,
         detail={"reason": "starter.unsupported.v1"},
     )
 

@@ -36,6 +36,7 @@ from lawvm.finland.references.eu_reference import (
 from lawvm.finland.references.sections import (
     coordinated_member_paths_from_ref_surface,
 )
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 _AKN_NS = 'http://docs.oasis-open.org/legaldocml/ns/akn/3.0'
 _FX_NS  = 'http://data.finlex.fi/schema/finlex'
@@ -122,7 +123,7 @@ class CrossRefDiagnostic:
     target_section: str = ""
     blocking: bool = False
     strict_disposition: str = "record"
-    quirks_disposition: str = "record"
+    quirks_disposition: QuirksDisposition = QuirksDisposition.RECORD
 
     def as_detail(self) -> dict[str, object]:
         return {

@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Mapping, Protocol, Sequence, TypeVar
 
 from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 T = TypeVar("T")
 
@@ -141,7 +142,7 @@ def source_version_date_window_diagnostic_detail(
         reason=reason,
         blocking=False,
         strict_disposition="record",
-        quirks_disposition="record",
+        quirks_disposition=QuirksDisposition.RECORD,
         requested_version_date=window.requested_version_date,
         truth_claim=window.truth_claim,
         replay_claims=window.replay_claims,
@@ -171,7 +172,7 @@ def source_version_change_window_diagnostic_detail(
         reason=reason,
         blocking=False,
         strict_disposition="record",
-        quirks_disposition="record",
+        quirks_disposition=QuirksDisposition.RECORD,
         requested_version_date=window.requested_version_date,
         truth_claim=window.truth_claim,
         replay_claims=window.replay_claims,

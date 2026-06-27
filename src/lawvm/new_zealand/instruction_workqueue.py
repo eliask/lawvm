@@ -41,6 +41,7 @@ from lawvm.new_zealand.text_comparison import (
     normalized_nz_inline_contains,
     normalized_nz_inline_occurrence_count,
 )
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 
 class NZWorkQueueStatus(StrEnum):
@@ -662,7 +663,7 @@ def _workqueue_evidence_row(
             evidence_status=CorpusRowStatus.SKIPPED,
             blocking=False,
             strict_disposition="candidate_handled_elsewhere",
-            quirks_disposition="candidate_handled_elsewhere",
+            quirks_disposition=QuirksDisposition.CANDIDATE_HANDLED_ELSEWHERE,
             detail=_workqueue_evidence_detail(row, reason="repeal candidate is owned by effect-candidates surface"),
         )
     reason = (
@@ -681,7 +682,7 @@ def _workqueue_evidence_row(
         evidence_status=CorpusRowStatus.UNSUPPORTED,
         blocking=True,
         strict_disposition="block",
-        quirks_disposition="record_instruction_workqueue",
+        quirks_disposition=QuirksDisposition.RECORD_INSTRUCTION_WORKQUEUE,
         detail=_workqueue_evidence_detail(row, reason=reason),
     )
 

@@ -31,6 +31,7 @@ from lawvm.finland.ops import AmendmentOp
 from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.temporal_rewrites import _rewrite_lo_op_source_expiry
 from lawvm.finland.vts import VtsSkippedTarget
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 
 RecordProcessFinding = Callable[..., Finding]
@@ -66,7 +67,7 @@ class RouteRejectionDisposition:
     family: str = "source_routing"
     phase: str = "process_muutoslaki.route_rejection"
     strict_disposition: str = "block"
-    quirks_disposition: str = "skip_with_finding"
+    quirks_disposition: QuirksDisposition = QuirksDisposition.SKIP_WITH_FINDING
 
     def as_detail(self, extra: Mapping[str, object] | None = None) -> dict[str, object]:
         detail: dict[str, object] = {

@@ -25,6 +25,7 @@ from lawvm.core.ir import IRNode, IRStatute, LegalOperation
 from lawvm.core.ir_helpers import ir_statute_from_dict
 from lawvm.core.semantic_types import FacetKind, IRNodeKind, StructuralAction
 from lawvm.core.source_lane import SourceLaneSelectionEvidence, source_lane_attempt_from_mapping
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 JsonObject = dict[str, Any]
 JsonObjectList = list[JsonObject]
@@ -1478,7 +1479,7 @@ def _record_se_official_artifacts_diagnostic(
                 selected_locator=pdf_url or locator,
                 blocking=blocking,
                 strict_disposition="block" if blocking else "record",
-                quirks_disposition="record",
+                quirks_disposition=QuirksDisposition.RECORD,
                 attempts=tuple(source_lane_attempt_from_mapping(row) for row in pdf_source_attempts),
                 detail=detail,
             ).to_diagnostic_detail()

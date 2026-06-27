@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Mapping, NamedTuple
 
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
+from lawvm.core.quirks_disposition import QuirksDisposition
 from lawvm.core.semantic_types import StructuralAction
 from lawvm.uk_legislation.execution_authorization import (
     uk_execution_authorization_from_semantic_claim_validation,
@@ -5426,7 +5427,11 @@ def _validation_row(
         matched_work_item_id = _optional_string(workqueue_row, "work_item_id")
     owner_phase = _manual_claim_owner_phase(row, workqueue_row)
     strict_disposition = "block" if validator_status in _REJECTED_STATUSES else "record"
-    quirks_disposition = strict_disposition if validator_status in _REJECTED_STATUSES else "record"
+    quirks_disposition = (
+        QuirksDisposition.BLOCK
+        if validator_status in _REJECTED_STATUSES
+        else QuirksDisposition.RECORD
+    )
     authorization = uk_execution_authorization_from_semantic_claim_validation(
         validator_status=validator_status,
         owner_phase=owner_phase,

@@ -11,6 +11,7 @@ from lawvm.contracts import ArtifactEnvelope, ProcessingStatus
 from lawvm.core.ir import IRStatute, LegalAddress, ProvisionTimeline
 from lawvm.core.phase_result import Finding, OBLIGATION_ROLE, OBSERVATION_ROLE
 from lawvm.core.provenance import MigrationEvent
+from lawvm.core.quirks_disposition import QuirksDisposition
 from lawvm.core.stage_result import (
     EMPTY_EVIDENCE,
     NEUTRAL_AUTHORITY,
@@ -315,8 +316,8 @@ class TimelineIssue:
         return "block" if self.blocking else "record"
 
     @property
-    def quirks_disposition(self) -> Literal["record"]:
-        return "record"
+    def quirks_disposition(self) -> QuirksDisposition:
+        return QuirksDisposition.RECORD
 
     def to_jsonable_dict(self) -> dict[str, object]:
         """Return the stable wire shape for this timeline issue."""

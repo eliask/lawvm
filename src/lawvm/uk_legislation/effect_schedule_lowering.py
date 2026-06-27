@@ -72,6 +72,7 @@ from lawvm.uk_legislation.witnesses import (
     UKLoweredOperationWitness,
     UKProvisionExtractionWitness,
 )
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 
 _UK_SCHEDULE_LIST_ENTRY_TABLE_ROWS_RULE_ID = "uk_effect_schedule_list_entry_table_rows_lowered"
@@ -460,7 +461,7 @@ def _try_lower_schedule_words_before_table_substitution(
                     "ordered_labels": list(ordered_labels),
                     "deferred_to_base_target": False,
                     "strict_disposition": "record",
-                    "quirks_disposition": "skip",
+                    "quirks_disposition": QuirksDisposition.SKIP,
                 },
             )
             return UKScheduleBatchLoweringResult(handled=True)
@@ -491,7 +492,7 @@ def _try_lower_schedule_words_before_table_substitution(
                 "ordered_labels": list(ordered_labels),
                 "deferred_to_base_target": True,
                 "strict_disposition": "record",
-                "quirks_disposition": "skip",
+                "quirks_disposition": QuirksDisposition.SKIP,
             },
         )
         return UKScheduleBatchLoweringResult(handled=True)

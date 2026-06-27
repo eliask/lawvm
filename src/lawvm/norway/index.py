@@ -21,6 +21,7 @@ from lawvm.norway.sources import (
     resolve_no_source_path,
 )
 from lawvm.replay_adjudication import CompileAdjudication
+from lawvm.core.quirks_disposition import QuirksDisposition, coerce_quirks_disposition
 
 NO_ACQUISITION_DUPLICATE_LOGICAL_LOCATOR = "no_acquisition_duplicate_logical_locator"
 
@@ -320,7 +321,7 @@ def _no_index_duplicate_logical_locator_diagnostic(
         ),
         blocking=True,
         strict_disposition="block",
-        quirks_disposition="select_first_identical" if identical_payloads else "block",
+        quirks_disposition=QuirksDisposition.SELECT_FIRST_IDENTICAL if identical_payloads else QuirksDisposition.BLOCK,
         source_id=logical_id,
         locator=locator,
         duplicate_count=len(artifacts),
@@ -399,7 +400,7 @@ def _no_duplicate_logical_locator_source_lane_evidence(
         ),
         blocking=True,
         strict_disposition="block",
-        quirks_disposition="select_first_identical" if identical_payloads else "block",
+        quirks_disposition=QuirksDisposition.SELECT_FIRST_IDENTICAL if identical_payloads else QuirksDisposition.BLOCK,
         detail={
             "logical_id": logical_id,
             "logical_locator": locator,
@@ -419,7 +420,7 @@ def _no_index_unmapped_member_diagnostic(
         reason="Norway Lovtidend XML member filename could not be mapped to a law or amendment source id",
         blocking=True,
         strict_disposition="block",
-        quirks_disposition="record",
+        quirks_disposition=QuirksDisposition.RECORD,
         source_id="",
         locator="",
         archive=artifact.source_name,
@@ -441,7 +442,7 @@ def _no_index_skipped_artifact_diagnostic(
         reason=reason,
         blocking=True,
         strict_disposition="block",
-        quirks_disposition="record",
+        quirks_disposition=QuirksDisposition.RECORD,
         source_id=artifact.logical_id,
         locator=artifact.locator,
         archive=artifact.source_name,
@@ -465,7 +466,7 @@ def _no_index_parser_adjudication_diagnostic(
         reason=adjudication.message,
         blocking=bool(detail.get("blocking", True)),
         strict_disposition=str(detail.get("strict_disposition") or "block"),
-        quirks_disposition=str(detail.get("quirks_disposition") or "record"),
+        quirks_disposition=coerce_quirks_disposition(detail.get("quirks_disposition") or QuirksDisposition.RECORD),
         kind=adjudication.kind,
         source_id=adjudication.source_statute,
         op_id=adjudication.op_id,

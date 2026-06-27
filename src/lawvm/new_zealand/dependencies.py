@@ -20,6 +20,7 @@ from lxml import etree
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.source_lane import SourceLaneAttempt, SourceLaneSelectionEvidence
 from lawvm.new_zealand.acquisition import open_farchive
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 
 class ArchiveReader(Protocol):
@@ -241,7 +242,7 @@ def _latest_xml_locator_candidate_diagnostic(
         reason=reason,
         blocking=True,
         strict_disposition="block",
-        quirks_disposition="record",
+        quirks_disposition=QuirksDisposition.RECORD,
         work_id=work_id,
         version_id=version_id,
         version_locator=version_locator,
@@ -265,7 +266,7 @@ def _latest_xml_locator_candidate_diagnostic(
             ),
             blocking=True,
             strict_disposition="block",
-            quirks_disposition="record",
+            quirks_disposition=QuirksDisposition.RECORD,
         ).to_diagnostic_detail(),
     )
     diagnostic["detail"] = {"reason_code": reason_code, **local_detail}

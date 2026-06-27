@@ -24,6 +24,7 @@ from lawvm.finland.target_selector_facades import (
 )
 from lawvm.finland.references.freetext_addresses import scan_legal_addresses
 from lawvm.finland.citation_routing import _head_genitive_title
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 if TYPE_CHECKING:
     from lawvm.core.compile_result import StrictProfile
@@ -82,7 +83,7 @@ class VtsSkippedTarget:
     family: str = "unsupported_target"
     blocking: bool = False
     strict_disposition: str = "record"
-    quirks_disposition: str = "record"
+    quirks_disposition: QuirksDisposition = QuirksDisposition.RECORD
 
     def as_detail(self) -> dict[str, object]:
         return {
@@ -118,7 +119,7 @@ class VtsSourceDiagnostic:
     family: str = "source_pathology"
     blocking: bool = False
     strict_disposition: str = "record"
-    quirks_disposition: str = "record"
+    quirks_disposition: QuirksDisposition = QuirksDisposition.RECORD
 
     def as_detail(self) -> dict[str, object]:
         return {

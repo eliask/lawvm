@@ -13,6 +13,7 @@ from typing import Any, Mapping
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.execution_authorization import ExecutionAuthorization
 from lawvm.core.frozen_values import freeze_mapping
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 
 _SOURCE_COMPLETENESS_REQUIRED_PROOFS: tuple[str, ...] = (
@@ -145,7 +146,7 @@ class SourceCompletenessStatus:
             authorization_rule_id=f"{self.row_id}:source-chain-completeness",
             owner_phase=self.owner_phase,
             strict_disposition="record" if self.status == "complete" else "block",
-            quirks_disposition="record",
+            quirks_disposition=QuirksDisposition.RECORD,
             validator_status="source_chain_completeness_counts_only",
             required_proofs=_SOURCE_COMPLETENESS_REQUIRED_PROOFS,
             safe_default=self.safe_default,

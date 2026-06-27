@@ -55,6 +55,7 @@ from lawvm.finland.johto_scope_mentions import (
 )
 from lawvm.finland.ops import AmendmentOp, OpType, _lo_with_path_update
 from lawvm.finland.target_selector_facades import fi_section_target, replace_target
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 _SPARSE_OSALTA_ROW_OMISSION_RULE_ID = "fi.sparse_osalta_row_omission_repeal.v1"
 _SPARSE_OSALTA_ROW_OMISSION_TAG = "sparse_osalta_row_omission_repeal"
@@ -1260,7 +1261,7 @@ def _sparse_osalta_recovery_finding(
             "named_row_targets": (clause.row_target,),
             "raw_text": clause.raw_text,
             "strict_disposition": "record",
-            "quirks_disposition": "record",
+            "quirks_disposition": QuirksDisposition.RECORD,
         },
     )
 

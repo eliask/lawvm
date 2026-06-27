@@ -29,6 +29,7 @@ from lawvm.core.ir import (
     TextPatchSpec,
 )
 from lawvm.core.semantic_types import FacetKind, LabelAction, MetaClauseKind, StructuralAction
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 
 # ============================================================================
@@ -312,7 +313,7 @@ class ClauseAstLoweringDiagnostic:
     reason: str
     blocking: bool
     strict_disposition: str
-    quirks_disposition: str
+    quirks_disposition: QuirksDisposition
     scope: Optional[LegalAddress] = None
     detail: Optional[str] = None
 
@@ -638,7 +639,7 @@ def _unsupported_generic_lowering_diagnostic(
         reason="Clause AST node has no generic LegalOperation lowering at this seam",
         blocking=True,
         strict_disposition="block",
-        quirks_disposition="record",
+        quirks_disposition=QuirksDisposition.RECORD,
         scope=scope,
         detail=_unsupported_generic_lowering_detail(node),
     )

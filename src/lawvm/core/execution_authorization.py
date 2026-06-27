@@ -10,6 +10,7 @@ from typing import Any, Mapping, cast
 
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.frozen_values import freeze_mapping
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 if TYPE_CHECKING:
     from lawvm.core.evidence_kernel import AuthorizationResult
@@ -36,7 +37,7 @@ class ExecutionAuthorization:
     authorization_rule_id: str
     owner_phase: str
     strict_disposition: str
-    quirks_disposition: str = "record"
+    quirks_disposition: QuirksDisposition = QuirksDisposition.RECORD
     validator_status: str = ""
     required_proofs: tuple[str, ...] = ()
     safe_default: str = ""
@@ -126,7 +127,7 @@ def execution_authorization_from_kernel_result(
     owner_phase: str,
     authorization_rule_id: str = "",
     strict_disposition: str = "",
-    quirks_disposition: str = "record",
+    quirks_disposition: QuirksDisposition = QuirksDisposition.RECORD,
     validator_status: str = "",
     replay_authorized_when_policy_satisfied: bool = False,
     required_proofs: tuple[str, ...] = (),

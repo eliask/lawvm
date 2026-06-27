@@ -32,6 +32,7 @@ from lawvm.norway.sources import (
     resolve_no_source_path,
 )
 from lawvm.norway.sources import NOReplayStatus
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 _NO_VERIFY_WS_RE = re.compile(r"\s+")
 _NO_VERIFY_PUNCT_RE = re.compile(r"\s+([,.;:])")
@@ -285,7 +286,7 @@ def _no_base_year(base_id: str) -> tuple[int, dict | None]:
             "base_year": 0,
             "blocking": False,
             "strict_disposition": "warn",
-            "quirks_disposition": "record",
+            "quirks_disposition": QuirksDisposition.RECORD,
         }
     return int(segments[2][:4]), None
 

@@ -84,6 +84,7 @@ from lawvm.finland.johtolause.surface_model import (
     TargetKind,
     VerbKind,
 )
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 
 FI_TAIL_UNRESOLVED_RULE_ID = "fi.johtolause.tail_unresolved.v1"
@@ -338,7 +339,7 @@ class SurfaceResolutionResidual:
     family: str
     reason_code: str
     strict_disposition: str
-    quirks_disposition: str
+    quirks_disposition: QuirksDisposition
     node: SurfaceNode
     detail: dict[str, object]
 
@@ -1165,7 +1166,7 @@ def _record_tail_unresolved(
             family="target_resolution_recovery",
             reason_code=reason_code,
             strict_disposition="block",
-            quirks_disposition="record",
+            quirks_disposition=QuirksDisposition.RECORD,
             node=node,
             detail=detail,
         )

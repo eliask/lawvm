@@ -25,6 +25,7 @@ from lxml import etree, html
 
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.norway.sources import open_no_archive, resolve_no_source_path
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 STATSRAD_SOURCE_NAME = "regjeringen.no/offisielt-fra-statsrad"
 
@@ -584,7 +585,7 @@ def _statsrad_event_artifact_diagnostic(
     phase: str = "parse",
     blocking: bool = True,
     strict_disposition: str | None = None,
-    quirks_disposition: str = "record",
+    quirks_disposition: QuirksDisposition = QuirksDisposition.RECORD,
     **extra: Any,
 ) -> dict[str, Any]:
     return diagnostic_detail(
@@ -631,7 +632,7 @@ def _statsrad_extract_missing_artifact_diagnostic(
         record_missing=record_missing,
         blocking=True,
         strict_disposition="block",
-        quirks_disposition="record",
+        quirks_disposition=QuirksDisposition.RECORD,
     )
 
 

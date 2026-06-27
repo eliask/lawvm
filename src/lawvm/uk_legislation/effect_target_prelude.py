@@ -67,6 +67,7 @@ from lawvm.uk_legislation.whole_act_text_patch import (
     simple_whole_act_all_occurrences_substitution,
 )
 from lawvm.uk_legislation.xml_helpers import _tag
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 
 _UK_ENACTED_SCHEDULE_TABLE_ROW_PART_TARGET_RULE_ID = (
@@ -564,7 +565,7 @@ def reject_external_or_partial_whole_act_scope(
                     "effect_type": effect_type,
                     "action": action,
                     "strict_disposition": "block",
-                    "quirks_disposition": "apply",
+                    "quirks_disposition": QuirksDisposition.APPLY,
                 },
             )
             return False

@@ -44,6 +44,7 @@ from lawvm.finland.consolidated_artifacts import (
     extract_consolidated_xml_identity,
 )
 from lawvm.finland.helpers import _parse_iso_date
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 BASE_URL = "https://opendata.finlex.fi/finlex/avoindata/v1"
 _USER_AGENT = "LawVM/0.1 (+https://lawvm.org)"
@@ -487,7 +488,7 @@ def _append_sync_latest_pit_diagnostic(
             reason=reason,
             blocking=blocking,
             strict_disposition="block" if blocking else "record",
-            quirks_disposition="record",
+            quirks_disposition=QuirksDisposition.RECORD,
             statute_id=statute_id,
             pit_version=pit_version,
             locator=locator,

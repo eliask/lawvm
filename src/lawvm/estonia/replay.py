@@ -51,6 +51,7 @@ from lawvm.estonia.fetch import (
     fetch_rt_xml,
     open_rt_archive,
 )
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 # Expected, non-fatal failure modes of a best-effort RT source fetch: the act
 # does not resolve (fetch_rt_xml → RuntimeError "Failed to fetch: …"), or the
@@ -508,7 +509,7 @@ def _ee_rt_xml_source_lane_detail(
         ),
         blocking=blocking,
         strict_disposition="block" if blocking else "record",
-        quirks_disposition="record",
+        quirks_disposition=QuirksDisposition.RECORD,
     ).to_diagnostic_detail()
 
 

@@ -13,6 +13,7 @@ from typing import Any, Literal, Mapping
 
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.frozen_values import FrozenDict, freeze_mapping
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 
 TemporalResolutionStatus = Literal[
@@ -78,7 +79,7 @@ class TemporalResolutionEvidence:
     source_locator: str = ""
     authority_layer: str = ""
     strict_disposition: str = ""
-    quirks_disposition: str = "record"
+    quirks_disposition: QuirksDisposition = QuirksDisposition.RECORD
     detail: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:

@@ -30,6 +30,7 @@ from lawvm.new_zealand.operation_surface import build_operation_surface, classif
 from lawvm.new_zealand.payload_surface import build_payload_surface
 from lawvm.new_zealand.source_tree import parse_nz_source_document
 from lawvm.new_zealand.version_diff import diff_source_documents, previous_archived_xml_version_for_work
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 
 NZ_REPLAY_BLOCKED_RULE_ID = "nz_replay_canonical_effects_not_implemented"
@@ -1627,7 +1628,7 @@ def _finding(
         reason=reason,
         blocking=blocking,
         strict_disposition="block" if blocking else "warn",
-        quirks_disposition="skip_with_finding" if blocking else "warn",
+        quirks_disposition=QuirksDisposition.SKIP_WITH_FINDING if blocking else QuirksDisposition.WARN,
         work_id=work_id,
         locator=locator,
     )

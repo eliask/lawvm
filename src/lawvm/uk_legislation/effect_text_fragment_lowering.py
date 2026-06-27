@@ -135,6 +135,7 @@ from lawvm.uk_legislation.lowering_records import (
 )
 from lawvm.uk_legislation.uk_grafter import _clean_num
 from lawvm.uk_legislation.xml_helpers import _direct_structural_num, _text_content
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 
 _UK_EFFECT_WORD_SUBSTITUTION_ESCALATED_TO_STRUCTURAL_REPLACE_RULE_ID = (
@@ -776,7 +777,7 @@ def lower_uk_text_fragment_rewrite(
                 "target_leaf_kind": str(_addr_leaf_kind(target) or ""),
                 "target_leaf_label": str(_addr_leaf_label(target) or ""),
                 "strict_disposition": "block",
-                "quirks_disposition": "apply",
+                "quirks_disposition": QuirksDisposition.APPLY,
             },
         )
         return UKTextFragmentLowering(
@@ -936,7 +937,7 @@ def _table_column_parent_blocks_generic_at_end_insert(
                     "target": str(target),
                     "source_parent_instruction": parent_instruction[:500],
                     "strict_disposition": "block",
-                    "quirks_disposition": "block",
+                    "quirks_disposition": QuirksDisposition.BLOCK,
                     "required_proofs": (
                         "table_surface_identity",
                         "row_or_column_boundary",
@@ -1642,7 +1643,7 @@ def _flat_target_paragraph_substitution_payload(
             "payload_paragraph_label": payload_label,
             "replacement_preview": replacement[:500],
             "strict_disposition": "block",
-            "quirks_disposition": "apply",
+            "quirks_disposition": QuirksDisposition.APPLY,
         },
     )
     return {

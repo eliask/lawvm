@@ -27,6 +27,7 @@ from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.ir_helpers import kind_str
 from lawvm.core.source_lane import SourceLaneAttempt, SourceLaneSelectionEvidence
 from lawvm.norway.grafter import lovdata_amendment_filename_to_id, lovdata_filename_to_id
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_NORWAY_DIR = _REPO_ROOT / "data" / "norway"
@@ -709,7 +710,7 @@ def load_no_current_law_ids(
                         ),
                         blocking=True,
                         strict_disposition="block",
-                        quirks_disposition="record",
+                        quirks_disposition=QuirksDisposition.RECORD,
                         statute_id=artifact.logical_id,
                         locator=artifact.locator,
                         source_name=artifact.source_name,
@@ -753,7 +754,7 @@ def load_no_current_law_titles(
                         reason="Norway current-law title extraction skipped an artifact because statute parsing failed.",
                         blocking=True,
                         strict_disposition="block",
-                        quirks_disposition="record",
+                        quirks_disposition=QuirksDisposition.RECORD,
                         statute_id=artifact.logical_id,
                         locator=artifact.locator,
                         source_name=artifact.source_name,
@@ -837,7 +838,7 @@ def _no_ingest_duplicate_locator_source_lane_evidence(
         ),
         blocking=True,
         strict_disposition="block",
-        quirks_disposition="select_existing_identical" if identical_payloads else "block",
+        quirks_disposition=QuirksDisposition.SELECT_EXISTING_IDENTICAL if identical_payloads else QuirksDisposition.BLOCK,
         detail={
             "logical_id": artifact.logical_id,
             "logical_locator": artifact.locator,
@@ -898,7 +899,7 @@ def ingest_no_public_archives(
                 reason="Norway Lovdata XML member filename could not be mapped to a legal source id",
                 blocking=True,
                 strict_disposition="block",
-                quirks_disposition="record",
+                quirks_disposition=QuirksDisposition.RECORD,
                 kind=kind,
                 locator=artifact.locator,
                 logical_id=artifact.logical_id,
@@ -929,7 +930,7 @@ def ingest_no_public_archives(
                 ),
                 blocking=True,
                 strict_disposition="block",
-                quirks_disposition="select_existing_identical" if identical_payloads else "block",
+                quirks_disposition=QuirksDisposition.SELECT_EXISTING_IDENTICAL if identical_payloads else QuirksDisposition.BLOCK,
                 kind=kind,
                 locator=artifact.locator,
                 logical_id=artifact.logical_id,

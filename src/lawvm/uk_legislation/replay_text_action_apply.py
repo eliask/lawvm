@@ -56,6 +56,7 @@ from lawvm.uk_legislation.text_rewrite_fragments import (
 from lawvm.uk_legislation.whole_act_text_patch import (
     UK_SIMPLE_WHOLE_ACT_ALL_OCCURRENCES_SUBSTITUTION_RULE_ID,
 )
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 
 _UK_REPLAY_TABLE_ENTRY_INLINE_UNRESOLVED_RULE_ID = "uk_replay_table_entry_inline_text_insertion_unresolved"
@@ -68,7 +69,7 @@ def _text_patch_detail(
     *,
     blocking: bool,
     strict_disposition: str | None = None,
-    quirks_disposition: str = "record",
+    quirks_disposition: QuirksDisposition = QuirksDisposition.RECORD,
     **extra: Any,
 ) -> dict[str, Any]:
     detail = uk_replay_action_target_detail(
@@ -413,7 +414,7 @@ class UKReplayTextActionApplyMixin:
                 replacement,
                 blocking=False,
                 strict_disposition="block",
-                quirks_disposition="apply",
+                quirks_disposition=QuirksDisposition.APPLY,
                 family="whole_act_text_patch_elaboration",
                 replacement_count=replacement_count,
                 changed_paths=replaced_paths_tuple,
@@ -631,7 +632,7 @@ class UKReplayTextActionApplyMixin:
                             text_patch,
                             replacement,
                             blocking=False,
-                            quirks_disposition="apply",
+                            quirks_disposition=QuirksDisposition.APPLY,
                             selector=dict(table_cell_selector),
                             **table_cells_result.detail,
                             family="source_table_elaboration",
@@ -714,7 +715,7 @@ class UKReplayTextActionApplyMixin:
                                 text_patch,
                                 replacement,
                                 blocking=False,
-                                quirks_disposition="apply",
+                                quirks_disposition=QuirksDisposition.APPLY,
                                 selector=dict(table_cell_selector),
                                 **table_cell_result.detail,
                                 **symbolic_detail,

@@ -17,6 +17,7 @@ from urllib.request import Request, urlopen
 
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.source_lane import SourceLaneAttempt, SourceLaneSelectionEvidence
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 
 BASE_URL = "http://publications.europa.eu/resource"
@@ -769,7 +770,7 @@ def _manifest_request_failure_row(
             ),
             blocking=True,
             strict_disposition="block",
-            quirks_disposition="record",
+            quirks_disposition=QuirksDisposition.RECORD,
         ).to_diagnostic_detail(),
     )
 

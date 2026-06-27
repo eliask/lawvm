@@ -20,6 +20,7 @@ from lawvm.eu.grafter import parse_eu_regulation_ir
 from lawvm.eu.ops_parser import EUOpsParser, EUOpsParserDiagnostic
 from lawvm.eu.cellar import NoticeRequest, _request_notice
 from lawvm.replay_adjudication import CompileAdjudication
+from lawvm.core.quirks_disposition import QuirksDisposition, coerce_quirks_disposition
 
 
 # ---------------------------------------------------------------------------
@@ -51,7 +52,7 @@ class EUPipelineDiagnostic:
     exception_type: str
     blocking: bool = True
     strict_disposition: str = "block"
-    quirks_disposition: str = "record"
+    quirks_disposition: QuirksDisposition = QuirksDisposition.RECORD
     detail: dict[str, object] = field(default_factory=dict)
 
     def as_detail(self) -> dict[str, object]:
@@ -472,7 +473,7 @@ def _eu_pipeline_diagnostic_from_cellar_row(celex: str, row: dict[str, Any]) -> 
         exception_type=str(detail.get("reason_code") or row.get("kind") or "cellar_diagnostic"),
         blocking=bool(row.get("blocking", True)),
         strict_disposition=str(row.get("strict_disposition") or "block"),
-        quirks_disposition=str(row.get("quirks_disposition") or "record"),
+        quirks_disposition=coerce_quirks_disposition(row.get("quirks_disposition") or QuirksDisposition.RECORD),
         detail={
             "cellar_source": str(row.get("source") or ""),
             "cellar_detail": dict(detail),

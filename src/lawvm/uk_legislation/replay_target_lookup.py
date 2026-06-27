@@ -43,6 +43,7 @@ from lawvm.uk_legislation.source_context import _source_parent_range_label
 from lawvm.uk_legislation.source_parent_payloads import UK_SOURCE_PARENT_SUBSTITUTION_RANGE_PAYLOAD_RULE_ID as _UK_SOURCE_PARENT_SUBSTITUTION_RANGE_PAYLOAD_RULE_ID
 from lawvm.uk_legislation.target_anchors import uk_match_kind_label
 from lawvm.uk_legislation.uk_grafter import _clean_num
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 
 _UK_REPLAY_SCHEDULE_ITEM_TARGET_FROM_PARENT_SUBSTITUTION_RULE_ID = (
@@ -351,7 +352,7 @@ class UKReplayTargetLookupMixin:
                                         if resolved_parent is not None
                                         else "",
                                         family="target_resolution_recovery",
-                                        quirks_disposition="apply",
+                                        quirks_disposition=QuirksDisposition.APPLY,
                                         target_resolution=TargetResolutionCoverage(
                                             rule_id=(
                                                 UK_REPLAY_SCHEDULE_PARTITION_TRANSPARENT_PARAGRAPH_RESOLVED_RULE_ID
@@ -383,7 +384,7 @@ class UKReplayTargetLookupMixin:
                                             ),
                                             blocking=False,
                                             strict_disposition="record",
-                                            quirks_disposition="apply",
+                                            quirks_disposition=QuirksDisposition.APPLY,
                                             detail={
                                                 "action": _action_name(target_resolution_op.action),
                                                 "op_id": target_resolution_op.op_id,
@@ -426,7 +427,7 @@ class UKReplayTargetLookupMixin:
                                                 paragraph_label=str(p_label),
                                                 wrapper_kind="p1group",
                                                 family="target_resolution_recovery",
-                                                quirks_disposition="apply",
+                                                quirks_disposition=QuirksDisposition.APPLY,
                                                 target_resolution=TargetResolutionCoverage(
                                                     rule_id=(
                                                         _UK_REPLAY_SCHEDULE_P1GROUP_PARAGRAPH_WRAPPER_RESOLVED_RULE_ID
@@ -454,7 +455,7 @@ class UKReplayTargetLookupMixin:
                                                     ),
                                                     blocking=False,
                                                     strict_disposition="record",
-                                                    quirks_disposition="apply",
+                                                    quirks_disposition=QuirksDisposition.APPLY,
                                                     detail={
                                                         "action": _action_name(target_resolution_op.action),
                                                         "op_id": target_resolution_op.op_id,
@@ -551,7 +552,7 @@ class UKReplayTargetLookupMixin:
                                                 scope_confidence=SCOPE_CONFIDENCE_FALLBACK,
                                                 blocking=False,
                                                 strict_disposition="block",
-                                                quirks_disposition="apply",
+                                                quirks_disposition=QuirksDisposition.APPLY,
                                                 detail={
                                                     "action": _action_name(target_resolution_op.action),
                                                     "op_id": target_resolution_op.op_id,
@@ -633,7 +634,7 @@ class UKReplayTargetLookupMixin:
                                                 scope_confidence=SCOPE_CONFIDENCE_FALLBACK,
                                                 blocking=True,
                                                 strict_disposition="block",
-                                                quirks_disposition="record",
+                                                quirks_disposition=QuirksDisposition.RECORD,
                                                 detail={
                                                     "action": _action_name(target_resolution_op.action),
                                                     "op_id": target_resolution_op.op_id,

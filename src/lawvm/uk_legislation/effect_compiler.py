@@ -98,6 +98,7 @@ from lawvm.uk_legislation.table_sources import (
     _uk_table_driven_fee_target_refinements,
     address_to_citation,
 )
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 
 _UK_EFFECT_FEE_TARGET_REFINEMENT_FAILED_RULE_ID = "uk_effect_fee_target_refinement_failed"
@@ -212,7 +213,7 @@ def _savings_qualified_structural_mutation_blocks_lowering(
             # test_savings_qualified_repeal_carries_strict_block_quirks_skip_disposition
             # per AGENTS.md §2.9 liveness.
             "strict_disposition": "block",
-            "quirks_disposition": "skip",
+            "quirks_disposition": QuirksDisposition.SKIP,
         },
     )
     return True
@@ -893,7 +894,7 @@ def _compile_effect_to_ir_ops_impl(
                     "failed_helper": _fee_refinement_failed_helper,
                     "exc_message": str(_fee_refinement_exc),
                     "strict_disposition": "block",
-                    "quirks_disposition": "apply",
+                    "quirks_disposition": QuirksDisposition.APPLY,
                 },
             )
     targets_str = refined_targets_str

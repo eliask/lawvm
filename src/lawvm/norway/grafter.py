@@ -42,6 +42,7 @@ from lawvm.core.semantic_types import (
     TextPatchKindEnum,
     structural_action_value,
 )
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 NO_PARSE_REPLACE_PROMOTED_TO_INSERT_FOR_RENUMBER = "no_parse_replace_promoted_to_insert_for_same_target_renumber"
 NO_PARSE_STRUCTURED_TARGET_REBOUND_FROM_LEAD = "no_parse_structured_target_rebound_from_lead"
@@ -2571,7 +2572,7 @@ def iter_no_document_change_ops(
                             phase="parse",
                             family="payload_normalization",
                             blocking=False,
-                            quirks_disposition="apply",
+                            quirks_disposition=QuirksDisposition.APPLY,
                             base_id=base_id,
                             source_doc=source_doc,
                             action=_no_action_value(action),

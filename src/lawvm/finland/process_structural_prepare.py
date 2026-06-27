@@ -17,6 +17,7 @@ from lawvm.finland.restructure_plan import (
     StructuralTransformPlan,
     build_restructure_plan,
 )
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 ReplayPrint = Callable[[str], None]
 
@@ -166,7 +167,7 @@ class ProcessStructuralPrepareContext:
                 "phase": "process_muutoslaki.structural_prepare",
                 "source_statute": self.amendment_id,
                 "strict_disposition": "inherit_chapter_seed_repair",
-                "quirks_disposition": "suppress_duplicate_apply",
+                "quirks_disposition": QuirksDisposition.SUPPRESS_DUPLICATE_APPLY,
                 "reason": (
                     "chapter body was already seeded from this amendment; "
                     "re-applying matching chapter op would duplicate or fail"
