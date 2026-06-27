@@ -8,7 +8,7 @@ from typing import Any, NamedTuple, Protocol
 from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.addressing import _uk_kind_value
-from lawvm.uk_legislation.mutable_ir import UKMutableNode, uk_replace_children
+from lawvm.uk_legislation.mutable_ir import UKMutableNode, uk_replace_children_cow
 from lawvm.uk_legislation.replay_records import (
     _append_uk_replay_adjudication,
     uk_replay_action_target_detail,
@@ -93,6 +93,12 @@ class _TableReplaySelf(Protocol):
     def _clear_eid_lookup_index(self) -> None: ...
 
     def _note_structure_mutation(self) -> None: ...
+
+    def _replace_ancestor_chain(
+        self,
+        old_node: UKMutableNode,
+        new_node: UKMutableNode,
+    ) -> bool: ...
 
     def _replace_node_in_statute(self, old_node: UKMutableNode, new_node: UKMutableNode) -> bool: ...
 
@@ -693,10 +699,13 @@ class UKReplayTableApplyMixin:
             strip_uk_identity_attrs_recursive(row)
         children = list(row_insert.table.children)
         children[row_insert.insert_index:row_insert.insert_index] = inserted_rows
-        uk_replace_children(row_insert.table, children)
+        # PR3 (audit XJUR-02 / AGENTS.md §2.3): CoW rebuild of the table + thread
+        # up to the statute root. No in-place mutation of ``row_insert.table.children``.
+        new_table = uk_replace_children_cow(row_insert.table, children)
+        self._replace_ancestor_chain(row_insert.table, new_table)
         _record_table_structure_splice(
             self,
-            container=row_insert.table,
+            container=new_table,
             helper="_insert_table_entry_row",
             outcome="table_rows_inserted",
             reason_code="source_owned_table_entry_selector",
@@ -790,10 +799,13 @@ class UKReplayTableApplyMixin:
         children = list(row_span.table.children)
         replaced_row_count = row_span.end_index - row_span.start_index
         children[row_span.start_index:row_span.end_index] = replacement_rows
-        uk_replace_children(row_span.table, children)
+        # PR3 (audit XJUR-02 / AGENTS.md §2.3): CoW rebuild of the table + thread
+        # up to the statute root. No in-place mutation of ``row_span.table.children``.
+        new_table = uk_replace_children_cow(row_span.table, children)
+        self._replace_ancestor_chain(row_span.table, new_table)
         _record_table_structure_splice(
             self,
-            container=row_span.table,
+            container=new_table,
             helper="_replace_table_entry_rows",
             outcome="table_rows_replaced",
             reason_code="source_owned_table_entry_selector",

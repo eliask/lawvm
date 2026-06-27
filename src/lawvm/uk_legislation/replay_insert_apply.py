@@ -19,9 +19,6 @@ from lawvm.uk_legislation.canonicalize import uk_find_body_predecessor_parent
 from lawvm.uk_legislation.mutable_ir import (
     UKMutableNode,
     UKMutableStatute,
-    uk_insert_child_sorted,
-    uk_insert_node_at_index,
-    uk_replace_children,
 )
 from lawvm.uk_legislation.ordering import _label_sort_key
 from lawvm.uk_legislation.provenance_notes import (
@@ -149,6 +146,27 @@ class _InsertReplaySelf(Protocol):
     def _record_supplement_inserted(self, node: UKMutableNode) -> None: ...
 
     def _insert_supplement_sorted(self, new_node: UKMutableNode) -> bool: ...
+
+    def _cow_insert_child_sorted_and_record(
+        self,
+        parent: UKMutableNode,
+        new_node: UKMutableNode,
+    ) -> bool: ...
+
+    def _cow_insert_child_at_index_and_record(
+        self,
+        parent: UKMutableNode,
+        idx: int,
+        new_node: UKMutableNode,
+    ) -> bool: ...
+
+    def _cow_replace_children_and_record(
+        self,
+        parent: UKMutableNode,
+        new_children: list[UKMutableNode],
+        *,
+        new_node: UKMutableNode,
+    ) -> bool: ...
 
     def _cached_exact_eid_lookup(self, eid: str) -> NodeLookupResult: ...
 
@@ -574,12 +592,12 @@ class UKReplayInsertApplyMixin:
                 return True
             new_node = _inherit_parent_local_eid(parent_node, new_node)
             replay._log(f"  EXECUTOR: inserting {new_node.kind} {new_node.label} at routed index {insert_idx}")
-            children = list(parent_node.children)
-            if not uk_insert_node_at_index(children, insert_idx, new_node):
-                return False
-            uk_replace_children(parent_node, children)
-            replay._record_child_inserted(parent_node, new_node)
-            return True
+            # PR3 (audit XJUR-02 / AGENTS.md §2.3): CoW insert at routed index
+            # + thread the rebuilt parent up to the statute root, replacing the
+            # in-place ``uk_insert_node_at_index + uk_replace_children`` mutation.
+            return replay._cow_insert_child_at_index_and_record(
+                parent_node, insert_idx, new_node
+            )
         if parent_node:
             if self._skip_insert_if_parent_already_has_target_child(
                 parent_node=parent_node,
@@ -592,10 +610,9 @@ class UKReplayInsertApplyMixin:
             replay._log(
                 f"  EXECUTOR: inserting {new_node.kind} {new_node.label} into {parent_node.kind} {parent_node.label}"
             )
-            inserted = uk_insert_child_sorted(parent_node, new_node)
-            if inserted:
-                replay._record_child_inserted(parent_node, new_node)
-            return inserted
+            # PR3 (audit XJUR-02 / AGENTS.md §2.3): CoW sorted-insert variant;
+            # rebuilds parent + threads up via ``_replace_ancestor_chain``.
+            return replay._cow_insert_child_sorted_and_record(parent_node, new_node)
 
         # Build parent address by dropping the last path segment.
         # Single-segment paths (e.g. section:2a) get parent = body/schedules directly,
@@ -621,10 +638,9 @@ class UKReplayInsertApplyMixin:
                 replay._log(
                     f"  EXECUTOR: inserting {new_node.kind} {new_node.label} into {p_node.kind} {p_node.label}"
                 )
-                inserted = uk_insert_child_sorted(p_node, new_node)
-                if inserted:
-                    replay._record_child_inserted(p_node, new_node)
-                return inserted
+                # PR3 (audit XJUR-02 / AGENTS.md §2.3): CoW sorted-insert
+                # variant; rebuilds parent + threads up to the statute root.
+                return replay._cow_insert_child_sorted_and_record(p_node, new_node)
         elif container == "schedule":
             # Single-segment schedule target: the target IS the schedule — insert payload into it,
             # but only when the payload is a part, chapter, or section (structural containers
@@ -660,10 +676,9 @@ class UKReplayInsertApplyMixin:
                     replay._log(
                         f"  EXECUTOR: inserting {new_node.kind} {new_node.label} into schedule {sch_node.label}"
                     )
-                    inserted = uk_insert_child_sorted(sch_node, new_node)
-                    if inserted:
-                        replay._record_child_inserted(sch_node, new_node)
-                    return inserted
+                    # PR3 (audit XJUR-02 / AGENTS.md §2.3): CoW sorted-insert
+                    # variant; rebuilds sch_node + threads up to the statute root.
+                    return replay._cow_insert_child_sorted_and_record(sch_node, new_node)
                 return False
         else:
             # Single-segment non-schedule target: prefer inserting after the
@@ -688,20 +703,18 @@ class UKReplayInsertApplyMixin:
                 replay._log(
                     f"  EXECUTOR: inserting {new_node.kind} {new_node.label} after body predecessor {pred_label}"
                 )
-                children: list[UKMutableNode] = list(pred_parent.children)
-                if not uk_insert_node_at_index(children, pred_idx + 1, new_node):
-                    return False
-                uk_replace_children(pred_parent, children)
-                replay._record_child_inserted(pred_parent, new_node)
-                return True
+                # PR3 (audit XJUR-02 / AGENTS.md §2.3): CoW insert-after-predecessor
+                # variant; rebuilds pred_parent + threads up to the statute root.
+                return replay._cow_insert_child_at_index_and_record(
+                    pred_parent, pred_idx + 1, new_node
+                )
 
             # No suitable predecessor exists in the body tree: fall back to a
             # true body-root insertion.
             replay._log(f"  EXECUTOR: inserting {new_node.kind} {new_node.label} into body (top-level)")
-            inserted = uk_insert_child_sorted(self.statute.body, new_node)
-            if inserted:
-                replay._record_child_inserted(self.statute.body, new_node)
-            return inserted
+            # PR3 (audit XJUR-02 / AGENTS.md §2.3): CoW sorted-insert variant
+            # against the body root; no in-place mutation of body.children.
+            return replay._cow_insert_child_sorted_and_record(self.statute.body, new_node)
 
         if "-" in target_eid:
             parent_eid = "-".join(target_eid.split("-")[:-1])
@@ -731,10 +744,9 @@ class UKReplayInsertApplyMixin:
                 new_node = _inherit_parent_local_eid(p_node, new_node)
                 replay._log(f"  EXECUTOR: inserting {new_node.kind} {new_node.label} into parent {parent_eid}")
                 parent_node = cast(UKMutableNode, p_node)
-                inserted = uk_insert_child_sorted(parent_node, new_node)
-                if inserted:
-                    replay._record_child_inserted(parent_node, new_node)
-                return inserted
+                # PR3 (audit XJUR-02 / AGENTS.md §2.3): CoW sorted-insert
+                # variant; rebuilds parent_node + threads up to the statute root.
+                return replay._cow_insert_child_sorted_and_record(parent_node, new_node)
 
         if container == "schedule" and len(target.path) > 1:
             replay._log(
@@ -764,12 +776,15 @@ class UKReplayInsertApplyMixin:
             )
             return False
         replay._log(f"  EXECUTOR: fallback inserting {new_node.kind} {new_node.label} into body")
+        # PR3 (audit XJUR-02 / AGENTS.md §2.3): CoW insertion at the body root
+        # or via the supplement-sorted path; both rebuild the parent (body or
+        # supplements list) without in-place mutation.
         if new_kind == "schedule":
             inserted = replay._insert_supplement_sorted(new_node)
         else:
-            inserted = uk_insert_child_sorted(self.statute.body, new_node)
-            if inserted:
-                replay._record_child_inserted(self.statute.body, new_node)
+            inserted = replay._cow_insert_child_sorted_and_record(
+                self.statute.body, new_node
+            )
         if not inserted:
             return False
         _append_uk_replay_adjudication(
@@ -912,11 +927,13 @@ class UKReplayInsertApplyMixin:
                 ),
             )
             return True
-        children = list(parent_node.children)
-        if not uk_insert_node_at_index(children, anchor_indexes[0] + 1, new_node):
+        # PR3 (audit XJUR-02 / AGENTS.md §2.3): CoW insert-after-anchor;
+        # rebuilds parent_node + threads up to the statute root. No in-place
+        # mutation of ``parent_node.children`` or ``uk_replace_children``.
+        if not replay._cow_insert_child_at_index_and_record(
+            parent_node, anchor_indexes[0] + 1, new_node
+        ):
             return False
-        uk_replace_children(parent_node, children)
-        replay._record_child_inserted(parent_node, new_node)
         _append_uk_replay_adjudication(
             replay.adjudications_out,
             kind="uk_replay_definition_child_structural_sibling_insert_applied",

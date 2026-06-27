@@ -15,7 +15,7 @@ from typing import Any, NamedTuple, Protocol
 from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.addressing import _uk_kind_value
-from lawvm.uk_legislation.mutable_ir import UKMutableNode, uk_replace_children
+from lawvm.uk_legislation.mutable_ir import UKMutableNode, uk_replace_children_cow
 from lawvm.uk_legislation.replay_records import (
     _append_uk_replay_adjudication,
     uk_replay_action_target_detail,
@@ -138,6 +138,12 @@ class _ScheduleListReplaySelf(Protocol):
 
     def _note_structure_mutation(self) -> None: ...
 
+    def _replace_ancestor_chain(
+        self,
+        old_node: UKMutableNode,
+        new_node: UKMutableNode,
+    ) -> bool: ...
+
     def _record_children_splice_mutation_event(
         self,
         *,
@@ -160,12 +166,22 @@ def _replace_schedule_list_children_with_event(
     reason_code: str,
     mark_structure_mutation: bool = True,
 ) -> None:
-    uk_replace_children(container, children)
+    # PR3 (audit XJUR-02 / AGENTS.md §2.3): copy-on-write splice. Build a new
+    # container with the supplied children, then thread the new container up to
+    # the statute root via ``_replace_ancestor_chain``. The chain helper clears
+    # the eID lookup index atomically; the structure mutation serial is bumped
+    # (and node-reference caches cleared) when ``mark_structure_mutation`` is
+    # True, matching the previous in-place semantics. The downstream
+    # ``_record_children_splice_mutation_event`` is given the NEW container so
+    # its ``_tree_path_for_mutable_node`` lookup resolves against the rebuilt
+    # tree rather than the detached OLD container reference.
+    new_container = uk_replace_children_cow(container, children)
+    if not self._replace_ancestor_chain(container, new_container):
+        return
     if mark_structure_mutation:
-        self._clear_eid_lookup_index()
         self._note_structure_mutation()
     self._record_children_splice_mutation_event(
-        container=container,
+        container=new_container,
         helper=helper,
         outcome=outcome,
         reason_code=reason_code,

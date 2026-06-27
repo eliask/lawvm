@@ -15,7 +15,6 @@ from lawvm.uk_legislation.canonicalize import uk_is_transparent_wrapper_kind, uk
 from lawvm.uk_legislation.mutable_ir import (
     UKMutableNode,
     UKMutableStatute,
-    uk_insert_child_sorted,
     uk_ir_node_kind,
 )
 from lawvm.uk_legislation.ordering import _label_sort_key
@@ -151,6 +150,12 @@ class UKReplayTargetDiagnosticsMixin:
         def _derive_target_eid(self, addr: LegalAddress) -> str: ...
 
         def _record_child_inserted(self, parent: UKMutableNode, node: UKMutableNode) -> None: ...
+
+        def _cow_insert_child_sorted_and_record(
+            self,
+            parent: UKMutableNode,
+            new_node: UKMutableNode,
+        ) -> bool: ...
 
         def _log(self, message: str) -> None: ...
 
@@ -742,9 +747,11 @@ class UKReplayTargetDiagnosticsMixin:
 
         if not str(new_node.attrs.get("eId") or new_node.attrs.get("id") or ""):
             new_node.attrs["eId"] = self._derive_target_eid(target)
-        if not uk_insert_child_sorted(parent_node, new_node):
+        # PR3 (audit XJUR-02 / AGENTS.md §2.3): CoW sorted-insert variant;
+        # rebuilds parent_node + threads up to the statute root without any
+        # in-place mutation of ``parent_node.children``.
+        if not self._cow_insert_child_sorted_and_record(parent_node, new_node):
             return False
-        self._record_child_inserted(parent_node, new_node)
         _append_uk_replay_adjudication(
             self.adjudications_out,
             kind="uk_replay_source_carried_structured_tail_substitution_recovered",
