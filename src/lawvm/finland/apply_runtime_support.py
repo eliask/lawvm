@@ -1079,6 +1079,8 @@ def _prefer_live_fold_section_snapshot_for_descendant_scoped_group(
         or not _group_has_descendant_scoped_snapshot_mutations(group_rops)
     ):
         return payload, payload_from_muutos_ir
+    if payload.attrs.get("lawvm_consumed_subsection_targets"):
+        return payload, payload_from_muutos_ir
 
     live_path = state.find_section_path(_norm_num_token(target_norm), target_chapter, target_part)
     if live_path is None:
@@ -2351,10 +2353,32 @@ def _emit_section_snapshot(
                     break
             return tuple(tokens) if len(tokens) == 6 else ()
 
+        def _rop_targets_this_section(rop: ResolvedOp) -> bool:
+            rop_section = _norm_num_token(rop.resolved_target_section_label or rop.target_norm)
+            if rop_section != normalized_target_norm:
+                return False
+            current_chapter = _norm_num_token(target_chapter or "")
+            rop_chapter = _norm_num_token(rop.resolved_target_scope_chapter_label or "")
+            if current_chapter and rop_chapter and rop_chapter != current_chapter:
+                return False
+            current_part = _norm_num_token(target_part or "")
+            rop_part = _norm_num_token(rop.resolved_target_scope_part_label or "")
+            if current_part and rop_part and rop_part != current_part:
+                return False
+            return True
+
+        if section_payload.attrs.get("lawvm_consumed_subsection_targets"):
+            return None
+
         source_text = " ".join(str(op_source.raw_text or "").split())
         target_prefixes_by_label: dict[str, set[str]] = {}
+        target_replacement_children_by_label: dict[str, tuple[IRNode, ...]] = {}
+        target_replacement_text_by_label: dict[str, str] = {}
+        target_texts_by_label: dict[str, set[str]] = {}
         target_token_signatures_by_label: dict[str, set[tuple[str, ...]]] = {}
         for rop in group_rops:
+            if not _rop_targets_this_section(rop):
+                continue
             if not rop.is_replace_action or not _snapshot_targets_subsection_only(rop):
                 continue
             target_label = _snapshot_subsection_target_label(rop)
@@ -2363,29 +2387,38 @@ def _emit_section_snapshot(
             amend_sub = rop.resolved_amend_sub_ir()
             if amend_sub is None or amend_sub.kind is not IRNodeKind.SUBSECTION:
                 continue
-            prefix = _signature_prefix(_norm_text(amend_sub))
+            target_text = _norm_text(amend_sub)
+            target_key = _norm_num_token(target_label)
+            target_texts_by_label.setdefault(target_key, set()).add(target_text)
+            target_replacement_children_by_label[target_key] = tuple(amend_sub.children)
+            target_replacement_text_by_label[target_key] = target_text
+            prefix = _signature_prefix(target_text)
             if not prefix:
-                token_signature = _leading_token_signature(_norm_text(amend_sub))
+                token_signature = _leading_token_signature(target_text)
             else:
-                token_signature = _leading_token_signature(_norm_text(amend_sub))
-                target_prefixes_by_label.setdefault(_norm_num_token(target_label), set()).add(prefix)
+                token_signature = _leading_token_signature(target_text)
+                target_prefixes_by_label.setdefault(target_key, set()).add(prefix)
             if token_signature:
                 target_token_signatures_by_label.setdefault(
-                    _norm_num_token(target_label),
+                    target_key,
                     set(),
                 ).add(token_signature)
-        if not target_prefixes_by_label and not target_token_signatures_by_label:
+        if not target_prefixes_by_label and not target_token_signatures_by_label and not target_texts_by_label:
             return None
 
         changed = False
         new_section_children: list[IRNode] = []
         removed = 0
-        target_labels = set(target_prefixes_by_label) | set(target_token_signatures_by_label)
+        consumed_target_labels: set[str] = set()
+        target_labels = set(target_prefixes_by_label) | set(target_token_signatures_by_label) | set(target_texts_by_label)
         for subsection in section_payload.children:
             if subsection.kind is not IRNodeKind.SUBSECTION or not subsection.label:
                 new_section_children.append(subsection)
                 continue
             subsection_key = _norm_num_token(subsection.label)
+            if subsection_key in consumed_target_labels:
+                changed = True
+                continue
             if subsection_key in target_labels:
                 new_section_children.append(subsection)
                 continue
@@ -2401,27 +2434,53 @@ def _emit_section_snapshot(
             }
 
             new_subsection_children: list[IRNode] = []
+            subsection_changed = False
             for child in subsection.children:
                 child_text = _norm_text(child)
-                paragraph_child = child.kind is IRNodeKind.PARAGRAPH
-                carried_target_text = (
+                if any(child_text in texts for texts in target_texts_by_label.values()):
+                    new_subsection_children.append(child)
+                    continue
+                carried_child_kind = child.kind in {
+                    IRNodeKind.CONTENT,
+                    IRNodeKind.PARAGRAPH,
+                    IRNodeKind.WRAP_UP,
+                }
+                strict_prefix_labels = {
+                    label
+                    for label, texts in target_texts_by_label.items()
+                    for target_text in texts
+                    if target_text != child_text
+                    and len(child_text) >= 40
+                    and target_text.startswith(child_text)
+                }
+                strict_target_prefix = bool(strict_prefix_labels)
+                carried_target_text = strict_target_prefix or (
                     include_content_prefix
                     and child.kind is IRNodeKind.CONTENT
                     and any(child_text.startswith(prefix) for prefix in target_prefixes)
                 ) or (
-                    paragraph_child
+                    carried_child_kind
                     and _leading_token_signature(child_text) in target_token_signatures
                 )
                 if (
                     carried_target_text
                     and child_text
-                    and child_text not in source_text
+                    and (child_text not in source_text or strict_target_prefix)
                 ):
                     removed += 1
                     changed = True
+                    subsection_changed = True
+                    if strict_target_prefix and child.kind in {IRNodeKind.CONTENT, IRNodeKind.WRAP_UP}:
+                        consumed_label = sorted(strict_prefix_labels)[0]
+                        replacement_children = target_replacement_children_by_label.get(consumed_label, ())
+                        if not replacement_children:
+                            replacement_text = target_replacement_text_by_label.get(consumed_label, "")
+                            replacement_children = (IRNode(kind=IRNodeKind.CONTENT, text=replacement_text),)
+                        new_subsection_children.extend(replacement_children)
+                        consumed_target_labels.add(consumed_label)
                     continue
                 new_subsection_children.append(child)
-            if len(new_subsection_children) == len(subsection.children):
+            if not subsection_changed:
                 new_section_children.append(subsection)
                 continue
             new_section_children.append(
@@ -2449,11 +2508,14 @@ def _emit_section_snapshot(
                     payload_sibling_count=removed,
                 )
             )
+        attrs = dict(section_payload.attrs)
+        if consumed_target_labels:
+            attrs["lawvm_consumed_subsection_targets"] = ",".join(sorted(consumed_target_labels))
         return IRNode(
             kind=section_payload.kind,
             label=section_payload.label,
             text=section_payload.text,
-            attrs=dict(section_payload.attrs),
+            attrs=attrs,
             children=tuple(new_section_children),
         )
 
@@ -2481,6 +2543,8 @@ def _emit_section_snapshot(
         subsection payloads over that lossy section observation.
         """
         if section_payload.kind is not IRNodeKind.SECTION:
+            return None
+        if section_payload.attrs.get("lawvm_consumed_subsection_targets"):
             return None
 
         def _targets_current_section(rop: ResolvedOp) -> bool:

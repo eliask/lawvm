@@ -3861,6 +3861,77 @@ def test_emit_section_snapshot_drops_collapsed_moment_paragraphs_for_explicit_su
     )
 
 
+def test_emit_section_snapshot_drops_collapsed_content_prefix_for_explicit_subsection_replace() -> None:
+    old_second = "Oppivelvollisuus voidaan keskeyttää pysyvän syyn vuoksi."
+    old_third = "Päätös keskeyttämisestä tehdään hakemuksesta."
+    old_fourth = "Koulutuksen järjestäjä päättää keskeyttämisestä."
+    new_third = (
+        "Päätös keskeyttämisestä tehdään hakemuksesta. Koulutuksen järjestäjän "
+        "tulee ilmoittaa oppivelvolliselle toistaiseksi keskeyttämisen seurauksesta."
+    )
+    final_section = _sec(
+        "7",
+        IRNode(kind=IRNodeKind.NUM, text="7 §"),
+        _sub(
+            "1",
+            _intro("Oppivelvollisella on oikeus keskeyttää määräajaksi:"),
+            _para("1", "sairauden vuoksi;"),
+            _para("2", "ulkomaan oleskelun vuoksi."),
+            _content(old_second),
+            _content(old_third),
+            IRNode(kind=IRNodeKind.WRAP_UP, text=old_fourth),
+        ),
+        _sub("3", _content(new_third)),
+    )
+    lo_ops: list[LegalOperation] = []
+    amendment_subsection = _sub("3", _content(new_third))
+    rop = dc_replace(
+        ResolvedOp.from_amendment_op(
+            _op(op_type=OpType.REPLACE, target_section="7", target_paragraph=3),
+            muutos_ir=_sec("7", amendment_subsection),
+            cross_ir=None,
+            target_unit_kind="section",
+            target_norm="7",
+            target_chapter=None,
+            target_address=LegalAddress(path=(("section", "7"), ("subsection", "3"))),
+            op_source=OperationSource(
+                statute_id="2022/715",
+                raw_text=f"muutetaan 7 §:n 3 momentti {new_third}",
+            ),
+        ),
+        amend_sub_ir=amendment_subsection,
+    )
+    pathologies: list[SourcePathology] = []
+
+    _emit_section_snapshot(
+        _make_state(_body(final_section)),
+        "section",
+        "7",
+        None,
+        None,
+        [rop],
+        lo_ops,
+        "2022/715",
+        "explicit subsection replacement",
+        _DATE,
+        _DATE,
+        source_pathologies_out=pathologies,
+    )
+
+    section_snapshot = next(op for op in lo_ops if op.op_id == "snapshot_section_7")
+    assert section_snapshot.payload is not None
+    rendered = irnode_to_text(section_snapshot.payload)
+    assert rendered.count("Päätös keskeyttämisestä tehdään hakemuksesta.") == 1
+    assert old_second in rendered
+    assert old_fourth in rendered
+    assert rendered.index(new_third) < rendered.index(old_fourth)
+    assert any(
+        pathology.detail.get("recovery_kind")
+        == "section_snapshot_drop_carried_target_subsection_text"
+        for pathology in pathologies
+    )
+
+
 def test_emit_section_snapshot_does_not_double_shift_rebased_subsection_replace() -> None:
     base_section = _sec(
         "32",
