@@ -27,7 +27,7 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.payload_surface import TargetUnitKind
 from lawvm.finland.ops import AmendmentOp, FailedOp, OpType, _op_target_subsection_label
 from lawvm.finland.payload_normalize import SubsectionSlotAssignmentResult, SubsectionSlotMap
-from lawvm.finland.helpers import _norm_num_token
+from lawvm.finland.helpers import _is_omission_ir, _norm_num_token
 from lawvm.finland.replay_notices import replay_print
 
 DEBUG = False  # set to True for per-constraint debug output
@@ -559,6 +559,32 @@ class _FilterCtx:
             child.kind == IRNodeKind.HEADING for child in payload.children
         )
 
+    def source_payload_has_sparse_omission_single_subsection_for(
+        self,
+        op: AmendmentOp,
+    ) -> bool:
+        """Return whether the source body shows ``omission + one subsection``.
+
+        This is source-model evidence, not a prepared-payload surface predicate:
+        downstream payload preparation may remove the omission marker before op
+        constraints run.
+        """
+        if self.source_model is None or not op.target_cols.target_section:
+            return False
+        lookup = self.source_model.lookup_payload_ir(
+            op.target_cols.target_unit_kind,
+            _norm_num_token(op.target_cols.target_section),
+            target_chapter=op.target_cols.target_chapter,
+            target_part=op.target_cols.target_part,
+        )
+        payload = lookup.payload_ir
+        if payload is None:
+            return False
+        return (
+            sum(1 for child in payload.children if child.kind == IRNodeKind.SUBSECTION) == 1
+            and any(_is_omission_ir(child) for child in payload.children)
+        )
+
     @property
     def is_lang_variant(self) -> bool:
         if self._is_lang_variant is None:
@@ -851,7 +877,7 @@ def _c_language_variant_replace_shadowed_by_sparse_insert(
     muutos_children = ctx.muutos_ir.children if ctx.muutos_ir is not None else []
     amend_subs = [child for child in muutos_children if child.kind == IRNodeKind.SUBSECTION]
     has_omission = any(child.kind == IRNodeKind.OMISSION for child in muutos_children)
-    if has_omission and len(amend_subs) == 1:
+    if (has_omission and len(amend_subs) == 1) or ctx.source_payload_has_sparse_omission_single_subsection_for(op):
         return False, "language-variant replace shadowed by sparse insert payload"
     return True, ""
 

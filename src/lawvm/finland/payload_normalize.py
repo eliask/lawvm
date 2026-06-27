@@ -4106,11 +4106,17 @@ def _normalize_item_like_target(
     def _sub_text(sub: IRNode) -> str:
         return (sub.text or " ".join(c.text or "" for c in sub.children)).strip()
 
-    def _is_flat_numbered_item_sub(sub: IRNode) -> bool:
+    def _flat_numbered_item_label(sub: IRNode) -> str | None:
         if any(c.kind is IRNodeKind.PARAGRAPH for c in sub.children):
-            return False
+            return None
         # lawvm-regex: owning_parser P-item-prefix flat-numbered-item predicate over IR sub text; lexer-shaped
-        return re.match(r"^(\d+[a-zA-Z]*)\)", _sub_text(sub)) is not None
+        match = re.match(r"^(\d+[a-zA-Z]*)\)", _sub_text(sub))
+        if match is None:
+            return None
+        return _norm_num_token(match.group(1))
+
+    def _is_flat_numbered_item_sub(sub: IRNode) -> bool:
+        return _flat_numbered_item_label(sub) is not None
 
     if (
         op.target_cols.target_unit_kind != "section"
@@ -4130,6 +4136,15 @@ def _normalize_item_like_target(
     if not any(c.kind is IRNodeKind.PARAGRAPH for c in master_subsecs[0].children):
         return op
     amend_subs = [c for c in muutos_ir.children if c.kind is IRNodeKind.SUBSECTION] if muutos_ir is not None else []
+    if (
+        op.op_type == OpType.INSERT
+        and not op.target_cols.target_item
+        and not any(
+            _flat_numbered_item_label(sub) == str(op.target_cols.target_paragraph)
+            for sub in amend_subs
+        )
+    ):
+        return op
     if len(amend_subs) > 1 and not all(_is_flat_numbered_item_sub(sub) for sub in amend_subs):
         return op
     if amend_subs and any(
