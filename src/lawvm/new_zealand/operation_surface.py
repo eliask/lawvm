@@ -37,6 +37,98 @@ from lawvm.new_zealand.source_tree import NZHistoryWitness, NZSourceDocument, NZ
 
 NZ_OPERATION_EFFECT_BLOCKED_RULE_ID = "nz_operation_surface_effect_lowering_not_implemented"
 
+# Per-readiness-bucket distinct effect_blocking_rule_id mapping. AGENTS §1.10:
+# every missing-mapping / unknown-key / blocked-state that would otherwise
+# fall to a generic "lane not implemented" diagnostic MUST surface its own
+# distinct named rule_id so a benchmark reading only effect_blocking_rule_id
+# can attribute WHY lowering blocked without re-reading the readiness field.
+# The legacy single constant ``NZ_OPERATION_EFFECT_BLOCKED_RULE_ID`` is
+# preserved as the forward-compatible fallback for any future readiness
+# bucket not in this map -- a new bucket never silently re-derives to a
+# generic blocker, and surfaces as an explicitly-typed "not_implemented"
+# diagnostic that the catalog already documents.
+_EFFECT_BLOCKING_RULE_ID_BY_READINESS: dict[str, str] = {
+    "ready_for_amending_act_payload_extraction": (
+        "nz_operation_surface_effect_lowering_lane_unimplemented"
+    ),
+    "blocked_amending_work_resolved_unarchived": (
+        "nz_operation_surface_effect_lowering_amending_work_unarchived"
+    ),
+    "blocked_non_structural_facet": (
+        "nz_operation_surface_effect_lowering_non_structural_facet"
+    ),
+    "blocked_target_address_blocked_non_current_skeleton_node": (
+        "nz_operation_surface_effect_lowering_target_address_non_current_skeleton_node"
+    ),
+    "blocked_target_hint_unparsed": (
+        "nz_operation_surface_effect_lowering_target_hint_unparsed"
+    ),
+    "blocked_target_hint_missing": (
+        "nz_operation_surface_effect_lowering_target_hint_missing"
+    ),
+    "blocked_citation_unparsed": (
+        "nz_operation_surface_effect_lowering_citation_unparsed"
+    ),
+    "blocked_citation_missing": (
+        "nz_operation_surface_effect_lowering_citation_missing"
+    ),
+    "blocked_operation_missing": (
+        "nz_operation_surface_effect_lowering_operation_missing"
+    ),
+    "blocked_operation_unclassified": (
+        "nz_operation_surface_effect_lowering_operation_unclassified"
+    ),
+    "blocked_editorial_change_non_canonical": (
+        "nz_operation_surface_effect_lowering_editorial_change_non_canonical"
+    ),
+    "blocked_duplicate_source_path": (
+        "nz_operation_surface_effect_lowering_duplicate_source_path"
+    ),
+    "blocked_same_label_rebirth_duplicate": (
+        "nz_operation_surface_effect_lowering_same_label_rebirth_duplicate"
+    ),
+}
+
+
+def _effect_blocking_rule_id_for_readiness(readiness_status: str) -> str:
+    """Derive the per-row effect_blocking_rule_id from the lowering readiness.
+
+    A benchmark reading only ``effect_blocking_rule_id`` MUST be able to
+    attribute WHY the lowering blocked without re-reading the readiness
+    field (AGENTS §1.10 -- distinct named diagnostic, no broad exception
+    swallowing). The legacy single constant
+    ``NZ_OPERATION_EFFECT_BLOCKED_RULE_ID`` is the forward-compatible
+    fallback for an unrecognised readiness bucket so a new bucket never
+    silently re-derives to a guessed blocker.
+    """
+    return _EFFECT_BLOCKING_RULE_ID_BY_READINESS.get(
+        readiness_status, NZ_OPERATION_EFFECT_BLOCKED_RULE_ID
+    )
+
+
+def _effect_status_for_readiness(readiness_status: str) -> str:
+    """Derive the per-row effect_status from the lowering readiness.
+
+    Two honest families:
+
+    * ``ready_for_amending_act_payload_extraction`` ->
+      ``ready_for_lowering`` -- the row IS ready to lower; the lowering
+      lane that consumes ready rows is itself unimplemented. Distinguishes
+      "I'm ready" (3257 rows on the smoke corpus 2026-06-27) from "I'm
+      blocked" (978 rows) -- previously both collapsed under the single
+      legacy ``blocked_effect_lowering`` value.
+    * ``blocked_*`` -> ``blocked_<reason>`` -- the row IS blocked at the
+      readiness stage; the reason is preserved in the suffix.
+    * Unknown readiness buckets -> legacy ``blocked_effect_lowering`` so a
+      new bucket never silently re-derives a guessed status, surfacing as
+      the cataloged legacy status instead.
+    """
+    if readiness_status == "ready_for_amending_act_payload_extraction":
+        return "ready_for_lowering"
+    if readiness_status.startswith("blocked_"):
+        return readiness_status
+    return "blocked_effect_lowering"
+
 # Closed vocabulary for a parsed target hint (the amended-provision label parse).
 NZTargetHintStatus = Literal[
     "missing",
@@ -197,6 +289,10 @@ class NZOperationSurfaceReport:
             "present" if row.amending_provision_hrefs else "missing" for row in self.rows
         )
         readiness_counts = Counter(row.lowering_readiness_status for row in self.rows)
+        effect_status_counts = Counter(row.effect_status for row in self.rows)
+        effect_blocking_rule_id_counts = Counter(
+            row.effect_blocking_rule_id for row in self.rows
+        )
         return {
             "work_id": self.work_id,
             "version_id": self.version_id,
@@ -211,8 +307,24 @@ class NZOperationSurfaceReport:
             "dependency_status_counts": dict(sorted(dependency_counts.items())),
             "amending_provision_href_status_counts": dict(sorted(amending_provision_href_counts.items())),
             "lowering_readiness_status_counts": dict(sorted(readiness_counts.items())),
+            # Per-row distinct effect_blocking_rule_id distribution (AGENTS §1.10
+            # distinct-named-diagnostic + §2.9 typed-accounting). The legacy
+            # single-rule_id pin ``effect_blocking_rule_id`` field (kept for
+            # back-compat with consumers reading the work-summary) reflects the
+            # DOMINANT rule_id across the work's rows; the per-row distribution
+            # in ``effect_blocking_rule_id_counts`` is the new load-bearing
+            # signal so a benchmark can distinguish ready-vs-blocked and which
+            # readiness bucket each row blocked under.
+            "effect_status_counts": dict(sorted(effect_status_counts.items())),
+            "effect_blocking_rule_id_counts": dict(
+                sorted(effect_blocking_rule_id_counts.items())
+            ),
             "effect_lowering_status": "blocked",
-            "effect_blocking_rule_id": NZ_OPERATION_EFFECT_BLOCKED_RULE_ID,
+            "effect_blocking_rule_id": (
+                effect_blocking_rule_id_counts.most_common(1)[0][0]
+                if effect_blocking_rule_id_counts
+                else NZ_OPERATION_EFFECT_BLOCKED_RULE_ID
+            ),
             "findings": len(self.findings),
         }
 
@@ -399,6 +511,10 @@ def build_operation_surface(
             amending_provisions=witness.amending_provisions,
             amending_provision_hrefs=witness.amending_provision_hrefs,
             witness_text=witness.text,
+            effect_status=_effect_status_for_readiness(readiness_status),
+            effect_blocking_rule_id=_effect_blocking_rule_id_for_readiness(
+                readiness_status
+            ),
         )
         rows.append(row)
         if operation_status != "classified":
@@ -949,7 +1065,7 @@ def _operation_evidence_row(
         quirks_disposition="record_witness_only",
         finding_ids=finding_ids,
         detail={
-            "reason": NZ_OPERATION_EFFECT_BLOCKED_RULE_ID,
+            "reason": row.effect_blocking_rule_id,
             "operation_status": row.operation_status,
             "target_surface_status": row.target_surface_status,
             "target_hint_status": row.target_hint.target_hint_status,
@@ -1060,6 +1176,8 @@ def main(args: Any) -> None:
     )
     print(f"operation_family_counts={summary['operation_family_counts']}")
     print(f"lowering_readiness_status_counts={summary['lowering_readiness_status_counts']}")
+    print(f"effect_status_counts={summary['effect_status_counts']}")
+    print(f"effect_blocking_rule_id_counts={summary['effect_blocking_rule_id_counts']}")
     print(f"effect_blocking_rule_id={summary['effect_blocking_rule_id']}")
     if args.summary_only:
         return

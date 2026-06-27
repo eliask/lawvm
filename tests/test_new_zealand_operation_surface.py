@@ -168,6 +168,47 @@ def test_build_operation_surface_extracts_history_witness_rows() -> None:
     assert report.rows[1].target_hint.label == "1"
     assert report.rows[1].target_address_candidate.address == "section:1"
     assert report.rows[1].target_address_candidate.target_address_status == "candidate"
+
+    # Per-row derived effect_blocking_rule_id + effect_status (AGENTS §1.10).
+    # The legacy constant default was `nz_operation_surface_effect_lowering_
+    # not_implemented` for EVERY row -- the per-row derivation now emits a
+    # distinct rule_id per readiness bucket so a benchmark reading only
+    # effect_blocking_rule_id can attribute WHY lowering blocked without
+    # re-reading lowering_readiness_status.
+    # row 0: blocked_non_structural_facet (the Title is a document-level
+    # facet, NOT a substantive section).
+    assert report.rows[0].effect_status == "blocked_non_structural_facet"
+    assert report.rows[0].effect_blocking_rule_id == (
+        "nz_operation_surface_effect_lowering_non_structural_facet"
+    )
+    # row 1: ready_for_amending_act_payload_extraction (Section 1 amended --
+    # the witness IS ready; the downstream canonical-effect lowering LANE
+    # is the unimplemented bit).
+    assert report.rows[1].effect_status == "ready_for_lowering"
+    assert report.rows[1].effect_blocking_rule_id == (
+        "nz_operation_surface_effect_lowering_lane_unimplemented"
+    )
+    # Work-summary emits per-row distributions so a benchmark can count by
+    # rule_id (and by effect_status), not just the legacy dominant-rule_id.
+    assert report.summary()["effect_status_counts"] == {
+        "blocked_non_structural_facet": 1,
+        "ready_for_lowering": 1,
+    }
+    assert report.summary()["effect_blocking_rule_id_counts"] == {
+        "nz_operation_surface_effect_lowering_non_structural_facet": 1,
+        "nz_operation_surface_effect_lowering_lane_unimplemented": 1,
+    }
+    # The legacy `effect_blocking_rule_id` work-summary field kept for back-
+    # compat surfaces the DOMINANT rule_id across the work's rows -- on a
+    # 2-row fixture with two distinct rule_ids tied at count 1, the
+    # dominant pick is stable per-iteration because Counter.most_common
+    # breaks ties by insertion order (not by Rule-ID), so this assertion
+    # just verifies the dominant-rule_id is one of the two known values
+    # rather than the legacy constant default.
+    assert report.summary()["effect_blocking_rule_id"] in {
+        "nz_operation_surface_effect_lowering_non_structural_facet",
+        "nz_operation_surface_effect_lowering_lane_unimplemented",
+    }
     assert report.rows[1].amending_provision_hrefs == ("amend-3",)
     assert report.rows[1].lowering_readiness_status == "ready_for_amending_act_payload_extraction"
 

@@ -731,7 +731,76 @@ _EXTRA_NZ_RULE_SPECS: Dict[str, str] = {
     # --- Operation surface / bench / dependency lane ----------------------------------
     "nz_operation_surface_effect_lowering_not_implemented": (
         "Operation-surface refusal: the operation row carries an effect family the lowering has not yet "
-        "implemented — a typed frontier blocker, never a silent drop."
+        "implemented — a typed frontier blocker, never a silent drop. This is the forward-compatible "
+        "fallback rule_id for an unrecognised lowering_readiness_status bucket (the named-bucket "
+        "rule_ids below cover the known per-row readiness states; this constant surfaces only when a "
+        "future bucket is added without extending the readiness->rule_id map, so a new bucket never "
+        "silently re-derives to a guessed blocker)."
+    ),
+    "nz_operation_surface_effect_lowering_lane_unimplemented": (
+        "Operation-surface row whose lowering_readiness_status is ready_for_amending_act_payload_extraction. "
+        "The row's witness is READY to lower; the downstream canonical-effect lowering LANE that consumes "
+        "ready rows is the unimplemented bit. Distinguishes 'I am ready' from 'I am blocked' on the same "
+        "rule_id field so a benchmark reading only effect_blocking_rule_id can attribute the readiness state "
+        "without re-deriving from lowering_readiness_status (AGENTS §1.10 distinct named diagnostic)."
+    ),
+    "nz_operation_surface_effect_lowering_amending_work_unarchived": (
+        "Operation-surface row whose dependency_status resolved amending_work_resolved_unarchived: the "
+        "amending act's XML is not archived locally. Acquisition frontier (not a parser gap, not a replay "
+        "bug); the witness would lower once the act is acquired."
+    ),
+    "nz_operation_surface_effect_lowering_non_structural_facet": (
+        "Operation-surface row whose target is a non-structural facet (Heading / Title / document-level — "
+        "not a substantive section/subsection/paragraph). The lowering lane does not apply facet edits as "
+        "canonical effects; the row is recorded-witness-only, never replayed."
+    ),
+    "nz_operation_surface_effect_lowering_target_address_non_current_skeleton_node": (
+        "Operation-surface row whose target address candidate resolves to a non-current-skeleton node "
+        "(a repealed/superseded copy in the end-of-document skeleton). The lowering refuses rather than "
+        "applying an op to a stale skeleton copy."
+    ),
+    "nz_operation_surface_effect_lowering_target_hint_unparsed": (
+        "Operation-surface row whose target hint could not be parsed (e.g. 'Section 1A to 1C' range, "
+        "compound 'Schedule 1 clause 5' target). The lowering refuses rather than guessing a "
+        "decomposition; needs the target-hint recogniser extended to admit the shape."
+    ),
+    "nz_operation_surface_effect_lowering_target_hint_missing": (
+        "Operation-surface row whose amended_provision carried no parseable target hint. The lowering "
+        "refuses rather than fabricating a target."
+    ),
+    "nz_operation_surface_effect_lowering_citation_unparsed": (
+        "Operation-surface row whose amending-work citation could not be parsed into (year, number). "
+        "Acquisition/parser frontier; the witness would lower once the citation recogniser admits the shape."
+    ),
+    "nz_operation_surface_effect_lowering_citation_missing": (
+        "Operation-surface row whose amending-work citation was entirely absent from the history note. "
+        "Source-footing gap; the witness is honest residue, never silently dropped."
+    ),
+    "nz_operation_surface_effect_lowering_operation_missing": (
+        "Operation-surface row whose amending-operation verb element was absent (no <amending-operation> "
+        "in the history note). The op-family classifier returns __missing__ and the lowering refuses rather "
+        "than fabricating a verb."
+    ),
+    "nz_operation_surface_effect_lowering_operation_unclassified": (
+        "Operation-surface row whose amending-operation verb was present but not in _KNOWN_OPERATION_FAMILIES "
+        "and not a recognised synonym (e.g. 'revoked' was unclassified before the revoked-as-repealed synonym "
+        "landed). The lowering refuses rather than guessing a family."
+    ),
+    "nz_operation_surface_effect_lowering_editorial_change_non_canonical": (
+        "Operation-surface row whose family is 'editorial change' (PCO editorial change per Legislation Act "
+        "2019 s.86/s.87). The lowering intentionally does not apply editorial changes as canonical effects; "
+        "the row is recorded-witness-only, surfaced as a typed frontier blocker rather than silently "
+        "suppressed."
+    ),
+    "nz_operation_surface_effect_lowering_duplicate_source_path": (
+        "Operation-surface row whose source_xml_path collides with another row's source_xml_path (same "
+        "history-note clause, two op witnesses). The lowering refuses both rather than guessing which to "
+        "lower; needs disambiguation of the duplicate-source-path shape."
+    ),
+    "nz_operation_surface_effect_lowering_same_label_rebirth_duplicate": (
+        "Operation-surface row whose target label was re-created after a prior repeal (a same-label rebirth). "
+        "The lowering refuses rather than conflating the two identities (§2.8 identity-vs-lineage); needs "
+        "explicit migration event for the rebirth."
     ),
     "nz_replay_canonical_effects_not_implemented": (
         "Bench refusal: the canonical-effects replay path is not implemented for this row (the bench "
