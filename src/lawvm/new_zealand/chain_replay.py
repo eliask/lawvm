@@ -1301,7 +1301,7 @@ def _op_local_divergence(
     materialized_node = _node_text_index(materialized).get(applied_op.target_path)
     if materialized_node is None:
         return None  # the produced node was overwritten by a later op; not this op
-    oracle_node = _node_text_index(oracle_doc).get(applied_op.target_path)
+    oracle_node = _resolve_oracle_node_for_target(oracle_doc, applied_op.target_path)
     local_similarity = (
         section_similarity(
             _node_similarity_text(materialized_node), _node_similarity_text(oracle_node)
@@ -1319,6 +1319,93 @@ def _op_local_divergence(
         oracle_version_date=oracle_version.version_date,
         local_similarity=local_similarity,
     )
+
+
+def _resolve_oracle_node_for_target(
+    oracle_doc: NZSourceDocument,
+    target_path: tuple[str, ...],
+) -> NZSourceNode | None:
+    """Resolve the oracle node at ``target_path`` with leading-part-drop tolerance.
+
+    The op-local divergence check keys on ``applied_op.target_path`` which lives
+    in the carried tree's path encoding (the parsed-shape of the EARLIEST archived
+    snapshot). NZ's parser falls back to ``part@DLM_xml_id`` (unlabeled-`<part>`
+    identity) when a `<part>` element lacks a parseable `<label>` -- observed on
+    199 nodes in the earliest act_public_1981_23 snapshot (the chain's start
+    state). The oracle (later archived snapshot) can carry the same prov:N under
+    one of TWO shapes after editorial consolidation re-standardised the XML:
+
+      (1) ``prov:N``            -- no `<part>` wrapper at all (oracle dropped the
+                                    wrapper entirely because the `<part>` element
+                                    no longer appears in the post-restoration XML).
+      (2) ``part@DLM_X/prov:N`` -- unlabeled identity fallback (same carried-tree
+                                    shape; the wrapper persisted across snapshots;
+                                    covered by the exact-match fast path).
+
+    The literal ``target_path == ('part@DLM44815', 'prov:22')`` lookup returns
+    None when the oracle carries Shape (1), producing a false
+    ``local_similarity=0.0`` divergence encoding-mismatch artefact rather than
+    an honest materialized-vs-oracle disagreement. Witness cluster verified
+    2026-06-27 on act_public_1981_23 chain-replay: 45 op-local divergences,
+    100% at target_path[0]='part@DLM_*' segments, 100% local_similarity=0.0,
+    100% resolve to Shape (1) under the oracle probe (prov:N at top level with
+    no part wrapper) -- the entire 45-row cluster is carried-tree-path-shape
+    -vs-oracle artefact.
+
+    The widening accepts Direction B (drop-wrapper): when the carried-tree's
+    leading segment is a part wrapper AND the literal lookup misses, accept
+    an oracle node whose path equals ``target_path[1:]`` (i.e., the wrapper
+    was dropped entirely on the oracle side). Single-match enforcement stays;
+    an empty or ambiguous result keeps returning None -- the divergence
+    check then correctly fires ``local_similarity=0.0`` for a genuinely-absent
+    oracle target, which is the honest signal.
+
+    Narrowness (per AGENTS §1.1 no silent target hijacking):
+
+    * The widening is restricted to the case where the carried-tree's head is
+      a ``part:N`` or ``part@xml_id`` segment (the parser's known-but-unlabeled
+      ``<part>`` wrapper shapes). Other leading-segment shapes are NOT widened
+      -- only the part-wrapper-shape-churn family.
+    * The widening accepts only ONE direction (drop-the-wrapper), NOT label-
+      tolerant fallback: prov:N labels are exact-matched; only the part
+      wrapper's presence-vs-absence is tolerated.
+    * Same-length-different-suffix variants (e.g. ``part:N`` vs ``part@X``
+      would match each other under label-tolerant) are NOT accepted -- those
+      are the parser's identity-vs-label choice and accepting them would
+      silently cross-snapshot-collapse two distinct part identities.
+    """
+    oracle_index = _node_text_index(oracle_doc)
+    # Fast path: exact-match (the common, no-part@-shape case).
+    exact = oracle_index.get(target_path)
+    if exact is not None:
+        return exact
+    if not target_path:
+        return None
+    head = target_path[0]
+    if not _oracle_target_head_is_part_wrapper(head):
+        # No leading-part-wrapper on the carried tree -- no path-shape churn to
+        # tolerate; the oracle honestly lacks the target.
+        return None
+    # Direction B (drop-wrapper): carried-tree's leading part-wrapper is absent
+    # from the oracle; accept an oracle node whose path equals target_path[1:].
+    tail = target_path[1:]
+    candidates = [node for node in oracle_doc.nodes if node.path == tail]
+    if len(candidates) == 1:
+        return candidates[0]
+    return None
+
+
+def _oracle_target_head_is_part_wrapper(segment: str) -> bool:
+    """The same ``part:N`` / ``part@xml_id`` widened predicate the apply-step
+    resolver uses (kept here as a local mirror so the divergence lane does not
+    import dry_run.py's ``_is_leading_part_segment`` and create a new dependency
+    cycle; the predicate's behaviour is pinned by the same paired synthetic
+    test landed 2026-06-24)."""
+    if not segment:
+        return False
+    if segment.split(":", 1)[0] == "part":
+        return True
+    return segment.startswith("part@")
 
 
 def _earliest_version_on_or_after(
