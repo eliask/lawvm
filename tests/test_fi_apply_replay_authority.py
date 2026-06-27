@@ -9,29 +9,26 @@ conjunction precisely:
 
 1. ``_receipt_boundary_authorized`` — boundary authorization for a landed
    receipt with a resolver binding. With ``bound_target_path is None``
-   (today's production op-level apply receipt), it authorizes by absence of
-   a binding. With a BOUND target, it authorizes iff ``divergence_explained``
-   (bound==landed, or a named recovery/migration/fallback rule explains the
-   divergence).
+   (a legacy / non-threaded op-level apply receipt), it authorizes by
+   absence of a binding. With a BOUND target, it authorizes iff
+   ``divergence_explained`` (bound==landed, or a named
+   recovery/migration/fallback rule explains the divergence).
 2. ``aggregate_replay_authority`` — the per-replay aggregate (AND over all
    landed receipts) plus the orthogonal ``no_boundary_violation`` conjunct
    (the blocking ``REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET`` finding).
 
-DEFERRED §2.9 FIRE-DRILL: the task spec for this PR anticipated a §2.9
-production-liveness fire-drill that drives a known-boundary-violating op
-through ``_collect_op_write_receipt`` and asserts the
-``_receipt_boundary_authorized`` finding fires. Threading ``bound_target_path``
-from ``rop.resolved_target_address`` onto the op-level receipt (the natural
-source) surfaced 115 false-positive divergences on the green corpus
-(1997/1339): 71 landed-is-prefix-of-bound at identity-pruned granularity
-shifts, 15 bound-is-prefix-of-landed at deeper mutations, 29 real rop-vs-IR
-kind-label mismatches (e.g. ``item:7`` vs ``paragraph:7``). Threading
-correctly requires deeper normalization (prefix-of-landed equivalence + a
-surface path-kind reconciliation across the FI IR and the rop's logical/legal
-address), exceeding this PR's bounded scope. The threading is reverted here;
-the receipt arm stays unreachable in production (the
-``no_boundary_violation`` conjunct carries the boundary check). The unit
-tests below pin the function-level behavior the future PR will rely on.
+Wave N3a PR1 threading (``BOUND_TARGET_PATH_NORMALIZATION_DESIGN`` §3): the
+op-level ``_collect_op_write_receipt`` now threads
+``bound_target_path = rop.resolved_target_address.path`` (canonicalized via
+``finland._receipt_path_norm`` — wrapper-strip + kind-alias rewrite). This
+makes ``_receipt_boundary_authorized`` LIVE in production for any bound
+target. The 29 Pattern-C kind-label-mismatch false-positives on the green
+corpus (1997/1339: ``item:7`` vs ``paragraph:7``) clear via the kind-alias
+canonicalization. The 71+15 Pattern-A/B prefix-count cases (86) remain
+surfaced as false-positives pending PR2's prefix-equivalence rule. The unit
+tests below pin the function-level behavior the future PR2 prefix-equivalence
+work will rely on (a constructed receipt with an unexplained divergence
+authoritatively un-authorizes the aggregate).
 """
 
 from __future__ import annotations
