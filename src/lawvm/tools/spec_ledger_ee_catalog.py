@@ -61,6 +61,7 @@ _EE_RULE_SPECS: Dict[str, str] = {
 
     # --- Flat / sectionless singleton regulation scope --------------------------------
     "ee_flat_sectionless_singleton_item_insert": "A 'täiendatakse punktiga N' clause with no named section inserts the item under the sole section's first subsection (living spec §55).",
+    "ee_inline_directive_punkt_supplement": "An amendment whose directive(s) live in <sisuTekst> (no <paragrahv> wrapper) and whose preambul target-fragment extraction failed is recovered via a synthetic <paragrahv> wrapper delegated to the muutmiseadus parser (living spec §55 family closure 2026-06-27).",
     "ee_flat_sectionless_singleton_item_repeal": "A sectionless item repeal in a singleton regulation removes the item under the only section's first subsection.",
     "ee_flat_sectionless_singleton_subsection_scope": "A sectionless subsection/item clause in a one-section regulation recovers the omitted singleton section/subsection path (living spec §55).",
     "ee_singleton_empty_section_label_to_1": "A regulation's sole top-level paragrahv with an empty label is the same unit later consolidated as § 1 (living spec §54).",

@@ -2689,6 +2689,22 @@ def parse_ee_amendment_ops(
         )
         if plain_paragraph_ops and any(op.action is not StructuralAction.META for op in plain_paragraph_ops):
             parsed_ops = plain_paragraph_ops
+    if (
+        not has_paragrahv
+        and target_title
+        and (not parsed_ops or all(op.action is StructuralAction.META for op in parsed_ops))
+    ):
+        inline_directive_ops = _parse_ee_inline_directive_via_synthetic_paragrahv(
+            root,
+            source_id,
+            root_ns,
+            target_title,
+            adjudications_out=adjudications_out,
+        )
+        if inline_directive_ops and any(
+            op.action is not StructuralAction.META for op in inline_directive_ops
+        ):
+            parsed_ops = inline_directive_ops
     if not parsed_ops and has_paragrahv and target_title:
         html_blocks: list[str] = []
         for el in root.iter():
@@ -2855,6 +2871,89 @@ def _parse_constitutional_review_ops(
         extract_ops=extract_ee_ops,
         adjudications_out=adjudications_out,
     )
+
+
+_EE_INLINE_DIRECTIVE_PUNKT_SUPPLEMENT_RULE = "ee_inline_directive_punkt_supplement"
+
+
+def _parse_ee_inline_directive_via_synthetic_paragrahv(
+    root: XmlElement,
+    source_id: str,
+    ns_str: str,
+    target_title: str,
+    *,
+    adjudications_out: Optional[list[CompileAdjudication]] = None,
+) -> List[LegalOperation]:
+    """Last-resort fallback for amendment acts whose directive text lives in
+    ``<sisuTekst>`` blocks directly under ``<sisu>`` without a ``<paragrahv>``
+    structural wrapper.
+
+    The existing handler chain (``_parse_old_format_amendment_ops`` +
+    ``_parse_preambul_single_target_ops`` + flat HTML) covers amendments
+    whose directives are recognizable by prose-based target-fragment
+    extraction (``extract_intro_statute_fragment``). When that extraction
+    fails (nested quotes, unrecognized directive verbs, or ``täiendatakse
+    punktiga N järgmises sõnastuses:`` patterns), the preambul handler's
+    target-validation gate returns ``[]`` — preventing the ``<sisuTekst>``
+    content from reaching the muutmisseadus parser.
+
+    This handler builds a synthetic ``<paragrahv>`` wrapping the
+    ``<sisuTekst>`` blocks (same pattern as the tail of
+    ``_tr_parse_preambul_single_target_ops`` at target_resolution.py:3529)
+    and delegates to ``_parse_muutmisseadus_ops``, which correctly lowers
+    ``täiendatakse punktiga N`` directives into ``INSERT item N`` ops.
+
+    Called ONLY when all existing handlers returned empty — see
+    ``parse_ee_amendment_ops`` call site. Per AGENTS §2.3: the handler is
+    a frontend-local drafting idiom (inline-directive supplement), not a
+    core change.
+
+    Family: ``ee_inline_directive_punkt_supplement`` (per the 2026-06-27
+    un-lowered-ops sweep journal). Source witnesses:
+    ``101092011002`` (curriculum) + ~30-60 silent-drop amendments.
+    """
+    if not target_title or not ns_str:
+        return []
+    sisu = root.find(_ns(ns_str, "sisu"))
+    if sisu is None:
+        return []
+    direct_sisu_blocks = [
+        child for child in list(sisu)
+        if child.tag == _ns(ns_str, "sisuTekst")
+    ]
+    if not direct_sisu_blocks:
+        return []
+    synthetic_root = ET.Element(root.tag)
+    if root.tag.startswith("{"):
+        synthetic_root.set("xmlns", root.tag.split("}")[0].lstrip("{"))
+    synthetic_sisu = ET.SubElement(synthetic_root, _ns(ns_str, "sisu"))
+    synthetic_para = ET.SubElement(synthetic_sisu, _ns(ns_str, "paragrahv"))
+    para_title = ET.SubElement(synthetic_para, _ns(ns_str, "paragrahvPealkiri"))
+    para_title.text = f"{target_title} muutmine"
+    for child in direct_sisu_blocks:
+        cloned_child = ET.fromstring(ET.tostring(child, encoding="utf-8"))
+        for text_el in cloned_child.iter(_ns(ns_str, "tavatekst")):
+            extracted_text = _element_text_with_bold_section_boundaries(text_el)
+            text_el.clear()
+            text_el.text = extracted_text
+        synthetic_para.append(cloned_child)
+    ops = _parse_muutmisseadus_ops(
+        synthetic_root,
+        source_id,
+        ns_str,
+        target_title=target_title,
+        adjudications_out=adjudications_out,
+    )
+    if ops and any(op.action is not StructuralAction.META for op in ops):
+        return [
+            replace(
+                op,
+                provenance_tags=(*op.provenance_tags, _EE_INLINE_DIRECTIVE_PUNKT_SUPPLEMENT_RULE),
+                witness_rule_id=op.witness_rule_id or _EE_INLINE_DIRECTIVE_PUNKT_SUPPLEMENT_RULE,
+            )
+            for op in ops
+        ]
+    return []
 
 
 def _parse_preambul_single_target_ops(
