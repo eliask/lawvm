@@ -502,6 +502,52 @@ def _compile_effect_to_ir_ops_impl(
         )
 
     if effect_type in _COMMENCEMENT_EFFECT_TYPES:
+        # §1.8 (replay conservation): every filtered/rejected/skipped op MUST
+        # be visible with a receipt. ``_COMMENCEMENT_EFFECT_TYPES`` carries the
+        # explicit commencement effect-feed type tags (``appointed day(s)``,
+        # ``coming into force``, ``commencement order``); structural replay
+        # cannot synthesise a mutation from commencement language — replay
+        # returns zero ops. That alone is the §0 over-retention-safe skip.
+        # WITHOUT this receipt the downstream manual-frontier classifier at
+        # ``source_adjudication.py:2303`` (``uk_manual_frontier_
+        # commencement_effect_out_of_scope`` routing on
+        # ``uk_effect_commencement_source_rejected``) WOULD see ``lowering_
+        # rules`` as empty for this lane — the Path-2 emit at
+        # ``source_action_inference.py:241`` handles the empty-type-text-
+        # commencement case but NOT this explicit-type path. This emission
+        # closes the §1.8 silent-drop (per audit agent EV-1 in
+        # notes_internal: ``return []`` without receipt flagged as a true
+        # silent-drop) and routs the row downstream to its manual-frontier
+        # classification cleanly.
+        _append_uk_effect_lowering_rejection(
+            lowering_rejections_out,
+            rule_id="uk_effect_commencement_source_rejected",
+            family="applicability_scope",
+            reason_code="commencement_effect_type_out_of_scope",
+            reason=(
+                "UK effect carries an explicit commencement-feed effect type; "
+                "structural replay cannot synthesise a mutation from in-force / "
+                "commencement language. The effect is routed downstream as a "
+                "manual-frontier commencement-effect-out-of-scope row (not a "
+                "replay mutation) so the row is owned rather than silently "
+                "dropped."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "effect_type_normalized": effect_type,
+                "affected_provisions": effect.affected_provisions,
+                "lowering_action": None,
+                "strict_disposition": "block",
+                "quirks_disposition": "skip",
+                # AGENTS.md §0 promotion-chain: the lowering receipt records
+                # the boundary; the manual-frontier classification downstream
+                # is NOT a replay authority — the row remains out-of-scope
+                # until a future temporal/applicability model owns it.
+                "manual_frontier_axis": "commencement_effect_type",
+            },
+        )
         _mark_lower_phase("compile_lower_prepare")
         return []
 
