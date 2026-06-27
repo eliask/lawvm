@@ -3917,6 +3917,157 @@ def test_se_replay_write_receipts_renumber_receipt_is_well_formed() -> None:
     assert post != "", r.post_hashes  # §4 present after
 
 
+def test_check_se_official_replay_emits_renumber_receipt_with_migration_rule_id() -> None:
+    """Fire-drill (§2.9 guard-liveness): the SE RENUMBER receipt with the
+    ``se_renumber_relabel`` migration_rule_id MUST land on the production apply
+    path ``check_se_official_replay`` → ``apply_se_ops_conserved(emit_receipts=True)``
+    → ``se_replay_write_receipts`` → ``_se_emit_one_op_receipt``.
+
+    Pre-fix state:
+    * The production caller at ``fetch.py:3413`` invoked bare ``apply_se_ops``,
+      so the conserved wrapper was exercised only by tests — a §2.9 worst-class
+      silent failure (a guard that exists but is unreachable from production).
+    * Even when the receipt was constructed in tests, ``migration_rule_ids``
+      defaulted to ``()``, so ``WriteReceipt.divergence_explained`` returned
+      False and the receipt audited as ``violation`` in
+      ``build_observed_write_audit`` (a §1.6 unstated-migration violation that
+      strict mode must reject).
+
+    The fix routes production through the conserved wrapper with
+    ``emit_receipts=True`` and names the rule ``se_renumber_relabel`` for the
+    RENUMBER case so the bound→landed divergence is explained.
+    """
+    base_payload = {
+        "beteckning": "2026:998",
+        "rubrik": "Förordning (2026:998) om renumber-fire-drill",
+        "ikraftDateTime": "2026-01-01T00:00:00",
+        "ikraftOvergangsbestammelse": False,
+        "organisation": {"namn": "Socialdepartementet", "namnOchEnhet": "Socialdepartementet"},
+        "forfattningstypNamn": "Förordning",
+        "register": {"forarbeten": None},
+        "fulltext": {
+            "utfardadDateTime": "2025-12-01T00:00:00",
+            "andringInford": None,
+            "forfattningstext": "2 § Flyttbar text.\n\n5 § Annan.\n",
+        },
+        "publiceradDateTime": "2026-01-01T00:00:00",
+        "andringsforfattningar": [],
+    }
+    official_act = {
+        "sfs_id": "2026:999",
+        "title": "Förordning om ändring i förordningen (2026:998) om renumber-fire-drill",
+        "act_type": "förordning",
+        "amended_act_sfs_id": "2026:998",
+        "is_amending_act": True,
+        "published_date": "2026-03-24",
+        "issued_date": "2026-03-19",
+        "enacting_clause": (
+            "Regeringen föreskriver i fråga om förordningen (2026:998) om renumber-fire-drill "
+            "dels att nuvarande 2 § ska betecknas 4 §, dels att 4 § ska ha följande lydelse."
+        ),
+        "effective_clause": "Denna förordning träder i kraft den 15 april 2026.",
+        "affected_section_labels": ["2"],
+        "provisions": [{"label": "4", "text": "Ny lydelse för §4."}],
+        "signatories": [],
+        "footnotes": [],
+    }
+    archive = _FakeArchive(
+        stored={
+            "se://sfs/2026:998/rk.current.json": json.dumps(base_payload, ensure_ascii=False).encode("utf-8"),
+            "se://sfs/2026:999/official.act.json": json.dumps(official_act, ensure_ascii=False).encode("utf-8"),
+        }
+    )
+
+    result = check_se_official_replay(archive, "2026:999")
+
+    # The production lane emits typed write receipts via the conserved
+    # wrapper's `emit_receipts=True` flag (the §2.9 fix). They land on the
+    # result dict's evidence subtree via `_se_write_receipt_to_projection`.
+    write_receipts = result["evidence"]["write_receipts"]
+    renumber_receipts = [r for r in write_receipts if r["action"] == "renumber"]
+    assert len(renumber_receipts) == 1, [r.get("action") for r in write_receipts]
+    receipt = renumber_receipts[0]
+
+    # The §4 receipt contract: bound_target_path (source label) diverges from
+    # landed_primary_path (destination label) — the divergence MUST be
+    # explained by a named migration rule.
+    assert receipt["bound_target_path"] == [["section", "2"]]
+    assert receipt["landed_primary_path"] == [["section", "4"]]
+    # Projection shape: ``renumbered_paths`` is a list of (from_path, to_path)
+    # pairs; each path is a list of ``[kind, label]`` step-lists. For the
+    # RENUMBER 2 → 4, both legs are single-step section paths.
+    assert receipt["renumbered_paths"] == [
+        [[["section", "2"]], [["section", "4"]]],
+    ]
+    assert receipt["migration_rule_ids"] == ["se_renumber_relabel"]
+    assert receipt["recovery_rule_ids"] == []
+    assert receipt["fallback_rule_ids"] == []
+    # bound != landed AND migration_rule_ids non-empty → divergence_explained
+    # is True (the §4 receipt-contract property). Projected into the result
+    # dict so downstream strict-mode audit consumers can classify the receipt
+    # as `qualified` rather than `violation`.
+    assert receipt["divergence_explained"] is True
+
+    # The receipt's pre/post hashes resolve at the destination coordinate
+    # (where the section landed): §4 was ABSENT before, present after.
+    assert list(receipt["pre_hashes"].keys()) == ["section:4"]
+    assert receipt["pre_hashes"]["section:4"] == ""
+    assert receipt["post_hashes"]["section:4"] != ""
+
+    # Reconstruct the typed WriteReceipt from the projection to confirm the
+    # serialized form faithfully represents the typed `divergence_explained`
+    # property — the typed object IS the source of truth (per
+    # notes/APPLY_RESOLUTION_AND_RECEIPT_CONTRACT.md §4), so round-tripping
+    # through the projection proves a future projection-layer rename cannot
+    # fake the audit.
+    from lawvm.core.write_receipt import WriteReceipt
+
+    def _to_path(path_list: list[list[str]]) -> tuple[tuple[str, str], ...]:
+        # Each step is a 2-item ``[kind, label]`` list — unpack explicitly so
+        # ``ty`` infers ``tuple[str, str]`` rather than ``tuple[str, ...]``.
+        return tuple((step[0], step[1]) for step in path_list)
+
+    def _to_paths(paths_list: list[list[list[str]]]) -> tuple[tuple[tuple[str, str], ...], ...]:
+        return tuple(_to_path(p) for p in paths_list)
+
+    def _to_renumbered_paths(
+        renumbered_list: list[list[list[list[str]]]],
+    ) -> tuple[tuple[tuple[tuple[str, str], ...], tuple[tuple[str, str], ...]], ...]:
+        return tuple(
+            (_to_path(from_path), _to_path(to_path))
+            for from_path, to_path in renumbered_list
+        )
+
+    typed = WriteReceipt(
+        op_id=receipt["op_id"],
+        helper=receipt["helper"],
+        action=receipt["action"],
+        bound_target_path=_to_path(receipt["bound_target_path"]),
+        landed_primary_path=_to_path(receipt["landed_primary_path"]),
+        created_paths=_to_paths(receipt["created_paths"]),
+        replaced_paths=_to_paths(receipt["replaced_paths"]),
+        removed_paths=_to_paths(receipt["removed_paths"]),
+        renumbered_paths=_to_renumbered_paths(receipt["renumbered_paths"]),
+        placeholder_created_paths=_to_paths(receipt["placeholder_created_paths"]),
+        placeholder_consumed_paths=_to_paths(receipt["placeholder_consumed_paths"]),
+        recovery_rule_ids=tuple(receipt["recovery_rule_ids"]),
+        migration_rule_ids=tuple(receipt["migration_rule_ids"]),
+        fallback_rule_ids=tuple(receipt["fallback_rule_ids"]),
+        pre_hashes=dict(receipt["pre_hashes"]),
+        post_hashes=dict(receipt["post_hashes"]),
+    )
+    assert typed.divergence_explained is True
+    assert typed.named_rule_ids == ("se_renumber_relabel",)
+
+    # The §1.8 FilterResult landed too — "no unsupported lane disappears":
+    # the synthetic statute produces 2 applied ops (the RENUMBER + the REPLACE
+    # on §4 by the official act's provision list) and zero rejections.
+    apply_filter = result["evidence"]["apply_filter_result"]
+    assert apply_filter["accepted_op_count"] == 2
+    assert apply_filter["rejected_op_count"] == 0
+    assert apply_filter["rejected_reason_codes"] == []
+
+
 def test_apply_se_ops_records_renumber_and_heading_skip_adjudications() -> None:
     payload = {
         "beteckning": "2026:998",

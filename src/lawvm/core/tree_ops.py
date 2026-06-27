@@ -2103,12 +2103,16 @@ def find_text_duplication_warnings(
 # ---------------------------------------------------------------------------
 # Flattened-sublist-family detection (lint-level heuristic)
 # ---------------------------------------------------------------------------
-
-_FI_DEFINITION_INTRO_PHRASES = (
-    "tarkoitetaan",
-    "joilla tarkoitetaan",
-    "jolla tarkoitetaan",
-)
+#
+# §2.3 firewall note: this kernel lint previously branched on the Finnish
+# ``tarkoitetaan`` idiom via hardcoded phrase constants. That fragment has been
+# moved to ``lawvm.finland.definition_introducer`` (the FI frontend). The kernel
+# still applies the jurisdiction-neutral suffix-colon (``:``) drafting signal,
+# but the language-specific signal is supplied as a frontend-provided predicate
+# via ``find_flattened_sublist_warnings(definition_introducer_predicate=...)``.
+# Core treats the predicate's verdict as an opaque bool (AGENTS.md §2.3 — core
+# may host a hook used by frontends; it must not interpret frontend-local
+# values).
 
 
 def _node_intro_text(node: IRNode) -> str:
@@ -2122,13 +2126,25 @@ def _node_intro_text(node: IRNode) -> str:
     return " ".join(parts).strip()
 
 
-def _has_definition_list_introducer(parent: IRNode) -> bool:
+def _has_definition_list_introducer(
+    parent: IRNode,
+    *,
+    definition_introducer_predicate: Optional[Callable[[IRNode], bool]] = None,
+) -> bool:
     """Return True when a subsection-style parent opens a definitions list.
 
-    Finnish chapter/section definitions commonly use an intro line ending with
-    ``:`` (``Tässä luvussa tarkoitetaan:``) followed by lettered items and
-    separate numbered clauses.  That flat ``a b c 1 2`` shape is legitimate and
-    must not be treated as a flattened nested sublist replay bug.
+    The suffix-colon (``:``) check is a jurisdiction-neutral drafting convention
+    and stays in the kernel (``Tämä luvussa tarkoitetaan:`` style intros are
+    universal across drafting traditions). The language-specific fragment signal
+    — e.g. the Finnish ``tarkoitetaan`` idiom — is delegated to a
+    frontend-supplied predicate (AGENTS.md §2.3: core hosts the hook; it does
+    not interpret frontend-local values).
+
+    When ``definition_introducer_predicate`` is ``None`` only the suffix-colon
+    check applies, which is the safe default for any caller that has not wired
+    in a frontend predicate (UK's ``replay_records`` and the generic CLI
+    ``invariant-bisect`` path take this default; Finland supplies its predicate
+    at the FI replay-projection call sites).
     """
     for child in parent.children:
         if _kind_str(child.kind) != "intro":
@@ -2136,11 +2152,10 @@ def _has_definition_list_introducer(parent: IRNode) -> bool:
         text = _node_intro_text(child)
         if not text:
             continue
-        lowered = text.lower()
         if text.rstrip().endswith(":"):
             return True
-        if any(phrase in lowered for phrase in _FI_DEFINITION_INTRO_PHRASES):
-            return True
+    if definition_introducer_predicate is not None and definition_introducer_predicate(parent):
+        return True
     return False
 
 
@@ -2203,6 +2218,7 @@ def find_flattened_sublist_warnings(
     tree: IRNode,
     *,
     min_children: int = 4,
+    definition_introducer_predicate: Optional[Callable[[IRNode], bool]] = None,
 ) -> List[Dict[str, object]]:
     """Return heuristic warnings for flattened sublist families.
 
@@ -2231,11 +2247,23 @@ def find_flattened_sublist_warnings(
     These are lint-style warnings, not hard invariants.  They are useful for
     detecting replay/apply bugs where sections from separate subsections have been
     collapsed to the same structural level.
+
+    ``definition_introducer_predicate`` (optional) lets a frontend supply a
+    language-specific "is this parent a definition-list introducer?" signal —
+    the kernel applies the jurisdiction-neutral suffix-colon (``:``) drafting
+    check universally, and ORs in this predicate's verdict. Finland wires its
+    ``fi_definition_list_introducer_predicate`` from
+    ``lawvm.finland.definition_introducer``; other callers omit the parameter
+    and get the suffix-colon-only default (AGENTS.md §2.3 — core does not
+    interpret frontend-local values).
     """
     warnings: List[Dict[str, object]] = []
 
     def _walk(node: IRNode, path: str) -> None:
-        skip_mixed_family_lint = _has_definition_list_introducer(node)
+        skip_mixed_family_lint = _has_definition_list_introducer(
+            node,
+            definition_introducer_predicate=definition_introducer_predicate,
+        )
 
         # Group labeled children by kind (preserving order)
         by_kind: Dict[str, List[str]] = {}

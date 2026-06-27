@@ -123,6 +123,9 @@ _SE_RULE_SPECS: Dict[str, str] = {
     "se_replay_unsupported_action": "An op whose action is not in the SE replay-supported set is a typed replay-skip adjudication, not a silent pass.",
     "se_replay_unsupported_target_kind": "An op whose target leaf-kind is not in the SE replay-supported set is a typed replay-skip adjudication, not a silent pass.",
 
+    # --- Apply receipt contract (§4 WriteReceipt divergence-naming) -----------------------
+    "se_renumber_relabel": "A RENUMBER op's bound_target_path (source label) vs landed_primary_path (destination label) divergence is the typed named migration for a section relabel/renumber — receipt-audited as ``qualified`` (named-rule-explained divergence), not a ``violation`` (unexplained); the §1.6 unstated-migration invariant risks being violated if the receipt omits this rule id.",
+
     # --- RK current JSON acquisition (the consolidated-text-oracle source) ----------------
     "se_rk_current_fetch_failed": "A network/HTTP/RK failure when fetching the current-text oracle is a typed acquisition residual, not a silent empty buffer.",
     "se_rk_current_invalid_hit": "A malformed entry inside the RK current-text hits container is a typed acquisition residual, the row is skipped without fabrication.",
