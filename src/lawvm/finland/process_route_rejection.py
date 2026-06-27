@@ -363,7 +363,10 @@ class ProcessRouteRejectionContext:
         expiry_override = self.source_model.commencement_expiry_override(self.amendment_id)
         if expiry_override is None:
             return
-        target_mid, labels, expiry = expiry_override
+        target_mid = expiry_override.target_mid
+        labels = expiry_override.labels
+        expiry = expiry_override.expiry
+        fallback_effective = expiry_override.fallback_effective
         if target_mid == self.amendment_id:
             return
         scope = sorted(labels) if labels else ["*"]
@@ -383,6 +386,7 @@ class ProcessRouteRejectionContext:
             expiry,
             parent_statute_id=self.parent_id,
             replay_mode=self.replay_mode,
+            fallback_effective=fallback_effective,
             expiry_convention="inclusive_prose",
         ):
             return

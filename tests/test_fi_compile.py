@@ -110,6 +110,122 @@ def compile_amendment_ops(*args: Any, **kwargs: Any) -> Any:
     return _real_compile_amendment_ops(*args, **kwargs)
 
 
+def test_normalize_and_compile_ops_promotes_payload_fixed_term_section_to_temporary() -> None:
+    xml = b"""<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+      <act name="amendment">
+        <docTitle>Testiasetus 8 a \xc2\xa7:n muuttamisesta</docTitle>
+        <body>
+          <hcontainer name="statuteProvisionsWrapper">
+            <section>
+              <num>8 a \xc2\xa7</num>
+              <heading>Raportti</heading>
+              <subsection>
+                <content>
+                  <p>Ministeri\xc3\xb6 laatii raportin.</p>
+                </content>
+              </subsection>
+              <subsection>
+                <content>
+                  <p>T\xc3\xa4m\xc3\xa4 asetus tulee voimaan 1 p\xc3\xa4iv\xc3\xa4n\xc3\xa4 toukokuuta 2019 ja on voimassa 30 p\xc3\xa4iv\xc3\xa4\xc3\xa4n huhtikuuta 2025 asti.</p>
+                </content>
+              </subsection>
+            </section>
+          </hcontainer>
+          <hcontainer name="entryIntoForce">
+            <content>
+              <p>T\xc3\xa4m\xc3\xa4 asetus tulee voimaan 1 p\xc3\xa4iv\xc3\xa4n\xc3\xa4 huhtikuuta 2023.</p>
+            </content>
+          </hcontainer>
+        </body>
+      </act>
+    </akomaNtoso>"""
+    tree = etree.fromstring(xml)
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(IRNode(kind=IRNodeKind.SECTION, label="8a", children=()),),
+        )
+    )
+    phase = normalize_and_compile_ops(
+        "muutetaan testiasetuksen (834/2014) 8 a § seuraavasti:",
+        tree,
+        master=master,
+        amendment_id="2023/197",
+        source_title="Testiasetus 8 a §:n muuttamisesta",
+        used_preamble_body_fallback=False,
+        parent_id="2014/834",
+        strict_profile=None,
+    )
+
+    assert len(phase.output) == 1
+    op = phase.output[0]
+    assert op.target_cols.target_section == "8a"
+    assert op.is_temporary is True
+    assert op.lo is not None
+    assert op.lo.source is not None
+    assert op.lo.source.effective == "2023-04-01"
+    assert op.lo.source.expires == "2025-05-01"
+    assert [(event.kind, event.expires) for event in phase.temporal_events] == [
+        ("commence", ""),
+        ("expire", "2025-05-01"),
+    ]
+    assert {event.scope.target_statute for event in phase.temporal_events} == {"2014/834"}
+
+
+def test_normalize_and_compile_ops_promotes_whole_entry_fixed_term_insert_to_temporary() -> None:
+    xml = b"""<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+      <act name="amendment">
+        <body>
+          <hcontainer name="statuteProvisionsWrapper">
+            <section>
+              <num>8 a \xc2\xa7</num>
+              <heading>Raportti</heading>
+              <subsection>
+                <content>
+                  <p>Ministeri\xc3\xb6 laatii raportin.</p>
+                </content>
+              </subsection>
+            </section>
+          </hcontainer>
+          <hcontainer name="entryIntoForce">
+            <content>
+              <p>T\xc3\xa4m\xc3\xa4 asetus tulee voimaan 1 p\xc3\xa4iv\xc3\xa4n\xc3\xa4 toukokuuta 2019 ja on voimassa 30 p\xc3\xa4iv\xc3\xa4\xc3\xa4n huhtikuuta 2021 asti.</p>
+            </content>
+          </hcontainer>
+        </body>
+      </act>
+    </akomaNtoso>"""
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(IRNode(kind=IRNodeKind.SECTION, label="8", children=()),),
+        )
+    )
+
+    phase = normalize_and_compile_ops(
+        "lisätään testiasetukseen uusi 8 a § seuraavasti:",
+        etree.fromstring(xml),
+        master=master,
+        amendment_id="2019/154",
+        source_title="Testiasetus",
+        used_preamble_body_fallback=False,
+        parent_id="2014/834",
+        strict_profile=None,
+    )
+
+    assert len(phase.output) == 1
+    op = phase.output[0]
+    assert op.op_type is OpType.INSERT
+    assert op.is_temporary is True
+    assert op.lo is not None
+    assert op.lo.source is not None
+    assert op.lo.source.expires == "2021-05-01"
+    assert [(event.kind, event.scope.target_statute, event.expires) for event in phase.temporal_events] == [
+        ("commence", "2014/834", ""),
+        ("expire", "2014/834", "2021-05-01"),
+    ]
+
+
 def test_legal_operation_descendant_only_target_is_not_coerced_to_section() -> None:
     lo = LegalOperation(
         op_id="descendant-only",

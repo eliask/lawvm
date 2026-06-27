@@ -17859,13 +17859,12 @@ def test_temporary_section_expiry_override_seka_subsection_pattern() -> None:
     result = _temporary_section_expiry_override(tree, "2021/147")
 
     assert result is not None, "Should extract section-scoped expiry from sekä-pattern"
-    target_mid, labels, expiry = result
-    assert expiry == dt.date(2021, 6, 30), f"Expected 2021-06-30, got {expiry}"
+    assert result.expiry == dt.date(2021, 6, 30), f"Expected 2021-06-30, got {result.expiry}"
     # Primary group: 58c–58h range and 59a–59e range
     for sec in ["58c", "58d", "58e", "58f", "58g", "58h", "59a", "59b", "59c", "59d", "59e"]:
-        assert sec in labels, f"§{sec} should be in expiry labels"
+        assert sec in result.labels, f"§{sec} should be in expiry labels"
     # Secondary group: §91 from the 'sekä 91 §:n 1 momentti' clause
-    assert "91" in labels, "§91 from sekä-clause should be in expiry labels"
+    assert "91" in result.labels, "§91 from sekä-clause should be in expiry labels"
 
 
 def test_temporary_section_expiry_override_simple_pattern_unchanged() -> None:
@@ -17888,10 +17887,9 @@ def test_temporary_section_expiry_override_simple_pattern_unchanged() -> None:
     result = _temporary_section_expiry_override(tree, "2021/701")
 
     assert result is not None, "Simple pattern should still match"
-    target_mid, labels, expiry = result
-    assert expiry == dt.date(2021, 12, 31)
+    assert result.expiry == dt.date(2021, 12, 31)
     for sec in ["16a", "16b", "16c", "16d", "16e", "16f", "16g"]:
-        assert sec in labels, f"§{sec} should be in expiry labels"
+        assert sec in result.labels, f"§{sec} should be in expiry labels"
 
 
 def test_temporary_section_expiry_override_bounded_interval_pattern() -> None:
@@ -17915,10 +17913,9 @@ def test_temporary_section_expiry_override_bounded_interval_pattern() -> None:
     result = _temporary_section_expiry_override(tree, "2007/158")
 
     assert result is not None
-    target_mid, labels, expiry = result
-    assert target_mid == "2007/158"
-    assert labels == {"5a", "5b", "5c"}
-    assert expiry == dt.date(2007, 5, 31)
+    assert result.target_mid == "2007/158"
+    assert result.labels == {"5a", "5b", "5c"}
+    assert result.expiry == dt.date(2007, 5, 31)
 
 
 def test_temporary_section_expiry_override_ignores_self_scoped_body_text() -> None:

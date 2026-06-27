@@ -11,7 +11,7 @@ from lawvm.core.effect_lifecycle import (
     EffectLifecycleEvent,
     EffectRef,
     EffectRelation,
-    lower_lifecycle_events_to_temporal_events,
+    lower_lifecycle_event_to_temporal_event,
     validate_effect_graph_closure,
     validate_effect_graph_unique_ids,
 )
@@ -71,6 +71,7 @@ from lawvm.finland.post_process import _canonicalize_section_shell_order
 from lawvm.finland.tree_invariant_allowances import (
     is_terminal_fi_commencement_section_violation,
 )
+from lawvm.finland.temporal_rewrites import reconcile_temporal_event_expiry_with_op_sources
 
 if TYPE_CHECKING:
     from lawvm.core.stage_result import AuthoritySurface, StageResult
@@ -1300,6 +1301,23 @@ def _merge_temporal_events(
     return tuple(merged)
 
 
+def _lower_lifecycle_events_without_direct_temporal_duplicates(
+    lifecycle_events: tuple[EffectLifecycleEvent, ...],
+    direct_temporal_events: tuple[TemporalEvent, ...],
+) -> tuple[TemporalEvent, ...]:
+    """Lower lifecycle rows without replaying already-present direct carriers."""
+    direct_event_ids = {event.event_id for event in direct_temporal_events}
+    lowered: list[TemporalEvent] = []
+    for lifecycle_event in lifecycle_events:
+        embedded = lifecycle_event.temporal_event
+        if embedded is not None and embedded.event_id in direct_event_ids:
+            continue
+        event = lower_lifecycle_event_to_temporal_event(lifecycle_event)
+        if event is not None:
+            lowered.append(event)
+    return tuple(lowered)
+
+
 def _cached_temporal_events_from_lo_ops(
     lo_ops: list[LegalOperation],
     *,
@@ -2086,9 +2104,13 @@ def build_replay_products(
     but replay products still preserve a bounded fallback synthesis from
     replay-owned structural ops until the producer path is fully migrated.
     """
+    direct_temporal_events = tuple(temporal_events)
     resolved_temporal_events = _merge_temporal_events(
-        tuple(temporal_events),
-        lower_lifecycle_events_to_temporal_events(effect_lifecycle_events),
+        direct_temporal_events,
+        _lower_lifecycle_events_without_direct_temporal_duplicates(
+            effect_lifecycle_events,
+            direct_temporal_events,
+        ),
     )
     if not build_full_products:
         return ReplayProducts(
@@ -2200,6 +2222,13 @@ def build_replay_products(
             resolved_temporal_events,
             synthesized_temporal_events,
         )
+    reconciled_temporal_events = list(resolved_temporal_events)
+    reconcile_temporal_event_expiry_with_op_sources(
+        reconciled_temporal_events,
+        lo_ops,
+        target_statute=base_ir.statute_id,
+    )
+    resolved_temporal_events = tuple(reconciled_temporal_events)
     # Extract the base statute's issue date (FRBR dateIssued / signature date) so
     # that compile_timelines can set the correct `enacted` date on base provisions.
     # This fixes --query-type in_force for pre-enactment as_of dates: the
