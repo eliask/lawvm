@@ -3173,6 +3173,26 @@ def test_replay_xml_2013_1201_carries_renumbered_section_12_moments() -> None:
     assert "Kirjallinen vastaus on toimitettava pyynnön vastaanottamista seuraavien" in subsections["5"]
 
 
+def test_replay_xml_1983_361_moves_current_section_21_to_chapter_7_section_50() -> None:
+    replay = replay_xml(
+        "1983/361",
+        mode="official_consolidation",
+        quiet=True,
+        build_full_products=False,
+    )
+    sections = extract_ir_sections(replay.materialized_state.ir)
+
+    assert "chapter:7/section:50" in sections
+    assert "chapter:4/section:50" not in sections
+
+    section21_text = " ".join(irnode_to_text(sections["chapter:4/section:21"]).split())
+    section50_text = " ".join(irnode_to_text(sections["chapter:7/section:50"]).split())
+
+    assert "Väliaikaisesta määräyksestä" in section21_text
+    assert "Tämä laki tulee voimaan 1 päivänä tammikuuta 1984" not in section21_text
+    assert "Tämä laki tulee voimaan 1 päivänä tammikuuta 1984" in section50_text
+
+
 def test_normalize_and_compile_ops_2021_1289_rehomes_reinstatement_list_to_prior_addresses() -> None:
     before = replay_xml("2021/1289", stop_before="2024/420", mode="legal_pit", quiet=True, build_full_products=False)
     corpus = get_corpus_store()

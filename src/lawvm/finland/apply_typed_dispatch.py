@@ -1627,13 +1627,11 @@ def _apply_intent_relabel(
                     outcome="applied",
                 )
                 if migration_ledger is not None:
-                    from_addr = intent.source.address
-                    to_addr = intent.destination.address
                     source = rop.resolved_op_source
                     effective = (source.effective or source.enacted) if source is not None else ""
                     migration_ledger.record_renumber(
-                        from_addr,
-                        to_addr,
+                        LegalAddress(path=src_path),
+                        LegalAddress(path=landed_path),
                         effective=effective,
                         source_statute=rop.resolved_source_statute,
                     )
@@ -1727,13 +1725,11 @@ def _apply_intent_relabel(
                     outcome="applied",
                 )
                 if migration_ledger is not None:
-                    from_addr = intent.source.address
-                    to_addr = intent.destination.address
                     source = rop.resolved_op_source
                     effective = (source.effective or source.enacted) if source is not None else ""
                     migration_ledger.record_renumber(
-                        from_addr,
-                        to_addr,
+                        LegalAddress(path=src_path),
+                        LegalAddress(path=landed_path),
                         effective=effective,
                         source_statute=rop.resolved_source_statute,
                     )
@@ -1835,13 +1831,11 @@ def _apply_intent_relabel(
             outcome="applied",
         )
         if migration_ledger is not None:
-            from_addr = intent.source.address
-            to_addr = intent.destination.address
             source = rop.resolved_op_source
             effective = (source.effective or source.enacted) if source is not None else ""
             migration_ledger.record_renumber(
-                from_addr,
-                to_addr,
+                LegalAddress(path=source_subsection_path),
+                LegalAddress(path=landed_subsection_path),
                 effective=effective,
                 source_statute=rop.resolved_source_statute,
             )
@@ -1965,13 +1959,11 @@ def _apply_intent_relabel(
             outcome="applied",
         )
         if migration_ledger is not None:
-            from_addr = intent.source.address
-            to_addr = intent.destination.address
             source = rop.resolved_op_source
             effective = (source.effective or source.enacted) if source is not None else ""
             migration_ledger.record_renumber(
-                from_addr,
-                to_addr,
+                LegalAddress(path=source_item_path),
+                LegalAddress(path=landed_item_path),
                 effective=effective,
                 source_statute=rop.resolved_source_statute,
             )

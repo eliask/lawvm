@@ -9,6 +9,7 @@ from __future__ import annotations
 import pytest
 from typing import cast
 
+from lawvm.finland.johtolause.jolloin_pair import JolloinRenumberPair
 from lawvm.finland.johtolause.lexer import tokenize
 from lawvm.finland.johtolause.lexicon import Token
 from lawvm.finland.johtolause.scan import (
@@ -247,19 +248,28 @@ class TestJolloiSectionRenumber:
         """Section renumber pair: plain numeric destination."""
         tokens = tokenize("jolloin nykyinen 5 § siirtyy 6 §:ksi")
         pairs = _extract_renumber_pairs_from_jolloin_tokens(tokens, 0, len(tokens))
-        assert pairs == [("5", "6", "P")]
+        assert pairs == [JolloinRenumberPair("5", "6", "P")]
 
     def test_extract_section_renumber_pair_with_letter_suffix(self):
         """Section renumber pair: destination with letter suffix (10 → 10a)."""
         tokens = tokenize("jolloin nykyinen 10 § siirtyy 10 a §:ksi")
         pairs = _extract_renumber_pairs_from_jolloin_tokens(tokens, 0, len(tokens))
-        assert pairs == [("10", "10a", "P")]
+        assert pairs == [JolloinRenumberPair("10", "10a", "P")]
+
+    def test_extract_section_renumber_pair_with_destination_chapter(self):
+        """Section renumber pair may move into an explicit destination chapter."""
+        tokens = tokenize("jolloin nykyinen 21 § siirtyy uuteen 7 lukuun 50 §:ksi")
+        pairs = _extract_renumber_pairs_from_jolloin_tokens(tokens, 0, len(tokens))
+        assert pairs == [JolloinRenumberPair("21", "50", "P", destination_chapter="7")]
 
     def test_extract_chapter_renumber_pair_still_works(self):
         """Chapter renumber pair: existing behaviour must be preserved."""
         tokens = tokenize("jolloin nykyinen 8 ja 9 luku siirtyvät 10 ja 11 luvuksi")
         pairs = _extract_renumber_pairs_from_jolloin_tokens(tokens, 0, len(tokens))
-        assert pairs == [("8", "10", "L"), ("9", "11", "L")]
+        assert pairs == [
+            JolloinRenumberPair("8", "10", "L"),
+            JolloinRenumberPair("9", "11", "L"),
+        ]
 
     def test_annotate_jolloin_stores_section_renumber_in_detail(self):
         """annotate_jolloin must populate renumber_pairs for section patterns."""
@@ -270,7 +280,7 @@ class TestJolloiSectionRenumber:
         assert len(anns) == 1
         assert anns[0].detail is not None
         pairs = anns[0].detail["renumber_pairs"]
-        assert pairs == [("10", "10a", "P")]
+        assert pairs == [JolloinRenumberPair("10", "10a", "P")]
 
     def test_annotate_jolloin_chapter_renumber_detail_preserved(self):
         """Chapter renumber pairs in annotate_jolloin detail must still carry kind='L'."""
@@ -281,7 +291,7 @@ class TestJolloiSectionRenumber:
         assert len(anns) == 1
         assert anns[0].detail is not None
         pairs = anns[0].detail["renumber_pairs"]
-        assert pairs == [("3", "4", "L")]
+        assert pairs == [JolloinRenumberPair("3", "4", "L")]
 
     def test_parse_clause_emits_section_renumber_op(self):
         """parse_clause must prepend S P op for jolloin section renumber."""
@@ -312,7 +322,7 @@ class TestJolloiSectionRenumber:
         filtered_tokens, pair_map = apply_annotations_with_jolloin_pairs(tokenize(text))
         filtered_shapes = [(tok.cat, tok.text) for tok in filtered_tokens]
 
-        assert pair_map == {11: [("3", "4", "M")]}
+        assert pair_map == {11: [JolloinRenumberPair("3", "4", "M")]}
         assert filtered_shapes == [
             ("VERB", "lisätään"),
             ("NUM", "15"),
@@ -441,43 +451,58 @@ class TestJolloinRangeExpansion:
         """Section range with endash: 3\u20135 \u2192 4\u20136 expands to 3 pairs."""
         tokens = tokenize("jolloin nykyinen 3\u20135 \u00a7 siirtyv\u00e4t 4\u20136 \u00a7:ksi")
         pairs = _extract_renumber_pairs_from_jolloin_tokens(tokens, 0, len(tokens))
-        assert pairs == [("3", "4", "P"), ("4", "5", "P"), ("5", "6", "P")]
+        assert pairs == [
+            JolloinRenumberPair("3", "4", "P"),
+            JolloinRenumberPair("4", "5", "P"),
+            JolloinRenumberPair("5", "6", "P"),
+        ]
 
     def test_section_range_hyphen(self):
         """Section range with regular hyphen: 3-5 \u2192 4-6 expands identically."""
         tokens = tokenize("jolloin nykyinen 3-5 \u00a7 siirtyv\u00e4t 4-6 \u00a7:ksi")
         pairs = _extract_renumber_pairs_from_jolloin_tokens(tokens, 0, len(tokens))
-        assert pairs == [("3", "4", "P"), ("4", "5", "P"), ("5", "6", "P")]
+        assert pairs == [
+            JolloinRenumberPair("3", "4", "P"),
+            JolloinRenumberPair("4", "5", "P"),
+            JolloinRenumberPair("5", "6", "P"),
+        ]
 
     def test_chapter_range_endash(self):
         """Chapter range: 3\u20135 luku \u2192 4\u20136 luvuksi expands to 3 pairs."""
         tokens = tokenize("jolloin nykyinen 3\u20135 luku siirtyv\u00e4t 4\u20136 luvuksi")
         pairs = _extract_renumber_pairs_from_jolloin_tokens(tokens, 0, len(tokens))
-        assert pairs == [("3", "4", "L"), ("4", "5", "L"), ("5", "6", "L")]
+        assert pairs == [
+            JolloinRenumberPair("3", "4", "L"),
+            JolloinRenumberPair("4", "5", "L"),
+            JolloinRenumberPair("5", "6", "L"),
+        ]
 
     def test_single_element_range(self):
         """Degenerate range 5\u20135 \u2192 6\u20136 produces one pair."""
         tokens = tokenize("jolloin nykyinen 5\u20135 \u00a7 siirtyv\u00e4t 6\u20136 \u00a7:ksi")
         pairs = _extract_renumber_pairs_from_jolloin_tokens(tokens, 0, len(tokens))
-        assert pairs == [("5", "6", "P")]
+        assert pairs == [JolloinRenumberPair("5", "6", "P")]
 
     def test_range_does_not_break_single_renumber(self):
         """Single-number renumber must still work after range logic is added."""
         tokens = tokenize("jolloin nykyinen 5 \u00a7 siirtyy 6 \u00a7:ksi")
         pairs = _extract_renumber_pairs_from_jolloin_tokens(tokens, 0, len(tokens))
-        assert pairs == [("5", "6", "P")]
+        assert pairs == [JolloinRenumberPair("5", "6", "P")]
 
     def test_range_does_not_break_ja_list(self):
         """Explicit ja-list renumber must still work after range logic is added."""
         tokens = tokenize("jolloin nykyinen 8 ja 9 luku siirtyv\u00e4t 10 ja 11 luvuksi")
         pairs = _extract_renumber_pairs_from_jolloin_tokens(tokens, 0, len(tokens))
-        assert pairs == [("8", "10", "L"), ("9", "11", "L")]
+        assert pairs == [
+            JolloinRenumberPair("8", "10", "L"),
+            JolloinRenumberPair("9", "11", "L"),
+        ]
 
     def test_range_with_letter_suffix_on_destination(self):
         """Single source with letter-suffixed destination still works."""
         tokens = tokenize("jolloin nykyinen 10 \u00a7 siirtyy 10 a \u00a7:ksi")
         pairs = _extract_renumber_pairs_from_jolloin_tokens(tokens, 0, len(tokens))
-        assert pairs == [("10", "10a", "P")]
+        assert pairs == [JolloinRenumberPair("10", "10a", "P")]
 
     def test_same_number_letter_suffix_range(self):
         """Section suffix range: 32 e-32 h expands to 32e, 32f, 32g, 32h."""
@@ -488,10 +513,10 @@ class TestJolloinRangeExpansion:
         )
         pairs = _extract_renumber_pairs_from_jolloin_tokens(tokens, 0, len(tokens))
         assert pairs == [
-            ("32c", "32e", "P"),
-            ("32d", "32f", "P"),
-            ("32e", "32g", "P"),
-            ("32f", "32h", "P"),
+            JolloinRenumberPair("32c", "32e", "P"),
+            JolloinRenumberPair("32d", "32f", "P"),
+            JolloinRenumberPair("32e", "32g", "P"),
+            JolloinRenumberPair("32f", "32h", "P"),
         ]
 
     def test_mismatched_range_sizes_returns_empty(self):

@@ -2524,6 +2524,21 @@ def test_replay_xml_keeps_1994_1486_uncovered_sections_under_part_scoped_chapter
 
 
 @pytest.mark.slow
+def test_replay_xml_2021_387_does_not_emit_repealed_slot_migrations() -> None:
+    """2021/387 inserts replacement 97-99 §; it must not migrate stale placeholders."""
+    replay = pinned_replay("1993/1501", mode="official_consolidation", quiet=True)
+
+    assert replay.materialized_state.find_section("97", chapter_num="5", part_num="1") is not None
+    assert replay.materialized_state.find_section("98", chapter_num="5", part_num="1") is not None
+    assert replay.materialized_state.find_section("99", chapter_num="5", part_num="1") is not None
+    assert not any(
+        event.source_statute == "2021/387"
+        and any(label in str(event) for label in ("section:97", "section:98", "section:99"))
+        for event in replay.migration_events
+    )
+
+
+@pytest.mark.slow
 def test_replay_xml_1978_38_section_12_1_full_replace_does_not_preserve_stale_list_items() -> None:
     replay = pinned_replay("1978/38", mode="official_consolidation", quiet=True, stop_before="2022/697")
 
