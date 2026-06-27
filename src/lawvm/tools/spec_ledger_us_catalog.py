@@ -370,6 +370,14 @@ _US_RULE_SPECS: Dict[str, str] = {
         "before-section split does not expose, or whose text an earlier op already "
         "mutated — surfaced as a typed residual rather than an unscoped string replace."
     ),
+    "us_dry_run_recovered_bare_leaf_target_via_unique_suffix_match": (
+        "A sub-section-scoped op whose target address has a bare-leaf path (paragraph/"
+        "subparagraph/clause without its parent subsection prefix) was recovered by "
+        "suffix-matching the leaf segments against all source-tree nodes: exactly one "
+        "node ended with the target's segments, so the bare leaf was unambiguously "
+        "resolved. When multiple nodes match the suffix, the existing §1.1 refusal "
+        "fires (no silent target hijacking)."
+    ),
     "us_dry_run_residual_target_level_absent_in_source_tree": (
         "Contradiction: the USC annual-edition source tree for the section does not "
         "expose the structural level the amendment names (e.g. only subparagraph markers "
@@ -610,6 +618,7 @@ _US_RULE_CONFIDENCE: Dict[str, str] = {
     "us_amend_strike_insert_punctuation_word": US_CONFIDENCE_HEURISTIC,
     "us_dry_run_residual_materialized_text_mismatch_with_oracle": US_CONFIDENCE_HEURISTIC,
     "us_dry_run_residual_source_truncated_payload": US_CONFIDENCE_HEURISTIC,
+    "us_dry_run_recovered_bare_leaf_target_via_unique_suffix_match": US_CONFIDENCE_HEURISTIC,
     "us_amendatory_deferred_amend_to_read": US_CONFIDENCE_HEURISTIC,
     "us_amendatory_unrecognized_redesignate_shape": US_CONFIDENCE_HEURISTIC,
     "us_amendatory_unrecognized_form": US_CONFIDENCE_HEURISTIC,

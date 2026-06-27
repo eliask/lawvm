@@ -227,6 +227,29 @@ US_DRY_RUN_DEFERRED_OP_INFLATED_AS_MISSING_SOURCE_RULE_ID = (
     "us_dry_run_resdeferred_op_inflated_as_missing_source"
 )
 
+# Owned target-resolution recovery (AGENTS.md §0/§2.1; family
+# ``target_resolution_recovery``). When the amendatory lowerer emits a bare-leaf
+# sub-section target — e.g. ``title:10/section:2432/paragraph:1`` WITHOUT the
+# parent ``subsection:b`` segment — the materializer's strict-equality matcher
+# (``_locate_subsection_text``) refused the op as ``..._target_node_not_located``
+# even when the targeted node was unambiguously present in the source-tree split.
+# This is the suffix-match fallback: when strict equality fails, collect every
+# source-tree node whose sub-section segments END with the target's segments; if
+# EXACTLY ONE matches, resolve to it. Multiple matches refuse (§1.1: no silent
+# target hijacking — the ambiguity stays visible as the existing typed residual).
+#
+# §0 ownership: the heuristic is named (this rule id), witness-anchored (the bare-
+# leaf target address + the resolved node segments travel on
+# :class:`USDryRunTargetRecovery`), strict-mode rejectable (the dry-run surface is
+# ``replay_authorized=False`` always — the recovery cannot leak into replay; a
+# reviewer can compare ``target_recoveries`` against the residual ledger to audit
+# any agree that depended on a recovery), and pinned by a synthetic regression
+# (the witnessing test). The source witness is the lowerer's bare-leaf address
+# (parsed amendment prose naming a leaf sub-unit without its parent subsection).
+US_DRY_RUN_RECOVERED_BARE_LEAF_TARGET_VIA_UNIQUE_SUFFIX_RULE_ID = (
+    "us_dry_run_recovered_bare_leaf_target_via_unique_suffix_match"
+)
+
 
 def _norm(text: str) -> str:
     return normalize_inline_comparison_text(text)
@@ -446,6 +469,41 @@ def _locate_subsection_text(
     case the caller surfaces a typed residual rather than guessing a span. The node
     text is the leading enumerated paragraph plus its attached continuation lines,
     so substituting it inside the section text is faithful, not a fragment.
+
+    When strict-equality fails, a suffix-match recovery (rule
+    ``US_DRY_RUN_RECOVERED_BARE_LEAF_TARGET_VIA_UNIQUE_SUFFIX_RULE_ID``, family
+    ``target_resolution_recovery`` — see :func:`_locate_subsection_text_resolved`)
+    is attempted: if exactly one source-tree node ENDS with the target's sub-section
+    segments, that node is returned. Multiple matches refuse (§1.1).
+    """
+    resolved = _locate_subsection_text_resolved(section, address)
+    return resolved.text if resolved is not None else None
+
+
+@dataclass(frozen=True)
+class _ResolvedSubsectionNode:
+    """Located sub-section node text plus the segments it actually resolved to.
+
+    ``resolved_segments`` equals ``_subsection_segments(address)`` on a strict-
+    equality match. When the suffix-match recovery fired, it carries the full
+    segments of the resolved source-tree node (the recovered ancestor included),
+    so callers can detect the recovery (``resolved_segments != target_segments``)
+    and surface a witness (:class:`USDryRunTargetRecovery`).
+    """
+
+    text: str
+    resolved_segments: tuple[tuple[str, str], ...]
+
+
+def _locate_subsection_text_resolved(
+    section: UscSection | None, address: LegalAddress
+) -> _ResolvedSubsectionNode | None:
+    """Locate ``address``'s node and report which segments it resolved to.
+
+    :returns: ``None`` when no node matches OR the suffix match is ambiguous (more
+        than one node ends with the target's segments — §1.1 no silent target
+        hijacking, the caller takes its existing residual path); otherwise the
+        node text and its full sub-section segments.
     """
     if section is None:
         return None
@@ -456,7 +514,25 @@ def _locate_subsection_text(
     for node in nodes:
         node_segments = _subsection_segments(node.address)
         if node_segments == target_segments:
-            return node.text
+            return _ResolvedSubsectionNode(text=node.text, resolved_segments=node_segments)
+    # Suffix-match fallback (AGENTS.md §0 owned heuristic, family
+    # ``target_resolution_recovery``). When the lowerer emitted a bare-leaf
+    # address (no parent subsection prefix) and exactly one source-tree node ends
+    # with the target's segments, recover that node. Multiple matches refuse
+    # (§1.1 no silent target hijacking): the caller surfaces the existing typed
+    # residual rather than guess.
+    suffix_matches: list[_ResolvedSubsectionNode] = []
+    for node in nodes:
+        node_segments = _subsection_segments(node.address)
+        if (
+            len(node_segments) >= len(target_segments)
+            and node_segments[-len(target_segments) :] == target_segments
+        ):
+            suffix_matches.append(
+                _ResolvedSubsectionNode(text=node.text, resolved_segments=node_segments)
+            )
+    if len(suffix_matches) == 1:
+        return suffix_matches[0]
     return None
 
 
@@ -571,6 +647,43 @@ class USDryRunRefusal:
 
 
 @dataclass(frozen=True)
+class USDryRunTargetRecovery:
+    """One target-resolution recovery observation (AGENTS.md §0 typed emission).
+
+    Witness-anchored audit row for the suffix-match fallback in
+    :func:`_locate_subsection_text_resolved`/``_locate_subsection_text``: when the
+    amendatory lowerer emitted a bare-leaf sub-section target (e.g.
+    ``title:10/section:2432/paragraph:1`` WITHOUT the parent ``subsection:b``
+    segment) and exactly one source-tree node ended with the target's segments,
+    the materializer resolved to that node. The recovery is non-blocking
+    (materialization proceeds) and non-authoritative (the dry-run is
+    ``replay_authorized=False`` always); this row only makes the heuristic visible
+    so a reviewer can audit any agreement that depended on a recovery.
+
+    ``target_segments`` is what the lowerer emitted (carries the family witness:
+    a sub-section segment with no parent subsection prefix). ``resolved_node_segments``
+    is the source-tree node the materializer resolved to (carries the recovered
+    ancestor).
+    """
+
+    op_id: str
+    target_address: str
+    target_segments: tuple[tuple[str, str], ...]
+    resolved_node_segments: tuple[tuple[str, str], ...]
+    family: str = "target_resolution_recovery"
+
+    def to_jsonable(self) -> dict[str, Any]:
+        return {
+            "op_id": self.op_id,
+            "rule_id": US_DRY_RUN_RECOVERED_BARE_LEAF_TARGET_VIA_UNIQUE_SUFFIX_RULE_ID,
+            "target_address": self.target_address,
+            "target_segments": [[k, v] for k, v in self.target_segments],
+            "resolved_node_segments": [[k, v] for k, v in self.resolved_node_segments],
+            "family": self.family,
+        }
+
+
+@dataclass(frozen=True)
 class USDryRunReport:
     """Section-level dry-run report for one (before-edition, PL window) pair.
 
@@ -593,6 +706,13 @@ class USDryRunReport:
     # ``sunset_findings`` carries ambiguous temporal residuals (no reversion claim).
     sunset_reversions: tuple[SunsetClassification, ...] = ()
     sunset_findings: tuple[SunsetFinding, ...] = ()
+    # Owned target-resolution recoveries (AGENTS.md §0 typed emission, family
+    # ``target_resolution_recovery``): one row per op whose bare-leaf sub-section
+    # target was resolved via the suffix-match fallback in
+    # :func:`_locate_subsection_text`. Carries the witness (target + resolved
+    # segments). Non-blocking and non-authoritative (the dry-run surface stays
+    # ``replay_authorized=False``); surfaced for audit only.
+    target_recoveries: tuple[USDryRunTargetRecovery, ...] = ()
     replay_authorized: bool = False
 
     def sunset_reversion_section_keys(self) -> frozenset[str]:
@@ -863,6 +983,7 @@ class USDryRunReport:
                 f"{self.title}:{c.section}" for c in self.sunset_reversions
             ],
             "sunset_finding_count": len(self.sunset_findings),
+            "target_recovery_count": len(self.target_recoveries),
             "north_star": self.north_star(),
             "boundary_status": self.boundary_proof.boundary_proof_status,
             # Dry-run gate: replay stays blocked here.
@@ -890,6 +1011,7 @@ class USDryRunReport:
         payload["agreement_surface"] = self.agreement_surface()
         payload["sunset_reversions"] = [c.to_jsonable() for c in self.sunset_reversions]
         payload["sunset_findings"] = [f.to_jsonable() for f in self.sunset_findings]
+        payload["target_recoveries"] = [r.to_jsonable() for r in self.target_recoveries]
         return payload
 
 
@@ -1237,6 +1359,9 @@ def _running_node_text(
     address: LegalAddress,
     running: str,
     node_overrides: NodeOverrides | None,
+    *,
+    op_id: str = "",
+    recoveries: list[USDryRunTargetRecovery] | None = None,
 ) -> str | None:
     """Return the targeted node's text AS IT CURRENTLY STANDS in ``running``.
 
@@ -1255,15 +1380,45 @@ def _running_node_text(
     actually present in ``running`` (``None`` when the node is unexposed/absent, or a
     sibling mutation desynchronized the tracked span from the running text — the
     caller then takes its absent/residual path, never a guess).
+
+    When the resolved source-tree node was located via the suffix-match recovery
+    (``resolved_segments != target_segments``), an earlier op against the SAME
+    resolved node from a DIFFERENT address path may have seeded the override under
+    the resolved (full) segments key; consult that key for the live node text before
+    falling back to the pristine before-edition span (which may already be stale).
+    The recovery observation is emitted via ``recoveries`` (AGENTS.md §0 typed
+    emission, family ``target_resolution_recovery``).
     """
     segments = _subsection_segments(address)
     if node_overrides is not None and segments in node_overrides:
         current = node_overrides[segments]
         return current if current in running else None
-    located = _locate_subsection_text(before_section, address)
-    if located is None:
+    resolved = _locate_subsection_text_resolved(before_section, address)
+    if resolved is None:
         return None
-    return located if located in running else None
+    recovered = resolved.resolved_segments != segments
+    if recovered:
+        if recoveries is not None:
+            recoveries.append(
+                USDryRunTargetRecovery(
+                    op_id=op_id,
+                    target_address=str(address),
+                    target_segments=segments,
+                    resolved_node_segments=resolved.resolved_segments,
+                )
+            )
+        # An earlier op against the same resolved node from a different address
+        # path may have seeded the override under the resolved (full) segments
+        # key. Use that live text when present (the pristine before-edition span
+        # would be stale in the running composition).
+        if (
+            node_overrides is not None
+            and resolved.resolved_segments in node_overrides
+        ):
+            candidate = node_overrides[resolved.resolved_segments]
+            if candidate in running:
+                return candidate
+    return resolved.text if resolved.text in running else None
 
 
 def _running_subtree_text(
@@ -1271,6 +1426,9 @@ def _running_subtree_text(
     address: LegalAddress,
     running: str,
     node_overrides: NodeOverrides | None,
+    *,
+    op_id: str = "",
+    recoveries: list[USDryRunTargetRecovery] | None = None,
 ) -> str | None:
     """Return the target node and its current descendants as one contiguous span.
 
@@ -1282,12 +1440,41 @@ def _running_subtree_text(
     """
     segments = _subsection_segments(address)
     if not segments:
-        return _running_node_text(before_section, address, running, node_overrides)
+        return _running_node_text(
+            before_section,
+            address,
+            running,
+            node_overrides,
+            op_id=op_id,
+            recoveries=recoveries,
+        )
     own: str | None = None
     if node_overrides is not None and segments in node_overrides:
         own = node_overrides[segments]
     if own is None:
-        own = _locate_subsection_text(before_section, address)
+        resolved = _locate_subsection_text_resolved(before_section, address)
+        if resolved is not None:
+            own = resolved.text
+            if resolved.resolved_segments != segments:
+                # Suffix-match recovery fired for the anchor. An earlier op may have
+                # seeded the override under the resolved (full) segments key; use
+                # that live text when present, and emit the recovery observation.
+                if recoveries is not None:
+                    recoveries.append(
+                        USDryRunTargetRecovery(
+                            op_id=op_id,
+                            target_address=str(address),
+                            target_segments=segments,
+                            resolved_node_segments=resolved.resolved_segments,
+                        )
+                    )
+                if (
+                    node_overrides is not None
+                    and resolved.resolved_segments in node_overrides
+                ):
+                    candidate = node_overrides[resolved.resolved_segments]
+                    if candidate in running:
+                        own = candidate
     if own is None or own not in running:
         return None
     spans: list[tuple[int, int]] = [(running.find(own), running.find(own) + len(own))]
@@ -1655,6 +1842,7 @@ def _materialize_one(
     *,
     before_section: UscSection | None = None,
     node_overrides: NodeOverrides | None = None,
+    recoveries: list[USDryRunTargetRecovery] | None = None,
 ) -> tuple[str, str, str] | USDryRunRefusal:
     """Apply one op to a section's before-text -> (materialized, rule_id, disposition).
 
@@ -1681,6 +1869,14 @@ def _materialize_one(
     sibling op mutated it away), the op is REFUSED as an absent anchor — never composed
     as a wrong materialization, never collapsed into the prior patch's edit. See
     :func:`_running_node_text`.
+
+    ``recoveries`` (mutated in place, optional) collects typed
+    :class:`USDryRunTargetRecovery` observations when the suffix-match fallback in
+    :func:`_locate_subsection_text` resolved a bare-leaf sub-section target to a
+    unique source-tree node (AGENTS.md §0 typed emission, family
+    ``target_resolution_recovery``). Non-blocking and non-authoritative — the
+    dry-run surface stays ``replay_authorized=False`` always. ``None`` skips
+    observation tracking (used by direct unit tests).
     """
     action = operation.action
     op_id = operation.op_id
@@ -1709,7 +1905,12 @@ def _materialize_one(
             # SAME node acts on the text a prior patch produced, not the now-stale
             # pristine before-edition node.
             node_text = _running_node_text(
-                before_section, operation.target, before_text, node_overrides
+                before_section,
+                operation.target,
+                before_text,
+                node_overrides,
+                op_id=op_id,
+                recoveries=recoveries,
             )
             if node_text is not None:
                 if not _token_in_text(node_text, match_text):
@@ -1900,7 +2101,12 @@ def _materialize_one(
         # a paragraph split into ``(10) ... but—`` plus ``(A)/(B)/(C)`` must receive
         # the insertion *after* subparagraph (C), not after the parent intro.
         anchor_text = _running_subtree_text(
-            before_section, operation.anchor, before_text, node_overrides
+            before_section,
+            operation.anchor,
+            before_text,
+            node_overrides,
+            op_id=op_id,
+            recoveries=recoveries,
         )
         if anchor_text is None:
             rule_id = US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID
@@ -1959,7 +2165,12 @@ def _materialize_one(
         # earlier op in this section's composition (e.g. an insert followed by a
         # conforming strike), so resolve against the running node state.
         node_text = _running_node_text(
-            before_section, operation.target, before_text, node_overrides
+            before_section,
+            operation.target,
+            before_text,
+            node_overrides,
+            op_id=op_id,
+            recoveries=recoveries,
         )
         if node_text is None:
             # The struck node is not present — introduced by an un-lowered sibling/future
@@ -2131,7 +2342,19 @@ def _materialize_one(
         # cleanly locatable, a typed residual (never an unscoped global relabel).
         from_label = operation.target.leaf_label()
         to_label = operation.destination.leaf_label()
-        node_text = _locate_subsection_text(before_section, operation.target)
+        resolved = _locate_subsection_text_resolved(before_section, operation.target)
+        if resolved is not None and resolved.resolved_segments != _subsection_segments(
+            operation.target
+        ) and recoveries is not None:
+            recoveries.append(
+                USDryRunTargetRecovery(
+                    op_id=op_id,
+                    target_address=str(operation.target),
+                    target_segments=_subsection_segments(operation.target),
+                    resolved_node_segments=resolved.resolved_segments,
+                )
+            )
+        node_text = resolved.text if resolved is not None else None
         if node_text is None or node_text not in before_text:
             # The from-node being redesignated is not present in this window's before
             # edition (introduced by an un-lowered sibling op, or already moved by an
@@ -2261,6 +2484,7 @@ def build_us_dry_run(
 
     rows: list[USDryRunSectionRow] = []
     refusals: list[USDryRunRefusal] = []
+    target_recoveries: list[USDryRunTargetRecovery] = []
     claimed_sections: set[str] = set()
 
     # Phase 1: lower each Public Law, then route every op to its section's
@@ -2417,6 +2641,7 @@ def build_us_dry_run(
                 running,
                 before_section=before_section,
                 node_overrides=node_overrides,
+                recoveries=target_recoveries,
             )
             if isinstance(outcome, USDryRunRefusal):
                 refusals.append(outcome)
@@ -2594,6 +2819,7 @@ def build_us_dry_run(
         boundary_proof=boundary,
         sunset_reversions=sunset_reversions,
         sunset_findings=sunset_findings,
+        target_recoveries=tuple(target_recoveries),
     )
 
 

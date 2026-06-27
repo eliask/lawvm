@@ -1797,18 +1797,6 @@ def _classify_action(actions: list[str], raw_text: str) -> str:
     lowered = raw_text.lower()
     if "repeal" in has or _IS_REPEALED_PROSE_RE.search(lowered) is not None:
         return "repeal"
-    if "redesignate" in has or "redesignat" in lowered:
-        return "redesignate"
-    if ("amend" in has and "to read" in lowered) or "to read as follows" in lowered:
-        return "amend_to_read"
-    # Extend: "strike X and substitute Y" (imperative drafting style used in
-    # older PLs, esp. technical-amendments sections) is semantically identical
-    # to "striking X and inserting Y". "substitute" in actions conveys the
-    # insert-replacement verb; " strike " (imperative, with surrounding spaces
-    # to avoid matching "striking" — which has 'i' at position 5 vs 'e')
-    # catches the deletion half. Without this, "strike X and substitute Y"
-    # instructions fell to us_amendatory_unrecognized_form; with it, they route
-    # to strike_insert like any other text replacement.
     has_strike = (
         "delete" in has
         or "striking" in lowered
@@ -1821,34 +1809,32 @@ def _classify_action(actions: list[str], raw_text: str) -> str:
         or "substituting" in lowered
     )
     has_anchor = " after " in lowered or " before " in lowered
-    # Terminal punctuation edits where the anchor is positional ("the period at the
-    # end") or the replacement is a punctuation word ("inserting a semicolon") need
-    # last-occurrence / punctuation mapping. Detect them before the generic strike-
-    # insert branch so the strike_insert branch can apply the correct rule.
+    # Strike-and-insert has priority over redesignate when BOTH verbs are present
+    # in the raw_text: a subsection that says "as so redesignated, by striking X
+    # and inserting Y" is a strike_insert follow-on on a redesigned subsection,
+    # NOT a redesignation. The parent's amendingAction type="redesignate" leaks
+    # into the child's actions list; without this priority, the child is
+    # misclassified as redesignate (975 instructions on title 10 2018->2020).
     if has_strike and has_insert:
         if _END_PUNCT_STRIKE_INSERT_RE.search(raw_text) is not None:
             return "strike_insert_end_punct"
         if _PUNCT_WORD_RE.search(raw_text) is not None:
             return "strike_insert_punct_word"
+        return "strike_insert"
+    if has_strike and not has_insert:
+        return "strike"
+    if "redesignate" in has or (
+        "redesignat" in lowered and not (has_strike or has_insert)
+    ):
+        return "redesignate"
+    if ("amend" in has and "to read" in lowered) or "to read as follows" in lowered:
+        return "amend_to_read"
     if has_insert and has_anchor and not has_strike:
         if _END_PUNCT_INSERT_RE.search(raw_text) is not None:
             return "insert_end_punct"
-    # "inserting 'X' after/before 'Y'" with NO striking is an anchored insert, not
-    # a strike-and-insert. Classify it as insert_after BEFORE the strike_insert and
-    # add_at_end branches so the anchor (not a struck phrase) drives the operand
-    # assignment (F5: PL 116-54 §547(b) was mis-read as strike_insert with inverted
-    # operands because a sibling subsection's "striking" bled into the raw text).
-    if has_insert and has_anchor and not has_strike:
         return "insert_after"
-    # Genuine strike-and-insert: an explicit strike verb paired with an insert.
-    if has_strike and has_insert:
-        return "strike_insert"
     if "add" in has and "at the end" in lowered:
         return "add_at_end"
-    if has_strike:
-        return "strike"
-    if has_insert and has_anchor:
-        return "insert_after"
     if "add" in has or "insert" in has:
         return "add_at_end"
     return "unknown"

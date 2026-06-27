@@ -48,11 +48,15 @@ from lawvm.us_federal.dry_run import (
     US_DRY_RUN_RESIDUAL_TARGET_LEVEL_ABSENT_IN_SOURCE_TREE_RULE_ID,
     US_DRY_RUN_RESIDUAL_TEXT_MISMATCH_RULE_ID,
     US_DRY_RUN_SECTION_AGREES_RULE_ID,
+    US_DRY_RUN_RECOVERED_BARE_LEAF_TARGET_VIA_UNIQUE_SUFFIX_RULE_ID,
     USDryRunRefusal,
     USDryRunReport,
+    USDryRunTargetRecovery,
     USDryRunWindowError,
     _has_source_truncated_clause_payload,
     _index_node_text,
+    _locate_subsection_text,
+    _locate_subsection_text_resolved,
     _materialize_one,
     _norm_editorial,
     _replace_token_tail_in_text,
@@ -522,8 +526,355 @@ def test_source_tree_parse_ambiguous_not_fired_when_parse_is_clean_and_label_mis
 
 
 # ---------------------------------------------------------------------------
-# Gate + JSON contract
+# Suffix-match recovery for bare-leaf sub-section targets (§0 owned heuristic,
+# family ``target_resolution_recovery``).
+#
+# When the amendatory lowerer emits a target address with a sub-section segment
+# (paragraph/subparagraph/clause) but WITHOUT a parent subsection segment —
+# ``title:10/section:2432/paragraph:1`` instead of the full
+# ``title:10/section:2432/subsection:b/paragraph:1`` — the materializer's strict
+# equality matcher (``_locate_subsection_text``) used to refuse the op as
+# ``us_dry_run_residual_subsection_target_node_not_located_in_before_section``
+# even when the targeted node was unambiguously present in the source-tree split.
+# The suffix-match fallback in ``_locate_subsection_text_resolved`` recovers the
+# unambiguous parent the lowerer dropped when EXACTLY ONE source-tree node ends
+# with the target's segments; multiple matches still refuse (§1.1 no silent target
+# hijacking). The recovery is owned by
+# ``US_DRY_RUN_RECOVERED_BARE_LEAF_TARGET_VIA_UNIQUE_SUFFIX_RULE_ID`` and surfaces
+# as a typed ``USDryRunTargetRecovery`` witness on the report.
 # ---------------------------------------------------------------------------
+
+
+def _bare_leaf_unique_match_section() -> UscSection:
+    """Section whose only ``paragraph:1`` lives under ``subsection:b``.
+
+    Subsection (a) has no paragraphs; only (b) carries (1) and (2). So a bare-leaf
+    ``paragraph:1`` target (no parent subsection prefix) has a UNIQUE source-tree
+    match ending with ``paragraph:1`` — exactly the bare-leaf shape on the title 10
+    2018->2020 §2432 family of amendments.
+    """
+    return synthetic_usc_section(
+        title=10,
+        section="2432",
+        text=(
+            "(a) Subsection A has no paragraphs. "
+            "(b) Authority is granted. "
+            "(1) The first paragraph mentions a 15-year window. "
+            "(2) The second paragraph stands alone."
+        ),
+    )
+
+
+def test_locate_subsection_text_resolved_returns_none_when_strict_match_present() -> None:
+    # Sanity: when the address names the full path ``.../subsection:b/paragraph:1``,
+    # the strict-equality matcher resolves without firing the recovery. The resolved
+    # segments equal the target segments (the §0 recovery signal must stay silent).
+    section = _bare_leaf_unique_match_section()
+    full = LegalAddress(
+        path=(
+            ("title", "10"),
+            ("section", "2432"),
+            ("subsection", "b"),
+            ("paragraph", "1"),
+        )
+    )
+    resolved = _locate_subsection_text_resolved(section, full)
+    assert resolved is not None
+    assert resolved.text == "(1) The first paragraph mentions a 15-year window."
+    assert resolved.resolved_segments == _subsection_segments(full)
+
+
+def test_locate_subsection_text_resolved_recovers_unique_bare_leaf_via_suffix_match() -> None:
+    # The lowerer emitted a bare-leaf address (no parent ``subsection:b``
+    # prefix). The strict-equality matcher would refuse; the suffix-match
+    # fallback finds exactly one source-tree node ending with ``paragraph:1``
+    # (the one under subsection (b)) and recovers the parent. The resolved
+    # segments carry the recovered ancestor (the witness for §0 ownership).
+    section = _bare_leaf_unique_match_section()
+    bare_leaf = LegalAddress(
+        path=(("title", "10"), ("section", "2432"), ("paragraph", "1"))
+    )
+    resolved = _locate_subsection_text_resolved(section, bare_leaf)
+    assert resolved is not None
+    assert resolved.text == "(1) The first paragraph mentions a 15-year window."
+    # The recovered ancestor is the missing subsection:b prefix.
+    assert resolved.resolved_segments == (("subsection", "b"), ("paragraph", "1"))
+    assert resolved.resolved_segments != _subsection_segments(bare_leaf)
+
+
+def test_locate_subsection_text_resolved_refuses_when_suffix_match_is_ambiguous() -> None:
+    # §1.1 firewall: when MORE THAN ONE source-tree node ends with the target's
+    # segments (paragraph:1 under both subsection:a and subsection:b), the
+    # recovery MUST refuse rather than hijack one. The bare-leaf target stays
+    # unlocated and the existing typed residual path takes over at the caller.
+    section = synthetic_usc_section(
+        title=10,
+        section="2432-amb",
+        text=(
+            "(a) Subsection A. "
+            "(1) Paragraph A1. "
+            "(b) Subsection B. "
+            "(1) Paragraph B1. "
+            "(2) Paragraph B2."
+        ),
+    )
+    bare_leaf = LegalAddress(
+        path=(("title", "10"), ("section", "2432-amb"), ("paragraph", "1"))
+    )
+    resolved = _locate_subsection_text_resolved(section, bare_leaf)
+    assert resolved is None
+
+
+def test_locate_subsection_text_backwards_compatible_wrapper_still_returns_text() -> None:
+    # The deprecated single-string wrapper still returns the node text on both a
+    # strict match and a recovery; existing direct callers (no evidence path) keep
+    # working byte-for-byte. Tests that import ``_locate_subsection_text`` should
+    # not need to call ``_locate_subsection_text_resolved`` to keep existing
+    # assertions passing.
+    section = _bare_leaf_unique_match_section()
+    bare_leaf = LegalAddress(
+        path=(("title", "10"), ("section", "2432"), ("paragraph", "1"))
+    )
+    text = _locate_subsection_text(section, bare_leaf)
+    assert text == "(1) The first paragraph mentions a 15-year window."
+
+
+def test_text_replace_on_bare_leaf_target_materializes_via_suffix_match_recovery() -> None:
+    # End-to-end: a TEXT_REPLACE op with a bare-leaf ``paragraph:1`` target is
+    # applied to the UNIQUE source-tree node the recovery resolves to. Without
+    # the fix this op would emit
+    # ``us_dry_run_residual_subsection_target_node_not_located_in_before_section``
+    # (lawvm_wrong). With the fix the patch lands inside subsection (b)'s
+    # paragraph (1) text only — never widens onto the whole section, never
+    # hijacks a sibling — and the recovery observation is emitted with its
+    # witness (op_id, target_segments, resolved_node_segments).
+    section = _bare_leaf_unique_match_section()
+    op = LegalOperation(
+        op_id="strike-15y-in-para-1",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(
+            path=(("title", "10"), ("section", "2432"), ("paragraph", "1"))
+        ),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text="15-year", occurrence=1),
+            replacement="20-year",
+        ),
+    )
+    recoveries: list[USDryRunTargetRecovery] = []
+    outcome = _materialize_one(
+        op,
+        section.statutory_text,
+        before_section=section,
+        recoveries=recoveries,
+    )
+    assert not isinstance(outcome, USDryRunRefusal), outcome
+    materialized, rule_id, _disposition = outcome
+    assert rule_id == ""  # recovery is non-blocking: the patch landed.
+    # Only the targeted paragraph (1) under subsection (b) was rewritten.
+    assert "(1) The first paragraph mentions a 20-year window." in materialized
+    assert "15-year" not in materialized
+    # Subsection (a) prose and paragraph (2) survived untouched (no hijack).
+    assert "(a) Subsection A has no paragraphs." in materialized
+    assert "(2) The second paragraph stands alone." in materialized
+
+    # The §0 typed emission carries the witness.
+    assert len(recoveries) == 1
+    recovery = recoveries[0]
+    assert recovery.op_id == "strike-15y-in-para-1"
+    assert recovery.target_segments == (("paragraph", "1"),)
+    assert recovery.resolved_node_segments == (("subsection", "b"), ("paragraph", "1"))
+    assert recovery.family == "target_resolution_recovery"
+    assert recovery.to_jsonable()["rule_id"] == (
+        US_DRY_RUN_RECOVERED_BARE_LEAF_TARGET_VIA_UNIQUE_SUFFIX_RULE_ID
+    )
+
+
+def test_text_replace_on_bare_leaf_target_refuses_when_suffix_match_ambiguous() -> None:
+    # §1.1 firewall at the materializer: when the suffix match is ambiguous (two
+    # distinct ``paragraph:1`` source-tree nodes), the materializer MUST NOT
+    # hijack one. The recovery observation list stays empty and the existing
+    # typed residual fires (lawvm_wrong — the lowerer's bare-leaf address was
+    # genuinely under-specified for this section shape).
+    section = synthetic_usc_section(
+        title=10,
+        section="2432-amb",
+        text=(
+            "(a) Subsection A. "
+            "(1) Paragraph A1 has the 15-year anchor. "
+            "(b) Subsection B. "
+            "(1) Paragraph B1 has the 15-year anchor too. "
+            "(2) Paragraph B2."
+        ),
+    )
+    op = LegalOperation(
+        op_id="strike-15y-in-para-1-ambiguous",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(
+            path=(("title", "10"), ("section", "2432-amb"), ("paragraph", "1"))
+        ),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text="15-year", occurrence=1),
+            replacement="20-year",
+        ),
+    )
+    recoveries: list[USDryRunTargetRecovery] = []
+    outcome = _materialize_one(
+        op,
+        section.statutory_text,
+        before_section=section,
+        recoveries=recoveries,
+    )
+    assert not isinstance(outcome, USDryRunRefusal)
+    _materialized, rule_id, disposition = outcome
+    assert rule_id == US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID
+    assert disposition == DISPOSITION_LAWVM_WRONG
+    assert recoveries == []
+
+
+def test_repeated_bare_leaf_patches_compose_via_resolved_node_overrides() -> None:
+    # When a prior op against the SAME resolved node wrote its new text under the
+    # resolved (full) segments key — e.g. an op with a fully qualified target
+    # ``subsection:b/paragraph:1`` followed by a bare-leaf ``paragraph:1`` op —
+    # the bare-leaf op must act on the RUNNING text the prior patch produced,
+    # not the now-stale pristine before-edition span. This is the multi-patch
+    # composition the recovery must keep intact.
+    section = _bare_leaf_unique_match_section()
+    full_target = LegalAddress(
+        path=(
+            ("title", "10"),
+            ("section", "2432"),
+            ("subsection", "b"),
+            ("paragraph", "1"),
+        )
+    )
+    bare_leaf = LegalAddress(
+        path=(("title", "10"), ("section", "2432"), ("paragraph", "1"))
+    )
+    op_full = LegalOperation(
+        op_id="patch-1-full",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=full_target,
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text="15-year", occurrence=1),
+            replacement="20-year",
+        ),
+    )
+    op_bare = LegalOperation(
+        op_id="patch-2-bare",
+        sequence=2,
+        action=StructuralAction.TEXT_REPLACE,
+        target=bare_leaf,
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text="20-year", occurrence=1),
+            replacement="25-year",
+        ),
+    )
+    recoveries: list[USDryRunTargetRecovery] = []
+    seeded_overrides: dict[tuple[tuple[str, str], ...], str] = {}
+    outcome1 = _materialize_one(
+        op_full,
+        section.statutory_text,
+        before_section=section,
+        node_overrides=seeded_overrides,
+        recoveries=recoveries,
+    )
+    assert not isinstance(outcome1, USDryRunRefusal), outcome1
+    materialized_1, rule_1, _ = outcome1
+    assert rule_1 == ""
+    assert "(1) The first paragraph mentions a 20-year window." in materialized_1
+    # The first op had a fully-specified address: no recovery.
+    assert recoveries == []
+
+    outcome2 = _materialize_one(
+        op_bare,
+        materialized_1,
+        before_section=section,
+        node_overrides=seeded_overrides,
+        recoveries=recoveries,
+    )
+    assert not isinstance(outcome2, USDryRunRefusal), outcome2
+    materialized_2, rule_2, _ = outcome2
+    assert rule_2 == ""
+    # The bare-leaf patch composed onto the prior op's text — not the stale
+    # pristine ``15-year`` text that is no longer in the running composition.
+    assert "(1) The first paragraph mentions a 25-year window." in materialized_2
+    assert "20-year" not in materialized_2
+    assert "15-year" not in materialized_2
+    # The §0 typed emission fired for the bare-leaf op (the witness is preserved).
+    assert len(recoveries) == 1
+    assert recoveries[0].op_id == "patch-2-bare"
+    assert recoveries[0].target_segments == (("paragraph", "1"),)
+    assert recoveries[0].resolved_node_segments == (
+        ("subsection", "b"),
+        ("paragraph", "1"),
+    )
+
+
+def test_build_us_dry_run_carries_target_recoveries_through_the_report() -> None:
+    # The §0 ownership surface: when the suffix-match recovery fires inside
+    # ``_materialize_one``, the typed ``USDryRunTargetRecovery`` observation MUST
+    # reach the public ``USDryRunReport`` and serialize via ``to_jsonable``/``summary``
+    # so the heuristic cannot go invisible (AGENTS.md §0 forbids invisible
+    # heuristics). We exercise the wiring directly: build a USDryRunReport with a
+    # pre-built recovery entry, then assert the serialization carries the witness.
+    recovery = USDryRunTargetRecovery(
+        op_id="test-op",
+        target_address="title:10/section:2432/paragraph:1",
+        target_segments=(("paragraph", "1"),),
+        resolved_node_segments=(("subsection", "b"), ("paragraph", "1")),
+    )
+    # ``boundary_proof`` defaults to the empty-proof (no oracle/claimed sets); the
+    # minimal report construction is sufficient to exercise serialization.
+    boundary = _build().boundary_proof
+    report = USDryRunReport(
+        title=10,
+        before_year="2023",
+        after_year="2024",
+        statute_ids=("PL 99-9",),
+        rows=(),
+        refusals=(),
+        oracle_changed_sections=(),
+        claimed_sections=(),
+        boundary_proof=boundary,
+        target_recoveries=(recovery,),
+    )
+    assert report.target_recoveries == (recovery,)
+    payload = report.to_jsonable()
+    assert payload["summary"]["target_recovery_count"] == 1
+    assert len(payload["target_recoveries"]) == 1
+    serialized = payload["target_recoveries"][0]
+    assert serialized["rule_id"] == (
+        US_DRY_RUN_RECOVERED_BARE_LEAF_TARGET_VIA_UNIQUE_SUFFIX_RULE_ID
+    )
+    assert serialized["family"] == "target_resolution_recovery"
+    assert serialized["op_id"] == "test-op"
+    assert serialized["target_address"] == "title:10/section:2432/paragraph:1"
+    # The witness segments serialize as JSON arrays of ``[kind, label]`` pairs.
+    assert serialized["target_segments"] == [["paragraph", "1"]]
+    assert serialized["resolved_node_segments"] == [
+        ["subsection", "b"],
+        ["paragraph", "1"],
+    ]
+    # ``replay_authorized`` stays False: the recovery cannot authorize replay.
+    assert report.replay_authorized is False
+    assert payload["replay_authorized"] is False
+
+
+def test_build_us_dry_run_default_report_has_no_target_recoveries() -> None:
+    # Regression guard: the existing synthetic Title 99 fixture lowers no bare-leaf
+    # sub-section targets, so its report carries zero target_recoveries — the
+    # shipping path must not silently emit observations no recovery fired.
+    report = _build()
+    assert report.target_recoveries == ()
+    assert report.to_jsonable()["summary"]["target_recovery_count"] == 0
+    assert report.to_jsonable()["target_recoveries"] == []
 
 
 def test_report_never_authorizes_replay() -> None:
