@@ -1535,6 +1535,12 @@ def materialize_pit_ex(
                 d2_addr = depth2_section_labels[(kind1, label)]
                 d2_v = active_versions.get(d2_addr)
                 d1_v = active_versions.get(addr)
+                if active.get(addr) is None:
+                    # A body-level tombstone is not duplicate live content. It
+                    # is the explicit overlay that removes a base/root section,
+                    # and deleting it here lets that base node leak back into
+                    # PIT materialization.
+                    continue
                 if d2_v and d1_v:
                     if d1_v.effective > d2_v.effective:
                         # Body-level is newer — promote its content into the
