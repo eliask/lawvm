@@ -600,9 +600,9 @@ def _section_expiry_by_label(tree: "etree._Element", sid: str) -> dict[str, set[
     from lawvm.finland.metadata import _temporary_section_expiry_overrides
 
     by_label: dict[str, set[dt.date]] = {}
-    for _target_mid, labels, expiry in _temporary_section_expiry_overrides(tree, sid):
-        for label in labels:
-            by_label.setdefault(label, set()).add(expiry)
+    for override in _temporary_section_expiry_overrides(tree, sid):
+        for label in override.labels:
+            by_label.setdefault(label, set()).add(override.expiry)
     return by_label
 
 

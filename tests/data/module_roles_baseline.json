@@ -2,13 +2,13 @@
   "_doc": "Monotone module-role baseline. The `dead` and `test_only_live` sets may only SHRINK: a module born dead must be wired or deleted, never added to the population. The `replay_exercised` map is a SNAPSHOT: a module flipping replay-exercised status (either direction) fails the ratchet until re-baselined. Regenerate with `uv run python scripts/inventory_module_roles.py --update-baseline` after legitimately retiring (deleting) a dead/test-only module, wiring it to a production consumer, or refreshing the replay-coverage snapshot (tests/data/replay_coverage_snapshot.json — see its provenance.refresh_command).",
   "counts": {
     "dead": 74,
-    "live": 1015,
+    "live": 1017,
     "test_only_live": 27
   },
   "replay_counts": {
     "exercised": 170,
-    "cold": 242,
-    "in_scope": 412
+    "cold": 243,
+    "in_scope": 413
   },
   "dead": [
     "lawvm.core.certified_transition",
@@ -155,6 +155,7 @@
     "lawvm.finland.johtolause.diagnostics",
     "lawvm.finland.johtolause.grammar",
     "lawvm.finland.johtolause.grammar.diff",
+    "lawvm.finland.johtolause.jolloin_pair",
     "lawvm.finland.johtolause.lower_surface",
     "lawvm.finland.johtolause.provenance_span",
     "lawvm.finland.johtolause.rule_registry",
@@ -480,6 +481,7 @@
     "lawvm.finland.johtolause.grammar.sections": true,
     "lawvm.finland.johtolause.grammar.subref": true,
     "lawvm.finland.johtolause.grammar.tail": true,
+    "lawvm.finland.johtolause.jolloin_pair": false,
     "lawvm.finland.johtolause.lexer": true,
     "lawvm.finland.johtolause.lexicon": true,
     "lawvm.finland.johtolause.lower_clause_ast": true,

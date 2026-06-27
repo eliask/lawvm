@@ -12075,6 +12075,74 @@ def test_enrich_ops_uses_vacated_live_scope_for_recodification_insert_under_mixe
     assert got_insert.scope_confidence.resolved_chapter == "6a"
 
 
+def test_restructure_destination_payload_replaces_hcontainer_fold_node() -> None:
+    from lawvm.finland.restructure_plan import ExecutedOp, StructuralTransformOp, TransformOpKind
+    from lawvm.finland.restructure_plan_replay import (
+        _apply_source_destination_relabel_payloads,
+    )
+    from lawvm.finland.source_model import AmendmentSourceModel
+
+    state_ir = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.HCONTAINER,
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CHAPTER,
+                        label="6a",
+                        children=(
+                            IRNode(kind=IRNodeKind.NUM, text="6 a luku"),
+                            IRNode(
+                                kind=IRNodeKind.SECTION,
+                                label="27g",
+                                children=(
+                                    IRNode(kind=IRNodeKind.NUM, text="27 g §"),
+                                    IRNode(kind=IRNodeKind.HEADING, text="Stale migrated heading"),
+                                    IRNode(kind=IRNodeKind.PARAGRAPH, text="stale migrated body"),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    source_tree = etree.fromstring(
+        """
+        <body xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <chapter>
+            <num>6 a luku</num>
+            <section>
+              <num>27 g §</num>
+              <heading>Vastuutahot</heading>
+              <content><p>destination-labelled source body</p></content>
+            </section>
+          </chapter>
+        </body>
+        """
+    )
+    source_model = AmendmentSourceModel.from_tree(source_tree, source_ref="2003/444")
+    executed = (
+        ExecutedOp(
+            op=StructuralTransformOp(
+                kind=TransformOpKind.RELABEL,
+                target="chapter:6a/section:27f",
+                destination="chapter:6a/section:27g",
+                notes=("synthetic_destination_payload",),
+            ),
+            success=True,
+            applied_path=(("chapter", "6a"), ("section", "27g")),
+        ),
+    )
+
+    updated = _apply_source_destination_relabel_payloads(state_ir, executed, source_model)
+
+    updated_text = irnode_to_text(updated)
+    assert "destination-labelled source body" in updated_text
+    assert "stale migrated body" not in updated_text
+
+
 def test_flat_body_insert_chapter_scope_uses_bracketing_live_siblings() -> None:
     from lawvm.finland.frontend_compile import (
         _infer_flat_body_insert_chapter_from_bracketing_live_siblings,
@@ -17132,6 +17200,27 @@ def test_restore_heading_facet_for_mixed_scope_section_replaces_rewrites_plain_s
     assert findings == []
 
 
+def test_restore_heading_facet_preserves_explicit_heading_only_clause() -> None:
+    parse_result = parse_clause("muutetaan 27 a §:n edellä olevan luvun otsikko")
+    heading_op = AmendmentOp(
+        op_type=OpType.REPLACE,
+        target_unit_kind="section",
+        target_section="27a",
+        target_special="otsikko",
+    )
+
+    patched, findings = _restore_heading_facet_for_mixed_scope_section_replaces(
+        [heading_op],
+        parse_result=parse_result,
+        amendment_id="1996/322",
+    )
+
+    assert patched[0].description() == "REPLACE 27a § otsikko"
+    assert patched[0].target_cols.target_special == "otsikko"
+    assert patched[0].preserve_explicit_heading_facet is True
+    assert findings == []
+
+
 def test_rewrite_later_effective_lo_groups_scopes_deferred_cited_version_ops() -> None:
     lo_ops = [
         LegalOperation(
@@ -17859,13 +17948,12 @@ def test_temporary_section_expiry_override_seka_subsection_pattern() -> None:
     result = _temporary_section_expiry_override(tree, "2021/147")
 
     assert result is not None, "Should extract section-scoped expiry from sekä-pattern"
-    target_mid, labels, expiry = result
-    assert expiry == dt.date(2021, 6, 30), f"Expected 2021-06-30, got {expiry}"
+    assert result.expiry == dt.date(2021, 6, 30), f"Expected 2021-06-30, got {result.expiry}"
     # Primary group: 58c–58h range and 59a–59e range
     for sec in ["58c", "58d", "58e", "58f", "58g", "58h", "59a", "59b", "59c", "59d", "59e"]:
-        assert sec in labels, f"§{sec} should be in expiry labels"
+        assert sec in result.labels, f"§{sec} should be in expiry labels"
     # Secondary group: §91 from the 'sekä 91 §:n 1 momentti' clause
-    assert "91" in labels, "§91 from sekä-clause should be in expiry labels"
+    assert "91" in result.labels, "§91 from sekä-clause should be in expiry labels"
 
 
 def test_temporary_section_expiry_override_simple_pattern_unchanged() -> None:
@@ -17888,10 +17976,9 @@ def test_temporary_section_expiry_override_simple_pattern_unchanged() -> None:
     result = _temporary_section_expiry_override(tree, "2021/701")
 
     assert result is not None, "Simple pattern should still match"
-    target_mid, labels, expiry = result
-    assert expiry == dt.date(2021, 12, 31)
+    assert result.expiry == dt.date(2021, 12, 31)
     for sec in ["16a", "16b", "16c", "16d", "16e", "16f", "16g"]:
-        assert sec in labels, f"§{sec} should be in expiry labels"
+        assert sec in result.labels, f"§{sec} should be in expiry labels"
 
 
 def test_temporary_section_expiry_override_bounded_interval_pattern() -> None:
@@ -17915,10 +18002,9 @@ def test_temporary_section_expiry_override_bounded_interval_pattern() -> None:
     result = _temporary_section_expiry_override(tree, "2007/158")
 
     assert result is not None
-    target_mid, labels, expiry = result
-    assert target_mid == "2007/158"
-    assert labels == {"5a", "5b", "5c"}
-    assert expiry == dt.date(2007, 5, 31)
+    assert result.target_mid == "2007/158"
+    assert result.labels == {"5a", "5b", "5c"}
+    assert result.expiry == dt.date(2007, 5, 31)
 
 
 def test_temporary_section_expiry_override_ignores_self_scoped_body_text() -> None:

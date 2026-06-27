@@ -17,6 +17,7 @@ from lawvm.finland.process_route_rejection import (
 from lawvm.finland.ops import OpType, AmendmentOp
 from lawvm.finland.replay_entrypoint import replay_xml
 from lawvm.finland.replay_request import ReplayXmlRequest
+from lawvm.finland.metadata import CommencementExpiryOverride
 from lawvm.finland.source_model import AmendmentSourceModel
 
 
@@ -243,9 +244,16 @@ def test_skipped_amendment_expiry_override_records_lifecycle_when_rewrite_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class SourceModel:
-        def commencement_expiry_override(self, amendment_id: str) -> tuple[str, set[str], dt.date]:
+        def commencement_expiry_override(
+            self,
+            amendment_id: str,
+        ) -> CommencementExpiryOverride:
             assert amendment_id == "2020/100"
-            return ("2019/50", {"4 a"}, dt.date(2022, 12, 31))
+            return CommencementExpiryOverride(
+                target_mid="2019/50",
+                labels=frozenset({"4 a"}),
+                expiry=dt.date(2022, 12, 31),
+            )
 
     ctx, _findings, _prints = _route_context("citation_mismatch_skip")
     ctx.source_model = cast(Any, SourceModel())

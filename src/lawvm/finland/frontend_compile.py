@@ -94,6 +94,7 @@ from lawvm.finland.scope import (
 from lawvm.finland.scoped_section_resolver import section_paths_for_label
 from lawvm.finland.metadata import (
     TemporaryProvisionExpiryOverride,
+    TemporarySectionExpiryOverride,
     _statute_issue_date,
     _amendment_effective_date,
     _amendment_expiry_date,
@@ -103,6 +104,7 @@ from lawvm.finland.metadata import (
     _temporary_section_expiry_overrides,
     _parse_section_list_labels,
     _normalize_fi_parse_text,
+    parse_whole_law_validity,
     get_johtolause,
 )
 
@@ -665,24 +667,9 @@ def _restore_heading_facet_for_mixed_scope_section_replaces(
         else:
             whole_section_keys.add(key)
 
-    candidate_keys = (heading_keys & descendant_keys) - whole_section_keys
+    candidate_keys = heading_keys - whole_section_keys
     if not candidate_keys:
         return ops, []
-
-    # descendant_scope_present: sections that have ANY descendant-level op
-    # (INSERT or REPLACE targeting paragraph/item). Keyed on (part, section)
-    # only — op_type is intentionally excluded because an INSERT subsection
-    # and a REPLACE section-container are different ops for the same section.
-    descendant_scope_present: set[tuple[str, str]] = {
-        (
-            str(op.target_cols.target_part or "").strip(),
-            str(op.target_cols.target_section or "").strip(),
-        )
-        for op in ops
-        if op.target_cols.target_unit_kind == "section"
-        and str(op.target_cols.target_section or "").strip()
-        and (op.target_cols.target_paragraph is not None or bool(op.target_cols.target_item))
-    }
 
     for op in ops:
         key = (
@@ -690,19 +677,15 @@ def _restore_heading_facet_for_mixed_scope_section_replaces(
             str(op.target_cols.target_part or "").strip(),
             str(op.target_cols.target_section or "").strip(),
         )
-        descendant_scope_key = (
-            str(op.target_cols.target_part or "").strip(),
-            str(op.target_cols.target_section or "").strip(),
-        )
         # Allow explicit heading ops (target_special == "otsikko") as well as
-        # plain section replaces to receive the preserve flag when co-occurring
-        # with a subsection op for the same section. An explicit "otsikko" op
-        # must stay on the heading facet even when the shared XML payload
-        # carries subsection children intended for the sibling subsection op.
+        # plain section replaces to receive the preserve flag when the typed
+        # clause parse explicitly targets the section heading and no whole
+        # section target for the same key was parsed. An explicit "otsikko" op
+        # must stay on the heading facet even when malformed source XML carries
+        # subsection children that are not authored targets.
         is_explicit_heading_op = op.target_cols.target_special == "otsikko"
         if (
             key not in candidate_keys
-            or descendant_scope_key not in descendant_scope_present
             or op.target_cols.target_unit_kind != "section"
             or op.op_type != OpType.REPLACE
             or op.target_cols.target_paragraph is not None
@@ -2721,7 +2704,7 @@ class _AmendmentTreeMetadata:
     effective_date: date | None
     expiry_date: date | None
     provision_expiry_overrides: tuple[TemporaryProvisionExpiryOverride, ...]
-    section_expiry_overrides: tuple[tuple[str, set[str], date], ...]
+    section_expiry_overrides: tuple[TemporarySectionExpiryOverride, ...]
     # Byte-level anchor of the source clause in the raw amendment bytes, when a
     # verbatim contiguous span exists; None (fail-loud) otherwise. Stamped by
     # the acquisition stage, which owns the raw bytes + chosen operative text.
@@ -2784,7 +2767,7 @@ def _enrich_ops_from_amendment_tree(
     # 2012/991) do not get an erroneous expires stamp.  The section-scoped expiry
     # is applied per-section via the section_expiry_override block below.
     _section_scoped_expiry = any(
-        target_mid == amendment_id for target_mid, _labels, _expiry in section_expiry_overrides
+        override.target_mid == amendment_id for override in section_expiry_overrides
     ) or any(target.target_mid == amendment_id for target in provision_expiry_overrides)
     op_source = OperationSource(
         statute_id=amendment_id,
@@ -3179,9 +3162,11 @@ def _enrich_ops_from_amendment_tree(
             else:
                 next_patched.append(op)
         patched = next_patched
-    for _target_mid, labels, section_expiry in section_expiry_overrides:
-        if _target_mid != amendment_id:
+    for override in section_expiry_overrides:
+        if override.target_mid != amendment_id:
             continue
+        labels = override.labels
+        section_expiry = override.expiry
         next_patched: List[AmendmentOp] = []
         for op in patched:
             if (
@@ -3221,7 +3206,12 @@ def _enrich_ops_from_amendment_tree(
 # ---------------------------------------------------------------------------
 
 
-def _temporary_events_for_op(op: AmendmentOp, amendment_id: str) -> tuple[TemporalEvent, ...]:
+def _temporary_events_for_op(
+    op: AmendmentOp,
+    amendment_id: str,
+    *,
+    target_statute: str = "",
+) -> tuple[TemporalEvent, ...]:
     """Build executable temporal carriers for one temporary amendment op."""
     source = op.lo.source if (op.lo is not None and op.lo.source is not None) else None
     start_date = (source.effective if source is not None else "") or ""
@@ -3236,7 +3226,7 @@ def _temporary_events_for_op(op: AmendmentOp, amendment_id: str) -> tuple[Tempor
         else ActivationRule(kind="immediate", raw_text=str(getattr(source, "raw_text", "") or ""))
     )
     scope = TemporalScope(
-        target_statute=op.source_statute or amendment_id,
+        target_statute=target_statute or amendment_id,
         exact_addresses=(op.lo.target,) if op.lo is not None else (),
     )
     event_key = op.op_id or op.target_cols.target_section or "op"
@@ -3307,6 +3297,7 @@ def _tag_temporary_ops(
     ops: List[AmendmentOp],
     *,
     amendment_id: str,
+    target_statute: str = "",
     muutos_tree: "etree._Element | None" = None,
     source_model: "AmendmentSourceModel | None" = None,
 ) -> tuple[List[AmendmentOp], List[TemporalEvent]]:
@@ -3344,7 +3335,13 @@ def _tag_temporary_ops(
             muutos_tree=muutos_tree,
             source_model=source_model,
         )[0]
-        temporal_events.extend(_temporary_events_for_op(tagged_op, amendment_id))
+        temporal_events.extend(
+            _temporary_events_for_op(
+                tagged_op,
+                amendment_id,
+                target_statute=target_statute,
+            )
+        )
         tagged.append(tagged_op)
     return tagged, temporal_events
 
@@ -3403,6 +3400,114 @@ def _apply_inferred_payload_expiry_to_temporary_ops(
                 continue
         patched.append(op)
     return patched
+
+
+def _explicit_payload_fixed_term_expiry_date(
+    op: AmendmentOp,
+    *,
+    muutos_tree: "etree._Element | None" = None,
+    source_model: "AmendmentSourceModel | None" = None,
+) -> date | None:
+    """Return the explicit fixed-term expiry stated in a whole-section payload.
+
+    This owns the case where the amendment replaces/inserts a temporary section
+    whose own payload says "Tämä laki/asetus ... on voimassa D asti". The
+    existing whole-law validity parser owns that clause shape; this helper only
+    binds the parsed bound to the already-typed op target carrying that payload.
+    """
+    if op.target_cols.target_unit_kind != "section" or not op.target_cols.target_section:
+        return None
+    text = _body_text_for_temporary_op(
+        op,
+        muutos_tree=muutos_tree,
+        source_model=source_model,
+    )
+    if not text and op.lo is not None and op.lo.payload is not None:
+        if op.lo.payload.kind is not IRNodeKind.SECTION:
+            return None
+        text = irnode_to_text(op.lo.payload)
+    if not text:
+        return None
+    parsed = parse_whole_law_validity(_normalize_fi_parse_text(text))
+    return parsed.valid_until if parsed is not None else None
+
+
+def _stamp_explicit_payload_fixed_term_expiry(
+    ops: List[AmendmentOp],
+    *,
+    muutos_tree: "etree._Element | None" = None,
+    source_model: "AmendmentSourceModel | None" = None,
+) -> List[AmendmentOp]:
+    """Stamp explicit payload-local fixed-term expiry onto matching op sources."""
+    patched: List[AmendmentOp] = []
+    for op in ops:
+        lo = op.lo
+        source = lo.source if (lo is not None and lo.source is not None) else None
+        if lo is None or source is None or source.expires:
+            patched.append(op)
+            continue
+        expiry = _explicit_payload_fixed_term_expiry_date(
+            op,
+            muutos_tree=muutos_tree,
+            source_model=source_model,
+        )
+        if expiry is None or _expiry_date_precedes_effective_date(expiry, source.effective):
+            patched.append(op)
+            continue
+        patched.append(
+            dc_replace(
+                op,
+                lo=dc_replace(
+                    lo,
+                    source=dc_replace(
+                        source,
+                        expires=expires_on_from_valid_until(expiry).isoformat(),
+                    ),
+                ),
+            )
+        )
+    return patched
+
+
+def _tag_expiring_source_ops(
+    ops: List[AmendmentOp],
+    *,
+    amendment_id: str,
+    target_statute: str = "",
+) -> tuple[List[AmendmentOp], List[TemporalEvent]]:
+    """Promote ops with typed finite source expiry to temporary ops.
+
+    Whole-amendment fixed-term clauses are parsed into ``OperationSource.expires``
+    during metadata enrichment. That typed source bound must become an explicit
+    temporal carrier even when the drafting text does not contain the word
+    ``väliaikaisesti`` and the fixed term lives in the amendment's own
+    entry-into-force clause rather than inside the provision payload.
+    """
+    from lawvm.finland.ops import temporary_signal_for_op
+
+    tagged: List[AmendmentOp] = []
+    temporal_events: List[TemporalEvent] = []
+    for op in ops:
+        if temporary_signal_for_op(op):
+            tagged.append(op)
+            continue
+        if op.op_type not in {OpType.REPLACE, OpType.INSERT}:
+            tagged.append(op)
+            continue
+        source = op.lo.source if (op.lo is not None and op.lo.source is not None) else None
+        if source is None or not source.expires:
+            tagged.append(op)
+            continue
+        tagged_op = dc_replace(op, is_temporary=True)
+        tagged.append(tagged_op)
+        temporal_events.extend(
+            _temporary_events_for_op(
+                tagged_op,
+                amendment_id,
+                target_statute=target_statute,
+            )
+        )
+    return tagged, temporal_events
 
 
 # ---------------------------------------------------------------------------
@@ -4512,10 +4617,24 @@ def normalize_and_compile_ops(
     # they are available separately from the amendment body.
     temporary_temporal_events: List[TemporalEvent] = []
     if ops:
+        ops = _stamp_explicit_payload_fixed_term_expiry(
+            ops,
+            muutos_tree=muutos_tree,
+            source_model=source_model,
+        )
+    if ops:
+        ops, source_expiry_events = _tag_expiring_source_ops(
+            ops,
+            amendment_id=amendment_id,
+            target_statute=parent_id or "",
+        )
+        temporary_temporal_events.extend(source_expiry_events)
+    if ops:
         if _is_temporary_whole:
             ops, temp_events = _tag_temporary_ops(
                 ops,
                 amendment_id=amendment_id,
+                target_statute=parent_id or "",
                 muutos_tree=muutos_tree,
                 source_model=source_model,
             )
@@ -4534,6 +4653,7 @@ def normalize_and_compile_ops(
                     temp_tagged, temp_events = _tag_temporary_ops(
                         [op],
                         amendment_id=amendment_id,
+                        target_statute=parent_id or "",
                         muutos_tree=muutos_tree,
                         source_model=source_model,
                     )

@@ -60,7 +60,7 @@ _PINS: list[tuple[str, str, str, str, str]] = [
     ("2009/273", "section:10", _AS_OF, _QT,
      "84f47ddc3cbe0787e134be3ce67a4831e0955e1797df569f667589ced7ca9612"),  # R5 vaalirahoituslaki 10 §; stale carried subsection-2 text removed
     ("2024/482", "section:7", _AS_OF, _QT,
-     "fdae08152bf6424b68aad271d8f0eaaae3a90eb1194f28cabfa01a112870ef51"),  # R7 laki 482/2024 7 § (voimaantulo)
+     "5ceafd2fe47777760c7177e14f6cbd06810d7aa851ad595ce83a50e8f91608ad"),  # R7 laki 482/2024 7 §; re-pinned after payload-local fixed-term validity became typed temporal metadata (text/content hash stable; expires 2027-01-01 from "voimassa 31 päivään joulukuuta 2026").
     # --- E1_LAWVM_ROUTE_GROUNDING_HANKINTALAKI.md (hankintalaki 1397/2016 + kilpailulaki 948/2011) ---
     ("2016/1397", "section:141", _AS_OF, _QT,
      "3fc5276b4c9956e9968898440e8a6b943f42a6cd450360e4cae7efe66ba6af0e"),  # § 141 (2024 amendment version)

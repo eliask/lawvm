@@ -1006,6 +1006,48 @@ def test_replay_xml_1982_91_repairs_source_sec_131_label() -> None:
     assert "Täten kumotaan 5 päivänä helmikuuta 1982 annetun maa-ainesasetuksen" not in text
 
 
+def test_replay_xml_1966_258_repairs_chapter_6_section_78_source_label() -> None:
+    replay = replay_xml_for_test("1966/258", mode="official_consolidation", quiet=True)
+
+    bogus = replay.materialized_state.find_node("section", "75", "chapter", "6")
+    section = replay.materialized_state.find_node("section", "78", "chapter", "6")
+
+    assert bogus is None
+    assert section is not None
+    text = " ".join(irnode_to_text(section).split())
+    assert "Vuokrasopimusta koskeva riita voidaan saattaa" in text
+    assert "heidän yhteisestä pyynnöstään sovittelun" not in text
+
+
+def test_replay_xml_1995_386_uses_destination_payload_for_2003_relabels() -> None:
+    replay = replay_xml_for_test(
+        "1995/386",
+        mode="official_consolidation",
+        quiet=True,
+        as_of="2003-09-01",
+    )
+
+    section_27g = replay.materialized_state.find_node("section", "27g", "chapter", "6a")
+    section_27k = replay.materialized_state.find_node("section", "27k", "chapter", "6a")
+
+    assert section_27g is not None
+    text_27g = " ".join(irnode_to_text(section_27g).split())
+    assert text_27g.startswith("27 g § Vastuutahot")
+    assert "27 f §:ssä tarkoitettuun verkkopalvelun keskeytymiseen" in text_27g
+    assert "Sähköntoimituksen keskeyttäminen vähittäismyyjästä" not in text_27g
+
+    assert section_27k is not None
+    text_27k = " ".join(irnode_to_text(section_27k).split())
+    assert text_27k.startswith(
+        "27 k § Jakeluverkonhaltijan oikeus purkaa sähköverkkosopimus"
+    )
+    assert (
+        "Sähköverkkosopimuksen ja sähkönmyyntisopimuksen saa kuluttajan maksuviivästyksen"
+        in text_27k
+    )
+    assert "Vastuutahot" not in text_27k
+
+
 def test_replay_xml_1973_36_materializes_live_missing_sections() -> None:
     """1973/36 must retain the live Finland bug-family sections end to end."""
     replay = pinned_replay(
@@ -2479,6 +2521,21 @@ def test_replay_xml_keeps_1994_1486_uncovered_sections_under_part_scoped_chapter
         "part:1/chapter:7/section:83",
         "part:1/chapter:9/section:88",
     }
+
+
+@pytest.mark.slow
+def test_replay_xml_2021_387_does_not_emit_repealed_slot_migrations() -> None:
+    """2021/387 inserts replacement 97-99 §; it must not migrate stale placeholders."""
+    replay = pinned_replay("1993/1501", mode="official_consolidation", quiet=True)
+
+    assert replay.materialized_state.find_section("97", chapter_num="5", part_num="1") is not None
+    assert replay.materialized_state.find_section("98", chapter_num="5", part_num="1") is not None
+    assert replay.materialized_state.find_section("99", chapter_num="5", part_num="1") is not None
+    assert not any(
+        event.source_statute == "2021/387"
+        and any(label in str(event) for label in ("section:97", "section:98", "section:99"))
+        for event in replay.migration_events
+    )
 
 
 @pytest.mark.slow

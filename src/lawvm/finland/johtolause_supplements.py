@@ -417,16 +417,16 @@ def _parse_jolloin_moment_renumber_clauses(
         if anchor is None:
             continue
         section, inserted_moments = anchor
-        for source, destination, kind in pairs:
-            if kind != "M":
+        for pair in pairs:
+            if pair.kind != "M":
                 continue
-            if not source.isdigit() or not destination.isdigit():
+            if not pair.source_label.isdigit() or not pair.destination_label.isdigit():
                 continue
             clauses.append(
                 JolloinMomentRenumberClause(
                     section=section,
-                    source_moment=int(source),
-                    destination_moment=int(destination),
+                    source_moment=int(pair.source_label),
+                    destination_moment=int(pair.destination_label),
                     inserted_moments=inserted_moments,
                 )
             )

@@ -8,6 +8,7 @@ operation/report lists, but do not apply legal tree mutations themselves.
 from __future__ import annotations
 
 import datetime as dt
+from collections.abc import Set as AbstractSet
 from dataclasses import replace as dc_replace
 from typing import Dict, List, Literal, Optional, Set
 
@@ -24,13 +25,15 @@ from lawvm.finland.metadata import _expiry_date_precedes_effective_date
 def _rewrite_lo_op_source_expiry(
     lo_ops_out: Optional[List[_LegalOperation]],
     target_source_statute: str,
-    section_labels: Optional[Set[str]],
+    section_labels: Optional[AbstractSet[str]],
     expiry_date: dt.date,
     parent_statute_id: Optional[str] = None,
     replay_mode: str = "legal_pit",
     chapter_section_map: Optional[Dict[Optional[str], Set[str]]] = None,
+    fallback_effective: Optional[dt.date] = None,
     *,
     expiry_convention: Literal["inclusive_prose", "exclusive_cutoff"],
+    touched_addresses_out: Optional[List[LegalAddress]] = None,
 ) -> bool:
     """Update expires on lo_ops whose source matches ``target_source_statute``.
 
@@ -82,8 +85,12 @@ def _rewrite_lo_op_source_expiry(
             if sec_label.lower() not in (global_secs | chap_secs):
                 continue
         lo_ops_out[i] = dc_replace(lo, source=dc_replace(src, expires=expiry_iso))
+        if touched_addresses_out is not None:
+            touched_addresses_out.append(lo.target)
         updated = True
-    if updated:
+    if updated and not (
+        parent_statute_id is not None and target_source_statute == parent_statute_id
+    ):
         return True
     # Fallback: when the override targets the parent statute (voimaantulosäännös
     # amending the whole regulation), extend every op that has a finite expiry
@@ -98,17 +105,170 @@ def _rewrite_lo_op_source_expiry(
             src = lo.source
             if src is None or not src.expires:
                 continue
+            if fallback_effective is not None and src.effective != fallback_effective.isoformat():
+                continue
             if _expiry_date_precedes_effective_date(expiry_date, src.effective):
                 continue
             if replay_mode != "official_consolidation" and src.expires >= expiry_iso:
+                continue
+            if _later_same_target_op_before_expiry(
+                lo_ops_out,
+                current_index=i,
+                target=lo.target,
+                current_effective=src.effective,
+                expiry_iso=expiry_iso,
+            ):
                 continue
             target_path = list(lo.target.path)
             sec_label = next((v for k, v in reversed(target_path) if k == "section"), "")
             if section_labels is not None and sec_label.lower() not in section_labels:
                 continue
             lo_ops_out[i] = dc_replace(lo, source=dc_replace(src, expires=new_expires))
+            if touched_addresses_out is not None:
+                touched_addresses_out.append(lo.target)
             updated = True
     return updated
+
+
+def _later_same_target_op_before_expiry(
+    lo_ops: List[_LegalOperation],
+    *,
+    current_index: int,
+    target: LegalAddress,
+    current_effective: str,
+    expiry_iso: str,
+) -> bool:
+    """Return True when a later op supersedes this target before the extension horizon."""
+    for later in lo_ops[current_index + 1 :]:
+        if later.target != target:
+            continue
+        later_src = later.source
+        if later_src is None or not later_src.effective:
+            continue
+        if current_effective and later_src.effective <= current_effective:
+            continue
+        if later_src.effective < expiry_iso:
+            return True
+    return False
+
+
+def _rewrite_temporal_event_expiry_for_addresses(
+    temporal_events: List[TemporalEvent],
+    target_statute: str,
+    addresses: tuple[LegalAddress, ...],
+    expiry_date: dt.date,
+    *,
+    replay_mode: str,
+    expiry_convention: Literal["inclusive_prose", "exclusive_cutoff"],
+) -> int:
+    """Mirror source-expiry overrides onto executable expiry TemporalEvents."""
+    if not temporal_events or not addresses:
+        return 0
+    address_set = set(addresses)
+    expiry_iso = (
+        expires_on_from_valid_until(expiry_date).isoformat()
+        if expiry_convention == "inclusive_prose"
+        else expiry_date.isoformat()
+    )
+    new_expires = "" if replay_mode == "official_consolidation" else expiry_iso
+    rewritten = 0
+    kept: list[TemporalEvent] = []
+    for event in temporal_events:
+        if (
+            event.kind not in {"expire", "suspend"}
+            or event.scope.target_statute != target_statute
+            or not any(address in address_set for address in event.scope.exact_addresses)
+        ):
+            kept.append(event)
+            continue
+        if replay_mode != "official_consolidation" and event.expires >= expiry_iso:
+            kept.append(event)
+            continue
+        if not new_expires:
+            rewritten += 1
+            continue
+        kept.append(
+            dc_replace(
+                event,
+                expires=new_expires,
+                source=(
+                    dc_replace(event.source, expires=new_expires)
+                    if event.source is not None
+                    else None
+                ),
+            )
+        )
+        rewritten += 1
+    if rewritten:
+        temporal_events[:] = kept
+    return rewritten
+
+
+def reconcile_temporal_event_expiry_with_op_sources(
+    temporal_events: List[TemporalEvent],
+    lo_ops: Optional[List[_LegalOperation]],
+    *,
+    target_statute: str,
+) -> int:
+    """Align executable expiry events with rewritten operation source expiry.
+
+    Late commencement-clause overrides rewrite ``LegalOperation.source.expires``
+    after earlier amendment events have already been accumulated at replay
+    scope. For replay/direct carriers minted from those operations, the
+    operation source is the typed authority for the exact group and target
+    address; stale matching expiry events must be updated or removed. Do not
+    apply this to relation-backed lifecycle events: those may intentionally add
+    an expiry that is not present on the operation source.
+    """
+    if not temporal_events or not lo_ops:
+        return 0
+    source_expiry_by_group_address: dict[tuple[str, LegalAddress], str] = {}
+    for lo in lo_ops:
+        if not lo.group_id or lo.source is None:
+            continue
+        source_expiry_by_group_address[(lo.group_id, lo.target)] = lo.source.expires or ""
+
+    changed = 0
+    kept: list[TemporalEvent] = []
+    for event in temporal_events:
+        if (
+            event.kind not in {"expire", "suspend"}
+            or not event.event_id.startswith(("fi-temporary:", "fi-temporal:"))
+            or event.scope.target_statute != target_statute
+            or not event.group_id
+            or not event.scope.exact_addresses
+        ):
+            kept.append(event)
+            continue
+        replacements = {
+            source_expiry_by_group_address[(event.group_id, address)]
+            for address in event.scope.exact_addresses
+            if (event.group_id, address) in source_expiry_by_group_address
+        }
+        if len(replacements) != 1:
+            kept.append(event)
+            continue
+        replacement = next(iter(replacements))
+        if replacement == event.expires:
+            kept.append(event)
+            continue
+        changed += 1
+        if not replacement:
+            continue
+        kept.append(
+            dc_replace(
+                event,
+                expires=replacement,
+                source=(
+                    dc_replace(event.source, expires=replacement)
+                    if event.source is not None
+                    else None
+                ),
+            )
+        )
+    if changed:
+        temporal_events[:] = kept
+    return changed
 
 
 def _rewrite_lo_op_source_effective(

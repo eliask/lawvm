@@ -1538,7 +1538,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 3,1978/302,suspect,oracle_suspect,1995/441 eff 1995-04-01 > cutoff 1995-03-24,
 3,1978/380,suspect,oracle_suspect,2025/578 eff 2026-01-01 > cutoff 2025-06-27,
 3,1978/508,suspect,oracle_suspect,2000/670 eff 2000-07-12 > cutoff 2000-07-06,
-3,1979/345,core,,,OK
+3,1979/345,suspect,oracle_suspect,oracle-check: EDITORIAL_CONVENTION×6; SOURCE_PATHOLOGY×1; contingent-effective-date 2018/1124; current replay/oracle differences are editorial punctuation/diacritics/heading spacing plus source-pathology finding,OK
 3,1979/864,suspect,oracle_suspect,2025/1179 eff 2026-01-01 > cutoff 2025-12-11,
 3,1980/795,suspect,oracle_suspect,2016/721 eff 2017-01-01 > cutoff 2016-08-25,
 3,1981/137,suspect,oracle_suspect,1995/1476 eff 1996-01-01 > cutoff 1995-12-18,
@@ -2425,7 +2425,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 6,1999/561,suspect,oracle_suspect,2003/404 eff 2003-07-25 > cutoff 2003-05-23,
 6,1999/565,suspect,oracle_suspect,2003/401 eff 2003-07-25 > cutoff 2003-05-23,
 6,2000/1119,suspect,oracle_suspect,2023/552 eff 2023-09-01 > cutoff 2023-03-23,
-6,2000/1195,core,,,OK
+6,2000/1195,suspect,oracle_suspect,oracle-check: EDITORIAL_CONVENTION×1; current diff is 100% by section and residual is editorial/source-pathology classified,OK
 6,2000/193,suspect,oracle_suspect,2022/1173 eff 2023-01-01 > cutoff 2022-12-20,
 6,2000/204,suspect,oracle_suspect,2015/258 eff 2015-04-01 > cutoff 2015-03-20,
 6,2000/427,suspect,oracle_suspect,2015/1240 eff 2015-10-01 > cutoff 2015-09-24,
@@ -2747,7 +2747,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 8,2011/1531,suspect,oracle_suspect,2025/442 eff 2026-01-01 > cutoff 2025-06-27,
 8,2011/922,core,,,OK
 8,2012/110,suspect,oracle_suspect,2015/780 eff 2015-08-01 > cutoff 2015-06-18,
-8,2012/422,notruth,no_truth_from_run,,NO_TRUTH
+8,2012/422,suspect,oracle_suspect,oracle-check: EDITORIAL_CONVENTION×2; ORACLE_STALE×1; residuals are repeal-notice/editorial convention and oracle-stale classification with source-pathology findings,OK
 8,2012/748,core,,,OK
 8,2013/185,suspect,oracle_suspect,2025/1044 eff 2026-01-01 > cutoff 2025-12-22,
 8,2013/423,suspect,oracle_suspect,2023/591 eff 2023-06-01 > cutoff 2023-03-23,

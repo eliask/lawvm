@@ -2854,10 +2854,25 @@ def _build_canonical_intent(rop: ResolvedOp) -> "CanonicalIntent | None":
                 if destination_address is not None:
                     # The legacy destination often carries only the new leaf label
                     # (for example ``section:3``), while Relabel requires the full
-                    # parent path to stay identical to the source address.
+                    # parent path to stay identical to the source address.  When
+                    # the parser supplies an explicit destination parent (for
+                    # example ``chapter:7/section:50``), preserve it.
                     source_address = rop.resolved_target_address
                     source_path = source_address.path if source_address is not None else ()
-                    if source_path:
+                    source_parent_path = source_path[:-1]
+                    destination_parent_path = destination_address.path[:-1]
+                    if (
+                        destination_parent_path
+                        and len(source_parent_path) >= len(destination_parent_path)
+                        and source_parent_path[-len(destination_parent_path) :] == destination_parent_path
+                    ):
+                        dest_path = (
+                            source_parent_path[: -len(destination_parent_path)]
+                            + destination_address.path
+                        )
+                    elif destination_parent_path:
+                        dest_path = destination_address.path
+                    elif source_path:
                         dest_leaf_kind = source_path[-1][0]
                         dest_path = source_path[:-1] + ((dest_leaf_kind, destination_address.leaf_label()),)
                     else:

@@ -1387,6 +1387,7 @@ def deferred_plan_op_finding(
 # Op kinds that the executor handles.  Other kinds (INSERT_SUBTREE,
 # REPLACE_LEAF, etc.) are applied by the existing leaf-level replay path.
 _EXECUTABLE_OP_KINDS = frozenset({TransformOpKind.MOVE, TransformOpKind.RELABEL})
+_RESTRUCTURE_RELABEL_DESTINATION_SCAFFOLD_ATTR = "lawvm_restructure_relabel_destination_scaffold"
 
 
 def _stabilize_same_parent_relabel_exec_order(
@@ -1844,15 +1845,12 @@ def _execute_same_parent_relabel_group(
                     source_statute=source_statute,
                 )
             relabel_op = op_by_source[source_key]
-            applied_path = None
-            snapshot_payload = None
-            if source_key[0] == "section":
-                found_path = found_paths[relabel_op]
-                applied_path = _strip_hcontainer_from_path(
-                    found_path[:-1]
-                    + (("section", dest_by_source[source_key]),)
-                )
-                snapshot_payload = relabeled_child
+            found_path = found_paths[relabel_op]
+            applied_to = found_path[:-1] + (
+                (found_path[-1][0], dest_by_source[source_key]),
+            )
+            applied_path = _strip_hcontainer_from_path(applied_to)
+            snapshot_payload = relabeled_child if source_key[0] == "section" else None
             executed.append(
                 ExecutedOp(
                     op=relabel_op,
@@ -2039,6 +2037,45 @@ def execute_restructure_plan(
     return tree, executed
 
 
+def _ensure_relabel_destination_parent(
+    tree: IRNode,
+    parent_path: tuple[tuple[str, str], ...],
+) -> IRNode | None:
+    """Ensure a cross-parent relabel destination container exists."""
+    current = tree
+    prefix: tuple[tuple[str, str], ...] = ()
+    for kind, label in parent_path:
+        if kind not in {"part", "chapter"}:
+            return None
+        next_prefix = prefix + ((kind, label),)
+        if _tops.resolve(current, next_prefix) is not None:
+            prefix = next_prefix
+            continue
+        if kind == "part":
+            if prefix:
+                return None
+            node = IRNode(
+                kind=IRNodeKind.PART,
+                label=label,
+                attrs={_RESTRUCTURE_RELABEL_DESTINATION_SCAFFOLD_ATTR: "1"},
+                children=(),
+            )
+            current = _tops.insert_sorted(current, (), node)
+        elif kind == "chapter":
+            parent = _tops.resolve(current, prefix) if prefix else current
+            if parent is None or parent.kind not in {IRNodeKind.BODY, IRNodeKind.PART}:
+                return None
+            node = IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label=label,
+                attrs={_RESTRUCTURE_RELABEL_DESTINATION_SCAFFOLD_ATTR: "1"},
+                children=(),
+            )
+            current = _tops.insert_sorted(current, prefix, node)
+        prefix = next_prefix
+    return current
+
+
 def _execute_relabel(
     tree: IRNode,
     op: StructuralTransformOp,
@@ -2082,6 +2119,7 @@ def _execute_relabel(
         )
 
     new_label = dest_path[-1][1]  # leaf label of destination
+    explicit_destination_parent = tuple(dest_path[:-1])
 
     # Find the target node in the tree.
     found_path = _resolve_relabel_lookup_path(
@@ -2194,47 +2232,81 @@ def _execute_relabel(
         )
 
     relabeled = _relabel_node(target_node, new_label)
-    explicit_parent_found = None
-    if len(target_path) > 1:
-        explicit_parent_found = _resolve_relabel_lookup_path(
-            tree,
-            target_path[:-1],
-            part_relabel_sources=part_relabel_sources,
-            lookup_cache=lookup_cache,
-        )
-
-    if (
-        explicit_parent_found is not None
-        and tuple(found_path[:-1]) != tuple(explicit_parent_found)
-        and found_path[-1][0] == target_path[-1][0]
-        and not found_via_pre_part_relabel_frame
-    ):
+    if explicit_destination_parent and tuple(found_path[:-1]) != explicit_destination_parent:
+        tree_with_parent = _ensure_relabel_destination_parent(tree, explicit_destination_parent)
+        if tree_with_parent is None:
+            return tree, ExecutedOp(
+                op=op,
+                success=False,
+                note=f"unsupported relabel destination parent: {op.destination}",
+                reason_code="unsupported_destination_parent",
+            )
+        tree = tree_with_parent
         tree = _tops.remove_at(tree, found_path)
-        parent_node = _tops.resolve(tree, explicit_parent_found) if explicit_parent_found else tree
+        parent_node = _tops.resolve(tree, explicit_destination_parent)
         if parent_node is None:
             return tree, ExecutedOp(
                 op=op,
                 success=False,
-                note=f"parent not found after loose-leaf recovery: {explicit_parent_found!r}",
-                reason_code="recovered_parent_missing",
+                note=f"destination parent not found: {explicit_destination_parent!r}",
+                reason_code="destination_parent_missing",
             )
-        rebuilt_parent = IRNode(
-            kind=parent_node.kind,
-            label=parent_node.label,
-            text=parent_node.text,
-            attrs=dict(parent_node.attrs),
-            children=tuple(list(parent_node.children) + [relabeled]),
-        )
-        rebuilt_parent = _tops.resort_children(rebuilt_parent)
-        tree = _tops.replace_at(tree, explicit_parent_found, rebuilt_parent)
+        if _tops.find(parent_node, dest_path[-1][0], new_label) is not None:
+            return tree, ExecutedOp(
+                op=op,
+                success=False,
+                note=f"destination already contains {dest_path[-1][0]}:{new_label}",
+                reason_code="destination_occupied",
+            )
+        tree = _tops.insert_sorted(tree, explicit_destination_parent, relabeled)
         applied_from = tuple(found_path)
-        applied_to = tuple(explicit_parent_found) + ((target_path[-1][0], new_label),)
-        note = f"reparented loose trailing leaf and relabeled to {new_label}"
+        applied_to = explicit_destination_parent + ((dest_path[-1][0], new_label),)
+        if tuple(target_path[:-1]) == explicit_destination_parent:
+            note = f"reparented loose trailing leaf and relabeled to {new_label}"
+        else:
+            note = f"moved to {op.destination} and relabeled to {new_label}"
     else:
-        tree = _tops.replace_at(tree, found_path, relabeled)
-        applied_from = tuple(found_path)
-        applied_to = tuple(found_path[:-1]) + ((found_path[-1][0], new_label),)
-        note = f"relabeled to {new_label}"
+        explicit_parent_found = None
+        if len(target_path) > 1:
+            explicit_parent_found = _resolve_relabel_lookup_path(
+                tree,
+                target_path[:-1],
+                part_relabel_sources=part_relabel_sources,
+                lookup_cache=lookup_cache,
+            )
+
+        if (
+            explicit_parent_found is not None
+            and tuple(found_path[:-1]) != tuple(explicit_parent_found)
+            and found_path[-1][0] == target_path[-1][0]
+            and not found_via_pre_part_relabel_frame
+        ):
+            tree = _tops.remove_at(tree, found_path)
+            parent_node = _tops.resolve(tree, explicit_parent_found) if explicit_parent_found else tree
+            if parent_node is None:
+                return tree, ExecutedOp(
+                    op=op,
+                    success=False,
+                    note=f"parent not found after loose-leaf recovery: {explicit_parent_found!r}",
+                    reason_code="recovered_parent_missing",
+                )
+            rebuilt_parent = IRNode(
+                kind=parent_node.kind,
+                label=parent_node.label,
+                text=parent_node.text,
+                attrs=dict(parent_node.attrs),
+                children=tuple(list(parent_node.children) + [relabeled]),
+            )
+            rebuilt_parent = _tops.resort_children(rebuilt_parent)
+            tree = _tops.replace_at(tree, explicit_parent_found, rebuilt_parent)
+            applied_from = tuple(found_path)
+            applied_to = tuple(explicit_parent_found) + ((target_path[-1][0], new_label),)
+            note = f"reparented loose trailing leaf and relabeled to {new_label}"
+        else:
+            tree = _tops.replace_at(tree, found_path, relabeled)
+            applied_from = tuple(found_path)
+            applied_to = tuple(found_path[:-1]) + ((found_path[-1][0], new_label),)
+            note = f"relabeled to {new_label}"
     if restored_source_alias:
         note = f"{note}; restored missing source part alias"
     if migration_ledger is not None:

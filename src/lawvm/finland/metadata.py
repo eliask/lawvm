@@ -645,7 +645,7 @@ RULE_FI_FIXED_TERM_SAAKKA = "fi_fixed_term_saakka"
 RULE_FI_FIXED_TERM_ANAPHORIC_YEAR_END = "fi_fixed_term_anaphoric_same_sentence_year_end"
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class WholeLawValidityParse:
     """Structured parse of one whole-law validity clause.
 
@@ -661,9 +661,29 @@ class WholeLawValidityParse:
     bound_kind: 'Literal["stated_expiry", "upper_cap"]'
     source_phrase_kind: Optional[str]
     earlier_termination_possible: bool
+    effective_from: Optional[dt.date] = None
     antecedent_text: Optional[str] = None
     antecedent_span: Optional[Tuple[int, int]] = None
     ambiguous_years: Tuple[int, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class CommencementExpiryOverride:
+    """Typed expiry override parsed from an amended commencement provision."""
+
+    target_mid: str
+    labels: frozenset[str] | None
+    expiry: dt.date
+    fallback_effective: dt.date | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class TemporarySectionExpiryOverride:
+    """Typed section-scoped fixed-term expiry override."""
+
+    target_mid: str
+    labels: frozenset[str]
+    expiry: dt.date
 
 
 def _anaphoric_antecedent_years(
@@ -716,14 +736,25 @@ def parse_whole_law_validity(text: str) -> Optional[WholeLawValidityParse]:
     starts = [0] + [b.end() for b in boundaries]
     ends = [b.start() for b in boundaries] + [len(text)]
     m = None
+    match_start = 0
+    match_end = len(text)
     for start, end in zip(starts, ends, strict=True):
         # lawvm-regex: owning_parser V-validity whole-law validity remainder anchor (canonical owner)
         m = WHOLE_LAW_VALIDITY_REMAINDER_RE.search(text, start, end)
         if m is not None:
+            match_start = start
+            match_end = end
             break
     if m is None:
         return None
+    sentence_text = text[match_start:match_end]
     remainder = m.group(1)
+    effective_match = match_fi_date(
+        sentence_text[: m.start(1) - match_start],
+        forms={FiDateForm.ESSIVE},
+        tolerate_finlex_typos=True,
+        tolerate_dotted_day=True,
+    )
 
     # (position-in-remainder, parse) candidates; the latest-positioned date
     # expression is the terminal bound (a start-range like "tammikuun 1
@@ -897,9 +928,22 @@ def parse_whole_law_validity(text: str) -> Optional[WholeLawValidityParse]:
                 bound_kind="upper_cap",
                 source_phrase_kind=phrase_kind,
                 earlier_termination_possible=True,
+                effective_from=effective_match.value if effective_match is not None else None,
                 antecedent_text=parse.antecedent_text,
                 antecedent_span=parse.antecedent_span,
             )
+    elif parse.valid_until is not None and effective_match is not None:
+        parse = WholeLawValidityParse(
+            valid_until=parse.valid_until,
+            rule_id=parse.rule_id,
+            bound_kind=parse.bound_kind,
+            source_phrase_kind=parse.source_phrase_kind,
+            earlier_termination_possible=parse.earlier_termination_possible,
+            effective_from=effective_match.value,
+            antecedent_text=parse.antecedent_text,
+            antecedent_span=parse.antecedent_span,
+            ambiguous_years=parse.ambiguous_years,
+        )
     return parse
 
 
@@ -1276,7 +1320,10 @@ def _subsection_clause_section_labels(raw: str) -> Set[str]:
     return _parse_section_list_labels(raw)
 
 
-_temporary_section_expiry_cache: dict[tuple[int, str, int], tuple[tuple[str, Set[str], dt.date], ...]] = {}
+_temporary_section_expiry_cache: dict[
+    tuple[int, str, int],
+    tuple[TemporarySectionExpiryOverride, ...],
+] = {}
 
 
 @dataclass(frozen=True, slots=True)
@@ -1645,7 +1692,7 @@ def _temporary_section_expiry_overrides(
     source_statute_id: str,
     *,
     raw_text: str | None = None,
-) -> tuple[tuple[str, Set[str], dt.date], ...]:
+) -> tuple[TemporarySectionExpiryOverride, ...]:
     """Return all section-scoped expiry override metadata when present.
 
     Real compile/replay paths should consume this plural form so multiple scoped
@@ -1670,17 +1717,24 @@ def _temporary_section_expiry_overrides(
         return ()
     full_text = _normalized_tree_text(tree, raw_text)
     full_text_casefold = full_text.casefold()
-    overrides: list[tuple[str, Set[str], dt.date]] = []
+    overrides: list[TemporarySectionExpiryOverride] = []
     seen: set[tuple[str, frozenset[str], str]] = set()
 
     def _append_override(target_mid: str, labels: Set[str], expiry: dt.date) -> None:
         if not labels:
             return
-        key = (target_mid, frozenset(labels), expiry.isoformat())
+        frozen_labels = frozenset(labels)
+        key = (target_mid, frozen_labels, expiry.isoformat())
         if key in seen:
             return
         seen.add(key)
-        overrides.append((target_mid, labels, expiry))
+        overrides.append(
+            TemporarySectionExpiryOverride(
+                target_mid=target_mid,
+                labels=frozen_labels,
+                expiry=expiry,
+            )
+        )
 
     target_mid_from_cited = source_statute_id
     if "voimaantulosäänn" in full_text_casefold:
@@ -1877,8 +1931,8 @@ def _temporary_section_expiry_overrides(
     if target_mid_from_cited == source_statute_id:
         whole_section_labels = {
             label
-            for _target_mid, labels, _expiry in overrides
-            for label in labels
+            for override in overrides
+            for label in override.labels
         }
         by_section: dict[str, dict[int, dt.date]] = {}
         for override in _temporary_provision_expiry_overrides(
@@ -1933,7 +1987,7 @@ def _temporary_section_expiry_overrides(
 def _temporary_section_expiry_override(
     tree: "etree._Element",
     source_statute_id: str,
-) -> Optional[Tuple[str, Set[str], dt.date]]:
+) -> Optional[TemporarySectionExpiryOverride]:
     """Return section-scoped expiry override metadata when present.
 
     Covers both:
@@ -2341,8 +2395,8 @@ def _commencement_expiry_override(
     tree: "etree._Element",
     source_statute_id: str,
     *,
-    section_expiry_overrides: tuple[tuple[str, Set[str], dt.date], ...] | None = None,
-) -> Optional[Tuple[str, Optional[Set[str]], dt.date]]:
+    section_expiry_overrides: tuple[TemporarySectionExpiryOverride, ...] | None = None,
+) -> Optional[CommencementExpiryOverride]:
     """Return expiry override metadata for amended voimaantulosäännös clauses.
 
     If the amended commencement clause scopes expiry to specific sections, the
@@ -2358,9 +2412,12 @@ def _commencement_expiry_override(
         if section_expiry_overrides is not None
         else _temporary_section_expiry_override(tree, source_statute_id)
     )
-    if scoped is not None and scoped[0] != source_statute_id:
-        target_mid, labels, expiry = scoped
-        return target_mid, labels, expiry
+    if scoped is not None and scoped.target_mid != source_statute_id:
+        return CommencementExpiryOverride(
+            target_mid=scoped.target_mid,
+            labels=scoped.labels,
+            expiry=scoped.expiry,
+        )
 
     full_text = _normalized_tree_text(tree)
     # lawvm-regex: owning_parser C-commence cited-voimaantulosäännös target-id redirection; id parse delegated to _normalize_textual_statute_id, no date minted here
@@ -2374,10 +2431,16 @@ def _commencement_expiry_override(
     target_mid = _normalize_textual_statute_id(cited.group(1))
     if not target_mid or target_mid == source_statute_id:
         return None
-    expiry = _amendment_expiry_date(tree)
+    validity = parse_whole_law_validity(full_text)
+    expiry = validity.valid_until if validity is not None else _amendment_expiry_date(tree)
     if expiry is None:
         return None
-    return target_mid, None, expiry
+    return CommencementExpiryOverride(
+        target_mid=target_mid,
+        labels=None,
+        expiry=expiry,
+        fallback_effective=validity.effective_from if validity is not None else None,
+    )
 
 
 def _chapter_expiry_from_base(
