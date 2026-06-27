@@ -57,7 +57,7 @@ from lawvm.core.ir import (
 )
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.mutation_boundary import TreePath
-from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.semantic_types import IRNodeKind, structural_action_from_str
 from lawvm.core.statute_facets import is_statute_title_address, replace_statute_title
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.core import tree_ops
@@ -137,23 +137,13 @@ _EE_CROSS_ACT_TRANSITIONAL_SECTION_REPEAL_RULE = "ee_cross_act_transitional_sect
 
 
 def _to_structural_action(action: str | StructuralAction) -> StructuralAction:
-    """Map action to StructuralAction, preserving text-level variants."""
-    if isinstance(action, StructuralAction):
-        return action
-    if action == "replace":
-        return StructuralAction.REPLACE
-    if action == "text_replace":
-        return StructuralAction.TEXT_REPLACE
-    if action == "repeal":
-        return StructuralAction.REPEAL
-    if action == "text_repeal":
-        return StructuralAction.TEXT_REPEAL
-    if action == "insert":
-        return StructuralAction.INSERT
-    if action == "renumber":
-        return StructuralAction.RENUMBER
-    # Fallback for unknown actions - should not happen in normal operation
-    return StructuralAction.META
+    """Map action to StructuralAction, preserving text-level variants.
+
+    Fail-loud: an action string naming no ``StructuralAction`` member raises
+    ``ValueError`` rather than silently collapsing to ``META``. Delegates to the
+    shared jurisdiction-neutral codec.
+    """
+    return structural_action_from_str(action, on_unknown="raise")
 
 
 def _try_parse_int(s: str) -> Optional[int]:
