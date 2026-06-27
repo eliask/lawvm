@@ -195,6 +195,77 @@ class CorrigendumExtraction:
 
 
 # ---------------------------------------------------------------------------
+# §1.10 — fail-loud diagnostic for swallowed corrigendum-pipeline failures
+# ---------------------------------------------------------------------------
+# Replaces bare `except Exception: pass/return None/return None` at nine call
+# sites in this module. The named diagnostic embeds the offending snippet
+# (≤400 chars) per §1.10 so triage does not require re-running extraction; it
+# is printed to stderr and the call site keeps its prior recovery semantics
+# (return None / [] / "") so behavior is preserved while the failure is no
+# longer silent. `frozen + slots` per §1.9 (typed carrier across the
+# (pipeline -> operator) seam; not indexed by position).
+
+@dataclass(frozen=True, slots=True)
+class CorrigendumApplyFailure:
+    rule_id: str                        # e.g. "corrigendum_pdf_to_text"
+    step: str                            # "<phase>.<step>" — e.g. "verify.read_source"
+    exception_kind: str                  # type(exc).__name__
+    detail: str = ""                     # str(exc), short
+    corrigendum_id: Optional[str] = None  # amendment_id / sid / op_id when known
+    snippet: str = ""                   # offending bytes/text ≤400 chars (utf-8 replace)
+
+    def render(self) -> str:
+        parts = [
+            f"[corrigendum_apply_failure:{self.rule_id}]",
+            f"step={self.step}",
+            f"exc={self.exception_kind}",
+        ]
+        if self.detail:
+            parts.append(f"detail={self.detail[:200]!r}")
+        if self.corrigendum_id:
+            parts.append(f"corrigendum_id={self.corrigendum_id}")
+        if self.snippet:
+            parts.append(f"snippet={self.snippet[:400]!r}")
+        return " ".join(parts)
+
+    def emit(self) -> None:
+        print(self.render(), file=sys.stderr, flush=True)
+
+
+def _emit_corrigendum_failure(
+    *,
+    rule_id: str,
+    step: str,
+    exc: BaseException,
+    corrigendum_id: Optional[str] = None,
+    snippet: Optional[bytes | str] = None,
+) -> None:
+    """Emit a §1.10 named diagnostic for a swallowed corrigendum-pipeline
+    failure.
+
+    The caller keeps its prior recovery semantics (returns None / [] / "" /
+    passes) — this only stops the failure from being silent by printing the
+    typed CorrigendumApplyFailure to stderr. `snippet` accepts bytes or str;
+    bytes are decoded utf-8 with errors=replace so the diagnostic never
+    itself chokes on bad input.
+    """
+    if snippet is None:
+        snippet_str = ""
+    elif isinstance(snippet, bytes):
+        snippet_str = snippet[:400].decode("utf-8", errors="replace")
+    else:
+        snippet_str = snippet[:400]
+    CorrigendumApplyFailure(
+        rule_id=rule_id,
+        step=step,
+        exception_kind=type(exc).__name__,
+        detail=str(exc) if str(exc) else "",
+        corrigendum_id=corrigendum_id,
+        snippet=snippet_str,
+    ).emit()
+
+
+# ---------------------------------------------------------------------------
 # LLM prompt
 # ---------------------------------------------------------------------------
 
@@ -958,7 +1029,26 @@ def _verify_in_source(amendment_id: str, wrong_text: str) -> Optional[bool]:
         return _verify_in_source_xml(data, wrong_text)
     except (NameError, TypeError, AttributeError):
         raise  # programming bugs — fail loud
-    except Exception:
+    except (ValueError, OSError, RuntimeError) as e:
+        # Malformed amendment_id or corpus-store read failure — distinct from
+        # the "amendment not present" None return. §1.10: emit a named
+        # diagnostic so the source of the swallowed failure is visible.
+        _emit_corrigendum_failure(
+            rule_id="corrigendum_verify_in_source",
+            step="verify.read_source",
+            exc=e,
+            corrigendum_id=amendment_id,
+            snippet=amendment_id,
+        )
+        return None
+    except Exception as e:
+        _emit_corrigendum_failure(
+            rule_id="corrigendum_verify_in_source_unexpected",
+            step="verify.read_source",
+            exc=e,
+            corrigendum_id=amendment_id,
+            snippet=amendment_id,
+        )
         return None
 
 
@@ -990,7 +1080,26 @@ def _verify_in_source_xml(xml_bytes: bytes | None, wrong_text: str) -> Optional[
         return ok
     except (NameError, TypeError, AttributeError):
         raise  # programming bugs — fail loud
-    except Exception:
+    except (ImportError, UnicodeDecodeError, ValueError, RuntimeError) as e:
+        # The try body imports from lawvm.finland.corrigendum lazily and then
+        # runs _apply_text_replace on bytes — failures are dominated by the
+        # import lookup (ImportError), byte-slice decode (UnicodeDecodeError),
+        # or _apply_text_replace's own ValueError/RuntimeError. §1.10: emit a
+        # named diagnostic carrying wrong_text as the snippet.
+        _emit_corrigendum_failure(
+            rule_id="corrigendum_apply_text_replace",
+            step="verify.apply_text_replace",
+            exc=e,
+            snippet=wrong_text,
+        )
+        return None
+    except Exception as e:
+        _emit_corrigendum_failure(
+            rule_id="corrigendum_apply_text_replace_unexpected",
+            step="verify.apply_text_replace",
+            exc=e,
+            snippet=wrong_text,
+        )
         return None
 
 
@@ -1010,29 +1119,30 @@ def _stable_id(source_pdf: str, correction_index: int) -> str:
 # ---------------------------------------------------------------------------
 
 def _pdf_to_images_base64(pdf_bytes: bytes, dpi: int = 150) -> list[str]:
-    """Render PDF pages to JPEG and return list of base64-encoded strings."""
+    """Render PDF pages to JPEG and return list of base64-encoded strings.
+
+    Uses :class:`tempfile.TemporaryDirectory` so the intermediate
+    ``page-*.jpg`` files created by ``pdftoppm`` are cleaned up even if an
+    exception is raised after the subprocess creates pages but before the
+    loop fully drains them. The prior ``NamedTemporaryFile``+``finally``
+    shape only unlinked ``pdf_path`` and leaked the JPEGs on failure (most
+    importantly on ``subprocess.CalledProcessError`` and on a
+    ``KeyboardInterrupt`` mid-loop).
+    """
     import base64
-    import subprocess
-    import tempfile
-    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
-        f.write(pdf_bytes)
-        pdf_path = f.name
-    try:
-        out_prefix = pdf_path.replace(".pdf", "_page")
+    result: list[str] = []
+    with tempfile.TemporaryDirectory(prefix="corrigendum_pdf_") as tmpdir:
+        tmp_root = Path(tmpdir)
+        pdf_path = tmp_root / "input.pdf"
+        out_prefix = tmp_root / "page"
+        pdf_path.write_bytes(pdf_bytes)
         subprocess.run(
-            ["pdftoppm", "-r", str(dpi), "-jpeg", pdf_path, out_prefix],
+            ["pdftoppm", "-r", str(dpi), "-jpeg", str(pdf_path), str(out_prefix)],
             check=True, capture_output=True,
         )
-        import glob as _glob
-        pages = sorted(_glob.glob(f"{out_prefix}-*.jpg"))
-        result = []
-        for page in pages:
-            with open(page, "rb") as f:
-                result.append(base64.b64encode(f.read()).decode())
-            import os; os.unlink(page)
-        return result
-    finally:
-        import os; os.unlink(pdf_path)
+        for page in sorted(tmp_root.glob("page-*.jpg")):
+            result.append(base64.b64encode(page.read_bytes()).decode())
+    return result
 
 
 async def _call_llm(
@@ -1253,7 +1363,26 @@ async def _classify_pdf(
     # ------------------------------------------------------------------ render PDF to images (always, for vision)
     try:
         images_b64 = _pdf_to_images_base64(pdf_bytes)
-    except Exception:
+    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as e:
+        # pdftoppm binary missing / poppler failure / tempdir I/O failure —
+        # vision lane is skipped, text lane still runs. §1.10: emit a named
+        # diagnostic so a missing poppler install is not silent.
+        _emit_corrigendum_failure(
+            rule_id="corrigendum_pdf_to_images_base64",
+            step="classify.pdf_to_images_base64",
+            exc=e,
+            corrigendum_id=amendment_id,
+            snippet=pdf_name,
+        )
+        images_b64 = []
+    except Exception as e:
+        _emit_corrigendum_failure(
+            rule_id="corrigendum_pdf_to_images_base64_unexpected",
+            step="classify.pdf_to_images_base64",
+            exc=e,
+            corrigendum_id=amendment_id,
+            snippet=pdf_name,
+        )
         images_b64 = []
 
     # ------------------------------------------------------------------ scanned (no text at all)
@@ -1772,8 +1901,25 @@ def _cmd_test(args) -> None:
                     print(f"    Context: ...{ctx[:200]}...")
             except (NameError, TypeError, AttributeError):
                 raise  # programming bugs — fail loud
-            except Exception:
-                pass
+            except (UnicodeDecodeError, ValueError, IndexError, OSError) as e:
+                # Context print is informational only — recovery is to skip
+                # the line, but emit a §1.10 named diagnostic so a recurring
+                # failure is visible rather than silently swallowed.
+                _emit_corrigendum_failure(
+                    rule_id="corrigendum_test_context_print",
+                    step="test.context_print",
+                    exc=e,
+                    corrigendum_id=amendment_id,
+                    snippet=op.op_id,
+                )
+            except Exception as e:
+                _emit_corrigendum_failure(
+                    rule_id="corrigendum_test_context_print_unexpected",
+                    step="test.context_print",
+                    exc=e,
+                    corrigendum_id=amendment_id,
+                    snippet=op.op_id,
+                )
         else:
             print("    Status : NO MATCH ✗  (text not found in source XML)")
         print()
@@ -3256,7 +3402,27 @@ def _get_xml_corrigendum_refs(cs, sid: str) -> JsonRows:
         return _parse_corrigendum_xml_refs(xml_bytes)
     except (NameError, TypeError, AttributeError):
         raise  # programming bugs — fail loud
-    except Exception:
+    except (UnicodeDecodeError, ValueError, RuntimeError) as e:
+        # _parse_corrigendum_xml_refs decodes href/date/ref byte-groups; an
+        # invalid UTF-8 byte in any captured group raises UnicodeDecodeError.
+        # §1.10: emit a named diagnostic carrying the sid and a 400-char
+        # source snippet so the offending XML can be triaged without re-read.
+        _emit_corrigendum_failure(
+            rule_id="corrigendum_parse_xml_refs",
+            step="get_xml_corrigendum_refs.parse",
+            exc=e,
+            corrigendum_id=sid,
+            snippet=xml_bytes[:400],
+        )
+        return []
+    except Exception as e:
+        _emit_corrigendum_failure(
+            rule_id="corrigendum_parse_xml_refs_unexpected",
+            step="get_xml_corrigendum_refs.parse",
+            exc=e,
+            corrigendum_id=sid,
+            snippet=xml_bytes[:400],
+        )
         return []
 
 
@@ -3283,7 +3449,24 @@ def _pdf_page_count(pdf_bytes: bytes) -> int | None:
         return None
     except (NameError, TypeError, AttributeError):
         raise
-    except Exception:
+    except (FileNotFoundError, subprocess.TimeoutExpired, subprocess.SubprocessError, OSError, ValueError) as e:
+        # pdfinfo not installed / timeout / poppler failure / int-parse failure
+        # of the "Pages:" line — §1.10: emit a named diagnostic with the
+        # pdf_bytes head as a snippet so the offending PDF is identifiable.
+        _emit_corrigendum_failure(
+            rule_id="corrigendum_pdf_page_count",
+            step="pdf_page_count.pdfinfo",
+            exc=e,
+            snippet=pdf_bytes[:64],
+        )
+        return None
+    except Exception as e:
+        _emit_corrigendum_failure(
+            rule_id="corrigendum_pdf_page_count_unexpected",
+            step="pdf_page_count.pdfinfo",
+            exc=e,
+            snippet=pdf_bytes[:64],
+        )
         return None
 
 
@@ -3307,9 +3490,34 @@ def _pdf_to_text(pdf_bytes: bytes, max_pages: int = _PDF_EXTRACT_MAX_PAGES) -> O
         return None
     except (NameError, TypeError, AttributeError):
         raise  # programming bugs — fail loud
-    except FileNotFoundError:
+    except FileNotFoundError as e:
+        # pdftotext binary not installed — emit a §1.10 named diagnostic so
+        # the operator sees the missing dependency (the silent
+        # FileNotFoundError swallow made it indistinguishable from "PDftotext
+        # returned non-zero" or "PDF unreadable"). Recovery stays `None`.
+        _emit_corrigendum_failure(
+            rule_id="corrigendum_pdf_to_text_missing_binary",
+            step="pdf_to_text.pdftotext",
+            exc=e,
+            snippet=pdf_bytes[:64],
+        )
         return None
-    except Exception:
+    except (subprocess.SubprocessError, OSError, UnicodeDecodeError) as e:
+        # poppler subprocess failure / tempdir I/O failure / non-utf8 stdout.
+        _emit_corrigendum_failure(
+            rule_id="corrigendum_pdf_to_text",
+            step="pdf_to_text.pdftotext",
+            exc=e,
+            snippet=pdf_bytes[:64],
+        )
+        return None
+    except Exception as e:
+        _emit_corrigendum_failure(
+            rule_id="corrigendum_pdf_to_text_unexpected",
+            step="pdf_to_text.pdftotext",
+            exc=e,
+            snippet=pdf_bytes[:64],
+        )
         return None
 
 
@@ -3553,8 +3761,25 @@ async def _reextract_one(
                 pdf_text = r.stdout.decode("utf-8", errors="replace")[:1000]
         except (NameError, TypeError, AttributeError):
             raise  # programming bugs — fail loud
-        except Exception:
-            pass
+        except (FileNotFoundError, subprocess.SubprocessError, OSError, UnicodeDecodeError) as e:
+            # pdftotext missing / failed / tempdir I/O — pdf_text stays ""
+            # but a §1.10 named diagnostic surfaces it (the prior silent
+            # swallow elided a missing poppler install behind empty context).
+            _emit_corrigendum_failure(
+                rule_id="corrigendum_reextract_pdf_text",
+                step="reextract.pdf_text",
+                exc=e,
+                corrigendum_id=amendment_id,
+                snippet=op_id,
+            )
+        except Exception as e:
+            _emit_corrigendum_failure(
+                rule_id="corrigendum_reextract_pdf_text_unexpected",
+                step="reextract.pdf_text",
+                exc=e,
+                corrigendum_id=amendment_id,
+                snippet=op_id,
+            )
 
     # ---- Phase 1: line identification ----
     user_p1 = (
@@ -3714,8 +3939,26 @@ def _cmd_reextract(args) -> None:
                 pdf_bytes = cs.read_corrigendum_media(amendment_id, Path(spdf).name)
             except (NameError, TypeError, AttributeError):
                 raise  # programming bugs — fail loud
-            except Exception:
-                pass
+            except (OSError, KeyError, RuntimeError) as e:
+                # Media missing from the archive / cache miss / archive backend
+                # failure — pdf_bytes stays None and the candidate continues,
+                # but a §1.10 named diagnostic surfaces it rather than leaving
+                # the LLM with no PDF and no explanation.
+                _emit_corrigendum_failure(
+                    rule_id="corrigendum_read_corrigendum_media",
+                    step="reextract.read_corrigendum_media",
+                    exc=e,
+                    corrigendum_id=amendment_id,
+                    snippet=op_id,
+                )
+            except Exception as e:
+                _emit_corrigendum_failure(
+                    rule_id="corrigendum_read_corrigendum_media_unexpected",
+                    step="reextract.read_corrigendum_media",
+                    exc=e,
+                    corrigendum_id=amendment_id,
+                    snippet=op_id,
+                )
         candidates.append({
             "amendment_id": amendment_id, "wrong": wrong, "correct": correct,
             "op_id": op_id, "xml_bytes": xml_bytes, "pdf_bytes": pdf_bytes,

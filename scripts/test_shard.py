@@ -507,7 +507,12 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_observed_write_audit.py",
         "test_fi_apply.py",
         "test_fi_recovery_kind_enum.py",
+        # Totality predicate + per-site guard-liveness for
+        # lawvm.core.named_swallow (§1.10 no-silent-default +
+        # §2.6 rule-of-three crystallisation).
+        "test_named_swallow_totality.py",
         "test_fi_apply_write_receipt_seam.py",
+        "test_fi_apply_replay_authority.py",
         "test_fi_item_relabel_replay.py",
         "test_fi_chapter_seed.py",
         "test_fi_constraints.py",
@@ -728,6 +733,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_export_transition_graph.py",
         "test_graph_export.py",
         "test_markdown_git_export.py",
+        "test_export_markdown_git_safe_path.py",
         "test_import_zip.py",
         "test_parallel_corpus_determinism.py",
         "test_projection_freshness.py",
