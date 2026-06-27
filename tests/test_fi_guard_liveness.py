@@ -2353,6 +2353,86 @@ def drill_overlay_unauthorized_promotion_apply_lane() -> None:
     )
 
 
+def drill_compare_eid_double_classified_apply_lane() -> None:
+    """COMPARE.EID_DOUBLE_CLASSIFIED fires from the production broad-baseline
+    summarize_results lane (D10).
+
+    Production lane: ``summarize_results`` aggregates per-statute
+    ``compare_adjudication_rows`` (surfaced on each scored result row at
+    ``score_one`` after the per-EID triple-classification sets
+    ``manual_frontier_records`` + ``oracle_only_eids`` + ``replay_only_eids``
+    are built). The audit ``assert_classification_exclusive`` runs over the
+    aggregated set; a known-violating input where one EID appears in >=2 of
+    {deterministic_gap, manual_compilation_frontier, oracle_suspect} for the
+    same statute MUST surface on the summary dict
+    (``compare_eid_double_classified_count`` +
+    ``compare_eid_double_classified_observations``). Without the wire a
+    double-classified EID would silently count twice in
+    ``agreement_residual_family_counts`` — the §0 disjoint-partition contract
+    break would be invisible.
+    """
+    import scripts.uk_broad_baseline as uk_broad_baseline
+
+    statute_id = "ukpga/2020/1-d10-drill"
+    # A known-violating cross-statute EID: ``section-5`` lands in BOTH
+    # ``deterministic_gap`` (replay_extra_eid) and
+    # ``manual_compilation_frontier`` (manual_frontier rule_id).
+    double_class_rows = (
+        uk_broad_baseline.AdjudicationRow(
+            statute_id=statute_id,
+            eid="section-5",
+            classification="deterministic_gap",
+            source_rule_id="uk_compare_deterministic_gap_replay_extra_eid",
+            witness="EID produced by replay but absent from oracle comparison set",
+        ),
+        uk_broad_baseline.AdjudicationRow(
+            statute_id=statute_id,
+            eid="section-5",
+            classification="manual_compilation_frontier",
+            source_rule_id="uk_manual_frontier_missing_payload_source_insufficient",
+            witness="manual-frontier rule id cited",
+        ),
+        # Plus a single-class EID that MUST NOT fire (the negative witness).
+        uk_broad_baseline.AdjudicationRow(
+            statute_id=statute_id,
+            eid="section-6",
+            classification="oracle_suspect",
+            source_rule_id="uk_compare_oracle_suspect_extra_eid",
+            witness="EID present in oracle alone",
+        ),
+    )
+    summary = uk_broad_baseline.summarize_results(
+        [
+            {
+                "statute_id": statute_id,
+                "score_status": "scored",
+                "compare_adjudication_rows": double_class_rows,
+                "effect_diagnostics": (),
+                "deterministic_frontend_candidates": (),
+            }
+        ]
+    )
+    assert summary["compare_eid_double_classified_count"] == 1, (
+        "the D10 audit MUST fire through summarize_results for an EID in >=2 "
+        "of the three disjoint-partition classes; got "
+        f"{summary['compare_eid_double_classified_count']} conflicts"
+    )
+    observations = summary["compare_eid_double_classified_observations"]
+    assert len(observations) == 1
+    obs = observations[0]
+    assert obs["statute_id"] == statute_id
+    assert obs["eid"] == "section-5"
+    assert set(obs["classes"]) == {
+        "deterministic_gap",
+        "manual_compilation_frontier",
+    }
+    assert set(obs["sources"]) == {
+        "uk_compare_deterministic_gap_replay_extra_eid",
+        "uk_manual_frontier_missing_payload_source_insufficient",
+    }
+    assert "§0 disjoint-partition contract break" in obs["reason"]
+
+
 def drill_definition_duplicate_definition_surface_totality() -> None:
     """Drive the production SURF-04 sweep into a DUPLICATE_DEFINITION firing.
 
@@ -3887,6 +3967,15 @@ FIRE_DRILLS: Dict[str, Callable[[], None]] = {
     "OVERLAY.UNAUTHORIZED_PROMOTION": (
         drill_overlay_unauthorized_promotion_apply_lane
     ),
+    # D10 COMPARE.DETERMINISTIC_GAP_VS_MANUAL_FRONTIER_PARITY — drives the
+    # production broad-baseline summarize_results lane to surface
+    # COMPARE.EID_DOUBLE_CLASSIFIED for a statute whose EID appears in >=2 of
+    # {deterministic_gap, manual_compilation_frontier, oracle_suspect}. Audit
+    # vendored in scripts/uk_broad_baseline.py::assert_classification_exclusive;
+    # wired at summarize_results.
+    "COMPARE.EID_DOUBLE_CLASSIFIED": (
+        drill_compare_eid_double_classified_apply_lane
+    ),
 }
 
 # A second, distinct surface for an already-covered code. Tracked separately so
@@ -4081,24 +4170,6 @@ NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
     "EVID.OBSERVATION_PROMOTED_TO_AUTHORITY": (
         "audit module landed; wire into aggregate_replay_authority/uk amendment "
         "replay authority_mode staged as follow-up; drill through production once wired",
-        "2026-06-27",
-    ),
-    # D10 COMPARE.DETERMINISTIC_GAP_VS_MANUAL_FRONTIER_PARITY (audit_impl_D10):
-    # the audit helper ``assert_classification_exclusive`` + the
-    # ``AdjudicationRow``/``EidClassificationConflict`` carriers + the synthetic
-    # regression test are landed in ``scripts/uk_broad_baseline.py``. The wire
-    # into ``summarize_results`` (after manual_frontier_records + the per-EID
-    # oracle_suspect/deterministic_gap projections exist) is staged as a
-    # follow-up commit per the D7/D8/D11 staged-wire discipline. Until that
-    # wire, the strict-block code is unreachable from the production
-    # broad-baseline drive. Bonus upstream dependency: the per-EID
-    # triple-classification projection itself needs the comparison-class
-    # projection rows emitted by ``score_one`` (which doesn't yet exist for
-    # oracle_suspect/deterministic_gap on a per-EID basis) — multi-session.
-    "COMPARE.EID_DOUBLE_CLASSIFIED": (
-        "audit helper landed in scripts/uk_broad_baseline.py; wire into "
-        "summarize_results + per-EID projection build-out staged as follow-up; "
-        "drill through the production broad-baseline lane once wired",
         "2026-06-27",
     ),
 }
@@ -4339,6 +4410,13 @@ _PRODUCTION_BUILDER_CALLS = (
     # D7 audit's TimelineIssues; the wire lives in ``compile_timelines``
     # itself, which ``compile_timelines_ex`` invokes with an issue_sink.
     "compile_timelines_ex(",
+    # D10 COMPARE.DETERMINISTIC_GAP_VS_MANUAL_FRONTIER_PARITY:
+    # ``summarize_results`` is the broad-baseline summary lane that aggregates
+    # per-statute ``compare_adjudication_rows`` and invokes the D10 audit
+    # ``assert_classification_exclusive`` over them; the wire emits one
+    # ``COMPARE.EID_DOUBLE_CLASSIFIED`` Observation per statute whose EID
+    # lands in >=2 of the three disjoint-partition classes.
+    "summarize_results(",
     # Wave-2 apply-authority closure: the EV-06 gate is the production
     # attestation-policy validator called from _gate_execution_authorization_at_op.
     "gate_unknown_attestation_policy",
@@ -4459,16 +4537,25 @@ _KNOWN_NO_PRODUCTION_EMIT: Dict[str, str] = {
         "timeline barrier with no emit site; reconcile separately"
     ),
     # D10 COMPARE.DETERMINISTIC_GAP_VS_MANUAL_FRONTIER_PARITY (audit_impl_D10):
-    # the audit helper ``assert_classification_exclusive`` lives in
-    # ``scripts/uk_broad_baseline.py`` (per spec §1 the audit lives next to
-    # its emitter — the broad-baseline driver — and not under src/lawvm/...).
-    # The production-emit-site scan roots are limited to src/lawvm/{core,
-    # finland}, so the script-level producer is invisible to it. The wire
-    # into ``summarize_results`` is staged follow-up per the D7/D8/D11 staged-
-    # wire discipline; once it lands and the per-EID triple-classification
-    # projection is built into score_one, this entry becomes removable.
+    # the audit helper ``assert_classification_exclusive`` + the
+    # ``AdjudicationRow``/``EidClassificationConflict`` carriers + the per-
+    # statute ``compare_adjudication_rows`` projection (at score_one end) +
+    # the wire into ``summarize_results`` ARE LANDED at
+    # ``scripts/uk_broad_baseline.py`` (the production broad-baseline driver —
+    # per spec §1 the audit lives next to its emitter, not under src/lawvm/...).
+    # The fire-drill
+    # ``drill_compare_eid_double_classified_apply_lane`` is registered in
+    # ``FIRE_DRILLS`` and drives the wire via ``summarize_results(...)``.
+    # HOWEVER: the production-emit-site scan roots are limited to
+    # ``src/lawvm/{core, finland}`` (extended to ``src/lawvm`` for ``uk_``/
+    # ``TIME.`` prefixes via ``_NON_FI_CORE_EMIT_PREFIXES``). The audit
+    # emission surface IS live in ``scripts/uk_broad_baseline.py`` (verified
+    # via the production fire-drill + the wire's ``summarize_results`` smoke);
+    # the scan-root-contract limitation keeps this entry honest rather than
+    # artificially green. Move the audit (or extend the scan roots) if the
+    # src-vs-scripts split moves.
     "COMPARE.EID_DOUBLE_CLASSIFIED": (
-        "uk_broad_baseline-driver audit + wire staged follow-up; module lives in scripts/uk_broad_baseline.py (outside src/lawvm/ emit-site scan roots)"
+        "wire live in scripts/uk_broad_baseline.py::summarize_results; emit site is in scripts/ outside src/lawvm/ scan roots"
     ),
 }
 

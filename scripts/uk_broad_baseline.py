@@ -965,6 +965,25 @@ def score_one(statute_id: str) -> dict[str, Any]:
                 result["n_only_in_replayed"] = len(replay_only_eids)
                 result["oracle_only_eid_samples"] = sorted(oracle_only_eids)[:20]
                 result["replay_only_eid_samples"] = sorted(replay_only_eids)[:20]
+                # D10 COMPARE.DETERMINISTIC_GAP_VS_MANUAL_FRONTIER_PARITY
+                # (audit_impl_D10): project per-statute per-EID triple-
+                # classification rows so summarize_results can run
+                # ``assert_classification_exclusive`` over the aggregate set —
+                # every EID must classify into EXACTLY ONE of {deterministic_gap,
+                # manual_compilation_frontier, oracle_suspect} (§0 disjoint-
+                # partition contract). The three classes project from data
+                # already present per-statute here: manual_frontier_records'
+                # affected_provisions field (manual_compilation_frontier class),
+                # oracle_only_eids (oracle_suspect), replay_only_eids
+                # (deterministic_gap). The wire is §1.8 evidence, not authority —
+                # firing does not demote either class (resolution per spec §9
+                # via attestation retraction or claim promotion).
+                result["compare_adjudication_rows"] = _emit_compare_adjudication_rows(
+                    statute_id=statute_id,
+                    manual_frontier_records=manual_frontier_records,
+                    oracle_suspect_eids=oracle_only_eids,
+                    deterministic_gap_eids=replay_only_eids,
+                )
                 result.update(
                     _oracle_only_addition_change_id_evidence(
                         current_xml=current,
@@ -1366,6 +1385,26 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     ]
     comparison_core_rows = [r for r in scored if _is_comparison_core_row(r)]
     comparison_non_core_rows = [r for r in scored if not _is_comparison_core_row(r)]
+    # D10 COMPARE.DETERMINISTIC_GAP_VS_MANUAL_FRONTIER_PARITY — aggregate per-
+    # statute per-EID triple-classification rows surfaced on each scored
+    # result's ``compare_adjudication_rows`` and run the disjoint-partition
+    # assertion over them. An EID classified into >=2 of {deterministic_gap,
+    # manual_compilation_frontier, oracle_suspect} for the same statute is a
+    # §0 contract break surfaced as an Observation; the count + observations
+    # are surfaced on summary so a wire consumer's `fail_on_compare_eid_
+    # double_classified` flag (future follow-up) can translate non-zero count
+    # to a hard-gate exit code. The audit is §1.8 evidence, not authority —
+    # firing does not demote either class.
+    _compare_adjudication_rows: list[AdjudicationRow] = []
+    for _row in scored:
+        _statute_id = str(_row.get("statute_id") or "")
+        for _per_statute_row in (
+            _row.get("compare_adjudication_rows") or ()
+        ):
+            _compare_adjudication_rows.append(_per_statute_row)
+    _compare_eid_double_classified_count, _compare_eid_double_classified_observations = (
+        assert_classification_exclusive(_compare_adjudication_rows)
+    )
     return {
         "scored": scored,
         "errored": errored,
@@ -1649,6 +1688,26 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         "zero_oracle_retention_reason_statutes": (
             zero_oracle_retention_reason_statutes
         ),
+        # D10 COMPARE.DETERMINISTIC_GAP_VS_MANUAL_FRONTIER_PARITY (audit_impl_D10):
+        # aggregate per-statute per-EID triple-classification rows surfaced on
+        # each scored result's ``compare_adjudication_rows`` and run the
+        # disjoint-partition assertion over them. An EID classified into >=2
+        # of {deterministic_gap, manual_compilation_frontier, oracle_suspect}
+        # for the same statute is a §0 contract break surfaced as a blocking
+        # Observation per spec §5 (the wire consumer's fail_on_compare_eid_
+        # double_classified flag — future follow-up — would translate
+        # non-zero conflict_count to a hard-gate exit code).
+        "compare_eid_double_classified_count": _compare_eid_double_classified_count,
+        "compare_eid_double_classified_observations": [
+            {
+                "statute_id": str(obs.detail.get("statute_id") or ""),
+                "eid": str(obs.detail.get("eid") or ""),
+                "classes": list(obs.detail.get("classes") or ()),
+                "sources": list(obs.detail.get("sources") or ()),
+                "reason": str(obs.detail.get("reason") or ""),
+            }
+            for obs in _compare_eid_double_classified_observations
+        ],
     }
 
 
@@ -4827,6 +4886,77 @@ class EidClassificationConflict:
 def _adjudication_row_key(row: AdjudicationRow) -> tuple[str, str]:
     """Stable per-(statute_id, eid) grouping key."""
     return (row.statute_id, row.eid)
+
+
+def _emit_compare_adjudication_rows(
+    *,
+    statute_id: str,
+    manual_frontier_records: list[Mapping[str, Any]],
+    oracle_suspect_eids: set[str],
+    deterministic_gap_eids: set[str],
+) -> list[AdjudicationRow]:
+    """Project one per-statute AdjudicationRow stream for D10's triple-classification.
+
+    The three §0 disjoint-partition classes per statute project from data
+    already present at score_one's per-statute scope:
+      * ``manual_compilation_frontier`` (one row per ``manual_frontier_record``,
+        keyed by its ``affected_provisions`` EID, source via its
+        ``manual_compile_rule_id``);
+      * ``oracle_suspect`` (one row per ``oracle_suspect_eids`` — EID present
+        in the oracle comparison set but missing from replay);
+      * ``deterministic_gap`` (one row per ``deterministic_gap_eids`` — EID
+        produced by replay but absent from the oracle comparison set).
+
+    Conflict detection (>=2 of the three classes for one (statute, eid)) is
+    the §0 disjoint-partition contract break surfaced by
+    :func:`assert_classification_exclusive` downstream. We emit one row per
+    (statute, eid, class) here; dedup + cross-class detection lives in the
+    audit helper so this emitter stays a pure projection from per-statute
+    signals.
+    """
+    rows: list[AdjudicationRow] = []
+    for record in manual_frontier_records:
+        eid = str(record.get("affected_provisions") or "").strip()
+        if not eid:
+            continue
+        rule_id = str(record.get("manual_compile_rule_id") or "")
+        reason = str(record.get("manual_compile_reason") or "")
+        rows.append(
+            AdjudicationRow(
+                statute_id=statute_id,
+                eid=eid,
+                classification="manual_compilation_frontier",
+                source_rule_id=rule_id,
+                witness=reason,
+            )
+        )
+    for eid in sorted(oracle_suspect_eids):
+        eid_str = str(eid or "").strip()
+        if not eid_str:
+            continue
+        rows.append(
+            AdjudicationRow(
+                statute_id=statute_id,
+                eid=eid_str,
+                classification="oracle_suspect",
+                source_rule_id="uk_compare_oracle_suspect_extra_eid",
+                witness="EID present in oracle comparison set but missing from replay",
+            )
+        )
+    for eid in sorted(deterministic_gap_eids):
+        eid_str = str(eid or "").strip()
+        if not eid_str:
+            continue
+        rows.append(
+            AdjudicationRow(
+                statute_id=statute_id,
+                eid=eid_str,
+                classification="deterministic_gap",
+                source_rule_id="uk_compare_deterministic_gap_replay_extra_eid",
+                witness="EID produced by replay but absent from oracle comparison set",
+            )
+        )
+    return rows
 
 
 def assert_classification_exclusive(
