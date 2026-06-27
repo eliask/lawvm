@@ -73,6 +73,7 @@ from lawvm.new_zealand.dry_run import (
     _source_path_for_tree_path,
     _substitute_node_text,
     _tombstone_node,
+    _top_level_provision_label,
     _top_level_sibling_labels,
 )
 from lawvm.new_zealand.effect_candidates import (
@@ -1188,6 +1189,7 @@ def _extract_replacement_payload(
         amending_node,
         target_leaf_kind=leaf_kind,
         target_leaf_label=leaf_label,
+        target_provision_label=_top_level_provision_label(op.source_path),
         base_work_year=base_work_year,
         base_work_number=base_work_number,
     )
@@ -1218,10 +1220,15 @@ def _extract_insertion_payload(
     amending_node = _amending_node_by_href(amending_root, op.amending_provision_href)
     if amending_node is None:
         return None
+    insert_provision_label = None
+    if op.source_path is not None and len(op.source_path) > 1:
+        parent_source_path = op.source_path[:-1]
+        insert_provision_label = _top_level_provision_label(parent_source_path)
     payload = extract_structural_insertion(
         amending_node,
         inserted_leaf_kind=leaf_kind,
         inserted_leaf_label=leaf_label,
+        target_provision_label=insert_provision_label,
         base_work_year=base_work_year,
         base_work_number=base_work_number,
     )
