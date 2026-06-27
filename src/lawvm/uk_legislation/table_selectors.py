@@ -32,7 +32,12 @@ from lawvm.uk_legislation.uk_grafter import (
     _clean_num,
     _parse_table as _parse_uk_table_payload,
 )
-from lawvm.uk_legislation.xml_helpers import _direct_structural_num, _tag, _text_content
+from lawvm.uk_legislation.xml_helpers import (
+    _direct_structural_num,
+    _RootScopedCache,
+    _tag,
+    _text_content,
+)
 
 
 UK_TABLE_ENTRY_INLINE_TEXT_RULE_ID = "uk_effect_table_entry_inline_text_insertion"
@@ -146,17 +151,15 @@ _UK_QUOTED_PAYLOAD_BEFORE_SUBSTITUTE_RE = re.compile(
     re.I,
 )
 
-# lxml _Element objects do not support weak references; use a plain dict.
-# Eviction is handled by explicit evict_source_root_caches() calls.
-_NORMALIZED_ELEMENT_TEXT_CACHE: dict[ET._Element, str] = {}
+# lxml _Element objects do not support weak references; use _RootScopedCache
+# so eviction is O(keys-for-this-root) via evict_source_root_caches() (§2.7).
+_NORMALIZED_ELEMENT_TEXT_CACHE: _RootScopedCache = _RootScopedCache()
 
 
 def evict_table_selector_caches(root: Optional[ET._Element]) -> None:
     if root is None:
         return
-    for el in tuple(_NORMALIZED_ELEMENT_TEXT_CACHE):
-        if el is root or el.getroottree().getroot() is root:
-            _NORMALIZED_ELEMENT_TEXT_CACHE.pop(el, None)
+    _NORMALIZED_ELEMENT_TEXT_CACHE.evict_root(root)
 
 # Site 2 module-scope patterns per §1.11.  The alternation below previously
 # appeared as a single re.search call with two .*? lazy quantifiers sharing one

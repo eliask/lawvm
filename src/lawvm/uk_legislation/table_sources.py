@@ -17,7 +17,7 @@ from lawvm.uk_legislation.lowering_records import (
 )
 from lawvm.uk_legislation.ordinals import _uk_ordinal_to_int
 from lawvm.uk_legislation.uk_grafter import _clean_num
-from lawvm.uk_legislation.xml_helpers import _tag, _text_content
+from lawvm.uk_legislation.xml_helpers import _RootScopedCache, _tag, _text_content
 
 
 _UK_REPEAL_TABLE_QUOTED_WORDS_TEXT_REPEAL_RULE_ID = (
@@ -373,10 +373,10 @@ class _UKRepealTableQuotedWordsSelector(NamedTuple):
     end_occurrence: int
 
 
-# lxml _Element objects do not support weak references; use a plain dict.
-# Eviction is handled by explicit evict_source_root_caches() calls.
-_REPEAL_EXTENT_TABLE_CACHE: dict[ET._Element, tuple[_UKRepealExtentSourceTable, ...]] = {}
-_UK_TABLE_ROWSPAN_ROWS_CACHE: dict[ET._Element, tuple[tuple[str, ...], ...]] = {}
+# lxml _Element objects do not support weak references; use _RootScopedCache
+# so eviction is O(keys-for-this-root) via evict_source_root_caches() (§2.7).
+_REPEAL_EXTENT_TABLE_CACHE: _RootScopedCache = _RootScopedCache()
+_UK_TABLE_ROWSPAN_ROWS_CACHE: _RootScopedCache = _RootScopedCache()
 
 
 def _strip_outer_uk_quotes(text: str) -> str:
@@ -3111,9 +3111,9 @@ class _UKFeeTableIndexEntry:
 
 
 # Process-level cache: source_root → list[_UKFeeTableIndexEntry]
-# lxml _Element objects do not support weak references; use a plain dict.
-# Eviction is handled by explicit evict_source_root_caches() calls.
-_UK_FEE_TABLE_INDEX_CACHE: dict[ET._Element, tuple[_UKFeeTableIndexEntry, ...]] = {}
+# lxml _Element objects do not support weak references; use _RootScopedCache
+# so eviction is O(keys-for-this-root) via evict_source_root_caches() (§2.7).
+_UK_FEE_TABLE_INDEX_CACHE: _RootScopedCache = _RootScopedCache()
 
 
 def _uk_build_fee_table_index(

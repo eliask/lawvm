@@ -3,14 +3,141 @@ from __future__ import annotations
 
 from lxml import etree as ET
 from functools import lru_cache
-from typing import Sequence
+from typing import Any, Sequence
 
 from lawvm.core.ir import IRNode
 from lawvm.uk_legislation.uk_grafter import _LEG_NS
 
 
-_TEXT_CONTENT_CACHE: dict[ET._Element, str] = {}
-_DIRECT_STRUCTURAL_NUM_CACHE: dict[ET._Element, str] = {}
+# ---------------------------------------------------------------------------
+# §source_root_lifecycle (AGENTS.md §2.7): element-keyed dict cache with a
+# root-id reverse index so eviction is O(keys-for-this-root) instead of
+# O(cache_size).
+#
+# lxml _Element objects do not support weak references, so plain dicts are
+# used as the storage and explicit eviction via evict_root(root) is the
+# memory-safety contract.  The reverse index maps id(root_element) → set of
+# cache keys whose root is that element, maintained on __setitem__/pop/__del__;
+# evict_root(root) walks only that bucket rather than scanning the whole
+# cache × .getroottree().getroot() per entry.
+#
+# Keys MUST be lxml _Element objects (the root or any of its descendants);
+# the cache walks key.getparent() up to the root on insert (O(depth), no
+# ElementTree wrapper allocation) and stays in sync on mutation.
+# ---------------------------------------------------------------------------
+
+
+class _RootScopedCache(dict):
+    """A dict keyed on lxml ``_Element`` objects that maintains a
+    ``dict[id(root), set[key]]`` reverse index so eviction of an entire
+    source-root tree is O(keys-for-this-root) rather than O(cache_size).
+
+    All public dict operations (``__setitem__``, ``__getitem__``,
+    ``__delitem__``, ``__contains__``, ``.get``, ``.pop``, ``__iter__``)
+    are inherited unchanged and stay in sync with the reverse index via the
+    overridden mutators.  The single new entry point is
+    :meth:`evict_root`, called from the compile-loop boundary when the
+    last effect for a source root has been processed.
+    """
+
+    # NOTE: no ``__slots__`` — dict subclasses already carry a ``__dict__``
+    # for instance state, and we need one for ``_reverse``.
+    _reverse: dict[int, set[Any]]
+
+    def __init__(self) -> None:
+        super().__init__()
+        # Avoid the per-instance ``_reverse`` attribute being annotated
+        # away from the class: keep it as a plain dict on each instance.
+        object.__setattr__(self, "_reverse", {})
+
+    @staticmethod
+    def _root_id(key: ET._Element) -> int:
+        # Walk key.getparent() up to the root element; avoid allocating an
+        # ``_ElementTree`` wrapper per insertion (lxml allocates one each
+        # time ``getroottree()`` is called).  O(depth); trees are shallow.
+        parent: ET._Element = key
+        while True:
+            next_parent = parent.getparent()
+            if next_parent is None:
+                return id(parent)
+            parent = next_parent
+
+    def __setitem__(self, key: ET._Element, value: Any) -> None:
+        super().__setitem__(key, value)
+        rid = self._root_id(key)
+        bucket = self._reverse.get(rid)
+        if bucket is None:
+            self._reverse[rid] = {key}
+        else:
+            bucket.add(key)
+
+    def __delitem__(self, key: ET._Element) -> None:
+        super().__delitem__(key)
+        self._drop_key(key)
+
+    def _drop_key(self, key: ET._Element) -> None:
+        # ``getparent()`` is O(depth) and the key was alive (still in the
+        # cache) moments ago, so its root is alive too.
+        rid = self._root_id(key)
+        bucket = self._reverse.get(rid)
+        if bucket is None:
+            return
+        bucket.discard(key)
+        if not bucket:
+            self._reverse.pop(rid, None)
+
+    def pop(self, key: ET._Element, default: Any = None) -> Any:
+        if key in self:
+            self._drop_key(key)
+        return super().pop(key, default)
+
+    def setdefault(self, key: ET._Element, default: Any = None) -> Any:
+        if key in self:
+            return self[key]
+        self[key] = default
+        return default
+
+    def update(self, *args: Any, **kwargs: Any) -> None:
+        # Route through __setitem__ so the reverse index stays in sync.  The
+        # ``**kwargs`` branch is intentionally absent: cache keys are always
+        # ``_Element`` (never ``str``), so a keyword-style update cannot
+        # correspond to a valid cache key.  Accepting ``**kwargs`` only for
+        # signature parity keeps the dict substitution shape working while
+        # ignoring the (always-empty) keyword set.
+        if args:
+            other = args[0]
+            if hasattr(other, "items"):
+                for k, v in other.items():
+                    self[k] = v
+            else:
+                for k, v in other:
+                    self[k] = v
+
+    def clear(self) -> None:
+        self._reverse.clear()
+        super().clear()
+
+    def evict_root(self, root: ET._Element) -> None:
+        """Remove every cache entry whose key belongs to ``root``.
+
+        O(keys-for-this-root) — walks only the bucket indexed by
+        ``id(root)`` rather than scanning the whole cache.  No-op when root
+        has no entries (e.g. a fresh root, or one already evicted).
+        """
+        bucket = self._reverse.pop(id(root), None)
+        if bucket is None:
+            return
+        # Snapshot to guard against concurrent mutation during iteration; we
+        # use the dict's own pop to avoid the (O(depth)) re-walk in __del__.
+        for key in tuple(bucket):
+            super().pop(key, None)
+
+
+# lxml _Element objects do not support weak references; use _RootScopedCache
+# so eviction of a source root is O(keys-for-this-root) rather than
+# O(cache_size).  See AGENTS.md §2.7 source-root cache lifecycle.
+_TEXT_CONTENT_CACHE: _RootScopedCache = _RootScopedCache()
+_DIRECT_STRUCTURAL_NUM_CACHE: _RootScopedCache = _RootScopedCache()
 
 
 @lru_cache(maxsize=4096)
@@ -65,10 +192,8 @@ def _direct_structural_num(el: ET._Element) -> str:
 
 def evict_xml_helper_caches(root: ET._Element) -> None:
     """Evict source-root scoped text/number caches for an archived XML root."""
-    for cache in (_TEXT_CONTENT_CACHE, _DIRECT_STRUCTURAL_NUM_CACHE):
-        for el in tuple(cache):
-            if el is root or el.getroottree().getroot() is root:
-                cache.pop(el, None)
+    _TEXT_CONTENT_CACHE.evict_root(root)
+    _DIRECT_STRUCTURAL_NUM_CACHE.evict_root(root)
 
 
 def _structural_children(el: ET._Element) -> tuple[ET._Element, ...]:
