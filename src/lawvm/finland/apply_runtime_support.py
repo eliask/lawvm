@@ -2752,6 +2752,12 @@ def _emit_section_snapshot(
                 rebased_from_expired_temporary_snapshot = prior_payload is not None
             else:
                 base_section = latest.payload
+            if (
+                single_sparse_whole_subsection_replace
+                and latest_expires == ""
+                and section_payload != latest.payload
+            ):
+                base_section = section_payload
         else:
             base_section = _section_node_from_base_ir(base_ir, section_path)
         if base_section is None or base_section.kind is not IRNodeKind.SECTION:

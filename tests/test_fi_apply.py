@@ -5712,6 +5712,87 @@ def test_apply_whole_section_insert_consumes_expired_temporary_section_slot() ->
     assert pathologies[0].detail["latest_snapshot_expires"] == "2008-08-01"
 
 
+def test_section_snapshot_single_sparse_subsection_replace_uses_current_live_base() -> None:
+    """Single sparse subsection snapshots must not resurrect stale snapshot tail.
+
+    Regression shape from 2003/393 §15a / 2012/692: the latest exact section
+    snapshot can contain obsolete tail material even though current live replay
+    has already removed it.  A one-slot sparse subsection replacement with
+    ``preserve_unstated_tail`` must preserve from current live, not from the
+    stale historical snapshot.
+    """
+    stale_snapshot = _sec(
+        "15a",
+        _sub("1", _content("intro")),
+        _sub("2", _content("old fee table")),
+        _sub("3", _content("obsolete 2009 and 2010 temporary table")),
+        _sub("4", _content("final no-refund sentence")),
+    )
+    current_live = _sec(
+        "15a",
+        _sub("1", _content("intro")),
+        _sub("2", _content("new fee table")),
+        _sub("3", _content("final no-refund sentence")),
+    )
+    state = _make_state(_body(current_live))
+    section_path = (("section", "15a"),)
+    lo_ops: list[LegalOperation] = [
+        LegalOperation(
+            op_id="snapshot_section_15a",
+            sequence=0,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=section_path),
+            payload=stale_snapshot,
+            source=OperationSource(
+                statute_id="2008/864",
+                enacted="2008-12-19",
+                effective="2009-01-01",
+                expires="",
+            ),
+        )
+    ]
+    op = ResolvedOp.from_amendment_op(
+        _op(op_type=OpType.REPLACE, target_section="15a", target_paragraph=2),
+        muutos_ir=_sec("15a", _sub("2", _content("new fee table"))),
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="15a",
+        target_chapter=None,
+        target_address=LegalAddress(path=(("section", "15a"), ("subsection", "2"))),
+        payload_completeness=PayloadCompletenessWitness(
+            kind="sparse_certified",
+            reasons=("mapped_tail_omission",),
+            tail_policy="preserve_unstated_tail",
+        ),
+    )
+
+    _emit_section_snapshot(
+        state=state,
+        target_unit_kind="section",
+        target_norm="15a",
+        target_chapter=None,
+        target_part=None,
+        group_rops=[op],
+        lo_ops_out=lo_ops,
+        amendment_id="2012/692",
+        source_title="Sparse replacement",
+        source_issue_date=_DATE,
+        source_effective_date=_DATE,
+        base_ir=_body(current_live),
+    )
+
+    emitted = next(
+        lo.payload
+        for lo in reversed(lo_ops)
+        if lo.target.path == section_path and lo.payload is not None
+    )
+    assert emitted is not None
+    emitted_text = irnode_to_text(emitted)
+    assert "new fee table" in emitted_text
+    assert "final no-refund sentence" in emitted_text
+    assert "obsolete 2009 and 2010 temporary table" not in emitted_text
+
+
 def test_apply_whole_section_op_declines_item_repeal() -> None:
     """A section/item repeal must stay on the item dispatch lane."""
 
