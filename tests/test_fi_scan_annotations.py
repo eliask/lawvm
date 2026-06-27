@@ -271,6 +271,22 @@ class TestJolloiSectionRenumber:
             JolloinRenumberPair("9", "11", "L"),
         ]
 
+    def test_extract_moment_renumber_pairs_orders_grouped_status_sources(self):
+        """Grouped changed/current moment lists map to the destination range by slot order."""
+        tokens = tokenize(
+            "jolloin muutettu 1 ja 3 momentti ja nykyinen 2 ja 4 momentti "
+            "siirtyvät 2-5 momentiksi"
+        )
+
+        pairs = _extract_renumber_pairs_from_jolloin_tokens(tokens, 0, len(tokens))
+
+        assert pairs == [
+            JolloinRenumberPair("1", "2", "M"),
+            JolloinRenumberPair("2", "3", "M"),
+            JolloinRenumberPair("3", "4", "M"),
+            JolloinRenumberPair("4", "5", "M"),
+        ]
+
     def test_annotate_jolloin_stores_section_renumber_in_detail(self):
         """annotate_jolloin must populate renumber_pairs for section patterns."""
         tokens = tokenize(

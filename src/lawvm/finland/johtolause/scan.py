@@ -1347,6 +1347,22 @@ def _extract_renumber_pairs_from_jolloin_tokens(
     if len(src_nums) != len(dst_nums) or not src_nums:
         return []
 
+    def _is_contiguous_numeric_range(labels: list[str]) -> bool:
+        if not labels or any(not label.isdigit() for label in labels):
+            return False
+        values = [int(label) for label in labels]
+        return values == list(range(values[0], values[0] + len(values)))
+
+    sorted_src_nums = sorted(src_nums, key=int) if all(label.isdigit() for label in src_nums) else []
+    if (
+        kind == "M"
+        and sorted_src_nums
+        and src_nums != sorted_src_nums
+        and _is_contiguous_numeric_range(dst_nums)
+        and _is_contiguous_numeric_range(sorted_src_nums)
+    ):
+        src_nums = sorted_src_nums
+
     return [
         JolloinRenumberPair(
             source_label=src,
