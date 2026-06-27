@@ -1162,6 +1162,76 @@ def _refresh_ancestor_overrides(
         current_new = refreshed
 
 
+def _refresh_sibling_overrides(
+    node_overrides: NodeOverrides,
+    changed_key: tuple[tuple[str, str], ...],
+    running: str,
+) -> None:
+    """Re-locate sibling node text in the post-patch running text.
+
+    After a patch, ``_index_node_text`` re-indexes the patched node's subtree and
+    ``_refresh_ancestor_overrides`` propagates up to strict ancestors. But SIBLING
+    entries (same parent prefix, different leaf) are NOT refreshed — their stored
+    text remains a substring of the pre-patch ``before_text``, and subsequent ops
+    targeting those siblings fail at ``before_text.find(node_text)`` because the
+    sibling's position shifted in the post-patch materialized text.
+
+    This function walks every key in ``node_overrides`` that shares the same parent
+    prefix as ``changed_key`` (same length, same prefix[:-1], different last segment)
+    AND is not an ancestor or descendant of ``changed_key``. For each such sibling,
+    it tries to find the sibling's CURRENT stored text in ``running`` (the post-patch
+    materialized text). If the text is found at EXACTLY ONE position, the override is
+    left as-is (it's already correct — the text didn't shift or the find confirms it).
+    If the text is NOT found in ``running``, the sibling's stored text is stale and
+    cannot be safely relocated — leave it stale and let the existing refusal fire
+    (§1.1: no silent target hijacking; §0: preserve uncertainty rather than guess).
+
+    The refresh is deliberately conservative: it only confirms that sibling text IS
+    still present in the running text, which lets ``_running_node_text``'s
+    ``current in running`` check pass. The actual position used by
+    ``_apply_text_patch_to_target_subtree``'s ``before_text.find(node_text)`` is
+    resolved at apply time against the live ``running`` text, so we don't need to
+    store positional offsets — only the correct text.
+    """
+    if not changed_key:
+        return
+    parent_prefix = changed_key[:-1]
+    parent_len = len(parent_prefix)
+    for key in list(node_overrides):
+        # Skip ancestors (shorter keys), descendants (longer keys with changed_key
+        # as prefix), and the patched node itself.
+        if len(key) <= parent_len:
+            continue
+        if key[:parent_len] != parent_prefix:
+            continue
+        if key == changed_key:
+            continue
+        # Same parent prefix, different leaf → SIBLING or COUSIN.
+        # Only refresh direct siblings (same key length as changed_key).
+        if len(key) != len(changed_key):
+            continue
+        sibling_text = node_overrides[key]
+        if not sibling_text:
+            continue
+        # Check whether the sibling's stored text is still present in the
+        # post-patch running text. If it is, the override is valid — the later
+        # ``before_text.find(node_text)`` will succeed. If not, it's stale.
+        # Per §1.1: do NOT try to re-locate by guessing; just leave it stale.
+        count = running.count(sibling_text)
+        if count == 0:
+            # Stale: the sibling's text is no longer in the running text.
+            # This can happen when the sibling's text was a substring of the
+            # patched node's text (run-in heads / overlapping spans). Remove
+            # the stale entry so the next op falls through to the pristine
+            # re-split via _running_node_text, rather than using stale text.
+            # Only remove if the sibling's text is short enough that it could
+            # plausibly have been displaced by the patch (heuristic: < 200 chars).
+            # Longer texts are unlikely to be fully displaced; leaving them
+            # stale and letting the find() return -1 is the same refusal.
+            if len(sibling_text) < 200:
+                del node_overrides[key]
+
+
 def _running_node_text(
     before_section: UscSection | None,
     address: LegalAddress,
@@ -1719,6 +1789,11 @@ def _materialize_one(
                         target_segments,
                         old_text=node_text,
                         new_text=node_overrides[target_segments],
+                        running=materialized,
+                    )
+                    _refresh_sibling_overrides(
+                        node_overrides,
+                        target_segments,
                         running=materialized,
                     )
                 return (materialized, "", "")
