@@ -466,7 +466,7 @@ def _mutation_boundary_diagnostics(
         )
         for index, report in enumerate(reports)
     )
-    proof_status_counts = Counter(proof.status for proof in proofs)
+    proof_status_counts = Counter(proof.boundary_proof_status for proof in proofs)
     proof_rule_counts = Counter(proof.rule_id for proof in proofs)
     proof_owner_phase_counts = Counter(proof.owner_phase for proof in proofs)
     samples = [
@@ -485,7 +485,7 @@ def _mutation_boundary_diagnostics(
     proof_samples = [
         proof.to_dict()
         for proof in proofs
-        if proof.status in {"unresolved", "violated"}
+        if proof.boundary_proof_status in {"unresolved", "violated"}
     ][:5]
     return {
         "n_mutation_events": len(mutation_events),

@@ -98,7 +98,7 @@ def test_clean_resolved_case_has_edge_and_no_lints() -> None:
     assert len(graph.bindings) == 1
     assert len(graph.edges) == 1
     assert graph.edges[0].binding is graph.bindings[0]
-    assert graph.edges[0].use.status == "resolved"
+    assert graph.edges[0].use.use_status == "resolved"
     assert graph.lints == ()
 
 
@@ -198,14 +198,14 @@ def test_unbound_term_lint_via_compute_seam() -> None:
         scope="statute",
         source_span=SourceSpan("x", 0, 5),
         binding_kind=BINDING_PARENTHETICAL_ALIAS,
-        status=STATUS_OK,
+        binding_status=STATUS_OK,
     )
     use = TermUse(
         term_surface="kohde",
         lemma="kohde",
         binding=None,
         source_span=SourceSpan("x", 34, 5),  # AFTER the binding -> not "later"
-        status=STATUS_OPEN,
+        use_status=STATUS_OPEN,
         rule_id=RULE_BEFORE_BINDING,
         bindings=(),
     )
@@ -233,14 +233,14 @@ def test_open_use_with_later_binding_is_used_before_definition_not_unbound() -> 
         scope="statute",
         source_span=SourceSpan("x", 25, 5),
         binding_kind=BINDING_PARENTHETICAL_ALIAS,
-        status=STATUS_OK,
+        binding_status=STATUS_OK,
     )
     use = TermUse(
         term_surface="kohde",
         lemma="kohde",
         binding=None,
         source_span=SourceSpan("x", 0, 5),  # BEFORE the binding
-        status=STATUS_OPEN,
+        use_status=STATUS_OPEN,
         rule_id=RULE_BEFORE_BINDING,
         bindings=(),
     )

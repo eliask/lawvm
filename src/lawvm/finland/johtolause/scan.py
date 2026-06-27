@@ -620,6 +620,15 @@ def annotate_statute_names(
                 break
             if tj.cat == "WORD":
                 has_word_before = True
+            if (
+                tj.cat == "LUKU"
+                and tj.case == "ILL"
+                and j + 1 < n
+                and tokens[j + 1].cat == "NUM"
+                and has_word_before
+            ):
+                skip_to = j
+                break
             if _is_structural_num(j) and tj.text[:1].isdigit() and has_word_before:
                 skip_to = j
                 break

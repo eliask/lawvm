@@ -97,7 +97,7 @@ class TermUse:
         bindings:      ALL matching in-scope bindings.  Length 1 for resolved,
                        0 for open, >1 for ambiguous.  Never silently truncated.
         source_span:   Byte range of the use token in the body text.
-        status:        ``resolved`` / ``open`` / ``ambiguous``.
+        use_status:    ``resolved`` / ``open`` / ``ambiguous``.
         rule_id:       How the match was found (see ``RULE_*``).
     """
 
@@ -105,7 +105,7 @@ class TermUse:
     lemma: str
     binding: Optional[DefinedTermBinding]
     source_span: SourceSpan
-    status: str
+    use_status: str
     rule_id: str
     bindings: tuple[DefinedTermBinding, ...] = field(default_factory=tuple)
 
@@ -259,7 +259,7 @@ def _build_matchers(
         gen: Optional[frozenset[str]] = None
         # The binder may have already declared the term morphologically
         # unsupported; honour that and do not attempt generation.
-        if b.status != STATUS_UNSUPPORTED_MORPHOLOGY:
+        if b.binding_status != STATUS_UNSUPPORTED_MORPHOLOGY:
             gen = _generated_surfaces(term)
         if gen is not None:
             surfaces = gen
@@ -350,7 +350,7 @@ def resolve_term_uses(
                     lemma=m.binding.term,
                     binding=m.binding,
                     source_span=SourceSpan(source_file, start, end - start),
-                    status=STATUS_RESOLVED,
+                    use_status=STATUS_RESOLVED,
                     rule_id=rule,
                     bindings=(m.binding,),
                 )
@@ -362,7 +362,7 @@ def resolve_term_uses(
                     lemma=in_scope[0].binding.term,
                     binding=None,
                     source_span=SourceSpan(source_file, start, end - start),
-                    status=STATUS_AMBIGUOUS,
+                    use_status=STATUS_AMBIGUOUS,
                     rule_id=RULE_MORPH,
                     bindings=tuple(m.binding for m in in_scope),
                 )
@@ -394,7 +394,7 @@ def resolve_term_uses(
                     lemma=hits[0].binding.term,
                     binding=None,
                     source_span=SourceSpan(source_file, start, end - start),
-                    status=STATUS_OPEN,
+                    use_status=STATUS_OPEN,
                     rule_id=RULE_BEFORE_BINDING,
                     bindings=(),
                 )

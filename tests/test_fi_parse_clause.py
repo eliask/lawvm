@@ -2958,6 +2958,23 @@ def test_parse_clause_doc_ill_prefix_chapter_keeps_section_insert() -> None:
     assert [op.code() for op in chapter_result.parsed_ops] == ["L L 3"]
 
 
+def test_parse_clause_inverted_lukuun_chapter_insert_batch() -> None:
+    """``lukuun N uuden/uudet M §`` is a chapter-scoped section insert batch."""
+    result = parse_clause(
+        "lisätään päätöksen lukuun 4 uuden 16 a, lukuun 5 uudet 21 a, "
+        "21 b ja 23 a sekä lukuun 8 uuden 31 a §:n seuraavasti:"
+    )
+
+    assert result.parse_error is None
+    assert [op.code() for op in result.parsed_ops] == [
+        "L P L:4 16a",
+        "L P L:5 21a",
+        "L P L:5 21b",
+        "L P L:5 23a",
+        "L P L:8 31a",
+    ]
+
+
 def test_parse_clause_doc_ill_spaced_citation_bare_section_insert() -> None:
     """A target-statute citation after DOC:ILL is not the inserted section label.
 

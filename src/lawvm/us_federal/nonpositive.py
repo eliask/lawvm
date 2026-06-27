@@ -180,13 +180,13 @@ class NonPositiveTargetWitness:
     """Typed witness for a resolved (or unresolved) non-positive-title target.
 
     ``address`` is the resolved USC :class:`LegalAddress` (``None`` when
-    unmapped). ``status`` is a :class:`NonPositiveResolveStatus`. ``rule_id`` is
-    the stable witness/finding id. ``paren_title``/``href_title`` record what each
-    channel saw (for the agreement audit). ``finding`` is implied by an
-    unmapped/note_only status.
+    unmapped). ``resolve_status`` is a :class:`NonPositiveResolveStatus`.
+    ``rule_id`` is the stable witness/finding id. ``paren_title``/``href_title``
+    record what each channel saw (for the agreement audit). ``finding`` is
+    implied by an unmapped/note_only status.
     """
 
-    status: NonPositiveResolveStatus
+    resolve_status: NonPositiveResolveStatus
     rule_id: str
     address: LegalAddress | None
     paren_cite: str = ""
@@ -208,7 +208,7 @@ class NonPositiveTargetWitness:
 
     def to_jsonable(self) -> dict[str, Any]:
         return {
-            "status": self.status,
+            "resolve_status": self.resolve_status,
             "rule_id": self.rule_id,
             "address": str(self.address) if self.address is not None else "",
             "resolved": self.resolved,
@@ -320,7 +320,7 @@ def resolve_nonpositive_target(
     if paren_addr is not None and href_addr is not None:
         if paren_addr.path == href_addr.path:
             return NonPositiveTargetWitness(
-                status=NonPositiveResolveStatus.PAREN_HREF_AGREE,
+                resolve_status=NonPositiveResolveStatus.PAREN_HREF_AGREE,
                 rule_id=RULE_PAREN_HREF_AGREE,
                 address=href_addr,
                 paren_cite=paren_cite,
@@ -334,7 +334,7 @@ def resolve_nonpositive_target(
         # drafter's cite (can be coarser, e.g. section-only). Take the href but
         # flag the disagreement in the witness so review sees it.
         return NonPositiveTargetWitness(
-            status=NonPositiveResolveStatus.HREF,
+            resolve_status=NonPositiveResolveStatus.HREF,
             rule_id=RULE_PAREN_HREF_DISAGREE,
             address=href_addr,
             paren_cite=paren_cite,
@@ -346,7 +346,7 @@ def resolve_nonpositive_target(
 
     if href_addr is not None:
         return NonPositiveTargetWitness(
-            status=NonPositiveResolveStatus.HREF,
+            resolve_status=NonPositiveResolveStatus.HREF,
             rule_id=RULE_HREF,
             address=href_addr,
             href=target_href,
@@ -356,7 +356,7 @@ def resolve_nonpositive_target(
 
     if paren_addr is not None:
         return NonPositiveTargetWitness(
-            status=NonPositiveResolveStatus.PAREN,
+            resolve_status=NonPositiveResolveStatus.PAREN,
             rule_id=RULE_PAREN,
             address=paren_addr,
             paren_cite=paren_cite,
@@ -369,7 +369,7 @@ def resolve_nonpositive_target(
     # distinctly from the bare no-signal case, but both stay unmapped.
     if note_only:
         return NonPositiveTargetWitness(
-            status=NonPositiveResolveStatus.NOTE_ONLY,
+            resolve_status=NonPositiveResolveStatus.NOTE_ONLY,
             rule_id=NOTE_ONLY_FINDING_RULE_ID,
             address=None,
             href=target_href,
@@ -378,7 +378,7 @@ def resolve_nonpositive_target(
             target_phrase=target_phrase,
         )
     return NonPositiveTargetWitness(
-        status=NonPositiveResolveStatus.UNMAPPED,
+        resolve_status=NonPositiveResolveStatus.UNMAPPED,
         rule_id=UNMAPPED_FINDING_RULE_ID,
         address=None,
         target_phrase=target_phrase,
@@ -535,7 +535,7 @@ def measure_nonpositive_resolve_rate(
             continue
         for witness in iter_nonpositive_targets(data, title=title):
             units += 1
-            status_counts[witness.status] += 1
+            status_counts[witness.resolve_status] += 1
             rule_counts[witness.rule_id] += 1
             if witness.resolved:
                 resolved += 1
@@ -545,7 +545,7 @@ def measure_nonpositive_resolve_rate(
                     samples.append(
                         {
                             "public_law": ident.public_law_label,
-                            "status": witness.status,
+                            "resolve_status": witness.resolve_status,
                             "target_phrase": witness.target_phrase[:160],
                             "note_href": witness.note_href,
                         }

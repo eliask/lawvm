@@ -2014,7 +2014,7 @@ def test_blame_lookup_follows_restructure_renumber_migration_lineage() -> None:
 def test_fi_ledger_inputs_attributes_restructure_blame_via_migration_lineage(
     monkeypatch,
 ) -> None:
-    from lawvm.tools.spec_ledger import fi_ledger_inputs
+    from lawvm.finland.spec_ledger_adapter import fi_ledger_inputs
 
     lo_ops = [
         SimpleNamespace(

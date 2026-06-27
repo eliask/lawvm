@@ -65,7 +65,7 @@ class MutationBoundaryProof:
     operation_id: str
     owner_phase: str
     rule_id: str
-    status: MutationBoundaryProofStatus
+    boundary_proof_status: MutationBoundaryProofStatus
     helper: str = ""
     outcome: str = ""
     selected_target_paths: TreePaths = ()
@@ -96,13 +96,13 @@ class MutationBoundaryProof:
         object.__setattr__(self, "operation_id", _required_string("operation_id", self.operation_id))
         object.__setattr__(self, "owner_phase", _required_string("owner_phase", self.owner_phase))
         object.__setattr__(self, "rule_id", _required_string("rule_id", self.rule_id))
-        status = _required_string("status", self.status)
+        status = _required_string("status", self.boundary_proof_status)
         if status not in _VALID_STATUSES:
             raise ValueError(
                 "MutationBoundaryProof.status must be one of "
                 f"{sorted(_VALID_STATUSES)}"
             )
-        object.__setattr__(self, "status", status)
+        object.__setattr__(self, "boundary_proof_status", status)
         for field_name, paths in (
             ("selected_target_paths", self.selected_target_paths),
             ("allowed_mutation_regions", self.allowed_mutation_regions),
@@ -162,7 +162,7 @@ class MutationBoundaryProof:
             operation_id=report.op_id,
             owner_phase=owner_phase,
             rule_id=_rule_id_for_report(report),
-            status=_status_for_report(report),
+            boundary_proof_status=_status_for_report(report),
             helper=report.helper,
             outcome=report.outcome,
             selected_target_paths=report.allowed_roots,
@@ -190,7 +190,7 @@ class MutationBoundaryProof:
             "operation_id": self.operation_id,
             "owner_phase": self.owner_phase,
             "rule_id": self.rule_id,
-            "status": self.status,
+            "boundary_proof_status": self.boundary_proof_status,
             "helper": self.helper,
             "outcome": self.outcome,
             "selected_target_paths": _path_strings(self.selected_target_paths),
@@ -329,7 +329,7 @@ def mutation_boundary_evidence_report(
 
     rows = tuple(_mutation_boundary_proof(row) for row in _proof_sequence(proofs))
     report_rows = tuple(_mutation_boundary_report_row(row) for row in rows)
-    status_counts = _counts(row.status for row in rows)
+    status_counts = _counts(row.boundary_proof_status for row in rows)
     owner_phase_counts = _counts(row.owner_phase for row in rows)
     rule_counts = _counts(row.rule_id for row in rows)
     result_code_counts = _counts(code for row in rows for code in row.result_codes)
@@ -395,7 +395,7 @@ def _mutation_boundary_proof(value: MutationBoundaryProof | Mapping[str, Any]) -
         operation_id=str(value.get("operation_id") or ""),
         owner_phase=str(value.get("owner_phase") or ""),
         rule_id=str(value.get("rule_id") or ""),
-        status=cast(MutationBoundaryProofStatus, str(value.get("status") or "")),
+        boundary_proof_status=cast(MutationBoundaryProofStatus, str(value.get("boundary_proof_status") or "")),
         helper=str(value.get("helper") or ""),
         outcome=str(value.get("outcome") or ""),
         selected_target_paths=_tree_paths_from_diagnostics(value.get("selected_target_paths")),
@@ -425,7 +425,7 @@ def _mutation_boundary_report_row(proof: MutationBoundaryProof) -> dict[str, Any
         "row_id": proof.proof_id,
         "subject_id": proof.operation_id,
         "proof_ref": proof.proof_id,
-        "status": proof.status,
+        "boundary_proof_status": proof.boundary_proof_status,
         "forbidden_shortcuts": tuple(
             dict.fromkeys(
                 (

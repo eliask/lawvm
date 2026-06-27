@@ -458,7 +458,7 @@ def _directive_entity_node(
         "work_kind": "eu_directive",
         "directive_celex": claim.directive_celex,
         "directive_surface": claim.directive_surface,
-        "binding_status": claim.status.value,
+        "binding_status": claim.transposition_status.value,
     }
     return SurfaceNode(
         node_id=mint_entity_node_id(discriminator),
@@ -591,7 +591,7 @@ class CorpusTranspositionEdgePass:
                     payload={
                         "directive_celex": claim.directive_celex,
                         "directive_surface": claim.directive_surface,
-                        "binding_status": claim.status.value,
+                        "binding_status": claim.transposition_status.value,
                         "claim_surface": claim.claim_surface,
                         # The honesty boundary, encoded IN the edge: a DECLARED
                         # transposition, never a verified conformance.

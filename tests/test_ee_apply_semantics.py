@@ -20,6 +20,7 @@ from lawvm.estonia.ee_instruction_waist import (
     EEParsedInstruction,
     EETextRewrite,
     EETextRewriteWitness,
+    encode_ee_selection_meta_note,
     make_item_selection_meta,
     make_sentence_target_meta,
     make_subsection_selection_meta,
@@ -2035,18 +2036,17 @@ def test_apply_ee_ops_plain_subsection_repeal_range_prefers_typed_selection_meta
             action=StructuralAction.REPEAL,
             target=LegalAddress(path=(("section", "14"), ("subsection", "2"))),
             source=source,
-            payload=IRNode(
-                kind=IRNodeKind.CONTENT,
-                text="",
-                attrs={
-                    "subsection_selection_meta": make_subsection_selection_meta(
+            payload=None,
+            provenance_tags=(
+                "paragrahvi 14 lõige 2 tunnistatakse kehtetuks;",
+                encode_ee_selection_meta_note(
+                    make_subsection_selection_meta(
                         explicit_labels=("2", "3", "4"),
                         plain_numeric_ranges=(("2", "4"),),
                         label_ranges=(("2", "4"),),
                     )
-                },
+                ),
             ),
-            provenance_tags=("paragrahvi 14 lõige 2 tunnistatakse kehtetuks;",),
         ),
         LegalOperation(
             op_id="ee_test_repeal_14_3_typed",
@@ -2054,18 +2054,17 @@ def test_apply_ee_ops_plain_subsection_repeal_range_prefers_typed_selection_meta
             action=StructuralAction.REPEAL,
             target=LegalAddress(path=(("section", "14"), ("subsection", "3"))),
             source=source,
-            payload=IRNode(
-                kind=IRNodeKind.CONTENT,
-                text="",
-                attrs={
-                    "subsection_selection_meta": make_subsection_selection_meta(
+            payload=None,
+            provenance_tags=(
+                "paragrahvi 14 lõige 3 tunnistatakse kehtetuks;",
+                encode_ee_selection_meta_note(
+                    make_subsection_selection_meta(
                         explicit_labels=("2", "3", "4"),
                         plain_numeric_ranges=(("2", "4"),),
                         label_ranges=(("2", "4"),),
                     )
-                },
+                ),
             ),
-            provenance_tags=("paragrahvi 14 lõige 3 tunnistatakse kehtetuks;",),
         ),
         LegalOperation(
             op_id="ee_test_repeal_14_4_typed",
@@ -2073,18 +2072,17 @@ def test_apply_ee_ops_plain_subsection_repeal_range_prefers_typed_selection_meta
             action=StructuralAction.REPEAL,
             target=LegalAddress(path=(("section", "14"), ("subsection", "4"))),
             source=source,
-            payload=IRNode(
-                kind=IRNodeKind.CONTENT,
-                text="",
-                attrs={
-                    "subsection_selection_meta": make_subsection_selection_meta(
+            payload=None,
+            provenance_tags=(
+                "paragrahvi 14 lõige 4 tunnistatakse kehtetuks;",
+                encode_ee_selection_meta_note(
+                    make_subsection_selection_meta(
                         explicit_labels=("2", "3", "4"),
                         plain_numeric_ranges=(("2", "4"),),
                         label_ranges=(("2", "4"),),
                     )
-                },
+                ),
             ),
-            provenance_tags=("paragrahvi 14 lõige 4 tunnistatakse kehtetuks;",),
         ),
     ]
 
@@ -2138,16 +2136,15 @@ def test_apply_ee_ops_plain_subsection_repeal_range_excludes_endpoint_superscrip
             action=StructuralAction.REPEAL,
             target=LegalAddress(path=(("section", "156"), ("subsection", label))),
             source=source,
-            payload=IRNode(
-                kind=IRNodeKind.CONTENT,
-                text="",
-                attrs={
-                    "subsection_selection_meta": make_subsection_selection_meta(
+            payload=None,
+            provenance_tags=(
+                encode_ee_selection_meta_note(
+                    make_subsection_selection_meta(
                         explicit_labels=("2", "3", "4", "5"),
                         plain_numeric_ranges=(("2", "5"),),
                         label_ranges=(("2", "5"),),
                     )
-                },
+                ),
             ),
         )
         for sequence, label in enumerate(("2", "3", "4", "5"), start=1)
@@ -2201,12 +2198,13 @@ def test_apply_ee_ops_superscript_subsection_repeal_typed_selection_does_not_cle
             action=StructuralAction.REPEAL,
             target=LegalAddress(path=(("section", "14"), ("subsection", "2_1"))),
             source=source,
-            payload=IRNode(
-                kind=IRNodeKind.CONTENT,
-                text="",
-                attrs={"subsection_selection_meta": make_subsection_selection_meta(explicit_labels=("2_1", "2_2"))},
+            payload=None,
+            provenance_tags=(
+                "paragrahvi 14 lõiked 2 1 ja 2 2 tunnistatakse kehtetuks;",
+                encode_ee_selection_meta_note(
+                    make_subsection_selection_meta(explicit_labels=("2_1", "2_2"))
+                ),
             ),
-            provenance_tags=("paragrahvi 14 lõiked 2 1 ja 2 2 tunnistatakse kehtetuks;",),
         ),
         LegalOperation(
             op_id="ee_test_repeal_14_2_2_typed",
@@ -2214,12 +2212,13 @@ def test_apply_ee_ops_superscript_subsection_repeal_typed_selection_does_not_cle
             action=StructuralAction.REPEAL,
             target=LegalAddress(path=(("section", "14"), ("subsection", "2_2"))),
             source=source,
-            payload=IRNode(
-                kind=IRNodeKind.CONTENT,
-                text="",
-                attrs={"subsection_selection_meta": make_subsection_selection_meta(explicit_labels=("2_1", "2_2"))},
+            payload=None,
+            provenance_tags=(
+                "paragrahvi 14 lõiked 2 1 ja 2 2 tunnistatakse kehtetuks;",
+                encode_ee_selection_meta_note(
+                    make_subsection_selection_meta(explicit_labels=("2_1", "2_2"))
+                ),
             ),
-            provenance_tags=("paragrahvi 14 lõiked 2 1 ja 2 2 tunnistatakse kehtetuks;",),
         ),
     ]
 
@@ -2266,14 +2265,13 @@ def test_apply_ee_ops_plain_subsection_repeal_list_does_not_clear_same_base_supe
         sequence=1,
         action=StructuralAction.REPEAL,
         target=LegalAddress(path=(("section", "2"), ("subsection", "1"))),
-        payload=IRNode(
-            kind=IRNodeKind.CONTENT,
-            text="",
-            attrs={
-                "subsection_selection_meta": make_subsection_selection_meta(
+        payload=None,
+        provenance_tags=(
+            encode_ee_selection_meta_note(
+                make_subsection_selection_meta(
                     explicit_labels=("1", "2"),
                 )
-            },
+            ),
         ),
     )
 
@@ -2322,15 +2320,14 @@ def test_apply_ee_ops_subsection_repeal_range_includes_live_intervening_superscr
         sequence=1,
         action=StructuralAction.REPEAL,
         target=LegalAddress(path=(("section", "2"), ("subsection", "16"))),
-        payload=IRNode(
-            kind=IRNodeKind.CONTENT,
-            text="",
-            attrs={
-                "subsection_selection_meta": make_subsection_selection_meta(
+        payload=None,
+        provenance_tags=(
+            encode_ee_selection_meta_note(
+                make_subsection_selection_meta(
                     explicit_labels=("16", "17", "18", "18_1"),
                     label_ranges=(("16", "18_1"),),
                 )
-            },
+            ),
         ),
     )
 

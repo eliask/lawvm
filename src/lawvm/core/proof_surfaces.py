@@ -229,6 +229,7 @@ def _row_status(row: Mapping[str, Any]) -> str:
         (
             "row_status",
             "status",
+            "boundary_proof_status",
             "proof_status",
             "projection_status",
             "binding_status",

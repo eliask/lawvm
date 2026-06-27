@@ -70,7 +70,7 @@ class TemporalResolutionEvidence:
     rule_id: str
     phase: str
     reason: str
-    status: TemporalResolutionStatus
+    temporal_evidence_status: TemporalResolutionStatus
     blocking: bool = False
     family: str = TEMPORAL_RESOLUTION_FAMILY
     effective_date: str = ""
@@ -88,9 +88,9 @@ class TemporalResolutionEvidence:
             raise ValueError("TemporalResolutionEvidence.phase must be non-empty")
         if not str(self.reason or "").strip():
             raise ValueError("TemporalResolutionEvidence.reason must be non-empty")
-        if not str(self.status or "").strip():
+        if not str(self.temporal_evidence_status or "").strip():
             raise ValueError("TemporalResolutionEvidence.status must be non-empty")
-        if self.status not in _VALID_TEMPORAL_RESOLUTION_STATUSES:
+        if self.temporal_evidence_status not in _VALID_TEMPORAL_RESOLUTION_STATUSES:
             raise ValueError(
                 f"TemporalResolutionEvidence.status must be one of "
                 f"{sorted(_VALID_TEMPORAL_RESOLUTION_STATUSES)}"
@@ -105,16 +105,16 @@ class TemporalResolutionEvidence:
             "detail",
             _frozen_temporal_resolution_detail("TemporalResolutionEvidence.detail", self.detail),
         )
-        if self.status in {
+        if self.temporal_evidence_status in {
             TEMPORAL_FIXED_DATE,
             TEMPORAL_SOURCE_BACKED_OVERRIDE,
             TEMPORAL_FUTURE_EFFECTIVE_DATE,
         } and not self.effective_date:
             raise ValueError(
-                f"TemporalResolutionEvidence(status={self.status!r}) requires effective_date"
+                f"TemporalResolutionEvidence(status={self.temporal_evidence_status!r}) requires effective_date"
             )
         if (
-            self.status == TEMPORAL_CERTIFIED_UNTRIGGERED
+            self.temporal_evidence_status == TEMPORAL_CERTIFIED_UNTRIGGERED
             and not self.source_locator
             and not self.authority_layer
             and not self.detail.get("trigger_coverage")
@@ -126,7 +126,7 @@ class TemporalResolutionEvidence:
         _reject_temporal_overrides(self.detail)
 
     def to_diagnostic_detail(self) -> dict[str, Any]:
-        temporal_fields: dict[str, Any] = {"temporal_resolution_status": self.status}
+        temporal_fields: dict[str, Any] = {"temporal_resolution_status": self.temporal_evidence_status}
         if self.effective_date:
             temporal_fields["effective_date"] = self.effective_date
         if self.as_of:

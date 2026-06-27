@@ -1,22 +1,37 @@
 from __future__ import annotations
 
+import pytest
+
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation, OperationSource, StructuralAction
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.estonia.peg import extract_ee_ops
 from lawvm.estonia.ee_instruction_waist import (
+    EE_DIAGNOSTIC_CLAUSE_NOTE_PREFIX,
+    EE_SELECTION_META_NOTE_PREFIX,
     EEInstructionFamily,
     EEItemSelectionMeta,
+    EESectionSelectionMeta,
+    EESelectionMetaCarrierError,
     EESentenceTargetMeta,
     EESubsectionSelectionMeta,
     EESubsectionTextScopeMeta,
     EETextReplaceMode,
     EETextRewrite,
     EETextRewriteWitness,
+    EEUnparsedClauseDiagnostic,
+    decode_ee_selection_meta_note,
+    encode_ee_diagnostic_clause_note,
+    encode_ee_selection_meta_note,
     make_item_selection_meta,
+    make_section_selection_meta,
     make_sentence_target_meta,
+    make_subsection_selection_meta,
     make_subsection_text_scope_meta,
     make_text_rewrite_witness,
     parse_wrapper_quoted_clause,
+    read_ee_unparsed_clause_diagnostic,
+    read_op_section_selection_meta,
+    read_op_subsection_selection_meta,
     to_ee_parsed_instructions,
 )
 
@@ -462,3 +477,102 @@ def test_to_ee_parsed_instructions_maps_wrapper_quoted_payload_family() -> None:
     assert instructions[0].rewrite.old_surface == "koolieelne lasteasutus"
     assert instructions[0].action == StructuralAction.TEXT_REPLACE
     assert instructions[0].target.path == (("section", "8"), ("subsection", "1"), ("item", "1_2"))
+
+
+def test_selection_meta_note_round_trips_section_and_subsection() -> None:
+    section_meta = make_section_selection_meta(
+        explicit_labels=("1", "2", "26_1"),
+        plain_numeric_ranges=(("1", "25"),),
+    )
+    section_note = encode_ee_selection_meta_note(section_meta)
+    assert section_note.startswith(EE_SELECTION_META_NOTE_PREFIX)
+    decoded_section = decode_ee_selection_meta_note(section_note)
+    assert isinstance(decoded_section, EESectionSelectionMeta)
+    assert decoded_section == section_meta
+
+    subsection_meta = make_subsection_selection_meta(
+        explicit_labels=("2", "3", "4"),
+        plain_numeric_ranges=(("2", "4"),),
+        label_ranges=(("2", "4"),),
+    )
+    subsection_note = encode_ee_selection_meta_note(subsection_meta)
+    decoded_subsection = decode_ee_selection_meta_note(subsection_note)
+    assert isinstance(decoded_subsection, EESubsectionSelectionMeta)
+    assert decoded_subsection == subsection_meta
+    # Tuples survive the JSON list round-trip as tuples.
+    assert decoded_subsection.plain_numeric_ranges == (("2", "4"),)
+    assert decoded_subsection.label_ranges == (("2", "4"),)
+
+
+def test_decode_selection_meta_note_raises_on_malformed() -> None:
+    with pytest.raises(EESelectionMetaCarrierError):
+        decode_ee_selection_meta_note("not-an-ee-note")
+    with pytest.raises(EESelectionMetaCarrierError):
+        decode_ee_selection_meta_note(EE_SELECTION_META_NOTE_PREFIX + "{not json")
+    with pytest.raises(EESelectionMetaCarrierError):
+        decode_ee_selection_meta_note(
+            EE_SELECTION_META_NOTE_PREFIX + '{"kind":"bogus","data":{}}'
+        )
+
+
+def test_read_op_selection_meta_raises_on_duplicate_notes() -> None:
+    note = encode_ee_selection_meta_note(
+        make_subsection_selection_meta(explicit_labels=("1",))
+    )
+    op = LegalOperation(
+        op_id="ee-repeal-dup",
+        sequence=1,
+        action=StructuralAction.REPEAL,
+        target=LegalAddress(path=(("section", "1"), ("subsection", "1"))),
+        payload=None,
+        provenance_tags=("clause", note, note),
+    )
+    with pytest.raises(EESelectionMetaCarrierError):
+        read_op_subsection_selection_meta(op)
+
+
+def test_diagnostic_clause_note_round_trips() -> None:
+    diag = EEUnparsedClauseDiagnostic(clause_text="midagi tundmatut", parser_action="repeal")
+    note = encode_ee_diagnostic_clause_note(diag)
+    assert note.startswith(EE_DIAGNOSTIC_CLAUSE_NOTE_PREFIX)
+    op = LegalOperation(
+        op_id="ee-unknown-1",
+        sequence=1,
+        action=StructuralAction.REPEAL,
+        target=LegalAddress(path=()),
+        payload=None,
+        provenance_tags=("no_target: midagi tundmatut", note),
+    )
+    decoded = read_ee_unparsed_clause_diagnostic(op)
+    assert decoded is not None
+    assert decoded.clause_text == "midagi tundmatut"
+    assert decoded.parser_action == "repeal"
+
+
+def test_plural_subsection_repeal_ops_carry_no_payload_but_selection_note() -> None:
+    ops = extract_ee_ops(
+        "paragrahvi 30 lõiked 12, 13 ja 18–20 tunnistatakse kehtetuks;",
+        OperationSource(statute_id="ee/test", raw_text="test"),
+    )
+    repeal_ops = [op for op in ops if op.action == StructuralAction.REPEAL]
+    assert repeal_ops, "expected at least one REPEAL op"
+    for op in repeal_ops:
+        assert op.payload is None
+        meta = read_op_subsection_selection_meta(op)
+        assert meta is not None
+        assert meta.explicit_labels == ("12", "13", "18", "19", "20")
+        assert meta.plain_numeric_ranges == (("18", "20"),)
+
+
+def test_plural_section_repeal_ops_carry_no_payload_but_selection_note() -> None:
+    ops = extract_ee_ops(
+        "paragrahvid 42–42 2 tunnistatakse kehtetuks;",
+        OperationSource(statute_id="ee/test", raw_text="test"),
+    )
+    repeal_ops = [op for op in ops if op.action == StructuralAction.REPEAL]
+    assert repeal_ops, "expected at least one REPEAL op"
+    for op in repeal_ops:
+        assert op.payload is None
+        meta = read_op_section_selection_meta(op)
+        assert meta is not None
+        assert meta.explicit_labels == ("42", "42_1", "42_2")

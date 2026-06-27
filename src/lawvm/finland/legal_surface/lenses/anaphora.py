@@ -163,7 +163,7 @@ class AnaphoraLens:
             n_units += 1
             for ref in recognize_anaphoric_refs(unit.raw_text, unit.work_id):
                 n_anaphors += 1
-                status = ref.status
+                status = ref.anaphor_status
                 if status is AnaphorStatus.RESOLVED:
                     n_resolved += 1
                 elif status is AnaphorStatus.AMBIGUOUS:
@@ -267,7 +267,7 @@ class AnaphoraLens:
             "head_kind": ref.head_kind.value,
             "target_provision_ref": _target_provision_ref(ref),
         }
-        if ref.status is AnaphorStatus.AMBIGUOUS:
+        if ref.anaphor_status is AnaphorStatus.AMBIGUOUS:
             payload["candidates"] = _candidate_ids(ref)
         return SurfaceNodeSeed(
             node_kind="reference_resolution",

@@ -4,7 +4,7 @@ Mirrors ``tests/test_spec_ledger_ee_catalog.py``: it pins the cataloged fraction
 the FI **parse-witness rule-id** surface at 100%, in both directions:
 
 * coverage: every discovered FI parse-witness ``witness_rule_id`` has a non-empty
-  believed_spec in ``_FI_RULE_SPECS`` (``spec_ledger.py``) ∪ ``_FI_RULE_SPECS_SUPPLEMENT``
+  believed_spec in ``_FI_RULE_SPECS`` (``finland/spec_ledger_adapter.py``) ∪ ``_FI_RULE_SPECS_SUPPLEMENT``
   (``spec_ledger_fi_catalog_supplement.py``) — no silent gap when a parse rule is added;
 * no dead supplement: every ``_FI_RULE_SPECS_SUPPLEMENT`` key corresponds to a real
   discovered FI parse-witness rule id (no stale hypotheses).
@@ -40,7 +40,7 @@ import ast
 from functools import lru_cache
 from pathlib import Path
 
-from lawvm.tools.spec_ledger import _FI_RULE_SPECS
+from lawvm.finland.spec_ledger_adapter import _FI_RULE_SPECS
 from lawvm.tools.spec_ledger_discovery import format_uncataloged, locate_rule_ids
 from lawvm.tools.spec_ledger_fi_catalog_supplement import _FI_RULE_SPECS_SUPPLEMENT
 

@@ -440,7 +440,7 @@ def _us_scan_one(locator: str) -> _UsResult | None:
     examples: list[tuple[str, str]] = []
     for instr in report.instructions:
         if instr.operation is None and len(examples) < 3:
-            rule = instr.witness_rule_id or instr.status or "__none__"
+            rule = instr.witness_rule_id or instr.instruction_status or "__none__"
             examples.append((rule, (instr.raw_text or "")[:200]))
     return _UsResult(
         sid=cov.get("statute_id", "") or report.statute_id,

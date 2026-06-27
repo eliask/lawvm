@@ -254,7 +254,7 @@ def test_plaw_116_52_strike_subparagraph_and_insert_block_replace():
     assert report.enacted == "2019-08-23"
     assert "title 11" in report.title_targets
     # One amendatory instruction: §101(10A) strike subparagraph (B) + insert block.
-    accepted = [i for i in report.instructions if i.status == "accepted"]
+    accepted = [i for i in report.instructions if i.instruction_status == "accepted"]
     assert len(accepted) == 1
     instr = accepted[0]
     assert instr.action == "strike_insert"
@@ -270,7 +270,7 @@ def test_plaw_116_52_strike_subparagraph_and_insert_block_replace():
 
 def test_plaw_116_51_each_place_text_replace():
     report = lower_plaw_amendatory(_read("PLAW-116publ51.xml"))
-    accepted = [i for i in report.instructions if i.status == "accepted"]
+    accepted = [i for i in report.instructions if i.instruction_status == "accepted"]
     assert len(accepted) == 1
     op = accepted[0].operation
     assert op is not None
@@ -307,7 +307,7 @@ def test_precise_text_strike_with_roman_ambiguous_subsection_head_is_section_sco
         "</section>"
     )
     report = lower_plaw_amendatory(_synthetic_plaw(body))
-    accepted = [i for i in report.instructions if i.status == "accepted"]
+    accepted = [i for i in report.instructions if i.instruction_status == "accepted"]
     assert len(accepted) == 1
     instr = accepted[0]
     assert instr.action == "strike_insert"
@@ -350,7 +350,7 @@ def test_precise_text_strike_with_letter_subsection_head_keeps_full_path():
         "</section>"
     )
     report = lower_plaw_amendatory(_synthetic_plaw(body))
-    accepted = [i for i in report.instructions if i.status == "accepted"]
+    accepted = [i for i in report.instructions if i.instruction_status == "accepted"]
     assert len(accepted) == 1
     op = accepted[0].operation
     assert op is not None
@@ -536,7 +536,7 @@ def test_plaw_117_177_strike_insert_off_title_11_is_needs_review_with_finding():
     report = lower_plaw_amendatory(_read("PLAW-117publ177.xml"))
     instr = report.instructions[0]
     assert instr.action == "strike_insert"
-    assert instr.status == "needs_review"
+    assert instr.instruction_status == "needs_review"
     assert instr.operation is not None
     assert instr.operation.action is StructuralAction.TEXT_REPLACE
     assert instr.target_address is not None
@@ -572,7 +572,7 @@ def test_proof_title_parameter_accepts_on_title_op_without_off_title_finding():
     assert instr_default.target_address == LegalAddress(
         path=(("title", "42"), ("section", "10403"))
     )
-    assert instr_default.status == "needs_review"
+    assert instr_default.instruction_status == "needs_review"
     assert instr_default.finding is not None
     assert instr_default.finding.rule_id == NON_TITLE_TARGET_RULE_ID
 
@@ -580,7 +580,7 @@ def test_proof_title_parameter_accepts_on_title_op_without_off_title_finding():
     report_proof_42 = lower_plaw_amendatory(plaw, proof_title="42")
     instr_42 = report_proof_42.instructions[0]
     assert instr_42.target_address == instr_default.target_address
-    assert instr_42.status == "accepted"
+    assert instr_42.instruction_status == "accepted"
     assert instr_42.finding is None
 
 
@@ -928,7 +928,7 @@ def test_quoted_cross_ref_does_not_hijack_target_onto_operands_cited_section():
     instr = report.instructions[0]
     assert instr.target_address is None
     assert instr.operation is None
-    assert instr.status == "unsupported"
+    assert instr.instruction_status == "unsupported"
     assert instr.finding is not None
     assert instr.finding.rule_id == TARGET_UNRESOLVED_FINDING_RULE_ID
 
@@ -1337,7 +1337,7 @@ def test_named_act_target_yields_unresolved_finding_not_silent_skip():
     report = lower_plaw_amendatory(_read("PLAW-118publ24.xml"))
     assert len(report.instructions) == 1
     instr = report.instructions[0]
-    assert instr.status == "unsupported"
+    assert instr.instruction_status == "unsupported"
     assert instr.operation is None
     assert instr.finding is not None
     assert instr.finding.rule_id == TARGET_UNRESOLVED_FINDING_RULE_ID
@@ -1908,7 +1908,7 @@ def test_effective_date_scope_does_not_leak_across_subsections_at_different_leve
         "</subparagraph></paragraph></paragraph></subsection></section>"
     )
     report = lower_plaw_amendatory(_synthetic_plaw(body))
-    accepted = [i for i in report.instructions if i.status == "accepted"]
+    accepted = [i for i in report.instructions if i.instruction_status == "accepted"]
     assert len(accepted) == 1, report
     instr = accepted[0]
     assert instr.target_address == LegalAddress(path=(("title", "11"), ("section", "322"), ("subsection", "a")))
@@ -2141,7 +2141,7 @@ def test_sibling_anchors_do_not_leak_into_ancestor_target_resolution():
         "</paragraph></paragraph></subsection></section>"
     )
     report = lower_plaw_amendatory(_synthetic_plaw(body))
-    accepted = [i for i in report.instructions if i.status == "accepted"]
+    accepted = [i for i in report.instructions if i.instruction_status == "accepted"]
     # The leaf under (A) must target section 322(a), not be hijacked by sibling (B)'s ref.
     instr_a = next(i for i in accepted if i.instruction_id.endswith("/4/A/i"))
     assert instr_a.target_address == LegalAddress(path=(("title", "11"), ("section", "322"), ("subsection", "a")))
@@ -2193,7 +2193,7 @@ def test_real_title28_pl115_141_title_only_inheritance_reaches_agreement() -> No
     assert "28:1871" in report.oracle_changed_sections
     assert "28:1871" in report.claimed_sections
     row = next(r for r in report.rows if r.section_key == "28:1871")
-    assert row.status == "agree"
+    assert row.row_status == "agree"
     assert row.target_address == "title:28/section:1871/subsection:b"
     assert row.match_text == "$40"
     assert row.replacement == "$50"
@@ -2221,7 +2221,7 @@ def test_precise_text_strike_with_subsection_letter_d_keeps_full_path():
         "</section>"
     )
     report = lower_plaw_amendatory(_synthetic_plaw(body))
-    accepted = [i for i in report.instructions if i.status == "accepted"]
+    accepted = [i for i in report.instructions if i.instruction_status == "accepted"]
     assert len(accepted) == 1
     instr = accepted[0]
     assert instr.target_address == LegalAddress(path=(("title", "11"), ("section", "522"), ("subsection", "d")))
@@ -2240,7 +2240,7 @@ def test_precise_text_strike_with_subsection_letter_d_keeps_full_path():
 
 
 def _accepted_instr(report):
-    accepted = [i for i in report.instructions if i.status == "accepted"]
+    accepted = [i for i in report.instructions if i.instruction_status == "accepted"]
     assert len(accepted) == 1
     return accepted[0]
 

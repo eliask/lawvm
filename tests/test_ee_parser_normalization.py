@@ -8,9 +8,9 @@ from lawvm.estonia.fetch import fetch_rt_xml, open_rt_archive
 from lawvm.estonia.ee_instruction_waist import (
     read_payload_rewrite_meta,
     read_item_selection_meta,
-    read_section_selection_meta,
+    read_op_section_selection_meta,
+    read_op_subsection_selection_meta,
     read_sentence_target_meta,
-    read_subsection_selection_meta,
     read_subsection_text_scope_meta,
 )
 from lawvm.estonia.grafter import (
@@ -5425,7 +5425,8 @@ def test_extract_ee_ops_handles_mixed_section_and_subsection_repeal_clause() -> 
     ]
     assert len(subsection_ops) == 3
     for op in subsection_ops:
-        selection_meta = read_subsection_selection_meta(_payload(op))
+        assert op.payload is None
+        selection_meta = read_op_subsection_selection_meta(op)
         assert selection_meta is not None
         assert selection_meta.explicit_labels == ("1", "2", "8")
         assert selection_meta.plain_numeric_ranges == (("1", "2"),)
@@ -5614,7 +5615,7 @@ def test_extract_ee_ops_handles_mixed_item_sentence_subsection_and_section_repea
     assert (
         StructuralAction.REPEAL,
         (("section", "21"), ("subsection", "1_1")),
-        "",
+        None,
     ) in triples
     assert (
         StructuralAction.REPEAL,
@@ -5634,12 +5635,12 @@ def test_extract_ee_ops_handles_mixed_item_sentence_subsection_and_section_repea
     assert (
         StructuralAction.REPEAL,
         (("section", "21"), ("subsection", "4")),
-        "",
+        None,
     ) not in triples
     subsection_1_1_op = next(
         op for op in ops if op.target.path == (("section", "21"), ("subsection", "1_1"))
     )
-    subsection_selection_meta = read_subsection_selection_meta(_payload(subsection_1_1_op))
+    subsection_selection_meta = read_op_subsection_selection_meta(subsection_1_1_op)
     assert subsection_selection_meta is not None
     assert subsection_selection_meta.explicit_labels == ("1_1",)
     assert (
@@ -5655,12 +5656,12 @@ def test_extract_ee_ops_handles_mixed_item_sentence_subsection_and_section_repea
     assert (
         StructuralAction.REPEAL,
         (("section", "27"), ("subsection", "4")),
-        "",
+        None,
     ) in triples
     subsection_27_4_op = next(
         op for op in ops if op.target.path == (("section", "27"), ("subsection", "4"))
     )
-    subsection_selection_meta = read_subsection_selection_meta(_payload(subsection_27_4_op))
+    subsection_selection_meta = read_op_subsection_selection_meta(subsection_27_4_op)
     assert subsection_selection_meta is not None
     assert subsection_selection_meta.explicit_labels == ("4",)
     assert (
@@ -5716,13 +5717,13 @@ def test_extract_ee_ops_keeps_companion_subsection_repeals_for_each_explicit_sec
     assert (
         StructuralAction.REPEAL,
         (("section", "121"), ("subsection", "4")),
-        "",
+        None,
     ) in triples
 
     subsection_121_4_op = next(
         op for op in ops if op.target.path == (("section", "121"), ("subsection", "4"))
     )
-    subsection_selection_meta = read_subsection_selection_meta(_payload(subsection_121_4_op))
+    subsection_selection_meta = read_op_subsection_selection_meta(subsection_121_4_op)
     assert subsection_selection_meta is not None
     assert subsection_selection_meta.explicit_labels == ("4",)
 
@@ -5795,7 +5796,8 @@ def test_extract_ee_ops_handles_leading_paragraph_sign_section_repeal_with_ning_
     assert targets[24] == (StructuralAction.REPEAL, (("section", "25"),))
     assert targets[25] == (StructuralAction.REPEAL, (("section", "26_1"),))
     assert all(op.source is not None and op.source.effective == "2012-01-01" for op in ops)
-    selection_meta = read_section_selection_meta(_payload(ops[0]))
+    assert ops[0].payload is None
+    selection_meta = read_op_section_selection_meta(ops[0])
     assert selection_meta is not None
     assert selection_meta.explicit_labels[:3] == ("1", "2", "3")
     assert selection_meta.explicit_labels[-2:] == ("25", "26_1")
@@ -5825,7 +5827,8 @@ def test_extract_ee_ops_does_not_mark_superscript_only_section_range_as_plain_nu
         OperationSource(statute_id="ee/test", raw_text="test"),
     )
 
-    selection_meta = read_section_selection_meta(_payload(ops[0]))
+    assert ops[0].payload is None
+    selection_meta = read_op_section_selection_meta(ops[0])
 
     assert selection_meta is not None
     assert selection_meta.explicit_labels == ("42", "42_1", "42_2")
@@ -5847,9 +5850,9 @@ def test_extract_ee_ops_tags_trailing_old_format_subsection_range_after_item_rep
     ]
 
     assert [op.target.path[-1][1] for op in subsection_ops] == ["2", "3", "4"]
-    assert all(op.payload is not None for op in subsection_ops)
+    assert all(op.payload is None for op in subsection_ops)
     for op in subsection_ops:
-        selection_meta = read_subsection_selection_meta(_payload(op))
+        selection_meta = read_op_subsection_selection_meta(op)
         assert selection_meta is not None
         assert selection_meta.explicit_labels == ("2", "3", "4")
 
@@ -5861,7 +5864,8 @@ def test_extract_ee_ops_expands_final_conjunct_subsection_range() -> None:
     )
 
     assert [op.target.path[-1][1] for op in ops] == ["12", "13", "15", "16", "18", "19", "20"]
-    selection_meta = read_subsection_selection_meta(_payload(ops[0]))
+    assert ops[0].payload is None
+    selection_meta = read_op_subsection_selection_meta(ops[0])
     assert selection_meta is not None
     assert selection_meta.explicit_labels == ("12", "13", "15", "16", "18", "19", "20")
     assert selection_meta.plain_numeric_ranges == (("18", "20"),)
@@ -5882,7 +5886,8 @@ def test_extract_ee_ops_keeps_singular_trailing_old_format_subsection_repeal_nar
     ]
 
     assert [op.target.path[-1][1] for op in subsection_ops] == ["1_1"]
-    selection_meta = read_subsection_selection_meta(_payload(subsection_ops[0]))
+    assert subsection_ops[0].payload is None
+    selection_meta = read_op_subsection_selection_meta(subsection_ops[0])
     assert selection_meta is not None
     assert selection_meta.explicit_labels == ("1_1",)
 
@@ -10321,7 +10326,8 @@ def test_extract_ee_ops_keeps_mixed_subsection_and_sentence_repeals_distinct() -
         (StructuralAction.REPEAL, "section:8/subsection:3_1"),
         (StructuralAction.REPLACE, "section:9/subsection:2"),
     ]
-    selection_meta = read_subsection_selection_meta(_payload(ops[0]))
+    assert ops[0].payload is None
+    selection_meta = read_op_subsection_selection_meta(ops[0])
     assert selection_meta is not None
     assert selection_meta.explicit_labels == ("3", "3_1")
     sentence_meta = read_sentence_target_meta(_payload(ops[2]))
@@ -10766,6 +10772,12 @@ def test_extract_ee_ops_recovers_flat_sectionless_singleton_item_repeals() -> No
         (StructuralAction.REPEAL, (("section", "1"), ("subsection", "1"), ("item", "16"))),
     ]
     assert all(op.witness_rule_id == "ee_flat_sectionless_singleton_item_repeal" for op in ops)
+    # R1: repeal ops carry no payload; the inferred-scope provenance rides in
+    # provenance_tags (no production reader pulled PROV attrs off the payload).
+    assert all(op.payload is None for op in ops)
+    assert all(
+        "scope_confidence:inferred_from_live_unique" in op.provenance_tags for op in ops
+    )
 
 
 def test_extract_ee_ops_recovers_flat_sectionless_singleton_subsection_item_scope() -> None:

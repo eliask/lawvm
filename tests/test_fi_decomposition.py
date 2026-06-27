@@ -37,6 +37,7 @@ from lawvm.core.phase_result import Finding, PhaseResult
 from lawvm.finland.apply_ops_executor import _apply_ops_to_tree_typed
 from lawvm.finland.compile_amendment import compile_amendment_ops as _real_compile_amendment_ops
 from lawvm.finland.frontend_compile import normalize_and_compile_ops
+from lawvm.finland.op_provenance import Recovered, RecognizerId, has_recognizer
 from lawvm.finland.ops import OpType, AmendmentOp, ResolvedOp
 from lawvm.finland.process_pipeline import process_muutoslaki
 from lawvm.finland.post_process import post_process_tree
@@ -1082,7 +1083,7 @@ class TestNormalizeAndCompileOps:
         ).output
 
         for op in ops:
-            assert op.sec1_body_johto_fallback is True
+            assert has_recognizer(op.provenance, RecognizerId.SEC1_BODY_JOHTO)
             assert "extraction_preamble_body" in op.extraction_provenance_tags
 
     def test_body_root_replace_tag_propagated(self) -> None:
@@ -1105,7 +1106,7 @@ class TestNormalizeAndCompileOps:
 
         assert ops
         for op in ops:
-            assert op.body_root_replace_fallback is True
+            assert has_recognizer(op.provenance, RecognizerId.BODY_ROOT_REPLACE)
             assert "extraction_body_root_replace" in op.extraction_provenance_tags
 
     def test_destinationless_move_relabel_is_reported_before_missing_intent(self) -> None:
@@ -1170,7 +1171,10 @@ class TestNormalizeAndCompileOps:
             ).output
 
         assert ops
-        assert all(op.fallback_provenance is True for op in ops)
+        assert all(
+            isinstance(op.provenance, Recovered) and op.provenance.from_fallback_provenance
+            for op in ops
+        )
         assert all("extraction_fallback_heuristic" in op.extraction_provenance_tags for op in ops)
 
     def test_title_fallback_provenance_is_typed_without_hint(self) -> None:
@@ -1192,7 +1196,7 @@ class TestNormalizeAndCompileOps:
         assert ops[0].op_type == "REPEAL"
         assert ops[0].target_kind == "L"
         assert ops[0].target_cols.target_section == "5"
-        assert ops[0].fallback_provenance is True
+        assert isinstance(ops[0].provenance, Recovered) and ops[0].provenance.from_fallback_provenance
         assert "extraction_title_fallback" in ops[0].extraction_provenance_tags
 
     def test_amendment_op_target_kind_projection_is_read_only(self) -> None:
@@ -1273,7 +1277,7 @@ class TestNormalizeAndCompileOps:
                 op_type=OpType.REPLACE,
                 target_kind=TargetKind.SECTION,
                 target_section="4",
-                body_root_replace_fallback=True,
+                _stamped_recognizers=frozenset({RecognizerId.BODY_ROOT_REPLACE}),
             )
         ]
 
@@ -1290,7 +1294,7 @@ class TestNormalizeAndCompileOps:
         assert len(remapped_ops) == 1
         assert remapped_ops[0].op_type == "INSERT"
         assert remapped_ops[0].target_cols.target_section == "3a"
-        assert remapped_ops[0].body_root_replace_fallback is True
+        assert has_recognizer(remapped_ops[0].provenance, RecognizerId.BODY_ROOT_REPLACE)
 
     def test_remap_body_root_replace_group_does_not_fire_from_breadcrumb_string_alone(self) -> None:
         parent = IRNode(

@@ -230,6 +230,13 @@ _NO_RULE_SPECS: Dict[str, str] = {
         "{contingent, dated, immediate, override}; the unknown status is "
         "recorded as blocking, never silently guessed."
     ),
+    "no_repeal_payload_dropped": (
+        "A Norway REPEAL/TEXT_REPEAL op arrived at the generic structured-spec mint "
+        "boundary carrying a non-None payload (the candidate map is consulted for all "
+        "actions); the payload is coerced to None — a repeal removes its target, so a "
+        "content payload is contradictory — and the drop is recorded as a non-blocking "
+        "adjudication, never silently discarded."
+    ),
     "no_replay_insert_occupied_direct_child_replaced": (
         "A Norway INSERT landed on an occupied direct child; replay recovers by "
         "replacing that child, recording the action-family conversion "

@@ -570,7 +570,7 @@ def collect_coverage_claims_partition(
             base_unit_id = f"{kind}_{label}"
 
         evidence_parts = [f"op_id={op.op_id}", f"op_type={op.op_type}"]
-        if op.fallback_provenance:
+        if isinstance(op.provenance, Recovered) and op.provenance.from_fallback_provenance:
             evidence_parts.append("fallback_provenance=true")
         if has_recognizer(op.provenance, RecognizerId.BODY_ROOT_REPLACE):
             evidence_parts.append("body_root_replace_fallback=true")

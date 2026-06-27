@@ -35,7 +35,7 @@ def _binding(
         scope="statute",
         source_span=SourceSpan("test", offset, length),
         binding_kind=BINDING_PARENTHETICAL_ALIAS,
-        status=status,
+        binding_status=status,
     )
 
 
@@ -73,7 +73,7 @@ def test_inflected_compound_use_resolves() -> None:
     b = _binding("sivutuoteasetus", offset=0, length=len(binding_text))
 
     uses = resolve_term_uses(body, [b])
-    resolved = [u for u in uses if u.status == STATUS_RESOLVED]
+    resolved = [u for u in uses if u.use_status == STATUS_RESOLVED]
     assert len(resolved) == 1
     u = resolved[0]
     assert u.term_surface == "sivutuoteasetuksen"
@@ -101,7 +101,7 @@ def test_multiple_inflected_uses_each_resolve() -> None:
         target="527/2014",
     )
     uses = resolve_term_uses(body, [b])
-    resolved = [u for u in uses if u.status == STATUS_RESOLVED]
+    resolved = [u for u in uses if u.use_status == STATUS_RESOLVED]
     surfaces = {u.term_surface for u in resolved}
     assert "ympäristönsuojelulakia" in surfaces
     # Sentence-initial capitalised use also matches (case-insensitive).
@@ -114,7 +114,7 @@ def test_nominative_use_resolves() -> None:
     body = binding_text + " ja asetus määrää menettelystä tarkemmin."
     b = _binding("asetus", offset=0, length=len(binding_text))
     uses = resolve_term_uses(body, [b])
-    resolved = [u for u in uses if u.status == STATUS_RESOLVED]
+    resolved = [u for u in uses if u.use_status == STATUS_RESOLVED]
     assert len(resolved) == 1
     assert resolved[0].term_surface == "asetus"
 
@@ -136,7 +136,7 @@ def test_use_before_binding_is_open() -> None:
     # binding span is skipped).
     assert len(uses) == 1
     u = uses[0]
-    assert u.status == STATUS_OPEN
+    assert u.use_status == STATUS_OPEN
     assert u.binding is None
     assert u.bindings == ()
     assert u.rule_id == RULE_BEFORE_BINDING
@@ -151,7 +151,7 @@ def test_use_after_binding_resolves_same_term() -> None:
     b = _binding("sivutuoteasetus", offset=0, length=len("(sivutuoteasetus)"))
     uses = resolve_term_uses(body, [b])
     assert len(uses) == 1
-    assert uses[0].status == STATUS_RESOLVED
+    assert uses[0].use_status == STATUS_RESOLVED
     assert uses[0].source_span.byte_offset > 0
 
 
@@ -167,7 +167,7 @@ def test_two_bindings_same_term_is_ambiguous() -> None:
     b2 = _binding("asetus", offset=20, length=8, target="999/2020")
     body = "(asetus)" + " " * 12 + "(asetus) myöhemmin asetuksessa säädetään."
     uses = resolve_term_uses(body, [b1, b2])
-    amb = [u for u in uses if u.status == STATUS_AMBIGUOUS]
+    amb = [u for u in uses if u.use_status == STATUS_AMBIGUOUS]
     assert len(amb) == 1
     u = amb[0]
     assert u.term_surface == "asetuksessa"
@@ -217,7 +217,7 @@ def test_unsupported_single_word_exact_surface_match() -> None:
         status=STATUS_UNSUPPORTED_MORPHOLOGY,
     )
     uses = resolve_term_uses(body, [b])
-    resolved = [u for u in uses if u.status == STATUS_RESOLVED]
+    resolved = [u for u in uses if u.use_status == STATUS_RESOLVED]
     assert len(resolved) == 1
     assert resolved[0].rule_id == RULE_EXACT_SURFACE
     assert resolved[0].term_surface == "testitermi"

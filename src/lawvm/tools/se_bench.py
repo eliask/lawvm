@@ -72,7 +72,7 @@ def se_bench_unit_result(summary: Mapping[str, Any]) -> BenchUnitResult:
     if outcome == "replay_ok":
         if target_count <= 0:
             # Reproducible replay but no oracle targets — nothing to score.
-            return BenchUnitResult(unit_id=unit_id, status=BenchStatus.NO_TRUTH)
+            return BenchUnitResult(unit_id=unit_id, bench_unit_status=BenchStatus.NO_TRUTH)
         structural_err = genuine_mismatch / target_count
         residue: dict[str, int] = {}
         if genuine_mismatch:
@@ -82,7 +82,7 @@ def se_bench_unit_result(summary: Mapping[str, Any]) -> BenchUnitResult:
         # where the consolidated oracle disagrees but LawVM was right.
         return BenchUnitResult(
             unit_id=unit_id,
-            status=BenchStatus.SCORED,
+            bench_unit_status=BenchStatus.SCORED,
             structural_err=structural_err,
             text_err=None,
             residue_buckets=residue,
@@ -94,7 +94,7 @@ def se_bench_unit_result(summary: Mapping[str, Any]) -> BenchUnitResult:
         # field rather than raising. Non-scored exclusion.
         return BenchUnitResult(
             unit_id=unit_id,
-            status=BenchStatus.SOURCE_UNAVAILABLE,
+            bench_unit_status=BenchStatus.SOURCE_UNAVAILABLE,
             residue_buckets={
                 "recovery_mode_older_base_required": 1,
             },
@@ -112,7 +112,7 @@ def se_bench_unit_result(summary: Mapping[str, Any]) -> BenchUnitResult:
     )
     return BenchUnitResult(
         unit_id=unit_id,
-        status=BenchStatus.CRASH,
+        bench_unit_status=BenchStatus.CRASH,
         witnesses=witnesses,
     )
 

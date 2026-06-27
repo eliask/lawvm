@@ -46,6 +46,7 @@ from lawvm.tools.spec_ledger import (
     StatuteLedgerInput,
     WitnessDisposition,
     build_ledger,
+    disposition_for,
 )
 from lawvm.tools.spec_ledger_us_catalog import (
     _US_RULE_SPECS,
@@ -88,7 +89,7 @@ _US_DISPOSITION: Dict[str, WitnessDisposition] = {
 
 
 def _disposition_for(raw: str) -> WitnessDisposition:
-    return _US_DISPOSITION.get(raw, "unknown")
+    return disposition_for(raw, _US_DISPOSITION)
 
 
 def _amendatory_witness_firings(
@@ -171,7 +172,7 @@ def us_ledger_inputs_from_reports(
     inputs: List[StatuteLedgerInput] = []
     for result in results:
         report = result.report
-        if result.status != "evaluated" or report is None:
+        if result.window_status != "evaluated" or report is None:
             continue
         sid = result.window.key
         firings: Dict[str, int] = defaultdict(int)
@@ -184,7 +185,7 @@ def us_ledger_inputs_from_reports(
         # 1. Per-section materialized-vs-oracle rows.
         for row in report.rows:
             firings[row.rule_id] += 1
-            if row.status == "agree":
+            if row.row_status == "agree":
                 continue
             divergences.append(
                 DivergenceRow(

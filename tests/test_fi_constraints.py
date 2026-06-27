@@ -598,6 +598,51 @@ def test_c_language_variant_replace_shadowed_by_sparse_insert_drops_earlier_repl
     assert "language-variant replace shadowed" in reason
 
 
+def test_c_language_variant_replace_shadowed_by_sparse_insert_uses_source_payload_after_omission_prepare() -> None:
+    prepared_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="44",
+        children=(
+            IRNode(kind=IRNodeKind.HEADING, text="Valtiosihteerin tehtävät"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="uusi 2 momentti"),),
+            ),
+        ),
+    )
+    source_payload = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="44",
+        children=(
+            IRNode(kind=IRNodeKind.HEADING, text="Valtiosihteerin tehtävät"),
+            IRNode(kind=IRNodeKind.OMISSION),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                children=(IRNode(kind=IRNodeKind.CONTENT, text="uusi 2 momentti"),),
+            ),
+        ),
+    )
+    source_model = SimpleNamespace(
+        lookup_payload_ir=lambda *args, **kwargs: SimpleNamespace(payload_ir=source_payload)
+    )
+    ctx = _ctx(
+        muutos_ir=prepared_ir,
+        johto="44 §:n otsikon ja 1 momentin ruotsinkielinen sanamuoto sekä lisätään 44 §:ään uusi 2 momentti",
+        source_model=source_model,
+    )
+    replace_op = _op(op_type=OpType.REPLACE, target_section="44", target_paragraph=1)
+    insert_op = _op(op_type=OpType.INSERT, target_section="44", target_paragraph=2)
+
+    keep, reason = _c_language_variant_replace_shadowed_by_sparse_insert(
+        replace_op,
+        [replace_op, insert_op],
+        ctx,
+    )
+
+    assert keep is False
+    assert "language-variant replace shadowed" in reason
+
+
 def test_c_language_variant_replace_shadowed_by_sparse_insert_keeps_insert() -> None:
     ir = IRNode(
         kind=IRNodeKind.SECTION,

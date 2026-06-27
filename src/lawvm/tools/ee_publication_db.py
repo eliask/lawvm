@@ -888,7 +888,7 @@ def _score_publication_pair(row: dict[str, str], archive: Any) -> tuple[dict[str
             {
                 "pair_key": pair_key,
                 "as_of": row.get("oracle_effective", ""),
-                "status": f"EXC:{str(exc)[:120]}",
+                "pair_status": f"EXC:{str(exc)[:120]}",
                 "source_basis": "",
                 "comparison_class": "exception",
                 "benchmark_reporting_stratum": "EE_NONCORE_SOURCE_GAP",
@@ -926,7 +926,7 @@ def _score_publication_pair(row: dict[str, str], archive: Any) -> tuple[dict[str
     pair = {
         "pair_key": pair_key,
         "as_of": getattr(result, "as_of", ""),
-        "status": "OK" if not result.error else f"ERR:{result.error[:120]}",
+        "pair_status": "OK" if not result.error else f"ERR:{result.error[:120]}",
         "source_basis": getattr(result, "source_basis", ""),
         "comparison_class": result.comparison_class,
         "benchmark_reporting_stratum": reporting_summary["benchmark_reporting_stratum"],
@@ -1097,7 +1097,7 @@ def build_ee_publication_db(
             _iter_scored_pairs(rows, archive_path=archive_path, workers=workers),
             start=1,
         ):
-            if not pair["status"].startswith("OK"):
+            if not pair["pair_status"].startswith("OK"):
                 stats["errors"] += 1
             stats["pairs"] += 1
             stats["divergences"] += pair["browser_divergence_count"]
@@ -1132,7 +1132,7 @@ def build_ee_publication_db(
                     _int_value(row.get("version_index") or row.get("pair_index")),
                     _int_value(row.get("version_count") or row.get("redaction_count")),
                     pair["as_of"],
-                    pair["status"],
+                    pair["pair_status"],
                     pair["source_basis"],
                     pair["comparison_class"],
                     pair["benchmark_reporting_stratum"],

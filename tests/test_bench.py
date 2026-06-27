@@ -935,13 +935,13 @@ def test_fi_unit_results_from_rows_maps_axes_and_statuses() -> None:
     by_id = {u.unit_id: u for u in units}
 
     scored = by_id["2004/1037"]
-    assert scored.status is BenchStatus.SCORED
+    assert scored.bench_unit_status is BenchStatus.SCORED
     assert scored.text_err == pytest.approx(0.1)
     assert scored.structural_err is None  # no section score on a text-only run
-    assert by_id["2012/916"].status is BenchStatus.NO_TRUTH
-    assert by_id["2018/1"].status is BenchStatus.SOURCE_UNAVAILABLE
+    assert by_id["2012/916"].bench_unit_status is BenchStatus.NO_TRUTH
+    assert by_id["2018/1"].bench_unit_status is BenchStatus.SOURCE_UNAVAILABLE
     crash = by_id["2020/5"]
-    assert crash.status is BenchStatus.CRASH
+    assert crash.bench_unit_status is BenchStatus.CRASH
     assert crash.witnesses == ("ValueError: boom",)
 
 

@@ -182,7 +182,7 @@ def transposition_edge_for_claim(
         transposition_deadline=deadline,
         fi_enactment_date=fi_enactment_date,
         timeliness=timeliness,
-        binding_status=claim.status,
+        binding_status=claim.transposition_status,
         claim_surface=claim.claim_surface,
     )
 

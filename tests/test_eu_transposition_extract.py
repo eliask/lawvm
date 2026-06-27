@@ -37,7 +37,7 @@ def test_resolved_claim_binds_known_directive_celex() -> None:
     claims = recognize_transposition_claims(text, citing_engine_id="2014/527")
     assert len(claims) == 1
     claim = claims[0]
-    assert claim.status is TranspositionStatus.RESOLVED
+    assert claim.transposition_status is TranspositionStatus.RESOLVED
     assert claim.directive_celex == "32010L0075"  # IED 2010/75/EU
     assert claim.directive_surface == "teollisuuspäästödirektiivin"
     assert claim.citing_engine_id == "2014/527"
@@ -54,7 +54,7 @@ def test_named_unknown_directive_is_statute_only_not_dropped() -> None:
     claims = recognize_transposition_claims(text, citing_engine_id="2099/1")
     assert len(claims) == 1
     claim = claims[0]
-    assert claim.status is TranspositionStatus.STATUTE_ONLY
+    assert claim.transposition_status is TranspositionStatus.STATUTE_ONLY
     assert claim.directive_celex is None  # tag, don't guess
     assert claim.directive_surface == "päästökattodirektiivin"
 
@@ -68,7 +68,7 @@ def test_ambiguous_directive_is_ambiguous_celex_none() -> None:
     claims = recognize_transposition_claims(text, citing_engine_id="2099/2")
     assert len(claims) == 1
     claim = claims[0]
-    assert claim.status is TranspositionStatus.AMBIGUOUS
+    assert claim.transposition_status is TranspositionStatus.AMBIGUOUS
     assert claim.directive_celex is None  # registry refuses to pick
 
 

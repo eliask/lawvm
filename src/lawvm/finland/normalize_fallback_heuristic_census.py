@@ -48,6 +48,8 @@ from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from typing import Literal, cast
 
+from lawvm.finland.op_provenance import ProvenanceBag, serialized_provenance_bag
+
 # ---------------------------------------------------------------------------
 # The extraction-provenance tag each heuristic stamps onto a load-bearing op.
 # (frontend_compile sets these at the two heuristic call sites; they are the
@@ -108,10 +110,7 @@ def _scan_one(sid: str) -> tuple[str, dict[str, int]] | None:
         pass
     counts: dict[str, int] = {tag: 0 for tag in HEURISTIC_TAGS}
     for row in compiled_ops:
-        raw_tags = row.get("extraction_provenance_tags")
-        tags: list[object] = (
-            list(raw_tags) if isinstance(raw_tags, (list, tuple)) else []
-        )
+        tags = serialized_provenance_bag(row.get("provenance"), ProvenanceBag.EXTRACTION)
         for tag in HEURISTIC_TAGS:
             if tag in tags:
                 counts[tag] += 1

@@ -97,7 +97,7 @@ def _binding(
         scope="statute",
         source_span=SourceSpan(source_file="s.xml", byte_offset=offset, byte_len=10),
         binding_kind=BINDING_PARENTHETICAL_ALIAS,
-        status=status,
+        binding_status=status,
     )
 
 
@@ -123,7 +123,7 @@ def test_use_after_binding_resolves_exact() -> None:
         eu_registry=eu_nickname,
         defined_terms=table,
     )
-    assert rr.status is ResolutionStatus.RESOLVED
+    assert rr.resolution_status is ResolutionStatus.RESOLVED
     assert rr.work_id == "1069/2009"
     assert rr.candidates == ("1069/2009",)
     assert rr.finding is None
@@ -161,7 +161,7 @@ def test_use_before_binding_stays_unresolved() -> None:
         defined_terms=table,
     )
     # Falls through to the (empty) registry -> coverage gap, not a silent resolve.
-    assert rr.status is ResolutionStatus.STATUTE_ONLY
+    assert rr.resolution_status is ResolutionStatus.STATUTE_ONLY
     assert rr.work_id is None
     assert rr.mention.target_provision_ref is not None
     assert rr.mention.target_provision_ref.statute_id == "fi-name:paikallisasetus"
@@ -177,7 +177,7 @@ def test_unanchored_use_offset_does_not_resolve() -> None:
         eu_registry=eu_nickname,
         defined_terms=table,
     )
-    assert rr.status is ResolutionStatus.STATUTE_ONLY
+    assert rr.resolution_status is ResolutionStatus.STATUTE_ONLY
 
 
 # ---------------------------------------------------------------------------
@@ -201,7 +201,7 @@ def test_unsupported_morphology_resolves_only_on_exact_surface() -> None:
         eu_registry=eu_nickname,
         defined_terms=table,
     )
-    assert rr_inflected.status is ResolutionStatus.STATUTE_ONLY
+    assert rr_inflected.resolution_status is ResolutionStatus.STATUTE_ONLY
 
     # ... but an EXACT surface match DOES resolve.
     exact = _mention(
@@ -213,7 +213,7 @@ def test_unsupported_morphology_resolves_only_on_exact_surface() -> None:
         eu_registry=eu_nickname,
         defined_terms=table,
     )
-    assert rr_exact.status is ResolutionStatus.RESOLVED
+    assert rr_exact.resolution_status is ResolutionStatus.RESOLVED
     assert rr_exact.work_id == "1069/2009"
 
 
@@ -237,7 +237,7 @@ def test_conflicting_targets_are_dropped_never_picked() -> None:
         eu_registry=eu_nickname,
         defined_terms=table,
     )
-    assert rr.status is ResolutionStatus.STATUTE_ONLY
+    assert rr.resolution_status is ResolutionStatus.STATUTE_ONLY
     assert rr.work_id is None
 
 
@@ -257,7 +257,7 @@ def test_repeated_same_target_keeps_earliest_site() -> None:
         eu_registry=eu_nickname,
         defined_terms=table,
     )
-    assert rr.status is ResolutionStatus.RESOLVED
+    assert rr.resolution_status is ResolutionStatus.RESOLVED
     assert rr.work_id == "1069/2009"
 
 
@@ -275,7 +275,7 @@ def test_binding_without_target_is_not_resolvable() -> None:
         eu_registry=eu_nickname,
         defined_terms=table,
     )
-    assert rr.status is ResolutionStatus.STATUTE_ONLY
+    assert rr.resolution_status is ResolutionStatus.STATUTE_ONLY
 
 
 # ---------------------------------------------------------------------------
@@ -293,7 +293,7 @@ def test_default_none_is_registry_only() -> None:
         statute_registry=reg,
         eu_registry=eu_nickname,
     )
-    assert rr.status is ResolutionStatus.RESOLVED
+    assert rr.resolution_status is ResolutionStatus.RESOLVED
     assert rr.work_id == "1096/1996"
     # Provenance is the registry path, not the local-binding tag.
     assert rr.mention.phrase_lemma != "defined_term_local_binding"
@@ -313,7 +313,7 @@ def test_local_binding_shadows_registry_when_both_match() -> None:
         eu_registry=eu_nickname,
         defined_terms=table,
     )
-    assert rr.status is ResolutionStatus.RESOLVED
+    assert rr.resolution_status is ResolutionStatus.RESOLVED
     assert rr.work_id == "1069/2009"
     assert rr.mention.phrase_lemma == "defined_term_local_binding"
 
@@ -358,6 +358,6 @@ def test_end_to_end_from_recognizer_parenthetical_alias() -> None:
         eu_registry=eu_nickname,
         defined_terms=table,
     )
-    assert rr.status is ResolutionStatus.RESOLVED
+    assert rr.resolution_status is ResolutionStatus.RESOLVED
     assert rr.work_id == "1069/2009"
     assert rr.mention.phrase_lemma == "defined_term_local_binding"

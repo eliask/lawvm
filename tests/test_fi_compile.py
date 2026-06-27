@@ -49,6 +49,11 @@ from lawvm.core.observation_registry import (
 )
 from lawvm.core.semantic_types import IRNodeKind, TextPatchKindEnum
 from lawvm.finland.ops import OpType, AmendmentOp, FailedOp, classify_legal_operation_conversion_skip
+from lawvm.finland.op_provenance import (
+    RecognizerId,
+    has_recognizer,
+    serialized_provenance_from_bags,
+)
 from lawvm.finland.effect_lifecycle_projection import build_finland_effect_lifecycle
 from lawvm.finland.replay_products import ReplayProducts
 from lawvm.tools.section_keys import extract_ir_sections
@@ -384,8 +389,10 @@ def test_strict_fail_reasons_detect_known_recovery_paths() -> None:
     reasons = strict_fail_reasons_from_finding_ledger(
         profile,
         compiled_ops=[{
-            "scope_provenance_tags": ["chapter_scope_from_preamble"],
-            "extraction_provenance_tags": ["extraction_fallback_heuristic"],
+            "provenance": serialized_provenance_from_bags(
+                extraction_tags=("extraction_fallback_heuristic",),
+                scope_tags=("chapter_scope_from_preamble",),
+            ),
         }],
         canonical_ops=recovered,
         failures=failures,
@@ -433,7 +440,7 @@ def test_strict_fail_reasons_accept_typed_target_guessing_provenance_tags() -> N
 
     reasons = strict_fail_reasons_from_finding_ledger(
         profile,
-        compiled_ops=[{"target_guessing_provenance_tags": ["normalize_item_like_target"]}],
+        compiled_ops=[{"provenance": serialized_provenance_from_bags(target_guessing_tags=("normalize_item_like_target",))}],
         canonical_ops=[],
         failures=[],
         findings=[],
@@ -447,7 +454,7 @@ def test_strict_fail_reasons_detect_shadowed_insert_supplement_tag() -> None:
 
     reasons = strict_fail_reasons_from_finding_ledger(
         profile,
-        compiled_ops=[{"extraction_provenance_tags": ["fallback_insert_supplement_shadowed"]}],
+        compiled_ops=[{"provenance": serialized_provenance_from_bags(extraction_tags=("fallback_insert_supplement_shadowed",))}],
         canonical_ops=[],
         failures=[],
         findings=[],
@@ -461,7 +468,7 @@ def test_strict_fail_reasons_detect_shadowed_replace_supplement_tag() -> None:
 
     reasons = strict_fail_reasons_from_finding_ledger(
         profile,
-        compiled_ops=[{"extraction_provenance_tags": ["fallback_replace_supplement_shadowed"]}],
+        compiled_ops=[{"provenance": serialized_provenance_from_bags(extraction_tags=("fallback_replace_supplement_shadowed",))}],
         canonical_ops=[],
         failures=[],
         findings=[],
@@ -476,7 +483,7 @@ def test_strict_fail_reasons_accept_chapter_scope_stripping_tags() -> None:
     reasons = strict_fail_reasons_from_finding_ledger(
         profile,
         compiled_ops=[{
-            "scope_provenance_tags": ["chapter_scope_stripped_unique_section"],
+            "provenance": serialized_provenance_from_bags(scope_tags=("chapter_scope_stripped_unique_section",)),
             "target_unit_kind": "section",
             "target_section": "14",
         }],
@@ -494,7 +501,7 @@ def test_strict_fail_reasons_accept_subsection_insert_scope_stripping_tags() -> 
     reasons = strict_fail_reasons_from_finding_ledger(
         profile,
         compiled_ops=[{
-            "scope_provenance_tags": ["chapter_scope_stripped_subsection_insert"],
+            "provenance": serialized_provenance_from_bags(scope_tags=("chapter_scope_stripped_subsection_insert",)),
             "target_unit_kind": "section",
             "target_section": "14",
         }],
@@ -512,7 +519,7 @@ def test_strict_fail_reasons_accept_section_facet_insert_scope_stripping_tags() 
     reasons = strict_fail_reasons_from_finding_ledger(
         profile,
         compiled_ops=[{
-            "scope_provenance_tags": ["chapter_scope_stripped_section_facet_insert"],
+            "provenance": serialized_provenance_from_bags(scope_tags=("chapter_scope_stripped_section_facet_insert",)),
             "target_unit_kind": "section",
             "target_section": "14",
         }],
@@ -530,7 +537,7 @@ def test_strict_fail_reasons_accept_duplicate_label_scope_stripping_tags() -> No
     reasons = strict_fail_reasons_from_finding_ledger(
         profile,
         compiled_ops=[{
-            "scope_provenance_tags": ["chapter_scope_stripped_duplicate_label_outside_stated_chapter"],
+            "provenance": serialized_provenance_from_bags(scope_tags=("chapter_scope_stripped_duplicate_label_outside_stated_chapter",)),
             "target_unit_kind": "section",
             "target_section": "14",
         }],
@@ -548,7 +555,7 @@ def test_strict_fail_reasons_accept_explicit_chunk_scope_tags() -> None:
     reasons = strict_fail_reasons_from_finding_ledger(
         profile,
         compiled_ops=[{
-            "scope_provenance_tags": ["chapter_scope_from_explicit_chunk"],
+            "provenance": serialized_provenance_from_bags(scope_tags=("chapter_scope_from_explicit_chunk",)),
             "target_unit_kind": "section",
             "target_section": "14",
             "target_chapter": "5",
@@ -583,7 +590,7 @@ def test_compile_fi_extracts_explicit_scope_rewrite_projection_from_compiled_ops
                 [
                     {
                         "source_statute": "2004/1313",
-                        "scope_provenance_tags": ["chapter_scope_stripped_unique_section"],
+                        "provenance": serialized_provenance_from_bags(scope_tags=("chapter_scope_stripped_unique_section",)),
                         "target_unit_kind": "section",
                         "target_norm": "14",
                         "target_chapter": "5",
@@ -629,7 +636,7 @@ def test_compile_fi_extracts_explicit_chunk_scope_projection_from_compiled_ops(
                 [
                     {
                         "source_statute": "2004/1313",
-                        "scope_provenance_tags": ["chapter_scope_from_explicit_chunk"],
+                        "provenance": serialized_provenance_from_bags(scope_tags=("chapter_scope_from_explicit_chunk",)),
                         "target_unit_kind": "section",
                         "target_norm": "14",
                         "target_chapter": "5",
@@ -692,7 +699,7 @@ def test_compile_fi_prefers_replay_scope_finding_over_compiled_op_scope_transpor
                 [
                     {
                         "source_statute": "2004/1313",
-                        "scope_provenance_tags": ["chapter_scope_stripped_unique_section"],
+                        "provenance": serialized_provenance_from_bags(scope_tags=("chapter_scope_stripped_unique_section",)),
                         "target_unit_kind": "section",
                         "target_norm": "14",
                         "target_chapter": "5",
@@ -928,7 +935,7 @@ def test_strict_fail_reasons_materializes_iterables_once() -> None:
 
     reasons = strict_fail_reasons_from_finding_ledger(
         profile,
-        compiled_ops=({"target_guessing_provenance_tags": ["normalize_item_like_target"]} for _ in range(1)),
+        compiled_ops=({"provenance": serialized_provenance_from_bags(target_guessing_tags=("normalize_item_like_target",))} for _ in range(1)),
         canonical_ops=(candidate for candidate in [op]),
         failures=(
             CompileFailure(
@@ -2372,11 +2379,11 @@ def test_compile_fi_surfaces_registered_provenance_projection_kinds(
                 [
                     {
                         "source_statute": "1993/805",
-                        "target_guessing_provenance_tags": ["normalize_item_like_target"],
+                        "provenance": serialized_provenance_from_bags(target_guessing_tags=("normalize_item_like_target",)),
                     },
                     {
                         "source_statute": "1993/805",
-                        "scope_provenance_tags": ["chapter_scope_from_preamble"],
+                        "provenance": serialized_provenance_from_bags(scope_tags=("chapter_scope_from_preamble",)),
                     },
                 ]
             )
@@ -2427,14 +2434,14 @@ def test_compile_fi_keeps_registered_provenance_projection_rows_target_scoped(
                         "target_unit_kind": "section",
                         "target_norm": "35",
                         "target_chapter": "5",
-                        "scope_provenance_tags": ["chapter_scope_from_preamble"],
+                        "provenance": serialized_provenance_from_bags(scope_tags=("chapter_scope_from_preamble",)),
                     },
                     {
                         "source_statute": "1993/805",
                         "target_unit_kind": "section",
                         "target_norm": "36",
                         "target_chapter": "5",
-                        "scope_provenance_tags": ["chapter_scope_from_preamble"],
+                        "provenance": serialized_provenance_from_bags(scope_tags=("chapter_scope_from_preamble",)),
                     },
                 ]
             )
@@ -2495,7 +2502,7 @@ def test_compile_fi_extracts_provenance_target_scope_from_flat_compiled_op_scope
                 [
                     {
                         "source_statute": "2004/1313",
-                        "scope_provenance_tags": ["chapter_scope_from_preamble"],
+                        "provenance": serialized_provenance_from_bags(scope_tags=("chapter_scope_from_preamble",)),
                         "target_unit_kind": "section",
                         "target_norm": "1",
                         "target_chapter": "5a",
@@ -4423,7 +4430,12 @@ def test_normalize_and_compile_ops_2011_516_2011_582_keeps_short_operative_pream
     )
 
     assert [
-        (op.op_type, op.target_cols.target_unit_kind, op.target_cols.target_section, op.sec1_body_johto_fallback)
+        (
+            op.op_type,
+            op.target_cols.target_unit_kind,
+            op.target_cols.target_section,
+            has_recognizer(op.provenance, RecognizerId.SEC1_BODY_JOHTO),
+        )
         for op in phase2.output
     ] == [("REPLACE", "section", "1", False)]
     assert phase2.output[0].source_statute == "2011/582"
@@ -5070,7 +5082,7 @@ def test_strict_fail_reasons_from_finding_ledger_detect_known_recovery() -> None
             target_section="14",
         )
     ]
-    compiled_ops: list[dict[str, Any]] = [{"scope_provenance_tags": ["chapter_scope_from_preamble"]}]
+    compiled_ops: list[dict[str, Any]] = [{"provenance": serialized_provenance_from_bags(scope_tags=("chapter_scope_from_preamble",))}]
     canonical_ops: list[LegalOperation] = recovered
     compile_failures: list[CompileFailure] = failures
     finding_rows: list[Finding] = [
@@ -5143,7 +5155,7 @@ def test_strict_fail_reasons_from_finding_ledger_prefers_structured_scope_witnes
             {
                 "scope_source": "preamble",
                 "scope_confidence": "inferred",
-                "scope_provenance_tags": ["chapter_scope_stripped_unique_section"],
+                "provenance": serialized_provenance_from_bags(scope_tags=("chapter_scope_stripped_unique_section",)),
             },
         ],
         canonical_ops=[],
@@ -5166,7 +5178,7 @@ def test_strict_fail_reasons_from_finding_ledger_keeps_legacy_scope_fallback_per
                 "scope_confidence": "inferred",
             },
             {
-                "scope_provenance_tags": ["chapter_scope_from_explicit_chunk"],
+                "provenance": serialized_provenance_from_bags(scope_tags=("chapter_scope_from_explicit_chunk",)),
                 "target_unit_kind": "section",
                 "target_section": "14",
                 "target_chapter": "5",
@@ -5217,7 +5229,7 @@ def test_strict_fail_reasons_from_finding_ledger_accept_typed_target_guessing_pr
 
     reasons = strict_fail_reasons_from_finding_ledger(
         profile,
-        compiled_ops=[{"target_guessing_provenance_tags": ["normalize_item_like_target"]}],
+        compiled_ops=[{"provenance": serialized_provenance_from_bags(target_guessing_tags=("normalize_item_like_target",))}],
         canonical_ops=[],
         failures=[],
         findings=[],
@@ -5483,12 +5495,10 @@ def test_strict_fail_reasons_from_finding_ledger_respects_profile_gates() -> Non
     new = strict_fail_reasons_from_finding_ledger(
         relaxed,
         compiled_ops=[{
-            "scope_provenance_tags": [
-                "chapter_scope_from_preamble",
-            ],
-            "target_guessing_provenance_tags": [
-                "normalize_item_like_target",
-            ],
+            "provenance": serialized_provenance_from_bags(
+                target_guessing_tags=("normalize_item_like_target",),
+                scope_tags=("chapter_scope_from_preamble",),
+            ),
         }],
         canonical_ops=recovered,
         failures=[],

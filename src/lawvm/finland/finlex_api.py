@@ -346,6 +346,9 @@ def list_changed_since(
 
         for item in page_data:
             akn_uri = item.get("akn_uri", "")
+            # `status` here mirrors the upstream Finlex API response field verbatim
+            # (an external value LawVM does not own); the key is kept as-is so the
+            # emitted rows reflect the source field name 1:1.
             status = item.get("status", "UNKNOWN")
             parsed = parse_akn_uri(akn_uri)
             if parsed is None:

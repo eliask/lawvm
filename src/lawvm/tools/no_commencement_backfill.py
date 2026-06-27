@@ -103,10 +103,10 @@ def main(args: "argparse.Namespace") -> None:
                             print(f"          {excerpt}")
             next_source_hint = item.get("next_source_hint", {})
             if isinstance(next_source_hint, dict):
-                status = str(next_source_hint.get("status", ""))
+                hint_status = str(next_source_hint.get("hint_status", ""))
                 primary = str(next_source_hint.get("primary_source_family", ""))
-                if status or primary:
-                    print(f"      next source: {primary} ({status})")
+                if hint_status or primary:
+                    print(f"      next source: {primary} ({hint_status})")
                 suggested_sources = next_source_hint.get("suggested_sources", [])
                 if isinstance(suggested_sources, list):
                     for source in suggested_sources:

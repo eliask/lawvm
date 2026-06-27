@@ -8324,9 +8324,9 @@ def _ee_apply_op(
                 parent_path = full_path[:-1]
                 parent_node = tree_ops.resolve(body, parent_path) if parent_path else None
                 if parent_node is not None:
-                    from lawvm.estonia.ee_instruction_waist import read_section_selection_meta
+                    from lawvm.estonia.ee_instruction_waist import read_op_section_selection_meta
 
-                    selection_meta = read_section_selection_meta(op.payload)
+                    selection_meta = read_op_section_selection_meta(op)
                     if (
                         selection_meta is not None
                         and selection_meta.plain_numeric_ranges
@@ -8388,9 +8388,9 @@ def _ee_apply_op(
                 parent_path = full_path[:-1]
                 parent_node = tree_ops.resolve(body, parent_path) if parent_path else None
                 if parent_node is not None:
-                    from lawvm.estonia.ee_instruction_waist import read_subsection_selection_meta
+                    from lawvm.estonia.ee_instruction_waist import read_op_subsection_selection_meta
 
-                    selection_meta = read_subsection_selection_meta(op.payload)
+                    selection_meta = read_op_subsection_selection_meta(op)
                     if selection_meta is not None and selection_meta.explicit_labels:
                         implied_labels_set: set[str] = {
                             label

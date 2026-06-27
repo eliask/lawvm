@@ -282,8 +282,7 @@ def _make_minimal_rop(
         _target_special_override=(
             target_special if target_special not in {None, "otsikko", "johd"} else None
         ),
-        sec1_body_johto_fallback=op.sec1_body_johto_fallback,
-        uncovered_body_recovery=op.uncovered_body_recovery,
+        _stamped_recognizers=op._stamped_recognizers,
         post_repeal_item_shift_label=op.post_repeal_item_shift_label,
         _source_statute_override=op.source_statute,
         _source_issue_date_override=op.source_issue_date,
@@ -415,8 +414,7 @@ def test_build_canonical_intent_uses_resolvedop_addresses_without_lo() -> None:
         _target_special_override=(
             op.target_cols.target_special if op.target_cols.target_special not in {None, "otsikko", "johd"} else None
         ),
-        sec1_body_johto_fallback=op.sec1_body_johto_fallback,
-        uncovered_body_recovery=op.uncovered_body_recovery,
+        _stamped_recognizers=op._stamped_recognizers,
         post_repeal_item_shift_label=op.post_repeal_item_shift_label,
         _source_statute_override=op.source_statute,
         _source_issue_date_override=op.source_issue_date,
@@ -455,8 +453,7 @@ def test_build_canonical_intent_without_target_address_gracefully_returns_none()
         _target_special_override=(
             op.target_cols.target_special if op.target_cols.target_special not in {None, "otsikko", "johd"} else None
         ),
-        sec1_body_johto_fallback=op.sec1_body_johto_fallback,
-        uncovered_body_recovery=op.uncovered_body_recovery,
+        _stamped_recognizers=op._stamped_recognizers,
         post_repeal_item_shift_label=op.post_repeal_item_shift_label,
         _source_statute_override=op.source_statute,
         _source_issue_date_override=op.source_issue_date,

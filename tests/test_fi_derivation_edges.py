@@ -122,9 +122,9 @@ def _conformance_claims_from_real_extractor() -> list[tuple[str, str | None, str
     # Keep the RESOLVED industrial-emissions claim (the demonstrative witness).
     out: list[tuple[str, str | None, str, str]] = []
     for c in claims:
-        if c.status is TranspositionStatus.RESOLVED:
+        if c.transposition_status is TranspositionStatus.RESOLVED:
             out.append(
-                (c.citing_engine_id, c.directive_celex, c.directive_surface, c.status.value)
+                (c.citing_engine_id, c.directive_celex, c.directive_surface, c.transposition_status.value)
             )
     assert out, "real extractor must bind the industrial-emissions directive"
     return out

@@ -274,7 +274,7 @@ class DefinitionLens:
                             "term": binding.term,
                             "term_id": term_id,
                             "binding_kind": binding.binding_kind,
-                            "binder_status": binding.status,
+                            "binder_status": binding.binding_status,
                             "construct_offset": binding.source_span.byte_offset,
                             "construct_len": binding.source_span.byte_len,
                         },
@@ -295,7 +295,7 @@ class DefinitionLens:
                         "expansion": binding.expansion,
                         "scope": binding.scope,
                         "binding_kind": binding.binding_kind,
-                        "binder_status": binding.status,
+                        "binder_status": binding.binding_status,
                         "term_id": term_id,
                     },
                 )
@@ -331,7 +331,7 @@ class DefinitionLens:
 
             # Residual: binder flagged unsupported morphology — the definition is
             # real but later-use inflection is not owned. Fail-loud, not dropped.
-            if binding.status == STATUS_UNSUPPORTED_MORPHOLOGY:
+            if binding.binding_status == STATUS_UNSUPPORTED_MORPHOLOGY:
                 residual_count = len(residuals)
                 residuals.append(
                     SurfaceResidualSeed(
@@ -351,11 +351,11 @@ class DefinitionLens:
         # -- term_use nodes + intrinsic uses_term edges ---------------------------
         cursor = 0
         for index, use in enumerate(uses):
-            status = _TERM_USE_STATUS.get(use.status)
+            status = _TERM_USE_STATUS.get(use.use_status)
             if status is None:  # pragma: no cover — fail loud on unexpected status
                 raise ValueError(
                     f"{LENS_ID}: term-use resolver returned unknown status "
-                    f"{use.status!r} for surface {use.term_surface!r}"
+                    f"{use.use_status!r} for surface {use.term_surface!r}"
                 )
             local_id = _local_use_id(use, index)
             ref, cursor = locate_span(unit, use.term_surface, cursor=cursor)
@@ -371,7 +371,7 @@ class DefinitionLens:
                     payload={
                         "term_surface": use.term_surface,
                         "lemma": use.lemma,
-                        "resolver_status": use.status,
+                        "resolver_status": use.use_status,
                         "resolver_rule_id": use.rule_id,
                         "candidate_count": len(use.bindings),
                     },
@@ -381,7 +381,7 @@ class DefinitionLens:
             # Intrinsic uses_term edge: only when the resolver tied the use to
             # EXACTLY ONE binding that lives in THIS lens's seeds.
             if (
-                use.status == STATUS_RESOLVED
+                use.use_status == STATUS_RESOLVED
                 and use.binding is not None
                 and id(use.binding) in binding_local_by_id
             ):

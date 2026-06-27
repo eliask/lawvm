@@ -36,6 +36,7 @@ from lawvm.finland.scope import (
     infer_letter_suffix_section_chapter_from_stem_host,
     source_names_descendant_scope_below_section,
 )
+from lawvm.finland.op_provenance import RecognizerId, has_recognizer
 from lawvm.finland.ops import AmendmentOp, ResolvedOp, ResolvedTargetScopeView, temporary_signal_for_op
 from lawvm.finland.replay_capture import ReplayLegalOperationCaptureList
 from lawvm.finland.standalone_targets import StandaloneSectionTargetsInput
@@ -2326,6 +2327,8 @@ def _emit_section_snapshot(
     def _drop_carried_target_subsection_text_from_siblings(
         section_path: Path,
         section_payload: IRNode,
+        *,
+        include_content_prefix: bool = True,
     ) -> IRNode | None:
         if section_payload.kind is not IRNodeKind.SECTION:
             return None
@@ -2338,8 +2341,19 @@ def _emit_section_snapshot(
                 return ""
             return text[:96]
 
+        def _leading_token_signature(text: str) -> tuple[str, ...]:
+            tokens: list[str] = []
+            for raw in text.split():
+                token = raw.strip(" \t\r\n.,;:!?()[]{}\"'“”’`´")
+                if token:
+                    tokens.append(token.casefold())
+                if len(tokens) == 6:
+                    break
+            return tuple(tokens) if len(tokens) == 6 else ()
+
         source_text = " ".join(str(op_source.raw_text or "").split())
         target_prefixes_by_label: dict[str, set[str]] = {}
+        target_token_signatures_by_label: dict[str, set[tuple[str, ...]]] = {}
         for rop in group_rops:
             if not rop.is_replace_action or not _snapshot_targets_subsection_only(rop):
                 continue
@@ -2351,20 +2365,28 @@ def _emit_section_snapshot(
                 continue
             prefix = _signature_prefix(_norm_text(amend_sub))
             if not prefix:
-                continue
-            target_prefixes_by_label.setdefault(_norm_num_token(target_label), set()).add(prefix)
-        if not target_prefixes_by_label:
+                token_signature = _leading_token_signature(_norm_text(amend_sub))
+            else:
+                token_signature = _leading_token_signature(_norm_text(amend_sub))
+                target_prefixes_by_label.setdefault(_norm_num_token(target_label), set()).add(prefix)
+            if token_signature:
+                target_token_signatures_by_label.setdefault(
+                    _norm_num_token(target_label),
+                    set(),
+                ).add(token_signature)
+        if not target_prefixes_by_label and not target_token_signatures_by_label:
             return None
 
         changed = False
         new_section_children: list[IRNode] = []
         removed = 0
+        target_labels = set(target_prefixes_by_label) | set(target_token_signatures_by_label)
         for subsection in section_payload.children:
             if subsection.kind is not IRNodeKind.SUBSECTION or not subsection.label:
                 new_section_children.append(subsection)
                 continue
             subsection_key = _norm_num_token(subsection.label)
-            if subsection_key in target_prefixes_by_label:
+            if subsection_key in target_labels:
                 new_section_children.append(subsection)
                 continue
             target_prefixes = {
@@ -2372,15 +2394,28 @@ def _emit_section_snapshot(
                 for prefixes in target_prefixes_by_label.values()
                 for prefix in prefixes
             }
+            target_token_signatures = {
+                token_signature
+                for token_signatures in target_token_signatures_by_label.values()
+                for token_signature in token_signatures
+            }
 
             new_subsection_children: list[IRNode] = []
             for child in subsection.children:
                 child_text = _norm_text(child)
+                paragraph_child = child.kind is IRNodeKind.PARAGRAPH
+                carried_target_text = (
+                    include_content_prefix
+                    and child.kind is IRNodeKind.CONTENT
+                    and any(child_text.startswith(prefix) for prefix in target_prefixes)
+                ) or (
+                    paragraph_child
+                    and _leading_token_signature(child_text) in target_token_signatures
+                )
                 if (
-                    child.kind is IRNodeKind.CONTENT
+                    carried_target_text
                     and child_text
                     and child_text not in source_text
-                    and any(child_text.startswith(prefix) for prefix in target_prefixes)
                 ):
                     removed += 1
                     changed = True
@@ -2562,9 +2597,8 @@ def _emit_section_snapshot(
             if amend_sub is None or amend_sub.kind is not IRNodeKind.SUBSECTION:
                 return None
             relabelled = _relabel_subsection_payload(amend_sub, target_norm)
-            target_already_rebased = (
-                "rebase_duplicate_target_shifted_replace"
-                in rop.target_guessing_provenance_tags
+            target_already_rebased = has_recognizer(
+                rop.provenance, RecognizerId.REBASE_DUPLICATE_TARGET_SHIFTED_REPLACE
             )
             pending_subsection_payloads.append(
                 _PendingSubsectionSnapshotPayload(
@@ -3656,6 +3690,20 @@ def _emit_section_snapshot(
         source_pathologies_out=source_pathologies_out,
         source_statute=op_source.statute_id,
     )
+    if (
+        action in {StructuralAction.REPLACE, StructuralAction.INSERT}
+        and resolved_path is not None
+        and target_unit_kind == "section"
+        and payload is not None
+        and payload.kind is IRNodeKind.SECTION
+    ):
+        carried_target_pruned_payload = _drop_carried_target_subsection_text_from_siblings(
+            tuple(resolved_path),
+            payload,
+            include_content_prefix=False,
+        )
+        if carried_target_pruned_payload is not None:
+            payload = carried_target_pruned_payload
     if (
         action in {StructuralAction.REPLACE, StructuralAction.INSERT}
         and resolved_path is not None

@@ -26,6 +26,13 @@ from lawvm.core.elaboration_context import (
 )
 from lawvm.core.payload_elaboration import PayloadCompletenessWitness
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
+from lawvm.finland.op_provenance import (
+    ProvenanceBag,
+    RecognizerId,
+    has_recognizer,
+    serialized_provenance_bag,
+    serialized_provenance_from_bags,
+)
 from lawvm.finland.target_kind import TargetKind
 from lawvm.finland.apply_events import ApplyMutationEvent
 from lawvm.core.phase_result import Finding, PhaseResult
@@ -1302,7 +1309,7 @@ def test_process_muutoslaki_preserves_source_pathologies_from_uncovered_apply(mo
             target_section="7",
             target_unit_kind="section",
             source_statute="1996/1261",
-            uncovered_body_recovery=True,
+            _stamped_recognizers=frozenset({RecognizerId.UNCOVERED_BODY}),
         ),
         muutos_ir=IRNode(kind=IRNodeKind.SECTION, label="7"),
         cross_ir=None,
@@ -8502,9 +8509,7 @@ def test_append_compiled_group_ops_serializes_resolved_scope_confidence() -> Non
             "action": "replace",
             "source_statute": "",
             "source_title": None,
-            "extraction_provenance_tags": [],
-            "target_guessing_provenance_tags": [],
-            "scope_provenance_tags": ["chapter_scope_from_preamble"],
+            "provenance": serialized_provenance_from_bags(scope_tags=("chapter_scope_from_preamble",)),
             "witness_rule_id": None,
             "target_unit_kind": "section",
             "target_norm": "4",
@@ -8547,7 +8552,7 @@ def test_append_compiled_group_ops_prefers_stored_scope_confidence_over_sidecar_
 
     append_compiled_group_ops(compiled_ops, [rop])
 
-    assert compiled_ops[0]["scope_provenance_tags"] == ["grouped_chapter_scope"]
+    assert serialized_provenance_bag(compiled_ops[0]["provenance"], ProvenanceBag.SCOPE) == ("grouped_chapter_scope",)
     assert compiled_ops[0]["scope_source"] == "explicit_chunk"
     assert compiled_ops[0]["scope_confidence"] == "explicit"
 
@@ -9333,7 +9338,7 @@ def test_uncovered_body_insert_accepts_spaced_lettered_sibling_section_refs() ->
     got = state
     for rop in rops:
         assert rop.intent is not None
-        assert rop.op.uncovered_body_recovery is True
+        assert has_recognizer(rop.op.provenance, RecognizerId.UNCOVERED_BODY)
         got = apply_op(got, None, ctx, None, replay_mode="official_consolidation", rop=rop)
 
     assert got.find_section("4a") is not None
@@ -11160,7 +11165,7 @@ def test_uncovered_body_insert_overrides_chapter_when_family_base_in_different_c
     insert_rop = [r for r in rops if r.op.op_id == "uncovered_insert_32a"]
     assert len(insert_rop) == 1
     assert insert_rop[0].op.target_cols.target_chapter == "7"
-    assert insert_rop[0].op.uncovered_body_recovery is True
+    assert has_recognizer(insert_rop[0].op.provenance, RecognizerId.UNCOVERED_BODY)
 
 
 def test_uncovered_body_insert_keeps_explicit_existing_chapter_ownership() -> None:
@@ -11231,7 +11236,7 @@ def test_uncovered_body_insert_keeps_explicit_existing_chapter_ownership() -> No
     assert len(rops) == 1
     assert rops[0].op.op_id == "uncovered_insert_37a"
     assert rops[0].op.target_cols.target_chapter == "6"
-    assert rops[0].op.uncovered_body_recovery is True
+    assert has_recognizer(rops[0].op.provenance, RecognizerId.UNCOVERED_BODY)
 
 
 def test_retarget_stale_body_chapter_scope_ignores_typed_scope_confidence_tags() -> None:

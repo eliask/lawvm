@@ -39,7 +39,7 @@ def test_parenthetical_alias_binds_to_eu_act() -> None:
     assert b.target_ref == "1069/2009"
     assert b.expansion is None
     assert b.scope == "statute"
-    assert b.status == STATUS_OK
+    assert b.binding_status == STATUS_OK
     assert b.source_span.source_file == "he.xml"
     assert b.source_span.byte_len > 0
 
@@ -52,7 +52,7 @@ def test_parenthetical_alias_binds_to_finnish_act() -> None:
     assert alias[0].term == "ympäristönsuojelulaki"
     # FI ids canonicalize to YEAR/NUMBER (the visible cite is "(527/2014)").
     assert alias[0].target_ref == "2014/527"
-    assert alias[0].status == STATUS_OK
+    assert alias[0].binding_status == STATUS_OK
 
 
 def test_parenthetical_not_after_cite_is_not_bound() -> None:
@@ -75,7 +75,7 @@ def test_jaljempana_unquoted_binds_to_finnish_act() -> None:
     assert jal[0].term == "ympäristönsuojelulaki"
     # FI ids canonicalize to YEAR/NUMBER (the visible cite is "(527/2014)").
     assert jal[0].target_ref == "2014/527"
-    assert jal[0].status == STATUS_OK
+    assert jal[0].binding_status == STATUS_OK
 
 
 def test_jaljempana_quoted_binds_to_eu_act() -> None:
@@ -133,7 +133,7 @@ def test_tarkoitetaan_binds_term_to_expansion() -> None:
     # adessive cannot be reverse-inflected (M1 is generation-only), so the term is
     # matched by its exact surface and flagged morphologically unsupported.
     assert tk[0].term == "Sivutuotteella"
-    assert tk[0].status == STATUS_UNSUPPORTED_MORPHOLOGY
+    assert tk[0].binding_status == STATUS_UNSUPPORTED_MORPHOLOGY
     assert tk[0].target_ref is None
     assert tk[0].expansion is not None
     assert "kuollutta" in tk[0].expansion
@@ -150,7 +150,7 @@ def test_tarkoitetaan_binds_term_to_act_when_expansion_is_a_cite() -> None:
     # Surface preserved as written; the act target is still resolved from the
     # expansion cite.
     assert tk[0].term == "Sivutuoteasetuksella"
-    assert tk[0].status == STATUS_UNSUPPORTED_MORPHOLOGY
+    assert tk[0].binding_status == STATUS_UNSUPPORTED_MORPHOLOGY
     assert tk[0].target_ref == "1069/2009"
     assert tk[0].expansion is None
 
@@ -167,7 +167,7 @@ def test_complex_np_alias_is_unsupported_morphology() -> None:
     bindings = recognize_defined_term_bindings(text)
     alias = _by_kind(bindings, BINDING_PARENTHETICAL_ALIAS)
     assert len(alias) == 1
-    assert alias[0].status == STATUS_UNSUPPORTED_MORPHOLOGY
+    assert alias[0].binding_status == STATUS_UNSUPPORTED_MORPHOLOGY
     # Target is still known — the binding is accounted for, not silently dropped.
     assert alias[0].target_ref == "1069/2009"
 
@@ -179,7 +179,7 @@ def test_final_head_compound_is_supported() -> None:
     bindings = recognize_defined_term_bindings(text)
     alias = _by_kind(bindings, BINDING_PARENTHETICAL_ALIAS)
     assert len(alias) == 1
-    assert alias[0].status == STATUS_OK
+    assert alias[0].binding_status == STATUS_OK
     assert alias[0].term == "uusi sivutuoteasetus"
 
 
@@ -458,7 +458,7 @@ def test_inline_multiword_definiendum_surface_is_preserved() -> None:
     tk = _by_kind(recognize_defined_term_bindings(text), BINDING_TARKOITETAAN)
     assert len(tk) == 1
     assert tk[0].term == "palkansaajaan rinnastettavalla yrittäjällä"
-    assert tk[0].status == STATUS_UNSUPPORTED_MORPHOLOGY
+    assert tk[0].binding_status == STATUS_UNSUPPORTED_MORPHOLOGY
 
 
 def test_function_word_after_colon_is_not_minted_as_term() -> None:

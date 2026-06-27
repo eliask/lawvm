@@ -96,7 +96,7 @@ def test_strike_insert_op_materializes_in_agreement_with_oracle() -> None:
     rows = {row.section_key: row for row in report.rows}
     assert "99:10" in rows
     agree = rows["99:10"]
-    assert agree.status == "agree"
+    assert agree.row_status == "agree"
     assert agree.rule_id == US_DRY_RUN_SECTION_AGREES_RULE_ID
     assert agree.disposition == ""
     assert "19-year" in agree.materialized_text
@@ -119,7 +119,7 @@ def test_boundary_proof_unresolved_when_oracle_changed_a_section_we_did_not_clai
     proof = report.boundary_proof
     # The boundary is unresolved: section 30 changed in the oracle but is not in
     # the claimed set. It is surfaced as an unexplained changed path, never hidden.
-    assert proof.status == "unresolved"
+    assert proof.boundary_proof_status == "unresolved"
     unexplained = {tuple(step) for step in proof.unexplained_changed_paths}
     assert (("title", "99"), ("section", "30")) in unexplained
     covered = {tuple(step) for step in proof.covered_changed_paths}
@@ -239,7 +239,7 @@ def test_wrong_replacement_is_a_text_mismatch_residual_not_repaired_to_oracle() 
     report = _build({"PL 99-3": pl})
     rows = {row.section_key: row for row in report.rows}
     row = rows["99:10"]
-    assert row.status == "residual"
+    assert row.row_status == "residual"
     assert row.rule_id == US_DRY_RUN_RESIDUAL_TEXT_MISMATCH_RULE_ID
     assert row.disposition == DISPOSITION_LAWVM_WRONG
     # Materialized text reflects OUR op (the X replacement), not the oracle
@@ -456,7 +456,7 @@ def test_real_title11_pl118_42_window_507d_stays_oracle_suspect_courtesy_space()
     # faithfully (no repair-to-oracle).
     rows = {row.section_key: row for row in report.rows}
     row = rows["11:507"]
-    assert row.status == "residual"
+    assert row.row_status == "residual"
     assert row.disposition == DISPOSITION_ORACLE_SUSPECT
     assert "(a)(8)excluding subparagraph (F)" in row.materialized_text
     assert "(a)(8) excluding subparagraph (F)" in row.oracle_text
@@ -704,7 +704,7 @@ def test_real_title10_526_strike_is_node_scoped_and_section_stays_a_typed_residu
     assert "may not exceed 68;" in row.materialized_text
     assert "may not exceed 144." in row.materialized_text
     # No false agreement: subsection (k) genuinely differs in the editions.
-    assert row.status == "residual"
+    assert row.row_status == "residual"
     assert row.disposition == DISPOSITION_LAWVM_WRONG
     assert "shall not apply to number of" in row.materialized_text
     assert "shall not apply to the number of" in row.oracle_text
@@ -744,7 +744,7 @@ def test_real_title7_3222a_markerless_node_stays_a_typed_residual_not_a_sibling_
     rows = {row.section_key: row for row in report.rows}
     assert "7:3222a" in rows
     row = rows["7:3222a"]
-    assert row.status == "residual"
+    assert row.row_status == "residual"
     assert row.rule_id == US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID
     assert row.disposition == DISPOSITION_LAWVM_WRONG
     # No wrong materialization: we did not splice "4" onto a guessed sibling node.
@@ -823,7 +823,7 @@ def test_new_section_insert_after_section_materializes_in_agreement() -> None:
     rows = {row.section_key: row for row in report.rows}
     assert "11:12" in rows
     row = rows["11:12"]
-    assert row.status == "agree"
+    assert row.row_status == "agree"
     assert row.rule_id == US_DRY_RUN_SECTION_AGREES_RULE_ID
     assert "(a) New body." in row.materialized_text
     ns = report.north_star()
@@ -1007,7 +1007,7 @@ def test_nonpositive_title15_act_section_amendment_materializes_in_agreement() -
     row = rows["15:77e"]
     # The act-section target resolved through the non-positive route and the
     # strike-insert materialized exactly the oracle after-text.
-    assert row.status == "agree"
+    assert row.row_status == "agree"
     assert row.rule_id == US_DRY_RUN_SECTION_AGREES_RULE_ID
     assert "19-day" in row.materialized_text
     assert "15-day" not in row.materialized_text
@@ -1072,7 +1072,7 @@ def test_multiple_ops_on_one_section_compose_before_a_single_comparison() -> Non
     row = rows["99:10"]
     # One composed row for the section, not one per op.
     assert sum(1 for r in report.rows if r.section_key == "99:10") == 1
-    assert row.status == "agree"
+    assert row.row_status == "agree"
     assert row.rule_id == US_DRY_RUN_SECTION_AGREES_RULE_ID
     assert "19-year" in row.materialized_text
     assert "15-year" not in row.materialized_text
@@ -1100,7 +1100,7 @@ def test_absent_anchor_on_a_later_composed_op_is_refused_not_a_section_tanking_r
     rows = {row.section_key: row for row in report.rows}
     row = rows["99:10"]
     # The surviving first-op materialization is published (not blanked out).
-    assert row.status == "residual"
+    assert row.row_status == "residual"
     assert row.rule_id == US_DRY_RUN_RESIDUAL_TEXT_MISMATCH_RULE_ID
     assert row.disposition == DISPOSITION_LAWVM_WRONG
     assert "17-year" in row.materialized_text
@@ -1442,7 +1442,7 @@ def test_absent_anchor_op_refusal_does_not_corrupt_a_sibling_ops_correct_materia
     assert "99:10" in rows
     row = rows["99:10"]
     # The section materializes correctly and AGREES with the oracle (de-corrupted).
-    assert row.status == "agree", f"expected agree, got {row.status}/{row.rule_id}"
+    assert row.row_status == "agree", f"expected agree, got {row.row_status}/{row.rule_id}"
     assert row.rule_id == US_DRY_RUN_SECTION_AGREES_RULE_ID
     assert "19-year" in row.materialized_text
     assert "15-year" not in row.materialized_text
@@ -1817,7 +1817,7 @@ def test_quoted_block_insert_residual_is_typed_oracle_suspect_not_lawvm_wrong(
 
     rows = {row.section_key: row for row in report.rows}
     row = rows["99:40"]
-    assert row.status == "residual"
+    assert row.row_status == "residual"
     assert row.disposition == DISPOSITION_ORACLE_SUSPECT
     assert row.rule_id == US_DRY_RUN_RESIDUAL_TEXT_MISMATCH_RULE_ID
     # The leading USLM wrapper quote is stripped (serialization artifact, not

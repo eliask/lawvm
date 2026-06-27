@@ -37,7 +37,7 @@ from lawvm.core.bench_contract import (
 def _scored(unit_id, structural_err=None, text_err=None, residue=None):
     return BenchUnitResult(
         unit_id=unit_id,
-        status=BenchStatus.SCORED,
+        bench_unit_status=BenchStatus.SCORED,
         structural_err=structural_err,
         text_err=text_err,
         residue_buckets=residue or {},
@@ -65,11 +65,11 @@ def test_none_axis_is_allowed_not_attempted() -> None:
 def test_non_scored_unit_may_not_carry_axis_errors() -> None:
     for status in NON_SCORED_STATUSES | {BenchStatus.CRASH}:
         with pytest.raises(BenchContractError):
-            BenchUnitResult(unit_id="x", status=status, structural_err=0.0)
+            BenchUnitResult(unit_id="x", bench_unit_status=status, structural_err=0.0)
 
 
 def test_non_scored_unit_with_no_axes_is_valid() -> None:
-    r = BenchUnitResult(unit_id="x", status=BenchStatus.NO_TRUTH)
+    r = BenchUnitResult(unit_id="x", bench_unit_status=BenchStatus.NO_TRUTH)
     assert not r.is_scored
     assert not r.is_failure
     assert r.headline_error() is None

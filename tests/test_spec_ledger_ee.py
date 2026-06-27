@@ -21,14 +21,14 @@ import types
 
 import pytest
 
-from lawvm.tools import spec_ledger
-from lawvm.tools.spec_ledger import (
+from lawvm.estonia import spec_ledger_adapter
+from lawvm.estonia.spec_ledger_adapter import (
     _EE_DIAGNOSIS_DISPOSITION,
     _ee_address_key,
     _ee_attribute_divergence,
     ee_ledger_inputs,
-    run_ledger,
 )
+from lawvm.tools.spec_ledger import run_ledger
 
 
 # --------------------------------------------------------------------------
@@ -126,7 +126,9 @@ class _FakeResult:
 
 
 def _install_fake_ee_surface(monkeypatch, *, result, summary=None):
-    monkeypatch.setattr(spec_ledger, "open_rt_archive", lambda *a, **k: object(), raising=False)
+    monkeypatch.setattr(
+        spec_ledger_adapter, "open_rt_archive", lambda *a, **k: object(), raising=False
+    )
     # patch the symbols imported *inside* ee_ledger_inputs by patching their modules
     import lawvm.estonia.fetch as fetch_mod
     import lawvm.estonia.replay as replay_mod
@@ -134,7 +136,7 @@ def _install_fake_ee_surface(monkeypatch, *, result, summary=None):
 
     monkeypatch.setattr(fetch_mod, "open_rt_archive", lambda *a, **k: object())
     monkeypatch.setattr(
-        spec_ledger, "_ee_resolve_as_of", lambda oracle_id, archive: "2020-01-01"
+        spec_ledger_adapter, "_ee_resolve_as_of", lambda oracle_id, archive: "2020-01-01"
     )
     monkeypatch.setattr(
         replay_mod, "replay_ee_to_pit", lambda *a, **k: result
@@ -210,10 +212,17 @@ def test_ee_ledger_inputs_skips_malformed_sid(monkeypatch):
 # run_ledger dispatch
 # --------------------------------------------------------------------------
 
-def test_run_ledger_dispatches_ee(monkeypatch):
-    def fake_inputs(sids, mode):
-        from lawvm.tools.spec_ledger import DivergenceRow, StatuteLedgerInput
+def test_run_ledger_dispatches_ee():
+    import dataclasses
 
+    from lawvm.tools.spec_ledger import (
+        DivergenceRow,
+        StatuteLedgerInput,
+        get_ledger_adapter,
+        register_ledger_adapter,
+    )
+
+    def fake_inputs(sids, mode):
         yield StatuteLedgerInput(
             sid="100/200",
             rule_firings={"ee.rule_a": 3},
@@ -222,8 +231,13 @@ def test_run_ledger_dispatches_ee(monkeypatch):
             ],
         )
 
-    monkeypatch.setattr(spec_ledger, "ee_ledger_inputs", fake_inputs)
-    led = run_ledger("ee", ["100/200"], "official_consolidation")
+    # Re-register an EE adapter using the fake stream; restore the real one afterward.
+    original = get_ledger_adapter("ee")
+    register_ledger_adapter(dataclasses.replace(original, ledger_inputs=fake_inputs))
+    try:
+        led = run_ledger("ee", ["100/200"], "official_consolidation")
+    finally:
+        register_ledger_adapter(original)
     assert led.jurisdiction == "ee"
     assert led.statutes == 1
     assert led.rules["ee.rule_a"].firings == 3

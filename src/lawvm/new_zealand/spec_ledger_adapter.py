@@ -62,6 +62,7 @@ from lawvm.tools.spec_ledger import (
     StatuteLedgerInput,
     WitnessDisposition,
     build_ledger,
+    disposition_for,
 )
 
 # ---------------------------------------------------------------------------
@@ -266,7 +267,7 @@ _NZ_LEDGER_SCOPES: Tuple[str, ...] = (
 def _disposition_for(oracle_match: str) -> WitnessDisposition:
     """Map a residual oracle_match to a witness disposition (loud on unknowns)."""
     # ``agrees`` is never a divergence and must not reach here.
-    return _NZ_ORACLE_MATCH_DISPOSITION.get(oracle_match, "unknown")
+    return disposition_for(oracle_match, _NZ_ORACLE_MATCH_DISPOSITION)
 
 
 def nz_ledger_inputs_from_reports(

@@ -58,6 +58,7 @@ from lawvm.core.statute_facets import is_statute_title_address
 from lawvm.core.timeline import (
     current_address_from_migration_events,
     compile_timelines,
+    _iter_nodes_with_address,
     TimelineCompilationResult,
     TimelineIssue,
     diff_statute,
@@ -93,6 +94,110 @@ def _find_node_by_label(node: IRNode, kind: IRNodeKind, label: str) -> IRNode | 
         if found is not None:
             return found
     return None
+
+
+def test_materialize_pit_keeps_body_level_tombstone_when_same_label_chapter_section_exists() -> None:
+    base = IRStatute(
+        statute_id="test/renumber-root-tombstone",
+        title="Root tombstone test",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.HCONTAINER,
+                    attrs={"name": "statuteProvisionsWrapper"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.CHAPTER,
+                            label="7",
+                            children=(
+                                IRNode(kind=IRNodeKind.NUM, text="7 luku"),
+                            ),
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.CHAPTER,
+                            label="8",
+                            children=(
+                                IRNode(kind=IRNodeKind.NUM, text="8 luku"),
+                            ),
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.SECTION,
+                            label="64",
+                            children=(
+                                IRNode(kind=IRNodeKind.NUM, text="64 §"),
+                                IRNode(kind=IRNodeKind.CONTENT, text="old root commencement"),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    source = OperationSource(statute_id="2010/1", enacted="2010-01-01")
+    root_64 = LegalAddress(path=(("section", "64"),))
+    chapter_7_64 = LegalAddress(path=(("chapter", "7"), ("section", "64")))
+    chapter_8_70 = LegalAddress(path=(("chapter", "8"), ("section", "70")))
+    timelines = {
+        root_64: ProvisionTimeline(
+            address=root_64,
+            versions=[
+                ProvisionVersion(
+                    effective="2010-01-01",
+                    enacted="2010-01-01",
+                    content=None,
+                    source=source,
+                ),
+            ],
+        ),
+        chapter_7_64: ProvisionTimeline(
+            address=chapter_7_64,
+            versions=[
+                ProvisionVersion(
+                    effective="2010-01-01",
+                    enacted="2010-01-01",
+                    content=IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="64",
+                        children=(
+                            IRNode(kind=IRNodeKind.NUM, text="64 §"),
+                            IRNode(kind=IRNodeKind.CONTENT, text="new chapter section"),
+                        ),
+                    ),
+                    source=source,
+                ),
+            ],
+        ),
+        chapter_8_70: ProvisionTimeline(
+            address=chapter_8_70,
+            versions=[
+                ProvisionVersion(
+                    effective="2010-01-01",
+                    enacted="2010-01-01",
+                    content=IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="70",
+                        children=(
+                            IRNode(kind=IRNodeKind.NUM, text="70 §"),
+                            IRNode(kind=IRNodeKind.CONTENT, text="renumbered commencement"),
+                        ),
+                    ),
+                    source=source,
+                ),
+            ],
+        ),
+    }
+
+    pit = materialize_pit(timelines, "2020-01-01", base=base)
+
+    section_paths = {
+        address.path: irnode_to_text(node)
+        for address, node in _iter_nodes_with_address(pit.body)
+        if node.kind is IRNodeKind.SECTION
+    }
+    assert (("section", "64"),) not in section_paths
+    assert section_paths[(("chapter", "7"), ("section", "64"))] == "64 § new chapter section"
+    assert section_paths[(("chapter", "8"), ("section", "70"))] == "70 § renumbered commencement"
 
 
 # ---------------------------------------------------------------------------

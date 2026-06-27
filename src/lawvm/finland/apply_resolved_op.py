@@ -50,6 +50,12 @@ from lawvm.finland.apply import apply_op
 from lawvm.finland.apply_events import ApplyMutationEvent
 from lawvm.finland.apply_policy import _OP_TYPE_TO_ACTION, _section_occupancy
 from lawvm.finland.migration_ledger import MigrationLedger
+from lawvm.finland.op_provenance import (
+    AcceptanceMode,
+    Recovered,
+    admits,
+    mode_for,
+)
 from lawvm.finland.ops import FailedOp, ResolvedOp
 from lawvm.finland.replay_notices import replay_print as _replay_print
 from lawvm.finland.standalone_targets import StandaloneSectionTarget
@@ -370,6 +376,14 @@ _FI_REPLAY_WRAPPER_ROOT_STEP: tuple[tuple[str, str], ...] = (("hcontainer", ""),
 
 OCCUPANCY_TRANSITION_BLOCKED_FINDING_CODE = "APPLY.OCCUPANCY_TRANSITION_BLOCKED"
 REPLAY_AUTHORIZATION_PROOF_REQUIRED_FINDING_CODE = "EVID.REPLAY_AUTHORIZATION_PROOF_REQUIRED"
+# AM-01 (strict-blocking): a state-mutating op whose typed OpProvenance is
+# ``Recovered`` (a recognizer guessed it) landed under a StrictProfile that
+# forbids that recovery surface. ``mode_for(profile, prov)`` yields STRICT and
+# ``admits`` rejects it, so a certified/strict claim provably rests only on
+# ``Parsed`` (grammar-recognized) ops, never recovered ones. The bench/corpus
+# replay runs permissive (``strict_profile is None`` -> QUIRKS -> admits all), so
+# this gate is 0-delta on the production corpus by construction.
+RECOVERED_OP_REJECTED_IN_STRICT_FINDING_CODE = "APPLY.RECOVERED_OP_REJECTED_IN_STRICT"
 # Owner phase recorded on the per-op ExecutionAuthorization closure (EV-05/FW-01).
 _APPLY_OP_AUTHORIZATION_OWNER_PHASE = "apply"
 _APPLY_OP_AUTHORIZATION_REQUIRED_PROOFS: tuple[str, ...] = (
@@ -433,6 +447,10 @@ def _enforce_per_op_apply_authority(
     )
     _gate_execution_authorization_at_op(
         rop=rop, is_strict=is_strict,
+        source_statute=source_statute, findings_out=findings_out,
+    )
+    _gate_provenance_acceptance_at_op(
+        rop=rop, strict_profile=strict_profile,
         source_statute=source_statute, findings_out=findings_out,
     )
     # Wave-2 apply-authority closure: the per-op totality sweeps (LS-05 scope-
@@ -608,6 +626,67 @@ def _gate_execution_authorization_at_op(
                 ),
                 "op_id": rop.op_id or "",
                 "required_proofs": list(_APPLY_OP_AUTHORIZATION_REQUIRED_PROOFS),
+            },
+        )
+    )
+
+
+def _gate_provenance_acceptance_at_op(
+    *,
+    rop: ResolvedOp,
+    strict_profile: Optional[StrictProfile],
+    source_statute: str,
+    findings_out: list[Finding],
+) -> None:
+    """AM-01: a strict profile rejects a ``Recovered`` op at the type boundary.
+
+    The typed-acceptance closure: ``mode_for(strict_profile, prov)`` derives the
+    :class:`AcceptanceMode` for the op's typed :class:`OpProvenance` from the
+    single source of truth (``StrictProfile``), and ``admits`` then decides
+    acceptance. An op whose provenance is :class:`Recovered` (a recognizer guessed
+    it) on a recovery surface the profile forbids yields ``AcceptanceMode.STRICT``,
+    which does not admit it — so a certified/strict claim cannot silently rest on a
+    guessed op. ``Parsed`` / ``None`` provenance is always admitted (a
+    grammar-recognized op is never recovered); a permissive profile
+    (``strict_profile is None`` -> QUIRKS) admits everything, so the bench/corpus
+    replay is 0-delta by construction.
+
+    This is the routing point that makes "silently relying on a guess in strict
+    mode" a type-level impossibility for the apply path: acceptance is decided by
+    :func:`admits` over the typed provenance, not by an ad-hoc tag inspection.
+    """
+    provenance = rop.provenance
+    if not isinstance(provenance, Recovered):
+        # Parsed / no-recovery op: admitted under every mode (and the strict
+        # surface gate only applies to Recovered provenance).
+        return
+    mode = mode_for(strict_profile, provenance)
+    if admits(mode, provenance):
+        # QUIRKS (the permissive profile, or a profile that allows this recovery
+        # surface) records-with-finding rather than rejecting; nothing to gate.
+        return
+    # mode is STRICT and admits() rejected the Recovered op.
+    findings_out.append(
+        Finding(
+            kind=RECOVERED_OP_REJECTED_IN_STRICT_FINDING_CODE,
+            role="violation",
+            stage="apply",
+            blocking=True,
+            source_statute=source_statute,
+            detail={
+                "message": (
+                    "A strict profile rejected a recovered (guessed) op at the "
+                    "typed-acceptance boundary: a certified/strict claim may rest "
+                    "only on grammar-recognized (Parsed) ops, never recovered ones "
+                    "(AM-01)."
+                ),
+                "op_id": rop.op_id or "",
+                "acceptance_mode": AcceptanceMode.STRICT.value,
+                "recovery_surface": provenance.surface.value,
+                "confidence_tier": provenance.tier.value,
+                "recognizer_ids": sorted(
+                    member.value for member in provenance.recognizer_ids
+                ),
             },
         )
     )

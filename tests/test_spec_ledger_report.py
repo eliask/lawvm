@@ -199,13 +199,13 @@ def test_grounding_renders_from_stream_c_authority_grounding_rows():
             rule_id="r.alpha",
             authority_tier=1,
             source_ref="Interpretation Act 1978 s.5",
-            status="HAVE",
+            authority_status="HAVE",
         ),
         "r.beta": AuthorityGrounding(
             rule_id="r.beta",
             authority_tier="1/2",
             source_ref="OPC drafting guidance",
-            status="SPEC",
+            authority_status="SPEC",
         ),
     }
     md = render_report_markdown(ledger, grounding=grounding)

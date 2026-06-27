@@ -23,6 +23,7 @@ from lawvm.core.ir import (
     OperationSource,
 )
 from lawvm.core.semantic_types import IRNodeKind, MetaClauseKind, StructuralAction
+from lawvm.finland.op_provenance import Recovered
 from lawvm.finland.frontend_compile import (
     FI_FALLBACK_EXTRACTION_RECOVERY_RULE_ID,
     normalize_and_compile_ops,
@@ -250,7 +251,7 @@ def test_fallback_minted_op_emits_witnessed_finding_on_production_lane() -> None
     )
 
     op = phase.output[0]
-    assert op.fallback_provenance is True
+    assert isinstance(op.provenance, Recovered) and op.provenance.from_fallback_provenance
     assert op.witness_rule_id == FI_FALLBACK_EXTRACTION_RECOVERY_RULE_ID
 
     fallback_findings = [
@@ -280,7 +281,10 @@ def test_canonical_verb_does_not_trigger_fallback_finding() -> None:
         strict_profile=None,
     )
 
-    assert all(op.fallback_provenance is False for op in phase.output)
+    assert all(
+        not (isinstance(op.provenance, Recovered) and op.provenance.from_fallback_provenance)
+        for op in phase.output
+    )
     assert not [
         f for f in phase.findings() if f.kind == "PARSE.FALLBACK_OP_FROM_RAW_TEXT"
     ]

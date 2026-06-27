@@ -2536,6 +2536,43 @@ def iter_no_document_change_ops(
                     payload = _heading_only_section_payload(change_el, action, target)
                 if payload is None:
                     payload = _fallback_payload(change_el, action, target)
+                if payload is not None and _no_action_value(action) in ("repeal", "text_repeal"):
+                    # The payload-candidate map is consulted for every action with
+                    # no filter, so a structured REPEAL/TEXT_REPEAL can pick up a
+                    # synthesised structural payload.  (The ``_*_payload`` fallbacks
+                    # are already repeal-gated to None.)  Repeals never carry
+                    # content, so we coerce the payload to None here to keep the
+                    # repeal-payload=None invariant structurally enforced and record
+                    # the dropped payload kind/label so the closed hole stays
+                    # auditable.
+                    dropped_kind = _no_kind_value(payload.kind)
+                    dropped_label = payload.label or ""
+                    _append_no_parse_adjudication(
+                        adjudications_out,
+                        kind="no_repeal_payload_dropped",
+                        message=(
+                            "Norway repeal/text_repeal lowering carried a synthesised "
+                            f"structural payload (kind={dropped_kind!r}, "
+                            f"label={dropped_label!r}); repeals never carry content, "
+                            "so lowering coerced the payload to None."
+                        ),
+                        source_id=source_id,
+                        detail=diagnostic_detail(
+                            rule_id="no_repeal_payload_dropped",
+                            phase="parse",
+                            family="payload_normalization",
+                            blocking=False,
+                            quirks_disposition="apply",
+                            base_id=base_id,
+                            source_doc=source_doc,
+                            action=_no_action_value(action),
+                            target=str(target),
+                            dropped_payload_kind=dropped_kind,
+                            dropped_payload_label=dropped_label,
+                            raw_text=raw_text,
+                        ),
+                    )
+                    payload = None
                 doc_ops.append(
                     LegalOperation(
                         op_id=f"{source_id}:{sequence}",

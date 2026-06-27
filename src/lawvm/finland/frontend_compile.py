@@ -4612,7 +4612,10 @@ def normalize_and_compile_ops(
             and op.target_cols.target_special is None
         )
         for op in enriched_fallback_ops:
-            op.fallback_provenance = True
+            # M2: stamp the fallback-provenance bit directly (replaces the deleted
+            # ``fallback_provenance`` boolean); ``restamp_provenance`` below folds
+            # in the extraction tag set here too.
+            op._from_fallback = True
             op.extraction_provenance_tags = tuple(
                 dict.fromkeys((*op.extraction_provenance_tags, "extraction_fallback_heuristic"))
             )
@@ -4720,8 +4723,13 @@ def normalize_and_compile_ops(
                     source_model=source_model,
                 )
                 for op in ops:
-                    op.body_root_replace_fallback = True
-                    op.fallback_provenance = True
+                    # M2: stamp the recognizer directly (replaces the deleted
+                    # ``body_root_replace_fallback`` boolean). The trailing
+                    # ``restamp_provenance`` folds in the markers set just below.
+                    op._stamped_recognizers = op._stamped_recognizers | {
+                        RecognizerId.BODY_ROOT_REPLACE
+                    }
+                    op._from_fallback = True
                     if not op.witness_rule_id:
                         op.witness_rule_id = FI_BODY_ROOT_REPLACE_FALLBACK_RULE_ID
                     op.extraction_provenance_tags = tuple(
@@ -4765,7 +4773,7 @@ def normalize_and_compile_ops(
                     source_model=source_model,
                 )
                 for op in ops:
-                    op.fallback_provenance = True
+                    op._from_fallback = True
                     if not op.witness_rule_id:
                         op.witness_rule_id = FI_ENACTING_FORMULA_BODY_REPLACE_FALLBACK_RULE_ID
                     op.extraction_provenance_tags = tuple(
@@ -4810,7 +4818,7 @@ def normalize_and_compile_ops(
                     source_model=source_model,
                 )
                 for op in ops:
-                    op.fallback_provenance = True
+                    op._from_fallback = True
                     op.witness_rule_id = FI_FALLBACK_EXTRACTION_RECOVERY_RULE_ID
                     op.extraction_provenance_tags = tuple(
                         dict.fromkeys((*op.extraction_provenance_tags, "extraction_ceremonial_body_only"))
@@ -4859,7 +4867,7 @@ def normalize_and_compile_ops(
                     source_model=source_model,
                 )
                 for op in ops:
-                    op.fallback_provenance = True
+                    op._from_fallback = True
                     op.witness_rule_id = FI_ACT_WIDE_BODY_SECTION_REPLACE_RULE_ID
                     op.extraction_provenance_tags = tuple(
                         dict.fromkeys((*op.extraction_provenance_tags, "extraction_act_wide_body_section_replace"))
@@ -4904,7 +4912,7 @@ def normalize_and_compile_ops(
                     source_model=source_model,
                 )
                 for op in ops:
-                    op.fallback_provenance = True
+                    op._from_fallback = True
                     if not op.witness_rule_id:
                         op.witness_rule_id = FI_TITLE_FALLBACK_RULE_ID
                     op.extraction_provenance_tags = tuple(
@@ -4958,7 +4966,7 @@ def normalize_and_compile_ops(
                     source_model=source_model,
                 )
                 for op in ops:
-                    op.fallback_provenance = True
+                    op._from_fallback = True
                     if not op.witness_rule_id:
                         op.witness_rule_id = FI_ENACTING_FORMULA_BODY_INSERT_FALLBACK_RULE_ID
                     op.extraction_provenance_tags = tuple(
@@ -4985,11 +4993,12 @@ def normalize_and_compile_ops(
     # Tag sec1 body-text fallback on all ops from this amendment
     if used_preamble_body_fallback and ops:
         for op in ops:
-            op.sec1_body_johto_fallback = True
             op.extraction_provenance_tags = tuple(
                 dict.fromkeys((*op.extraction_provenance_tags, "extraction_preamble_body"))
             )
-            op.restamp_provenance()
+            # M2: stamp the recognizer directly (replaces the deleted
+            # ``sec1_body_johto_fallback`` boolean). ``stamp_recognizer`` restamps.
+            op.stamp_recognizer(RecognizerId.SEC1_BODY_JOHTO)
     if ops:
         reinstated_scope_ops: list[AmendmentOp] = []
         for op in ops:

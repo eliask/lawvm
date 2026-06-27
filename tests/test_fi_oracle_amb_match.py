@@ -121,7 +121,7 @@ def test_reconciliation_holds_when_amb_neutralizes_sole_diff() -> None:
     # residue nonempty) still holds.
     result = BenchUnitResult(
         unit_id="2015/1286",
-        status=BenchStatus.SCORED,
+        bench_unit_status=BenchStatus.SCORED,
         structural_err=0.0,
         text_err=0.0,
         residue_buckets={},

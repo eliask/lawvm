@@ -790,7 +790,7 @@ def oracle_check_uk_statute(
         )
         for index, report in enumerate(mutation_reports)
     )
-    mutation_proof_status_counts = Counter(proof.status for proof in mutation_proofs)
+    mutation_proof_status_counts = Counter(proof.boundary_proof_status for proof in mutation_proofs)
     mutation_proof_rule_counts = Counter(proof.rule_id for proof in mutation_proofs)
     mutation_unexplained_reports = [
         report

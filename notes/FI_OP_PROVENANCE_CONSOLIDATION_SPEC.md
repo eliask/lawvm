@@ -161,6 +161,49 @@ RETAINED (load-bearing per whole-corpus census). They are gated by
 - `quirks_disposition` (FI + core) → replaced by `AcceptanceMode` keyed on `OpProvenance`
   (see §3). Behaviour-neutral because nothing branches on it.
 
+### 2.1 RETAIN-WITH-GUARD: the three `*_provenance_tags` bags are KEPT (not deleted)
+
+The recovery-recognizer READS that were cleanly equivalent to a typed
+`has_recognizer(prov, RecognizerId.X)` check have all been migrated (the specific
+single-tag membership branches in `apply_item_ops`, `apply_payload_ops`,
+`apply_policy`, `frontend_compile`, `payload_normalize`, `scope`, `group_ops`,
+`merge`, `apply_subsection_dispatch`, etc. now route through `op_provenance.has_recognizer`).
+
+What REMAINS reading the raw bags is exactly **two whole-bag witness reads** that
+are DUAL-PURPOSE and therefore NOT collapsible onto the typed `OpProvenance`:
+
+- `apply_op_closure_sweeps._has_conversion_witness` (LS-06): suppresses the
+  unwitnessed-verb-conversion sweep when ANY extraction/target-guessing/scope tag
+  (OR a typed `Recovered` provenance) is present.
+- `apply_op_closure_sweeps._migration_backs_delta` (LS-10): backs an address-key
+  delta when ANY scope/target-guessing tag (OR a witness rule id / scope
+  confidence) is present.
+
+Both accept tag strings that are **deliberately OUTSIDE the closed `RecognizerId`
+namespace** — most importantly the conversion-witness tag
+`semantic_collapse_move_renumber` (and its family). These witness tags are not
+recovery recognizers: they record that a verb conversion / address rebind was
+named (traceable), without naming a recovery recognizer an apply site branches on.
+They carry no typed home in `RecognizerId` by design (the namespace is closed over
+recovery recognizers only), so a whole-bag emptiness/membership read **cannot** be
+rewritten as `isinstance(prov, Recovered)` / `has_recognizer(...)` without losing
+them — an op carrying only such a witness tag has `provenance is None`.
+
+Decision: **RETAIN the three bags.** They are not dead — they remain the carrier
+for these conversion/migration witness tags outside the recovery namespace. The
+typed `OpProvenance` is the canonical carrier for the *recovery* markers (and the
+serialized column is reconstructed from it via the codec); the bags persist only
+for the witness-tag dual purpose.
+
+**Load-bearing proof (committed):** `test_fi_guard_liveness`'s
+`drill_verb_conversion_unwitnessed_at_op_apply_lane` exercises the LS-06 sweep at
+the PRODUCTION apply lane and asserts (a) `semantic_collapse_move_renumber` is NOT
+a `RecognizerId` member, and (b) an op carrying only that witness tag has no typed
+`Recovered` provenance, so the suppression rides ONLY on the whole-bag read. If a
+future change either gives the witness tag a `RecognizerId` home or routes the
+whole-bag read through typed provenance, that drill fails — the retention cannot
+rot into a silent false "the bags are dead" claim.
+
 ### KEEP AS-IS (genuine executable semantics — verified LIVE consumers)
 
 - `voimaantulo_repeal` — gates voimaantulo repeal recovery + VTS timeline

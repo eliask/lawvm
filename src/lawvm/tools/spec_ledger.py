@@ -17,6 +17,15 @@ the adapter is jurisdiction-specific (classify entrypoint, diagnosis vocabulary,
 list, rule catalog); the witness-attribution and aggregation are shared.  This mirrors
 ``self_consistency`` ``-j fi/uk/ee`` dispatch.
 
+Each adapter lives in its OWN jurisdiction package
+(``lawvm.finland.spec_ledger_adapter``, ``lawvm.uk_legislation.spec_ledger_adapter``,
+``lawvm.estonia.spec_ledger_adapter``, and the US/NZ adapters) and *self-registers* into
+the :class:`LedgerAdapterRegistry` at import time via :func:`register_ledger_adapter` —
+mirroring how ``core/bench_comparator_registry`` registers per-jurisdiction comparators.
+The core never imports a jurisdiction package itself; ``run_ledger`` loads the adapter
+module on demand (which triggers its self-registration) and dispatches through the
+registry.
+
 "Oracle" is a *witness surface, not ground truth*: a divergence carries a disposition
 (``lawvm_wrong`` vs ``oracle_suspect`` vs ``missing_source``) so we never refine a rule
 to fit an oracle bug.
@@ -33,8 +42,8 @@ import argparse
 import json
 import sys
 from collections import defaultdict
-from dataclasses import dataclass, field, replace
-from typing import Dict, Iterable, Iterator, List, Literal, Mapping, Optional
+from dataclasses import dataclass, field
+from typing import Callable, Dict, Iterable, List, Literal, Mapping, Optional
 
 # ---------------------------------------------------------------------------
 # Jurisdiction-neutral core
@@ -54,6 +63,19 @@ WitnessDisposition = Literal[
 
 # Dispositions that count as falsifying evidence against a rule.
 _FALSIFYING = ("lawvm_wrong", "structural")
+
+
+def disposition_for(
+    raw: str, mapping: Mapping[str, WitnessDisposition]
+) -> WitnessDisposition:
+    """Map an adapter's raw diagnosis ``raw`` onto a neutral witness disposition.
+
+    The one shared rule every jurisdiction adapter uses: a known diagnosis resolves
+    through its own ``mapping``; anything unmapped falls to ``"unknown"`` — *loud*, never
+    silently bucketed as a pass.  This is the single jurisdiction-neutral home of the
+    ``map.get(raw, "unknown")`` one-liner the FI/UK/EE/US/NZ adapters all duplicated.
+    """
+    return mapping.get(raw, "unknown")
 
 
 @dataclass(frozen=True)
@@ -231,553 +253,80 @@ def render_markdown(ledger: SpecLedger) -> str:
     return "\n".join(lines)
 
 
-# ---------------------------------------------------------------------------
-# Finland adapter
-# ---------------------------------------------------------------------------
-
-# Finland oracle-check ``diagnosis`` vocabulary -> witness disposition.  Diagnoses absent
-# here fall back to "unknown" (loud, not silently bucketed as a pass).
-_FI_DIAGNOSIS_DISPOSITION: Dict[str, WitnessDisposition] = {
-    "UNKNOWN": "lawvm_wrong",
-    "REPLAY_EXTRA": "lawvm_wrong",
-    "REPLAY_MISSING": "lawvm_wrong",
-    # An oracle whole-section repeal stub whose repealing statute is reachable and
-    # in-window, yet replay kept the section — a genuine missed-repeal bug.
-    "REPLAY_UNREPEALED": "lawvm_wrong",
-    "EMPTY_OPERATIVE_BODY": "lawvm_wrong",
-    "ORACLE_STALE": "oracle_suspect",
-    "CORRIGENDUM_APPLIED": "oracle_suspect",
-    "EDITORIAL_CONVENTION": "oracle_suspect",
-    "REPEAL_NOTICE": "oracle_suspect",
-    "SOURCE_INCOMPLETE": "missing_source",
-    "SOURCE_PATHOLOGY": "missing_source",
-    "MISSING": "structural",
-    "EXTRA": "structural",
-    "LIITE_DIFF": "structural",
-}
-_FI_NON_DIVERGENCE = {"NO_ORACLE", "OK", "MATCH", ""}
-
-# Finland rule catalog seed (believed_spec prose per witness_rule_id).  Co-owned with
-# the grafter seams over time; uncataloged rules show as "·" and are loud.
-_FI_RULE_SPECS: Dict[str, str] = {
-    "fi.section_ref": "A johtolause '<n> §' citation targets the live section <n>.",
-    "fi.chapter_ref": "A johtolause '<n> luku' citation targets the live chapter <n>.",
-    "fi.insertion_section": "lisätään ... uusi <n> § inserts a new section at <n>.",
-    "fi.insertion_chapter": "lisätään ... uusi <n> luku inserts a new chapter at <n>.",
-    "fi.insertion_sub_target": "An insertion's sub-target (momentti/kohta) lands inside its parent section.",
-    "fi.jolloin_renumber": "A 'jolloin ... siirtyy' clause renumbers the displaced sections.",
-    "fi_body_chapter_scope_from_source_body": "A body-scoped section inherits chapter scope from the amendment body container.",
-    "fi_chapter_seed_inserted_from_amendment_body": "Chapter seeding inserts a missing base chapter from the earliest amendment body before replay.",
-    "fi.recovery.uncovered_body": "Uncovered-body recovery synthesizes a section INSERT/REPLACE from unclaimed amendment body XML.",
-    "fi.recovery.uncovered_body.part_insert_subtree_johto_bypass": "When an amendment INSERTs a new part, uncovered-body recovery may materialize sections carried in that part payload even if the johtolause only names other targets; same-wave repeal-placeholder slots under the inserted part may be reinstated.",
-    "fi.recovery.uncovered_chapter_scaffold": "Uncovered-body recovery materializes a missing chapter scaffold needed to host recovered or parsed section operations.",
-    "fi.recovery.uncovered_kumotaan": "Uncovered kumotaan recovery applies a repeal named in operative text but not emitted as a parsed structural op.",
-    "fi.restructure.renumber_timeline": "A restructure-plan migration event emits an explicit RENUMBER operation so timeline compilation tombstones the old address.",
-    "fi.restructure.relabel_section_snapshot": "After a successful section relabel, replay emits a payload snapshot at the live post-relabel IR path so PIT materialization owns the relocated section body.",
-    "fi.restructure.chapter_part_move_timeline": "A chapter moved under a newly created part emits an old-address tombstone plus new-address insert so PIT materialization preserves the move.",
-    "fi.restructure.chapter_part_move_timeline.label_reuse_guard": "Suppress inferred chapter part-move timeline LOs when the same chapter label still lives under its pre-amendment part (label reuse during part INSERT, not a cross-part move).",
-    "fi.restructure.relabel_migration_ledger_lookup": "A later restructure-plan relabel may resolve amendment-frame addresses through prior same-statute migration lineage (as_of_date, not content-lineage not_before) instead of failing with target_not_found.",
-    "fi.restructure.relabel_structural_label_alias_lookup": "A restructure-plan relabel may resolve live tree nodes whose display label differs from the amendment-frame token when Finland structural-label normalization proves equivalence (for example part IIa vs part 2a).",
-    "fi.process.post_apply_label_dedup": "After a restructure-heavy amendment apply loop, transient same-kind+label siblings are removed with the global replay-fold dedup backstop before the next amendment consumes the state.",
-    "fi.replay.fold_timeline_backfill": "Before PIT materialization, replay products graft fold-owned section snapshots onto timeline addresses that only received payload-less renumber/move authority during restructure waves.",
-    "fi.elaboration.named_row_province_table_merge": "Named regional table replaces merge only the claimed province blocks from a sparse amendment table into the live province layout instead of replacing the whole section.",
-}
-
-# Fold the FI catalog supplement (firing parse-witness rules + the fallback-extraction
-# lane id, authored in a sibling module) into a SEPARATE merged catalog used by the
-# ledger, leaving the seed ``_FI_RULE_SPECS`` literal pure (the anti-drift test in
-# tests/test_fi_spec_ledger_catalog.py checks base and supplement separately). Mirrors
-# the UK split.
-def _load_fi_rule_specs() -> Dict[str, str]:
-    specs = dict(_FI_RULE_SPECS)
-    try:
-        from lawvm.tools.spec_ledger_fi_catalog_supplement import (
-            _FI_RULE_SPECS_SUPPLEMENT,
-        )
-        specs.update(_FI_RULE_SPECS_SUPPLEMENT)
-    except ImportError:
-        pass
-    return specs
-
-
-_FI_RULE_SPECS_FULL: Dict[str, str] = _load_fi_rule_specs()
-
-
-def fi_ledger_inputs(sids: List[str], mode: Mode) -> Iterator[StatuteLedgerInput]:
-    """Turn Finland's ClassifyResult surface into neutral ledger inputs.
-
-    firings come from ``compiled_ops[].witness_rule_id``; divergences come from
-    ``section_results`` (per-section ``diagnosis``), attributed to the witness rule of
-    the blame op resolved the same way as oracle-check classify
-    (``_blame_map_for_classify_result`` / ``_lookup_blame_op_for_classify_result``),
-    including replay ``lo_ops`` lineage witnesses and migration-event predecessor lookup.
-    """
-    from lawvm.tools.oracle_check import (
-        _classify_statute_sync,
-        _lookup_blame_op_for_classify_result,
-    )
-
-    for sid in sids:
-        cr = _classify_statute_sync(sid, mode)
-        if cr is None or cr.error:
-            continue  # caller counts errors separately via the sentinel below
-        firings: Dict[str, int] = defaultdict(int)
-        for op in cr.compiled_ops:
-            if isinstance(op, dict):
-                rid = op.get("witness_rule_id") or ""
-                if rid:
-                    firings[rid] += 1
-        divergences: List[DivergenceRow] = []
-        for sec in cr.section_results:
-            diagnosis = str(sec.get("diagnosis") or "")
-            if diagnosis in _FI_NON_DIVERGENCE:
-                continue
-            section_key = str(sec.get("section") or "")
-            blame_op = _lookup_blame_op_for_classify_result(cr, section_key)
-            rid = blame_op.get("witness_rule_id") if isinstance(blame_op, dict) else None
-            divergences.append(
-                DivergenceRow(
-                    sid=sid,
-                    section_key=section_key,
-                    diagnosis=diagnosis,
-                    disposition=_FI_DIAGNOSIS_DISPOSITION.get(diagnosis, "unknown"),
-                    rule_id=rid or None,
-                    blame_source=str(sec.get("blame_source") or ""),
-                )
-            )
-        yield StatuteLedgerInput(sid=sid, rule_firings=dict(firings), divergences=divergences)
-
-
-def _load_bench_core_ids() -> List[str]:
-    """Finland statute ids from data/finland/bench_core.csv (``count,sid`` rows)."""
-    from pathlib import Path
-
-    base = Path(__file__).resolve().parents[3] / "data" / "finland"
-    path = base / "bench_core.csv"
-    if not path.exists():
-        path = base / "bench_corpus.csv"
-    sids: List[str] = []
-    with path.open(encoding="utf-8") as fh:
-        for line in fh:
-            parts = line.strip().split(",")
-            if len(parts) >= 2 and "/" in parts[1]:
-                sids.append(parts[1])
-    return sids
-
 
 # ---------------------------------------------------------------------------
-# UK adapter
+# Per-jurisdiction adapter registry
 # ---------------------------------------------------------------------------
-
-# UK diagnosis vocabulary -> witness disposition. Three vocabularies feed it:
-#  1. the §2.1 oracle-check bucket names emitted per-EID by
-#     ``uk_divergence_rows_for_statute`` (deterministic_gap / manual_frontier /
-#     oracle_suspect / text_diff);
-#  2. the source-pathology classes (UK_EFFECT_SOURCE_PATHOLOGY_CLASSES) and
-#     compare-shape classes (UK_EFFECT_COMPARE_SHAPE_CLASSES) from
-#     uk_legislation.source_adjudication, which may appear as a covering
-#     rejection's ``source_pathology``;
-#  3. the owning phase constants (UK_PHASE_*) from phase_discipline.
 #
-# Diagnoses absent here fall back to "unknown" (loud) — never silently a pass.
-# Discipline: a missing-source / out-of-scope pathology is "missing_source"
-# (the source did not deterministically specify it); a compare-shape class is
-# "oracle_suspect" (oracle exposes a different editorial shape, replay coherent);
-# deterministic_gap is "lawvm_wrong" (our compiler should have produced it).
-_UK_DIAGNOSIS_DISPOSITION: Dict[str, WitnessDisposition] = {
-    # --- §2.1 oracle-check bucket names (the primary per-EID diagnosis) ---
-    "deterministic_gap": "lawvm_wrong",
-    "manual_frontier": "missing_source",
-    "oracle_suspect": "oracle_suspect",
-    "text_diff": "unknown",  # both sides carry the EID; needs per-text analysis
+# The adapter is the ONLY jurisdiction-specific part: a ``ledger_inputs`` callable
+# (frontend classification surface -> neutral ``StatuteLedgerInput``s), the rule
+# ``catalog`` (believed_spec per witness rule id), and optional corpus loaders for the
+# ``--corpus-bench`` / ``--corpus-full`` CLI flags.  Each adapter lives in its own
+# jurisdiction package and self-registers here at import time (see
+# ``lawvm.finland.spec_ledger_adapter`` etc.), mirroring
+# ``core/bench_comparator_registry``.  The core never imports a jurisdiction package;
+# ``run_ledger`` loads the adapter module on demand, which triggers registration.
+
+LedgerInputsFn = Callable[[List[str], "Mode"], Iterable[StatuteLedgerInput]]
+
+
+@dataclass(frozen=True)
+class LedgerAdapter:
+    """One jurisdiction's spec-ledger adapter: how to turn its frontend surface into
+    neutral ledger inputs, plus its rule catalog and corpus loaders."""
+
+    jurisdiction: str
+    ledger_inputs: LedgerInputsFn
+    catalog: Mapping[str, str]
+    # CLI corpus loaders keyed by flag name ("bench" -> --corpus-bench,
+    # "full" -> --corpus-full); a jurisdiction wires only the flags it supports.
+    corpus_loaders: Mapping[str, Callable[[], List[str]]] = field(default_factory=dict)
+
+
+_LEDGER_ADAPTERS: Dict[str, LedgerAdapter] = {}
+
+# Jurisdiction -> the module that, when imported, self-registers that adapter.  The core
+# loads these lazily (never at import time) so it carries no compile-time dependency on a
+# jurisdiction package.  US/NZ are standalone (their own CLIs) and are not dispatched
+# through ``run_ledger``; they are intentionally absent.
+_ADAPTER_MODULES: Dict[str, str] = {
+    "fi": "lawvm.finland.spec_ledger_adapter",
+    "uk": "lawvm.uk_legislation.spec_ledger_adapter",
+    "ee": "lawvm.estonia.spec_ledger_adapter",
 }
 
 
-def _seed_uk_pathology_dispositions() -> None:
-    """Extend the diagnosis map with the source-pathology / compare-shape /
-    phase vocabularies so a covering rejection's finer label also resolves."""
+def register_ledger_adapter(adapter: LedgerAdapter) -> None:
+    """Register *adapter* under its ``jurisdiction`` key.
+
+    Registering twice for the same key overwrites — a jurisdiction owns its key.
+    """
+    if not adapter.jurisdiction:
+        raise ValueError("ledger adapter jurisdiction key must be non-empty")
+    _LEDGER_ADAPTERS[adapter.jurisdiction] = adapter
+
+
+def get_ledger_adapter(jurisdiction: str) -> LedgerAdapter:
+    """Return the registered adapter for *jurisdiction*, importing its module on demand.
+
+    Raises :class:`NotImplementedError` (fail loud) when the jurisdiction has no adapter,
+    rather than silently producing an empty ledger.
+    """
+    if jurisdiction not in _LEDGER_ADAPTERS:
+        module = _ADAPTER_MODULES.get(jurisdiction)
+        if module is not None:
+            import importlib
+
+            importlib.import_module(module)  # triggers self-registration
     try:
-        from lawvm.uk_legislation.source_adjudication import (
-            UK_EFFECT_COMPARE_SHAPE_CLASSES,
-            UK_EFFECT_SOURCE_PATHOLOGY_CLASSES,
-        )
-        from lawvm.uk_legislation.phase_discipline import (
-            UK_PHASE_AFFECTING_SOURCE_EXTRACTION,
-            UK_PHASE_CANONICAL_OP_COMPILATION,
-            UK_PHASE_COMPARE_ORACLE_CLASSIFICATION,
-            UK_PHASE_EFFECT_METADATA_FRONTEND,
-            UK_PHASE_REPLAY_INVARIANTS,
-            UK_PHASE_SOURCE_PATHOLOGY_MANUAL_FRONTIER,
-            UK_PHASE_TYPED_ELABORATION,
-        )
-    except ImportError:
-        return
-    # source pathology = the source text did not deterministically specify the
-    # result (unsupported shape / out of scope / missing payload): missing_source.
-    for cls in UK_EFFECT_SOURCE_PATHOLOGY_CLASSES:
-        _UK_DIAGNOSIS_DISPOSITION.setdefault(cls, "missing_source")
-    # compare-shape = oracle exposes a different editorial structure while replay
-    # stays source-faithful: oracle_suspect (a finding, not our bug).
-    for cls in UK_EFFECT_COMPARE_SHAPE_CLASSES:
-        _UK_DIAGNOSIS_DISPOSITION.setdefault(cls, "oracle_suspect")
-    # owning-phase constants, when a row's diagnosis is reported as its phase.
-    phase_dispositions: Dict[str, WitnessDisposition] = {
-        UK_PHASE_EFFECT_METADATA_FRONTEND: "missing_source",
-        UK_PHASE_AFFECTING_SOURCE_EXTRACTION: "missing_source",
-        UK_PHASE_TYPED_ELABORATION: "lawvm_wrong",
-        UK_PHASE_CANONICAL_OP_COMPILATION: "lawvm_wrong",
-        UK_PHASE_REPLAY_INVARIANTS: "lawvm_wrong",
-        UK_PHASE_COMPARE_ORACLE_CLASSIFICATION: "oracle_suspect",
-        UK_PHASE_SOURCE_PATHOLOGY_MANUAL_FRONTIER: "missing_source",
-    }
-    for phase, disp in phase_dispositions.items():
-        _UK_DIAGNOSIS_DISPOSITION.setdefault(phase, disp)
-
-
-_seed_uk_pathology_dispositions()
-
-
-# Believed-spec catalog: authored by a sibling agent in
-# ``lawvm.tools.spec_ledger_uk_catalog``. Import it if present, else fall back to
-# an empty dict so this adapter works whether or not that module exists yet.
-def _load_uk_rule_specs() -> Dict[str, str]:
-    try:
-        from lawvm.tools.spec_ledger_uk_catalog import _UK_RULE_SPECS
-    except ImportError:
-        return {}
-    specs = dict(_UK_RULE_SPECS)
-    # Fold in the effect/diagnostic-rule supplement (the ledger-firing ids that are
-    # string literals, not static *_RULE_ID constants — kept separate so the main
-    # catalog's no-dead-entry constant check stays pure). Merged only here, where the
-    # ledger consumes the combined catalog.
-    try:
-        from lawvm.tools.spec_ledger_uk_catalog_supplement import (
-            _UK_RULE_SPECS_SUPPLEMENT,
-        )
-        specs.update(_UK_RULE_SPECS_SUPPLEMENT)
-    except ImportError:
-        pass
-    return specs
-
-
-_UK_RULE_SPECS: Dict[str, str] = _load_uk_rule_specs()
-
-
-# A statute whose divergences are overwhelmingly UNATTRIBUTED structural
-# deterministic-gaps is not N rule-falsifications — it is one whole-statute
-# addressing / EID-scheme incommensurability (replay and oracle structure the
-# same content under different EIDs). Counting each gap as lawvm_wrong lets a
-# single mismatched statute dominate the real-bug ranking (e.g. ukpga/1907/51:
-# 4595 named-part deterministic-gaps, every one an unattributed blind spot).
-# Demote such a statute's unattributed deterministic-gap rows to a non-falsifying
-# "unknown", tagged so the pattern stays visible — not masquerading as bugs.
-_NONCOMMENSURABLE_MIN_ROWS = 50
-_NONCOMMENSURABLE_FRACTION = 0.9
-_NONCOMMENSURABLE_DIAGNOSIS = "noncommensurable_whole_statute_structural"
-
-
-def _demote_whole_statute_noncommensurable(
-    rows: List[DivergenceRow],
-) -> List[DivergenceRow]:
-    """Reclassify a whole-statute structural-incommensurability wall.
-
-    When a statute's divergences are dominated by unattributed ``deterministic_gap``
-    rows (no witness rule; structural EID present in the oracle but not replay), the
-    cause is one addressing-scheme mismatch, not many rule bugs. Demote those rows to
-    a non-falsifying ``unknown`` disposition under a
-    ``noncommensurable_whole_statute_structural`` diagnosis so a single mismatched
-    statute does not dominate the real-bug ranking. Attributed rows and non-gap
-    diagnoses are never touched.
-    """
-    if len(rows) < _NONCOMMENSURABLE_MIN_ROWS:
-        return rows
-    wall = sum(
-        1 for r in rows if r.rule_id is None and r.diagnosis == "deterministic_gap"
-    )
-    if wall / len(rows) < _NONCOMMENSURABLE_FRACTION:
-        return rows
-    return [
-        replace(r, diagnosis=_NONCOMMENSURABLE_DIAGNOSIS, disposition="unknown")
-        if (r.rule_id is None and r.diagnosis == "deterministic_gap")
-        else r
-        for r in rows
-    ]
-
-
-def uk_ledger_inputs(sids: List[str], mode: Mode) -> Iterator[StatuteLedgerInput]:
-    """Turn the UK oracle-check per-EID surface into neutral ledger inputs.
-
-    Firings come from compiled UK ops' ``witness_rule_id``; divergences come from
-    ``uk_divergence_rows_for_statute`` (one row per divergent EID, carrying the
-    §2.1 bucket diagnosis, plus the covering rejection's rule_id / owning phase /
-    authority layer when attributable).
-
-    ``mode`` is accepted for signature parity with the FI adapter; the UK
-    oracle-check path is point-in-time-less (full current-oracle comparison).
-    """
-    from lawvm.tools.uk_oracle_check import (
-        _compute_uk_divergence_state,
-        uk_divergence_rows_for_statute,
-    )
-
-    for sid in sids:
-        state = _compute_uk_divergence_state(sid)
-        if state.error:
-            continue  # caller counts errors separately
-        # Firings: each compile rejection/diagnostic row that names a witness
-        # rule_id is a fired hypothesis. UK compiled ops carry witness_rule_id;
-        # the per-EID rows surface the covering rule, so we tally rule_ids from
-        # the diagnostic rows (the rule-level firing proxy the surface exposes).
-        firings: Dict[str, int] = defaultdict(int)
-        for row in (
-            state.lowering_rejections
-            + state.effect_feed_parse_rejections
-            + state.authority_rejections
-            + state.effect_diagnostics
-        ):
-            rid = str(row.get("rule_id") or "")
-            if rid:
-                firings[rid] += 1
-
-        divergences: List[DivergenceRow] = []
-        for drow in uk_divergence_rows_for_statute(sid):
-            # Prefer the finer per-EID source-pathology label over the coarse §2.1
-            # bucket when it resolves to a known (more specific) disposition; the
-            # coarse bucket is the fallback. "unclassified"/"" never override.
-            diagnosis = drow.diagnosis
-            disposition = _UK_DIAGNOSIS_DISPOSITION.get(diagnosis, "unknown")
-            finer = drow.source_pathology_label
-            if finer and finer != "unclassified":
-                finer_disp = _UK_DIAGNOSIS_DISPOSITION.get(finer)
-                if finer_disp is not None:
-                    diagnosis, disposition = finer, finer_disp
-            divergences.append(
-                DivergenceRow(
-                    sid=sid,
-                    section_key=drow.eid,
-                    diagnosis=diagnosis,
-                    disposition=disposition,
-                    rule_id=drow.rule_id or None,
-                    blame_source=drow.blame_source,
-                    phase_owner=drow.phase_owner,
-                    authority_layer=drow.authority_layer,
-                )
-            )
-        divergences = _demote_whole_statute_noncommensurable(divergences)
-        yield StatuteLedgerInput(sid=sid, rule_firings=dict(firings), divergences=divergences)
-
-
-def _load_uk_bench_ids() -> List[str]:
-    """UK statute ids from data/uk/bench_corpus_smoke.csv (header + CSV rows;
-    first column ``statute_id`` like ``asc/2020/1``)."""
-    from pathlib import Path
-
-    base = Path(__file__).resolve().parents[3] / "data" / "uk"
-    path = base / "bench_corpus_smoke.csv"
-    if not path.exists():
-        path = base / "bench_corpus.csv"
-    sids: List[str] = []
-    with path.open(encoding="utf-8") as fh:
-        for i, line in enumerate(fh):
-            if i == 0:
-                continue  # header
-            first = line.strip().split(",")[0]
-            if first.count("/") >= 2:
-                sids.append(first)
-    return sids
-
-
-# ---------------------------------------------------------------------------
-# Estonia adapter
-# ---------------------------------------------------------------------------
-
-# EE is NOT an oracle-*check* like FI/UK: it replays as a *consistency verification*
-# against the official consolidated text (Riigi Teataja terviktekst).  That text is
-# law-in-force — but legal force is NOT consolidation-correctness: consolidating the
-# amendment acts into a running text is an editorial act that can mis-render them, and
-# a wrong terviktekst stays in force until corrected.  So even here LawVM replaying the
-# primary amendment acts can be RIGHT while the in-force consolidation is WRONG.
-# ``oracle_suspect`` is therefore a first-class outcome and a high-value finding (the
-# adoption wedge, AGENTS.md §2.1/§3) — NOT a rare escape hatch, and the authoritative
-# oracle is never presumed correct.
-#
-# The raw-divergence default below is ``lawvm_wrong`` only as the conservative, *humble*
-# discovery stance — "suspect our own rule first" — never as deference to the
-# consolidation's correctness: over-attributing a divergence to ourselves is the safe
-# direction; presuming the in-force text correct is the dangerous one.  An adjudicated
-# residual bucket flips it to ``oracle_suspect`` (consolidation drift / correction
-# notice) or ``missing_source`` (the amendment source itself is incomplete).
-#
-# Two layers map onto the neutral WitnessDisposition:
-#   1. residual bucket (preferred, when the address is adjudicated), and
-#   2. raw consistency divergence_type (provisional default, no residual record).
-# Anything unmapped in either layer falls to "unknown" (loud, never a silent pass).
-_EE_DIAGNOSIS_DISPOSITION: Dict[str, WitnessDisposition] = {
-    # -- raw consistency divergence_type (no adjudicated residual record) --
-    "MISMATCH": "lawvm_wrong",
-    "OPS_MISSING": "lawvm_wrong",          # in oracle but not replay
-    "CONSOLIDATED_MISSING": "lawvm_wrong",  # in replay but not oracle
-    # -- adjudicated residual buckets --
-    "replay_bug": "lawvm_wrong",
-    "source_oracle_drift": "oracle_suspect",
-    "oracle_correction_notice": "oracle_suspect",
-    "source_pathology": "missing_source",
-    "source_ambiguity": "missing_source",
-    "appendix_display_pathology": "structural",
-    "descendant_residual_mix": "unknown",
-    "presentation_punctuation_whitespace": "unknown",
-}
-
-
-# Believed-spec catalog authored by a sibling agent in
-# ``lawvm.tools.spec_ledger_ee_catalog``; import if present, else fall back to {}.
-def _load_ee_rule_specs() -> Dict[str, str]:
-    try:
-        from lawvm.tools.spec_ledger_ee_catalog import _EE_RULE_SPECS
-    except ImportError:
-        return {}
-    return dict(_EE_RULE_SPECS)
-
-
-_EE_RULE_SPECS: Dict[str, str] = _load_ee_rule_specs()
-
-
-def _ee_address_key(address: object) -> str:
-    """Render a StructuredAddress ``.path`` as the residual-inventory key form.
-
-    Mirrors ``ConsistencyDivergence.__str__`` and the residual-inventory keys
-    (e.g. ``"section:5/subsection:2"``).
-    """
-    path = getattr(address, "path", None)
-    if not path:
-        return ""
-    return "/".join(f"{kind}:{label}" for kind, label in path)
-
-
-def _ee_resolve_as_of(oracle_id: str, archive: object) -> str:
-    """Resolve an oracle terviktekst's own effective date (its PIT as_of)."""
-    from lawvm.estonia.fetch import extract_effective_date, fetch_rt_xml
-
-    try:
-        xml_bytes = fetch_rt_xml(oracle_id, archive)
-    except Exception:
-        return ""
-    return extract_effective_date(xml_bytes)
-
-
-def ee_ledger_inputs(sids: List[str], mode: Mode) -> Iterator[StatuteLedgerInput]:
-    """Turn Estonia's replay/consistency surface into neutral ledger inputs.
-
-    Each ``sid`` is the ``"<base_id>/<oracle_id>"`` pair form.  firings come from
-    ``op.witness_rule_id`` over the compiled ops; divergences come from the
-    consistency report (``replay_ee_to_pit(...).divergences``), each refined by the
-    adjudicated residual bucket where one exists.  A divergence is attributed to the
-    *earliest* op whose target address contains (is a suffix-or-equal of) the
-    divergence address; no such op => an unattributed blind spot.  ``blame_source`` is
-    left empty because the EE oracle is authoritative, not a blamed amendment surface.
-    """
-    from lawvm.estonia.fetch import open_rt_archive
-    from lawvm.estonia.replay import replay_ee_to_pit
-    from lawvm.estonia.residual_reporting import build_ee_residual_summary
-
-    archive = open_rt_archive()
-    for sid in sids:
-        base_id, _, oracle_id = sid.partition("/")
-        if not base_id or not oracle_id:
-            continue
-        as_of = _ee_resolve_as_of(oracle_id, archive)
-        if not as_of:
-            continue
-        result = replay_ee_to_pit(base_id, as_of, archive=archive, oracle_id=oracle_id)
-        if result.error:
-            continue
-
-        firings: Dict[str, int] = defaultdict(int)
-        for op in result.compiled_ops:
-            rid = getattr(op, "witness_rule_id", "") or ""
-            if rid:
-                firings[rid] += 1
-
-        # Pre-index ops by their target address key, keeping the earliest sequence.
-        op_owner: Dict[str, object] = {}
-        for op in sorted(result.compiled_ops, key=lambda o: getattr(o, "sequence", 0)):
-            key = _ee_address_key(getattr(op, "target", None))
-            if key and key not in op_owner:
-                op_owner[key] = op
-
-        divergence_addresses = [_ee_address_key(d.address) for d in result.divergences]
-        summary = build_ee_residual_summary(
-            base_id, oracle_id, divergence_addresses=divergence_addresses
-        )
-        record_by_address = dict(summary.record_by_address) if summary is not None else {}
-
-        divergences: List[DivergenceRow] = []
-        for div in result.divergences:
-            addr_key = _ee_address_key(div.address)
-            record = record_by_address.get(addr_key)
-            if record is not None:
-                diagnosis = record.bucket
-            else:
-                diagnosis = div.divergence_type
-            rid = _ee_attribute_divergence(addr_key, op_owner)
-            divergences.append(
-                DivergenceRow(
-                    sid=sid,
-                    section_key=addr_key,
-                    diagnosis=diagnosis,
-                    disposition=_EE_DIAGNOSIS_DISPOSITION.get(diagnosis, "unknown"),
-                    rule_id=rid,
-                    blame_source="",
-                )
-            )
-        yield StatuteLedgerInput(sid=sid, rule_firings=dict(firings), divergences=divergences)
-
-
-def _ee_attribute_divergence(addr_key: str, op_owner: Mapping[str, object]) -> Optional[str]:
-    """Find the witness rule of the op that owns ``addr_key`` (suffix-or-equal match).
-
-    Prefers the exact-address owner; otherwise the longest owning prefix-chain match
-    (an op whose target is an ancestor of, or equal to, the divergence address).
-    ``op_owner`` is pre-sorted to the earliest op per address.  Returns None when no op
-    owns the address — a blind spot.
-    """
-    if not addr_key:
-        return None
-    if addr_key in op_owner:
-        op = op_owner[addr_key]
-        return (getattr(op, "witness_rule_id", "") or None)
-    # Ancestor match: the longest op-target key that ``addr_key`` extends.
-    best_key = ""
-    for key in op_owner:
-        if addr_key == key or addr_key.startswith(f"{key}/"):
-            if len(key) > len(best_key):
-                best_key = key
-    if best_key:
-        op = op_owner[best_key]
-        return (getattr(op, "witness_rule_id", "") or None)
-    return None
-
-
-def _load_ee_corpus_pairs(fuller: bool = False) -> List[str]:
-    """Estonia ``<base_id>/<oracle_id>`` pairs from data/estonia/.
-
-    Default smoke uses ``bench_corpus.csv`` (the EE analog of FI's bench_core); the
-    fuller replayable list is ``current_replayable_corpus.csv``.  Both are CSVs with
-    ``base_id`` and ``oracle_id`` columns.
-    """
-    import csv
-    from pathlib import Path
-
-    base = Path(__file__).resolve().parents[3] / "data" / "estonia"
-    path = base / ("current_replayable_corpus.csv" if fuller else "bench_corpus.csv")
-    pairs: List[str] = []
-    with path.open(encoding="utf-8", newline="") as fh:
-        for row in csv.DictReader(fh):
-            base_id = (row.get("base_id") or "").strip()
-            oracle_id = (row.get("oracle_id") or "").strip()
-            if base_id and oracle_id:
-                pairs.append(f"{base_id}/{oracle_id}")
-    return pairs
+        return _LEDGER_ADAPTERS[jurisdiction]
+    except KeyError:
+        raise NotImplementedError(
+            f"spec-ledger adapter for -j {jurisdiction} not implemented; "
+            f"{sorted(_ADAPTER_MODULES)} are the dispatchable adapters (provide a "
+            "classify surface + diagnosis map + catalog and self-register via "
+            "register_ledger_adapter)"
+        ) from None
 
 
 # ---------------------------------------------------------------------------
@@ -785,23 +334,10 @@ def _load_ee_corpus_pairs(fuller: bool = False) -> List[str]:
 # ---------------------------------------------------------------------------
 
 def run_ledger(jurisdiction: str, sids: List[str], mode: Mode) -> SpecLedger:
-    if jurisdiction == "fi":
-        inputs = list(fi_ledger_inputs(sids, mode))
-        catalog = _FI_RULE_SPECS_FULL
-    elif jurisdiction == "uk":
-        inputs = list(uk_ledger_inputs(sids, mode))
-        catalog = _UK_RULE_SPECS
-    elif jurisdiction == "ee":
-        inputs = list(ee_ledger_inputs(sids, mode))
-        catalog = _EE_RULE_SPECS
-    else:
-        raise NotImplementedError(
-            f"spec-ledger adapter for -j {jurisdiction} not implemented; "
-            "fi, uk and ee are the implemented adapters (provide classify surface + "
-            "diagnosis map + catalog)"
-        )
+    adapter = get_ledger_adapter(jurisdiction)
+    inputs = list(adapter.ledger_inputs(sids, mode))
     ledger = build_ledger(
-        inputs, jurisdiction=jurisdiction, mode=mode, catalog=catalog
+        inputs, jurisdiction=jurisdiction, mode=mode, catalog=adapter.catalog
     )
     # The adapter drops un-classifiable statutes from the stream; reflect them honestly.
     ledger.statute_errors = len(sids) - ledger.statutes
@@ -824,19 +360,23 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = ap.parse_args(argv)
 
     sids = list(args.sids)
-    if args.corpus_bench:
-        if args.jurisdiction == "fi":
-            sids = _load_bench_core_ids()
-        elif args.jurisdiction == "uk":
-            sids = _load_uk_bench_ids()
-        elif args.jurisdiction == "ee":
-            sids = _load_ee_corpus_pairs(fuller=False)
-        else:
-            ap.error("--corpus-bench is only wired for -j fi, -j uk and -j ee")
-    if args.corpus_full:
-        if args.jurisdiction != "ee":
-            ap.error("--corpus-full is only wired for -j ee")
-        sids = _load_ee_corpus_pairs(fuller=True)
+    if args.corpus_bench or args.corpus_full:
+        adapter = get_ledger_adapter(args.jurisdiction)
+        if args.corpus_bench:
+            loader = adapter.corpus_loaders.get("bench")
+            if loader is None:
+                ap.error(
+                    "--corpus-bench is only wired for -j "
+                    f"{sorted(_ADAPTER_MODULES)}"
+                )
+            else:
+                sids = loader()
+        if args.corpus_full:
+            loader = adapter.corpus_loaders.get("full")
+            if loader is None:
+                ap.error("--corpus-full is only wired for -j ee")
+            else:
+                sids = loader()
     if not sids:
         ap.error("provide statute ids or --corpus-bench")
 

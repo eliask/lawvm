@@ -1097,7 +1097,7 @@ def fi_bench_unit_result(
     from lawvm.core.bench_contract import BenchStatus, BenchUnitResult
 
     if is_known_missing_source(sid):
-        return BenchUnitResult(unit_id=sid, status=BenchStatus.SOURCE_UNAVAILABLE)
+        return BenchUnitResult(unit_id=sid, bench_unit_status=BenchStatus.SOURCE_UNAVAILABLE)
 
     try:
         master, _warning_counts = _run_replay_with_bench_warning_capture(
@@ -1113,11 +1113,11 @@ def fi_bench_unit_result(
         if fast:
             lev_sim = _lev_sim_fast(sid, master) if text_scores else -1.0
             if lev_sim < 0:
-                return BenchUnitResult(unit_id=sid, status=BenchStatus.NO_TRUTH)
+                return BenchUnitResult(unit_id=sid, bench_unit_status=BenchStatus.NO_TRUTH)
             # Fast path has no structural axis — only the text axis is attempted.
             return BenchUnitResult(
                 unit_id=sid,
-                status=BenchStatus.SCORED,
+                bench_unit_status=BenchStatus.SCORED,
                 structural_err=None,
                 text_err=1.0 - lev_sim,
                 witnesses=_bench_oracle_provenance_witnesses(sid),
@@ -1126,13 +1126,13 @@ def fi_bench_unit_result(
         score = _semantic_section_score(sid, master, text_scores=text_scores)
         sim = score.structural_similarity
         if sim < 0:
-            return BenchUnitResult(unit_id=sid, status=BenchStatus.NO_TRUTH)
+            return BenchUnitResult(unit_id=sid, bench_unit_status=BenchStatus.NO_TRUTH)
         lev_sim = score.adjusted_levenshtein_similarity
         text_err = None if lev_sim < 0 else 1.0 - lev_sim
         residue = {k: int(v) for k, v in score.penalized_event_counts.items() if v}
         return BenchUnitResult(
             unit_id=sid,
-            status=BenchStatus.SCORED,
+            bench_unit_status=BenchStatus.SCORED,
             structural_err=1.0 - sim,
             text_err=text_err,
             residue_buckets=residue,
@@ -1146,7 +1146,7 @@ def fi_bench_unit_result(
     except Exception as e:
         return BenchUnitResult(
             unit_id=sid,
-            status=BenchStatus.CRASH,
+            bench_unit_status=BenchStatus.CRASH,
             witnesses=(str(e),),
         )
 
@@ -2006,12 +2006,12 @@ def _fi_unit_results_from_rows(
         if sim < 0:
             mapped = _status_map.get(status)
             if mapped is not None:
-                out.append(BenchUnitResult(unit_id=sid, status=mapped))
+                out.append(BenchUnitResult(unit_id=sid, bench_unit_status=mapped))
             else:
                 # Genuine exception (status == str(exception)) — a crash.
                 out.append(
                     BenchUnitResult(
-                        unit_id=sid, status=BenchStatus.CRASH, witnesses=(status,)
+                        unit_id=sid, bench_unit_status=BenchStatus.CRASH, witnesses=(status,)
                     )
                 )
             continue
@@ -2023,7 +2023,7 @@ def _fi_unit_results_from_rows(
         out.append(
             BenchUnitResult(
                 unit_id=sid,
-                status=BenchStatus.SCORED,
+                bench_unit_status=BenchStatus.SCORED,
                 structural_err=structural_err,
                 text_err=1.0 - sim,
             )

@@ -61,7 +61,7 @@ class EEAuthorityGrounding:
     rule_id: str
     authority_kind: AuthorityKind
     source_ref: str
-    status: Status
+    authority_grounding_status: Status
     ledger_section: str = ""
     note: str = ""
 
@@ -111,7 +111,7 @@ def load_ee_authority_grounding(
             rule_id=rule_id,
             authority_kind=authority_kind,
             source_ref=source_ref,
-            status=status,
+            authority_grounding_status=status,
             ledger_section=row.get("ledger_section", ""),
             note=row.get("note", ""),
         )
@@ -132,4 +132,4 @@ def render_ee_grounding_column(
     entry = table.get(rule_id)
     if entry is None:
         return "-"
-    return f"{entry.status} · {entry.authority_kind} · {entry.source_ref}"
+    return f"{entry.authority_grounding_status} · {entry.authority_kind} · {entry.source_ref}"

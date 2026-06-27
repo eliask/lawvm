@@ -46,7 +46,7 @@ class AuthorityGrounding:
     rule_id: str
     authority_tier: int | str
     source_ref: str
-    status: Status
+    authority_status: Status
     key_kind: KeyKind = "witness_rule_id"
     ledger_section: str = ""
     note: str = ""
@@ -82,7 +82,7 @@ def load_uk_authority_grounding(
             rule_id=rule_id,
             authority_tier=row["authority_tier"],
             source_ref=row["source_ref"],
-            status=row["status"],
+            authority_status=row["status"],
             key_kind=row.get("key_kind", "witness_rule_id"),
             ledger_section=row.get("ledger_section", ""),
             note=row.get("note", ""),
@@ -104,4 +104,4 @@ def render_grounding_column(
     entry = table.get(rule_id)
     if entry is None:
         return "-"
-    return f"{entry.status} · T{entry.authority_tier} · {entry.source_ref}"
+    return f"{entry.authority_status} · T{entry.authority_tier} · {entry.source_ref}"

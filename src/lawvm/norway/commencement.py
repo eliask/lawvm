@@ -13,7 +13,9 @@ from lawvm.norway.index import NOAmendmentIndex
 from lawvm.norway.sources import (
     NO_RESOLVED_EFFECTIVE_STATUSES,
     NO_UNRESOLVED_EFFECTIVE_STATUSES,
+    NOBackfillHintStatus,
     NOBackfillLane,
+    NOBackfillPlanStatus,
     NOEffectiveStatus,
     NOReplayStatus,
     load_available_lti_law_ids,
@@ -683,7 +685,7 @@ def _build_no_backfill_next_source_hint(
         return {
             "source_id": source_id,
             "title": title,
-            "status": "needs_external_official_source",
+            "hint_status": NOBackfillHintStatus.NEEDS_EXTERNAL_OFFICIAL_SOURCE,
             "kind": "external_official_search",
             "primary_source_family": "other_official_publication_channels",
             "suggested_sources": [
@@ -704,7 +706,7 @@ def _build_no_backfill_next_source_hint(
         return {
             "source_id": source_id,
             "title": title,
-            "status": "compare_existing_lanes",
+            "hint_status": NOBackfillHintStatus.COMPARE_EXISTING_LANES,
             "kind": "lane_comparison",
             "primary_source_family": "local_corpus_and_statsrad",
             "suggested_sources": [
@@ -723,7 +725,7 @@ def _build_no_backfill_next_source_hint(
         return {
             "source_id": source_id,
             "title": title,
-            "status": "statsrad_first",
+            "hint_status": NOBackfillHintStatus.STATSRAD_FIRST,
             "kind": "single_lane",
             "primary_source_family": "statsrad",
             "suggested_sources": [
@@ -741,7 +743,7 @@ def _build_no_backfill_next_source_hint(
     return {
         "source_id": source_id,
         "title": title,
-        "status": "local_corpus_first",
+        "hint_status": NOBackfillHintStatus.LOCAL_CORPUS_FIRST,
         "kind": "single_lane",
         "primary_source_family": "local_corpus",
         "suggested_sources": [
@@ -772,7 +774,7 @@ def _build_no_backfill_source_plan(
                 "display_name": "local_corpus",
                 "priority": 1,
                 "mode": "compare",
-                "status": "candidate",
+                "plan_status": NOBackfillPlanStatus.CANDIDATE,
                 "why": "Local corpus candidates exist and should be compared with statsrad.",
                 "candidate_group_summary": [
                     {
@@ -788,7 +790,7 @@ def _build_no_backfill_source_plan(
                 "display_name": "statsrad",
                 "priority": 2,
                 "mode": "compare",
-                "status": "candidate",
+                "plan_status": NOBackfillPlanStatus.CANDIDATE,
                 "why": "Statsrad candidates exist and should be compared against local corpus.",
                 "candidate_group_summary": [
                     {
@@ -807,7 +809,7 @@ def _build_no_backfill_source_plan(
                 "display_name": "statsrad",
                 "priority": 1,
                 "mode": "search",
-                "status": "candidate",
+                "plan_status": NOBackfillPlanStatus.CANDIDATE,
                 "why": "Statsrad has the only surfaced candidate signal.",
                 "candidate_group_summary": [
                     {
@@ -826,7 +828,7 @@ def _build_no_backfill_source_plan(
                 "display_name": "local_corpus",
                 "priority": 1,
                 "mode": "search",
-                "status": "candidate",
+                "plan_status": NOBackfillPlanStatus.CANDIDATE,
                 "why": "Local corpus has the surfaced candidate signal.",
                 "candidate_group_summary": [
                     {
@@ -844,7 +846,7 @@ def _build_no_backfill_source_plan(
             "display_name": "Offisielt fra statsråd",
             "priority": 1,
             "mode": "search",
-            "status": "next_official_source",
+            "plan_status": NOBackfillPlanStatus.NEXT_OFFICIAL_SOURCE,
             "why": "No local_corpus or statsrad candidate surfaced for this source.",
             "search_targets": [
                 "regjeringen.no/no/aktuelt/offisielt-fra-statsrad/",
@@ -856,7 +858,7 @@ def _build_no_backfill_source_plan(
             "display_name": "ministerial regulations / delegated commencement decisions",
             "priority": 2,
             "mode": "search",
-            "status": "next_official_source",
+            "plan_status": NOBackfillPlanStatus.NEXT_OFFICIAL_SOURCE,
             "why": "Some contingent provisions are resolved by ministerial or delegated publication channels.",
             "search_targets": [
                 "ministerial regulations",
@@ -868,7 +870,7 @@ def _build_no_backfill_source_plan(
             "display_name": "Lovdata Pro historical layers",
             "priority": 3,
             "mode": "search",
-            "status": "fallback_history",
+            "plan_status": NOBackfillPlanStatus.FALLBACK_HISTORY,
             "why": "Deeper historical layers may contain the missing commencement context.",
             "search_targets": [
                 "historical version / expression layer",
@@ -901,7 +903,7 @@ def _build_no_external_evidence_packets(
                 "display_name": str(plan_item.get("display_name", "")),
                 "priority": int(plan_item.get("priority", 0)),
                 "mode": str(plan_item.get("mode", "")),
-                "status": str(plan_item.get("status", "")),
+                "plan_status": str(plan_item.get("plan_status", "")),
                 "packet_note": str(plan_item.get("why", "")),
                 "search_targets": search_targets,
             }

@@ -14,6 +14,7 @@ changes.
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, replace
 from enum import Enum
 from typing import Optional, Sequence
@@ -351,6 +352,168 @@ def read_subsection_selection_meta(payload: IRNode | None) -> Optional[EESubsect
     return None
 
 
+# ---------------------------------------------------------------------------
+# EE-local payload-less-op carrier for repeal selection metadata.
+#
+# Every EE *repeal* op carries ``payload=None`` (un-overloaded from the legacy
+# ``IRNode(kind=CONTENT, text="", attrs={...})`` carrier).  The typed scope
+# selection metadata (and the R11 unparsed-clause diagnostic) now ride on an
+# EE-local serialized note inside ``op.provenance_tags`` — the same
+# payload-less-op carrier pattern UK uses in ``witness_sidecars.py``.  This is
+# strictly an EE convention; no ``core/ir.py`` shape changes.
+# ---------------------------------------------------------------------------
+
+EE_SELECTION_META_NOTE_PREFIX = "ee.selection_meta.v1:"
+EE_DIAGNOSTIC_CLAUSE_NOTE_PREFIX = "ee.diagnostic_clause.v1:"
+
+
+class EESelectionMetaCarrierError(ValueError):
+    """Raised on a malformed/unknown/duplicate EE serialized selection note."""
+
+
+def encode_ee_selection_meta_note(
+    meta: EESectionSelectionMeta | EESubsectionSelectionMeta,
+) -> str:
+    """Serialize a section/subsection selection meta into a provenance note."""
+    if isinstance(meta, EESectionSelectionMeta):
+        kind = "section"
+        data = {
+            "explicit_labels": list(meta.explicit_labels),
+            "plain_numeric_ranges": [list(r) for r in meta.plain_numeric_ranges],
+        }
+    elif isinstance(meta, EESubsectionSelectionMeta):
+        kind = "subsection"
+        data = {
+            "explicit_labels": list(meta.explicit_labels),
+            "plain_numeric_ranges": [list(r) for r in meta.plain_numeric_ranges],
+            "label_ranges": [list(r) for r in meta.label_ranges],
+        }
+    else:
+        raise EESelectionMetaCarrierError(
+            f"Cannot encode selection meta of type {type(meta).__name__!r}"
+        )
+    payload = {"kind": kind, "data": data}
+    return EE_SELECTION_META_NOTE_PREFIX + json.dumps(
+        payload, sort_keys=True, separators=(",", ":")
+    )
+
+
+def decode_ee_selection_meta_note(
+    note: str,
+) -> EESectionSelectionMeta | EESubsectionSelectionMeta:
+    """Rebuild a section/subsection selection meta from a provenance note."""
+    if not isinstance(note, str) or not note.startswith(EE_SELECTION_META_NOTE_PREFIX):
+        raise EESelectionMetaCarrierError(f"Not a selection-meta note: {note!r}")
+    raw = note[len(EE_SELECTION_META_NOTE_PREFIX):]
+    try:
+        payload = json.loads(raw)
+    except (ValueError, TypeError) as exc:
+        raise EESelectionMetaCarrierError(f"Malformed selection-meta JSON: {note!r}") from exc
+    if not isinstance(payload, dict):
+        raise EESelectionMetaCarrierError(f"Selection-meta payload not an object: {note!r}")
+    kind = payload.get("kind")
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        raise EESelectionMetaCarrierError(f"Selection-meta data not an object: {note!r}")
+    if kind == "section":
+        return make_section_selection_meta(
+            explicit_labels=data.get("explicit_labels", ()),
+            plain_numeric_ranges=data.get("plain_numeric_ranges", ()),
+        )
+    if kind == "subsection":
+        return make_subsection_selection_meta(
+            explicit_labels=data.get("explicit_labels", ()),
+            plain_numeric_ranges=data.get("plain_numeric_ranges", ()),
+            label_ranges=data.get("label_ranges", ()),
+        )
+    raise EESelectionMetaCarrierError(f"Unknown selection-meta kind {kind!r}: {note!r}")
+
+
+def _selection_meta_note(op: LegalOperation) -> Optional[str]:
+    """Return the single selection-meta note on an op, or None; raise if >1."""
+    notes = [
+        tag
+        for tag in op.provenance_tags
+        if isinstance(tag, str) and tag.startswith(EE_SELECTION_META_NOTE_PREFIX)
+    ]
+    if not notes:
+        return None
+    if len(notes) > 1:
+        raise EESelectionMetaCarrierError(
+            f"Multiple selection-meta notes on op {op.op_id!r}: {notes!r}"
+        )
+    return notes[0]
+
+
+def read_op_section_selection_meta(op: LegalOperation) -> Optional[EESectionSelectionMeta]:
+    """Read section selection meta off an op (note carrier first, payload fallback)."""
+    note = _selection_meta_note(op)
+    if note is not None:
+        meta = decode_ee_selection_meta_note(note)
+        if isinstance(meta, EESectionSelectionMeta):
+            return meta
+        return None
+    return read_section_selection_meta(op.payload)
+
+
+def read_op_subsection_selection_meta(op: LegalOperation) -> Optional[EESubsectionSelectionMeta]:
+    """Read subsection selection meta off an op (note carrier first, payload fallback)."""
+    note = _selection_meta_note(op)
+    if note is not None:
+        meta = decode_ee_selection_meta_note(note)
+        if isinstance(meta, EESubsectionSelectionMeta):
+            return meta
+        return None
+    return read_subsection_selection_meta(op.payload)
+
+
+@dataclass(frozen=True)
+class EEUnparsedClauseDiagnostic:
+    clause_text: str = ""
+    parser_action: str = ""
+
+
+def encode_ee_diagnostic_clause_note(diag: EEUnparsedClauseDiagnostic) -> str:
+    """Serialize an unparsed-clause diagnostic into a provenance note."""
+    payload = {
+        "clause_text": str(diag.clause_text or ""),
+        "parser_action": str(diag.parser_action or ""),
+    }
+    return EE_DIAGNOSTIC_CLAUSE_NOTE_PREFIX + json.dumps(
+        payload, sort_keys=True, separators=(",", ":")
+    )
+
+
+def read_ee_unparsed_clause_diagnostic(op: LegalOperation) -> Optional[EEUnparsedClauseDiagnostic]:
+    """Read the single unparsed-clause diagnostic note off an op, or None; raise if >1."""
+    notes = [
+        tag
+        for tag in op.provenance_tags
+        if isinstance(tag, str) and tag.startswith(EE_DIAGNOSTIC_CLAUSE_NOTE_PREFIX)
+    ]
+    if not notes:
+        return None
+    if len(notes) > 1:
+        raise EESelectionMetaCarrierError(
+            f"Multiple diagnostic-clause notes on op {op.op_id!r}: {notes!r}"
+        )
+    raw = notes[0][len(EE_DIAGNOSTIC_CLAUSE_NOTE_PREFIX):]
+    try:
+        payload = json.loads(raw)
+    except (ValueError, TypeError) as exc:
+        raise EESelectionMetaCarrierError(
+            f"Malformed diagnostic-clause JSON: {notes[0]!r}"
+        ) from exc
+    if not isinstance(payload, dict):
+        raise EESelectionMetaCarrierError(
+            f"Diagnostic-clause payload not an object: {notes[0]!r}"
+        )
+    return EEUnparsedClauseDiagnostic(
+        clause_text=str(payload.get("clause_text", "")),
+        parser_action=str(payload.get("parser_action", "")),
+    )
+
+
 def make_item_selection_meta(
     *,
     explicit_labels: Sequence[str],
@@ -484,8 +647,8 @@ def to_ee_parsed_instructions(
         text_rewrite = payload_meta.rewrite if op.action.value in ("text_replace", "text_repeal") else None
         rewrite_witness = payload_meta.rewrite_witness
         sentence_target_meta = read_sentence_target_meta(op.payload)
-        section_selection_meta = read_section_selection_meta(op.payload)
-        subsection_selection_meta = read_subsection_selection_meta(op.payload)
+        section_selection_meta = read_op_section_selection_meta(op)
+        subsection_selection_meta = read_op_subsection_selection_meta(op)
         item_selection_meta = read_item_selection_meta(op.payload)
         subsection_text_scope_meta = read_subsection_text_scope_meta(op.payload)
         instructions.append(
@@ -539,9 +702,16 @@ __all__ = [
     "EESectionSelectionMeta",
     "EESubsectionSelectionMeta",
     "EESentenceTargetMeta",
+    "EESelectionMetaCarrierError",
+    "EEUnparsedClauseDiagnostic",
     "EETextRewrite",
     "EETextRewriteWitness",
     "EETextReplaceMode",
+    "EE_SELECTION_META_NOTE_PREFIX",
+    "EE_DIAGNOSTIC_CLAUSE_NOTE_PREFIX",
+    "encode_ee_selection_meta_note",
+    "decode_ee_selection_meta_note",
+    "encode_ee_diagnostic_clause_note",
     "make_item_selection_meta",
     "make_section_selection_meta",
     "make_subsection_selection_meta",
@@ -549,6 +719,9 @@ __all__ = [
     "make_sentence_target_meta",
     "make_text_rewrite_witness",
     "read_item_selection_meta",
+    "read_op_section_selection_meta",
+    "read_op_subsection_selection_meta",
+    "read_ee_unparsed_clause_diagnostic",
     "read_payload_rewrite_meta",
     "read_section_selection_meta",
     "read_subsection_selection_meta",

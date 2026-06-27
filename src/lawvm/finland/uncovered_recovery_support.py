@@ -13,6 +13,7 @@ from lawvm.core.payload_surface import TargetUnitKind
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.body_pairing import should_use_body_section
 from lawvm.finland.helpers import _norm_num_token
+from lawvm.finland.op_provenance import RecognizerId
 from lawvm.finland.ops import AmendmentOp, OpType, ResolvedOp
 from lawvm.finland.target_selector_facades import fi_section_target
 from lawvm.finland.uncovered_recovery_state import (
@@ -192,7 +193,9 @@ def build_uncovered_rop(
         ),
         source_statute=amendment_id,
         move_clause_target_unit_kind=draft.move_clause_target_unit_kind,
-        uncovered_body_recovery=True,
+        # M2: stamp the recognizer directly (replaces the deleted
+        # ``uncovered_body_recovery`` boolean).
+        _stamped_recognizers=frozenset({RecognizerId.UNCOVERED_BODY}),
         witness_rule_id=FI_RECOVERY_UNCOVERED_BODY_RULE_ID,
     )
     return ResolvedOp.from_amendment_op(

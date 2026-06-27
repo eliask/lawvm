@@ -27,6 +27,7 @@ are the authoritative model.
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal, cast
 
@@ -44,6 +45,32 @@ BOUNDARY_VIOLATION_BLOCKERS = (
     "REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET",
 )
 MISSING_EFFECTIVE_DATE_BLOCKER = "TIME.MISSING_EFFECTIVE_DATE"
+
+
+def _row_extraction_provenance_tags(row: Any) -> set[str]:
+    """Return a compiled-op row's extraction-bag provenance tag strings.
+
+    The serialized schema carries a single typed ``provenance`` field instead of
+    the legacy raw provenance-tag bags; the per-bag tag views are derived (by the
+    FI codec at serialize time) under ``provenance["bags"]``. This reader stays in
+    ``core`` (no jurisdiction import) by reading the pre-derived extraction-bag
+    view directly — membership against those strings is the section-completeness
+    extraction-fallback signal (replacing the old ``extraction_provenance_tags``
+    column read).
+    """
+    if not isinstance(row, Mapping):
+        return set()
+    provenance = row.get("provenance")
+    if not isinstance(provenance, Mapping):
+        return set()
+    bags = provenance.get("bags")
+    if not isinstance(bags, Mapping):
+        return set()
+    view = bags.get("extraction_provenance_tags")
+    if not isinstance(view, (list, tuple)):
+        return set()
+    return {str(part).strip() for part in view if str(part).strip()}
+
 
 CompletenessBlockerKind = Literal[
     "APPLY.SOURCE_INCOMPLETE",
@@ -286,10 +313,7 @@ def compute_chain_completeness(
     }
     extraction_fallback_by_section: dict[str, list[str]] = {}
     for cop in compiled_ops:
-        extraction_tags = cop.get("extraction_provenance_tags")
-        tags: set[str] = set()
-        if isinstance(extraction_tags, list):
-            tags.update(str(part).strip() for part in extraction_tags if str(part).strip())
+        tags = _row_extraction_provenance_tags(cop)
         if tags & extraction_fallback_tags:
             src = str(cop.get("source_statute") or "unknown")
             for ts in _matching_sections_for_row(row=cop, section_labels=section_labels):

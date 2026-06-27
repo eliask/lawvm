@@ -31,7 +31,11 @@ from lawvm.finland.ops import (
     ResolvedOp,
     projection_scope_confidence,
 )
-from lawvm.finland.op_provenance import RecognizerId, has_recognizer
+from lawvm.finland.op_provenance import (
+    RecognizerId,
+    has_recognizer,
+    serialize_provenance,
+)
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.apply_ir_ops import _relabel_section_ir
 from lawvm.finland.target_selector_facades import replace_target
@@ -472,9 +476,11 @@ def append_compiled_group_ops(
             "action": rop.resolved_action_type.lower(),
             "source_statute": rop.resolved_source_statute,
             "source_title": rop.resolved_source_title or None,
-            "extraction_provenance_tags": list(rop.extraction_provenance_tags),
-            "target_guessing_provenance_tags": list(rop.target_guessing_provenance_tags),
-            "scope_provenance_tags": list(rop.scope_provenance_tags),
+            # Typed op-provenance is now the canonical serialized schema. The three
+            # raw bag columns (extraction/target_guessing/scope provenance tags)
+            # are no longer stored; a reader reconstructs any per-bag tag view from
+            # this field via op_provenance.serialized_bag_tags.
+            "provenance": serialize_provenance(rop.provenance),
             "witness_rule_id": rop.witness_rule_id,
             **asdict(target_scope),
         }

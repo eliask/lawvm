@@ -880,6 +880,136 @@ def test_payload_normalize_item_like_target_preserves_labelled_sparse_insert_sub
     assert got.target_guessing_provenance_tags == ()
 
 
+def test_payload_normalize_item_like_target_preserves_unlabelled_insert_subsection_without_item_evidence() -> None:
+    live_sec = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="44",
+        children=(
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(
+                    IRNode(kind=IRNodeKind.INTRO, text="Vanhan momentin johdanto."),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="1"),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="2"),
+                ),
+            ),
+        ),
+    )
+    ctx = _mock_ctx("section", "44", live_node=live_sec)
+    op = AmendmentOp(
+        op_type=OpType.INSERT,
+        target_kind=TargetKind.SECTION,
+        target_section="44",
+        target_paragraph=2,
+        source_statute="2004/1401",
+        lo=LegalOperation(
+            op_id="t44",
+            sequence=0,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("section", "44"), ("subsection", "2"))),
+        ),
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="44",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="44 §"),
+            IRNode(kind=IRNodeKind.HEADING, text="Valtiosihteerin tehtävät"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                children=(
+                    IRNode(kind=IRNodeKind.INTRO, text="Uuden momentin johdanto."),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="1", text="ensimmäinen kohta"),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="2", text="toinen kohta"),
+                ),
+            ),
+        ),
+    )
+
+    got = _normalize_item_like_target(ctx, op, muutos_ir)
+
+    assert got.lo is not None
+    assert dict(got.lo.target.path) == {"section": "44", "subsection": "2"}
+    assert got.target_guessing_provenance_tags == ()
+
+
+def test_elaborate_payload_against_live_preserves_mixed_insert_subsection_without_item_evidence() -> None:
+    live_sec = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="44",
+        children=(
+            IRNode(kind=IRNodeKind.HEADING, text="Pääministerin valtiosihteerin tehtävät"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(
+                    IRNode(kind=IRNodeKind.INTRO, text="Pääministerin toimikaudeksi nimitetyn valtiosihteerin tehtävänä on:"),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="1"),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="2"),
+                ),
+            ),
+        ),
+    )
+    ctx = _mock_ctx("section", "44", live_node=live_sec)
+    replace_heading = AmendmentOp(
+        op_type=OpType.REPLACE,
+        target_kind=TargetKind.SECTION,
+        target_section="44",
+        target_special="otsikko",
+    )
+    replace_subsection_1 = AmendmentOp(
+        op_type=OpType.REPLACE,
+        target_kind=TargetKind.SECTION,
+        target_section="44",
+        target_paragraph=1,
+    )
+    insert_subsection_2 = AmendmentOp(
+        op_type=OpType.INSERT,
+        target_kind=TargetKind.SECTION,
+        target_section="44",
+        target_paragraph=2,
+        source_statute="2004/1401",
+        lo=LegalOperation(
+            op_id="t44-2",
+            sequence=0,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("section", "44"), ("subsection", "2"))),
+        ),
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="44",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="44 §"),
+            IRNode(kind=IRNodeKind.HEADING, text="Valtiosihteerin tehtävät"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                children=(
+                    IRNode(kind=IRNodeKind.INTRO, text="Ministerin toimikaudeksi nimitetyn valtiosihteerin tehtävänä on:"),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="1", text="edistää hallitusohjelman toteuttamista"),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="2", text="ohjata asioiden valmistelua"),
+                ),
+            ),
+        ),
+    )
+
+    got = elaborate_payload_against_live(
+        ctx,
+        [replace_subsection_1, replace_heading, insert_subsection_2],
+        muutos_ir,
+        set(),
+    )
+
+    surviving_targets = {
+        (op.op_type, op.target_cols.target_paragraph, op.target_cols.target_item, op.target_cols.target_special)
+        for op in got.group_ops
+    }
+    assert ("INSERT", 2, None, None) in surviving_targets
+    assert not any(failed.description == "INSERT 44 § 1 mom 2 kohta" for failed in got.rejected_ops)
+    assert "ELAB.NORMALIZE_ITEM_LIKE_TARGET" not in [obs.kind for obs in _observations(got)]
+
+
 def test_payload_normalize_item_like_target_keeps_real_subsection_when_group_has_item_ops() -> None:
     live_sec = IRNode(
         kind=IRNodeKind.SECTION,

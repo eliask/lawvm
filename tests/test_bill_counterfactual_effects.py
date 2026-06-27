@@ -112,7 +112,7 @@ def _binding(term: str, *, offset: int) -> DefinedTermBinding:
         scope="statute",
         source_span=SourceSpan("fi", offset, len(term)),
         binding_kind=BINDING_TARKOITETAAN,
-        status=STATUS_OK,
+        binding_status=STATUS_OK,
     )
 
 
@@ -123,7 +123,7 @@ def _use(surface: str, lemma: str, binding: DefinedTermBinding, *, offset: int) 
         lemma=lemma,
         binding=binding,
         source_span=SourceSpan("fi", offset, len(surface)),
-        status=STATUS_RESOLVED,
+        use_status=STATUS_RESOLVED,
         rule_id=RULE_MORPH,
         bindings=(binding,),
     )

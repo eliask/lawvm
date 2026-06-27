@@ -20,7 +20,7 @@ def test_temporal_resolution_evidence_projects_diagnostic_detail() -> None:
         rule_id="test_temporal_source_override",
         phase="lowering",
         reason="source metadata supplied the missing date",
-        status=TEMPORAL_SOURCE_BACKED_OVERRIDE,
+        temporal_evidence_status=TEMPORAL_SOURCE_BACKED_OVERRIDE,
         effective_date="2025-01-02",
         source_locator="source://instrument",
         authority_layer="SOURCE_METADATA",
@@ -49,7 +49,7 @@ def test_temporal_resolution_evidence_blocks_strict_when_blocking() -> None:
         rule_id="test_temporal_future",
         phase="temporal",
         reason="date is after the point in time",
-        status=TEMPORAL_FUTURE_EFFECTIVE_DATE,
+        temporal_evidence_status=TEMPORAL_FUTURE_EFFECTIVE_DATE,
         effective_date="2025-03-01",
         as_of="2025-02-01",
         blocking=True,
@@ -66,7 +66,7 @@ def test_temporal_resolution_evidence_projects_certified_untriggered_status() ->
         rule_id="test_temporal_certified_untriggered",
         phase="temporal",
         reason="coverage proves no trigger as of the query horizon",
-        status=TEMPORAL_CERTIFIED_UNTRIGGERED,
+        temporal_evidence_status=TEMPORAL_CERTIFIED_UNTRIGGERED,
         as_of="2026-04-07",
         source_locator="coverage://commencement-instruments",
     ).to_diagnostic_detail()
@@ -82,7 +82,7 @@ def test_temporal_resolution_evidence_rejects_reserved_detail_keys() -> None:
             rule_id="test_temporal_bad",
             phase="temporal",
             reason="bad detail",
-            status=TEMPORAL_SOURCE_BACKED_OVERRIDE,
+            temporal_evidence_status=TEMPORAL_SOURCE_BACKED_OVERRIDE,
             effective_date="2025-01-02",
             detail={"effective_date": "2025-01-03"},
         )
@@ -94,7 +94,7 @@ def test_temporal_resolution_evidence_requires_dates_for_date_statuses() -> None
             rule_id="test_temporal_bad",
             phase="temporal",
             reason="bad detail",
-            status=TEMPORAL_FUTURE_EFFECTIVE_DATE,
+            temporal_evidence_status=TEMPORAL_FUTURE_EFFECTIVE_DATE,
         )
 
 
@@ -104,7 +104,7 @@ def test_temporal_resolution_evidence_rejects_unknown_status() -> None:
             rule_id="test_temporal_bad",
             phase="temporal",
             reason="bad status",
-            status=cast(TemporalResolutionStatus, "dateish"),
+            temporal_evidence_status=cast(TemporalResolutionStatus, "dateish"),
         )
 
 
@@ -114,7 +114,7 @@ def test_temporal_resolution_evidence_rejects_unknown_family() -> None:
             rule_id="test_temporal_bad",
             phase="temporal",
             reason="bad family",
-            status=TEMPORAL_SOURCE_BACKED_OVERRIDE,
+            temporal_evidence_status=TEMPORAL_SOURCE_BACKED_OVERRIDE,
             effective_date="2025-01-02",
             family="commencement",
         )
@@ -126,7 +126,7 @@ def test_certified_untriggered_requires_authority_or_coverage_witness() -> None:
             rule_id="test_temporal_bad",
             phase="temporal",
             reason="unwitnessed non-trigger claim",
-            status=TEMPORAL_CERTIFIED_UNTRIGGERED,
+            temporal_evidence_status=TEMPORAL_CERTIFIED_UNTRIGGERED,
             as_of="2026-04-07",
         )
 
@@ -134,7 +134,7 @@ def test_certified_untriggered_requires_authority_or_coverage_witness() -> None:
         rule_id="test_temporal_coverage",
         phase="temporal",
         reason="coverage certificate proves no trigger",
-        status=TEMPORAL_CERTIFIED_UNTRIGGERED,
+        temporal_evidence_status=TEMPORAL_CERTIFIED_UNTRIGGERED,
         as_of="2026-04-07",
         detail={"trigger_coverage": "coverage://2026-04-07"},
     ).to_diagnostic_detail()
@@ -148,7 +148,7 @@ def test_temporal_resolution_evidence_freezes_detail_payload() -> None:
         rule_id="test_temporal_coverage",
         phase="temporal",
         reason="coverage certificate proves no trigger",
-        status=TEMPORAL_CERTIFIED_UNTRIGGERED,
+        temporal_evidence_status=TEMPORAL_CERTIFIED_UNTRIGGERED,
         as_of="2026-04-07",
         detail=mutable_detail,
     )
@@ -170,6 +170,6 @@ def test_temporal_resolution_evidence_rejects_malformed_detail() -> None:
             rule_id="test_temporal_bad",
             phase="temporal",
             reason="bad detail",
-            status=TEMPORAL_CERTIFIED_UNTRIGGERED,
+            temporal_evidence_status=TEMPORAL_CERTIFIED_UNTRIGGERED,
             detail=cast(Any, []),
         )

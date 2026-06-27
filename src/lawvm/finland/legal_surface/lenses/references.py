@@ -517,7 +517,7 @@ class ReferenceLens:
             "surface_text": mention.surface_text,
         }
         if resolved is not None:
-            payload["resolution_status"] = resolved.status.value
+            payload["resolution_status"] = resolved.resolution_status.value
             payload["work_id"] = resolved.work_id
             payload["candidates"] = list(resolved.candidates)
         return SurfaceNodeSeed(
@@ -542,7 +542,7 @@ class ReferenceLens:
         residuals: list[SurfaceResidualSeed],
     ) -> _EndpointCounts:
         """Emit the resolution's endpoint per §D5 (resolved/ambiguous/open)."""
-        status = resolved.status
+        status = resolved.resolution_status
 
         if status in (ResolutionStatus.RESOLVED, ResolutionStatus.UNCHANGED):
             work_id = resolved.work_id
