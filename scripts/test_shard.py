@@ -822,6 +822,10 @@ SHARD_GROUPS: dict[str, tuple[str, ...]] = {
 }
 
 SOURCE_SHARD_PREFIXES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        "data/finland/corrigendum_manual.yaml",
+        ("finland_replay_products_core", "finland_replay_rules"),
+    ),
     ("src/lawvm/contracts.py", ("core",)),
     ("src/lawvm/graph_build.py", ("core", "tools")),
     ("src/lawvm/semantic/", ("core", "finland", "tools")),
