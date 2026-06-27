@@ -326,6 +326,7 @@
   "unresolved_owner_residual": [
     "audit",
     "effect_lowering",
+    "execution_authorization",
     "extract_legal_ops_from_parse_result",
     "fallback",
     "fi_schedule_window_totality",

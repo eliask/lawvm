@@ -3993,6 +3993,18 @@ NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
         "drill through the production lane once the wire lands",
         "2026-06-27",
     ),
+    # D11 EVID.AUTHORITY_SOURCE_EXCLUDES_OBSERVATION_KINDS (audit_impl_D11): the
+    # audit module is landed in ``core.execution_authorization``; the wire into
+    # ``aggregate_replay_authority`` (FI) + ``uk_amendment_replay.authority_mode``
+    # (UK) is staged as a follow-up commit (parallel to D7/D8 discipline).
+    # Until the wire, the strict-block code is unreachable from production;
+    # declared honestly here per AGENTS §2.9. Drill through the production
+    # apply-authority lane once the wire lands.
+    "EVID.OBSERVATION_PROMOTED_TO_AUTHORITY": (
+        "audit module landed; wire into aggregate_replay_authority/uk amendment "
+        "replay authority_mode staged as follow-up; drill through production once wired",
+        "2026-06-27",
+    ),
 }
 
 # Committed monotone-decreasing debt ceiling for NO_FIRE_DRILL_YET. The allowlist

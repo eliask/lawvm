@@ -1599,6 +1599,18 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "an overlay-tagged IRNode carries replay_authorized=True but has no typed "
                 "ExecutionAuthorization promotion event with rule_id and witness (AGENTS.md §2.10)",
                 ("safety_invariant", "provenance"), role="obligation"),
+    # D11 EVID.AUTHORITY_SOURCE_EXCLUDES_OBSERVATION_KINDS (audit_impl_D11): the
+    # evidence plane may explain authority but never become it (AGENTS.md §2.10).
+    # An observation-role finding kind appearing in the apply-path authority
+    # source set voids the ExecutionAuthorization — a breach of the evidence->
+    # authority firewall, not a soft mismatch. hard_fail: strict mode aborts the
+    # apply pass; quirks emits the finding non-blocking and proceeds (over-
+    # retention-safe direction per §0).
+    FindingSpec("EVID.OBSERVATION_PROMOTED_TO_AUTHORITY", "apply_authority_audit",
+                "violation", "hard_fail", "execution_authorization",
+                "apply-path authority source set contained a finding whose registry role is "
+                "'observation', breaching the §2.10 evidence->authority firewall",
+                ("safety_invariant", "strictness"), role="violation"),
     # D7 / LS-23 COMMENCEMENT.EFFECT_TOTALITY (audit_impl_D7): every LegalOperation
     # reaching compile-timelines is temporally authorized — a commence/revive
     # TemporalEvent matches via group_id + scope, OR the op carries an explicit
