@@ -75,12 +75,14 @@ if TYPE_CHECKING:
 # notes/NORWAY_LAWVM_STATUS.md §"Limits"). These are *not* replay failures: the
 # algorithm did not crash, but the source/effect data is incomplete to the point
 # of no comparable truth. SOURCE_UNAVAILABLE, not CRASH.
-_NO_BENCH_SOURCE_UNAVAILABLE_STATUSES: frozenset[str] = frozenset(
-    {
-        "blocked_contingent",  # royal-decree commencement unknown
-        "blocked_missing_source",  # base text not archived
-        "blocked_unknown",  # effective-status flag not in {dated, immediate, override}
-    }
+#
+# Single source of truth after the §1.9 NOReplayStatus closure: the typed
+# ``NO_BENCH_SOURCE_UNAVAILABLE_STATUSES`` frozenset in
+# ``lawvm.norway.sources`` owns it (verify.py + inventory.py + commencement.py
+# + no_bench.py all read the same set). Previously held a parallel raw-string
+# frozenset here that escaped the StrEnum closure.
+from lawvm.norway.sources import (
+    NO_BENCH_SOURCE_UNAVAILABLE_STATUSES as _NO_BENCH_SOURCE_UNAVAILABLE_STATUSES,
 )
 
 
