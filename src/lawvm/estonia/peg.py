@@ -3987,6 +3987,208 @@ def _set_appendix_table_payload_attrs(
 
 
 # ---------------------------------------------------------------------------
+# Op construction waist
+# ---------------------------------------------------------------------------
+
+def _mint_ee_op(
+    action: str,
+    *,
+    op_id: str,
+    sequence: int,
+    target: LegalAddress,
+    payload: Optional[IRNode] = None,
+    destination: Optional[LegalAddress] = None,
+    source: Optional[OperationSource] = None,
+    provenance_tags: Tuple[str, ...] = (),
+    text_patch: Optional[TextPatchSpec] = None,
+    witness_rule_id: Optional[str] = None,
+) -> LegalOperation:
+    """Single construction point for Estonian LegalOperations.
+
+    Centralizes the ``action`` string → :class:`StructuralAction` lowering so
+    every Estonian op flows through one place. The forwarded fields are exactly
+    the LegalOperation carriers the Estonian frontend populates (anchor /
+    applicability / group_id / scope_confidence / move_clause_target_unit_kind
+    are never set here); this is a thin, behavior-preserving wrapper.
+    """
+    return LegalOperation(
+        op_id=op_id,
+        sequence=sequence,
+        action=_to_structural_action(action),
+        target=target,
+        payload=payload,
+        destination=destination,
+        source=source,
+        provenance_tags=provenance_tags,
+        text_patch=text_patch,
+        witness_rule_id=witness_rule_id,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Early-exit classification handlers
+#
+# Each handler inspects one cohesive clause shape and either returns a fully
+# minted op list (it owns the clause) or ``None`` (fall through to the next
+# handler / the main dispatcher body). Handlers are pure code-motion out of
+# extract_ee_ops and must not change behavior.
+# ---------------------------------------------------------------------------
+
+def _handle_ee_chapter_heading_insert_after_section(
+    clean: str,
+    source: OperationSource,
+    seq: int,
+) -> Optional[List[LegalOperation]]:
+    """``seadust täiendatakse pärast § N peatüki pealkirjaga ...``"""
+    m_chapter_heading_after_section = re.search(
+        r'\b(?:seadust|seadustikku|määrust)\s+täiendatakse\s+pärast\s+§\s*'
+        r'(?P<anchor>\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+'
+        r'peatüki\s+pealkirjaga\s+'
+        r'(?:järgmises\s+sõnastuses|järgmiselt)\s*:',
+        clean,
+        re.IGNORECASE,
+    )
+    if m_chapter_heading_after_section is None:
+        return None
+    content = _extract_quoted_content(clean) or ""
+    chapter_match = re.match(
+        r'\s*(?P<label>\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰_]*)[.]\s*peatükk\b',
+        content,
+        re.IGNORECASE,
+    )
+    if chapter_match is None:
+        return None
+    chapter_label = _normalize_num(chapter_match.group("label"))
+    anchor_label = _normalize_num(m_chapter_heading_after_section.group("anchor"))
+    payload = IRNode(
+        kind=IRNodeKind.CONTENT,
+        text=content,
+        attrs={
+            "insert_after_section": anchor_label,
+            "rule_id": "ee_chapter_heading_insert_after_section",
+        },
+    )
+    return [
+        _mint_ee_op(
+            "insert",
+            op_id=f"ee-insert-chapter-heading-after-section-{chapter_label}-{source.statute_id}",
+            sequence=seq,
+            target=LegalAddress(path=(("chapter", chapter_label),)),
+            payload=payload,
+            source=source,
+            provenance_tags=(clean[:200], "ee_chapter_heading_insert_after_section"),
+            witness_rule_id="ee_chapter_heading_insert_after_section",
+        )
+    ]
+
+
+def _handle_ee_chapter_level_replace(
+    clean: str,
+    source: OperationSource,
+    seq: int,
+    ops: List[LegalOperation],
+) -> Optional[List[LegalOperation]]:
+    """``seaduse N. peatükk muudetakse ja sõnastatakse järgmiselt: ...``"""
+    _NUM_CH = r'\d+(?:\s+\d+)?'
+    m_ch_replace = re.search(
+        r'\b(?:seaduse\s+)?(' + _NUM_CH + r')\s*[.]\s*peatükk\w*'
+        r'\s+(?:muudetakse(?:\s+ja\s+sõnastatakse\s+järgmises\s+sõnastuses)?|sõnastatakse)'
+        r'(?:\s+järgmises\s+sõnastuses|\s+järgmiselt)?',
+        clean,
+        re.IGNORECASE,
+    )
+    if not m_ch_replace:
+        return None
+    content = _extract_quoted_content(clean)
+    if not content:
+        return None
+    ch_label = _normalize_num(m_ch_replace.group(1).strip())
+    ops.append(_mint_ee_op(
+        "replace",
+        op_id=f"ee-replace-chapter-{ch_label}-{source.statute_id}",
+        sequence=seq,
+        target=LegalAddress(path=(("chapter", ch_label),)),
+        payload=IRNode(kind=IRNodeKind.CONTENT, text=content),
+        source=source,
+        provenance_tags=(clean[:200],),
+    ))
+    return ops
+
+
+def _handle_ee_division_level_replace(
+    clean: str,
+    source: OperationSource,
+    seq: int,
+    ops: List[LegalOperation],
+) -> Optional[List[LegalOperation]]:
+    """``seaduse N. peatüki M. jagu muudetakse ja sõnastatakse järgmiselt: ...``
+
+    Returns ``ops`` whenever the division-replace shape matches even if the
+    quoted replacement content is absent (the original swallowed the clause in
+    that case); only a no-match falls through.
+    """
+    _NUM_DIV = r'\d+(?:\s+\d+)?'
+    m_div_replace = re.search(
+        r'\b(?:seaduse\s+)?(' + _NUM_DIV + r')\s*[.]\s*peatüki\s+(' + _NUM_DIV + r')\s*[.]\s*jagu\w*'
+        r'\s+muudetakse(?:\s+ja\s+sõnastatakse\s+järgmises\s+sõnastuses)?(?:\s+järgmises\s+sõnastuses|\s+järgmiselt)?',
+        clean,
+        re.IGNORECASE,
+    )
+    if not m_div_replace:
+        return None
+    content = _extract_quoted_content(clean)
+    if content:
+        ch_label = _normalize_num(m_div_replace.group(1).strip())
+        div_label = _normalize_num(m_div_replace.group(2).strip())
+        ops.append(_mint_ee_op(
+            "replace",
+            op_id=f"ee-replace-division-{ch_label}-{div_label}-{source.statute_id}",
+            sequence=seq,
+            target=LegalAddress(path=(("chapter", ch_label), ("division", div_label))),
+            payload=IRNode(kind=IRNodeKind.CONTENT, text=content),
+            source=source,
+            provenance_tags=(clean[:200],),
+        ))
+    return ops
+
+
+def _handle_ee_lahter_text_replace(
+    clean: str,
+    source: OperationSource,
+    seq: int,
+    ops: List[LegalOperation],
+) -> Optional[List[LegalOperation]]:
+    """``paragrahvi N lahtri M tekst sõnastatakse järgmiselt: ...`` (field text)."""
+    m_lahter_text = re.search(
+        r'\bparagrahvi\s+(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+'
+        r'lahtri\s+(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+tekst\s+sõnastatakse',
+        clean,
+        re.IGNORECASE,
+    )
+    content = _extract_quoted_content(clean)
+    if m_lahter_text is None or not content:
+        return None
+    rule_id = "ee_lahter_text_replace"
+    section_label = _normalize_num(m_lahter_text.group(1))
+    field_label = _normalize_num(m_lahter_text.group(2))
+    ops.append(_mint_ee_op(
+        "replace",
+        op_id=f"ee-lahter-text-replace-{section_label}-{field_label}-{source.statute_id}",
+        sequence=seq,
+        target=LegalAddress(path=(("section", section_label),)),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text=content,
+            attrs={"ee_replace_lahter_text": field_label, "source_family": rule_id},
+        ),
+        source=source,
+        provenance_tags=(clean[:200], rule_id),
+        witness_rule_id=rule_id,
+    ))
+    return ops
+
+
+# ---------------------------------------------------------------------------
 # Main extraction function
 # ---------------------------------------------------------------------------
 
@@ -4370,44 +4572,9 @@ def extract_ee_ops(
         return ops
 
     if action == "insert":
-        m_chapter_heading_after_section = re.search(
-            r'\b(?:seadust|seadustikku|määrust)\s+täiendatakse\s+pärast\s+§\s*'
-            r'(?P<anchor>\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+'
-            r'peatüki\s+pealkirjaga\s+'
-            r'(?:järgmises\s+sõnastuses|järgmiselt)\s*:',
-            clean,
-            re.IGNORECASE,
-        )
-        if m_chapter_heading_after_section is not None:
-            content = _extract_quoted_content(clean) or ""
-            chapter_match = re.match(
-                r'\s*(?P<label>\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰_]*)[.]\s*peatükk\b',
-                content,
-                re.IGNORECASE,
-            )
-            if chapter_match is not None:
-                chapter_label = _normalize_num(chapter_match.group("label"))
-                anchor_label = _normalize_num(m_chapter_heading_after_section.group("anchor"))
-                payload = IRNode(
-                    kind=IRNodeKind.CONTENT,
-                    text=content,
-                    attrs={
-                        "insert_after_section": anchor_label,
-                        "rule_id": "ee_chapter_heading_insert_after_section",
-                    },
-                )
-                return [
-                    LegalOperation(
-                        op_id=f"ee-insert-chapter-heading-after-section-{chapter_label}-{source.statute_id}",
-                        sequence=seq,
-                        action=_to_structural_action("insert"),
-                        target=LegalAddress(path=(("chapter", chapter_label),)),
-                        payload=payload,
-                        source=source,
-                        provenance_tags=(clean[:200], "ee_chapter_heading_insert_after_section"),
-                        witness_rule_id="ee_chapter_heading_insert_after_section",
-                    )
-                ]
+        _handled = _handle_ee_chapter_heading_insert_after_section(clean, source, seq)
+        if _handled is not None:
+            return _handled
 
     # Division-level repeal: "seaduse N. peatüki M. jagu tunnistatakse kehtetuks"
     # RT often renders these as surviving division headings plus boundary stubs,
@@ -4454,86 +4621,25 @@ def extract_ee_ops(
     # Chapter-level replace: "seaduse N. peatükk muudetakse ja sõnastatakse
     # järgmiselt: „N. peatükk ... § K ...”".
     if action == "replace":
-        _NUM_CH = r'\d+(?:\s+\d+)?'
-        m_ch_replace = re.search(
-            r'\b(?:seaduse\s+)?(' + _NUM_CH + r')\s*[.]\s*peatükk\w*'
-            r'\s+(?:muudetakse(?:\s+ja\s+sõnastatakse\s+järgmises\s+sõnastuses)?|sõnastatakse)'
-            r'(?:\s+järgmises\s+sõnastuses|\s+järgmiselt)?',
-            clean,
-            re.IGNORECASE,
-        )
-        if m_ch_replace:
-            content = _extract_quoted_content(clean)
-            if content:
-                ch_label = _normalize_num(m_ch_replace.group(1).strip())
-                ops.append(LegalOperation(
-                    op_id=f"ee-replace-chapter-{ch_label}-{source.statute_id}",
-                    sequence=seq,
-                    action=_to_structural_action("replace"),
-                    target=LegalAddress(path=(("chapter", ch_label),)),
-                    payload=IRNode(kind=IRNodeKind.CONTENT, text=content),
-                    source=source,
-                    provenance_tags=(clean[:200],),
-                ))
-                return ops
+        _handled = _handle_ee_chapter_level_replace(clean, source, seq, ops)
+        if _handled is not None:
+            return _handled
 
     # Division-level replace: "seaduse N. peatüki M. jagu muudetakse ja
     # sõnastatakse järgmiselt: „M. jagu Title § K ..."
     if action == "replace":
-        _NUM_DIV = r'\d+(?:\s+\d+)?'
-        m_div_replace = re.search(
-            r'\b(?:seaduse\s+)?(' + _NUM_DIV + r')\s*[.]\s*peatüki\s+(' + _NUM_DIV + r')\s*[.]\s*jagu\w*'
-            r'\s+muudetakse(?:\s+ja\s+sõnastatakse\s+järgmises\s+sõnastuses)?(?:\s+järgmises\s+sõnastuses|\s+järgmiselt)?',
-            clean,
-            re.IGNORECASE,
-        )
-        if m_div_replace:
-            content = _extract_quoted_content(clean)
-            if content:
-                ch_label = _normalize_num(m_div_replace.group(1).strip())
-                div_label = _normalize_num(m_div_replace.group(2).strip())
-                ops.append(LegalOperation(
-                    op_id=f"ee-replace-division-{ch_label}-{div_label}-{source.statute_id}",
-                    sequence=seq,
-                    action=_to_structural_action("replace"),
-                    target=LegalAddress(path=(("chapter", ch_label), ("division", div_label))),
-                    payload=IRNode(kind=IRNodeKind.CONTENT, text=content),
-                    source=source,
-                    provenance_tags=(clean[:200],),
-                ))
-            return ops
+        _handled = _handle_ee_division_level_replace(clean, source, seq, ops)
+        if _handled is not None:
+            return _handled
 
     # Field-text replacement in flattened declaration guidance:
     # "paragrahvi N lahtri M tekst sõnastatakse järgmiselt".
     # The XML/parser exposes these fields as section children headed by
     # "Lahter M ..."; this is not a whole-section replacement.
     if action == "replace":
-        m_lahter_text = re.search(
-            r'\bparagrahvi\s+(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+'
-            r'lahtri\s+(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+tekst\s+sõnastatakse',
-            clean,
-            re.IGNORECASE,
-        )
-        content = _extract_quoted_content(clean)
-        if m_lahter_text is not None and content:
-            rule_id = "ee_lahter_text_replace"
-            section_label = _normalize_num(m_lahter_text.group(1))
-            field_label = _normalize_num(m_lahter_text.group(2))
-            ops.append(LegalOperation(
-                op_id=f"ee-lahter-text-replace-{section_label}-{field_label}-{source.statute_id}",
-                sequence=seq,
-                action=_to_structural_action("replace"),
-                target=LegalAddress(path=(("section", section_label),)),
-                payload=IRNode(
-                    kind=IRNodeKind.CONTENT,
-                    text=content,
-                    attrs={"ee_replace_lahter_text": field_label, "source_family": rule_id},
-                ),
-                source=source,
-                provenance_tags=(clean[:200], rule_id),
-                witness_rule_id=rule_id,
-            ))
-            return ops
+        _handled = _handle_ee_lahter_text_replace(clean, source, seq, ops)
+        if _handled is not None:
+            return _handled
 
     # Chapter-level repeal: "seaduse N. [ja M.] peatükk tunnistatakse kehtetuks"
     # Also: "N. ja M. peatükk tunnistatakse kehtetuks" (no "seaduse" prefix)
