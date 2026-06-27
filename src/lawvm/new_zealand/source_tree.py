@@ -125,6 +125,14 @@ class NZHistoryWitness:
     # ``amended-provision`` reference and the operation. Empty for ordinary
     # (non-definition) targets.
     defined_term: str = ""
+    # Stable rule_id of any legacy history-note recovery that sourced this
+    # witness's operation verb (empty when the verb came from the canonical
+    # ``<amending-operation>`` element). Emitted downstream as an ag(
+    # non-blocking evidence finding per AGENTS §2.1 (a heuristic that
+    # affects op-family classification needs: stable rule_id, family tag,
+    # source witness, finding emission, strict-mode behavior, synthetic
+    # test, real-corpus regression).
+    recovery_rule_id: str = ""
 
     def to_jsonable(self) -> dict[str, Any]:
         return {
@@ -140,6 +148,7 @@ class NZHistoryWitness:
             "amending_legislation": self.amending_legislation,
             "amending_work_id": self.amending_work_id,
             "defined_term": self.defined_term,
+            "recovery_rule_id": self.recovery_rule_id,
         }
 
 
@@ -418,12 +427,51 @@ def _history_witness(node: etree._Element) -> NZHistoryWitness:
         _title, year, number = parsed
         work_id = f"act_public_{year}_{number}"
     amendment_date = _first_descendant_text(node, "amendment-date")
+    amended_provision = _first_descendant_text(node, "amended-provision")
+    operation = _first_descendant_text(node, "amending-operation")
+    recovery_rule_id = ""
+    # Legacy recovery: when the canonical ``<amending-operation>`` element is
+    # absent (early-format history notes pre-XML-standardisation), the verb
+    # can appear in one of two structured alternatives (AGENTS §2.4 single-
+    # predicate family; AGENTS §1.10 -- a real amend verb must not fall to
+    # __missing__ when its surface form is recoverable):
+    #
+    # Shape A (5 rows on act_public_1956_47 @ 2001-10-02):
+    #   <amended-provision>Section 19I(1)</amended-provision>:
+    #   <amended-provision>amended</amended-provision>, on ...
+    # A SECOND <amended-provision> element whose text classifies as a known
+    # operation family. The legacy editorial-consolidation XML reuses the
+    # <amended-provision> tag for the verb phrase.
+    #
+    # Shape D (1 row on act_public_1876_79):
+    #   Subsection <amended-provision>(5)</amended-provision> was
+    #   <amended-provision>repealed</amended-provision>, as from ...
+    # Same double-<amended-provision> shape -- covers the broader polarity.
+    #
+    # Shape B (1 row on act_public_1871_24):
+    #   The words <quote.in>X</quote.in> were
+    #   <amending-instruction>substituted</amending-instruction>, as from ...
+    # The verb is in a non-standard <amending-instruction> element.
+    if not operation:
+        recovered = _recover_legacy_operation_from_amended_provision_node(node)
+        if recovered:
+            operation = recovered
+            recovery_rule_id = (
+                NZ_SOURCE_HISTORY_NOTE_LEGACY_AMENDED_PROVISION_VERB_RECOVERY_RULE_ID
+            )
+    if not operation:
+        amending_instruction_text = _first_descendant_text(node, "amending-instruction")
+        if amending_instruction_text.strip().lower() in _LEGACY_AMENDED_PROVISION_VERB_SYNONYMS:
+            operation = amending_instruction_text.strip()
+            recovery_rule_id = (
+                NZ_SOURCE_HISTORY_NOTE_LEGACY_AMENDING_INSTRUCTION_VERB_RECOVERY_RULE_ID
+            )
     return NZHistoryWitness(
         xml_id=_attr(node, "id"),
         xml_path=_element_source_key(node),
         text=text,
-        amended_provision=_first_descendant_text(node, "amended-provision"),
-        operation=_first_descendant_text(node, "amending-operation"),
+        amended_provision=amended_provision,
+        operation=operation,
         amendment_date=amendment_date,
         amendment_date_iso=nz_date_text_to_iso(amendment_date),
         amending_provisions=tuple(_descendant_texts(node, "amending-provision")),
@@ -431,18 +479,98 @@ def _history_witness(node: etree._Element) -> NZHistoryWitness:
         amending_legislation=_first_descendant_text(node, "amending-leg"),
         amending_work_id=work_id,
         defined_term=_history_note_defined_term(node),
+        recovery_rule_id=recovery_rule_id,
     )
+
+
+# Stable rule_ids for the two legacy-verb-recovery shapes emitted when the
+# canonical ``<amending-operation>`` element was absent and the verb was
+# recovered from a structured alternative (AGENTS §2.1 needs a stable
+# rule_id + family tag + source witness + finding emission + strict-mode
+# behavior + synthetic test + corpus regression when corpus-confirmed).
+NZ_SOURCE_HISTORY_NOTE_LEGACY_AMENDED_PROVISION_VERB_RECOVERY_RULE_ID = (
+    "nz_source_history_note_legacy_amended_provision_verb_recovery"
+)
+NZ_SOURCE_HISTORY_NOTE_LEGACY_AMENDING_INSTRUCTION_VERB_RECOVERY_RULE_ID = (
+    "nz_source_history_note_legacy_amending_instruction_verb_recovery"
+)
+
+
+def _recover_legacy_operation_from_amended_provision_node(
+    node: etree._Element,
+) -> str:
+    """Legacy history-note verb recovery for the double-``<amended-provision>``
+    shape (Shapes A and D in the recovery notebook, 2026-06-27).
+
+    Early-format NZ consolidated XML mislabels the operation verb as a
+    SECOND ``<amended-provision>`` element rather than the canonical
+    ``<amending-operation>`` element. Two confirmed shapes:
+
+    * Shape A (5 rows on act_public_1956_47 @ 2001-10-02):
+
+        <history-note>
+          <amended-provision>Section 19I(1)</amended-provision>:
+          <amended-provision>amended</amended-provision>, on
+          <amendment-date>2 October 2001</amendment-date>, by
+          <amending-provision ...>section 21</amending-provision> of the
+          <amending-leg>...</amending-leg>.
+        </history-note>
+
+    * Shape D (1 row on act_public_1876_79):
+
+        <history-note>
+          Subsection <amended-provision>(5)</amended-provision> was
+          <amended-provision>repealed</amended-provision>, as from
+          <amendment-date>1 July 2003</amendment-date>, ...
+        </history-note>
+
+    Recovery: enumerate ALL ``<amended-provision>`` descendants; skip the
+    FIRST (that is the canonical section label -- the amended_provision
+    field); any SUBSEQUENT ``<amended-provision>`` whose text matches a
+    known operation-family verb (incl. the 'revoked' synonym) is the
+    recovered verb.
+
+    Witnesses verified (2026-06-27 audit on the smoke corpus):
+
+    * act_public_1956_47 nz-opw-244/245/246/255/257/305 (6 rows: Shape A)
+    * act_public_1876_79 nz-opw-5 (Shape D)
+
+    AGENTS §1.10 (distinct named diagnostic; a real amend verb must not
+    fall to __missing__ when its surface form is recoverable) + §2.4
+    single-predicate recovery family (one recogniser for the recurring
+    shape, NOT a per-prose-sentence recognizer).
+    """
+    provisions = list(_descendant_texts(node, "amended-provision"))
+    if len(provisions) < 2:
+        return ""
+    for candidate in provisions[1:]:
+        if candidate.strip().lower() in _LEGACY_AMENDED_PROVISION_VERB_SYNONYMS:
+            return candidate.strip()
+    return ""
+
+
+# Known NZ operation-family verbs (lowercased) plus the 'revoked'-as-repealed
+# synonym. Used only for the legacy double-`<amended-provision>` recovery
+# (a strict-superset check the canonical classify_operation_family would
+# also pass once the verb is wired onto the witness). Kept locally in
+# source_tree (NOT imported from operation_surface) to avoid a circular
+# import: operation_surface imports source_tree via parse_nz_source_document.
+_LEGACY_AMENDED_PROVISION_VERB_SYNONYMS = frozenset({
+    "added",
+    "amended",
+    "brought into force",
+    "editorial change",
+    "expired",
+    "inserted",
+    "repealed",
+    "revoked",
+    "replaced",
+    "substituted",
+})
 
 
 def _history_note_defined_term(node: etree._Element) -> str:
     """Extract the defined term a definition-level history note targets.
-
-    NZ writes definition notes as ``<amended-provision>Section 2(1)</amended-
-    provision> <emphasis style="bold">term</emphasis>: <amending-operation>
-    repealed</amending-operation>, ...``. The defined term is the bold
-    ``emphasis`` that is a direct child of the note. We require the emphasis to
-    sit between the ``amended-provision`` and the ``amending-operation`` so an
-    incidental emphasis elsewhere in the note text is not mistaken for a term.
     Terms carrying the path separators ``/`` or ``:`` are dropped (cannot be a
     clean addressable label).
     """

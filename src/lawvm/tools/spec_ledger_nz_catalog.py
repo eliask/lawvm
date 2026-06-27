@@ -729,6 +729,29 @@ _EXTRA_NZ_RULE_SPECS: Dict[str, str] = {
         "source — the heading-facet lowering is blocked rather than guessed."
     ),
     # --- Operation surface / bench / dependency lane ----------------------------------
+    "nz_source_history_note_legacy_amended_provision_verb_recovery": (
+        "Recovery (non-blocking evidence finding, AGENTS §2.1): the canonical "
+        "<amending-operation> element was absent from the history note, and the "
+        "operation verb was recovered from a SECOND <amended-provision> element "
+        "in the legacy editorial-consolidation XML -- early-format history notes "
+        "pre-XML-standardisation reuse the <amended-provision> tag for the verb "
+        "phrase ('<amended-provision>Section X</amended-provision>: <amended-"
+        "provision>amended</amended-provision>'). Witness: act_public_1956_47 "
+        "@ 2001-10-02 nz-opw-244/245/246/255/257/305 (6 rows, Shape A); "
+        "act_public_1876_79 @ 2003-07-01 nz-opw-5 (1 row, Shape D). Recovery "
+        "is strict-superset additive: never blocks replay, never changes the "
+        "classified op_family (downstream dispatch on operation_family is "
+        "identical to the canonical case)."
+    ),
+    "nz_source_history_note_legacy_amending_instruction_verb_recovery": (
+        "Recovery (non-blocking evidence finding, AGENTS §2.1): the canonical "
+        "<amending-operation> element was absent from the history note, and the "
+        "operation verb was recovered from a non-standard <amending-instruction> "
+        "element in the early-format editorial-consolidation XML. Witness: "
+        "act_public_1871_24 @ 1980-04-01 nz-opw-16 (1 row, Shape B). Recovery is "
+        "strict-superset additive: never blocks replay, never changes the "
+        "classified op_family."
+    ),
     "nz_operation_surface_effect_lowering_not_implemented": (
         "Operation-surface refusal: the operation row carries an effect family the lowering has not yet "
         "implemented — a typed frontier blocker, never a silent drop. This is the forward-compatible "

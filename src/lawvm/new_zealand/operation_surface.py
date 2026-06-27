@@ -517,6 +517,35 @@ def build_operation_surface(
             ),
         )
         rows.append(row)
+        if witness.recovery_rule_id:
+            # Legacy verb recovery finding emission (AGENTS §2.1 -- a
+            # heuristic that affects op-family classification needs a
+            # stable rule_id + finding emission + strict-mode behavior +
+            # synthetic+corpus regression). The recovery sourced this
+            # witness's operation verb from a non-canonical XML element
+            # (legacy double-<amended-provision> Shape A/D or the
+            # non-standard <amending-instruction> Shape B); the op_family
+            # was classified from the RECOVERED verb, not the canonical
+            # ``<amending-operation>`` element. Non-blocking: recovery
+            # is honest accounting, never a replay-blocker; downstream
+            # consumers dispatch on operation_family (recovered == the
+            # canonical family for the recovered verb).
+            findings.append(
+                _finding(
+                    rule_id=witness.recovery_rule_id,
+                    phase="P5",
+                    family="operation_witness_surface",
+                    reason=(
+                        "history-note operation verb was sourced from a "
+                        "legacy non-canonical XML element (the canonical "
+                        "<amending-operation> element was absent); the "
+                        "op_family was classified from the recovered verb"
+                    ),
+                    row_id=row.row_id,
+                    source_xml_id=witness.xml_id,
+                    blocking=False,
+                )
+            )
         if operation_status != "classified":
             findings.append(
                 _finding(
