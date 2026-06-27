@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace as dc_replace
 from lxml import etree as ET
 from typing import Any, Callable, Optional
 
@@ -184,7 +184,9 @@ def _normalize_inserted_schedule_part_p1group_wrapping(
     if wrapped_run_count == 0:
         return payload_node_mut
 
-    payload_node_mut.children = new_children
+    # PR2 (audit XJUR-02 / AGENTS.md §2.3): build a new UKMutableNode via
+    # ``dataclasses.replace`` rather than mutating ``children`` in place.
+    payload_node_mut = dc_replace(payload_node_mut, children=list(new_children))
     _append_uk_effect_lowering_observation(
         lowering_rejections_out,
         rule_id=_UK_EFFECT_SCHEDULE_PART_P1GROUP_WRAPPER_RULE_ID,
@@ -306,37 +308,64 @@ def _normalize_schedule_subparagraph_definition_schedule_entries(
 
     promoted_count = 0
 
-    def _walk(node: UKMutableNode, parent: Optional[UKMutableNode], idx: int) -> None:
+    def _walk(
+        node: UKMutableNode, *, is_root: bool = False
+    ) -> tuple[UKMutableNode, list[UKMutableNode]]:
+        """Return ``(new_node, promoted_siblings)`` for *node*.
+
+        PR2 (audit XJUR-02 / AGENTS.md §2.3): no in-place mutation of the
+        parsed payload node. Each level rebuilds its children via
+        ``dataclasses.replace`` and returns a fresh ``UKMutableNode``.
+
+        *promoted_siblings* are synthetic PARAGRAPH nodes derived from
+        schedule_entry children of a subparagraph descendant (when that
+        descendant is not itself the root). The caller inserts the
+        promoted siblings into its new children list immediately after
+        the affected subparagraph node, preserving the original
+        reversed-insertion ordering (entry order is preserved).
+        """
         nonlocal promoted_count
-        if node.kind.value == "subparagraph" and parent is not None:
+        surviving_children = list(node.children)
+        promoted_entries: list[UKMutableNode] = []
+        if not is_root and node.kind.value == "subparagraph":
             entries: list[UKMutableNode] = []
-            other_children: list[UKMutableNode] = []
-            for child in node.children:
+            others: list[UKMutableNode] = []
+            for child in surviving_children:
                 if child.kind.value == "schedule_entry" and not child.children:
                     entries.append(child)
                 else:
-                    other_children.append(child)
+                    others.append(child)
             if entries:
-                node.children = other_children
-                insert_at = idx + 1
-                for entry in reversed(entries):
-                    para = UKMutableNode(
+                surviving_children = others
+                promoted_entries = [
+                    UKMutableNode(
                         kind=IRNodeKind.PARAGRAPH,
                         label=None,
                         text=entry.text,
-                        attrs=dict(entry.attrs),
+                        attrs={
+                            **dict(entry.attrs),
+                            "source_rule_id": (
+                                _UK_EFFECT_SCHEDULE_SUBPARAGRAPH_DEFINITION_ENTRIES_RULE_ID
+                            ),
+                            "source_tag": entry.attrs.get("source_tag", "ListItem"),
+                            "promoted_from_kind": "schedule_entry",
+                        },
                     )
-                    para.attrs["source_rule_id"] = (
-                        _UK_EFFECT_SCHEDULE_SUBPARAGRAPH_DEFINITION_ENTRIES_RULE_ID
-                    )
-                    para.attrs["source_tag"] = entry.attrs.get("source_tag", "ListItem")
-                    para.attrs["promoted_from_kind"] = "schedule_entry"
-                    parent.children.insert(insert_at, para)
-                    promoted_count += 1
-        for child_idx, child in enumerate(list(node.children)):
-            _walk(child, node, child_idx)
+                    for entry in entries
+                ]
+                promoted_count += len(promoted_entries)
 
-    _walk(payload_node_mut, None, 0)
+        new_children: list[UKMutableNode] = []
+        for child in surviving_children:
+            new_child, child_promoted = _walk(child, is_root=False)
+            new_children.append(new_child)
+            if child_promoted:
+                new_children.extend(child_promoted)
+
+        new_node = dc_replace(node, children=list(new_children))
+        return new_node, promoted_entries
+
+    payload_node_mut, _root_promoted = _walk(payload_node_mut, is_root=True)
     if promoted_count == 0:
         return payload_node_mut
 
@@ -788,7 +817,12 @@ def prepare_uk_operation_payload_node(
         and target_replacement_leaf_kind
         and payload_node_mut.kind.value == _uk_core_kind_alias_value(target_replacement_leaf_kind)
     ):
-        payload_node_mut.label = target_replacement_leaf_override
+        # PR2 (audit XJUR-02 / AGENTS.md §2.3): no in-place mutation of the
+        # parsed payload node; rebuild a fresh UKMutableNode via
+        # ``dataclasses.replace`` for any post-construction adjustment.
+        payload_node_mut = dc_replace(
+            payload_node_mut, label=target_replacement_leaf_override
+        )
 
     if payload_node_mut is not None and curr_action in ("insert", "replace"):
         leaf_kind = _addr_leaf_kind(target) or ""
@@ -836,7 +870,7 @@ def prepare_uk_operation_payload_node(
                     "quirks_disposition": QuirksDisposition.APPLY,
                 },
             )
-            payload_node_mut.label = leaf_label
+            payload_node_mut = dc_replace(payload_node_mut, label=leaf_label)
         if (
             leaf_kind in leafish_kinds
             and payload_kind in leafish_kinds
@@ -871,7 +905,17 @@ def prepare_uk_operation_payload_node(
                     "quirks_disposition": QuirksDisposition.APPLY,
                 },
             )
-            payload_node_mut.kind = uk_ir_node_kind(leaf_kind)
+            # Critical kind-mutation site (audit XJUR-02 / AGENTS.md §2.3):
+            # `kind` is the IRNode's canonical type discriminator. PR2 replaces
+            # the in-place write with a fresh node built via
+            # ``dataclasses.replace`` (option (a) per the task brief) — the
+            # payload_node is constructed upstream by ``_to_mutable_node`` and
+            # is not visible at this call site, so the kind cannot be pushed
+            # into the original constructor (option (b)) without an upstream
+            # refactor.
+            payload_node_mut = dc_replace(
+                payload_node_mut, kind=uk_ir_node_kind(leaf_kind)
+            )
 
     if payload_node_mut is not None and curr_action in ("insert", "replace"):
         payload_node_mut = _normalize_inserted_schedule_part_p1group_wrapping(

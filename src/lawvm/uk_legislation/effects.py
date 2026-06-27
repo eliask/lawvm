@@ -12,6 +12,11 @@ from urllib.request import Request, urlopen
 
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.http_identity import LAWVM_USER_AGENT
+from lawvm.uk_legislation.affecting_class import (
+    _UK_AFFECTING_URI_SLUG_RE,
+    affecting_class_slug,
+    is_affecting_class_recognized,
+)
 
 _LEG_BASE = "https://www.legislation.gov.uk"
 _USER_AGENT = LAWVM_USER_AGENT
@@ -50,29 +55,14 @@ _COMMENCEMENT_EFFECT_TYPES = frozenset(
 )
 
 
-# Maps an effects-feed AffectingClass to its legislation.gov.uk document type slug.
-# This is necessarily incomplete (legislation.gov.uk has many types), so it is NOT
-# the authoritative source for the affecting-act id — the effect AffectingURI is.
-# A class absent here, with no usable URI, cannot be resolved to a real slug and is
-# surfaced loudly (uk_affecting_act_class_unmapped_rejected) rather than guessed.
-_UK_AFFECTING_CLASS_SLUG_MAP = {
-    "UnitedKingdomPublicGeneralAct": "ukpga",
-    "UnitedKingdomStatutoryInstrument": "uksi",
-    "WelshParliamentAct": "asc",
-    "WelshStatutoryInstrument": "wsi",
-    "ScottishAct": "asp",
-    "ScottishStatutoryInstrument": "ssi",
-    "NorthernIrelandAssemblyMeasure": "mnia",
-    "NorthernIrelandParliamentAct": "apni",
-    "NorthernIrelandStatutoryRule": "nisr",
-    "UnitedKingdomChurchInstrument": "ukci",
-    "UnitedKingdomMinisterialOrder": "ukmo",
-    "EuropeanUnionRegulation": "eur",
-    "EuropeanUnionDecision": "eudn",
-    "EuropeanUnionDirective": "eudr",
-}
-
-_UK_AFFECTING_URI_SLUG_RE = re.compile(r"legislation\.gov\.uk/(?:id/)?([a-z]{1,16})/(\d{1,9})/(\d{1,9})\b")
+# Affecting-class slug derivation lives in ``lawvm.uk_legislation.affecting_class``
+# (single source of truth under AGENTS.md §2.6 — duplicated ``cls.lower()`` shapes
+# now route through one shared helper). The map is necessarily incomplete
+# (legislation.gov.uk has many types), so it is NOT the authoritative source for
+# the affecting-act id — the effect AffectingURI is. A class absent from the map,
+# with no usable URI, raises ``UnmappedAffectingClass`` (AGENTS.md §1.10) and is
+# surfaced loudly via the ``uk_affecting_act_class_unmapped_rejected`` finding
+# rather than guessed as ``cls.lower()``.
 
 # Affecting-act classes authored by a devolved legislature/executive. A devolved
 # instrument has no legislative competence over the whole United Kingdom extent
@@ -294,12 +284,24 @@ class UKEffectRecord:
         has no entry and would otherwise fall back to the invalid slug
         ``northernirelandact``). Fall back to the class map only when no URI is
         available.
+
+        When neither source resolves a real slug — class is unmapped AND no
+        usable URI — the helper raises ``UnmappedAffectingClass`` (AGENTS.md
+        §1.10) so the missing mapping surfaces as a typed residual instead of
+        the silent ``cls.lower()`` slug that 404s at archive fetch and reads as
+        a generic missing-XML error. Callers that need a soft-fall-through
+        (e.g. witness attribution for an effect already in flight) should check
+        ``affecting_class_is_recognized`` first and route the unmapped case
+        through the ``uk_affecting_act_class_unmapped_rejection`` finding.
         """
         uri_match = _UK_AFFECTING_URI_SLUG_RE.search(str(self.affecting_uri or ""))
         if uri_match:
             return f"{uri_match.group(1)}/{uri_match.group(2)}/{uri_match.group(3)}"
-        cls = self.affecting_class
-        slug = _UK_AFFECTING_CLASS_SLUG_MAP.get(cls, cls.lower())
+        slug = affecting_class_slug(
+            self.affecting_class,
+            year=self.affecting_year,
+            number=self.affecting_number,
+        )
         return f"{slug}/{self.affecting_year}/{self.affecting_number}"
 
     @property
@@ -308,13 +310,18 @@ class UKEffectRecord:
 
         The slug is trustworthy when it comes from the AffectingURI or a known
         class-map entry. A non-empty class that is neither (and has no usable URI)
-        produces a guessed ``cls.lower()`` slug that may not be a real document
-        type — callers should surface that loudly instead of treating a resulting
-        archive miss as a generic "XML missing".
+        makes the helper raise ``UnmappedAffectingClass`` — callers should surface
+        that loudly via the ``uk_affecting_act_class_unmapped_rejection`` finding
+        instead of treating a resulting archive miss as a generic "XML missing".
+
+        Delegates to the shared ``is_affecting_class_recognized`` predicate so the
+        recognition verdict and the slug-derivation verdict cannot drift apart
+        (AGENTS.md §2.6 — the shared helper owns this classification).
         """
-        if _UK_AFFECTING_URI_SLUG_RE.search(str(self.affecting_uri or "")):
-            return True
-        return str(self.affecting_class or "") in _UK_AFFECTING_CLASS_SLUG_MAP
+        return is_affecting_class_recognized(
+            cls=self.affecting_class,
+            uri=self.affecting_uri,
+        )
 
     @property
     def affecting_is_devolved(self) -> bool:
@@ -841,7 +848,7 @@ def _download_file(url: str, dest: Path) -> None:
     req = Request(url)
     req.add_header("User-Agent", _USER_AGENT)
     try:
-        with urlopen(req) as response:
+        with urlopen(req, timeout=60) as response:
             with open(dest, "wb") as f:
                 f.write(response.read())
     except HTTPError as e:

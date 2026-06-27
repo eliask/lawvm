@@ -23,9 +23,15 @@ from typing import Any, Iterator, Optional, cast
 
 from lxml import etree
 
+from lawvm.core.archive_safety import (
+    ArchiveMemberTooLarge,
+    log_archive_member_too_large,
+    safe_tar_read,
+)
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.ir_helpers import kind_str
 from lawvm.core.source_lane import SourceLaneAttempt, SourceLaneSelectionEvidence
+from lawvm.core.xml_parse import parse_corpus_xml
 from lawvm.norway.grafter import lovdata_amendment_filename_to_id, lovdata_filename_to_id
 from lawvm.core.quirks_disposition import QuirksDisposition
 
@@ -321,9 +327,8 @@ def repair_mojibake(text: str) -> str:
 
 def parse_header_value(html_bytes: bytes, dd_class: str) -> str:
     root = None
-    xml_parser = etree.XMLParser(recover=True)
     try:
-        root = etree.fromstring(html_bytes, parser=xml_parser)
+        root = parse_corpus_xml(html_bytes, recover=True)
     except etree.XMLSyntaxError:
         root = None
     if root is None:
@@ -393,15 +398,25 @@ def _iter_current_artifacts_from_dir(data_dir: Path) -> Iterator[NOLocatedArtifa
             base_id = lovdata_filename_to_id(member.name)
             if base_id is None:
                 continue
-            file_obj = tf.extractfile(member)
-            if file_obj is None:
+            try:
+                payload = safe_tar_read(
+                    tf, member, archive_path=current_archive.name
+                )
+            except ArchiveMemberTooLarge as exc:
+                # Conserved as a structured stderr receipt (AGENTS.md §1.8):
+                # the generators yield tuples / NOLocatedArtifact and have no
+                # rejected-items accumulator to extend, so the typed
+                # diagnostic is logged rather than dropped.
+                log_archive_member_too_large(exc)
+                continue
+            if payload is None:
                 continue
             yield NOLocatedArtifact(
                 locator=no_current_locator(base_id),
                 logical_id=base_id,
                 source_name=current_archive.name,
                 member_name=member.name,
-                payload=file_obj.read(),
+                payload=payload,
             )
 
 
@@ -413,10 +428,18 @@ def _iter_lovtidend_members_from_dir(
             for member in tf.getmembers():
                 if not member.name.endswith(".xml"):
                     continue
-                file_obj = tf.extractfile(member)
-                if file_obj is None:
+                try:
+                    payload = safe_tar_read(
+                        tf, member, archive_path=archive_path.name
+                    )
+                except ArchiveMemberTooLarge as exc:
+                    # Generator without a rejected-items accumulator: log the
+                    # typed receipt to stderr (AGENTS.md §1.8 — the skip must
+                    # stay visible, never silent).
+                    log_archive_member_too_large(exc)
                     continue
-                payload = file_obj.read()
+                if payload is None:
+                    continue
                 yield (
                     lovdata_filename_to_id(member.name),
                     lovdata_amendment_filename_to_id(member.name),
@@ -483,15 +506,21 @@ def iter_no_unmapped_current_xml_members(source_path: Path | None = None) -> Ite
                 continue
             if lovdata_filename_to_id(member.name) is not None:
                 continue
-            file_obj = tf.extractfile(member)
-            if file_obj is None:
+            try:
+                payload = safe_tar_read(
+                    tf, member, archive_path=current_archive.name
+                )
+            except ArchiveMemberTooLarge as exc:
+                log_archive_member_too_large(exc)
+                continue
+            if payload is None:
                 continue
             yield NOLocatedArtifact(
                 locator="",
                 logical_id="",
                 source_name=current_archive.name,
                 member_name=member.name,
-                payload=file_obj.read(),
+                payload=payload,
             )
 
 
@@ -622,10 +651,22 @@ def load_no_amendment_artifact_bytes(
         for member in tf.getmembers():
             if member.name != member_name:
                 continue
-            file_obj = tf.extractfile(member)
-            if file_obj is None:
+            try:
+                payload = safe_tar_read(
+                    tf, member, archive_path=archive_path.name
+                )
+            except ArchiveMemberTooLarge as exc:
+                # Visible stderr receipt (AGENTS.md §1.8): the function returns
+                # ``bytes | None`` and has no rejected-items accumulator, so
+                # the typed diagnostic is logged rather than silently dropped.
+                # Returns None to the caller so the loader treats an oversized
+                # member like an absent one (the over-retention principle —
+                # never fabricate) while the receipt stays audible.
+                log_archive_member_too_large(exc)
                 return None
-            return file_obj.read()
+            if payload is None:
+                return None
+            return payload
     return None
 
 

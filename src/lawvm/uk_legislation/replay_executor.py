@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing_extensions import override
 
 import time
+from dataclasses import replace as dc_replace
 from typing import Any, List, Optional
 
 from lawvm.core.ir import IRStatute, LegalOperation
@@ -151,7 +152,10 @@ class UKReplayExecutor(
         if str(target.special or "") == "whole_act":
             if _action_name(op.action) == "repeal":
                 self._log("  EXECUTOR: repealing WHOLE ACT")
-                self.statute.body.children = []
+                # PR3 (audit XJUR-02 / AGENTS.md §2.3): copy-on-write repeal.
+                # Build a fresh ``UKMutableNode`` for the body so neither the
+                # body nor its (now-emptied) children list is mutated in place.
+                self.statute.body = dc_replace(self.statute.body, children=[])
                 self.statute.supplements = []
                 self._clear_eid_lookup_index()
                 self._note_structure_mutation()

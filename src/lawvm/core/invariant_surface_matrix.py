@@ -165,13 +165,30 @@ def project_replay_warning_findings(
     replay_findings: list[Finding],
     replay_meta_out: Optional[dict[str, object]],
     replay_print: Callable[[str], None],
+    definition_introducer_predicate: Optional[Callable[[IRNode], bool]] = None,
 ) -> None:
-    """Project replay lint warnings into findings, meta, and replay print."""
+    """Project replay lint warnings into findings, meta, and replay print.
+
+    ``definition_introducer_predicate`` (optional) is the frontend-supplied
+    "is this parent a definition-list introducer?" predicate forwarded to the
+    ``flattened_sublist_family`` builder. Finland wires its FI predicate at the
+    replay projection call sites; other callers omit it and the kernel applies
+    only the suffix-colon (``:``) drafting check (AGENTS.md §2.3 — core hosts
+    the hook; it does not interpret frontend-local values).
+    """
     for family in warnings:
         builder = _WARNING_BUILDERS.get(family)
         if builder is None:
             continue
-        lint_findings = builder(tree, phase=phase, source_statute=source_statute)
+        if family == "flattened_sublist_family":
+            lint_findings = builder(
+                tree,
+                phase=phase,
+                source_statute=source_statute,
+                definition_introducer_predicate=definition_introducer_predicate,
+            )
+        else:
+            lint_findings = builder(tree, phase=phase, source_statute=source_statute)
         if replay_meta_out is not None and lint_findings:
             meta_key = _WARNING_META_KEYS[family]
             replay_meta_out[meta_key] = _warning_detail_rows(lint_findings)

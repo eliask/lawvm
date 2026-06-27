@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import replace as dc_replace
 from typing import Any, Optional
 
 from lawvm.core.diagnostic_records import diagnostic_detail
@@ -137,7 +138,11 @@ def _synthesize_whole_schedule_payload_descendant_eids(
         return payload_node
     existing_root_eid = str(payload_node.attrs.get("eId") or payload_node.attrs.get("id") or "")
     if not existing_root_eid:
-        payload_node.attrs["eId"] = root_eid
+        # PR2 (audit XJUR-02 / AGENTS.md §2.3): rebuild a fresh UKMutableNode
+        # rather than mutating ``attrs`` in place.
+        payload_node = dc_replace(
+            payload_node, attrs={**dict(payload_node.attrs), "eId": root_eid}
+        )
     else:
         root_eid = existing_root_eid
 
@@ -166,8 +171,16 @@ def _synthesize_whole_schedule_payload_descendant_eids(
     skipped_ambiguous = 0
     skipped_duplicate = 0
 
-    def _walk(parent_eid: str, current: UKMutableNode) -> None:
+    def _walk(parent_eid: str, current: UKMutableNode) -> UKMutableNode:
+        """Return a new UKMutableNode with synthesized descendant eIds.
+
+        PR2 (audit XJUR-02 / AGENTS.md §2.3): no in-place mutation of the
+        parsed payload node. Each level rebuilds its children via
+        ``dataclasses.replace`` and returns a fresh ``UKMutableNode``;
+        ``child.attrs["eId"] = ...`` becomes ``dc_replace(child, attrs=...)``.
+        """
         nonlocal skipped_ambiguous, skipped_duplicate
+        new_children: list[UKMutableNode] = []
         for child in current.children:
             child_kind_name = str(child.kind or "").lower()
             existing_eid = str(child.attrs.get("eId") or child.attrs.get("id") or "")
@@ -183,10 +196,12 @@ def _synthesize_whole_schedule_payload_descendant_eids(
                         child_parent_eid = parent_eid
                         if child.children:
                             skipped_ambiguous += 1
-                        _walk(child_parent_eid, child)
+                        new_children.append(_walk(child_parent_eid, child))
                         continue
                     used_eids.add(child_parent_eid)
-                    child.attrs["eId"] = child_parent_eid
+                    child = dc_replace(
+                        child, attrs={**dict(child.attrs), "eId": child_parent_eid}
+                    )
                     if child_kind_name == "crossheading":
                         child_parent_eid = parent_eid
                     synthesized.append(
@@ -199,9 +214,10 @@ def _synthesize_whole_schedule_payload_descendant_eids(
                     )
                 elif child.children:
                     skipped_ambiguous += 1
-            _walk(child_parent_eid, child)
+            new_children.append(_walk(child_parent_eid, child))
+        return dc_replace(current, children=new_children)
 
-    _walk(root_eid, payload_node)
+    payload_node = _walk(root_eid, payload_node)
     if synthesized and lowering_records_out is not None:
         lowering_records_out.append(
             _payload_identity_diagnostic(
@@ -252,14 +268,19 @@ def _synthesize_payload_descendant_eids(
         if derived:
             retargeted_from = foreign_id
             root_eid = derived
-            payload_node.attrs["eId"] = derived
-            # Drop the foreign physical id so it cannot shadow the derived eId
-            # downstream (eId-collection prefers eId, but other passes read id).
-            payload_node.attrs.pop("id", None)
+            # PR2 (audit XJUR-02 / AGENTS.md §2.3): rebuild attrs via a fresh
+            # dict and publish a new UKMutableNode via ``dataclasses.replace``,
+            # instead of mutating ``payload_node.attrs`` in place (set ``eId``
+            # to the derived id AND drop the foreign physical ``id``).
+            new_attrs = {**dict(payload_node.attrs), "eId": derived}
+            new_attrs.pop("id", None)
+            payload_node = dc_replace(payload_node, attrs=new_attrs)
     if not root_eid:
         root_eid = _fallback_target_eid(target)
         if root_eid:
-            payload_node.attrs["eId"] = root_eid
+            payload_node = dc_replace(
+                payload_node, attrs={**dict(payload_node.attrs), "eId": root_eid}
+            )
     if retargeted_from and lowering_records_out is not None:
         lowering_records_out.append(
             _payload_identity_diagnostic(
@@ -307,8 +328,16 @@ def _synthesize_payload_descendant_eids(
     used_eids: set[str] = {root_eid}
     skipped_duplicate = 0
 
-    def _walk(parent_eid: str, current: UKMutableNode) -> None:
+    def _walk(parent_eid: str, current: UKMutableNode) -> UKMutableNode:
+        """Return a new UKMutableNode with synthesized descendant eIds.
+
+        PR2 (audit XJUR-02 / AGENTS.md §2.3): no in-place mutation of the
+        parsed payload node. Each level rebuilds its children via
+        ``dataclasses.replace`` and returns a fresh ``UKMutableNode``;
+        ``child.attrs["eId"] = ...`` becomes ``dc_replace(child, attrs=...)``.
+        """
         nonlocal skipped_duplicate
+        new_children: list[UKMutableNode] = []
         for child in current.children:
             child_eid = str(child.attrs.get("eId") or child.attrs.get("id") or "")
             child_parent_eid = child_eid or parent_eid
@@ -326,7 +355,9 @@ def _synthesize_payload_descendant_eids(
                         child_parent_eid = parent_eid
                     else:
                         used_eids.add(flat_root)
-                        child.attrs["eId"] = flat_root
+                        child = dc_replace(
+                            child, attrs={**dict(child.attrs), "eId": flat_root}
+                        )
                         child_parent_eid = flat_root
                         synthesized.append(
                             {
@@ -343,7 +374,10 @@ def _synthesize_payload_descendant_eids(
                         child_parent_eid = parent_eid
                     else:
                         used_eids.add(child_parent_eid)
-                        child.attrs["eId"] = child_parent_eid
+                        child = dc_replace(
+                            child,
+                            attrs={**dict(child.attrs), "eId": child_parent_eid},
+                        )
                         synthesized.append(
                             {
                                 "kind": str(child.kind),
@@ -352,9 +386,10 @@ def _synthesize_payload_descendant_eids(
                                 "after_eid": child_parent_eid,
                             }
                         )
-            _walk(child_parent_eid, child)
+            new_children.append(_walk(child_parent_eid, child))
+        return dc_replace(current, children=new_children)
 
-    _walk(root_eid, payload_node)
+    payload_node = _walk(root_eid, payload_node)
     if synthesized and lowering_records_out is not None:
         lowering_records_out.append(
             _payload_identity_diagnostic(

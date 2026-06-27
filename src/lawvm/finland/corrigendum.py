@@ -72,6 +72,7 @@ from lawvm.core.ir import (
 )
 from lawvm.core.mutation_boundary import TreePathStep
 from lawvm.core.semantic_types import StructuralAction, TextPatchKindEnum
+from lawvm.core.xml_parse import parse_corpus_xml
 from lawvm.finland.corrigendum_records import default_patch_records_path, load_patch_records
 from lawvm.finland.metadata import _normalize_fi_parse_text as _normalize_ws_base
 
@@ -243,7 +244,7 @@ def extract_inline_corrections(
         return [], xml_bytes
 
     try:
-        root = etree.fromstring(xml_bytes)
+        root = parse_corpus_xml(xml_bytes)
     except etree.XMLSyntaxError:
         return [], xml_bytes
 
@@ -1699,7 +1700,7 @@ _FRAGMENT_WRAPPER_CLOSE = b"</root>"
 
 def _parse_fragment_root(xml_bytes: bytes) -> etree._Element | None:
     try:
-        return etree.fromstring(_FRAGMENT_WRAPPER_OPEN + xml_bytes + _FRAGMENT_WRAPPER_CLOSE)
+        return parse_corpus_xml(_FRAGMENT_WRAPPER_OPEN + xml_bytes + _FRAGMENT_WRAPPER_CLOSE)
     except etree.XMLSyntaxError:
         return None
 

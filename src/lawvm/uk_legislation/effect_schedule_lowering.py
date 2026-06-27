@@ -507,8 +507,17 @@ def _try_lower_schedule_words_before_table_substitution(
         node = _parse_section(p1_el, "schedule", force_active=True, pit_date=None, is_eur=False)
         if node is None:
             return None
-        node.attrs["eId"] = f"{schedule_root}-paragraph-{_clean_num(para_label)}"
-        node.attrs["source_rule_id"] = _UK_SCHEDULE_WORDS_BEFORE_TABLE_SUBSTITUTION_RULE_ID
+        # PR2 (audit XJUR-02 / AGENTS.md §2.3): no in-place mutation of the
+        # UKMutableNode returned by ``_parse_section``; build a new attrs dict
+        # and return a fresh node via ``dataclasses.replace``.
+        node = dc_replace(
+            node,
+            attrs={
+                **dict(node.attrs),
+                "eId": f"{schedule_root}-paragraph-{_clean_num(para_label)}",
+                "source_rule_id": _UK_SCHEDULE_WORDS_BEFORE_TABLE_SUBSTITUTION_RULE_ID,
+            },
+        )
         node = _synthesize_payload_descendant_eids(
             node,
             target=para_addr,

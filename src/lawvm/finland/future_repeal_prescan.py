@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Literal, Mapping, Optional
 import lxml.etree as etree
 
 from lawvm.core.semantic_types import StructuralAction
+from lawvm.core.xml_parse import parse_corpus_xml
 from lawvm.finland.acquisition import build_amendment_acquisition_result
 from lawvm.finland.future_repeal import RepealTargetRef
 from lawvm.finland.helpers import _norm_num_token
@@ -146,7 +147,7 @@ def _pre_scan_repeal_targets(
         try:
             eff_date = effective_dates_by_amendment.get(amendment_id)
             if eff_date is None:
-                tree = etree.fromstring(xml_bytes)
+                tree = parse_corpus_xml(xml_bytes)
                 eff_date = _amendment_effective_date(tree)
             if cutoff_date is not None and eff_date is not None and eff_date > cutoff_date:
                 per_amendment.append(targets)

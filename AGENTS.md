@@ -175,6 +175,7 @@ Treat each replay/oracle divergence as a probe for a reusable family, not as an 
 ### 3.5 Debug commands
 Discover current flags with `uv run lawvm <cmd> --help`; the full catalogue is in `notes/JURISDICTION_CLI_TOOLING_CONTRACT.md`.
 ```bash
+uv run lawvm profile <ID> --as-of <DATE> --out <path.pstats>   # cProfile single-statute compile + replay (§2.7); prints top-25 cumtime summary to stdout
 uv run lawvm explain <ID>
 uv run lawvm bisect <ID>
 uv run lawvm diagnose-phase <ID> --source <AMENDMENT_ID> [--target chapter:4/section:20]

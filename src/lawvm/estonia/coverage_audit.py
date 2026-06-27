@@ -52,6 +52,7 @@ import xml.etree.ElementTree as ET
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from lawvm.core.regex_safety import compile_classifier_regex
 from lawvm.estonia.peg import (
     _EE_SUPERSCRIPT_DIGIT_CLASS,
     _classify_verb,
@@ -111,7 +112,7 @@ _LEVEL_DEPTH = {_SECTION: 0, _SUBSECTION: 1, _ITEM: 2}
 # not to amend.  Op-items whose instruction preamble matches this are excluded
 # from the verb-item universe so they cannot generate regex-noise drops.  This
 # is the EE analog of FI's ``leading_preamble`` exclusion.
-_CITATION_CONTEXT_RE = re.compile(
+_CITATION_CONTEXT_RE = compile_classifier_regex(
     r"\b("
     r"alusel"  # "on the basis of <provision>"
     r"|nimetatu[a-zõäöü]*"  # "referred to" (nimetatud / nimetatuga / nimetatule)
@@ -124,6 +125,7 @@ _CITATION_CONTEXT_RE = re.compile(
     r"|Euroopa\s+Parlamendi"  # "of the European Parliament ..." (EU instrument)
     r")\b",
     re.IGNORECASE,
+    classifier_id="ee.coverage_audit.citation_context_re",
 )
 
 

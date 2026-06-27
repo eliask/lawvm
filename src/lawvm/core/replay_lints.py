@@ -8,7 +8,7 @@ not a primary persisted/public contract.
 
 from __future__ import annotations
 
-from typing import List
+from typing import Callable, List, Optional
 
 from lawvm.core.ir import IRNode
 from lawvm.core.phase_result import Finding, OBSERVATION_ROLE
@@ -62,11 +62,19 @@ def build_flattened_sublist_findings(
     phase: str,
     source_statute: str = "",
     min_children: int = 4,
+    definition_introducer_predicate: Optional[Callable[[IRNode], bool]] = None,
 ) -> List[Finding]:
     """Convert flattened-sublist lints into finding-ledger observations.
 
     These warnings are heuristic structural diagnostics. They do not authorize
     repair; they make a suspicious replay shape visible for review.
+
+    ``definition_introducer_predicate`` (optional) is the frontend-supplied
+    "is this parent a definition-list introducer?" predicate that the kernel
+    consults in addition to the jurisdiction-neutral suffix-colon check. Finland
+    wires its ``fi_definition_list_introducer_predicate`` at the FI replay
+    projection call sites; other callers omit it (AGENTS.md §2.3 — core hosts
+    the hook; it does not interpret frontend-local values).
     """
 
     message = (
@@ -86,6 +94,7 @@ def build_flattened_sublist_findings(
         for warning in find_flattened_sublist_warnings(
             tree,
             min_children=min_children,
+            definition_introducer_predicate=definition_introducer_predicate,
         )
     ]
 

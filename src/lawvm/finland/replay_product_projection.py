@@ -15,6 +15,7 @@ from lawvm.core.invariant_surface_matrix import (
 )
 from lawvm.core.phase_result import Finding
 
+from lawvm.finland.definition_introducer import fi_definition_list_introducer_predicate
 from lawvm.finland.replay_findings import (
     _emit_structural_dedup_warning,
     _replay_product_invariant_finding,
@@ -239,6 +240,7 @@ def project_replay_products(request: ReplayProductProjectionRequest) -> ReplayPr
         replay_findings=request.replay_findings,
         replay_meta_out=request.replay_meta_out,
         replay_print=request.replay_print,
+        definition_introducer_predicate=fi_definition_list_introducer_predicate,
     )
 
     if request.replay_meta_out is not None and request.replay_meta_out.get(

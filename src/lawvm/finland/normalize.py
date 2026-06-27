@@ -19,6 +19,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from dataclasses import replace as dc_replace
+from functools import lru_cache
 from typing import List, Optional, Set, Tuple
 
 import lxml.etree as etree
@@ -103,15 +104,22 @@ _INSERT_CHAPTER_SECTION_FALLBACK_RE = re.compile(
     r"\b(\d+\s*[a-z]?)\s+lukuun\s+uusi\s+([^§]{1,120})§",
     flags=re.I,
 )
+# Body capture is bounded to .{0,400}? per AGENTS.md §2.4 backtracking
+# discipline — the only alternation terminator anchored by `|$` is end-of-text,
+# so an unbounded ``.*?`` would walk to end-of-text on EVERY match position when
+# the body fails the other alternations.  The 400-char bound matches the
+# established bounded-lazy idiom used elsewhere in the codebase; the fallback's
+# realistic clause bodies (a single ``uusi N momentti`` insert between section
+# markers) are 80-200 chars in the corpus.
 _INSERT_SUBSECTION_FALLBACK_RE = re.compile(
     r"(\d+\s*[a-z]?)\s*§\s*:ään\s*,?\s*(?:sellaisena\s+kuin\s+[^,]+,\s*)?"
-    r"(.*?)(?=(?:\d+\s*[a-z]?\s*§\s*:ään)|(?:\d+\s*[a-z]?\s+luvun\s+\d+\s*[a-z]?\s*§\s*:)"
+    r"(.{0,400}?)(?=(?:\d+\s*[a-z]?\s*§\s*:ään)|(?:\d+\s*[a-z]?\s+luvun\s+\d+\s*[a-z]?\s*§\s*:)"
     r"|(?:\d+\s*[a-z]?\s+luvun\s+\d+\s*[a-z]?\s*§\s*:ään)|\bseuraavasti\b|$)",
     flags=re.I,
 )
 _INSERT_ITEM_FALLBACK_RE = re.compile(
     r"(\d+\s*[a-z]?)\s*§\s*:n\s*(\d+)\s+momenttiin\s*,?\s*(?:sellaisena\s+kuin\s+[^,]+,\s*)?"
-    r"(.*?)(?=(?:\d+\s*[a-z]?\s*§\s*:n\s*\d+\s+momenttiin)"
+    r"(.{0,400}?)(?=(?:\d+\s*[a-z]?\s*§\s*:n\s*\d+\s+momenttiin)"
     r"|(?:\d+\s*[a-z]?\s*§\s*:ään)"
     r"|(?:\blakiin\s+uusi\b)|\bseuraavasti\b|$)",
     flags=re.I,
@@ -139,13 +147,34 @@ def _extract_grouped_container_targets(johto: str, noun: str) -> Set[str]:
     text = _RE_WHITESPACE.sub(" ", johto or "").replace("\xa0", " ")
     labels: Set[str] = set()
     # lawvm-regex: owning_parser N-container coordinated bare-number container-noun inheritance over passed-in johto (label-interpolated dynamic pattern, left inline per §1.11); part of the RETAINED rank-3 load-bearing fallback residual (census-proven; see normalize_fallback_heuristic_census)
-    for match in re.finditer(rf"((?:\d+\s*,\s*)*\d+(?:\s+ja\s+\d+)?)\s+{noun}\b", text, flags=re.I):
+    # Per AGENTS.md §2.4/§2.7: ``re.finditer(rf"...\b{noun}\b", text)`` per
+    # call compilations dominated compile cost across many provisions.  The set
+    # of container nouns (``luku``/``osa``/...) is small and repeats heavily,
+    # so a bounded LRU cache (mirrors ``us_federal/_word_boundary_pattern``).
+    pat = _container_noun_pattern(noun)
+    for match in pat.finditer(text):
         cluster = match.group(1)
         for token in _RE_COMMA_OR_JA.split(cluster):
             token = token.strip()
             if re.fullmatch(r"\d+[a-z]?", token, flags=re.I):
                 labels.add(token.lower())
     return labels
+
+
+@lru_cache(maxsize=512)
+def _container_noun_pattern(noun: str) -> "re.Pattern[str]":
+    """Compile and cache the bare-number + container-noun coordinator pattern.
+
+    Per AGENTS.md §2.4/§2.7: per-call compilation of the escaped coordinator
+    pattern (rf-string built around an interpolated ``noun``) inside a per-
+    provision loop is forbidden — the set of distinct container nouns
+    (``luku``/``osa``/``pykälä`` ...) is small and repeats heavily, so a
+    bounded LRU cache is sound.  Mirrors ``us_federal/_word_boundary_pattern``.
+    """
+    return re.compile(
+        rf"((?:\d+\s*,\s*)*\d+(?:\s+ja\s+\d+)?)\s+{re.escape(noun)}\b",
+        flags=re.I,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -257,10 +286,13 @@ def _extract_insert_subsection_ops_fallback(cleaned: str) -> List[AmendmentOp]:
     """
     ops: List[AmendmentOp] = []
     seen: Set[Tuple[str, int]] = set()
+    # Body capture bounded to .{0,400}? per AGENTS.md §2.4 (same fix as
+    # _INSERT_SUBSECTION_FALLBACK_RE above; this inline form is the
+    # third-in-family instance so the rule-of-three applies — keep it in lock-step).
     # lawvm-regex: owning_parser N-insert-fallback subsection insert recognizer over passed-in johto; gated by allows_target_guessing, has RegexRecognitionCoverage shadow; part of the RETAINED rank-3 load-bearing fallback residual (census-proven; see normalize_fallback_heuristic_census)
     for m in re.finditer(
         r"(\d+\s*[a-z]?)\s*§\s*:ään\s*,?\s*(?:sellaisena\s+kuin\s+[^,]+,\s*)?"
-        r"(.*?)(?=(?:\d+\s*[a-z]?\s*§\s*:ään)|(?:\d+\s*[a-z]?\s+luvun\s+\d+\s*[a-z]?\s*§\s*:)"
+        r"(.{0,400}?)(?=(?:\d+\s*[a-z]?\s*§\s*:ään)|(?:\d+\s*[a-z]?\s+luvun\s+\d+\s*[a-z]?\s*§\s*:)"
         r"|(?:\d+\s*[a-z]?\s+luvun\s+\d+\s*[a-z]?\s*§\s*:ään)|\bseuraavasti\b|$)",
         cleaned,
         flags=re.I,
@@ -509,7 +541,15 @@ def _classify_regex_ignored_span(text: str) -> str:
     lowered = cleaned.lower()
     if lowered in {"lisätään", "lisää", "ja", "sekä"}:
         return "drafting_connector"
-    if re.fullmatch(r"(?:sellaisena|sellaisina)\s+kuin\b.*", lowered):
+    # Use ``re.match`` (start-anchored) instead of ``re.fullmatch(...\b.*)`` —
+    # the original ``.*`` existed only to let ``fullmatch`` accept any suffix
+    # length, but an unbounded ``.*`` is forbidden by AGENTS.md §2.4 even in a
+    # greedy form (LL futures could change backtracking shape without notice).
+    # The classifier only needs to detect the ``sellaisena/sellaisina kuin``
+    # prefix + word boundary; the suffix content is irrelevant to the
+    # ``source_version_qualifier`` label.
+    # lawvm-regex: prefilter sellaisena/sellaisena kuin source_version_qualifier prefix predicate (converts fullmatch\b.* -> re.match start-anchor per §2.4); answers yes/no, mints no legal state
+    if re.match(r"(?:sellaisena|sellaisina)\s+kuin\b", lowered):
         return "source_version_qualifier"
     return "unclassified"
 
@@ -856,8 +896,12 @@ def _extract_replace_ops_from_muutetaan_tail(cleaned: str) -> List[AmendmentOp]:
     and subsection targets. It exists for mixed clauses where PEG found the
     repeal side but dropped the subsequent replace side entirely.
     """
+    # Tail capture bounded to .{0,400}? per AGENTS.md §2.4 — the only terminator
+    # anchored by `|$` is end-of-text, so an unbounded ``.*?`` walks to
+    # end-of-text on every match attempt; the muutetaan tail is the short
+    # between-section-to-seuraavasti region (well under 400 chars in corpus).
     # lawvm-regex: owning_parser N-tail-replace muutetaan-tail recognizer over passed-in johto; part of the RETAINED rank-3 load-bearing fallback residual (census-proven; see normalize_fallback_heuristic_census)
-    m = re.search(r"\bmuutetaan\b(.*?)(?:\bseuraavasti\b|$)", cleaned, flags=re.I)
+    m = re.search(r"\bmuutetaan\b(.{0,400}?)(?:\bseuraavasti\b|$)", cleaned, flags=re.I)
     if m is None:
         return []
     tail = re.sub(r"\(\s*\d+/\d+\s*\)", " ", m.group(1))

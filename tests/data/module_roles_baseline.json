@@ -1,17 +1,16 @@
 {
   "_doc": "Monotone module-role baseline. The `dead` and `test_only_live` sets may only SHRINK: a module born dead must be wired or deleted, never added to the population. The `replay_exercised` map is a SNAPSHOT: a module flipping replay-exercised status (either direction) fails the ratchet until re-baselined. Regenerate with `uv run python scripts/inventory_module_roles.py --update-baseline` after legitimately retiring (deleting) a dead/test-only module, wiring it to a production consumer, or refreshing the replay-coverage snapshot (tests/data/replay_coverage_snapshot.json — see its provenance.refresh_command).",
   "counts": {
-    "dead": 74,
-    "live": 1017,
+    "dead": 73,
+    "live": 1028,
     "test_only_live": 27
   },
   "replay_counts": {
     "exercised": 170,
-    "cold": 243,
-    "in_scope": 413
+    "cold": 244,
+    "in_scope": 414
   },
   "dead": [
-    "lawvm.core.certified_transition",
     "lawvm.core.claim_assumption_binding",
     "lawvm.core.compile_metadata_verify",
     "lawvm.core.downgrade_witness",
@@ -133,6 +132,7 @@
     "lawvm.finland.claim_kinds.xml_manual_frontier",
     "lawvm.finland.compile",
     "lawvm.finland.corrigendum_proof_projector",
+    "lawvm.finland.definition_introducer",
     "lawvm.finland.delegation",
     "lawvm.finland.effect_lifecycle_projection",
     "lawvm.finland.effect_lifecycle_signals",
@@ -424,6 +424,7 @@
     "lawvm.finland.corrigendum": true,
     "lawvm.finland.corrigendum_proof_projector": false,
     "lawvm.finland.corrigendum_records": true,
+    "lawvm.finland.definition_introducer": false,
     "lawvm.finland.delegation": false,
     "lawvm.finland.editorial_adjudication": false,
     "lawvm.finland.effect_lifecycle_projection": false,

@@ -6,12 +6,14 @@ are known to indicate fallback- or heuristic-heavy parser behavior.
 It also hosts the reusable scan for the *regex ratchet* gate
 (``tests/test_regex_ratchet.py``). That gate enforces the pipeline-contract rule
 "no NEW post-parse raw-text semantic regex without a waiver/category"
-(``notes/LAWVM_PIPELINE_CONTRACT.md`` §4, AGENTS.md §1.12 / §2.4): every file in
-``src/lawvm/{core,finland}`` is either pre-cleared by ``CATEGORY_MAP`` (genuine
-source-plane / lexer / owning-parser / diagnostic regex) or *scanned*, and every
-regex use-site in a scanned (post-parse / legal-state / projection) file must
-carry an inline ``# lawvm-regex:`` waiver or be a baselined leak. The committed
-baseline (``tests/data/regex_ratchet_baseline.json``) is a monotone ratchet: the
+(``notes/LAWVM_PIPELINE_CONTRACT.md`` §4, AGENTS.md §1.12 / §2.4): every file
+under ``src/lawvm/`` (all 12 source frontends — core, finland, estonia, norway,
+sweden, new_zealand, eu, us_federal, uk_legislation, substrate, semantic,
+open_law, tools) is either pre-cleared by ``CATEGORY_MAP`` (genuine source-plane
+/ lexer / owning-parser / diagnostic regex) or *scanned*, and every regex
+use-site in a scanned (post-parse / legal-state / projection) file must carry an
+inline ``# lawvm-regex:`` waiver or be a baselined leak. The committed baseline
+(``tests/data/regex_ratchet_baseline.json``) is a monotone ratchet: the
 un-waived semantic-plane count may never increase, only fall.
 """
 from __future__ import annotations
@@ -954,9 +956,29 @@ def _to_markdown(inventory: dict[str, Any]) -> str:
 # ---------------------------------------------------------------------------
 
 _DEFAULT_REPO_ROOT = Path(__file__).resolve().parents[1]
-_RATCHET_SCAN_ROOTS = (
+
+# All LawVM source roots scanned by the regex ratchet. The ratchet is the
+# doctrine-level gate for "no NEW post-parse raw-text semantic regex without a
+# waiver/category" (notes/LAWVM_PIPELINE_CONTRACT.md §4, AGENTS.md §1.12 / §2.4,
+# notes/REGEX_TO_GRAMMAR_MIGRATION.md step 10). Every frontend is included so
+# the gate cannot silently re-leak on a non-`core`/`finland` frontend. A file is
+# scanned UNLESS it is pre-cleared in ``CATEGORY_MAP`` (genuine source-plane /
+# lexer / owning-parser / diagnostic regex use). Test/``__pycache__`` files are
+# excluded by ``iter_scanned_files``.
+_RATCHET_SCAN_ROOTS: tuple[Path, ...] = (
     Path("src/lawvm/core"),
     Path("src/lawvm/finland"),
+    Path("src/lawvm/estonia"),
+    Path("src/lawvm/norway"),
+    Path("src/lawvm/sweden"),
+    Path("src/lawvm/new_zealand"),
+    Path("src/lawvm/eu"),
+    Path("src/lawvm/us_federal"),
+    Path("src/lawvm/uk_legislation"),
+    Path("src/lawvm/substrate"),
+    Path("src/lawvm/semantic"),
+    Path("src/lawvm/open_law"),
+    Path("src/lawvm/tools"),
 )
 
 
@@ -968,10 +990,14 @@ def _rel_posix(path: Path, repo_root: Path) -> str:
 
 
 def iter_scanned_files(repo_root: Path | None = None) -> list[str]:
-    """All ``src/lawvm/{core,finland}`` python files that are NOT pre-cleared.
+    """All python files under ``_RATCHET_SCAN_ROOTS`` that are NOT pre-cleared.
 
     A file is scanned unless ``CATEGORY_MAP`` pre-clears it as source-plane /
     lexer / owning-parser / diagnostic. Test/``__pycache__`` files are excluded.
+    The scan roots span every LawVM source frontend (core/finland/estonia/
+    norway/sweden/new_zealand/eu/us_federal/uk_legislation/substrate/semantic/
+    open_law/tools) so the "no NEW post-parse raw-text semantic regex" gate
+    cannot silently re-leak on a non-core/finland frontend.
     """
     root = (repo_root or _DEFAULT_REPO_ROOT).resolve()
     scanned: list[str] = []
@@ -1187,10 +1213,7 @@ def write_ratchet_baseline(repo_root: Path | None = None) -> Path:
 #                              splitter) within one file — the missing-abstraction
 #                              signal (CLAUDE.md rule-of-three).
 
-_FW08_SCAN_ROOTS = (
-    Path("src/lawvm/core"),
-    Path("src/lawvm/finland"),
-)
+_FW08_SCAN_ROOTS = _RATCHET_SCAN_ROOTS
 
 _FW08_REGEX_PATTERN_METHODS = frozenset(
     {"compile", "search", "finditer", "findall", "match", "sub", "subn", "split"}
@@ -1202,8 +1225,9 @@ _FW08_BOUNDARY_TOKEN_RE = re.compile(
 
 
 def _fw08_iter_scanned_files(repo_root: Path) -> list[str]:
-    """Scanned (non-precleared) post-parse core/finland files — the regex-ratchet
-    scan set, so FW-08 sensors share the semantic-plane scope."""
+    """Scanned (non-precleared) post-parse LawVM files — the regex-ratchet
+    scan set (``_RATCHET_SCAN_ROOTS``), so FW-08 sensors share the semantic-plane
+    scope across every frontend."""
     root = repo_root.resolve()
     scanned: list[str] = []
     for scan_root in _FW08_SCAN_ROOTS:

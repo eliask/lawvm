@@ -12,6 +12,7 @@ import re
 from dataclasses import replace as dc_replace
 from typing import TYPE_CHECKING, List, Optional, Set, Tuple
 
+from lawvm.core.named_swallow import build_named_swallow_finding
 from lawvm.core.phase_result import Finding
 from lawvm.finland.op_provenance import representative_scope_tag
 from lawvm.finland.ops import AmendmentOp, OpType, projection_scope_confidence
@@ -207,13 +208,33 @@ def _semantic_collapse_move_or_renumber_observations(
 
     if "numero" not in cleaned or "mainit" not in cleaned:
         return findings
+    # §1.10 (no broad exception swallowing) + §2.6 (rule of three): the prior
+    # ``except (...) raise; except Exception: return findings`` was an
+    # independent re-invention of the named_swallow pattern. Now the swallow
+    # path uses ``build_named_swallow_finding`` (the named_swallow primitive's
+    # typed constructor) to append a typed Finding(kind=UNEXPECTED_PHASE_FAILURE)
+    # to ``findings`` (the function's return value) with the offending
+    # johtolause clause text embedded (truncated ~400 chars). The body keeps
+    # the original try/except shape so ``result``/``parsed_ops``/``johto_features``
+    # bindings stay in scope for the success path (the subsequent iteration over
+    # ``parsed_ops`` requires that binding).
     try:
         result = parse_result if parse_result is not None else parse_clause(johto)
         parsed_ops = result.parsed_ops
         johto_features = derive_features(johto, parsed_ops)
     except (NameError, TypeError, AttributeError):
         raise  # programming bugs — fail loud
-    except Exception:
+    except Exception as exc:
+        findings.append(
+            build_named_swallow_finding(
+                rule_id="fi_frontend_observations_derive_features",
+                exception=exc,
+                op_id=None,
+                clause_text=(johto or "")[:400],
+                jurisdiction="fi",
+                source_artifact=source_statute,
+            )
+        )
         return findings
     if "renumber" not in johto_features or not ({"backref_singular", "backref_plural"} & set(johto_features)):
         return findings

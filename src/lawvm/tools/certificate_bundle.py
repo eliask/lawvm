@@ -36,6 +36,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
+from lawvm.core.certified_transition import certified_tree_transitions_from_receipt
 from lawvm.core.observation_registry import FINDING_REGISTRY, FindingSpec
 from lawvm.core.provenance import SourceAnchor
 from lawvm.core.stage_result import AuthoritySurface, StageResult
@@ -1233,6 +1234,26 @@ def _address_explains(footprint_addr: str, target_addr: str) -> bool:
     )
 
 
+def _target_address_at_granularity(addr: str, granularity: str) -> bool:
+    """True when ``addr``'s deepest step matches the bundle covering ``granularity``.
+
+    The typed producer emits one transition per receipt's declared footprint
+    address; that address can be at a COARSER level than the bundle's covering
+    units (a section-level op receipt whose footprint path is ``section:7`` at
+    bundle granularity ``subsection``). Such a typed transition's address
+    never appears in the verifier's folded state (state-diff emits at
+    ``section:7/subsection:1`` only), so emitting it would fire a pre_hash
+    mismatch. The typed producer falls back to state-diff in those cases
+    (§1.12 reach-back exception for granularity-mismatched receipts).
+    """
+    if not addr:
+        return False
+    last_step = addr.rsplit("/", 1)[-1]
+    if ":" not in last_step:
+        return False
+    return last_step.split(":", 1)[0] == granularity
+
+
 def cross_check_transitions_against_receipts(
     *,
     transition_rows: Sequence[Mapping[str, Any]],
@@ -1842,13 +1863,211 @@ def build_certificate_bundle(
     ops_by_date = _index_ops_by_date(bundle.lo_ops)
     expiry_ops_by_date = _index_ops_by_expiry_date(bundle.lo_ops)
 
+    # --- byte-level source anchor verification (trace spec §5.1/§7) ---
+    # Promote genuine source anchors carried by landed receipts onto the
+    # transition rows. The anchor is RE-VERIFIED against the bundle's own source
+    # bytes before it is certified: a certified anchor must satisfy
+    # source_blobs[aid][off:off+len] == quote bytes AND match the recorded
+    # quote_hash. Any anchor that fails this independent re-derivation (e.g. the
+    # receipt anchored a corrigendum-corrected byte stream that differs from the
+    # bundled raw source) is dropped — the transition then keeps its fail-loud
+    # SOURCE_ANCHOR_UNAVAILABLE residual. Anchors are never fabricated and never
+    # trusted blindly.
+    #
+    # Helper is hoisted before the typed-producer pre-pass and the state-diff
+    # loop because BOTH consume it (the typed producer trusts the receipt's
+    # anchor; the certificate writer independently re-verifies it before
+    # certifying). `anchored_refs` records the (transition_id, source_ref)
+    # pairs that earned a certified anchor so the §7 residual loop can suppress
+    # only those.
+    #
+    # The join is on the SOURCE ARTIFACT, not on op_id: a receipt's anchor names
+    # the amendment clause (source_artifact_id) whose verbatim source bytes
+    # drove the write. Receipt op_ids and the engine's lo_op op_ids live in
+    # different id spaces (the receipt boundary mints its own), so an op_id join
+    # would never fire. Anchoring a transition to its driving source artifact is
+    # the sound relation: the certified anchor is that artifact's clause
+    # provenance, and the transition declares that artifact in ``source_refs``.
+    def _verified_anchor_json(anchor: "SourceAnchor", artifact_id: str) -> Optional[Dict[str, Any]]:
+        blob = source_blobs.get(artifact_id)
+        if blob is None:
+            return None
+        end = anchor.byte_offset + anchor.byte_len
+        if end > len(blob):
+            return None
+        quoted = blob[anchor.byte_offset:end]
+        if "sha256:" + hashlib.sha256(quoted).hexdigest() != anchor.quote_hash:
+            return None
+        return anchor.as_jsonable()
+
+    # One verified anchor per source artifact, keyed by bundle artifact_id.
+    verified_anchor_by_artifact: Dict[str, Dict[str, Any]] = {}
+    for _receipt in bundle.result.write_receipts:
+        anchor = _receipt.source_anchor
+        if anchor is None:
+            continue
+        artifact_id = artifact_id_by_engine_sid.get(
+            _engine_statute_id(anchor.source_artifact_id)
+        )
+        if artifact_id is None or artifact_id in verified_anchor_by_artifact:
+            continue
+        verified = _verified_anchor_json(anchor, artifact_id)
+        if verified is None:
+            continue
+        verified_anchor_by_artifact[artifact_id] = verified
+
+    # Per-source-statute effective-date lookup for the typed-producer pre-pass.
+    # Built from lo_ops: each lo_op's source carries `statute_id` plus
+    # `effective` or `enacted`. Used to attribute a typed transition to the
+    # same boundary date the state-diff loop would attribute it to (the date
+    # that op takes effect). Keyed on the engine-statute id so the lookup below
+    # matches anchor.source_artifact_id (which is the canonical statute id)
+    # after the same normalizer.
+    eff_date_by_sid: Dict[str, str] = {}
+    for _lo_op in bundle.lo_ops:
+        if _lo_op.source is None:
+            continue
+        _sid_raw = _lo_op.source.statute_id or ""
+        _eff = _lo_op.source.effective or _lo_op.source.enacted or ""
+        if _sid_raw and _eff:
+            _sid = _engine_statute_id(_sid_raw)
+            if _sid not in eff_date_by_sid:
+                eff_date_by_sid[_sid] = _eff
+
+    # --- typed producer pre-pass (§1.12 no representation regression) ----------
+    # Per AGENTS.md §1.12 + notes/CERTIFICATE_SCHEMA_V0.md §5.1 + the
+    # _MUST_TRANSITION_FROM_RECEIPT (PIPE-MUST-10) clause in core/must_trace.py:
+    # the typed WriteReceipt→CertifiedTreeTransition producer
+    # (lawvm.core.certified_transition.certified_tree_transitions_from_receipt)
+    # is the canonical transition source for receipts that carry a byte-level
+    # ``source_anchor`` (the producer's ``source_anchors`` parameter carries
+    # the verified anchor directly into the certified core — no state-diff
+    # reach-back).
+    #
+    # Fall-back derivation for receipts lacking ``source_anchor`` (legacy
+    # receipts pre-threading) lives in the state-diff loop below: this is the
+    # documented §1.12 reach-back exception. The typed producer is
+    # authoritative when ``source_anchor`` is present; the state-diff
+    # transition loop SKIPS any (eff_date, target_address) pair already owned
+    # by a typed transition so the canonical typed row is not double-emitted.
+    #
+    # Anchors are joined on the SOURCE ARTIFACT, not on op_id (per the
+    # overlay-step contract above). The same verified_anchor_by_artifact map
+    # is reused: the typed producer trusts the receipt's anchor only after the
+    # certificate writer has INDEPENDENTLY re-verified it against the bundle's
+    # source bytes (the §1.12 promotion boundary for raw source bytes). A
+    # receipt whose anchor does not re-verify falls back to state-diff below —
+    # its fail-loud SOURCE_ANCHOR_UNAVAILABLE residual then fires.
+    #
+    # Placeholder sequences here (``_typed_seq``) are REASSIGNED post-merge
+    # below so typed + state-diff transitions share a date-ascending global
+    # sequence (the verifier requires effective_date non-decreasing in
+    # sequence order). ``typed_anchor_refs`` remembers the (row_idx,
+    # artifact_id) for each typed transition so anchored_refs can be
+    # re-keyed under the post-sort transition_id after the merge.
+    typed_transition_rows: List[Dict[str, Any]] = []
+    typed_owned_pairs: set[Tuple[str, str]] = set()
+    typed_anchor_refs: List[Tuple[int, str]] = []
+    _typed_seq = 0
+    for _receipt in bundle.result.write_receipts:
+        anchor = _receipt.source_anchor
+        if anchor is None:
+            continue  # legacy receipt — §1.12 reach-back exception in state-diff below
+        artifact_id = artifact_id_by_engine_sid.get(
+            _engine_statute_id(anchor.source_artifact_id)
+        )
+        if artifact_id is None:
+            continue  # source not bundled — fall back to state-diff
+        verified = verified_anchor_by_artifact.get(artifact_id)
+        if verified is None:
+            continue  # anchor did not verify against bundled bytes — fail-loud residual
+        eff_date = eff_date_by_sid.get(_engine_statute_id(anchor.source_artifact_id))
+        if not eff_date:
+            continue  # no source-statute effective date — fall back to state-diff
+        try:
+            typed_rows = certified_tree_transitions_from_receipt(
+                _receipt,
+                effective_date=eff_date,
+                sequence_start=_typed_seq + 1,
+                source_refs=(artifact_id,),
+                source_anchors=(verified,),
+            )
+        except ValueError:
+            # Receipt's hashes not transition-projectable (e.g. declared
+            # footprint but pre==post hash, or hash coverage mismatch). Fall
+            # back to state-diff for this receipt's footprint — fail-loud
+            # residual will fire.
+            continue
+        for _typed in typed_rows:
+            _typed_seq = _typed.sequence
+            # Normalize the typed producer's target_address to match the
+            # state-diff / materialized-state address space: the receipt's
+            # declared footprint path carries the IR's body-root `hcontainer
+            # ""` wrapper step (an FI XML IR structural wrapping node), and
+            # the typed producer stringifies that path verbatim into the
+            # address (e.g. ``hcontainer:/section:7``). The state-diff loop's
+            # ``covering_units`` emits the same nodes WITHOUT the wrapper
+            # prefix (e.g. ``section:7``). Without alignment, the typed
+            # transition's target_address would never collide with state-
+            # diff's, the ``typed_owned_pairs`` skip would never fire, and
+            # the verifier would fold typed at ``hcontainer:/section:7``
+            # against an empty state (pre_hash mismatch). Stripping the body-
+            # root prefix is the existing normalization
+            # ``_receipt_footprint_addresses`` already applies to receipt
+            # footprints; the typed producer inherits the same alignment so
+            # cross_check_transitions_against_receipts (which uses
+            # ``_receipt_footprint_addresses``) compares apples to apples.
+            target_address = _typed.target_address
+            if target_address.startswith(_RECEIPT_BODY_ROOT_PREFIX):
+                target_address = target_address[len(_RECEIPT_BODY_ROOT_PREFIX):]
+            # Granularity guard: a typed transition whose declared footprint
+            # is at a COARSER level than the bundle's covering units (e.g.
+            # a section-level receipt at subsection granularity) cannot align
+            # with the verifier's folded state — emitting it would fire a
+            # pre_hash mismatch. Fall back to state-diff for those receipts
+            # (the §1.12 reach-back exception); the receipt's anchor is
+            # re-applied to the state-diff transition by the overlay step
+            # below when the receipt's source artifact matches a transition
+            # source_ref.
+            if not _target_address_at_granularity(target_address, granularity):
+                continue
+            typed_owned_pairs.add((eff_date, target_address))
+            _row = _typed.to_jsonable_dict()
+            _row["target_address"] = target_address
+            # Display annotations (NOT hashed; same shape as state-diff rows
+            # below for downstream-consumer symmetry).
+            _row.update(
+                {
+                    "legal_op_kind": "",
+                    "legal_op_summary": "",
+                    "preparatory_refs": [],
+                    "expires_date": "",
+                    "flags": {"typed_producer": True},
+                }
+            )
+            typed_anchor_refs.append((len(typed_transition_rows), artifact_id))
+            typed_transition_rows.append(_row)
+
+    # --- state-diff derivation (§1.12 reach-back EXCEPTION for legacy receipts) -
+    # Fall-back derivation for receipts lacking ``source_anchor`` (legacy
+    # receipts pre-threading); the typed producer is authoritative when
+    # source_anchor is present, so this loop SKIPS any (eff_date,
+    # target_address) pair already owned by a typed transition above. The
+    # state-diff remains canonical for first-materialization rows (pre == "")
+    # and temporary-act lapse restoration (flags.temporary_expiry), neither of
+    # which carries a receipt anchor.
+    #
+    # Placeholder sequences here (``_state_seq``) are REASSIGNED post-merge
+    # below; ``op_transitions`` is keyed by these placeholder ids and rebuilt
+    # at the same point so cross_check_transitions_against_receipts (which
+    # reads ``op_transitions``) sees the final ids.
     prev_state: Dict[str, str] = {}
     states_by_date: Dict[str, Dict[str, str]] = {}
     blobs: Dict[str, Dict[str, Any]] = {}  # bare-hex structural hash -> §2.1 node json
-    transition_rows: List[Dict[str, Any]] = []
+    state_diff_transition_rows: List[Dict[str, Any]] = []
     checkpoint_rows: List[Dict[str, Any]] = []
     op_transitions: Dict[str, List[str]] = {}
-    seq = 0
+    _state_seq = 0
     for date in boundary:
         tree = materialize_oracle_tree(bundle, date)
         units = covering_units(tree, "", granularity)
@@ -1881,13 +2100,18 @@ def build_certificate_bundle(
         expiring_on_date = expiry_ops_by_date.get(date, [])
         all_addrs = list(dict.fromkeys(list(prev_state.keys()) + cur_order))
         for addr in all_addrs:
+            if (date, addr) in typed_owned_pairs:
+                # Owned by the typed producer (§1.12 no reach-back): the typed
+                # transition row above is canonical for this (date, addr);
+                # skip the state-diff derivation so it is not double-emitted.
+                continue
             pre = prev_state.get(addr, "")
             post = cur_state.get(addr, "")
             if pre == post:
                 continue
-            seq += 1
+            _state_seq += 1
             action = "delete_subtree" if post == "" else "set_subtree"
-            transition_id = f"t{seq:06d}:{date}:{addr}"
+            transition_id = f"t{_state_seq:06d}:{date}:{addr}"
 
             ops = _ops_for_covering(ops_on_date, addr)
             expiring = _ops_for_covering(expiring_on_date, addr)
@@ -1926,7 +2150,7 @@ def build_certificate_bundle(
             row = {
                 # certified core (trace spec §5.1)
                 "transition_id": transition_id,
-                "sequence": seq,
+                "sequence": _state_seq,
                 "effective_date": date,
                 "action": action,
                 "target_address": addr,
@@ -1935,8 +2159,11 @@ def build_certificate_bundle(
                 "payload_hash": ("sha256:" + post) if post else "",
                 "source_refs": source_refs,
                 # Experimental writer: state-diff-derived transitions carry no
-                # byte anchors; every source_ref gets a
-                # kind=source_anchor_unavailable residual (trace spec §7).
+                # byte anchors by construction; every source_ref gets a
+                # kind=source_anchor_unavailable residual (trace spec §7)
+                # UNLESS the overlay step below finds a verified anchor for
+                # one of this row's source_refs (legacy anchored receipt that
+                # fell through the typed-producer pre-pass).
                 "source_anchors": [],
                 # display annotation (NOT hashed)
                 "legal_op_kind": ",".join(sorted(kind_set)),
@@ -1945,61 +2172,67 @@ def build_certificate_bundle(
                 "expires_date": "",
                 "flags": flags,
             }
-            transition_rows.append(row)
+            state_diff_transition_rows.append(row)
             for op in ops + expiring:
                 op_transitions.setdefault(op.op_id, []).append(transition_id)
         prev_state = cur_state
 
-    # --- byte-level source anchoring (trace spec §5.1/§7) ---
-    # Promote genuine source anchors carried by landed receipts onto the
-    # transition rows that the receipts drove. The anchor is RE-VERIFIED against
-    # the bundle's own source bytes before it is certified: a certified anchor
-    # must satisfy source_blobs[aid][off:off+len] == quote bytes AND match the
-    # recorded quote_hash. Any anchor that fails this independent re-derivation
-    # (e.g. the receipt anchored a corrigendum-corrected byte stream that
-    # differs from the bundled raw source) is dropped — the transition then
-    # keeps its fail-loud SOURCE_ANCHOR_UNAVAILABLE residual. Anchors are never
-    # fabricated and never trusted blindly. ``anchored_refs`` records the
-    # (transition_id, source_ref) pairs that earned a certified anchor so the
-    # residual loop can suppress only those.
-    #
-    # The join is on the SOURCE ARTIFACT, not on op_id: a receipt's anchor names
-    # the amendment clause (source_artifact_id) whose verbatim source bytes drove
-    # the write. Receipt op_ids and the engine's lo_op op_ids live in different
-    # id spaces (the receipt boundary mints its own), so an op_id join would
-    # never fire. Anchoring a transition to its driving source artifact is the
-    # sound relation: the certified anchor is that artifact's clause provenance,
-    # and the transition declares that artifact in ``source_refs``.
-    def _verified_anchor_json(anchor: "SourceAnchor", artifact_id: str) -> Optional[Dict[str, Any]]:
-        blob = source_blobs.get(artifact_id)
-        if blob is None:
-            return None
-        end = anchor.byte_offset + anchor.byte_len
-        if end > len(blob):
-            return None
-        quoted = blob[anchor.byte_offset:end]
-        if "sha256:" + hashlib.sha256(quoted).hexdigest() != anchor.quote_hash:
-            return None
-        return anchor.as_jsonable()
-
-    # One verified anchor per source artifact, keyed by bundle artifact_id.
-    verified_anchor_by_artifact: Dict[str, Dict[str, Any]] = {}
-    for _receipt in bundle.result.write_receipts:
-        anchor = _receipt.source_anchor
-        if anchor is None:
-            continue
-        artifact_id = artifact_id_by_engine_sid.get(
-            _engine_statute_id(anchor.source_artifact_id)
+    # --- merge: typed + state-diff in date-ascending global sequence ----------
+    # The verifier (verify_bundle TRACE-MUST) requires every transition's
+    # sequence to be strictly increasing AND its effective_date to be
+    # non-decreasing in sequence order. Concatenating typed-then-state-diff
+    # would break that (a typed transition dated D2 > state-diff's first date
+    # D1 emits a decreasing date transition). Instead merge them with a stable
+    # sort on (effective_date, target_address) so the global sequence is
+    # date-ascending regardless of producer order; state-diff rows for the
+    # same (date, addr) are skipped above so no duplicate emerges. Ties on
+    # (date, addr) are impossible by construction (typed pairs are skipped in
+    # state-diff), so the typed_producer sort-sub-key is the row producer's
+    # disambiguator only.
+    transition_rows: List[Dict[str, Any]] = typed_transition_rows + state_diff_transition_rows
+    transition_rows.sort(
+        key=lambda r: (
+            r["effective_date"],
+            r["target_address"],
+            0 if r.get("flags", {}).get("typed_producer") else 1,
         )
-        if artifact_id is None or artifact_id in verified_anchor_by_artifact:
-            continue
-        verified = _verified_anchor_json(anchor, artifact_id)
-        if verified is None:
-            continue
-        verified_anchor_by_artifact[artifact_id] = verified
+    )
 
-    anchored_refs: set[Tuple[str, str]] = set()
+    # Reassign sequence + transition_id; re-key op_transitions and
+    # anchored_refs under the final ids.
+    seq = 0
+    old_to_new_transition_ids: Dict[str, str] = {}
     for row in transition_rows:
+        seq += 1
+        old_id = row["transition_id"]
+        new_id = f"t{seq:06d}:{row['effective_date']}:{row['target_address']}"
+        row["sequence"] = seq
+        row["transition_id"] = new_id
+        if old_id != new_id:
+            old_to_new_transition_ids[old_id] = new_id
+    new_op_transitions: Dict[str, List[str]] = {}
+    for op_id, transition_ids in op_transitions.items():
+        new_op_transitions[op_id] = [
+            old_to_new_transition_ids.get(tid, tid) for tid in transition_ids
+        ]
+    op_transitions.clear()
+    op_transitions.update(new_op_transitions)
+    anchored_refs: set[Tuple[str, str]] = set()
+    for row_idx, artifact_id in typed_anchor_refs:
+        new_id = typed_transition_rows[row_idx]["transition_id"]
+        anchored_refs.add((new_id, artifact_id))
+
+    # --- byte-level source anchor overlay for FALLBACK state-diff transitions --
+    # The typed producer pre-pass already certified anchors on typed_transition
+    # rows (and populated anchored_refs above to suppress their fail-loud
+    # residual). For the REMAINING state-diff transition rows whose source_refs
+    # were verified above, overlay the verified anchor on the row's source_
+    # anchors — same §1.12 reach-back as before, retained for the legacy/
+    # fallback surface ONLY and skipped for rows already produced by the typed
+    # producer (flags.typed_producer).
+    for row in transition_rows:
+        if row.get("flags", {}).get("typed_producer"):
+            continue  # typed producer is canonical; no reach-back overlay
         transition_id = row["transition_id"]
         anchors_for_row: Dict[str, Dict[str, Any]] = {}
         for ref in row["source_refs"]:

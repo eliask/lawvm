@@ -20,6 +20,7 @@ import lxml.etree as etree
 from lawvm.core.ir import LegalAddress
 from lawvm.core.semantic_types import FacetKind
 from lawvm.core.unicode_folds import CF_FORMAT_CPS, ZS_NON_ASCII_SPACE_CPS
+from lawvm.core.xml_parse import parse_corpus_xml
 from lawvm.finland.fi_dates import (
     FI_MONTH_GENITIVE_TO_NUMBER,
     FiDateForm,
@@ -396,7 +397,7 @@ def _operative_body_repeal_candidate(tree: "etree._Element") -> str:
 
 def get_operative_body_repeal_candidate(xml_bytes: bytes) -> str:
     """Extract a body-prose repeal clause when no structured operative body exists."""
-    tree = etree.fromstring(xml_bytes)
+    tree = parse_corpus_xml(xml_bytes)
     return get_operative_body_repeal_candidate_from_tree(tree)
 
 
@@ -407,7 +408,7 @@ def get_operative_body_repeal_candidate_from_tree(tree: "etree._Element") -> str
 
 def get_johtolause(xml_bytes: bytes) -> str:
     """Extract the enacting clause (johtolause) from amendment XML bytes."""
-    tree = etree.fromstring(xml_bytes)
+    tree = parse_corpus_xml(xml_bytes)
     return get_johtolause_from_tree(tree)
 
 
@@ -1167,7 +1168,7 @@ def _separate_commencement_witness_index() -> dict[str, tuple[SeparateCommenceme
         xml_bytes = corpus.read_source(source_id)
         if xml_bytes is None or b"tulevat voimaan" not in xml_bytes:
             continue
-        tree = etree.fromstring(xml_bytes)
+        tree = parse_corpus_xml(xml_bytes)
         for witness in _separate_commencement_witnesses_from_tree(
             commencement_statute_id=source_id,
             tree=tree,

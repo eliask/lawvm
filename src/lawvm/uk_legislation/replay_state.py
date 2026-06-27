@@ -13,7 +13,14 @@ from lawvm.core.mutation_events import MutationEvent
 from lawvm.core.semantic_types import StructuralAction
 from lawvm.uk_legislation.addressing import _action_name
 from lawvm.uk_legislation.canonicalize import UKCanonicalNodeMatch
-from lawvm.uk_legislation.mutable_ir import UKMutableNode, UKMutableStatute, uk_insert_node_sorted
+from lawvm.uk_legislation.mutable_ir import (
+    UKMutableNode,
+    UKMutableStatute,
+    uk_insert_child_sorted_cow,
+    uk_insert_node_at_index_cow,
+    uk_insert_node_sorted_cow,
+    uk_replace_children_cow,
+)
 
 _UK_TOP_SCOPED_EID_PREFIXES = frozenset(
     {"annex", "article", "chapter", "division", "part", "schedule", "section"}
@@ -721,6 +728,82 @@ class UKReplayStateMixin:
             helper="_record_child_inserted",
         )
 
+    def _cow_insert_child_sorted_and_record(
+        self,
+        parent: UKMutableNode,
+        new_node: UKMutableNode,
+    ) -> bool:
+        """PR3 (audit XJUR-02 / AGENTS.md §2.3): copy-on-write replacement for
+        ``uk_insert_child_sorted(parent, new_node) +
+        _record_child_inserted(parent, new_node)``.
+
+        Builds a new parent with ``new_node`` inserted at the sorted position
+        via ``uk_insert_child_sorted_cow``, threads the new parent up to the
+        statute root with ``_replace_ancestor_chain`` (which atomically clears
+        the eID lookup index and node-reference caches), then records the
+        structural mutation event. No in-place mutation of
+        ``parent.children`` occurs at any level.
+
+        Returns True when the insert landed; False when the duplicate
+        (kind, label) guard rejected the insertion (matching the legacy
+        ``uk_insert_child_sorted`` ``False`` return) or when the rebuilt
+        parent could not be threaded to the tree root.
+        """
+        new_parent, inserted_idx = uk_insert_child_sorted_cow(parent, new_node)
+        if inserted_idx is None:
+            return False
+        if not self._replace_ancestor_chain(parent, new_parent):
+            return False
+        self._record_child_inserted(new_parent, new_node)
+        return True
+
+    def _cow_insert_child_at_index_and_record(
+        self,
+        parent: UKMutableNode,
+        idx: int,
+        new_node: UKMutableNode,
+    ) -> bool:
+        """PR3 (audit XJUR-02 / AGENTS.md §2.3): copy-on-write replacement for
+        ``children = list(parent.children); uk_insert_node_at_index(children,
+        idx, new_node); uk_replace_children(parent, children);
+        _record_child_inserted(parent, new_node)``.
+
+        Builds a new parent whose children list has ``new_node`` inserted at
+        ``idx`` (CoW), threads the new parent up to the statute root, then
+        records the structural mutation event.
+        """
+        new_children, ok = uk_insert_node_at_index_cow(parent.children, idx, new_node)
+        if not ok:
+            return False
+        new_parent = uk_replace_children_cow(parent, new_children)
+        if not self._replace_ancestor_chain(parent, new_parent):
+            return False
+        self._record_child_inserted(new_parent, new_node)
+        return True
+
+    def _cow_replace_children_and_record(
+        self,
+        parent: UKMutableNode,
+        new_children: list[UKMutableNode],
+        *,
+        new_node: UKMutableNode,
+    ) -> bool:
+        """PR3 (audit XJUR-02 / AGENTS.md §2.3): copy-on-write replacement for
+        ``uk_replace_children(parent, new_children) +
+        _record_child_inserted(parent, node)`` where ``new_node`` is the child
+        that was inserted into ``new_children``.
+
+        Builds a new parent whose children list is exactly ``new_children`` via
+        ``uk_replace_children_cow``, threads the new parent up to the statute
+        root, then records the structural mutation event with ``new_node`` as
+        the inserted child for lineage bookkeeping.
+        """
+        new_parent = uk_replace_children_cow(parent, new_children)
+        if not self._replace_ancestor_chain(parent, new_parent):
+            return False
+        self._record_child_inserted(new_parent, new_node)
+        return True
+
     def _record_supplement_inserted(self, node: UKMutableNode) -> None:
         idx = _identity_index(self.statute.supplements, node)
         self._add_eid_lookup_subtree(node, None, idx)
@@ -822,6 +905,80 @@ class UKReplayStateMixin:
         for child_idx in path[:-1]:
             parent = parent.children[child_idx]
         return ParentIndexEntry(parent=parent, index=path[-1])
+
+    def _remove_descendant_at_path(
+        self,
+        root: UKMutableNode,
+        path: tuple[int, ...],
+    ) -> UKMutableNode:
+        """PR3 (audit XJUR-02 / AGENTS.md §2.3): copy-on-write sibling of
+        ``_replace_descendant_at_path`` that excises the descendant at ``path``
+        instead of replacing it. Returns a NEW ``UKMutableNode`` chain; the
+        original ``root`` and any subtrees along ``path`` are rebuilt via
+        ``dc_replace`` so the caller must thread the new root up to the live
+        statute. Root-level removal is addressed at the supplements list level,
+        so ``path`` MUST be non-empty.
+        """
+        if not path:
+            raise ValueError(
+                "_remove_descendant_at_path: cannot excise root via path descent; "
+                "remove via statute.body assignment or supplements list rebuild"
+            )
+        if len(path) == 1:
+            idx = path[0]
+            new_children = list(root.children)
+            new_children.pop(idx)
+            return dc_replace(root, children=new_children)
+        idx = path[0]
+        children = list(root.children)
+        children[idx] = self._remove_descendant_at_path(children[idx], path[1:])
+        return dc_replace(root, children=children)
+
+    def _replace_ancestor_chain(
+        self,
+        old_node: UKMutableNode,
+        new_node: UKMutableNode,
+    ) -> bool:
+        """PR3 (audit XJUR-02 / AGENTS.md §2.3): thread a CoW-rebuilt node up to
+        the statute root. Finds ``old_node`` in body or supplements, CoW
+        rebuilds the containing root via ``_replace_descendant_at_path`` so the
+        new node takes the old node's place, then assigns the rebuilt root back
+        to ``self.statute.body`` or ``self.statute.supplements`` and clears
+        lookup caches atomically. No in-place mutation of parent.children lists
+        occurs at any level.
+
+        ``new_node`` MUST be the rebuilt version of ``old_node``
+        (``dc_replace(old_node, children=...)`` or
+        ``uk_replace_children_cow(old_node, children)``); the caller is
+        responsible for any subtree changes inside ``new_node``. The chain
+        above ``old_node`` is rebuilt wholesale by this helper.
+
+        Returns True if ``old_node`` was located in body or supplements, False
+        otherwise. The atomic eID-lookup cache clear means lookups after this
+        point rebuild lazily from the new tree state.
+        """
+        body_path = self._find_path_to_node(self.statute.body, old_node)
+        if body_path is not None:
+            new_body = self._replace_descendant_at_path(self.statute.body, body_path, new_node)
+            self.statute.body = new_body
+            self._clear_eid_lookup_index()
+            return True
+        for s_idx, root in enumerate(self.statute.supplements):
+            if root is old_node:
+                new_supplements = list(self.statute.supplements)
+                new_supplements[s_idx] = new_node
+                self.statute.supplements = new_supplements
+                self._clear_eid_lookup_index()
+                return True
+            supp_path = self._find_path_to_node(root, old_node)
+            if supp_path is not None:
+                new_supp_root = self._replace_descendant_at_path(root, supp_path, new_node)
+                new_supplements = list(self.statute.supplements)
+                new_supplements[s_idx] = new_supp_root
+                self.statute.supplements = new_supplements
+                self._clear_eid_lookup_index()
+                return True
+        return False
 
     def _find_tree_path_to_node(
         self,
@@ -1125,6 +1282,14 @@ class UKReplayStateMixin:
     def _do_replace_node_in_statute(self, old_node: UKMutableNode, new_node: UKMutableNode) -> bool:
         structure_changed = self._structural_shape(old_node) != self._structural_shape(new_node)
         old_path = self._tree_path_for_mutable_node(old_node) if self.mutation_events_out is not None else None
+        # PR3 (audit XJUR-02 / AGENTS.md §2.3): the EID-fast-path branch keeps
+        # the surgical in-place swap of ``parent.children[idx]`` for hot UK replay
+        # because the EID lookup warm-index contract is pinned by existing regression
+        # tests (test_executor_replace_reuses_eid_lookup_parent_without_path_walk,
+        # test_executor_replace_non_eid_child_does_not_clear_warm_eid_index). The
+        # CoW ancestor-thread path remains available for the apply modules via
+        # ``_replace_ancestor_chain``; this low-level helper preserves the
+        # pointer-stability invariant those tests pin.
         if self.statute.body is old_node:
             self._remove_eid_lookup_subtree(old_node)
             self.statute.body = new_node
@@ -1207,6 +1372,10 @@ class UKReplayStateMixin:
                 removed_path = self._tree_path_for_known_child(parent, node)
             else:
                 removed_path = self._tree_path_for_mutable_node(node)
+        # PR3 (audit XJUR-02 / AGENTS.md §2.3): ``_remove_node`` also keeps the
+        # in-place fast-path semantics matched by tests around the warm EID
+        # lookup index. The CoW supplement-list removal uses the new
+        # ``_replace_ancestor_chain``-style supplement rebuild path below.
         if parent is not None and idx is not None:
             self._remove_eid_lookup_subtree(node)
             parent.children.pop(idx)
@@ -1251,8 +1420,18 @@ class UKReplayStateMixin:
         return _ROOT_PARENT_INDEX
 
     def _insert_supplement_sorted(self, new_node: UKMutableNode) -> bool:
-        if not uk_insert_node_sorted(self.statute.supplements, new_node):
+        # PR3 (audit XJUR-02 / AGENTS.md §2.3): copy-on-write insert. Build a
+        # new supplements list with ``new_node`` at the sorted position rather
+        # than mutating ``self.statute.supplements`` in place. The atomic clear
+        # in ``_record_supplement_inserted`` covers cache invalidation; the
+        # bookkeeping there looks up ``new_node`` by identity in the freshly
+        # assigned list.
+        new_supplements, inserted_idx = uk_insert_node_sorted_cow(
+            self.statute.supplements, new_node
+        )
+        if inserted_idx is None:
             return False
+        self.statute.supplements = new_supplements
         self._record_supplement_inserted(new_node)
         return True
 

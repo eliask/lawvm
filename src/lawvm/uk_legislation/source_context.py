@@ -52,6 +52,7 @@ from lawvm.uk_legislation.source_state import (
 from lawvm.uk_legislation.uk_grafter import _LEG_NS, _clean_num
 from lawvm.uk_legislation.xml_helpers import (
     _direct_structural_num,
+    _RootScopedCache,
     _tag,
     _text_content,
     evict_xml_helper_caches,
@@ -157,13 +158,16 @@ def _first_amendment_container(el: Optional[ET._Element]) -> Optional[ET._Elemen
 
 
 # ---------------------------------------------------------------------------
-# §source_root_lifecycle: Plain-dict-backed parent-map and ancestor-chain
+# §source_root_lifecycle: _RootScopedCache-backed parent-map and ancestor-chain
 # caches with explicit eviction.
 #
 # Originally these were WeakKeyDictionary-backed, but lxml _Element objects do
-# not support weak references, so plain dicts are used instead.  Memory safety
-# is maintained entirely by explicit eviction via evict_source_root_caches()
-# which the compile loop calls at each root's last-occurrence point.
+# not support weak references, so plain dicts were used. They have been
+# converted to _RootScopedCache so eviction of a source root is
+# O(keys-for-this-root) rather than O(cache_size) (AGENTS.md §2.7 perf HIGH).
+# Memory safety is maintained by explicit eviction via
+# evict_source_root_caches(), which the compile loop calls at each root's
+# last-occurrence point.
 #
 # With 229 unique affecting-act roots for ukpga/1970/9 (~6 MB raw XML), all
 # roots would accumulate if not evicted.  Explicit eviction keeps at most a
@@ -185,19 +189,23 @@ def _first_amendment_container(el: Optional[ET._Element]) -> Optional[ET._Elemen
 #   id(el) inner key is safe: el is alive while source_root is alive.
 # ---------------------------------------------------------------------------
 
-_source_parent_map_cache: dict[ET._Element, dict[ET._Element, ET._Element]] = {}
+_source_parent_map_cache: _RootScopedCache = _RootScopedCache()
 
-_source_ancestor_chain_cache: dict[ET._Element, dict[int, tuple[ET._Element, ...]]] = {}
+_source_ancestor_chain_cache: _RootScopedCache = _RootScopedCache()
 
-_unique_unnumbered_root_schedule_cache: dict[ET._Element, Optional[ET._Element]] = {}
-_source_parent_table_column_omission_cache: dict[ET._Element, bool] = {}
-_source_broad_repeal_extent_part_cache: dict[ET._Element, bool] = {}
+_unique_unnumbered_root_schedule_cache: _RootScopedCache = _RootScopedCache()
+_source_parent_table_column_omission_cache: _RootScopedCache = _RootScopedCache()
+_source_broad_repeal_extent_part_cache: _RootScopedCache = _RootScopedCache()
 
 
 def evict_source_root_caches(root: Optional[ET._Element]) -> None:
     """Explicitly release module-level cache entries for root.
 
     Call this after the last effect for a source root has been processed.
+    Cache eviction is O(keys-for-this-root) via the _RootScopedCache reverse
+    index (one entry per id(root) → set of cache keys); previously each call
+    scanned the entire cache × .getroottree().getroot() per entry.
+
     Plain-dict caches (lxml _Element objects do not support weak references)
     retain root until explicit eviction.  Cycles exist because cache values
     include root as a parent element or terminal ancestor element:
@@ -217,21 +225,16 @@ def evict_source_root_caches(root: Optional[ET._Element]) -> None:
     """
     if root is None:
         return
-    _source_parent_map_cache.pop(root, None)
-    _source_ancestor_chain_cache.pop(root, None)
-    _EXTRACTION_CONTEXT_CACHE.pop(root, None)
-    _unique_unnumbered_root_schedule_cache.pop(root, None)
+    _source_parent_map_cache.evict_root(root)
+    _source_ancestor_chain_cache.evict_root(root)
+    _EXTRACTION_CONTEXT_CACHE.evict_root(root)
+    _unique_unnumbered_root_schedule_cache.evict_root(root)
     # _INSTRUCTION_TEXT_CACHE is keyed on arbitrary descendant elements, each
     # of which pins the whole parsed tree; without this eviction it grows
     # unbounded across compiles (~5 GB over the uk test shard).
-    for cache in (
-        _source_parent_table_column_omission_cache,
-        _source_broad_repeal_extent_part_cache,
-        _INSTRUCTION_TEXT_CACHE,
-    ):
-        for el in tuple(cache):
-            if el is root or el.getroottree().getroot() is root:
-                cache.pop(el, None)
+    _source_parent_table_column_omission_cache.evict_root(root)
+    _source_broad_repeal_extent_part_cache.evict_root(root)
+    _INSTRUCTION_TEXT_CACHE.evict_root(root)
     from lawvm.uk_legislation.source_fragment_context import (
         evict_source_fragment_context_caches,
     )
@@ -243,11 +246,9 @@ def evict_source_root_caches(root: Optional[ET._Element]) -> None:
         _UK_TABLE_ROWSPAN_ROWS_CACHE,
         _UK_FEE_TABLE_INDEX_CACHE,
     )
-    _REPEAL_EXTENT_TABLE_CACHE.pop(root, None)
-    _UK_FEE_TABLE_INDEX_CACHE.pop(root, None)
-    for table in tuple(_UK_TABLE_ROWSPAN_ROWS_CACHE):
-        if table is root or table.getroottree().getroot() is root:
-            _UK_TABLE_ROWSPAN_ROWS_CACHE.pop(table, None)
+    _REPEAL_EXTENT_TABLE_CACHE.evict_root(root)
+    _UK_FEE_TABLE_INDEX_CACHE.evict_root(root)
+    _UK_TABLE_ROWSPAN_ROWS_CACHE.evict_root(root)
     from lawvm.uk_legislation.table_selectors import (
         evict_table_selector_caches,
     )
@@ -507,19 +508,30 @@ def _append_affecting_source_context_diagnostic(
     source_context: UKAffectingSourceContext,
     parse_error: Optional[Exception],
 ) -> None:
-    if diagnostics_out is None or not effect.affecting_act_id:
+    if diagnostics_out is None:
+        return
+    # ``effect.affecting_act_id`` raises ``UnmappedAffectingClass`` for an
+    # unmapped class with no usable URI (AGENTS.md §1.10), so the guard cannot
+    # touch the property directly. The unmapped case is emitted upstream by
+    # ``effect_source_selection.source_context_for_effect`` (predicate check +
+    # ``uk_affecting_act_class_unmapped_rejection``); this function only runs
+    # for effects with a usable uri-or-class recognition, so the missing
+    # guard below is for an entirely empty record.
+    if not effect.affecting_uri and not effect.affecting_class:
         return
     if source_context.source_status == "absent":
         if str(effect.affecting_class or "") and not effect.affecting_class_is_recognized:
             diagnostics_out.append(
                 uk_affecting_act_class_unmapped_rejection(
                     effect_id=str(effect.effect_id or ""),
-                    affecting_act_id=str(effect.affecting_act_id or ""),
+                    affecting_act_id="",
                     locator=source_context.locator,
                     affecting_class=str(effect.affecting_class or ""),
                 )
             )
         else:
+            # ``effect.affecting_class_is_recognized`` is True here, so accessing
+            # ``affecting_act_id`` cannot raise.
             diagnostics_out.append(
                 uk_affecting_act_xml_missing_rejection(
                     effect_id=str(effect.effect_id or ""),

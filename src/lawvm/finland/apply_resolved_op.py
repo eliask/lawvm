@@ -46,8 +46,8 @@ from lawvm.finland.apply_replay_authorization import (
     mint_apply_replay_authority,
     op_replay_authorized,
 )
-from lawvm.finland.apply import apply_op
 from lawvm.finland.apply_events import ApplyMutationEvent
+from lawvm.finland.apply import apply_op
 from lawvm.finland.apply_policy import _OP_TYPE_TO_ACTION, _section_occupancy
 from lawvm.finland.migration_ledger import MigrationLedger
 from lawvm.finland.op_provenance import (
@@ -774,6 +774,23 @@ def _collect_op_write_receipt(
     # apply_op). With no classification hint, receipt_from_diff records every
     # observed changed path as a replaced path, so the declared footprint equals
     # the observed footprint by construction.
+    #
+    # NOTE (scope split, 2026-06-27): threading ``bound_target_path`` from
+    # ``rop.resolved_target_address`` here — the natural source — surfaced 115
+    # false-positive divergences on the green corpus (1997/1339: 71
+    # landed-is-prefix-of-bound at identity-pruned granularity shifts, 15
+    # bound-is-prefix-of-landed at deep mutations, 29 real rop-vs-IR kind-label
+    # mismatches such as ``item:7`` vs ``paragraph:7``). Threading correctly
+    # requires deeper normalization work (prefix-of-landed equivalence + a
+    # surface path-kind reconciliation across the FI IR and the rop's
+    # logical/legal address) that exceeds this PR's bounded scope. The bound
+    # stays None; the ``_receipt_boundary_authorized`` receipt arm in
+    # ``apply_replay_authorization`` stays unreachable; the
+    # ``no_boundary_violation`` conjunct carries the boundary check. The
+    # typed-producer consumption in ``certificate_bundle`` is the §1.12 work
+    # this PR still ships (via source_anchor, which IS threaded here and
+    # upstream). See the task's "stop and report" provision for the broader
+    # scope plan that belongs in a follow-up PR.
     _rop_source = rop.resolved_op_source
     receipt = receipt_from_diff(
         prev_state.ir,

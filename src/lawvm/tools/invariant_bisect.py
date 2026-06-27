@@ -95,6 +95,17 @@ def _run_fi_invariant_detector_messages(
                 target_path,
             )
         ]
+    if detector == "flattened_sublist_family":
+        # §2.3 firewall: forward the FI definition-list-introducer predicate so
+        # the kernel need not interpret the Finnish ``tarkoitetaan`` fragment.
+        from lawvm.finland.definition_introducer import fi_definition_list_introducer_predicate
+
+        return run_invariant_detector_messages(
+            ir,
+            detector,
+            target_path,
+            definition_introducer_predicate=fi_definition_list_introducer_predicate,
+        )
     return run_invariant_detector_messages(ir, detector, target_path)
 
 
