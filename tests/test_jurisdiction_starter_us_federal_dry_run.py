@@ -84,6 +84,41 @@ def _build(plaw_blobs: dict[str, bytes] | None = None) -> USDryRunReport:
 # ---------------------------------------------------------------------------
 
 
+def test_replace_token_in_text_last_occurrence_replaces_rightmost_match_once():
+    """TextSelector.occurrence_mode='Last' is honored by the regular replace path.
+
+    Without ``last_occurrence=True``, the legacy ``count=-1`` ALL semantics
+    multiplies the op across every period in the section: a single
+    'inserting 'X' before the period at the end' opswith three sentences gets
+    X prepended before EACH period, creating a triple-insert materialization
+    that silently multiplies the op's effect across the section. The typed
+    'Last' carrier restricts the patch to the W-rightmost match ONCE.
+    Concrete witness: PL 114-113 s709(a) on 12 U.S.C. 5230(b)
+    ('inserting after the period at the end the following: 'Notwithstanding...'').
+
+    AGENTS.md §0: no silent mutation beyond the target region. The op's target
+    is ONE terminal period, not every period in the section.
+    """
+    from lawvm.us_federal.dry_run import _replace_token_in_text
+
+    before_text = "First sentence. Second sentence. Third sentence."
+    patched = _replace_token_in_text(
+        before_text, match_text=".", replacement="X", count=-1, last_occurrence=True
+    )
+    assert patched == "First sentence. Second sentence. Third sentenceX"
+    # The default 'Auto' mode preserves the legacy ALL-across-periods behavior
+    # (each-place AL ops deliberately replace every occurrence).
+    auto_patched = _replace_token_in_text(
+        before_text, match_text=".", replacement="X", count=-1
+    )
+    assert auto_patched == "First sentenceX Second sentenceX Third sentenceX"
+    # Single-occurrence text behaves identically across both modes.
+    single = "Only one sentence here."
+    assert _replace_token_in_text(
+        single, match_text=".", replacement="X", count=-1, last_occurrence=True
+    ) == _replace_token_in_text(single, match_text=".", replacement="X", count=-1)
+
+
 def test_oracle_changed_section_set_is_a_fact_of_the_two_editions() -> None:
     report = _build()
     # Section 10 changed (15-year -> 19-year); section 30 is after-only; section
