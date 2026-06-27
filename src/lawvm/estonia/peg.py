@@ -4188,6 +4188,172 @@ def _handle_ee_lahter_text_replace(
     return ops
 
 
+def _handle_ee_item_renumber_before_replace(
+    clean: str,
+    source: OperationSource,
+    seq: int,
+) -> Optional[List[LegalOperation]]:
+    """``§ N lõike M punkt K loetakse punktiks L ja senine punkt K sõnastatakse ...``
+
+    Caller gates on ``action == "replace"``; this handler only inspects the
+    instruction preamble for the renumber-then-replace shape.
+    """
+    m_item_renumber_before_replace = re.search(
+        r'(?:\bparagrahvi[s]?\s+|§\s*)(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+'
+        r'l[oõ]ike\s+(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+'
+        r'punkt\s+(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+loetakse\s+punktiks\s+'
+        r'(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+ja\s+senine\s+punkt\s+\3\s+s[oõ]nastatakse',
+        _instruction_preamble(clean),
+        re.IGNORECASE,
+    )
+    if not m_item_renumber_before_replace:
+        return None
+    sect_label = _normalize_num(m_item_renumber_before_replace.group(1))
+    sub_label = _normalize_num(m_item_renumber_before_replace.group(2))
+    old_item = _normalize_num(m_item_renumber_before_replace.group(3))
+    new_item = _normalize_num(m_item_renumber_before_replace.group(4))
+    content = _extract_quoted_content(clean)
+    if not content:
+        return None
+    item_path = (("section", sect_label), ("subsection", sub_label), ("item", old_item))
+    renumber_op = _mint_ee_op(
+        "renumber",
+        op_id=(
+            f"ee-renumber-item-before-replace-{sect_label}-{sub_label}-"
+            f"{old_item}-{new_item}-{source.statute_id}"
+        ),
+        sequence=seq,
+        target=LegalAddress(path=item_path),
+        destination=LegalAddress(
+            path=(("section", sect_label), ("subsection", sub_label), ("item", new_item))
+        ),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="",
+            attrs={"source_family": _EE_ITEM_RENUMBER_BEFORE_REPLACE_RULE},
+        ),
+        source=source,
+        provenance_tags=(clean[:200], _EE_ITEM_RENUMBER_BEFORE_REPLACE_RULE),
+        witness_rule_id=_EE_ITEM_RENUMBER_BEFORE_REPLACE_RULE,
+    )
+    replacement_payload = IRNode(
+        kind=IRNodeKind.CONTENT,
+        text=content,
+        attrs={"source_family": _EE_ITEM_RENUMBER_BEFORE_REPLACE_RULE},
+    )
+    replacement_payload = _set_sentence_replace_payload_attrs(replacement_payload, clean)
+    insert_op = _mint_ee_op(
+        "insert",
+        op_id=(
+            f"ee-insert-senine-item-after-renumber-{sect_label}-{sub_label}-"
+            f"{old_item}-{source.statute_id}"
+        ),
+        sequence=seq + 1,
+        target=LegalAddress(path=item_path),
+        payload=replacement_payload,
+        source=source,
+        provenance_tags=(clean[:200], _EE_ITEM_RENUMBER_BEFORE_REPLACE_RULE),
+        witness_rule_id=_EE_ITEM_RENUMBER_BEFORE_REPLACE_RULE,
+    )
+    return [renumber_op, insert_op]
+
+
+def _ee_chapter_heading_parts(raw: str) -> tuple[str, str] | None:
+    match = re.match(
+        r"\s*(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s*[.]\s*peatükk\s+(.+?)\s*$",
+        raw,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if match is None:
+        return None
+    return _normalize_num(match.group(1)), re.sub(r"\s+", " ", match.group(2)).strip()
+
+
+def _handle_ee_textosa_heading_relabel(
+    clean: str,
+    source: OperationSource,
+    seq: int,
+) -> Optional[List[LegalOperation]]:
+    """``tekstiosa „N. peatükk X” asendatakse tekstiosaga „M. peatükk Y”``."""
+    heading_relabel = re.search(
+        r"\btekstiosa[a-z]*\s+[„\"“](?P<old>[^”\"]+)[”\"]\s+"
+        r"asendatakse\s+tekstiosaga\s+[„\"“](?P<new>[^”\"]+)[”\"]",
+        clean,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if heading_relabel is None:
+        return None
+    old_heading = re.sub(r"\s+", " ", heading_relabel.group("old")).strip()
+    new_heading = re.sub(r"\s+", " ", heading_relabel.group("new")).strip()
+    old_parts = _ee_chapter_heading_parts(old_heading)
+    new_parts = _ee_chapter_heading_parts(new_heading)
+    if old_parts is None or new_parts is None:
+        return None
+    old_label, old_title = old_parts
+    new_label, new_title = new_parts
+    payload = IRNode(
+        kind=IRNodeKind.CONTENT,
+        text=new_title,
+        attrs={
+            "rule_id": "ee_structural_textosa_heading_relabel",
+            "old_heading": old_title,
+            "new_heading": new_title,
+            "old_heading_full": old_heading,
+            "new_heading_full": new_heading,
+            "allow_occupied_destination": True,
+        },
+    )
+    return [
+        _mint_ee_op(
+            "renumber",
+            op_id=f"ee-structural-textosa-heading-relabel-{old_label}-{new_label}-{source.statute_id}",
+            sequence=seq,
+            target=LegalAddress(path=(("chapter", old_label),)),
+            destination=LegalAddress(path=(("chapter", new_label),)),
+            payload=payload,
+            source=source,
+            provenance_tags=(clean[:200], "ee_structural_textosa_heading_relabel"),
+            witness_rule_id="ee_structural_textosa_heading_relabel",
+        )
+    ]
+
+
+def _handle_ee_statute_title_text_delete(
+    clean: str,
+    source: OperationSource,
+    seq: int,
+    title_delete_global: "re.Match[str]",
+) -> List[LegalOperation]:
+    """``seaduse pealkirjast jäetakse välja sõna/tekstiosa „X”`` (title text delete)."""
+    rule_id = "ee_statute_title_text_delete"
+    old_t = re.sub(r"\s+", " ", title_delete_global.group("old")).strip()
+    payload = IRNode(
+        kind=IRNodeKind.CONTENT,
+        text="",
+        attrs={"rewrite_scope_surface": "title"},
+    )
+    payload, _rewrite_witness = _set_text_replace_payload_attrs(
+        payload,
+        clean,
+        old_t,
+        "",
+        source_family=rule_id,
+    )
+    return [
+        _mint_ee_op(
+            "text_replace",
+            op_id=f"ee-title-text-delete-{seq}-{source.statute_id}",
+            sequence=seq,
+            target=LegalAddress(path=()),
+            payload=payload,
+            text_patch=_typed_text_replace_patch(old_t, ""),
+            source=source,
+            provenance_tags=(clean[:200], rule_id),
+            witness_rule_id=rule_id,
+        )
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Main extraction function
 # ---------------------------------------------------------------------------
@@ -4231,62 +4397,10 @@ def extract_ee_ops(
 
     action = _classify_verb(clean)
 
-    m_item_renumber_before_replace = re.search(
-        r'(?:\bparagrahvi[s]?\s+|§\s*)(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+'
-        r'l[oõ]ike\s+(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+'
-        r'punkt\s+(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+loetakse\s+punktiks\s+'
-        r'(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+ja\s+senine\s+punkt\s+\3\s+s[oõ]nastatakse',
-        _instruction_preamble(clean),
-        re.IGNORECASE,
-    )
-    if action == "replace" and m_item_renumber_before_replace:
-        sect_label = _normalize_num(m_item_renumber_before_replace.group(1))
-        sub_label = _normalize_num(m_item_renumber_before_replace.group(2))
-        old_item = _normalize_num(m_item_renumber_before_replace.group(3))
-        new_item = _normalize_num(m_item_renumber_before_replace.group(4))
-        content = _extract_quoted_content(clean)
-        if content:
-            item_path = (("section", sect_label), ("subsection", sub_label), ("item", old_item))
-            renumber_op = LegalOperation(
-                op_id=(
-                    f"ee-renumber-item-before-replace-{sect_label}-{sub_label}-"
-                    f"{old_item}-{new_item}-{source.statute_id}"
-                ),
-                sequence=seq,
-                action=_to_structural_action("renumber"),
-                target=LegalAddress(path=item_path),
-                destination=LegalAddress(
-                    path=(("section", sect_label), ("subsection", sub_label), ("item", new_item))
-                ),
-                payload=IRNode(
-                    kind=IRNodeKind.CONTENT,
-                    text="",
-                    attrs={"source_family": _EE_ITEM_RENUMBER_BEFORE_REPLACE_RULE},
-                ),
-                source=source,
-                provenance_tags=(clean[:200], _EE_ITEM_RENUMBER_BEFORE_REPLACE_RULE),
-                witness_rule_id=_EE_ITEM_RENUMBER_BEFORE_REPLACE_RULE,
-            )
-            replacement_payload = IRNode(
-                kind=IRNodeKind.CONTENT,
-                text=content,
-                attrs={"source_family": _EE_ITEM_RENUMBER_BEFORE_REPLACE_RULE},
-            )
-            replacement_payload = _set_sentence_replace_payload_attrs(replacement_payload, clean)
-            insert_op = LegalOperation(
-                op_id=(
-                    f"ee-insert-senine-item-after-renumber-{sect_label}-{sub_label}-"
-                    f"{old_item}-{source.statute_id}"
-                ),
-                sequence=seq + 1,
-                action=_to_structural_action("insert"),
-                target=LegalAddress(path=item_path),
-                payload=replacement_payload,
-                source=source,
-                provenance_tags=(clean[:200], _EE_ITEM_RENUMBER_BEFORE_REPLACE_RULE),
-                witness_rule_id=_EE_ITEM_RENUMBER_BEFORE_REPLACE_RULE,
-            )
-            return [renumber_op, insert_op]
+    if action == "replace":
+        _handled = _handle_ee_item_renumber_before_replace(clean, source, seq)
+        if _handled is not None:
+            return _handled
 
     def _lower_explicit_target_text_replace_ops(
         explicit_targets: list[LegalAddress],
@@ -4324,55 +4438,9 @@ def extract_ee_ops(
             local_seq += 1
         return lowered
 
-    def _chapter_heading_parts(raw: str) -> tuple[str, str] | None:
-        match = re.match(
-            r"\s*(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s*[.]\s*peatükk\s+(.+?)\s*$",
-            raw,
-            re.IGNORECASE | re.DOTALL,
-        )
-        if match is None:
-            return None
-        return _normalize_num(match.group(1)), re.sub(r"\s+", " ", match.group(2)).strip()
-
-    heading_relabel = re.search(
-        r"\btekstiosa[a-z]*\s+[„\"“](?P<old>[^”\"]+)[”\"]\s+"
-        r"asendatakse\s+tekstiosaga\s+[„\"“](?P<new>[^”\"]+)[”\"]",
-        clean,
-        re.IGNORECASE | re.DOTALL,
-    )
-    if heading_relabel is not None:
-        old_heading = re.sub(r"\s+", " ", heading_relabel.group("old")).strip()
-        new_heading = re.sub(r"\s+", " ", heading_relabel.group("new")).strip()
-        old_parts = _chapter_heading_parts(old_heading)
-        new_parts = _chapter_heading_parts(new_heading)
-        if old_parts is not None and new_parts is not None:
-            old_label, old_title = old_parts
-            new_label, new_title = new_parts
-            payload = IRNode(
-                kind=IRNodeKind.CONTENT,
-                text=new_title,
-                attrs={
-                    "rule_id": "ee_structural_textosa_heading_relabel",
-                    "old_heading": old_title,
-                    "new_heading": new_title,
-                    "old_heading_full": old_heading,
-                    "new_heading_full": new_heading,
-                    "allow_occupied_destination": True,
-                },
-            )
-            return [
-                LegalOperation(
-                    op_id=f"ee-structural-textosa-heading-relabel-{old_label}-{new_label}-{source.statute_id}",
-                    sequence=seq,
-                    action=_to_structural_action("renumber"),
-                    target=LegalAddress(path=(("chapter", old_label),)),
-                    destination=LegalAddress(path=(("chapter", new_label),)),
-                    payload=payload,
-                    source=source,
-                    provenance_tags=(clean[:200], "ee_structural_textosa_heading_relabel"),
-                    witness_rule_id="ee_structural_textosa_heading_relabel",
-                )
-            ]
+    _handled = _handle_ee_textosa_heading_relabel(clean, source, seq)
+    if _handled is not None:
+        return _handled
 
     # Statute-wide text replacement: "seaduse kogu tekstis asendatakse sõna X sõnadega Y"
     # Also: "seaduses asendatakse läbivalt number X numbriga Y"
@@ -4406,33 +4474,7 @@ def extract_ee_ops(
         re.IGNORECASE | re.DOTALL,
     )
     if title_delete_global is not None:
-        rule_id = "ee_statute_title_text_delete"
-        old_t = re.sub(r"\s+", " ", title_delete_global.group("old")).strip()
-        payload = IRNode(
-            kind=IRNodeKind.CONTENT,
-            text="",
-            attrs={"rewrite_scope_surface": "title"},
-        )
-        payload, _rewrite_witness = _set_text_replace_payload_attrs(
-            payload,
-            clean,
-            old_t,
-            "",
-            source_family=rule_id,
-        )
-        return [
-            LegalOperation(
-                op_id=f"ee-title-text-delete-{seq}-{source.statute_id}",
-                sequence=seq,
-                action=_to_structural_action("text_replace"),
-                target=LegalAddress(path=()),
-                payload=payload,
-                text_patch=_typed_text_replace_patch(old_t, ""),
-                source=source,
-                provenance_tags=(clean[:200], rule_id),
-                witness_rule_id=rule_id,
-            )
-        ]
+        return _handle_ee_statute_title_text_delete(clean, source, seq, title_delete_global)
     if re.search(
         rf'\b{statute_ref}\s+kogu\s+teksti[s]?\s+asendatakse'
         rf'|\b{statute_ref}\s+asendatakse\s+kogu\s+teksti\s+ulatuses'
