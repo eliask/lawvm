@@ -4,9 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Literal, Optional, cast
 
-import lxml.etree as etree
-
 from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.xml_parse import parse_corpus_xml
 from lawvm.finland.metadata import _chapter_expiry_from_base
 from lawvm.finland.ops import AmendmentOp, _apply_law_level_text_patches
 from lawvm.finland.corpus import get_consolidated_oracle_reflected_section_original_versions
@@ -176,7 +175,7 @@ def _base_chapter_expiries_from_base(
     base_xml_bytes: bytes,
     replay_print: Callable[[str], None],
 ) -> dict[str, str]:
-    base_tree = etree.fromstring(base_xml_bytes)
+    base_tree = parse_corpus_xml(base_xml_bytes)
     chapter_expiry = _chapter_expiry_from_base(base_tree)
     if chapter_expiry is None:
         return {}
