@@ -115,7 +115,45 @@ RULE_REDESIGNATE_RANGE_CROSS_KIND = "us_amend_redesignate_range_cross_kind"
 # rest is held out as a typed finding so the held-out portion stays visible
 # (§1.8 — no unsupported lane disappears).
 RULE_REDESIGNATE_COMPOUND_HELD_OUT = "us_amend_redesignate_compound_held_out"
+# 'redesignating clauses (i) through (iv) as clauses (ii) through (v)' — a
+# contiguous range whose endpoints are roman-numeral labels. Mapping a roman
+# range to its member-by-member relabel requires enumerating the roman numerals
+# in [lo, hi]; the lowerer owns a bounded roman numeral enumerator (1..20, the
+# form clauses/subclauses actually use) rather than guessing.
+RULE_REDESIGNATE_RANGE_ROMAN = "us_amend_redesignate_range_roman"
+# 'redesignating section 311 as section 312' — a single section-level renumber.
+# Section labels are bare numerals (no parentheses), unlike
+# subsection/paragraph/... labels which carry parens. Source witness: PL 108-177
+# §302 "(A) by redesignating section 311 as section 312; and" and similar forms
+# across PL 109-233, PL 110-181, PL 111-203.
+RULE_REDESIGNATE_SECTION = "us_amend_redesignate_section"
+# 'redesignating such subsection as subsection (b)' — the source unit is named
+# by ``such <kind>`` (the just-discussed unit in the preceding clause), so the
+# from-address is the resolved target itself and the to-address is the new
+# (kind, label). ``as so redesignated`` / ``(as amended by this paragraph)``
+# modifiers are stripped before matching.
+RULE_REDESIGNATE_SUCH = "us_amend_redesignate_such"
+# 'redesignating chapter 107 as chapter 106A' — a chapter-level renumber.
+# Source witness: PL 108-375 §1074 "(1) by redesignating chapter 107 as chapter
+# 106A; and". Bare numerals, parent is the title.
+RULE_REDESIGNATE_CHAPTER = "us_amend_redesignate_chapter"
 RULE_INSERT_NODE_AFTER = "us_amend_insert_node_after_unit"
+# 'inserting before section (N) / paragraph (N) the following: <block>' — the
+# mirror of RULE_INSERT_NODE_AFTER for the BEFORE direction. The op shape is the
+# same structural INSERT (anchor + payload + new-section target); the rule id
+# keeps the directional intent visible in the audit trail. The dry-run's
+# materializer at section-text granularity does not distinguish before/after
+# positioning of a new node (both append the payload text), so emitting the same
+# INSERT op shape is faithful at the section-text plane; the rule id records the
+# enacted directional intent for higher planes (chapter ordering, full-tree
+# materialization).
+RULE_INSERT_NODE_BEFORE = "us_amend_insert_node_before_unit"
+# 'inserting a comma/semicolon/period/em dash/closing parenthesis after "X"' —
+# a phrase-swap whose INSERTED operand is given as a punctuation WORD, not a
+# quoted literal. The anchor is the quoted text; the replacement is the anchor
+# with the punctuation char joined before/after it. Lowered to a TEXT_REPLACE
+# targeting the quoted anchor (first occurrence unless "each place" applies).
+RULE_INSERT_PUNCT_WORD_ANCHOR = "us_amend_insert_punct_word_anchor"
 # Terminal punctuation edits where the struck anchor is described positionally:
 # "striking the period at the end and inserting '; and'" / "inserting 'X' before
 # the period at the end".  These are common list-conjunction amendments; they are
@@ -161,6 +199,19 @@ SENTENCE_STRIKE_FINDING_RULE_ID = "us_amendatory_sentence_strike_not_section_rep
 HEADING_STRIKE_FINDING_RULE_ID = "us_amendatory_heading_strike_not_section_representable"
 TAIL_STRIKE_FINDING_RULE_ID = "us_amendatory_tail_strike_not_section_representable"
 DESIGNATION_STRIKE_FINDING_RULE_ID = "us_amendatory_designation_strike_not_section_representable"
+# Inserting relative to a SENTENCE anchor ("after the first sentence",
+# "before the last sentence") — a sentence's offset in the rendered text is
+# editorial (per AGENTS.md §2.1), and LawVM cannot deterministically locate a
+# sentence boundary from prose alone. Held out as a typed finding rather than
+# guessed into a phrase-swap op.
+SENTENCE_ANCHOR_INSERT_FINDING_RULE_ID = "us_amendatory_sentence_anchor_insert_not_section_representable"
+# "Inserting 'X' after the subsection/paragraph designation" — the anchor is
+# a structural sub-unit's *designator* (the "(a)" / "(1)" label), not a
+# substring of the node text. LawVM's TEXT_REPLACE matches against body text;
+# the designator lives outside the running prose (it is the labelled
+# enumerator). Inserting a heading/catchline "after the designation" is a
+# node-structure edit, not a phrase swap. Held out as a typed residual.
+DESIGNATION_ANCHOR_INSERT_FINDING_RULE_ID = "us_amendatory_designation_anchor_insert_not_section_representable"
 # A tail strike whose deletion is explicitly bounded by a second quoted anchor
 # ("striking 'unless—' and all that follows through 'the holder'") is not the same
 # as an open-ended tail deletion: it deletes a defined span. We cannot materialize it
@@ -193,6 +244,41 @@ INSERT_AFTER_MISSING_OPERANDS_FINDING_RULE_ID = "us_amendatory_insert_after_miss
 # §603 ("analysis for chapter 110... inserting after the item relating to
 # section 2252A the following new item: '2252B. Misleading domain names…'").
 CHAPTER_ANALYSIS_INSERT_FINDING_RULE_ID = "us_amendatory_chapter_analysis_insert"
+# Mirror of CHAPTER_ANALYSIS_INSERT_FINDING_RULE_ID for the strike form: an
+# amendment to a chapter's TABLE OF SECTIONS (an editorial aggregate), NOT to a
+# section body. Drafting shapes:
+# - "amended by striking the items relating to sections 1703, 1705..."
+# - "amended by striking the item relating to section 1725"
+# - "amended by striking the table of sections at the beginning of the chapter"
+# - "amended by striking the matter relating to subchapter VI"
+# LawVM's IR has no chapter-analysis entity (§2.3: don't promote a
+# jurisdiction-local aggregate to a core node before the shape is shared), so
+# the instruction is correctly held out as a typed residual rather than
+# mis-routed as a section-body strike into the generic
+# STRIKE_NO_QUOTED_ANCHOR_FINDING_RULE_ID bucket (which would erase the
+# structural reason: there is no section body whose text to delete). Source
+# witness: PL 108-136 §1073 ("the table of sections at the beginning of
+# subchapter I is amended by striking the items relating to sections 1703,
+# 1705, 1706, and 1707"); PL 108-375 §1034 ("by striking the table of
+# sections at the beginning of the chapter ... and sections 2481, 2483,
+# 2485, and 2487").
+CHAPTER_ANALYSIS_STRIKE_FINDING_RULE_ID = "us_amendatory_chapter_analysis_strike"
+# "Section X(...) is amended by striking section N" — a whole-section strike
+# where the struck operand is named by a bare USC section NUMBER (no
+# parens, no quoted text). Distinguished from a quoted-phrase strike (no
+# <quotedText>) and from a named sub-unit strike (which carries a
+# parenthesised label like "striking subsection (X)"). Recognizing the shape
+# lets the dry-run bucket it accurately; the instruction stays held out as
+# a typed finding (NOT lowered) because the struck section's target
+# resolution from the inherited address is ambiguous (the inherited scope
+# may be the chapter, but the chapter containing section N is not always
+# determinable from the inheritance alone — cross-chapter risk). A future
+# proper lowering requires additional chapter-scope resolution; for now
+# hiding it as STRIKE_NO_QUOTED_ANCHOR would destroy the structural reason.
+# Source witness: PL 108-136 §1073 ("(1) by striking section 1763; and");
+# PL 109-155 §602 ("The Vision 100-Century of Aviation Reauthorization Act
+# is amended by striking section 703 (42 U.S.C. 2473e)").
+SECTION_NUMBER_STRIKE_FINDING_RULE_ID = "us_amendatory_section_number_strike"
 STRIKE_NO_QUOTED_ANCHOR_FINDING_RULE_ID = "us_amendatory_strike_no_quoted_anchor"
 # Strike-family compound: the leading ``striking <unit>`` clause lowered to a
 # REPEAL but the trailing secondary-action clause (``and by redesignating
@@ -1582,6 +1668,22 @@ def _punctuation_word_to_char(word: str | None) -> str | None:
     return _PUNCTUATION_WORD_MAP.get(word.strip().lower())
 
 
+def _punct_word_to_operand_char(word: str | None) -> str | None:
+    """Map the punct-word operand (a comma/semicolon/period/em dash/closing
+    parenthesis/closing quotation mark/hyphen) of an
+    ``inserting <word> after/before '<X>'`` instruction to its enacted character.
+
+    Differs from :func:`_punctuation_word_to_char` by accepting the broader
+    operand vocabulary (``em dash`` / ``closing parenthesis`` /
+    ``closing quotation mark``) that the insert-punct-word recognizer admits.
+    Returns ``None`` for an unmapped word so the caller can emit a typed
+    diagnostic rather than guess.
+    """
+    if word is None:
+        return None
+    return _PUNCT_WORD_OPERAND_MAP.get(word.strip().lower())
+
+
 def _end_punctuation_char(name: str | None) -> str | None:
     """Map a positional punctuation name ('period', 'semicolon', 'comma') to char."""
     if name is None:
@@ -2128,6 +2230,141 @@ _CHAPTER_ANALYSIS_INSERT_RE = compile_classifier_regex(
     re.IGNORECASE,
     classifier_id="us_amendatory_chapter_analysis_insert",
 )
+# Sentence-anchor insert: "inserting after the first/second/third/last sentence
+# the following: '<X>'" / "inserting '<X>' before the first sentence". A
+# sentence's offset in the rendered text is editorial (AGENTS.md §2.1); LawVM
+# cannot deterministically locate a sentence boundary from prose alone. The
+# instruction is a typed finding, not a phrase swap. Recognizer is a hot-path
+# classifier on every insert_after instruction; routed through
+# ``compile_classifier_regex`` per AGENTS.md §2.4.
+_SENTENCE_ANCHOR_INSERT_RE = re.compile(
+    r"\binserting\s+"
+    r"(?:"
+    # "after the first sentence [in paragraph (N)]" — merges the bare-sentence
+    # and the trailing "in <kind> (label)" qualifier forms into ONE alternative
+    # so the regex engine does not have two alternation members with the SAME
+    # variable-length prefix (which the catastrophic-backtracking lint flagged
+    # as adjacent variable repeats). The plural-sentence form
+    # ("first and second sentence") is intentionally NOT matched here — the
+    # optional ``\s+(?:and|through)\s+<ordinal>`` would create another
+    # adjacent-backtracking boundary; the rare plural-sentence insert falls
+    # through to SENTENCE_STRIKE_FINDING_RULE_ID (still held out as a typed
+    # residual, the safe wrong).
+    r"(?:after|before)\s+the\s+(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|last|final)\s+sentence(?:\s+in\s+(?:paragraph|subparagraph|clause|subclause|subsection|item)\s*\([0-9A-Za-z]+\))?"
+    r"|"
+    # "'<X>' before the first sentence" (single-quoted phrase swap form)
+    r"[\"\u201c\u201d][^\"\u201c\u201d]{0,400}[\"\u201c\u201d]\s+(?:after|before)\s+the\s+(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|last|final)\s+sentence"
+    r")",
+    re.IGNORECASE,
+)
+# "inserting a comma/semicolon/period/em dash/closing parenthesis after '<X>'" —
+# a phrase-swap whose INSERTED operand is a punctuation WORD, not a quoted
+# literal. The anchor is the quoted text X; the lowered op replaces X with
+# (X + punct) when after, or (punct + X) when before.
+_PUNCT_WORD_OPERAND_MAP: dict[str, str] = {
+    "comma": ",",
+    "semicolon": ";",
+    "period": ".",
+    "em dash": "\u2014",
+    "em-dash": "\u2014",
+    "dash": "\u2014",
+    "hyphen": "-",
+    "closing parenthesis": ")",
+    "closing quotation mark": "\u201d",
+    "closing quote": "\u201d",
+}
+_PUNCT_WORD_OPERAND_ALT = (
+    r"comma|semicolon|period|em[ -]dash|closing\s+parenthesis"
+    r"|closing\s+quotation\s+mark|hyphen"
+)
+_INSERT_PUNCT_WORD_ANCHOR_RE = re.compile(
+    rf"inserting\s+(?:a\s+|an\s+)?(?P<punct_word>(?:{_PUNCT_WORD_OPERAND_ALT}))\s+"
+    r"(?P<where>after|before)\s+"
+    r"[\"\u201c\u201d](?P<anchor>[^\"\u201c\u201d]{0,400})[\"\u201c\u201d]"
+    + _STRUCTURAL_ACTION_TRAIL,
+    re.IGNORECASE,
+)
+# "inserting '<X>' after the term '<Y>' each place such term appears" — a
+# phrase-swap of X joined after anchor Y, applied to every occurrence of Y
+# (the ``_is_each_place_instruction`` machinery sets ``occurrence = -1``). The
+# term anchor is the quoted text. The SECOND operand is a <term> element (not
+# <quotedText>), so the two-quoted-operand swap above misses it. Source
+# witness: PL 111-31 §107 ("by inserting 'tobacco products,' after the term
+# 'devices,' each place such term appears").
+_INSERT_TERM_ANCHOR_RE = re.compile(
+    r"inserting\s+"
+    r"[\"\u201c](?P<ins>[^\"\u201c\u201d]{0,400})[\"\u201d]\s+"
+    r"after\s+the\s+term\s+"
+    r"[\"\u201c](?P<anchor>[^\"\u201c\u201d]{0,400})[\"\u201d]"
+    r"(?:\s+each\s+place\s+such\s+term\s+appears)?"
+    + _STRUCTURAL_ACTION_TRAIL,
+    re.IGNORECASE,
+)
+# "inserting '<X>' after the subsection/paragraph designation" — a structural
+# sub-unit *designator* anchor. The designator is the "(a)" / "(1)" label
+# OUTSIDE the running prose; LawVM's TEXT_REPLACE matches against body text
+# only. Held out as a typed finding.
+_DESIGNATION_ANCHOR_INSERT_RE = compile_classifier_regex(
+    r"\binserting\s+[\"\u201c][^\"\u201c\u201d]{0,400}[\"\u201d]\s+"
+    r"after\s+the\s+(?:subsection|paragraph|subparagraph|clause|subclause|item)\s+designation\b",
+    re.IGNORECASE,
+    classifier_id="us_amendatory_designation_anchor_insert",
+)
+# Chapter-analysis / table-of-sections STRIKE. Recognizes the drafting shapes:
+#   - "amended by striking the items relating to sections 1703, 1705, 1706, and 1707"
+#   - "amended by striking the item relating to section 1725"
+#   - "amended by striking the table of sections at the beginning of the chapter"
+#   - "amended by striking the matter relating to subchapter VI"
+#   - "amended by striking the item relating to each of the following positions:..."
+# Like the insert form, this amends the chapter's TABLE OF SECTIONS (an
+# editorial aggregate), NOT a section body; held out as a typed finding. The
+# "the following:" tail shape (§4 of the family) accepts a <quotedContent>
+# block (the struck text) but LawVM has no chapter-analysis node to delete
+# against, so it stays held out. Routed through ``compile_classifier_regex``
+# per AGENTS.md §2.4. Source witness: PL 108-136 §1073, PL 108-375 §1034.
+_CHAPTER_ANALYSIS_STRIKE_RE = compile_classifier_regex(
+    r"\bstriking\s+"
+    r"(?:"
+    # "the items relating to sections 1703[, 1705[, and 1707]]"
+    r"the\s+items?\s+relating\s+to\s+sections?\s+[0-9A-Za-z]+"
+    # "the table of sections at the beginning of chapter N"
+    r"|the\s+table\s+of\s+sections\b"
+    # "the table of contents at the beginning of chapter N"
+    r"|the\s+table\s+of\s+contents\b"
+    # "the matter relating to [subchapter|chapter|section] N"
+    r"|the\s+matter\s+relating\s+to\s+(?:sub)?chapter\s+[0-9A-Za-z]+"
+    r")",
+    re.IGNORECASE,
+    classifier_id="us_amendatory_chapter_analysis_strike",
+)
+# "Section X is amended by striking section N" — a whole-section strike named
+# by a bare USC section NUMBER (no parens, no quoted text). The recognizer
+# fires only when the strike is the bare-number form (so ``striking section
+# 1763`` matches, but ``striking subsection (c)`` does NOT, leaving the
+# structural-subunit path to handle the parenthesised form). Source witness:
+# PL 108-136 §1073, PL 109-155 §602, PL 109-173 §632. Routed through
+# ``compile_classifier_regex`` per AGENTS.md §2.4.
+_SECTION_NUMBER_STRIKE_RE = compile_classifier_regex(
+    # Real corpus forms are 'section N' (digit), 'section 2473e' (digit+letter),
+    # 'chapter 107' / 'chapter 106A' (digit, optionally with letter). The bare
+    # bounded pattern ``\d+[A-Za-z]?`` covers every real form; a more open
+    # ``[A-Za-z\-]*\d*`` would create adjacent variable backtracking repeats.
+    r"\bstriking\s+(?:section|chapter|subchapter)\s+\d+[A-Za-z]?\b",
+    re.IGNORECASE,
+    classifier_id="us_amendatory_section_number_strike",
+)
+# "striking the following: '<X>'" — a strike whose struck operand lives in a
+# <quotedContent> payload rather than a <quotedText>. Pure-strike form (no
+# "and inserting" tail). Recognizer is a hot-path prefilter on every strike
+# instruction whose <quotedText> list is empty; the handler reads the
+# <quotedContent> payload to obtain the struck text. Source witness: PL 113-188
+# §301(b)(1); PL 110-254 §511; PL 109-288 §1046. Routed through
+# ``compile_classifier_regex`` per AGENTS.md §2.4.
+_STRIKE_FOLLOWING_RE = compile_classifier_regex(
+    r"\bstriking\s+the\s+following\s*:\s*[\"“”]",
+    re.IGNORECASE,
+    classifier_id="us_amendatory_strike_following",
+)
 # Open-ended tail strike: deletes from an anchor to the end of the node.
 _TAIL_STRIKE_RE = re.compile(
     r"striking\s+[\"“”'](?P<old>[^\"“”']{0,500})[\"“”']\s+and\s+all\s+that\s+follows",
@@ -2137,6 +2374,22 @@ _TAIL_STRIKE_RE = re.compile(
 _THROUGH_TAIL_STRIKE_RE = re.compile(
     r"striking\s+[\"“”'](?P<old>[^\"“”']{0,500})[\"“”']\s+"
     r"and\s+all\s+that\s+follows\s+through\s+[\"“”'](?P<end>[^\"“”']{0,500})[\"“”']",
+    re.IGNORECASE,
+)
+# Positional END anchor for the through-tail form ("striking 'X' and all that
+# follows through <positional END> and inserting..."). When the END anchor is
+# described positionally ("the period at the end", "the semicolon at the end",
+# "the end of the paragraph") rather than as a quoted literal, the through-tail
+# form has NO second <quotedText> and ``_THROUGH_TAIL_STRIKE_RE`` does not
+# match — but the raw text still names a BOUNDED deletion that the open-ended
+# tail-strike-insert lowering MUST NOT absorb (a positional END is not the same
+# as an open-ended delete-to-end-of-node). The recognizer is used as a guard
+# in the ``through_match is None`` payload branch so it holds the positional
+# END form out as a typed finding instead of mis-lowering it. Quantifiers are
+# bounded; the END phrase is limited to 100 chars (much shorter than the
+# realistic shapes, which are <=80 chars in the corpus).
+_THROUGH_TAIL_POSITIONAL_END_RE = re.compile(
+    r"\band\s+all\s+that\s+follows\s+through\s+[^\"“”'\n]{1,100}?\s+and\s+inserting\b",
     re.IGNORECASE,
 )
 # "redesignating paragraphs (3) through (7) as paragraphs (4) through (8)" — a
@@ -2197,24 +2450,85 @@ _REDESIGNATE_COMPOUND_CUT_RE = re.compile(
     r"\s+and\s+(?:by\s+)?(?:inserting|transferring|adding|striking|renumbering|designating|redesignating|amending)\b.*$",
     re.IGNORECASE,
 )
+# "redesignating section 311 as section 312" (and the plural pairs form
+# ``redesignating sections 624 (...), 625 (...), and 626 (...) as sections 625,
+# 626, and 627, respectively``) — section labels are BARE numerals, never
+# parenthesised like the lower-rung kind labels. The optional ``(N U.S.C. M)``
+# parenthetical carries govinfo's OLRC classification for each section but is
+# NOT a redesignation operand. Source witness: PL 108-177 §302 "(A) by
+# redesignating section 311 as section 312; and" / PL 109-58 §1 "(1) by
+# redesignating section 514 (42 U.S.C. 13264) as section 515; and". Includes the
+# single-pair and multiple-pair forms (the latter zipped ``respectively``).
+# Quantifiers bounded: ``[0-9]{1,5}`` covers real USC section numbers (max
+# 5 digits); U.S.C. cite is bounded to 80 chars; to-section list bounded to 600
+# chars so the regex cannot run away on a malformed tail.
+_SECTION_LABEL_NUM = r"\d{1,5}[A-Za-z]?"
+_USC_CITE = r"\([^)]{0,5}?\d{1,5}\s*U\.S\.C\.\s*[0-9A-Za-z\u2013\-]{1,30}\)"
+_REDESIGNATE_SECTION_RENUMBER_RE = re.compile(
+    rf"redesignating\s+sections?\s+"
+    rf"(?P<from_list>{_SECTION_LABEL_NUM}(?:\s+{_USC_CITE})?"
+    rf"(?:\s*(?:,\s*and\s+|,\s*|\s+and\s+){_SECTION_LABEL_NUM}(?:\s+{_USC_CITE})?){{0,8}})"
+    rf"\s+as\s+sections?\s+"
+    rf"(?P<to_list>{_SECTION_LABEL_NUM}(?:\s*(?:,\s*and\s+|,\s*|\s+and\s+){_SECTION_LABEL_NUM}){{0,8}})"
+    r"(?:,\s*respectively)?" + _STRUCTURAL_ACTION_TRAIL,
+    re.IGNORECASE,
+)
+# "redesignating chapter 107 as chapter 106A" — chapter-level renumber. Bare
+# numeral (with possible trailing letter for chapters-designated-as-letter
+# subchapters), no parens. Source witness: PL 108-375 §1074.
+_CHAPTER_LABEL_NUM = r"\d{1,4}[A-Za-z]?"
+_REDESIGNATE_CHAPTER_RENUMBER_RE = re.compile(
+    rf"redesignating\s+chapters?\s+(?P<from_label>{_CHAPTER_LABEL_NUM})"
+    rf"\s+as\s+chapters?\s+(?P<to_label>{_CHAPTER_LABEL_NUM})"
+    + _STRUCTURAL_ACTION_TRAIL,
+    re.IGNORECASE,
+)
+# "redesignating such subsection as subsection (b)" — the source unit is named
+# by ``such <kind>`` (the just-discussed unit in the preceding clause), so the
+# from-address is the resolved target itself. The destination label may be
+# parenthesised (``subsection (b)``) or bare (``section 2722``) for
+# section-level destinations. Provenance modifiers ``as so redesignated`` /
+# ``(as amended by this paragraph)`` are stripped via ``_strip_redesignate_modifiers``.
+_KIND_WORDS_WITH_SECTION = "section|subsection|paragraph|subparagraph|clause|subclause"
+_REDESIGNATE_SUCH_RENUMBER_RE = re.compile(
+    rf"redesignating\s+such\s+(?P<src_kind>{_KIND_WORDS_WITH_SECTION})"
+    r"(?:\s*\((?P<src_label>[0-9A-Za-z]+)\))?"
+    r"(?:\s*\(as\s+amended\s+by[^)]*?\))?"
+    r"(?:\s*\([^)]{0,100}?\))?"  # tolerate a trailing short parenthetical descriptor
+    rf"\s+as\s+(?P<dst_kind>{_KIND_WORDS_WITH_SECTION})\s+"
+    r"(?:\((?P<dst_label_p>[0-9A-Za-z]+)\)|(?P<dst_label_s>[0-9A-Za-z]+))"
+    + _STRUCTURAL_ACTION_TRAIL,
+    re.IGNORECASE,
+)
 # "inserting after section (N) / paragraph (N) / subsection (N) the following[ new
 # <kind>]: <block>" — splice the quoted block as a NEW node positioned after the
 # named anchor unit. Section anchors appear when the resolved target is a chapter/
 # subchapter/part container.
 _INSERT_NODE_AFTER_RE = re.compile(
-    rf"inserting\s+after\s+(?P<kind>section|{_KIND_WORDS})\s+"
+    rf"inserting\s*,?\s+(?P<where>after|before)\s+(?P<kind>section|{_KIND_WORDS})\s+"
     r"(?:\((?P<label_p>[0-9A-Za-z]+)\)|(?P<label_s>[0-9A-Za-z]+))"
     r"(?:\s*\([0-9A-Za-z]+\))*"
-    # Optional enacted qualifier: ", as redesignated and transferred by paragraph
-    # (N)," — a parenthesized sub-clause introduced and closed by commas. The
-    # trailing comma is mandatory so the qualifier cannot greedily absorb "the
-    # following" when the enacted text uses the bare comma-then-"the following"
-    # form ("after subparagraph (B), the following:" — here the comma belongs to
-    # the connector, not to a qualifier). The separator after the qualifier (or
-    # after the label when no qualifier) accepts whitespace-or-comma, matching
-    # both the bare "the following" and the enacted-comma "the following" forms.
-    r"(?:\s*,\s+[^,]{1,160},)?"
-    r"[\s,]+(?:\(as\s+so\s+redesignated\)\s+)?the\s+following",
+    # Optional enacted qualifier in ONE of two drafting forms between the anchor
+    # label and "the following":
+    #   (a) comma-bounded: ", as redesignated and transferred by paragraph (N),"
+    #       (the closing comma is mandatory so the connector comma in
+    #       "(B), the following:" is not absorbed).
+    #   (b) a single parenthesised group, possibly with one level of nested
+    #       parens: " (as so redesignated and transferred under subsection (N))" /
+    #       " (16 U.S.C. 2103a)" / " (as redesignated by subparagraph (N))" /
+    #       " (as added by subsection (b))". Bounded to 200 chars to keep the
+    #       tempered-greedy group cheap (AGENTS.md §2.4).
+    r"(?:"
+    r"\s*,\s+[^,]{1,160},"
+    r"|"
+    r"\s*\((?:[^()]|\([^)]*\)){0,200}\)"
+    r")?"
+    # Separator may be whitespace, comma, OR em dash (the em-dash form
+    # "label (qualifier)—the following" appears in PL 114-94 §1411). The trailing
+    # optional "(as so redesignated)" mark is the bare-non-parens form (PL 108-36
+    # §508: "... (as so redesignated), the following:"); the paren-bounded form
+    # above already covers it when the parens are present.
+    r"[\s,\u2014]+(?:\(as\s+so\s+redesignated\)\s+)?the\s+following",
     re.IGNORECASE,
 )
 # A comma/"and"-separated list of parenthesised labels: "(a), (c), (f), and (g)" or
@@ -2402,6 +2716,50 @@ def _strike_insert_unit_target(raw_text: str, target: LegalAddress) -> LegalAddr
     return LegalAddress(path=(*target.path, (kind, label)))
 
 
+# ---------------------------------------------------------------------------
+# Bounded roman-numeral enumerator (for clause/subclause ranges)
+# ---------------------------------------------------------------------------
+# Roman-numeral labels at the clause/subclause level rarely exceed (xx) in
+# legislation; we deliberately bound the supported range to 1..20 so we can
+# reject non-canonical synthetic shapes like 'iix' (8) that drafting conventions
+# do not produce. A static lookup also avoids the production-risks of writing a
+# general roman parser (which must be validated against the canonical
+# round-trip).
+_INT_TO_LOWER_ROMAN: tuple[str, ...] = (
+    "", "i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x",
+    "xi", "xii", "xiii", "xiv", "xv", "xvi", "xvii", "xviii", "xix", "xx",
+)
+_LOWER_ROMAN_TO_INT: dict[str, int] = {r: n for n, r in enumerate(_INT_TO_LOWER_ROMAN) if r}
+
+
+def _roman_to_int(label: str) -> int | None:
+    """Parse a roman-numeral label (``i``..``xx``) to its integer value.
+
+    Accepts ``i``, ``ii``, ..., ``xx`` (case-insensitive). Returns ``None`` for
+    the empty string, digits, multi-char alpha that isn't a roman numeral, or
+    roman values out of the supported 1..20 range. The static lookup is
+    intentional: it refuses non-canonical synthetic shapes like ``iix`` (which
+    a greedy subtractive parser would silently accept), keeping the
+    enumerator's output within the form used by real clause/subclause drafting.
+    """
+    if not label:
+        return None
+    return _LOWER_ROMAN_TO_INT.get(label.lower())
+
+
+def _int_to_roman(n: int, *, upper: bool = False) -> str | None:
+    """Convert an integer in 1..20 to its roman-numeral label, or ``None``.
+
+    When ``upper`` is ``True`` the result is uppercased (``I``, ``II``, ...) so
+    subclause-level destinations render in their USC form. ``None`` for values
+    outside 1..20 — the caller refuses such ranges rather than guessing.
+    """
+    if not 1 <= n < len(_INT_TO_LOWER_ROMAN):
+        return None
+    roman = _INT_TO_LOWER_ROMAN[n]
+    return roman.upper() if upper else roman
+
+
 def _redesignate_range(raw_text: str, target: LegalAddress) -> tuple[tuple[LegalAddress, LegalAddress], ...] | None:
     """Parse a ``redesignating (a) through (b) as (c) through (d)`` range.
 
@@ -2503,6 +2861,73 @@ def _redesignate_range(raw_text: str, target: LegalAddress) -> tuple[tuple[Legal
             offset = n - int(lo)
             new_ord = ord_lo + offset
             to_label = chr(new_ord).upper() if to_lo.isupper() else chr(new_ord)
+            pairs.append(
+                (
+                    LegalAddress(path=(*target.path, (from_kind, from_label))),
+                    LegalAddress(path=(*target.path, (to_kind, to_label))),
+                )
+            )
+        return tuple(pairs)
+
+    # Roman-numeral range: clauses (i) through (iv) as clauses (ii) through (v),
+    # or cross-kind variants (clauses (i)-(iv) as subclauses (I)-(IV), clauses
+    # (i)-(iv) as subparagraphs (A)-(D), clauses (iii)-(v) as paragraphs (3)-(5)).
+    # Both endpoints must be canonical roman numerals in the 1..20 legislation
+    # range; the destination may be roman (same/case-variant), single-letter
+    # alpha (cross-kind with digit-equivalent position), or digit (cross-kind to
+    # paragraph). Source witness: PL 108-173 §1862 "(A) by redesignating clauses
+    # (i) through (v) as clauses (ii) through (vi), respectively; and" and PL
+    # 108-458 "(B) by redesignating subparagraphs (A) through (C) as clauses
+    # (i) through (iii), respectively;". The lowerer enumerates each member of
+    # [from_lo..from_hi] and emits one RENUMBER per member (high-end first so
+    # relabels never collide).
+    from_lo_int = _roman_to_int(lo)
+    from_hi_int = _roman_to_int(hi)
+    if from_lo_int is not None and from_hi_int is not None:
+        to_lo_int: int | None = None
+        to_hi_int: int | None = None
+        # Destination label kind. Try roman first, then digit, then single-letter
+        # alpha (cross-kind).
+        to_lo_roman = _roman_to_int(to_lo)
+        to_hi_roman = _roman_to_int(to_hi)
+        if to_lo_roman is not None and to_hi_roman is not None:
+            to_lo_int, to_hi_int = to_lo_roman, to_hi_roman
+        elif to_lo.isdigit() and to_hi.isdigit():
+            to_lo_int, to_hi_int = int(to_lo), int(to_hi)
+        elif (
+            len(to_lo) == 1 and to_lo.isalpha()
+            and len(to_hi) == 1 and to_hi.isalpha()
+        ):
+            to_lo_int = ord(to_lo.lower()) - ord('a') + 1
+            to_hi_int = ord(to_hi.lower()) - ord('a') + 1
+        if to_lo_int is None or to_hi_int is None:
+            return None
+        span = from_hi_int - from_lo_int
+        if span < 0 or (to_hi_int - to_lo_int) != span:
+            return None
+        offset = to_lo_int - from_lo_int
+        to_lo_is_upper = to_lo.isupper()
+        to_lo_is_alpha = to_lo.isalpha()
+        to_lo_is_digit = to_lo.isdigit()
+        for n in range(from_hi_int, from_lo_int - 1, -1):
+            from_label = _int_to_roman(n, upper=lo.isupper())
+            if from_label is None:
+                return None
+            dst = n + offset
+            if to_lo_is_digit:
+                to_label = str(dst)
+            elif to_lo_is_alpha and len(to_lo) == 1:
+                # Single-letter alpha destination (cross-kind roman→alpha). The
+                # destination's alphabet position (1-based) is ``dst``. Refuse
+                # destinations past 'z'.
+                if dst > 26:
+                    return None
+                to_label = chr(ord('a') + dst - 1).upper() if to_lo_is_upper else chr(ord('a') + dst - 1)
+            else:
+                # Roman-numeral destination (same kind, possibly upper-cased).
+                to_label = _int_to_roman(dst, upper=to_lo_is_upper)
+                if to_label is None:
+                    return None
             pairs.append(
                 (
                     LegalAddress(path=(*target.path, (from_kind, from_label))),
@@ -2685,6 +3110,111 @@ def _redesignate_pairs(raw_text: str, target: LegalAddress) -> tuple[tuple[Legal
             )
         )
     return tuple(pairs)
+
+
+# Bare-numeral section labels (no parens) used in ``redesignating section N as
+# section M`` — distinct from the paren-list ``_SEGMENT_RE`` used by the
+# subsection/paragraph/... recognizers.
+_SECTION_BARE_LABEL_RE = re.compile(r"\d{1,5}[A-Za-z]?")
+
+
+def _redesignate_section_renumber(
+    raw_text: str, target: LegalAddress
+) -> tuple[tuple[LegalAddress, LegalAddress], ...] | None:
+    """Parse ``redesignating section N as section M`` (single or multi-pair).
+
+    Section-level renumbers use BARE numeral labels (no parentheses), unlike
+    subsection/paragraph/... labels. Supports the single-pair form (one RENUMBER)
+    and the ``respectively`` multi-pair form (``redesignating sections N1, N2, N3
+    as sections M1, M2, M3, respectively``). The optional ``(N U.S.C. M)``
+    parentheticals are stripped before label extraction (provenance annotations,
+    not operands).
+
+    Source/destination addresses are emitted at title-level because section
+    numbers hang directly under the title root, NOT under a deeper target path
+    (the resolved ``target`` may be the area-tree root, a chapter, or a sibling
+    section context node — never the parent of the section being renumbered).
+
+    Returns ``None`` when the form is not a section-level redesignation or when
+    the from/to label lists have mismatched lengths.
+    """
+    m = _REDESIGNATE_SECTION_RENUMBER_RE.search(_strip_redesignate_modifiers(raw_text))
+    if m is None:
+        return None
+    title_segments = tuple(p for p in target.path if p[0] == "title")
+    if len(title_segments) != 1:
+        return None
+    title_path = title_segments[0]
+    from_text = m.group("from_list")
+    to_text = m.group("to_list")
+    from_clean = re.sub(_USC_CITE, "", from_text)
+    to_clean = re.sub(_USC_CITE, "", to_text)
+    from_labels = _SECTION_BARE_LABEL_RE.findall(from_clean)
+    to_labels = _SECTION_BARE_LABEL_RE.findall(to_clean)
+    if not from_labels or len(from_labels) != len(to_labels):
+        return None
+    pairs: list[tuple[LegalAddress, LegalAddress]] = []
+    for from_label, to_label in zip(from_labels, to_labels, strict=True):
+        pairs.append(
+            (
+                LegalAddress(path=(title_path, ("section", from_label))),
+                LegalAddress(path=(title_path, ("section", to_label))),
+            )
+        )
+    return tuple(pairs)
+
+
+def _redesignate_chapter_renumber(
+    raw_text: str, target: LegalAddress
+) -> tuple[LegalAddress, LegalAddress] | None:
+    """Parse ``redesignating chapter N as chapter M`` (single renumber).
+
+    Chapter labels are bare numerals with optional trailing letter (``106A``).
+    Source/destination addresses are emitted at title-level because chapters
+    hang directly off the title root. Source witness: PL 108-375 §1074.
+    """
+    m = _REDESIGNATE_CHAPTER_RENUMBER_RE.search(_strip_redesignate_modifiers(raw_text))
+    if m is None:
+        return None
+    title_segments = tuple(p for p in target.path if p[0] == "title")
+    if len(title_segments) != 1:
+        return None
+    title_path = title_segments[0]
+    from_label = m.group("from_label")
+    to_label = m.group("to_label")
+    return (
+        LegalAddress(path=(title_path, ("chapter", from_label))),
+        LegalAddress(path=(title_path, ("chapter", to_label))),
+    )
+
+
+def _redesignate_such_renumber(
+    raw_text: str, target: LegalAddress
+) -> tuple[LegalAddress, LegalAddress] | None:
+    """Parse ``redesignating such <kind> as <kind> (label)`` renumber.
+
+    The source unit is named by ``such <kind>`` — a back-reference to the
+    just-discussed unit in the preceding clause. The from-address is the
+    resolved ``target`` itself. The destination replaces the target's leaf
+    kind/label. Source witness: PL 110-289 §1651 "(E) by redesignating such
+    subsection as subsection (b);".
+    """
+    m = _REDESIGNATE_SUCH_RENUMBER_RE.search(_strip_redesignate_modifiers(raw_text))
+    if m is None:
+        return None
+    dst_kind = m.group("dst_kind").lower()
+    dst_label = m.group("dst_label_p") or m.group("dst_label_s")
+    if not dst_label:
+        return None
+    if not target.path:
+        return None
+    # Source is the resolved target's leaf; we replace the leaf kind/label with
+    # the new (dst_kind, dst_label). Keeping the parent path means an
+    # (a)→(b) relabel lives at the same level as the source leaf, never
+    # silently jumping up or down the address tree (§1.0 mutation boundary).
+    from_addr = target
+    to_addr = LegalAddress(path=(*target.path[:-1], (dst_kind, dst_label)))
+    return from_addr, to_addr
 
 
 # Group splitter for ``_REDESIGNATE_MULTI_KIND_PAIRS_RE``: a group is
@@ -3183,6 +3713,55 @@ def _lower_instruction(
                         extra_provenance_tags=(RULE_STRIKE_INSERT_TAIL,),
                     )
                     witness_rule_id = RULE_STRIKE_INSERT_TAIL
+                elif (
+                    through_match is None
+                    and len(quoted) == 1
+                    and payload_node is not None
+                    and _THROUGH_TAIL_POSITIONAL_END_RE.search(raw_text) is None
+                ):
+                    # Open-ended tail strike-insert with ONE quoted OLD anchor
+                    # and a <quotedContent> NEW block: "striking 'X' and all
+                    # that follows and inserting the following: '<block>'".
+                    # This is the same RULE_STRIKE_INSERT_TAIL shape as the
+                    # 2-quoted-operand form, but the NEW operand lives in the
+                    # enacted <quotedContent> payload rather than a second
+                    # <quotedText> (govinfo USLM splits the two operands across
+                    # child element kinds, especially when the NEW block
+                    # contains structural sub-units like <clause> /
+                    # <subparagraph>). The OLD anchor is the only <quotedText>
+                    # child; the right operand comes from the quotedContent
+                    # payload. Source witness: PL 108-136 §572#instr213 ("by
+                    # striking 'shall commence' and all that follows and
+                    # inserting '<quotedContent>shall commence—(i)...'").
+                    #
+                    # The through-tail variant ("striking 'OLD' and all that
+                    # follows through <positional END> and inserting the
+                    # following: <block>") is EXCLUDED by the
+                    # ``_THROUGH_TAIL_POSITIONAL_END_RE`` guard — its END
+                    # anchor is positional ("through the period at the end")
+                    # rather than a quoted string, and the open-ended lowering
+                    # (which deletes to the end of the node) would over-delete
+                    # past the positional END. That form correctly falls through
+                    # to the typed finding below (the through-tail-strike with
+                    # positional END requires recognizing the END's structural
+                    # meaning, which is out of scope for this recognizer).
+                    old = quoted[0]
+                    new = payload_node.text or ""
+                    op = _make_op(
+                        StructuralAction.TEXT_REPLACE,
+                        rule_id=RULE_STRIKE_INSERT_TAIL,
+                        text_patch=TextPatchSpec(
+                            kind=TextPatchKindEnum.REPLACE,
+                            selector=TextSelector(
+                                match_text=old,
+                                occurrence=-1 if _is_each_place_instruction(raw_text) else 0,
+                            ),
+                            replacement=new,
+                        ),
+                        target=_text_strike_target,
+                        extra_provenance_tags=(RULE_STRIKE_INSERT_TAIL,),
+                    )
+                    witness_rule_id = RULE_STRIKE_INSERT_TAIL
                 else:
                     finding = _finding(
                         TAIL_STRIKE_INSERT_MISSING_OPERANDS_FINDING_RULE_ID,
@@ -3249,11 +3828,33 @@ def _lower_instruction(
             )
             witness_rule_id = RULE_STRIKE_INSERT
         else:
-            finding = _finding(
-                STRIKE_INSERT_MISSING_OPERANDS_FINDING_RULE_ID,
-                "strike-and-insert without two quoted strings or a quoted block payload "
-                "(the form 'striking X and inserting Y' needs the X and Y operands)",
-            )
+            # Recognize the sentence-strike + insert form BEFORE absorbing it
+            # into the generic STRIKE_INSERT_MISSING_OPERANDS fallback (which
+            # would lose the structural reason: the strike's anchor is the
+            # 'first/second/third sentence' offset, an editorial position LawVM
+            # cannot deterministic locate from prose alone — same family as
+            # SENTENCE_STRIKE_FINDING_RULE_ID in the pure-strike path). The
+            # common shape: "by striking the first sentence and inserting the
+            # following: '<X>'" — only the INSERT operand is captured (the
+            # STRIKE half names a positional sentence offset, not a quoted
+            # literal). Source witness: PL 113-188 §902(b)(1) ("by striking the
+            # first sentence and inserting the following: 'The Comptroller
+            # General shall...'"); PL 108-375 §1074 ("striking the second and
+            # third sentences and inserting '<X>'").
+            if _SENTENCE_STRIKE_RE.search(raw_text) is not None:
+                finding = _finding(
+                    SENTENCE_STRIKE_FINDING_RULE_ID,
+                    "strike-and-insert whose strike half names a positionally-"
+                    "located sentence ('striking the first/second/last sentence "
+                    "and inserting the following: <X>') — a sentence's offset is "
+                    "editorial, not enactable text. Held out as a typed residual",
+                )
+            else:
+                finding = _finding(
+                    STRIKE_INSERT_MISSING_OPERANDS_FINDING_RULE_ID,
+                    "strike-and-insert without two quoted strings or a quoted block payload "
+                    "(the form 'striking X and inserting Y' needs the X and Y operands)",
+                )
     elif family == "strike_insert_end_punct":
         # Terminal punctuation edit: "striking the period at the end and inserting
         # '; and'" / "striking '; and' at the end ... and inserting ';'".  Anchor on
@@ -3447,7 +4048,38 @@ def _lower_instruction(
             # Named non-materializable structural strikes are classified before the
             # bare structural-unit path so they produce typed findings, not generic
             # unlowered records.
-            if _HEADING_STRIKE_RE.search(raw_text):
+            if _CHAPTER_ANALYSIS_STRIKE_RE.search(raw_text) is not None:
+                # Chapter-analysis / table-of-sections strike family. LawVM's IR
+                # has no chapter-analysis node (§2.3: don't promote a
+                # jurisdiction-local aggregate to a core node before the shape
+                # is shared), so the operation is correctly held out as a typed
+                # residual rather than mis-routed into the generic
+                # STRIKE_NO_QUOTED_ANCHOR fallback (which would erase the
+                # structural reason: there is no section body whose text to
+                # delete — the amendment is against the TABLE OF SECTIONS).
+                finding = _finding(
+                    CHAPTER_ANALYSIS_STRIKE_FINDING_RULE_ID,
+                    "table-of-sections / chapter-analysis strike (the amendment is "
+                    "against the chapter's TABLE OF SECTIONS, an editorial aggregate, "
+                    "not a section body; LawVM has no chapter-analysis node) — held "
+                    "out as a typed residual",
+                )
+            elif _SECTION_NUMBER_STRIKE_RE.search(raw_text) is not None:
+                # Whole-section/chapter strike by bare USC number ("striking
+                # section 1763" / "striking chapter 107"). Recognized shape;
+                # held out as a typed finding because the struck section's
+                # address resolution from the inherited scope alone is
+                # ambiguous (the inherited address may be the chapter but the
+                # chapter containing the cited section is not always
+                # determinable — cross-chapter risk).
+                finding = _finding(
+                    SECTION_NUMBER_STRIKE_FINDING_RULE_ID,
+                    "whole-section / chapter strike by bare USC number ('striking "
+                    "section N') — recognized but held out as a typed residual "
+                    "(the struck section's address resolution from the inherited "
+                    "scope is ambiguous without a chapter-scope anchor)",
+                )
+            elif _HEADING_STRIKE_RE.search(raw_text):
                 finding = _finding(
                     HEADING_STRIKE_FINDING_RULE_ID,
                     "heading strike not section-representable",
@@ -3462,6 +4094,38 @@ def _lower_instruction(
                     SENTENCE_STRIKE_FINDING_RULE_ID,
                     "sentence strike not section-representable",
                 )
+            elif (
+                payload_node is not None
+                and not quoted
+                and _STRIKE_FOLLOWING_RE.search(raw_text) is not None
+            ):
+                # "striking the following: '<X>'" where X lives in a
+                # <quotedContent> payload rather than a <quotedText>. The
+                # strike's match text is the payload's text (the struck
+                # literal). The govinfo USLM converter sometimes packages a
+                # multi-line struck block (often a chapter/section heading or
+                # a multi-sentence intro) inside <quotedContent> rather than
+                # <quotedText> even when no insertion follows. Without this
+                # path, the strike falls into STRIKE_NO_QUOTED_ANCHOR, hiding
+                # the structural reason behind a generic message and losing the
+                # struck text. Lowered as TEXT_REPEAL with the payload's text
+                # as the match_text (first occurrence unless 'each place').
+                # Source witness: PL 113-188 §301(b)(1) ("by striking the
+                # following: '(a) Design of Programs.—'"); PL 110-254
+                # ("by striking the following: 'CHAPTER 1201—[RESERVED]'").
+                op = _make_op(
+                    StructuralAction.TEXT_REPEAL,
+                    rule_id=RULE_STRIKE,
+                    text_patch=TextPatchSpec(
+                        kind=TextPatchKindEnum.DELETE,
+                        selector=TextSelector(
+                            match_text=payload_node.text or "",
+                            occurrence=-1 if _is_each_place_instruction(raw_text) else 0,
+                        ),
+                    ),
+                    target=_text_strike_target,
+                )
+                witness_rule_id = RULE_STRIKE
             else:
                 # "is amended by striking subsection (X)" — a structural-unit strike (a
                 # sub-section REPEAL), no quoted phrase. Lower to a REPEAL of the named
@@ -3582,16 +4246,30 @@ def _lower_instruction(
             )
             witness_rule_id = rule_id
         elif node_anchor is not None and payload_node is not None:
-            # "inserting after paragraph/section (N) the following: <block>" — splice
-            # the quoted block as a NEW node positioned AFTER the named anchor unit.
-            # The anchor node hangs off the resolved target; the dry-run inserts the
-            # payload immediately after that node's span.
+            # "inserting [after|before] section/paragraph/subsection (N) the
+            # following: <block>" — splice the quoted block as a NEW node positioned
+            # relative to the named anchor unit. Both drafting directions are
+            # recognized; ``where`` records which. The BEFORE direction is only
+            # lowered at the SECTION level (a chapter-container insert), where the
+            # dry-run's chapter-text append is faithful — at sub-section granularity
+            # a "before" would be APPENDED to the anchor node (wrong
+            # materialization), so it is held out as a typed finding instead.
             anchor_label = node_anchor.group("label_p") or node_anchor.group("label_s")
             anchor_kind = node_anchor.group("kind").lower()
+            where = (node_anchor.group("where") or "after").lower()
             if anchor_kind == "section":
                 # Section labels ("7300") are not on the subsection ladder; the
-                # prose verb itself names the anchor level.
-                anchor_addr = LegalAddress(path=(*address.path, ("section", anchor_label)))
+                # prose verb itself names the anchor level. When the resolved
+                # target is itself a SECTION (e.g. "Section 5 is amended by
+                # inserting before section 5 the following new section: ..."),
+                # the anchor section IS the resolved target — do NOT append
+                # another section rung to it. Otherwise (target is a chapter /
+                # subchapter / part container), append a ``section`` rung as
+                # before.
+                if address.path and address.path[-1][0] == "section":
+                    anchor_addr = address
+                else:
+                    anchor_addr = LegalAddress(path=(*address.path, ("section", anchor_label)))
             elif anchor_kind in _USC_LEVELS:
                 # The enacted prose explicitly names the anchor level ("paragraph",
                 # "subparagraph", ...). Trust it rather than re-typing by ladder
@@ -3602,40 +4280,157 @@ def _lower_instruction(
             else:
                 typed_kind = _label_level(anchor_label, max(address.depth() - 1, 0))
                 anchor_addr = LegalAddress(path=(*address.path, (typed_kind, anchor_label)))
+            # Sub-section "before" is unrepresentable — the dry-run would append
+            # instead of prepend. Hold it out as a typed finding rather than emit
+            # a structurally wrong op (AGENTS.md §0 — preserve the uncertainty).
+            if where == "before" and anchor_kind != "section":
+                finding = _finding(
+                    INSERT_AFTER_MISSING_OPERANDS_FINDING_RULE_ID,
+                    "insert-before a sub-section anchor has no faithful "
+                    "section-text materialization (the dry-run would append "
+                    "rather than prepend); held out as a typed residual",
+                )
+            else:
+                rule_id = (
+                    RULE_INSERT_NODE_BEFORE
+                    if where == "before"
+                    else RULE_INSERT_NODE_AFTER
+                )
+                op = _make_op(
+                    StructuralAction.INSERT,
+                    rule_id=rule_id,
+                    payload=payload_node,
+                    anchor=anchor_addr,
+                )
+                # A section-level insert creates a new section node. Address the
+                # operation by the enacted section number in the payload so
+                # downstream phases (including the dry-run oracle comparison) can
+                # compare the new section directly against its after-edition
+                # witness.
+                if anchor_kind == "section":
+                    new_section_number = _new_section_number_from_payload(payload_node.text or "")
+                    if new_section_number is not None:
+                        insert_title = _address_title(address) or _address_title(anchor_addr)
+                        op = _make_op(
+                            StructuralAction.INSERT,
+                            rule_id=rule_id,
+                            payload=payload_node,
+                            anchor=anchor_addr,
+                            target=LegalAddress(path=(("title", insert_title), ("section", new_section_number))),
+                        )
+                witness_rule_id = rule_id
+        elif (m := _INSERT_PUNCT_WORD_ANCHOR_RE.search(raw_text)) is not None:
+            # "inserting a comma/semicolon/period/em dash/closing parenthesis
+            # after/before '<X>'" — a phrase-swap whose INSERTED operand is a
+            # punctuation WORD (not a quoted literal). Map the word to its char,
+            # then join it to the anchor text after (anchor + punct) or before
+            # (punct + anchor). The anchor is the first occurrence unless the
+            # instruction says "each place". Source witness: PL 108-173 §1813
+            # ("by inserting a comma after '1813'") and PL 108-193 §1 ("by
+            # inserting a comma after 'fraud'").
+            punct_word = m.group("punct_word").lower().strip()
+            punct_char = _punct_word_to_operand_char(punct_word)
+            where = m.group("where").lower()
+            anchor_text = m.group("anchor")
+            if punct_char is None:
+                finding = _finding(
+                    PUNCT_WORD_UNRECOGNIZED_FINDING_RULE_ID,
+                    f"insert punct-word anchor matched classify but punct word "
+                    f"{punct_word!r} unmapped",
+                )
+            else:
+                if where == "before":
+                    # Punctuation-char BEFORE an anchor binds directly to the
+                    # anchor (no separating space): ")2008" not ") 2008", ",X"
+                    # not ", X". The ``_join_insert_before`` helper would add a
+                    # space (it assumes a word-level join). Source witness: PL
+                    # 109-444 §4 ("closing parenthesis before the period at the
+                    # end" — analogous punct-before-word form).
+                    replacement = punct_char + anchor_text
+                    rule_id = RULE_INSERT_BEFORE
+                else:
+                    replacement = _join_insert_after(anchor_text, punct_char)
+                    rule_id = RULE_INSERT_AFTER
+                op = _make_op(
+                    StructuralAction.TEXT_REPLACE,
+                    rule_id=RULE_INSERT_PUNCT_WORD_ANCHOR,
+                    text_patch=TextPatchSpec(
+                        kind=TextPatchKindEnum.REPLACE,
+                        selector=TextSelector(
+                            match_text=anchor_text,
+                            occurrence=-1 if _is_each_place_instruction(raw_text) else 0,
+                            # `occurrence_mode="All"` is invalid; the existing each-place
+                            # convention is `occurrence=-1` + `occurrence_mode="Auto"`, which
+                            # the materializer treats as all-occurrence for TEXT_REPLACE.
+                            occurrence_mode="Auto",
+                        ),
+                        replacement=replacement,
+                    ),
+                )
+                # Use the punct-word rule id so the audit trail identifies the
+                # construction family (a punct-word anchor differs from a quoted
+                # two-operand swap).
+                witness_rule_id = RULE_INSERT_PUNCT_WORD_ANCHOR
+        elif (term_m := _INSERT_TERM_ANCHOR_RE.search(raw_text)) is not None:
+            # "inserting '<X>' after the term '<Y>' [each place such term
+            # appears]" — the SECOND operand is a <term> element (NOT a
+            # <quotedText>), so the two-quoted-operand swap above misses it and
+            # the instruction would silently fall to missing-operands. Extract
+            # the inserted text and the term anchor from raw_text via the typed
+            # recognizer; lower as a phrase swap with occurrence mode =
+            # each-place when the enacted text directs all-occurrence
+            # application. Source witness: PL 111-31 §107 ("by inserting
+            # 'tobacco products,' after the term 'devices,' each place such term
+            # appears").
+            ins_text = term_m.group("ins")
+            anchor_text = term_m.group("anchor")
+            # The recognizer hardcodes the ``after the term`` connector (no
+            # ``before the term`` drafting form exists in the corpus), so the
+            # direction is always AFTER.
+            replacement = _join_insert_after(anchor_text, ins_text)
+            rule_id = RULE_INSERT_AFTER
             op = _make_op(
-                StructuralAction.INSERT,
-                rule_id=RULE_INSERT_NODE_AFTER,
-                payload=payload_node,
-                anchor=anchor_addr,
+                StructuralAction.TEXT_REPLACE,
+                rule_id=rule_id,
+                text_patch=TextPatchSpec(
+                    kind=TextPatchKindEnum.REPLACE,
+                    selector=TextSelector(
+                        match_text=anchor_text,
+                        occurrence=-1 if _is_each_place_instruction(raw_text) else 0,
+                        occurrence_mode="Auto",
+                    ),
+                    replacement=replacement,
+                ),
             )
-            # A section-level insert creates a new section node. Address the operation
-            # by the enacted section number in the payload so downstream phases
-            # (including the dry-run oracle comparison) can compare the new section
-            # directly against its after-edition witness.
-            if anchor_kind == "section":
-                new_section_number = _new_section_number_from_payload(payload_node.text or "")
-                if new_section_number is not None:
-                    insert_title = _address_title(address) or _address_title(anchor_addr)
-                    op = _make_op(
-                        StructuralAction.INSERT,
-                        rule_id=RULE_INSERT_NODE_AFTER,
-                        payload=payload_node,
-                        anchor=anchor_addr,
-                        target=LegalAddress(path=(("title", insert_title), ("section", new_section_number))),
-                    )
-            witness_rule_id = RULE_INSERT_NODE_AFTER
+            witness_rule_id = rule_id
         else:
             # The branch is the missing-operands fallback. Before absorbing into
             # the generic ``insert_after_missing_operands`` bucket (erasing the
-            # structural reason), classify a recognized table-of-sections /
-            # chapter-analysis insert into its own typed-finding family —
-            # LawVM has no chapter-analysis node, so the instruction is held
-            # out explicitly rather than mis-routed as a section-body op.
+            # structural reason), classify a recognized shape into its own typed-
+            # finding family — LawVM cannot faithfully lower it, so the
+            # instruction is held out explicitly rather than mis-routed as a
+            # section-body op.
             if _CHAPTER_ANALYSIS_INSERT_RE.search(raw_text) is not None:
                 finding = _finding(
                     CHAPTER_ANALYSIS_INSERT_FINDING_RULE_ID,
                     "table-of-sections / chapter-analysis insert (LawVM has no "
                     "chapter-analysis node); held out as a typed residual",
+                )
+            elif _SENTENCE_ANCHOR_INSERT_RE.search(raw_text) is not None:
+                finding = _finding(
+                    SENTENCE_ANCHOR_INSERT_FINDING_RULE_ID,
+                    "insert relative to a SENTENCE anchor (the "
+                    "first/second/.../last sentence); a sentence's offset is "
+                    "editorial, not enacted (AGENTS.md §2.1); held out as a "
+                    "typed residual",
+                )
+            elif _DESIGNATION_ANCHOR_INSERT_RE.search(raw_text) is not None:
+                finding = _finding(
+                    DESIGNATION_ANCHOR_INSERT_FINDING_RULE_ID,
+                    "insert relative to a structural sub-unit's DESIGNATION "
+                    "(the '(a)' / '(1)' label outside the running prose); "
+                    "LawVM's TEXT_REPLACE matches against body text only — "
+                    "held out as a typed residual",
                 )
             else:
                 finding = _finding(
@@ -3754,15 +4549,50 @@ def _lower_instruction(
         ordinal_present = _ORDINAL_TIEBREAKER_DETECT_RE.search(raw_text) is not None
         redesignate_text, compound_cut = _extract_redesignate_prefix(raw_text)
         pair = _redesignate_destination(redesignate_text, address)
-        range_pairs = None if pair is not None else _redesignate_range(redesignate_text, address)
+        section_pairs = (
+            None if pair is not None else _redesignate_section_renumber(redesignate_text, address)
+        )
+        chapter_pair = (
+            None
+            if (pair is not None or section_pairs is not None)
+            else _redesignate_chapter_renumber(redesignate_text, address)
+        )
+        such_pair = (
+            None
+            if (pair is not None or section_pairs is not None or chapter_pair is not None)
+            else _redesignate_such_renumber(redesignate_text, address)
+        )
+        range_pairs = (
+            None
+            if (
+                pair is not None
+                or section_pairs is not None
+                or chapter_pair is not None
+                or such_pair is not None
+            )
+            else _redesignate_range(redesignate_text, address)
+        )
         pair_list = (
             None
-            if (pair is not None or range_pairs is not None)
+            if (
+                pair is not None
+                or section_pairs is not None
+                or chapter_pair is not None
+                or such_pair is not None
+                or range_pairs is not None
+            )
             else _redesignate_pairs(redesignate_text, address)
         )
         multi_kind_pairs = (
             None
-            if (pair is not None or range_pairs is not None or pair_list is not None)
+            if (
+                pair is not None
+                or section_pairs is not None
+                or chapter_pair is not None
+                or such_pair is not None
+                or range_pairs is not None
+                or pair_list is not None
+            )
             else _redesignate_multi_kind_pairs(redesignate_text, address)
         )
         if pair is not None:
@@ -3778,18 +4608,76 @@ def _lower_instruction(
                 provenance_tags=("us_amendatory", f"target_resolution:{resolution_status}", *_metadata_provenance),
             )
             witness_rule_id = RULE_REDESIGNATE
+        elif section_pairs:
+            # "redesignating section 311 as section 312" (single) or the
+            # ``respectively`` multi-pair form. One RENUMBER per pair, at
+            # title-level scope.
+            for idx, (from_addr, to_addr) in enumerate(section_pairs):
+                node_op = LegalOperation(
+                    op_id=f"{instruction_id}#s{idx}",
+                    sequence=sequence,
+                    action=StructuralAction.RENUMBER,
+                    target=from_addr,
+                    destination=to_addr,
+                    source=source,
+                    witness_rule_id=RULE_REDESIGNATE_SECTION,
+                    provenance_tags=("us_amendatory", f"target_resolution:{resolution_status}", *_metadata_provenance),
+                )
+                if op is None:
+                    op = node_op
+                else:
+                    extra_ops.append(node_op)
+            witness_rule_id = RULE_REDESIGNATE_SECTION
+        elif chapter_pair is not None:
+            # "redesignating chapter 107 as chapter 106A" — chapter-level single
+            # renumber at title scope.
+            from_addr, to_addr = chapter_pair
+            op = LegalOperation(
+                op_id=instruction_id,
+                sequence=sequence,
+                action=StructuralAction.RENUMBER,
+                target=from_addr,
+                destination=to_addr,
+                source=source,
+                witness_rule_id=RULE_REDESIGNATE_CHAPTER,
+                provenance_tags=("us_amendatory", f"target_resolution:{resolution_status}", *_metadata_provenance),
+            )
+            witness_rule_id = RULE_REDESIGNATE_CHAPTER
+        elif such_pair is not None:
+            # "redesignating such subsection as subsection (b)" — the source is
+            # the resolved target itself; the destination replaces its leaf
+            # kind/label.
+            from_addr, to_addr = such_pair
+            op = LegalOperation(
+                op_id=instruction_id,
+                sequence=sequence,
+                action=StructuralAction.RENUMBER,
+                target=from_addr,
+                destination=to_addr,
+                source=source,
+                witness_rule_id=RULE_REDESIGNATE_SUCH,
+                provenance_tags=("us_amendatory", f"target_resolution:{resolution_status}", *_metadata_provenance),
+            )
+            witness_rule_id = RULE_REDESIGNATE_SUCH
         elif range_pairs:
             # "redesignating paragraphs (3) through (7) as (4) through (8)" — one
-            # RENUMBER per member (high-end first so relabels never collide).
-            rule_id = (
-                RULE_REDESIGNATE_RANGE_CROSS_KIND
-                if range_pairs and any(
-                    fk != tk for fk, tk in (
-                        (p[0].path[-1][0], p[1].path[-1][0]) for p in range_pairs
-                    )
-                )
-                else RULE_REDESIGNATE_RANGE
+            # RENUMBER per member (high-end first so relabels never collide). The
+            # range handler also covers roman-numeral ranges ``(i) through (iv)``
+            # via the bounded roman-numeral enumerator.
+            has_roman = any(
+                _roman_to_int(p[0].path[-1][1]) is not None for p in range_pairs
             )
+            cross_kind = any(
+                fk != tk for fk, tk in (
+                    (p[0].path[-1][0], p[1].path[-1][0]) for p in range_pairs
+                )
+            )
+            if has_roman:
+                rule_id = RULE_REDESIGNATE_RANGE_ROMAN
+            elif cross_kind:
+                rule_id = RULE_REDESIGNATE_RANGE_CROSS_KIND
+            else:
+                rule_id = RULE_REDESIGNATE_RANGE
             for idx, (from_addr, to_addr) in enumerate(range_pairs):
                 node_op = LegalOperation(
                     op_id=f"{instruction_id}#r{idx}",

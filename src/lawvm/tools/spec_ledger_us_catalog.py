@@ -230,6 +230,56 @@ _US_RULE_SPECS: Dict[str, str] = {
         "<xhtml:table> in the parent subsection; the enacted text names no labels in "
         "its prose."
     ),
+    "us_amend_redesignate_range_roman": (
+        "A 'redesignating (i) through (iv) as (ii) through (v)' instruction with "
+        "roman-numeral endpoints emits one RENUMBER per member, enumerating the "
+        "roman-numeral sequence arithmetically."
+    ),
+    "us_amend_redesignate_section": (
+        "A 'redesignating section N as section M' instruction emits a section-level "
+        "RENUMBER (the source and destination are bare section numbers, not sub-units)."
+    ),
+    "us_amend_redesignate_chapter": (
+        "A 'redesignating chapter N as chapter M' instruction emits a chapter-level "
+        "RENUMBER."
+    ),
+    "us_amend_redesignate_such": (
+        "A 'redesignating such section as section N' instruction emits a RENUMBER "
+        "where the source is named by reference ('such') rather than explicit label."
+    ),
+    "us_amendatory_chapter_analysis_strike": (
+        "A 'striking the item relating to section N' in the chapter table of sections "
+        "targets the USC editorial apparatus (TOC), not the statutory text; held out "
+        "as a typed finding."
+    ),
+    "us_amendatory_section_number_strike": (
+        "A 'by striking section N' whole-section strike targets the section as a unit; "
+        "held out as a typed finding when the section is not in the before edition."
+    ),
+    "us_amend_insert_node_before_unit": (
+        "An 'inserting before <unit> the following' instruction splices a new node "
+        "positioned before the named anchor unit (mirrors RULE_INSERT_NODE_AFTER)."
+    ),
+    "us_amend_insert_punct_word_anchor": (
+        "An 'inserting a comma/semicolon/period after/before <quoted>' instruction "
+        "inserts a punctuation character at a quoted anchor without striking anything."
+    ),
+    "us_amendatory_designation_anchor_insert": (
+        "Classifier id for recognizing 'inserting after the designation of <unit>' "
+        "shapes that target the OLRC editorial designation apparatus."
+    ),
+    "us_amendatory_designation_anchor_insert_not_section_representable": (
+        "An 'inserting after the designation of <unit>' instruction targets the "
+        "OLRC structural designation; not representable as a section-text patch."
+    ),
+    "us_amendatory_sentence_anchor_insert_not_section_representable": (
+        "An 'inserting after the first/second/last sentence' instruction names a "
+        "sentence boundary the section-text surface cannot locate without guessing."
+    ),
+    "us_amendatory_strike_following": (
+        "Classifier id for recognizing 'striking <quoted> and all that follows' "
+        "open-ended tail shapes that cannot be represented at section granularity."
+    ),
     "us_amend_strike_structural_unit": (
         "A 'strike subsection/paragraph (X)' instruction repeals the named structural "
         "node from the section body; striking an absent node is a typed no-op refusal, "
@@ -664,6 +714,18 @@ _US_RULE_CONFIDENCE: Dict[str, str] = {
     "us_amend_redesignate_range": US_CONFIDENCE_HEURISTIC,
     "us_amend_redesignate_pairs": US_CONFIDENCE_HEURISTIC,
     "us_amend_redesignate_table": US_CONFIDENCE_HEURISTIC,
+    "us_amend_redesignate_range_roman": US_CONFIDENCE_HEURISTIC,
+    "us_amend_redesignate_section": US_CONFIDENCE_HEURISTIC,
+    "us_amend_redesignate_chapter": US_CONFIDENCE_HEURISTIC,
+    "us_amend_redesignate_such": US_CONFIDENCE_HEURISTIC,
+    "us_amendatory_chapter_analysis_strike": US_CONFIDENCE_HEURISTIC,
+    "us_amendatory_section_number_strike": US_CONFIDENCE_HEURISTIC,
+    "us_amend_insert_node_before_unit": US_CONFIDENCE_HEURISTIC,
+    "us_amend_insert_punct_word_anchor": US_CONFIDENCE_HEURISTIC,
+    "us_amendatory_designation_anchor_insert": US_CONFIDENCE_HEURISTIC,
+    "us_amendatory_designation_anchor_insert_not_section_representable": US_CONFIDENCE_HEURISTIC,
+    "us_amendatory_sentence_anchor_insert_not_section_representable": US_CONFIDENCE_HEURISTIC,
+    "us_amendatory_strike_following": US_CONFIDENCE_HEURISTIC,
     "us_amend_redesignate_range_cross_kind": US_CONFIDENCE_HEURISTIC,
     "us_amend_redesignate_multi_kind_pairs": US_CONFIDENCE_HEURISTIC,
     "us_amend_redesignate_ordinal_dropped": US_CONFIDENCE_HEURISTIC,
