@@ -1841,12 +1841,17 @@ def _classify_action(actions: list[str], raw_text: str) -> str:
 
 
 def _redesignate_destination(raw_text: str, target: LegalAddress) -> tuple[LegalAddress, LegalAddress] | None:
-    """Parse ``redesignating X as Y`` into ``(from, to)`` addresses (single-unit form)."""
+    """Parse ``redesignating X as Y`` into ``(from, to)`` addresses (single-unit form).
+
+    Strips ``as added by X`` and ``as redesignated by Y`` parenthetical modifiers
+    and the ``and indenting appropriately`` formatting clause before matching —
+    these are contextual annotations, not redesignation operands.
+    """
     m = re.search(
-        r"redesignating\s+(?:subsection|paragraph|subparagraph|clause|subclause)\s+"
+        rf"redesignating\s+(?:{_KIND_WORDS})\s+"
         r"\(([0-9A-Za-z]+)\)\s+as\s+"
-        r"(?:subsection|paragraph|subparagraph|clause|subclause)\s+\(([0-9A-Za-z]+)\)",
-        raw_text,
+        rf"(?:{_KIND_WORDS})\s+\(([0-9A-Za-z]+)\)",
+        _strip_redesignate_modifiers(raw_text),
         re.IGNORECASE,
     )
     if m is None:
@@ -2100,7 +2105,7 @@ def _redesignate_range(raw_text: str, target: LegalAddress) -> tuple[tuple[Legal
     etc.) — the enacted text is authoritative, so a single-letter roman label is not
     mis-typed as a clause when the source explicitly says ``subsection``.
     """
-    m = _REDESIGNATE_RANGE_RE.search(raw_text)
+    m = _REDESIGNATE_RANGE_RE.search(_strip_redesignate_modifiers(raw_text))
     if m is None:
         return None
     lo, hi = m.group("from_lo"), m.group("from_hi")
@@ -2193,6 +2198,21 @@ def _strip_indenting_suffix(raw_text: str) -> str:
     return re.sub(r",?\s+and\s+indenting[^;,]*(?:;|\.|$)", "", raw_text)
 
 
+def _strip_redesignate_modifiers(raw_text: str) -> str:
+    """Strip contextual annotations that interfere with redesignate regex matching.
+
+    Two modifier classes are stripped:
+      1. ``as added by X`` / ``as redesignated by Y`` parentheticals — these are
+         provenance annotations naming the source Act that added/redesignated the
+         unit; they are not redesignation operands. E.g. "redesignating paragraph
+         (8), as added by section 221(a) of BIPA, as paragraph (9)".
+      2. ``and indenting [the margins] appropriately`` formatting directive.
+    """
+    t = _strip_indenting_suffix(raw_text)
+    t = re.sub(r",?\s+as\s+(?:added|redesignated)\s+by[^,;]*", "", t)
+    return t
+
+
 def _redesignate_pairs(raw_text: str, target: LegalAddress) -> tuple[tuple[LegalAddress, LegalAddress], ...] | None:
     """Parse ``redesignating (a) and (b) as (c) and (d), respectively`` relabel.
 
@@ -2206,7 +2226,7 @@ def _redesignate_pairs(raw_text: str, target: LegalAddress) -> tuple[tuple[Legal
     Strips the ``and indenting [the margins] appropriately`` trailing clause
     before matching — it is a formatting directive, not a redesignation operand.
     """
-    m = _REDESIGNATE_PAIRS_RE.search(_strip_indenting_suffix(raw_text))
+    m = _REDESIGNATE_PAIRS_RE.search(_strip_redesignate_modifiers(raw_text))
     if m is None:
         return None
     from_kind = m.group("from_kind").lower()
