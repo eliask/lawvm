@@ -1006,6 +1006,19 @@ def test_replay_xml_1982_91_repairs_source_sec_131_label() -> None:
     assert "Täten kumotaan 5 päivänä helmikuuta 1982 annetun maa-ainesasetuksen" not in text
 
 
+def test_replay_xml_1966_258_repairs_chapter_6_section_78_source_label() -> None:
+    replay = replay_xml_for_test("1966/258", mode="official_consolidation", quiet=True)
+
+    bogus = replay.materialized_state.find_node("section", "75", "chapter", "6")
+    section = replay.materialized_state.find_node("section", "78", "chapter", "6")
+
+    assert bogus is None
+    assert section is not None
+    text = " ".join(irnode_to_text(section).split())
+    assert "Vuokrasopimusta koskeva riita voidaan saattaa" in text
+    assert "heidän yhteisestä pyynnöstään sovittelun" not in text
+
+
 def test_replay_xml_1973_36_materializes_live_missing_sections() -> None:
     """1973/36 must retain the live Finland bug-family sections end to end."""
     replay = pinned_replay(
