@@ -2425,7 +2425,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 6,1999/561,suspect,oracle_suspect,2003/404 eff 2003-07-25 > cutoff 2003-05-23,
 6,1999/565,suspect,oracle_suspect,2003/401 eff 2003-07-25 > cutoff 2003-05-23,
 6,2000/1119,suspect,oracle_suspect,2023/552 eff 2023-09-01 > cutoff 2023-03-23,
-6,2000/1195,core,,,OK
+6,2000/1195,suspect,oracle_suspect,oracle-check: EDITORIAL_CONVENTION×1; current diff is 100% by section and residual is editorial/source-pathology classified,OK
 6,2000/193,suspect,oracle_suspect,2022/1173 eff 2023-01-01 > cutoff 2022-12-20,
 6,2000/204,suspect,oracle_suspect,2015/258 eff 2015-04-01 > cutoff 2015-03-20,
 6,2000/427,suspect,oracle_suspect,2015/1240 eff 2015-10-01 > cutoff 2015-09-24,
@@ -2747,7 +2747,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 8,2011/1531,suspect,oracle_suspect,2025/442 eff 2026-01-01 > cutoff 2025-06-27,
 8,2011/922,core,,,OK
 8,2012/110,suspect,oracle_suspect,2015/780 eff 2015-08-01 > cutoff 2015-06-18,
-8,2012/422,notruth,no_truth_from_run,,NO_TRUTH
+8,2012/422,suspect,oracle_suspect,oracle-check: EDITORIAL_CONVENTION×2; ORACLE_STALE×1; residuals are repeal-notice/editorial convention and oracle-stale classification with source-pathology findings,OK
 8,2012/748,core,,,OK
 8,2013/185,suspect,oracle_suspect,2025/1044 eff 2026-01-01 > cutoff 2025-12-22,
 8,2013/423,suspect,oracle_suspect,2023/591 eff 2023-06-01 > cutoff 2023-03-23,
