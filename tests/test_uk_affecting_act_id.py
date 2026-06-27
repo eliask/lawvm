@@ -7,6 +7,9 @@ when the correct slug is ``nia``. Prefer the URI when present.
 """
 from __future__ import annotations
 
+import pytest
+
+from lawvm.uk_legislation.affecting_class import UnmappedAffectingClass
 from lawvm.uk_legislation.effects import UKEffectRecord
 
 
@@ -97,11 +100,20 @@ class TestAffectingClassIsRecognized:
 
     def test_unmapped_class_without_uri_not_recognized(self) -> None:
         # This is the loud case: a guessed "northernirelandact" slug that 404s.
+        # Per AGENTS.md §1.10 the helper now raises ``UnmappedAffectingClass``
+        # rather than silently producing the invalid ``cls.lower()`` slug; the
+        # predicate stays False so callers can pre-check and surface the typed
+        # ``uk_affecting_act_class_unmapped_rejection`` finding instead.
         rec = _record(
             affecting_class="NorthernIrelandAct", affecting_uri="", year="2016", number="10"
         )
         assert rec.affecting_class_is_recognized is False
-        assert rec.affecting_act_id == "northernirelandact/2016/10"
+        with pytest.raises(UnmappedAffectingClass) as excinfo:
+            _ = rec.affecting_act_id
+        assert excinfo.value.cls == "NorthernIrelandAct"
+        assert excinfo.value.year == "2016"
+        assert excinfo.value.number == "10"
+        assert "add an entry to _UK_AFFECTING_CLASS_SLUG_MAP" in excinfo.value.hint
 
 
 class TestClassUnmappedDiagnostic:
