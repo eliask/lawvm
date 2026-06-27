@@ -2125,6 +2125,154 @@ def test_emit_section_snapshot_inserts_new_subsection_addresses_not_in_base() ->
     ]
 
 
+def test_emit_section_snapshot_uses_bound_sparse_insert_subsection_payload() -> None:
+    base_section = _sec(
+        "14",
+        IRNode(kind=IRNodeKind.NUM, text="14 §"),
+        _sub("1", _content("Old first")),
+        _sub("2", _content("Second")),
+        _sub("3", _content("Third")),
+        _sub("4", _content("Fourth")),
+    )
+    live_section = _sec(
+        "14",
+        IRNode(kind=IRNodeKind.NUM, text="14 §"),
+        _sub("1", _content("New first")),
+        _sub("2", _content("Second")),
+        _sub("3", _content("Third")),
+        _sub("4", _content("Fourth")),
+        _sub("5"),
+    )
+    replacement_payload = _sub(
+        "1",
+        _content(
+            "Toiminnanharjoittajan joka valmistaa laskee liikkeeseen varastoi "
+            "kuljettaa ilmoittaa muutoksista."
+        ),
+    )
+    inserted_payload = _sub(
+        "5",
+        _content(
+            "Toiminnanharjoittajan joka valmistaa laskee liikkeeseen varastoi "
+            "kuljettaa turvallisuuspoikkeamista."
+        ),
+    )
+
+    replace_op = AmendmentOp(
+        op_id="op_replace_14_1",
+        op_type=OpType.REPLACE,
+        target_section="14",
+        target_unit_kind="section",
+        target_chapter="3",
+        target_paragraph=1,
+        source_statute="2002/636",
+        source_issue_date=_DATE,
+    )
+    insert_op = AmendmentOp(
+        op_id="op_insert_14_5",
+        op_type=OpType.INSERT,
+        target_section="14",
+        target_unit_kind="section",
+        target_chapter="3",
+        target_paragraph=5,
+        source_statute="2002/636",
+        source_issue_date=_DATE,
+    )
+    slot_map = SubsectionSlotMap()
+    slot_map.assign(replace_op, replacement_payload)
+    slot_map.assign(insert_op, inserted_payload)
+    slot_assignment = SubsectionSlotAssignmentResult(
+        subsec_map=slot_map,
+        sparse_slot_bindings=(
+            SparsePayloadSlotBinding(
+                op_description="REPLACE 3 luku 14 § 1 mom",
+                op_type="REPLACE",
+                target_paragraph=1,
+                target_item=None,
+                target_special=None,
+                payload_slot_index=1,
+                payload_slot_label="1",
+            ),
+            SparsePayloadSlotBinding(
+                op_description="INSERT 3 luku 14 § 5 mom",
+                op_type="INSERT",
+                target_paragraph=5,
+                target_item=None,
+                target_special=None,
+                payload_slot_index=2,
+                payload_slot_label="5",
+            ),
+        ),
+        used_subs=(0, 1),
+        unassigned_payload_slots=(),
+    )
+    rops = [
+        ResolvedOp.from_amendment_op(
+            replace_op,
+            muutos_ir=live_section,
+            cross_ir=None,
+            target_unit_kind="section",
+            target_norm="14",
+            target_chapter="3",
+            slot_assignment=slot_assignment,
+            target_address=LegalAddress(path=(("chapter", "3"), ("section", "14"), ("subsection", "1"))),
+        ),
+        ResolvedOp.from_amendment_op(
+            insert_op,
+            muutos_ir=live_section,
+            cross_ir=None,
+            target_unit_kind="section",
+            target_norm="14",
+            target_chapter="3",
+            slot_assignment=slot_assignment,
+            target_address=LegalAddress(path=(("chapter", "3"), ("section", "14"), ("subsection", "5"))),
+        ),
+    ]
+    state = _make_state(
+        _body(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="3",
+                children=(live_section,),
+            )
+        )
+    )
+    lo_ops: list[LegalOperation] = []
+
+    _emit_section_snapshot(
+        state=state,
+        target_unit_kind="section",
+        target_norm="14",
+        target_chapter="3",
+        target_part=None,
+        group_rops=rops,
+        lo_ops_out=lo_ops,
+        amendment_id="2002/636",
+        source_title="Replace and insert",
+        source_issue_date=_DATE,
+        source_effective_date=_DATE,
+        base_ir=_body(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="3",
+                children=(base_section,),
+            )
+        ),
+    )
+
+    subsection_snapshots = {
+        op.target.path[-1][1]: op
+        for op in lo_ops
+        if op.target.path and op.target.path[-1][0] == "subsection"
+    }
+    assert subsection_snapshots["5"].action is StructuralAction.INSERT
+    assert subsection_snapshots["5"].payload is not None
+    assert irnode_to_text(subsection_snapshots["5"].payload) == (
+        "Toiminnanharjoittajan joka valmistaa laskee liikkeeseen varastoi "
+        "kuljettaa turvallisuuspoikkeamista."
+    )
+
+
 def test_emit_section_snapshot_prefers_typed_body_chapter_move_from_over_lo_provenance_tag() -> None:
     base_ir = _body(
         IRNode(

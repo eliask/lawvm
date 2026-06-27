@@ -2376,9 +2376,18 @@ def _emit_section_snapshot(
         target_replacement_text_by_label: dict[str, str] = {}
         target_texts_by_label: dict[str, set[str]] = {}
         target_token_signatures_by_label: dict[str, set[tuple[str, ...]]] = {}
+        protected_subsection_labels: set[str] = set()
         for rop in group_rops:
             if not _rop_targets_this_section(rop):
                 continue
+            if (
+                (rop.is_insert_action or rop.is_replace_action)
+                and _snapshot_targets_subsection_only(rop)
+                and rop.resolved_amend_sub_ir() is not None
+            ):
+                protected_label = _snapshot_subsection_target_label(rop)
+                if protected_label:
+                    protected_subsection_labels.add(_norm_num_token(protected_label))
             if not rop.is_replace_action or not _snapshot_targets_subsection_only(rop):
                 continue
             target_label = _snapshot_subsection_target_label(rop)
@@ -2419,7 +2428,7 @@ def _emit_section_snapshot(
             if subsection_key in consumed_target_labels:
                 changed = True
                 continue
-            if subsection_key in target_labels:
+            if subsection_key in target_labels or subsection_key in protected_subsection_labels:
                 new_section_children.append(subsection)
                 continue
             target_prefixes = {
