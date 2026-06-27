@@ -41,7 +41,7 @@ from __future__ import annotations
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from collections import Counter
 import hashlib
 import json
@@ -50,8 +50,16 @@ import re
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
+
+if TYPE_CHECKING:
+    # Forward-only import to satisfy the type-only annotation reference to
+    # ``Observation`` on the ``assert_classification_exclusive`` return type
+    # (the actual runtime import lives inside the function — kept local to
+    # avoid forcing the script's import-time cost on every subcommand path).
+    from lawvm.core.phase_result import Observation
 
 from lxml import etree as ET
 
@@ -4727,6 +4735,193 @@ def run_compare(before_path: Path, after_path: Path) -> int:
 
     print(f"\n{len(improvements)} improved, {len(regressions)} regressed")
     return 1 if regressions else 0
+
+
+# --------------------------------------------------------------------------- #
+# D10 — COMPARE.DETERMINISTIC_GAP_VS_MANUAL_FRONTIER_PARITY audit              #
+# --------------------------------------------------------------------------- #
+# Per audit_impl_D10.md + AGENTS.md §0: every replay-vs-oracle divergence must
+# classify into EXACTLY ONE of {deterministic_gap, manual_compilation_frontier,
+# oracle_suspect}. Per-EID taxonomic uniqueness is the contract. This audit
+# surfaces double-classified EIDs (an EID in >=2 of the three classes within
+# one statute row) as blocking ``COMPARE.EID_DOUBLE_CLASSIFIED`` Observations.
+# It is `evidence` not authority per §2.10: firing does not demote either class
+# (the conflict's ``detail`` carries both ``source_rule_id``s so triage decides
+# which is stale; resolution per spec §9 is via attestation retraction or
+# manual-frontier claim promotion, never silent demotion).
+#
+# WIRE STATUS: the audit helper + AdjudicationRow/EidClassificationConflict
+# carriers + the synthetic regression test are LANDSCAPE-LANDED here; the
+# WIRE into ``summarize_results`` after ``manual_frontier_records`` and the
+# per-EID ``oracle_suspect``/``deterministic_gap`` projections exist is staged
+# as a follow-up commit per the D7/D8/D11 staged-wire discipline. Until that
+# wire, the audit runs from the unit/helper lane only; the strict-block code
+# is unreachable from production. Declared honestly via NO_FIRE_DRILL_YET in
+# tests/test_fi_guard_liveness.py per AGENTS.md §2.9.
+
+COMPAREEID_DOUBLE_CLASSIFIED_FINDING_CODE = "COMPARE.EID_DOUBLE_CLASSIFIED"
+_D10_AUDIT_STAGE = "compare_oracle_classification"
+_D10_AUDIT_OWNER = "compare_oracle_classification"
+# Closed-set of the three exhaustively-disjoint §0 classes (audit_impl_D10 §2).
+# A new class added here is a §0 contract change, not an inline improvisation.
+COMPARE_CLASSIFICATION_KNOWN_CLASSES: frozenset[str] = frozenset(
+    {
+        "deterministic_gap",
+        "manual_compilation_frontier",
+        "oracle_suspect",
+    }
+)
+
+
+@dataclass(frozen=True, slots=True)
+class AdjudicationRow:
+    """One per-EID classification row from the broad-baseline projection.
+
+    Lightweight typed carrier per §1.9 — no positional tuple escape hatch.
+    Fields:
+    * ``statute_id``: the statute whose baseline projection emitted the row.
+    * ``eid``: the affected-EID identifier (e.g. ``section-5``).
+    * ``classification``: one of :data:`COMPARE_CLASSIFICATION_KNOWN_CLASSES`.
+    * ``source_rule_id``: the rule_id / field that asserted the class (e.g.
+      ``uk_manual_frontier_missing_payload_source_insufficient`` for manual-
+      compilation_frontier; ``uk_compare_text_patch_preimage_consumed_by_
+      replay_chain`` for oracle_suspect; ``uk_broad_residual_after_grounding``
+      for deterministic_gap).
+    * ``witness``: a human-readable locator / snippet; free text, NFC-normalised.
+    """
+
+    statute_id: str
+    eid: str
+    classification: str
+    source_rule_id: str
+    witness: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class EidClassificationConflict:
+    """One EID classified into >=2 of the three §0 classes for the same statute.
+
+    A typed carrier (§1.9) so a triager can answer §3.2's evidence path
+    (which EID + which classes + which source_rule_ids) without re-running
+    the broad baseline.
+
+    Fields:
+    * ``statute_id``: the statute under audit.
+    * ``eid``: the offending EID.
+    * ``classes``: the >=2 offending class names (subset of
+      :data:`COMPARE_CLASSIFICATION_KNOWN_CLASSES`).
+    * ``sources``: the ``source_rule_id`` for each class in ``classes``'s
+      ordinal position (parallel tuple — index ``i`` of ``classes`` corresponds
+      to index ``i`` of ``sources``).
+    * ``detail``: the full per-class projection rows so triage sees the
+      witness text too.
+    """
+
+    statute_id: str
+    eid: str
+    classes: tuple[str, ...]
+    sources: tuple[str, ...]
+    detail: Mapping[str, Any]
+
+
+def _adjudication_row_key(row: AdjudicationRow) -> tuple[str, str]:
+    """Stable per-(statute_id, eid) grouping key."""
+    return (row.statute_id, row.eid)
+
+
+def assert_classification_exclusive(
+    adjudications: Iterable[AdjudicationRow],
+) -> tuple[int, tuple["Observation", ...]]:
+    """Return (conflict_count, observations) for EIDs in >=2 of the three classes.
+
+    Per AGENTS.md §0 + audit_impl_D10: an EID classified into >=2 of
+    {deterministic_gap, manual_compilation_frontier, oracle_suspect} for the
+    same statute is a §0 disjoint-partition contract break. The audit groups
+    by ``(statute_id, eid)`` and surfaces any group whose class set size >= 2
+    as one ``COMPARE.EID_DOUBLE_CLASSIFIED`` Observation.
+
+    The audit never returns ``None`` (§1.10 fail-loud discipline — the
+    absence of a conflict is a valid result, but None would be silent
+    folklore). Empty input is the clean-state witness (empty Observations
+    tuple + count 0).
+
+    DOES NOT demote either class (§2.10 evidence, not authority). The
+    conflict's Observation detail carries both ``source_rule_id``s and the
+    per-class witness rows so triage can decide which class is stale per
+    spec §9 (retraction via attestation or claim promotion, not silent
+    demotion).
+    """
+    from lawvm.core.phase_result import Observation  # noqa: PLC0415
+
+    # Group rows by (statute_id, eid) preserving input class set.
+    groups: dict[tuple[str, str], list[AdjudicationRow]] = {}
+    for row in adjudications:
+        # Closed-set discipline: a class outside the known set is NOT silently
+        # absorbed into a conflict here — it is forwarded upstream via the
+        # projection's existing source-pathology receipt. This audit only
+        # compares the three §0 classes.
+        if row.classification not in COMPARE_CLASSIFICATION_KNOWN_CLASSES:
+            continue
+        groups.setdefault(_adjudication_row_key(row), []).append(row)
+
+    conflicts: list[EidClassificationConflict] = []
+    for (statute_id, eid), rows in groups.items():
+        # Dedupe the (classification, source_rule_id) tuples — the same EID
+        # might appear under one class multiple times if the projection emits
+        # duplicate rows; that is NOT a multi-class conflict (per spec §0 an
+        # EID is in a class once). Use a stable ordering so Observations are
+        # reproducible across runs.
+        seen: dict[str, str] = {}
+        for row in rows:
+            seen.setdefault(row.classification, row.source_rule_id)
+        if len(seen) < 2:
+            continue
+        classes_sorted = sorted(seen.keys())
+        sources_in_order = tuple(seen[c] for c in classes_sorted)
+        conflicts.append(
+            EidClassificationConflict(
+                statute_id=statute_id,
+                eid=eid,
+                classes=tuple(classes_sorted),
+                sources=sources_in_order,
+                detail={
+                    "rows": [
+                        {
+                            "classification": r.classification,
+                            "source_rule_id": r.source_rule_id,
+                            "witness": r.witness,
+                        }
+                        for r in rows
+                    ],
+                    "rule_id": COMPAREEID_DOUBLE_CLASSIFIED_FINDING_CODE,
+                    "owner": _D10_AUDIT_OWNER,
+                },
+            )
+        )
+
+    observations = tuple(
+        Observation(
+            kind=COMPAREEID_DOUBLE_CLASSIFIED_FINDING_CODE,
+            stage=_D10_AUDIT_STAGE,
+            detail={
+                "statute_id": c.statute_id,
+                "eid": c.eid,
+                "classes": c.classes,
+                "sources": c.sources,
+                "rows": c.detail["rows"],
+                "rule_id": c.detail["rule_id"],
+                "owner": c.detail["owner"],
+                "reason": (
+                    "one EID classified into >=2 of {deterministic_gap, "
+                    "manual_compilation_frontier, oracle_suspect} for the same "
+                    "statute (§0 disjoint-partition contract break)"
+                ),
+            },
+            source_statute=c.statute_id,
+        )
+        for c in conflicts
+    )
+    return (len(observations), observations)
 
 
 def main(argv: list[str] | None = None) -> int:

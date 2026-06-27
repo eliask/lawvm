@@ -1625,6 +1625,20 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
     # no second FindingSpec row here for D12 — the single canonical registry
     # row is the EV-06 apply-path emitter's, shared by the bundle-emission
     # sweep.
+    # D10 COMPARE.DETERMINISTIC_GAP_VS_MANUAL_FRONTIER_PARITY (audit_impl_D10):
+    # one EID classified into >=2 of {deterministic_gap, manual_compilation_
+    # frontier, oracle_suspect} for the same statute is a §0 contract break
+    # — the three classes are exhaustive AND disjoint per-EID. The audit module
+    # emits Observation carriers (role=observation per validate_finding_projection's
+    # Observation carrier contract — mirrors D7's precedent); the wire consumer
+    # in scripts/uk_broad_baseline.py::summarize_results translates the count
+    # into a hard-gate exit-code flip via fail_on_compare_eid_double_classified
+    # when the strict block is enabled (audit_impl_D10 §5).
+    FindingSpec("COMPARE.EID_DOUBLE_CLASSIFIED", "compare_oracle_classification",
+                "violation", "strict_fail", "compare_oracle_classification",
+                "one EID classified into >=2 of {deterministic_gap, "
+                "manual_compilation_frontier, oracle_suspect} for the same statute",
+                ("comparative",), role="observation"),
     # D7 / LS-23 COMMENCEMENT.EFFECT_TOTALITY (audit_impl_D7): every LegalOperation
     # reaching compile-timelines is temporally authorized — a commence/revive
     # TemporalEvent matches via group_id + scope, OR the op carries an explicit

@@ -4005,6 +4005,24 @@ NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
         "replay authority_mode staged as follow-up; drill through production once wired",
         "2026-06-27",
     ),
+    # D10 COMPARE.DETERMINISTIC_GAP_VS_MANUAL_FRONTIER_PARITY (audit_impl_D10):
+    # the audit helper ``assert_classification_exclusive`` + the
+    # ``AdjudicationRow``/``EidClassificationConflict`` carriers + the synthetic
+    # regression test are landed in ``scripts/uk_broad_baseline.py``. The wire
+    # into ``summarize_results`` (after manual_frontier_records + the per-EID
+    # oracle_suspect/deterministic_gap projections exist) is staged as a
+    # follow-up commit per the D7/D8/D11 staged-wire discipline. Until that
+    # wire, the strict-block code is unreachable from the production
+    # broad-baseline drive. Bonus upstream dependency: the per-EID
+    # triple-classification projection itself needs the comparison-class
+    # projection rows emitted by ``score_one`` (which doesn't yet exist for
+    # oracle_suspect/deterministic_gap on a per-EID basis) — multi-session.
+    "COMPARE.EID_DOUBLE_CLASSIFIED": (
+        "audit helper landed in scripts/uk_broad_baseline.py; wire into "
+        "summarize_results + per-EID projection build-out staged as follow-up; "
+        "drill through the production broad-baseline lane once wired",
+        "2026-06-27",
+    ),
 }
 
 # Committed monotone-decreasing debt ceiling for NO_FIRE_DRILL_YET. The allowlist
@@ -4361,6 +4379,18 @@ _KNOWN_NO_PRODUCTION_EMIT: Dict[str, str] = {
     ),
     "TIME.UNRESOLVED_COMMENCEMENT_TRIGGER": (
         "timeline barrier with no emit site; reconcile separately"
+    ),
+    # D10 COMPARE.DETERMINISTIC_GAP_VS_MANUAL_FRONTIER_PARITY (audit_impl_D10):
+    # the audit helper ``assert_classification_exclusive`` lives in
+    # ``scripts/uk_broad_baseline.py`` (per spec §1 the audit lives next to
+    # its emitter — the broad-baseline driver — and not under src/lawvm/...).
+    # The production-emit-site scan roots are limited to src/lawvm/{core,
+    # finland}, so the script-level producer is invisible to it. The wire
+    # into ``summarize_results`` is staged follow-up per the D7/D8/D11 staged-
+    # wire discipline; once it lands and the per-EID triple-classification
+    # projection is built into score_one, this entry becomes removable.
+    "COMPARE.EID_DOUBLE_CLASSIFIED": (
+        "uk_broad_baseline-driver audit + wire staged follow-up; module lives in scripts/uk_broad_baseline.py (outside src/lawvm/ emit-site scan roots)"
     ),
 }
 
