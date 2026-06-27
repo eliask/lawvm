@@ -3165,6 +3165,65 @@ def _detect_numbering_anomalies(
     return children
 
 
+def _reclassify_leading_unnumbered_item_intro(
+    children: List[IRNode],
+    statute_id: str,
+    parent_path: Tuple[str, ...],
+    facts: List[SourceNormalizationFact],
+) -> List[IRNode]:
+    """Convert a malformed leading paragraph into an INTRO before an item run."""
+    if len(children) < 3:
+        return children
+    lead = children[0]
+    if lead.kind != IRNodeKind.PARAGRAPH or _paragraph_has_num_child(lead):
+        return children
+    if _paragraph_has_subparagraph_children(lead):
+        return children
+    lead_text = irnode_to_text(lead).strip()
+    if not lead_text.endswith(":"):
+        return children
+    numbered = [
+        child
+        for child in children[1:]
+        if child.kind == IRNodeKind.PARAGRAPH and _paragraph_has_num_child(child)
+    ]
+    if len(numbered) < 2:
+        return children
+    labels = [_numeric_label_value(child.label) for child in numbered[:2]]
+    if labels != [1, 2]:
+        return children
+    lead_label = _numeric_label_value(lead.label)
+    if lead_label != labels[0]:
+        return children
+    intro = IRNode(
+        kind=IRNodeKind.INTRO,
+        text=lead_text,
+        attrs=lead.attrs,
+    )
+    facts.append(
+        SourceNormalizationFact(
+            statute_id=statute_id,
+            kind=SourceNormalizationKind.TAG_RECLASSIFY,
+            basis=SourceNormalizationBasis.PROFILE_INVALID,
+            before=(
+                f"leading unnumbered paragraph {_node_path_label(lead)} before "
+                "numbered paragraph items"
+            ),
+            after="reclassified as subsection INTRO facet",
+            explanation=(
+                "The paragraph has no explicit NUM child, ends with a list "
+                "introducing colon, and is followed by an explicit 1), 2) item "
+                "run whose first item has the same inherited label. The lead-in "
+                "label is source transport shape; keeping it in the item sibling "
+                "label space would collide with the real first item."
+            ),
+            path=parent_path + (_node_path_label(lead),),
+            confidence=0.98,
+        )
+    )
+    return [intro, *children[1:]]
+
+
 def _item_text_ends_with_open_coordinator(node: IRNode) -> bool:
     text = irnode_to_text(node).strip().casefold()
     return text.endswith((" ja", " sekä", " tai", " taikka"))
@@ -4085,6 +4144,9 @@ def normalize_source_ir(
            children, no num_in_intro prefix) as a wrapUp facet on the
            preceding numbered kohta (SUBSECTION nodes only).  Runs after
            step 8.5 and before step 9.
+      8.65. Reclassify a leading unnumbered paragraph before a numbered item
+            run as an INTRO facet when the local list grammar proves it is the
+            list lead-in, not item ``1)``.
       8.7. Recover num_in_intro unnumbered paragraph peers by lifting the
            leading ``N)``/``N.`` token from body text into a synthetic NUM
            child (SUBSECTION nodes only).  Only recovers when the candidate
@@ -4301,6 +4363,26 @@ def normalize_source_ir(
                 text=working.text,
                 attrs=working.attrs,
                 children=tuple(absorbed_children),
+            )
+
+    # Step 8.65: reclassify a malformed lead-in paragraph as INTRO.
+    #
+    # Must run before step 9 so an inferred label on unnumbered prose cannot
+    # collide with the real first numbered item and trigger duplicate pruning.
+    if working.kind == IRNodeKind.SUBSECTION:
+        new_children = list(working.children)
+        intro_children = _reclassify_leading_unnumbered_item_intro(
+            new_children, statute_id, current_path, facts
+        )
+        if len(intro_children) != len(new_children) or any(
+            a is not b for a, b in zip(intro_children, new_children, strict=True)
+        ):
+            working = IRNode(
+                kind=working.kind,
+                label=working.label,
+                text=working.text,
+                attrs=working.attrs,
+                children=tuple(intro_children),
             )
 
     # Step 8.7: recover num_in_intro unnumbered paragraph peers.
