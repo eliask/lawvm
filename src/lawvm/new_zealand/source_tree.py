@@ -313,7 +313,13 @@ def _walk_source_nodes(
 ) -> None:
     if not isinstance(node.tag, str):
         return
-    kind = _localname(node)
+    # ``_localname`` is the #1 chain-replay hotspot (~25M calls); here and at
+    # the other call sites below we inline ``_localname_of_tag(node.tag)``
+    # because ``isinstance(node.tag, str)`` is already verified. This saves
+    # the ``_localname`` Python frame, the ``hasattr`` precheck, and the
+    # ``isinstance(value, str)`` branch on ~2M calls, keeping the lru_cached
+    # tag-split (which dominates for ~30 unique NZ tag names).
+    kind = _localname_of_tag(node.tag)
     if kind in _STRUCTURAL_TAGS:
         if kind == "def-para":
             label = _first_def_term(node)
@@ -785,7 +791,7 @@ def _collect_legal_text(node: etree._Element, texts: list[str], *, is_root: bool
 
     if not isinstance(node.tag, str):
         return
-    if _localname(node) in _TEXT_EXCLUDE_TAGS:
+    if _localname_of_tag(node.tag) in _TEXT_EXCLUDE_TAGS:
         return
     # The structural root contributes only its descendant flow text, not its own
     # leading ``text`` (which for a structural element is empty/whitespace); this
@@ -797,7 +803,7 @@ def _collect_legal_text(node: etree._Element, texts: list[str], *, is_root: bool
             # Comment/PI nodes contribute nothing (text or tail), matching the
             # historical extractor's ``isinstance(tag, str)`` skip.
             continue
-        if _localname(child) in _TEXT_EXCLUDE_TAGS:
+        if _localname_of_tag(child.tag) in _TEXT_EXCLUDE_TAGS:
             # Excluded subtree: skip its text and the tail that trails it, to
             # keep the historical "notes/history contribute nothing" behaviour.
             continue
@@ -892,6 +898,20 @@ def _amend_subtree_section_label(amend_element: etree._Element) -> str | None:
 NZ_STRUCTURAL_REPLACE_BLOCKED_NO_AMEND_SUBTREE = "structural_replace_no_amend_subtree_in_amending_node"
 NZ_STRUCTURAL_REPLACE_BLOCKED_NO_MATCHING_CHILD = "structural_replace_no_amend_child_matches_target_leaf"
 NZ_STRUCTURAL_REPLACE_BLOCKED_AMBIGUOUS_MATCH = "structural_replace_multiple_amend_children_match_target_leaf"
+# Single-match-wrong-section typed receipt (§2.5 audit state; forward-looking).
+# When exactly ONE <amend> child matches the target leaf's kind+label BUT that
+# amend subtree's enclosing instruction citation names a DIFFERENT section than
+# the op's target_provision_label, the single match is semantically wrong -- it
+# belongs to a different section's amend. Emitting the typed blocker prevents
+# silently accepting the wrong-section payload (AGENTS §1.1 no silent target
+# hijacking). When the amend subtree's section label is unparseable (None),
+# we still accept (no disambiguating evidence to block on).
+NZ_STRUCTURAL_REPLACE_BLOCKED_SINGLE_MATCH_WRONG_SECTION = (
+    "structural_replace_single_match_wrong_section"
+)
+NZ_STRUCTURAL_INSERT_BLOCKED_SINGLE_MATCH_WRONG_SECTION = (
+    "structural_insert_single_match_wrong_section"
+)
 NZ_STRUCTURAL_REPLACE_BLOCKED_EMPTY_REPLACEMENT = "structural_replace_extracted_replacement_is_empty"
 NZ_STRUCTURAL_REPLACE_BLOCKED_TARGET_LEAF_UNUSABLE = "structural_replace_target_leaf_kind_or_label_unusable"
 
@@ -1007,6 +1027,18 @@ def extract_structural_replacement(
         return NZ_STRUCTURAL_REPLACE_BLOCKED_NO_MATCHING_CHILD
     if len(matches) > 1:
         return NZ_STRUCTURAL_REPLACE_BLOCKED_AMBIGUOUS_MATCH
+
+    # §2.5 audit-state: when target_provision_label was provided AND the single
+    # match's enclosing instruction citation names a different section, the match
+    # is semantically wrong -- the single amend child belongs to a different
+    # section's amend subtree. Block with a distinct typed receipt rather than
+    # silently accepting the wrong-section payload (AGENTS §1.1). When the
+    # single match's section label is None (unparseable), accept (no
+    # disambiguating evidence to block on -- the current default).
+    if normalized_provision:
+        match_section = _amend_subtree_section_label(matches[0])
+        if match_section is not None and match_section != normalized_provision:
+            return NZ_STRUCTURAL_REPLACE_BLOCKED_SINGLE_MATCH_WRONG_SECTION
 
     replacement_element = matches[0]
     nodes = _walk_payload_root_nodes(replacement_element)
@@ -1531,6 +1563,13 @@ def extract_structural_insertion(
     if len(matches) > 1:
         return NZ_STRUCTURAL_INSERT_BLOCKED_AMBIGUOUS_MATCH
 
+    # §2.5 audit-state: mirror the replacement path's single-match-wrong-section
+    # guard (same AGENTS §1.1 no-silent-target-hijacking discipline).
+    if normalized_provision:
+        match_section = _amend_subtree_section_label(matches[0])
+        if match_section is not None and match_section != normalized_provision:
+            return NZ_STRUCTURAL_INSERT_BLOCKED_SINGLE_MATCH_WRONG_SECTION
+
     inserted_element = matches[0]
     nodes = _walk_payload_root_nodes(inserted_element)
     if not nodes:
@@ -1555,9 +1594,9 @@ def _amend_instructions(node: etree._Element) -> tuple[NZAmendInstruction, ...]:
     """
     instructions: list[NZAmendInstruction] = []
     for text_node in node.iter():
-        if not isinstance(text_node.tag, str) or _localname(text_node) != "text":
+        if not isinstance(text_node.tag, str) or _localname_of_tag(text_node.tag) != "text":
             continue
-        amend_ins = [child for child in text_node.iter() if isinstance(child.tag, str) and _localname(child) == "amend.in"]
+        amend_ins = [child for child in text_node.iter() if isinstance(child.tag, str) and _localname_of_tag(child.tag) == "amend.in"]
         if not amend_ins:
             continue
         flat = _node_text(text_node)
@@ -1616,7 +1655,7 @@ def _insert_after_anchor_payload(
     quote_ins = [
         child
         for child in text_node.iter()
-        if isinstance(child.tag, str) and _localname(child) == "quote.in"
+        if isinstance(child.tag, str) and _localname_of_tag(child.tag) == "quote.in"
     ]
     if len(quote_ins) != 1 or len(amend_ins) != 1:
         return "", "", ""
@@ -1754,11 +1793,19 @@ def _localname_of_tag(tag: str) -> str:
 
 
 def _localname(value: Any) -> str:
-    if hasattr(value, "tag"):
-        value = value.tag
-    if isinstance(value, str):
-        return _localname_of_tag(value)
-    return _localname_of_tag(str(value))
+    # EAFP fast path: avoids the ``hasattr`` precheck (a separate C call) and
+    # the redundant ``isinstance`` branch on the common lxml-Element path.
+    # ``_localname`` is the #1 NZ chain-replay hotspot (~25M calls / 32-version
+    # chain); the prior ``hasattr`` / ``isinstance`` cascade cost ~2s of pure
+    # call overhead that disappears here. ``.tag`` may be a function (Comment /
+    # ProcessingInstruction); fall back to ``str(...)`` in that case to preserve
+    # the historical "<cyfunction Comment>" localname behaviour for non-string
+    # tags.
+    try:
+        tag = value.tag
+    except AttributeError:
+        tag = value
+    return _localname_of_tag(tag if isinstance(tag, str) else str(tag))
 
 
 def main(args: Any) -> None:

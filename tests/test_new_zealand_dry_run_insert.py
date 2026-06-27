@@ -49,6 +49,7 @@ from lawvm.new_zealand.source_tree import (
     NZ_STRUCTURAL_INSERT_BLOCKED_NO_AMEND_SUBTREE,
     NZ_STRUCTURAL_INSERT_BLOCKED_NO_MATCHING_CHILD,
     NZ_STRUCTURAL_INSERT_BLOCKED_SCHEDULE_INDIRECTION,
+    NZ_STRUCTURAL_INSERT_BLOCKED_SINGLE_MATCH_WRONG_SECTION,
     NZStructuralReplacement,
     extract_structural_insertion,
 )
@@ -1613,3 +1614,67 @@ def test_family_specific_no_candidate_rule_ids_are_distinguishable_lanes() -> No
     assert NZ_DRY_RUN_REFUSED_NO_REPLACE_CANDIDATE_RULE_ID == "nz_dry_run_refused_no_replayable_replace_candidate"
     assert NZ_DRY_RUN_REFUSED_NO_REPEAL_CANDIDATE_RULE_ID == "nz_dry_run_refused_no_replayable_repeal_candidate"
     assert len({NZ_DRY_RUN_REFUSED_NO_INSERT_CANDIDATE_RULE_ID, NZ_DRY_RUN_REFUSED_NO_REPLACE_CANDIDATE_RULE_ID, NZ_DRY_RUN_REFUSED_NO_REPEAL_CANDIDATE_RULE_ID}) == 3
+
+
+_INSERT_SINGLE_MATCH_WRONG_SECTION_XML = b"""\
+<act><body><prov id="SECMISMATCH"><prov.body>
+  <para><text>In <citation jurisdiction="nz"><extref href="s12">section 12</extref></citation>, insert:</text>
+    <amend><subprov><label>4A</label><para><text>4A New section 12 subsection.</text></para></subprov></amend></para>
+  <para><text>In <citation jurisdiction="nz"><extref href="s40">section 40</extref></citation>, insert:</text>
+    <amend><subprov><label>4B</label><para><text>4B New section 40 subsection.</text></para></subprov></amend></para>
+</prov.body></prov></body></act>
+"""
+
+
+def test_insert_single_match_wrong_section_blocks_when_target_provision_mismatches() -> None:
+    """Single-match-wrong-section typed blocker (§2.5 audit-state). When
+    exactly ONE amend subtree matches the target leaf kind+label BUT that
+    amend's enclosing instruction citation names a DIFFERENT section than
+    the witness's ``target_provision_label``, emit the typed blocker rather
+    than silently accepting the wrong-section payload (AGENTS §1.1 no-
+    silent-target-hijacking).
+    """
+    node = _amending_node(_INSERT_SINGLE_MATCH_WRONG_SECTION_XML, "SECMISMATCH")
+    result = extract_structural_insertion(
+        node, inserted_leaf_kind="subprov", inserted_leaf_label="4A",
+        target_provision_label="40",
+    )
+    assert result == NZ_STRUCTURAL_INSERT_BLOCKED_SINGLE_MATCH_WRONG_SECTION
+
+
+def test_insert_single_match_wrong_section_does_not_fire_when_section_label_unparseable() -> None:
+    """Negative: section label None (no citation) -> accept (no evidence)."""
+    xml = b"""\
+<act><body><prov id="NOSEC"><prov.body><para>
+  Insert subprov 4A:
+  <amend><subprov><label>4A</label><para><text>4A body.</text></para></subprov></amend>
+</para></prov.body></prov></body></act>
+"""
+    node = _amending_node(xml, "NOSEC")
+    result = extract_structural_insertion(
+        node, inserted_leaf_kind="subprov", inserted_leaf_label="4A",
+        target_provision_label="40",
+    )
+    assert isinstance(result, NZStructuralReplacement)
+    assert "4A body." in result.root.text
+
+
+def test_insert_single_match_wrong_section_does_not_fire_when_section_matches() -> None:
+    """Negative: section label matches target -> extraction succeeds."""
+    node = _amending_node(_INSERT_SINGLE_MATCH_WRONG_SECTION_XML, "SECMISMATCH")
+    result = extract_structural_insertion(
+        node, inserted_leaf_kind="subprov", inserted_leaf_label="4A",
+        target_provision_label="12",
+    )
+    assert isinstance(result, NZStructuralReplacement)
+    assert "section 12 subsection" in result.root.text
+
+
+def test_insert_single_match_wrong_section_does_not_fire_when_no_target_provision_label() -> None:
+    """Negative: no target_provision_label passed -> accept (legacy default)."""
+    node = _amending_node(_INSERT_SINGLE_MATCH_WRONG_SECTION_XML, "SECMISMATCH")
+    result = extract_structural_insertion(
+        node, inserted_leaf_kind="subprov", inserted_leaf_label="4A"
+    )
+    assert isinstance(result, NZStructuralReplacement)
+    assert "section 12 subsection" in result.root.text
