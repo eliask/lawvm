@@ -10,6 +10,10 @@ from lawvm.core.ir import IRStatute, LegalOperation
 from lawvm.core.mutation_events import MutationEvent
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.addressing import _action_name
+from lawvm.uk_legislation.mutation_boundary_per_op_probe import (
+    boundary_probe_enabled,
+    probe_op_mutation_boundary,
+)
 from lawvm.uk_legislation.mutable_ir import UKMutableNode, UKMutableStatute
 from lawvm.uk_legislation.replay_grounding import UKReplayGroundingMixin
 from lawvm.uk_legislation.replay_heading_apply import UKReplayHeadingApplyMixin
@@ -109,10 +113,35 @@ class UKReplayExecutor(
     def apply_op(self, op: LegalOperation):
         previous_mutation_op = self._current_mutation_op
         self._current_mutation_op = op
+        # §2.9 per-op mutation-boundary probe (LS-01 / §1.0): env-gated
+        # (LAWVM_UK_MUTATION_BOUNDARY_PER_OP=1), default-off. Capture an
+        # immutable IRNode snapshot of the live mutable body BEFORE the apply
+        # mutates it; the after-snapshot is captured below once the apply
+        # returns. The probe must run OUTSIDE the try/finally that resets
+        # ``self._current_mutation_op`` so the snapshot is consistent with the
+        # op that produced it. ``boundary_probe_enabled`` is a cached env
+        # read — checked once per apply (cheap) so the snapshot is only
+        # taken when opted in (default-off preserves byte-stable bench output
+        # + avoid the ``UKMutableNode.to_irnode`` deep-copy cost on the hot
+        # path; AGENTS.md §2.7).
+        boundary_probe_on = boundary_probe_enabled()
+        before_snapshot = (
+            self.statute.body.to_irnode() if boundary_probe_on else None
+        )
         try:
             self._apply_op_with_context(op)
         finally:
             self._current_mutation_op = previous_mutation_op
+        if boundary_probe_on:
+            after_snapshot = self.statute.body.to_irnode()
+            probe_op_mutation_boundary(
+                before=before_snapshot,
+                after=after_snapshot,
+                op=op,
+                op_id=op.op_id,
+                adjudications_out=self.adjudications_out,
+                source_statute=self.statute.statute_id,
+            )
 
     def _apply_op_with_context(self, op: LegalOperation) -> None:
         target = op.target

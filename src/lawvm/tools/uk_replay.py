@@ -21,6 +21,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional, Sequence, Set
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 if TYPE_CHECKING:
     import argparse
@@ -154,7 +155,7 @@ def _uk_commencement_score_summary(
         ),
         "observations": observation_rows,
         "strict_disposition": "record",
-        "quirks_disposition": "record",
+        "quirks_disposition": QuirksDisposition.RECORD,
     }
 
 
@@ -245,7 +246,7 @@ def _uk_replay_executor_oracle_alignment_summary(
         "event_samples": event_samples if enabled else [],
         "unavailable_reason": unavailable_reason,
         "strict_disposition": "block",
-        "quirks_disposition": "record",
+        "quirks_disposition": QuirksDisposition.RECORD,
     }
 
 

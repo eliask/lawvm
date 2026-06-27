@@ -31,6 +31,7 @@ from lawvm.finland.ops import AmendmentOp
 from lawvm.finland.replay_notices import replay_print
 from lawvm.finland.chapter_seed_targets import ChapterSeedSkip
 from lawvm.corpus_store import CorpusStore
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 DEBUG = False
 _MISSING_CHAPTER_SPAN_RE = compile_classifier_regex(r"\bpuuttuu\s+luvut?\s+(\d+)\s*[-–]\s*(\d+)\b", re.IGNORECASE, classifier_id="fi.chapter_seed.missing_chapter_span_re")
@@ -52,7 +53,7 @@ class ChapterSeedDiagnostic:
     chapter_label: str = ""
     blocking: bool = True
     strict_disposition: str = "block"
-    quirks_disposition: str = "record"
+    quirks_disposition: QuirksDisposition = QuirksDisposition.RECORD
 
     def as_detail(self) -> dict[str, object]:
         return {
@@ -78,7 +79,7 @@ def _record_chapter_seed_diagnostic(
     source_statute: str = "",
     chapter_label: str = "",
     blocking: bool = True,
-    quirks_disposition: str = "record",
+    quirks_disposition: QuirksDisposition = QuirksDisposition.RECORD,
 ) -> None:
     if diagnostics_out is None:
         return
@@ -323,7 +324,7 @@ def _record_unseeded_implicit_chapter_gaps(
                     source_statute="",
                     chapter_label=label,
                     blocking=False,
-                    quirks_disposition="record",
+                    quirks_disposition=QuirksDisposition.RECORD,
                 )
 
 
@@ -513,7 +514,7 @@ def seed_missing_chapters(
                             source_statute=amendment_id,
                             chapter_label=label,
                             blocking=False,
-                            quirks_disposition="apply",
+                            quirks_disposition=QuirksDisposition.APPLY,
                         )
                     container_changed = True
                 else:
@@ -555,7 +556,7 @@ def seed_missing_chapters(
                         source_statute=amendment_id,
                         chapter_label=label,
                         blocking=False,
-                        quirks_disposition="apply",
+                        quirks_disposition=QuirksDisposition.APPLY,
                     )
                     container_changed = True
                 if next_label is not None and notice_span is not None:
@@ -599,7 +600,7 @@ def seed_missing_chapters(
                             source_statute="",
                             chapter_label=absent_label,
                             blocking=False,
-                            quirks_disposition="record",
+                            quirks_disposition=QuirksDisposition.RECORD,
                         )
             else:
                 new_children.append(child)

@@ -21,6 +21,7 @@ from lawvm.uk_legislation.target_anchors import (
 )
 from lawvm.uk_legislation.target_parser import _parse_affected_target
 from lawvm.uk_legislation.uk_grafter import _clean_num
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 
 UK_EFFECT_AFTER_ANCHOR_INSERT_PROMOTED_RULE_ID = (
@@ -163,7 +164,7 @@ def _block_substitution_tail_insert_detail(
         "payload_label": payload_label,
         "anchor_eid": anchor_eid,
         "strict_disposition": "apply",
-        "quirks_disposition": "apply",
+        "quirks_disposition": QuirksDisposition.APPLY,
     }
 
 
@@ -390,7 +391,7 @@ def lower_substituted_payload_insert_normalization(
                     "anchor_address": str(anchor_addr),
                     "anchor_eid": anchor_eid,
                     "strict_disposition": "apply",
-                    "quirks_disposition": "apply",
+                    "quirks_disposition": QuirksDisposition.APPLY,
                 },
             )
             return UKSubstitutedPayloadInsertNormalization(

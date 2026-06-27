@@ -78,6 +78,7 @@ _SE_RULE_SPECS: Dict[str, str] = {
     "se_official_base_ir_build_failed": "A base act for which the non-amending IR seed fails to construct is a typed acquisition failure, not a silent empty body.",
     "se_official_pdf_source_lane_fallback": "When the official SFS PDF is unreachable over HTTP, the acquisition falls back to the legacy SFS PDF index with a typed source-lane note.",
     "se_official_pdf_text_extraction_failed": "When pdftotext fails to extract text from a valid SFS PDF, the row is a typed extraction-failure residual, not a silent empty buffer.",
+    "se_official_artifacts_force_reextract_overwrite": "When ``--force-reextract`` overlays prior bytes at a cached locator, the prior+new content hashes are recorded as a typed SEOverwriteEvent in the caller accumulator — never a silent in-place mutation (KNOW-01 monotonicity + §1.6 no unstated migration at the archive-write boundary).",
 
     # --- Clause-surface parse findings ---------------------------------------------------
     "se_official_clause_renumber_arity_mismatch": "A renumber enacting clause whose source-label list and destination-label list have different arities is a typed parse diagnostic, not a silent best-effort zip.",
@@ -111,6 +112,7 @@ _SE_RULE_SPECS: Dict[str, str] = {
 
     # --- Replay outcome typed signals (§1.0 Mutation Boundary Invariant failures) ----------
     "se_replay_base_surface_contains_post_amendment_targets": "When the contaminated base current surface has post-amendment targets before the amending act's effective date and reverse-patching plateaued, the replay outcome is ``older_base_required`` (a typed frontier signal), not a silent replay.",
+    "se_replay_classification_to_agreement_residual": "Each check_se_official_replay row classification is projected to a typed AgreementResidual carrying residual_id, family, status, missing_proofs — the evidence-plane dossier the CLI/aggregate dict is re-derived FROM (§2.10 projection plane). Closed-vocabulary classification→family mapping; an unknown class raises (§1.10 fail-loud), not a silent drop.",
     "se_replay_destination_missing": "A RENUMBER op whose destination address is absent is a typed replay-skip adjudication, not a silent no-op.",
     "se_replay_payload_missing": "A REPLACE/INSERT op whose payload is missing or wrong-kind is a typed replay-skip adjudication, not a silent default.",
     "se_replay_recovered_base_lacks_required_targets": "When the recovered older-base rebuild still lacks a replay target the amending act needs, the replay outcome is ``precondition_issues_blocking``, not a silent mismatch.",

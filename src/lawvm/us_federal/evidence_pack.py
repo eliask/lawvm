@@ -51,6 +51,7 @@ from lawvm.core.evidence_contracts import (
     evidence_row_kind,
     evidence_rule_ids,
 )
+from lawvm.core.quirks_disposition import QuirksDisposition
 from lawvm.us_federal.dry_run import (
     DISPOSITION_MISSING_SOURCE,
     US_DRY_RUN_RESIDUAL_ORACLE_CHANGED_NOT_CLAIMED_RULE_ID,
@@ -69,7 +70,7 @@ _OWNER_PHASE = "dry_run"
 # A residual/finding carries a reason-bearing detail but never blocks (the dry-run
 # gate never authorizes replay), so the shared blocking invariant stays trivial.
 _STRICT_WARN = "warn"
-_QUIRKS_RECORD = "record_residual_without_repairing_to_oracle"
+_QUIRKS_RECORD = QuirksDisposition.RECORD_RESIDUAL_WITHOUT_REPAIRING_TO_ORACLE
 
 
 def _window_dict(report: USDryRunReport) -> dict[str, Any]:

@@ -30,6 +30,7 @@ from lawvm.us_federal.amendatory import (
     NON_TITLE_TARGET_RULE_ID,
     TARGET_UNRESOLVED_FINDING_RULE_ID,
     UNLOWERED_FINDING_RULE_ID,
+    UNRECOGNIZED_REDESIGNATE_FINDING_RULE_ID,
 )
 from lawvm.us_federal.nonpositive import (
     NOTE_ONLY_FINDING_RULE_ID,
@@ -90,12 +91,17 @@ class _OracleForbiddenStore:
 # ---------------------------------------------------------------------------
 
 
-def test_amendatory_finding_signal_map_is_exactly_the_three_lowering_findings() -> None:
-    assert _AMENDATORY_FINDING_SIGNAL == {
-        UNLOWERED_FINDING_RULE_ID: "unhandled_op",
-        TARGET_UNRESOLVED_FINDING_RULE_ID: "target_absent",
-        NON_TITLE_TARGET_RULE_ID: "target_absent",
-    }
+def test_amendatory_finding_signal_map_covers_every_lowering_finding() -> None:
+    # Every lowering-failure finding emitted by lower_plaw_amendatory routes to
+    # either `unhandled_op` (genuinely un-lowered: each held-out family carries
+    # a stable rule id, per AGENTS.md §2.1) or `target_absent` (target out of
+    # scope: unresolved or non-Title). The generic UNLOWERED_FINDING_RULE_ID
+    # catch-all remains mapped but should now be a last-resort default; the
+    # named families (redesignate, strike, insert, etc.) all carry their own
+    # typed ids.
+    assert _AMENDATORY_FINDING_SIGNAL[UNLOWERED_FINDING_RULE_ID] == "unhandled_op"
+    assert _AMENDATORY_FINDING_SIGNAL[TARGET_UNRESOLVED_FINDING_RULE_ID] == "target_absent"
+    assert _AMENDATORY_FINDING_SIGNAL[NON_TITLE_TARGET_RULE_ID] == "target_absent"
     # Every mapped signal type is a member of the shared US taxonomy.
     assert set(_AMENDATORY_FINDING_SIGNAL.values()) <= set(US_SIGNAL_TYPES)
 
@@ -103,7 +109,9 @@ def test_amendatory_finding_signal_map_is_exactly_the_three_lowering_findings() 
 def test_unlowered_instruction_maps_to_unhandled_op() -> None:
     # A redesignation in a multi-unit / non-enumerable form (multi-letter target
     # labels, not simple single-letter alphabetic ranges) is deliberately NOT
-    # lowered to a RENUMBER -> us_amendatory_unlowered -> unhandled_op.
+    # lowered to a RENUMBER -> us_amendatory_unrecognized_redesignate_shape
+    # (the named-typed-finding replacement for the generic UNLOWERED catch-all
+    # for the redesignate family) -> unhandled_op.
     body = (
         "<section><num>2.</num><content>"
         "<ref href='/us/usc/t11/s521'>Section 521 of title 11, United States Code</ref>"
@@ -118,7 +126,7 @@ def test_unlowered_instruction_maps_to_unhandled_op() -> None:
     assert errs == []
     unhandled = [r for r in rows if r["signal_type"] == "unhandled_op"]
     assert unhandled, rows
-    assert all(r["category"] == UNLOWERED_FINDING_RULE_ID for r in unhandled)
+    assert all(r["category"] == UNRECOGNIZED_REDESIGNATE_FINDING_RULE_ID for r in unhandled)
     # No USC edition was ever read.
     assert store.usc_reads == []
 

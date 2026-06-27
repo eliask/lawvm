@@ -15,6 +15,7 @@ from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.execution_authorization import ExecutionAuthorization
 from lawvm.core.frozen_values import freeze_mapping
 from lawvm.core.source_witness import SourceWitness
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 
 _SOURCE_BUNDLE_REQUIRED_PROOFS: tuple[str, ...] = (
@@ -166,7 +167,7 @@ class SourceBundleAdmission:
             authorization_rule_id=f"{self.policy_id}:{self.assertion_id}",
             owner_phase=owner_phase,
             strict_disposition="record" if self.admitted else "block",
-            quirks_disposition="record",
+            quirks_disposition=QuirksDisposition.RECORD,
             validator_status="source_bundle_admission_only",
             required_proofs=_SOURCE_BUNDLE_REQUIRED_PROOFS,
             safe_default=(

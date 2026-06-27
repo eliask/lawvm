@@ -66,6 +66,7 @@ from lawvm.tools._evidence_helpers import (
     _section_similarity,
 )
 from lawvm.tools.bisect_support import _section_bisect_support
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 _EVIDENCE_BUNDLE_CACHE_VERSION = "evidence-bundle-v54"
 _DEFAULT_ORACLE_CORPUS_BUNDLE_CACHE_DIR = ".tmp/evidence_bundle_cache"
@@ -162,7 +163,7 @@ def _evidence_context_degradation_rows(
                 source_artifact_id=statute_id,
                 blocking=True,
                 strict_disposition="block",
-                quirks_disposition="record_degraded",
+                quirks_disposition=QuirksDisposition.RECORD_DEGRADED,
                 evidence=dict(diagnostic),
             ).to_dict()
         )

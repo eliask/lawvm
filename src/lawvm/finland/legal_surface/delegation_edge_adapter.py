@@ -62,6 +62,7 @@ from lawvm.finland.legal_surface.delegation_canonical import (
     DelegationGrantScan,
     parse_delegation_grants,
 )
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 
 def _scan_units(
@@ -205,6 +206,6 @@ def _record_residuals(
                 quote=unit_text[:500],
                 blocking=False,
                 strict_disposition="record",
-                quirks_disposition="record",
+                quirks_disposition=QuirksDisposition.RECORD,
             )
         )

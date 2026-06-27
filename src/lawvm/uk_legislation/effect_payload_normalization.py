@@ -57,6 +57,7 @@ from lawvm.uk_legislation.uk_grafter import (
     _text_content,
 )
 from lawvm.uk_legislation.xml_helpers import _direct_structural_num, _tag
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 
 _UK_EFFECT_PAYLOAD_LABEL_REALIGNED_TO_TARGET_LEAF_RULE_ID = (
@@ -203,7 +204,7 @@ def _normalize_inserted_schedule_part_p1group_wrapping(
             "wrapped_run_count": wrapped_run_count,
             "action": curr_action,
             "strict_disposition": "record",
-            "quirks_disposition": "apply",
+            "quirks_disposition": QuirksDisposition.APPLY,
         },
     )
     return payload_node_mut
@@ -270,7 +271,7 @@ def _normalize_inserted_schedule_part_direct_child_p1group_wrapping(
             "child_kind": child_kind,
             "action": curr_action,
             "strict_disposition": "record",
-            "quirks_disposition": "apply",
+            "quirks_disposition": QuirksDisposition.APPLY,
         },
     )
     return wrapper
@@ -359,7 +360,7 @@ def _normalize_schedule_subparagraph_definition_schedule_entries(
             "promoted_count": promoted_count,
             "action": curr_action,
             "strict_disposition": "record",
-            "quirks_disposition": "apply",
+            "quirks_disposition": QuirksDisposition.APPLY,
         },
     )
     return payload_node_mut
@@ -832,7 +833,7 @@ def prepare_uk_operation_payload_node(
                     "target_leaf_kind": leaf_kind,
                     "target_leaf_label": leaf_label,
                     "strict_disposition": "block",
-                    "quirks_disposition": "apply",
+                    "quirks_disposition": QuirksDisposition.APPLY,
                 },
             )
             payload_node_mut.label = leaf_label
@@ -867,7 +868,7 @@ def prepare_uk_operation_payload_node(
                     "target_leaf_kind": leaf_kind,
                     "target_leaf_label": leaf_label,
                     "strict_disposition": "block",
-                    "quirks_disposition": "apply",
+                    "quirks_disposition": QuirksDisposition.APPLY,
                 },
             )
             payload_node_mut.kind = uk_ir_node_kind(leaf_kind)
@@ -955,7 +956,7 @@ def prepare_uk_operation_payload_node(
                 "dropped_payload_kind": dropped_kind,
                 "dropped_payload_label": dropped_label,
                 "strict_disposition": "record",
-                "quirks_disposition": "apply",
+                "quirks_disposition": QuirksDisposition.APPLY,
             },
         )
         payload_node_mut = None

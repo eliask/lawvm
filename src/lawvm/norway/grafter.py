@@ -36,7 +36,13 @@ from lawvm.core.ir import (
     TextPatchSpec,
     TextSelector,
 )
-from lawvm.core.semantic_types import IRNodeKind, StructuralAction, TextPatchKindEnum
+from lawvm.core.semantic_types import (
+    IRNodeKind,
+    StructuralAction,
+    TextPatchKindEnum,
+    structural_action_value,
+)
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 NO_PARSE_REPLACE_PROMOTED_TO_INSERT_FOR_RENUMBER = "no_parse_replace_promoted_to_insert_for_same_target_renumber"
 NO_PARSE_STRUCTURED_TARGET_REBOUND_FROM_LEAD = "no_parse_structured_target_rebound_from_lead"
@@ -44,8 +50,12 @@ NO_PARSE_ACTION_RECOVERED_FROM_STRUCTURED_LEAD = "no_parse_action_recovered_from
 
 
 def _no_action_value(action: StructuralAction | str) -> str:
-    """Normalize action to string value for comparisons and serialization."""
-    return action.value if isinstance(action, StructuralAction) else action
+    """Normalize action to string value for comparisons and serialization.
+
+    Delegates to the shared jurisdiction-neutral codec (the action->string
+    direction).
+    """
+    return structural_action_value(action)
 
 
 def _no_kind_value(kind: IRNodeKind | str) -> str:
@@ -2562,7 +2572,7 @@ def iter_no_document_change_ops(
                             phase="parse",
                             family="payload_normalization",
                             blocking=False,
-                            quirks_disposition="apply",
+                            quirks_disposition=QuirksDisposition.APPLY,
                             base_id=base_id,
                             source_doc=source_doc,
                             action=_no_action_value(action),

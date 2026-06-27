@@ -29,6 +29,7 @@ from typing import Any, List, Optional
 
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.source_lane import SourceLaneAttempt, SourceLaneSelectionEvidence
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 _BASE_URL = "https://www.riigiteataja.ee"
 _UA = (
@@ -79,7 +80,7 @@ class RedactionsFeedDiagnostic:
     exception_type: str
     blocking: bool = True
     strict_disposition: str = "block"
-    quirks_disposition: str = "record"
+    quirks_disposition: QuirksDisposition = QuirksDisposition.RECORD
 
     def as_detail(self) -> dict[str, object]:
         return diagnostic_detail(
@@ -127,7 +128,7 @@ class RTXmlMetadataDiagnostic:
     detail: dict[str, object] = field(default_factory=dict)
     blocking: bool = True
     strict_disposition: str = "block"
-    quirks_disposition: str = "record"
+    quirks_disposition: QuirksDisposition = QuirksDisposition.RECORD
 
     def as_detail(self) -> dict[str, object]:
         payload = diagnostic_detail(

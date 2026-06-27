@@ -20,6 +20,7 @@ from lawvm.new_zealand.acquisition import (
 )
 from lawvm.new_zealand import acquisition as nz_acquisition
 from lawvm.tools.cli import _build_parser
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 
 @dataclass
@@ -160,7 +161,7 @@ def test_nz_acquisition_diagnostic_jsonable_uses_standard_envelope() -> None:
         status_code=200,
         blocking=True,
         strict_disposition="block",
-        quirks_disposition="record",
+        quirks_disposition=QuirksDisposition.RECORD,
         metadata=metadata,
         source_lane_selection=source_lane_selection,
     )

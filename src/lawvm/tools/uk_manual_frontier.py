@@ -17,6 +17,7 @@ from lawvm.uk_legislation.frontier_work_items import (
     uk_frontier_work_item_from_manual_frontier_row,
 )
 from lawvm.uk_legislation.phase_discipline import uk_phase_owner_for_manual_frontier
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 if TYPE_CHECKING:
     import argparse
@@ -50,7 +51,7 @@ def _manual_frontier_validation_row(
     reason: str = "",
     blocking: bool = False,
     strict_disposition: str = "record",
-    quirks_disposition: str = "record",
+    quirks_disposition: QuirksDisposition = QuirksDisposition.RECORD,
     extra: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
@@ -233,7 +234,7 @@ def _wrong_schema_validation_row(row: Mapping[str, Any]) -> dict[str, Any] | Non
         reason=f"Manual-frontier JSONL row schema must be {_WORKQUEUE_SCHEMA}.",
         blocking=True,
         strict_disposition="block",
-        quirks_disposition="block",
+        quirks_disposition=QuirksDisposition.BLOCK,
         extra={
             "input_schema": schema,
             "expected_schema": _WORKQUEUE_SCHEMA,
@@ -257,7 +258,7 @@ def _invalid_replay_regime_validation_row(
             reason="Manual-frontier replay_regime must be an object when supplied.",
             blocking=True,
             strict_disposition="block",
-            quirks_disposition="block",
+            quirks_disposition=QuirksDisposition.BLOCK,
             extra={
                 "input_replay_regime": value,
                 "expected_applicability_modes": list(UK_APPLICABILITY_MODE_CHOICES),
@@ -275,7 +276,7 @@ def _invalid_replay_regime_validation_row(
         reason="Manual-frontier replay_regime.applicability_mode is not supported.",
         blocking=True,
         strict_disposition="block",
-        quirks_disposition="block",
+        quirks_disposition=QuirksDisposition.BLOCK,
         extra={
             "input_applicability_mode": applicability_mode,
             "expected_applicability_modes": list(UK_APPLICABILITY_MODE_CHOICES),
@@ -319,7 +320,7 @@ def _validation_row_jsonable(
             reason="Manual-frontier JSONL row must include statute_id and effect_id.",
             blocking=True,
             strict_disposition="block",
-            quirks_disposition="block",
+            quirks_disposition=QuirksDisposition.BLOCK,
         )
     if not effect_found or current_summary is None:
         return _manual_frontier_validation_row(
@@ -331,7 +332,7 @@ def _validation_row_jsonable(
             reason="The exported workqueue effect_id is no longer present in the current effect feed for this statute.",
             blocking=True,
             strict_disposition="block",
-            quirks_disposition="record",
+            quirks_disposition=QuirksDisposition.RECORD,
             extra={
                 "original_manual_compile_status": original_manual_status,
                 "original_manual_compile_rule_id": original_manual_rule_id,
@@ -436,7 +437,7 @@ def validate_manual_frontier_rows(
                         reason=str(row.get("reason") or ""),
                         blocking=True,
                         strict_disposition="block",
-                        quirks_disposition="block",
+                        quirks_disposition=QuirksDisposition.BLOCK,
                     )
                 )
                 continue
@@ -452,7 +453,7 @@ def validate_manual_frontier_rows(
                         reason="; ".join(conflict_issues),
                         blocking=True,
                         strict_disposition="block",
-                        quirks_disposition="block",
+                        quirks_disposition=QuirksDisposition.BLOCK,
                     )
                 )
                 continue

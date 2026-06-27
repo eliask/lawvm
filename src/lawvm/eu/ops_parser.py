@@ -14,6 +14,7 @@ from typing import List, Optional, Tuple
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.ir import LegalAddress, LegalOperation, OperationSource
 from lawvm.core.semantic_types import StructuralAction
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 VERB_MAPPING = {
     "replace": "replace",
@@ -75,7 +76,7 @@ class EUOpsParserDiagnostic:
     source_excerpt: str
     blocking: bool = False
     strict_disposition: str = "record"
-    quirks_disposition: str = "record"
+    quirks_disposition: QuirksDisposition = QuirksDisposition.RECORD
 
     def as_detail(self) -> dict[str, object]:
         return diagnostic_detail(

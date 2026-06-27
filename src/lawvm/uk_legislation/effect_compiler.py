@@ -98,6 +98,7 @@ from lawvm.uk_legislation.table_sources import (
     _uk_table_driven_fee_target_refinements,
     address_to_citation,
 )
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 
 _UK_EFFECT_FEE_TARGET_REFINEMENT_FAILED_RULE_ID = "uk_effect_fee_target_refinement_failed"
@@ -186,7 +187,12 @@ def _savings_qualified_structural_mutation_blocks_lowering(
     _append_uk_effect_lowering_rejection(
         lowering_rejections_out,
         rule_id=UK_EFFECT_SAVINGS_REFERENCES_QUALIFIED_REPEAL_BLOCKED_RULE_ID,
-        family="applicability",
+        # §2.1 named family ``savings_qualification`` — specialises the prior
+        # generic ``applicability`` tag so audit/projection consumers can route
+        # the savings-qualified repeal residue distinctly. No other UK
+        # lowering-rule emit site reads ``applicability`` as a family tag
+        # (verified), so the rename is clean and domain-scoped.
+        family="savings_qualification",
         reason_code="savings_references_qualify_structural_mutation",
         reason=(
             "UK effect carries a savings reference to an explicit schedule of the "
@@ -199,8 +205,15 @@ def _savings_qualified_structural_mutation_blocks_lowering(
         detail={
             "savings_references": effect.savings_references,
             "lowering_action": action,
+            # §0 over-retention-safe direction: the strict profile MUST block
+            # the structural repeal from replay until a claim owns the savings
+            # scope; quirks skips the op (no replay mutation) so the saved
+            # target survives — the safe wrong vs the forbidden over-repeal.
+            # Pinned by tests/test_uk_effect_savings_references.py::
+            # test_savings_qualified_repeal_carries_strict_block_quirks_skip_disposition
+            # per AGENTS.md §2.9 liveness.
             "strict_disposition": "block",
-            "quirks_disposition": "skip",
+            "quirks_disposition": QuirksDisposition.SKIP,
         },
     )
     return True
@@ -881,7 +894,7 @@ def _compile_effect_to_ir_ops_impl(
                     "failed_helper": _fee_refinement_failed_helper,
                     "exc_message": str(_fee_refinement_exc),
                     "strict_disposition": "block",
-                    "quirks_disposition": "apply",
+                    "quirks_disposition": QuirksDisposition.APPLY,
                 },
             )
     targets_str = refined_targets_str

@@ -27,6 +27,7 @@ from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.ir_helpers import kind_str
 from lawvm.core.source_lane import SourceLaneAttempt, SourceLaneSelectionEvidence
 from lawvm.norway.grafter import lovdata_amendment_filename_to_id, lovdata_filename_to_id
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_NORWAY_DIR = _REPO_ROOT / "data" / "norway"
@@ -87,21 +88,63 @@ NO_UNRESOLVED_EFFECTIVE_STATUSES: frozenset[NOEffectiveStatus] = frozenset(
 class NOReplayStatus(StrEnum):
     """Closed set of per-base-law replayability classifications.
 
-    Derived from the in-force statuses of a base law's amendments. A ``StrEnum``
-    so it flows through serialized status maps / test comparisons byte-for-byte.
+    Derived from the in-force statuses of a base law's amendments (INVENTORY
+    axis, used by ``no_base_replay_status_from_statuses``) AND the endpoint
+    outcome of a verify run (VERIFY axis — adds ``ERROR``, ``REPLAYED``,
+    ``BLOCKED_MISSING_SOURCE``). A ``StrEnum`` so it flows through serialized
+    status maps / test comparisons / ``_NO_BENCH_SOURCE_UNAVAILABLE_STATUSES``
+    membership checks byte-for-byte.
+
+    Closure invariant (§1.9): every ``NOVerifyResult.replay_status`` produced
+    by ``verify_no_against_current`` and every inventory map value MUST be a
+    member of this set. The prior shape reserved a typed enum for the
+    inventory axis only and the verify endpoint (which emits
+    ``replayed`` / ``blocked_missing_source`` / ``error`` as bare inline
+    strings) escaped it — forcing the bench comparator's
+    ``_NO_BENCH_SOURCE_UNAVAILABLE_STATUSES`` frozenset to read raw strings.
     """
 
     NO_AMENDMENTS = "no_amendments"
-    """The base law has no amendments to replay."""
+    """The base law has no amendments to replay (INVENTORY axis)."""
 
     FULLY_REPLAYABLE = "fully_replayable"
-    """Every amendment has a resolved in-force date."""
+    """Every amendment has a resolved in-force date (INVENTORY axis)."""
 
     BLOCKED_CONTINGENT = "blocked_contingent"
     """At least one amendment is contingent (future/conditional commencement)."""
 
     BLOCKED_UNKNOWN = "blocked_unknown"
     """At least one amendment has a missing/unknown in-force status."""
+
+    BLOCKED_MISSING_SOURCE = "blocked_missing_source"
+    """Replay skipped amendments because their source text was not archived
+    (VERIFY axis; produced when ``replay.amendments_skipped_missing_source``
+    is non-empty — distinct from the in-force-status axis)."""
+
+    REPLAYED = "replayed"
+    """Replay completed with at least one applied amendment that did not
+    error (VERIFY axis). Carries the comparison-surface judgment
+    (consistent / divergent-bearing) underneath; the bench's SCORED path
+    fires only when ``replay_status`` is ``REPLAYED``."""
+
+    ERROR = "error"
+    """Replay raised an unhandled exception (VERIFY axis). The bench maps
+    this to ``BenchStatus.CRASH`` (an unexpected production failure),
+    distinct from the SOURCE_UNAVAILABLE ceiling tier."""
+
+
+# Reaching the bench comparator's ``SOURCE_UNAVAILABLE`` tier via the enum
+# (single source of truth after migration — previously the bench held a
+# parallel raw-string frozenset). ``REPLAYED``, ``ERROR``, and
+# ``NO_AMENDMENTS`` stay out of this set: REPLAYED carries the SCORED path,
+# ERROR maps to CRASH, and NO_AMENDMENTS maps to NO_TRUTH.
+NO_BENCH_SOURCE_UNAVAILABLE_STATUSES: frozenset[NOReplayStatus] = frozenset(
+    {
+        NOReplayStatus.BLOCKED_CONTINGENT,
+        NOReplayStatus.BLOCKED_MISSING_SOURCE,
+        NOReplayStatus.BLOCKED_UNKNOWN,
+    }
+)
 
 
 def no_base_replay_status_from_statuses(
@@ -667,7 +710,7 @@ def load_no_current_law_ids(
                         ),
                         blocking=True,
                         strict_disposition="block",
-                        quirks_disposition="record",
+                        quirks_disposition=QuirksDisposition.RECORD,
                         statute_id=artifact.logical_id,
                         locator=artifact.locator,
                         source_name=artifact.source_name,
@@ -711,7 +754,7 @@ def load_no_current_law_titles(
                         reason="Norway current-law title extraction skipped an artifact because statute parsing failed.",
                         blocking=True,
                         strict_disposition="block",
-                        quirks_disposition="record",
+                        quirks_disposition=QuirksDisposition.RECORD,
                         statute_id=artifact.logical_id,
                         locator=artifact.locator,
                         source_name=artifact.source_name,
@@ -795,7 +838,7 @@ def _no_ingest_duplicate_locator_source_lane_evidence(
         ),
         blocking=True,
         strict_disposition="block",
-        quirks_disposition="select_existing_identical" if identical_payloads else "block",
+        quirks_disposition=QuirksDisposition.SELECT_EXISTING_IDENTICAL if identical_payloads else QuirksDisposition.BLOCK,
         detail={
             "logical_id": artifact.logical_id,
             "logical_locator": artifact.locator,
@@ -856,7 +899,7 @@ def ingest_no_public_archives(
                 reason="Norway Lovdata XML member filename could not be mapped to a legal source id",
                 blocking=True,
                 strict_disposition="block",
-                quirks_disposition="record",
+                quirks_disposition=QuirksDisposition.RECORD,
                 kind=kind,
                 locator=artifact.locator,
                 logical_id=artifact.logical_id,
@@ -887,7 +930,7 @@ def ingest_no_public_archives(
                 ),
                 blocking=True,
                 strict_disposition="block",
-                quirks_disposition="select_existing_identical" if identical_payloads else "block",
+                quirks_disposition=QuirksDisposition.SELECT_EXISTING_IDENTICAL if identical_payloads else QuirksDisposition.BLOCK,
                 kind=kind,
                 locator=artifact.locator,
                 logical_id=artifact.logical_id,

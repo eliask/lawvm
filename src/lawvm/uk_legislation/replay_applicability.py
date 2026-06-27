@@ -21,6 +21,7 @@ from lawvm.uk_legislation.effect_temporal_cessation import (
 from lawvm.uk_legislation.lowering_records import (
     _append_uk_effect_lowering_observation,
 )
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 
 UK_EFFECT_NONSTRUCTURAL_SUBSTITUTED_SERIES_ALL_INSERTS_ADMITTED_RULE_ID = (
@@ -87,7 +88,7 @@ def should_replay_nonstructural_ops(
                         ],
                         "compiled_targets": [str(op.target) for op in compiled_ops],
                         "strict_disposition": "record",
-                        "quirks_disposition": "apply",
+                        "quirks_disposition": QuirksDisposition.APPLY,
                     },
                 )
             return True

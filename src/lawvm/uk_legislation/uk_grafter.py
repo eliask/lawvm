@@ -12,6 +12,7 @@ from lawvm.core.ir import IRNode, IRStatute
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.roman import roman_to_arabic as _shared_roman_to_arabic
 from lawvm.uk_legislation.mutable_ir import UKMutableNode
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 _LEG_NS = "http://www.legislation.gov.uk/namespaces/legislation"
 _USER_AGENT = "LawVM-Replayer/1.0"
@@ -1175,7 +1176,7 @@ def _record_physical_eid_drift(
             "xml_tag": tag,
             "physical_path_key": path_key,
             "strict_disposition": "block",
-            "quirks_disposition": "record",
+            "quirks_disposition": QuirksDisposition.RECORD,
         }
     )
 
@@ -1225,7 +1226,7 @@ def _record_visible_number_eid_alias(
             "visible_number": clean_leaf,
             "physical_path_key": path_key,
             "strict_disposition": "block",
-            "quirks_disposition": "record",
+            "quirks_disposition": QuirksDisposition.RECORD,
         }
     )
 
@@ -2170,7 +2171,7 @@ def _visit_eid(
                         "xml_tag": tag,
                         "physical_path_key": this_node_path,
                         "strict_disposition": "record",
-                        "quirks_disposition": "record",
+                        "quirks_disposition": QuirksDisposition.RECORD,
                     }
                 )
         if clean_num:
@@ -2243,7 +2244,7 @@ def _visit_eid(
                         "xml_tag": tag,
                         "physical_path_key": this_node_path,
                         "strict_disposition": "record",
-                        "quirks_disposition": "record",
+                        "quirks_disposition": QuirksDisposition.RECORD,
                     }
                 )
 

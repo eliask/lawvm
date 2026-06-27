@@ -7,6 +7,7 @@ from typing import Any
 
 from lawvm.core.compile_records import CompileRecord, is_blocking_compile_record
 from lawvm.core.execution_authorization import ExecutionAuthorization
+from lawvm.core.quirks_disposition import QuirksDisposition, coerce_quirks_disposition
 
 
 _COMPILE_LANE_PROOFS: dict[str, tuple[str, ...]] = {
@@ -33,7 +34,7 @@ def uk_execution_authorization_from_manual_frontier(
     manual_compile_rule_id: str,
     owner_phase: str,
     strict_disposition: str = "record",
-    quirks_disposition: str = "record",
+    quirks_disposition: QuirksDisposition = QuirksDisposition.RECORD,
     validator_status: str = "",
 ) -> ExecutionAuthorization:
     """Build authorization facts for UK manual-frontier diagnostic rows."""
@@ -154,7 +155,7 @@ def uk_execution_authorization_from_compile_record(
             manual_compile_rule_id=str(record.get("manual_compile_rule_id") or ""),
             owner_phase=owner_phase,
             strict_disposition=str(record.get("strict_disposition") or "record"),
-            quirks_disposition=str(record.get("quirks_disposition") or "record"),
+            quirks_disposition=coerce_quirks_disposition(record.get("quirks_disposition") or QuirksDisposition.RECORD),
             validator_status=str(record.get("validator_status") or ""),
         )
     compile_record = CompileRecord.from_mapping(record)
@@ -162,7 +163,7 @@ def uk_execution_authorization_from_compile_record(
     strict_disposition = str(
         compile_record.strict_disposition or ("block" if blocking else "record")
     )
-    quirks_disposition = str(record.get("quirks_disposition") or "record")
+    quirks_disposition = coerce_quirks_disposition(record.get("quirks_disposition") or QuirksDisposition.RECORD)
     if blocking:
         return _non_authorized_compile_record(
             authorization_status=f"{lane_id}_compile_blocked",
@@ -211,7 +212,7 @@ def uk_execution_authorization_from_replay_adjudication(
     strict_disposition = str(
         detail.get("strict_disposition") or ("block" if blocking else "record")
     )
-    quirks_disposition = str(detail.get("quirks_disposition") or "record")
+    quirks_disposition = coerce_quirks_disposition(detail.get("quirks_disposition") or QuirksDisposition.RECORD)
     bucket_id = str(bucket or "unknown")
     return ExecutionAuthorization(
         executable=False,
@@ -246,7 +247,7 @@ def uk_execution_authorization_from_semantic_claim_validation(
     validator_status: str,
     owner_phase: str,
     strict_disposition: str = "record",
-    quirks_disposition: str = "record",
+    quirks_disposition: QuirksDisposition = QuirksDisposition.RECORD,
 ) -> ExecutionAuthorization:
     """Build authorization facts for UK semantic-claim validation rows.
 
@@ -346,7 +347,7 @@ def uk_execution_authorization_from_residual_claim(
     owner_phase: str,
     validator_status: str = "not_validated",
     strict_disposition: str = "record",
-    quirks_disposition: str = "record",
+    quirks_disposition: QuirksDisposition = QuirksDisposition.RECORD,
 ) -> ExecutionAuthorization:
     """Build authorization facts for UK residual-claim workqueue rows."""
     tier = str(claim.get("selected_tier") or "UNRESOLVED")
@@ -390,7 +391,7 @@ def _non_authorized_compile_record(
     lane: str,
     owner_phase: str,
     strict_disposition: str,
-    quirks_disposition: str,
+    quirks_disposition: QuirksDisposition,
     validator_status: str,
     required_proofs: tuple[str, ...],
     safe_default: str,
@@ -434,7 +435,7 @@ def _non_authorized_frontier(
     rule_id: str,
     owner_phase: str,
     strict_disposition: str,
-    quirks_disposition: str,
+    quirks_disposition: QuirksDisposition,
     validator_status: str,
     required_proofs: tuple[str, ...],
     safe_default: str,
@@ -471,7 +472,7 @@ def _non_authorized_claim(
     rule_id: str,
     owner_phase: str,
     strict_disposition: str,
-    quirks_disposition: str,
+    quirks_disposition: QuirksDisposition,
     validator_status: str,
     required_proofs: tuple[str, ...],
     safe_default: str,

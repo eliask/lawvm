@@ -5,6 +5,7 @@ from __future__ import annotations
 from lawvm.core.compile_result import SourcePathology
 from lawvm.core.payload_surface import TargetUnitKind
 from lawvm.core.recovery_kind import RecoveryKind
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 
 def _target_label(target_section: str, target_chapter: str = "") -> str:
@@ -157,7 +158,7 @@ def build_section_replace_bootstrap_parent_missing_pathology(
             "target_section": target_section,
             "recovery_kind": RecoveryKind.SECTION_REPLACE_BOOTSTRAP_PARENT_MISSING,
             "strict_disposition": "block",
-            "quirks_disposition": "record",
+            "quirks_disposition": QuirksDisposition.RECORD,
         },
     )
 
@@ -191,7 +192,7 @@ def build_same_effective_container_repeal_shadowed_pathology(
             "effective": effective,
             "recovery_kind": RecoveryKind.SAME_EFFECTIVE_CONTAINER_REPEAL_SHADOWED,
             "strict_disposition": "record",
-            "quirks_disposition": "record",
+            "quirks_disposition": QuirksDisposition.RECORD,
         },
     )
 
@@ -295,7 +296,7 @@ def build_recodification_omission_only_section_shell_pathology(
             "source_surface": "sparse_omission_shell",
             "recovery_kind": RecoveryKind.RECODIFICATION_OMISSION_ONLY_SECTION_SHELL,
             "strict_disposition": "block",
-            "quirks_disposition": "record",
+            "quirks_disposition": QuirksDisposition.RECORD,
         },
     )
 

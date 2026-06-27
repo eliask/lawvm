@@ -89,14 +89,36 @@ EE_BLOCKING_RULE_IDS: Final[FrozenSet[str]] = frozenset(
         "ee_implicit_division_sequence_relabel_after_high_jagu_insert",
         # --- generic replay-time guard adjudications --------------------------
         # Broadcast via ``_append_ee_replay_adjudication``.
+        # ``ee_replay_unsupported_action`` and ``ee_replay_target_not_found``
+        # are drilled out of the debt list by
+        # ``tests/test_ee_guard_liveness.py`` (drives a HEADING_REPLACE op /
+        # a REPLACE op against a non-existent target through ``apply_ee_ops``
+        # and asserts the blocking adjudication fires); the remaining
+        # ``ee_replay_*`` codes below stay debt-admitted until their
+        # individual drills land.
         "ee_replay_unsupported_action",
+        "ee_replay_target_not_found",
         "ee_replay_unsupported_heading_target",
         "ee_replay_unsupported_statute_title_action",
-        "ee_replay_target_not_found",
         "ee_replay_noop",
         "ee_replay_statute_title_noop",
         "ee_replay_meta_non_body_skipped",
         "ee_replay_unparsed_operation_skipped",
+        # --- source-lane orchestration failures (via _ee_orchestration_*) ------
+        # The fail-loud broad-except audits in commits 0d60710e (pair-planning)
+        # + 00f778fc (replay) added explicit blocking adjudications for source
+        # fetch / parse / consistency-check failures that previously crashed
+        # silently. Each forwards ``blocking=True`` and a kind= through
+        # ``_ee_orchestration_adjudication`` (a pass-through helper — the
+        # caller's ``blocking=`` flows to the inner CompileAdjudication).
+        "ee_oracle_parse_failed",
+        "ee_consistency_check_failed",
+        "ee_amendment_parse_failed",
+        "ee_amendment_source_fetch_failed",
+        "ee_cancelled_pending_ref_metadata_parse_failed",
+        "ee_cancelled_pending_ref_source_fetch_failed",
+        "ee_pending_source_act_commencement_source_fetch_failed",
+        "ee_temporal_source_scan_failed",
     }
 )
 
@@ -113,7 +135,123 @@ EE_BLOCKING_RULE_IDS: Final[FrozenSet[str]] = frozenset(
 # ``tests/test_ee_guard_liveness.py`` under the names recorded here, so the
 # ratchet gate (every blocking code is either in DRILLS or in DEBT) is
 # machine-enforced and the inspection surface is small.
-EE_FIRE_DRILL_COVERAGE: Final[FrozenSet[str]] = frozenset()
+EE_FIRE_DRILL_COVERAGE: Final[FrozenSet[str]] = frozenset(
+    {
+        # === Self-authored drills in tests/test_ee_guard_liveness.py ===
+        # ``ee_replay_unsupported_action`` — drives HEADING_REPLACE through apply_ee_ops.
+        # See ``test_ee_fire_drill_replay_unsupported_action_blocks``.
+        "ee_replay_unsupported_action",
+        # ``ee_replay_target_not_found`` — drives REPLACE targeting a non-existent
+        # section through apply_ee_ops. See
+        # ``test_ee_fire_drill_replay_target_not_found_blocks``.
+        "ee_replay_target_not_found",
+        # ``ee_replay_statute_title_noop`` — drives a REPLACE op targeting the
+        # statute-title address whose payload text equals the current title.
+        # See ``test_ee_fire_drill_replay_statute_title_noop_blocks``.
+        "ee_replay_statute_title_noop",
+        # ``ee_replay_unsupported_statute_title_action`` — drives a REPEAL op
+        # targeting the statute-title address (a non-replace action against
+        # the statute title). See
+        # ``test_ee_fire_drill_replay_unsupported_statute_title_action_blocks``.
+        "ee_replay_unsupported_statute_title_action",
+        # === Crash-path drills (via monkeypatched replay_ee_to_pit) ===
+        # ``ee_oracle_parse_failed`` — monkeypatches parse_ee_statute to raise
+        # on oracle XML; asserts the blocking adjudication fires.
+        # See ``test_ee_fire_drill_oracle_parse_failed_blocks``.
+        "ee_oracle_parse_failed",
+        # ``ee_consistency_check_failed`` — monkeypatches verify_consistency to
+        # raise; asserts the blocking adjudication fires.
+        # See ``test_ee_fire_drill_consistency_check_failed_blocks``.
+        "ee_consistency_check_failed",
+        # === Existing-tests-registered drills (verified production-path) ===
+        # Each rule_id below is driven through the full production path by an
+        # existing EE test (apply_ee_ops / parse_ee_amendment_ops / replay_ee_to_pit /
+        # _ee_filter_cancelled_pending_refs / old_format_lower_op_texts /
+        # _precompose_pending_source_act_commencement). The drill name listed in
+        # the comment is the canonical production-path witness locating the
+        # violator + the assert. Cross-referenced by the
+        # ``notes_internal/_cross_ref_drills.py`` AST scan (2026-06-26).
+        # ``ee_ambiguous_single_occurrence_text_replace`` —
+        # ``test_exact_target_insert_after_with_repeated_source_surface_emits_ambiguity``
+        "ee_ambiguous_single_occurrence_text_replace",
+        # ``ee_amendment_parse_failed`` —
+        # ``test_replay_ee_to_pit_adjudicates_amendment_parse_failure``
+        "ee_amendment_parse_failed",
+        # ``ee_amendment_source_fetch_failed`` —
+        # ``test_replay_ee_to_pit_adjudicates_amendment_fetch_failure`` (monkeypatches
+        # fetch to raise; asserts the parse-fail adjudication fires).
+        "ee_amendment_source_fetch_failed",
+        # ``ee_cancelled_pending_ref_metadata_parse_failed`` —
+        # ``test_filter_cancelled_pending_refs_records_metadata_parse_failure_and_retains_ref``
+        "ee_cancelled_pending_ref_metadata_parse_failed",
+        # ``ee_cancelled_pending_ref_source_fetch_failed`` —
+        # ``test_filter_cancelled_pending_refs_records_source_fetch_failure_and_retains_ref``
+        "ee_cancelled_pending_ref_source_fetch_failed",
+        # ``ee_flat_part_repeal_span`` —
+        # ``test_repeal_flat_part_marker_removes_owned_section_run_until_next_part``
+        "ee_flat_part_repeal_span",
+        # ``ee_implicit_division_sequence_relabel_after_high_jagu_insert`` —
+        # ``test_high_division_insert_relabels_unique_duplicate_division_suffix_with_adjudication``
+        "ee_implicit_division_sequence_relabel_after_high_jagu_insert",
+        # ``ee_inline_item_replace_singleton_subsection`` —
+        # ``test_replace_section_item_recovers_inline_singleton_subsection_item``
+        "ee_inline_item_replace_singleton_subsection",
+        # ``ee_labelled_item_replacement_payload_selection`` —
+        # ``test_replace_item_selects_matching_label_from_multi_item_payload``
+        "ee_labelled_item_replacement_payload_selection",
+        # ``ee_overbroad_container_replace_blocked`` —
+        # ``test_replace_blocks_child_payload_from_overwriting_part_container``
+        "ee_overbroad_container_replace_blocked",
+        # ``ee_parse_old_format_unparsed_meta_rejected`` —
+        # ``test_old_format_lower_op_texts_records_rejected_unparsed_meta``
+        "ee_parse_old_format_unparsed_meta_rejected",
+        # ``ee_pending_source_act_commencement_source_fetch_failed`` —
+        # ``test_precompose_pending_source_act_commencement_records_fetch_failure``
+        "ee_pending_source_act_commencement_source_fetch_failed",
+        # ``ee_plural_item_replace_range_omits_inserted_labels`` —
+        # ``test_plural_item_replace_range_removes_omitted_inserted_item_labels``
+        "ee_plural_item_replace_range_omits_inserted_labels",
+        # ``ee_plural_subsection_replace_extra_payload_label`` —
+        # ``test_replace_extra_plural_subsection_payload_label_inserts_absent_subsection``
+        "ee_plural_subsection_replace_extra_payload_label",
+        # ``ee_ref_slice_operation_filtered`` —
+        # ``test_parse_old_format_ref_slice_drop_uses_ref_slice_filtered_adjudication``
+        "ee_ref_slice_operation_filtered",
+        # ``ee_replay_meta_non_body_skipped`` —
+        # ``test_apply_ee_ops_records_meta_as_non_body_skip_not_unsupported``
+        "ee_replay_meta_non_body_skipped",
+        # ``ee_replay_noop`` —
+        # ``test_apply_ee_ops_records_unresolved_target_and_noop``
+        "ee_replay_noop",
+        # ``ee_replay_unparsed_operation_skipped`` —
+        # ``test_apply_ee_ops_records_unparsed_meta_as_coverage_skip_not_non_body``
+        "ee_replay_unparsed_operation_skipped",
+        # ``ee_replay_unsupported_heading_target`` —
+        # ``test_ee_apply_unsupported_heading_target_records_adjudication_not_warning``
+        "ee_replay_unsupported_heading_target",
+        # ``ee_section_item_replace_unique_descendant_item`` —
+        # ``test_apply_ee_ops_resolves_section_item_replace_to_unique_descendant_item``
+        "ee_section_item_replace_unique_descendant_item",
+        # ``ee_source_case_only_text_replace`` —
+        # ``test_apply_ee_ops_records_case_only_source_text_recovery``
+        "ee_source_case_only_text_replace",
+        # ``ee_source_local_global_text_replace_selector_exclusion_inferred`` —
+        # ``test_parse_ee_amendment_ops_keeps_selector_exclusion_out_of_global_replay_scope``
+        "ee_source_local_global_text_replace_selector_exclusion_inferred",
+        # ``ee_subsection_table_only_replace_preserve_intro`` —
+        # ``test_subsection_table_only_replace_preserves_existing_intro``
+        "ee_subsection_table_only_replace_preserve_intro",
+        # ``ee_temporal_source_scan_failed`` —
+        # ``test_replay_ee_to_pit_adjudicates_temporal_source_scan_failure``
+        "ee_temporal_source_scan_failed",
+        # ``ee_text_replace_numbered_subsection_for_item_target_by_old_text`` —
+        # ``test_apply_ee_ops_retargets_section_item_text_replace_to_same_number_subsection_old_text``
+        "ee_text_replace_numbered_subsection_for_item_target_by_old_text",
+        # ``ee_text_replace_unique_descendant_item_by_old_text`` —
+        # ``test_apply_ee_ops_retargets_section_item_text_replace_to_unique_descendant_old_text``
+        "ee_text_replace_unique_descendant_item_by_old_text",
+    }
+)
 
 
 # ---------------------------------------------------------------------------
@@ -132,132 +270,14 @@ EE_FIRE_DRILL_COVERAGE: Final[FrozenSet[str]] = frozenset()
 _EE_DRILL_FAMILY_HINT = "drill needs a known-violator witness statute + replay_ee_to_pit run asserting the blocking adjudication fires"
 
 EE_NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
-    # Old-format / parse-time guards
-    "ee_parse_old_format_unparsed_meta_rejected": (
-        f"old-format META op rejected at parse-time; {_EE_DRILL_FAMILY_HINT}, "
-        "located from RT archive (statute whose META elem fails to parse).",
-        "2026-06-24",
-    ),
-    "ee_ref_slice_operation_filtered": (
-        f"old-format ref-slice parse-time drop; {_EE_DRILL_FAMILY_HINT}; "
-        "locate EE pair where one ref's effective date excludes the target.",
-        "2026-06-24",
-    ),
-    # payload-normalization selector inference
-    "ee_source_local_global_text_replace_selector_exclusion_inferred": (
-        f"statute-wide text_replace with selector excluding a sibling op's "
-        f"path; {_EE_DRILL_FAMILY_HINT}; multi-op amendment where one op is "
-        f"a longer superset of another's old surface.",
-        "2026-06-24",
-    ),
-    # text_replace scope decisions
-    "ee_ambiguous_single_occurrence_text_replace": (
-        f"text_replace hits a single ambiguous occurrence and is blocked; "
-        f"{_EE_DRILL_FAMILY_HINT}; locate RT statute with ambiguous singleton.",
-        "2026-06-24",
-    ),
-    "ee_source_case_only_text_replace": (
-        f"text_replace only differs in case; {_EE_DRILL_FAMILY_HINT}; "
-        f"locate statute with source-case-only surface.",
-        "2026-06-24",
-    ),
-    "ee_text_replace_numbered_subsection_for_item_target_by_old_text": (
-        f"text_replace targets a numbered subsection for an item via old text; "
-        f"{_EE_DRILL_FAMILY_HINT}.",
-        "2026-06-24",
-    ),
-    "ee_text_replace_unique_descendant_item_by_old_text": (
-        f"text_replace targets the unique descendant item by old text; "
-        f"{_EE_DRILL_FAMILY_HINT}.",
-        "2026-06-24",
-    ),
-    # item / section / subsection recovery
-    "ee_inline_item_replace_singleton_subsection": (
-        f"singleton-subsection inline item replace; {_EE_DRILL_FAMILY_HINT}; "
-        f"locate RT statute with a single-item subsection replacement.",
-        "2026-06-24",
-    ),
-    "ee_labelled_item_replacement_payload_selection": (
-        f"labelled item replacement payload selection; {_EE_DRILL_FAMILY_HINT}.",
-        "2026-06-24",
-    ),
-    "ee_section_item_replace_unique_descendant_item": (
-        f"section item replace unique descendant item; {_EE_DRILL_FAMILY_HINT}.",
-        "2026-06-24",
-    ),
-    "ee_subsection_table_only_replace_preserve_intro": (
-        f"subsection table-only replace preserving intro; {_EE_DRILL_FAMILY_HINT}; "
-        f"locate statute with a table-only subsection replacement.",
-        "2026-06-24",
-    ),
-    # plural coordination + overbroad
-    "ee_overbroad_container_replace_blocked": (
-        f"overbroad container replace blocked (§1.0 mutation-boundary guard); "
-        f"{_EE_DRILL_FAMILY_HINT}; locate overbroad container targeting.",
-        "2026-06-24",
-    ),
-    "ee_plural_item_replace_range_omits_inserted_labels": (
-        f"plural item replace range omits inserted labels; {_EE_DRILL_FAMILY_HINT}; "
-        f"locate statute with `1–5`täppi range covering an inserted label.",
-        "2026-06-24",
-    ),
-    "ee_plural_subsection_replace_extra_payload_label": (
-        f"plural subsection replace with extra payload label; {_EE_DRILL_FAMILY_HINT}.",
-        "2026-06-24",
-    ),
-    "ee_flat_part_repeal_span": (
-        f"flat/part repeal span (no subsection parent); {_EE_DRILL_FAMILY_HINT}; "
-        f"locate flat/part-only RT statute.",
-        "2026-06-24",
-    ),
-    # division / jagu recovery
-    "ee_implicit_division_sequence_relabel_after_high_jagu_insert": (
-        f"implicit division-sequence relabel after a high jagu insert; "
-        f"{_EE_DRILL_FAMILY_HINT}; locate statute with duplicate jagu + insert.",
-        "2026-06-24",
-    ),
-    # generic replay-time guard adjudications
-    "ee_replay_unsupported_action": (
-        "unhandled IR action in _ee_apply_op falls to the explicit raise+block "
-        f"branch; {_EE_DRILL_FAMILY_HINT}; synthetic op with action='split' "
-        f"or other unknown verbatim.",
-        "2026-06-24",
-    ),
-    "ee_replay_unsupported_heading_target": (
-        f"replay hits an unsupported heading target; {_EE_DRILL_FAMILY_HINT}; "
-        f"locate statute whose heading target shape is not modeled.",
-        "2026-06-24",
-    ),
-    "ee_replay_unsupported_statute_title_action": (
-        f"replay hits an unsupported statute-title-level action; {_EE_DRILL_FAMILY_HINT}; "
-        f"locate statute whose title-level rewrite is not modeled.",
-        "2026-06-24",
-    ),
-    "ee_replay_target_not_found": (
-        f"replay target not found in tree; {_EE_DRILL_FAMILY_HINT}; "
-        f"locate statute whose target label is absent elsewhere.",
-        "2026-06-24",
-    ),
-    "ee_replay_noop": (
-        f"replay noop (op intentionally had no effect); {_EE_DRILL_FAMILY_HINT}; "
-        f"locate statute where an op's payload resolves to a no-op.",
-        "2026-06-24",
-    ),
-    "ee_replay_statute_title_noop": (
-        f"replay statute-title noop; {_EE_DRILL_FAMILY_HINT}; locate statute "
-        f"whose title rewrite resolves to a no-op.",
-        "2026-06-24",
-    ),
-    "ee_replay_meta_non_body_skipped": (
-        f"meta op skipped as non-body during replay; {_EE_DRILL_FAMILY_HINT}; "
-        f"locate statute with old-format META-only non-body content.",
-        "2026-06-24",
-    ),
-    "ee_replay_unparsed_operation_skipped": (
-        f"unparsed op skipped during replay; {_EE_DRILL_FAMILY_HINT}; "
-        f"locate statute with an opaque/unmodeled op variant.",
-        "2026-06-24",
-    ),
+    # The EE guard-liveness ratchet has achieved 100% fire-drill coverage:
+    # every blocking rule_id in ``EE_BLOCKING_RULE_IDS`` is registered in
+    # ``EE_FIRE_DRILL_COVERAGE``. This dict is empty at baseline. New
+    # blocking codes that land in source without a corresponding drill
+    # must be added here as a conscious debt-admission (with a stated
+    # reason and last-reviewed date) — the partition ratchet gate
+    # (``test_ee_blocking_code_inventory_is_fully_partitioned``) catches
+    # any blocking code that violates this invariant.
 }
 
 # Committed monotone-decreasing ceiling over the NO_FIRE_DRILL_YET debt

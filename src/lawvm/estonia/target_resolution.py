@@ -21,6 +21,7 @@ from lawvm.core.target_resolution import (
     TargetResolutionCoverage,
 )
 from lawvm.replay_adjudication import CompileAdjudication
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 if TYPE_CHECKING:
     XmlElement = ET.Element[str]
@@ -108,7 +109,7 @@ def _record_ee_parse_rejection(
                 reason=reason,
                 blocking=True,
                 strict_disposition="block",
-                quirks_disposition="record",
+                quirks_disposition=QuirksDisposition.RECORD,
                 target_title=target_title,
                 statute_fragment=statute_fragment,
                 target_resolution=TargetResolutionCoverage(
@@ -121,7 +122,7 @@ def _record_ee_parse_rejection(
                     candidates=candidates,
                     blocking=True,
                     strict_disposition="block",
-                    quirks_disposition="record",
+                    quirks_disposition=QuirksDisposition.RECORD,
                     detail={
                         "jurisdiction_status": reason,
                         "target_title": target_title,
@@ -161,7 +162,7 @@ def _record_ee_old_format_unparsed_meta_rejection(
                 reason="unparsed_meta_not_executable",
                 blocking=True,
                 strict_disposition="block",
-                quirks_disposition="record",
+                quirks_disposition=QuirksDisposition.RECORD,
                 target_title=target_title,
                 source_text=effective_text[:500],
             ),

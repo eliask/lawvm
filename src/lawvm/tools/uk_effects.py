@@ -29,6 +29,7 @@ from lawvm.uk_legislation.source_state import (
     uk_source_xml_parse_rejection,
     uk_source_state_wire_tuple as _source_state,
 )
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 if TYPE_CHECKING:
     import argparse
@@ -1981,7 +1982,7 @@ def _manual_compile_evidence_row_jsonable(
         "replay_regime": replay_regime_payload,
         "blocking": False,
         "strict_disposition": "record",
-        "quirks_disposition": "record",
+        "quirks_disposition": QuirksDisposition.RECORD,
     }
     if payload["replay_authorized"] is False:
         payload["frontier_work_item"] = (

@@ -42,6 +42,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_ee_fetch.py",
         "test_ee_frontier.py",
         "test_ee_guard_liveness.py",
+        "test_ee_invariant_bisect.py",
         "test_ee_structural_invariants.py",
         "test_ee_inspect_source.py",
         "test_ee_new_tools.py",
@@ -364,6 +365,12 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # Declared non-guarantees as root-committed evidence-plane objects.
         "test_assumption_register.py",
         "test_se_assumptions.py",
+        # SE agreement-residual projector (typed evidence-plane dossier).
+        "test_se_agreement_residuals.py",
+        # SE coverage-scan universe — committed content-addressed corpus root.
+        "test_se_coverage_universe.py",
+        # SE archive-write monotonicity ledger (KNOW-01 + §1.6).
+        "test_se_overwrite_event_ledger.py",
     ),
     "evidence_reports": (
         "test_fi_explain_facade.py",
@@ -561,6 +568,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_replay_metamorphic.py",
         "test_replay_small_model.py",
         "test_fi_timeline.py",
+        "test_commencement_totality_audit.py",
         "test_know_invariants.py",
         "test_timeline_invariants.py",
         "test_timeline_lineage_contracts.py",

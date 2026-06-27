@@ -22,6 +22,7 @@ from urllib.request import Request, urlopen
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.frozen_values import freeze_mapping
 from lawvm.core.source_lane import SourceLaneAttempt, SourceLaneSelectionEvidence
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 _API_BASE = "https://api.legislation.govt.nz"
 _USER_AGENT = "LawVM/0.1 (+https://lawvm.org)"
@@ -126,7 +127,7 @@ class NZAcquisitionDiagnostic:
     status_code: int | None = None
     blocking: bool = False
     strict_disposition: str = "record"
-    quirks_disposition: str = "record"
+    quirks_disposition: QuirksDisposition = QuirksDisposition.RECORD
     metadata: Mapping[str, Any] = field(default_factory=dict)
     source_lane_selection: Mapping[str, Any] | None = None
 
@@ -909,7 +910,7 @@ def _http_diagnostic(
             ),
             blocking=blocking,
             strict_disposition="block" if blocking else "record",
-            quirks_disposition="record",
+            quirks_disposition=QuirksDisposition.RECORD,
         ).to_diagnostic_detail(),
     )
 

@@ -9,6 +9,7 @@ from lawvm.core.diagnostic_records import (
     validate_blocking_disposition,
     validate_diagnostic_detail,
 )
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 
 def test_diagnostic_detail_defaults_strict_and_quirks_dispositions() -> None:
@@ -30,7 +31,7 @@ def test_diagnostic_detail_preserves_phase_local_extra_fields() -> None:
         reason="fallback_scope",
         blocking=False,
         strict_disposition="block",
-        quirks_disposition="apply",
+        quirks_disposition=QuirksDisposition.APPLY,
         detail={"target": "section:1"},
         action="replace",
     )

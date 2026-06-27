@@ -34,6 +34,7 @@ from lawvm.finland.citation_routing import johtolause_cited_target_ids
 from lawvm.finland.fi_dates import parse_fi_day_month_year
 from lawvm.finland.metadata import _statute_issue_date, get_johtolause
 from lawvm.finland.vts import extract_voimaantulo_repeals
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 # Pattern for /akn/fi/act/statute-consolidated/YEAR/NUMBER...
 # or /akn/fi/act/statute/YEAR/NUMBER...
@@ -104,7 +105,7 @@ def _append_amendment_index_diagnostic(
             "reason": reason,
             "blocking": True,
             "strict_disposition": "block",
-            "quirks_disposition": "record",
+            "quirks_disposition": QuirksDisposition.RECORD,
             **detail,
         }
     )

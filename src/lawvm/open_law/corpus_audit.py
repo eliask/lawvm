@@ -12,6 +12,7 @@ from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.evidence_contracts import CorpusFindingEvidenceRow, CorpusOperationEvidenceRow, CorpusRowStatus
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import _kind_str
+from lawvm.core.quirks_disposition import QuirksDisposition, coerce_quirks_disposition
 from lawvm.core.mutation_boundary import build_mutation_boundary_report
 from lawvm.core.tree_ops import resolve_required
 from lawvm.open_law.audit import (
@@ -679,7 +680,7 @@ def _finding_evidence_row(row: OpenLawOperationAuditRow, finding: OpenLawFinding
         related_row_ids=(row.op_id,),
         blocking=bool(envelope["blocking"]),
         strict_disposition=str(envelope["strict_disposition"]),
-        quirks_disposition=str(envelope["quirks_disposition"]),
+        quirks_disposition=coerce_quirks_disposition(envelope["quirks_disposition"]),
         evidence={
             "codify_path": "|".join(finding.path or row.codify_path),
             "audit_status": row.audit_status,
@@ -709,16 +710,16 @@ def _strict_disposition(row: OpenLawOperationAuditRow) -> str:
     return "record"
 
 
-def _quirks_disposition(row: OpenLawOperationAuditRow) -> str:
+def _quirks_disposition(row: OpenLawOperationAuditRow) -> QuirksDisposition:
     if row.audit_status in {"matched", "metadata_matched"}:
-        return "record"
+        return QuirksDisposition.RECORD
     if row.audit_status == "lifecycle_unsupported":
-        return "record_unsupported"
+        return QuirksDisposition.RECORD_UNSUPPORTED
     if row.audit_status in {"planning_failed", "snapshot_missing"}:
-        return "record_failure"
+        return QuirksDisposition.RECORD_FAILURE
     if row.audit_status in {"diverged", "metadata_diverged"}:
-        return "record_divergence"
-    return "record"
+        return QuirksDisposition.RECORD_DIVERGENCE
+    return QuirksDisposition.RECORD
 
 
 def _finding_phase(finding_status: str) -> str:

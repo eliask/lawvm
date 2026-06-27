@@ -43,6 +43,7 @@ from lawvm.new_zealand.source_tree import parse_nz_source_document
 from lawvm.new_zealand.text_comparison import normalized_nz_inline_occurrence_count
 from lawvm.new_zealand.version_diff import NZArchivedVersion, NZArchivedVersionDateWindow, archived_xml_version_date_window
 from lawvm.new_zealand.version_diff import archived_xml_version_change_window
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 
 # A canonical-effect candidate row is either emitted as a candidate or blocked.
@@ -831,7 +832,7 @@ class NZEffectCandidatePreflightReport:
                 related_row_ids=related_row_ids,
                 blocking=True,
                 strict_disposition="block",
-                quirks_disposition="record_blocked_preflight",
+                quirks_disposition=QuirksDisposition.RECORD_BLOCKED_PREFLIGHT,
                 evidence={
                     "blocked_rows": summary["blocked_rows"],
                     "candidate_operations": summary["candidate_operations"],
@@ -1970,7 +1971,7 @@ def _candidate_evidence_row(
             evidence_status=CorpusRowStatus.ACCEPTED,
             blocking=False,
             strict_disposition="candidate_only",
-            quirks_disposition="candidate_only",
+            quirks_disposition=QuirksDisposition.CANDIDATE_ONLY,
             detail={
                 "candidate_status": row.candidate_status,
                 "reason": "candidate canonical effect emitted but not replayed",
@@ -2028,7 +2029,7 @@ def _candidate_evidence_row(
             evidence_status=CorpusRowStatus.UNSUPPORTED,
             blocking=True,
             strict_disposition="block",
-            quirks_disposition="record_blocked_candidate",
+            quirks_disposition=QuirksDisposition.RECORD_BLOCKED_CANDIDATE,
             detail={
                 "reason": NZ_EFFECT_CANDIDATE_OPERATION_MISSING_RULE_ID,
                 "effect_readiness_row_id": row.effect_readiness_row_id,
@@ -2058,7 +2059,7 @@ def _candidate_evidence_row(
         evidence_status=CorpusRowStatus.UNSUPPORTED,
         blocking=True,
         strict_disposition="block",
-        quirks_disposition="record_blocked_candidate",
+        quirks_disposition=QuirksDisposition.RECORD_BLOCKED_CANDIDATE,
         detail={
             "candidate_status": row.candidate_status,
             "reason": row.blocking_rule_id or "nz_effect_candidate_not_ready",
@@ -2129,7 +2130,7 @@ def _preflight_operation_evidence_row(
             evidence_status=CorpusRowStatus.ACCEPTED,
             blocking=False,
             strict_disposition="candidate_only_preflight",
-            quirks_disposition="candidate_only_preflight",
+            quirks_disposition=QuirksDisposition.CANDIDATE_ONLY_PREFLIGHT,
             detail={
                 "preflight_status": "ready_candidate",
                 "candidate_row_id": row.row_id,
@@ -2202,7 +2203,7 @@ def _preflight_operation_evidence_row(
         evidence_status=CorpusRowStatus.UNSUPPORTED,
         blocking=True,
         strict_disposition="block",
-        quirks_disposition="record_blocked_preflight",
+        quirks_disposition=QuirksDisposition.RECORD_BLOCKED_PREFLIGHT,
         detail={
             "preflight_status": detail_status,
             "candidate_row_id": row.row_id,

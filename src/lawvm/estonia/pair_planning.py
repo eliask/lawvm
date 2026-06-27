@@ -6,6 +6,7 @@ import sqlite3
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, replace
 from typing import Any, Optional
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 # A best-effort RT fetch probe can fail in exactly two expected ways: the act
 # does not resolve (fetch_rt_xml → RuntimeError "Failed to fetch: …"), or the
@@ -150,7 +151,7 @@ def _unavailable_muutmismarge_repair_candidate_finding(
         "family": "source_pathology",
         "blocking": True,
         "strict_disposition": "block",
-        "quirks_disposition": "record",
+        "quirks_disposition": QuirksDisposition.RECORD,
         "repair_rule": repair_rule,
         "original_aktViide": original_aktviide,
         "candidate_aktViide": candidate_aktviide,
@@ -284,7 +285,7 @@ def _repair_muutmismarge_publication_number_refs(
                 "family": "source_pathology",
                 "blocking": True,
                 "strict_disposition": "block",
-                "quirks_disposition": "record",
+                "quirks_disposition": QuirksDisposition.RECORD,
                 "exception_type": type(exc).__name__,
                 "message": str(exc),
             },

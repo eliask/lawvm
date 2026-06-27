@@ -54,6 +54,7 @@ from lawvm.core.filter_result import FilterResult, RejectedItem
 # existing in-module call sites and for back-compat importers (e.g.
 # ``tests/test_fi_delegation.py``).
 from lawvm.finland.authority_basis import _classify_authority_kind, _normalize_year
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 NS = '{http://docs.oasis-open.org/legaldocml/ns/akn/3.0}'
 
@@ -126,7 +127,7 @@ class DelegationDiagnostic:
     quote: str = ""
     blocking: bool = False
     strict_disposition: str = "record"
-    quirks_disposition: str = "record"
+    quirks_disposition: QuirksDisposition = QuirksDisposition.RECORD
 
     def as_detail(self) -> dict[str, object]:
         return {

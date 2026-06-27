@@ -8,6 +8,7 @@ frontend-local finding/adjudication classes.
 from __future__ import annotations
 
 from typing import Any, Mapping, Optional
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 
 BLOCKING_STRICT_DISPOSITIONS = frozenset({"block", "reject", "fail", "hard_fail", "strict_block"})
@@ -34,7 +35,7 @@ def diagnostic_detail(
     reason: str = "",
     message: str = "",
     strict_disposition: Optional[str] = None,
-    quirks_disposition: str = "record",
+    quirks_disposition: QuirksDisposition = QuirksDisposition.RECORD,
     detail: Optional[Mapping[str, Any]] = None,
     **extra: Any,
 ) -> dict[str, Any]:
