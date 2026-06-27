@@ -25,9 +25,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Mapping
+from typing import TYPE_CHECKING, Any, Mapping
+
+if TYPE_CHECKING:
+    # Forward-only import to resolve the ``Finding`` return-annotation type
+    # without introducing a circular import at module-load time.
+    from lawvm.core.phase_result import Finding
 
 
 Json = Any
@@ -373,3 +379,230 @@ def _predicate_from_dict(d: dict[str, Any]) -> EvidenceGraphPredicate:
 
 def _expr_from_dict(d: dict[str, Any]) -> PolicyExpr:
     return PolicyExpr(op=d["op"], args=d.get("args", {}))
+
+
+# --------------------------------------------------------------------------- #
+# D12 — EVID.ATTESTATION_POLICY_GAP_TOTALITY audit                             #
+# --------------------------------------------------------------------------- #
+# Per audit_impl_D12.md + AGENTS.md §0/§2.10: an attestation policy id cited
+# by a proof-carrying output but absent from the loaded
+# EvidencePolicyRegistry is a TRUST-SURFACE violation — a forged policy id, not
+# a soft mismatch. The gap must be a typed first-class object, never a silent
+# drop. This audit consumes a loaded registry plus the certificate-bundle
+# projection rows and returns one AttestationPolicyGap per cited-but-unknown
+# policy id.
+#
+# PLANE & DISCIPLINE. This audit lives in the evidence kernel plane: it reads
+# the registry's known predicates plus the projection proof_rows, returns
+# :class:`AttestationPolicyGap` carriers, and never mutates the registry or
+# the projection. The bundle wire (audit_impl_D12 §3) decides whether each
+# gap becomes a strict-mode bundle-abort or quirks non-blocking residue; the
+# audit itself only reports the gap.
+#
+# WHAT THIS DOES NOT YET DO (honest scope, per the staged-wire discipline of
+# D7/D8/D11):
+#   * Wire into ``tools/certificate_bundle.py:~2404`` (the existing policy-hash
+#     commit block) is staged as a follow-up commit. The audit runs from the
+#     unit/helper lane only until the wire lands; declared honestly in
+#     ``NO_FIRE_DRILL_YET``.
+#   * The cited-policy collector inspects ``authorization_rule_id`` and
+#     ``detail.evidence_kernel.policy_id`` paths. Frontends that emit
+#     policy cites under different detail keys must teach the collector.
+#     Until then those cites are invisible — but the §1.8 receipt contract
+#     for THIS collector stays closed (no fuzzy-match fallback).
+
+EVID_ATTESTATION_POLICY_GAP_TOTALITY_RULE_ID = (
+    "evid_attestation_policy_gap_totality"
+)
+EVID_UNKNOWN_ATTESTATION_POLICY_FINDING_CODE = "EVID.UNKNOWN_ATTESTATION_POLICY"
+_EVID_ATTESTATION_AUDIT_STAGE = "evidence_kernel"
+_EVID_ATTESTATION_AUDIT_OWNER = "evidence_kernel"
+_EVID_ATTESTATION_PROOF_RULE_ID_KEY = "authorization_rule_id"
+_EVID_ATTESTATION_PROOF_KERNEL_PATH = ("detail", "evidence_kernel", "policy_id")
+_EVID_ATTESTATION_PROOF_ROW_ID_KEY = "row_id"
+
+
+@dataclass(frozen=True, slots=True)
+class AttestationPolicyGap:
+    """One cited-but-unknown attestation policy id (audit D12 — carrier).
+
+    A typed carrier (§1.9) so a triager can answer §3.2's evidence path
+    (which cited_policy_id was unknown + where was the cite) without
+    re-running extraction.
+
+    Fields:
+    * ``cited_policy_id``: the unknown predicate_id cited by the proof row.
+    * ``cite_source``: ``authorization_rule_id`` | ``proof_id`` | ``row_id``.
+    * ``cite_location``: a bundle-path / row-id string locating the cite.
+    * ``rule_id``: defaults to the
+      :data:`EVID_UNKNOWN_ATTESTATION_POLICY_FINDING_CODE` lowering so the
+      projection-to-Finding step has a stable owner.
+    """
+
+    cited_policy_id: str
+    cite_source: str
+    cite_location: str
+    rule_id: str = EVID_UNKNOWN_ATTESTATION_POLICY_FINDING_CODE
+
+
+def known_predicate_ids(registry: EvidencePolicyRegistry) -> frozenset[str]:
+    """Return the set of ``predicate_id`` strings the loaded registry admits.
+
+    Single authority surface: a ``predicate_id`` is registered IF AND ONLY IF
+    it appears as a ``predicates[].predicate_id`` member of the loaded
+    registry (per audit_impl_D12 §9 risk: dynamically-constructed ids must
+    persist into the registry JSON; there is no static-prefix escape hatch
+    for attestation-policy ids — they are deliberately closed).
+    """
+    return frozenset(p.predicate_id for p in registry.predicates)
+
+
+def _extract_cite_location(row: Mapping[str, Any]) -> str:
+    """Locate the cite in one row so the gap record carries provenance.
+
+    Prefers an explicit ``row_id`` field; falls back to a synthesized
+    ``"<authorization_rule_id>"`` (the row's authority rule) so a triager
+    can route the finding back to its source.
+    """
+    row_id = str(row.get(_EVID_ATTESTATION_PROOF_ROW_ID_KEY) or "")
+    if row_id:
+        return row_id
+    auth_rule = str(row.get(_EVID_ATTESTATION_PROOF_RULE_ID_KEY) or "")
+    if auth_rule:
+        return f"<{auth_rule}>"
+    return "<unknown_cite>"
+
+
+def collect_cited_attestation_policy_ids(
+    proof_rows: Sequence[Mapping[str, Any]],
+) -> frozenset[str]:
+    """Extract every policy id cited across the proof/certification surface.
+
+    Cite locations recognised (closed set per the impl-spec §3):
+      * ``row["authorization_rule_id"]`` — the rule_id cited by an
+        :class:`ExecutionAuthorization` (the apply-authority path); and
+      * ``row["detail"]["evidence_kernel"]["policy_id"]`` — the nested
+        attestation-policy id the existent ExecutionAuthorization's
+        EvidenceKernel projection carries.
+
+    Frontends emitting policy cites under other detail keys must teach the
+    collector; until then those cites are invisible. The collector does NOT
+    raise on unknown keys (§1.10 fail-loud for the registry-vs-cite gap lives
+    in :func:`audit_attestation_policy_gap` itself, not the collector).
+    """
+    cited: set[str] = set()
+    for row in proof_rows:
+        auth_rule = str(row.get(_EVID_ATTESTATION_PROOF_RULE_ID_KEY) or "")
+        if auth_rule:
+            cited.add(auth_rule)
+        # Walk the nested EvidenceKernel.policy_id path.
+        cursor: Any = row
+        for key in _EVID_ATTESTATION_PROOF_KERNEL_PATH:
+            if not isinstance(cursor, Mapping):
+                cursor = None
+                break
+            cursor = cursor.get(key)
+        if isinstance(cursor, str) and cursor:
+            cited.add(cursor)
+    return frozenset(cited)
+
+
+def audit_attestation_policy_gap(
+    registry: EvidencePolicyRegistry,
+    proof_rows: Sequence[Mapping[str, Any]],
+) -> tuple[AttestationPolicyGap, ...]:
+    """Return one :class:`AttestationPolicyGap` per cited policy id NOT in the registry.
+
+    Per AGENTS.md §0/§2.10: a cited-by-unknown predicate_id is a FORGED policy
+    cite, not a soft mismatch. Empty tuple is the success witness; the audit
+    never returns ``None`` (§1.10 fail-loud discipline — the absence of a
+    gap is a valid result, but a None return would be silent folklore).
+    """
+    known = known_predicate_ids(registry)
+    gaps: list[AttestationPolicyGap] = []
+    for row in proof_rows:
+        # authorization_rule_id cite path
+        auth_rule = str(row.get(_EVID_ATTESTATION_PROOF_RULE_ID_KEY) or "")
+        if auth_rule and auth_rule not in known:
+            gaps.append(
+                AttestationPolicyGap(
+                    cited_policy_id=auth_rule,
+                    cite_source=_EVID_ATTESTATION_PROOF_RULE_ID_KEY,
+                    cite_location=_extract_cite_location(row),
+                )
+            )
+        # Nested detail.evidence_kernel.policy_id cite path
+        cursor: Any = row
+        for key in _EVID_ATTESTATION_PROOF_KERNEL_PATH:
+            if not isinstance(cursor, Mapping):
+                cursor = None
+                break
+            cursor = cursor.get(key)
+        if isinstance(cursor, str) and cursor and cursor not in known:
+            # Deduplicate against the auth_rule cite on the same row
+            # (if both paths cite the same id, the auth_rule gap is the
+            # canonical witness and we don't double-fire).
+            if cursor != auth_rule:
+                gaps.append(
+                    AttestationPolicyGap(
+                        cited_policy_id=cursor,
+                        cite_source="evidence_kernel_policy_id",
+                        cite_location=_extract_cite_location(row),
+                    )
+                )
+    return tuple(gaps)
+
+
+def attestation_policy_gap_findings(
+    gaps: Sequence[AttestationPolicyGap],
+) -> tuple["Finding", ...]:
+    """Project each :class:`AttestationPolicyGap` to a violation Finding.
+
+    Spec §5: hard-fail emission in strict mode; non-blocking residue in quirks.
+    The Findings are ``role="violation"`` + ``blocking=True`` per the contract:
+    a forged policy id is a contract break, not informational. The wire
+    consumer (certificate bundle emission) decides whether the bundle write
+    aborts.
+    """
+    from lawvm.core.observation_registry import get_finding_spec  # noqa: PLC0415
+    from lawvm.core.phase_result import Finding, VIOLATION_ROLE  # noqa: PLC0415
+
+    findings: list[Finding] = []
+    for gap in gaps:
+        spec = get_finding_spec(EVID_UNKNOWN_ATTESTATION_POLICY_FINDING_CODE)
+        if spec is None:  # pragma: no cover - defensive: registry-row present
+            continue
+        detail: dict[str, Any] = {
+            "cited_policy_id": gap.cited_policy_id,
+            "cite_source": gap.cite_source,
+            "cite_location": gap.cite_location,
+            "rule_id": EVID_ATTESTATION_POLICY_GAP_TOTALITY_RULE_ID,
+            "reason": (
+                "ExecutionAuthorization cites an attestation policy id that is "
+                "not in the loaded EvidencePolicyRegistry; the cited "
+                "predicate_id is unknown (forged attestation-policy cite per "
+                "AGENTS.md §0/§2.10 — never a silent drop)"
+            ),
+        }
+        findings.append(
+            Finding(
+                kind=EVID_UNKNOWN_ATTESTATION_POLICY_FINDING_CODE,
+                role=VIOLATION_ROLE,
+                stage=_EVID_ATTESTATION_AUDIT_STAGE,
+                detail=detail,
+                source_statute=gap.cite_location,
+                blocking=True,
+            )
+        )
+    return tuple(findings)
+
+
+__all__ = [
+    "EVID_ATTESTATION_POLICY_GAP_TOTALITY_RULE_ID",
+    "EVID_UNKNOWN_ATTESTATION_POLICY_FINDING_CODE",
+    "AttestationPolicyGap",
+    "attestation_policy_gap_findings",
+    "audit_attestation_policy_gap",
+    "collect_cited_attestation_policy_ids",
+    "known_predicate_ids",
+]

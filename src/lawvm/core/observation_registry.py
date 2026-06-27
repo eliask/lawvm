@@ -1611,6 +1611,20 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "apply-path authority source set contained a finding whose registry role is "
                 "'observation', breaching the §2.10 evidence->authority firewall",
                 ("safety_invariant", "strictness"), role="violation"),
+    # D12 NOTE: ``EVID.UNKNOWN_ATTESTATION_POLICY`` is ALREADY registered above
+    # by the EV-06 apply-authority closure wave (phase=apply, owner=
+    # apply_op_closure_sweeps, family=violation, hard_fail, role=violation) at
+    # line 1128. The D12 spec wanted a sibling bundle-emission audit in
+    # ``evidence_policy.audit_attestation_policy_gap`` that EMITS THE SAME
+    # code from a different evidence-plane surface (certificate-bundle
+    # emission at tools/certificate_bundle.py:~2404). To avoid silently
+    # overriding the existing emitter's FindingSpec metadata (which would
+    # invalidate EV-06's existing fire-drill metadata: phase=apply,
+    # owner=apply_op_closure_sweeps), the new helper emits the SAME code and
+    # relies on the EXISTING registry row for FindingSpec metadata. There is
+    # no second FindingSpec row here for D12 — the single canonical registry
+    # row is the EV-06 apply-path emitter's, shared by the bundle-emission
+    # sweep.
     # D7 / LS-23 COMMENCEMENT.EFFECT_TOTALITY (audit_impl_D7): every LegalOperation
     # reaching compile-timelines is temporally authorized — a commence/revive
     # TemporalEvent matches via group_id + scope, OR the op carries an explicit
