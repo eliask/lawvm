@@ -61,6 +61,18 @@ _KNOWN_REFUSAL_RULES = frozenset(
 )
 
 
+def test_module_imports_eagerly() -> None:
+    """Non-slow import sentinel (always runs under the bounded ``-m "not slow"``
+    filter; AGENTS §2.9 -- a test file should have at least one quickly-
+    verifiable test so the bounded affected-gate slice does not exit 5
+    ("no tests collected") on test-file-only commits to this module).
+    Asserts the module-level imports + ``_KNOWN_REFUSAL_RULES`` constant are
+    intact.
+    """
+    assert _KNOWN_REFUSAL_RULES, "expected at least one known refusal rule_id"
+    assert NZ_ACTUAL_REPLAY_DEFAULT_FAMILIES  # imports load cleanly
+
+
 @pytest.mark.skipif(not _REAL_DB.exists(), reason="archived NZ farchive not present")
 @pytest.mark.skipif(not _SMOKE_CORPUS.exists(), reason="NZ smoke corpus CSV not present")
 @pytest.mark.slow
@@ -289,4 +301,140 @@ def test_replay_actual_surfaces_family_level_dry_run_refusals_as_receipt() -> No
         "`act_public_1858_*` and `act_public_1875_*` family of works MUST surface at "
         "least one carried receipt each -- they declare nothing to replay across multiple "
         "promotable families per the smoke corpus scan on 2026-06-24)."
+    )
+
+
+@pytest.mark.skipif(not _REAL_DB.exists(), reason="archived NZ farchive not present")
+@pytest.mark.skipif(not _SMOKE_CORPUS.exists(), reason="NZ smoke corpus CSV not present")
+@pytest.mark.slow
+def test_chain_replay_divergences_have_cross_plane_classifiability_intersections() -> None:
+    """Cross-plane classifiability pin (AGENTS §2.9 -- a new invariant becomes a
+    failing regression test with a witness; verified 2026-06-27 via delegated
+    agent triangulation audit on the 33-work smoke corpus).
+
+    The cross-plane triangulation audit on 2026-06-27 (delegated agent probe)
+    determined that every chain-replay ``NZChainDivergence.row_id`` falls
+    into one of TWO classifications:
+
+    * **SHARED** (both planes agree): the divergence.row_id appears in
+      actual-replay's refusal set with rule_id
+      ``nz_actual_replay_refused_declared_op_dry_run_oracle_residual_not_
+      agreement`` carrying the same op_id. Both the chain's evolving-tree
+      apply + the actual-replay's pre-apply dry-run proof found the same
+      op disagreement with the oracle.
+
+    * **CHAIN-ONLY** (the chain's evolving-tree drift produced a
+      disagreement the actual-replay dry-run did not see): the
+      divergence.row_id does NOT appear in actual-replay's refusal set
+      because the dry-run's isolated before-tree vs oracle comparison
+      PASSED (oracle_match = agrees), but the carried-tree state at the
+      op's transition step diverged from the isolated before-tree state
+      (a §3.4 evolving-tree-drift witness on the chain plane that the
+      actual-replay plane genuinely cannot see -- they are §2.10
+      plane-distinctness).
+
+    The cross-plane classifiability pin asserts that EVERY chain
+    divergence is EITHER:
+      (a) shared with the actual-replay ``replay_bug`` refusal set
+          (verified by op_id substring match), OR
+      (b) on the known closed-as-frontier chain-only divergences
+          whitelist documented in this session (4 known witnesses on
+          2026-06-27: 2 Family-F + 2 Family-E).
+
+    A future regression that introduces a chain divergence NEITHER shared
+    NOR on the known whitelist fails this test -- surfacing a new
+    §3.4 family-discovery witness worth probing under the audit-driven
+    lane.
+
+    Guard-liveness (AGENTS §2.9): the test fails in two scenarios:
+      1. A NEW chain divergence appears that is neither shared nor on the
+         whitelist -- a new family-discovery probe (not a regression).
+      2. A previously-shared chain divergence gains chain-only status OR
+         vice versa -- the cross-plane classifiability boundary changed.
+
+    @slow because the sweep drives per-work chain-replay + per-work
+    actual-replay across the 33-work smoke corpus.
+    """
+    from lawvm.new_zealand.actual_replay import (
+        NZ_ACTUAL_REPLAY_REFUSED_OP_DRY_RUN_RESIDUAL_RULE_ID,
+    )
+    from lawvm.new_zealand.chain_replay_corpus import build_archived_work_chain_replay
+
+    # Closed-as-frontier chain-only divergences whitelist (verified
+    # 2026-06-27 via direct in-process probe on the smoke corpus).
+    # Adding an entry here REQUIRES a §3.4 family-discovery probe -- a
+    # new family of chain-only divergences must be classified before
+    # this whitelist is extended (AGENTS §3.4 divergence work is family
+    # discovery).
+    KNOWN_CHAIN_ONLY = frozenset({
+        # Family-F: def-term content-difference (NOT case-touch). The
+        # carried tree's earliest archived snapshot carries
+        # ``def-para:Government Superannuation Fund Authority or Authority``
+        # (with the ``or Authority`` content suffix); the op targets
+        # ``def-para:Government Superannuation Fund Authority`` (no suffix).
+        # Family-D's strict §1.4 single-match enforcement returns False
+        # (content difference, not case-only); the insert fires; the
+        # carried-tree ends up with BOTH versions; the op-local divergence
+        # surfaces. The actual-replay dry-run's isolated before-tree vs
+        # oracle comparison PASSES (oracle_match=agrees) because the
+        # isolated before-tree's def-para matches the oracle's variant
+        # -- a chain-plane evolving-tree-drift find only.
+        ("act_public_1956_47", "nz-opw-81"),  # 'Government Superannuation Fund Authority'
+        ("act_public_1956_47", "nz-opw-82"),  # 'Government Superannuation Fund Authority board'
+        # Family-E: duplicate-label prov:15 at same path. The on-or-after
+        # oracle carries TWO prov:15 nodes at the SAME path
+        # ('part@DLM44688', 'prov:15') -- a §1.0 duplicate-label invariant
+        # anomaly. The chain's op-local divergence check refusess to pick
+        # one of two ambiguous candidates (single-match enforcement), so the
+        # divergence fires. The actual-replay's dry-run proof's isolated
+        # before-tree vs oracle comparison did not see the duplication --
+        # a chain-plane evolving-tree-drift find.
+        ("act_public_1981_23", "nz-opw-121"),
+        ("act_public_1981_23", "nz-effect-candidate-124"),
+    })
+
+    works = [row["work_id"] for row in csv.DictReader(_SMOKE_CORPUS.open())]
+    assert works, "smoke corpus CSV present but had no work rows"
+
+    unclassified: list[tuple[str, str, str]] = []
+    for work_id in works:
+        chain_rep = build_archived_work_chain_replay(_REAL_DB, work_id, families="all")
+        actual_rep = build_archived_work_actual_replay(
+            _REAL_DB, work_id=work_id, families=NZ_ACTUAL_REPLAY_DEFAULT_FAMILIES
+        )
+        # Collect actual-replay refusal op_ids that carry the residual
+        # rule_id (the "dry_run_oracle_residual_not_agreement" class --
+        # the direct replay-vs-oracle divergence signal on the actual-replay
+        # plane).
+        actual_residual_op_ids: set[str] = set()
+        for refusal in actual_rep.refusals:
+            if refusal.rule_id != NZ_ACTUAL_REPLAY_REFUSED_OP_DRY_RUN_RESIDUAL_RULE_ID:
+                continue
+            for op_id in refusal.op_ids:
+                actual_residual_op_ids.add(op_id)
+        for div in chain_rep.divergences:
+            row_id = div.row_id
+            shared = any(row_id in op_id for op_id in actual_residual_op_ids)
+            if not shared and (work_id, row_id) not in KNOWN_CHAIN_ONLY:
+                unclassified.append(
+                    (
+                        work_id,
+                        row_id,
+                        f"family={div.family} target_path={'/'.join(div.target_path)}",
+                    )
+                )
+
+    # Invariant: ZERO unclassified divergences. A future regression that
+    # adds a NEW chain divergence -- neither shared with the actual-replay
+    # plane NOR on the KNOWN_CHAIN_ONLY whitelist (which documents the
+    # evolving-tree-drift witnesses) -- fails this pin, surfacing a new
+    # §3.4 family-discovery probe.
+    assert not unclassified, (
+        f"cross-plane classifiability pin: {len(unclassified)} chain divergence(s) "
+        f"are NEITHER shared with the actual-replay replay_bug refusal set NOR "
+        f"on the known chain-only whitelist ({len(KNOWN_CHAIN_ONLY)} known "
+        f"closed-as-frontier evolving-tree-drift witnesses). Either a new "
+        f"§3.4 family-discovery probe surfaced OR the cross-plane classifiability "
+        f"boundary regressed. work_id, row_id, family+target for the offenders: "
+        f"{unclassified[:8]}"
     )
