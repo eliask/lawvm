@@ -54,7 +54,12 @@ _LOWER_ADDRESSABLE_KINDS = frozenset({"subsection", "paragraph", "subparagraph"}
 _SKIP_INLINE_CHILD_KINDS = _ADDRESSABLE_KINDS | {"num", "heading"}
 _MARKDOWN_ESCAPE_RE = re.compile(r"([\\`*_{}\[\]()#+.!|<>-])")
 _ANCHOR_CLEANUP_RE = re.compile(r"[^a-z0-9]+")
-_SAFE_PATH_RE = re.compile(r"[^A-Za-z0-9._/-]+")
+# Path-component sanitizer: allows [A-Za-z0-9._-] only. `/` is intentionally
+# excluded so a caller that forgets to split on `/` cannot smuggle a directory
+# separator (or a `..` traversal via `/`) through this function. The contract:
+# callers must split on `/` first (see `_statute_markdown_path`); this sanitizer
+# does NOT preserve directory separators.
+_SAFE_PATH_RE = re.compile(r"[^A-Za-z0-9._-]+")
 _NUMERIC_STATUTE_ID_RE = re.compile(
     r"^(?P<number>[0-9]{1,6}|[0-9]{1,6}-[A-Za-z0-9]{1,8})/(?P<year>[0-9]{4})$"
 )
@@ -1324,6 +1329,10 @@ def _statute_markdown_path(statute_id: str, *, jurisdiction: str) -> str:
 
 
 def _safe_path_component(value: str) -> str:
+    # Sanitize a single path component (filename or directory leaf). Strips
+    # `/` (and any other char outside [A-Za-z0-9._-]) to `-`. Contract: callers
+    # must split on `/` first; this sanitizer does NOT preserve directory
+    # separators and will collapse a `../`-style traversal into a flat token.
     cleaned = _SAFE_PATH_RE.sub("-", value.strip()).strip("-")
     return cleaned or "unknown"
 
