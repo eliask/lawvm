@@ -541,6 +541,16 @@ def classify_operation_family(operation: str) -> str:
         return "editorial change"
     if "brought into force" in normalized:
         return "brought into force"
+    # 'revoked' is a NZ editorial synonym for 'repealed' (both surface in
+    # `<amending-operation>` and history-note narratives). Downstream
+    # consumers (effect_readiness, dry_run, instruction_workqueue) dispatch
+    # on operation_family == 'repealed'; admitting the synonym here avoids
+    # a __unclassified__ bucket that masks a real amend verb (AGENTS §1.10).
+    # Verified on witness act_public_1955_37 @ 2024-06-05 nz-opw-106:
+    # `Clause 3(c) : revoked , on 5 June 2024 , by section 209(2) of the
+    # Whakatōhea Claims Settlement Act 2024`.
+    if normalized == "revoked":
+        return "repealed"
     if normalized in _KNOWN_OPERATION_FAMILIES:
         return normalized
     return "__unclassified__"

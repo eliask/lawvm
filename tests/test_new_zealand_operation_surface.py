@@ -19,6 +19,24 @@ def test_classify_operation_family_normalizes_known_and_unclassified_values() ->
     assert classify_operation_family("full sentence that is not an operation") == "__unclassified__"
 
 
+def test_classify_operation_family_admits_revoked_synonym_for_repealed() -> None:
+    """NZ editorial '<amending-operation>revoked</amending-operation>' is a synonym
+    for 'repealed' (both surface in history-note narratives). Downstream consumers
+    (effect_readiness, dry_run, instruction_workqueue) dispatch on
+    operation_family == 'repealed'; the synonym MUST alias to 'repealed' so the
+    real amend verb is not lost to __unclassified__ (AGENTS §1.10 -- distinct
+    named diagnostic; a witness verb must never fall to a generic 'unclassified'
+    bucket when its surface form is recoverable).
+
+    Witness verified 2026-06-27 on act_public_1955_37 @ 2024-06-05 nz-opw-106:
+    'Clause 3(c) : revoked , on 5 June 2024 , by section 209(2) of the
+    Whakatōhea Claims Settlement Act 2024 (2024 No 15).'
+    """
+    assert classify_operation_family("revoked") == "repealed"
+    assert classify_operation_family("Revoked") == "repealed"
+    assert classify_operation_family("  revoked  ") == "repealed"
+
+
 def test_parse_target_hint_extracts_bounded_structural_hints() -> None:
     assert parse_target_hint("Section 12(3)").to_jsonable() == {
         "target_hint_status": "parsed",
