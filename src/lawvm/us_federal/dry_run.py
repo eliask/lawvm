@@ -1392,7 +1392,25 @@ def _running_node_text(
     segments = _subsection_segments(address)
     if node_overrides is not None and segments in node_overrides:
         current = node_overrides[segments]
-        return current if current in running else None
+        if current in running:
+            return current
+        # Stale override: the stored text isn't an exact substring of the
+        # running text (a sibling op's ancestor refresh shifted the descendant
+        # text). Try a prefix-match fallback: the first 60 chars include the
+        # leading enumerator marker and are unique enough to locate the node.
+        # §0-safe: re-derive the text from the ACTUAL running text, not the
+        # stale stored copy — the patch composes on the live span.
+        prefix_len = min(60, len(current))
+        prefix = current[:prefix_len]
+        start = running.find(prefix)
+        if start != -1:
+            # Find the end of the node: scan forward to the next structural
+            # marker at the same or shallower depth, or to the end of running.
+            # For now, use the stored text's length as the upper bound (the
+            # node's text length shouldn't change drastically from a sibling).
+            end = min(start + len(current), len(running))
+            return running[start:end]
+        # Prefix also not found → fall through to pristine re-split
     resolved = _locate_subsection_text_resolved(before_section, address)
     if resolved is None:
         return None

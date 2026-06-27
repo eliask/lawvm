@@ -199,6 +199,31 @@ _US_RULE_SPECS: Dict[str, str] = {
         "instruction maps in source order and emits one RENUMBER per pair, relabelling "
         "only each node's leading enumerator."
     ),
+    "us_amend_redesignate_range_cross_kind": (
+        "A 'redesignating <digital-range> as <alpha-range>' instruction (e.g. "
+        "paragraphs (1)-(6) as subparagraphs (A)-(F)) enumerates the cross-kind "
+        "pairs by mapping each digit to its alphabet position and emits one "
+        "RENUMBER per pair with differing from/to kinds."
+    ),
+    "us_amend_redesignate_multi_kind_pairs": (
+        "A compound 'redesignating <kind-a> <labels> and <kind-b> <labels> as "
+        "<kind-c> <labels> and <kind-d> <labels>, respectively' instruction "
+        "(kinds cycle within a single instruction) zips the flattened (kind, "
+        "label) tuples in source order and emits one RENUMBER per pair."
+    ),
+    "us_amend_redesignate_ordinal_dropped": (
+        "A 'redesignating the second/third <kind> (X) as <kind> (Y)' instruction "
+        "drops the ordinal tiebreaker for matching (LegalAddress cannot encode "
+        "duplicate-label instance selection positionally), lowers the RENUMBER "
+        "on the labelled address, and emits a typed finding so the dropped "
+        "tiebreaker stays auditable; strict-mode rejectable."
+    ),
+    "us_amend_redesignate_compound_held_out": (
+        "A compound 'redesignating X AND <other-action> Y' instruction lowers "
+        "only the redesignate prefix; the secondary action clause (insert/"
+        "transferring/striking/amending) is held out as a typed residual so the "
+        "unsupported lane does not silently disappear (§1.8)."
+    ),
     "us_amend_redesignate_table": (
         "A 'redesignating the sections as described in the table' instruction emits "
         "one RENUMBER per (before, after) section-number row extracted from a sibling "
@@ -214,6 +239,23 @@ _US_RULE_SPECS: Dict[str, str] = {
         "A 'strike subsections (a), (c), and (g)' instruction emits one REPEAL per named "
         "member node; each removes its own located span (order-independent), and a "
         "future-effective/sunset strike is refused (owned by the temporal layer)."
+    ),
+    "us_amend_strike_structural_unit_range": (
+        "A 'strike paragraphs (1) through (6)' instruction emits one REPEAL per member "
+        "of the contiguous range; numeric and single-letter alpha ranges are enumerable "
+        "from arithmetic, multi-char roman-numeral ranges are not and stay unlowered."
+    ),
+    "us_amend_strike_compound_held_out": (
+        "A compound 'strike <unit> AND <other-action> Y' instruction lowers only the "
+        "strike prefix; the secondary action clause (redesignate/insert/add/renumber/"
+        "designate/amend/substitute/transfer) is held out as a typed finding so the "
+        "held-out portion stays visible (§1.8)."
+    ),
+    "us_amendatory_strike_compound_other_action_held_out": (
+        "Strike compound other-action held-out finding, parallel to "
+        "us_amend_redesignate_compound_held_out but for the strike family: the leading "
+        "'striking <unit>' clause lowered to a REPEAL but the trailing secondary-action "
+        "clause could not lower on the same op, recorded as a typed residual (§1.8)."
     ),
     "us_amend_insert_node_after_unit": (
         "An 'insert after <anchor> the following: <block>' instruction splices the quoted "
@@ -240,6 +282,13 @@ _US_RULE_SPECS: Dict[str, str] = {
         "(2) the following: <block>') is a positional compound a single 2-operand "
         "text_replace cannot represent; held out as a typed residual rather than "
         "lowered to a corrupt phrase swap."
+    ),
+    "us_amendatory_chapter_analysis_insert": (
+        "An 'inserting after the item relating to section N' / 'inserting the "
+        "following after the item relating to section N' instruction targets the "
+        "chapter-analysis table of contents (a USC editorial apparatus LawVM does "
+        "not represent); recognized by a named compile_classifier_regex (AGENTS.md "
+        "§2.4) and held out as a typed finding rather than lowered."
     ),
     "us_amendatory_new_section_insert": (
         "An 'add at the end the following: <block>' instruction whose block opens with "
@@ -615,8 +664,15 @@ _US_RULE_CONFIDENCE: Dict[str, str] = {
     "us_amend_redesignate_range": US_CONFIDENCE_HEURISTIC,
     "us_amend_redesignate_pairs": US_CONFIDENCE_HEURISTIC,
     "us_amend_redesignate_table": US_CONFIDENCE_HEURISTIC,
+    "us_amend_redesignate_range_cross_kind": US_CONFIDENCE_HEURISTIC,
+    "us_amend_redesignate_multi_kind_pairs": US_CONFIDENCE_HEURISTIC,
+    "us_amend_redesignate_ordinal_dropped": US_CONFIDENCE_HEURISTIC,
+    "us_amend_redesignate_compound_held_out": US_CONFIDENCE_HEURISTIC,
     "us_amend_strike_structural_unit": US_CONFIDENCE_HEURISTIC,
     "us_amend_strike_structural_unit_list": US_CONFIDENCE_HEURISTIC,
+    "us_amend_strike_structural_unit_range": US_CONFIDENCE_HEURISTIC,
+    "us_amend_strike_compound_held_out": US_CONFIDENCE_HEURISTIC,
+    "us_amendatory_strike_compound_other_action_held_out": US_CONFIDENCE_HEURISTIC,
     "us_amend_insert_node_after_unit": US_CONFIDENCE_HEURISTIC,
     "us_amend_insert_end_punctuation": US_CONFIDENCE_HEURISTIC,
     "us_amend_strike_insert_end_punctuation": US_CONFIDENCE_HEURISTIC,
@@ -634,6 +690,7 @@ _US_RULE_CONFIDENCE: Dict[str, str] = {
     "us_amendatory_amend_to_read_missing_payload": US_CONFIDENCE_HEURISTIC,
     "us_amendatory_tail_strike_insert_missing_operands": US_CONFIDENCE_HEURISTIC,
     "us_amendatory_end_punct_insert_no_quoted_capture": US_CONFIDENCE_HEURISTIC,
+    "us_amendatory_chapter_analysis_insert": US_CONFIDENCE_HEURISTIC,
     "us_amendatory_end_punct_strike_insert_regex_miss": US_CONFIDENCE_HEURISTIC,
     "us_amendatory_punct_word_unrecognized": US_CONFIDENCE_HEURISTIC,
     "us_amendatory_table_redesignate_ambiguous_title": US_CONFIDENCE_HEURISTIC,
