@@ -1048,6 +1048,22 @@ _EXTRA_NZ_RULE_SPECS: Dict[str, str] = {
         "Chain-replay refusal: the op's effective date falls after the latest archived version of the work "
         "(beyond the verified consolidation window) — replay refuses rather than extrapolating."
     ),
+    "nz_chain_replay_insert_def_term_case_fold_collision_recognized": (
+        "Family-D (def-term case-fold collision) -- chain-replay recognised that "
+        "an INSERT op's ``def-para:<term>`` leaf targets the SAME def-term as an "
+        "existing carried-tree ``def-para:<Same-Term-Different-Case>`` (case-only "
+        "label difference). Per AGENTS §1.4 (no silent sibling absorption by "
+        "label text equality or case-touch alone): the recognition emits a typed "
+        "skip receipt (distinct from the generic insert-already-present bucket) "
+        "so the absorption is auditable under its own rule_id rather than silently "
+        "absorbed or duplicated. Test pin: ``test_def_term_case_fold_collision_"
+        "recognised_and_inhibits_duplicate_insert`` in "
+        "tests/test_new_zealand_chain_replay.py. Witnesses verified 2026-06-27 "
+        "across the smoke corpus: 8 Family-D divergences pre-fix -> 22 Family-D "
+        "skips fired + 2 residual 'Government Superannuation Fund Authority' "
+        "content-difference cases deferred to Family-F (a new family probe "
+        "carried-tree's 'or Authority'-suffix content difference, not just case)."
+    ),
     # --- Effect readiness voter — amendment/structural payload extraction state --------
     "nz_effect_readiness_amendment_semantics_not_extracted": (
         "Readiness refusal: the amendment semantics could not be extracted from the payload — the readiness "

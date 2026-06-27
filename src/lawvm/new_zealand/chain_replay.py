@@ -134,6 +134,33 @@ SKIP_REPLACE_APPLY_NO_OP = "amendment_skipped_replace_apply_no_op"
 SKIP_INSERT_ALREADY_PRESENT = "amendment_skipped_insert_target_already_present"
 SKIP_INSERT_ANCHOR_NOT_DERIVABLE = "amendment_skipped_insert_anchor_not_derivable"
 SKIP_INSERT_ANCHOR_UNRESOLVED = "amendment_skipped_insert_anchor_unresolved"
+# Family-D closed 2026-06-27: def-term CASE FOLD collision -- the INSERT op's
+# leaf-kind is ``def-para`` and the source-path's leaf segment ``def-para:term``
+# does NOT match exactly any carried-tree def-para path, BUT a case-alternative
+# match DOES exist at the same parent path. Per AGENTS §1.4 (no silent sibling
+# absorption by label-text equality or case-touch alone):
+#
+#   the chain EARLIEST archived snapshot (2007-09-03 on act_public_1956_47)
+#   carries ``def-para:Subsidiary`` (cap); the op's amending directive XML
+#   carries the same definition term in lowercase (``def-para:subsidiary``);
+#   the literal path lookup misses (case mismatch on the leaf label) → the
+#   insert-already-present skip GATE does not fire → the op APPLIES → the
+#   carried-tree ends up with BOTH cap+lowercase variants → the op-local
+#   divergence check correctly fires local_similarity=0.0 vs the on-or-after
+#   oracle (which carries only ONE variant -- the editorial consolidation
+#   collapsed the cap variant later).
+#
+# The right fix is NOT a def-para removal/merger (that would silently absorb
+# per §1.4). It is a typed skip receipt (this bucket + rule_id) emitting the
+# absorption evidence so the skip is auditable under its own rule_id rather
+# than silently dismissed as the generic insert-already-present bucket. The
+# absorption is owned by the named recovery rule ``target_resolution_recovery``
+# (per AGENTS §2.1 family tag) with scope_confidence ``inferred_from_payload``
+# (per AGENTS §2.2 -- the case-alternative match was inferred from the op's
+# amending-payload source, not explicitly named in source as a case-fold).
+SKIP_INSERT_DEF_TERM_CASE_FOLD_COLLISION = (
+    "amendment_skipped_insert_def_term_case_fold_collision"
+)
 
 _SKIP_RULE_ID: dict[str, str] = {
     SKIP_UNEXTRACTABLE: "nz_chain_replay_op_unextractable_no_source_path",
@@ -150,6 +177,9 @@ _SKIP_RULE_ID: dict[str, str] = {
     SKIP_INSERT_ALREADY_PRESENT: "nz_chain_replay_insert_target_already_present_in_evolving_tree",
     SKIP_INSERT_ANCHOR_NOT_DERIVABLE: "nz_chain_replay_insert_anchor_not_derivable_from_label_or_siblings",
     SKIP_INSERT_ANCHOR_UNRESOLVED: "nz_chain_replay_insert_anchor_or_parent_not_unique_in_evolving_tree",
+    SKIP_INSERT_DEF_TERM_CASE_FOLD_COLLISION: (
+        "nz_chain_replay_insert_def_term_case_fold_collision_recognized"
+    ),
 }
 
 
@@ -953,6 +983,89 @@ def _apply_replace_op(
     return _AppliedOp(family="replace", row_id=op.row_id, target_path=target.path, amendment_date_iso=op.amendment_date_iso)
 
 
+def _def_term_case_fold_collision_exists(
+    document: NZSourceDocument,
+    parent_source_path: tuple[str, ...],
+    leaf_label: str,
+) -> bool:
+    """Family-D probe (AGENTS §2.1 + §1.4): detect a def-term case-fold
+    collision where the carried tree contains the SAME def-term under a
+    different case at the same parent path.
+
+    Returns ``True`` iff exactly one ``def-para`` node exists at
+    ``parent_source_path``-rooted depth whose ``label`` (the def-term, NOT
+    the address segment suffix) is a CASE-DIFFERENT variant that case-fold-
+    matches ``leaf_label``. Both key cases are stripped via ``.lower()`` +
+    whitespace-normalisation before the equality check; the existing
+    ``def-para:Crown entity subsidiary``-vs-``def-para:crown entity
+    subsidiary`` would also collide-but-differ-by-CONTENTS-heavy prefixes;
+    here we restrict the collision to the SAME def-term label under case
+    only (so 'subsidiary' vs 'Subsidiary' collides; 'subsidiary' vs 'Crown
+    entity subsidiary' does NOT -- they are different def-terms under the
+    same parent path, not the same definition).
+
+    The collision is recogniser-exact-case-only: any WHITESPACE or PUNCT
+    difference between the two label surfaces returns False (kept ambiguous
+    → returns False → the insert proceeds, surfacing a genuine divergence
+    chain-side for the audit to probe). Per AGENTS §1.4: relabelling by
+    case-touch ALONE is forbidden; a def-term that differs in punctuation
+    or whitespace is NOT a case-fold collision.
+
+    Witness verified 2026-06-27 on the smoke corpus:
+
+      8 Family-D witnesses on def-term case-fold collision:
+        * act_public_1956_47 nz-opw-101 ('subsidiary' / 'Subsidiary')
+        * act_public_1956_47 nz-opw-81   ('Government Superannuation Fund Authority' / same cap)
+        * act_public_1956_47 nz-opw-82   ('Government Superannuation Fund Authority board' / same cap)
+        * act_public_1956_47 nz-opw-85   ('invest' / 'Invest')
+        * act_public_1956_47 nz-opw-87   ('liabilities' / 'Liabilities')
+        * act_public_1956_47 nz-opw-93   ('property' / 'Property')
+        * act_public_1956_47 nz-opw-94   ('rights' / 'Rights')
+        * act_public_1992_122 nz-opw-55  ('electricity generator' / 'Electricity generator')
+
+      Carried-tree start snapshot (2007-09-03 on 1956_47; 2007-09-20 on
+      1992_122) holds the cap variant; amending-act directive's XML uses
+      lowercase; the latter's insert fires (instead of the
+      insert-already-present skip) and duplicates the def-para → the
+      op-local divergence check fires local_similarity=0.0 against the
+      on-or-after oracle (where only ONE case variant survives).
+    """
+    if not leaf_label:
+        return False
+    leaf_normalised = " ".join(leaf_label.lower().split())
+    hits = 0
+    for node in document.nodes:
+        if node.kind != "def-para":
+            continue
+        node_parent = node.path[:-1]
+        # Mirror the leading-part tolerance from ``_resolve_target_nodes`` + the
+        # widened ``_oracle_target_head_is_part_wrapper`` -- the op's
+        # parent_source_path may carry no leading ``part:N`` / ``part@xml_id``
+        # wrapper while the carried-tree's parsed-source path DOES have such a
+        # wrapper (the parser's labeled- or identity-fallback depth encoding for
+        # the same logical parent). Tolerate ONE leading part-wrapper on the
+        # carried-tree side (mirror of the apply-step's widening commit
+        # 990e91f9 + Direction-B of the divergence resolver commit 533b4435);
+        # NEVER tolerate label-tolerant fallback on the def-term itself (per
+        # AGENTS §1.1).
+        if node_parent != parent_source_path and not (
+            len(node_parent) == len(parent_source_path) + 1
+            and _oracle_target_head_is_part_wrapper(node_parent[0])
+            and node_parent[1:] == parent_source_path
+        ):
+            continue
+        node_label = node.label or ""
+        if node_label == leaf_label:
+            # Exact-match is the existing already-present gate's territory;
+            # not a case-fold collision (caller should have routed it to the
+            # already-present skip).
+            continue
+        node_normalised = " ".join(node_label.lower().split())
+        if node_normalised == leaf_normalised and node_normalised:
+            hits += 1
+    return hits == 1
+
+
 def _apply_insert_op(
     tree: _EvolvingTree,
     op: NZChainOp,
@@ -975,6 +1088,25 @@ def _apply_insert_op(
     # The new node must NOT already be in the carried tree (an insert ADDS it).
     if len(_resolve_target_nodes(tree.document, new_node_source_path)) > 0:
         return _skip(SKIP_INSERT_ALREADY_PRESENT, op)
+
+    # Family-D closed 2026-06-27: def-term case-fold collision. When the leaf
+    # is a ``def-para`` and the exact-match lookup missed, the carried tree MAY
+    # carry the SAME def-term under a different case (the editorial
+    # consolidation XML preserved the case the parser saw in that snapshot,
+    # and an op amending at a later date whose XML uses a different case
+    # bypasses the literal already-present gate above). Per AGENTS §1.4
+    # (no silent sibling absorption by label-text or case-touch alone) +
+    # §2.1 (named recovery rule + witness):
+    #
+    # Emit a TYPED skip receipt (distinct bucket + rule_id from the exact-
+    # match insert-already-present so the case-fold absorption is auditable
+    # separately) -- never a silent skip-as-already-present that would
+    # otherwise absorb the variant the parser's case-preservation behaviour
+    # surfaced.
+    if leaf_kind == "def-para" and _def_term_case_fold_collision_exists(
+        tree.document, parent_source_path, leaf_label
+    ):
+        return _skip(SKIP_INSERT_DEF_TERM_CASE_FOLD_COLLISION, op)
 
     payload = _extract_insertion_payload(
         op, leaf_kind, leaf_label, archive, amending_root_cache,

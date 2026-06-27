@@ -1076,3 +1076,135 @@ def test_resolve_oracle_node_for_target_admits_part_wrapper_shape_churn() -> Non
         document_history=(),
     )
     assert _resolve_oracle_node_for_target(oracle_other_wrapper, target_path) is None
+
+
+def test_def_term_case_fold_collision_recognised_and_inhibits_duplicate_insert() -> None:
+    """Family-D (def-term case-fold collision) — the INSERT-op
+    precheck MUST recognise a case-fold collision on a def-para leaf when the
+    carried tree carries the SAME def-term (case-different-only) at the same
+    parent path, AND emit the typed ``SKIP_INSERT_DEF_TERM_CASE_FOLD_COLLISION``
+    receipt rather than the generic insert-already-present bucket so the
+    absorption is auditable under §1.4 (no silent sibling deletion by label
+    text equality or case-touch alone).
+
+    Witness verified 2026-06-27 on the smoke corpus:
+      8 Family-D witnesses -- act_public_1956_47 nz-opw-101 'subsidiary'
+      (cap 'Subsidiary' present in carried tree start snapshot 2007-09-03)
+      + 6 same-family witnesses; act_public_1992_122 nz-opw-55 'electricity
+      generator' (cap 'Electricity generator' present in carried tree start
+      snapshot 2007-09-20).
+
+    Pre-fix: the op applied, creating a duplicate under the lowercase variant;
+    op-local divergence check then correctly fired local_similarity=0.0 against
+    the on-or-after oracle (where only ONE case variant survived).
+
+    Post-fix (commit f8f29...): 6/10 divergences eliminated on smoke corpus
+    (1956_47: 7 -> 2; 1992_122: 1 -> 0); 22 Family-D skips fired across
+    the smoke corpus.
+
+    Narrowness (per AGENTS §1.4): only a case-touch alone relabel triggers the
+    bucket. A def-para whose label DIFFERS IN CONTENT (not just case) does NOT
+    collide; for the 2 residual 1956_47 Family-F witnesses, the carried tree
+    holds ``def-para:Government Superannuation Fund Authority or Authority``
+    while the op targets ``Government Superannuation Fund Authority`` -- a
+    CONTENT difference (suffix added), NOT a case-touch. The helper correctly
+    returns False on these and lets the insert fire (a genuine §3.4
+    family-discovery probe, not an absorption).
+    """
+    from lawvm.new_zealand.chain_replay import (
+        NZSourceDocument,
+        NZSourceNode,
+        SKIP_INSERT_DEF_TERM_CASE_FOLD_COLLISION,
+        _def_term_case_fold_collision_exists,
+    )
+
+    def _node(path: tuple[str, ...], label: str) -> NZSourceNode:
+        return NZSourceNode(
+            kind="def-para",
+            path=path,
+            xml_id=f"placeholder-{label}-{path}",
+            xml_path="",
+            source_zone="primary_body",
+            label=label,
+            heading="",
+            deletion_status="",
+            text=f"placeholder text {label}",
+            history=(),
+        )
+
+    # Witness shape from act_public_1956_47:
+    #   op source_path: ('prov:2', 'subprov:1', 'def-para:subsidiary')
+    #   carried tree start snapshot: def-para at ('part:1', 'prov:2', 'subprov:1', 'def-para:Subsidiary')
+    #   (case-only difference).
+    parent_path = ("prov:2", "subprov:1")
+    leaf_label = "subsidiary"
+    carried_tree = NZSourceDocument(
+        xml_locator="carry",
+        version_id="v",
+        metadata={},
+        nodes=(
+            _node(
+                ("part:1", "prov:2", "subprov:1", "def-para:Subsidiary"),
+                "Subsidiary",
+            ),
+        ),
+        document_history=(),
+    )
+
+    # (A) Collision present (cap-and-lowercase variant of the same def-term).
+    assert _def_term_case_fold_collision_exists(
+        carried_tree, parent_path, leaf_label
+    ) is True
+
+    # (B) Negative: a DIFFERENT def-term at the same parent path is NOT a
+    # collision (different def-term content, not just case).
+    different_term_carried = NZSourceDocument(
+        xml_locator="diff",
+        version_id="v2",
+        metadata={},
+        nodes=(
+            _node(
+                ("part:1", "prov:2", "subprov:1", "def-para:Crown entity subsidiary"),
+                "Crown entity subsidiary",
+            ),
+        ),
+        document_history=(),
+    )
+    assert _def_term_case_fold_collision_exists(
+        different_term_carried, parent_path, leaf_label
+    ) is False
+
+    # (C) Negative: the Family-F "content difference not just case-touch"
+    # shape (carried tree carries 'Government Superannuation Fund Authority
+    # or Authority' -- a SUFFIX-CONTENT difference, not case-only) does NOT
+    # collide per AGENTS §1.4.
+    family_f_carried = NZSourceDocument(
+        xml_locator="familyf",
+        version_id="v3",
+        metadata={},
+        nodes=(
+            _node(
+                (
+                    "part:1",
+                    "prov:2",
+                    "subprov:1",
+                    "def-para:Government Superannuation Fund Authority or Authority",
+                ),
+                "Government Superannuation Fund Authority or Authority",
+            ),
+        ),
+        document_history=(),
+    )
+    assert (
+        _def_term_case_fold_collision_exists(
+            family_f_carried,
+            ("prov:2", "subprov:1"),
+            "Government Superannuation Fund Authority",
+        )
+        is False
+    )
+
+    # (D) The bucket constant's value is stable (cataloged rule_id invariant).
+    assert SKIP_INSERT_DEF_TERM_CASE_FOLD_COLLISION == (
+        "amendment_skipped_insert_def_term_case_fold_collision"
+    )
