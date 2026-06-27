@@ -713,6 +713,204 @@ def build_invariant_bisect_bundle(
     }
 
 
+def build_ee_invariant_bisect_bundle(
+    statute_id: str,
+    as_of: str,
+    target_path: str = "",
+    detector: str = "duplicate_label",
+    after_mid: str = "",
+    before_mid: str = "",
+    oracle_id: str = "",
+) -> Dict[str, Any]:
+    """Scan the EE amendment chain of ``statute_id`` and find the first bad
+    amendment, mirroring ``build_invariant_bisect_bundle`` for the Estonia
+    frontend.
+
+    EE's replay path applies each amendment's ops through
+    ``apply_ee_ops`` cumulatively (no FI-style ``replay_xml`` checkpoint).
+    This function replays the amendment chain linearly:
+
+      parse_ee_statute(base_xml)
+      → fetch_rt_xml + parse_ee_amendment_ops per amendment
+      → apply_ee_ops(cumulative_statute, ops)
+      → run_invariant_detector_messages(body, detector)
+
+    The first-bad-post-processing mirrors the FI builder exactly: tracks
+    clean→bad transitions, monotone vs transient failures, and reports
+    the pre-window state. The output dict carries the same keys:
+    ``first_bad_amendment``, ``first_clean_amendment``,
+    ``monotone_failure``, ``transient_failure``, ``failure_count``,
+    ``total_scanned``, ``first_bad_violations``, ``steps``, plus the EE
+    surface-specific ``jurisdiction="ee"`` and ``as_of``.
+    """
+    from lawvm.estonia.fetch import fetch_rt_xml, open_rt_archive
+    from lawvm.estonia.grafter import apply_ee_ops, parse_ee_amendment_ops, parse_ee_statute
+    from lawvm.estonia.pair_planning import plan_ee_oracle_pair
+
+    archive = open_rt_archive()
+    base_xml = fetch_rt_xml(statute_id, archive)
+    pair_plan_result = plan_ee_oracle_pair(
+        base_id=statute_id,
+        as_of=as_of,
+        base_xml=base_xml,
+        archive=archive,
+        oracle_id=oracle_id or None,
+    )
+    pair_plan = pair_plan_result.plan
+    base = parse_ee_statute(base_xml, f"ee/{statute_id}")
+
+    amendment_refs = list(pair_plan.amendments_to_apply)
+    amendment_ids = [ref.aktViide for ref in amendment_refs]
+
+    if after_mid:
+        if after_mid in amendment_ids:
+            start_idx = amendment_ids.index(after_mid) + 1
+        else:
+            raise SystemExit(
+                f"--after amendment {after_mid!r} not in chain for {statute_id!r}"
+            )
+    else:
+        start_idx = 0
+
+    if before_mid:
+        if before_mid in amendment_ids:
+            end_idx = amendment_ids.index(before_mid)
+        else:
+            raise SystemExit(
+                f"--before amendment {before_mid!r} not in chain for {statute_id!r}"
+            )
+    else:
+        end_idx = len(amendment_ids)
+
+    scan_ids = amendment_ids[start_idx:end_idx]
+
+    initial_violations = _run_fi_invariant_detector_messages(
+        base.body, detector, target_path
+    )
+    initial_clean = len(initial_violations) == 0
+
+    # Apply amendments cumulatively, running the detector after each step.
+    cumulative_statute = base
+    steps: List[Dict[str, Any]] = []
+    scan_refs = amendment_refs[start_idx:end_idx]
+    for ref in scan_refs:
+        try:
+            xml_bytes = fetch_rt_xml(ref.aktViide, archive)
+            ops = parse_ee_amendment_ops(
+                xml_bytes,
+                source_id=f"ee/{ref.aktViide}",
+            )
+            cumulative_statute = apply_ee_ops(cumulative_statute, ops)
+        except Exception as e:
+            # Skip the failing amendment but keep scanning; record an error
+            # step so the bisect surface is honest about the gap.
+            steps.append({
+                "source_id": ref.aktViide,
+                "clean": None,
+                "violation_count": 0,
+                "violations": [],
+                "error": f"{type(e).__name__}: {str(e)[:200]}",
+            })
+            continue
+        if cumulative_statute is None:
+            steps.append({
+                "source_id": ref.aktViide,
+                "clean": None,
+                "violation_count": 0,
+                "violations": [],
+                "error": "apply_ee_ops returned None",
+            })
+            continue
+        violations = _run_fi_invariant_detector_messages(
+            cumulative_statute.body, detector, target_path
+        )
+        steps.append({
+            "source_id": ref.aktViide,
+            "clean": len(violations) == 0,
+            "violation_count": len(violations),
+            "violations": violations[:10],
+        })
+
+    # First-bad-post-processing — mirrors build_invariant_bisect_bundle (the
+    # first-bad/first-clean search for FI). Treats ``clean=None`` (errored
+    # steps) as bad, so a parse or apply failure flips the bisect to bad at
+    # the failing amendment.
+    first_bad_idx_raw: Optional[int] = next(
+        (i for i, s in enumerate(steps) if not s["clean"]), None
+    )
+
+    if not initial_clean:
+        first_clean_in_window = next(
+            (i for i, s in enumerate(steps) if s["clean"]), None
+        )
+        if first_clean_in_window is not None:
+            re_bad_idx = next(
+                (
+                    i
+                    for i, s in enumerate(steps)
+                    if i > first_clean_in_window and not s["clean"]
+                ),
+                None,
+            )
+            first_bad_idx: Optional[int] = re_bad_idx
+        else:
+            first_bad_idx = None
+    else:
+        first_bad_idx = first_bad_idx_raw
+
+    first_bad = steps[first_bad_idx] if first_bad_idx is not None else None
+
+    if first_bad_idx is not None:
+        if first_bad_idx > 0:
+            first_clean_amendment = steps[first_bad_idx - 1]["source_id"]
+        elif after_mid:
+            first_clean_amendment = after_mid
+        else:
+            first_clean_amendment = ""
+    elif not initial_clean and first_bad_idx_raw == 0:
+        first_clean_amendment = ""
+    else:
+        first_clean_amendment = scan_ids[-1] if scan_ids else ""
+
+    monotone_failure = False
+    transient_failure = False
+    if first_bad_idx_raw is not None:
+        post_bad_clean_flags = [bool(s["clean"]) for s in steps[first_bad_idx_raw:]]
+        if not any(post_bad_clean_flags):
+            monotone_failure = True
+        else:
+            transient_failure = True
+    elif not initial_clean:
+        monotone_failure = True
+
+    return {
+        "statute_id": statute_id,
+        "jurisdiction": "ee",
+        "as_of": as_of,
+        "mode": "legal_pit",
+        "target_path": target_path or "(all)",
+        "detector": detector,
+        "scan_window": {
+            "after": after_mid or "",
+            "before": before_mid or "",
+            "count": len(scan_ids),
+            "total_in_chain": len(amendment_ids),
+        },
+        "initial_clean": initial_clean,
+        "initial_violations": initial_violations[:10] if not initial_clean else [],
+        "first_bad_amendment": first_bad["source_id"] if first_bad else "",
+        "first_clean_amendment": first_clean_amendment,
+        "monotone_failure": monotone_failure,
+        "transient_failure": transient_failure,
+        "failure_count": sum(1 for s in steps if not s["clean"]),
+        "total_scanned": len(steps),
+        "first_bad_violations": (
+            first_bad["violations"] if first_bad else initial_violations[:10]
+        ),
+        "steps": steps,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Text formatter
 # ---------------------------------------------------------------------------
@@ -823,6 +1021,27 @@ def main(args) -> None:
             detector=getattr(args, "detector", "duplicate_label") or "duplicate_label",
             after_mid=getattr(args, "after", "") or "",
             before_mid=getattr(args, "before", "") or "",
+        )
+    elif jurisdiction == "ee":
+        as_of = getattr(args, "as_of", "") or ""
+        if not as_of:
+            import sys
+            from datetime import date
+
+            as_of = date.today().isoformat()
+            print(
+                f"NOTE: --as-of not given; defaulting to today ({as_of}). "
+                "EE bisect replays all amendments effective on or before this date.",
+                file=sys.stderr,
+            )
+        bundle = build_ee_invariant_bisect_bundle(
+            statute_id=args.statute_id,
+            as_of=as_of,
+            target_path=getattr(args, "target", "") or "",
+            detector=getattr(args, "detector", "duplicate_label") or "duplicate_label",
+            after_mid=getattr(args, "after", "") or "",
+            before_mid=getattr(args, "before", "") or "",
+            oracle_id=getattr(args, "oracle_id", "") or "",
         )
     else:
         import sys
