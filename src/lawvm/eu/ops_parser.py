@@ -13,6 +13,7 @@ from typing import List, Optional, Tuple
 
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.ir import LegalAddress, LegalOperation, OperationSource
+from lawvm.core.regex_safety import compile_classifier_regex
 from lawvm.core.semantic_types import StructuralAction
 from lawvm.core.quirks_disposition import QuirksDisposition
 
@@ -60,10 +61,15 @@ KIND_MAPPING = {
     "division": "division",
 }
 
-_CONTEXT_RE = re.compile(r"\b(in|to)\s+(Article|Chapter|Division)\s+([0-9A-Za-z]+)\b", re.I)
-_TARGET_RE = re.compile(
+_CONTEXT_RE = compile_classifier_regex(
+    r"\b(in|to)\s+(Article|Chapter|Division)\s+([0-9A-Za-z]+)\b",
+    re.I,
+    classifier_id="eu.ops_parser.context_re",
+)
+_TARGET_RE = compile_classifier_regex(
     r"\b(Article|paragraph|point|annex|recital|subparagraph|chapter|division)\s+([0-9A-Za-z().-]+)\b",
     re.I,
+    classifier_id="eu.ops_parser.target_re",
 )
 
 

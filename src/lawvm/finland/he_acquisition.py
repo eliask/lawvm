@@ -53,6 +53,9 @@ from typing import Any
 
 from lxml import etree
 
+from lawvm.core.archive_safety import ArchiveMemberTooLarge, safe_zip_read
+from lawvm.core.xml_parse import parse_corpus_xml
+
 # ---------------------------------------------------------------------------
 # AKN / Finlex namespace constants
 # ---------------------------------------------------------------------------
@@ -383,7 +386,7 @@ def parse_he_metadata(
     xml_root: etree._Element | None = None
     parse_err: str | None = None
     try:
-        xml_root = etree.fromstring(main_xml_bytes)
+        xml_root = parse_corpus_xml(main_xml_bytes)
     except etree.XMLSyntaxError as exc:
         parse_err = str(exc)
 
@@ -496,7 +499,7 @@ def _check_metadata_disagreement(
     disagreements: list[HEMetadataDisagreement] = []
     wrapper_root: etree._Element | None = None
     try:
-        wrapper_root = etree.fromstring(wrapper_bytes)
+        wrapper_root = parse_corpus_xml(wrapper_bytes)
     except etree.XMLSyntaxError:
         disagreements.append(
             HEMetadataDisagreement(
@@ -850,7 +853,36 @@ def _read_he_group(
         # Read main.xml bytes
         main_xml_bytes: bytes
         try:
-            main_xml_bytes = zf.read(main_xml_entry)
+            main_xml_bytes = safe_zip_read(
+                zf, main_xml_entry, archive_path="<government-proposal.zip>"
+            )
+        except ArchiveMemberTooLarge as exc:
+            # Acquisition lane: never silently drop. Emit a typed
+            # HEAcquisitionFailure (AGENTS.md §1.8/§1.10) carrying the
+            # member name and declared vs cap sizes, so the oversized
+            # member is conserved in the run's failure list rather than
+            # the read becoming a silent OOM. Non-blocking on the
+            # per-HE level (the cap is operator-tunable); per-HE abort
+            # is preserved via strict_disposition.
+            failures.append(
+                HEAcquisitionFailure(
+                    rule_id="HE_ACQ.ARCHIVE_MEMBER_TOO_LARGE",
+                    phase="acquisition",
+                    family="transport_cleanup",
+                    he_year=year,
+                    he_number=number,
+                    lang=lang,
+                    zip_entry_name=main_xml_entry,
+                    reason="main.xml declares more bytes than LAWVM_MAX_ARCHIVE_MEMBER_BYTES",
+                    detail=(
+                        f"declared_size={exc.declared_size}; "
+                        f"cap_bytes={exc.cap_bytes}; "
+                        f"archive_path={exc.archive_path}"
+                    ),
+                    strict_disposition="abort",
+                )
+            )
+            continue
         except Exception as exc:
             failures.append(
                 HEAcquisitionFailure(
@@ -886,9 +918,27 @@ def _read_he_group(
         wrapper_entry = file_map.get("main_pdf-wrapper.xml")
         if wrapper_entry is not None:
             try:
-                wrapper_bytes = zf.read(wrapper_entry)
+                wrapper_bytes = safe_zip_read(
+                    zf, wrapper_entry, archive_path="<government-proposal.zip>"
+                )
                 disag = _check_metadata_disagreement(meta, wrapper_bytes, wrapper_entry)
                 disagreements.extend(disag)
+            except ArchiveMemberTooLarge as exc:
+                disagreements.append(
+                    HEMetadataDisagreement(
+                        rule_id="HE_ACQ.PDF_WRAPPER_ARCHIVE_MEMBER_TOO_LARGE",
+                        he_year=year,
+                        he_number=number,
+                        lang=lang,
+                        field_name="pdf_wrapper_read",
+                        main_xml_value="",
+                        pdf_wrapper_value="",
+                        resolution=(
+                            f"wrapper skipped: declared_size={exc.declared_size}; "
+                            f"cap_bytes={exc.cap_bytes}; using main.xml"
+                        ),
+                    )
+                )
             except Exception as exc:
                 disagreements.append(
                     HEMetadataDisagreement(
@@ -931,7 +981,35 @@ def _read_he_group(
             locator = he_locator(year, number, lang, filename)
             entry_data: bytes
             try:
-                entry_data = zf.read(entry_name)
+                entry_data = safe_zip_read(
+                    zf, entry_name, archive_path="<government-proposal.zip>"
+                )
+            except ArchiveMemberTooLarge as exc:
+                # The oversized blob is conserved as an HEAcquisitionFailure
+                # (AGENTS.md §1.8) rather than dropped; the cap is operator-
+                # tunable so the disposition is per-HE abort, not run-fatal.
+                failures.append(
+                    HEAcquisitionFailure(
+                        rule_id="HE_ACQ.ARCHIVE_MEMBER_TOO_LARGE",
+                        phase="acquisition",
+                        family="transport_cleanup",
+                        he_year=year,
+                        he_number=number,
+                        lang=lang,
+                        zip_entry_name=entry_name,
+                        reason=(
+                            f"blob {filename} declares more bytes than "
+                            f"LAWVM_MAX_ARCHIVE_MEMBER_BYTES"
+                        ),
+                        detail=(
+                            f"declared_size={exc.declared_size}; "
+                            f"cap_bytes={exc.cap_bytes}; "
+                            f"archive_path={exc.archive_path}"
+                        ),
+                        strict_disposition="abort",
+                    )
+                )
+                continue
             except Exception as exc:
                 failures.append(
                     HEAcquisitionFailure(
@@ -1125,6 +1203,7 @@ def acquire_fi_proposals(
 
     if source is None:
         source = os.environ.get("LAWVM_GOVPROP_ZIP", _DEFAULT_SOURCE)
+    dest_explicit_env: str | None
     if dest is None:
         # Route through the single resolver so worktrees / canonical-data-root
         # resolve correctly at runtime instead of relying on a cwd-relative
@@ -1137,6 +1216,15 @@ def acquire_fi_proposals(
             explicit_env="LAWVM_HE_FARCHIVE_DB",
         )
         dest = str(dest_path)
+        # Default-resolved path: apply the data-root check with the
+        # explicit-env override channel so LAWVM_HE_FARCHIVE_DB pointing at
+        # an out-of-tree target is honoured (operator trust).
+        dest_explicit_env = "LAWVM_HE_FARCHIVE_DB"
+    else:
+        # Caller-supplied path (test fixture, ad-hoc ingest): caller is the
+        # operator-in-trust. Pass explicit_env=None so the data-root check
+        # stays opt-in (Security M2 §4 — backwards-compatible).
+        dest_explicit_env = None
 
     ingest_timestamp = datetime.now(timezone.utc)
 
@@ -1161,7 +1249,9 @@ def acquire_fi_proposals(
     if not dry_run:
         from lawvm.corpus_store import validate_farchive_create_path
 
-        validate_farchive_create_path(Path(dest))
+        validate_farchive_create_path(
+            Path(dest), explicit_env=dest_explicit_env
+        )
     farchive: Any = None if dry_run else Farchive(dest)
 
     run = HEIngestRun(

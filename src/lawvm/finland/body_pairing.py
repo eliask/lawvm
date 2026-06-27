@@ -52,6 +52,7 @@ from lawvm.core.clause_ast import (
 )
 from lawvm.core.ir import LegalAddress
 from lawvm.core.semantic_types import FacetKind, LabelAction, StructuralAction
+from lawvm.core.xml_parse import parse_corpus_xml
 from lawvm.finland.helpers import _normalize_source_part_num, _normalize_source_section_num, _norm_num_token
 from lawvm.finland.johtolause.surface_model import TargetKind
 from lawvm.finland.johtolause.types import ParsedOp
@@ -1252,7 +1253,9 @@ class AmendmentPairingResult:
 def analyze_amendment_pairing(
     statute_id: str,
     amendment_id: str,
-    amendment_xml_bytes: bytes,
+    amendment_root: etree._Element,
+    *,
+    xml_bytes: bytes,
 ) -> Optional[AmendmentPairingResult]:
     """Run body pairing analysis on a single amendment.
 
@@ -1260,14 +1263,22 @@ def analyze_amendment_pairing(
     the body inventory from the amendment XML, pairs them, and returns
     findings.
 
+    ``amendment_root`` is the already-parsed muutos tree from acquisition.
+    ``xml_bytes`` is the same source bytes that produced the tree, threaded
+    through to ``build_amendment_acquisition_result`` for byte-level source
+    anchoring. Per §2.7 (per-call re-parsing has dominated compile cost),
+    the caller parses once and the function MUST NOT re-parse — the parsed
+    tree is also handed to ``build_amendment_acquisition_result`` via its
+    ``muutos_tree`` parameter, so neither party re-parses the supplied bytes.
+
     Returns None if the amendment has no body content or no parseable ops.
     """
     from lawvm.finland.acquisition import build_amendment_acquisition_result
     from lawvm.finland.johtolause.api import parse_clause
 
-    muutos_tree = etree.fromstring(amendment_xml_bytes)
     acquisition = build_amendment_acquisition_result(
-        xml_bytes=amendment_xml_bytes,
+        xml_bytes=xml_bytes,
+        muutos_tree=amendment_root,
         parent_id=statute_id,
         amendment_id=amendment_id,
         source_title="",
@@ -1284,7 +1295,7 @@ def analyze_amendment_pairing(
     if not clause_ast.verb_groups:
         return None
 
-    inventory = build_observed_body_inventory(muutos_tree)
+    inventory = build_observed_body_inventory(amendment_root)
     if not inventory:
         return None
 
@@ -1338,7 +1349,10 @@ def audit_statute_body_pairing(
         xml_bytes = corpus.read_source(amendment_id)
         if xml_bytes is None:
             continue
-        result = analyze_amendment_pairing(statute_id, amendment_id, xml_bytes)
+        amendment_root = parse_corpus_xml(xml_bytes)
+        result = analyze_amendment_pairing(
+            statute_id, amendment_id, amendment_root, xml_bytes=xml_bytes
+        )
         if result is not None:
             results.append(result)
 

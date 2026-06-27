@@ -241,6 +241,9 @@ _EE_RULE_SPECS: Dict[str, str] = {
     "ee_replay_unsupported_heading_target": "A heading-target action the replay kernel cannot execute is recorded as unsupported.",
     "ee_replay_unsupported_statute_title_action": "A statute-title action the replay kernel cannot execute is recorded as unsupported.",
 
+    # --- §1.7 same-moment cross-act conflict (pre-pass in ordering.py) ---------------
+    "ee_same_moment_cross_act_incompatible_payload_ambiguous": "Two affecting acts that change the same target at the same effective date with incompatible whole-target payloads are surfaced as a §1.7 ambiguity (sequence-order pick unproven) until a precedence claim proves which act prevails; apply order is unchanged, the finding makes the silent pick strict-rejectable.",
+
     # --- Temporal / commencement provenance -------------------------------------------
     "ee_old_format_commencement_whole_act_default": "An unstamped old-format op inherits the whole-act commencement default only when that default is the active reference slice (living spec §77).",
     "ee_old_format_commencement_section_effective": "An old-format op stamped by a section-specific commencement clause carries that section's effective date (living spec §77).",

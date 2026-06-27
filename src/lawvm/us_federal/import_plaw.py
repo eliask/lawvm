@@ -31,6 +31,7 @@ import urllib.request
 import zipfile
 import zlib
 
+from lawvm.core.archive_safety import ArchiveMemberTooLarge, safe_zip_read
 from lawvm.us_federal.sources import (
     GOVINFO_PLAW_MEMBER_URL,
     content_digest,
@@ -209,7 +210,35 @@ def import_plaw_zip(
             seen_locators.setdefault(locator, name)
 
             try:
-                data = zf.read(name)
+                data = safe_zip_read(zf, name, archive_path=zip_label)
+            except ArchiveMemberTooLarge as exc:
+                # Acquisition lane: never silently drop. Emit a typed
+                # rejection receipt (AGENTS.md §1.8/§1.10) carrying the
+                # declared vs cap sizes plus the entry name + locator, so
+                # the gap is visible in report.skipped_entries rather than
+                # a bare stderr print that disappears. Family:
+                # transport_cleanup (mechanical IO failure, no legal-
+                # ontology implication). Non-blocking: the cap is operator-
+                # tunable via LAWVM_MAX_ARCHIVE_MEMBER_BYTES; over-retention
+                # (omit rather than fabricate) per AGENTS.md §0.
+                report.total_skipped += 1
+                entry_locator = locator if locator else ""
+                _record_import_skip(
+                    report,
+                    rule_id="us_plaw_import_archive_member_too_large",
+                    family="transport_cleanup",
+                    reason=exc.diagnostic.render_reason(),
+                    source_label=zip_label,
+                    zip_entry_name=name,
+                    locator=entry_locator or None,
+                    detail={
+                        "declared_size": str(exc.declared_size),
+                        "cap_bytes": str(exc.cap_bytes),
+                        "archive_path": exc.archive_path,
+                        "blocking": "false",
+                    },
+                )
+                continue
             except (zipfile.BadZipFile, OSError, zlib.error, EOFError) as exc:  # corrupt/truncated zip member
                 # Acquisition lane: never silently drop. Emit a typed rejection
                 # receipt (AGENTS.md §1.8/§1.10) carrying the entry name, locator,
