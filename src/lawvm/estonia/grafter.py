@@ -55,7 +55,7 @@ from lawvm.core.ir import (
     TextPatchSpec,
     TextSelector,
 )
-from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.diagnostic_records import diagnostic_detail, QuirksDisposition
 from lawvm.core.mutation_boundary import TreePath
 from lawvm.core.semantic_types import IRNodeKind, structural_action_from_str
 from lawvm.core.statute_facets import is_statute_title_address, replace_statute_title
@@ -2720,8 +2720,17 @@ def parse_ee_amendment_ops(
         parsed_ops = _merge_frontloaded_ops(parsed_ops, cross_act_transitional_ops)
     leading_ops = [*generic_minister_ops, *generic_ministry_ops]
     if leading_ops:
-        return _merge_frontloaded_ops(leading_ops, parsed_ops)
-    return parsed_ops
+        final_ops = _merge_frontloaded_ops(leading_ops, parsed_ops)
+    else:
+        final_ops = parsed_ops
+    _emit_unrecognized_source_shape_if_zero_ops(
+        adjudications_out,
+        parsed_ops=final_ops,
+        xml_bytes=xml_bytes,
+        root=root,
+        source_id=source_id,
+    )
+    return final_ops
 
 
 def _space_flexible_literal(text: str) -> str:
@@ -5271,6 +5280,121 @@ _EE_PARENTHESIZED_TARGET_HTML_BLOCK_RULE = "ee_parenthesized_target_html_block_s
 _EE_OUT_OF_BODY_APPENDIX_OR_NOTE_RULE = "ee_out_of_body_appendix_or_note_clause"
 _EE_UNPARSED_OPERATION_CLAUSE_RULE = "ee_unparsed_operation_clause"
 _EE_INSERT_AFTER_TERMINAL_PUNCTUATION_RULE = "ee_insert_after_terminal_punctuation_boundary"
+_EE_PARSE_AMENDMENT_UNRECOGNIZED_SOURCE_SHAPE_RULE = (
+    "ee_parse_amendment_unrecognized_source_shape"
+)
+
+
+def _emit_unrecognized_source_shape_if_zero_ops(
+    adjudications_out: Optional[list[CompileAdjudication]],
+    *,
+    parsed_ops: List[LegalOperation],
+    xml_bytes: bytes,
+    root: Any,
+    source_id: str,
+) -> None:
+    """Lawvm-failloud (AGENTS §1.8 / §1.10): emit a typed adjudication when
+    ``parse_ee_amendment_ops`` produces zero ops despite the source XML
+    carrying non-empty ``<sisu>`` operative content.
+
+    A silent drop returning ``[]`` would otherwise hide an unrecognized
+    amendment-act shape from every downstream bench / residual-inventory
+    surface — a violation of §1.8 (``No unsupported lane disappears``:
+    every filtered/rejected/skipped op MUST stay visible with a receipt).
+
+    The adjudication carries:
+    - ``source_id``: the amendment's canonical ID;
+    - ``xml_head``: the first ~400 chars of the XML, so triaging the
+      residual doesn't require re-fetching the source (per §1.10: a
+      diagnostic about source text MUST embed the offending snippet);
+    - ``shape_markers``: presence booleans for ``<paragrahv>``,
+      ``<sisuTekst>``, ``<lisa>``, ``<veaparandus>`` elements, so the
+      residual is clusterable by raw-XML shape without re-parsing.
+
+    Strict disposition: ``record`` — the parser cannot lower the shape
+    but does NOT block the replay (over-retention is the safe wrong per
+    AGENTS §0). The residual is purely informational: it surfaces the gap
+    so a future ``ee_inline_directive_*`` parser family can be promoted
+    to lower these amendments into real ops.
+    """
+    if adjudications_out is None:
+        return
+    if parsed_ops:
+        return
+    # Suppression: if another parse-phase adjudication already explained
+    # why this amendment produced 0 ops (e.g. ``ee_ref_slice_operation_filtered``
+    # when the ref-slice filter dropped the op at parse time, or
+    # ``ee_parse_constitutional_review_rejected`` when an upstream clause
+    # rejected the source shape), the silent-drop smell of §1.8 is already
+    # closed by that receipt — do not emit a competing generic one. The
+    # receipt here fires ONLY when the parser returned [] silently, with no
+    # other parse-phase explanation for this source.
+    if any(
+        adj.phase == "parse"
+        and adj.source_statute == source_id
+        and adj.kind != _EE_PARSE_AMENDMENT_UNRECOGNIZED_SOURCE_SHAPE_RULE
+        for adj in adjudications_out
+    ):
+        return
+    # Resolve the XML namespace once. The empty-overlay case (redaction
+    # marker XML that has no <sisu>) must not fire this receipt.
+    ns = ""
+    if "}" in root.tag:
+        ns = root.tag.split("}")[0].lstrip("{")
+    elif root.get("xmlns"):
+        ns = root.get("xmlns", "")
+    if not ns:
+        return  # Cannot probe reliably without a namespace.
+    sisu = root.find(f".//{_ns(ns, 'sisu')}")
+    if sisu is None:
+        return
+    # Operative content footprint: any child element OR any non-whitespace
+    # direct text. An empty placeholder wrapper doesn't qualify.
+    has_element = len(list(sisu)) > 0
+    has_text = bool((sisu.text or "").strip()) or any(
+        bool((child.tail or "").strip()) for child in sisu
+    )
+    if not (has_element or has_text):
+        return
+
+    has_paragrahv = root.find(f".//{_ns(ns, 'paragrahv')}") is not None
+    has_sisu_tekst = root.find(f".//{_ns(ns, 'sisuTekst')}") is not None
+    has_lisa = root.find(f".//{_ns(ns, 'lisa')}") is not None
+    has_veaparandus = root.find(f".//{_ns(ns, 'veaparandus')}") is not None
+
+    xml_head = xml_bytes[:400].decode("utf-8", errors="replace")
+
+    adjudications_out.append(
+        CompileAdjudication(
+            kind=_EE_PARSE_AMENDMENT_UNRECOGNIZED_SOURCE_SHAPE_RULE,
+            message=(
+                "Estonia parser produced zero LegalOperation for an amendment "
+                "act with non-empty <sisu> content — unrecognized source shape. "
+                "The amendment is preserved without lowering; emit a typed "
+                "residual for future family promotion review."
+            ),
+            source_statute=source_id,
+            blocking=False,
+            phase="parse",
+            detail=diagnostic_detail(
+                rule_id=_EE_PARSE_AMENDMENT_UNRECOGNIZED_SOURCE_SHAPE_RULE,
+                phase="parse",
+                family="source_pathology",
+                blocking=False,
+                strict_disposition="record",
+                quirks_disposition=QuirksDisposition.RECORD,
+                reason="unrecognized_amendment_source_shape_no_paragrahv_or_unlowered_directive",
+                source_id=source_id,
+                xml_head=xml_head,
+                shape_markers={
+                    "has_paragrahv": has_paragrahv,
+                    "has_sisu_tekst": has_sisu_tekst,
+                    "has_lisa": has_lisa,
+                    "has_veaparandus": has_veaparandus,
+                },
+            ),
+        )
+    )
 
 
 def _ee_remove_omitted_inserted_item_labels_from_replace_range(

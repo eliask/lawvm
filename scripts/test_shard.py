@@ -44,6 +44,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_ee_guard_liveness.py",
         "test_ee_invariant_bisect.py",
         "test_ee_structural_invariants.py",
+        "test_ee_unrecognized_source_shape.py",
         "test_ee_inspect_source.py",
         "test_ee_new_tools.py",
         "test_ee_pair_planning.py",

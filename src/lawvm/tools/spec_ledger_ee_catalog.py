@@ -292,6 +292,7 @@ _EE_RULE_SPECS: Dict[str, str] = {
     # --- Other parse rejections / meta --------------------------------------------------
     "ee_parse_new_format_op_text_rejected": "A new-format op whose text fails parse preconditions is rejected with a recorded reason.",
     "ee_parse_old_format_unparsed_meta_rejected": "An old-format clause that stays unparsed is rejected as meta with a recorded reason.",
+    "ee_parse_amendment_unrecognized_source_shape": "An amendment act whose source XML has non-empty <sisu> content but produces zero LegalOperation is recorded as a visible non-blocking residual (carrying the XML head + presence-of-paragrahv/sisuTekst/lisa/veaparandus markers) so the silent drop is no longer §1.8-invisible.",
 
     # --- Algtekst probe (source boundary diagnostics) ---------------------------------
     "ee_algtekst_probe_not_requested": "An algtekst (original-text) probe is skipped when not requested, recorded so the absence is explicit.",
