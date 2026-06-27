@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace as dc_replace
 from typing import Literal, Optional
 
 from lawvm.core.compile_result import SourcePathology, StrictProfile
@@ -24,6 +24,7 @@ from lawvm.core.occupancy import (
     validate_transition,
 )
 from lawvm.core.execution_authorization import ExecutionAuthorization
+from lawvm.core.observation_registry import make_bound_prefix_observation
 from lawvm.core.observed_write_audit import ObservedWriteAudit, build_observed_write_audit
 from lawvm.core.phase_result import Finding
 from lawvm.core.stage_result import (
@@ -36,7 +37,7 @@ from lawvm.core.stage_result import (
 )
 from lawvm.core.source_witness import DigestWitness, SourceWitness
 from lawvm.core.tree_ops import receipt_from_diff
-from lawvm.core.write_receipt import WriteReceipt
+from lawvm.core.write_receipt import DivergenceKind, WriteReceipt, _paths_consistent_under_prefix
 from lawvm.finland._receipt_path_norm import _normalize_receipt_path_for_comparison
 from lawvm.finland.apply_op_closure_sweeps import (
     gate_unknown_attestation_policy,
@@ -733,6 +734,59 @@ class WriteReceiptTotalityError(AssertionError):
     """
 
 
+def _classify_receipt_divergence_kind(
+    receipt: WriteReceipt,
+    *,
+    normalized_bound_path: Optional[tuple[tuple[str, str], ...]],
+    normalized_landed_path: Optional[tuple[tuple[str, str], ...]],
+) -> Optional[DivergenceKind]:
+    """Classify the receipt's bound→landed divergence (PR2).
+
+    The typed witness the §0 prime directive demands for any
+    authority-bearing relation: classify HOW the (canonical-form)
+    bound→landed relation was resolved so the receipt-boundary arm
+    (``_receipt_boundary_authorized``) reads the typed value instead of
+    recomputing the prefix relation from raw paths (§1.12 — no semantic
+    reach-back once a typed owner exists). Both bound/landed inputs MUST
+    already be in canonical form (``_normalize_receipt_path_for_comparison``
+    from ``finland._receipt_path_norm``); the caller (``_collect_op_write_receipt``)
+    canonicalizes both sides before constructing the receipt.
+
+    Classification (PR2 of ``BOUND_TARGET_PATH_NORMALIZATION_DESIGN`` §3):
+
+    * ``None``        — no resolver binding (``bound_target_path is None``);
+      the legacy production op-level receipt has no divergence to explain.
+    * EXACT_MATCH     — bound and landed paths reconcile to the same canonical
+      address. Today's receipt-boundary arm short-circuits on this.
+    * EXPLAINED_BY_RULE — bound != landed but the receipt carries a named
+      recovery/migration/fallback rule id (``divergence_explained`` via
+      ``named_rule_ids`` — the second arm of the property).
+    * PREFIX_OF_LANDED — bound is a strict prefix of landed (or vice versa);
+      benign per the receipt-prefix-equivalence rule
+      (``receipt_prefix_equivalence``, family ``presentation_cleanup``).
+      The CALLER emits the named ``APPLY.RECEIPT_BOUND_PREFIX_OF_LANDED``
+      observation row carrying the bound/landed pair as the audit witness,
+      so this authorization is OWNED, not silent.
+    * UNEXPLAINED_DIVERGENCE — bound and landed diverge in a non-prefix way;
+      the receipt's mutation-boundary divergence is unexplained (strict mode
+      blocks via the receipt-boundary arm refusing authorization).
+    """
+    if normalized_bound_path is None:
+        return None  # legacy op-level receipt — no resolver binding
+    if normalized_bound_path == normalized_landed_path:
+        return DivergenceKind.EXACT_MATCH
+    if receipt.named_rule_ids:
+        return DivergenceKind.EXPLAINED_BY_RULE
+    # Both sides already canonical: the prefix check passes them through as-is
+    # (no normalize_fn) so the helper trusts the typed input per §1.12.
+    if normalized_landed_path is not None and _paths_consistent_under_prefix(
+        normalized_bound_path,
+        normalized_landed_path,
+    ):
+        return DivergenceKind.PREFIX_OF_LANDED
+    return DivergenceKind.UNEXPLAINED_DIVERGENCE
+
+
 def _collect_op_write_receipt(
     prev_state: ReplayState,
     new_state: ReplayState,
@@ -823,6 +877,45 @@ def _collect_op_write_receipt(
         landed_primary_path=normalized_landed_path,
         source_anchor=_rop_source.source_anchor if _rop_source is not None else None,
     )
+    # PR2 receipt-prefix-equivalence (BOUND_TARGET_PATH_NORMALIZATION_DESIGN §3):
+    # classify the bound→landed relation's divergence_kind NOW that both sides
+    # are in canonical form; the receipt-boundary arm reads this typed witness
+    # instead of recomputing it (per §1.12 — no semantic reach-back from a
+    # lossier representation once a typed owner exists). The PREFIX_OF_LANDED
+    # case emits a named ``APPLY.RECEIPT_BOUND_PREFIX_OF_LANDED`` observation
+    # row carrying the bound/landed pair so the prefix authorization is OWNED
+    # (§0 prime directive: an *invisible* heuristic is forbidden), with the
+    # undeclared-touch cross-check (``no_boundary_violation`` in
+    # ``aggregate_replay_authority``) as the load-bearing independent witness.
+    divergence_kind = _classify_receipt_divergence_kind(
+        receipt,
+        normalized_bound_path=normalized_bound_path,
+        normalized_landed_path=normalized_landed_path,
+    )
+    if divergence_kind is not None:
+        receipt = dc_replace(receipt, divergence_kind=divergence_kind)
+    # The PREFIX_OF_LANDED kind implies both bound/landed are non-None (the
+    # classifier returns None when bound is None and PREFIX_OF_LANDED only
+    # when landed is non-None too — see ``_classify_receipt_divergence_kind``).
+    # The explicit None-checks below are NOT redundant at runtime — they
+    # surface the invariant to the type checker so the
+    # ``make_bound_prefix_observation`` call's Sequence[Tuple[str, str]]
+    # parameter type is sound.
+    if (
+        divergence_kind is DivergenceKind.PREFIX_OF_LANDED
+        and sinks.findings_out is not None
+        and normalized_bound_path is not None
+        and normalized_landed_path is not None
+    ):
+        sinks.findings_out.append(
+            make_bound_prefix_observation(
+                op_id=rop.op_id or "",
+                bound_path=normalized_bound_path,
+                landed_path=normalized_landed_path,
+                rule_ids=receipt.named_rule_ids,
+                source_statute=source_statute,
+            )
+        )
     audit = build_observed_write_audit(prev_state.ir, new_state.ir, receipt)
     sinks.write_receipts_out.append(receipt)
     sinks.write_audits_out.append(audit)

@@ -33,6 +33,7 @@ from typing import TYPE_CHECKING, Optional, Sequence
 
 from lawvm.core.execution_authorization import ExecutionAuthorization
 from lawvm.core.stage_result import AuthoritySurface, NEUTRAL_AUTHORITY
+from lawvm.core.write_receipt import DivergenceKind, _paths_consistent_under_prefix
 
 if TYPE_CHECKING:
     from lawvm.core.phase_result import Finding
@@ -131,34 +132,67 @@ def _receipt_boundary_authorized(receipt: "WriteReceipt") -> bool:
     apply write with no resolver binding) has no divergence to explain and is
     authorized by absence of a binding. A receipt that bound a target authorizes
     iff its bound→landed divergence is explained (``divergence_explained``: bound
-    == landed, or a named recovery/migration/fallback rule). This is the exact
-    condition the #3 structural mutation-boundary residual fires on.
+    == landed, or a named recovery/migration/fallback rule), OR the divergence is
+    a strict prefix-of relation (PR2 receipt-prefix-equivalence). This is the
+    exact condition the #3 structural mutation-boundary residual fires on.
 
-    HONESTY NOTE (the receipt arm is NOT yet load-bearing in production): the ONLY
-    producer that reaches the aggregated ``signals.write_receipts`` sink today is
-    the op-level ``apply_resolved_op._collect_op_write_receipt``, which hardcodes
-    ``bound_target_path=None``. The bound-target receipts that DO carry a resolver
-    binding are built inside ``apply_typed_dispatch`` / ``apply_structure_ops`` on
-    a LOCAL receipt list that is never threaded out to the aggregate. So in
-    production this branch is always ``bound_target_path is None`` → returns
-    ``True`` unconditionally, and the boundary check is carried by the blocking
-    apply-boundary finding (the ``no_boundary_violation`` conjunct in
-    :func:`aggregate_replay_authority`), NOT by this arm. The
-    ``divergence_explained`` logic below is correct and ready for the day the
-    bound-target receipts are threaded to the aggregated sink (deferred follow-up,
-    see :func:`aggregate_replay_authority`); until then it is exercised only by the
-    unit tests that construct bound receipts directly. We emit a one-shot debug log
-    if a bound receipt ever reaches this arm in production, which would signal the
-    threading has landed and the arm became live.
+    PR2 receipt-prefix-equivalence (``BOUND_TARGET_PATH_NORMALIZATION_DESIGN``
+    §3): the receipt-boundary arm recognizes that ``bound_target_path`` is a
+    strict prefix of ``landed_primary_path`` (Pattern B — bound=section-level,
+    landed=subsection-level) OR vice versa (Pattern A — bound=subsection-level,
+    landed=section-level). The relation is benign-by-relation-shape because the
+    undeclared-touch cross-check (``no_boundary_violation`` in
+    :func:`aggregate_replay_authority`) — the load-bearing independent witness
+    — complains when the op's declared mutation events do not cover the deeper
+    side's descendant keys. The receipt arm's prefix authorization is therefore
+    DESIGNED to defer to that cross-check: a dirty cross-check refuses
+    authorization at the aggregate level regardless of the prefix relation.
+
+    The receipt's typed ``divergence_kind`` (PR2) is computed at the receipt-
+    construction site (``apply_resolved_op._collect_op_write_receipt``) and
+    carries the witness; the named ``APPLY.RECEIPT_BOUND_PREFIX_OF_LANDED``
+    observation row carrying bound/landed is emitted at construction so the
+    prefix authorization is OWNED (per §0 prime directive: an *invisible*
+    heuristic is forbidden). For defense-in-depth — and to keep this arm
+    reachable from constructed receipts that pre-date PR2 threading — the
+    helper recomputes :func:`_paths_consistent_under_prefix` directly when the
+    receipt has no typed ``divergence_kind`` set (legacy / ``None``). Both bound
+    and landed paths arrive in canonical form (wrapper-strip + kind-alias
+    rewrite — see ``finland._receipt_path_norm._normalize_receipt_path_for_comparison``)
+    from the receipt-construction site; the prefix check passes them through
+    as-is so the helper trusts the typed input per §1.12.
+
+    HONESTY NOTE (the receipt arm is now LIVE in production): the op-level
+    ``_collect_op_write_receipt`` (the only producer reaching the aggregated
+    ``signals.write_receipts`` sink today) threads
+    ``bound_target_path = rop.resolved_target_address.path`` (canonicalized) —
+    PR1 closed the 29 Pattern-C kind-label-mismatch false-positives; PR2 (this
+    arm's prefix recognition) closes the 71+15 Pattern-A/B prefix-count
+    false-positives. A blocking structural residual still fires when the
+    undeclared-touch cross-check (the ``no_boundary_violation`` conjunct of
+    :func:`aggregate_replay_authority`) is dirty — that is the load-bearing
+    independent witness for the prefix relation's benignity.
     """
     if receipt.bound_target_path is None:
         return True
-    logger.debug(
-        "apply replay authority: receipt %r carried a bound target to the "
-        "aggregated sink; the receipt boundary arm is now live (threading landed)",
-        receipt.op_id,
-    )
-    return receipt.divergence_explained
+    # PR2 — typed fast path: the receipt-construction site already classified
+    # the relation (PREFIX_OF_LANDED, EXACT_MATCH, EXPLAINED_BY_RULE,
+    # UNEXPLAINED_DIVERGENCE). Trust the typed owner (§1.12 — no semantic
+    # reach-back); fall through to the legacy recomputation for pre-PR2
+    # constructed receipts (``divergence_kind is None`` — defense in depth).
+    if receipt.divergence_kind is DivergenceKind.PREFIX_OF_LANDED:
+        return True
+    if receipt.divergence_explained:
+        return True
+    # Legacy reach-back (defense in depth): reconstruct the prefix relation
+    # when the typed witness was not set at construction. The bound/landed
+    # paths on the receipt are ALREADY in canonical form; the helper passes
+    # them through without re-normalizing.
+    bound = receipt.bound_target_path
+    landed = receipt.landed_primary_path
+    if bound is not None and landed is not None and _paths_consistent_under_prefix(bound, landed):
+        return True
+    return False
 
 
 class ObservationPromotedToAuthorityError(AssertionError):
