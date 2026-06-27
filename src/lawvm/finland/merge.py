@@ -2270,11 +2270,17 @@ def _merge_sparse_alakohta_replace_ir(
     if anchor is None:
         return None
 
-    sparse_letters: List[IRNode] = [
+    anchor_sparse_letters: List[IRNode] = [
         c
         for c in anchor.children
         if c.kind is IRNodeKind.SUBPARAGRAPH and c.label and re.fullmatch(r"[a-z]", normalized_label_key(c.label))
     ]
+    if anchor_sparse_letters and not any(_is_omission_ir(c) for c in anchor.children):
+        labels = [normalized_label_key(c.label) for c in anchor_sparse_letters]
+        prefix_labels = [chr(ord("a") + idx) for idx in range(len(labels))]
+        if len(labels) >= 2 and labels == prefix_labels:
+            return None
+    sparse_letters: List[IRNode] = list(anchor_sparse_letters)
     if not sparse_letters:
         sparse_letters = [
             c

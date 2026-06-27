@@ -12559,6 +12559,201 @@ class TestApplyItemReplace:
         assert "a" in sp_labels, "pure-letter subparagraph 'a' must not be stripped"
         assert "b" in sp_labels, "pure-letter subparagraph 'b' must not be stripped"
 
+    def test_replace_full_item_payload_retires_stale_nested_subparagraph_tail(self) -> None:
+        # Provenance: 2013/588 §3 / 2025/933. A complete REPLACE of kohta 5
+        # carries nested subparagraphs a-c. The prior 2025/201 version had a-d;
+        # stale d must not be preserved by the sparse alakohta merge lane.
+        master_para5 = IRNode(
+            kind=IRNodeKind.PARAGRAPH,
+            label="5",
+            children=(
+                IRNode(kind=IRNodeKind.INTRO, text="old item five:"),
+                IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="a", children=(IRNode(kind=IRNodeKind.CONTENT, text="old a"),)),
+                IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="b", children=(IRNode(kind=IRNodeKind.CONTENT, text="old b"),)),
+                IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="c", children=(IRNode(kind=IRNodeKind.CONTENT, text="old c"),)),
+                IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="d", children=(IRNode(kind=IRNodeKind.CONTENT, text="stale d"),)),
+            ),
+        )
+        sec = _sec(
+            "3",
+            _sub(
+                "1",
+                _para("4", "item four"),
+                master_para5,
+                _para("5a", "sibling item 5a"),
+            ),
+        )
+        state = _make_state(_body(sec))
+        sec_path = [("section", "3")]
+        amend_para5 = IRNode(
+            kind=IRNodeKind.PARAGRAPH,
+            label="5",
+            children=(
+                IRNode(kind=IRNodeKind.INTRO, text="new item five:"),
+                IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="a", children=(IRNode(kind=IRNodeKind.CONTENT, text="new a"),)),
+                IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="b", children=(IRNode(kind=IRNodeKind.CONTENT, text="new b"),)),
+                IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="c", children=(IRNode(kind=IRNodeKind.CONTENT, text="new c"),)),
+            ),
+        )
+        amend_sub = _sub("1", amend_para5)
+        muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
+        subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+        pathologies: list[SourcePathology] = []
+        op = _op(op_type=OpType.REPLACE, target_section="3", target_paragraph=1, target_item="5")
+
+        result = _apply_item_replace(
+            state,
+            op,
+            sec_path,
+            sec,
+            subsecs,
+            amend_sub,
+            muutos_ir,
+            "3 § 1 mom 5 k",
+            source_pathologies_out=pathologies,
+        )
+        result = _modified(state, result)
+
+        new_sec = next(c for c in result.ir.children if c.kind == IRNodeKind.SECTION)
+        new_sub = next(c for c in new_sec.children if c.kind == IRNodeKind.SUBSECTION)
+        new_para5 = next(c for c in new_sub.children if c.kind == IRNodeKind.PARAGRAPH and c.label == "5")
+        labels = [c.label for c in new_para5.children if c.kind == IRNodeKind.SUBPARAGRAPH]
+
+        assert labels == ["a", "b", "c"]
+        assert "stale d" not in irnode_to_text(new_para5)
+        assert any(c.kind == IRNodeKind.PARAGRAPH and c.label == "5a" for c in new_sub.children)
+        assert pathologies == []
+
+    def test_replace_omission_marked_item_payload_preserves_unstated_subparagraphs(self) -> None:
+        # Provenance: 2000/1106 §1 / 2004/1265. The source replaces item 2
+        # subparagraphs a, b, c, e, f, g, h and marks the skipped slots with
+        # omission nodes, so d and i are source-owned preserved tail, not stale.
+        master_para2 = IRNode(
+            kind=IRNodeKind.PARAGRAPH,
+            label="2",
+            children=(
+                IRNode(kind=IRNodeKind.INTRO, text="old item two:"),
+                *(
+                    IRNode(
+                        kind=IRNodeKind.SUBPARAGRAPH,
+                        label=label,
+                        children=(IRNode(kind=IRNodeKind.CONTENT, text=f"old {label}"),),
+                    )
+                    for label in ("a", "b", "c", "d", "e", "f", "g", "h", "i")
+                ),
+            ),
+        )
+        sec = _sec("1", _sub("1", _para("1", "item one"), master_para2))
+        state = _make_state(_body(sec))
+        sec_path = [("section", "1")]
+        amend_para2 = IRNode(
+            kind=IRNodeKind.PARAGRAPH,
+            label="2",
+            children=(
+                IRNode(kind=IRNodeKind.INTRO, text="new item two:"),
+                IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="a", children=(IRNode(kind=IRNodeKind.CONTENT, text="new a"),)),
+                IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="b", children=(IRNode(kind=IRNodeKind.CONTENT, text="new b"),)),
+                IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="c", children=(IRNode(kind=IRNodeKind.CONTENT, text="new c"),)),
+                IRNode(kind=IRNodeKind.OMISSION),
+                IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="e", children=(IRNode(kind=IRNodeKind.CONTENT, text="new e"),)),
+                IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="f", children=(IRNode(kind=IRNodeKind.CONTENT, text="new f"),)),
+                IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="g", children=(IRNode(kind=IRNodeKind.CONTENT, text="new g"),)),
+                IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="h", children=(IRNode(kind=IRNodeKind.CONTENT, text="new h"),)),
+                IRNode(kind=IRNodeKind.OMISSION),
+            ),
+        )
+        amend_sub = _sub("1", amend_para2)
+        muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
+        subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+        pathologies: list[SourcePathology] = []
+        op = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=1, target_item="2")
+
+        result = _apply_item_replace(
+            state,
+            op,
+            sec_path,
+            sec,
+            subsecs,
+            amend_sub,
+            muutos_ir,
+            "1 § 1 mom 2 k",
+            source_pathologies_out=pathologies,
+        )
+        result = _modified(state, result)
+
+        new_sec = next(c for c in result.ir.children if c.kind == IRNodeKind.SECTION)
+        new_sub = next(c for c in new_sec.children if c.kind == IRNodeKind.SUBSECTION)
+        new_para2 = next(c for c in new_sub.children if c.kind == IRNodeKind.PARAGRAPH and c.label == "2")
+        subitems = {
+            c.label: irnode_to_text(c)
+            for c in new_para2.children
+            if c.kind == IRNodeKind.SUBPARAGRAPH and c.label
+        }
+
+        assert list(subitems) == ["a", "b", "c", "d", "e", "f", "g", "h", "i"]
+        assert subitems["a"].endswith("new a")
+        assert subitems["d"].endswith("old d")
+        assert subitems["h"].endswith("new h")
+        assert subitems["i"].endswith("old i")
+        assert [p.detail["recovery_kind"] for p in pathologies] == ["sparse_alakohta_replace_merge"]
+
+    def test_replace_sparse_nested_non_prefix_subparagraph_payload_preserves_unstated_tail(self) -> None:
+        master_para2 = IRNode(
+            kind=IRNodeKind.PARAGRAPH,
+            label="2",
+            children=(
+                IRNode(kind=IRNodeKind.INTRO, text="old item two:"),
+                IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="a", children=(IRNode(kind=IRNodeKind.CONTENT, text="old a"),)),
+                IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="b", children=(IRNode(kind=IRNodeKind.CONTENT, text="old b"),)),
+                IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="c", children=(IRNode(kind=IRNodeKind.CONTENT, text="old c"),)),
+                IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="d", children=(IRNode(kind=IRNodeKind.CONTENT, text="old d"),)),
+            ),
+        )
+        sec = _sec("1", _sub("1", master_para2))
+        state = _make_state(_body(sec))
+        sec_path = [("section", "1")]
+        amend_para2 = IRNode(
+            kind=IRNodeKind.PARAGRAPH,
+            label="2",
+            children=(
+                IRNode(kind=IRNodeKind.INTRO, text="new item two:"),
+                IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="c", children=(IRNode(kind=IRNodeKind.CONTENT, text="new c"),)),
+            ),
+        )
+        amend_sub = _sub("1", amend_para2)
+        muutos_ir = IRNode(kind=IRNodeKind.SECTION, children=(amend_sub,))
+        subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+        pathologies: list[SourcePathology] = []
+        op = _op(op_type=OpType.REPLACE, target_section="1", target_paragraph=1, target_item="2")
+
+        result = _apply_item_replace(
+            state,
+            op,
+            sec_path,
+            sec,
+            subsecs,
+            amend_sub,
+            muutos_ir,
+            "1 § 1 mom 2 k",
+            source_pathologies_out=pathologies,
+        )
+        result = _modified(state, result)
+
+        new_sec = next(c for c in result.ir.children if c.kind == IRNodeKind.SECTION)
+        new_sub = next(c for c in new_sec.children if c.kind == IRNodeKind.SUBSECTION)
+        new_para2 = next(c for c in new_sub.children if c.kind == IRNodeKind.PARAGRAPH and c.label == "2")
+        subitems = {
+            c.label: irnode_to_text(c)
+            for c in new_para2.children
+            if c.kind == IRNodeKind.SUBPARAGRAPH and c.label
+        }
+
+        assert list(subitems) == ["a", "b", "c", "d"]
+        assert subitems["a"].endswith("old a")
+        assert subitems["c"].endswith("new c")
+        assert subitems["d"].endswith("old d")
+        assert [p.detail["recovery_kind"] for p in pathologies] == ["sparse_alakohta_replace_merge"]
+
     def test_replace_compound_item_target_updates_only_named_subparagraph(self):
         master_para2 = IRNode(
             kind=IRNodeKind.PARAGRAPH,
