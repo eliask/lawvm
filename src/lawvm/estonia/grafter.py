@@ -2309,24 +2309,52 @@ def parse_ee_amendment_ops(
                                 "source_new_text": payload.attrs.get("source_new_text") or rewrite.new_surface,
                             },
                         )
-                        updated_op = replace(
-                            op,
-                            payload=updated_payload,
-                            text_patch=_typed_text_replace_patch(old_surface, new_surface),
-                            provenance_tags=(
-                                *op.provenance_tags,
-                                *(
-                                    ("ee_source_local_global_text_replace_selector_composition",)
-                                    if old_surface != rewrite.old_surface or new_surface != rewrite.new_surface
-                                    else ()
+                        # Fail-loud (AGENTS §1.10): if the composed
+                        # old_surface collapsed to empty (an upstream
+                        # rewrite-spec carried an empty old_surface but
+                        # non-empty new_surface), emitting a typed
+                        # ``TextSelector`` would raise ``ValueError:
+                        # match_text must be non-empty`` and bury the
+                        # triage detail in an exception. Emit a typed
+                        # non-blocking adjudication with the source
+                        # snippet so the gap is visible on the bench /
+                        # residual inventory; skip the text_patch
+                        # emission so the rest of the op proceeds with
+                        # the payload rewrite intact.
+                        if not old_surface:
+                            _emit_compose_global_text_replace_empty_old_surface_adjudication(
+                                adjudications_out,
+                                op=op,
+                                rewrite_old_surface=rewrite.old_surface,
+                                new_surface=new_surface,
+                            )
+                            updated_op = replace(
+                                op,
+                                payload=updated_payload,
+                                provenance_tags=(
+                                    *op.provenance_tags,
+                                    (_EE_COMPOSE_GLOBAL_TEXT_REPLACE_EMPTY_OLD_SURFACE_RULE,),
                                 ),
-                                *(
-                                    ("ee_source_local_global_text_replace_selector_composition_skipped_for_excluded_target",)
-                                    if selector_composition_skipped
-                                    else ()
+                            )
+                        else:
+                            updated_op = replace(
+                                op,
+                                payload=updated_payload,
+                                text_patch=_typed_text_replace_patch(old_surface, new_surface),
+                                provenance_tags=(
+                                    *op.provenance_tags,
+                                    *(
+                                        ("ee_source_local_global_text_replace_selector_composition",)
+                                        if old_surface != rewrite.old_surface or new_surface != rewrite.new_surface
+                                        else ()
+                                    ),
+                                    *(
+                                        ("ee_source_local_global_text_replace_selector_composition_skipped_for_excluded_target",)
+                                        if selector_composition_skipped
+                                        else ()
+                                    ),
                                 ),
-                            ),
-                        )
+                            )
                         payload = updated_payload
             if payload is not None and action in {"replace", "insert"}:
                 updated_payload = payload
@@ -5283,6 +5311,57 @@ _EE_INSERT_AFTER_TERMINAL_PUNCTUATION_RULE = "ee_insert_after_terminal_punctuati
 _EE_PARSE_AMENDMENT_UNRECOGNIZED_SOURCE_SHAPE_RULE = (
     "ee_parse_amendment_unrecognized_source_shape"
 )
+_EE_COMPOSE_GLOBAL_TEXT_REPLACE_EMPTY_OLD_SURFACE_RULE = (
+    "ee_compose_global_text_replace_empty_old_surface"
+)
+
+
+def _emit_compose_global_text_replace_empty_old_surface_adjudication(
+    adjudications_out: Optional[list[CompileAdjudication]],
+    *,
+    op: LegalOperation,
+    rewrite_old_surface: str,
+    new_surface: str,
+) -> None:
+    """Fail-loud (AGENTS §1.10): the composite-selector normalization in
+    ``_compose_global_text_replaces_into_later_payloads`` collapsed an op's
+    ``rewrite.old_surface`` to an empty string. Emitting an empty
+    ``TextSelector.match_text`` would raise an opaque ``ValueError`` in
+    ``TextSelector.__post_init__`` and bury the triage detail; instead,
+    emit a typed non-blocking adjudication with the source op_id + the
+    original old_surface + the composed new_surface so the gap is
+    diagnosable on the bench / residual inventory surface. Skip the
+    composite ``text_patch`` emission (the rest of the op's payload
+    rewrite is preserved intact).
+    """
+    if adjudications_out is None:
+        return
+    adjudications_out.append(
+        CompileAdjudication(
+            kind=_EE_COMPOSE_GLOBAL_TEXT_REPLACE_EMPTY_OLD_SURFACE_RULE,
+            message=(
+                "EE composer: rewrite.old_surface collapsed to empty during "
+                "composite selector normalization; text_patch skipped to avoid "
+                "TextSelector(match_text='') ValueError."
+            ),
+            source_statute=op.source.statute_id if op.source else "",
+            op_id=op.op_id,
+            blocking=False,
+            phase="parse",
+            detail=diagnostic_detail(
+                rule_id=_EE_COMPOSE_GLOBAL_TEXT_REPLACE_EMPTY_OLD_SURFACE_RULE,
+                phase="parse",
+                family="source_pathology",
+                blocking=False,
+                strict_disposition="record",
+                quirks_disposition=QuirksDisposition.RECORD,
+                reason="composite_selector_normalization_collapsed_old_surface_to_empty",
+                op_id=op.op_id,
+                original_old_surface=rewrite_old_surface[:400],
+                composed_new_surface=new_surface[:400],
+            ),
+        )
+    )
 
 
 def _emit_unrecognized_source_shape_if_zero_ops(

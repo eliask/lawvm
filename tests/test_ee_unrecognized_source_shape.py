@@ -153,3 +153,63 @@ def test_parse_ee_amendment_ops_receipt_carries_correct_shape_markers_per_varian
             assert markers[k] is v, (
                 f"Variant idx={idx} {k}: expected {v}, got {markers[k]}"
             )
+
+
+_EMPTY_OLD_SURFACE_RULE_ID = "ee_compose_global_text_replace_empty_old_surface"
+
+
+def test_parse_ee_amendment_ops_emits_empty_old_surface_receipt_on_corpus_witness() -> None:
+    """Corpus-witness regression for
+    ``ee_compose_global_text_replace_empty_old_surface``:
+
+    Drive the EE archive-sourced amendment ``105072023001`` through
+    ``parse_ee_amendment_ops`` and assert:
+
+    - No ``ValueError: TextSelector.match_text must be non-empty`` is
+      raised (this was the pre-fix crash path when
+      ``_compose_global_text_replaces_into_later_payloads`` collapsed
+      ``rewrite.old_surface`` to empty).
+    - A typed
+      ``ee_compose_global_text_replace_empty_old_surface``
+      adjudication is emitted on the parse-phase adjudication stream,
+      carrying the op_id + original old_surface + composed new_surface
+      per AGENTS §1.10.
+
+    Wiiness identification: 2026-06-27 broad corpus sweep found 128
+    amendments firing this receipt (notes_internal/
+    EE_UNLOWERED_OPS_SWEEP_20260627.md, Stream 1 side-tracking).
+
+    Skips gracefully if the EE archive isn't reachable so the test is
+    not blocking on developer-local envs without RT archive.
+    """
+    from pathlib import Path
+
+    from lawvm.estonia.fetch import fetch_rt_xml, open_rt_archive
+    from lawvm.estonia.fetch import _DEFAULT_RT_DB as EE_DEFAULT_DB_PATH
+
+    if not Path(EE_DEFAULT_DB_PATH).exists():
+        import pytest
+
+        pytest.skip(f"EE archive not reachable: {EE_DEFAULT_DB_PATH}")
+
+    archive = open_rt_archive(readonly=True)
+    xml_bytes = fetch_rt_xml("105072023001", archive)
+    adj: list[CompileAdjudication] = []
+    # Must NOT raise ValueError("TextSelector.match_text must be non-empty").
+    parse_ee_amendment_ops(xml_bytes, source_id="ee/105072023001", adjudications_out=adj)
+
+    matches = [a for a in adj if a.kind == _EMPTY_OLD_SURFACE_RULE_ID]
+    assert matches, (
+        "Expected ee_compose_global_text_replace_empty_old_surface receipt "
+        "to fire on EE archive witness 105072023001. Either the witness no "
+        "longer triggers the condition or the receipt was removed."
+    )
+    receipt = matches[0]
+    assert receipt.blocking is False
+    assert receipt.phase == "parse"
+    assert receipt.detail.get("rule_id") == _EMPTY_OLD_SURFACE_RULE_ID
+    assert receipt.detail.get("family") == "source_pathology"
+    assert receipt.detail.get("blocking") is False
+    assert "original_old_surface" in receipt.detail
+    assert "composed_new_surface" in receipt.detail
+    assert receipt.op_id, "Receipt should carry a non-empty op_id for triage"
