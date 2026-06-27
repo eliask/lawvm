@@ -32,6 +32,12 @@ from lawvm.core import tree_ops
 from lawvm.core.adjudication_evidence import adjudication_finding_evidence_rows
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.sweden.grafter import SESourceRecord, parse_se_source_record, parse_se_statute
+from lawvm.sweden.se_agreement_residuals import se_replay_agreement_residuals
+from lawvm.sweden.se_coverage_universe import se_coverage_universe_entry, se_coverage_universe_root
+from lawvm.sweden.se_overwrite_event_ledger import (
+    SEOverwriteEvent,
+    se_store_with_overwrite_event,
+)
 from lawvm.sweden.grafter import (
     apply_se_ops,
     build_se_official_base_statute,
@@ -1169,6 +1175,7 @@ def fetch_se_official_artifacts(
     force_reextract: bool = False,
     pdf_url_override: str | None = None,
     diagnostics_out: list[dict[str, Any]] | None = None,
+    overwrite_events_out: list[SEOverwriteEvent] | None = None,
 ) -> Optional[SEOfficialArtifacts]:
     """Fetch Sweden official doc page + PDF and archive extracted text.
 
@@ -1327,8 +1334,30 @@ def fetch_se_official_artifacts(
     elif existing_text is None or force_reextract or existing_cleaned is None:
         pdf_text = se_pdf_bytes_to_text(pdf_bytes)
         if pdf_text:
-            archive.store(text_url, pdf_text.encode("utf-8"), storage_class="text")
-            archive.store(cleaned_text_url, clean_se_pdf_text(pdf_text).encode("utf-8"), storage_class="text")
+            # KNOW-01 monotonicity wrap: the force_reextract path overwrites
+            # prior text/cleaned bytes (the cached source-footing mutates).
+            # Pass through se_store_with_overwrite_event so the prior bytes'
+            # sha256 lands in the caller-passed overwrite_events_out ledger
+            # (when provided); the wrapper transparently stores + emits.
+            source_trigger = "force_reextract" if force_reextract else "manual_reingest"
+            se_store_with_overwrite_event(
+                archive,
+                text_url,
+                pdf_text.encode("utf-8"),
+                sfs_id=sfs_id,
+                source_trigger=source_trigger,
+                events_out=overwrite_events_out,
+                storage_class="text",
+            )
+            se_store_with_overwrite_event(
+                archive,
+                cleaned_text_url,
+                clean_se_pdf_text(pdf_text).encode("utf-8"),
+                sfs_id=sfs_id,
+                source_trigger=source_trigger,
+                events_out=overwrite_events_out,
+                storage_class="text",
+            )
         else:
             _record_se_official_artifacts_diagnostic(
                 diagnostics_out,
@@ -1347,9 +1376,22 @@ def fetch_se_official_artifacts(
             cleaned_bytes.decode("utf-8", errors="replace"),
             sfs_id=sfs_id,
         )
-        archive.store(
+        # KNOW-01 wrap (downstream-derived): act_json is derived from
+        # cleaned_bytes (which force_reextract just (re-)stored), so a re-extract
+        # of the cleaned text also re-store()s the cached parsed act text — and
+        # if a prior act_json occupies the locator it is overwritten in place.
+        # The wrapper mirrors the force_reextract branch above: when force_reextract
+        # did NOT fire (e.g. existing_cleaned was None triggering re-derivation
+        # without force_reextract), still scribe the overwrite with the
+        # "manual_reingest" trigger so the audit is complete — the prior content
+        # is recorded either way.
+        se_store_with_overwrite_event(
+            archive,
             act_json_url,
             _json_bytes(se_official_act_text_to_dict(act_text)),
+            sfs_id=sfs_id,
+            source_trigger="force_reextract" if force_reextract else "manual_reingest",
+            events_out=overwrite_events_out,
             storage_class="json",
         )
         if not act_text.is_amending_act:
@@ -1368,9 +1410,16 @@ def fetch_se_official_artifacts(
                     exception_type=type(exc).__name__,
                 )
             else:
-                archive.store(
+                # KNOW-01 wrap (downstream-derived): the base_ir locator is
+                # written from the act text just (re-)derived above. Same
+                # force-reextract / manual-reingest trigger semantics as act_json.
+                se_store_with_overwrite_event(
+                    archive,
                     se_official_base_ir_locator(sfs_id),
                     _json_bytes(base_statute.to_jsonable_dict()),
+                    sfs_id=sfs_id,
+                    source_trigger="force_reextract" if force_reextract else "manual_reingest",
+                    events_out=overwrite_events_out,
                     storage_class="json",
                 )
 
@@ -3572,6 +3621,24 @@ def check_se_official_replay(
         "adjudications": [asdict(item) for item in replay_adjudications],
         "evidence": {
             "finding_rows": [row.to_dict() for row in finding_rows],
+            # Typed evidence-plane residuals (§2.10 projection re-derivable
+            # from a committed dossier). Each replay row's classification is
+            # projected to a content-addressed AgreementResidual carrying
+            # family + status + missing_proofs; the residual_id is stable
+            # across reruns so a missing or surplus residual between two
+            # runs becomes detectable. The CLI/aggregate dict above is the
+            # projection; this list IS the evidence-plane dossier it is
+            # re-derived FROM.
+            "agreement_residuals": [
+                r.to_dict()
+                for r in se_replay_agreement_residuals(
+                    {
+                        "amending_sfs_id": amending_sfs_id,
+                        "base_sfs_id": resolved_base_sfs_id,
+                        "rows": rows,
+                    }
+                )
+            ],
         },
         "rows": rows,
     }
@@ -3779,9 +3846,19 @@ def aggregate_se_official_coverage(
     bucket_genuine_mismatch = 0
     bucket_unknown = 0
     error_examples: dict[str, list[str]] = {}
+    # Per-act typed entries for the committed universe root. Building one entry
+    # per scanned act so adding/dropping an act or flipping its outcome
+    # materially changes the root (pro-note §6 UniverseSpec — "no hidden
+    # universe": the omitted-act signal is detectable on a second run).
+    coverage_universe_entries: list[dict[str, Any]] = []
     for summary in act_summaries:
         outcome = str(summary.get("outcome") or "error")
         outcome_counts[outcome] = outcome_counts.get(outcome, 0) + 1
+        # Build the committed-entry fields BEFORE the outcome branch so a
+        # non-replay_ok act still contributes its (sfs_id, outcome, recovery_mode)
+        # to the universe — a missing/surplus act is detectable even when no
+        # bucket counts exist for it. Raises KeyError if outcome is non-empty
+        # and outside the closed set (se_coverage_universe_entry validates).
         if outcome == "replay_ok":
             total_targets += int(summary.get("target_count") or 0)
             total_matches += int(summary.get("match_count") or 0)
@@ -3799,6 +3876,18 @@ def aggregate_se_official_coverage(
             bucket = error_examples.setdefault(key, [])
             if len(bucket) < 5:
                 bucket.append(str(summary.get("amending_sfs_id") or ""))
+        coverage_universe_entries.append(
+            se_coverage_universe_entry(
+                str(summary.get("amending_sfs_id") or ""),
+                base_sfs_id=str(summary.get("base_sfs_id") or ""),
+                outcome=outcome,
+                bucket_genuine_match_count=int(summary.get("bucket_genuine_match_count") or 0),
+                bucket_oracle_version_mismatch_count=int(summary.get("bucket_oracle_version_mismatch_count") or 0),
+                bucket_genuine_mismatch_count=int(summary.get("bucket_genuine_mismatch_count") or 0),
+                bucket_unknown_count=int(summary.get("bucket_unknown_count") or 0),
+                recovery_mode=str(summary.get("recovery_mode") or ""),
+            )
+        )
 
     def _rate(numerator: int, denominator: int) -> float:
         return round(numerator / denominator, 4) if denominator else 0.0
@@ -3834,6 +3923,13 @@ def aggregate_se_official_coverage(
         },
         "classification_counts": dict(sorted(classification_counts.items())),
         "error_examples": {key: error_examples[key] for key in sorted(error_examples)},
+        # Committed content-addressed universe root over the per-act entries
+        # (pro-note §6 UniverseSpec). Adding/dropping an SFS id, or changing
+        # any per-act outcome/bucket, materially changes the root — so a
+        # missing or surplus scanned act is re-detectable on a subsequent
+        # run. The empty-scan case is a committed empty SetRoot (the v0
+        # "declares nothing" omission is committed to, not skipped).
+        "coverage_universe_root": se_coverage_universe_root(coverage_universe_entries),
     }
 
 
