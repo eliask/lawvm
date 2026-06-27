@@ -8,7 +8,8 @@ from typing import Any, NamedTuple, Protocol
 from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.addressing import _uk_kind_value
-from lawvm.uk_legislation.mutable_ir import UKMutableNode, uk_replace_children_cow
+from lawvm.uk_legislation.apply_rebuild import uk_replace_children_cow
+from lawvm.uk_legislation.mutable_ir import UKMutableNode
 from lawvm.uk_legislation.replay_records import (
     _append_uk_replay_adjudication,
     uk_replay_action_target_detail,

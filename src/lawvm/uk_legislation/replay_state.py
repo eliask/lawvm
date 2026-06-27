@@ -13,13 +13,15 @@ from lawvm.core.mutation_events import MutationEvent
 from lawvm.core.semantic_types import StructuralAction
 from lawvm.uk_legislation.addressing import _action_name
 from lawvm.uk_legislation.canonicalize import UKCanonicalNodeMatch
-from lawvm.uk_legislation.mutable_ir import (
-    UKMutableNode,
-    UKMutableStatute,
+from lawvm.uk_legislation.apply_rebuild import (
     uk_insert_child_sorted_cow,
     uk_insert_node_at_index_cow,
     uk_insert_node_sorted_cow,
     uk_replace_children_cow,
+)
+from lawvm.uk_legislation.mutable_ir import (
+    UKMutableNode,
+    UKMutableStatute,
 )
 
 _UK_TOP_SCOPED_EID_PREFIXES = frozenset(
