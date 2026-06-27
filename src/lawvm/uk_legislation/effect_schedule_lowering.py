@@ -18,6 +18,7 @@ from lawvm.uk_legislation.lowering_records import (
     _append_uk_effect_lowering_observation,
     _append_uk_effect_lowering_rejection,
 )
+from lawvm.uk_legislation.payload_conversion import _to_irnode
 from lawvm.uk_legislation.payload_identity import _synthesize_payload_descendant_eids
 
 from lawvm.uk_legislation.provenance_notes import (
@@ -508,8 +509,9 @@ def _try_lower_schedule_words_before_table_substitution(
         if node is None:
             return None
         # PR2 (audit XJUR-02 / AGENTS.md §2.3): no in-place mutation of the
-        # UKMutableNode returned by ``_parse_section``; build a new attrs dict
-        # and return a fresh node via ``dataclasses.replace``.
+        # IRNode returned by ``_parse_section`` (post-N3d-Sub-PR-A: that helper
+        # already builds ``IRNode`` directly); build a new attrs dict and return
+        # a fresh node via ``dataclasses.replace``.
         node = dc_replace(
             node,
             attrs={
@@ -525,7 +527,13 @@ def _try_lower_schedule_words_before_table_substitution(
             lowering_records_out=lowering_rejections_out,
             allow_payload_identity_synthesis=True,
         )
-        return node.to_irnode()
+        # ``_synthesize_payload_descendant_eids`` is still typed
+        # ``UKMutableNode -> UKMutableNode`` (Sub-PR B ratchet territory); post
+        # Wave N3d Sub-PR A the ``_parse_section`` input is ``IRNode``, so the
+        # function flows an ``IRNode`` through ``dc_replace`` at runtime. Route
+        # the return through ``_to_irnode`` for type-clean handoff (no-op at
+        # runtime when the underlying value is already ``IRNode``).
+        return _to_irnode(node)
 
     lowered_ops: list[LegalOperation] = []
     replace_payload = _build_payload_node(found[target_label], target_label)
