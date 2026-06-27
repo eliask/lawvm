@@ -367,30 +367,25 @@ def test_chain_replay_divergences_have_cross_plane_classifiability_intersections
     # this whitelist is extended (AGENTS §3.4 divergence work is family
     # discovery).
     KNOWN_CHAIN_ONLY = frozenset({
-        # Family-F: def-term content-difference (NOT case-touch). The
-        # carried tree's earliest archived snapshot carries
-        # ``def-para:Government Superannuation Fund Authority or Authority``
-        # (with the ``or Authority`` content suffix); the op targets
-        # ``def-para:Government Superannuation Fund Authority`` (no suffix).
-        # Family-D's strict §1.4 single-match enforcement returns False
-        # (content difference, not case-only); the insert fires; the
-        # carried-tree ends up with BOTH versions; the op-local divergence
-        # surfaces. The actual-replay dry-run's isolated before-tree vs
-        # oracle comparison PASSES (oracle_match=agrees) because the
-        # isolated before-tree's def-para matches the oracle's variant
-        # -- a chain-plane evolving-tree-drift find only.
-        ("act_public_1956_47", "nz-opw-81"),  # 'Government Superannuation Fund Authority'
-        ("act_public_1956_47", "nz-opw-82"),  # 'Government Superannuation Fund Authority board'
         # Family-E: duplicate-label prov:15 at same path. The on-or-after
         # oracle carries TWO prov:15 nodes at the SAME path
-        # ('part@DLM44688', 'prov:15') -- a §1.0 duplicate-label invariant
-        # anomaly. The chain's op-local divergence check refusess to pick
-        # one of two ambiguous candidates (single-match enforcement), so the
-        # divergence fires. The actual-replay's dry-run proof's isolated
-        # before-tree vs oracle comparison did not see the duplication --
-        # a chain-plane evolving-tree-drift find.
+        # ('part@DLM44688', 'prov:15') -- a §2.8 editorial-consolidation
+        # identity collision (base Juries Act 1981's real s.15 + amending
+        # act's s.15 "Amendment incorporated in the principal Act" editorially
+        # merged into the base act's XML as a separate <prov>). The chain's
+        # op-local divergence check refuses to pick one of two ambiguous
+        # candidates (single-match enforcement per §1.1), so the divergence
+        # fires. The actual-replay's dry-run proof's isolated before-tree vs
+        # oracle comparison did not see the duplication -- a chain-plane
+        # evolving-tree-drift find. Settled closed-as-frontier 2026-06-27.
         ("act_public_1981_23", "nz-opw-121"),
         ("act_public_1981_23", "nz-effect-candidate-124"),
+        # Family-F (act_public_1956_47 nz-opw-81/82) WAS on this whitelist
+        # but was CLOSED 2026-06-27 by the Family-F "or X" suffix stripping
+        # typed skip receipt (commit landed alongside this whitelist update).
+        # Those ops now SKIP (SKIP_INSERT_DEF_TERM_OR_SUFFIX_COLLISION)
+        # instead of diverging -- they no longer appear in the chain's
+        # divergence array, so they do NOT need to be on the whitelist.
     })
 
     works = [row["work_id"] for row in csv.DictReader(_SMOKE_CORPUS.open())]

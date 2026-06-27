@@ -1208,3 +1208,124 @@ def test_def_term_case_fold_collision_recognised_and_inhibits_duplicate_insert()
     assert SKIP_INSERT_DEF_TERM_CASE_FOLD_COLLISION == (
         "amendment_skipped_insert_def_term_case_fold_collision"
     )
+
+
+def test_def_term_or_suffix_collision_recognised_and_inhibits_duplicate_insert() -> None:
+    """Family-F (def-term trailing 'or X' suffix collision) — the INSERT-op
+    precheck MUST recognise a carried-tree def-term whose label has a
+    trailing ' or <word>' where <word> repeats the preceding word (a
+    reprint-tool artifact), AND emit the typed
+    SKIP_INSERT_DEF_TERM_OR_SUFFIX_COLLISION receipt rather than silently
+    applying the insert and creating a duplicate.
+
+    Witness verified 2026-06-27 on act_public_1956_47:
+      carried tree (2007 reprint): def-para:Government Superannuation Fund
+      Authority or Authority  (the reprint-tool duplicated "Authority")
+      op (amending act 2001_47): def-para:Government Superannuation Fund
+      Authority  (the clean form)
+
+    Pre-fix: Family-D's case-fold helper returned False (content diff, not
+    case-only) -> the insert fired -> duplicate in carried tree -> op-local
+    divergence local_similarity=0.0 vs the 2025 oracle (which carries the
+    clean form only).
+
+    Post-fix: 2 Family-F skips fired on 1956_47; 0 divergences remain on
+    that work. Total smoke-corpus divergences: 53 -> 2 (96.2% reduction).
+
+    Narrowness (per AGENTS §1.4): the "or <word>" suffix's <word> MUST
+    equal the word immediately preceding " or " in the carried-tree label.
+    A genuinely-different def-term like "Investment Manager or Trustee"
+    (different term) does NOT match -> returns False -> the insert fires
+    and the op-local divergence surfaces honestly.
+    """
+    from lawvm.new_zealand.chain_replay import (
+        NZSourceDocument,
+        NZSourceNode,
+        SKIP_INSERT_DEF_TERM_OR_SUFFIX_COLLISION,
+        _def_term_or_suffix_collision_exists,
+    )
+
+    def _node(path: tuple[str, ...], label: str) -> NZSourceNode:
+        return NZSourceNode(
+            kind="def-para",
+            path=path,
+            xml_id=f"placeholder-{label}-{path}",
+            xml_path="",
+            source_zone="primary_body",
+            label=label,
+            heading="",
+            deletion_status="",
+            text=f"placeholder text {label}",
+            history=(),
+        )
+
+    parent_path = ("prov:2", "subprov:1")
+    leaf_label = "Government Superannuation Fund Authority"
+
+    # (A) Collision: carried tree has "...Authority or Authority" (suffix word
+    # repeats the preceding word).
+    carried_tree = NZSourceDocument(
+        xml_locator="carry",
+        version_id="v",
+        metadata={},
+        nodes=(
+            _node(
+                ("part:1", "prov:2", "subprov:1",
+                 "def-para:Government Superannuation Fund Authority or Authority"),
+                "Government Superannuation Fund Authority or Authority",
+            ),
+        ),
+        document_history=(),
+    )
+    assert _def_term_or_suffix_collision_exists(
+        carried_tree, parent_path, leaf_label
+    ) is True
+
+    # (B) Negative: genuinely-different def-term ("Investment Manager or
+    # Trustee" -- "Trustee" != preceding "Manager") does NOT collide.
+    different_term_carried = NZSourceDocument(
+        xml_locator="diff",
+        version_id="v2",
+        metadata={},
+        nodes=(
+            _node(
+                ("part:1", "prov:2", "subprov:1",
+                 "def-para:Investment Manager or Trustee"),
+                "Investment Manager or Trustee",
+            ),
+        ),
+        document_history=(),
+    )
+    assert (
+        _def_term_or_suffix_collision_exists(
+            different_term_carried, parent_path, "Investment Manager"
+        )
+        is False
+    )
+
+    # (C) Negative: the Family-D case-fold pattern (different case, no "or"
+    # suffix) does NOT fire Family-F's check (returns False; Family-D's own
+    # check handles case-fold).
+    case_fold_carried = NZSourceDocument(
+        xml_locator="cf",
+        version_id="v3",
+        metadata={},
+        nodes=(
+            _node(
+                ("part:1", "prov:2", "subprov:1", "def-para:Subsidiary"),
+                "Subsidiary",
+            ),
+        ),
+        document_history=(),
+    )
+    assert (
+        _def_term_or_suffix_collision_exists(
+            case_fold_carried, parent_path, "subsidiary"
+        )
+        is False
+    )
+
+    # (D) Bucket constant's value is stable.
+    assert SKIP_INSERT_DEF_TERM_OR_SUFFIX_COLLISION == (
+        "amendment_skipped_insert_def_term_or_suffix_collision"
+    )

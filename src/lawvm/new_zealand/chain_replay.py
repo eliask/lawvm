@@ -162,6 +162,22 @@ SKIP_INSERT_ANCHOR_UNRESOLVED = "amendment_skipped_insert_anchor_unresolved"
 SKIP_INSERT_DEF_TERM_CASE_FOLD_COLLISION = (
     "amendment_skipped_insert_def_term_case_fold_collision"
 )
+# Family-F closed 2026-06-27: def-term "or X" suffix collision -- the carried
+# tree's earliest archived reprint carries a def-term whose text has a
+# trailing "or <word>" suffix (a reprint-tool artifact where the reprint
+# duplicated the preceding word after "or" inside the <def-term> text).
+# The op's amending-act XML uses the clean form without the suffix. The
+# literal path lookup misses -> the insert fires -> the carried tree ends
+# up with BOTH variants -> divergence fires at local_similarity=0.0.
+#
+# The fix: when the op's leaf_label is a clean prefix of a carried-tree
+# def-term's label, and the carried-tree label's trailing " or <word>"
+# suffix matches the preceding word, emit the typed skip receipt per
+# AGENTS §1.4 (recognising the suffix as a reprint artifact, not a
+# genuine def-term-content difference).
+SKIP_INSERT_DEF_TERM_OR_SUFFIX_COLLISION = (
+    "amendment_skipped_insert_def_term_or_suffix_collision"
+)
 
 _SKIP_RULE_ID: dict[str, str] = {
     SKIP_UNEXTRACTABLE: "nz_chain_replay_op_unextractable_no_source_path",
@@ -180,6 +196,9 @@ _SKIP_RULE_ID: dict[str, str] = {
     SKIP_INSERT_ANCHOR_UNRESOLVED: "nz_chain_replay_insert_anchor_or_parent_not_unique_in_evolving_tree",
     SKIP_INSERT_DEF_TERM_CASE_FOLD_COLLISION: (
         "nz_chain_replay_insert_def_term_case_fold_collision_recognized"
+    ),
+    SKIP_INSERT_DEF_TERM_OR_SUFFIX_COLLISION: (
+        "nz_chain_replay_insert_def_term_or_suffix_collision_recognized"
     ),
 }
 
@@ -1067,6 +1086,81 @@ def _def_term_case_fold_collision_exists(
     return hits == 1
 
 
+def _def_term_or_suffix_collision_exists(
+    document: NZSourceDocument,
+    parent_source_path: tuple[str, ...],
+    leaf_label: str,
+) -> bool:
+    """Family-F probe (AGENTS §2.1 + §1.4): detect a def-term trailing-"or X"
+    suffix collision where the carried tree's reprint-format def-term label
+    has a trailing " or <word>" whose <word> repeats the preceding word, and
+    stripping that suffix yields exactly the op's ``leaf_label``.
+
+    The reprint artifact: the 2007-09-03 archived reprint places the entire
+    def-term text inside a single ``<def-term>`` element, sometimes appending
+    " or <word>" where <word> duplicates the word preceding "or" (e.g.,
+    "Government Superannuation Fund Authority or Authority"; "Government
+    Superannuation Fund Authority board or board"). The amending act and the
+    latest oracle both use the clean form without the suffix.
+
+    Guard (per AGENTS §1.4 no silent sibling absorption by label-text alone):
+      * The " or <word>" suffix's <word> MUST equal the word immediately
+        preceding " or " in the original carried-tree label (the reprint-tool
+        duplicate-word pattern). A genuinely-different def-term like
+        "Investment Manager or Trustee" does NOT match (<word>="Trustee" ≠
+        preceding "Manager") -> no collision.
+      * Stripping the suffix yields the op's ``leaf_label`` (exact match,
+        case-sensitive — the reprint does not change the stem case).
+      * Single-match enforcement (per §1.1): zero or multiple matches return
+        False; the insert fires and the op-local divergence surfaces honestly.
+
+    Witnesses verified 2026-06-27:
+      * act_public_1956_47 nz-opw-81 ('Government Superannuation Fund Authority'
+        vs carried-tree '... Authority or Authority')
+      * act_public_1956_47 nz-opw-82 ('Government Superannuation Fund Authority
+        board' vs carried-tree '... board or board')
+    """
+    if not leaf_label:
+        return False
+    leaf_normalised = " ".join(leaf_label.split())
+    hits = 0
+    for node in document.nodes:
+        if node.kind != "def-para":
+            continue
+        node_parent = node.path[:-1]
+        if node_parent != parent_source_path and not (
+            len(node_parent) == len(parent_source_path) + 1
+            and _oracle_target_head_is_part_wrapper(node_parent[0])
+            and node_parent[1:] == parent_source_path
+        ):
+            continue
+        node_label = node.label or ""
+        if node_label == leaf_label:
+            # Exact-match is the already-present gate's territory.
+            continue
+        tokenised = " ".join(node_label.split())
+        # Check if the carried-tree label has a trailing " or <word>" whose
+        # <word> repeats the preceding word. E.g., "... Authority or Authority"
+        # -> strip " or Authority" -> "... Authority" == leaf_label when the
+        # preceding word IS "Authority".
+        idx = tokenised.rfind(" or ")
+        if idx <= 0:
+            continue
+        suffix_word = tokenised[idx + 4:].strip()
+        stem = tokenised[:idx]
+        # stem's LAST word must equal suffix_word (the reprint-tool duplicate
+        # pattern).
+        stem_words = stem.rsplit(" ", 1)
+        if len(stem_words) < 2:
+            continue
+        preceding_word = stem_words[-1]
+        if suffix_word != preceding_word or not suffix_word:
+            continue
+        if stem == leaf_normalised:
+            hits += 1
+    return hits == 1
+
+
 def _apply_insert_op(
     tree: _EvolvingTree,
     op: NZChainOp,
@@ -1108,6 +1202,16 @@ def _apply_insert_op(
         tree.document, parent_source_path, leaf_label
     ):
         return _skip(SKIP_INSERT_DEF_TERM_CASE_FOLD_COLLISION, op)
+
+    # Family-F closed 2026-06-27: def-term "or X" suffix collision. The
+    # carried tree's reprint-format label may have a trailing " or <word>"
+    # whose <word> repeats the preceding word (reprint-tool artifact). The
+    # helper strips the suffix and checks if the stem matches ``leaf_label``.
+    # Per AGENTS §1.4 + §2.1: typed skip receipt, never a silent absorption.
+    if leaf_kind == "def-para" and _def_term_or_suffix_collision_exists(
+        tree.document, parent_source_path, leaf_label
+    ):
+        return _skip(SKIP_INSERT_DEF_TERM_OR_SUFFIX_COLLISION, op)
 
     payload = _extract_insertion_payload(
         op, leaf_kind, leaf_label, archive, amending_root_cache,

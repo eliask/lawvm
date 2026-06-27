@@ -1064,6 +1064,22 @@ _EXTRA_NZ_RULE_SPECS: Dict[str, str] = {
         "content-difference cases deferred to Family-F (a new family probe "
         "carried-tree's 'or Authority'-suffix content difference, not just case)."
     ),
+    "nz_chain_replay_insert_def_term_or_suffix_collision_recognized": (
+        "Family-F (def-term trailing-'or X' suffix collision) -- chain-replay "
+        "recognised that an INSERT op's ``def-para:<term>`` leaf targets the SAME "
+        "def-term as an existing carried-tree ``def-para:<term> or <word>`` whose "
+        "<word> repeats the preceding word (a 2007-era NZ reprint-tool artifact "
+        "that placed the entire term+suffix inside a single <def-term> element; "
+        "the amending act and the latest archived oracle both use the clean form "
+        "without the suffix). Per AGENTS §1.4 (no silent sibling absorption by "
+        "label text equality or suffix-touch alone): the recognition emits a "
+        "typed skip receipt (distinct from Family-D's case-fold and from the "
+        "generic insert-already-present) so the suffix-stripping absorption is "
+        "auditable under its own rule_id. Witnesses verified 2026-06-27: "
+        "act_public_1956_47 nz-opw-81 ('Government Superannuation Fund Authority' "
+        "vs carried-tree '... Authority or Authority') and nz-opw-82 "
+        "('... Authority board' vs carried-tree '... board or board')."
+    ),
     # --- Effect readiness voter — amendment/structural payload extraction state --------
     "nz_effect_readiness_amendment_semantics_not_extracted": (
         "Readiness refusal: the amendment semantics could not be extracted from the payload — the readiness "
