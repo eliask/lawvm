@@ -1399,6 +1399,85 @@ def test_compile_fi_facade_rejects_conflicting_duplicate_lifecycle_events(monkey
         )
 
 
+def test_compile_fi_facade_uses_resolved_temporal_lifecycle_over_stale_product_projection(
+    monkeypatch,
+) -> None:
+    def fake_compile_artifacts_from_replay(*_args, **_kwargs):
+        return SimpleNamespace(
+            compiled_ops=[],
+            canonical_ops=[],
+            compile_failures=[],
+            findings=[],
+            strict_fail_reasons=[],
+            source_adjudication=None,
+            replay_meta={},
+            verdict=compute_verdict_from_registry(default_finland_strict_profile(), [], has_internal_failure=False),
+        )
+
+    monkeypatch.setattr(
+        "lawvm.finland._compile._compile_artifacts_from_replay",
+        fake_compile_artifacts_from_replay,
+    )
+    address = LegalAddress(path=(("chapter", "12"), ("section", "127a")))
+    op_effects, _relations, _events = build_finland_effect_lifecycle(
+        target_statute="2003/393",
+        canonical_ops=(
+            LegalOperation(
+                op_id="op_0",
+                sequence=1,
+                action=StructuralAction.INSERT,
+                target=address,
+                source=OperationSource(
+                    statute_id="2008/119",
+                    title="temporary act",
+                    effective="2008-03-01",
+                    expires="2010-07-01",
+                ),
+                group_id="finland-johto:2008/119",
+            ),
+        ),
+        temporal_events=(),
+    )
+    stale_temporal = TemporalEvent(
+        event_id="fi-temporary:2008/119:op_0:expire",
+        kind="expire",
+        scope=TemporalScope(target_statute="2003/393", exact_addresses=(address,)),
+        expires="2010-07-01",
+        source=OperationSource(statute_id="2008/119", expires="2010-07-01"),
+        group_id="finland-johto:2008/119",
+    )
+    resolved_temporal = replace(
+        stale_temporal,
+        expires="2012-07-01",
+        source=OperationSource(statute_id="2008/119", expires="2012-07-01"),
+    )
+    _source_effects, _relations, stale_lifecycle_events = build_finland_effect_lifecycle(
+        target_statute="2003/393",
+        canonical_ops=(),
+        temporal_events=(stale_temporal,),
+        known_source_effects=op_effects,
+    )
+
+    facade = compile_fi_facade_from_replay(
+        parent_id="2003/393",
+        replay_result=_replay_result_stub(
+            temporal_events=(resolved_temporal,),
+            source_effects=op_effects,
+            effect_lifecycle_events=stale_lifecycle_events,
+        ),
+        replay_mode="legal_pit",
+        compiled_ops=[],
+        replay_meta={},
+        canonical_ops=[],
+        failed_ops=[],
+    )
+
+    event = facade.bundle.effect_lifecycle_events[0]
+    assert event.lifecycle_event_id == "fi-effect-lifecycle:fi-temporary:2008/119:op_0:expire"
+    assert event.expires == "2012-07-01"
+    assert event.temporal_event is resolved_temporal
+
+
 def test_compile_fi_facade_reuses_product_source_effects_for_temporal_lifecycle(
     monkeypatch,
 ) -> None:
