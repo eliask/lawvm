@@ -6,6 +6,7 @@ amendment verb group lists after its verb — clauses that ADD new structure:
 
     [N osan] [N luvun] DOC:ILL              uusi numlist (§ | luku | osa)
     [N osan] [N luvun] N LUKU:ILL           uusi numlist (§ | luku)
+    [N osan] [N luvun] LUKU:ILL N           uusi numlist (§)
     [N osan]           N OSA:ILL            uusi numlist (§ | luku)
                        DOC:ILL N LUKU:ILL   uusi numlist §        (prefix-chapter)
                        DOC:ILL (NUM/YY)     uusi N [letter]       (bare-section)
@@ -846,6 +847,66 @@ def recognize_bare_anaphoric_chapter_insert(
     return None
 
 
+def recognize_inverted_lukuun_chapter_insert_batch(
+    scan: _Scan,
+    effective_part: str,
+    verb: Optional[SourceVerb],
+) -> Optional[list[InsNode]]:
+    """Recognize ``lukuun N uuden/uudet section-list [§]`` insert batches.
+
+    Real witness: 1998/958 over 1992/1715 spells the destination chapter after
+    ``lukuun`` (``lukuun 5 uudet 21 a, 21 b ja 23 a``), unlike the common
+    ``5 lukuun uusi ...`` order.  The closing ``§:n`` may appear only after the
+    final arm and scopes the whole batch.
+    """
+    if verb != SourceVerb.LISATA:
+        return None
+    saved = scan.pos
+    out: list[InsNode] = []
+
+    while True:
+        arm_saved = scan.pos
+        if not _at_cat_case(scan, "LUKU", "ILL"):
+            scan.goto(arm_saved)
+            break
+        scan.advance()
+        chap = _number_list(scan)
+        if not chap or len(chap) != 1:
+            scan.goto(saved)
+            return None
+        chapter = chap[0][0] + chap[0][1]
+        if not _consume_uusi(scan):
+            scan.goto(saved)
+            return None
+        nums = _number_list(scan)
+        if not nums:
+            scan.goto(saved)
+            return None
+        out.extend(
+            InsNode(kind=TargetKind.SECTION, label=n + sf, chapter=chapter, part=effective_part)
+            for n, sf in nums
+        )
+
+        py_saved = scan.pos
+        if _at(scan, "PYKALA"):
+            scan.advance()
+
+        cont_saved = scan.pos
+        if _sep(scan) is None:
+            scan.goto(cont_saved)
+            return out
+        if _at_cat_case(scan, "LUKU", "ILL"):
+            continue
+        scan.goto(cont_saved)
+        if _at(scan, "END_SENTINEL_SPAN") or scan.peek() is None:
+            return out
+        scan.goto(py_saved)
+        return out
+
+    scan.goto(saved)
+    return None
+
+
 @dataclass(frozen=True, slots=True)
 class ParsedCrossVerbAnaphoricInsert:
     """A cross-verb-group anaphoric insert resolved against a *prior* group.
@@ -1656,6 +1717,16 @@ def _dispatch(
         bare = recognize_bare_uusi_whole_target(scan, inherited_chapter, inherited_part)
         if bare is not None:
             return bare
+
+    # ── Inverted explicit chapter: ``lukuun N uuden/uudet <sections>`` ─────
+    #
+    # This is explicit destination syntax, not the anaphoric ``lukuun uusi``
+    # back-reference below: the chapter number follows ``lukuun``.
+    inverted_lukuun = recognize_inverted_lukuun_chapter_insert_batch(
+        scan, effective_part, verb
+    )
+    if inverted_lukuun is not None:
+        return inverted_lukuun
 
     # ── Bare ``LUKU:ILL [reinst] uusi numlist (§ | luku)`` (old Pattern E) ──
     #

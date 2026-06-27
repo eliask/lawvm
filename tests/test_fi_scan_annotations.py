@@ -183,6 +183,25 @@ class TestAnnotateStatuteNamesRoundTrip:
                 f"Token {i} non-deterministic: ({a.cat}, {a.text!r}) vs ({b.cat}, {b.text!r})"
             )
 
+    def test_statute_name_annotation_stops_before_inverted_chapter_insert_anchor(self):
+        # 1998/958 over 1992/1715: ``päätöksen`` is statute-name noise, but
+        # ``lukuun 4`` is the typed insertion destination and must stay visible.
+        tokens = tokenize(
+            "lisätään päätöksen lukuun 4 uuden 16 a §:n seuraavasti:"
+        )
+        cite_anns = annotate_statute_citations(tokens)
+        name_anns = annotate_statute_names(tokens, cite_anns)
+        view = AnnotatedStream(tokens=tokens, annotations=cite_anns + name_anns).structural_view()
+
+        assert [(t.cat, t.text) for t in view[:6]] == [
+            ("VERB", "lisätään"),
+            ("STATUTE_NAME_SPAN", "[STATUTE_NAME]"),
+            ("LUKU", "lukuun"),
+            ("NUM", "4"),
+            ("UUSI", "uuden"),
+            ("NUM", "16"),
+        ]
+
 
 class TestFullPipelineRoundTrip:
     """Verify apply_annotations produces deterministic, structurally valid output.
