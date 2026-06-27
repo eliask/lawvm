@@ -1774,12 +1774,33 @@ def _apply_text_patch_to_target_subtree(
     for key, node_text in reversed(candidates):
         start = before_text.find(node_text)
         if start == -1:
-            continue
-        end = start + len(node_text)
+            # The stored node text may be stale after a sibling op patched the
+            # parent (the ancestor refresh in _refresh_ancestor_overrides may
+            # have introduced minor text shifts that make the full stored span
+            # no longer an exact substring of the running text). Try a PREFIX
+            # match: the first 60 chars of the node text (which include the
+            # leading enumerator marker like "(A)" or "(1)") are unique enough
+            # to locate the node. §0-safe: we only extend the span to the stored
+            # text's length, never beyond — we're locating the same node, not
+            # hijacking a sibling.
+            prefix_len = min(60, len(node_text))
+            prefix = node_text[:prefix_len]
+            start = before_text.find(prefix)
+            if start == -1:
+                continue
+            # Extend to the stored text's length (or to the next section
+            # boundary if the running text is shorter — the node may have been
+            # truncated by a sibling op's ancestor refresh).
+            end = min(start + len(node_text), len(before_text))
+        else:
+            end = start + len(node_text)
         if any(start < u_end and end > u_start for u_start, u_end in used):
             continue
         used.append((start, end))
-        hits.append((key, start, end, node_text))
+        # Use the ACTUAL running text at the located span, not the stored text —
+        # this ensures the patch composes on the live text, not the stale copy.
+        actual_node_text = before_text[start:end]
+        hits.append((key, start, end, actual_node_text))
     if not hits:
         return None
 
