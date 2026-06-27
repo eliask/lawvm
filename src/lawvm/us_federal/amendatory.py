@@ -1860,7 +1860,7 @@ def _redesignate_destination(raw_text: str, target: LegalAddress) -> tuple[Legal
     return from_addr, to_addr
 
 
-_KIND_WORDS = "subsection|paragraph|subparagraph|clause|subclause"
+_KIND_WORDS = "subsection|paragraph|subparagraph|clause|subclause|item"
 # Structural-action trailing punctuation in nested conforming-amendment lists:
 # a unit's raw text is often "(A) by striking subsection (X); and" or "(B) by
 # redesignating paragraphs ...;".  The recognizers below must consume the
@@ -2182,6 +2182,17 @@ def _strike_structural_unit_list(raw_text: str, target: LegalAddress) -> tuple[L
     return tuple(LegalAddress(path=(*target.path, (kind, label))) for label in labels)
 
 
+def _strip_indenting_suffix(raw_text: str) -> str:
+    """Strip the ``and indenting [the margins] appropriately`` trailing clause.
+
+    This is a formatting directive, not a redesignation operand — the indenting
+    instruction does not change which labels map to which. Stripping it lets the
+    redesignate recognizers match the ``respectively`` tail without the
+    formatting clause interfering with ``_STRUCTURAL_ACTION_TRAIL``.
+    """
+    return re.sub(r",?\s+and\s+indenting[^;,]*(?:;|\.|$)", "", raw_text)
+
+
 def _redesignate_pairs(raw_text: str, target: LegalAddress) -> tuple[tuple[LegalAddress, LegalAddress], ...] | None:
     """Parse ``redesignating (a) and (b) as (c) and (d), respectively`` relabel.
 
@@ -2191,8 +2202,11 @@ def _redesignate_pairs(raw_text: str, target: LegalAddress) -> tuple[tuple[Legal
     when the form is not a listed non-contiguous redesignation. The source and
     destination kinds come from the prose (e.g. ``paragraphs`` -> ``paragraph``);
     mismatched kinds are honoured because the enacted text may change nesting level.
+
+    Strips the ``and indenting [the margins] appropriately`` trailing clause
+    before matching — it is a formatting directive, not a redesignation operand.
     """
-    m = _REDESIGNATE_PAIRS_RE.search(raw_text)
+    m = _REDESIGNATE_PAIRS_RE.search(_strip_indenting_suffix(raw_text))
     if m is None:
         return None
     from_kind = m.group("from_kind").lower()
