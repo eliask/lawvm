@@ -3195,6 +3195,13 @@ def _lower_instruction(
             # barrier. Keep the non-title-scope finding dominant but do not erase it.
             finding = non_title_finding
 
+    # When a family handler produced a finding but did not update
+    # witness_rule_id from the default (UNRECOGNIZED_AMENDATORY_FORM), sync
+    # it to the finding's own rule_id so the surfaced witness matches the
+    # typed finding — the parse_witness and the finding should agree.
+    if op is None and finding is not None:
+        witness_rule_id = finding.rule_id
+
     return USAmendmentInstruction(  # noqa: B035
         instruction_id=instruction_id,
         instruction_status=status,
