@@ -1586,6 +1586,19 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "source-monotonicity, never INVALID (absent bytes => cannot "
                 "check, not a violation)",
                 ("provenance", "negative"), role="observation"),
+    # D8 OVERLAY.DEFAULT_REPLAY_AUTHORIZED_FALSE (audit_impl_D8): AGENTS.md §2.10
+    # declares a surface/overlay node defaults to replay_authorized=False; a node
+    # tagged as originating from the overlay plane may mutate legal state ONLY
+    # through a typed ExecutionAuthorization promotion event. An overlay-tagged
+    # node carrying replay_authorized=True WITHOUT a matching promotion breaches
+    # the deterministic firewall; this audit surfaces it as a blocking
+    # obligation. The audit module is landed; wire into compile_timelines is
+    # staged as follow-up (parallel to D7's wire-then-promote discipline).
+    FindingSpec("OVERLAY.UNAUTHORIZED_PROMOTION", "compile-timelines",
+                "violation", "strict_fail", "overlay_default_replay_authorized_false_audit",
+                "an overlay-tagged IRNode carries replay_authorized=True but has no typed "
+                "ExecutionAuthorization promotion event with rule_id and witness (AGENTS.md §2.10)",
+                ("safety_invariant", "provenance"), role="obligation"),
     # D7 / LS-23 COMMENCEMENT.EFFECT_TOTALITY (audit_impl_D7): every LegalOperation
     # reaching compile-timelines is temporally authorized — a commence/revive
     # TemporalEvent matches via group_id + scope, OR the op carries an explicit

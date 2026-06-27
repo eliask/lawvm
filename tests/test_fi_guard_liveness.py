@@ -3978,6 +3978,21 @@ NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
     "TIME.TRIGGER_COVERAGE_INCOMPLETE": ("timeline barrier; needs fixture", "2026-06-20"),
     "TIME.UNRESOLVED_COMMENCEMENT_TRIGGER": ("timeline barrier; needs fixture", "2026-06-20"),
     "uk_replay_text_patch_preimage_drift": ("UK replay text-patch drift; needs UK fixture", "2026-06-20"),
+    # D8 OVERLAY.DEFAULT_REPLAY_AUTHORIZED_FALSE (audit_impl_D8): the audit
+    # module ``core/overlay_default_replay_authorized_false_audit.py`` + its
+    # unit tests are landed; the production wire into ``compile_timelines()``
+    # is deliberately staged as a follow-up commit (parallel to D7's wire-
+    # then-promote discipline). Until the wire lands, the strict-block code
+    # is unreachable from the production compile-timelines lane (no fire-drill
+    # drive path); declaring that honestly here per AGENTS §2.9. Drill through
+    # the production compile-timelines lane once the wire lands (assert a real
+    # overlay-tagged IRNode carrying replay_authorized=True without a matching
+    # ExecutionAuthorization promotion reaches the wire and fires).
+    "OVERLAY.UNAUTHORIZED_PROMOTION": (
+        "audit module landed; wire into compile_timelines() staged as follow-up; "
+        "drill through the production lane once the wire lands",
+        "2026-06-27",
+    ),
 }
 
 # Committed monotone-decreasing debt ceiling for NO_FIRE_DRILL_YET. The allowlist
