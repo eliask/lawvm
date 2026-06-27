@@ -383,6 +383,25 @@ def apply_standalone_temporal_event(
             active = latest_eligible_version_without_scope(timeline, event_date)
             if active is not None and active.content is not None:
                 continue
+            if event.kind == "commence" and any(
+                version.content is not None
+                and version.effective < event_date
+                and version.expires == event_date
+                for version in timeline.versions
+            ):
+                record_issue(
+                    issue_sink,
+                    kind="empty_same_day_interval",
+                    message=(
+                        "compile_timelines: standalone temporal commence event "
+                        f"{event.event_id!r} would revive content ended at the same "
+                        f"boundary {event_date}"
+                    ),
+                    address=address,
+                    source_statute=event.source.statute_id if event.source else "",
+                    emit_warnings=emit_warnings,
+                )
+                continue
             source_version = latest_substantive_version_at_or_before(timeline, event_date)
             if source_version is None or source_version.content is None:
                 record_issue(
