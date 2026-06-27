@@ -1591,6 +1591,33 @@ def test_paired_redesignation_with_list_conjunction():
     assert labels == [("1", "2"), ("2", "3")]
 
 
+def test_strike_and_substitute_lowers_as_strike_insert():
+    # 'strike X and substitute Y' is the older-drafting imperative form of
+    # 'striking X and inserting Y' — semantically identical text replacement.
+    # The USLM marks these with <amendingAction type="substitute">. Without the
+    # classifier extension, these fell to us_amendatory_unrecognized_form;
+    # with it, the word-boundary \bstrike\b match + substitute in actions routes
+    # to the strike_insert family.
+    # Source witness: PL 108-136 §7 "strike (40 U.S.C. 1003 note) and substitute
+    # (40 U.S.C. 8903 note)".
+    body = (
+        '<section identifier="/us/pl/116/900/s1" role="instruction"><num>1.</num>'
+        '<content>'
+        '<ref href="/us/usc/t11/s101">Section 101 of title 11, United States Code</ref>, '
+        '<amendingAction type="amend">is amended</amendingAction>—'
+        '(1) In subsection (a)(2), '
+        'strike \u201c<quotedText>old section</quotedText>\u201d and '
+        '<amendingAction type="substitute">substitute</amendingAction> '
+        '\u201c<quotedText>new section</quotedText>\u201d.'
+        '</content></section>'
+    )
+    instr = _accepted_instr(lower_plaw_amendatory(_synthetic_plaw(body)))
+    assert instr.action == "strike_insert"
+    patch = _patch(instr)
+    assert patch.selector.match_text == "old section"
+    assert patch.replacement == "new section"
+
+
 def test_redesignate_table_form_lowers_one_renumber_per_row():
     # 'redesignating the sections as described in the table' — the section-number
     # pairs live in a sibling <xhtml:table> in the parent subsection. The lowerer

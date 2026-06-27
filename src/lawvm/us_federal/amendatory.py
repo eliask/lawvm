@@ -1801,8 +1801,25 @@ def _classify_action(actions: list[str], raw_text: str) -> str:
         return "redesignate"
     if ("amend" in has and "to read" in lowered) or "to read as follows" in lowered:
         return "amend_to_read"
-    has_strike = "delete" in has or "striking" in lowered
-    has_insert = "insert" in has or "inserting" in lowered
+    # Extend: "strike X and substitute Y" (imperative drafting style used in
+    # older PLs, esp. technical-amendments sections) is semantically identical
+    # to "striking X and inserting Y". "substitute" in actions conveys the
+    # insert-replacement verb; " strike " (imperative, with surrounding spaces
+    # to avoid matching "striking" — which has 'i' at position 5 vs 'e')
+    # catches the deletion half. Without this, "strike X and substitute Y"
+    # instructions fell to us_amendatory_unrecognized_form; with it, they route
+    # to strike_insert like any other text replacement.
+    has_strike = (
+        "delete" in has
+        or "striking" in lowered
+        or re.search(r"\bstrike\b", lowered) is not None
+    )
+    has_insert = (
+        "insert" in has
+        or "inserting" in lowered
+        or "substitute" in has
+        or "substituting" in lowered
+    )
     has_anchor = " after " in lowered or " before " in lowered
     # Terminal punctuation edits where the anchor is positional ("the period at the
     # end") or the replacement is a punctuation word ("inserting a semicolon") need
