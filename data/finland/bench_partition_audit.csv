@@ -1538,7 +1538,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 3,1978/302,suspect,oracle_suspect,1995/441 eff 1995-04-01 > cutoff 1995-03-24,
 3,1978/380,suspect,oracle_suspect,2025/578 eff 2026-01-01 > cutoff 2025-06-27,
 3,1978/508,suspect,oracle_suspect,2000/670 eff 2000-07-12 > cutoff 2000-07-06,
-3,1979/345,core,,,OK
+3,1979/345,suspect,oracle_suspect,oracle-check: EDITORIAL_CONVENTION×6; SOURCE_PATHOLOGY×1; contingent-effective-date 2018/1124; current replay/oracle differences are editorial punctuation/diacritics/heading spacing plus source-pathology finding,OK
 3,1979/864,suspect,oracle_suspect,2025/1179 eff 2026-01-01 > cutoff 2025-12-11,
 3,1980/795,suspect,oracle_suspect,2016/721 eff 2017-01-01 > cutoff 2016-08-25,
 3,1981/137,suspect,oracle_suspect,1995/1476 eff 1996-01-01 > cutoff 1995-12-18,
