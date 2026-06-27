@@ -221,6 +221,15 @@ TimelineIssueKind = Literal[
     # as a TimelineIssue here so a compile_timelines consumer that does not
     # route PhaseResult.Observations still sees it on the issue_sink.
     "commencement_op_without_temporal_authorization",
+    # D8 OVERLAY.DEFAULT_REPLAY_AUTHORIZED_FALSE: an overlay-tagged IRNode
+    # carrying replay_authorized=True reached compile_timelines without a
+    # matching typed ExecutionAuthorization promotion event (§2.10
+    # deterministic-firewall breach). Mirrors the D7-commencement TimelineIssue
+    # discipline: the audit emits Observations only; this TimelineIssue value
+    # routes the breach to consumers that don't read PhaseResult.Observations
+    # so a strict-profile consumer can flip the strict_fail finding to a
+    # strict barrier.
+    "overlay_unauthorized_promotion",
 ]
 
 

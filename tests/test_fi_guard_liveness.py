@@ -2262,6 +2262,97 @@ def drill_commencement_op_without_temporal_authorization_apply_lane() -> None:
     )
 
 
+def drill_overlay_unauthorized_promotion_apply_lane() -> None:
+    """OVERLAY.UNAUTHORIZED_PROMOTION fires from the production compile-timelines
+    lane (D8).
+
+    Production lane: ``compile_timelines_ex`` is the public compile-timelines
+    entrypoint that surfaces the D8 audit's TimelineIssues via
+    ``iter_overlay_default_replay_authorized_false_violations`` (vendored from
+    ``core.overlay_default_replay_authorized_false_audit``). The wire in
+    ``compile_timelines`` routes each Observation to a TimelineIssue on the
+    ``issue_sink`` with ``kind="overlay_unauthorized_promotion"``. The drill
+    drives a known-violating input (an overlay-tagged IRNode carrying
+    ``replay_authorized=True`` WITHOUT a matching ExecutionAuthorization
+    promotion) through the production lane; without the audit the overlay
+    plane would silently mutate legal state — the §2.10 deterministic-firewall
+    breach surface (a §0 silent-state mutation by an unowned overlay lane).
+    """
+    from lawvm.core.execution_authorization import ExecutionAuthorization
+    from lawvm.core.ir import IRNode, IRNodeKind, IRStatute
+    from lawvm.core.overlay_default_replay_authorized_false_audit import (
+        OVERLAY_UNAUTHORIZED_PROMOTION_FINDING_CODE,
+    )
+    from lawvm.core.timeline import compile_timelines_ex
+
+    overlay_node = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="d8-drill-target",
+        attrs={
+            "overlay_kind": "test_overlay",
+            "replay_authorized": True,
+            "source_unit": "d8-drill-overlay",
+        },
+    )
+    base = IRStatute(
+        statute_id="ukpga/2020/1-d8-drill",
+        title="d8 overlay-default fire-drill",
+        body=overlay_node,
+    )
+    # An overlay-tagged node claiming replay authority, with an empty
+    # authorizations tuple — the known-violating input that must surface as a
+    # TimelineIssue (the §2.10 deterministic firewall breach).
+    result = compile_timelines_ex(base, [], authorizations=())
+    d8_issues = [
+        issue
+        for issue in result.issues
+        if issue.kind == "overlay_unauthorized_promotion"
+    ]
+    assert len(d8_issues) == 1, (
+        "D8 audit must fire through the production compile_timelines lane for "
+        "an overlay-tagged node carrying replay_authorized=True without a "
+        f"matching ExecutionAuthorization promotion; got {len(d8_issues)} "
+        f"matching issues out of {len(result.issues)}"
+    )
+    issue = d8_issues[0]
+    assert "d8-drill-target" in issue.message
+    assert "replay_authorized=True" in issue.message
+    assert issue.source_statute == "ukpga/2020/1-d8-drill"
+    # The overlay-suppressed branch: attaching a matching ExecutionAuthorization
+    # promotion suppresses the issue so legitimate promotion traffic stays quiet
+    # (the §2.10 promotion ladder pays for replay authority). Subject-id mirrors
+    # `_overlay_subject_id`: statute_id|source_unit|overlay_kind|node_kind|node_label.
+    promoted_subject = (
+        "ukpga/2020/1-d8-drill|d8-drill-overlay|test_overlay|section|d8-drill-target"
+    )
+    promotion = ExecutionAuthorization(
+        executable=True,
+        replay_authorized=True,
+        authorization_status="promoted",
+        authorization_rule_id=promoted_subject,
+        owner_phase="d8_fire_drill",
+        strict_disposition="block",
+        safe_default="skip_replay_until_promotion_explicit",
+        detail={"subject_id": promoted_subject},
+    )
+    quiet_result = compile_timelines_ex(
+        base, [], authorizations=(promotion,)
+    )
+    quiet_d8 = [
+        issue
+        for issue in quiet_result.issues
+        if issue.kind == "overlay_unauthorized_promotion"
+    ]
+    assert not quiet_d8, (
+        "D8 audit MUST NOT fire when a matching ExecutionAuthorization "
+        f"promotion is attached; got: {quiet_d8}"
+    )
+    # Sanity: the registered FindingSpec code matches the audit module constant.
+    assert OVERLAY_UNAUTHORIZED_PROMOTION_FINDING_CODE == (
+        "OVERLAY.UNAUTHORIZED_PROMOTION"
+    )
+
+
 def drill_definition_duplicate_definition_surface_totality() -> None:
     """Drive the production SURF-04 sweep into a DUPLICATE_DEFINITION firing.
 
@@ -3787,6 +3878,15 @@ FIRE_DRILLS: Dict[str, Callable[[], None]] = {
     "COMMENCEMENT.OP_WITHOUT_TEMPORAL_AUTHORIZATION": (
         drill_commencement_op_without_temporal_authorization_apply_lane
     ),
+    # D8 OVERLAY.DEFAULT_REPLAY_AUTHORIZED_FALSE — drives the production
+    # compile_timelines lane to surface OVERLAY.UNAUTHORIZED_PROMOTION for
+    # an overlay-tagged IRNode carrying replay_authorized=True without a
+    # matching ExecutionAuthorization promotion. Audit-vendored in
+    # core/overlay_default_replay_authorized_false_audit.py; wired in
+    # compile_timelines alongside the D7 commencement audit.
+    "OVERLAY.UNAUTHORIZED_PROMOTION": (
+        drill_overlay_unauthorized_promotion_apply_lane
+    ),
 }
 
 # A second, distinct surface for an already-covered code. Tracked separately so
@@ -3978,28 +4078,6 @@ NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
     "TIME.TRIGGER_COVERAGE_INCOMPLETE": ("timeline barrier; needs fixture", "2026-06-20"),
     "TIME.UNRESOLVED_COMMENCEMENT_TRIGGER": ("timeline barrier; needs fixture", "2026-06-20"),
     "uk_replay_text_patch_preimage_drift": ("UK replay text-patch drift; needs UK fixture", "2026-06-20"),
-    # D8 OVERLAY.DEFAULT_REPLAY_AUTHORIZED_FALSE (audit_impl_D8): the audit
-    # module ``core/overlay_default_replay_authorized_false_audit.py`` + its
-    # unit tests are landed; the production wire into ``compile_timelines()``
-    # is deliberately staged as a follow-up commit (parallel to D7's wire-
-    # then-promote discipline). Until the wire lands, the strict-block code
-    # is unreachable from the production compile-timelines lane (no fire-drill
-    # drive path); declaring that honestly here per AGENTS §2.9. Drill through
-    # the production compile-timelines lane once the wire lands (assert a real
-    # overlay-tagged IRNode carrying replay_authorized=True without a matching
-    # ExecutionAuthorization promotion reaches the wire and fires).
-    "OVERLAY.UNAUTHORIZED_PROMOTION": (
-        "audit module landed; wire into compile_timelines() staged as follow-up; "
-        "drill through the production lane once the wire lands",
-        "2026-06-27",
-    ),
-    # D11 EVID.AUTHORITY_SOURCE_EXCLUDES_OBSERVATION_KINDS (audit_impl_D11): the
-    # audit module is landed in ``core.execution_authorization``; the wire into
-    # ``aggregate_replay_authority`` (FI) + ``uk_amendment_replay.authority_mode``
-    # (UK) is staged as a follow-up commit (parallel to D7/D8 discipline).
-    # Until the wire, the strict-block code is unreachable from production;
-    # declared honestly here per AGENTS §2.9. Drill through the production
-    # apply-authority lane once the wire lands.
     "EVID.OBSERVATION_PROMOTED_TO_AUTHORITY": (
         "audit module landed; wire into aggregate_replay_authority/uk amendment "
         "replay authority_mode staged as follow-up; drill through production once wired",

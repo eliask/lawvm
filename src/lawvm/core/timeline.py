@@ -106,6 +106,10 @@ from lawvm.core.timeline_temporal_events import (
     temporal_overrides_for_op as _temporal_overrides_for_op,
 )
 from lawvm.core.commencement_totality_audit import assert_effect_totality
+from lawvm.core.execution_authorization import ExecutionAuthorization
+from lawvm.core.overlay_default_replay_authorized_false_audit import (
+    iter_overlay_default_replay_authorized_false_violations,
+)
 
 # Compatibility re-exports while timeline address helpers migrate out.
 _TIMELINE_ADDRESS_COMPAT_EXPORTS = (_iter_nodes_with_address,)
@@ -294,6 +298,17 @@ def compile_timelines(
     temporal_events: Tuple[TemporalEvent, ...] = (),
     issue_sink: Optional[List[TimelineIssue]] = None,
     authority_context: BranchContext = DEFAULT_ENACTED_CONTEXT,
+    # §2.10 overlay-default-False audit (D8): the §2.10 deterministic firewall
+    # asserts every overlay-tagged node defaults to ``replay_authorized=False``
+    # and may mutate legal state only via a typed ``ExecutionAuthorization``
+    # promotion event. ``authorizations`` carries the promotions this
+    # timeline-compilation pass is willing to honour; the audit emits one
+    # ``OVERLAY.UNAUTHORIZED_PROMOTION`` Observation per overlay-tagged node
+    # that claims ``replay_authorized=True`` without a matching promotion. The
+    # default-empty tuple is the conservative "no promotions will be honoured"
+    # case — the audit fires on any overlay-tagged node carrying a node-side
+    # ``replay_authorized=True`` claim.
+    authorizations: Tuple[ExecutionAuthorization, ...] = (),
 ) -> Timelines:
     """Build a ProvisionTimeline for each addressable provision.
 
@@ -614,6 +629,40 @@ def compile_timelines(
                 f"action={_finding.detail.get('action', '?')})"
             ),
             source_statute=_finding.source_statute,
+        )
+    # D8 OVERLAY.DEFAULT_REPLAY_AUTHORIZED_FALSE (audit_impl_D8): the §2.10
+    # deterministic firewall. An overlay-tagged node carrying
+    # ``replay_authorized=True`` WITHOUT a matching typed
+    # ExecutionAuthorization promotion breaches the firewall — the audit
+    # emits Observations only; we route each one to the issue_sink as a
+    # TimelineIssue with kind
+    # ``overlay_unauthorized_promotion`` (mirrored on the
+    # TimelineIssueKind closed vocabulary below) so consumers that don't
+    # read PhaseResult.Observations still see the gap. The wire is
+    # position-adjacent to the D7 commencement find to keep the per-phase
+    # totality audits localised at compile_timelines' pre-materialization
+    # checkpoint per audit_impl_D8 §3 (callsite for the existing per-stage
+    # ExecutionAuthorization sequence gathered before PIT materialization).
+    _overlay_findings = tuple(
+        iter_overlay_default_replay_authorized_false_violations(
+            base,
+            authorizations=authorizations,
+        )
+    )
+    for _overlay_finding in _overlay_findings:
+        _record_timeline_issue(
+            issue_sink,
+            kind="overlay_unauthorized_promotion",
+            message=(
+                "compile_timelines: overlay-tagged IRNode carries "
+                "replay_authorized=True but has no matching "
+                "ExecutionAuthorization promotion event (§2.10 deterministic "
+                "firewall) (node_label="
+                f"{_overlay_finding.detail.get('node_label', '?')}, "
+                f"node_kind={_overlay_finding.detail.get('node_kind', '?')}, "
+                f"overlay_kind={_overlay_finding.detail.get('overlay_kind', '?')})"
+            ),
+            source_statute=_overlay_finding.source_statute,
         )
     temporal_events_by_group_id: Dict[str, Tuple[TemporalEvent, ...]] = {}
     if temporal_events:
@@ -1072,6 +1121,7 @@ def compile_timelines_ex(
     label_norm: Optional[Callable[[str], str]] = None,
     temporal_events: Tuple[TemporalEvent, ...] = (),
     authority_context: BranchContext = DEFAULT_ENACTED_CONTEXT,
+    authorizations: Tuple[ExecutionAuthorization, ...] = (),
 ) -> TimelineCompilationResult:
     """Explicit compile_timelines result with typed issues.
     """
@@ -1084,6 +1134,7 @@ def compile_timelines_ex(
         temporal_events=temporal_events,
         issue_sink=issues,
         authority_context=authority_context,
+        authorizations=authorizations,
     )
     return TimelineCompilationResult(timelines=timelines, issues=tuple(issues))
 
