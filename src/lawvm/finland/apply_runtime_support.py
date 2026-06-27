@@ -2739,6 +2739,66 @@ def _emit_section_snapshot(
             section_path=section_path,
             replay_history_ops=lo_ops_out,
         )
+
+        def _labeled_descendant_addresses(node: IRNode) -> set[tuple[str, str]]:
+            addresses: set[tuple[str, str]] = set()
+            stack = list(node.children)
+            while stack:
+                child = stack.pop()
+                if child.label:
+                    addresses.add((child.kind.value, _norm_num_token(child.label)))
+                stack.extend(child.children)
+            return addresses
+
+        def _live_section_is_safe_sparse_merge_base(
+            latest_section: IRNode,
+            live_section: IRNode,
+        ) -> bool:
+            touched_labels = set(subsection_payloads)
+            latest_children = {
+                _norm_num_token(child.label): child
+                for child in latest_section.children
+                if child.kind is IRNodeKind.SUBSECTION and child.label
+            }
+            live_children = {
+                _norm_num_token(child.label): child
+                for child in live_section.children
+                if child.kind is IRNodeKind.SUBSECTION and child.label
+            }
+            if set(live_children) - set(latest_children):
+                return False
+            untouched_differences = 0
+            for label, live_child in live_children.items():
+                if label in touched_labels:
+                    continue
+                latest_child = latest_children.get(label)
+                if latest_child is None:
+                    return False
+                if irnode_to_text(live_child) == irnode_to_text(latest_child):
+                    continue
+                if _labeled_descendant_addresses(live_child) - _labeled_descendant_addresses(latest_child):
+                    return False
+                untouched_differences += 1
+            if untouched_differences <= 1:
+                return True
+            current_effective = op_source.effective or op_source.enacted
+            if not current_effective:
+                return False
+            for latest_child in latest_section.children:
+                if latest_child.kind is not IRNodeKind.SUBSECTION or not latest_child.label:
+                    continue
+                child_label = _norm_num_token(latest_child.label)
+                child_snapshot = _latest_snapshot_for_path(section_path + (("subsection", child_label),))
+                if child_snapshot is None or child_snapshot.source is None:
+                    continue
+                child_expires = child_snapshot.source.expires or ""
+                if not child_expires or current_effective < child_expires:
+                    continue
+                live_child = live_children.get(child_label)
+                if live_child is not None and irnode_to_text(live_child) != irnode_to_text(latest_child):
+                    return True
+            return False
+
         if latest is not None and latest.payload is not None and latest.payload.kind is IRNodeKind.SECTION:
             latest_expires = latest.source.expires if latest.source is not None else ""
             if latest_expires and op_source.effective and op_source.effective >= latest_expires:
@@ -2752,6 +2812,27 @@ def _emit_section_snapshot(
                 rebased_from_expired_temporary_snapshot = prior_payload is not None
             else:
                 base_section = latest.payload
+            if (
+                single_sparse_whole_subsection_replace
+                and latest_expires == ""
+                and section_payload != latest.payload
+            ):
+                live_path = state.find_section_path(
+                    normalized_target_norm,
+                    target_chapter,
+                    target_part,
+                )
+                live_payload = _tops.resolve(state.ir, live_path) if live_path is not None else None
+                if (
+                    live_payload is not None
+                    and live_payload.kind is IRNodeKind.SECTION
+                    and not any(child.kind is IRNodeKind.OMISSION for child in live_payload.children)
+                    and _live_section_is_safe_sparse_merge_base(
+                        latest.payload,
+                        live_payload,
+                    )
+                ):
+                    base_section = live_payload
         else:
             base_section = _section_node_from_base_ir(base_ir, section_path)
         if base_section is None or base_section.kind is not IRNodeKind.SECTION:
@@ -2762,8 +2843,15 @@ def _emit_section_snapshot(
             (idx for idx, child in enumerate(current_children) if child.kind is IRNodeKind.SUBSECTION),
             len(current_children),
         )
-        if any(child.kind is not IRNodeKind.SUBSECTION for child in current_children[first_current_subsection:]):
+        if any(
+            child.kind not in {IRNodeKind.SUBSECTION, IRNodeKind.OMISSION}
+            for child in current_children[first_current_subsection:]
+        ):
             return None
+        current_prefix_children = [
+            child for child in current_children[:first_current_subsection]
+            if child.kind is not IRNodeKind.OMISSION
+        ]
 
         def _subsection_covers_item_payloads(
             current_subsection: IRNode,
@@ -2948,7 +3036,7 @@ def _emit_section_snapshot(
             label=section_payload.label,
             text=section_payload.text,
             attrs=dict(section_payload.attrs),
-            children=tuple(current_children[:first_current_subsection] + merged_subsections),
+            children=tuple(current_prefix_children + merged_subsections),
         )
         if single_sparse_whole_subsection_replace and rebased_from_expired_temporary_snapshot:
             merged_section = _stamp_exact_section_snapshot_payload(merged_section)
