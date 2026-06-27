@@ -12075,6 +12075,74 @@ def test_enrich_ops_uses_vacated_live_scope_for_recodification_insert_under_mixe
     assert got_insert.scope_confidence.resolved_chapter == "6a"
 
 
+def test_restructure_destination_payload_replaces_hcontainer_fold_node() -> None:
+    from lawvm.finland.restructure_plan import ExecutedOp, StructuralTransformOp, TransformOpKind
+    from lawvm.finland.restructure_plan_replay import (
+        _apply_source_destination_relabel_payloads,
+    )
+    from lawvm.finland.source_model import AmendmentSourceModel
+
+    state_ir = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.HCONTAINER,
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CHAPTER,
+                        label="6a",
+                        children=(
+                            IRNode(kind=IRNodeKind.NUM, text="6 a luku"),
+                            IRNode(
+                                kind=IRNodeKind.SECTION,
+                                label="27g",
+                                children=(
+                                    IRNode(kind=IRNodeKind.NUM, text="27 g §"),
+                                    IRNode(kind=IRNodeKind.HEADING, text="Stale migrated heading"),
+                                    IRNode(kind=IRNodeKind.PARAGRAPH, text="stale migrated body"),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    source_tree = etree.fromstring(
+        """
+        <body xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <chapter>
+            <num>6 a luku</num>
+            <section>
+              <num>27 g §</num>
+              <heading>Vastuutahot</heading>
+              <content><p>destination-labelled source body</p></content>
+            </section>
+          </chapter>
+        </body>
+        """
+    )
+    source_model = AmendmentSourceModel.from_tree(source_tree, source_ref="2003/444")
+    executed = (
+        ExecutedOp(
+            op=StructuralTransformOp(
+                kind=TransformOpKind.RELABEL,
+                target="chapter:6a/section:27f",
+                destination="chapter:6a/section:27g",
+                notes=("synthetic_destination_payload",),
+            ),
+            success=True,
+            applied_path=(("chapter", "6a"), ("section", "27g")),
+        ),
+    )
+
+    updated = _apply_source_destination_relabel_payloads(state_ir, executed, source_model)
+
+    updated_text = irnode_to_text(updated)
+    assert "destination-labelled source body" in updated_text
+    assert "stale migrated body" not in updated_text
+
+
 def test_flat_body_insert_chapter_scope_uses_bracketing_live_siblings() -> None:
     from lawvm.finland.frontend_compile import (
         _infer_flat_body_insert_chapter_from_bracketing_live_siblings,

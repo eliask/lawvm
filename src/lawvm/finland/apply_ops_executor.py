@@ -40,6 +40,7 @@ from lawvm.finland.relabel_identity import (
     stabilize_same_parent_relabel_order as _stabilize_same_parent_relabel_order,
 )
 from lawvm.finland.restructure_plan import (
+    OwnedRelabelSignature,
     resolved_op_is_owned_by_restructure_plan as _resolved_op_is_owned_by_restructure_plan,
     restructure_plan_owned_renumber_signatures as _restructure_plan_owned_renumber_signatures,
 )
@@ -47,7 +48,9 @@ from lawvm.finland.restructure_plan_replay import (
     ExecuteRestructurePlanRequest as _ExecuteRestructurePlanRequest,
     ExecuteRestructurePlanSinks as _ExecuteRestructurePlanSinks,
     execute_restructure_plan_with_evidence as _execute_restructure_plan_with_evidence,
+    source_destination_relabel_snapshot_payload as _source_destination_relabel_snapshot_payload,
 )
+from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.standalone_targets import (
     build_standalone_section_targets as _build_standalone_section_targets,
 )
@@ -61,6 +64,42 @@ if TYPE_CHECKING:
 
 
 _SAME_WAVE_SHIFTED_SUBSECTION_REPEAL_RULE_ID = "same_wave_shifted_subsection_repeal_target"
+
+
+def _replace_is_owned_by_restructure_destination_payload(
+    rop: "ResolvedOp",
+    owned_relabels: set[OwnedRelabelSignature],
+    source_model: AmendmentSourceModel,
+) -> bool:
+    """True when a same-wave relabel snapshot owns a whole-section replacement.
+
+    Finnish clauses may say that a changed source section moves to a destination
+    label while a new section occupies the vacated source label. The body then
+    prints the changed continuing provision under the destination label. In
+    that case the ordinary ``REPLACE source`` op must not also follow the same
+    wave migration and write its source-label payload at the destination.
+    """
+    if not rop.is_replace_action or not rop.targets_whole_unit("section"):
+        return False
+    source_address = rop.resolved_target_address
+    if source_address is None:
+        return False
+    source_path = tuple(source_address.path)
+    for owned_source, owned_destination in owned_relabels:
+        if len(source_path) < len(owned_source) or source_path[-len(owned_source) :] != owned_source:
+            continue
+        if owned_source == owned_destination:
+            continue
+        destination_path = owned_destination
+        if len(owned_destination) < len(source_path):
+            destination_path = source_path[: -len(owned_destination)] + owned_destination
+        payload = _source_destination_relabel_snapshot_payload(
+            source_model,
+            destination_path,
+        )
+        if payload is not None:
+            return True
+    return False
 
 
 def _replace_last_subsection_label(path: "Path", new_label: str) -> "Path":
@@ -270,6 +309,11 @@ def _apply_ops_to_tree_typed(
             rop
             for rop in resolved
             if not _resolved_op_is_owned_by_restructure_plan(rop, owned_relabels)
+            and not _replace_is_owned_by_restructure_destination_payload(
+                rop,
+                owned_relabels,
+                source_model,
+            )
         ]
         # Execute the pre-seeded relabel plan before the ordinary resolved-op
         # fold. Large renumber waves like 2019/371 can move containers later in
@@ -285,6 +329,7 @@ def _apply_ops_to_tree_typed(
                 amendment_effective_date=amendment_effective_date,
                 migration_ledger=migration_ledger,
                 log_label="early restructure_plan",
+                source_model=source_model,
             ),
             _ExecuteRestructurePlanSinks(
                 lo_ops_out=lo_ops_out,

@@ -1019,6 +1019,35 @@ def test_replay_xml_1966_258_repairs_chapter_6_section_78_source_label() -> None
     assert "heidän yhteisestä pyynnöstään sovittelun" not in text
 
 
+def test_replay_xml_1995_386_uses_destination_payload_for_2003_relabels() -> None:
+    replay = replay_xml_for_test(
+        "1995/386",
+        mode="official_consolidation",
+        quiet=True,
+        as_of="2003-09-01",
+    )
+
+    section_27g = replay.materialized_state.find_node("section", "27g", "chapter", "6a")
+    section_27k = replay.materialized_state.find_node("section", "27k", "chapter", "6a")
+
+    assert section_27g is not None
+    text_27g = " ".join(irnode_to_text(section_27g).split())
+    assert text_27g.startswith("27 g § Vastuutahot")
+    assert "27 f §:ssä tarkoitettuun verkkopalvelun keskeytymiseen" in text_27g
+    assert "Sähköntoimituksen keskeyttäminen vähittäismyyjästä" not in text_27g
+
+    assert section_27k is not None
+    text_27k = " ".join(irnode_to_text(section_27k).split())
+    assert text_27k.startswith(
+        "27 k § Jakeluverkonhaltijan oikeus purkaa sähköverkkosopimus"
+    )
+    assert (
+        "Sähköverkkosopimuksen ja sähkönmyyntisopimuksen saa kuluttajan maksuviivästyksen"
+        in text_27k
+    )
+    assert "Vastuutahot" not in text_27k
+
+
 def test_replay_xml_1973_36_materializes_live_missing_sections() -> None:
     """1973/36 must retain the live Finland bug-family sections end to end."""
     replay = pinned_replay(
