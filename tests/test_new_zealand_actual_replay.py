@@ -554,3 +554,112 @@ def test_apply_verified_mutation_each_place_replaces_every_occurrence() -> None:
 
     single = _apply_verified_mutation(node, _proof(each_place=False))
     assert single.text == "the new phrase here and the old phrase there"
+
+
+# --- Family-level dry-run refusal receipt propagation (AGENTS §1.8) ----------
+
+
+def test_family_level_dry_run_refusal_is_carried_as_non_blocking_receipt() -> None:
+    """A family-level dry-run refusal (no candidate / preflight not ready) is
+    carried onto the actual-replay plane as a NON-blocking receipt. Pins the
+    §1.8 receipt-conservation contract at the report-construction layer
+    (paired with `tests/test_new_zealand_actual_replay_corpus_smoke.py`'s
+    @slow corpus pin that drives the full per-work actual-replay on the smoke
+    corpus -- AGENTS §2.9 synthetic+corpus pairing rule).
+
+    Contract pinned:
+    * The receipt lives in `report.family_level_dry_run_refusals`, NOT in
+      `report.refusals` (so it never inflates `transitions_refused` or blocks
+      a transition).
+    * `summary()["family_level_dry_run_refusal_counts"]` is a `(rule_id -> n)`
+      map carrying the originating dry-run refusal rule_id -- not the
+      actual-replay carried rule_id -- so a benchmark can attribute "the
+      family declared nothing" to the right family (repeal/replace/insert/
+      preflight) without re-running the dry-run.
+    * `agreement_residuals()` includes the receipt (typed into
+      `accepted_non_executable_frontier` -- the family declared nothing, so
+      no mutation, not a `replay_bug` / `temporal_mismatch` / `source_footing_gap`).
+
+    Faster than the @slow corpus sweep -- exercises the report construction
+    contract directly (synthetic, no archived XML required).
+    """
+    from lawvm.new_zealand.actual_replay import (
+        NZActualReplayReport,
+        NZActualReplayRefusal,
+        NZ_ACTUAL_REPLAY_CARRIED_FAMILY_LEVEL_DRY_RUN_REFUSAL_RULE_ID,
+    )
+    from lawvm.new_zealand.dry_run import (
+        NZ_DRY_RUN_REFUSED_NO_INSERT_CANDIDATE_RULE_ID,
+        NZ_DRY_RUN_REFUSED_NO_REPEAL_CANDIDATE_RULE_ID,
+    )
+
+    carried = (
+        NZActualReplayRefusal(
+            rule_id=NZ_ACTUAL_REPLAY_CARRIED_FAMILY_LEVEL_DRY_RUN_REFUSAL_RULE_ID,
+            message="synthetic inserted-no-candidate receipt",
+            detail={
+                "family": "insert",
+                "dry_run_refusal_rule_id": NZ_DRY_RUN_REFUSED_NO_INSERT_CANDIDATE_RULE_ID,
+            },
+        ),
+        NZActualReplayRefusal(
+            rule_id=NZ_ACTUAL_REPLAY_CARRIED_FAMILY_LEVEL_DRY_RUN_REFUSAL_RULE_ID,
+            message="synthetic repealed-no-candidate receipt",
+            detail={
+                "family": "repeal",
+                "dry_run_refusal_rule_id": NZ_DRY_RUN_REFUSED_NO_REPEAL_CANDIDATE_RULE_ID,
+            },
+        ),
+    )
+    # A second identical dry-run rule_id to exercise the count > 1 path.
+    carried = carried + (
+        NZActualReplayRefusal(
+            rule_id=NZ_ACTUAL_REPLAY_CARRIED_FAMILY_LEVEL_DRY_RUN_REFUSAL_RULE_ID,
+            message="synthetic second inserted-no-candidate receipt",
+            detail={
+                "family": "insert",
+                "dry_run_refusal_rule_id": NZ_DRY_RUN_REFUSED_NO_INSERT_CANDIDATE_RULE_ID,
+            },
+        ),
+    )
+
+    report = NZActualReplayReport(
+        work_id="synthetic",
+        families=("repeal", "text_replace", "replace", "insert"),
+        transitions=(),
+        refusals=(),
+        family_level_dry_run_refusals=carried,
+    )
+
+    sm = report.summary()
+    assert sm["transitions_replayed"] == 0
+    assert sm["transitions_refused"] == 0
+    assert sm["family_level_dry_run_refusal_counts"] == {
+        NZ_DRY_RUN_REFUSED_NO_INSERT_CANDIDATE_RULE_ID: 2,
+        NZ_DRY_RUN_REFUSED_NO_REPEAL_CANDIDATE_RULE_ID: 1,
+    }, (
+        "family_level_dry_run_refusal_counts must map the originating DRY-RUN "
+        "refusal rule_id -> count so the receiving family (insert / repeal / etc) "
+        "stays observable per AGENTS §1.8 / §2.9."
+    )
+
+    # The carry rule_id lives ONLY in family_level_dry_run_refusals -- not
+    # in `refusals` (which would inflate transitions_refused).
+    assert all(
+        ref.rule_id != NZ_ACTUAL_REPLAY_CARRIED_FAMILY_LEVEL_DRY_RUN_REFUSAL_RULE_ID
+        for ref in report.refusals
+    )
+
+    # The receipt is observable on the agreement-residual projection (typed
+    # accepted_non_executable_frontier: family declared nothing -> no mutation
+    # -> not a replay_bug / temporal_mismatch / source_footing_gap).
+    families = {
+        residual.family for residual in report.agreement_residuals()
+    }
+    assert "accepted_non_executable_frontier" in families
+    assert "replay_bug" not in families
+
+    # The summary surfaces the receipt under a stable key a benchmark reads.
+    payload = report.to_jsonable()
+    assert "family_level_dry_run_refusals" in payload
+    assert len(payload["family_level_dry_run_refusals"]) == 3

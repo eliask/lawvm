@@ -400,6 +400,14 @@ _EXTRA_NZ_RULE_SPECS: Dict[str, str] = {
         "Refusal: a structural family (replace/insert) was requested but no operation surface was provided — "
         "the family is not attempted, never silently skipped."
     ),
+    "nz_actual_replay_carried_family_level_dry_run_refusal": (
+        "Receipt (NOT a fail-closed refusal): the dry-run surface emitted a family-level refusal "
+        "(no candidate for repeal/replace/insert, preflight not ready) — the family declared nothing "
+        "to replay, so it never blocks a transition; carried onto the actual-replay plane as a work-"
+        "level receipt so the family-level no-candidate event stays observable per AGENTS §1.8 "
+        "(every filtered lane stays visible with a receipt; differing from the per-op blocking "
+        "``refusals`` which DO fail-closed a transition)."
+    ),
     # --- Instruction-semantics readiness (effect_readiness.py) ------------------------
     "nz_instruction_semantics_payload_witness_not_available": (
         "Readiness refusal: the op's amending payload witness is absent (payload_status != "
