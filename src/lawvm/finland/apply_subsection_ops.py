@@ -9,6 +9,7 @@ cohabit with typed/legacy dispatch.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from difflib import SequenceMatcher
 import logging
 import re
 from typing import TYPE_CHECKING, List, Optional
@@ -273,7 +274,12 @@ def _extract_predecessor_tail_paragraph_as_insert(
     if muutos_ir is None or target_paragraph <= 1:
         return None
     slot_kinds = [c.kind for c in muutos_ir.children if c.kind == IRNodeKind.SUBSECTION or _is_omission_ir(c)]
-    if slot_kinds != [IRNodeKind.OMISSION, IRNodeKind.SUBSECTION, IRNodeKind.OMISSION]:
+    omission_bracketed_single = slot_kinds == [IRNodeKind.OMISSION, IRNodeKind.SUBSECTION, IRNodeKind.OMISSION]
+    mixed_predecessor_payload = tuple(slot_kinds) in {
+        (IRNodeKind.SUBSECTION, IRNodeKind.SUBSECTION),
+        (IRNodeKind.SUBSECTION, IRNodeKind.SUBSECTION, IRNodeKind.OMISSION),
+    }
+    if not (omission_bracketed_single or mixed_predecessor_payload):
         return None
     if any(child.kind == IRNodeKind.PARAGRAPH for child in replacement_subsection.children):
         return None
@@ -317,11 +323,26 @@ def _extract_predecessor_tail_paragraph_as_insert(
         or predecessor_tail_text == current_target_text
     ):
         return None
+    prefix = replacement_text[:40]
+    pred_score = SequenceMatcher(None, replacement_text[:240], predecessor_tail_text[:240]).ratio()
+    target_score = SequenceMatcher(None, replacement_text[:240], current_target_text[:240]).ratio()
+    tail_is_better_payload_match = (
+        len(replacement_text) >= 40
+        and len(predecessor_tail_text) >= 40
+        and predecessor_tail_text.startswith(prefix)
+        and not current_target_text.startswith(prefix)
+        and pred_score >= 0.60
+        and pred_score > target_score + 0.10
+    )
     if predecessor_tail.kind == IRNodeKind.PARAGRAPH:
-        if predecessor_tail_text != replacement_text:
+        if predecessor_tail_text != replacement_text and not (
+            mixed_predecessor_payload and tail_is_better_payload_match
+        ):
             return None
     elif predecessor_tail.kind == IRNodeKind.CONTENT:
         if not has_numbered_predecessor_body:
+            return None
+        if mixed_predecessor_payload and not tail_is_better_payload_match:
             return None
     else:
         return None

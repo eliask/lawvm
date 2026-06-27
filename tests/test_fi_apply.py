@@ -18010,6 +18010,75 @@ def test_subsection_replace_extracts_predecessor_tail_into_inserted_new_moment()
     assert pathologies[0].detail["recovery_kind"] == "subsection_replace_predecessor_tail_extract_insert"
 
 
+def test_subsection_replace_extracts_mixed_predecessor_tail_when_payload_matches_tail_not_nominal_target() -> None:
+    """Mixed item-insert + subsection-replace payload may reveal embedded tail moment.
+
+    Pattern from 2023/186 <- 2026/32 §8: the live XML has the old second
+    moment as an unnumbered tail under the first intro/list moment, while the
+    following live subsection is logically the third moment. The sparse source
+    body updates the first-moment item list and replaces that embedded tail.
+    """
+    old_tail = (
+        "Rekisteriin merkitään myös tiedot niistä, joille on määrätty kielto "
+        "harjoittaa kuluttajaluottojen tarjoamista taikka vertaislainanvälitystä."
+    )
+    replacement_tail = (
+        "Rekisteriin merkitään myös tiedot niistä, joille on määrätty kielto "
+        "harjoittaa kuluttajaluottojen tarjoamista, vertaislainanvälitystä taikka "
+        "kuluttajaluottoja koskevaa neuvontapalvelujen tarjoamista."
+    )
+    notice = "Luotonantajan on ilmoitettava rekisteriin merkittyjen tietojen muutoksista."
+    sec = _sec(
+        "8",
+        _sub(
+            "1",
+            _intro("Rekisteriin merkitään:"),
+            _para("1", "ensimmäinen tieto;"),
+            _para("2", "toinen tieto."),
+            _content(old_tail),
+        ),
+        _sub("2", _content(notice)),
+    )
+    body = _body(sec)
+    sec_path = [("section", "8")]
+    subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+    pathologies: list[SourcePathology] = []
+    replace_sub = _sub("2", _content(replacement_tail))
+    muutos_ir = _sec(
+        "8",
+        _sub("1", _intro("Rekisteriin merkitään:"), _para("2a", "uusi tieto;")),
+        replace_sub,
+    )
+    state = _make_state(body)
+    op = _op(op_type=OpType.REPLACE, target_section="8", target_paragraph=2)
+
+    result = _apply_subsection_replace(
+        state,
+        op,
+        sec_path,
+        sec,
+        subsecs,
+        replace_sub,
+        muutos_ir,
+        _FINLEX_ORACLE,
+        "8 § 2 mom",
+        source_pathologies_out=pathologies,
+    )
+
+    assert result is not None
+    from lawvm.core.tree_ops import resolve as tree_resolve
+
+    result_sec = tree_resolve(result.ir, (("section", "8"),))
+    assert result_sec is not None
+    result_subsecs = [c for c in result_sec.children if c.kind == IRNodeKind.SUBSECTION]
+    assert [sub.label for sub in result_subsecs] == ["1", "2", "3"]
+    assert old_tail not in irnode_to_text(result_subsecs[0])
+    assert irnode_to_text(result_subsecs[1]) == replacement_tail
+    assert irnode_to_text(result_subsecs[2]) == notice
+    assert [p.code for p in pathologies] == ["DESTRUCTIVE_SHAPE_LOSS_RISK"]
+    assert pathologies[0].detail["recovery_kind"] == "subsection_replace_predecessor_tail_extract_insert"
+
+
 def test_subsection_replace_does_not_extract_predecessor_tail_duplicate_of_target() -> None:
     """A copied target in the predecessor tail is stale source shape, not a new slot."""
     sec = _sec(
