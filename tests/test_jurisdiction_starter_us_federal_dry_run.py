@@ -119,6 +119,136 @@ def test_replace_token_in_text_last_occurrence_replaces_rightmost_match_once():
     ) == _replace_token_in_text(single, match_text=".", replacement="X", count=-1)
 
 
+def test_s0_length_ratio_invariant_defends_against_silent_state_corruption() -> None:
+    """§0 guard-liveness test: through-tail must preserve the right-side
+    suffix AND end-punct-insert must target the W-rightmost period only.
+
+    AGENTS.md §2.9 guard-liveness: drive known-violating inputs through the
+    FULL production path (``build_us_dry_run``), not just a unit test of the
+    helper function. This test catches two §0 silent-state-corruption bug
+    classes discovered during the 2026-06 session:
+
+      1. ``_replace_token_through_in_text`` dropped ``text[end_pos:]``
+         (the bounded-deletion helper returned
+         ``text[:start_pos] + replacement`` without the suffix) — every
+         through-tail op silently converted to an open-ended tail cut.
+         Regression signature: ``len(materialized) << len(oracle)`` on a
+         section whose right-side text should survive.
+
+      2. ``TextSelector.occurrence == -1`` was overloaded between EACH_PLACE
+         (replace ALL occurrences) and LAST (replace rightmost once);
+         ``str.replace(count=-1)`` means ALL in Python — multi-sentence
+         sections with >1 terminal period got the insert applied to every
+         period, silently multiplying the op's effect.
+         Regression signature: ``len(materialized) >> len(oracle)`` on a
+         multi-sentence section where one terminal-punct edit ran.
+
+    The test drives both op families through ``build_us_dry_run`` end-to-end
+    and asserts per-section length ratios against a band that the regressions
+    would violate.
+    """
+    section_50_before = "Sentence one. Sentence two. Sentence three."
+    section_50_after = "Sentence one. Sentence two. Sentence three; and."
+    section_70_before = (
+        "Preamble. Definitions. End block. Surplus text that is long enough"
+        " to test truncation behavior at the end of the section."
+    )
+    section_70_after = (
+        "Preamble. Budget Activity Defined. Surplus text that is long enough"
+        " to test truncation behavior at the end of the section."
+    )
+
+    def _htm(s50: str, s70: str) -> bytes:
+        return (
+            '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"\n'
+            '"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">\n'
+            '<html xmlns="http://www.w3.org/1999/xhtml">\n'
+            " <head>\n  <title>U.S.C. Title 99 (s0 guard)</title>\n"
+            "<!-- AUTHORITIES-USC-TITLE-ENUM:99 -->\n"
+            " </head>\n <body>\n  <div>\n"
+            "<!-- expcite:TITLE 99-SYNTHETIC!@!CHAPTER 1-PROVISIONS!@!Sec. 50 -->\n"
+            "<!-- field-start:head -->\n"
+            '<h3 class="section-head">&sect;50. Multi-sentence</h3>\n'
+            "<!-- field-end:head -->\n"
+            "<!-- field-start:statute -->\n"
+            f'<p class="statutory-body">{s50}</p>\n'
+            "<!-- field-end:statute -->\n"
+            "<!-- field-start:sourcecredit -->\n"
+            '<p class="source-credit">(Pub. L. 99&ndash;1, Jan. 1, 2020, 100 Stat. 1.)</p>\n'
+            "<!-- field-end:sourcecredit -->\n"
+            "<!-- expcite:TITLE 99-SYNTHETIC!@!CHAPTER 1-PROVISIONS!@!Sec. 70 -->\n"
+            "<!-- field-start:head -->\n"
+            '<h3 class="section-head">&sect;70. Multi-block</h3>\n'
+            "<!-- field-end:head -->\n"
+            "<!-- field-start:statute -->\n"
+            f'<p class="statutory-body">{s70}</p>\n'
+            "<!-- field-end:statute -->\n"
+            "<!-- field-start:sourcecredit -->\n"
+            '<p class="source-credit">(Pub. L. 99&ndash;1, Jan. 1, 2020, 100 Stat. 1.)</p>\n'
+            "<!-- field-end:sourcecredit -->\n"
+            "  </div>\n </body>\n</html>\n"
+        ).encode("utf-8")
+
+    plaw = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<uslm xmlns="http://schemas.gpo.gov/xml/uslm"><meta>'
+        "<congress>99</congress><docNumber>3</docNumber>"
+        "<approvedDate>2024-01-01</approvedDate></meta><main>"
+        "<section><num>1</num><content>"
+        '<ref href="/us/usc/t99/s50">Section 50 of title 99, United States Code</ref>, '
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="insert">inserting</amendingAction> '
+        "\u201c<quotedText>; and</quotedText>\u201d before the period at the end."
+        "</content></section>"
+        "<section><num>2</num><content>"
+        '<ref href="/us/usc/t99/s70">Section 70 of title 99, United States Code</ref>, '
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="delete">striking</amendingAction> '
+        "\u201c<quotedText>Definitions</quotedText>\u201d and all that follows through "
+        "\u201c<quotedText>End block.</quotedText>\u201d and "
+        '<amendingAction type="insert">inserting</amendingAction> '
+        "\u201c<quotedText>Budget Activity Defined.</quotedText>\u201d."
+        "</content></section>"
+        "</main></uslm>"
+    ).encode("utf-8")
+
+    report = build_us_dry_run(
+        before_htm=_htm(section_50_before, section_70_before),
+        after_htm=_htm(section_50_after, section_70_after),
+        plaw_blobs={"PL 99-3": plaw},
+        title=99,
+        before_year="2023",
+        after_year="2024",
+    )
+    rows = {r.section_key: r for r in report.rows}
+    assert "99:50" in rows, list(rows)
+    assert "99:70" in rows, list(rows)
+
+    # Section 50 (insert_end_punct on a multi-sentence section).
+    # If OccMode bug regressed (every period got "; and" prepended), the
+    # materialized text would be ~30% longer than the oracle.
+    s50 = rows["99:50"]
+    oracle_50 = max(len(s50.oracle_text), 1)
+    ratio_50 = len(s50.materialized_text) / oracle_50
+    assert 0.9 <= ratio_50 <= 1.10, (
+        f"section 50 ratio {ratio_50:.2f} out of [0.9, 1.10] band; "
+        f"mat_len={len(s50.materialized_text)} orc_len={oracle_50}; "
+        f"mat={s50.materialized_text!r}"
+    )
+
+    # Section 70 (through-tail strike-insert whose right-side text must survive).
+    # If through-tail bug regressed (text[end_pos:] dropped), the materialized
+    # text would be ~60% shorter than the oracle.
+    s70 = rows["99:70"]
+    oracle_70 = max(len(s70.oracle_text), 1)
+    ratio_70 = len(s70.materialized_text) / oracle_70
+    assert 0.50 <= ratio_70 <= 1.50, (
+        f"section 70 ratio {ratio_70:.2f} out of [0.50, 1.50] band; "
+        f"mat_len={len(s70.materialized_text)} orc_len={oracle_70}; "
+        f"mat={s70.materialized_text!r}"
+    )
+
+
 def test_oracle_changed_section_set_is_a_fact_of_the_two_editions() -> None:
     report = _build()
     # Section 10 changed (15-year -> 19-year); section 30 is after-only; section
