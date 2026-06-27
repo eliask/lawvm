@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import re
 
+from lawvm.core.regex_safety import compile_classifier_regex
+
 
 def nz_date_text_to_iso(text: str) -> str:
     """Normalize simple NZ source dates to ``YYYY-MM-DD``.
@@ -31,7 +33,10 @@ def nz_date_text_to_iso(text: str) -> str:
 
 
 _ISO_DATE_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})(?:\b|$)")
-_DATE_TEXT_RE = re.compile(r"^(?P<day>\d{1,2}) (?P<month>[A-Za-z]+) (?P<year>\d{4})(?:\b|$)")
+_DATE_TEXT_RE = compile_classifier_regex(
+    r"^(?P<day>\d{1,2}) (?P<month>[A-Za-z]+) (?P<year>\d{4})(?:\b|$)",
+    classifier_id="nz.dates.date_text_re",
+)
 _MONTHS = {
     "january": "01",
     "february": "02",
