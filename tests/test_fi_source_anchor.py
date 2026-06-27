@@ -21,7 +21,10 @@ the writer-logic level here; a real-corpus end-to-end build is in
 from __future__ import annotations
 
 import hashlib
+from pathlib import Path
 from typing import Any, List, cast
+
+import pytest
 
 from lawvm.core.provenance import OperationSource, SourceAnchor, compute_source_anchor
 from lawvm.core.ir import IRNode
@@ -320,3 +323,116 @@ def test_certificate_keeps_fail_loud_when_anchor_does_not_verify(
     assert any(
         r.get("diagnostic_code") == "CERT.SOURCE_ANCHOR_UNAVAILABLE" for r in residuals
     )
+
+
+# ---------------------------------------------------------------------------
+# 4. the typed producer IS the canonical source when source_anchor is present
+#    (AGENTS.md §1.12 _MUST_TRANSITION_FROM_RECEIPT; PIPE-MUST-10 in core/must_trace)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(
+    not Path("data/finlex.farchive").exists(),
+    reason="data/finlex.farchive not present; skipping real-corpus test",
+)
+def test_typed_producer_emits_canonical_transitions_when_granularity_matches(
+    monkeypatch: Any, tmp_path: Any
+) -> None:
+    """For receipts WITH a verified source_anchor AND whose declared footprint
+    matches the bundle granularity, the typed producer
+    (``lawvm.core.certified_transition.certified_tree_transitions_from_receipt``)
+    is the canonical transition source per AGENTS.md §1.12 / PIPE-MUST-10 —
+    the typed transition row carries ``source_anchors`` from the typed producer
+    directly (no state-diff reach-back). The fail-loud
+    ``CERT.SOURCE_ANCHOR_UNAVAILABLE`` residual is suppressed for those
+    (transition_id, source_ref) pairs.
+
+    Builds the bundle at ``granularity='section'`` so op_0's section-level
+    receipt (declared footprint ``section:7``) matches the bundle's
+    granularity: at the default ``subsection`` granularity the fingerprint's
+    declared footprint is at section level and the typed producer falls back
+    to the state-diff + overlay step (a separate code path tested above in
+    ``test_certificate_flips_to_certified_anchor_when_verified``).
+    """
+    from lawvm.tools.certificate_bundle import build_certificate_bundle, verify_bundle
+
+    anchor = _anchor_over_bundled_source("2025/368", byte_offset=200, byte_len=50)
+    _patched_replay_with_anchor(monkeypatch, anchor)
+
+    out = tmp_path / "bundle"
+    build_certificate_bundle(
+        "482/2024",
+        out,
+        granularity="section",
+        graph_store_root=tmp_path / "graph",
+    )
+
+    rows = _read_jsonl(out / "trace" / "certified_tree_transitions.jsonl")
+    typed_rows = [r for r in rows if r.get("flags", {}).get("typed_producer")]
+    assert typed_rows, (
+        "expected at least one typed-producer transition for op_0 at section granularity"
+    )
+    cert_anchor = typed_rows[0]["source_anchors"][0]
+    assert cert_anchor["span_unit"] == "byte"
+    assert cert_anchor["source_artifact_id"] == "2025/368"
+    assert cert_anchor["byte_offset"] == 200
+    assert cert_anchor["byte_len"] == 50
+
+    # The anchored (transition_id, source_ref) pairs MUST NOT appear in the
+    # fail-loud SOURCE_ANCHOR_UNAVAILABLE residual ledger — the typed producer
+    # already certified the anchor (no reach-back).
+    anchored_pairs: set[tuple[str, str]] = set()
+    for row in typed_rows:
+        for ref in row["source_refs"]:
+            anchored_pairs.add((row["transition_id"], ref))
+    assert anchored_pairs
+
+    residuals = _read_jsonl(out / "residue" / "residuals.jsonl")
+    unavailable_pairs: set[tuple[str, str]] = set()
+    for resid in residuals:
+        if resid.get("diagnostic_code") != "CERT.SOURCE_ANCHOR_UNAVAILABLE":
+            continue
+        tid = resid.get("transition_id", "")
+        for ref in resid.get("source_refs", []):
+            unavailable_pairs.add((tid, ref))
+    assert not (anchored_pairs & unavailable_pairs), (
+        "anchored typed-producer pairs leaked into the SOURCE_ANCHOR_UNAVAILABLE residual ledger"
+    )
+
+    # Self-consistent: roots recompute from the written bundle.
+    verify_bundle(out)
+
+
+@pytest.mark.skipif(
+    not Path("data/finlex.farchive").exists(),
+    reason="data/finlex.farchive not present; skipping real-corpus test",
+)
+def test_typed_producer_skipped_for_receipts_without_source_anchor(tmp_path: Any) -> None:
+    """When NO receipt carries a source_anchor (the legacy production case),
+    the typed-producer pre-pass emits zero typed rows and the certificate
+    writhes through the §1.12 reach-back state-diff path with the fail-loud
+    SOURCE_ANCHOR_UNAVAILABLE residual for every (transition, ref) pair. This
+    is the no-anchor / legacy fallback guaranteeing honest failure when
+    source_anchor threading is absent — never a silent upgrade.
+    """
+    from lawvm.tools.certificate_bundle import build_certificate_bundle
+
+    out = tmp_path / "bundle"
+    build_certificate_bundle(
+        "482/2024",
+        out,
+        granularity="section",
+        graph_store_root=tmp_path / "graph",
+    )
+
+    rows = _read_jsonl(out / "trace" / "certified_tree_transitions.jsonl")
+    assert all(not r.get("flags", {}).get("typed_producer") for r in rows), (
+        "no receipt carries source_anchor in production — typed-producer pre-pass"
+        " must be empty and all transitions come from the state-diff path"
+    )
+    # No transition carries source_anchors (no anchored receipt to verify).
+    assert all(not r.get("source_anchors") for r in rows)
+    residuals = _read_jsonl(out / "residue" / "residuals.jsonl")
+    assert any(
+        r.get("diagnostic_code") == "CERT.SOURCE_ANCHOR_UNAVAILABLE" for r in residuals
+    ), "legacy receipts MUST emit the fail-loud SOURCE_ANCHOR_UNAVAILABLE residual"
