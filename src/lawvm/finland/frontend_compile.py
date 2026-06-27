@@ -667,24 +667,9 @@ def _restore_heading_facet_for_mixed_scope_section_replaces(
         else:
             whole_section_keys.add(key)
 
-    candidate_keys = (heading_keys & descendant_keys) - whole_section_keys
+    candidate_keys = heading_keys - whole_section_keys
     if not candidate_keys:
         return ops, []
-
-    # descendant_scope_present: sections that have ANY descendant-level op
-    # (INSERT or REPLACE targeting paragraph/item). Keyed on (part, section)
-    # only — op_type is intentionally excluded because an INSERT subsection
-    # and a REPLACE section-container are different ops for the same section.
-    descendant_scope_present: set[tuple[str, str]] = {
-        (
-            str(op.target_cols.target_part or "").strip(),
-            str(op.target_cols.target_section or "").strip(),
-        )
-        for op in ops
-        if op.target_cols.target_unit_kind == "section"
-        and str(op.target_cols.target_section or "").strip()
-        and (op.target_cols.target_paragraph is not None or bool(op.target_cols.target_item))
-    }
 
     for op in ops:
         key = (
@@ -692,19 +677,15 @@ def _restore_heading_facet_for_mixed_scope_section_replaces(
             str(op.target_cols.target_part or "").strip(),
             str(op.target_cols.target_section or "").strip(),
         )
-        descendant_scope_key = (
-            str(op.target_cols.target_part or "").strip(),
-            str(op.target_cols.target_section or "").strip(),
-        )
         # Allow explicit heading ops (target_special == "otsikko") as well as
-        # plain section replaces to receive the preserve flag when co-occurring
-        # with a subsection op for the same section. An explicit "otsikko" op
-        # must stay on the heading facet even when the shared XML payload
-        # carries subsection children intended for the sibling subsection op.
+        # plain section replaces to receive the preserve flag when the typed
+        # clause parse explicitly targets the section heading and no whole
+        # section target for the same key was parsed. An explicit "otsikko" op
+        # must stay on the heading facet even when malformed source XML carries
+        # subsection children that are not authored targets.
         is_explicit_heading_op = op.target_cols.target_special == "otsikko"
         if (
             key not in candidate_keys
-            or descendant_scope_key not in descendant_scope_present
             or op.target_cols.target_unit_kind != "section"
             or op.op_type != OpType.REPLACE
             or op.target_cols.target_paragraph is not None

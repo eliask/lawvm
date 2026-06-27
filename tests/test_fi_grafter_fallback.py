@@ -17132,6 +17132,27 @@ def test_restore_heading_facet_for_mixed_scope_section_replaces_rewrites_plain_s
     assert findings == []
 
 
+def test_restore_heading_facet_preserves_explicit_heading_only_clause() -> None:
+    parse_result = parse_clause("muutetaan 27 a §:n edellä olevan luvun otsikko")
+    heading_op = AmendmentOp(
+        op_type=OpType.REPLACE,
+        target_unit_kind="section",
+        target_section="27a",
+        target_special="otsikko",
+    )
+
+    patched, findings = _restore_heading_facet_for_mixed_scope_section_replaces(
+        [heading_op],
+        parse_result=parse_result,
+        amendment_id="1996/322",
+    )
+
+    assert patched[0].description() == "REPLACE 27a § otsikko"
+    assert patched[0].target_cols.target_special == "otsikko"
+    assert patched[0].preserve_explicit_heading_facet is True
+    assert findings == []
+
+
 def test_rewrite_later_effective_lo_groups_scopes_deferred_cited_version_ops() -> None:
     lo_ops = [
         LegalOperation(

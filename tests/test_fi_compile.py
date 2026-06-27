@@ -3065,6 +3065,16 @@ def test_normalize_and_compile_ops_2007_473_repairs_split_muutetaan_verb() -> No
     assert [op.description() for op in phase.output] == ["REPLACE 5 luku 16 §"]
 
 
+def test_replay_xml_1991_248_heading_only_op_does_not_smuggle_commencement_body() -> None:
+    replay = replay_xml("1991/248", stop_before="1996/323", mode="legal_pit", quiet=True, build_full_products=False)
+    sections = extract_ir_sections(replay.state.ir)
+    sec = sections["chapter:2a/section:27a"]
+    text = " ".join(irnode_to_text(sec).split())
+
+    assert "alueiden tasapainoiseen kehittämiseen" in text
+    assert "Tämä asetus tulee voimaan 24 päivänä toukokuuta 1996" not in text
+
+
 def test_replay_xml_1996_1200_merges_sparse_omission_item_rows_in_targeted_subsection() -> None:
     replay = pinned_replay("1996/1200", mode="official_consolidation", quiet=True)
     section9 = extract_ir_sections(replay.materialized_state.ir)["section:9"]
