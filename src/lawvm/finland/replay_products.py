@@ -1501,6 +1501,20 @@ def _cited_snapshot_materially_covers_current(
     same-effective snapshot structurally covers the later one and contains
     materially more payload.  If the later snapshot adds content or has equivalent
     coverage, it must stay: it is the actual current amendment payload.
+
+    Material coverage is decided by the typed IRNode payload shape counts only
+    (§1.12 — the typed payload IS the owner). The prior criterion additionally
+    rendered both payloads to text and required ``len(cited_text) >=
+    len(current_text) + 80``; that re-derived semantic authority from a lossier
+    representation, so whitespace, editorial comments, or comment-rich prose could
+    bump the score without bumping typed shape (false positive) and conversely a
+    broader snapshot with terse extra nodes could be missed (false negative). The
+    typed criterion is:
+    (a) ``cited_counts`` covers ``current_counts`` — every ``(kind, label)`` tuple
+        in the current payload appears at least as many times in the cited one;
+    (b) the cited payload carries strictly more shape instances than the current
+        one, so the drop fires only when the cited snapshot is genuinely broader
+        — not when prose merely happens to be longer.
     """
     if current_payload is None or cited_payload is None:
         return False
@@ -1508,11 +1522,7 @@ def _cited_snapshot_materially_covers_current(
     cited_counts = _payload_shape_counts(cited_payload)
     if not all(cited_counts[key] >= count for key, count in current_counts.items()):
         return False
-    if sum(cited_counts.values()) <= sum(current_counts.values()):
-        return False
-    current_text = irnode_to_text(current_payload)
-    cited_text = irnode_to_text(cited_payload)
-    return len(cited_text) >= len(current_text) + 80
+    return sum(cited_counts.values()) > sum(current_counts.values())
 
 
 FI_CITED_VERSION_SNAPSHOT_DROP_RULE_ID = "fi.replay.cited_version_ancestor_snapshot_drop"

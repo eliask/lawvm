@@ -3978,6 +3978,14 @@ NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
     "TIME.TRIGGER_COVERAGE_INCOMPLETE": ("timeline barrier; needs fixture", "2026-06-20"),
     "TIME.UNRESOLVED_COMMENCEMENT_TRIGGER": ("timeline barrier; needs fixture", "2026-06-20"),
     "uk_replay_text_patch_preimage_drift": ("UK replay text-patch drift; needs UK fixture", "2026-06-20"),
+    # Theme C (§1.10 no-silent-default + §2.6 rule-of-three): the named_swallow
+    # primitive's typed Finding kind. Drill when a fixture exercises an
+    # actual swallow through the production lane (corpus / consolidated_artifacts
+    # / spec_ledger / dry_run / worker_pool / graph sites). The migration tests
+    # in tests/test_named_swallow_totality.py already drive the primitive
+    # directly; the drill needs to drive through the apply-pipeline PhaseResult
+    # surface so the blocking obligation reaches a strict-mode consumer.
+    "UNEXPECTED_PHASE_FAILURE": ("named_swallow primitive; needs pipeline-lane fixture", "2026-06-27"),
 }
 
 # Committed monotone-decreasing debt ceiling for NO_FIRE_DRILL_YET. The allowlist

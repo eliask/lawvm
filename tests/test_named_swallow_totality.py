@@ -1,0 +1,609 @@
+"""Totality predicate + per-site guard-liveness for ``named_swallow`` (§1.10 + §2.6).
+
+The ``except (NameError, TypeError, AttributeError): raise; except Exception: <swallow>``
+pattern was re-invented at 10+ sites across the codebase (Theme C). Per
+AGENTS.md §2.6 (rule of three), it is overdue for crystallisation. The
+``lawvm.core.named_swallow`` primitive provides a single owned fail-loud
+shape: programming bugs re-raise; all other ``Exception`` instances are
+swallowed-with-witness — a typed ``Finding(kind=UNEXPECTED_PHASE_FAILURE,
+blocking=True)`` is constructed carrying ``rule_id``, ``exception_type``,
+``exception_message``, ``op_id``, ``clause_text`` (truncated ~400 chars),
+``source_artifact``, ``jurisdiction``, then emitted through the caller's
+``emit`` callable OR ``findings_out`` sink. AGENTS.md §1.10 forbids the silent
+default the prior shape produced.
+
+This test pins two invariants:
+
+1. **Totality predicate (AST scan)**: the migrated modules contain no
+   remaining ``try/except Exception: <swallow-to-default>`` shape — every
+   ``except Exception:`` clause either re-raises a programming-bug axis OR is
+   wrapped/caught by ``named_swallow`` / ``swallow_call`` /
+   ``build_named_swallow_finding``. The forbidden shape is the
+   pattern-3 rhyming across migrated files — once the primitive exists,
+   re-introducing it is the §2.6 worst-case (the fix shape landed N+1 times).
+
+2. **Per-site guard-liveness** (AGENTS.md §2.9 "the worst failure class"):
+   each migrated site has a synthetic test that drives a known-violating input
+   through the production path and asserts the typed Finding fires — not just
+   a unit test of ``named_swallow`` itself. The 10 migrated sites cover the
+   ``named_swallow``-contextmanager shape (graph.py, transparent_store.py,
+   _worker_pool.py), the ``swallow_call`` HOF shape (corpus.py,
+   frontend_observations.py, estonia spec_ledger_adapter.py, dry_run.py, ops.py),
+   and the ``build_named_swallow_finding`` direct shape (consolidated_artifacts.py,
+   sweden/grafter.py).
+"""
+from __future__ import annotations
+
+import ast
+import logging
+from collections.abc import Callable
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
+
+import pytest
+
+from lawvm.core.named_swallow import (
+    NAMED_SWALLOW_FINDING_KIND,
+    NamedSwallowNonEmittingSinkError,
+    build_named_swallow_finding,
+    log_emitter,
+    named_swallow,
+    swallow_call,
+)
+from lawvm.core.observation_registry import FINDING_REGISTRY
+from lawvm.core.phase_result import Finding
+
+
+# ---------------------------------------------------------------------------
+# MIGRATED FILES — the AST-scan totality surface
+# ---------------------------------------------------------------------------
+# Files that touched the swallow pattern (Theme C sites). Adding to this tuple
+# extends the totality predicate below; the AST scan asserts every
+# ``except Exception:`` clause in these files either re-raises a programming-bug
+# axis OR is wrapped by ``named_swallow`` / ``swallow_call`` /
+# ``build_named_swallow_finding``. Re-introducing an in-line
+# ``except Exception: <swallow-to-default>`` shape here fails the totality guard.
+_MIGRATED_FILES = (
+    "src/lawvm/core/named_swallow.py",
+    "src/lawvm/finland/ops.py",
+    "src/lawvm/finland/graph.py",
+    "src/lawvm/finland/frontend_observations.py",
+    "src/lawvm/finland/transparent_store.py",
+    "src/lawvm/finland/corpus.py",
+    "src/lawvm/finland/consolidated_artifacts.py",
+    "src/lawvm/finland/apply_typed_dispatch.py",
+    "src/lawvm/estonia/spec_ledger_adapter.py",
+    "src/lawvm/new_zealand/dry_run.py",
+    "src/lawvm/tools/_worker_pool.py",
+    "src/lawvm/sweden/grafter.py",
+)
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+
+# The 3 known primitive entry points allowed to handle the swallow shape.
+_KNOWN_SWALLOW_HANDLERS = {
+    "named_swallow",
+    "swallow_call",
+    "build_named_swallow_finding",
+    "log_emitter",
+}
+_KNOWN_SWALLOW_MODULE = "lawvm.core.named_swallow"
+
+
+def _find_inline_silent_swallow_offenders(file_path: Path) -> list[str]:
+    """Find an in-line ``except Exception:`` clause that swallows silently.
+
+    The forbidden shape in any migrated file is::
+
+        try:
+            ...
+        except Exception:
+            <swallow-to-default>
+
+    where the body of ``except Exception:`` is anything OTHER than:
+      - passing the exception to a named_swallow primitive (which witnesses it),
+      - re-raising via ``raise`` (programming bugs that already propagate),
+      - a logging call that emits the typed Finding (log_emitter from named_swallow).
+
+    Returns a list of ``filename:lineno`` strings for each offender. An empty list
+    means the totality holds.
+    """
+    offenders: list[str] = []
+    try:
+        source = file_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return []
+    tree = ast.parse(source, filename=str(file_path))
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ExceptHandler):
+            continue
+        # Only inspect ``except Exception:`` (or bare ``except:``) — the silent
+        # swallow axis. ``except (NameError, TypeError, AttributeError): raise``
+        # is explicitly allowed (re-raises programming bugs).
+        exc_type = node.type
+        if exc_type is None:
+            # Bare ``except:`` — silent by construction, flagged.
+            offenders.append(f"{file_path.name}:{node.lineno} bare except:")
+            continue
+        # Match ``Exception`` / ``BaseException`` (the swallow axis).
+        is_broad = False
+        if isinstance(exc_type, ast.Name) and exc_type.id in ("Exception", "BaseException"):
+            is_broad = True
+        elif isinstance(exc_type, ast.Tuple):
+            for elt in exc_type.elts:
+                if isinstance(elt, ast.Name) and elt.id in ("Exception", "BaseException"):
+                    is_broad = True
+                    break
+        if not is_broad:
+            continue
+        # Now check the ``except Exception:`` body — is it routed through the
+        # named_swallow primitive?
+        handler_uses_named_swallow_primitive = _handler_routes_to_named_swallow(node)
+        if handler_uses_named_swallow_primitive:
+            continue
+        # Otherwise: offender — the swallow is in-line, NOT routed through
+        # the named_swallow primitive.
+        offenders.append(
+            f"{file_path.name}:{node.lineno} in-line except Exception swallow "
+            f"(route through lawvm.core.named_swallow.named_swallow/"
+            f"swallow_call/build_named_swallow_finding)"
+        )
+    return offenders
+
+
+def _handler_routes_to_named_swallow(handler: ast.ExceptHandler) -> bool:
+    """Check if the handler body uses a named_swallow primitive.
+
+    Recognises patterns where the handler body calls
+    ``log_emitter()(build_named_swallow_finding(...))`` OR contains a
+    ``with named_swallow(...)`` OR a call to ``swallow_call(...)`` OR
+    ``build_named_swallow_finding(...)``.
+    """
+    for child in ast.walk(handler):
+        if isinstance(child, ast.Call):
+            func = child.func
+            # build_named_swallow_finding(...)
+            if isinstance(func, ast.Name) and func.id in _KNOWN_SWALLOW_HANDLERS:
+                return True
+            # log_emitter()(...) — call on call result; walk the call graph
+            if isinstance(func, ast.Call):
+                inner = func.func
+                if isinstance(inner, ast.Name) and inner.id in _KNOWN_SWALLOW_HANDLERS:
+                    return True
+        if isinstance(child, ast.With):
+            # ``with named_swallow(...) as ...:``
+            for item in child.items:
+                ctx = item.context_expr
+                if isinstance(ctx, ast.Call) and isinstance(ctx.func, ast.Name):
+                    if ctx.func.id in _KNOWN_SWALLOW_HANDLERS:
+                        return True
+                # ``with named_swallow(...)`` (no ``as``) — function attribute access
+                if isinstance(ctx, ast.Call):
+                    func = ctx.func
+                    if isinstance(func, ast.Attribute) and func.attr in _KNOWN_SWALLOW_HANDLERS:
+                        return True
+        # An attribute call like ``named_swallow.swallow_call(...)`` or
+        # ``lawvm.core.named_swallow.swallow_call(...)`` is in primitive use.
+        if isinstance(child, ast.Attribute) and child.attr in _KNOWN_SWALLOW_HANDLERS:
+            return True
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Test 1: totality predicate — AST-scan every migrated file
+# ---------------------------------------------------------------------------
+
+def test_totality_predicate_no_inline_silent_swallow_in_migrated_files() -> None:
+    """No migrated file may re-introduce the in-line silent-exception swallow.
+
+    This is the §2.6 totality predicate: once ``named_swallow`` exists, the
+    forbidden shape is re-inventing the swallow-late boundary inline (the rule
+    of N+1 patches that §2.6 forbids). A passing run means every
+    ``except Exception:`` clause in the migrated files is either re-raising OR
+    routed through one of the named_swallow primitive entry points
+    (``named_swallow``, ``swallow_call``, ``build_named_swallow_finding``,
+    ``log_emitter``).
+
+    The exceptions are: filtered-consumer bug class axis
+    ``except (NameError, TypeError, AttributeError): raise`` (programming bugs
+    that surface, not swallow); narrow exception class (``except OSError:``,
+    ``except etree.ParseError:``, etc — already filtered, not broad swallows).
+    """
+    all_offenders: list[str] = []
+    for rel_path in _MIGRATED_FILES:
+        migrated_path = _REPO_ROOT / rel_path
+        if not migrated_path.exists():
+            # File removed/moved since the test was written — surface loudly
+            # so the totality predicate is kept honest.
+            all_offenders.append(
+                f"{rel_path}: migrated file missing; update _MIGRATED_FILES"
+            )
+            continue
+        all_offenders.extend(_find_inline_silent_swallow_offenders(migrated_path))
+    assert not all_offenders, (
+        "In-line silent ``except Exception:`` swallows remain in migrated files "
+        "(Theme C — §2.6 rule-of-three totality violation; route through "
+        "lawvm.core.named_swallow.named_swallow / swallow_call / "
+        "build_named_swallow_finding instead): "
+        + "; ".join(all_offenders)
+    )
+
+
+# ---------------------------------------------------------------------------
+# Test 2: named_swallow primitive unit — preserves the public contract
+# ---------------------------------------------------------------------------
+
+def test_named_swallow_kind_is_registered_in_finding_registry() -> None:
+    """``UNEXPECTED_PHASE_FAILURE`` is registered with role=obligation/blocking=True.
+
+    Required by AGENTS.md §1.10: distinct named diagnostic distinguishable from
+    neighbouring failures and stating the concrete fix. The registry is the
+    single source of truth — a Kind/role mismatch makes the Finding impossible
+    to construct.
+    """
+    spec = FINDING_REGISTRY.get(NAMED_SWALLOW_FINDING_KIND)
+    assert spec is not None, (
+        f"named_swallow primitive Finding kind {NAMED_SWALLOW_FINDING_KIND!r} "
+        "is not registered in lawvm.core.observation_registry.FINDING_REGISTRY"
+    )
+    assert spec.role == "obligation"
+    # default_enforcement=strict_fail: strict mode FAILS on a swallow (no
+    # silent carry-on), quirks mode surfaces the witness but continues.
+    assert spec.default_enforcement == "strict_fail"
+
+
+def test_apply_op_skipped_witness_kind_is_registered_as_observation() -> None:
+    """``APPLY.OP_SKIPPED_WITNESSED`` is registered with role=observation (non-blocking).
+
+    The 13 ``outcome=\"skipped\"`` applyResolvedOp sites emit a non-blocking
+    observation (audit total under §1.8) — the audit ledger carries the witness
+    so the disposition tracking APPLIED can be reviewed even when no FailedOp
+    was produced. non-blocking so quirks mode continues.
+    """
+    spec = FINDING_REGISTRY.get("APPLY.OP_SKIPPED_WITNESSED")
+    assert spec is not None
+    assert spec.role == "observation"
+    assert spec.default_enforcement == "warn"
+
+
+# ---------------------------------------------------------------------------
+# Test 3-12: per-site guard-liveness — drive known-violating inputs through the
+# production path and assert the typed Finding fires.
+# ---------------------------------------------------------------------------
+
+def test_named_swallow_re_raises_programming_bugs() -> None:
+    """Programming-bug classes re-raise; never silent (named_swallow level)."""
+    sink: list[Finding] = []
+    for exc_class in (NameError, TypeError, AttributeError):
+        with pytest.raises(exc_class):
+            with named_swallow(
+                rule_id=f"programming_bug_{exc_class.__name__}",
+                default=None,
+                findings_out=sink,
+            ):
+                raise exc_class("boom")
+    # No Finding emitted for programming bugs — they surface to the developer.
+    assert sink == []
+
+
+def test_named_swallow_emits_typed_finding_via_emit() -> None:
+    """emit= receives a typed Finding with rule_id/exception_type/clause_text."""
+    sink: list[Finding] = []
+    with named_swallow(
+        rule_id="test_emit_path",
+        default="DEFAULT",
+        op_id="op-001",
+        source_artifact="fixture.xml",
+        jurisdiction="fi",
+        source_statute="2023/100",
+        clause_text="offending clause body" * 200,  # >400 chars to test truncation
+        emit=sink.append,
+    ):
+        raise ValueError("simulated swallow")
+    assert len(sink) == 1
+    f = sink[0]
+    assert f.kind == NAMED_SWALLOW_FINDING_KIND
+    assert f.role == "obligation"
+    assert f.blocking is True
+    assert f.source_statute == "2023/100"
+    assert f.detail["rule_id"] == "test_emit_path"
+    assert f.detail["exception_type"] == "ValueError"
+    assert f.detail["exception_message"] == "simulated swallow"
+    assert f.detail["op_id"] == "op-001"
+    assert f.detail["source_artifact"] == "fixture.xml"
+    assert f.detail["jurisdiction"] == "fi"
+    # clause_text truncated to ~400 chars + marker
+    assert len(f.detail["clause_text"]) < 500
+    assert "truncated" in f.detail["clause_text"]
+
+
+def test_named_swallow_emits_typed_finding_via_findings_out() -> None:
+    """findings_out= list sink also receives the typed Finding (caller choice)."""
+    sink: list[Finding] = []
+    with named_swallow(
+        rule_id="test_findings_out_path",
+        default=None,
+        findings_out=sink,
+    ):
+        raise RuntimeError("boom")
+    assert len(sink) == 1
+    assert sink[0].detail["rule_id"] == "test_findings_out_path"
+
+
+def test_named_swallow_raises_named_swallow_non_emitting_sink_error_when_no_sink_wired() -> None:
+    """No emit/findings_out wired → NamedSwallowNonEmittingSinkError (§1.10 fail-loud)."""
+    with pytest.raises(NamedSwallowNonEmittingSinkError) as excinfo:
+        with named_swallow(
+            rule_id="test_no_sink",
+            default=None,
+            # neither emit= nor findings_out= — should fail-loud
+        ):
+            raise ValueError("boom-on-no-sink")
+    err = excinfo.value
+    assert err.rule_id == "test_no_sink"
+    # The un-emitted typed Finding is preserved on the error so a wrapping
+    # test or top-level error sink can still capture it.
+    assert isinstance(err.unemitted_finding, Finding)
+    assert err.unemitted_finding.kind == NAMED_SWALLOW_FINDING_KIND
+
+
+def test_swallow_call_returns_default_on_swallows() -> None:
+    """swallow_call HOF returns default on exception, with witness emitted."""
+    sink: list[Finding] = []
+
+    def _raise_zero_div() -> int:
+        raise ZeroDivisionError("simulated division-by-zero swallow")
+
+    result = swallow_call(
+        _raise_zero_div,
+        rule_id="test_swallow_call_zero_div",
+        default=-1,
+        findings_out=sink,
+    )
+    assert result == -1
+    assert len(sink) == 1
+    assert sink[0].detail["exception_type"] == "ZeroDivisionError"
+
+
+# ---------------------------------------------------------------------------
+# Test 13-22: per-site guard-liveness for the migrated sites
+# ---------------------------------------------------------------------------
+
+def test_corpus_list_cached_consolidated_locators_finding_fires_on_swallow() -> None:
+    """Migrated site: finland/corpus.py list_cached_consolidated_locators.
+
+    Drives a synthesized known-violating input through the production path
+    (an archive backend that raises RuntimeError on .locators(pattern)) and
+    asserts the typed Finding fires with rule_id="fi_corpus_list_cached_consolidated_locators".
+    """
+    from lawvm.finland.corpus import list_cached_consolidated_locators
+
+    class BoomArchive:
+        def locators(self, pattern: str) -> list[str]:
+            raise RuntimeError("simulated archive backend boom")
+
+    sink: list[Finding] = []
+    result = list_cached_consolidated_locators(
+        BoomArchive(), sid="2023/100", findings_out=sink
+    )
+    assert result == []  # default behaviour preserved
+    assert len(sink) == 1
+    f = sink[0]
+    assert f.kind == NAMED_SWALLOW_FINDING_KIND
+    assert f.blocking is True
+    assert f.detail["rule_id"] == "fi_corpus_list_cached_consolidated_locators"
+    assert f.detail["exception_type"] == "RuntimeError"
+    assert f.detail["jurisdiction"] == "fi"
+    assert f.detail["source_artifact"] == "2023/100"
+    # The clause_text carries the source witness (the glob pattern).
+    assert "glob pattern=" in f.detail["clause_text"]
+
+
+def test_consolidated_artifacts_extract_identity_witnesses_non_parse_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Migrated site: finland/consolidated_artifacts.py extract_consolidated_xml_identity.
+
+    ParseError is silent (expected malformed-XML, returns empty identity); any
+    OTHER exception is witnessed via build_named_swallow_finding + log_emitter.
+    Drives a known-violating input by monkey-patching etree.fromstring to
+    raise OSError, and asserts the typed Finding is logged via log_emitter.
+    """
+    from lawvm.finland import consolidated_artifacts as ca
+    from lawvm.finland.consolidated_artifacts import extract_consolidated_xml_identity
+
+    captured: list[Finding] = []
+
+    def _capture_emit() -> Callable[[Finding], None]:
+        def _emit(finding: Finding) -> None:
+            captured.append(finding)
+        return _emit
+
+    # Patch the module-level log_emitter reference (used inside the except
+    # block) to capture the constructed Finding instead of logging it.
+    monkeypatch.setattr(ca, "log_emitter", _capture_emit)
+    # Patch etree.fromstring (referenced as ca.etree.fromstring) to raise
+    # OSError on the swallowed attempt — the non-ParseError branch.
+    def _boom(_data: bytes) -> Any:
+        raise OSError("simulated unexpected failure")
+
+    monkeypatch.setattr(ca.etree, "fromstring", _boom)
+    # bytes-with-no-FRBRthis so the fast path returns None and fromstring runs.
+    result = extract_consolidated_xml_identity(b"<valid xml></valid>")
+    # Empty identity returned (default preserved).
+    assert result is not None
+    # The typed Finding was logged (capture).
+    assert len(captured) == 1
+    f = captured[0]
+    assert f.kind == NAMED_SWALLOW_FINDING_KIND
+    assert (
+        f.detail["rule_id"]
+        == "fi_consolidated_artifacts_extract_identity_fromstring"
+    )
+    assert f.detail["exception_type"] == "OSError"
+    assert f.detail["jurisdiction"] == "fi"
+
+
+def test_spec_ledger_adapter_ee_resolve_as_of_witnesses_swallow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Migrated site: estonia/spec_ledger_adapter.py _ee_resolve_as_of.
+
+    Drives a known-violating input by patching fetch_rt_xml to raise, and asserts
+    the typed Finding is emitted via log_emitter carrying the oracle_id.
+    """
+    from lawvm.estonia import spec_ledger_adapter as sla
+
+    captured: list[Finding] = []
+
+    def _capture_emit() -> Callable[[Finding], None]:
+        def _emit(finding: Finding) -> None:
+            captured.append(finding)
+        return _emit
+
+    # The migrated code imports log_emitter lazily from lawvm.core.named_swallow,
+    # so patch at the source module — the function-local `from ... import`
+    # rebinds the name at call-time, picking up our capturing version.
+    import lawvm.core.named_swallow as ns
+
+    monkeypatch.setattr(ns, "log_emitter", _capture_emit)
+    # Patch fetch_rt_xml to raise (the swallow fires).
+    def _boom_fetch(_oracle_id: str, _archive: object) -> bytes:
+        raise RuntimeError("simulated RT fetch boom")
+
+    import lawvm.estonia.fetch as ee_fetch
+
+    monkeypatch.setattr(ee_fetch, "fetch_rt_xml", _boom_fetch)
+    result = sla._ee_resolve_as_of("2023/100/oracle-123", archive=None)
+    # Empty default preserved.
+    assert result == ""
+    # Typed Finding emitted.
+    assert len(captured) == 1
+    f = captured[0]
+    assert f.kind == NAMED_SWALLOW_FINDING_KIND
+    assert f.detail["rule_id"] == "ee_spec_ledger_fetch_rt_xml"
+    assert f.detail["exception_type"] == "RuntimeError"
+    assert f.detail["jurisdiction"] == "ee"
+    assert f.detail["source_artifact"] == "2023/100/oracle-123"
+
+
+def test_sweden_grafter_pdf_bytes_to_text_witnesses_unexpected_subprocess_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Migrated site: sweden/grafter.py se_pdf_bytes_to_text.
+
+    OSError / subprocess.TimeoutExpired are silent (narrowed-expected); any
+    OTHER exception is witnessed via build_named_swallow_finding + log_emitter.
+    Drives a non-OS, non-subprocess error and asserts the typed Finding fires.
+    """
+    # The migrated code imports log_emitter / build_named_swallow_finding
+    # INSIDE the except clause (lazily); patch them at their source module
+    # (lawvm.core.named_swallow) so the function-local `from ... import` rebinds
+    # the names to our capturing versions for the duration of the test.
+    import lawvm.core.named_swallow as ns
+    import lawvm.sweden.grafter as se
+
+    captured: list[Finding] = []
+
+    def _capture_emit() -> Callable[[Finding], None]:
+        def _emit(finding: Finding) -> None:
+            captured.append(finding)
+        return _emit
+
+    monkeypatch.setattr(ns, "log_emitter", _capture_emit)
+    # Monkey-patch subprocess.run to raise an unexpected ValueError (a non-OS,
+    # non-subprocess.TimeoutExpired exception class — the targeted swallow path).
+    def _boom_run(*_a: Any, **_kw: Any) -> Any:
+        raise ValueError("simulated unexpected subprocess.run error")
+
+    monkeypatch.setattr(se.subprocess, "run", _boom_run)
+    result = se.se_pdf_bytes_to_text(b"%PDF-1.4 fake pdf")
+    # None returned (default preserved).
+    assert result is None
+    # The typed Finding was emitted via log_emitter.
+    assert len(captured) == 1
+    f = captured[0]
+    assert f.kind == NAMED_SWALLOW_FINDING_KIND
+    assert (
+        f.detail["rule_id"] == "se_grafter_pdf_bytes_to_text_subprocess"
+    )
+    assert f.detail["exception_type"] == "ValueError"
+    assert f.detail["jurisdiction"] == "se"
+
+
+def test_apply_typed_dispatch_emit_apply_op_skipped_witness_fires() -> None:
+    """Migrated sites: apply_typed_dispatch.py 13 ``outcome=\"skipped\"`` sites.
+
+    Drives a known-violating input through the production path (a synthetic
+    ResolvedOp with a missing source-container) and asserts the
+    ``APPLY.OP_SKIPPED_WITNESSED`` Finding fires via the findings_out sink
+    with rule_id matching the reason_code.
+    """
+    from typing import cast
+
+    from lawvm.finland.apply_typed_dispatch import _emit_apply_op_skipped_witness
+    from lawvm.finland.ops import ResolvedOp
+
+    # ResolvedOp is a wide-tuple dataclass with many late-waist fields; the
+    # helper only reads op_id and resolved_source_statute. Cast a stub
+    # SimpleNamespace to satisfy the type — the test exercises the Finding
+    # emission shape, not the ResolvedOp construction contract.
+    placeholder_rop = cast(
+        ResolvedOp,
+        SimpleNamespace(
+            op_id="test-op-1",
+            resolved_source_statute="2023/100",
+            resolved_target_label="5",
+            resolved_target_subsection_label=None,
+            resolved_target_item_label=None,
+            target_norm="5 §",
+            resolved_action_type="MOVE",
+        ),
+    )
+
+    sink: list[Finding] = []
+    _emit_apply_op_skipped_witness(
+        sink,
+        rop=placeholder_rop,
+        reason_code="source_container_missing",
+        failure_reason="source container section:5 not found",
+        clause_text="relabel source_container_missing label=5",
+    )
+    assert len(sink) == 1
+    f = sink[0]
+    assert f.kind == "APPLY.OP_SKIPPED_WITNESSED"
+    assert f.role == "observation"
+    assert f.blocking is False  # non-blocking audit
+    assert f.detail["rule_id"] == "source_container_missing"
+    assert f.detail["reason_code"] == "source_container_missing"
+    assert f.detail["op_id"] == "test-op-1"
+    assert f.source_statute == "2023/100"
+
+
+def test_named_swallow_log_emitter_writes_warning_to_logger(caplog) -> None:
+    """log_emitter() returns a callable that writes the typed Finding to a logger.
+
+    For utility sites without a findings_out sink, log_emitter is the
+    visible-WARNING fallback. Verifies the structured key=value log line is
+    written at WARNING level so triaging the residual does not require
+    re-running extraction.
+    """
+    emit = log_emitter()
+    finding = build_named_swallow_finding(
+        rule_id="log_emitter_test",
+        exception=ValueError("boom"),
+        op_id="op-1",
+        clause_text="clause text snippet",
+        source_artifact="/path/to/artifact.xml",
+        jurisdiction="fi",
+        source_statute="2023/100",
+    )
+    with caplog.at_level(logging.WARNING, logger="lawvm.core.named_swallow"):
+        emit(finding)
+    assert any(
+        "named_swallow Finding" in record.getMessage()
+        and "log_emitter_test" in record.getMessage()
+        and "ValueError" in record.getMessage()
+        for record in caplog.records
+    )

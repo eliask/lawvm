@@ -1604,6 +1604,47 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "commencement TemporalEvent and without a pending/unresolved/"
                 "manual-frontier classification.",
                 ("temporal_selection", "strictness"), role="observation"),
+    # §1.10 (no broad exception swallowing) + §2.6 (rule of three): the
+    # ``except (NameError, TypeError, AttributeError): raise; except Exception:
+    # <swallow>`` pattern was re-invented 6+ times across the codebase. The
+    # ``named_swallow`` contextmanager (``lawvm.core.named_swallow``) is the
+    # single owned primitive; every swallowed exception is witnessed by a
+    # Finding of this kind, with rule_id naming the call site and
+    # clause_text/op_id/source_artifact/jurisdiction embedding the offending
+    # input so triage does not require re-running extraction. role="obligation"
+    # / blocking=True honours §1.10 ("distinct named diagnostic") and
+    # strict-mode rejectability; the default_enforcement=strict_fail means
+    # strict mode FAILS the run on a swallow (no silent carry-on), quirks mode
+    # still surfaces and continues.
+    FindingSpec("UNEXPECTED_PHASE_FAILURE", "recovery",
+                "recovery", "strict_fail", "named_swallow",
+                "An unexpected exception was caught and swallowed by "
+                "lawvm.core.named_swallow at a rule_id-named recovery site. "
+                "The swallowed exception_type, exception_message, and the "
+                "truncated (~400 char) clause_text are embedded in detail so "
+                "triage does not require re-running extraction. AGENTS.md §1.10: "
+                "the swallow is witnessed (not silent); the typed obligation "
+                "MUST be reviewed before treating the recovered output as valid.",
+                ("provenance", "safety_invariant"), role="obligation"),
+    # §1.8 (replay conservation): an ``applyResolvedOp`` path that emits
+    # ``outcome="skipped"`` to its mutation event ledger without a typed
+    # Finding or FailedOp consumes the op silently (the audit carries the
+    # mutation_event but the disposition stays APPLIED). Each migrated site
+    # now emits this non-blocking observation carrying ``rule_id`` =
+    # the existing ``reason_code`` (source_not_found, destination_exists, …)
+    # so the 13 known skip sites stay distinguishable. non-blocking so quirks
+    # mode continues; the existing FailedOp path for typed-target skips
+    # (sites at reason_code="unhandled_*_target") is preserved — this Finding
+    # is the ADDITIONAL witness that the mutation_event alone was missing.
+    FindingSpec("APPLY.OP_SKIPPED_WITNESSED", "apply",
+                "recovery", "warn", "apply_typed_dispatch",
+                "An applyResolvedOp path emitted outcome=\"skipped\" with a "
+                "reason_code naming the specific skip site (source_not_found, "
+                "destination_exists, container_op_returned_none, …). The "
+                "findings ledger carries the witness so the audit is total "
+                "(AGENTS.md §1.8); the disposition tracking the apply-mutation "
+                "event stays APPLIED but the skip is no longer silent.",
+                ("provenance",), role="observation"),
 )}
 
 

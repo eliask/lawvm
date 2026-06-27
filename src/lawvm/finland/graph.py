@@ -28,6 +28,7 @@ from __future__ import annotations
 import re
 
 from lawvm.core.graph import CitationEdgeLike, DelegationEdgeLike, StatuteGraph
+from lawvm.core.named_swallow import log_emitter, named_swallow
 
 
 async def build_statute_graph_fi(sid: str) -> StatuteGraph:
@@ -102,13 +103,30 @@ async def build_statute_graph_fi(sid: str) -> StatuteGraph:
     citations: list[CitationEdgeLike] = []
     con_xml = cs.read_oracle(sid)
     if con_xml is not None:
-        try:
+        # ``extract_delegations_canonical`` parses the consolidated XML which
+        # can raise ValueError / etree.QueryError on malformed oracle bytes.
+        # Previously ``except Exception: pass`` silently swallowed to [];
+        # now ``named_swallow`` evidence-witnesses the swallow (AGENTS.md §1.10)
+        # — the typed Finding is logged at WARNING visibility so a stale/
+        # malformed oracle is observable, while still returning [] so a graph
+        # build for one broken corpus does not abort a batch run.
+        with named_swallow(
+            rule_id="fi_graph_build_delegations_extract",
+            default=delegations,
+            jurisdiction="fi",
+            source_artifact=sid,
+            clause_text=f"delegations canonical parse: con_xml size={len(con_xml)}",
+            emit=log_emitter(),
+        ):
             delegations = list(extract_delegations_canonical(con_xml, sid))
-        except (NameError, TypeError, AttributeError):
-            raise  # programming bugs — fail loud
-        except Exception:
-            pass
-        try:
+        with named_swallow(
+            rule_id="fi_graph_build_citations_extract",
+            default=citations,
+            jurisdiction="fi",
+            source_artifact=sid,
+            clause_text=f"cross-refs parse: con_xml size={len(con_xml)}",
+            emit=log_emitter(),
+        ):
             # Parse the preamble "nojalla" authority basis from the BASE XML:
             # Finlex drops the preamble from the consolidated form of older
             # statutes, so the nojalla clause (which supplies the ISSUED_UNDER
@@ -116,10 +134,6 @@ async def build_statute_graph_fi(sid: str) -> StatuteGraph:
             citations = list(
                 extract_cross_refs(con_xml, sid, authority_xml_bytes=base_xml)
             )
-        except (NameError, TypeError, AttributeError):
-            raise  # programming bugs — fail loud
-        except Exception:
-            pass
 
     # 5. Amendment chain (statutes that amend sid)
     amendment_chain = get_amendment_children().get(sid, [])
@@ -188,13 +202,26 @@ async def build_statute_graph_fi_lightweight(sid: str) -> StatuteGraph:
     citations: list[CitationEdgeLike] = []
     con_xml = cs.read_oracle(sid)
     if con_xml is not None:
-        try:
+        # Mirror build_statute_graph_fi: swallow-and-witness via named_swallow
+        # (AGENTS.md §1.10). Visible WARNING path keeps [] default so a single
+        # broken oracle does not abort a bulk export.
+        with named_swallow(
+            rule_id="fi_graph_lightweight_delegations_extract",
+            default=delegations,
+            jurisdiction="fi",
+            source_artifact=sid,
+            clause_text=f"delegations canonical parse: con_xml size={len(con_xml)}",
+            emit=log_emitter(),
+        ):
             delegations = list(extract_delegations_canonical(con_xml, sid))
-        except (NameError, TypeError, AttributeError):
-            raise  # programming bugs — fail loud
-        except Exception:
-            pass
-        try:
+        with named_swallow(
+            rule_id="fi_graph_lightweight_citations_extract",
+            default=citations,
+            jurisdiction="fi",
+            source_artifact=sid,
+            clause_text=f"lightweight cross-refs parse: con_xml size={len(con_xml)}",
+            emit=log_emitter(),
+        ):
             # Parse the preamble "nojalla" authority basis from the BASE XML:
             # Finlex drops the preamble from the consolidated form of older
             # statutes, so the nojalla clause (which supplies the ISSUED_UNDER
@@ -203,10 +230,6 @@ async def build_statute_graph_fi_lightweight(sid: str) -> StatuteGraph:
                 extract_cross_refs(con_xml, sid, authority_xml_bytes=base_xml)
             )
             citations.extend(extract_eu_refs(base_xml, sid))
-        except (NameError, TypeError, AttributeError):
-            raise  # programming bugs — fail loud
-        except Exception:
-            pass
 
     # The ISSUED_UNDER section + drafting-kind enrichment from the preamble
     # "N §:n nojalla" clause is now applied centrally inside extract_cross_refs

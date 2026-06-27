@@ -16,6 +16,9 @@ from typing import Dict, List, Optional, Protocol, Set, Tuple, cast
 
 import lxml.etree as etree
 
+from lawvm.core.named_swallow import log_emitter, swallow_call
+from lawvm.core.phase_result import Finding
+from lawvm.core.xml_parse import parse_corpus_xml
 from lawvm.corpus_store import get_corpus_store, CorpusStore, oracle_url, statute_url
 from lawvm.finland.consolidated_artifacts import (
     build_consolidated_family_glob,
@@ -113,17 +116,42 @@ def _archive_from_source(source: object) -> object | None:
     return source
 
 
-def list_cached_consolidated_locators(source: object, sid: str | None = None) -> list[str]:
-    """Return cached consolidated artifact/media locators from a store or archive."""
+def list_cached_consolidated_locators(
+    source: object,
+    sid: str | None = None,
+    *,
+    findings_out: Optional[List[Finding]] = None,
+) -> list[str]:
+    """Return cached consolidated artifact/media locators from a store or archive.
+
+    The underlying ``archive.locators(pattern)`` call may raise across archive
+    backends (Farchive, hdsearch, FileNotFoundError-lived caching). Previously
+    the swallow returned ``[]`` silently (AGENTS.md §1.10 silent-fallback). Now
+    routed through ``lawvm.core.named_swallow.swallow_call`` so a typed
+    ``Finding(kind=UNEXPECTED_PHASE_FAILURE)`` is constructed with the offending
+    ``pattern`` as ``clause_text`` and the ``sid`` as ``source_artifact``, then
+    either appended to ``findings_out`` (when the caller plumbs a sink) or
+    raised via ``NamedSwallowNonEmittingSinkError`` — never silently swallowed.
+    """
     archive = _archive_from_source(source)
     if archive is None or not hasattr(archive, "locators"):
         return []
     archive_with_locators = cast(_ArchiveWithLocators, archive)
     pattern = build_consolidated_family_glob(sid=sid)
-    try:
-        locators = archive_with_locators.locators(pattern)
-    except Exception:
-        return []
+    # When the caller plumbs a findings_out sink, the typed Finding is appended
+    # there (audit-trail path). When not, fall back to log_emitter so the
+    # swallow is still VISIBLE (stderr WARNING) — never silent (§1.10).
+    emit = None if findings_out is not None else log_emitter()
+    locators = swallow_call(
+        lambda: archive_with_locators.locators(pattern),
+        rule_id="fi_corpus_list_cached_consolidated_locators",
+        default=[],
+        jurisdiction="fi",
+        source_artifact=sid or "",
+        clause_text=f"glob pattern={pattern}",
+        emit=emit,
+        findings_out=findings_out,
+    )
     return sorted(
         {
             locator
@@ -355,7 +383,7 @@ def get_consolidated_oracle_context(
         )
         corpus_cache[cache_key] = ctx
         return ctx
-    tree = etree.fromstring(oracle_bytes)
+    tree = parse_corpus_xml(oracle_bytes)
     if oracle_version_amendment_id is None:
         for el in tree.findall('.//{*}FRBRthis'):
             val = el.get('value', '')
@@ -452,7 +480,7 @@ def get_consolidated_oracle_reflected_source_vts_children(
     if oracle_bytes is None:
         return set()
     try:
-        tree = etree.fromstring(oracle_bytes)
+        tree = parse_corpus_xml(oracle_bytes)
     except etree.XMLSyntaxError:
         return set()
 
@@ -528,7 +556,7 @@ def get_consolidated_oracle_reflected_section_original_versions(
     if oracle_bytes is None:
         return set()
     try:
-        tree = etree.fromstring(oracle_bytes)
+        tree = parse_corpus_xml(oracle_bytes)
     except etree.XMLSyntaxError:
         return set()
 
@@ -664,7 +692,7 @@ def get_consolidated_oracle_suspect(
         xml_bytes = corpus.read_source(oracle_version_amendment_id)
         if xml_bytes is None:
             return None
-        tree = etree.fromstring(xml_bytes)
+        tree = parse_corpus_xml(xml_bytes)
     except (KeyError, FileNotFoundError):
         return None
     eff_date = _amendment_effective_date(tree)
@@ -711,7 +739,7 @@ def get_consolidated_oracle_suspect_cache_only(
     if oracle_bytes is None:
         return "", ""
     try:
-        tree = etree.fromstring(oracle_bytes)
+        tree = parse_corpus_xml(oracle_bytes)
     except etree.XMLSyntaxError:
         return "", ""
 
@@ -750,7 +778,7 @@ def get_consolidated_oracle_suspect_cache_only(
                     first_pending_detail = f"oracle_missing_version_pin_amendment_uncached:{mid}"
                 continue
             try:
-                source_tree = etree.fromstring(xml_bytes)
+                source_tree = parse_corpus_xml(xml_bytes)
             except etree.XMLSyntaxError:
                 if not first_pending_detail:
                     first_pending_detail = f"oracle_missing_version_pin_amendment_unparseable:{mid}"
@@ -772,7 +800,7 @@ def get_consolidated_oracle_suspect_cache_only(
         return "", f"oracle_version_amendment_id_source_uncached:{oracle_version_amendment_id}"
 
     try:
-        source_tree = etree.fromstring(xml_bytes)
+        source_tree = parse_corpus_xml(xml_bytes)
     except etree.XMLSyntaxError:
         return "", f"oracle_version_amendment_id_source_unparseable:{oracle_version_amendment_id}"
 
@@ -877,7 +905,7 @@ def get_ground_truth(
     )
     if oracle_bytes is None:
         return ""
-    tree = etree.fromstring(oracle_bytes)
+    tree = parse_corpus_xml(oracle_bytes)
     body = tree.find(".//{*}body")
     root = body if body is not None else tree
     _strip_editorial_note_containers(root)
@@ -944,7 +972,7 @@ def get_ground_truth_tree(
     oracle_bytes = get_ground_truth_bytes(statute_id, corpus=corpus, selector=selector)
     if oracle_bytes is None:
         return None
-    tree = etree.fromstring(oracle_bytes)
+    tree = parse_corpus_xml(oracle_bytes)
     body = tree.find(".//{*}body")
     root = body if body is not None else tree
     _strip_editorial_note_containers(root)

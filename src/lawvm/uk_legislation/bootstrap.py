@@ -155,7 +155,7 @@ def _safe_relative_path(path_text: str) -> Path:
 
 def _download(url: str) -> _UKDownloadResult:
     request = Request(url, headers={"User-Agent": USER_AGENT})
-    with urlopen(request) as response:
+    with urlopen(request, timeout=60) as response:
         return _UKDownloadResult(response.read(), response.geturl())
 
 
