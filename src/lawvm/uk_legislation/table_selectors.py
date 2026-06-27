@@ -2671,7 +2671,7 @@ def _uk_schedule_list_entry_table_payload(extracted_el: Optional[ET._Element]) -
     ]
     if not row_children:
         return None
-    return table_node.to_irnode()
+    return table_node
 
 
 def _source_root_element_by_id(

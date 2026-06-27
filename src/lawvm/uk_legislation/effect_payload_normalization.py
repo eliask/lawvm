@@ -1093,39 +1093,39 @@ def _parse_structural_payload_element(
     if tag == "Part":
         return _parse_part(
             actual_el, parse_context, force_active=True, pit_date=None, is_eur=is_eur
-        ).to_dict()
+        ).to_jsonable_dict()
     if tag in ("Chapter", "EUChapter"):
         return _parse_chapter(
             actual_el, parse_context, force_active=True, pit_date=None, is_eur=is_eur
-        ).to_dict()
+        ).to_jsonable_dict()
     if tag == "Pblock":
         return _parse_pblock(
             actual_el, parse_context, force_active=True, pit_date=None, is_eur=is_eur
-        ).to_dict()
+        ).to_jsonable_dict()
     if tag == "P1group":
         return _parse_p1group(
             actual_el, parse_context, force_active=True, pit_date=None, is_eur=is_eur
-        ).to_dict()
+        ).to_jsonable_dict()
     if tag in ("Section", "P1", "Article", "Rule", "ConventionRights", "EUSection"):
         return _parse_section(
             actual_el, parse_context, force_active=True, pit_date=None, is_eur=is_eur
-        ).to_dict()
+        ).to_jsonable_dict()
     if tag in ("Subsection", "P2"):
         return _parse_p2(
             actual_el, parse_context or "body", force_active=True, pit_date=None, is_eur=is_eur
-        ).to_dict()
+        ).to_jsonable_dict()
     if tag == "P3":
         return _parse_p3(
             actual_el, parse_context or "body", force_active=True, pit_date=None, is_eur=is_eur
-        ).to_dict()
+        ).to_jsonable_dict()
     if tag == "P4":
         return _parse_p4(
             actual_el, parse_context or "body", force_active=True, pit_date=None, is_eur=is_eur
-        ).to_dict()
+        ).to_jsonable_dict()
     if tag == "Schedule":
         return _parse_schedule_single(
             actual_el, "schedule", force_active=True, pit_date=None, is_eur=is_eur
-        ).to_dict()
+        ).to_jsonable_dict()
     return None
 
 
