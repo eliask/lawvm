@@ -145,6 +145,35 @@ def test_doc_insert_then_section_heading_continuation_stays_reachable() -> None:
     assert insertions[2].sub_target.momentti == 3
 
 
+def test_anaphoric_sen_section_heading_continuation_is_kept() -> None:
+    # ``lisätään N lukuun uusi <sections> ja sen <M ja K> §:ään otsikko`` — a
+    # chapter-scoped section-insert batch followed by a heading-insert continuation
+    # whose target sections are named anaphorically (``sen`` = "its", pointing at the
+    # chapter just established). BOTH the legacy parser and the section/insertion
+    # families stop on the bare ``sen`` WORD and silently drop the whole heading
+    # batch; the consolidated Finlex text proves those headings ARE installed (FI
+    # 1978/38 ch.12 §§2-3 via 5.1.1994/16). The driver now skips the anaphor when it
+    # directly opens a ``<num-run> §:ILL otsikko`` heading target so the heading
+    # inserts survive, scoped to the resumed chapter. This is an intentional
+    # divergence from the legacy parser (an oracle-confirmed correctness gain), so it
+    # is asserted directly on the new parser rather than differentially.
+    model = parse_text_with(
+        "lisätään 11 lukuun uusi 1 a–1 d § ja sen 2 ja 3 §:ään otsikko seuraavasti:",
+        new_parser.parse,
+    )
+    (vg,) = model.verb_groups
+    insertions = [_as_insertion(node) for node in vg.nodes]
+    assert [node.label for node in insertions] == ["1a", "1b", "1c", "1d", "2", "3"]
+    # The 1a–1d whole-section inserts carry no facet; the trailing two are headings.
+    assert all(node.sub_target is None for node in insertions[:4])
+    for node in insertions[4:]:
+        assert node.sub_target is not None
+        assert node.sub_target.facet is FacetKind.HEADING
+        assert node.sub_target.special == "otsikko"
+        # The heading targets inherit the chapter the preceding batch established.
+        assert node.chapter == "11"
+
+
 def test_conj_before_uusi_after_citation_is_owned() -> None:
     # ``N §:ään, [citation], ja uusi M momentti`` — a coordinating ``ja`` sits
     # between the §:ään target's citation provenance and ``uusi``. The old parser
