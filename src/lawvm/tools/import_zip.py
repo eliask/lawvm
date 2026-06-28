@@ -25,6 +25,7 @@ import zipfile
 from typing import Any, Callable, Protocol
 
 from lawvm.corpus_store import akn_path_to_url, validate_farchive_create_path
+from lawvm.core.archive_safety import ArchiveMemberTooLarge, safe_zip_read
 from lawvm.finland.consolidated_artifacts import (
     build_canonical_consolidated_locator,
     extract_consolidated_xml_identity,
@@ -59,14 +60,21 @@ class _ClosableArchive(Protocol):
     def close(self) -> None: ...
 
 
-def _open_import_archive(dest: Path, *, dry_run: bool) -> _ClosableArchive:
+def _open_import_archive(
+    dest: Path, *, dry_run: bool, explicit_env: str | None = None
+) -> _ClosableArchive:
     from farchive import Farchive
 
     if dry_run:
         if dest.exists():
             return Farchive(dest, readonly=True)
         return _MissingDryRunArchive()
-    validate_farchive_create_path(dest)
+    # When dest came from the CLI (caller-supplied), explicit_env=None keeps
+    # the existing suffix-only behaviour (caller is the operator-in-trust).
+    # When dest was default-resolved via resolve_farchive_path, main() passes
+    # explicit_env="LAWVM_FARCHIVE_DB" so the data-root check fires with the
+    # explicit-env override channel honoured (Security M2 §4).
+    validate_farchive_create_path(dest, explicit_env=explicit_env)
     return Farchive(dest)
 
 
@@ -304,7 +312,31 @@ def import_statute_zip(
                 continue
 
             try:
-                data = zf.read(name)
+                data = safe_zip_read(zf, name, archive_path=zip_label)
+            except ArchiveMemberTooLarge as exc:
+                # Acquisition lane: never silently drop. Emit a typed
+                # rejection receipt (AGENTS.md §1.8/§1.10) carrying the
+                # member name and the declared vs cap sizes. Family:
+                # transport_cleanup (mechanical IO failure, no legal-
+                # ontology implication). Non-blocking: the cap is
+                # operator-tunable via LAWVM_MAX_ARCHIVE_MEMBER_BYTES.
+                report.total_skipped += 1
+                _record_import_skip(
+                    report,
+                    rule_id="finlex_import_archive_member_too_large",
+                    family="transport_cleanup",
+                    reason=exc.diagnostic.render_reason(),
+                    source_label=zip_label,
+                    zip_entry_name=name,
+                    locator=locator,
+                    detail={
+                        "declared_size": str(exc.declared_size),
+                        "cap_bytes": str(exc.cap_bytes),
+                        "archive_path": exc.archive_path,
+                        "blocking": "false",
+                    },
+                )
+                continue
             except Exception as exc:
                 print(f"  ERROR reading {name}: {exc}", file=sys.stderr)
                 report.total_errors += 1
@@ -368,7 +400,32 @@ def import_consolidated_zip(
             sid, lang, path_version, _rest = parsed
             family_key = (sid, lang, path_version)
             try:
-                data = zf.read(name)
+                data = safe_zip_read(zf, name, archive_path=zip_label)
+            except ArchiveMemberTooLarge as exc:
+                # Family-discovery pass: a too-large main.xml skips the whole
+                # family's PIT lookup (the member cannot be materialised to
+                # extract the embedded version tag). Conserved as a typed
+                # receipt (AGENTS.md §1.8) — downstream main-pass entries for
+                # this family will fall through to the existing "no PIT
+                # version available" branch, which already emits its own
+                # typed skip per `_record_import_skip`.
+                report.total_skipped += 1
+                _record_import_skip(
+                    report,
+                    rule_id="finlex_import_archive_member_too_large",
+                    family="transport_cleanup",
+                    reason=exc.diagnostic.render_reason(),
+                    source_label=zip_label,
+                    zip_entry_name=name,
+                    detail={
+                        "declared_size": str(exc.declared_size),
+                        "cap_bytes": str(exc.cap_bytes),
+                        "archive_path": exc.archive_path,
+                        "pass": "family_discovery",
+                        "blocking": "false",
+                    },
+                )
+                continue
             except Exception as exc:
                 print(f"  ERROR reading {name}: {exc}", file=sys.stderr)
                 report.total_errors += 1
@@ -432,7 +489,30 @@ def import_consolidated_zip(
             storage_class = "gif" if suffix == ".gif" else "xml"
 
             try:
-                data = zf.read(name)
+                data = safe_zip_read(zf, name, archive_path=zip_label)
+            except ArchiveMemberTooLarge as exc:
+                # Acquisition lane: never silently drop. Emit a typed
+                # rejection receipt (AGENTS.md §1.8/§1.10). The locator
+                # for a consolidated entry IS known at this point (above),
+                # so it's carried in the receipt.
+                report.total_skipped += 1
+                _record_import_skip(
+                    report,
+                    rule_id="finlex_import_archive_member_too_large",
+                    family="transport_cleanup",
+                    reason=exc.diagnostic.render_reason(),
+                    source_label=zip_label,
+                    zip_entry_name=name,
+                    locator=locator,
+                    detail={
+                        "declared_size": str(exc.declared_size),
+                        "cap_bytes": str(exc.cap_bytes),
+                        "archive_path": exc.archive_path,
+                        "pass": "consolidated_main",
+                        "blocking": "false",
+                    },
+                )
+                continue
             except Exception as exc:
                 print(f"  ERROR reading {name}: {exc}", file=sys.stderr)
                 report.total_errors += 1
@@ -515,7 +595,31 @@ def import_consolidated_zip(
             )
 
             try:
-                data = zf.read(name)
+                data = safe_zip_read(zf, name, archive_path=zip_label)
+            except ArchiveMemberTooLarge as exc:
+                # Corrigendum PDF pass: refusing the read does NOT destroy
+                # existing legal state — it leaves a typed gap in the
+                # acquisition receipt (AGENTS.md §1.8). The over-retention
+                # principle (AGENTS.md §0) holds: when in doubt, omit
+                # rather than fabricate.
+                report.total_skipped += 1
+                _record_import_skip(
+                    report,
+                    rule_id="finlex_import_archive_member_too_large",
+                    family="transport_cleanup",
+                    reason=exc.diagnostic.render_reason(),
+                    source_label=zip_label,
+                    zip_entry_name=name,
+                    locator=locator,
+                    detail={
+                        "declared_size": str(exc.declared_size),
+                        "cap_bytes": str(exc.cap_bytes),
+                        "archive_path": exc.archive_path,
+                        "pass": "corrigendum_pdf",
+                        "blocking": "false",
+                    },
+                )
+                continue
             except Exception as exc:
                 print(f"  ERROR reading {name}: {exc}", file=sys.stderr)
                 report.total_errors += 1
@@ -555,12 +659,20 @@ def main(args: object) -> None:
     _dest_arg = getattr(args, "dest", None)
     if _dest_arg:
         dest = Path(_dest_arg)
+        # CLI-supplied: caller is the operator-in-trust. Suffix-only check
+        # (backwards-compatible — Security M2 §4 keeps the data-root check
+        # opt-in via explicit_env so the existing --dest behaviour survives).
+        dest_explicit_env: str | None = None
     else:
         # Ingest target: resolve through the single chokepoint (worktree /
         # canonical-data-root aware) instead of a cwd-relative default.
         from lawvm.corpus_store import resolve_farchive_path
 
         dest, _rule = resolve_farchive_path("finlex.farchive")
+        # Default-resolved path: apply the data-root check with the
+        # explicit-env override channel so LAWVM_FARCHIVE_DB pointing at an
+        # out-of-tree target is honoured (operator trust).
+        dest_explicit_env = "LAWVM_FARCHIVE_DB"
     skip_existing: bool = getattr(args, "skip_existing", False)
     dry_run: bool = getattr(args, "dry_run", False)
     batch_size: int = getattr(args, "batch_size", _DEFAULT_BATCH_SIZE)
@@ -587,7 +699,9 @@ def main(args: object) -> None:
     print(f"Opening farchive: {dest}", file=sys.stderr)
     if dry_run:
         print("  (--dry-run: no writes will be performed)", file=sys.stderr)
-    archive = _open_import_archive(dest, dry_run=dry_run)
+    archive = _open_import_archive(
+        dest, dry_run=dry_run, explicit_env=dest_explicit_env
+    )
 
     overall = ImportReport()
 

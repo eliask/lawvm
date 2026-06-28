@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
-from typing import Optional
+from typing import Any, Optional
 
-from lawvm.uk_legislation.mutable_ir import UKMutableNode
+from lawvm.core.ir import IRNode
 
 
 _WORD_PUNCTUATION_ELISION_CANDIDATE_RE = re.compile(
@@ -38,13 +38,13 @@ class UKNumericListTrailingCommaSubtreeReplacement:
 @dataclass(frozen=True, slots=True)
 class _UKTextNodeWalkEntry:
     path: tuple[int, ...]
-    node: UKMutableNode
+    node: Any
 
 
 @dataclass(frozen=True, slots=True)
 class _UKTextMatchCandidate:
     path: tuple[int, ...]
-    node: UKMutableNode
+    node: Any
     match: re.Match[str]
 
 
@@ -121,7 +121,7 @@ def _text_match_has_word_punctuation_elision_candidate(match: str) -> bool:
     return bool(_WORD_PUNCTUATION_ELISION_CANDIDATE_RE.search(match))
 
 
-def _walk_text_nodes(node: UKMutableNode) -> list[_UKTextNodeWalkEntry]:
+def _walk_text_nodes(node: IRNode) -> list[_UKTextNodeWalkEntry]:
     text_nodes: list[_UKTextNodeWalkEntry] = []
     stack: list[_UKTextNodeWalkEntry] = [_UKTextNodeWalkEntry((), node)]
     while stack:
@@ -136,7 +136,7 @@ def _walk_text_nodes(node: UKMutableNode) -> list[_UKTextNodeWalkEntry]:
 
 
 def _node_text_patch_preimage_present(
-    node: UKMutableNode,
+    node: Any,
     match: str,
     occurrence: int,
     end_occurrence: int = 0,
@@ -153,7 +153,7 @@ def _node_text_patch_preimage_present(
     return re.search(pattern, text, flags=re.I) is not None
 
 
-def _rotated_trailing_comma_omission_match(match: str, node: UKMutableNode) -> Optional[str]:
+def _rotated_trailing_comma_omission_match(match: str, node: Any) -> Optional[str]:
     """Return a unique `X` preimage for a quoted omission selector shaped as `X,`.
 
     Some UK effect/source surfaces quote the logical omitted phrase with a
@@ -233,7 +233,7 @@ def _numeric_list_trailing_comma_replacement_text(
 
 
 def _numeric_list_trailing_comma_subtree_replacement(
-    node: UKMutableNode,
+    node: Any,
     match: str,
     replacement: str,
     occurrence: int,

@@ -55,10 +55,12 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_ee_tool_promotions.py",
     ),
     "estonia_replay_semantics": (
+        "test_ee_apply_conserved.py",
         "test_ee_apply_semantics.py",
         "test_ee_blame_provision_walk.py",
         "test_ee_instruction_waist.py",
         "test_ee_parser_normalization.py",
+        "test_ee_same_moment_ambiguity.py",
     ),
     "estonia_replay_logic": (
         "test_ee_replay_logic.py",
@@ -169,6 +171,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     ),
     "finland_parse_payload": (
         "test_fi_body_*.py",
+        "test_fi_definition_introducer.py",
         "test_fi_definition_projection.py",
         "test_fi_clause_ast_curated.py",
         "test_fi_clause_patterns.py",
@@ -229,6 +232,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     ),
     "finland_replay_rules": (
         "test_fi_corrigendum_*.py",
+        "test_corrigendum_fail_loud.py",
         "test_fi_guard_liveness.py",
         "test_filter_conservation_ratchet.py",
         "test_scope_source_ratchet.py",
@@ -394,6 +398,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_z3_proofs.py",
     ),
     "core_discipline_gates": (
+        "test_archive_safety.py",
         "test_replay_conservation.py",
         "test_downgrade_witness.py",
         "test_downgrade_witness_lint.py",
@@ -445,8 +450,12 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # rows PROMOTE-02 (authorization scope-match), CHAIN-01/02 (completeness +
         # monotonicity), PROMOTE-01 (retraction down-chain propagation).
         "test_promotion_chain_integrity.py",
+        "test_frozen_slots_discipline.py",
+        "test_strict_profile_registry.py",
     ),
     "core_ir_contracts": (
+        "test_quirks_disposition_enum.py",
+        "test_scope_confidence_protocol.py",
         "test_fi_address_parse.py",
         "test_irnodekind_stringly_typed_gate.py",
         "test_fi_admissible_binding.py",
@@ -507,7 +516,16 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_observed_write_audit.py",
         "test_fi_apply.py",
         "test_fi_recovery_kind_enum.py",
+        # Totality predicate + per-site guard-liveness for
+        # lawvm.core.named_swallow (§1.10 no-silent-default +
+        # §2.6 rule-of-three crystallisation).
+        "test_named_swallow_totality.py",
         "test_fi_apply_write_receipt_seam.py",
+        "test_fi_apply_replay_authority.py",
+        # Wave N3a PR1 (BOUND_TARGET_PATH_NORMALIZATION_DESIGN): wrapper-strip +
+        # kind-alias canonicalization for the op-level WriteReceipt.bound_target_path.
+        "test_fi_receipt_path_norm.py",
+        "test_fi_receipt_prefix_eq.py",
         "test_fi_item_relabel_replay.py",
         "test_fi_chapter_seed.py",
         "test_fi_constraints.py",
@@ -530,6 +548,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_core_tree_invariant_scan_families.py",
     ),
     "core_compile_projection": (
+        "test_compile_metadata_default_fail_loud.py",
         "test_fi_effect_lifecycle_projection.py",
         "test_fi_compile_facade.py",
         "test_compile_records.py",
@@ -581,6 +600,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_timeline_selection_contracts.py",
     ),
     "core_surface_semantic": (
+        "test_core_firewall_no_fi_definition_phrases.py",
         "test_comparison_normalization.py",
         "test_composite_interaction_reference_model.py",
         "test_fi_abstraction_modules.py",
@@ -678,6 +698,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     ),
     "tools_cli_debug": (
         "test_check_consistency.py",
+        "test_lawvm_profile_cli.py",
         "test_proof_gate_summary.py",
         "test_fi_self_consistency.py",
         "test_spec_authority.py",
@@ -720,6 +741,9 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_verify_observations.py",
     ),
     "tools_runtime_io": (
+        "test_corpus_store_path_validation.py",
+        "test_corpus_xml_parser_ratchet.py",
+        "test_xml_parse_hardened.py",
         "test_fi_acquisition.py",
         "test_fi_source_anchor.py",
         "test_fi_process_acquisition_digest_consumer.py",
@@ -731,6 +755,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_export_transition_graph.py",
         "test_graph_export.py",
         "test_markdown_git_export.py",
+        "test_export_markdown_git_safe_path.py",
         "test_import_zip.py",
         "test_parallel_corpus_determinism.py",
         "test_projection_freshness.py",
@@ -825,6 +850,10 @@ SHARD_GROUPS: dict[str, tuple[str, ...]] = {
 }
 
 SOURCE_SHARD_PREFIXES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        "data/finland/corrigendum_manual.yaml",
+        ("finland_replay_products_core", "finland_replay_rules"),
+    ),
     ("src/lawvm/contracts.py", ("core",)),
     ("src/lawvm/graph_build.py", ("core", "tools")),
     ("src/lawvm/semantic/", ("core", "finland", "tools")),

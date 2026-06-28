@@ -257,6 +257,36 @@
   notes: "LawVM-editorial base-source defect fix (no_official_corrigendum_found): enacted source XML labels the chapter 3 provision between 27 § and 29 § as chp_3__sec_3 / 3 §, while consolidated Finlex and the chapter-local sequence identify the same source-owned text as 28 §; exact full-section fragment patch repairs structural identity and eIds before replay."
   verified: "2026-06-22"
 
+# 1966/258 (Maanvuokralaki) — enacted source XML labels the chapter 6
+# mediation provision between 77 § and 79 § as chp_6__sec_75 / 75 §. The
+# neighbouring 79 § refers back to 78 §, and the later 2010/1140 amendment
+# explicitly replaces 78 §; the source-owned provision is therefore chapter 6
+# §78. Exact full-section fragment patch repairs both visible <num> and eId
+# lineage so the 2010 replacement overwrites the base text instead of leaving a
+# bogus chapter 6 §75 live.
+- amendment_id: "1966/258"
+  wrong_text: |-
+    <section eId="chp_6__sec_75">
+                        <num>75§</num>
+                        <subsection eId="chp_6__sec_75__subsec_1">
+                            <content>
+                                <p>Jos asianosaisten kesken on ilmaantunut erimielisyyttä vuokrasuhteesta johtuvassa asiassa, toimittaa asutuslautakunta heidän yhteisestä pyynnöstään sovittelun. Jos sovinto saadaan aikaan, on asutuslautakunnan laadittava sovintokirja, joka asianosaisten on allekirjoitettava. Asutuslautakunnan on sovintokirjaan lisäksi merkittävä, että se on tässä lainkohdassa tarkoitettu sovintokirja. </p>
+                            </content>
+                        </subsection>
+                    </section>
+  correct_text: |-
+    <section eId="chp_6__sec_78">
+                        <num>78§</num>
+                        <subsection eId="chp_6__sec_78__subsec_1">
+                            <content>
+                                <p>Jos asianosaisten kesken on ilmaantunut erimielisyyttä vuokrasuhteesta johtuvassa asiassa, toimittaa asutuslautakunta heidän yhteisestä pyynnöstään sovittelun. Jos sovinto saadaan aikaan, on asutuslautakunnan laadittava sovintokirja, joka asianosaisten on allekirjoitettava. Asutuslautakunnan on sovintokirjaan lisäksi merkittävä, että se on tässä lainkohdassa tarkoitettu sovintokirja. </p>
+                            </content>
+                        </subsection>
+                    </section>
+  correction_type: body_text
+  notes: "LawVM-editorial base-source defect fix (no_official_corrigendum_found): enacted source XML labels the chapter 6 provision between 77 § and 79 § as chp_6__sec_75 / 75 §, while the neighbouring 79 § refers to 78 § and 2010/1140 later replaces 78 §; exact full-section fragment patch repairs structural identity and eIds before replay."
+  verified: "2026-06-27"
+
 # 1208/1991 (Metsäveroasetus) — enacted base SD source XML has several
 # still-live OCR/spacing defects in ordinary prose. No official corrigendum was
 # harvested; cached consolidated XML fin@20061451 carries the corrected visible

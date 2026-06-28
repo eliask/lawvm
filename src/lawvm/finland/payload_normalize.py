@@ -1761,6 +1761,43 @@ def _merge_sparse_plain_subsection_shell_continuations(
     observations = list(assignment.binding_observations)
     changed = False
 
+    def _continuation_row_slot(node: IRNode) -> bool:
+        if _slot_ir_has_omission(node) or _slot_ir_has_paragraph_row(node):
+            return False
+        text = " ".join(irnode_to_text(node).split())
+        return bool(text and not text.endswith(":"))
+
+    def _subsection_from_shell_and_rows(
+        shell: IRNode,
+        rows: list[IRNode],
+        *,
+        rule_id: str,
+        continuation_slots: list[str],
+    ) -> IRNode:
+        row_children = [
+            IRNode(
+                kind=IRNodeKind.PARAGRAPH,
+                label=str(idx),
+                attrs={**row.attrs, _PRESERVE_IMPLICIT_PARAGRAPH_NUMBER_ATTR: "1"},
+                children=(IRNode(kind=IRNodeKind.CONTENT, text=" ".join(irnode_to_text(row).split())),),
+            )
+            for idx, row in enumerate(rows, start=1)
+        ]
+        return IRNode(
+            kind=shell.kind,
+            label=shell.label,
+            text=shell.text,
+            attrs={
+                **shell.attrs,
+                "lawvm_payload_elaboration_rule": rule_id,
+                "lawvm_payload_elaboration_merged_slots": ",".join(continuation_slots),
+            },
+            children=(
+                IRNode(kind=IRNodeKind.INTRO, text=" ".join(irnode_to_text(shell).split())),
+                *row_children,
+            ),
+        )
+
     for binding in assignment.sparse_slot_bindings:
         if binding.target_paragraph is None or binding.target_item or binding.target_special:
             continue
@@ -1857,6 +1894,67 @@ def _merge_sparse_plain_subsection_shell_continuations(
                 intro_slot=f"{assigned_idx}:{intro_slot.label or ''}",
                 shell_slot=f"{assigned_idx + 1}:{shell.label or ''}",
                 rebound_payload_slot=f"{continuation_idx + 1}:{continuation.label or ''}",
+            )
+        )
+        changed = True
+
+    for binding in assignment.sparse_slot_bindings:
+        if binding.target_paragraph is None or binding.target_item or binding.target_special:
+            continue
+        assigned_idx = binding.payload_slot_index - 1
+        if assigned_idx < 0 or assigned_idx >= len(amend_subs):
+            continue
+        if any((obs.detail or {}).get("op_description") == binding.op_description for obs in observations):
+            continue
+        shell = amend_subs[assigned_idx]
+        if not _slot_ir_is_intro_only_fragment(shell):
+            continue
+        target_op = next(
+            (
+                op
+                for op in group_ops
+                if (
+                    op.target_cols.target_paragraph == binding.target_paragraph
+                    and not op.target_cols.target_item
+                    and not op.target_cols.target_special
+                    and assignment.for_op(op) is shell
+                )
+            ),
+            None,
+        )
+        if target_op is None:
+            continue
+        continuation_rows: list[IRNode] = []
+        continuation_indices: list[int] = []
+        cursor = assigned_idx + 1
+        while cursor < len(amend_subs) and cursor not in used_subs and _continuation_row_slot(amend_subs[cursor]):
+            continuation_rows.append(amend_subs[cursor])
+            continuation_indices.append(cursor)
+            cursor += 1
+        if not continuation_rows:
+            continue
+        continuation_slots = [f"{idx + 1}:{amend_subs[idx].label or ''}" for idx in continuation_indices]
+        rebound = _subsection_from_shell_and_rows(
+            shell,
+            continuation_rows,
+            rule_id=_SPARSE_PLAIN_SUBSECTION_SHELL_CONTINUATION_MERGE_RULE,
+            continuation_slots=continuation_slots,
+        )
+        subsec_map.assign(target_op, rebound)
+        used_subs.update(continuation_indices)
+        observations.append(
+            _obs(
+                _SPARSE_PLAIN_SUBSECTION_SHELL_CONTINUATION_MERGE_RULE,
+                "sparse_subsection_elaboration",
+                op_description=target_op.description(),
+                target_paragraph=binding.target_paragraph,
+                shell_slot=f"{assigned_idx + 1}:{shell.label or ''}",
+                continuation_slots=continuation_slots,
+                synthesized_tail_rows=[
+                    str(child.label or "")
+                    for child in rebound.children
+                    if child.kind is IRNodeKind.PARAGRAPH and child.label
+                ],
             )
         )
         changed = True

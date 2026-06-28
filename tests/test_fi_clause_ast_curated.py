@@ -419,6 +419,26 @@ class TestJolloiNRenumberPairs:
         for rn in renumber_nodes:
             assert rn.new_label == "6", f"Expected new_label='6', got {rn.new_label!r}"
 
+    def test_jolloin_section_renumber_to_destination_chapter(self):
+        """'nykyinen 21 § siirtyy uuteen 7 lukuun 50 §:ksi' carries full destination."""
+        text = (
+            "lisätään lakiin uusi 21-29 § ja 5-7 luku, jolloin nykyinen 21 § "
+            "siirtyy uuteen 7 lukuun 50 §:ksi"
+        )
+        result = parse_clause(text)
+        nodes = _flat_nodes(result.clause_ast)
+
+        renumber_nodes = [
+            n
+            for n in nodes
+            if isinstance(n, LabelAmend) and n.action == LabelAction.RENUMBER and ("section", "21") in n.target.path
+        ]
+        assert len(renumber_nodes) == 1
+        renumber = renumber_nodes[0]
+        assert renumber.target == LegalAddress(path=(("section", "21"),))
+        assert renumber.new_label == "50"
+        assert renumber.destination == LegalAddress(path=(("chapter", "7"), ("section", "50")))
+
     def test_jolloin_move_consequence_preserves_following_target(self):
         """'muutetaan 5 §:n 1 momentti, jolloin nykyinen 2 momentti siirtyy 3 momentiksi, ja 8 §'
         -> replace(5,1) and replace(8) — the jolloin is consumed, not a target.

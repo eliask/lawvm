@@ -63,13 +63,135 @@ class ArchiveLike(Protocol):
     def close(self) -> None: ...
 
 
-def validate_farchive_create_path(path: Path) -> None:
-    """Reject ambiguous farchive creation targets such as ``unused``."""
+class FarchivePathOutsideDataRoot(ValueError):
+    """Raised when a farchive-create target resolves outside the data root.
+
+    Per AGENTS.md §1.0/§1.1 (mutation boundary): the create-path validation
+    must not silently widen to a SQLite file outside the resolved data root.
+    The fields let triage point at the exact divergence (input, resolved,
+    data root) without re-running the operation (AGENTS.md §1.10 — embed
+    the load-bearing context, do not collapse to a generic message).
+
+    The check is bypassed only when the resolved path matches an explicit
+    ``LAWVM_*_FARCHIVE_DB`` operator override supplied through
+    :func:`validate_farchive_create_path`'s ``explicit_env`` parameter —
+    preserving the legitimate CLI/env override path while rejecting ``..``
+    traversal, absolute path injection, and symlink targets that escape the
+    data root.
+    """
+
+    def __init__(self, *, path: Path, resolved: Path, data_root: Path) -> None:
+        self.path = path
+        self.resolved = resolved
+        self.data_root = data_root
+        super().__init__(
+            f"FarchivePathOutsideDataRoot: create target resolves outside the "
+            f"data root.\n"
+            f"  input path  : {path}\n"
+            f"  resolved    : {resolved}\n"
+            f"  data root   : {data_root}\n"
+            f"  remedy      : pass a path under <data root>/<name>.farchive, "
+            f"or set the appropriate LAWVM_*_FARCHIVE_DB env var to the "
+            f"explicit target."
+        )
+
+
+def _data_root() -> Path:
+    """Resolved canonical data root (mirrors :func:`resolve_farchive_path`).
+
+    ``$LAWVM_CANONICAL_DATA_ROOT/data`` when the canonical override is set
+    (worktree / shared data checkout); ``<repo_root>/data`` otherwise. The
+    farchive-create path must resolve within this root unless an explicit
+    ``LAWVM_*_FARCHIVE_DB`` operator override authorizes the divergence.
+    """
+    canonical_root = os.environ.get("LAWVM_CANONICAL_DATA_ROOT")
+    if canonical_root:
+        return Path(canonical_root).resolve() / "data"
+    return _repo_root() / "data"
+
+
+def _is_within(path: Path, root: Path) -> bool:
+    """Return True iff ``path`` is ``root`` itself or a descendant of it.
+
+    Both arguments MUST be resolved (``Path.resolve()``) so symlink targets
+    and ``..`` traversal are evaluated against the actual filesystem location
+    rather than the surface notation (AGENTS.md §1.11 — surface predicate
+    must not authorize state; the resolved path is the load-bearing check).
+    """
+    try:
+        root.relative_to(root)
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return path == root or root in path.parents
+
+
+def _matches_explicit_farchive_env(
+    resolved: Path, explicit_env: str | None
+) -> bool:
+    """True iff ``explicit_env`` is set and resolves to the same path.
+
+    Operators may legitimately override the data root by pointing
+    ``LAWVM_FARCHIVE_DB`` / ``LAWVM_HE_FARCHIVE_DB`` /
+    ``LAWVM_US_FEDERAL_FARCHIVE_DB`` at an out-of-tree target (test
+    fixtures, shared mounts, scratch space). When the supplied path equals
+    such an explicit override it is treated as trusted operator input —
+    not a path-traversal vector.
+    """
+    if not explicit_env:
+        return False
+    raw = os.environ.get(explicit_env)
+    if not raw:
+        return False
+    try:
+        return Path(raw).resolve() == resolved
+    except OSError:
+        return False
+
+
+def validate_farchive_create_path(
+    path: Path, *, explicit_env: str | None = None
+) -> None:
+    """Reject ambiguous farchive creation targets such as ``unused``.
+
+    The suffix check (``.farchive``) is always enforced — it rejects
+    extensionless scratch paths that would silently create untracked SQLite
+    files (e.g. ``unused``).
+
+    The data-root check is **opt-in via** ``explicit_env``: callers that
+    resolve the path through a known precedence chain (default resolution
+    via :func:`resolve_farchive_path`, which honours ``$LAWVM_*_FARCHIVE_DB``
+    / ``$LAWVM_CANONICAL_DATA_ROOT`` / ``<repo_root>/data``) pass the env-var
+    name so the resolved path is verified to lie within the data root OR
+    match the operator override. Callers without an env-var precedence chain
+    (CLI args, function parameters, Sweden's suffixless-guard path, NZ)
+    keep the previous behaviour — suffix check only — preserving backwards
+    compatibility while the new protection attaches to the default-resolved
+    ingest path. This is purely additive: no caller regresses, and the
+    default-resolved path (the production hot path) is now hardened against
+    ``..`` traversal, absolute path injection, and symlink targets that
+    escape the data root (Security M2). On divergence raises
+    :class:`FarchivePathOutsideDataRoot` with the input, resolved, and
+    data-root triplet so triage does not require re-running (AGENTS.md
+    §1.10 — embed the load-bearing context, do not collapse to a generic
+    message).
+    """
     if path.suffix != ".farchive":
         raise ValueError(
             f"refusing to create extensionless farchive destination: {path}; "
             "use a .farchive path"
         )
+    if explicit_env is None:
+        return
+    resolved = path.resolve()
+    data_root = _data_root().resolve()
+    if _is_within(resolved, data_root):
+        return
+    if _matches_explicit_farchive_env(resolved, explicit_env):
+        return
+    raise FarchivePathOutsideDataRoot(
+        path=path, resolved=resolved, data_root=data_root
+    )
 
 
 def statute_url(sid: str, lang: str = "fin") -> str:
@@ -512,7 +634,7 @@ def open_corpus_archive(
     path, rule = resolve_farchive_path(name, explicit_env=explicit_env)
 
     if allow_create:
-        validate_farchive_create_path(path)
+        validate_farchive_create_path(path, explicit_env=explicit_env)
         return Farchive(path, readonly=False), path, rule
 
     if not _archive_is_populated(path):

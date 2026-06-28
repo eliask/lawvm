@@ -230,11 +230,20 @@ def open_us_federal_farchive(
 
     if db_path is None:
         path, _rule = resolve_us_federal_farchive_path()
+        # Default-resolution path: apply the data-root check with the
+        # explicit-env override channel so LAWVM_US_FEDERAL_FARCHIVE_DB
+        # pointing at an out-of-tree target is honoured (operator trust).
+        explicit_env = "LAWVM_US_FEDERAL_FARCHIVE_DB"
     else:
         path = Path(db_path)
+        # Caller supplied the path directly (test fixture, ad-hoc ingest).
+        # Caller is the operator-in-trust at this layer; pass explicit_env=None
+        # so validate_farchive_create_path enforces only the suffix check
+        # (Security M2 §4: opt-in via explicit_env, backwards-compatible).
+        explicit_env = None
 
     if allow_create:
-        validate_farchive_create_path(path)
+        validate_farchive_create_path(path, explicit_env=explicit_env)
         path.parent.mkdir(parents=True, exist_ok=True)
         return Farchive(path, readonly=False)
     return Farchive(path, readonly=readonly)

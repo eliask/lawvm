@@ -5,7 +5,6 @@ import re
 from typing import Any
 
 from lawvm.core.ir import IRNode
-from lawvm.uk_legislation.mutable_ir import UKMutableNode
 from lawvm.uk_legislation.uk_grafter import _clean_num
 
 
@@ -15,7 +14,7 @@ def _normalize_text_for_grounding(text: str) -> str:
     return " ".join(text.split())
 
 
-def _normalized_replay_subtree_text(node: IRNode | UKMutableNode) -> str:
+def _normalized_replay_subtree_text(node: IRNode) -> str:
     parts: list[str] = []
     if node.text:
         parts.append(str(node.text).strip())
@@ -26,7 +25,7 @@ def _normalized_replay_subtree_text(node: IRNode | UKMutableNode) -> str:
     return _normalize_text_for_grounding(" ".join(parts))
 
 
-def _node_text_contains_text(node: UKMutableNode, needle: str) -> bool:
+def _node_text_contains_text(node: IRNode, needle: str) -> bool:
     """Return whether *needle* is present in one node text field only."""
     normalized_needle = " ".join((needle or "").split())
     if not normalized_needle:
@@ -36,7 +35,7 @@ def _node_text_contains_text(node: UKMutableNode, needle: str) -> bool:
     return normalized_needle in text or bool(re.search(pattern, text, flags=re.I))
 
 
-def _subtree_contains_text(node: UKMutableNode, needle: str) -> bool:
+def _subtree_contains_text(node: IRNode, needle: str) -> bool:
     """Return whether *needle* is already present in the target subtree text."""
     normalized_needle = " ".join((needle or "").split())
     if not normalized_needle:
@@ -52,7 +51,7 @@ def _subtree_contains_text(node: UKMutableNode, needle: str) -> bool:
     return False
 
 
-def _subtree_text_match_count(node: UKMutableNode, needle: str) -> int:
+def _subtree_text_match_count(node: IRNode, needle: str) -> int:
     """Count whitespace-flexible text matches across a mutable subtree."""
     normalized_needle = " ".join((needle or "").split())
     if not normalized_needle:
@@ -176,7 +175,7 @@ def _parenthetical_omission_text_selector(text: str) -> bool:
     return bool(re.search(r"[A-Za-z]{3,}", stripped))
 
 
-def _citation_connector_elided_text_match_present(match_text: str, node: IRNode | UKMutableNode) -> bool:
+def _citation_connector_elided_text_match_present(match_text: str, node: IRNode) -> bool:
     text = match_text or ""
     if not re.search(r"\bor\b", text, re.I):
         return False
@@ -191,7 +190,7 @@ def _citation_connector_elided_text_match_present(match_text: str, node: IRNode 
     return bool(target_norm) and selector_norm in target_norm
 
 
-def _article_phrase_content_word_present(match_text: str, node: IRNode | UKMutableNode) -> bool:
+def _article_phrase_content_word_present(match_text: str, node: IRNode) -> bool:
     stripped = (match_text or "").strip()
     article_match = re.fullmatch(r"(?:a|an|the)\s+([A-Za-z][A-Za-z-]{3,})", stripped, re.I)
     if article_match is None:
@@ -201,7 +200,7 @@ def _article_phrase_content_word_present(match_text: str, node: IRNode | UKMutab
     return bool(content_norm) and content_norm in target_norm
 
 
-def _normalized_text_match_present(match_text: str, node: IRNode | UKMutableNode) -> bool:
+def _normalized_text_match_present(match_text: str, node: IRNode) -> bool:
     match_norm = _compact_normalized_text(match_text)
     if len(match_norm) < 3:
         return False
@@ -209,7 +208,7 @@ def _normalized_text_match_present(match_text: str, node: IRNode | UKMutableNode
     return bool(target_norm) and match_norm in target_norm
 
 
-def _definition_entry_term_absent(match_text: str, node: IRNode | UKMutableNode) -> bool:
+def _definition_entry_term_absent(match_text: str, node: IRNode) -> bool:
     if not match_text.startswith("TEXT_DEFINITION_ENTRY_"):
         return False
     term = match_text[len("TEXT_DEFINITION_ENTRY_") :].strip()
@@ -220,7 +219,7 @@ def _definition_entry_term_absent(match_text: str, node: IRNode | UKMutableNode)
     return bool(target_norm) and term_norm not in target_norm
 
 
-def _normalized_replacement_text_present(replacement_text: str, node: IRNode | UKMutableNode) -> bool:
+def _normalized_replacement_text_present(replacement_text: str, node: IRNode) -> bool:
     replacement_norm = _compact_normalized_text(replacement_text)
     if len(replacement_norm) < 3:
         return False
@@ -228,7 +227,7 @@ def _normalized_replacement_text_present(replacement_text: str, node: IRNode | U
     return bool(target_norm) and replacement_norm in target_norm
 
 
-def _citation_stripped_text_match_present(match_text: str, node: IRNode | UKMutableNode) -> bool:
+def _citation_stripped_text_match_present(match_text: str, node: IRNode) -> bool:
     text = match_text or ""
     if not re.search(r"\b(?:Act|Measure|Order|Regulations)\s+\d{4}\b|\(\s*c\.\s*\d+", text, re.I):
         return False
@@ -268,7 +267,7 @@ def _synthetic_text_selector(text: str) -> bool:
     return stripped.startswith("TEXT_") or bool(re.match(r"^FROM_.+_TO_", stripped))
 
 
-def _replay_subtree_text_preview(node: IRNode | UKMutableNode, *, limit: int = 240) -> str:
+def _replay_subtree_text_preview(node: IRNode, *, limit: int = 240) -> str:
     parts: list[str] = []
     if node.text:
         parts.append(str(node.text).strip())

@@ -315,7 +315,9 @@ def align_uk_replay_to_oracle_with_report(
         verbose=verbose,
     )
     executor.ground_ids()
-    aligned = executor.statute.to_irstatute()
+    # Sub-PR C+D: ``executor.statute`` IS the immutable ``IRStatute`` — no
+    # ``to_irstatute()`` boundary call left.
+    aligned = executor.statute
     return UKOracleAlignmentResult(
         statute=aligned,
         report=_alignment_report(

@@ -37,7 +37,7 @@ from lawvm.core.branch_authority import (
     operation_matches_overlay_context,
     source_matches_overlay_context,
 )
-from lawvm.core.ir_helpers import irnode_content_hash
+from lawvm.core.ir_helpers import irnode_content_hash, irnode_to_text
 from lawvm.core.provenance import MigrationEvent
 from lawvm.core.semantic_types import StructuralAction
 from lawvm.core.semantic_types import IRNodeKind
@@ -67,6 +67,8 @@ from lawvm.core.timeline_lineage import (
 )
 from lawvm.core.timeline_materialization import (
     MaterializationSelectionState as _MaterializationSelectionState,
+    SPARSE_PARENT_OVERLAY_POLICY as _SPARSE_PARENT_OVERLAY_POLICY,
+    SPARSE_PRESERVED_TAIL_ATTR as _SPARSE_PRESERVED_TAIL_ATTR,
     apply_overlays as _apply_overlays_impl,
     materialize_body as _materialize_body,
     materialize_root_nodes as _materialize_root_nodes,
@@ -114,7 +116,12 @@ from lawvm.core.overlay_default_replay_authorized_false_audit import (
 # Compatibility re-exports while timeline address helpers migrate out.
 _TIMELINE_ADDRESS_COMPAT_EXPORTS = (_iter_nodes_with_address,)
 _TIMELINE_LINEAGE_COMPAT_EXPORTS = (_current_address_from_migration_events, _lineage_address_chain_helper)
-_TIMELINE_CONSISTENCY_COMPAT_EXPORTS = (ConsistencyDivergence, ingest_consolidated, ingest_uk_snapshots, verify_consistency)
+_TIMELINE_CONSISTENCY_COMPAT_EXPORTS = (
+    ConsistencyDivergence,
+    ingest_consolidated,
+    ingest_uk_snapshots,
+    verify_consistency,
+)
 
 _BODY_TOP_LEVEL_KINDS: frozenset[str] = frozenset(
     {"part", "chapter", "section", "division", "recital", "preamble", "p1group", "final"}
@@ -125,12 +132,8 @@ _PARENT_STRUCTURAL_CHILD_KINDS: dict[str, frozenset[IRNodeKind]] = {
     "chapter": frozenset((IRNodeKind.SECTION,)),
     "section": frozenset((IRNodeKind.SUBSECTION, IRNodeKind.ITEM)),
 }
-_MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_ATTR = (
-    "lawvm_materialize_as_absent_under_detached_horizon"
-)
-_MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_TAG = (
-    "lawvm:materialize_as_absent_under_detached_horizon"
-)
+_MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_ATTR = "lawvm_materialize_as_absent_under_detached_horizon"
+_MATERIALIZE_AS_ABSENT_UNDER_DETACHED_HORIZON_TAG = "lawvm:materialize_as_absent_under_detached_horizon"
 
 
 def _day_after_iso(iso_date: str) -> str:
@@ -171,26 +174,19 @@ def _apply_overlays(
 
 _TIMELINE_MATERIALIZATION_COMPAT_EXPORTS = (_sort_label_key, _apply_overlays)
 
+
 def _latest_eligible_version_without_scope(
     timeline: ProvisionTimeline,
     as_of: str,
 ) -> Optional[ProvisionVersion]:
-    return _pick_latest(
-        [v for v in timeline.versions if _eligible(v, as_of, "governing")]
-    )
+    return _pick_latest([v for v in timeline.versions if _eligible(v, as_of, "governing")])
 
 
 def _latest_substantive_version_at_or_before(
     timeline: ProvisionTimeline,
     as_of: str,
 ) -> Optional[ProvisionVersion]:
-    return _pick_latest(
-        [
-            v
-            for v in timeline.versions
-            if v.effective <= as_of and v.content is not None
-        ]
-    )
+    return _pick_latest([v for v in timeline.versions if v.effective <= as_of and v.content is not None])
 
 
 def _record_timeline_issue(
@@ -670,10 +666,7 @@ def compile_timelines(
         for event in temporal_events:
             if event.group_id:
                 grouped_events.setdefault(event.group_id, []).append(event)
-        temporal_events_by_group_id = {
-            group_id: tuple(events)
-            for group_id, events in grouped_events.items()
-        }
+        temporal_events_by_group_id = {group_id: tuple(events) for group_id, events in grouped_events.items()}
 
     def _temporal_events_for_op(op: LegalOperation) -> Tuple[TemporalEvent, ...]:
         if not op.group_id:
@@ -912,11 +905,7 @@ def compile_timelines(
             )
             if wave_key not in renumber_wave_source_snapshots:
                 renumber_wave_source_snapshots[wave_key] = {
-                    address: (
-                        _select_active_cached(timeline, effective).version
-                        if timeline.versions
-                        else None
-                    )
+                    address: (_select_active_cached(timeline, effective).version if timeline.versions else None)
                     for address, timeline in timelines.items()
                 }
             source_active = renumber_wave_source_snapshots[wave_key].get(target)
@@ -936,11 +925,7 @@ def compile_timelines(
                 continue
             if destination not in timelines:
                 timelines[destination] = ProvisionTimeline(address=destination)
-            migrated_expires = (
-                temporal_overrides.expires
-                if temporal_overrides.matched
-                else source_active.expires
-            )
+            migrated_expires = temporal_overrides.expires if temporal_overrides.matched else source_active.expires
             migrated_applicability = (
                 list(temporal_overrides.applicability)
                 if temporal_overrides.applicability
@@ -970,7 +955,7 @@ def compile_timelines(
                     source=op.source,
                     applicability=migrated_applicability,
                     content_hash=irnode_content_hash(migrated_content),
-                )
+                ),
             )
             _append_version(
                 timelines[target],
@@ -979,7 +964,7 @@ def compile_timelines(
                     enacted=enacted,
                     content=None,
                     source=op.source,
-                )
+                ),
             )
             continue
 
@@ -1033,18 +1018,21 @@ def compile_timelines(
                 emit_warnings=emit_warnings,
             )
             continue
-        if op.action in (
-            StructuralAction.REPLACE,
-            StructuralAction.HEADING_REPLACE,
-            StructuralAction.TEXT_REPLACE,
-        ) and content is None:
+        if (
+            op.action
+            in (
+                StructuralAction.REPLACE,
+                StructuralAction.HEADING_REPLACE,
+                StructuralAction.TEXT_REPLACE,
+            )
+            and content is None
+        ):
             _src_id = op.source.statute_id if op.source else "?"
             _record_timeline_issue(
                 issue_sink,
                 kind="missing_replace_payload",
                 message=(
-                    "compile_timelines: skipping op from "
-                    f"{_src_id} — replace payload is missing for target {target}"
+                    f"compile_timelines: skipping op from {_src_id} — replace payload is missing for target {target}"
                 ),
                 address=target,
                 source_statute=_src_id,
@@ -1063,11 +1051,16 @@ def compile_timelines(
         # repeal is permanent, even for temporary provisions. A repealed section
         # doesn't come back when the parent law's sunset date passes.
         _is_repeal_placeholder = _content_is_repeal_placeholder(content)
-        if not expires and op.action in (
-            StructuralAction.REPLACE,
-            StructuralAction.INSERT,
-            StructuralAction.TEXT_REPLACE,
-        ) and not _is_repeal_placeholder:
+        if (
+            not expires
+            and op.action
+            in (
+                StructuralAction.REPLACE,
+                StructuralAction.INSERT,
+                StructuralAction.TEXT_REPLACE,
+            )
+            and not _is_repeal_placeholder
+        ):
             expires = _active_temporary_expiry_for_target_or_ancestor(target, effective)
 
         if expires:
@@ -1090,7 +1083,7 @@ def compile_timelines(
                     else list(op.applicability)
                 ),
                 content_hash=irnode_content_hash(content),
-            )
+            ),
         )
 
     while standalone_index < len(standalone_events):
@@ -1123,8 +1116,7 @@ def compile_timelines_ex(
     authority_context: BranchContext = DEFAULT_ENACTED_CONTEXT,
     authorizations: Tuple[ExecutionAuthorization, ...] = (),
 ) -> TimelineCompilationResult:
-    """Explicit compile_timelines result with typed issues.
-    """
+    """Explicit compile_timelines result with typed issues."""
     issues: List[TimelineIssue] = []
     timelines = compile_timelines(
         base,
@@ -1261,9 +1253,7 @@ def materialize_pit_ex(
         degradations caused by missing required scope.
     """
     if lineage_plan is not None and migration_events:
-        raise ValueError(
-            "materialize_pit_ex accepts either lineage_plan or migration_events, not both"
-        )
+        raise ValueError("materialize_pit_ex accepts either lineage_plan or migration_events, not both")
     if lineage_plan is not None:
         migration_events = lineage_plan.migration_events
     expiry_horizon = expires_as_of or as_of
@@ -1356,13 +1346,9 @@ def materialize_pit_ex(
                 )
             )
             inactive_expiry_by_address[address] = max(v.expires or "" for v in expired_versions)
-            expired_temporary_versions = [
-                v for v in expired_versions if v.variant_kind == "temporary"
-            ]
+            expired_temporary_versions = [v for v in expired_versions if v.variant_kind == "temporary"]
             if expired_temporary_versions and len(expired_temporary_versions) == len(expired_versions):
-                inactive_temporary_expiry_by_address[address] = max(
-                    v.expires or "" for v in expired_temporary_versions
-                )
+                inactive_temporary_expiry_by_address[address] = max(v.expires or "" for v in expired_temporary_versions)
 
     active, active_versions, ambiguous_address_tuple = _project_materialization_selection_states(
         selection_states,
@@ -1396,9 +1382,7 @@ def materialize_pit_ex(
             if migration_events
             else address
         )
-        current_expiry = inactive_temporary_expiry_by_projected_address.get(
-            projected_address, ""
-        )
+        current_expiry = inactive_temporary_expiry_by_projected_address.get(projected_address, "")
         if expiry > current_expiry:
             inactive_temporary_expiry_by_projected_address[projected_address] = expiry
     title_address = statute_title_address()
@@ -1468,6 +1452,7 @@ def materialize_pit_ex(
             )
 
         node = content
+        traversed_sparse_preserved_tail = False
         for kind_name, label in relative_path:
             found_child = None
             expected_kind = _IR_NODE_KIND_BY_VALUE.get(kind_name)
@@ -1483,7 +1468,16 @@ def materialize_pit_ex(
                         break
             if found_child is None:
                 return False
+            if found_child.attrs.get(_SPARSE_PRESERVED_TAIL_ATTR) == "1":
+                traversed_sparse_preserved_tail = True
             node = found_child
+        if (
+            parent_leaf == "section"
+            and content.attrs.get("lawvm_materialization_policy") == _SPARSE_PARENT_OVERLAY_POLICY
+            and node.attrs.get("lawvm_repeal_placeholder") != "1"
+            and (traversed_sparse_preserved_tail or not irnode_to_text(node).strip())
+        ):
+            return False
         return True
 
     def _same_source_section_snapshot_masks_child(
@@ -1499,10 +1493,7 @@ def materialize_pit_ex(
         child_source = child_v.source.statute_id if child_v.source is not None else ""
         if not parent_source or parent_source != child_source:
             return False
-        return any(
-            child.kind.value in {"subsection", "item"} and child.label
-            for child in parent_v.content.children
-        )
+        return any(child.kind.value in {"subsection", "item"} and child.label for child in parent_v.content.children)
 
     for addr in list(active):
         if len(addr.path) <= 1:
@@ -1645,9 +1636,7 @@ def materialize_pit_ex(
         if len(addr.path) > 2 and addr.path[-1][0] == "section":
             deeper_section_labels.setdefault(addr.path[-1], []).append(addr)
     unique_deeper_section_labels = {
-        key: addresses[0]
-        for key, addresses in deeper_section_labels.items()
-        if len(addresses) == 1
+        key: addresses[0] for key, addresses in deeper_section_labels.items() if len(addresses) == 1
     }
     for addr in list(active):
         if len(addr.path) >= 3 or not addr.path or addr.path[-1][0] != "section":
@@ -1732,9 +1721,7 @@ def materialize_pit_ex(
     elif any(issue.blocking for issue in issues):
         materialization_status = "degraded_timeline_issues"
         metadata["materialization_status"] = materialization_status
-        metadata["timeline_issue_rule_ids"] = tuple(
-            issue.rule_id for issue in issues if issue.blocking
-        )
+        metadata["timeline_issue_rule_ids"] = tuple(issue.rule_id for issue in issues if issue.blocking)
 
     statute = IRStatute(
         statute_id=statute_id,

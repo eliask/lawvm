@@ -72,6 +72,7 @@ from lawvm.core.ir import (
 )
 from lawvm.core.mutation_boundary import TreePathStep
 from lawvm.core.semantic_types import StructuralAction, TextPatchKindEnum
+from lawvm.core.xml_parse import parse_corpus_xml
 from lawvm.finland.corrigendum_records import default_patch_records_path, load_patch_records
 from lawvm.finland.metadata import _normalize_fi_parse_text as _normalize_ws_base
 
@@ -243,7 +244,7 @@ def extract_inline_corrections(
         return [], xml_bytes
 
     try:
-        root = etree.fromstring(xml_bytes)
+        root = parse_corpus_xml(xml_bytes)
     except etree.XMLSyntaxError:
         return [], xml_bytes
 
@@ -424,7 +425,11 @@ def _classify_location(location: str) -> str:
 
 def _is_section_num_before_heading_location(location: str) -> bool:
     loc = _WHITESPACE_RE.sub(" ", _normalize_ws(location)).strip().lower()
-    return "pykälän otsikon edellä" in loc or "pykälänumerona" in loc
+    return (
+        "pykälän otsikon edellä" in loc
+        or "pykälänumerona" in loc
+        or "pykälän numero" in loc
+    )
 
 
 def _bare_section_num_display(text: str) -> str:
@@ -1699,7 +1704,7 @@ _FRAGMENT_WRAPPER_CLOSE = b"</root>"
 
 def _parse_fragment_root(xml_bytes: bytes) -> etree._Element | None:
     try:
-        return etree.fromstring(_FRAGMENT_WRAPPER_OPEN + xml_bytes + _FRAGMENT_WRAPPER_CLOSE)
+        return parse_corpus_xml(_FRAGMENT_WRAPPER_OPEN + xml_bytes + _FRAGMENT_WRAPPER_CLOSE)
     except etree.XMLSyntaxError:
         return None
 
@@ -1754,6 +1759,10 @@ def _normalize_section_num_display(text: str) -> str:
     number, suffix = match.groups()
     suffix = suffix.lower()
     return f"{number} {suffix} §".strip() if suffix else f"{number} §"
+
+
+def _local_xml_tag(el: etree._Element) -> str:
+    return str(el.tag).split("}")[-1] if "}" in str(el.tag) else str(el.tag)
 
 
 def _split_section_num_heading_witness(text: str) -> tuple[str, str] | None:
@@ -1837,6 +1846,11 @@ def _apply_bare_section_num_corrigendum(
             candidates.append(num_el)
 
     if len(candidates) != 1:
+        candidates = _section_num_corrigendum_sequence_candidates(
+            candidates,
+            correct_num=correct_num,
+        )
+    if len(candidates) != 1:
         return xml_bytes, False
 
     candidates[0].text = correct_num
@@ -1847,6 +1861,53 @@ def _apply_bare_section_num_corrigendum(
     except etree.XMLSyntaxError:
         return xml_bytes, False
     return repaired, True
+
+
+def _section_num_corrigendum_sequence_candidates(
+    candidates: list[etree._Element],
+    *,
+    correct_num: str,
+) -> list[etree._Element]:
+    """Keep ambiguous section-number candidates backed by sibling sequence context."""
+    correct_ord = _section_num_ordinal(correct_num)
+    if correct_ord is None:
+        return []
+    sequenced: list[etree._Element] = []
+    for num_el in candidates:
+        section = num_el.getparent()
+        if section is None:
+            continue
+        parent = section.getparent() if section is not None else None
+        if parent is None:
+            continue
+        siblings = [child for child in parent if _local_xml_tag(child) == "section"]
+        try:
+            index = siblings.index(section)
+        except ValueError:
+            continue
+        prev_ord = _nearest_section_num_ordinal(reversed(siblings[:index]))
+        next_ord = _nearest_section_num_ordinal(iter(siblings[index + 1 :]))
+        if prev_ord == correct_ord - 1 or next_ord == correct_ord + 1:
+            sequenced.append(num_el)
+    return sequenced
+
+
+def _nearest_section_num_ordinal(sections: Iterable[etree._Element]) -> int | None:
+    for section in sections:
+        num_el = section.find("./{*}num")
+        if num_el is None:
+            continue
+        ordinal = _section_num_ordinal(_normalize_section_num_display(num_el.text or ""))
+        if ordinal is not None:
+            return ordinal
+    return None
+
+
+def _section_num_ordinal(display: str) -> int | None:
+    match = re.fullmatch(r"(\d+) §", display)
+    if not match:
+        return None
+    return int(match.group(1))
 
 
 def _find_element_range(xml_bytes: bytes, sec: str, subsec: str | None) -> tuple[int, int] | None:
@@ -1982,11 +2043,20 @@ class CorrigendumPatchTable:
                 compatible_types = _STATUTE_BODY_TYPES | {"body_text"}
             else:
                 compatible_types = {corr_type}
+            wrong_compact = "".join(wrong_norm.split())
+            correct_compact = "".join(correct_norm.split())
             for kept_corr_type, kept_wrong_norm, kept_correct_norm in _kept_text_pairs.get(amendment_id, []):
                 if "::" in kept_corr_type:
                     kept_corr_type = kept_corr_type.split("::", 1)[0]
                 if kept_corr_type not in compatible_types:
                     continue
+                kept_wrong_compact = "".join(kept_wrong_norm.split())
+                kept_correct_compact = "".join(kept_correct_norm.split())
+                if (
+                    wrong_compact == kept_wrong_compact
+                    and correct_compact == kept_correct_compact
+                ):
+                    return True
                 wrong_overlap = (
                     wrong_norm in kept_wrong_norm
                     or kept_wrong_norm in wrong_norm
@@ -2040,6 +2110,28 @@ class CorrigendumPatchTable:
                     return True
             return False
 
+        def _contains_same_compact_text_pair(
+            amendment_id: str,
+            corr_type: str,
+            wrong_compact: str,
+            correct_compact: str,
+        ) -> bool:
+            if corr_type in _STATUTE_BODY_TYPES or corr_type == "body_text":
+                compatible_types = _STATUTE_BODY_TYPES | {"body_text"}
+            else:
+                compatible_types = {corr_type}
+            for kept_corr_type, kept_wrong_norm, kept_correct_norm in _kept_text_pairs.get(amendment_id, []):
+                if "::" in kept_corr_type:
+                    kept_corr_type = kept_corr_type.split("::", 1)[0]
+                if kept_corr_type not in compatible_types:
+                    continue
+                if (
+                    wrong_compact == "".join(kept_wrong_norm.split())
+                    and correct_compact == "".join(kept_correct_norm.split())
+                ):
+                    return True
+            return False
+
         for row in rows:
             amendment_id_numyr = str(row.get("amendment_id") or "").strip()
             idx = int(row.get("correction_index") or 0)
@@ -2083,6 +2175,16 @@ class CorrigendumPatchTable:
             )
             wrong_compact = "".join(wrong_norm.split())
             correct_compact = "".join(correct_norm.split())
+            if (
+                corr_type in _STATUTE_BODY_TYPES | {"body_text"}
+                and _contains_same_compact_text_pair(
+                    amendment_id,
+                    corr_type,
+                    wrong_compact,
+                    correct_compact,
+                )
+            ):
+                continue
             # Deduplicate across extractor variants: same amendment + location +
             # normalised wrong/correct (ellipsis style may differ between LLM and vision).
             dedup_key = (amendment_id, corr_type, location, wrong_norm, correct_norm)

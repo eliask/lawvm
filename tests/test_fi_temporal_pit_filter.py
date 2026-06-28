@@ -413,6 +413,40 @@ def test_standalone_commence_event_restores_prior_substantive_content() -> None:
     assert commenced.content.text == "Base section"
 
 
+def test_standalone_commence_event_does_not_revive_same_day_expiry() -> None:
+    addr = LegalAddress(path=(("section", "1"),))
+    base = _statute("9999/standalone-same-day-commence", _body(_section("1", "Base section")))
+
+    timelines = compile_timelines(
+        base,
+        [],
+        base_date="2000-01-01",
+        temporal_events=(
+            TemporalEvent(
+                event_id="ev:standalone-expire",
+                kind="expire",
+                scope=TemporalScope(
+                    target_statute="9999/standalone-same-day-commence",
+                    exact_addresses=(addr,),
+                ),
+                expires="2010-01-01",
+            ),
+            TemporalEvent(
+                event_id="ev:standalone-commence",
+                kind="commence",
+                scope=TemporalScope(
+                    target_statute="9999/standalone-same-day-commence",
+                    exact_addresses=(addr,),
+                ),
+                effective="2010-01-01",
+            ),
+        ),
+    )
+
+    assert select_active_version_ex(timelines[addr], "2009-12-31").version is not None
+    assert select_active_version_ex(timelines[addr], "2010-01-01").version is None
+
+
 def test_compile_timelines_exact_target_applies_update() -> None:
     """Exact targets apply their update in PIT materialization."""
     base = _statute(

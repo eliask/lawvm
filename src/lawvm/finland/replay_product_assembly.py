@@ -4,12 +4,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Literal, Optional, cast
 
-import lxml.etree as etree
-
 from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.xml_parse import parse_corpus_xml
 from lawvm.finland.metadata import _chapter_expiry_from_base
 from lawvm.finland.ops import AmendmentOp, _apply_law_level_text_patches
-from lawvm.finland.corpus import get_consolidated_oracle_reflected_section_original_versions
+from lawvm.finland.corpus import (
+    get_consolidated_oracle_reflected_section_original_versions,
+    get_consolidated_oracle_single_future_repeal_overlay_versions,
+)
 from lawvm.finland.replay_capture import ReplayCaptureSinks
 from lawvm.finland.replay_horizon import ReplayHorizonRequest, choose_replay_horizon
 from lawvm.finland.replay_pipeline import ReplayPlan, ReplaySignalBuffers
@@ -85,6 +87,13 @@ def assemble_replay_products(request: ReplayProductAssemblyRequest) -> ReplayPro
             legal_operations=request.capture_sinks.legal_operations or (),
             oracle_reflected_section_original_versions=(
                 get_consolidated_oracle_reflected_section_original_versions(
+                    request.parent_id,
+                    corpus=request.corpus,
+                    selector=request.oracle_selector,
+                )
+            ),
+            oracle_single_future_repeal_overlay_versions=(
+                get_consolidated_oracle_single_future_repeal_overlay_versions(
                     request.parent_id,
                     corpus=request.corpus,
                     selector=request.oracle_selector,
@@ -176,7 +185,7 @@ def _base_chapter_expiries_from_base(
     base_xml_bytes: bytes,
     replay_print: Callable[[str], None],
 ) -> dict[str, str]:
-    base_tree = etree.fromstring(base_xml_bytes)
+    base_tree = parse_corpus_xml(base_xml_bytes)
     chapter_expiry = _chapter_expiry_from_base(base_tree)
     if chapter_expiry is None:
         return {}

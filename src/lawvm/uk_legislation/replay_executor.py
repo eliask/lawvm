@@ -4,9 +4,10 @@ from __future__ import annotations
 from typing_extensions import override
 
 import time
+from dataclasses import replace as dc_replace
 from typing import Any, List, Optional
 
-from lawvm.core.ir import IRStatute, LegalOperation
+from lawvm.core.ir import IRNode, IRStatute, LegalOperation
 from lawvm.core.mutation_events import MutationEvent
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.addressing import _action_name
@@ -14,7 +15,6 @@ from lawvm.uk_legislation.mutation_boundary_per_op_probe import (
     boundary_probe_enabled,
     probe_op_mutation_boundary,
 )
-from lawvm.uk_legislation.mutable_ir import UKMutableNode, UKMutableStatute
 from lawvm.uk_legislation.replay_grounding import UKReplayGroundingMixin
 from lawvm.uk_legislation.replay_heading_apply import UKReplayHeadingApplyMixin
 from lawvm.uk_legislation.replay_insert_apply import UKReplayInsertApplyMixin
@@ -54,6 +54,11 @@ class UKReplayExecutor(
     UKReplayRepealApplyMixin,
     UKReplayReplaceApplyMixin,
 ):
+    # Sub-PR C+D: explicit class-level annotation so ty narrows
+    # ``UKReplayExecutor.statute`` to ``IRStatute`` regardless of the
+    # ``UKMutableStatute`` annotation still present on the (yet-unmigrated)
+    # sibling apply mixins. Sub-PR B-completion will widen their annotations.
+    statute: IRStatute
     def __init__(
         self,
         statute: IRStatute,
@@ -64,7 +69,13 @@ class UKReplayExecutor(
         adjudications_out: Optional[List[CompileAdjudication]] = None,
         mutation_events_out: Optional[list[MutationEvent]] = None,
     ):
-        self.statute = UKMutableStatute.from_irstatute(statute)
+        # Sub-PR C (mutable_ir Wave N3d): store the input ``IRStatute`` directly.
+        # All downstream mutation now goes through
+        # ``self.statute = dataclasses.replace(self.statute, body=..., supplements=...)``
+        # because ``IRStatute`` is a frozen dataclass — no in-place writes
+        # survive past the boundary. Sub-PR B-completion will widen the
+        # ``UKMutableNode``-typed fields in apply modules to ``IRNode``.
+        self.statute: IRStatute = statute
         self.eid_map = eid_map or {}
         self.text_map = text_map or {}
         self.verbose = bool(verbose)
@@ -126,14 +137,14 @@ class UKReplayExecutor(
         # path; AGENTS.md §2.7).
         boundary_probe_on = boundary_probe_enabled()
         before_snapshot = (
-            self.statute.body.to_irnode() if boundary_probe_on else None
+            self.statute.body if boundary_probe_on else None
         )
         try:
             self._apply_op_with_context(op)
         finally:
             self._current_mutation_op = previous_mutation_op
         if boundary_probe_on:
-            after_snapshot = self.statute.body.to_irnode()
+            after_snapshot = self.statute.body
             probe_op_mutation_boundary(
                 before=before_snapshot,
                 after=after_snapshot,
@@ -151,8 +162,17 @@ class UKReplayExecutor(
         if str(target.special or "") == "whole_act":
             if _action_name(op.action) == "repeal":
                 self._log("  EXECUTOR: repealing WHOLE ACT")
-                self.statute.body.children = []
-                self.statute.supplements = []
+                # Sub-PR C+D (audit XJUR-02 / AGENTS.md §2.3): copy-on-write
+                # whole-act repeal. ``IRStatute`` is frozen, so the body
+                # rebuild assigns a NEW IRNode whose children tuple is empty
+                # (no in-place list mutation), then ``self.statute`` itself
+                # is rebuilt via ``dc_replace`` to thread the new body/supplements
+                # into the immutable statute.
+                self.statute = dc_replace(
+                    self.statute,
+                    body=dc_replace(self.statute.body, children=()),
+                    supplements=(),
+                )
                 self._clear_eid_lookup_index()
                 self._note_structure_mutation()
                 self._record_whole_act_repeal_mutation_event(op)
@@ -173,8 +193,8 @@ class UKReplayExecutor(
             return
 
         target_eid = self._derive_target_eid(target)
-        node: Optional[UKMutableNode]
-        parent: Optional[UKMutableNode]
+        node: Optional[IRNode]
+        parent: Optional[IRNode]
         idx: Optional[int]
         node, parent, idx = None, None, None
         if target_eid:
@@ -377,11 +397,11 @@ def replay_uk_ops(
     if adjudications_out is not None:
         append_replay_fold_text_duplication_adjudications(
             adjudications_out,
-            frozen_statute=executor.statute.to_irstatute(),
+            frozen_statute=executor.statute,
             source_statute=base.statute_id,
         )
         _mark_replay_phase("replay_fold_text_duplication")
 
-    replayed = executor.statute.to_irstatute()
+    replayed = executor.statute
     _mark_replay_phase("replay_to_ir")
     return replayed

@@ -25,6 +25,7 @@ from lawvm.core.compile_result import (
     _compiled_op_scope_witness,
 )
 from lawvm.core.effect_lifecycle import (
+    EffectLifecycleEvent,
     merge_unique_effect_lifecycle_events,
     merge_unique_effect_refs,
     merge_unique_effect_relations,
@@ -61,6 +62,39 @@ class _ReplayCompileArtifacts:
     source_adjudication: SourceAdjudication | None
     verdict: CompileVerdict | None
     replay_meta: dict[str, object]
+
+
+def _is_temporal_event_lifecycle_projection(event: EffectLifecycleEvent) -> bool:
+    return (
+        str(event.detail.get("projection") or "") == "temporal_event"
+        and str(event.detail.get("temporal_event_id") or "").strip() != ""
+    )
+
+
+def _facade_effect_lifecycle_events(
+    product_events: Sequence[EffectLifecycleEvent],
+    derived_events: Sequence[EffectLifecycleEvent],
+) -> tuple[EffectLifecycleEvent, ...]:
+    """Merge lifecycle rows after resolved temporal events supersede stale projections."""
+
+    derived_temporal_projection_ids = {
+        event.lifecycle_event_id
+        for event in derived_events
+        if _is_temporal_event_lifecycle_projection(event)
+    }
+    product_events_for_merge = tuple(
+        event
+        for event in product_events
+        if not (
+            event.lifecycle_event_id in derived_temporal_projection_ids
+            and _is_temporal_event_lifecycle_projection(event)
+        )
+    )
+    return merge_unique_effect_lifecycle_events(
+        product_events_for_merge,
+        derived_events,
+        subject="Finland facade effect_lifecycle_events",
+    )
 
 
 @dataclass(frozen=True)
@@ -884,10 +918,9 @@ def compile_fi_facade_from_replay(
         derived_effect_relations,
         subject="Finland facade effect_relations",
     )
-    effect_lifecycle_events = merge_unique_effect_lifecycle_events(
+    effect_lifecycle_events = _facade_effect_lifecycle_events(
         replay_result.products.effect_lifecycle_events,
         derived_effect_lifecycle_events,
-        subject="Finland facade effect_lifecycle_events",
     )
     bundle = CanonicalBundle(
         target_statute=parent_id,

@@ -27,6 +27,7 @@ from lawvm.core.ir import IRNode, LegalAddress, OperationSource, TextPatchSpec
 from lawvm.core.ir import LegalOperation as _LegalOperation
 from lawvm.core.compile_result import StrictProfile
 from lawvm.core.phase_result import Finding
+from lawvm.core.scope_confidence import ScopeConfidence as _CoreScopeConfidenceProtocol
 from lawvm.core.semantic_types import (
     FacetKind,
     IRNodeKind,
@@ -271,8 +272,15 @@ class SectionPathResolutionReason(StrEnum):
 
 
 @dataclass(frozen=True)
-class ScopeConfidence:
-    """Finland-local unified witness for chapter-scope resolution provenance."""
+class ScopeConfidence(_CoreScopeConfidenceProtocol):
+    """Finland-local unified witness for chapter-scope resolution provenance.
+
+    Inherits the marker ``lawvm.core.scope_confidence.ScopeConfidence`` protocol
+    explicitly so the AST-scan parity check in
+    ``tests/test_scope_confidence_protocol.py`` keeps producer-set ==
+    protocol-implementer-set (AGENTS.md §1.9 typed carriers over dynamic shape,
+    §2.3 core does not interpret frontend-local values).
+    """
 
     tag: str
     source: ScopeResolutionSource
@@ -287,6 +295,31 @@ class ScopeConfidence:
     @property
     def is_rewritten(self) -> bool:
         return self.confidence is ScopeResolutionConfidence.REWRITTEN
+
+    @property
+    def rung_id(self) -> str:
+        """Project this witness onto the cross-jurisdiction §2.2 ladder.
+
+        Maps the Finland-local ``ScopeResolutionSource`` / ``ScopeResolutionConfidence``
+        pair to the AGENTS.md §2.2 vocabulary (the same constants used by the
+        ``TargetResolutionCoverage.scope_confidence`` whitelist in
+        ``lawvm.core.target_resolution``). Core does NOT branch on this value;
+        it is surfaced for cross-jurisdiction comparability and for any future
+        core consumer that must read a stable rung value.
+        """
+        if self.source is ScopeResolutionSource.EXPLICIT_CHUNK:
+            return "explicit_source"
+        if self.source in (ScopeResolutionSource.PREAMBLE, ScopeResolutionSource.CARRY_FORWARD):
+            return "explicit_source_with_context"
+        if self.source in (ScopeResolutionSource.GROUPED_PART, ScopeResolutionSource.GROUPED_CHAPTER):
+            return "inferred_from_group"
+        if self.source is ScopeResolutionSource.LIVE_STEM_HOST:
+            return "inferred_from_payload"
+        if self.source is ScopeResolutionSource.EXPLICIT_SCOPE_REWRITE:
+            if self.confidence is ScopeResolutionConfidence.REWRITTEN:
+                return "inferred_from_payload"
+            return "explicit_source_with_context"
+        return "fallback"
 
 
 @dataclass(frozen=True)
@@ -2821,10 +2854,25 @@ def _build_canonical_intent(rop: ResolvedOp) -> "CanonicalIntent | None":
                 if destination_address is not None:
                     # The legacy destination often carries only the new leaf label
                     # (for example ``section:3``), while Relabel requires the full
-                    # parent path to stay identical to the source address.
+                    # parent path to stay identical to the source address.  When
+                    # the parser supplies an explicit destination parent (for
+                    # example ``chapter:7/section:50``), preserve it.
                     source_address = rop.resolved_target_address
                     source_path = source_address.path if source_address is not None else ()
-                    if source_path:
+                    source_parent_path = source_path[:-1]
+                    destination_parent_path = destination_address.path[:-1]
+                    if (
+                        destination_parent_path
+                        and len(source_parent_path) >= len(destination_parent_path)
+                        and source_parent_path[-len(destination_parent_path) :] == destination_parent_path
+                    ):
+                        dest_path = (
+                            source_parent_path[: -len(destination_parent_path)]
+                            + destination_address.path
+                        )
+                    elif destination_parent_path:
+                        dest_path = destination_address.path
+                    elif source_path:
                         dest_leaf_kind = source_path[-1][0]
                         dest_path = source_path[:-1] + ((dest_leaf_kind, destination_address.leaf_label()),)
                     else:
@@ -2848,12 +2896,31 @@ def _build_canonical_intent(rop: ResolvedOp) -> "CanonicalIntent | None":
 
     except (NameError, TypeError, AttributeError):
         raise  # programming bugs — fail loud
-    except Exception:
-        _log.debug(
-            "Failed to build canonical intent for %s: %s",
-            rop.op_id or "<missing-op-id>",
-            rop.description(),
-            exc_info=True,
+    except Exception as exc:
+        # §1.10 + §2.6: previously ``except Exception: _log.debug(...); return
+        # None`` was a silent swallow at DEBUG (invisible at default WARNING
+        # level). Now the swallow is witnessed via ``build_named_swallow_finding``
+        # (the named_swallow primitive's typed constructor) so a
+        # Finding(kind=UNEXPECTED_PHASE_FAILURE) is emitted via log_emitter at
+        # WARNING — carrying the offending ``rop.description()`` as clause_text
+        # (truncated ~400 chars), ``op_id``, ``source_statute``. The function
+        # still returns None (the typed-target seam handles None via graceful
+        # degradation); the audit now accounts for every swallow rather than
+        # disappearing into DEBUG. AGENTS.md §1.10: "A diagnostic about source
+        # text the pipeline could not handle MUST embed the offending
+        # clause/snippet" — rop.description() is the op description surface, the
+        # canonical clause-text witness available at this point.
+        from lawvm.core.named_swallow import build_named_swallow_finding, log_emitter
+
+        log_emitter()(
+            build_named_swallow_finding(
+                rule_id="fi_ops_build_canonical_intent",
+                exception=exc,
+                op_id=rop.op_id or None,
+                jurisdiction="fi",
+                source_statute=rop.resolved_source_statute or "",
+                clause_text=rop.description()[:400],
+            )
         )
         return None
 

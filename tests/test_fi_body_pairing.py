@@ -250,7 +250,9 @@ def test_analyze_amendment_pairing_uses_shared_sec1_acquisition_lane() -> None:
         """.encode()
     )
 
-    result = analyze_amendment_pairing("1994/1280", "2000/172", etree.tostring(xml, encoding="utf-8"))
+    result = analyze_amendment_pairing(
+        "1994/1280", "2000/172", xml, xml_bytes=etree.tostring(xml, encoding="utf-8")
+    )
 
     assert result is not None
     assert result.inventory_count == 2
@@ -1074,12 +1076,28 @@ class TestAnalyzeAmendmentPairing:
   </act>
 </akomaNtoso>""".encode("utf-8")
 
+    def _call_analyze(
+        self,
+        xml_bytes: bytes,
+        statute_id: str = "1994/1280",
+        amendment_id: str = "2000/172",
+    ):
+        """Parse bytes once and call analyze_amendment_pairing with the parsed tree.
+
+        Mirrors the production caller in ``audit_statute_body_pairing`` (parse
+        once, thread both the parsed tree and the source bytes — §2.7).
+        """
+        amendment_root = etree.fromstring(xml_bytes)
+        return analyze_amendment_pairing(
+            statute_id, amendment_id, amendment_root, xml_bytes=xml_bytes
+        )
+
     def test_replace_amendment_all_current(self) -> None:
         xml = self._make_full_amendment_xml(
             _make_section("5") + "\n" + _make_section("6"),
             "muutetaan 5 ja 6 §",
         )
-        result = analyze_amendment_pairing("1994/1280", "2000/172", xml)
+        result = self._call_analyze(xml)
         assert result is not None
         assert result.inventory_count == 2
         assert result.claimed_current == 2
@@ -1093,7 +1111,7 @@ class TestAnalyzeAmendmentPairing:
             _make_section("3"),
             "kumotaan 3 §",
         )
-        result = analyze_amendment_pairing("1994/1280", "2000/172", xml)
+        result = self._call_analyze(xml)
         assert result is not None
         assert result.claimed_current == 1
         assert result.repeal_blocked == 1
@@ -1104,7 +1122,7 @@ class TestAnalyzeAmendmentPairing:
             _make_section("5") + "\n" + _make_section("99"),
             "muutetaan 5 §",
         )
-        result = analyze_amendment_pairing("1994/1280", "2000/172", xml)
+        result = self._call_analyze(xml)
         assert result is not None
         assert result.unmatched == 1
         assert result.has_anomalies
@@ -1121,7 +1139,7 @@ class TestAnalyzeAmendmentPairing:
     <body/>
   </act>
 </akomaNtoso>""".encode("utf-8")
-        result = analyze_amendment_pairing("1994/1280", "2000/172", xml)
+        result = self._call_analyze(xml)
         assert result is None
 
     def test_no_johtolause_returns_none(self) -> None:
@@ -1134,7 +1152,7 @@ class TestAnalyzeAmendmentPairing:
     </body>
   </act>
 </akomaNtoso>""".encode("utf-8")
-        result = analyze_amendment_pairing("1994/1280", "2000/172", xml)
+        result = self._call_analyze(xml)
         assert result is None
 
     def test_to_dict_roundtrip(self) -> None:
@@ -1142,7 +1160,7 @@ class TestAnalyzeAmendmentPairing:
             _make_section("5") + "\n" + _make_section("99"),
             "muutetaan 5 §",
         )
-        result = analyze_amendment_pairing("1994/1280", "2000/172", xml)
+        result = self._call_analyze(xml)
         assert result is not None
         d = result.to_dict()
         assert d["statute_id"] == "1994/1280"
@@ -1150,6 +1168,42 @@ class TestAnalyzeAmendmentPairing:
         assert d["unmatched"] == 1
         assert len(d["findings"]) >= 1
         assert d["findings"][0]["kind"] == "unmatched_body_unit"
+
+    def test_does_not_reparse_supplied_tree(self, monkeypatch) -> None:
+        """Regression: analyze_amendment_pairing must not re-parse its supplied tree.
+
+        Per §2.7, per-call re-parsing has dominated compile cost. After the
+        signature change, the function consumes the caller's parsed tree and
+        hands it straight to build_amendment_acquisition_result via its
+        ``muutos_tree`` parameter — no ``etree.fromstring`` should fire on the
+        amendment bytes for either party.
+        """
+        xml_bytes = self._make_full_amendment_xml(
+            _make_section("5") + "\n" + _make_section("6"),
+            "muutetaan 5 ja 6 §",
+        )
+        amendment_root = etree.fromstring(xml_bytes)
+
+        call_count = {"n": 0}
+
+        def fail_fromstring(_xml_bytes: bytes):
+            call_count["n"] += 1
+            raise AssertionError(
+                "analyze_amendment_pairing reparsed supplied tree"
+            )
+
+        monkeypatch.setattr(
+            "lawvm.finland.body_pairing.etree.fromstring", fail_fromstring
+        )
+
+        result = analyze_amendment_pairing(
+            "1994/1280", "2000/172", amendment_root, xml_bytes=xml_bytes
+        )
+
+        assert result is not None
+        assert result.inventory_count == 2
+        assert result.claimed_current == 2
+        assert call_count["n"] == 0
 
 
 # ---------------------------------------------------------------------------

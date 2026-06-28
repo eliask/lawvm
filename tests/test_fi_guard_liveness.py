@@ -4172,6 +4172,14 @@ NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
         "replay authority_mode staged as follow-up; drill through production once wired",
         "2026-06-27",
     ),
+    # Theme C (§1.10 no-silent-default + §2.6 rule-of-three): the named_swallow
+    # primitive's typed Finding kind. Drill when a fixture exercises an
+    # actual swallow through the production lane (corpus / consolidated_artifacts
+    # / spec_ledger / dry_run / worker_pool / graph sites). The migration tests
+    # in tests/test_named_swallow_totality.py already drive the primitive
+    # directly; the drill needs to drive through the apply-pipeline PhaseResult
+    # surface so the blocking obligation reaches a strict-mode consumer.
+    "UNEXPECTED_PHASE_FAILURE": ("named_swallow primitive; needs pipeline-lane fixture", "2026-06-27"),
 }
 
 # Committed monotone-decreasing debt ceiling for NO_FIRE_DRILL_YET. The allowlist

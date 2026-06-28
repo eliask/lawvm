@@ -4,35 +4,37 @@ FW-07 — *any classifier regex over long/adversarial prose emitting a gate/reca
 feature must be built via ``compile_classifier_regex`` (backtracking-bounded +
 sound required-literal prefilter), never raw ``re.compile``.* The primitive
 (``lawvm.core.regex_safety.compile_classifier_regex``) exists, but no standing
-lint mandates its use in ``finland/**`` — a new classifier can silently reach for
-raw ``re.compile`` and reintroduce the catastrophic-backtracking class that cost
-ukpga/1970/9 104s (the A8 incident).
+lint mandates its use across the LawVM source tree — a new classifier can
+silently reach for raw ``re.compile`` and reintroduce the catastrophic-
+backtracking class that cost ukpga/1970/9 104s (the A8 incident).
 
 This gate freezes the count of raw ``re.compile(...)`` use-sites in the SCANNED
-(non-precleared) semantic-plane ``finland`` files — the files where a regex is
-most likely a post-parse classifier rather than a source-plane locator or a
-lexer/owning-parser tokenizer (those modules are pre-cleared by the same
-``CATEGORY_MAP`` the regex ratchet uses, so they are exempt by category). The
-per-file raw-``re.compile`` count is a committed baseline that may only FALL. A
-NEW raw ``re.compile`` in a scanned finland file trips the gate; the author must
-either build the pattern via ``compile_classifier_regex`` (the WRAP mandate) or,
-if it is a genuinely non-classifier lexer/locator that simply lives in a scanned
-module, consciously bump the baseline.
+(non-precleared) semantic-plane files across EVERY LawVM frontend
+(``_RATCHET_SCAN_ROOTS`` = core, finland, estonia, norway, sweden, new_zealand,
+eu, us_federal, uk_legislation, substrate, semantic, open_law, tools) — the
+files where a regex is most likely a post-parse classifier rather than a
+source-plane locator or a lexer/owning-parser tokenizer (those modules are
+pre-cleared by the same ``CATEGORY_MAP`` the regex ratchet uses, so they are
+exempt by category). The per-file raw-``re.compile`` count is a committed
+baseline that may only FALL. A NEW raw ``re.compile`` in a scanned file trips
+the gate; the author must either build the pattern via
+``compile_classifier_regex`` (the WRAP mandate) or, if it is a genuinely
+non-classifier lexer/locator that simply lives in a scanned module,
+consciously bump the baseline.
 
 HONESTY (the generator's stopping rule)
 =======================================
 This is IMPL-at-frozen-baseline with a NAMED HEURISTIC GAP, not clean-at-0. The
-current scanned-finland tree carries a baseline of raw ``re.compile`` sites
-(~352). A purely static check CANNOT prove a given pattern is a "classifier over
-long/adversarial prose emitting a gate/recall feature" versus a bounded
-lexer/locator regex — that distinction is human judgment. So this gate over-
-includes (it freezes lexer/locator compiles in scanned modules too) exactly like
-the naming-hygiene bare-``status`` surface proxy: the lock is "no NEW raw
-``re.compile`` in a scanned semantic-plane finland module without a conscious
-decision", NOT "every baselined site is a prose classifier". The complementary
-``test_regex_perf_gate`` already bounds backtracking risk for the patterns it
-sees; FW-07 is the WRAP-adoption ratchet that pushes new classifiers onto the
-safe primitive.
+current scanned tree carries a baseline of raw ``re.compile`` sites. A purely
+static check CANNOT prove a given pattern is a "classifier over long/adversarial
+prose emitting a gate/recall feature" versus a bounded lexer/locator regex —
+that distinction is human judgment. So this gate over-includes (it freezes
+lexer/locator compiles in scanned modules too) exactly like the naming-hygiene
+bare-``status`` surface proxy: the lock is "no NEW raw ``re.compile`` in a
+scanned semantic-plane module without a conscious decision", NOT "every
+baselined site is a prose classifier". The complementary ``test_regex_perf_gate``
+already bounds backtracking risk for the patterns it sees; FW-07 is the
+WRAP-adoption ratchet that pushes new classifiers onto the safe primitive.
 """
 from __future__ import annotations
 
@@ -47,7 +49,6 @@ import pytest
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _SCRIPT_PATH = _REPO_ROOT / "scripts" / "inventory_parser_smells.py"
 _BASELINE_PATH = "tests/data/classifier_wrap_ratchet_baseline.json"
-_FINLAND_PREFIX = "src/lawvm/finland/"
 
 
 def _load_inventory_module() -> Any:
@@ -85,13 +86,16 @@ def count_raw_re_compile(text: str) -> int:
     return n
 
 
-def scan_scanned_finland_raw_compile(repo_root: Path) -> dict[str, int]:
-    """{rel: raw-re.compile count} over the SCANNED (non-precleared) finland files
-    (the regex-ratchet scan set, restricted to finland/**)."""
+def scan_scanned_raw_compile(repo_root: Path) -> dict[str, int]:
+    """{rel: raw-re.compile count} over the SCANNED (non-precleared)
+    semantic-plane files across EVERY LawVM frontend (the regex-ratchet scan
+    set, ``_RATCHET_SCAN_ROOTS``). Expanding from finland-only to all
+    frontends implements the doc's "cross-cutting WRAP" step
+    (notes/REGEX_TO_GRAMMAR_MIGRATION.md rank 10) so a new classifier regex
+    cannot silently land as raw ``re.compile`` in an un-scanned frontend.
+    """
     out: dict[str, int] = {}
     for rel in _INV.iter_scanned_files(repo_root):
-        if not rel.startswith(_FINLAND_PREFIX):
-            continue
         try:
             text = (repo_root / rel).read_text(encoding="utf-8")
         except OSError:
@@ -100,6 +104,10 @@ def scan_scanned_finland_raw_compile(repo_root: Path) -> dict[str, int]:
         if n:
             out[rel] = n
     return out
+
+
+# Backward-compatible alias retained for external callers and tests.
+scan_scanned_finland_raw_compile = scan_scanned_raw_compile
 
 
 def _load_baseline() -> dict[str, Any]:
@@ -123,9 +131,9 @@ def _baseline_counts(baseline: dict[str, Any]) -> dict[str, int]:
 
 
 class TestClassifierWrapRatchet:
-    def test_no_new_raw_re_compile_in_scanned_finland(self) -> None:
+    def test_no_new_raw_re_compile_in_scanned_files(self) -> None:
         baseline = _baseline_counts(_load_baseline())
-        current = scan_scanned_finland_raw_compile(_REPO_ROOT)
+        current = scan_scanned_raw_compile(_REPO_ROOT)
         increases = [
             f"  {rel}: {count} raw re.compile (baseline {baseline.get(rel, 0)}, "
             f"+{count - baseline.get(rel, 0)})"
@@ -135,7 +143,7 @@ class TestClassifierWrapRatchet:
         if increases:
             pytest.fail(
                 "\n[FW-07 CLASSIFIER WRAP] NEW raw re.compile in a scanned "
-                "semantic-plane finland module:\n"
+                "semantic-plane module:\n"
                 + "\n".join(increases)
                 + "\n\nA classifier regex over prose must be built via "
                 "`compile_classifier_regex` (backtracking-bounded + sound prefilter), "
@@ -149,7 +157,7 @@ class TestClassifierWrapRatchet:
 
     def test_ratchet_only_tightens(self) -> None:
         baseline = _baseline_counts(_load_baseline())
-        current = scan_scanned_finland_raw_compile(_REPO_ROOT)
+        current = scan_scanned_raw_compile(_REPO_ROOT)
         decreases = [
             f"  {rel}: now {current.get(rel, 0)} (baseline {a})"
             for rel, a in sorted(baseline.items())
@@ -169,24 +177,24 @@ class TestClassifierWrapRatchet:
         baseline = _load_baseline()
         counts = _baseline_counts(baseline)
         assert baseline["total_raw_re_compile"] == sum(counts.values())
-        current = scan_scanned_finland_raw_compile(_REPO_ROOT)
+        current = scan_scanned_raw_compile(_REPO_ROOT)
         assert sum(current.values()) <= baseline["total_raw_re_compile"]
 
     def test_scan_is_not_blind(self) -> None:
         """Liveness: the scan observes real raw-re.compile sites; zero would mean
         the AST walk went blind (vacuously green)."""
-        current = scan_scanned_finland_raw_compile(_REPO_ROOT)
+        current = scan_scanned_raw_compile(_REPO_ROOT)
         assert sum(current.values()) > 0
 
 
 class TestClassifierWrapTripProof:
     def test_injected_raw_compile_exceeds_file_baseline(self) -> None:
-        """A real scanned finland file with one extra raw re.compile appended must
-        scan ABOVE its committed per-file baseline → the ratchet would FAIL."""
+        """A real scanned file with one extra raw re.compile appended must scan
+        ABOVE its committed per-file baseline → the ratchet would FAIL."""
         baseline = _baseline_counts(_load_baseline())
-        current = scan_scanned_finland_raw_compile(_REPO_ROOT)
-        # Pick any scanned finland file present in the live scan.
-        assert current, "no scanned finland file produced a raw-re.compile count"
+        current = scan_scanned_raw_compile(_REPO_ROOT)
+        # Pick any scanned file present in the live scan.
+        assert current, "no scanned file produced a raw-re.compile count"
         rel = next(iter(sorted(current)))
         clean = (_REPO_ROOT / rel).read_text(encoding="utf-8")
         injected = clean + '\n_LEAK_RE = re.compile(r".+adversarial.+")\n'
@@ -203,7 +211,7 @@ class TestClassifierWrapTripProof:
 
     def test_clean_tree_at_or_below_baseline(self) -> None:
         baseline = _baseline_counts(_load_baseline())
-        current = scan_scanned_finland_raw_compile(_REPO_ROOT)
+        current = scan_scanned_raw_compile(_REPO_ROOT)
         over = {rel: c for rel, c in current.items() if c > baseline.get(rel, 0)}
         assert not over, f"unexpected over-baseline files: {over}"
 
@@ -234,17 +242,19 @@ class TestRawCompileDetector:
 
 
 def _update_baseline() -> None:
-    counts = scan_scanned_finland_raw_compile(_REPO_ROOT)
+    counts = scan_scanned_raw_compile(_REPO_ROOT)
     payload = {
         "_doc": (
             "FW-07 classifier-prose WRAP-mandate ratchet baseline. Per-file count "
             "of raw `re.compile(...)` use-sites in the SCANNED (non-precleared) "
-            "semantic-plane finland files; may only FALL. A NEW raw re.compile "
+            "semantic-plane files across every LawVM frontend "
+            "(``_RATCHET_SCAN_ROOTS``); may only FALL. A NEW raw re.compile "
             "trips the gate — adopt `compile_classifier_regex` (the WRAP mandate) "
-            "or consciously bump. HEURISTIC: cannot statically prove classifier-vs-"
-            "lexer, so it over-includes (freezes lexers in scanned modules too). "
-            "Regenerate: uv run python tests/test_classifier_wrap_ratchet.py "
-            "--update-baseline. See registry row FW-07."
+            "or consciously bump. HEURISTIC: cannot statically prove "
+            "classifier-vs-lexer, so it over-includes (freezes lexers in scanned "
+            "modules too). Regenerate: uv run python "
+            "tests/test_classifier_wrap_ratchet.py --update-baseline. See "
+            "registry row FW-07."
         ),
         "raw_re_compile_counts": dict(sorted(counts.items())),
         "total_raw_re_compile": sum(counts.values()),
@@ -260,4 +270,4 @@ if __name__ == "__main__":
     if "--update-baseline" in sys.argv:
         _update_baseline()
     else:
-        print(json.dumps(scan_scanned_finland_raw_compile(_REPO_ROOT), indent=2))
+        print(json.dumps(scan_scanned_raw_compile(_REPO_ROOT), indent=2))

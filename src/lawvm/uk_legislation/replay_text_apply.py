@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any, Callable, NamedTuple, Optional
 from lawvm.uk_legislation.definition_anchors import _uk_definition_term_lexical_variants
 from lawvm.uk_legislation.definition_grammar import predicate_alternation
 from lawvm.core.semantic_types import IRNodeKind
-from lawvm.uk_legislation.mutable_ir import UKMutableNode
+from lawvm.core.ir import IRNode
 from lawvm.uk_legislation.nlp_parser import US
 from lawvm.uk_legislation.replay_text import _append_definition_child_suffix_text, _range_anchor_matches
 from lawvm.uk_legislation.text_matching import (
@@ -31,14 +31,14 @@ from lawvm.uk_legislation.uk_grafter import _clean_num
 
 
 type TextNodePath = tuple[int, ...]
-type DocumentTextNode = tuple[TextNodePath, UKMutableNode]
-type TextNodeRewriteCandidate = tuple[TextNodePath, UKMutableNode, str]
-type TextNodeRewriteMetadataCandidate = tuple[TextNodePath, UKMutableNode, str, Any]
-type TextNodeRegexMatch = tuple[TextNodePath, UKMutableNode, re.Match[str]]
-type TextNodeExactMatch = tuple[TextNodePath, UKMutableNode, int]
+type DocumentTextNode = tuple[TextNodePath, IRNode]
+type TextNodeRewriteCandidate = tuple[TextNodePath, IRNode, str]
+type TextNodeRewriteMetadataCandidate = tuple[TextNodePath, IRNode, str, Any]
+type TextNodeRegexMatch = tuple[TextNodePath, IRNode, re.Match[str]]
+type TextNodeExactMatch = tuple[TextNodePath, IRNode, int]
 type TextNodeRegexMatchesByPath = dict[
     TextNodePath,
-    tuple[UKMutableNode, list[re.Match[str]]],
+    tuple[IRNode, list[re.Match[str]]],
 ]
 
 _EXCEPT_PHRASE_SELECTOR_PREFIX = f"TEXT_EXCEPT_PHRASE{US}"
@@ -57,7 +57,7 @@ class DefinitionTextRewriteResult(NamedTuple):
 
 
 class NumericListTrailingCommaApplyResult(NamedTuple):
-    node: UKMutableNode
+    node: IRNode
     applied: bool
     anchor: str | None
 
@@ -80,7 +80,7 @@ class ExceptPhraseTextRewrite(NamedTuple):
 
 class DirectChildTextRewriteMatch(NamedTuple):
     index: int
-    child: UKMutableNode
+    child: IRNode
 
 
 def _literal_regex_replacement(replacement: str) -> Callable[[re.Match[str]], str]:
@@ -489,7 +489,7 @@ def _definition_child_insert_payload(
     raw_replacement: str,
     *,
     term: str,
-) -> tuple[str, list[UKMutableNode]]:
+) -> tuple[str, list[IRNode]]:
     text = " ".join(raw_replacement.split()).strip(" ,.")
     if not text:
         return "", []
@@ -505,7 +505,7 @@ def _definition_child_insert_payload(
             flags=re.S,
         )
     )
-    items: list[UKMutableNode] = []
+    items: list[IRNode] = []
     if item_matches and item_matches[0].start() == 0:
         for item_match in item_matches:
             label = item_match.group("label").strip()
@@ -513,7 +513,7 @@ def _definition_child_insert_payload(
             if not label or not item_text:
                 return "", []
             items.append(
-                UKMutableNode(
+                IRNode(
                     kind=IRNodeKind.ITEM,
                     label=None,
                     text=item_text,
@@ -692,7 +692,7 @@ def _rewrite_flat_definition_child_inner_text(
     return " ".join(new_text.split()).strip(), True
 
 
-def _node_at_path(n: UKMutableNode, path: TextNodePath) -> UKMutableNode:
+def _node_at_path(n: IRNode, path: TextNodePath) -> IRNode:
     current = n
     for index in path:
         current = current.children[index]
@@ -700,7 +700,7 @@ def _node_at_path(n: UKMutableNode, path: TextNodePath) -> UKMutableNode:
 
 
 def _find_descendant_path_by_kind_label(
-    node: UKMutableNode,
+    node: IRNode,
     *,
     kind: str,
     label: str,
@@ -717,7 +717,7 @@ def _find_descendant_path_by_kind_label(
 
 
 def _excluded_occurrence_span_in_child(
-    node: UKMutableNode,
+    node: IRNode,
     *,
     child_path: TextNodePath,
     excluded_original: str,
@@ -743,7 +743,7 @@ def _excluded_occurrence_span_in_child(
 
 
 def _collect_descendant_paths_by_label_and_kinds(
-    node: UKMutableNode,
+    node: IRNode,
     *,
     label: str,
     allowed_kinds: set[str],
@@ -761,7 +761,7 @@ def _collect_descendant_paths_by_label_and_kinds(
 
 
 def _collect_descendant_paths_by_kind_label_chain(
-    node: UKMutableNode,
+    node: IRNode,
     chain: tuple[tuple[str, str], ...],
 ) -> list[TextNodePath]:
     paths: list[TextNodePath] = [()]
@@ -782,7 +782,7 @@ def _collect_descendant_paths_by_kind_label_chain(
 
 
 def _definition_child_nodes(
-    n: UKMutableNode,
+    n: IRNode,
     *,
     term: str,
     child_label: str,
@@ -819,7 +819,7 @@ def _child_ordinal(label: str) -> Optional[int]:
 
 
 def _text_nodes_in_document_order(
-    n: UKMutableNode,
+    n: IRNode,
     path: TextNodePath = (),
 ) -> list[DocumentTextNode]:
     text_nodes: list[DocumentTextNode] = []
@@ -855,7 +855,7 @@ def _step_boundary_matches(text: str, step_label: str) -> list[re.Match[str]]:
     return list(_step_boundary_pattern(step_label).finditer(text))
 
 
-def _text_node_matches_step_selector(node: UKMutableNode, step_label: str) -> bool:
+def _text_node_matches_step_selector(node: IRNode, step_label: str) -> bool:
     if not step_label:
         return False
     source_ordinal = _clean_num(str(node.attrs.get("source_ordinal", "")).upper())
@@ -871,7 +871,7 @@ def _text_node_matches_step_selector(node: UKMutableNode, step_label: str) -> bo
     return False
 
 
-def _text_node_matches_type_selector(node: UKMutableNode, type_label: str) -> bool:
+def _text_node_matches_type_selector(node: IRNode, type_label: str) -> bool:
     if not type_label:
         return False
     source_ordinal = _clean_num(str(node.attrs.get("source_ordinal", "")).upper())
@@ -1641,25 +1641,25 @@ def _find_text_range_start_index(
 class UKReplayTextApplyMixin:
     if TYPE_CHECKING:
 
-        def _replace_node_in_statute(self, old_node: UKMutableNode, new_node: UKMutableNode) -> bool: ...
+        def _replace_node_in_statute(self, old_node: IRNode, new_node: IRNode) -> bool: ...
 
         def _replace_descendant_at_path(
             self,
-            root: UKMutableNode,
+            root: IRNode,
             path: tuple[int, ...],
-            new_node: UKMutableNode,
-        ) -> UKMutableNode: ...
+            new_node: IRNode,
+        ) -> IRNode: ...
 
         def _log(self, message: str) -> None: ...
 
     def _apply_at_end_of_step_text_insert_on_subtree(
         self,
-        node: UKMutableNode,
+        node: IRNode,
         match: str,
         insertion: str,
         *,
         recovery_rule_ids_out: Optional[list[str]] = None,
-    ) -> tuple[UKMutableNode, bool]:
+    ) -> tuple[IRNode, bool]:
         step_label = _step_selector_label(match)
         if not step_label or not insertion:
             return node, False
@@ -1688,12 +1688,12 @@ class UKReplayTextApplyMixin:
 
     def _apply_before_step_text_insert_on_subtree(
         self,
-        node: UKMutableNode,
+        node: IRNode,
         match: str,
         insertion: str,
         *,
         recovery_rule_ids_out: Optional[list[str]] = None,
-    ) -> tuple[UKMutableNode, bool]:
+    ) -> tuple[IRNode, bool]:
         step_label = _before_step_selector_label(match)
         if not step_label or not insertion:
             return node, False
@@ -1736,7 +1736,7 @@ class UKReplayTextApplyMixin:
 
     def _apply_numeric_list_trailing_comma_anchor_on_node_text_only(
         self,
-        node: UKMutableNode,
+        node: IRNode,
         match: str,
         replacement: str,
         occurrence: int,
@@ -1764,7 +1764,7 @@ class UKReplayTextApplyMixin:
 
     def _apply_numeric_list_trailing_comma_anchor_on_subtree(
         self,
-        node: UKMutableNode,
+        node: IRNode,
         match: str,
         replacement: str,
         occurrence: int,
@@ -1801,7 +1801,7 @@ class UKReplayTextApplyMixin:
 
     def _apply_text_replace_on_node_text_only(
         self,
-        node: UKMutableNode,
+        node: IRNode,
         match: str,
         replacement: str,
         occurrence: int,
@@ -1810,7 +1810,7 @@ class UKReplayTextApplyMixin:
         allow_punctuation_spacing: bool = False,
         allow_word_punctuation_elision: bool = False,
         recovery_rule_ids_out: Optional[list[str]] = None,
-    ) -> tuple[UKMutableNode, bool]:
+    ) -> tuple[IRNode, bool]:
         """Apply a text patch only to one node's text, never to descendants."""
         text = node.text or ""
         if not text:
@@ -2288,7 +2288,7 @@ class UKReplayTextApplyMixin:
 
     def _apply_text_replace_on_marked_post_child_tail(
         self,
-        node: UKMutableNode,
+        node: IRNode,
         match: str,
         replacement: str,
         occurrence: int,
@@ -2296,7 +2296,7 @@ class UKReplayTextApplyMixin:
         allow_punctuation_spacing: bool = False,
         allow_word_punctuation_elision: bool = False,
         recovery_rule_ids_out: Optional[list[str]] = None,
-    ) -> tuple[UKMutableNode, bool]:
+    ) -> tuple[IRNode, bool]:
         """Apply a range-to-end rewrite to parser-marked post-child local text."""
         text = node.text or ""
         post_child_tail = str(node.attrs.get("uk_post_child_text_tail") or "")
@@ -2329,9 +2329,9 @@ class UKReplayTextApplyMixin:
 
     def _apply_text_append_on_node_text_only(
         self,
-        node: UKMutableNode,
+        node: IRNode,
         insertion: str,
-    ) -> tuple[UKMutableNode, bool]:
+    ) -> tuple[IRNode, bool]:
         """Append text only to one node's text, never to descendants."""
         text = node.text or ""
         if not insertion:
@@ -2349,9 +2349,9 @@ class UKReplayTextApplyMixin:
 
     def _apply_text_append_on_subtree_text_end(
         self,
-        node: UKMutableNode,
+        node: IRNode,
         insertion: str,
-    ) -> tuple[UKMutableNode, bool]:
+    ) -> tuple[IRNode, bool]:
         """Append text at the target subtree end without flattening children."""
         if not insertion:
             return node, False
@@ -2380,9 +2380,9 @@ class UKReplayTextApplyMixin:
 
     def _apply_text_substitution_on_node(
         self,
-        node: UKMutableNode,
+        node: IRNode,
         subs: list[dict[str, Any]],
-    ) -> tuple[UKMutableNode, tuple[dict[str, Any], ...]]:
+    ) -> tuple[IRNode, tuple[dict[str, Any], ...]]:
         text = node.text or ""
         children = list(node.children)
         observations: list[dict[str, Any]] = []
@@ -2433,10 +2433,10 @@ class UKReplayTextApplyMixin:
 
     def _apply_unique_text_node_rewrite(
         self,
-        node: UKMutableNode,
+        node: IRNode,
         text_nodes: list[DocumentTextNode],
         rewrite: Callable[[str], tuple[str, bool]],
-    ) -> tuple[UKMutableNode, bool]:
+    ) -> tuple[IRNode, bool]:
         """Apply a text rewrite to root text or one unique descendant text node."""
 
         if node.text:
@@ -2466,10 +2466,10 @@ class UKReplayTextApplyMixin:
 
     def _apply_unique_text_node_rewrite_with_metadata(
         self,
-        node: UKMutableNode,
+        node: IRNode,
         text_nodes: list[DocumentTextNode],
         rewrite: Callable[[str], tuple[str, bool, Any]],
-    ) -> tuple[UKMutableNode, bool, Any]:
+    ) -> tuple[IRNode, bool, Any]:
         """Apply a unique text rewrite and return the rewrite's metadata."""
 
         if node.text:
@@ -2499,7 +2499,7 @@ class UKReplayTextApplyMixin:
 
     def _apply_text_replace_on_subtree(
         self,
-        node: UKMutableNode,
+        node: IRNode,
         match: str,
         replacement: str,
         occurrence: int,
@@ -2508,7 +2508,7 @@ class UKReplayTextApplyMixin:
         allow_punctuation_spacing: bool = False,
         allow_word_punctuation_elision: bool = False,
         recovery_rule_ids_out: Optional[list[str]] = None,
-    ) -> tuple[UKMutableNode, bool]:
+    ) -> tuple[IRNode, bool]:
         """Walk the subtree rooted at *node*, find *match* in text fields, and substitute.
 
         Args:
@@ -2711,7 +2711,7 @@ class UKReplayTextApplyMixin:
             if not candidates:
                 return node, False
             rebuilt = node
-            by_path: dict[TextNodePath, tuple[UKMutableNode, list[re.Match[str]]]] = {}
+            by_path: dict[TextNodePath, tuple[IRNode, list[re.Match[str]]]] = {}
             for path, text_node, candidate_match in candidates:
                 by_path.setdefault(path, (text_node, []))[1].append(candidate_match)
             for path in sorted(by_path, reverse=True):

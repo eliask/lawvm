@@ -479,15 +479,16 @@ class TextPatch:
 
 @dataclass(frozen=True)
 class Relabel:
-    """Change the label of a node in-place (renumber without moving).
+    """Change a node's legal address while preserving its structural kind.
 
     source
         The node's current address (the address that will be updated).
 
     destination
-        The node's target address (with the new label).  The parent path
-        of source and destination must be identical — Relabel does not move
-        nodes across parents; use Move for that.
+        The node's target address.  Same-parent renumbers change only the leaf
+        label; cross-parent redesignations may change the parent path as long
+        as the source and destination leaf kinds match.  Use Move for parent-only
+        transfers that preserve the leaf label.
 
     contract
         Occupancy contract.  Typical: same_slot_replace() on the source.
@@ -499,11 +500,9 @@ class Relabel:
 
     def __post_init__(self) -> None:
         _require_kind(self.kind, IntentKind.RELABEL, "Relabel")
-        source_parent = self.source.address.parent()
-        destination_parent = self.destination.address.parent()
-        if source_parent != destination_parent:
+        if self.source.address.leaf_kind() != self.destination.address.leaf_kind():
             raise ValueError(
-                "Relabel source and destination must share the same parent path"
+                "Relabel source and destination leaf kinds must match"
             )
         if self.contract.insert_order is not None:
             raise ValueError(

@@ -41,6 +41,26 @@ def oracle_version_future_repeal_only_uses_cutoff_date(
     return saw_oracle_version_op
 
 
+def _oracle_version_has_mixed_repeal_and_non_repeal_ops(
+    *,
+    compiled_ops: Iterable[dict[str, object]],
+    oracle_version_amendment_id: str,
+) -> bool:
+    if not oracle_version_amendment_id:
+        return False
+    saw_repeal = False
+    saw_non_repeal = False
+    for op in compiled_ops:
+        if str(op.get("source_statute") or "") != oracle_version_amendment_id:
+            continue
+        action = str(op.get("action") or "").strip().lower()
+        if action == "repeal":
+            saw_repeal = True
+        else:
+            saw_non_repeal = True
+    return saw_repeal and saw_non_repeal
+
+
 def _is_repeal_like_legal_operation(lo: LegalOperation) -> bool:
     """Return True for replay ops that remove visible legal state."""
     return lo.action is StructuralAction.REPEAL or (
@@ -77,6 +97,7 @@ class ReplayHorizonRequest:
     compiled_ops: Iterable[dict[str, object]]
     legal_operations: Iterable[LegalOperation]
     oracle_reflected_section_original_versions: Iterable[str]
+    oracle_single_future_repeal_overlay_versions: Iterable[str]
     replay_print: Callable[[str], None]
 
 
@@ -99,15 +120,25 @@ def choose_replay_horizon(request: ReplayHorizonRequest) -> ReplayHorizonDecisio
             for source_id in request.oracle_reflected_section_original_versions
             if str(source_id)
         )
+        single_future_repeal_overlay_versions = frozenset(
+            str(source_id)
+            for source_id in request.oracle_single_future_repeal_overlay_versions
+            if str(source_id)
+        )
         oracle_cutoff_iso: Optional[str] = (
             request.cutoff_date.isoformat() if request.cutoff_date is not None else None
         )
         oracle_vid_id = request.oracle_version_amendment_id or ""
+        compiled_ops = tuple(request.compiled_ops)
         oracle_vid_repeal_only_future = oracle_version_future_repeal_only_uses_cutoff_date(
-            compiled_ops=request.compiled_ops,
+            compiled_ops=compiled_ops,
             oracle_version_amendment_id=oracle_vid_id,
             oracle_cutoff_iso=oracle_cutoff_iso,
         )
+        oracle_vid_mixed_repeal_future = _oracle_version_has_mixed_repeal_and_non_repeal_ops(
+            compiled_ops=compiled_ops,
+            oracle_version_amendment_id=oracle_vid_id,
+        ) and oracle_vid_id in single_future_repeal_overlay_versions
         oracle_dates: list[str] = []
         for rec in request.amendment_records:
             if not bool(rec.get("included", True)):
@@ -146,6 +177,14 @@ def choose_replay_horizon(request: ReplayHorizonRequest) -> ReplayHorizonDecisio
                 and eff_iso > oracle_cutoff_iso
             ):
                 date_for_oracle = oracle_cutoff_iso
+            if (
+                rec_sid == oracle_vid_id
+                and oracle_vid_mixed_repeal_future
+                and oracle_cutoff_iso is not None
+                and eff_iso is not None
+                and eff_iso > oracle_cutoff_iso
+            ):
+                date_for_oracle = oracle_cutoff_iso
             oracle_dates.append(date_for_oracle)
         if oracle_dates:
             oracle_materialize_as_of = max(oracle_dates)
@@ -160,6 +199,13 @@ def choose_replay_horizon(request: ReplayHorizonRequest) -> ReplayHorizonDecisio
                     continue
                 is_repeal_like = _is_repeal_like_legal_operation(lo)
                 if not is_repeal_like and lo_src.statute_id not in reflected_section_original_versions:
+                    continue
+                if (
+                    oracle_vid_mixed_repeal_future
+                    and oracle_cutoff_iso is not None
+                    and lo_eff > oracle_cutoff_iso
+                    and lo_src.statute_id == oracle_vid_id
+                ):
                     continue
                 if oracle_materialize_as_of is None or lo_eff > oracle_materialize_as_of:
                     oracle_materialize_as_of = lo_eff

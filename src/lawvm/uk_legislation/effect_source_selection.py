@@ -69,6 +69,27 @@ def source_context_for_effect(
     """Return the current affecting-source context for one UK effect row."""
     if not source_required_for_replay:
         return _effect_feed_index_source_context(provision_extractor)
+    if not effect.affecting_class_is_recognized:
+        # Affecting class has no document-type slug mapping AND no usable
+        # AffectingURI; ``effect.affecting_act_id`` would raise
+        # ``UnmappedAffectingClass`` (AGENTS.md §1.10). Surface the residual
+        # loudly via the typed finding instead of producing an invalid
+        # ``cls.lower()`` slug that 404s and reads to a human as a generic
+        # missing-XML error.
+        if effect_diagnostics_out is not None:
+            from lawvm.uk_legislation.source_state import (
+                uk_affecting_act_class_unmapped_rejection,
+            )
+
+            effect_diagnostics_out.append(
+                uk_affecting_act_class_unmapped_rejection(
+                    effect_id=str(effect.effect_id or ""),
+                    affecting_act_id="",
+                    locator=str(effect.affecting_uri or ""),
+                    affecting_class=str(effect.affecting_class or ""),
+                )
+            )
+        return _effect_feed_index_source_context(provision_extractor)
     if effect.affecting_act_id in extraction_cache:
         return extraction_cache[effect.affecting_act_id]
 

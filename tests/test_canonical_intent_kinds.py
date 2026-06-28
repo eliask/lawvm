@@ -116,14 +116,25 @@ def test_replace_rejects_insert_contract_fields() -> None:
         )
 
 
-def test_relabel_rejects_cross_parent_path() -> None:
-    with pytest.raises(ValueError, match="Relabel source and destination must share the same parent path"):
+def test_relabel_rejects_kind_changing_destination() -> None:
+    with pytest.raises(ValueError, match="Relabel source and destination leaf kinds must match"):
         Relabel(
             kind=IntentKind.RELABEL,
             source=NodeTarget(LegalAddress(path=(("section", "1"), ("subsection", "2")))),
-            destination=NodeTarget(LegalAddress(path=(("chapter", "2"), ("subsection", "2")))),
+            destination=NodeTarget(LegalAddress(path=(("chapter", "2"), ("section", "2")))),
             contract=_contract(),
         )
+
+
+def test_relabel_accepts_cross_parent_same_kind_path() -> None:
+    intent = Relabel(
+        kind=IntentKind.RELABEL,
+        source=NodeTarget(LegalAddress(path=(("chapter", "1"), ("section", "2")))),
+        destination=NodeTarget(LegalAddress(path=(("chapter", "2"), ("section", "3")))),
+        contract=_contract(),
+    )
+
+    assert intent.source.address.leaf_kind() == intent.destination.address.leaf_kind()
 
 
 def test_relabel_accepts_same_parent_path() -> None:

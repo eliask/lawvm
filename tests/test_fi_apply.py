@@ -2125,6 +2125,154 @@ def test_emit_section_snapshot_inserts_new_subsection_addresses_not_in_base() ->
     ]
 
 
+def test_emit_section_snapshot_uses_bound_sparse_insert_subsection_payload() -> None:
+    base_section = _sec(
+        "14",
+        IRNode(kind=IRNodeKind.NUM, text="14 §"),
+        _sub("1", _content("Old first")),
+        _sub("2", _content("Second")),
+        _sub("3", _content("Third")),
+        _sub("4", _content("Fourth")),
+    )
+    live_section = _sec(
+        "14",
+        IRNode(kind=IRNodeKind.NUM, text="14 §"),
+        _sub("1", _content("New first")),
+        _sub("2", _content("Second")),
+        _sub("3", _content("Third")),
+        _sub("4", _content("Fourth")),
+        _sub("5"),
+    )
+    replacement_payload = _sub(
+        "1",
+        _content(
+            "Toiminnanharjoittajan joka valmistaa laskee liikkeeseen varastoi "
+            "kuljettaa ilmoittaa muutoksista."
+        ),
+    )
+    inserted_payload = _sub(
+        "5",
+        _content(
+            "Toiminnanharjoittajan joka valmistaa laskee liikkeeseen varastoi "
+            "kuljettaa turvallisuuspoikkeamista."
+        ),
+    )
+
+    replace_op = AmendmentOp(
+        op_id="op_replace_14_1",
+        op_type=OpType.REPLACE,
+        target_section="14",
+        target_unit_kind="section",
+        target_chapter="3",
+        target_paragraph=1,
+        source_statute="2002/636",
+        source_issue_date=_DATE,
+    )
+    insert_op = AmendmentOp(
+        op_id="op_insert_14_5",
+        op_type=OpType.INSERT,
+        target_section="14",
+        target_unit_kind="section",
+        target_chapter="3",
+        target_paragraph=5,
+        source_statute="2002/636",
+        source_issue_date=_DATE,
+    )
+    slot_map = SubsectionSlotMap()
+    slot_map.assign(replace_op, replacement_payload)
+    slot_map.assign(insert_op, inserted_payload)
+    slot_assignment = SubsectionSlotAssignmentResult(
+        subsec_map=slot_map,
+        sparse_slot_bindings=(
+            SparsePayloadSlotBinding(
+                op_description="REPLACE 3 luku 14 § 1 mom",
+                op_type="REPLACE",
+                target_paragraph=1,
+                target_item=None,
+                target_special=None,
+                payload_slot_index=1,
+                payload_slot_label="1",
+            ),
+            SparsePayloadSlotBinding(
+                op_description="INSERT 3 luku 14 § 5 mom",
+                op_type="INSERT",
+                target_paragraph=5,
+                target_item=None,
+                target_special=None,
+                payload_slot_index=2,
+                payload_slot_label="5",
+            ),
+        ),
+        used_subs=(0, 1),
+        unassigned_payload_slots=(),
+    )
+    rops = [
+        ResolvedOp.from_amendment_op(
+            replace_op,
+            muutos_ir=live_section,
+            cross_ir=None,
+            target_unit_kind="section",
+            target_norm="14",
+            target_chapter="3",
+            slot_assignment=slot_assignment,
+            target_address=LegalAddress(path=(("chapter", "3"), ("section", "14"), ("subsection", "1"))),
+        ),
+        ResolvedOp.from_amendment_op(
+            insert_op,
+            muutos_ir=live_section,
+            cross_ir=None,
+            target_unit_kind="section",
+            target_norm="14",
+            target_chapter="3",
+            slot_assignment=slot_assignment,
+            target_address=LegalAddress(path=(("chapter", "3"), ("section", "14"), ("subsection", "5"))),
+        ),
+    ]
+    state = _make_state(
+        _body(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="3",
+                children=(live_section,),
+            )
+        )
+    )
+    lo_ops: list[LegalOperation] = []
+
+    _emit_section_snapshot(
+        state=state,
+        target_unit_kind="section",
+        target_norm="14",
+        target_chapter="3",
+        target_part=None,
+        group_rops=rops,
+        lo_ops_out=lo_ops,
+        amendment_id="2002/636",
+        source_title="Replace and insert",
+        source_issue_date=_DATE,
+        source_effective_date=_DATE,
+        base_ir=_body(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="3",
+                children=(base_section,),
+            )
+        ),
+    )
+
+    subsection_snapshots = {
+        op.target.path[-1][1]: op
+        for op in lo_ops
+        if op.target.path and op.target.path[-1][0] == "subsection"
+    }
+    assert subsection_snapshots["5"].action is StructuralAction.INSERT
+    assert subsection_snapshots["5"].payload is not None
+    assert irnode_to_text(subsection_snapshots["5"].payload) == (
+        "Toiminnanharjoittajan joka valmistaa laskee liikkeeseen varastoi "
+        "kuljettaa turvallisuuspoikkeamista."
+    )
+
+
 def test_emit_section_snapshot_prefers_typed_body_chapter_move_from_over_lo_provenance_tag() -> None:
     base_ir = _body(
         IRNode(
@@ -3854,6 +4002,77 @@ def test_emit_section_snapshot_drops_collapsed_moment_paragraphs_for_explicit_su
     rendered = irnode_to_text(section_snapshot.payload)
     assert old_second not in rendered
     assert old_third not in rendered
+    assert any(
+        pathology.detail.get("recovery_kind")
+        == "section_snapshot_drop_carried_target_subsection_text"
+        for pathology in pathologies
+    )
+
+
+def test_emit_section_snapshot_drops_collapsed_content_prefix_for_explicit_subsection_replace() -> None:
+    old_second = "Oppivelvollisuus voidaan keskeyttää pysyvän syyn vuoksi."
+    old_third = "Päätös keskeyttämisestä tehdään hakemuksesta."
+    old_fourth = "Koulutuksen järjestäjä päättää keskeyttämisestä."
+    new_third = (
+        "Päätös keskeyttämisestä tehdään hakemuksesta. Koulutuksen järjestäjän "
+        "tulee ilmoittaa oppivelvolliselle toistaiseksi keskeyttämisen seurauksesta."
+    )
+    final_section = _sec(
+        "7",
+        IRNode(kind=IRNodeKind.NUM, text="7 §"),
+        _sub(
+            "1",
+            _intro("Oppivelvollisella on oikeus keskeyttää määräajaksi:"),
+            _para("1", "sairauden vuoksi;"),
+            _para("2", "ulkomaan oleskelun vuoksi."),
+            _content(old_second),
+            _content(old_third),
+            IRNode(kind=IRNodeKind.WRAP_UP, text=old_fourth),
+        ),
+        _sub("3", _content(new_third)),
+    )
+    lo_ops: list[LegalOperation] = []
+    amendment_subsection = _sub("3", _content(new_third))
+    rop = dc_replace(
+        ResolvedOp.from_amendment_op(
+            _op(op_type=OpType.REPLACE, target_section="7", target_paragraph=3),
+            muutos_ir=_sec("7", amendment_subsection),
+            cross_ir=None,
+            target_unit_kind="section",
+            target_norm="7",
+            target_chapter=None,
+            target_address=LegalAddress(path=(("section", "7"), ("subsection", "3"))),
+            op_source=OperationSource(
+                statute_id="2022/715",
+                raw_text=f"muutetaan 7 §:n 3 momentti {new_third}",
+            ),
+        ),
+        amend_sub_ir=amendment_subsection,
+    )
+    pathologies: list[SourcePathology] = []
+
+    _emit_section_snapshot(
+        _make_state(_body(final_section)),
+        "section",
+        "7",
+        None,
+        None,
+        [rop],
+        lo_ops,
+        "2022/715",
+        "explicit subsection replacement",
+        _DATE,
+        _DATE,
+        source_pathologies_out=pathologies,
+    )
+
+    section_snapshot = next(op for op in lo_ops if op.op_id == "snapshot_section_7")
+    assert section_snapshot.payload is not None
+    rendered = irnode_to_text(section_snapshot.payload)
+    assert rendered.count("Päätös keskeyttämisestä tehdään hakemuksesta.") == 1
+    assert old_second in rendered
+    assert old_fourth in rendered
+    assert rendered.index(new_third) < rendered.index(old_fourth)
     assert any(
         pathology.detail.get("recovery_kind")
         == "section_snapshot_drop_carried_target_subsection_text"
@@ -5639,6 +5858,193 @@ def test_apply_whole_section_insert_consumes_expired_temporary_section_slot() ->
     assert pathologies[0].detail["rebase_context"] == "section_insert_expired_temporary_slot"
     assert pathologies[0].detail["rebase_kind"] == "expired_latest_snapshot_prior_non_temporary_snapshot"
     assert pathologies[0].detail["latest_snapshot_expires"] == "2008-08-01"
+
+
+def test_section_snapshot_single_sparse_subsection_replace_uses_current_live_base() -> None:
+    """Single sparse subsection snapshots must not resurrect stale snapshot tail.
+
+    Regression shape from 2003/393 §15a / 2012/692: the latest exact section
+    snapshot can contain obsolete tail material even though current live replay
+    has already removed it.  A one-slot sparse subsection replacement with
+    ``preserve_unstated_tail`` must preserve from current live, not from the
+    stale historical snapshot.
+    """
+    stale_snapshot = _sec(
+        "15a",
+        _sub("1", _content("intro")),
+        _sub("2", _content("old fee table")),
+        _sub("3", _content("obsolete 2009 and 2010 temporary table")),
+        _sub("4", _content("final no-refund sentence")),
+    )
+    current_live = _sec(
+        "15a",
+        _sub("1", _content("intro")),
+        _sub("2", _content("new fee table")),
+        _sub("3", _content("final no-refund sentence")),
+    )
+    state = _make_state(_body(current_live))
+    section_path = (("section", "15a"),)
+    lo_ops: list[LegalOperation] = [
+        LegalOperation(
+            op_id="snapshot_section_15a",
+            sequence=0,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=section_path),
+            payload=stale_snapshot,
+            source=OperationSource(
+                statute_id="2008/864",
+                enacted="2008-12-19",
+                effective="2009-01-01",
+                expires="",
+            ),
+        )
+    ]
+    lo_ops.append(
+        LegalOperation(
+            op_id="snapshot_subsection_3_from_section_15a",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=section_path + (("subsection", "3"),)),
+            payload=_sub("3", _content("obsolete 2009 and 2010 temporary table")),
+            source=OperationSource(
+                statute_id="2008/864",
+                enacted="2008-12-19",
+                effective="2009-01-01",
+                expires="2011-01-01",
+            ),
+        )
+    )
+    amend_op = _op(op_type=OpType.REPLACE, target_section="15a", target_paragraph=2)
+    slot_map = SubsectionSlotMap()
+    slot_map.assign(amend_op, _sub("2", _content("new fee table")))
+    op = ResolvedOp.from_amendment_op(
+        amend_op,
+        muutos_ir=_sec("15a", _sub("2", _content("new fee table"))),
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="15a",
+        target_chapter=None,
+        target_address=LegalAddress(path=(("section", "15a"), ("subsection", "2"))),
+        slot_assignment=SubsectionSlotAssignmentResult(
+            subsec_map=slot_map,
+            sparse_slot_bindings=(),
+            used_subs=(0,),
+            unassigned_payload_slots=(),
+        ),
+        payload_completeness=PayloadCompletenessWitness(
+            kind="sparse_certified",
+            reasons=("mapped_tail_omission",),
+            tail_policy="preserve_unstated_tail",
+        ),
+    )
+
+    _emit_section_snapshot(
+        state=state,
+        target_unit_kind="section",
+        target_norm="15a",
+        target_chapter=None,
+        target_part=None,
+        group_rops=[op],
+        lo_ops_out=lo_ops,
+        amendment_id="2012/692",
+        source_title="Sparse replacement",
+        source_issue_date=_DATE,
+        source_effective_date=_DATE,
+        base_ir=_body(current_live),
+    )
+
+    emitted = next(
+        lo.payload
+        for lo in reversed(lo_ops)
+        if lo.target.path == section_path and lo.payload is not None and lo.payload.kind is IRNodeKind.SECTION
+    )
+    assert emitted is not None
+    emitted_text = irnode_to_text(emitted)
+    assert "new fee table" in emitted_text
+    assert "final no-refund sentence" in emitted_text
+    assert "obsolete 2009 and 2010 temporary table" not in emitted_text
+
+
+def test_section_snapshot_single_sparse_subsection_replace_rejects_sparse_live_base() -> None:
+    """A sparse source/live section is not a parent snapshot merge base."""
+    dense_snapshot = _sec(
+        "15",
+        _sub("1", _content("preserved prefix")),
+        _sub("2", _content("old target")),
+        _sub("3", _content("preserved suffix")),
+    )
+    sparse_live = _sec(
+        "15",
+        IRNode(kind=IRNodeKind.OMISSION),
+        _sub("2", _content("new target")),
+        IRNode(kind=IRNodeKind.OMISSION),
+    )
+    state = _make_state(_body(sparse_live))
+    section_path = (("section", "15"),)
+    lo_ops: list[LegalOperation] = [
+        LegalOperation(
+            op_id="snapshot_section_15",
+            sequence=0,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=section_path),
+            payload=dense_snapshot,
+            source=OperationSource(
+                statute_id="2005/449",
+                enacted="2005-06-23",
+                effective="2005-07-01",
+                expires="",
+            ),
+        )
+    ]
+    amend_op = _op(op_type=OpType.REPLACE, target_section="15", target_paragraph=2)
+    slot_map = SubsectionSlotMap()
+    slot_map.assign(amend_op, _sub("2", _content("new target")))
+    op = ResolvedOp.from_amendment_op(
+        amend_op,
+        muutos_ir=sparse_live,
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="15",
+        target_chapter=None,
+        target_address=LegalAddress(path=(("section", "15"), ("subsection", "2"))),
+        slot_assignment=SubsectionSlotAssignmentResult(
+            subsec_map=slot_map,
+            sparse_slot_bindings=(),
+            used_subs=(0,),
+            unassigned_payload_slots=(),
+        ),
+        payload_completeness=PayloadCompletenessWitness(
+            kind="sparse_certified",
+            reasons=("omission_marked_sparse_payload",),
+            tail_policy="preserve_unstated_tail",
+        ),
+    )
+
+    _emit_section_snapshot(
+        state=state,
+        target_unit_kind="section",
+        target_norm="15",
+        target_chapter=None,
+        target_part=None,
+        group_rops=[op],
+        lo_ops_out=lo_ops,
+        amendment_id="2007/933",
+        source_title="Sparse replacement",
+        source_issue_date=_DATE,
+        source_effective_date=_DATE,
+        base_ir=_body(dense_snapshot),
+    )
+
+    emitted = next(
+        lo.payload
+        for lo in reversed(lo_ops)
+        if lo.target.path == section_path and lo.payload is not None and lo.payload.kind is IRNodeKind.SECTION
+    )
+    assert emitted is not None
+    emitted_text = irnode_to_text(emitted)
+    assert "preserved prefix" in emitted_text
+    assert "new target" in emitted_text
+    assert "preserved suffix" in emitted_text
 
 
 def test_apply_whole_section_op_declines_item_repeal() -> None:
@@ -8632,7 +9038,12 @@ def test_apply_whole_section_insert_moves_unique_same_label_placeholder_into_tar
             ),
         )
     )
-    op = _op(op_type=OpType.INSERT, target_section="33", target_chapter="5")
+    op = _op(
+        op_type=OpType.INSERT,
+        target_section="33",
+        target_chapter="5",
+        body_chapter_move_from="6",
+    )
     muutos_ir = _sec("33", _content("new chapter five text"))
     pathologies: list[SourcePathology] = []
 
@@ -8653,9 +9064,62 @@ def test_apply_whole_section_insert_moves_unique_same_label_placeholder_into_tar
     moved_text = " ".join(child.text or "" for child in moved.children)
     assert "new chapter five text" in moved_text
     assert result.find_section("33", "6") is None
-    assert len(pathologies) == 1
-    assert pathologies[0].code == "DESTRUCTIVE_SHAPE_LOSS_RISK"
-    assert pathologies[0].detail["recovery_kind"] == "section_move_insert_destination_rebind"
+    assert any(
+        pathology.code == "DESTRUCTIVE_SHAPE_LOSS_RISK"
+        and pathology.detail.get("recovery_kind") == "section_move_insert_destination_rebind"
+        for pathology in pathologies
+    )
+
+
+def test_apply_whole_section_insert_consumes_cross_chapter_placeholder_without_declared_body_move() -> None:
+    placeholder_33 = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="33",
+        attrs={"lawvm_repeal_placeholder": "1"},
+        children=(),
+    )
+    state = _make_state(
+        _body(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="5",
+                children=(IRNode(kind=IRNodeKind.NUM, text="5 luku"),),
+            ),
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="6",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="6 luku"),
+                    placeholder_33,
+                ),
+            ),
+        )
+    )
+    op = _op(op_type=OpType.INSERT, target_section="33", target_chapter="5")
+    muutos_ir = _sec("33", _content("new chapter five text"))
+    pathologies: list[SourcePathology] = []
+
+    result = _apply_whole_section_op(
+        state,
+        op,
+        None,
+        muutos_ir,
+        None,
+        _LEGAL_PIT,
+        "5 luku 33 §",
+        source_pathologies_out=pathologies,
+    )
+
+    result = _modified(state, result)
+    assert result.find_section("33", "6") is None
+    inserted = result.find_section("33", "5")
+    assert inserted is not None
+    assert "new chapter five text" in irnode_to_text(inserted)
+    assert any(
+        pathology.code == "DESTRUCTIVE_SHAPE_LOSS_RISK"
+        and pathology.detail.get("recovery_kind") == "section_move_insert_destination_rebind"
+        for pathology in pathologies
+    )
 
 
 def test_apply_whole_section_insert_moves_unique_root_section_into_target_chapter() -> None:
@@ -18521,8 +18985,128 @@ def test_subsection_replace_prunes_standalone_tail_successor_with_text_witness()
     assert result_sec is not None
     result_subsecs = [c for c in result_sec.children if c.kind == IRNodeKind.SUBSECTION]
     assert [sub.label for sub in result_subsecs] == ["1"]
-    assert [p.code for p in pathologies] == ["DESTRUCTIVE_SHAPE_LOSS_RISK"]
-    assert pathologies[0].detail["recovery_kind"] == "subsection_replace_standalone_tail_sibling_prune"
+    assert any(
+        pathology.detail.get("recovery_kind") == "subsection_replace_standalone_tail_sibling_prune"
+        for pathology in pathologies
+    )
+
+
+def test_subsection_replace_prunes_stale_successor_when_payload_owns_changed_tail() -> None:
+    old_tail = (
+        "sellaiset pitkäaikaiset tai vaativat muut kuin sairaanhoitoon välittömästi "
+        "liittyvät kuntoutusjaksot laitos- tai avohoidossa, jotka ovat tarpeen "
+        "hänen työ- tai toimintakykynsä säilyttämiseksi tai parantamiseksi."
+    )
+    new_tail = (
+        "sellaiset pitkäaikaiset tai vaativat muut kuin sairaanhoitoon välittömästi "
+        "liittyvät kuntoutusjaksot laitos- tai avohoidossa, jotka ovat tarpeen "
+        "hänen työ- tai toimintakykynsä turvaamiseksi tai parantamiseksi."
+    )
+    sec = _sec(
+        "3",
+        _sub("1", _para("4", "vanha neljäs kohta")),
+        _sub("2", _content(old_tail)),
+        _sub("3", _content("Asetuksella voidaan tarkemmin säätää kuntoutuksen sisällöstä.")),
+    )
+    body = _body(sec)
+    sec_path = [("section", "3")]
+    subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+    pathologies: list[SourcePathology] = []
+
+    replace_sub = _sub(
+        "1",
+        IRNode(
+            kind=IRNodeKind.PARAGRAPH,
+            label="4",
+            children=(IRNode(kind=IRNodeKind.SUBPARAGRAPH, children=(_content(new_tail),)),),
+        ),
+    )
+    state = _make_state(body)
+    op = _op(op_type=OpType.REPLACE, target_section="3", target_paragraph=1)
+    result = _apply_subsection_replace(
+        state,
+        op,
+        sec_path,
+        sec,
+        subsecs,
+        replace_sub,
+        None,
+        _FINLEX_ORACLE,
+        "3 § 1 mom",
+        source_pathologies_out=pathologies,
+    )
+
+    assert result is not None
+    from lawvm.core.tree_ops import resolve as tree_resolve
+
+    result_sec = tree_resolve(result.ir, (("section", "3"),))
+    assert result_sec is not None
+    result_subsecs = [c for c in result_sec.children if c.kind == IRNodeKind.SUBSECTION]
+    assert [sub.label for sub in result_subsecs] == ["1", "2"]
+    assert old_tail not in irnode_to_text(result_sec)
+    assert new_tail in irnode_to_text(result_sec)
+    assert any(
+        pathology.detail.get("recovery_kind") == "subsection_replace_standalone_tail_sibling_prune"
+        for pathology in pathologies
+    )
+
+
+def test_subsection_replace_keeps_unrelated_standalone_successor_tail() -> None:
+    sec = _sec(
+        "3",
+        _sub("1", _para("4", "vanha neljäs kohta")),
+        _sub("2", _content("Asetuksella voidaan antaa tarkempia säännöksiä lain täytäntöönpanosta.")),
+    )
+    body = _body(sec)
+    sec_path = [("section", "3")]
+    subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+    pathologies: list[SourcePathology] = []
+
+    replace_sub = _sub(
+        "1",
+        IRNode(
+            kind=IRNodeKind.PARAGRAPH,
+            label="4",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SUBPARAGRAPH,
+                    children=(
+                        _content(
+                            "sellaiset pitkäaikaiset tai vaativat muut kuin sairaanhoitoon "
+                            "välittömästi liittyvät kuntoutusjaksot laitos- tai avohoidossa."
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    state = _make_state(body)
+    op = _op(op_type=OpType.REPLACE, target_section="3", target_paragraph=1)
+    result = _apply_subsection_replace(
+        state,
+        op,
+        sec_path,
+        sec,
+        subsecs,
+        replace_sub,
+        None,
+        _FINLEX_ORACLE,
+        "3 § 1 mom",
+        source_pathologies_out=pathologies,
+    )
+
+    assert result is not None
+    from lawvm.core.tree_ops import resolve as tree_resolve
+
+    result_sec = tree_resolve(result.ir, (("section", "3"),))
+    assert result_sec is not None
+    result_subsecs = [c for c in result_sec.children if c.kind == IRNodeKind.SUBSECTION]
+    assert [sub.label for sub in result_subsecs] == ["1", "2"]
+    assert "täytäntöönpanosta" in irnode_to_text(result_sec)
+    assert all(
+        pathology.detail.get("recovery_kind") != "subsection_replace_standalone_tail_sibling_prune"
+        for pathology in pathologies
+    )
 
 
 def test_subsection_replace_strict_blocks_standalone_tail_successor_prune() -> None:

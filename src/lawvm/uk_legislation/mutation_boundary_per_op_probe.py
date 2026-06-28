@@ -60,6 +60,7 @@ from lawvm.core.mutation_boundary_proof import (
     PerOpMutationBoundaryVerdict,
     verify_per_op,
 )
+from lawvm.core.quirks_disposition import QuirksDisposition
 from lawvm.replay_adjudication import CompileAdjudication
 
 # Opt-in env flag — default-off preserves byte-stable bench replay output.
@@ -141,7 +142,7 @@ def probe_op_mutation_boundary(
             "boundary_status": verdict.boundary_status,
             "probe_mode": "observation_only",
             "strict_disposition": "record",
-            "quirks_disposition": "record",
+            "quirks_disposition": QuirksDisposition.RECORD,
             "witness_class": "core.mutation_boundary_proof.verify_per_op",
             # The canonical FI per-op violation witness (LS-01) is the SOTA
             # analogue; documented in core/invariant_spec.py at the LS-01 row.

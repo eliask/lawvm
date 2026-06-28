@@ -87,6 +87,13 @@ EE_BLOCKING_RULE_IDS: Final[FrozenSet[str]] = frozenset(
         "ee_flat_part_repeal_span",
         # --- division / jagu recovery -----------------------------------------
         "ee_implicit_division_sequence_relabel_after_high_jagu_insert",
+        # --- §1.7 same-moment cross-act conflict (pre-pass in ordering.py) -----
+        # Blocking finding emitted by ``detect_ee_same_moment_cross_act_conflicts``
+        # before the apply fold when two distinct affecting acts change the same
+        # target at the same effective date with incompatible whole-target
+        # payloads. Cross-act (carries an empty op_id), so it surfaces as an
+        # evidence row without partition impact in the conserved wrapper.
+        "ee_same_moment_cross_act_incompatible_payload_ambiguous",
         # --- generic replay-time guard adjudications --------------------------
         # Broadcast via ``_append_ee_replay_adjudication``.
         # ``ee_replay_unsupported_action`` and ``ee_replay_target_not_found``
@@ -154,6 +161,12 @@ EE_FIRE_DRILL_COVERAGE: Final[FrozenSet[str]] = frozenset(
         # the statute title). See
         # ``test_ee_fire_drill_replay_unsupported_statute_title_action_blocks``.
         "ee_replay_unsupported_statute_title_action",
+        # ``ee_same_moment_cross_act_incompatible_payload_ambiguous`` — drives
+        # two REPLACE ops on §5 from distinct affecting acts at the same
+        # effective date through ``apply_ee_ops`` and asserts the blocking
+        # §1.7 same-moment finding fires. See
+        # ``tests/test_ee_same_moment_ambiguity.py::test_two_distinct_acts_replace_same_target_same_effective_date_emits_ambiguity_finding``.
+        "ee_same_moment_cross_act_incompatible_payload_ambiguous",
         # === Crash-path drills (via monkeypatched replay_ee_to_pit) ===
         # ``ee_oracle_parse_failed`` — monkeypatches parse_ee_statute to raise
         # on oracle XML; asserts the blocking adjudication fires.

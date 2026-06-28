@@ -2275,7 +2275,10 @@ def _merge_sparse_alakohta_replace_ir(
         for c in anchor.children
         if c.kind is IRNodeKind.SUBPARAGRAPH and c.label and re.fullmatch(r"[a-z]", normalized_label_key(c.label))
     ]
-    if anchor_sparse_letters and not any(_is_omission_ir(c) for c in anchor.children):
+    has_omission_context = any(_is_omission_ir(c) for c in anchor.children) or any(
+        _is_omission_ir(c) for c in amend_sub.children
+    )
+    if anchor_sparse_letters and not has_omission_context:
         labels = [normalized_label_key(c.label) for c in anchor_sparse_letters]
         prefix_labels = [chr(ord("a") + idx) for idx in range(len(labels))]
         if len(labels) >= 2 and labels == prefix_labels:

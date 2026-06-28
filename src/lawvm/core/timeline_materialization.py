@@ -12,7 +12,7 @@ from lawvm.core.duplicate_child_classification import (
     timeline_issue_kind_for_duplicate_classification,
 )
 from lawvm.core.ir import IRNode, IRStatute, LegalAddress, ProvisionVersion
-from lawvm.core.ir_helpers import _kind_str
+from lawvm.core.ir_helpers import _kind_str, irnode_to_text
 from lawvm.core.mutation_boundary import TreePath
 from lawvm.core.provenance import MigrationEvent
 from lawvm.core.semantic_types import IRNodeKind
@@ -22,6 +22,10 @@ from lawvm.core.timeline_addresses import (
     _sort_label_key,
 )
 from lawvm.core.timeline_lineage import current_address_from_migration_events
+
+
+SPARSE_PRESERVED_TAIL_ATTR = "lawvm_sparse_preserved_tail"
+SPARSE_PARENT_OVERLAY_POLICY = "sparse_parent_overlay_preserve_tail"
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,6 +105,167 @@ def _node_is_complete_snapshot_owner(node: IRNode) -> bool:
     return (
         node.attrs.get("lawvm_tail_policy") == "replace_if_target_scope_requires"
         and node.attrs.get("lawvm_payload_completeness_kind") == "complete"
+    )
+
+
+def _node_preserves_unstated_tail(node: IRNode) -> bool:
+    """Return whether a selected node is a sparse overlay over prior content."""
+    return node.attrs.get("lawvm_materialization_policy") == SPARSE_PARENT_OVERLAY_POLICY
+
+
+def _sparse_overlay_child_map(content: IRNode) -> dict[tuple[str, str], IRNode]:
+    return {
+        (_kind_str(child.kind), child.label): child
+        for child in content.children
+        if (
+            child.label is not None
+            and not is_strip_node(child)
+            and (child.attrs.get("lawvm_repeal_placeholder") == "1" or bool(irnode_to_text(child).strip()))
+        )
+    }
+
+
+def _sparse_overlay_unlabeled_by_kind(content: IRNode) -> dict[str, IRNode]:
+    replacements: dict[str, IRNode] = {}
+    for child in content.children:
+        if child.label is not None or is_strip_node(child):
+            continue
+        kind = _kind_str(child.kind)
+        if kind not in replacements:
+            replacements[kind] = child
+    return replacements
+
+
+def _mark_sparse_preserved_tail(node: IRNode) -> IRNode:
+    normalized = normalize_base_node(node)
+    attrs = dict(normalized.attrs)
+    attrs[SPARSE_PRESERVED_TAIL_ATTR] = "1"
+    return IRNode(
+        kind=normalized.kind,
+        label=normalized.label,
+        text=normalized.text,
+        attrs=attrs,
+        children=normalized.children,
+    )
+
+
+def _merge_sparse_overlay_over_base(
+    base_content: IRNode,
+    sparse_content: IRNode,
+    parent_address: LegalAddress,
+    active: dict[LegalAddress, Optional[IRNode]],
+    label_norm: Optional[Callable[[str], str]],
+    active_prefixes: Optional[set[TreePath]],
+    issue_sink: Any,
+    emit_warnings: bool,
+    *,
+    record_issue: Callable[..., None],
+    active_child_overrides: dict[TreePath, dict[tuple[str, str], Optional[IRNode]]] | None,
+) -> IRNode:
+    """Overlay a sparse selected parent snapshot while preserving omitted base children."""
+    labeled_overrides = _sparse_overlay_child_map(sparse_content)
+    unlabeled_overrides = _sparse_overlay_unlabeled_by_kind(sparse_content)
+    active_direct_child_overrides = (
+        active_child_overrides.get(parent_address.path, {}) if active_child_overrides is not None else {}
+    )
+    seen_labeled: set[tuple[str, str]] = set()
+    seen_unlabeled: set[str] = set()
+    children: list[IRNode] = []
+
+    for base_child in base_content.children:
+        if is_strip_node(base_child):
+            continue
+        if base_child.label is not None:
+            key = (_kind_str(base_child.kind), base_child.label)
+            override = labeled_overrides.get(key)
+            if override is not None:
+                seen_labeled.add(key)
+                child_addr = LegalAddress(path=parent_address.path + (key,))
+                children.append(
+                    apply_overlays(
+                        override,
+                        child_addr,
+                        active,
+                        label_norm,
+                        active_prefixes,
+                        issue_sink=issue_sink,
+                        emit_warnings=emit_warnings,
+                        record_issue=record_issue,
+                        active_child_overrides=active_child_overrides,
+                    )
+                )
+            else:
+                seen_labeled.add(key)
+                child_addr = LegalAddress(path=parent_address.path + (key,))
+                if key in active_direct_child_overrides:
+                    active_child = active_direct_child_overrides[key]
+                    if active_child is not None:
+                        children.append(
+                            apply_overlays(
+                                active_child,
+                                child_addr,
+                                active,
+                                label_norm,
+                                active_prefixes,
+                                issue_sink=issue_sink,
+                                emit_warnings=emit_warnings,
+                                record_issue=record_issue,
+                                active_child_overrides=active_child_overrides,
+                            )
+                        )
+                else:
+                    children.append(_mark_sparse_preserved_tail(base_child))
+            continue
+
+        kind = _kind_str(base_child.kind)
+        override = unlabeled_overrides.get(kind)
+        if override is not None:
+            seen_unlabeled.add(kind)
+            children.append(normalize_base_node(override))
+        else:
+            children.append(normalize_base_node(base_child))
+
+    for child in sparse_content.children:
+        if is_strip_node(child):
+            continue
+        if child.label is not None:
+            key = (_kind_str(child.kind), child.label)
+            if key in seen_labeled:
+                continue
+            seen_labeled.add(key)
+            child_addr = LegalAddress(path=parent_address.path + (key,))
+            node = apply_overlays(
+                child,
+                child_addr,
+                active,
+                label_norm,
+                active_prefixes,
+                issue_sink=issue_sink,
+                emit_warnings=emit_warnings,
+                record_issue=record_issue,
+                active_child_overrides=active_child_overrides,
+            )
+            insert_key = _sort_label_key(key[1])
+            insert_idx = len(children)
+            for idx, existing in enumerate(children):
+                if _kind_str(existing.kind) == key[0] and existing.label is not None:
+                    if _sort_label_key(existing.label) > insert_key:
+                        insert_idx = idx
+                        break
+            children.insert(insert_idx, node)
+            continue
+
+        kind = _kind_str(child.kind)
+        if kind not in seen_unlabeled:
+            children.append(normalize_base_node(child))
+            seen_unlabeled.add(kind)
+
+    return IRNode(
+        kind=sparse_content.kind,
+        label=sparse_content.label,
+        text=sparse_content.text,
+        attrs=dict(sparse_content.attrs),
+        children=tuple(children),
     )
 
 
@@ -374,9 +539,7 @@ def apply_overlays(
             key = exact_key
             child_addr = LegalAddress(path=parent_address.path + (key,))
 
-        if duplicate_raw_counts.get(exact_key, 0) > 1 and (
-            key in child_overrides or exact_key in child_overrides
-        ):
+        if duplicate_raw_counts.get(exact_key, 0) > 1 and (key in child_overrides or exact_key in child_overrides):
             override_key = key if key in child_overrides else exact_key
             override = child_overrides[override_key]
             if override is not None and _node_is_complete_snapshot_owner(override):
@@ -582,8 +745,7 @@ def overlay_on_container(
                         children=tuple(
                             child
                             for child in base_children
-                            if child.label is not None
-                            and (_kind_str(child.kind), child.label) == raw_key
+                            if child.label is not None and (_kind_str(child.kind), child.label) == raw_key
                         ),
                         classification_hint="carried_tail_or_preserved_live_content",
                         emit_warnings=emit_warnings,
@@ -639,6 +801,22 @@ def overlay_on_container(
             if addr in active:
                 content = active[addr]
                 if content is None:
+                    continue
+                if _node_preserves_unstated_tail(content):
+                    children.append(
+                        _merge_sparse_overlay_over_base(
+                            normalize_base_node(c),
+                            content,
+                            addr,
+                            active,
+                            label_norm,
+                            active_prefixes,
+                            issue_sink,
+                            emit_warnings,
+                            record_issue=record_issue,
+                            active_child_overrides=active_child_overrides,
+                        )
+                    )
                     continue
                 children.append(
                     apply_overlays(
@@ -703,13 +881,11 @@ def overlay_on_container(
         direct_child_items = [
             (addr.path[-1], addr)
             for addr in active
-            if len(addr.path) == len(parent_path) + 1
-            and addr.has_path_prefix(parent_path)
+            if len(addr.path) == len(parent_path) + 1 and addr.has_path_prefix(parent_path)
         ]
     else:
         direct_child_items = [
-            (key, LegalAddress(path=parent_path + (key,)))
-            for key in active_child_overrides.get(parent_path, {})
+            (key, LegalAddress(path=parent_path + (key,))) for key in active_child_overrides.get(parent_path, {})
         ]
     for _key, addr in sorted(
         direct_child_items,
@@ -995,16 +1171,8 @@ def project_materialization_selection_states(
             version.enacted,
             1 if is_native else 0,
         )
-        current_source_statute = (
-            current_version.source.statute_id
-            if current_version.source is not None
-            else ""
-        )
-        incoming_source_statute = (
-            version.source.statute_id
-            if version.source is not None
-            else ""
-        )
+        current_source_statute = current_version.source.statute_id if current_version.source is not None else ""
+        incoming_source_statute = version.source.statute_id if version.source is not None else ""
         source_leaf_changed = (
             bool(state.address.path)
             and bool(migrated_address.path)

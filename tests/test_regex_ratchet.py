@@ -82,10 +82,14 @@ class TestCategoryMapIntegrity:
             )
 
     def test_precleared_files_are_in_scan_roots(self) -> None:
+        scan_root_prefixes = tuple(
+            f"{p.as_posix()}/" for p in _INV._RATCHET_SCAN_ROOTS
+        )
         for rel in _INV.CATEGORY_MAP:
-            assert rel.startswith("src/lawvm/core/") or rel.startswith(
-                "src/lawvm/finland/"
-            ), f"CATEGORY_MAP entry {rel!r} is outside the scanned roots."
+            assert rel.startswith(scan_root_prefixes), (
+                f"CATEGORY_MAP entry {rel!r} is outside the scanned roots "
+                f"({_INV._RATCHET_SCAN_ROOTS})."
+            )
 
     def test_precleared_files_are_excluded_from_scan(self) -> None:
         scanned = set(_INV.iter_scanned_files(_REPO_ROOT))

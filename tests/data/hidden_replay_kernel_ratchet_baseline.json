@@ -1,16 +1,14 @@
 {
   "_doc": "Monotone hidden-replay-kernel-in-a-frontend ratchet baseline (audit row XJUR-02, §2.3 boundary). Counts, per frontend file, two signals that a frontend grew a replay kernel for a problem core owns: (1) parallel_mutable_ir_shadow — a non-frozen @dataclass mirroring core IRNode (children + attrs/text), the substrate of an in-place edit kernel; (2) frontend_pit_materialization — a materialize_*/*_to_pit/compile_timelines/fold_timeline function that does NOT delegate to a core PIT/timeline entry (materialize_pit / compile_timelines) nor a core tree_ops mutator (replace_at / remove_at / insert_sorted …). The baseline is the ACTUAL current state (this row had zero prior coverage): existing debt is recorded per-file with a reason in `_findings`, NOT failed/refactored — the gate makes the §2.3 boundary visible and prevents NEW kernels. Per-file counts may only fall, never rise; a fall must be committed (regenerate with `uv run python scripts/inventory_architecture_smells.py --ratchet hidden_kernel --update-baseline`). See tests/test_hidden_replay_kernel_ratchet.py.",
   "_findings": {
-    "src/lawvm/sweden/grafter.py": "TWO signals, distinct severities. (a) parallel_mutable_ir_shadow `_SEMutableNode`: a parse-time scratch builder used ONLY during forward source parsing (parse_se_statute builds a fresh tree then .to_irnode()); it does NOT replay LegalOperations over itself, so it is a thin parse builder, the more benign end of the shadow signal. (b) frontend_pit_materialization `_materialize_irnode_as_of` / `materialize_se_statute_as_of`: a GENUINE frontend-local PIT re-derivation — it date-filters nodes (`_is_node_active_on`) and rebuilds the tree, stamping `materialized_as_of`, instead of routing through core/timeline.materialize_pit. A real (small) hidden kernel; recorded as existing debt for a future wave.",
-    "src/lawvm/uk_legislation/mutable_ir.py": "REAL HIDDEN REPLAY KERNEL (high-value finding for a future refactor wave). UKMutableNode/UKMutableStatute are a parallel MUTABLE IR mirroring frozen core IRNode; ~26 uk_legislation modules (replay_executor, replay_{repeal,replace,insert,renumber,text,table,schedule_list}_apply, uk_grafter, …) drive op-effect / amendment-replay semantics over it in place (e.g. `statute.body.children = []`, uk_replace_children, uk_insert_node_sorted) instead of routing through core/tree_ops. The module docstring already concedes this ('must not become a new shared contract … TODO(arch): replace this mutable mirror … once the UK replay executor is fully migrated off in-place tree edits'). Recorded as existing debt; do NOT refactor in this audit wave."
+    "src/lawvm/sweden/grafter.py": "TWO signals, distinct severities. (a) parallel_mutable_ir_shadow `_SEMutableNode`: a parse-time scratch builder used ONLY during forward source parsing (parse_se_statute builds a fresh tree then .to_irnode()); it does NOT replay LegalOperations over itself, so it is a thin parse builder, the more benign end of the shadow signal. (b) frontend_pit_materialization `_materialize_irnode_as_of` / `materialize_se_statute_as_of`: a GENUINE frontend-local PIT re-derivation — it date-filters nodes (`_is_node_active_on`) and rebuilds the tree, stamping `materialized_as_of`, instead of routing through core/timeline.materialize_pit. A real (small) hidden kernel; recorded as existing debt for a future wave."
   },
   "kind_counts": {
     "frontend_pit_materialization": 2,
-    "parallel_mutable_ir_shadow": 2
+    "parallel_mutable_ir_shadow": 1
   },
   "signal_counts": {
-    "src/lawvm/sweden/grafter.py": 3,
-    "src/lawvm/uk_legislation/mutable_ir.py": 1
+    "src/lawvm/sweden/grafter.py": 3
   },
-  "total_signals": 4
+  "total_signals": 3
 }

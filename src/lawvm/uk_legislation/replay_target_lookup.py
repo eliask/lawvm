@@ -6,7 +6,7 @@ import re
 from collections.abc import Callable
 from typing import NamedTuple, Optional, Protocol, cast
 
-from lawvm.core.ir import IRNode, LegalAddress, LegalOperation
+from lawvm.core.ir import IRNode, IRStatute, LegalAddress, LegalOperation
 from lawvm.core.mutation_boundary import TreePath
 from lawvm.core.target_resolution import (
     SCOPE_CONFIDENCE_EXPLICIT_SOURCE_WITH_CONTEXT,
@@ -28,7 +28,6 @@ from lawvm.uk_legislation.canonicalize import (
     uk_schedule_partition_transparent_matches,
     uk_schedule_root_candidates,
 )
-from lawvm.uk_legislation.mutable_ir import UKMutableNode, UKMutableStatute
 from lawvm.uk_legislation.replay_records import (
     _append_uk_replay_adjudication,
     uk_replay_action_target_detail,
@@ -64,30 +63,30 @@ UK_REPLAY_TARGET_AMBIGUOUS_RECURSIVE_DESCENT_RULE_ID = (
 
 
 class _ExistingInsertTargetResolution(NamedTuple):
-    node: Optional[UKMutableNode]
-    parent: Optional[UKMutableNode]
+    node: Optional[IRNode]
+    parent: Optional[IRNode]
     index: Optional[int]
     reason: str
 
 
 class _ScheduleItemTargetCandidate(NamedTuple):
-    node: UKMutableNode
-    parent: UKMutableNode
+    node: IRNode
+    parent: IRNode
     index: int
 
 
 def _target_resolution_address_for_node(
-    statute: UKMutableStatute,
-    target_node: UKMutableNode,
-    path_resolver: Callable[[UKMutableNode], TreePath | None] | None = None,
+    statute: IRStatute,
+    target_node: IRNode,
+    path_resolver: Callable[[IRNode], TreePath | None] | None = None,
 ) -> str:
     """Return a diagnostic legal-address string for a mutable replay node."""
-    if path_resolver is not None and isinstance(target_node, UKMutableNode):
+    if path_resolver is not None and isinstance(target_node, IRNode):
         resolved_path = path_resolver(target_node)
         if resolved_path is not None:
             return str(LegalAddress(path=resolved_path))
 
-    def _walk(node: UKMutableNode, path: tuple[tuple[str, str], ...]) -> str:
+    def _walk(node: IRNode, path: tuple[tuple[str, str], ...]) -> str:
         if node is target_node:
             return str(LegalAddress(path=path))
         for child in node.children:
@@ -112,7 +111,7 @@ def _target_resolution_address_for_node(
 
 
 class _TargetLookupSelf(Protocol):
-    statute: UKMutableStatute
+    statute: IRStatute
     adjudications_out: list[CompileAdjudication]
 
     def _derive_target_eid(self, addr: LegalAddress) -> str: ...
@@ -124,7 +123,7 @@ class _TargetLookupSelf(Protocol):
         allow_sequence_match: bool = True,
     ) -> NodeLookupResult: ...
 
-    def _eid_candidate_matches_target_leaf(self, node: UKMutableNode, target: LegalAddress) -> bool: ...
+    def _eid_candidate_matches_target_leaf(self, node: IRNode, target: LegalAddress) -> bool: ...
 
     def _target_lookup_cache_key(
         self,
@@ -140,7 +139,7 @@ class _TargetLookupSelf(Protocol):
 
     def _recursive_match_cache_key(
         self,
-        node: UKMutableNode,
+        node: IRNode,
         *,
         kind: str,
         label: str,
@@ -163,24 +162,24 @@ class _TargetLookupSelf(Protocol):
         target_resolution_op: LegalOperation | None = None,
     ) -> NodeLookupResult: ...
 
-    def _tree_path_for_mutable_node(self, node: UKMutableNode) -> TreePath | None: ...
+    def _tree_path_for_mutable_node(self, node: IRNode) -> TreePath | None: ...
 
     def _find_compound_subsection_candidate(
         self,
-        curr_node: UKMutableNode,
+        curr_node: IRNode,
         label: str,
     ) -> UKCanonicalNodeMatch: ...
 
     def _find_recursive_match(
         self,
-        node: UKMutableNode,
+        node: IRNode,
         kind: str,
         label: str,
     ) -> NodeLookupResult: ...
 
 
 class UKReplayTargetLookupMixin:
-    statute: UKMutableStatute
+    statute: IRStatute
     adjudications_out: list[CompileAdjudication]
 
     def _find_existing_insert_target_by_explicit_parent_leaf(
@@ -195,7 +194,7 @@ class UKReplayTargetLookupMixin:
         leaf_label = _addr_leaf_label(target)
         if parent_addr is None or not leaf_kind or not leaf_label:
             return _ExistingInsertTargetResolution(None, None, None, "")
-        parent_candidate: Optional[UKMutableNode] = None
+        parent_candidate: Optional[IRNode] = None
         parent_eid = self._derive_target_eid(parent_addr)
         if parent_eid:
             parent_candidate, _, _ = self._find_node_and_parent_statute(
@@ -230,12 +229,12 @@ class UKReplayTargetLookupMixin:
 
     def _find_compound_subsection_candidate(
         self,
-        curr_node: UKMutableNode,
+        curr_node: IRNode,
         label: str,
     ) -> UKCanonicalNodeMatch:
         """Match malformed UK shapes like legal subsection 8A stored as 8 -> a."""
         return uk_compound_subsection_candidate(
-            cast(IRNode, curr_node),
+            curr_node,
             label,
             match_kind_label=uk_match_kind_label,
         )
@@ -288,13 +287,13 @@ class UKReplayTargetLookupMixin:
                 )
                 if sched_label and roots and not remaining:
                     sch, _, idx = roots[0]
-                    return NodeLookupResult(node=cast(UKMutableNode, sch), parent=None, index=idx)
+                    return NodeLookupResult(node=cast(IRNode, sch), parent=None, index=idx)
                 if not sched_label and len(roots) == 1 and not remaining:
                     sch, _, idx = roots[0]
-                    return NodeLookupResult(node=cast(UKMutableNode, sch), parent=None, index=idx)
+                    return NodeLookupResult(node=cast(IRNode, sch), parent=None, index=idx)
                 path = remaining
             else:
-                roots = [UKCanonicalNodeMatch(cast(IRNode, self.statute.body), None, None)]
+                roots = [UKCanonicalNodeMatch(self.statute.body, None, None)]
             if not roots:
                 return NodeLookupResult(node=None, parent=None, index=None)
 
@@ -316,7 +315,7 @@ class UKReplayTargetLookupMixin:
                         if uk_match_kind_label(child, p_kind, p_label):
                             next_cands.append(UKCanonicalNodeMatch(child, curr_node, i))
                     if not next_cands and allow_compound_subsection_alias and p_kind.lower() == "subsection" and p_label:
-                        compound = self._find_compound_subsection_candidate(cast(UKMutableNode, curr_node), p_label)
+                        compound = self._find_compound_subsection_candidate(curr_node, p_label)
                         if compound[0] is not None:
                             next_cands.append(compound)
                 if not next_cands:
@@ -502,7 +501,7 @@ class UKReplayTargetLookupMixin:
                                 if target_resolution_op is not None:
                                     recovered_target = _target_resolution_address_for_node(
                                         self.statute,
-                                        cast(UKMutableNode, res_node),
+                                        cast(IRNode, res_node),
                                         path_resolver=self._tree_path_for_mutable_node,
                                     ) or str(target)
                                     _append_uk_replay_adjudication(
@@ -578,7 +577,7 @@ class UKReplayTargetLookupMixin:
                                         target=(
                                             _target_resolution_address_for_node(
                                                 self.statute,
-                                                cast(UKMutableNode, match[0]),
+                                                match[0],
                                                 path_resolver=self._tree_path_for_mutable_node,
                                             )
                                             or (
@@ -653,8 +652,8 @@ class UKReplayTargetLookupMixin:
             if node is None:
                 return NodeLookupResult(node=None, parent=None, index=None)
             return NodeLookupResult(
-                node=cast(UKMutableNode, node),
-                parent=cast(Optional[UKMutableNode], parent),
+                node=node,
+                parent=parent,
                 index=idx,
             )
 
@@ -703,7 +702,7 @@ class UKReplayTargetLookupMixin:
         )
         candidates: list[_ScheduleItemTargetCandidate] = []
 
-        def _walk(parent: UKMutableNode) -> None:
+        def _walk(parent: IRNode) -> None:
             for child_idx, child in enumerate(parent.children):
                 if (
                     _uk_kind_value(child.kind).lower() == "item"
@@ -713,7 +712,7 @@ class UKReplayTargetLookupMixin:
                 _walk(child)
 
         for root, _root_parent, _root_idx in roots:
-            _walk(cast(UKMutableNode, root))
+            _walk(cast(IRNode, root))
         if len(candidates) != 1:
             return NodeLookupResult(node=None, parent=None, index=None)
         recovered_node, recovered_parent, recovered_idx = candidates[0]
@@ -748,21 +747,21 @@ class UKReplayTargetLookupMixin:
         )
 
     def _find_recursive_match(
-        self: _TargetLookupSelf, node: UKMutableNode, kind: str, label: str
+        self: _TargetLookupSelf, node: IRNode, kind: str, label: str
     ) -> NodeLookupResult:
         cache_key = self._recursive_match_cache_key(node, kind=kind, label=label)
         cached = self._cached_recursive_match(cache_key)
         if cached is not None:
             return cached
         result = uk_recursive_kind_match(
-            cast(IRNode, node),
+            node,
             kind=str(kind),
             label=label,
             match_kind_label=uk_match_kind_label,
         )
         typed_result = NodeLookupResult(
-            node=cast(Optional[UKMutableNode], result[0]),
-            parent=cast(Optional[UKMutableNode], result[1]),
+            node=result[0],
+            parent=result[1],
             index=result[2],
         )
         self._store_recursive_match_cache(cache_key, typed_result)

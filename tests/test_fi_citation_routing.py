@@ -82,6 +82,20 @@ class TestJohtolauseCitedTargetIds:
         assert surface.references_statute("1988/575")
         assert not surface.references_statute("1987/450")
 
+    def test_nojalla_comma_sellaisena_prefix_does_not_hide_later_target_citation(self) -> None:
+        johto = (
+            "lisätään 30 päivänä huhtikuuta 1987 annetun pakkokeinolain "
+            "(450/87) 5 a luvun 8 §:n nojalla, sellaisena, kuin se on "
+            "24 päivänä maaliskuuta 1995 annetussa laissa (402/95), "
+            "esitutkinnasta ja pakkokeinoista 17 päivänä kesäkuuta 1988 "
+            "annettuun asetukseen (575/88) uusi 25 a § seuraavasti:"
+        )
+        surface = parse_routing_surface(johto, source_year=1995)
+
+        assert surface.normalized_target_ids() == ("1988/575",)
+        assert surface.references_statute("1988/575")
+        assert not surface.references_statute("1987/450")
+
     def test_nojalla_sellaisina_prefix_does_not_hide_later_target_citation(self) -> None:
         johto = (
             "muutetaan yleisestä oikeusavusta 6 päivänä helmikuuta 1998 annetun "
@@ -124,6 +138,17 @@ class TestJohtolauseCitedTargetIds:
             "muutetaan jonkin lain (100/58) 5 §, sellaisena kuin se on laissa (661/62)"
         )
         assert johtolause_cited_target_ids(johto, 1965) == ["1958/100"]
+
+    def test_prior_amendment_citations_after_comma_sellaisena_excluded(self) -> None:
+        johto = (
+            "muutetaan kirkkojärjestyksen 11 §:n 1 momentti sellaisena, kuin "
+            "pykälä muutettiin marraskuun 28 päivänä 2017 (1160/2017) sekä "
+            "kirkkojärjestyksen 12, 17, 19, 21 sekä 27 § seuraavasti:"
+        )
+        surface = parse_routing_surface(johto, source_year=2020)
+
+        assert surface.normalized_target_ids() == ()
+        assert surface.references_statute("2007/174")
 
     def test_typo_selaisena_kuin_still_cuts_provenance_citation(self) -> None:
         # 1978/676 has source typo "selaisena kuin"; the following 323/64 is

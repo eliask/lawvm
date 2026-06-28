@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import re
+from dataclasses import replace as dc_replace
 from typing import TYPE_CHECKING, Any, Optional
 
-from lawvm.core.ir import LegalAddress, LegalOperation, StructuralAction, TextPatchSpec
+from lawvm.core.ir import IRNode, IRStatute, LegalAddress, LegalOperation, StructuralAction, TextPatchSpec
 from lawvm.core.mutation_events import MutationEvent
 from lawvm.core.semantic_types import FacetKind, TextPatchKindEnum
 from lawvm.replay_adjudication import CompileAdjudication
@@ -15,7 +16,6 @@ from lawvm.uk_legislation.heading_facets import (
     _CROSSHEADING_BEFORE_ANCHOR_TEXT_PATCH_RULE,
     _heading_facet_carrier_for_target,
 )
-from lawvm.uk_legislation.mutable_ir import UKMutableNode, UKMutableStatute
 from lawvm.uk_legislation.provenance_notes import (
     NOTE_TEXT_REWRITE_RULE as _NOTE_TEXT_REWRITE_RULE,
     _table_cell_selector,
@@ -90,7 +90,7 @@ class UKReplayTextActionApplyMixin:
     adjudications_out: list[CompileAdjudication]
     lo_ops_out: list[LegalOperation] | None
     mutation_events_out: list[MutationEvent] | None
-    statute: UKMutableStatute
+    statute: IRStatute
     _applied_text_patch_targets: dict[str, list[str]]
 
     if TYPE_CHECKING:
@@ -103,7 +103,7 @@ class UKReplayTextActionApplyMixin:
 
         def _apply_text_replace_on_node_text_only(
             self,
-            node: UKMutableNode,
+            node: IRNode,
             match: str,
             replacement: str,
             occurrence: int,
@@ -112,11 +112,11 @@ class UKReplayTextActionApplyMixin:
             allow_punctuation_spacing: bool = False,
             allow_word_punctuation_elision: bool = False,
             recovery_rule_ids_out: Optional[list[str]] = None,
-        ) -> tuple[UKMutableNode, bool]: ...
+        ) -> tuple[IRNode, bool]: ...
 
         def _apply_text_replace_on_subtree(
             self,
-            node: UKMutableNode,
+            node: IRNode,
             match: str,
             replacement: str,
             occurrence: int,
@@ -125,30 +125,30 @@ class UKReplayTextActionApplyMixin:
             allow_punctuation_spacing: bool = False,
             allow_word_punctuation_elision: bool = False,
             recovery_rule_ids_out: Optional[list[str]] = None,
-        ) -> tuple[UKMutableNode, bool]: ...
+        ) -> tuple[IRNode, bool]: ...
 
         def _apply_text_append_on_node_text_only(
             self,
-            node: UKMutableNode,
+            node: IRNode,
             replacement: str,
-        ) -> tuple[UKMutableNode, bool]: ...
+        ) -> tuple[IRNode, bool]: ...
 
         def _apply_text_append_on_subtree_text_end(
             self,
-            node: UKMutableNode,
+            node: IRNode,
             replacement: str,
-        ) -> tuple[UKMutableNode, bool]: ...
+        ) -> tuple[IRNode, bool]: ...
 
         def _apply_source_carried_table_cell_paragraph_substitution(
             self,
-            cell: UKMutableNode,
+            cell: IRNode,
             match_text: str,
             replacement: str,
         ) -> Any: ...
 
         def _apply_numeric_list_trailing_comma_anchor_on_node_text_only(
             self,
-            node: UKMutableNode,
+            node: IRNode,
             match: str,
             replacement: str,
             occurrence: int,
@@ -157,7 +157,7 @@ class UKReplayTextActionApplyMixin:
 
         def _apply_numeric_list_trailing_comma_anchor_on_subtree(
             self,
-            node: UKMutableNode,
+            node: IRNode,
             match: str,
             replacement: str,
             occurrence: int,
@@ -176,7 +176,7 @@ class UKReplayTextActionApplyMixin:
             self,
             op: LegalOperation,
             target: LegalAddress,
-            node: UKMutableNode,
+            node: IRNode,
             text_patch: TextPatchSpec,
             replacement: str,
         ) -> bool: ...
@@ -235,22 +235,29 @@ class UKReplayTextActionApplyMixin:
 
         def _prior_same_target_gap_kind(self, target: LegalAddress) -> str | None: ...
 
-    def _whole_act_text_patch_nodes(self) -> list[tuple[tuple[tuple[str, str], ...], UKMutableNode]]:
-        def _kind_label(node: UKMutableNode) -> tuple[str, str]:
+        # Sub-PR C+D (audit XJUR-02 / AGENTS.md §2.3): _apply_whole_act_text_patch_op
+        # routes per-node text-only replaces through ``_replace_node_in_statute``
+        # (defined on ``UKReplayStateMixin``) so the CoW ancestor-chain rebuild
+        # and warm-EID-index re-keying stays consistent for the whole-Act batch
+        # path. Declare the Protocol stub here so ty can resolve the method.
+        def _replace_node_in_statute(self, old_node: IRNode, new_node: IRNode) -> bool: ...
+
+    def _whole_act_text_patch_nodes(self) -> list[tuple[tuple[tuple[str, str], ...], IRNode]]:
+        def _kind_label(node: IRNode) -> tuple[str, str]:
             kind = node.kind.value if hasattr(node.kind, "value") else str(node.kind)
             return kind, node.label or ""
 
         def _walk(
-            node: UKMutableNode,
+            node: IRNode,
             path: tuple[tuple[str, str], ...],
-        ) -> list[tuple[tuple[tuple[str, str], ...], UKMutableNode]]:
+        ) -> list[tuple[tuple[tuple[str, str], ...], IRNode]]:
             nodes = [(path, node)]
             for child in node.children:
                 child_path = path + (_kind_label(child),)
                 nodes.extend(_walk(child, child_path))
             return nodes
 
-        text_nodes: list[tuple[tuple[tuple[str, str], ...], UKMutableNode]] = []
+        text_nodes: list[tuple[tuple[tuple[str, str], ...], IRNode]] = []
         for child in self.statute.body.children:
             text_nodes.extend(_walk(child, (_kind_label(child),)))
         for supplement in self.statute.supplements:
@@ -282,7 +289,7 @@ class UKReplayTextActionApplyMixin:
     def _top_node_for_whole_act_snapshot(
         self,
         top_path: tuple[str, str],
-    ) -> UKMutableNode | None:
+    ) -> IRNode | None:
         top_kind, top_label = top_path
         for child in self.statute.body.children:
             child_kind = child.kind.value if hasattr(child.kind, "value") else str(child.kind)
@@ -314,7 +321,7 @@ class UKReplayTextActionApplyMixin:
                     sequence=op.sequence,
                     action=StructuralAction.REPLACE,
                     target=LegalAddress(path=((top_kind, top_label),)),
-                    payload=top_node.to_irnode(),
+                    payload=top_node,
                     source=op.source,
                     group_id=op.group_id,
                 )
@@ -372,6 +379,23 @@ class UKReplayTextActionApplyMixin:
         prefilter = match_text.lower()
         replaced_paths: list[tuple[tuple[str, str], ...]] = []
         replacement_count = 0
+        # Sub-PR C+D (audit XJUR-02 / AGENTS.md §2.3): IRNode is frozen, so the
+        # pre-CoW shape mutated each text-bearing node in place
+        # (``node.text = new_text``). Pre-compute the (old, new) pairs first,
+        # then route through ``_replace_node_in_statute`` for the CoW rebuild
+        # (warm-EID-index fast path where possible, path-walk fallback
+        # otherwise). Each replacement rebuilds the affected ancestor chain
+        # bottom-up; sibling nodes' identities are preserved across the rebuild
+        # so the next iteration's ``old_node`` still resolves via the live tree.
+        #
+        # Suppress per-replace ``replaced_node`` MutationEvents for the
+        # duration of the batch: the meaningful event for the whole-Act op is
+        # the aggregate ``whole_act_text_patch_applied`` event emitted below
+        # (matching the pre-CoW contract where in-place mutation emitted zero
+        # per-node events). This avoids inflating the audit trail with N
+        # ``replaced_node`` rows for a single whole-Act op whose fan-out is
+        # already summarized by ``changed_paths`` on the aggregate row.
+        patched_nodes: list[tuple[IRNode, IRNode]] = []
         for path, node in self._whole_act_text_patch_nodes():
             text = node.text or ""
             if not text or prefilter not in text.lower():
@@ -379,9 +403,17 @@ class UKReplayTextActionApplyMixin:
             new_text, count = pattern.subn(lambda _match: replacement, text)
             if count == 0:
                 continue
-            node.text = new_text
+            patched_nodes.append((node, dc_replace(node, text=new_text)))
             replacement_count += count
             replaced_paths.append(path)
+
+        saved_mutation_events_out = self.mutation_events_out
+        self.mutation_events_out = None
+        try:
+            for old_node_v2, new_node_v2 in patched_nodes:
+                self._replace_node_in_statute(old_node_v2, new_node_v2)
+        finally:
+            self.mutation_events_out = saved_mutation_events_out
 
         if not replaced_paths:
             _append_uk_replay_adjudication(
@@ -431,8 +463,8 @@ class UKReplayTextActionApplyMixin:
         self,
         op: LegalOperation,
         target: LegalAddress,
-        node: UKMutableNode | None,
-        parent: UKMutableNode | None,
+        node: IRNode | None,
+        parent: IRNode | None,
     ) -> None:
         text_patch = op.text_patch
         if text_patch is None:

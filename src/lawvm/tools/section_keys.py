@@ -373,6 +373,17 @@ def _is_valiaikaisesti_tombstone_section(sec: etree._Element) -> bool:
     return bool(_VALIAIKAISESTI_TOMBSTONE_RE.search(content_text))
 
 
+def _single_future_repeal_overlay_versions(root: etree._Element) -> set[int]:
+    version_counts: dict[int, int] = {}
+    for sec in cast(list[etree._Element], root.xpath(".//*[local-name()='section']")):
+        if not _is_future_repeal_overlay_section(sec):
+            continue
+        version = _oracle_section_eid_version(sec)
+        if version >= 0:
+            version_counts[version] = version_counts.get(version, 0) + 1
+    return {version for version, count in version_counts.items() if count == 1}
+
+
 def _group_oracle_section_candidates(
     root: etree._Element,
     *,
@@ -386,6 +397,9 @@ def _group_oracle_section_candidates(
     same-key siblings as ``amb`` candidates), so both see the IDENTICAL key space.
     """
     candidates: Dict[str, list[etree._Element]] = {}
+    single_future_repeal_overlay_versions = (
+        _single_future_repeal_overlay_versions(root) if exclude_kumottu_stubs else set()
+    )
     for sec in cast(list[etree._Element], root.xpath(".//*[local-name()='section']")):
         parts = []
         for anc in reversed(list(sec.iterancestors())):
@@ -407,6 +421,12 @@ def _group_oracle_section_candidates(
         if exclude_kumottu_stubs and _is_kumottu_notice_section(sec):
             continue
         if exclude_valiaikaisesti_stubs and _is_valiaikaisesti_tombstone_section(sec):
+            continue
+        version = _oracle_section_eid_version(sec)
+        if (
+            version in single_future_repeal_overlay_versions
+            and not _is_future_repeal_overlay_section(sec)
+        ):
             continue
         parts.append(f"section:{norm_section_label(sec_num)}")
         key = "/".join(parts)

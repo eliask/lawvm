@@ -249,8 +249,20 @@ _KNOWN_UNFIXED: dict[str, str] = {
         "look-ahead). Anchored short label pattern; low practical risk. Batch 6."
     ),
     "src/lawvm/finland/normalize.py": (
-        "Pre-existing baseline: _SECTION_TOKEN_RE nested quantifiers. "
-        "Pre-existing baseline."
+        "Pre-existing baseline: multiple fallback recognizers in this file "
+        "(_INSERT_*_FALLBACK_RE family, _INSERT_ROOT/CHAPTER_SECTION_FALLBACK_RE, "
+        "and _SECTION_TOKEN_RE) carry adjacent-repeat and nested-quantifier flags "
+        "from the lookahead alternations and ``[a-z]?``/``\\d+`` nullable-separator "
+        "shapes; these are the RETAINED rank-3 load-bearing fallback residual "
+        "(census-proven; see normalize_fallback_heuristic_census).  Per AGENTS.md "
+        "§2.4 the body captures of _INSERT_SUBSECTION_FALLBACK_RE and "
+        "_INSERT_ITEM_FALLBACK_RE (and their inline duplicate at the "
+        "_extract_insert_subsection_ops_fallback call site, plus the §2.4 inline "
+        "``sellaisena kuin`` predicate converted to ``re.match`` start-anchor and "
+        "the ``muutetaan`` tail recognizer) were bounded to ``.{0,400}?`` "
+        "(2026-06-27) to cap the lazy tail-walk on anchor-less clauses — the "
+        "residual flags come from the bounded lookahead (?:...)?/\\d+/[a-z]? "
+        "adjacent groups, not the bounded body capture."
     ),
     "src/lawvm/finland/profile/normalize.py": (
         "Pre-existing baseline: embedded-number patterns with adjacent repeats "
@@ -985,4 +997,128 @@ class TestAdversarialTimingA14UnloweredOverlap:
         assert elapsed_ms < _CEILING_MS, (
             f"A14 amendment-table adversarial: {elapsed_ms:.1f} ms "
             f"(ceiling {_CEILING_MS} ms); bounded regex may have regressed"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Group B (extension) — FI normalize.py §2.4 bounding guards
+#
+# Drives the bounded _INSERT_SUBSECTION_FALLBACK_RE / _INSERT_ITEM_FALLBACK_RE
+# (and the inline ``muutetaan`` tail recognizer + ``sellaisena kuin`` predicate)
+# with worst-case 5K-char johtolause bodies that contain NONE of the alternation
+# anchors (next ``§`` lead-in, ``seuraavasti``, ``lakiin uusi`` or end-of-text
+# within the bounded window).  Before the 2026-06-27 ``.*? -> .{0,400}?`` fix
+# the lazy body capture walked to end-of-text on every match position; the
+# ceiling verifies the bound holds (defense against a future regression that
+# removes or expands the quantifier).
+# ---------------------------------------------------------------------------
+
+
+class TestAdversarialTimingFIBound:
+    """Bounded quantifier guards for the FI normalize fallback recognizers."""
+
+    def test_insert_subsection_fallback_re_bounded_is_fast(self) -> None:
+        from lawvm.finland.normalize import _INSERT_SUBSECTION_FALLBACK_RE
+
+        # Worst case: a §-lead-in followed by 5K chars that contain no alternation
+        # anchor (no further ``§``, no ``seuraavasti``, no ``lakiin uusi``, no
+        # ``luvun``).  The unbounded ``.*?`` would walk to end-of-text on every
+        # match position; the bounded ``.{0,400}?`` walks at most 400 chars per
+        # match attempt before bailing on the unable lookahead.
+        text = "1 §:ään " + "x" * 5000
+        assert "seuraavasti" not in text and "lakiin uusi" not in text
+        t0 = time.perf_counter()
+        matches = list(_INSERT_SUBSECTION_FALLBACK_RE.finditer(text))
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        # No ``$`` is reachable within the 400-char bound from any match start,
+        # so a body this long with no anchor produces no full matches.
+        assert matches == []
+        assert elapsed_ms < _CEILING_MS, (
+            f"FI bounded insert-subsection adversarial: {elapsed_ms:.1f} ms "
+            f"(ceiling {_CEILING_MS} ms); .{{0,400}}? bound may have regressed "
+            f"back to an unbounded .*?"
+        )
+
+    def test_insert_item_fallback_re_bounded_is_fast(self) -> None:
+        from lawvm.finland.normalize import _INSERT_ITEM_FALLBACK_RE
+
+        # Same shape but anchored on the item-insert prelude ``§:n N momenttiin``.
+        text = "1 §:n 1 momenttiin " + "x" * 5000
+        assert "seuraavasti" not in text and "lakiin uusi" not in text
+        t0 = time.perf_counter()
+        matches = list(_INSERT_ITEM_FALLBACK_RE.finditer(text))
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        assert matches == []
+        assert elapsed_ms < _CEILING_MS, (
+            f"FI bounded insert-item adversarial: {elapsed_ms:.1f} ms "
+            f"(ceiling {_CEILING_MS} ms); .{{0,400}}? bound may have regressed "
+            f"back to an unbounded .*?"
+        )
+
+    def test_insert_subsection_fallback_re_many_restart_positions_is_fast(self) -> None:
+        """Many potential ``§:ään`` restart positions followed by a long body.
+
+        ``finditer`` restarts after each match attempt; this stress-tests the
+        pattern at every ``§:ään`` occurrence in a long generated string to
+        ensure the bounded ``.{0,400}?`` does not blow up combinatorially.
+        """
+        from lawvm.finland.normalize import _INSERT_SUBSECTION_FALLBACK_RE
+
+        text = ("1 luvun 1 §:ään " * 500) + ("x" * 5000)
+        t0 = time.perf_counter()
+        matches = list(_INSERT_SUBSECTION_FALLBACK_RE.finditer(text))
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        # Each restart position may produce a match whose body extends to the
+        # next ``luvun ... §`` lead-in; the count depends on the engine's
+        # restart behaviour, but the wall budget is the invariant.
+        assert elapsed_ms < _CEILING_MS, (
+            f"FI bounded insert-subsection multi-restart adversarial: "
+            f"{elapsed_ms:.1f} ms (ceiling {_CEILING_MS} ms); .{{0,400}}? bound "
+            f"may have regressed"
+        )
+        # Sanity: at least one restart position is captured (the very first
+        # ``luvun 1 §:ään`` lead-in starts a non-empty chain of matches).
+        assert matches, "expected at least one match in the multi-restart fixture"
+
+    def test_muutetaan_tail_recognizer_bounded_is_fast(self) -> None:
+        """Drives the inline ``\\bmuutetaan\\b(.{0,400}?)(?:\\bseuraavasti\\b|$)``
+        recognizer at line 899 of normalize.py via the public
+        ``_extract_replace_ops_from_muutetaan_tail`` entry point."""
+        from lawvm.finland.normalize import _extract_replace_ops_from_muutetaan_tail
+
+        # Worst case: ``muutetaan`` lead-in followed by 5K chars with no
+        # ``seuraavasti`` anchor; the ``.{0,400}?`` bound caps the tail walk.
+        text = "muutetaan " + "x" * 5000
+        assert "seuraavasti" not in text
+        t0 = time.perf_counter()
+        result = _extract_replace_ops_from_muutetaan_tail(text)
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        assert result == []
+        assert elapsed_ms < _CEILING_MS, (
+            f"FI bounded muutetaan-tail adversarial: {elapsed_ms:.1f} ms "
+            f"(ceiling {_CEILING_MS} ms); .{{0,400}}? bound may have regressed"
+        )
+
+    def test_sellaisena_kuin_predicate_bounded_is_fast(self) -> None:
+        """Drives the ``re.match(r"(?:sellaisena|sellaisina)\\s+kuin\\b", lowered)``
+        prefix predicate at line 547 of normalize.py via the public
+        ``_classify_regex_ignored_span`` entry point.  The original
+        ``re.fullmatch(... \\b.*)`` was converted to a start-anchored ``re.match``
+        (suffix irrelevant to the classifier) per AGENTS.md §2.4 — this test
+        guards against a regression back to ``re.fullmatch(...\\b.*)`` (which
+        would walk the full string on each call)."""
+        from lawvm.finland.normalize import _classify_regex_ignored_span
+
+        # Worst case for the predicate: the literal ``sellaisena kuin`` prelude
+        # followed by 5K chars of qualifier text.  Before bounding, ``.*`` in a
+        # ``fullmatch`` walked the entire string; the bound caps at 400 chars.
+        text = "sellaisena kuin " + "x" * 5000
+        t0 = time.perf_counter()
+        classification = _classify_regex_ignored_span(text)
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        assert classification == "source_version_qualifier"
+        assert elapsed_ms < _CEILING_MS, (
+            f"FI bounded sellaisena-kuin predicate adversarial: "
+            f"{elapsed_ms:.1f} ms (ceiling {_CEILING_MS} ms); .{{0,400}}? bound "
+            f"may have regressed"
         )

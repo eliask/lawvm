@@ -7,6 +7,7 @@ from typing import Iterable
 
 import lxml.etree as etree
 
+from lawvm.core.xml_parse import parse_corpus_xml
 from lawvm.finland.helpers import (
     _fi_label_postprocessor,
     _normalize_source_part_num,
@@ -58,8 +59,7 @@ def audit_source_xml_label_policies(
     that already exist in the codebase; it does not choose a canonical policy or
     alter replay behavior.
     """
-    parser = etree.XMLParser(remove_blank_text=False, recover=True)
-    root = etree.fromstring(xml_bytes, parser)
+    root = parse_corpus_xml(xml_bytes, recover=True)
     rows: list[SourceXmlLabelAuditRow] = []
     for element in root.iter():
         kind = _localname(element)

@@ -393,6 +393,54 @@ def test_oracle_reflected_section_original_versions_excludes_future_repeal_overl
     assert got == {"2003/537"}
 
 
+def test_single_future_repeal_overlay_versions_count_sections_not_evidence_channels() -> None:
+    sid = "1992/110"
+    oracle_path = "akn/fi/act/statute-consolidated/1992/110/fin@20260377/main.xml"
+    oracle_xml = f"""
+    <akn xmlns="{_AKN_NS}" xmlns:finlex="{_FINLEX_NS}">
+      <body>
+        <section eId="sec_15bv20260377" finlex:originalVersion="@20260377">
+          <num>15 b §</num>
+          <content><p>15 b § on kumottu L:lla 22.5.2026/377, joka tulee voimaan 1.1.2027. Aiempi sanamuoto kuuluu:</p></content>
+        </section>
+        <section eId="sec_15bv20110873" finlex:originalVersion="@20110873">
+          <num>15 b §</num>
+          <subsection><content><p>Current wording.</p></content></subsection>
+        </section>
+      </body>
+    </akn>
+    """.encode("utf-8")
+    fake = _FakeCorpus({sid: oracle_path}, {oracle_path: oracle_xml})
+
+    got = corpus.get_consolidated_oracle_single_future_repeal_overlay_versions(sid, cast(Any, fake))
+
+    assert got == {"2026/377"}
+
+
+def test_single_future_repeal_overlay_versions_excludes_broad_overlay_families() -> None:
+    sid = "2001/1047"
+    oracle_path = "akn/fi/act/statute-consolidated/2001/1047/fin@20260011/main.xml"
+    oracle_xml = f"""
+    <akn xmlns="{_AKN_NS}" xmlns:finlex="{_FINLEX_NS}">
+      <body>
+        <section eId="sec_3v20260011" finlex:originalVersion="@20260011">
+          <num>3 §</num>
+          <content><p>3 § on kumottu L:lla 16.1.2026/11, joka tulee voimaan 1.7.2027. Aiempi sanamuoto kuuluu:</p></content>
+        </section>
+        <section eId="sec_42av20260011" finlex:originalVersion="@20260011">
+          <num>42 a §</num>
+          <content><p>42 a § on kumottu L:lla 16.1.2026/11, joka tulee voimaan 1.7.2027. Aiempi sanamuoto kuuluu:</p></content>
+        </section>
+      </body>
+    </akn>
+    """.encode("utf-8")
+    fake = _FakeCorpus({sid: oracle_path}, {oracle_path: oracle_xml})
+
+    got = corpus.get_consolidated_oracle_single_future_repeal_overlay_versions(sid, cast(Any, fake))
+
+    assert got == set()
+
+
 def test_oracle_reflected_section_original_versions_excludes_shadow_when_current_section_exists() -> None:
     sid = "2012/960"
     oracle_path = "akn/fi/act/statute-consolidated/2012/960/fin@20251505/main.xml"
