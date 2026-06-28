@@ -233,7 +233,7 @@ def _repair_leading_section_marker_after_citation(text: str) -> str:
 # fuzz + a full Finlex corpus replay); the 400-char cap is load-bearing
 # (real johtolause citations sit up to exactly 400 chars after the §-ref).
 _CROSS_LAW_DESC_PAT = compile_classifier_regex(r'(?:§:[nä]|§:ss[aä])(?:(?!\(\s*\d{3,4}/\d{4}\s*\)).){0,400}+\(\s*(\d{3,4}/\d{4})\s*\)', re.DOTALL, classifier_id="fi.metadata.cross_law_desc_pat")
-_AS_AMENDED_QUALIFIER_PAT = compile_classifier_regex(r"\bsellais(?:ena|ina)\s+kuin\b", re.IGNORECASE, classifier_id="fi.metadata.as_amended_qualifier_pat")
+_AS_AMENDED_QUALIFIER_PAT = compile_classifier_regex(r"\bsellais(?:ena|ina)(?:\s+kuin|,\s+kuin)\b", re.IGNORECASE, classifier_id="fi.metadata.as_amended_qualifier_pat")
 _NOMINATIVE_TARGET_PAT = re.compile(r'\d+\s*(?:ja\s+\d+\s*)?§(?!\s*:)')
 _OPERATIVE_KEYWORD_PAT = compile_classifier_regex(r"\b(?:kumotaan|muutetaan|lisätään|poistetaan|siirretään)\b", re.IGNORECASE, classifier_id="fi.metadata.operative_keyword_pat")
 # Anti-backtracking: the old unbounded lazy gap ``(.+?)`` before the distant
