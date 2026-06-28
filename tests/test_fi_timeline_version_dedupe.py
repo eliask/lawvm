@@ -144,7 +144,7 @@ def test_restructure_relabel_snapshot_is_not_shadowed_by_structural_renumber_sna
 
     deduped, records = dedupe_finland_timelines(timelines)
 
-    assert deduped[address].versions == [structural_renumber_snapshot, restructure_snapshot]
+    assert deduped[address].versions == (structural_renumber_snapshot, restructure_snapshot)
     assert records == ()
 
 
@@ -193,7 +193,7 @@ def test_restructure_relabel_snapshot_shadows_label_only_section_shell() -> None
 
     deduped, records = dedupe_finland_timelines(timelines)
 
-    assert deduped[address].versions == [restructure_snapshot]
+    assert deduped[address].versions == (restructure_snapshot,)
     assert len(records) == 1
     assert records[0].witness_rule_id == FI_TIMELINE_RESTRUCTURE_RELABEL_SHELL_SHADOW_COLLAPSE_RULE_ID
 
@@ -234,7 +234,7 @@ def test_restructure_relabel_snapshot_does_not_shadow_repeal_placeholder() -> No
 
     deduped, records = dedupe_finland_timelines(timelines)
 
-    assert deduped[address].versions == [repeal_placeholder]
+    assert deduped[address].versions == (repeal_placeholder,)
     assert len(records) == 1
     assert records[0].witness_rule_id == FI_TIMELINE_RESTRUCTURE_RELABEL_SNAPSHOT_SHADOW_COLLAPSE_RULE_ID
 

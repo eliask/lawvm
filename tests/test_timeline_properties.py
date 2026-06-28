@@ -2205,11 +2205,17 @@ def test_irnode_to_text_parent_includes_children(p_text: str, c_text: str) -> No
 @given(base_statute())
 @settings(max_examples=50)
 def test_provision_lineage_matches_timeline(statute: IRStatute) -> None:
-    """provision_lineage returns the same versions as the timeline.versions list."""
+    """provision_lineage returns the same versions as the timeline.versions list.
+
+    After iter2 W5 H5 froze ``ProvisionTimeline.versions`` to a tuple,
+    ``provision_lineage`` still returns a ``List[ProvisionVersion]`` for
+    API stability — the comparison normalises both sides to tuples so the
+    structural invariant (same versions in the same order) is asserted.
+    """
     timelines = compile_timelines(statute, [])
     for addr, tl in timelines.items():
         lineage = provision_lineage(timelines, addr)
-        assert lineage == tl.versions, f"{addr}: lineage differs from tl.versions"
+        assert tuple(lineage) == tl.versions, f"{addr}: lineage differs from tl.versions"
 
 
 def test_provision_lineage_uses_migration_events_for_current_address_resolution() -> None:

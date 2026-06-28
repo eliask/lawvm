@@ -19,6 +19,7 @@ Executable temporal authority is carried by explicit temporal events.
 
 from __future__ import annotations
 
+from dataclasses import replace as dc_replace
 from typing import Any, Callable, Dict, List, Literal, Optional, Set, Tuple
 
 from lawvm.core.ir import (
@@ -349,15 +350,13 @@ def compile_timelines(
 
     for address, node in _iter_statute_nodes_with_address(base):
         address = _norm_addr(address)
-        tl = ProvisionTimeline(address=address)
-        tl.versions.append(
-            ProvisionVersion(
-                effective=effective_base,
-                enacted=enacted_base,
-                content=node,
-                content_hash=irnode_content_hash(node),
-            )
+        initial_version = ProvisionVersion(
+            effective=effective_base,
+            enacted=enacted_base,
+            content=node,
+            content_hash=irnode_content_hash(node),
         )
+        tl = ProvisionTimeline(address=address, versions=(initial_version,))
         timelines[address] = tl
     title_address = _norm_addr(statute_title_address())
     title_node = IRNode(
@@ -365,16 +364,15 @@ def compile_timelines(
         text=base.title,
         attrs={"facet": "statute_title"},
     )
+    title_version = ProvisionVersion(
+        effective=effective_base,
+        enacted=enacted_base,
+        content=title_node,
+        content_hash=irnode_content_hash(title_node),
+    )
     timelines[title_address] = ProvisionTimeline(
         address=title_address,
-        versions=[
-            ProvisionVersion(
-                effective=effective_base,
-                enacted=enacted_base,
-                content=title_node,
-                content_hash=irnode_content_hash(title_node),
-            )
-        ],
+        versions=(title_version,),
     )
 
     # Exact-address lookup only: callers must provide the canonical source
@@ -653,15 +651,16 @@ def compile_timelines(
     def _append_version(
         timeline: ProvisionTimeline,
         version: ProvisionVersion,
-    ) -> None:
+    ) -> ProvisionTimeline:
         active_selection_cache.pop(timeline.address, None)
-        timeline.versions.append(version)
+        new_timeline = dc_replace(timeline, versions=(*timeline.versions, version))
         if version.expires and version.effective == version.expires:
             _record_empty_same_day_interval(
                 address=timeline.address,
                 source_statute=version.source.statute_id if version.source and version.source.statute_id else "",
                 effective=version.effective,
             )
+        return new_timeline
 
     matched_temporal_event_ids = {
         event.event_id
@@ -895,7 +894,7 @@ def compile_timelines(
                 },
                 children=migrated_content.children,
             )
-            _append_version(
+            timelines[destination] = _append_version(
                 timelines[destination],
                 ProvisionVersion(
                     effective=effective,
@@ -908,7 +907,7 @@ def compile_timelines(
                     content_hash=irnode_content_hash(migrated_content),
                 ),
             )
-            _append_version(
+            timelines[target] = _append_version(
                 timelines[target],
                 ProvisionVersion(
                     effective=effective,
@@ -1019,7 +1018,7 @@ def compile_timelines(
         else:
             _variant_kind = "permanent"
 
-        _append_version(
+        timelines[target] = _append_version(
             timelines[target],
             ProvisionVersion(
                 effective=effective,
@@ -1052,8 +1051,11 @@ def compile_timelines(
         standalone_index += 1
 
     # Step 3: sort each timeline chronologically
-    for tl in timelines.values():
-        tl.versions.sort(key=lambda v: (v.effective, v.enacted))
+    for tl_address, tl in list(timelines.items()):
+        timelines[tl_address] = dc_replace(
+            tl,
+            versions=tuple(sorted(tl.versions, key=lambda v: (v.effective, v.enacted))),
+        )
 
     return timelines
 

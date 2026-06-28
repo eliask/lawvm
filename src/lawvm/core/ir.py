@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing_extensions import override
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, FrozenSet, List, Literal, Mapping, Optional, Tuple
+from typing import Any, Dict, FrozenSet, List, Literal, Mapping, Optional, Sequence, Tuple
 
 from lawvm.core.frozen_values import FrozenDict, _freeze_value, _jsonable_value
 from lawvm.core.provenance import OperationSource
@@ -201,7 +201,7 @@ class LegalOperation:
             coerce_scope_confidence(self.scope_confidence),
         )
 
-@dataclass(slots=True)
+@dataclass(frozen=True, slots=True)
 class ProvisionVersion:
     """A single version of a provision in the temporal graph."""
 
@@ -223,12 +223,30 @@ class ProvisionVersion:
             raise ValueError(f"ProvisionVersion expires ({self.expires}) before effective ({self.effective})")
         object.__setattr__(self, "applicability", tuple(self.applicability))
 
-@dataclass(slots=True)
+@dataclass(frozen=True, slots=True)
 class ProvisionTimeline:
-    """Complete version history of a single addressable provision."""
+    """Complete version history of a single addressable provision.
+
+    ``versions`` is annotated as ``Sequence[ProvisionVersion]`` (the
+    read-only covariant protocol) and stored at runtime as a ``tuple``
+    via ``__post_init__`` — this satisfies §1.9's immutable-carrier rule
+    at both the type level (no ``append``/``sort``/``pop`` on the
+    declared protocol) and runtime (tuple raises ``AttributeError`` on
+    any mutation attempt). Every append/sort/replace goes through
+    ``dataclasses.replace`` so historical state cannot silently mutate
+    across a phase seam. Callers may ergonomically pass either a list
+    or tuple literal at construction.
+    """
 
     address: LegalAddress
-    versions: List[ProvisionVersion] = field(default_factory=list)
+    versions: Sequence[ProvisionVersion] = field(default_factory=tuple)
+
+    def __post_init__(self) -> None:
+        # Coerce any iterable passed at construction (list/tuple) to a tuple
+        # so callers may write ``versions=[v1, v2]`` ergonomically while the
+        # stored value remains immutable and the declared ``Sequence``
+        # contract is satisfied.
+        object.__setattr__(self, "versions", tuple(self.versions))
 
 
 @dataclass(frozen=True, slots=True)

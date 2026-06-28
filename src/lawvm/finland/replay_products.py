@@ -2063,21 +2063,24 @@ def _with_fold_backfill_versions(
             target,
             effective,
         )
-        timeline.versions.append(
-            ProvisionVersion(
-                effective=effective,
-                enacted=op.source.enacted,
-                expires=expires,
-                variant_kind="temporary" if expires else "permanent",
-                content=op.payload,
-                source=op.source,
-                applicability=list(op.applicability),
-                content_hash=irnode_content_hash(op.payload),
-            )
+        appended_version = ProvisionVersion(
+            effective=effective,
+            enacted=op.source.enacted,
+            expires=expires,
+            variant_kind="temporary" if expires else "permanent",
+            content=op.payload,
+            source=op.source,
+            applicability=list(op.applicability),
+            content_hash=irnode_content_hash(op.payload),
         )
+        timelines[target] = dc_replace(timeline, versions=(*timeline.versions, appended_version))
 
     for address in copied:
-        timelines[address].versions.sort(key=lambda version: (version.effective, version.enacted))
+        tl = timelines[address]
+        timelines[address] = dc_replace(
+            tl,
+            versions=tuple(sorted(tl.versions, key=lambda version: (version.effective, version.enacted))),
+        )
     return timelines
 
 
