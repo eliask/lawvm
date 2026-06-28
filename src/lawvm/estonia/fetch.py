@@ -311,7 +311,13 @@ def _curl(url: str, archive: Any) -> Optional[bytes]:
     try:
         result = subprocess.run(
             ["curl", "-s", "-A", _UA, "-L", "--max-time", "30",
-             "-o", str(tmp_path), url],
+             "-o", str(tmp_path),
+             # ``--`` separator stops curl from parsing the URL as a flag —
+             # without it, a URL starting with ``-`` (e.g. an attacker-
+             # controlled ``--help``) would be interpreted as a curl option
+             # (MEDIUM-3).
+             "--",
+             url],
             capture_output=True,
         )
         if result.returncode != 0 or not tmp_path.exists() or tmp_path.stat().st_size < 50:

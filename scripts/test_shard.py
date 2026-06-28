@@ -766,6 +766,9 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_graph_export.py",
         "test_markdown_git_export.py",
         "test_export_markdown_git_safe_path.py",
+        # iter2 W6 Fix 2 (MEDIUM-3): curl argv ``--`` separator for NO + EE
+        # fetch paths (argument-injection guard).
+        "test_curl_separator.py",
         "test_import_zip.py",
         "test_parallel_corpus_determinism.py",
         "test_projection_freshness.py",

@@ -898,6 +898,10 @@ def fetch_statsrad_url(url: str, *, timeout: float = 10.0, retries: int = 10) ->
         "Pragma: no-cache",
         "--header",
         "Connection: close",
+        # ``--`` separator stops curl from parsing the URL as a flag — without
+        # it, a URL starting with ``-`` (e.g. an attacker-controlled
+        # ``--help``) would be interpreted as a curl option (MEDIUM-3).
+        "--",
         url,
     ]
     attempts = max(1, int(retries))
