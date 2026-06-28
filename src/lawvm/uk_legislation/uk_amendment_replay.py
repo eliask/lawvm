@@ -69,6 +69,9 @@ from lawvm.uk_legislation.identity_intrinsic_probe import (
 from lawvm.uk_legislation.lineage_acyclic_probe import (
     probe_uk_lineage_acyclic,
 )
+from lawvm.uk_legislation.commencement_effect_totality_probe import (
+    probe_uk_commencement_effect_totality,
+)
 from lawvm.uk_legislation.effect_compiler import compile_effect_to_ir_ops
 from lawvm.uk_legislation.effect_source_selection import (
     EffectSourceSelection as _EffectSourceSelection,
@@ -1121,6 +1124,11 @@ class UKReplayPipeline:
         )
         probe_uk_lineage_acyclic(
             mutation_events_out,
+            adjudications_out=adjudications_out,
+            source_statute=base_ir.statute_id,
+        )
+        probe_uk_commencement_effect_totality(
+            prepared_ops.accepted_ops,
             adjudications_out=adjudications_out,
             source_statute=base_ir.statute_id,
         )
