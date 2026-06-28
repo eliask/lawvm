@@ -67,6 +67,31 @@ The four entries below encode the four load-bearing UK non-guarantees:
    ``uk_replay_*_observed`` adjudications. A future strict-profile lane could
    flip them to blocking; v0 is discipline-disclosing-first-step posture, not
    enforcement.
+
+5. **No fixed-term-expiry temporal model.** A statute subject to a sunset /
+   fixed-term-expiry clause has a temporal validity bound that expires the
+   whole Act at a future date unless extended. Finland has
+   :mod:`lawvm.finland.fixed_term_expiry` (which emits the
+   ``TEMPORAL.EXPIRY_CANDIDATE_SUPPRESSED_NON_COMMENCEMENT_CONTEXT`` finding at
+   ``core/observation_registry.py:959``); UK has no analogue — a UK sunset-
+   clause instrument has no compile-time-recognised expiry bound, so replay
+   will materialise it as perpetually in force past its expiry date.
+
+6. **No lineage-migration emission for repeal/reinsert cycles.** AGENTS.md §2.8
+   requires frontends to emit ``MigrationEvent`` records for moves, renumbers,
+   same-label rebirths, native-vs-migrated collisions, and repeal/reinsert
+   cycles so core can carry provision identity through PIT windows. UK records
+   ``MutationEvent`` (a richer-but-different structural-mutation ledger at
+   ``lawvm.core.mutation_events``) populated per-apply from
+   ``replay_state.py:_record_*_mutation_event``, but emits ZERO
+   :class:`lawvm.core.provenance.MigrationEvent` objects. The
+   ``uk_effect_repeal_no_double_entry_duplicate_rejected`` witness guards a
+   second repeal of the same eid (the no-double-entry half), but the no-revive
+   half — the inference that a successor repeal of repealing-Act Y does not
+   revive repealed-Act X — is not modelled. ``core/timeline_lineage.py`` has
+   ``check_lineage_acyclic`` / ``assert_acyclic`` (LS-11) but it consumes
+   ``MigrationEvent`` tuples; UK has no producer, so the cycle check is dead
+   code against UK replay.
 """
 
 from __future__ import annotations
@@ -241,6 +266,103 @@ def build_uk_assumption_register() -> tuple[AssumptionRegister, ...]:
                 "src/lawvm/uk_legislation/materialization_totality_probe.py::module docstring",
                 "tests/test_uk_mutation_boundary_per_op_probe.py::test_probe_disabled_by_default",
                 "tests/test_uk_materialization_totality_probe.py::test_probe_disabled_by_default",
+            ),
+        ),
+        AssumptionRegister(
+            kind="parser_incomplete",
+            scope=(
+                "UK fixed-term-expiry (sunset-clause) temporal model is absent. "
+                "Finland has `lawvm.finland.fixed_term_expiry` which extracts "
+                "StatuteValidityBound from Finnish `voimaantulosäännös` clauses "
+                "and emits the registered "
+                "`TEMPORAL.EXPIRY_CANDIDATE_SUPPRESSED_NON_COMMENCEMENT_CONTEXT` "
+                "finding (core/observation_registry.py:959). UK has NO analogue: "
+                "no `fix_term_expiry`/`statute_validity_bound` builder, no "
+                "core/observation_registry row keyed on a UK sunset rule. A UK "
+                "instrument subject to a sunset clause expires silently past its "
+                "expiry date because the temporally-aware expiry filter has no "
+                "input row to act on — replay materialises it in force at "
+                "post-expiry PIT dates."
+            ),
+            effect="qualifies",
+            expires_when=(
+                "a UK analogue of fixed_term_expiry lands — extracting a "
+                "StatuteValidityBound from the UK instrument's sunset-clause "
+                "provisions (per the FI pattern at "
+                "fixed_term_expiry.py:65) and emitting the cross-jurisdiction "
+                "`TEMPORAL.EXPIRY_CANDIDATE_SUPPRESSED_NON_COMMENCEMENT_CONTEXT` "
+                "finding_kind from UK replay."
+            ),
+            public_message=(
+                "LawVM does NOT guarantee fixed-term-expiry-aware temporal "
+                "filtering for UK legislation. A UK statute subject to a sunset "
+                "clause has no compile-time-recognised expiry bound; replay will "
+                "materialise it as perpetually in force past its sunset date. "
+                "The fixed_term_expiry temporal machinery is FI-only today."
+            ),
+            witness_rule_id=(
+                "TEMPORAL.EXPIRY_CANDIDATE_SUPPRESSED_NON_COMMENCEMENT_CONTEXT"
+            ),
+            finding_refs=(
+                "src/lawvm/core/observation_registry.py:959",
+                "src/lawvm/finland/fixed_term_expiry.py:65",
+                "AGENTS.md::§2.7 Timeline, lineage, identity",
+            ),
+        ),
+        AssumptionRegister(
+            kind="doctrine_unresolved",
+            scope=(
+                "UK repeal/reinsert cycle lineage-migration emission is absent. "
+                "AGENTS.md §2.8 requires frontends to emit MigrationEvent records "
+                "for moves, renumbers, same-label rebirths, native-vs-migrated "
+                "collisions, and repeal/reinsert cycles. UK records ONLY "
+                "MutationEvent (a richer-but-different structural-mutation "
+                "ledger at lawvm.core.mutation_events) populated per-apply from "
+                "replay_state.py `_record_*_mutation_event` (replace_node / "
+                "remove_node / insert_node / renumber_node / children_splice / "
+                "descendant_renumber). It emits ZERO of "
+                "`lawvm.core.provenance.MigrationEvent` (the timeline_lineage "
+                "input type that carries `event_id` + `kind renumber|move|split|"
+                "merge` + `from_address`/`to_address` as LegalAddress). The "
+                "`uk_effect_repeal_no_double_entry_duplicate_rejected` guard at "
+                "repeal_no_double_entry.py:164 covers the no-double-entry half "
+                "(a second repeal of the same eid is blocked); the no-revive "
+                "half — that a successor repeal of repealing-Act Y does NOT "
+                "revive the prior-repealed Act X — is not modelled as a typed "
+                "migration event. `core/timeline_lineage.py:check_lineage_"
+                "acyclic` (LS-11) consumes MigrationEvent; UK has no producer, "
+                "so the cycle check is dead code against UK replay."
+            ),
+            effect="qualifies",
+            expires_when=(
+                "a UK frontend-level MigrationEvent emitter is built that maps "
+                "each per-op MutationEvent (with its renumbered_paths / removed_"
+                "paths / created_paths / replaced_paths / descendant_renumber "
+                "TreePath pairs) to a typed MigrationEvent (with kind and "
+                "from_address/to_address as LegalAddress), so core "
+                "timeline_lineage.consume / check_lineage_acyclic / "
+                "current_address_from_migration_events operate over UK replay."
+            ),
+            public_message=(
+                "LawVM does NOT guarantee identity preservation across UK "
+                "repeal/reinsert cycles. The UK replay fold records structural "
+                "MutationEvents but emits NO MigrationEvents (the AGENTS.md §2.8 "
+                "lineage carrier), so a repealed-then-reinserted provision is "
+                "tracked only at the structural-mutation accounting plane — not "
+                "at the migration/lineage plane. The no-double-entry guard at "
+                "repeal_no_double_entry.py:164 is structural; the no-revive "
+                "inference (repeal of repealing-Act does not revive prior-repealed "
+                "Act) is not modelled."
+            ),
+            witness_rule_id="uk_effect_repeal_no_double_entry_duplicate_rejected",
+            finding_refs=(
+                "AGENTS.md::§2.8 Timeline, lineage, identity",
+                "src/lawvm/uk_legislation/repeal_no_double_entry.py:164",
+                "src/lawvm/uk_legislation/replay_state.py::_record_"
+                "*_mutation_event",
+                "src/lawvm/core/mutation_events.py:32 MutationEvent",
+                "src/lawvm/core/timeline_lineage.py:228 check_lineage_acyclic",
+                "src/lawvm/core/provenance.py:166 MigrationEvent",
             ),
         ),
     )

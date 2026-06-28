@@ -161,6 +161,76 @@ def test_uk_no_strict_profile_observation_default_assumption_is_well_formed() ->
     )
 
 
+def test_uk_fixed_term_expiry_absent_assumption_is_well_formed() -> None:
+    register = build_uk_assumption_register()
+    entry = next(
+        a
+        for a in register
+        if a.witness_rule_id
+        == "TEMPORAL.EXPIRY_CANDIDATE_SUPPRESSED_NON_COMMENCEMENT_CONTEXT"
+    )
+    # Capability gap (no UK fixed_term_expiry module built yet), NOT doctrine.
+    assert entry.kind == "parser_incomplete"
+    # The claim is QUALIFIED (sunset clauses are a materialized-as-perpetual
+    # boundary, not outside claim scope).
+    assert entry.effect == "qualifies"
+    # The FI prior-art module is named in scope so the missing UK analogue is
+    # findable — the cross-jurisdiction mirror is the §2.3 contract.
+    assert "fixed_term_expiry" in entry.scope
+    assert "uk" in entry.scope.lower() and "no analogue" in entry.scope.lower()
+    # expires_when names the concrete unblocker: a UK analogue of the FI module
+    # + the cross-jurisdiction finding_kind emission. Not a hand-wave.
+    assert "fixed_term_expiry" in entry.expires_when
+    assert "StatuteValidityBound" in entry.expires_when
+    # The cross-jurisdiction finding_kind witness is anchored in core.
+    assert any(
+        "core/observation_registry.py" in ref for ref in entry.finding_refs
+    )
+    # The FI prior-art module is cross-linked so a future UK port has the
+    # reference implementation to mirror (per AGENTS.md §2.3 core/frontend
+    # boundary — proven-shared primitives migrate cross-jurisdiction).
+    assert any(
+        "finland/fixed_term_expiry.py" in ref for ref in entry.finding_refs
+    )
+
+
+def test_uk_repeal_reinsert_no_lineage_migration_assumption_is_well_formed() -> None:
+    register = build_uk_assumption_register()
+    entry = next(
+        a
+        for a in register
+        if a.witness_rule_id
+        == "uk_effect_repeal_no_double_entry_duplicate_rejected"
+    )
+    # Doctrine debt (AGENTS.md §2.8 requires lineage/migration semantics; UK
+    # records structural MutationEvents but emits no MigrationEvents), NOT a
+    # capability-miss classifier — the contract requires the carrier.
+    assert entry.kind == "doctrine_unresolved"
+    # The claim is QUALIFIED — the no-double-entry half IS implemented; the
+    # no-revive half and the migration-event emission are the debt.
+    assert entry.effect == "qualifies"
+    # The §2.8 lineage contract is named (the load-bearing rule that the
+    # missing MigrationEvent violates).
+    assert "MigrationEvent" in entry.scope
+    assert "repeal/reinsert" in entry.scope.lower() or "repeal-reinsert" in entry.scope.lower()
+    # The structural MutationEvent vs the lineage MigrationEvent distinction
+    # is named so a reader does not conflate them.
+    assert "MutationEvent" in entry.scope
+    # expires_when names the concrete frontend-level emitter build-out, not
+    # a hand-wave — the unblocker is a UK producer for an existing core
+    # consumer.
+    assert "MigrationEvent" in entry.expires_when
+    # The two carrier types are anchored in finding_refs so a refactor can
+    # locate the core types (MutationEvent line 32; MigrationEvent line 166).
+    assert any("mutation_events.py" in ref or "MutationEvent" in ref for ref in entry.finding_refs)
+    assert any("provenance.py" in ref and "MigrationEvent" in ref for ref in entry.finding_refs)
+    # The core timeline_lineage.check_lineage_acyclic site is anchored — the
+    # dead-code-against-UK claim is verifiable.
+    assert any("timeline_lineage.py" in ref for ref in entry.finding_refs)
+    # AGENTS.md §2.8 is cross-linked (the load-bearing contract).
+    assert any("AGENTS.md" in ref and "§2.8" in ref for ref in entry.finding_refs)
+
+
 # --------------------------------------------------------------------------- #
 # Validation parity with the FI/SE register shape.                            #
 # --------------------------------------------------------------------------- #
