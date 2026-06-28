@@ -944,6 +944,7 @@ def extract_structural_replacement(
     target_provision_label: str | None = None,
     base_work_year: str = "",
     base_work_number: str = "",
+    amending_act_root: etree._Element | None = None,
 ) -> "NZStructuralReplacement | str":
     """Extract a clean one-to-one structural replacement from an amending node.
 
@@ -964,6 +965,14 @@ def extract_structural_replacement(
     a typed blocker reason string (never a guess, never a flatten). More than one
     child matching the SAME leaf, even after section disambiguation, is genuine
     ambiguity and stays blocked.
+
+    ``amending_act_root`` enables the amending-act-own-schedule delegation
+    path (AGENTS §2.5 extension of the canonical structural-leaf recognizer
+    family): when the inline ``<amend>``-subtree path produces a no-payload
+    blocker AND the amending provision delegates its payload by prose to
+    "Schedule K of this Act", the payload is fetched from the amending act's
+    own top-level ``<schedule>`` K carrier. When ``None`` (legacy callers)
+    the inline blockers stand unchanged.
     """
 
     if not target_leaf_kind or not target_leaf_label:
@@ -992,6 +1001,21 @@ def extract_structural_replacement(
         if isinstance(element.tag, str) and _localname(element) == "amend"
     ]
     if not amend_subtrees:
+        # AGENTS §2.5: try the amending-act-own-schedule delegation form
+        # (canonical typed parser/recognizer family extension). When the
+        # amending provision delegates by prose to "Schedule K of this
+        # Act" and the amending act root is available, follow the directive
+        # into the carrier schedule. Otherwise the no-amend-subtree blocker
+        # stands.
+        delegated = _try_amending_act_own_schedule_delegation(
+            amending_node,
+            amending_act_root,
+            target_leaf_kind=target_leaf_kind,
+            normalized_label=normalized_label,
+            insertion=False,
+        )
+        if delegated is not None:
+            return delegated
         return NZ_STRUCTURAL_REPLACE_BLOCKED_NO_AMEND_SUBTREE
 
     # Select the single ``<amend>`` structural child whose kind+label match the
@@ -1024,6 +1048,17 @@ def extract_structural_replacement(
                 matches = scoped_matches
 
     if not matches:
+        # AGENTS §2.5: schedule-as-direct-payload delegation retry (see the
+        # no-amend-subtree branch above for the same shape).
+        delegated = _try_amending_act_own_schedule_delegation(
+            amending_node,
+            amending_act_root,
+            target_leaf_kind=target_leaf_kind,
+            normalized_label=normalized_label,
+            insertion=False,
+        )
+        if delegated is not None:
+            return delegated
         return NZ_STRUCTURAL_REPLACE_BLOCKED_NO_MATCHING_CHILD
     if len(matches) > 1:
         return NZ_STRUCTURAL_REPLACE_BLOCKED_AMBIGUOUS_MATCH
@@ -1283,6 +1318,38 @@ NZ_STRUCTURAL_BLOCKED_SCHEDULE_UNRESOLVED_PLACEHOLDER = "structural_schedule_ind
 # the flattened payload text ("... is [standard text].").
 _SCHEDULE_PAYLOAD_PLACEHOLDER = re.compile(r"\[\s*standard text\s*\]", re.IGNORECASE)
 
+# Amending-act-own-schedule delegation typed blockers.
+#
+# A second delegation form exists (distinct from the omnibus
+# ``schedule.amendments.group2`` path above): the amending act's operative
+# provision says "Replace Schedule N with the Schedule N set out in Schedule K
+# of this Act" / "After Schedule M, insert the Schedule M' set out in
+# Schedule K of this Act" — i.e. the payload is NOT inside ``<amend>`` at
+# all, but lives in the AMENDING ACT'S OWN top-level ``<schedule>`` element
+# K. The carrier schedule K wraps the new structural leaf (a nested
+# ``<schedule>`` carrying the target leaf label, sometimes directly, sometimes
+# inside an ``<amend>`` payload wrapper). The extractors below follow that
+# delegation when the inline ``<amend>``-subtree path fails with the no-payload
+# blockers and the directive prose witnesses it.
+NZ_STRUCTURAL_BLOCKED_AMENDING_ACT_SCHEDULE_NOT_FOUND = (
+    "structural_amending_act_named_schedule_not_found"
+)
+NZ_STRUCTURAL_BLOCKED_AMENDING_ACT_SCHEDULE_NO_MATCH = (
+    "structural_amending_act_named_schedule_no_amend_child_matches_target_leaf"
+)
+NZ_STRUCTURAL_BLOCKED_AMENDING_ACT_SCHEDULE_AMBIGUOUS_MATCH = (
+    "structural_amending_act_named_schedule_multiple_amend_children_match_target_leaf"
+)
+
+# Directive predicate: "Schedule K of this Act" references the AMENDING ACT's
+# own top-level schedule K as the payload carrier. Compile-once at module
+# scope (AGENTS §2.4 backtracking discipline); the matched index is the
+# carrier schedule's ``<label>`` value.
+_AMENDING_ACT_OWN_SCHEDULE_DIRECTIVE = re.compile(
+    r"\bSchedule\s+([0-9]+[A-Za-z]*)\s+of\s+this\s+Act\b",
+    re.IGNORECASE,
+)
+
 # Schedule-indirection amending provisions ("Amend the Acts set out in the
 # tables in Schedules 1 to 32 of this Act, in each case,—" / "Amend the
 # enactments specified in Schedule N ... as set out in that schedule") deliver
@@ -1482,6 +1549,236 @@ def _resolve_schedule_indirection(
     )
 
 
+# Amending-act-own-schedule delegation. --------------------------------------
+#
+# Distinct from the ``schedule.amendments.group2`` omnibus indirection above
+# (where the payload lives in BASE-act-keyed schedule amendment groups), the
+# amending act's operative provision may delegate to its OWN top-level
+# schedule: "Replace Schedule 2 with the Schedule 2 set out in Schedule 1 of
+# this Act" -- the amending act's Schedule 1 carries the new Schedule 2
+# content as a NESTED ``<schedule>`` structural child. The carrier takes two
+# forms in the corpus:
+#   1. ``<schedule><label>1</label><heading>New Schedule 2 of...</heading>``
+#      ``<schedule><label>2</label>...</schedule></schedule>`` (direct nest).
+#   2. ``<schedule><label>2</label><heading>Schedule 5 replaced</heading>``
+#      ``<amend><schedule><label>5</label>...</schedule></amend></schedule>``
+#      (the inner schedule is wrapped in an ``<amend>``).
+#
+# Followed through, the new structural leaf is the nested ``<schedule>``
+# (sometimes ``<prov>`` for a sub-schedule insertion) whose kind+label match
+# the witness's target leaf. The carrier wrapper itself is NOT the leaf;
+# descendants past it are payload. AGENTS §2.4/§2.5: this is the canonical
+# structural-leaf recognizer family EXTENDED to recognize the amending-act-
+# own-schedule delegation form (one parser per family), never a parallel
+# fallback. AGENTS §1.12: the payload is read from the AMENDING ACT's source
+# XML (source faith), never the oracle.
+
+# Kinds that mark "we are inside the amending-act-schedule payload carrier" --
+# descending through any of these flips the inside-container flag for the
+# leaf-match check. Extends the inline ``_AMEND_CONTAINER_KINDS`` set with
+# ``schedule`` (the carrier wrapper itself) and ``amend`` (an intermediate
+# payload wrapper inside the carrier). Both act as container gates here
+# because the amending-act's schedule-N wrapper IS by directive the payload
+# boundary; once we are inside it, every structural child is a candidate
+# payload leaf.
+_AMENDING_ACT_SCHEDULE_PAYLOAD_CONTAINERS = _AMEND_CONTAINER_KINDS | frozenset(
+    {"schedule", "amend"}
+)
+
+
+def _amending_node_directs_to_amending_act_schedule(
+    amending_node: etree._Element,
+) -> str | None:
+    """Return the amending act's carrier-schedule label referenced by the
+    directive ("Schedule K of this Act"), or ``None`` when no such directive
+    is present.
+
+    The directive form references the AMENDING ACT'S OWN top-level schedule
+    (e.g. "the Schedule 2 set out in Schedule 1 of this Act" -- amending act's
+    Schedule 1 is the carrier). The matched index is the carrier's ``<label>``
+    value. The bare phrase "Schedule K of this Act" is a strong, witnessed
+    signal (the prose explicitly delegates to the amending act's own
+    schedule); it is NOT a guess about target scope -- it is a directive
+    from the source itself. Returns ``None`` for amending provisions that do
+    not delegate by this form (the inline ``<amend>``-subtree path stays in
+    force).
+    """
+
+    for text_node in amending_node.iter():
+        if not isinstance(text_node.tag, str) or _localname(text_node) != "text":
+            continue
+        match = _AMENDING_ACT_OWN_SCHEDULE_DIRECTIVE.search(_node_text(text_node))
+        if match:
+            return _normalize_text(match.group(1))
+    return None
+
+
+def _amending_act_top_level_schedule_by_label(
+    amending_act_root: etree._Element,
+    schedule_label: str,
+) -> etree._Element | None:
+    """Locate the amending act's top-level ``<schedule>`` whose ``<label>``
+    equals ``schedule_label``.
+
+    Top-level schedules appear either as direct children of the act root or
+    inside a ``<schedule.group>`` wrapper. Only OUTER schedules are
+    considered -- nested schedules inside a carrier are the payload, NOT
+    carriers themselves, and an inner schedule's label can collide with an
+    outer carrier's (the corpus has e.g. two ``<schedule><label>2</label>``
+    elements where one is a carrier and one is its nested payload). Returns
+    the FIRST outer match in document order; the directive prose witnesses
+    the carrier label.
+    """
+
+    def _candidates() -> Iterable[etree._Element]:
+        for child in amending_act_root:
+            if not isinstance(child.tag, str):
+                continue
+            child_kind = _localname(child)
+            if child_kind == "schedule":
+                yield child
+            elif child_kind == "schedule.group":
+                for inner in child:
+                    if isinstance(inner.tag, str) and _localname(inner) == "schedule":
+                        yield inner
+
+    normalized = _normalize_text(schedule_label)
+    for schedule in _candidates():
+        if _normalize_text(_direct_child_text(schedule, "label")) == normalized:
+            return schedule
+    return None
+
+
+def _amending_act_schedule_descendant_matches(
+    carrier: etree._Element,
+    leaf_kind: str,
+    normalized_label: str,
+) -> list[etree._Element]:
+    """Structural-leaf matches nested inside the amending-act carrier schedule.
+
+    Recurses ONLY through the structural/payload-container kinds a delegated
+    leaf can sit under (``schedule`` carrier itself / intermediate ``<amend>``
+    wrappers / ``part`` / ``subpart`` / ``prov``) and returns every structural
+    descendant whose kind+label match the target leaf (using the standard
+    ``_amend_child_matches_leaf`` predicate so kind aliasing and label
+    normalization are byte-identical to the inline path). The carrier wrapper
+    enters the descent with ``inside_container=True`` (we are already inside
+    the payload boundary by directive), so a DIRECT nested carrier child of
+    the right kind+label is matched the same way a deeper one is. A matched
+    leaf is not recursed into -- its sub-nodes are payload, never separate
+    matches for this leaf. The caller treats >1 match as ambiguous and
+    refuses (never a guess).
+    """
+
+    matches: list[etree._Element] = []
+
+    def _recurse(element: etree._Element, *, inside_container: bool) -> None:
+        for child in element:
+            if not isinstance(child.tag, str):
+                continue
+            child_kind = _localname(child)
+            structural = child_kind in _STRUCTURAL_TAGS
+            container = child_kind in _AMENDING_ACT_SCHEDULE_PAYLOAD_CONTAINERS
+            if not structural and not container:
+                # Non-structural wrapper (``<para>``, ``<text>`` etc.): keep
+                # descending so a container/payload nested under prose markup
+                # is reached, without treating the wrapper itself as a
+                # container.
+                _recurse(child, inside_container=inside_container)
+                continue
+            if inside_container and _amend_child_matches_leaf(child, leaf_kind, normalized_label):
+                matches.append(child)
+                # Do not recurse into the matched leaf — its own sub-nodes
+                # are part of the payload, never a separate match for this
+                # leaf.
+                continue
+            _recurse(child, inside_container=container or inside_container)
+
+    _recurse(carrier, inside_container=True)
+    return matches
+
+
+def _extract_from_amending_act_named_schedule(
+    amending_act_root: etree._Element,
+    schedule_label: str,
+    target_leaf_kind: str,
+    normalized_label: str,
+    *,
+    insertion: bool,
+) -> "NZStructuralReplacement | str":
+    """Extract the new structural leaf from the amending act's named carrier
+    schedule, or emit a typed blocker.
+
+    Resolves the carrier schedule by ``<label>`` equality with the directive
+    reference (the prose "Schedule K of this Act" witnesses the carrier
+    label), then runs the amending-act-schedule descendant matcher over it
+    to find the nested structural child whose kind+label match the target
+    leaf. Exactly one match produces an :class:`NZStructuralReplacement`
+    (reusing the inline path's node model so materialization is byte-
+    comparable); zero, multiple, or empty produces a typed blocker -- never
+    a guess.
+    """
+
+    carrier = _amending_act_top_level_schedule_by_label(
+        amending_act_root, schedule_label
+    )
+    if carrier is None:
+        return NZ_STRUCTURAL_BLOCKED_AMENDING_ACT_SCHEDULE_NOT_FOUND
+    matches = _amending_act_schedule_descendant_matches(
+        carrier, target_leaf_kind, normalized_label
+    )
+    if not matches:
+        return NZ_STRUCTURAL_BLOCKED_AMENDING_ACT_SCHEDULE_NO_MATCH
+    if len(matches) > 1:
+        return NZ_STRUCTURAL_BLOCKED_AMENDING_ACT_SCHEDULE_AMBIGUOUS_MATCH
+    nodes = _walk_payload_root_nodes(matches[0])
+    if not nodes or not nodes[0].text.strip():
+        return (
+            NZ_STRUCTURAL_INSERT_BLOCKED_EMPTY_PAYLOAD
+            if insertion
+            else NZ_STRUCTURAL_REPLACE_BLOCKED_EMPTY_REPLACEMENT
+        )
+    return NZStructuralReplacement(root=nodes[0], descendants=tuple(nodes[1:]))
+
+
+def _try_amending_act_own_schedule_delegation(
+    amending_node: etree._Element,
+    amending_act_root: etree._Element | None,
+    *,
+    target_leaf_kind: str,
+    normalized_label: str,
+    insertion: bool,
+) -> "NZStructuralReplacement | str | None":
+    """Try the amending-act-own-schedule delegation form; return the result of
+    the resolver when the directive matches, or ``None`` when it does not
+    (so the caller falls through to its existing inline blocker).
+
+    The delegation form requires BOTH the directive's prose (the amending
+    provision's text contains "Schedule K of this Act") AND the amending act
+    root element (so the carrier schedule can be located). When either is
+    missing, this helper returns ``None`` and the caller's existing
+    no-amend-subtree / no-matching-child blocker stands unchanged -- no silent
+    state mutation, no parallel fallback (AGENTS §2.5). When the directive
+    matches AND the amending act root is provided, the resolver's typed
+    blocker or successful :class:`NZStructuralReplacement` is returned -- the
+    caller MUST surface it to the dry-run refusal/refusal path so the typed
+    blocker is visible in receipts.
+    """
+
+    if amending_act_root is None:
+        return None
+    schedule_label = _amending_node_directs_to_amending_act_schedule(amending_node)
+    if schedule_label is None:
+        return None
+    return _extract_from_amending_act_named_schedule(
+        amending_act_root,
+        schedule_label,
+        target_leaf_kind,
+        normalized_label,
+        insertion=insertion,
+    )
+
+
 def extract_structural_insertion(
     amending_node: etree._Element,
     *,
@@ -1490,6 +1787,7 @@ def extract_structural_insertion(
     target_provision_label: str | None = None,
     base_work_year: str = "",
     base_work_number: str = "",
+    amending_act_root: etree._Element | None = None,
 ) -> "NZStructuralReplacement | str":
     """Extract the new provision node a whole-provision INSERT adds.
 
@@ -1510,6 +1808,9 @@ def extract_structural_insertion(
     typed blocker reason string. A multi-child ``<amend>`` subtree is allowed: the
     per-witness label selects the single inserted node, so this is a clean
     one-node extraction, never a flatten.
+
+    ``amending_act_root`` enables the amending-act-own-schedule delegation
+    path (see :func:`extract_structural_replacement`).
     """
 
     if not inserted_leaf_kind or not inserted_leaf_label:
@@ -1539,6 +1840,16 @@ def extract_structural_insertion(
         if isinstance(element.tag, str) and _localname(element) == "amend"
     ]
     if not amend_subtrees:
+        # AGENTS §2.5: try the amending-act-own-schedule delegation form.
+        delegated = _try_amending_act_own_schedule_delegation(
+            amending_node,
+            amending_act_root,
+            target_leaf_kind=inserted_leaf_kind,
+            normalized_label=normalized_label,
+            insertion=True,
+        )
+        if delegated is not None:
+            return delegated
         return NZ_STRUCTURAL_INSERT_BLOCKED_NO_AMEND_SUBTREE
 
     matches = _insertion_leaf_matches(amend_subtrees, inserted_leaf_kind, normalized_label)
@@ -1559,6 +1870,17 @@ def extract_structural_insertion(
                 matches = scoped_matches
 
     if not matches:
+        # AGENTS §2.5: schedule-as-direct-payload delegation retry (see the
+        # no-amend-subtree branch above for the same shape).
+        delegated = _try_amending_act_own_schedule_delegation(
+            amending_node,
+            amending_act_root,
+            target_leaf_kind=inserted_leaf_kind,
+            normalized_label=normalized_label,
+            insertion=True,
+        )
+        if delegated is not None:
+            return delegated
         return NZ_STRUCTURAL_INSERT_BLOCKED_NO_MATCHING_CHILD
     if len(matches) > 1:
         return NZ_STRUCTURAL_INSERT_BLOCKED_AMBIGUOUS_MATCH

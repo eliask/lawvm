@@ -1296,6 +1296,7 @@ def _extract_replacement_payload(
         target_provision_label=_top_level_provision_label(op.source_path),
         base_work_year=base_work_year,
         base_work_number=base_work_number,
+        amending_act_root=amending_root,
     )
     if isinstance(replacement, str):
         return None
@@ -1335,6 +1336,7 @@ def _extract_insertion_payload(
         target_provision_label=insert_provision_label,
         base_work_year=base_work_year,
         base_work_number=base_work_number,
+        amending_act_root=amending_root,
     )
     if isinstance(payload, str):
         return None
