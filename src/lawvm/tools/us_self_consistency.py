@@ -130,6 +130,22 @@ _AMENDATORY_FINDING_SIGNAL: Dict[str, str] = {
     NON_TITLE_TARGET_RULE_ID: "target_absent",
 }
 
+
+def _get_classification_index_for_self_consistency() -> Any:
+    """Lazily load the PL-section→USC-section classification index."""
+    import os
+    path = os.environ.get("LAWVM_US_CLASSIFICATION_INDEX")
+    if not path or not os.path.exists(path):
+        return None
+    import json
+    from lawvm.us_federal.classification_tables import (
+        ClassificationEntry, ClassificationIndex,
+    )
+    with open(path) as f:
+        data = json.load(f)
+    entries = [ClassificationEntry(**e) for e in data["entries"]]
+    return ClassificationIndex(entries)
+
 # Non-positive-law resolution statuses that denote an UNMAPPED holdout (no
 # govinfo-reachable channel yields a codified section). Only these two are
 # self-consistency signals; the resolved statuses (paren/href/agree) are correct
@@ -243,7 +259,8 @@ def project_us_self_consistency(
         return [], [{"statute_id": locator, "error": "plaw_source_absent"}]
 
     try:
-        report = lower_plaw_amendatory(data, statute_id=locator)
+        report = lower_plaw_amendatory(data, statute_id=locator,
+                                       classification_index=_get_classification_index_for_self_consistency())
     except Exception as exc:  # an unparseable law is itself a finding
         err = f"{type(exc).__name__}: {exc}"
         row = {
