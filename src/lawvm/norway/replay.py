@@ -15,7 +15,7 @@ import re
 import sys
 from dataclasses import dataclass, field, replace as dc_replace
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Tuple
 
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.filter_result import FilterResult
@@ -28,6 +28,7 @@ from lawvm.core.temporal_resolution import (
     TemporalResolutionEvidence,
     TemporalResolutionStatus,
 )
+from lawvm.core.write_receipt import WriteReceipt
 from lawvm.norway.commencement import (
     apply_no_commencement_overrides,
     load_no_commencement_overrides,
@@ -147,6 +148,19 @@ class NOReplayResult:
     # production — the §2.9 worst-class silent failure (a guard that exists
     # but is unreachable from the production lane).
     apply_filter_result: Optional[FilterResult[LegalOperation]] = None
+    # Per-op landed-write receipts (AGENTS.md §2.3 +
+    # notes/APPLY_RESOLUTION_AND_RECEIPT_CONTRACT.md §4). Populated when the
+    # production apply lane routes through ``apply_no_ops_conserved`` with
+    # ``emit_receipts=True`` (the §2.9 guard-liveness fix so the receipt
+    # lane is reachable from production, not just from tests via
+    # ``no_replay_write_receipts``). Each receipt records the landed
+    # footprint (created/replaced/removed/renumbered paths) plus pre/post
+    # structural subtree hashes per op, and the ``migration_rule_ids`` stamp
+    # that explains the bound→landed divergence on a RENUMBER
+    # (``no_section_renumber_relabel`` — mirrors SE's ``se_renumber_relabel``
+    # at sweden/fetch.py:3497). Mirrors SE's ``write_receipts`` surface on
+    # the production result carrier.
+    write_receipts: Tuple[WriteReceipt, ...] = ()
 
 
 def _normalize_base_id(base_id: str) -> str:
@@ -422,14 +436,26 @@ def replay_no_to_pit(
         # contract). Without routing production here, the conserved wrapper
         # would be exercised only by tests — a §2.9 worst-class silent
         # failure (a guard that exists but is unreachable from production).
+        # ``emit_receipts=True`` additionally routes per-op ``WriteReceipt``
+        # records (AGENTS.md §2.3 + notes/APPLY_RESOLUTION_AND_RECEIPT_CONTRACT.md
+        # §4) through the production lane — these were previously reachable
+        # only from tests via ``no_replay_write_receipts``, a §2.9 worst-class
+        # silent failure. Each receipt carries the landed footprint
+        # (created/replaced/removed/renumbered paths) plus pre/post structural
+        # subtree hashes per op, and the ``migration_rule_ids`` stamp that
+        # explains the bound→landed divergence on a RENUMBER
+        # (``no_section_renumber_relabel`` — mirrors SE's
+        # ``se_renumber_relabel`` at sweden/fetch.py:3497).
         apply_result = apply_no_ops_conserved(
             base_statute,
             ops,
             adjudications_out=result.adjudications,
             strict_action_family=strict_action_family,
+            emit_receipts=True,
         )
         result.replayed = apply_result.statute
         result.apply_filter_result = apply_result.filter_result
+        result.write_receipts = apply_result.write_receipts
         if heading_groups:
             result.replayed = apply_no_heading_groups(result.replayed, heading_groups)
     except ValueError as exc:
