@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, List, Optional
 
 from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.filter_result import FilterResult
 from lawvm.core.ir import IRStatute, LegalOperation
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.temporal_resolution import (
@@ -34,7 +35,7 @@ from lawvm.norway.commencement import (
 from lawvm.norway.grafter import (
     NO_PARSE_REPLACE_PROMOTED_TO_INSERT_FOR_RENUMBER,
     apply_no_heading_groups,
-    apply_no_ops,
+    apply_no_ops_conserved,
     iter_no_document_change_ops,
     parse_no_heading_groups,
     parse_no_statute,
@@ -136,6 +137,16 @@ class NOReplayResult:
     adjudications: List[CompileAdjudication] = field(default_factory=list)
     n_ops: int = 0
     error: Optional[str] = None
+    # Typed apply-result conservation receipt (AGENTS.md §1.8 + §2.9
+    # guard-liveness). Populated when the production apply lane routes
+    # through ``apply_no_ops_conserved``: partitions every input op into
+    # ``accepted_items`` (its binding landed in ``replayed``) or
+    # ``rejected_items`` (its replay skipped, with a typed ``RejectedItem``
+    # witness carrying ``reason`` / ``reason_code`` / ``blocking``). Without
+    # this field the conserved wrapper exists but is unreachable from
+    # production — the §2.9 worst-class silent failure (a guard that exists
+    # but is unreachable from the production lane).
+    apply_filter_result: Optional[FilterResult[LegalOperation]] = None
 
 
 def _normalize_base_id(base_id: str) -> str:
@@ -402,12 +413,23 @@ def replay_no_to_pit(
             )
         )
     try:
-        result.replayed = apply_no_ops(
+        # Route production through the conserved wrapper (AGENTS.md §1.8 +
+        # §2.9 guard-liveness). The bare ``apply_no_ops`` returned only the
+        # IRStatute and shuttled skip-evidence through ``adjudications_out``
+        # side-effect; the conserved wrapper returns a typed ``NOApplyResult``
+        # whose ``filter_result`` partitions ops into accepted /
+        # RejectedItem witnesses (the §1.8 "no unsupported lane disappears"
+        # contract). Without routing production here, the conserved wrapper
+        # would be exercised only by tests — a §2.9 worst-class silent
+        # failure (a guard that exists but is unreachable from production).
+        apply_result = apply_no_ops_conserved(
             base_statute,
             ops,
             adjudications_out=result.adjudications,
             strict_action_family=strict_action_family,
         )
+        result.replayed = apply_result.statute
+        result.apply_filter_result = apply_result.filter_result
         if heading_groups:
             result.replayed = apply_no_heading_groups(result.replayed, heading_groups)
     except ValueError as exc:

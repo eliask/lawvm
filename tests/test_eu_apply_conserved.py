@@ -178,3 +178,120 @@ def test_apply_eu_ops_conserved_rejects_duplicate_op_ids() -> None:
     ]
     with pytest.raises(ValueError, match="unique"):
         apply_eu_ops_conserved(baseline, ops)
+
+
+def test_replay_statute_routes_apply_through_conserved_wrapper(monkeypatch, tmp_path) -> None:
+    """§2.9 guard-liveness fire-drill: the production lane
+    ``EUReplayPipeline.replay_statute`` MUST route the apply fold through
+    ``apply_eu_ops_conserved`` (not the bare ``apply_eu_ops``) and surface the
+    typed ``FilterResult`` on the ``EUReplayResult.apply_filter_result`` field.
+
+    Pre-fix state: the conserved wrapper existed and was well-tested in
+    isolation, but the production call site at ``eu/pipeline.py:898``
+    invoked the bare ``apply_eu_ops`` directly. That made the conserved
+    wrapper UNREACHABLE from production — the §2.9 worst-class silent failure
+    (a guard that exists but cannot fire from the production lane).
+
+    Drives a synthesized op set through the FULL ``replay_statute`` path:
+
+    * one REPLACE §1 op (succeeds — target is in the synthesized baseline body)
+    * one REPLACE §99 op (skips — target not in the baseline, surfaces as a
+      ``RejectedItem`` with ``reason_code == 'eu_replay_target_not_found'``)
+
+    Mirrors ``test_check_se_official_replay_emits_renumber_receipt_with_migration_rule_id``
+    (SE production fire-drill) in shape: drive-through + assertion that the
+    typed receipt landed on the production result. Also mirrors the
+    ``test_replay_statute_collects_eu_adjudications`` EU pattern for the
+    upstream-phase monkeypatches (compile_ops_for_statute / parse / timelines
+    / pit) so the synthesized ops reach the apply fold.
+    """
+    from lawvm.eu.pipeline import EUReplayPipeline, EUReplayResult, apply_eu_ops_conserved
+
+    baseline = _baseline_statute()
+    baseline_path = tmp_path / "32000R0000_baseline.xhtml"
+    baseline_path.write_text("<dummy/>")
+
+    synthesized_ops = [
+        _replace_op(op_id="eu-replace-ok", sequence=1, section_label="1", text="replacement"),
+        LegalOperation(
+            op_id="eu-replace-not-found",
+            sequence=2,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "9"),)),  # not in baseline
+            payload=IRNode(kind=IRNodeKind.SECTION, label="9", text="replacement"),
+            source=OperationSource(statute_id="2026/2"),
+        ),
+    ]
+
+    def fake_compile_ops_for_statute(_self, celex: str):
+        assert celex == "32000R0000"
+        return synthesized_ops
+
+    def fake_parse_eu_regulation_ir(_path: object, celex: str) -> IRStatute:
+        assert celex == "32000R0000"
+        return baseline
+
+    def fake_compile_timelines(_base: IRStatute, ops, temporal_events=()):
+        return "timelines"
+
+    def fake_materialize_pit(_timelines, as_of: str, base: IRStatute):
+        return base
+
+    monkeypatch.setattr(EUReplayPipeline, "compile_ops_for_statute", fake_compile_ops_for_statute)
+    monkeypatch.setattr("lawvm.eu.pipeline.parse_eu_regulation_ir", fake_parse_eu_regulation_ir)
+    monkeypatch.setattr("lawvm.eu.pipeline.compile_timelines", fake_compile_timelines)
+    monkeypatch.setattr("lawvm.eu.pipeline.materialize_pit", fake_materialize_pit)
+
+    # Spy: replace ``apply_eu_ops_conserved`` in the pipeline module with a
+    # wrapper that records the call and delegates to the real function. If
+    # the production lane regresses to bare ``apply_eu_ops``, the spy is
+    # never invoked — the §2.9 worst-class silent failure.
+    invocations: list[tuple] = []
+
+    def spy_apply_eu_ops_conserved(base_arg, ops, **kwargs):
+        invocations.append((base_arg, list(ops), dict(kwargs)))
+        return apply_eu_ops_conserved(base_arg, ops, **kwargs)
+
+    monkeypatch.setattr(
+        "lawvm.eu.pipeline.apply_eu_ops_conserved",
+        spy_apply_eu_ops_conserved,
+    )
+
+    result: EUReplayResult = EUReplayPipeline(cache_dir=tmp_path).replay_statute("32000R0000")
+
+    # The production lane routed through ``apply_eu_ops_conserved`` — the spy
+    # was invoked. If this assertion fails, the production call site has
+    # regressed to bare ``apply_eu_ops`` (the §2.9 worst-class silent failure).
+    assert invocations, (
+        "apply_eu_ops_conserved was not invoked by the production lane — "
+        "the production call site may have regressed to bare apply_eu_ops "
+        "(§2.9 worst-class silent failure: a guard that exists but is "
+        "unreachable from production)."
+    )
+
+    # The typed ``FilterResult`` landed on the production result's
+    # ``apply_filter_result`` field.
+    assert result.apply_filter_result is not None, (
+        "result.apply_filter_result is None — the conserved wrapper was "
+        "invoked but the typed FilterResult was not threaded to the production "
+        "result carrier (§2.9 worst-class silent failure)."
+    )
+    assert isinstance(result.apply_filter_result, FilterResult)
+
+    rejected_items = list(result.apply_filter_result.rejected_items)
+    assert len(rejected_items) == 1, [
+        (item.item.op_id, item.reason_code) for item in rejected_items
+    ]
+    rejected = rejected_items[0]
+    assert isinstance(rejected, RejectedItem)
+    assert rejected.item.op_id == "eu-replace-not-found"
+    assert rejected.reason_code == "eu_replay_target_not_found"
+    assert rejected.reason  # message forwarded from the bare variant's adjudication
+    assert rejected.blocking is False  # EU conserved skips are recorded, not blocking
+
+    # Accepted lane carries the §1 op; conservation partition is total.
+    accepted_ids = {op.op_id for op in result.apply_filter_result.accepted_items}
+    rejected_ids = {item.item.op_id for item in result.apply_filter_result.rejected_items}
+    input_ids = {op.op_id for op in synthesized_ops}
+    assert accepted_ids | rejected_ids == input_ids
+    assert accepted_ids & rejected_ids == set()  # disjoint

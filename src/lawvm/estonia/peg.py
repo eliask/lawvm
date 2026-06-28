@@ -5659,7 +5659,7 @@ def extract_ee_ops(
                 payload = None
                 _selection_meta_note = encode_ee_selection_meta_note(subsection_selection_meta)
             ops.append(LegalOperation(
-                op_id=f"ee-{action}-{str(addr)}-{source.statute_id}",
+                op_id=f"ee-{action}-{str(addr)}-{seq}-{source.statute_id}",
                 sequence=seq,
                 action=_to_structural_action(action),
                 target=addr,
@@ -6102,7 +6102,7 @@ def extract_ee_ops(
                 else:
                     payload = _set_sentence_insert_payload_attrs(payload, clean)
             ops.append(LegalOperation(
-                op_id=f"ee-{op_action}-item-{sect_label}-{item_label}-{source.statute_id}",
+                op_id=f"ee-{op_action}-item-{sect_label}-{item_label}-{seq}-{source.statute_id}",
                 sequence=seq,
                 action=_to_structural_action(op_action),
                 target=addr,
@@ -7511,7 +7511,7 @@ def extract_ee_ops(
         else None
     )
     ops.append(LegalOperation(
-        op_id=f"ee-{action}-{str(target)}-{source.statute_id}",
+        op_id=f"ee-{action}-{str(target)}-{seq}-{source.statute_id}",
         sequence=seq,
         action=_to_structural_action(action),
         target=target,

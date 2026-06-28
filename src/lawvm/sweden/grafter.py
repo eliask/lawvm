@@ -3862,7 +3862,19 @@ def apply_se_ops_conserved(
             "partition keys on op_id and duplicate op_ids would mis-partition). "
             f"Duplicate op_ids: {duplicates}."
         )
-    adjudications: list[CompileAdjudication] = list(adjudications_out or [])
+    # Trust the bare-apply contract: ``apply_se_ops`` appends each per-op
+    # adjudication to ``adjudications_out`` in place. Routing the caller's
+    # list directly through bare apply means a mid-apply raise (any §1.10
+    # fail-loud path) preserves the witnesses emitted BEFORE the raise on the
+    # caller's accumulator — the caller can then diagnose via the partial
+    # adjudications (AGENTS.md §1.0 evidence is not silently destroyed).
+    # When the caller did not pass an ``adjudications_out``, use a throwaway
+    # local buffer so bare-apply's mutations stay scoped and the partition
+    # below still has a source to read from. Mirrors the EE/NO/EU wrappers
+    # (conserved-wrapper consistency fix).
+    adjudications: list[CompileAdjudication] = (
+        adjudications_out if adjudications_out is not None else []
+    )
     applied = apply_se_ops(statute, ops_list, adjudications_out=adjudications)
     skipped_op_ids = {a.op_id for a in adjudications if a.op_id}
     accepted: list[LegalOperation] = []
@@ -3882,12 +3894,12 @@ def apply_se_ops_conserved(
             )
         else:
             accepted.append(op)
-    # If the caller passed their own adjudications_out, surface there too --
-    # the existing descriptive adjudications path is NOT replaced by the typed
-    # carrier; both share the same evidence ledger.
-    if adjudications_out is not None:
-        adjudications_out.clear()
-        adjudications_out.extend(adjudications)
+    # Propagation: bare apply already mutated ``adjudications_out`` in place
+    # (the caller's list when one was provided) — no local-copy / clear /
+    # extend round-trip needed. The previous local-copy-then-extend pattern
+    # silently dropped bare-apply's partial adjudication witness when bare
+    # apply raised mid-fold (the §1.0 evidence-loss failure); routing the
+    # caller's list directly closes that hole. Mirrors the EE/NO/EU wrappers.
     write_receipts: tuple[WriteReceipt, ...] = ()
     if emit_receipts:
         # Re-apply one op at a time to snapshot before/after body trees for
