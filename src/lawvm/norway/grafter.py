@@ -1590,6 +1590,7 @@ def _iter_unstructured_no_change_groups(
                         source=OperationSource(statute_id=source_id, raw_text=lead, title=lead_base_id),
                         provenance_tags=(f"base_act:{lead_base_id}", "fallback:unstructured"),
                         group_id=f"{source_id}:{lead_base_id}:{sequence}",
+                        witness_rule_id="no_section_renumber_relabel",
                     )
                 )
                 sequence += 1
@@ -1865,6 +1866,7 @@ def _iter_unstructured_no_change_groups(
                     source=OperationSource(statute_id=source_id, raw_text=lead, title=lead_base_id),
                     provenance_tags=(f"base_act:{lead_base_id}", "fallback:unstructured"),
                     group_id=f"{source_id}:{lead_base_id}:{sequence}",
+                    witness_rule_id="no_section_renumber_relabel",
                 )
             )
             sequence += 1
@@ -1892,6 +1894,7 @@ def _iter_unstructured_no_change_groups(
                         source=OperationSource(statute_id=source_id, raw_text=lead, title=lead_base_id),
                         provenance_tags=(f"base_act:{lead_base_id}", "fallback:unstructured"),
                         group_id=f"{source_id}:{lead_base_id}:{sequence}",
+                        witness_rule_id="no_section_renumber_relabel",
                     )
                 )
                 sequence += 1
@@ -2564,6 +2567,7 @@ def iter_no_document_change_ops(
                         ),
                         provenance_tags=(f"base_act:{base_id}",),
                         group_id=f"{source_id}:{source_doc}:{sequence}",
+                        witness_rule_id="no_section_renumber_relabel",
                     )
                 )
                 sequence += 1
