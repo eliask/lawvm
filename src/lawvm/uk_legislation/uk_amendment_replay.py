@@ -75,6 +75,9 @@ from lawvm.uk_legislation.commencement_effect_totality_probe import (
 from lawvm.uk_legislation.overlay_authorization_probe import (
     probe_uk_overlay_authorization,
 )
+from lawvm.uk_legislation.observation_promoted_to_authority_probe import (
+    probe_uk_observation_promoted_to_authority,
+)
 from lawvm.uk_legislation.effect_compiler import compile_effect_to_ir_ops
 from lawvm.uk_legislation.effect_source_selection import (
     EffectSourceSelection as _EffectSourceSelection,
@@ -1137,6 +1140,10 @@ class UKReplayPipeline:
         )
         probe_uk_overlay_authorization(
             replayed,
+            adjudications_out=adjudications_out,
+            source_statute=base_ir.statute_id,
+        )
+        probe_uk_observation_promoted_to_authority(
             adjudications_out=adjudications_out,
             source_statute=base_ir.statute_id,
         )
