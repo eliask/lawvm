@@ -19,20 +19,22 @@ as an OBSERVATION-ONLY, env-gated probe — emitting typed
 without risking a bench-wide metric shift. STRICT ENFORCEMENT (block under
 strict mode) is multi-session: the UK replay fold has no ``strict_profile``
 signaling path today (Finland's ``strict_profile``/``is_strict`` system is
-absent in ``replay_executor.py`` — see ``replay_executor.py`` already fact
-the executor mutates IR mutably via ``UKMutableStatute``), so the probe is
-the discipline-disclosing first step, not the strict verdict.
+absent in ``replay_executor.py`` — historically the executor mutated IR
+mutably via the now-deleted ``UKMutableStatute`` mirror, and now operates on
+the frozen ``IRStatute`` directly), so the probe is the discipline-disclosing
+first step, not the strict verdict.
 
 WHY A SNAPSHOT PROBE (post-apply, not pre-apply filter)
 ``verify_per_op`` computes ``diff_ir_paths(before, after)`` — it requires
 before/after ``IRNode`` snapshots. The Finland replay fold already carries
 ``prev_state.ir`` / ``new_state.ir`` snapshots as part of its
-``ReplayState`` model; the UK fold uses ``UKMutableStatute`` (the XJUR-02
-"hidden replay kernel" — ``mutable_ir.py``), so each per-op snapshot is a
-fresh ``UKMutableNode.to_irnode()`` deep-copy. That snapshot cost is real but
-acceptable because the probe is **default-off**: production UK bench replay
-output stays byte-stable; opt-in only for diagnostic runs / corpus probes /
-CI liveness checks. The probe never raises — it appends non-blocking
+``ReplayState`` model; the UK fold historically used ``UKMutableStatute`` (the
+XJUR-02 "hidden replay kernel" — ``mutable_ir.py``, now deleted) and required a
+fresh ``UKMutableNode.to_irnode()`` deep-copy per per-op snapshot. Under the
+post-Wave-N3d frozen-``IRStatute`` fold the statute body is already immutable,
+so the snapshot is a direct reference (no deep-copy); the snapshot cost is
+therefore negligible, and default-off remains in place to preserve byte-stable
+bench output. The probe never raises — it appends non-blocking
 ``uk_replay_mutation_boundary_per_op_violation_observed`` adjudications to
 the supplied sink.
 

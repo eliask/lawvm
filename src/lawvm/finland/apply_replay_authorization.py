@@ -266,17 +266,15 @@ def aggregate_replay_authority(
     BOUND→LANDED DIVERGENCE: a receipt that bound a target and landed elsewhere
     with no named recovery rule.
 
-    DEFERRED FOLLOW-UP (the receipt arm is not yet load-bearing): the only producer
-    reaching ``write_receipts`` today is the op-level apply receipt with
-    ``bound_target_path=None`` (see
-    ``apply_resolved_op._collect_op_write_receipt``). The bound-target receipts
-    built inside ``apply_typed_dispatch`` / ``apply_structure_ops`` live on a local
-    list and are NOT threaded out to this aggregated sink. So
-    ``every_receipt_explained`` is currently always ``True`` in production and the
-    boundary check rides ``no_boundary_violation`` (the blocking finding). Threading
-    those bound receipts to the aggregated sink — which requires changes in the
-    dispatch modules — would make ``_receipt_boundary_authorized`` live; that is
-    the deferred follow-up.
+    POST-PR2 REALITY (the op-level receipt arm IS load-bearing): the op-level
+    apply receipt threads ``bound_target_path = rop.resolved_target_address.path``
+    (PR1+PR2; canonicalized via
+    ``finland/_receipt_path_norm._normalize_receipt_path_for_comparison``); the
+    receipt-bound arm at ``_receipt_boundary_authorized:128`` consumes the typed
+    ``DivergenceKind`` witness from ``receipt.divergence_kind``. Receipts built
+    inside ``apply_typed_dispatch`` / ``apply_structure_ops`` remain on a local
+    list and ARE NOT threaded to the aggregate sink — that additional threading
+    is the explicitly-deferred follow-up.
     """
     every_receipt_explained = all(
         _receipt_boundary_authorized(receipt) for receipt in write_receipts

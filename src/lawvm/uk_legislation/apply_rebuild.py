@@ -100,14 +100,15 @@ def uk_replace_children_cow(
     node: IRNode,
     new_children: list[IRNode],
 ) -> IRNode:
-    """PR3 (audit XJUR-02 / AGENTS.md §2.3): copy-on-write variant of
-    ``uk_replace_children``. Returns a NEW ``IRNode`` with the supplied
-    children, sharing every other field, instead of mutating in place.
+    """PR3 (audit XJUR-02 / AGENTS.md §2.3): copy-on-write ``uk_replace_children``.
+    Returns a NEW ``IRNode`` with the supplied children, sharing every other
+    field, instead of mutating in place.
 
     The mutation_boundary / replay invariants depend on every node upstream of
-    a modified subtree being rebuilt rather than mutated in place. The in-place
-    ``uk_replace_children`` is preserved for legacy callers and tests; new replay
-    state mutation sites route through this CoW variant.
+    a modified subtree being rebuilt rather than mutated in place; this CoW
+    variant is the only ``uk_replace_children`` shipped today (the historical
+    in-place variant lived in the now-deleted ``mutable_ir.py`` shadow module
+    and was retired with it under mutable_ir Wave N3d Sub-PR F).
     """
     return dc_replace(node, children=list(new_children))
 
