@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any, List, Optional
 
 from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.filter_result import FilterResult, RejectedItem, filter_result_from_parts
 from lawvm.core.source_lane import SourceLaneAttempt, SourceLaneSelectionEvidence
 from lawvm.core.temporal import TemporalEvent, TemporalScope
 from lawvm.replay_adjudication import CompileAdjudication, SourceAdjudication
@@ -600,9 +601,9 @@ def _ee_filter_cancelled_pending_refs(
     archive: Any,
     adjudications_out: list[CompileAdjudication] | None = None,
     successful_xml_cache: dict[str, bytes] | None = None,
-) -> list[AmendmentRef]:
+) -> FilterResult[AmendmentRef]:
     if len(refs) < 2 or not target_title:
-        return refs
+        return filter_result_from_parts(accepted_items=tuple(refs))
 
     ref_xml: dict[str, bytes] = {}
     ref_titles: dict[str, str] = {}
@@ -761,7 +762,21 @@ def _ee_filter_cancelled_pending_refs(
                     )
                 break
 
-    return [ref for ref in refs if ref.aktViide not in cancelled]
+    accepted = [ref for ref in refs if ref.aktViide not in cancelled]
+    rejected = [
+        RejectedItem(
+            item=ref,
+            reason=f"cancelled_pending_amendment: {ref.aktViide} is cancelled by a later same-commencement source act",
+            reason_code="cancelled_pending_amendment",
+            blocking=False,
+        )
+        for ref in refs
+        if ref.aktViide in cancelled
+    ]
+    return FilterResult(
+        accepted_items=tuple(accepted),
+        rejected_items=tuple(rejected),
+    )
 
 
 def _ee_filter_ops_for_ref_slice(
@@ -1569,13 +1584,14 @@ def replay_ee_to_pit(
     ]
     cancellation_filter_adjudications: list[CompileAdjudication] = []
     successful_amendment_xml_cache: dict[str, bytes] = {}
-    to_apply = _ee_filter_cancelled_pending_refs(
+    cancelled_pending_result = _ee_filter_cancelled_pending_refs(
         sorted(pair_plan.amendments_to_apply, key=_ee_ref_sort_key),
         target_title=base.title,
         archive=_archive,
         adjudications_out=cancellation_filter_adjudications,
         successful_xml_cache=successful_amendment_xml_cache,
     )
+    to_apply = list(cancelled_pending_result.accepted_items)
     to_apply, commencement_precomposition_adjudications = _ee_precompose_pending_source_act_commencements(
         tuple(to_apply),
         as_of=as_of,

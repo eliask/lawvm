@@ -1,5 +1,6 @@
 from __future__ import annotations
 from lawvm.core.ir import IRStatute
+from lawvm.core.filter_result import filter_result_from_parts
 
 from collections.abc import Iterator
 from dataclasses import replace
@@ -175,7 +176,7 @@ def test_filter_cancelled_pending_refs_drops_future_effect_source_repealed_befor
         adjudications_out=adjudications,
     )
 
-    assert [ref.aktViide for ref in filtered] == ["118122025003"]
+    assert [ref.aktViide for ref in filtered.accepted_items] == ["118122025003"]
     assert [adjudication.kind for adjudication in adjudications] == [
         "ee_cancelled_pending_amendment_ref_filtered"
     ]
@@ -245,7 +246,7 @@ def test_filter_cancelled_pending_refs_drops_future_effect_source_rewritten_befo
         adjudications_out=adjudications,
     )
 
-    assert [ref.aktViide for ref in filtered] == ["101072025001"]
+    assert [ref.aktViide for ref in filtered.accepted_items] == ["101072025001"]
     assert [adjudication.kind for adjudication in adjudications] == [
         "ee_cancelled_pending_amendment_ref_filtered"
     ]
@@ -289,7 +290,7 @@ def test_filter_cancelled_pending_refs_records_source_fetch_failure_and_retains_
         adjudications_out=adjudications,
     )
 
-    assert filtered == refs
+    assert list(filtered.accepted_items) == refs
     assert [adjudication.kind for adjudication in adjudications] == [
         "ee_cancelled_pending_ref_source_fetch_failed"
     ]
@@ -350,7 +351,7 @@ def test_filter_cancelled_pending_refs_records_metadata_parse_failure_and_retain
         adjudications_out=adjudications,
     )
 
-    assert filtered == refs
+    assert list(filtered.accepted_items) == refs
     assert [adjudication.kind for adjudication in adjudications] == [
         "ee_cancelled_pending_ref_metadata_parse_failed"
     ]
@@ -3807,7 +3808,11 @@ def test_replay_ee_to_pit_threads_temporal_events_into_compile_timelines(
             oracle_xml=None,
         ),
     )
-    monkeypatch.setattr(ee_replay, "_ee_filter_cancelled_pending_refs", lambda refs, **kwargs: refs)
+    monkeypatch.setattr(
+        ee_replay,
+        "_ee_filter_cancelled_pending_refs",
+        lambda refs, **kwargs: filter_result_from_parts(accepted_items=tuple(refs)),
+    )
     monkeypatch.setattr(ee_replay, "parse_ee_amendment_ops", lambda xml, statute_id, target_title=None: [])
     monkeypatch.setattr(ee_replay, "apply_ee_ops", lambda statute, ops, **kwargs: statute)
 
@@ -3845,7 +3850,11 @@ def _patch_minimal_ee_replay_pipeline(monkeypatch, ee_replay, *, pair_plan, fetc
         "plan_ee_oracle_pair",
         lambda **kwargs: SimpleNamespace(plan=pair_plan, oracle_xml=None),
     )
-    monkeypatch.setattr(ee_replay, "_ee_filter_cancelled_pending_refs", lambda refs, **kwargs: refs)
+    monkeypatch.setattr(
+        ee_replay,
+        "_ee_filter_cancelled_pending_refs",
+        lambda refs, **kwargs: filter_result_from_parts(accepted_items=tuple(refs)),
+    )
     monkeypatch.setattr(
         ee_replay,
         "_ee_precompose_pending_source_act_commencements",
