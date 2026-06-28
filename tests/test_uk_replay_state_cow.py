@@ -29,13 +29,16 @@ hidden regression.
 """
 from __future__ import annotations
 
+import copy
 import dataclasses
+import time
 from typing import Any
 
 import pytest
 
 from lawvm.core.ir import IRNode, IRStatute, LegalAddress, LegalOperation, OperationSource
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
+from lawvm.uk_legislation.replay_state import NodeIndexEntry
 from lawvm.uk_legislation.uk_amendment_replay import UKReplayExecutor, replay_uk_ops
 
 
@@ -359,3 +362,294 @@ class TestWaveN3dCoWChainPreservesWarmEIDIndex:
         assert node_5_after is not None
         assert node_5_after is executor.statute.body.children[4]
         assert node_5_after.text == "Replaced section five text."
+
+
+# ---------------------------------------------------------------------------
+# iter2 W1 perf invariant: patch-in-place CoW re-key vs. prior O(W) rebuild
+# ---------------------------------------------------------------------------
+
+
+def _build_deep_statute_with_eids(
+    n_sections: int = 10,
+    n_subsections_per_section: int = 5,
+    n_paragraphs_per_subsection: int = 5,
+) -> IRStatute:
+    """Synthetic statute with explicit ``eId`` attrs on every node so the warm
+    EID index is populated to ~W = ``n_sections * (1 + n_subsections *
+    (1 + n_paragraphs))`` entries. Used by the perf regression to drive
+    deep-node REPLACE ops through the CoW chain."""
+    sections: list[IRNode] = []
+    for s in range(1, n_sections + 1):
+        subsecs: list[IRNode] = []
+        for ss in range(1, n_subsections_per_section + 1):
+            paras: list[IRNode] = []
+            for p in range(1, n_paragraphs_per_subsection + 1):
+                paras.append(IRNode(
+                    kind=IRNodeKind.PARAGRAPH,
+                    label=str(p),
+                    text=f"Section {s} / subsec {ss} / para {p} original.",
+                    attrs={"eId": f"section-{s}/subsection-{ss}/paragraph-{p}"},
+                ))
+            subsecs.append(IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label=str(ss),
+                text=f"Section {s} / subsec {ss} intro.",
+                attrs={"eId": f"section-{s}/subsection-{ss}"},
+                children=tuple(paras),
+            ))
+        sections.append(IRNode(
+            kind=IRNodeKind.SECTION,
+            label=str(s),
+            text=f"Section {s} intro.",
+            attrs={"eId": f"section-{s}"},
+            children=tuple(subsecs),
+        ))
+    return IRStatute(
+        statute_id="ukpga/2000/1",
+        title="Perf Act",
+        body=IRNode(kind=IRNodeKind.BODY, children=tuple(sections)),
+        supplements=(),
+    )
+
+
+def _make_subsection_replace_ops(
+    statute: IRStatute,
+    n_ops: int,
+    *,
+    n_sections: int,
+    n_subsections_per_section: int,
+    n_paragraphs_per_subsection: int,
+) -> list[LegalOperation]:
+    """Build ``n_ops`` REPLACE ops targeting alternating subsections of the
+    given deep statute. Each replacement subsection payload mirrors the
+    original paragraph children so the warm EID index stays populated across
+    ops (otherwise each replace would shrink the index, masking the per-op
+    cost gap we want to measure)."""
+    ops: list[LegalOperation] = []
+    for i in range(n_ops):
+        s = (i % n_sections) + 1
+        ss = ((i // n_sections) % n_subsections_per_section) + 1
+        paragraphs = tuple(
+            IRNode(
+                kind=IRNodeKind.PARAGRAPH,
+                label=str(p),
+                text=f"Section {s} / subsec {ss} / para {p} REPLACED v{i}.",
+                attrs={"eId": f"section-{s}/subsection-{ss}/paragraph-{p}"},
+            )
+            for p in range(1, n_paragraphs_per_subsection + 1)
+        )
+        ops.append(LegalOperation(
+            op_id=f"perf-replace-{i}",
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(
+                ("section", str(s)),
+                ("subsection", str(ss)),
+            )),
+            payload=IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label=str(ss),
+                text=f"Section {s} / subsec {ss} REPLACED v{i}.",
+                attrs={"eId": f"section-{s}/subsection-{ss}"},
+                children=paragraphs,
+            ),
+            source=OperationSource(statute_id="ukpga/2026/99", title="Amending Act"),
+            sequence=i + 1,
+        ))
+    return ops
+
+
+def _make_naive_rekey_eid_closure(executor: UKReplayExecutor):
+    """Captured O(W) wholesale-rebuild of ``_rekey_eid_index_after_cow_chain``
+    that the patch-in-place replaced. Pinned here as a synthetic stub so the
+    regression guard can run the "before" baseline on the same process / same
+    statute / same op stream as the patched production path. The prior impl
+    re-allocated every ``NodeIndexEntry`` per CoW chain — ``W`` fresh
+    allocations per op regardless of how many entries were actually touched
+    by the chain — and wholesale-dropped the path index."""
+
+    def _naive_rekey(chain: list[tuple[IRNode, IRNode]]) -> None:
+        if not chain:
+            return
+        remap = {id(old): new for old, new in chain}
+        if executor._eid_lookup_index is not None:
+            new_index: dict[str, NodeIndexEntry] = {}
+            for eid, entry in executor._eid_lookup_index.items():
+                node, parent, idx = entry
+                updated_node = remap.get(id(node), node)
+                updated_parent = (
+                    remap.get(id(parent), parent) if parent is not None else None
+                )
+                new_index[eid] = NodeIndexEntry(
+                    node=updated_node, parent=updated_parent, index=idx
+                )
+            executor._eid_lookup_index = new_index
+        if executor._eid_suffix_lookup_index is not None:
+            new_suffix: dict[tuple[str, str], NodeIndexEntry] = {}
+            for key, entry in executor._eid_suffix_lookup_index.items():
+                node, parent, idx = entry
+                updated_node = remap.get(id(node), node)
+                updated_parent = (
+                    remap.get(id(parent), parent) if parent is not None else None
+                )
+                new_suffix[key] = NodeIndexEntry(
+                    node=updated_node, parent=updated_parent, index=idx
+                )
+            executor._eid_suffix_lookup_index = new_suffix
+        # Prior path-index behaviour was a wholesale drop (the patched
+        # production path replaces this with ``_rekey_node_tree_path_index_after_cow_chain``).
+        executor._node_tree_path_index = None
+
+    return _naive_rekey
+
+
+def _make_naive_rekey_path_closure(executor: UKReplayExecutor):
+    """Captured prior path-index handler: wholesale-drop. The patched
+    production path replaces this with patch-in-place ancestor re-key."""
+
+    def _naive_rekey_path(chain: list[tuple[IRNode, IRNode]]) -> None:
+        executor._node_tree_path_index = None
+
+    return _naive_rekey_path
+
+
+class TestWaveN3dCoWReKeyPerfInRegression:
+    """iter2 W1 perf regression guard: pins that the patch-in-place re-key
+    path (``_rekey_eid_index_after_cow_chain`` + the new
+    ``_rekey_node_tree_path_index_after_cow_chain``) is NOT SLOWER than the
+    prior O(W) wholesale-rebuild baseline on the same multi-op workload.
+
+    Per §2.9 the assertion is RELATIVE (naive ≥ patched, with a noise
+    tolerance for CI jitter) rather than an absolute wall-time ceiling —
+    both implementations run on the same workload in the same process, so
+    timing noise affects both equally. The "before" implementation is
+    captured as synthetic stub closures (monkeypatched onto the executor
+    instance via plain attribute assignment, which Python resolves before
+    the class-level production helpers) that mirror the prior O(W) full
+    rebuild + wholesale path-index drop.
+
+    The workload (deep-node REPLACE): ``N_OPS`` REPLACE ops on subsections of
+    a ``N_SECTIONS`` × ``N_SUBSECTIONS`` × ``N_PARAGRAPHS`` statute with
+    explicit ``eId`` attributes on every node. Each CoW chain reaches
+    ``[subsection, section, body]`` (depth 3) so survivor paragraphs under
+    sibling subsections (whose parent is NOT in the chain remap) keep their
+    existing ``NodeIndexEntry`` tuples in the patched path — vs. the prior
+    wholesale rebuild that re-allocated ALL ~W entries per op."""
+
+    N_SECTIONS = 10
+    N_SUBSECTIONS_PER_SECTION = 5
+    N_PARAGRAPHS_PER_SUBSECTION = 5
+    N_OPS = 80
+    # Wall-time comparison noise tolerance: patched must not be more than
+    # ``NAIVE_TOLERANCE`` slower than naive on the same workload (the patched
+    # path strictly skips work, so it should always be ≤ naive; 20% is
+    # generously defensive against first-run GC pauses / page faults on the
+    # patched trial happening to land first).
+    NAIVE_TOLERANCE = 1.20
+    N_TRIALS = 3
+
+    def _build_statute(self) -> IRStatute:
+        return _build_deep_statute_with_eids(
+            n_sections=self.N_SECTIONS,
+            n_subsections_per_section=self.N_SUBSECTIONS_PER_SECTION,
+            n_paragraphs_per_subsection=self.N_PARAGRAPHS_PER_SUBSECTION,
+        )
+
+    def _build_ops(self, statute: IRStatute) -> list[LegalOperation]:
+        return _make_subsection_replace_ops(
+            statute,
+            self.N_OPS,
+            n_sections=self.N_SECTIONS,
+            n_subsections_per_section=self.N_SUBSECTIONS_PER_SECTION,
+            n_paragraphs_per_subsection=self.N_PARAGRAPHS_PER_SUBSECTION,
+        )
+
+    def _time_replay(
+        self,
+        statute: IRStatute,
+        ops: list[LegalOperation],
+        *,
+        use_naive: bool,
+    ) -> float:
+        executor = UKReplayExecutor(statute)
+        if use_naive:
+            # Plain instance-attribute assignment: Python resolves instance
+            # attributes before class methods, so when the production CoW
+            # chain calls ``self._rekey_eid_index_after_cow_chain(chain)``
+            # it invokes our closure instead of the patched production method.
+            executor._rekey_eid_index_after_cow_chain = _make_naive_rekey_eid_closure(executor)
+            executor._rekey_node_tree_path_index_after_cow_chain = _make_naive_rekey_path_closure(executor)
+        t0 = time.perf_counter()
+        for op in ops:
+            executor.apply_op(op)
+        return time.perf_counter() - t0
+
+    def test_patched_rekey_beats_naive_wholesale_rebuild(self) -> None:
+        """Drive the same deep-node REPLACE workload through (a) the captured
+        O(W) wholesale-rebuild ``_naive`` closure and (b) the production
+        patched patch-in-place ``_rekey_*`` helpers; assert production is at
+        least as fast as naive."""
+        statute_template = self._build_statute()
+        ops = self._build_ops(statute_template)
+
+        # Sanity check: the workload actually executes CoW chains (otherwise
+        # the perf gap is masked). The warm EID index has entries post-replay
+        # and each op mutates the statute body's identity (CoW chain reached
+        # the body root).
+        sanity_executor = UKReplayExecutor(copy.deepcopy(statute_template))
+        body_id_before = id(sanity_executor.statute.body)
+        for op in ops[:5]:
+            sanity_executor.apply_op(op)
+        body_id_after = id(sanity_executor.statute.body)
+        assert body_id_before != body_id_after, (
+            "Sanity check failed: workload did NOT mutate the executor statute — "
+            "the perf gap is masked because CoW chains are not being driven "
+            "through the re-key helpers."
+        )
+        warm_index = sanity_executor._ensure_eid_lookup_index()
+        assert len(warm_index) > 0, (
+            "Sanity check failed: warm EID index is empty after replay — "
+            "addressing or payload shape is wrong, masking the perf gap."
+        )
+
+        # Multi-trial min wall time filters CI jitter (e.g. transient GC
+        # pauses). Same process, same workload, same statute template —
+        # noise affects both implementations equally so the relative
+        # comparison is robust.
+        naive_times = [
+            self._time_replay(copy.deepcopy(statute_template), ops, use_naive=True)
+            for _ in range(self.N_TRIALS)
+        ]
+        patched_times = [
+            self._time_replay(copy.deepcopy(statute_template), ops, use_naive=False)
+            for _ in range(self.N_TRIALS)
+        ]
+        naive_min = min(naive_times)
+        patched_min = min(patched_times)
+
+        # Relative perf invariant. The patched path strictly skips
+        # ``NodeIndexEntry`` re-allocations for survivor subtrees outside the
+        # rebuilt ancestor chain (chain depth=3, so ~15 entries touched per
+        # op vs. ~310 re-allocated by the prior full rebuild). It must be at
+        # least as fast as the naive wholesale rebuild.
+        assert patched_min <= naive_min * self.NAIVE_TOLERANCE, (
+            f"Patched CoW re-key was materially slower than the prior O(W) "
+            f"wholesale rebuild on a {self.N_SECTIONS}x"
+            f"{self.N_SUBSECTIONS_PER_SECTION}x"
+            f"{self.N_PARAGRAPHS_PER_SUBSECTION} statute with "
+            f"{self.N_OPS} deep-node subsection replaces: "
+            f"naive_min={naive_min*1000:.2f}ms "
+            f"patched_min={patched_min*1000:.2f}ms "
+            f"ratio={patched_min / naive_min:.3f} "
+            f"(expected <= {self.NAIVE_TOLERANCE:.2f}). "
+            f"Full naive times (ms): {[f'{t*1000:.2f}' for t in naive_times]}. "
+            f"Full patched times (ms): {[f'{t*1000:.2f}' for t in patched_times]}."
+        )
+        # Sanity ceiling: no pathological latency regression independent of
+        # the relative comparison. 5s on a ~310-node / ~80-op workload is
+        # generously defensive; if the patched path crosses it, the relative
+        # invariant above is also failing for the wrong reason.
+        assert patched_min < 5.0, (
+            f"Patched CoW re-key took >5s on a {self.N_SECTIONS}x"
+            f"{self.N_SUBSECTIONS_PER_SECTION}x{self.N_PARAGRAPHS_PER_SUBSECTION} "
+            f"statute with {self.N_OPS} replaces — performance regression."
+        )

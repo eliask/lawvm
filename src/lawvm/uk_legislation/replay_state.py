@@ -1299,9 +1299,12 @@ class UKReplayStateMixin:
             self._remove_eid_lookup_subtree(old_node)
             self.statute = dc_replace(self.statute, body=new_node)
             self._add_eid_lookup_subtree(new_node, None, None)
-            # No ancestor references exist above the body root; only the
-            # id-keyed path index needs invalidation.
-            self._node_tree_path_index = None
+            # No ancestor references exist above the body root and no chain
+            # to re-key. ``_add_eid_lookup_subtree`` already repopulated the
+            # path index for the new body subtree; supplement entries (if any)
+            # are untouched and stay warm. The prior wholesale-drop here was
+            # pure waste — it discarded freshly-added entries and forced an
+            # O(S) lazy rebuild on the next path lookup.
             if structure_changed:
                 self._note_structure_mutation()
             self._record_replace_node_mutation_event(old_path=old_path, new_node=new_node)
@@ -1316,7 +1319,9 @@ class UKReplayStateMixin:
                 new_supps[s_idx] = new_node
                 self.statute = dc_replace(self.statute, supplements=tuple(new_supps))
                 self._add_eid_lookup_subtree(new_node, None, s_idx)
-                self._node_tree_path_index = None
+                # No chain to re-key; ``_add_eid_lookup_subtree`` already
+                # repopulated the path index for the new supplement subtree
+                # and the body subtree (untouched by this op) stays warm.
                 if structure_changed:
                     self._note_structure_mutation()
                 self._record_replace_node_mutation_event(old_path=old_path, new_node=new_node)
@@ -1419,10 +1424,13 @@ class UKReplayStateMixin:
 
         # Re-key the warm EID index entries using the rebuilt ancestor chain.
         self._rekey_eid_index_after_cow_chain(chain)
+        # Re-key the node tree path index for the rebuilt ancestors BEFORE
+        # re-adding new_node's subtree so the parent path is warm — otherwise
+        # ``_add_node_tree_path_subtree`` falls into its wholesale-drop branch
+        # when the post-CoW parent's ``id()`` is not yet in the path index.
+        self._rekey_node_tree_path_index_after_cow_chain(chain)
         # Re-add new_node's subtree EIDs (with the rebuilt immediate parent).
         self._add_eid_lookup_subtree(new_node, parent=chain[1][1], idx=idx)
-        # id-keyed path index invalidated wholesale; rebuild lazily on access.
-        self._node_tree_path_index = None
         return True
 
     def _cow_replace_in_subtree_via_path_walk(
@@ -1449,10 +1457,10 @@ class UKReplayStateMixin:
             self._remove_eid_lookup_subtree(old_node)
             self.statute = dc_replace(self.statute, body=new_body)
             self._rekey_eid_index_after_cow_chain(chain)
+            self._rekey_node_tree_path_index_after_cow_chain(chain)
             self._add_eid_lookup_subtree(
                 new_node, parent=chain[1][1], idx=body_path[-1]
             )
-            self._node_tree_path_index = None
             return True
         for s_idx, root in enumerate(self.statute.supplements):
             if root is old_node:
@@ -1473,10 +1481,10 @@ class UKReplayStateMixin:
                 new_supps[s_idx] = new_supp_root
                 self.statute = dc_replace(self.statute, supplements=tuple(new_supps))
                 self._rekey_eid_index_after_cow_chain(chain)
+                self._rekey_node_tree_path_index_after_cow_chain(chain)
                 self._add_eid_lookup_subtree(
                     new_node, parent=chain[1][1], idx=sub_path[-1]
                 )
-                self._node_tree_path_index = None
                 return True
         return False
 
@@ -1511,46 +1519,105 @@ class UKReplayStateMixin:
         self,
         chain: list[tuple[IRNode, IRNode]],
     ) -> None:
-        """After a CoW ancestor rebuild, walk the warm EID index entries and
-        for each entry whose ``node`` or ``parent`` references an old ancestor
-        in ``chain``, update the reference to the new ancestor.
+        """After a CoW ancestor rebuild, patch the warm EID index entries in
+        place: only entries whose ``node`` or ``parent`` is one of the rebuilt
+        ancestors in ``chain`` are re-allocated as a fresh ``NodeIndexEntry``;
+        untouched entries keep their existing allocated tuple.
 
         ``chain`` is leaf-first: ``[(old_node, new_node), (parent, new_parent),
         ..., (root, new_root)]`` inclusive of the rebuilt root.
 
+        Cost: O(W) iteration over the warm EID index (cheap dict walk) +
+        O(touched) ``NodeIndexEntry`` allocations, where ``touched`` is the
+        number of entries whose ``id(node)`` or ``id(parent)`` is in the
+        chain remap. For replaces deep in the tree (paragraph / subsection
+        leaves) the chain remap is short, so survivor subtrees outside the
+        rebuilt ancestor path keep their allocated entries — previously every
+        entry was re-allocated per CoW replace, which on W≈6000 / N≈400
+        statute = ~2.4M fresh ``NodeIndexEntry`` allocations that this patch
+        eliminates for survivor entries.
+
         Does NOT clear the warm EID index (preserving the contract pinned by
-        ``test_executor_replace_*_warm_eid_index``). The id-keyed node tree
-        path index is invalidated wholesale separately by the caller — CoW
-        changes node ``id()``s along the whole path so partial re-keying isn't
-        cost-effective here.
+        ``test_executor_replace_*_warm_eid_index`` and
+        ``test_post_replace_lookups_stay_warm_across_replaces``).
         """
         if not chain:
             return
         remap: dict[int, IRNode] = {id(old): new for old, new in chain}
         if self._eid_lookup_index is not None:
-            new_index: dict[str, NodeIndexEntry] = {}
-            for eid, entry in self._eid_lookup_index.items():
-                node, parent, idx = entry
-                updated_node = remap.get(id(node), node)
-                updated_parent = (
-                    remap.get(id(parent), parent) if parent is not None else None
+            # Patch in place: iterate entries, but only allocate a fresh
+            # ``NodeIndexEntry`` when the entry's ``node`` or ``parent`` is
+            # in ``remap`` (i.e. touched by the rebuilt ancestor chain).
+            # Untouched entries keep their existing tuple.
+            for eid, entry in list(self._eid_lookup_index.items()):
+                new_node = remap.get(id(entry.node))
+                new_parent = (
+                    remap.get(id(entry.parent))
+                    if entry.parent is not None
+                    else None
                 )
-                new_index[eid] = NodeIndexEntry(
-                    node=updated_node, parent=updated_parent, index=idx
+                if new_node is None and new_parent is None:
+                    continue  # Not in chain; leave entry untouched.
+                self._eid_lookup_index[eid] = NodeIndexEntry(
+                    node=new_node if new_node is not None else entry.node,
+                    parent=new_parent if new_parent is not None else entry.parent,
+                    index=entry.index,
                 )
-            self._eid_lookup_index = new_index
         if self._eid_suffix_lookup_index is not None:
-            new_suffix: dict[tuple[str, str], NodeIndexEntry] = {}
-            for key, entry in self._eid_suffix_lookup_index.items():
-                node, parent, idx = entry
-                updated_node = remap.get(id(node), node)
-                updated_parent = (
-                    remap.get(id(parent), parent) if parent is not None else None
+            for key, entry in list(self._eid_suffix_lookup_index.items()):
+                new_node = remap.get(id(entry.node))
+                new_parent = (
+                    remap.get(id(entry.parent))
+                    if entry.parent is not None
+                    else None
                 )
-                new_suffix[key] = NodeIndexEntry(
-                    node=updated_node, parent=updated_parent, index=idx
+                if new_node is None and new_parent is None:
+                    continue
+                self._eid_suffix_lookup_index[key] = NodeIndexEntry(
+                    node=new_node if new_node is not None else entry.node,
+                    parent=new_parent if new_parent is not None else entry.parent,
+                    index=entry.index,
                 )
-            self._eid_suffix_lookup_index = new_suffix
+
+    def _rekey_node_tree_path_index_after_cow_chain(
+        self,
+        chain: list[tuple[IRNode, IRNode]],
+    ) -> None:
+        """Patch ``_node_tree_path_index`` in place: for each ``(old, new)``
+        pair in ``chain[1:]`` (the rebuilt ancestors; ``chain[0]`` is the
+        replaced leaf, whose subtree entries were already handled by the
+        caller's ``_remove_eid_lookup_subtree`` + ``_add_eid_lookup_subtree``
+        calls), pop the entry keyed by ``id(old)`` and re-insert keyed by
+        ``id(new)`` carrying the same path. CoW chain rebuild preserves
+        ``kind`` / ``label`` sequences, so the survivor's path is unchanged
+        — only ``id()``s along the ancestor path are swapped.
+
+        Cost: O(chain_len) dict ops vs. the prior O(S) wholesale-drop +
+        O(S) lazy-rebuild-from-walk on next access (S = full statute tree
+        size). When the path index is ``None`` (cold / lazy), this is a
+        no-op — the next access still triggers the standard lazy rebuild.
+        """
+        if self._node_tree_path_index is None or not chain:
+            return  # Cold path: nothing to re-key.
+        # Skip chain[0]: the replaced leaf's path entries were either
+        # already removed by ``_remove_eid_lookup_subtree`` (replace case)
+        # or never present (remove case — chain[0] = the rebuilt parent of
+        # the popped leaf, so its entry is still id(old_parent) → patched).
+        # Only chain[1:] (rebuilt ancestor identities) need re-keying.
+        for i in range(1, len(chain)):
+            old, new = chain[i]
+            old_entry = self._node_tree_path_index.pop(id(old), None)
+            if old_entry is None:
+                continue  # Not indexed (e.g. chain[0] leaf case above).
+            if id(new) == id(old):
+                # Defensive: dc_replace always mints a fresh IRNode, so id
+                # differs; but if a future no-op CoW path returns the same
+                # object, keep the entry under the original key.
+                self._node_tree_path_index[id(old)] = old_entry
+                continue
+            # Path is preserved — CoW chain rebuild doesn't change the
+            # kind/label sequence of any ancestor.
+            self._node_tree_path_index[id(new)] = (new, old_entry[1])
 
     def _remove_node(
         self,
@@ -1639,7 +1706,7 @@ class UKReplayStateMixin:
             chain.append((grandparent, new_grandparent))
             current_old, current_new = grandparent, new_grandparent
         self._rekey_eid_index_after_cow_chain(chain)
-        self._node_tree_path_index = None
+        self._rekey_node_tree_path_index_after_cow_chain(chain)
         return True
 
     def _cow_remove_via_path_walk(self, node: IRNode) -> bool:
