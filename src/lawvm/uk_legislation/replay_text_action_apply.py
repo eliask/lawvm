@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import replace as dc_replace
 from typing import TYPE_CHECKING, Any, Optional
 
 from lawvm.core.ir import IRNode, IRStatute, LegalAddress, LegalOperation, StructuralAction, TextPatchSpec
@@ -234,6 +235,13 @@ class UKReplayTextActionApplyMixin:
 
         def _prior_same_target_gap_kind(self, target: LegalAddress) -> str | None: ...
 
+        # Sub-PR C+D (audit XJUR-02 / AGENTS.md §2.3): _apply_whole_act_text_patch_op
+        # routes per-node text-only replaces through ``_replace_node_in_statute``
+        # (defined on ``UKReplayStateMixin``) so the CoW ancestor-chain rebuild
+        # and warm-EID-index re-keying stays consistent for the whole-Act batch
+        # path. Declare the Protocol stub here so ty can resolve the method.
+        def _replace_node_in_statute(self, old_node: IRNode, new_node: IRNode) -> bool: ...
+
     def _whole_act_text_patch_nodes(self) -> list[tuple[tuple[tuple[str, str], ...], IRNode]]:
         def _kind_label(node: IRNode) -> tuple[str, str]:
             kind = node.kind.value if hasattr(node.kind, "value") else str(node.kind)
@@ -371,6 +379,23 @@ class UKReplayTextActionApplyMixin:
         prefilter = match_text.lower()
         replaced_paths: list[tuple[tuple[str, str], ...]] = []
         replacement_count = 0
+        # Sub-PR C+D (audit XJUR-02 / AGENTS.md §2.3): IRNode is frozen, so the
+        # pre-CoW shape mutated each text-bearing node in place
+        # (``node.text = new_text``). Pre-compute the (old, new) pairs first,
+        # then route through ``_replace_node_in_statute`` for the CoW rebuild
+        # (warm-EID-index fast path where possible, path-walk fallback
+        # otherwise). Each replacement rebuilds the affected ancestor chain
+        # bottom-up; sibling nodes' identities are preserved across the rebuild
+        # so the next iteration's ``old_node`` still resolves via the live tree.
+        #
+        # Suppress per-replace ``replaced_node`` MutationEvents for the
+        # duration of the batch: the meaningful event for the whole-Act op is
+        # the aggregate ``whole_act_text_patch_applied`` event emitted below
+        # (matching the pre-CoW contract where in-place mutation emitted zero
+        # per-node events). This avoids inflating the audit trail with N
+        # ``replaced_node`` rows for a single whole-Act op whose fan-out is
+        # already summarized by ``changed_paths`` on the aggregate row.
+        patched_nodes: list[tuple[IRNode, IRNode]] = []
         for path, node in self._whole_act_text_patch_nodes():
             text = node.text or ""
             if not text or prefilter not in text.lower():
@@ -378,9 +403,17 @@ class UKReplayTextActionApplyMixin:
             new_text, count = pattern.subn(lambda _match: replacement, text)
             if count == 0:
                 continue
-            node.text = new_text
+            patched_nodes.append((node, dc_replace(node, text=new_text)))
             replacement_count += count
             replaced_paths.append(path)
+
+        saved_mutation_events_out = self.mutation_events_out
+        self.mutation_events_out = None
+        try:
+            for old_node_v2, new_node_v2 in patched_nodes:
+                self._replace_node_in_statute(old_node_v2, new_node_v2)
+        finally:
+            self.mutation_events_out = saved_mutation_events_out
 
         if not replaced_paths:
             _append_uk_replay_adjudication(
