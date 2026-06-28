@@ -60,6 +60,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     "estonia_replay_semantics": (
         "test_ee_apply_conserved.py",
         "test_ee_apply_semantics.py",
+        "test_ee_apply_filter_result.py",
         "test_ee_blame_provision_walk.py",
         "test_ee_instruction_waist.py",
         "test_ee_parser_normalization.py",
