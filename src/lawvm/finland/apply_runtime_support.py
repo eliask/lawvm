@@ -1052,6 +1052,56 @@ def _payload_has_in_place_merge_child(node: IRNode) -> bool:
     )
 
 
+def _section_payload_is_missing_descendant_insert(payload: IRNode, group_rops: list[ResolvedOp]) -> bool:
+    """True when a same-group descendant INSERT is absent from a complete section payload."""
+    if payload.kind is not IRNodeKind.SECTION:
+        return False
+
+    def _descendant_target_key(rop: ResolvedOp) -> tuple[str, str | None] | None:
+        subsection_label = str(rop.resolved_target_subsection_label or "").strip()
+        if not subsection_label and rop.effective_target_paragraph is not None:
+            subsection_label = str(rop.effective_target_paragraph)
+        if not subsection_label:
+            return None
+        item_label = (
+            _normalize_snapshot_item_label(rop.effective_target_item_label)
+            if rop.effective_target_item_label is not None
+            else None
+        )
+        return (_norm_num_token(subsection_label), item_label)
+
+    repealed_targets = {
+        key for rop in group_rops if rop.is_repeal_action and (key := _descendant_target_key(rop)) is not None
+    }
+    subsection_by_label = {
+        _norm_num_token(child.label): child
+        for child in payload.children
+        if child.kind is IRNodeKind.SUBSECTION and child.label
+    }
+    for rop in group_rops:
+        if not rop.is_insert_action:
+            continue
+        target_key = _descendant_target_key(rop)
+        if target_key is None or target_key in repealed_targets:
+            continue
+        subsection_label, item_label = target_key
+
+        subsection = subsection_by_label.get(subsection_label)
+        if subsection is None:
+            return True
+        if item_label is None:
+            continue
+
+        item_labels = {
+            _normalize_snapshot_item_label(child.label)
+            for child in subsection.children
+            if child.kind is IRNodeKind.PARAGRAPH and child.label
+        }
+        if item_label not in item_labels:
+            return True
+    return False
+
+
 def _prefer_live_fold_section_snapshot_for_descendant_scoped_group(
     *,
     state: "ReplayState",
@@ -1095,6 +1145,7 @@ def _prefer_live_fold_section_snapshot_for_descendant_scoped_group(
         _snapshot_payload_is_complete_owner(payload)
         and not _payload_has_in_place_merge_child(payload)
         and not has_post_repeal_item_shift
+        and not _section_payload_is_missing_descendant_insert(payload, group_rops)
     )
     if live_len <= payload_len or complete_owner_should_win:
         return payload, payload_from_muutos_ir
@@ -4218,6 +4269,14 @@ def _emit_section_snapshot(
             )
             child_payload = _inherit_parent_snapshot_ownership_attrs(child_payload, payload)
             child_source = op_source
+            prior_paragraph_labels: set[str] = set()
+            if _snapshot_payload_is_complete_owner(child_payload):
+                # Capture the pre-child-snapshot paragraph surface before the
+                # subsection snapshot below is appended to replay history. The
+                # child snapshot carries the new paragraph set; counting it as
+                # prior would turn genuinely new inserted paragraphs into
+                # absent-target REPLACE ops that timeline compilation rejects.
+                prior_paragraph_labels = _prior_paragraph_labels_for_subsection(child_path)
             for rop in group_rops:
                 rop_subsection = _norm_num_token(_snapshot_subsection_target_label(rop))
                 if rop_subsection != child_norm_label:
@@ -4273,7 +4332,6 @@ def _emit_section_snapshot(
                 )
                 payload_paragraph_labels -= explicitly_repealed_paragraph_labels
                 if payload_paragraphs:
-                    prior_paragraph_labels = _prior_paragraph_labels_for_subsection(child_path)
                     for paragraph in payload_paragraphs:
                         assert paragraph.label is not None
                         paragraph_label = _normalize_snapshot_item_label(paragraph.label)

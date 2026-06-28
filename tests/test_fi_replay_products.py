@@ -7257,6 +7257,22 @@ def test_replay_xml_2020_811_inserts_4a_and_11a_sections() -> None:
     assert replay.find_section("11a") is not None, "2021/278 must insert section 11a"
 
 
+def test_replay_xml_2000_609_keeps_same_group_descendant_inserts_in_section_snapshot() -> None:
+    """2006/1154 §57 complete-source snapshot must retain same-group inserts.
+
+    The amendment replaces §57 while also inserting §57 1 mom 4 a kohta and a
+    new 4 mom. The complete source section payload omits those same-group
+    descendant inserts; the live fold owns the combined product.
+    """
+    replay = replay_xml_for_test("2000/609", mode="official_consolidation", quiet=True)
+    section = replay.materialized_state.find_section("57", "9")
+    assert section is not None
+    text = " ".join(irnode_to_text(section).split())
+
+    assert "4 a) Itä-Suomen tavoite 1 -ohjelman alueella toteutettavaan vesivarahankkeeseen" in text
+    assert "Tukea 1 momentin 4 a kohdassa tarkoitettuun vesivarahankkeeseen voidaan myöntää" in text
+
+
 @pytest.mark.slow
 def test_replay_xml_2004_301_2016_454_snapshots_86b_under_chapter_five() -> None:
     """2016/454 must not mint a bare root timeline for uniquely hosted §86b."""
