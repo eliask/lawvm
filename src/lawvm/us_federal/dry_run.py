@@ -2483,6 +2483,7 @@ def build_us_dry_run(
     after_year: str = "",
     enacted: str = "",
     prior_edition_htms: Mapping[str, bytes] | None = None,
+    classification_index: Any = None,
 ) -> USDryRunReport:
     """Build the section-level dry-run report for one (before, after, PL) window.
 
@@ -2560,7 +2561,8 @@ def build_us_dry_run(
     lowered_reports: list[tuple[str, str, bytes, USAmendatoryReport]] = []
     for statute_id, blob in plaw_blobs.items():
         report = lower_plaw_amendatory(
-            blob, statute_id=statute_id, enacted=enacted, proof_title=str(title)
+            blob, statute_id=statute_id, enacted=enacted, proof_title=str(title),
+            classification_index=classification_index,
         )
         report_enacted = report.enacted or statute_id
         lowered_reports.append((report_enacted, statute_id, blob, report))
@@ -3021,6 +3023,7 @@ def build_us_dry_run_from_archive(
     plaw_locators: Mapping[str, str],
     enacted: str = "",
     prior_edition_years: tuple[int, ...] = (),
+    classification_index: Any = None,
 ) -> USDryRunReport:
     """Assemble and run the dry-run for one window directly from the archive.
 
@@ -3076,4 +3079,5 @@ def build_us_dry_run_from_archive(
         after_year=str(after_year),
         enacted=enacted,
         prior_edition_htms=prior_edition_htms,
+        classification_index=classification_index,
     )
