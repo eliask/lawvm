@@ -575,9 +575,13 @@ def _collect_sibling_sunset_scopes(
 # to every amendatory unit in the same PLAW section, even when no named kind/range is
 # given. "This Act" scopes are treated the same way when the paragraph is a sibling of
 # the amendatory leaves within one section.
-_SECTION_EFFECTIVE_SCOPE_RE = re.compile(
+#
+# Routed through ``compile_classifier_regex`` (Wave 5 migration, regex review M4) so
+# the backtracking lint and required-literal prefilter are enforced (AGENTS.md §2.4).
+_SECTION_EFFECTIVE_SCOPE_RE = compile_classifier_regex(
     r"\bthis\s+(?:section|Act)\b",
     re.IGNORECASE,
+    classifier_id="us.amendatory.section_effective_scope_re",
 )
 
 # USLM tags that wrap statutory text being inserted/amended by an amendatory
@@ -1090,12 +1094,18 @@ _ANY_SUBUNIT_ANCHOR_RE = re.compile(
 # subparagraph (B), by striking 'or'".  The edit applies to the text after the
 # named sub-unit inside the inherited container.  When that sub-unit is the last
 # child, the target is effectively that sub-unit's trailing conjunction.
-_MATTER_FOLLOWING_ANCHOR_RE = re.compile(
+#
+# Routed through ``compile_classifier_regex`` (Wave 5 migration, regex review M4)
+# so the backtracking lint and required-literal prefilter are enforced (AGENTS.md
+# §2.4). The ``matter following`` literal anchors the prefilter; the trailing
+# kind/label alternations are bounded.
+_MATTER_FOLLOWING_ANCHOR_RE = compile_classifier_regex(
     r"in\s+the\s+matter\s+following\s+"
     r"(?P<kind>subsection|paragraph|subparagraph|clause|subclause)\s+"
     r"\((?P<label>[0-9A-Za-z]+)\)"
     r"\s*(?:,|—)",
     re.IGNORECASE,
+    classifier_id="us.amendatory.matter_following_anchor_re",
 )
 
 
@@ -1461,13 +1471,18 @@ _PUNCTUATION_WORD_MAP: dict[str, str] = {
 }
 
 
-_INSERT_WORD_ANCHOR_DIRECTION_RE = re.compile(
+# Routed through ``compile_classifier_regex`` (Wave 5 migration, regex review M4)
+# so the backtracking lint and required-literal prefilter are enforced (AGENTS.md
+# §2.4). The ``inserting`` literal and bounded ``[^quote]{0,400}`` capture cap
+# per-position work, so the prefilter dispatches only on real insertion heads.
+_INSERT_WORD_ANCHOR_DIRECTION_RE = compile_classifier_regex(
     r"inserting\s+["
     "\"\u201c\u201d"
     r"][^\"\u201d]{0,400}[\"\u201d]\s+"
     r"(?P<where>before|after)\s+"
     r"[\"\u201c][^\"\u201d]{0,400}[\"\u201d]",
     re.IGNORECASE,
+    classifier_id="us.amendatory.insert_word_anchor_direction_re",
 )
 
 
@@ -1839,13 +1854,7 @@ def _classify_action(actions: list[str], raw_text: str) -> str:
 
 def _redesignate_destination(raw_text: str, target: LegalAddress) -> tuple[LegalAddress, LegalAddress] | None:
     """Parse ``redesignating X as Y`` into ``(from, to)`` addresses (single-unit form)."""
-    m = re.search(
-        r"redesignating\s+(?:subsection|paragraph|subparagraph|clause|subclause)\s+"
-        r"\(([0-9A-Za-z]+)\)\s+as\s+"
-        r"(?:subsection|paragraph|subparagraph|clause|subclause)\s+\(([0-9A-Za-z]+)\)",
-        raw_text,
-        re.IGNORECASE,
-    )
+    m = _REDESIGNATE_DESTINATION_RE.search(raw_text)
     if m is None:
         return None
     from_label, to_label = m.group(1), m.group(2)
@@ -1874,12 +1883,18 @@ _STRIKE_UNIT_RE = re.compile(
 # amendment. The temporal layer owns it; lowering it to an immediate REPEAL would
 # (wrongly) delete a node that is still in force in the window's after edition.
 # We refuse to lower these as immediate ops.
-_FUTURE_EFFECTIVE_RE = re.compile(
+#
+# Routed through ``compile_classifier_regex`` (Wave 5 migration, regex review M4)
+# so the backtracking lint and required-literal prefilter are enforced (AGENTS.md
+# §2.4). The bare ``effective``/``on the date``/``sunset``/``expires`` literals
+# anchor the prefilter; the trailing alternations are all bounded literal words.
+_FUTURE_EFFECTIVE_RE = compile_classifier_regex(
     r"effective\s+(?:on\s+the\s+date|[A-Z][a-z]+\s+\d|\w+\s+\d{1,2},\s*\d{4})"
     r"|on\s+the\s+date\s+that\s+is\b"
     r"|(?:^|\W)(?:sunset|expires?|terminates?)\s+(?:on|after)\b"
     r"|shall\s+take\s+effect\b",
     re.IGNORECASE,
+    classifier_id="us.amendatory.future_effective_re",
 )
 # Terminal punctuation edits where the struck anchor is described positionally.
 # Pattern A: "striking the period [at the end [of paragraph (2)]] and inserting
@@ -1951,15 +1966,27 @@ _DESIGNATION_STRIKE_RE = re.compile(
     re.IGNORECASE,
 )
 # Open-ended tail strike: deletes from an anchor to the end of the node.
-_TAIL_STRIKE_RE = re.compile(
+#
+# Routed through ``compile_classifier_regex`` (Wave 5 migration, regex review M4)
+# so the backtracking lint and required-literal prefilter are enforced (AGENTS.md
+# §2.4). The ``striking … and all that follows`` literal prefix anchors the
+# prefilter; the quoted capture is bounded to 500 chars.
+_TAIL_STRIKE_RE = compile_classifier_regex(
     r"striking\s+[\"“”'](?P<old>[^\"“”']{0,500})[\"“”']\s+and\s+all\s+that\s+follows",
     re.IGNORECASE,
+    classifier_id="us.amendatory.tail_strike_re",
 )
 # Bounded tail strike: deletes from anchor through a second anchor.
-_THROUGH_TAIL_STRIKE_RE = re.compile(
+#
+# Routed through ``compile_classifier_regex`` (Wave 5 migration, regex review M4)
+# so the backtracking lint and required-literal prefilter are enforced (AGENTS.md
+# §2.4). Same shape as ``_TAIL_STRIKE_RE`` plus a literal ``through`` anchor; the
+# quoted captures are bounded to 500 chars per side.
+_THROUGH_TAIL_STRIKE_RE = compile_classifier_regex(
     r"striking\s+[\"“”'](?P<old>[^\"“”']{0,500})[\"“”']\s+"
     r"and\s+all\s+that\s+follows\s+through\s+[\"“”'](?P<end>[^\"“”']{0,500})[\"“”']",
     re.IGNORECASE,
+    classifier_id="us.amendatory.through_tail_strike_re",
 )
 # "redesignating paragraphs (3) through (7) as paragraphs (4) through (8)" — a
 # contiguous range relabel. The two endpoints define the shift; each member is
@@ -1989,6 +2016,21 @@ _REDESIGNATE_PAIRS_RE = re.compile(
     r"(?P<to_labels>\((?:[0-9A-Za-z]+)\)(?:\s*(?:,\s*and\s+|,\s*|\s+and\s+)\((?:[0-9A-Za-z]+)\))+)"
     r"(?:,\s*respectively)?" + _STRUCTURAL_ACTION_TRAIL,
     re.IGNORECASE,
+)
+# Single-unit redesignation: "redesignating subsection (a) as subsection (b)".
+# Pattern hoisted from the per-call ``re.search`` in ``_redesignate_destination`` per
+# AGENTS.md §2.4 (backtracking discipline: a per-op ``re.search`` with a *constant*
+# pattern will be re-compiled by Python's internal regex cache lookup on every call;
+# hoisting to module scope removes that lookup and routes the pattern through
+# ``compile_classifier_regex`` so the backtracking lint and required-literal prefilter
+# are enforced). The ``redesignating`` literal anchors the prefilter; the two label
+# groups are bounded parenthesised tokens.
+_REDESIGNATE_DESTINATION_RE = compile_classifier_regex(
+    rf"redesignating\s+(?:{_KIND_WORDS})\s+"
+    r"\(([0-9A-Za-z]+)\)\s+as\s+"
+    rf"(?:{_KIND_WORDS})\s+\(([0-9A-Za-z]+)\)",
+    re.IGNORECASE,
+    classifier_id="us.amendatory.redesignate_destination_re",
 )
 # "inserting after section (N) / paragraph (N) / subsection (N) the following[ new
 # <kind>]: <block>" — splice the quoted block as a NEW node positioned after the
@@ -3319,8 +3361,17 @@ def _unit_own_target(
 # the title is the OLRC's own (enacted) scope, never invented. The prose form must
 # carry "United States Code" so a stray "title 18 of the report" is not mistaken for
 # a USC title.
+#
+# ``_TITLE_ONLY_PROSE_RE`` is routed through ``compile_classifier_regex`` (Wave 5
+# migration, regex review M4) so the backtracking lint and required-literal
+# prefilter are enforced (AGENTS.md §2.4); ``_TITLE_ONLY_HREF_RE`` is a pure-lexical
+# URL-shape recognizer with a ``$``-anchored ``\d+`` title group, kept raw.
 _TITLE_ONLY_HREF_RE = re.compile(r"^/us/usc/t(?P<title>\d+)/?$")
-_TITLE_ONLY_PROSE_RE = re.compile(r"\btitle\s+(?P<title>\d+),?\s+United\s+States\s+Code\b", re.IGNORECASE)
+_TITLE_ONLY_PROSE_RE = compile_classifier_regex(
+    r"\btitle\s+(?P<title>\d+),?\s+United\s+States\s+Code\b",
+    re.IGNORECASE,
+    classifier_id="us.amendatory.title_only_prose_re",
+)
 
 
 def _unit_title_only_scope(
