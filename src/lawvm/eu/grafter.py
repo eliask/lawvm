@@ -14,6 +14,7 @@ import zipfile
 from pathlib import Path
 from typing import List, Optional, cast
 
+from lawvm.core.archive_safety import safe_zip_read
 from lawvm.core.ir import IRNode, IRStatute
 from lawvm.core.semantic_types import IRNodeKind
 
@@ -89,7 +90,18 @@ class EUIRGrafter:
 
                 if not act_name:
                     raise ValueError(f"No main FMX4 XML found in ZIP {xml_path}")
-                data = zf.read(act_name)
+                # Wave 3 decompression-bomb cap (Security M1): safe_zip_read
+                # checks the declared uncompressed size against
+                # $LAWVM_MAX_ARCHIVE_MEMBER_BYTES BEFORE materialising. A
+                # malicious FMX4 zip declaring a huge main.xml would OOM the
+                # process. There is no skip accumulator in this one-shot parse
+                # (the grafter returns a single IRStatute), so a too-large
+                # member is fail-loud: ArchiveMemberTooLarge carries the typed
+                # (archive_path, member_name, declared_size, cap_bytes)
+                # receipt (AGENTS.md §1.8/§1.10) and surfaces to the caller's
+                # CompileAdjudication / acquisition-failure path. Mirrors
+                # src/lawvm/eu/cellar.py:611 extract_fmx4_structure.
+                data = safe_zip_read(zf, act_name, archive_path=str(xml_path))
                 root = ET.fromstring(data)
         else:
             tree = ET.parse(xml_path)

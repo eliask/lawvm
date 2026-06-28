@@ -31,7 +31,27 @@ into extracted text. The returned ops record what was corrected.
 Population B (PDF-based, amendment johtolause): In grafter.process_muutoslaki(),
 after reading amendment XML:
 
-    xml_bytes = zf.read(f"akn/fi/act/statute/{amendment_id}/fin@/main.xml")
+    from lawvm.core.archive_safety import ArchiveMemberTooLarge, safe_zip_read
+    # Wave 3 decompression-bomb cap (Security M1): never bare zf.read() a
+    # zip member — safe_zip_read checks the declared uncompressed size
+    # against $LAWVM_MAX_ARCHIVE_MEMBER_BYTES BEFORE materialising, and
+    # ArchiveMemberTooLarge carries (archive_path, member_name,
+    # declared_size, cap_bytes) so the skip is visible (AGENTS.md §1.8/§1.10)
+    # rather than an OOM. The caller's zip_label/.farchive path is the
+    # archive_path receipt field.
+    try:
+        xml_bytes = safe_zip_read(
+            zf,
+            f"akn/fi/act/statute/{amendment_id}/fin@/main.xml",
+            archive_path=str(zip_label),
+        )
+    except ArchiveMemberTooLarge as exc:
+        # Corrigendum-patch lane is non-blocking: skip this amendment's
+        # patch and continue replay (over-retention is the safe wrong per
+        # AGENTS.md §0), but the rejection MUST stay visible — emit a typed
+        # finding with exc.diagnostic.render_reason() and continue, OR
+        # re-raise if the outer grafter already has a typed accumulator.
+        raise
     xml_bytes, applied = get_patch_table().patch_source_xml(xml_bytes, amendment_id)
 
 If applied is non-empty, the amendment johtolause (or body text) was corrected
