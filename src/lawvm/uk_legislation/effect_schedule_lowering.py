@@ -18,7 +18,6 @@ from lawvm.uk_legislation.lowering_records import (
     _append_uk_effect_lowering_observation,
     _append_uk_effect_lowering_rejection,
 )
-from lawvm.uk_legislation.payload_conversion import _to_irnode
 from lawvm.uk_legislation.payload_identity import _synthesize_payload_descendant_eids
 
 from lawvm.uk_legislation.provenance_notes import (
@@ -527,13 +526,12 @@ def _try_lower_schedule_words_before_table_substitution(
             lowering_records_out=lowering_rejections_out,
             allow_payload_identity_synthesis=True,
         )
-        # ``_synthesize_payload_descendant_eids`` is still typed
-        # ``UKMutableNode -> UKMutableNode`` (Sub-PR B ratchet territory); post
-        # Wave N3d Sub-PR A the ``_parse_section`` input is ``IRNode``, so the
-        # function flows an ``IRNode`` through ``dc_replace`` at runtime. Route
-        # the return through ``_to_irnode`` for type-clean handoff (no-op at
-        # runtime when the underlying value is already ``IRNode``).
-        return _to_irnode(node)
+        # Sub-PR F (mutable_ir Wave N3d): ``_synthesize_payload_descendant_eids``
+        # is now typed ``IRNode -> IRNode`` (the ``UKMutableNode`` shadow was
+        # deleted) and the ``_parse_section`` upstream has built ``IRNode``
+        # directly since Sub-PR A, so the returned node is already a frozen
+        # ``IRNode`` and no boundary converter is required.
+        return node
 
     lowered_ops: list[LegalOperation] = []
     replace_payload = _build_payload_node(found[target_label], target_label)

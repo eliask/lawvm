@@ -15,18 +15,22 @@ Migrated modules covered here:
     ``_try_lower_schedule_words_before_table_substitution`` lowering
     callable) — emits ``LegalOperation.payload`` as a frozen ``IRNode``.
   * ``payload_identity._synthesize_payload_descendant_eids`` /
-    ``_synthesize_whole_schedule_payload_descendant_eids`` — these still
-    return ``UKMutableNode`` at the helper boundary (PR3+ will migrate the
-    boundary to frozen IRNode), so the freeze test asserts two invariants
-    instead: (a) the INPUT payload node is unchanged after the call (no
-    in-place mutation regressed in) AND (b) ``to_irnode()`` on the returned
-    UKMutableNode produces a frozen IRNode tree.
-  * ``replay_grounding.ground_ids`` — after the grounding pass the
-    statute's ``to_irstatute()`` boundary must yield a frozen ``IRNode``
-    tree (no leaky ``UKMutableNode`` shadow survivals) AND the
+    ``_synthesize_whole_schedule_payload_descendant_eids`` — both typed
+    ``IRNode -> IRNode`` at the helper boundary (Wave N3d Sub-PR F deleted
+    the ``UKMutableNode`` shadow); the freeze test pins that the INPUT payload
+    node is unchanged after the call (no in-place mutation regressed in).
+  * ``replay_grounding.ground_ids`` — after the grounding pass the statute
+    IS the immutable ``IRStatute`` (the prior ``to_irstatute()`` boundary
+    converter was deleted with the mutable mirror) AND the
     ``oracle_alignment_events`` audit list remains byte-identical to
     pre-PR2 deduplication semantics (the path-keyed dedup preserves the
     "matched-supersedes-cleared" invariant).
+
+Sub-PR F (mutable_ir Wave N3d, final): the prior ``TestReplayGrounding...``
+leak-detection helpers and the ``TestNoUKMutableNodeSurvives`` class were
+deleted — once ``mutable_ir.py`` is gone there is no class to detect, so the
+leak guard no longer adds coverage. The frozen-field and structural
+assertions below remain load-bearing.
 
 ``effect_special_lowering.py`` was verified during PR2 survey to contain
 NO in-place mutation sites — every payload is built via direct
@@ -42,7 +46,6 @@ import pytest
 
 from lawvm.core.ir import IRNode, IRNodeKind, IRStatute
 from lawvm.uk_legislation.effects import UKEffectRecord
-from lawvm.uk_legislation.mutable_ir import UKMutableNode
 from lawvm.uk_legislation.payload_identity import (
     _synthesize_payload_descendant_eids,
     _synthesize_whole_schedule_payload_descendant_eids,
@@ -89,16 +92,6 @@ def _content_ir_section(label: str = "1", text: str = "climate change levy") -> 
     }
 
 
-def _collect_mutable_leaks(node: Any) -> list[Any]:
-    """Return every ``UKMutableNode`` reachable from ``node`` (recursive)."""
-    leaks: list[Any] = []
-    if isinstance(node, UKMutableNode):
-        leaks.append(node)
-    for child in getattr(node, "children", ()):
-        leaks.extend(_collect_mutable_leaks(child))
-    return leaks
-
-
 # ---------------------------------------------------------------------------
 # effect_payload_normalization — frozen IRNode at the boundary
 # ---------------------------------------------------------------------------
@@ -130,7 +123,6 @@ class TestPreparePayloadNodeIsFrozenIRNode:
         result = self._prepare(target_path=(("section", "1"),))
         assert result.payload_node is not None
         assert isinstance(result.payload_node, IRNode), type(result.payload_node)
-        assert not isinstance(result.payload_node, UKMutableNode)
 
     @pytest.mark.parametrize("field", ["label", "text", "children", "attrs", "kind"])
     def test_payload_node_field_is_frozen(self, field: str) -> None:
@@ -151,25 +143,25 @@ class TestPreparePayloadNodeIsFrozenIRNode:
 
 
 # ---------------------------------------------------------------------------
-# payload_identity — input NOT mutated + returned tree is frozen at IRNode
-# boundary
+# payload_identity — input NOT mutated + returned tree is frozen IRNode at
+# the helper boundary
 # ---------------------------------------------------------------------------
 
 
-def _simple_section_payload_with_paragraph_child() -> UKMutableNode:
-    """Return a UKMutableNode tree suitable for descendant-eid synthesis."""
-    child = UKMutableNode(
+def _simple_section_payload_with_paragraph_child() -> IRNode:
+    """Return an IRNode tree suitable for descendant-eid synthesis."""
+    child = IRNode(
         kind=IRNodeKind.PARAGRAPH,
         label="1",
         text="Body text",
         attrs={},
     )
-    section = UKMutableNode(
+    section = IRNode(
         kind=IRNodeKind.SECTION,
         label="10",
         text="Inserted provision",
         attrs={"id": "section-10"},
-        children=[child],
+        children=(child,),
     )
     return section
 
@@ -206,27 +198,27 @@ class TestPayloadIdentitySynthesisIsNonMutating:
         # Returned node is the (possibly rebuilt) product; if synthesis
         # assigned a new ``eId``, that's reflected on the RESULT, not input.
         assert result is not None
-        # And to_irnode() on the rebuilt UKMutableNode produces a frozen IRNode.
-        ir = result.to_irnode()
-        assert isinstance(ir, IRNode)
+        # Sub-PR F: the returned node IS a frozen IRNode (the UKMutableNode
+        # shadow was deleted); assert frozen-ness directly.
+        assert isinstance(result, IRNode)
         with pytest.raises(dataclasses.FrozenInstanceError):
-            setattr(ir, "attrs", {})  # noqa: B010
+            setattr(result, "attrs", {})  # noqa: B010
 
     def test_synthesize_whole_schedule_payload_descendant_eids_does_not_mutate_input(self) -> None:
         from lawvm.core.ir import LegalAddress
 
-        para = UKMutableNode(
+        para = IRNode(
             kind=IRNodeKind.PARAGRAPH,
             label="1",
             text="A paragraph in the schedule.",
             attrs={},
         )
-        schedule = UKMutableNode(
+        schedule = IRNode(
             kind=IRNodeKind.SCHEDULE,
             label="1",
             text="Demo schedule",
             attrs={"id": "schedule-1"},
-            children=[para],
+            children=(para,),
         )
         before_root_id = schedule.attrs.get("id")
         before_root_eid = schedule.attrs.get("eId")
@@ -245,16 +237,15 @@ class TestPayloadIdentitySynthesisIsNonMutating:
         assert schedule.attrs.get("id") == before_root_id
         assert schedule.attrs.get("eId") == before_root_eid
         assert schedule.children[0].attrs.get("eId") == before_para_eid
-        assert isinstance(result, UKMutableNode)
-        # Result.to_irnode() produces a frozen IRNode tree.
-        ir = result.to_irnode()
-        assert isinstance(ir, IRNode)
+        # Sub-PR F: result is a frozen IRNode tree (no UKMutableNode shadow).
+        assert isinstance(result, IRNode)
         with pytest.raises(dataclasses.FrozenInstanceError):
-            setattr(ir.children[0], "attrs", {})  # noqa: B010
+            setattr(result.children[0], "attrs", {})  # noqa: B010
 
 
 # ---------------------------------------------------------------------------
-# replay_grounding — frozen IRNode at boundary + no UKMutableNode leak
+# replay_grounding — frozen IRStatute IS the boundary (no separate
+# to_irstatute converter after mutable_ir deletion)
 # ---------------------------------------------------------------------------
 
 
@@ -288,11 +279,13 @@ class TestReplayGroundingFreezesAtBoundary:
             text_map={},
         )
         executor.ground_ids()
-        ir = executor.statute.to_irstatute()
+        # Sub-PR C+D/F: ``executor.statute`` IS the immutable IRStatute
+        # (the ``to_irstatute()`` boundary converter was deleted with the
+        # ``UKMutableStatute`` mirror). Assert the boundary directly.
+        ir = executor.statute
 
         section = ir.body.children[0]
         assert isinstance(section, IRNode)
-        assert not isinstance(section, UKMutableNode)
 
     @pytest.mark.parametrize("field", ["label", "text", "children", "attrs", "kind"])
     def test_ground_ids_irnode_fields_are_frozen(self, field: str) -> None:
@@ -303,27 +296,10 @@ class TestReplayGroundingFreezesAtBoundary:
             text_map={},
         )
         executor.ground_ids()
-        ir = executor.statute.to_irstatute()
+        ir = executor.statute
         section = ir.body.children[0]
         with pytest.raises(dataclasses.FrozenInstanceError):
             setattr(section, field, [])
-
-    def test_ground_ids_no_mutable_node_leaks_into_irnode_boundary(self) -> None:
-        statute = _grounding_demo_statute()
-        executor = UKReplayExecutor(
-            statute,
-            eid_map={"body:section-1": "section-1"},
-            text_map={},
-        )
-        executor.ground_ids()
-        ir = executor.statute.to_irstatute()
-        leaks = _collect_mutable_leaks(ir.body)
-        assert leaks == [], f"UKMutableNode leaked into boundary IR body: {leaks!r}"
-        for supplement in ir.supplements:
-            supplement_leaks = _collect_mutable_leaks(supplement)
-            assert supplement_leaks == [], (
-                f"UKMutableNode leaked into boundary IR supplement: {supplement_leaks!r}"
-            )
 
     def test_ground_ids_dedup_preserves_matched_supersedes_cleared(self) -> None:
         """The path-keyed ``pending_cleared_events`` dedup must retain the

@@ -1,32 +1,30 @@
 """PR1 boundary freeze guard for ``uk_grafter`` (audit XJUR-02 / AGENTS.md §2.3).
 
 Regression for the parse-boundary migration of ``uk_grafter`` off of in-place
-``UKMutableNode`` mutation. Pins two invariants that the wider UK test suite
-implicitly relied on:
+``UKMutableNode`` mutation (Wave N3d Sub-PR F: the ``mutable_ir`` shadow module
+was deleted; the boundary IS frozen by construction). Pins two invariants:
 
   * (1) The tree returned by ``parse_uk_statute_ir_bytes`` at the parse
-    boundary IS the frozen ``IRNode`` (the core's frozen-by-design dataclass) —
-    not a ``UKMutableNode`` shadow. Mutating ``.children`` / ``.attrs`` /
-    ``.label`` / ``.text`` raises ``dataclasses.FrozenInstanceError``.
-  * (2) No ``UKMutableNode`` instances survive anywhere in the IR tree returned
-    at the boundary — body and supplements alike (recursively) — confirming
-    the parse product has crossed the ``to_irnode()`` boundary.
+    boundary IS the frozen ``IRNode`` (the core's ``@dataclass(frozen=True)``
+    dataclass). Mutating ``.children`` / ``.attrs`` / ``.label`` / ``.text``
+    raises ``dataclasses.FrozenInstanceError``.
+  * (2) The parse product carries the expected structural shape at the
+    boundary (``p1group`` heading attached to a sole section; schedule
+    supplement preserved). This was the byte-identical pre-PR1 contract.
 
-These guards are PR1-specific: if a future change keeps a ``UKMutableNode``
-in the parse path past the boundary (e.g., the conversion at ``_build_ir_from_root``
-is removed), the boundary would silently regress to mutable. The guard makes
-that a failing test, not a hidden regression.
+Sub-PR F removed the prior ``TestNoUKMutableNodeSurvivesIntoBoundaryTree``
+class — once the ``mutable_ir`` shadow was deleted there is no class to detect,
+so the leak-detection guard no longer adds coverage. The structural
+``IRNode``-type and frozen-field assertions below remain load-bearing.
 """
 from __future__ import annotations
 
 import dataclasses
-from typing import Any
 
 import pytest
 
 from lawvm.core.ir import IRNode, IRStatute
 from lawvm.core.semantic_types import IRNodeKind
-from lawvm.uk_legislation.mutable_ir import UKMutableNode
 from lawvm.uk_legislation.uk_grafter import parse_uk_statute_ir_bytes
 
 
@@ -84,28 +82,16 @@ def _parse_boundary_ir() -> IRStatute:
     )
 
 
-def _collect_mutable_leaks(node: Any) -> list[Any]:
-    """Return every ``UKMutableNode`` reachable from ``node`` (recursive)."""
-    leaks: list[Any] = []
-    if isinstance(node, UKMutableNode):
-        leaks.append(node)
-    for child in getattr(node, "children", ()):
-        leaks.extend(_collect_mutable_leaks(child))
-    return leaks
-
-
 class TestParseBoundaryIsFrozenIRNode:
     def test_body_is_frozen_irnode(self) -> None:
         ir = _parse_boundary_ir()
         assert isinstance(ir.body, IRNode)
-        assert not isinstance(ir.body, UKMutableNode)
 
     def test_supplements_are_frozen_irnode(self) -> None:
         ir = _parse_boundary_ir()
         assert ir.supplements
         for supplement in ir.supplements:
             assert isinstance(supplement, IRNode)
-            assert not isinstance(supplement, UKMutableNode)
 
     @pytest.mark.parametrize(
         "field",
@@ -118,19 +104,6 @@ class TestParseBoundaryIsFrozenIRNode:
         # compatible with the typed frozen ``IRNode`` API checked by ty.
         with pytest.raises(dataclasses.FrozenInstanceError):
             setattr(ir.body, field, [])
-
-
-class TestNoUKMutableNodeSurvivesIntoBoundaryTree:
-    def test_no_mutable_node_in_body(self) -> None:
-        ir = _parse_boundary_ir()
-        leaks = _collect_mutable_leaks(ir.body)
-        assert not leaks, f"UKMutableNode leaked into boundary IR body: {leaks!r}"
-
-    def test_no_mutable_node_in_supplements(self) -> None:
-        ir = _parse_boundary_ir()
-        for supplement in ir.supplements:
-            leaks = _collect_mutable_leaks(supplement)
-            assert not leaks, f"UKMutableNode leaked into boundary IR supplement: {leaks!r}"
 
 
 class TestParseBoundarySignalEquivalence:

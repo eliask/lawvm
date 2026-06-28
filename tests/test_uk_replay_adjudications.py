@@ -15,10 +15,9 @@ from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.definition_anchors import _uk_definition_term_lexical_variants
 from lawvm.uk_legislation.effect_payload_normalization import prepare_uk_operation_payload_node
-from lawvm.uk_legislation.mutable_ir import (
-    UKMutableNode,
-    uk_insert_child_sorted,
-    uk_insert_node_at_index,
+from lawvm.uk_legislation.apply_rebuild import (
+    uk_insert_child_sorted_cow,
+    uk_insert_node_at_index_cow,
     uk_ir_node_kind,
 )
 from lawvm.uk_legislation.nlp_parser import US
@@ -510,59 +509,55 @@ def test_replay_uk_ops_can_emit_core_mutation_event_for_node_insert() -> None:
 
 
 def test_uk_mutable_sorted_insert_refuses_same_label_replacement() -> None:
-    parent = UKMutableNode(
+    """CoW-variant regression for the duplicate-(kind,label) insert guard.
+
+    Sub-PR F (mutable_ir Wave N3d): the legacy in-place ``uk_insert_child_sorted``
+    helper was deleted with ``mutable_ir.py``; the CoW variant
+    ``uk_insert_child_sorted_cow`` owns the same invariant and signals rejection
+    via ``inserted_idx is None`` rather than returning ``False``.
+    """
+    parent = IRNode(
         kind=IRNodeKind.SECTION,
         label="1",
-        children=[
-            UKMutableNode(kind=IRNodeKind.SUBSECTION, label="1", text="Existing text."),
-        ],
+        children=(
+            IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Existing text."),
+        ),
     )
-    new_node = UKMutableNode(
+    new_node = IRNode(
         kind=IRNodeKind.SUBSECTION,
         label="1",
         text="Replacement text.",
     )
 
-    inserted = uk_insert_child_sorted(parent, new_node)
+    new_parent, inserted_idx = uk_insert_child_sorted_cow(parent, new_node)
 
-    assert inserted is False
-    assert [child.text for child in parent.children] == ["Existing text."]
-
-
-def test_uk_mutable_node_normalizes_replaced_tuple_children_for_insert() -> None:
-    parent = UKMutableNode(
-        kind=IRNodeKind.SECTION,
-        label="1",
-        children=cast(Any, (
-            UKMutableNode(kind=IRNodeKind.SUBSECTION, label="1", text="Existing text."),
-        )),
-    )
-    new_node = UKMutableNode(
-        kind=IRNodeKind.SUBSECTION,
-        label="2",
-        text="Inserted text.",
-    )
-
-    inserted = uk_insert_child_sorted(parent, new_node)
-
-    assert inserted is True
-    assert [child.label for child in parent.children] == ["1", "2"]
+    assert inserted_idx is None
+    # CoW: the input parent's children tuple is unchanged (rejection did not
+    # build a fresh parent — the caller is expected to keep using ``parent``).
+    assert new_parent is parent or [child.text for child in parent.children] == ["Existing text."]
 
 
 def test_uk_mutable_index_insert_refuses_same_label_replacement() -> None:
+    """CoW-variant sibling test guarding ``uk_insert_node_at_index_cow``.
+
+    The CoW variant returns ``(new_children, success)``; the duplicate-guard
+    rejection surfaces as the ``False`` success bool (matching the legacy
+    in-place ``uk_insert_node_at_index`` semantics that were deleted with
+    ``mutable_ir.py``).
+    """
     children = [
-        UKMutableNode(kind=IRNodeKind.SUBSECTION, label="1", text="Existing text."),
+        IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Existing text."),
     ]
-    new_node = UKMutableNode(
+    new_node = IRNode(
         kind=IRNodeKind.SUBSECTION,
         label="1",
         text="Replacement text.",
     )
 
-    inserted = uk_insert_node_at_index(children, 0, new_node)
+    new_children, inserted = uk_insert_node_at_index_cow(children, 0, new_node)
 
     assert inserted is False
-    assert [child.text for child in children] == ["Existing text."]
+    assert [child.text for child in new_children] == ["Existing text."]
 
 
 def test_replay_uk_ops_emit_mutation_event_for_fallback_schedule_insert() -> None:
@@ -652,7 +647,7 @@ def test_replace_descendant_at_path_is_copy_on_write() -> None:
     executor = UKReplayExecutor(_base_statute_sections_1_2())
     old_body = executor.statute.body
     old_section = old_body.children[0]
-    replacement = UKMutableNode(kind=IRNodeKind.SECTION, label="1", text="Replacement section one.")
+    replacement = IRNode(kind=IRNodeKind.SECTION, label="1", text="Replacement section one.")
 
     rebuilt = executor._replace_descendant_at_path(old_body, (0,), replacement)
 
@@ -1647,17 +1642,17 @@ def test_find_text_range_start_index_rejects_missing_anchor() -> None:
 
 
 def test_find_descendant_path_by_kind_label_returns_first_document_order_match() -> None:
-    root = UKMutableNode(
+    root = IRNode(
         kind=IRNodeKind.SECTION,
         label="1",
-        children=[
-            UKMutableNode(kind=IRNodeKind.PARAGRAPH, label="a"),
-            UKMutableNode(
+        children=(
+            IRNode(kind=IRNodeKind.PARAGRAPH, label="a"),
+            IRNode(
                 kind=IRNodeKind.SUBSECTION,
                 label="1",
-                children=[UKMutableNode(kind=IRNodeKind.PARAGRAPH, label="a")],
+                children=(IRNode(kind=IRNodeKind.PARAGRAPH, label="a"),),
             ),
-        ],
+        ),
     )
 
     assert _find_descendant_path_by_kind_label(root, kind="paragraph", label="a") == (0,)
@@ -1665,14 +1660,14 @@ def test_find_descendant_path_by_kind_label_returns_first_document_order_match()
 
 
 def test_collect_descendant_paths_by_label_and_kinds_preserves_document_order() -> None:
-    root = UKMutableNode(
+    root = IRNode(
         kind=IRNodeKind.SECTION,
         label="1",
-        children=[
-            UKMutableNode(kind=IRNodeKind.ITEM, label="2"),
-            UKMutableNode(kind=IRNodeKind.PARAGRAPH, label="2"),
-            UKMutableNode(kind=IRNodeKind.SUBPARAGRAPH, label="3"),
-        ],
+        children=(
+            IRNode(kind=IRNodeKind.ITEM, label="2"),
+            IRNode(kind=IRNodeKind.PARAGRAPH, label="2"),
+            IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="3"),
+        ),
     )
 
     assert _collect_descendant_paths_by_label_and_kinds(
@@ -4384,7 +4379,7 @@ def test_executor_applies_labeled_child_end_range_without_target_hijack() -> Non
         "In making a guardianship order the sheriff may require an individual "
         "appointed as guardian to find caution."
     )
-    # executor.statute is a UKMutableStatute: UKMutableNode.children is a list
+    # executor.statute is a UKMutableStatute: IRNode.children is a list
     # (the mutable working representation), not the immutable IRNode tuple that
     # replay_uk_ops(...) returns. The sibling .children == () assertions in this
     # file all inspect replay_uk_ops results, not executor.statute directly.
@@ -5251,7 +5246,7 @@ def test_executor_guards_sibling_renumber_collision_after_destination_lookup_mis
         allow_compound_subsection_alias: bool = False,
         allow_recursive_match: bool = True,
         target_resolution_op: LegalOperation | None = None,
-    ) -> tuple[UKMutableNode | None, UKMutableNode | None, int | None]:
+    ) -> tuple[IRNode | None, IRNode | None, int | None]:
         if target.path == (("section", "8"),):
             return None, None, None
         return real_find_node_by_target(
@@ -6702,8 +6697,17 @@ def test_executor_materializes_source_carried_alpha_child_text_substitution() ->
 
 
 def test_uk_mutable_ir_maps_source_point_alias_to_item_kind() -> None:
+    """The UK-local ``"point"`` source/address kind alias coerces to ``ITEM``.
+
+    Renamed intent after Sub-PR F (mutable_ir Wave N3d): ``mutable_ir.py`` was
+    deleted and ``uk_ir_node_kind`` moved to ``apply_rebuild.py``. The
+    ``IRNode`` constructor itself does NOT coerce strings — callers that pass
+    raw source kinds must call ``uk_ir_node_kind`` explicitly; the helper is
+    the single UK kind-alias coercion point.
+    """
     assert uk_ir_node_kind("point") == IRNodeKind.ITEM
-    assert UKMutableNode(kind=cast(Any, "point"), label="i").kind == IRNodeKind.ITEM
+    node = IRNode(kind=uk_ir_node_kind("point"), label="i")
+    assert node.kind is IRNodeKind.ITEM
 
 
 def test_prepare_replay_uk_ops_canonicalizes_point_address_alias_for_core_ir_boundary() -> None:

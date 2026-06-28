@@ -16,8 +16,7 @@ from lawvm.uk_legislation.metadata_rewrites import (
     _is_uk_parent_sibling_promotion_renumber_shape,
     _renumbered_descendant_text,
 )
-from lawvm.uk_legislation.apply_rebuild import uk_insert_node_sorted_cow
-from lawvm.uk_legislation.mutable_ir import uk_ir_node_kind
+from lawvm.uk_legislation.apply_rebuild import uk_insert_node_sorted_cow, uk_ir_node_kind
 from lawvm.uk_legislation.replay_records import (
     _append_uk_replay_adjudication,
     uk_replay_blocking_action_target_detail,
@@ -236,7 +235,7 @@ class UKReplayRenumberApplyMixin:
                 destination_label=destination_label,
             ),
             attrs={"eId": replay._derive_target_eid(destination)},
-            children=moved_children,
+            children=tuple(moved_children),
         )
         replacement_children = list(retained_children)
         replacement_children.append(child)
@@ -245,7 +244,7 @@ class UKReplayRenumberApplyMixin:
             label=source_node.label,
             text="",
             attrs=dict(source_node.attrs),
-            children=replacement_children,
+            children=tuple(replacement_children),
         )
         replaced = replay._replace_node_in_statute(source_node, replacement)
         if replaced and old_path is not None:
