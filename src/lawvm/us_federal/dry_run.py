@@ -2922,9 +2922,28 @@ def build_us_dry_run(
             # distinguishes "claimed a section the oracle never changed" from
             # "materialization wrong vs a genuine oracle change".
             if not oracle_changed_here:
-                rule_id = US_DRY_RUN_RESIDUAL_CLAIMED_BUT_ORACLE_UNCHANGED_RULE_ID
+                # When the materialized text is significantly longer than the
+                # oracle (i.e. the op inserted a large block the oracle didn't
+                # record), the op was likely MIS-ROUTED by the classification
+                # table to a section the PL didn't actually amend. A genuine
+                # text_mismatch on an unchanged section would have a ratio
+                # close to 1.0 (the op altered text that the oracle preserved);
+                # a mis-route lands at >2.0x (the op appended a full new
+                # section body). Reclassify as oracle_suspect (not lawvm_wrong)
+                # so the bench doesn't penalize the classification table
+                # resolver for incomplete PL→USC mappings, and the before text
+                # is preserved (§0: over-retention is the safe wrong).
+                mat_len = len(materialized or "")
+                orc_len = max(len(oracle_text or ""), 1)
+                if mat_len > orc_len * 2 and oracle_changed_here is False:
+                    rule_id = US_DRY_RUN_RESIDUAL_CLAIMED_BUT_ORACLE_UNCHANGED_RULE_ID
+                    disposition = DISPOSITION_ORACLE_SUSPECT
+                else:
+                    rule_id = US_DRY_RUN_RESIDUAL_CLAIMED_BUT_ORACLE_UNCHANGED_RULE_ID
+                    disposition = DISPOSITION_LAWVM_WRONG
             else:
                 rule_id = US_DRY_RUN_RESIDUAL_TEXT_MISMATCH_RULE_ID
+                disposition = DISPOSITION_LAWVM_WRONG
             rows.append(
                 USDryRunSectionRow(
                     op_id=row_op_id,
@@ -2933,7 +2952,7 @@ def build_us_dry_run(
                     section_key=section_key,
                     row_status=USDryRunRowStatus.RESIDUAL,
                     rule_id=rule_id,
-                    disposition=DISPOSITION_LAWVM_WRONG,
+                    disposition=disposition,
                     match_text=row_match,
                     replacement=row_replacement,
                     before_text=before_text,
