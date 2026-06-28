@@ -16,8 +16,8 @@ from tests.corpus_pin_helpers import replay_xml_for_test
 
 def test_patch_table_loads_from_text_corpus(tmp_path: Path, monkeypatch) -> None:
     records_path = tmp_path / "corrigendum_official_fi.jsonl"
-    manual_path = tmp_path / "corrigendum_manual.yaml"
-    manual_path.write_text("[]\n", encoding="utf-8")
+    source_defect_path = tmp_path / "source_defect_fixes.yaml"
+    source_defect_path.write_text("[]\n", encoding="utf-8")
     records_path.write_text(
         json.dumps(
             {
@@ -42,7 +42,7 @@ def test_patch_table_loads_from_text_corpus(tmp_path: Path, monkeypatch) -> None
         encoding="utf-8",
     )
 
-    monkeypatch.setattr(corr, "_MANUAL_YAML", manual_path)
+    monkeypatch.setattr(corr, "_SOURCE_DEFECT_YAML", source_defect_path)
 
     table = corr.CorrigendumPatchTable.load_from_source(records_path)
 
@@ -484,8 +484,8 @@ def test_replay_xml_1992_1578_applies_owned_source_typos() -> None:
 
 def test_patch_table_keeps_johtolauseen_jalkeen_in_body_patch_lane(tmp_path: Path, monkeypatch) -> None:
     records_path = tmp_path / "corrigendum_official_fi.jsonl"
-    manual_path = tmp_path / "corrigendum_manual.yaml"
-    manual_path.write_text("[]\n", encoding="utf-8")
+    source_defect_path = tmp_path / "source_defect_fixes.yaml"
+    source_defect_path.write_text("[]\n", encoding="utf-8")
     records_path.write_text(
         json.dumps(
             {
@@ -507,7 +507,7 @@ def test_patch_table_keeps_johtolauseen_jalkeen_in_body_patch_lane(tmp_path: Pat
         encoding="utf-8",
     )
 
-    monkeypatch.setattr(corr, "_MANUAL_YAML", manual_path)
+    monkeypatch.setattr(corr, "_SOURCE_DEFECT_YAML", source_defect_path)
 
     table = corr.CorrigendumPatchTable.load_from_source(records_path)
 
@@ -526,8 +526,8 @@ def test_patch_table_routes_section_num_before_heading_corrigendum_to_body_patch
     monkeypatch,
 ) -> None:
     records_path = tmp_path / "corrigendum_official_fi.jsonl"
-    manual_path = tmp_path / "corrigendum_manual.yaml"
-    manual_path.write_text("[]\n", encoding="utf-8")
+    source_defect_path = tmp_path / "source_defect_fixes.yaml"
+    source_defect_path.write_text("[]\n", encoding="utf-8")
     records_path.write_text(
         json.dumps(
             {
@@ -549,7 +549,7 @@ def test_patch_table_routes_section_num_before_heading_corrigendum_to_body_patch
         encoding="utf-8",
     )
 
-    monkeypatch.setattr(corr, "_MANUAL_YAML", manual_path)
+    monkeypatch.setattr(corr, "_SOURCE_DEFECT_YAML", source_defect_path)
 
     table = corr.CorrigendumPatchTable.load_from_source(records_path)
 
@@ -564,8 +564,8 @@ def test_patch_table_dedupes_whitespace_variant_section_num_corrigenda(
     monkeypatch,
 ) -> None:
     records_path = tmp_path / "corrigendum_official_fi.jsonl"
-    manual_path = tmp_path / "corrigendum_manual.yaml"
-    manual_path.write_text("[]\n", encoding="utf-8")
+    source_defect_path = tmp_path / "source_defect_fixes.yaml"
+    source_defect_path.write_text("[]\n", encoding="utf-8")
     rows = [
         {
             "stable_id": "official#0",
@@ -599,7 +599,7 @@ def test_patch_table_dedupes_whitespace_variant_section_num_corrigenda(
         encoding="utf-8",
     )
 
-    monkeypatch.setattr(corr, "_MANUAL_YAML", manual_path)
+    monkeypatch.setattr(corr, "_SOURCE_DEFECT_YAML", source_defect_path)
 
     table = corr.CorrigendumPatchTable.load_from_source(records_path)
 
@@ -689,8 +689,8 @@ def test_patch_source_body_xml_rejects_ambiguous_section_num_without_sequence_wi
 
 def test_patch_table_preserves_unsupported_table_corrections(tmp_path: Path, monkeypatch) -> None:
     records_path = tmp_path / "corrigendum_official_fi.jsonl"
-    manual_path = tmp_path / "corrigendum_manual.yaml"
-    manual_path.write_text("[]\n", encoding="utf-8")
+    source_defect_path = tmp_path / "source_defect_fixes.yaml"
+    source_defect_path.write_text("[]\n", encoding="utf-8")
     records_path.write_text(
         json.dumps(
             {
@@ -715,7 +715,7 @@ def test_patch_table_preserves_unsupported_table_corrections(tmp_path: Path, mon
         encoding="utf-8",
     )
 
-    monkeypatch.setattr(corr, "_MANUAL_YAML", manual_path)
+    monkeypatch.setattr(corr, "_SOURCE_DEFECT_YAML", source_defect_path)
     table = corr.CorrigendumPatchTable.load_from_source(records_path)
 
     assert table._patches == {}
@@ -742,8 +742,8 @@ def test_load_from_source_routes_prose_johtolause_location_to_johtolause_patch(
     monkeypatch,
 ) -> None:
     records_path = tmp_path / "corrigendum_official_fi.jsonl"
-    manual_path = tmp_path / "corrigendum_manual.yaml"
-    manual_path.write_text("[]\n", encoding="utf-8")
+    source_defect_path = tmp_path / "source_defect_fixes.yaml"
+    source_defect_path.write_text("[]\n", encoding="utf-8")
     records_path.write_text(
         json.dumps(
             {
@@ -765,7 +765,7 @@ def test_load_from_source_routes_prose_johtolause_location_to_johtolause_patch(
         encoding="utf-8",
     )
 
-    monkeypatch.setattr(corr, "_MANUAL_YAML", manual_path)
+    monkeypatch.setattr(corr, "_SOURCE_DEFECT_YAML", source_defect_path)
 
     table = corr.CorrigendumPatchTable.load_from_source(records_path)
 
@@ -783,8 +783,8 @@ def test_load_from_source_skips_manual_expanded_duplicate_johtolause_patch(
     monkeypatch,
 ) -> None:
     records_path = tmp_path / "corrigendum_official_fi.jsonl"
-    manual_path = tmp_path / "corrigendum_manual.yaml"
-    manual_path.write_text("[]\n", encoding="utf-8")
+    source_defect_path = tmp_path / "source_defect_fixes.yaml"
+    source_defect_path.write_text("[]\n", encoding="utf-8")
     records = [
         {
             "stable_id": "official#0",
@@ -820,7 +820,7 @@ def test_load_from_source_skips_manual_expanded_duplicate_johtolause_patch(
         encoding="utf-8",
     )
 
-    monkeypatch.setattr(corr, "_MANUAL_YAML", manual_path)
+    monkeypatch.setattr(corr, "_SOURCE_DEFECT_YAML", source_defect_path)
 
     table = corr.CorrigendumPatchTable.load_from_source(records_path)
 
@@ -1148,8 +1148,8 @@ def test_patch_source_body_xml_blocks_location_scoped_retry(tmp_path: Path, monk
 </body></act></akomaNtoso>"""
 
     records_path = tmp_path / "corrigendum_official_fi.jsonl"
-    manual_path = tmp_path / "corrigendum_manual.yaml"
-    manual_path.write_text("[]\n", encoding="utf-8")
+    source_defect_path = tmp_path / "source_defect_fixes.yaml"
+    source_defect_path.write_text("[]\n", encoding="utf-8")
     records_path.write_text(
         json.dumps({
             "stable_id": "x#0",
@@ -1167,7 +1167,7 @@ def test_patch_source_body_xml_blocks_location_scoped_retry(tmp_path: Path, monk
         encoding="utf-8",
     )
 
-    monkeypatch.setattr(corr, "_MANUAL_YAML", manual_path)
+    monkeypatch.setattr(corr, "_SOURCE_DEFECT_YAML", source_defect_path)
     table = corr.CorrigendumPatchTable.load_from_source(records_path)
     corr.clear_misapplied_records()
 
@@ -1202,8 +1202,8 @@ def test_patch_source_body_xml_blocks_location_scoped_retry(tmp_path: Path, monk
 def test_patch_source_body_xml_full_body_success_still_applies(tmp_path: Path, monkeypatch) -> None:
     xml = b"""<?xml version="1.0" encoding="UTF-8"?><akomaNtoso><act><body><section eId="sec_6"><subsection eId="sec_6__subsec_2"><content><p>old text here</p></content></subsection></section></body></act></akomaNtoso>"""
     records_path = tmp_path / "corrigendum_official_fi.jsonl"
-    manual_path = tmp_path / "corrigendum_manual.yaml"
-    manual_path.write_text("[]\n", encoding="utf-8")
+    source_defect_path = tmp_path / "source_defect_fixes.yaml"
+    source_defect_path.write_text("[]\n", encoding="utf-8")
     records_path.write_text(
         json.dumps({
             "stable_id": "x#0",
@@ -1221,7 +1221,7 @@ def test_patch_source_body_xml_full_body_success_still_applies(tmp_path: Path, m
         encoding="utf-8",
     )
 
-    monkeypatch.setattr(corr, "_MANUAL_YAML", manual_path)
+    monkeypatch.setattr(corr, "_SOURCE_DEFECT_YAML", source_defect_path)
     table = corr.CorrigendumPatchTable.load_from_source(records_path)
     corr.clear_misapplied_records()
 
@@ -1516,11 +1516,11 @@ def test_patch_source_xml_2021_669_preserves_full_johtolause_after_context_corri
     johtolause = get_johtolause(patched)
 
     assert applied == [
-        "corr/669/2021/0",
-        "corr/669/2021/1",
-        "corr/669/2021/2",
-        "corr/669/2021/3",
-        "corr/669/2021/4",
+        "retry/2021/669/0",
+        "retry/2021/669/1",
+        "corr/2021/669/0",
+        "corr/2021/669/3",
+        "corr/2021/669/4",
     ]
     assert "..." not in johtolause
     assert "…" not in johtolause
@@ -1636,8 +1636,8 @@ def test_load_from_source_skips_duplicate_manual_body_patch_family(
     monkeypatch,
 ) -> None:
     records_path = tmp_path / "corrigendum_official_fi.jsonl"
-    manual_path = tmp_path / "corrigendum_manual.yaml"
-    manual_path.write_text(
+    source_defect_path = tmp_path / "source_defect_fixes.yaml"
+    source_defect_path.write_text(
         "- amendment_id: 2018/541\n"
         "  correction_type: body_text\n"
         "  wrong_text: |\n"
@@ -1681,7 +1681,7 @@ def test_load_from_source_skips_duplicate_manual_body_patch_family(
         encoding="utf-8",
     )
 
-    monkeypatch.setattr(corr, "_MANUAL_YAML", manual_path)
+    monkeypatch.setattr(corr, "_SOURCE_DEFECT_YAML", source_defect_path)
 
     table = corr.CorrigendumPatchTable.load_from_source(records_path)
 
@@ -1702,8 +1702,8 @@ def test_load_from_source_skips_near_duplicate_body_patch_variant_for_same_locat
     monkeypatch,
 ) -> None:
     records_path = tmp_path / "corrigendum_official_fi.jsonl"
-    manual_path = tmp_path / "corrigendum_manual.yaml"
-    manual_path.write_text("[]\n", encoding="utf-8")
+    source_defect_path = tmp_path / "source_defect_fixes.yaml"
+    source_defect_path.write_text("[]\n", encoding="utf-8")
     records = [
         {
             "stable_id": "official#0",
@@ -1751,7 +1751,7 @@ def test_load_from_source_skips_near_duplicate_body_patch_variant_for_same_locat
         encoding="utf-8",
     )
 
-    monkeypatch.setattr(corr, "_MANUAL_YAML", manual_path)
+    monkeypatch.setattr(corr, "_SOURCE_DEFECT_YAML", source_defect_path)
 
     table = corr.CorrigendumPatchTable.load_from_source(records_path)
 
@@ -1770,7 +1770,7 @@ def test_load_from_source_skips_near_duplicate_body_patch_variant_for_same_locat
 
 def test_load_from_source_records_manual_yaml_failure(tmp_path: Path, monkeypatch) -> None:
     records_path = tmp_path / "corrigendum_official_fi.jsonl"
-    manual_path = tmp_path / "corrigendum_manual.yaml"
+    source_defect_path = tmp_path / "source_defect_fixes.yaml"
     records_path.write_text(
         json.dumps(
             {
@@ -1794,13 +1794,13 @@ def test_load_from_source_records_manual_yaml_failure(tmp_path: Path, monkeypatc
         + "\n",
         encoding="utf-8",
     )
-    manual_path.write_text(":\n", encoding="utf-8")
+    source_defect_path.write_text(":\n", encoding="utf-8")
     corr.clear_misapplied_records()
 
-    monkeypatch.setattr(corr, "_MANUAL_YAML", manual_path)
+    monkeypatch.setattr(corr, "_SOURCE_DEFECT_YAML", source_defect_path)
     table = corr.CorrigendumPatchTable.load_from_source(records_path)
     records = corr.get_misapplied_records()
 
     assert table._loaded is True
-    assert records[-1]["reason"] == "FINLAND.CORRIGENDUM_MANUAL_YAML_LOAD_FAILED"
+    assert records[-1]["reason"] == "FINLAND.CORRIGENDUM_SOURCE_DEFECT_YAML_LOAD_FAILED"
     assert records[-1]["fallback"] == "db_only"

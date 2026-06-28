@@ -1,6 +1,6 @@
 """Regression: johtolause corrigenda flip a declining parse into a parsing one.
 
-Each manual johtolause corrigendum in ``data/finland/corrigendum_manual.yaml``
+Each manual johtolause corrigendum in ``data/finland/source_defect_fixes_fi.yaml``
 exists because a source-text defect (a glued pykälä token like ``18§``, a stray
 period like ``uusi.3``, or a dittographic ``uusi momentti 3 momentti``) makes the
 new grammar parser drop the affected insertion target.  Applying the corrigendum
@@ -25,7 +25,7 @@ from lawvm.finland.johtolause.api import parse_clause
 
 
 # Each case pins:
-#   amendment_id : the SID as it appears in corrigendum_manual.yaml (NUM/YEAR)
+#   amendment_id : the SID as it appears in source_defect_fixes_fi.yaml (NUM/YEAR)
 #   wrong_text   : the verbatim johtolause as it appears in the source XML, with
 #                  the multi-line indentation collapsed to single spaces (the
 #                  form the clause parser receives after tokenization).

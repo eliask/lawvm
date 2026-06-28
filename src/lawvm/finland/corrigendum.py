@@ -74,6 +74,7 @@ sk* = Finnish (relevant to LawVM), fs* = Swedish (skipped).
 from __future__ import annotations
 
 import difflib
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -93,7 +94,12 @@ from lawvm.core.ir import (
 from lawvm.core.mutation_boundary import TreePathStep
 from lawvm.core.semantic_types import StructuralAction, TextPatchKindEnum
 from lawvm.core.xml_parse import parse_corpus_xml
-from lawvm.finland.corrigendum_records import default_patch_records_path, load_patch_records
+from lawvm.finland.corrigendum_records import (
+    _RETRY_OVERLAYS_JSONL,  # noqa: F401 — used by tools.corr_records writers
+    default_patch_records_path,
+    load_patch_records,
+    load_unresolvable_overrides,
+)
 from lawvm.finland.metadata import _normalize_fi_parse_text as _normalize_ws_base
 
 # ---------------------------------------------------------------------------
@@ -162,6 +168,172 @@ class ParsedCorrigendumResult:
 class _NearDuplicatePatchCandidate:
     wrong_compact: str
     correct_compact: str
+
+
+# ---------------------------------------------------------------------------
+# Upstream-corrigenda retry overlays (per-``stable_id`` authority layer).
+#
+# A retry overlay targets one ``stable_id`` in the official classified records
+# (``corrigendum_official_fi.jsonl``). The official row there represents what
+# the LLM/regex/vision extractors produced — its ``(wrong_text, correct_text)``
+# may not byte-match in source XML (LLM ellipsis spans, multi-block collapse,
+# truncated body text). The retry overlay carries one or more byte-exact
+# ``patches`` that, applied together, realise the same upstream-corrigendum
+# effect that the LLM was reaching for.
+#
+# Authority relationship (AGENTS.md §0/§2.10): the overlay's authority comes
+# from the upstream Finlex corrigendum PDF (sha256'd in
+# ``corrigendum_sources_fi.jsonl``); the byte patches here are the *execution-
+# authorized form* of that corrigendum, not a LawVM-authored repair. That's
+# the distinction from source-defect fixes (``_SOURCE_DEFECT_YAML``), whose
+# authority comes from a typed source witness because no upstream
+# corrigendum exists.
+#
+# At load time, ``load_from_source`` SNIPS the official row whose
+# ``stable_id`` matches an overlay target and EMITS ops only from the overlay
+# patches, with the same dedup guards as a regular row. Per-overlay patches
+# dedup against earlier-processed rows in the same amendment — they never
+# wipe siblings (the legacy per-amendment "REPLACE all DB patches" semantics
+# that silently destroyed legitimate corrigendum content in the same
+# amendment when any retry landed).
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class _RetryOverlayPatch:
+    """One byte-exact ``(wrong_text, correct_text)`` patch in an overlay."""
+
+    wrong_text: str
+    correct_text: str
+    # Expected exact-occurrence count when this patch is applied to source XML.
+    # Default 1 — apply loop emits ``under_applied`` when the byte span appears
+    # fewer than this many times and ``ambiguous`` when more (AGENTS.md §1.8).
+    expected_apply_count: int = 1
+
+
+@dataclass(frozen=True, slots=True)
+class _RetryOverlay:
+    """One overlay targeting a single ``stable_id`` in the official records."""
+
+    stable_id: str
+    rule_id: str
+    family: str
+    amendment_id_numyr: str
+    source_pdf_witness: str
+    correction_type: str
+    span_verified: bool
+    verified_at: str
+    patches: Tuple[_RetryOverlayPatch, ...]
+
+
+def _load_retry_overlays(path: Optional[Path] = None) -> "dict[str, _RetryOverlay]":
+    """Load retry-overlay records from ``_RETRY_OVERLAYS_JSONL``.
+
+    Returns a dict keyed by overlay-targeted ``stable_id``. Lenient on a
+    missing file (returns ``{}``) — the overlay layer is optional, and the
+    core loader must produce a coherent patch table with or without it.
+    Each record is validated: overlays without a stable_id or with an
+    empty patches list are dropped, and failing individual records emit a
+    typed ``_record_misapplied`` diagnostic rather than aborting the whole
+    load.
+    """
+    target_path = path or _RETRY_OVERLAYS_JSONL
+    if not target_path.exists():
+        return {}
+    overlays: "dict[str, _RetryOverlay]" = {}
+    with target_path.open(encoding="utf-8") as f:
+        for line_no, line in enumerate(f, start=1):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError as exc:
+                _record_misapplied(
+                    op_id=f"corr/retry_overlay/parse/{line_no}",
+                    amendment_id="retry_overlay_jsonl",
+                    statute_id=str(target_path.name),
+                    reason="FINLAND.CORRIGENDUM_RETRY_OVERLAY_PARSE_FAILED",
+                    surface="retry_overlay",
+                    wrong_text=line[:300],
+                    correct_text="",
+                    path=str(target_path),
+                    line_no=line_no,
+                    exc_type=type(exc).__name__,
+                    exc_msg=str(exc),
+                )
+                continue
+            stable_id = str(record.get("stable_id") or "").strip()
+            if not stable_id:
+                _record_misapplied(
+                    op_id=f"corr/retry_overlay/{line_no}/missing_stable_id",
+                    amendment_id="retry_overlay_jsonl",
+                    statute_id=str(target_path.name),
+                    reason="FINLAND.CORRIGENDUM_RETRY_OVERLAY_MISSING_STABLE_ID",
+                    surface="retry_overlay",
+                    wrong_text=str(record)[:300],
+                    correct_text="",
+                    line_no=line_no,
+                )
+                continue
+            patches_raw = record.get("patches") or []
+            patches_list: List[_RetryOverlayPatch] = []
+            for p in patches_raw:
+                w = str(p.get("wrong_text") or "").strip()
+                c = str(p.get("correct_text") or "").strip()
+                if w and c and w != c:
+                    try:
+                        eac = int(p.get("expected_apply_count") or 1)
+                    except (TypeError, ValueError):
+                        eac = 1
+                    if eac < 1:
+                        eac = 1
+                    patches_list.append(
+                        _RetryOverlayPatch(
+                            wrong_text=w, correct_text=c, expected_apply_count=eac
+                        )
+                    )
+            if not patches_list:
+                _record_misapplied(
+                    op_id=f"corr/retry_overlay/{stable_id}/empty_patches",
+                    amendment_id="retry_overlay_jsonl",
+                    statute_id=str(target_path.name),
+                    reason="FINLAND.CORRIGENDUM_RETRY_OVERLAY_EMPTY_PATCHES",
+                    surface="retry_overlay",
+                    wrong_text=stable_id,
+                    correct_text="",
+                )
+                continue
+            # Duplicate-overlay-target diagnostic: two overlays cannot target
+            # the same stable_id (the second would silently drop the first).
+            if stable_id in overlays:
+                _record_misapplied(
+                    op_id=f"corr/retry_overlay/{stable_id}/duplicate_target",
+                    amendment_id="retry_overlay_jsonl",
+                    statute_id=str(target_path.name),
+                    reason="FINLAND.CORRIGENDUM_RETRY_OVERLAY_DUPLICATE_TARGET",
+                    surface="retry_overlay",
+                    wrong_text=stable_id,
+                    correct_text="",
+                )
+                continue  # keep the first overlay
+            overlays[stable_id] = _RetryOverlay(
+                stable_id=stable_id,
+                rule_id=str(
+                    record.get("rule_id") or "FINLAND.CORR.EXTRACTION_RETRY"
+                ),
+                family=str(record.get("family") or ""),
+                amendment_id_numyr=str(record.get("amendment_id") or "").strip(),
+                source_pdf_witness=str(record.get("source_pdf_witness") or "").strip(),
+                correction_type=str(
+                    record.get("correction_type") or "johtolause"
+                ).strip()
+                or "johtolause",
+                span_verified=bool(record.get("span_verified", False)),
+                verified_at=str(record.get("verified_at") or "").strip(),
+                patches=tuple(patches_list),
+            )
+    return overlays
 
 
 def _corrigendum_text_replace_op(
@@ -363,7 +535,29 @@ def extract_inline_corrections(
 
 _HERE = Path(__file__).resolve()
 _LAWVM_DIR = _HERE.parent.parent.parent.parent  # src/lawvm/finland/ → LawVM/
-_MANUAL_YAML = _LAWVM_DIR / "data" / "finland" / "corrigendum_manual.yaml"
+
+# Source-defect fixes (LawVM-authored; no upstream corrigendum). The carrier
+# file separately from upstream-corrigenda retries (see ``_RETRY_OVERLAYS``)
+# because the two are different proof problems: a source-defect patch's
+# authority comes from a typed source witness (typographic impossibility,
+# multi-acquisition corroboration), whereas a retry overlay's authority
+# comes from the upstream Finlex corrigendum PDF. Conflating them in one
+# file produced the "first entry REPLACES all DB-derived patches for
+# amendment_id" semantics that silently wiped legitimate sibling patches
+# when any retry landed (AGENTS.md §0 Mutation Boundary, §1.8 conservation).
+_SOURCE_DEFECT_YAML = _LAWVM_DIR / "data" / "finland" / "source_defect_fixes_fi.yaml"
+
+# Upstream-corrigenda extraction retries — per-``stable_id`` overlay records.
+# Each overlay targets one official-row ``stable_id`` and emits one or more
+# byte-exact ``patches`` (``wrong_text``, ``correct_text``) that, applied
+# together, realise the upstream-corrigendum effect. The overlay REPLACES
+# only the targeted official row's auto-extracted (wrong, correct) candidate
+# — never wiping siblings in the same amendment, unlike the legacy
+# per-amendment REPLACE semantics.
+#
+# The canonical path constant lives in ``corrigendum_records`` so tools that
+# read OR write overlays share one source of truth (the records module owns
+# all ``corrigendum_*_fi.jsonl`` paths).
 _WHITESPACE_RE = re.compile(r"\s+")
 
 # ---------------------------------------------------------------------------
@@ -2036,11 +2230,31 @@ class CorrigendumPatchTable:
         return tuple(dict(row) for row in self._unsupported_patches)
 
     @classmethod
-    def load_from_source(cls, source_path: Optional[Path] = None) -> "CorrigendumPatchTable":
-        """Load all classified corrections from the repo text corpus."""
+    def load_from_source(
+        cls,
+        source_path: Optional[Path] = None,
+        overlays_path: Optional[Path] = None,
+    ) -> "CorrigendumPatchTable":
+        """Load all classified corrections from the repo text corpus.
+
+        ``overlays_path`` resolution precedence:
+          1. explicit ``overlays_path`` argument (tests pinning the overlay
+             layer in isolation should pass this directly),
+          2. ``<source_path>.parent / corrigendum_retry_overlays_fi.jsonl``
+             when a ``source_path`` is provided (so tests that point the
+             official-records path at a tmp dir automatically get an
+             empty overlay — they don't pick up the real repo file), and
+          3. the module-level ``_RETRY_OVERLAYS_JSONL`` constant when
+             ``source_path`` is None (production: real repo file).
+        """
         table = cls()
         path = source_path or default_patch_records_path()
         rows = load_patch_records(path)
+        if overlays_path is None:
+            if source_path is not None:
+                overlays_path = source_path.parent / _RETRY_OVERLAYS_JSONL.name
+            else:
+                overlays_path = _RETRY_OVERLAYS_JSONL
         if not rows:
             return table
 
@@ -2152,7 +2366,140 @@ class CorrigendumPatchTable:
                     return True
             return False
 
+        # -----------------------------------------------------------------
+        # Upstream-corrigenda retry overlays — per-``stable_id`` authority
+        # layer. Loaded BEFORE the per-row loop so overlay-targeted official
+        # rows can be SKIPPED: their auto-extracted ``(wrong, correct)`` is
+        # replaced by the overlay's byte-exact ``patches``. The overlay
+        # REPLACES only the targeted row — never wiping sibling patches in
+        # the same amendment (the §0 promotion chain made surgical instead
+        # of wholesale, vs. the legacy per-amendment "REPLACE all DB
+        # patches" semantics that silently destroyed legitimate corrigendum
+        # content in the same amendment when any retry landed).
+        # -----------------------------------------------------------------
+        overlays = _load_retry_overlays(overlays_path)
+        overlay_targeted_stable_ids: set[str] = set(overlays.keys())
+        # Unresolvable-corrigendum overlays: per-``stable_id`` SKIP-only
+        # records declaring no mechanical apply is possible (source missing,
+        # anchor absent post-search, semantic-only, ambiguous anchor).
+        # These official rows are skipped at load time (no patch emitted); a
+        # typed finding is recorded per the schema at
+        # ``corrigendum_unresolvable_fi.yaml``.
+        unresolvable_records = load_unresolvable_overrides()
+        for rec in unresolvable_records:
+            sid = str(rec.get("stable_id") or "").strip()
+            if sid:
+                overlay_targeted_stable_ids.add(sid)
+        # Unique op_id counter per amendment within the retry-overlay loop. Each
+        # overlay's local ``patch_idx`` starts at 0, so emitting
+        # ``retry/<aid>/<patch_idx>`` would collide when two overlays target
+        # the same amendment (e.g. expanded_corr stable_ids for 2021/669).
+        # Maintain a per-amendment global counter to keep op_ids unique —
+        # uniqueness is required because apply loop appends op_ids to the
+        # ``applied`` list and downstream tracking (applied_list assertion,
+        # misapplied ledger dedup) assumes uniqueness.
+        overlay_op_counters: dict[str, int] = {}
+        for overlay_stable_id, overlay in overlays.items():
+            amendment_id_numyr = overlay.amendment_id_numyr
+            if not amendment_id_numyr:
+                continue
+            amendment_id = _to_grafter_mid(amendment_id_numyr)
+            if amendment_id is None:
+                continue
+            overlay_corr_type = overlay.correction_type
+            op_seq = overlay_op_counters.get(amendment_id, 0)
+            for patch_idx, patch in enumerate(overlay.patches):
+                wrong = patch.wrong_text.strip()
+                correct = patch.correct_text.strip()
+                if not wrong or not correct or wrong == correct:
+                    continue
+                wrong_norm = _WHITESPACE_RE.sub(
+                    " ", _normalize_ws(_ell_re.sub("…", wrong))
+                ).strip()
+                correct_norm = _WHITESPACE_RE.sub(
+                    " ", _normalize_ws(_ell_re.sub("…", correct))
+                ).strip()
+                wrong_compact = "".join(wrong_norm.split())
+                correct_compact = "".join(correct_norm.split())
+                # Body text-family dedup — overlay patches are typed/curated,
+                # so we apply the compact-pair dedup to avoid double-emit
+                # within an amendment. The near-duplicate-location heuristic
+                # is moot (overlay patches carry no location_desc).
+                if (
+                    overlay_corr_type in _STATUTE_BODY_TYPES | {"body_text"}
+                    and _contains_same_compact_text_pair(
+                        amendment_id,
+                        overlay_corr_type,
+                        wrong_compact,
+                        correct_compact,
+                    )
+                ):
+                    continue
+                dedup_key = (
+                    amendment_id,
+                    overlay_corr_type,
+                    "",
+                    wrong_norm,
+                    correct_norm,
+                )
+                if dedup_key in _seen:
+                    continue
+                _seen.add(dedup_key)
+                _kept_text_pairs.setdefault(amendment_id, []).append(
+                    (overlay_corr_type, wrong_norm, correct_norm)
+                )
+                op = _corrigendum_text_replace_op(
+                    op_id=f"retry/{amendment_id_numyr}/{op_seq}",
+                    sequence=op_seq,
+                    target=_location_to_address("", overlay_corr_type),
+                    wrong_text=wrong,
+                    correct_text=correct,
+                    source=OperationSource(
+                        statute_id=f"corr/{amendment_id_numyr}",
+                        raw_text=(
+                            f"retry overlay on {overlay_stable_id}"
+                            f" family={overlay.family!r}"
+                            f" source_pdf_witness={overlay.source_pdf_witness!r}"
+                        ),
+                        corrected_by=amendment_id_numyr,
+                        expected_apply_count=patch.expected_apply_count,
+                    ),
+                )
+                op_seq += 1
+                overlay_op_counters[amendment_id] = op_seq
+                if (
+                    overlay_corr_type in _STATUTE_BODY_TYPES
+                    or overlay_corr_type == "body_text"
+                ):
+                    if amendment_id not in table._body_patches:
+                        table._body_patches[amendment_id] = []
+                    table._body_patches[amendment_id].append((wrong, correct, ""))
+                elif overlay_corr_type != "table":
+                    if amendment_id not in table._patches:
+                        table._patches[amendment_id] = []
+                    table._patches[amendment_id].append(op)
+                else:
+                    table._unsupported_patches.append(
+                        {
+                            "reason": "FINLAND.CORRIGENDUM_TABLE_UNSUPPORTED",
+                            "amendment_id": amendment_id,
+                            "source_amendment_id": amendment_id_numyr,
+                            "statute_id": "",
+                            "correction_type": overlay_corr_type,
+                            "location_desc": "",
+                            "wrong_text": wrong,
+                            "correct_text": correct,
+                        }
+                    )
+
         for row in rows:
+            # Skip overlay-targeted official rows: the overlay's byte-exact
+            # patches have already been emitted above; processing this row's
+            # auto-extracted (wrong, correct) would double-emit and re-introduce
+            # the misapplied patch that the overlay exists to replace.
+            row_stable_id = str(row.get("stable_id") or "").strip()
+            if row_stable_id and row_stable_id in overlay_targeted_stable_ids:
+                continue
             amendment_id_numyr = str(row.get("amendment_id") or "").strip()
             idx = int(row.get("correction_index") or 0)
             location = str(row.get("location_desc") or "")
@@ -2281,8 +2628,13 @@ class CorrigendumPatchTable:
                     }
                 )
 
-        # Merge manual overrides — replaces DB entries for matching amendment_id
-        manual_path = _MANUAL_YAML
+        # Merge LawVM-authored source-defect patches — the carrier is now
+        # ``_SOURCE_DEFECT_YAML`` (separate from upstream-corrigenda retries,
+        # which arrive as per-``stable_id`` overlays on official rows). The
+        # rows here ONLY apply to amendments that have no upstream Finlex
+        # corrigendum; the file has been curated to exclude upstream
+        # retries (which moved to ``corrigendum_retry_overlays_fi.jsonl``).
+        manual_path = _SOURCE_DEFECT_YAML
         if manual_path.exists():
             try:
                 entries = yaml.safe_load(manual_path.read_text(encoding="utf-8")) or []
@@ -2297,6 +2649,17 @@ class CorrigendumPatchTable:
                     amendment_id = _to_grafter_mid(amendment_id_numyr)
                     if amendment_id is None:
                         continue
+                    # Apply-cardinality invariant: patches that target exactly
+                    # one byte span leave this at the default 1; table-row or
+                    # repeat-pattern fixes opt in to N>1 explicitly. Loader-
+                    # tolerant — missing field default 1 preserves all current
+                    # patch behaviour.
+                    try:
+                        eac = int(entry.get("expected_apply_count") or 1)
+                    except (TypeError, ValueError):
+                        eac = 1
+                    if eac < 1:
+                        eac = 1
                     wrong_norm = _WHITESPACE_RE.sub(" ", _normalize_ws(_ell_re.sub("…", wrong))).strip()
                     correct_norm = _WHITESPACE_RE.sub(" ", _normalize_ws(_ell_re.sub("…", correct))).strip()
                     # body_text corrections go to a separate dict — not johtolause
@@ -2315,7 +2678,9 @@ class CorrigendumPatchTable:
                             (corr_type, wrong_norm, correct_norm)
                         )
                         continue
-                    # First manual entry for this amendment clears DB-loaded ops
+                    # First manual entry for this amendment clears DB-loaded ops.
+                    # Safe because amendments in this file have no upstream
+                    # corrigendum (no DB ops to wipe) — the pop is a no-op.
                     if amendment_id not in manual_seen:
                         manual_seen.add(amendment_id)
                         table._patches.pop(amendment_id, None)
@@ -2329,19 +2694,21 @@ class CorrigendumPatchTable:
                             statute_id=f"corr/{amendment_id_numyr}",
                             raw_text=entry.get("notes", ""),
                             corrected_by=amendment_id_numyr,
+                            expected_apply_count=eac,
                         ),
                     )
                     if amendment_id not in table._patches:
                         table._patches[amendment_id] = []
                     table._patches[amendment_id].append(op)
             except (OSError, yaml.YAMLError) as exc:
-                # Unreadable or malformed manual override file — DB patches still apply,
-                # but the failure must remain visible.
+                # Unreadable or malformed source-defect file — DB patches still
+                # apply, but the failure must remain visible.
                 _record_misapplied(
-                    op_id="corr/manual_yaml/load",
-                    amendment_id="manual_yaml",
-                    statute_id="corrigendum_manual.yaml",
-                    reason="FINLAND.CORRIGENDUM_MANUAL_YAML_LOAD_FAILED",
+                    op_id="corr/source_defect_yaml/load",
+                    amendment_id="source_defect_yaml",
+                    statute_id="source_defect_fixes_fi.yaml",
+                    reason="FINLAND.CORRIGENDUM_SOURCE_DEFECT_YAML_LOAD_FAILED",
+                    surface="source_defect",
                     wrong_text="",
                     correct_text="",
                     path=str(manual_path),
@@ -2399,13 +2766,19 @@ class CorrigendumPatchTable:
                 wrong_text, correct_text = context_patch
             wrong_b = wrong_text.encode("utf-8")
             count = fragment.count(wrong_b)
-            if count > 1:
-                _MISAPPLIED.append({
-                    "op_id": op.op_id, "amendment_id": amendment_mid,
-                    "statute_id": statute_id,
-                    "reason": "ambiguous", "count": count,
-                    "wrong_text": wrong_text, "correct_text": correct_text,
-                })
+            expected_apply_count = max(1, op.source.expected_apply_count) if op.source else 1
+            if count > expected_apply_count:
+                _record_misapplied(
+                    op_id=op.op_id,
+                    amendment_id=amendment_mid,
+                    statute_id=statute_id,
+                    reason="ambiguous",
+                    surface=_surface_from_op_id(op.op_id),
+                    count=count,
+                    expected_apply_count=expected_apply_count,
+                    wrong_text=wrong_text,
+                    correct_text=correct_text,
+                )
                 continue
             new_frag, ok = _apply_text_replace_single_text_slot(
                 fragment, wrong_text, correct_text
@@ -2446,6 +2819,7 @@ class CorrigendumPatchTable:
                             amendment_id=amendment_mid,
                             statute_id=statute_id,
                             reason="post_patch_xml_invalid",
+                            surface=_surface_from_op_id(op.op_id),
                             wrong_text=wrong_text,
                             correct_text=correct_text,
                             error=str(exc),
@@ -2460,6 +2834,7 @@ class CorrigendumPatchTable:
                             amendment_id=amendment_mid,
                             statute_id=statute_id,
                             reason="post_patch_xml_invalid",
+                            surface=_surface_from_op_id(op.op_id),
                             wrong_text=wrong_text,
                             correct_text=correct_text,
                             error=str(repaired_exc),
@@ -2472,19 +2847,25 @@ class CorrigendumPatchTable:
                 frag_ws = re.sub(r"\s+", " ", _normalize_ws(fragment.decode("utf-8", errors="replace")))
                 correct_ws = re.sub(r"\s+", " ", _normalize_ws(correct_text)).strip()
                 if correct_ws and correct_ws in frag_ws:
-                    _MISAPPLIED.append({
-                        "op_id": op.op_id, "amendment_id": amendment_mid,
-                        "statute_id": statute_id,
-                        "reason": "already_applied",
-                        "wrong_text": wrong_text, "correct_text": correct_text,
-                    })
+                    _record_misapplied(
+                        op_id=op.op_id,
+                        amendment_id=amendment_mid,
+                        statute_id=statute_id,
+                        reason="already_applied",
+                        surface=_surface_from_op_id(op.op_id),
+                        wrong_text=wrong_text,
+                        correct_text=correct_text,
+                    )
                 else:
-                    _MISAPPLIED.append({
-                        "op_id": op.op_id, "amendment_id": amendment_mid,
-                        "statute_id": statute_id,
-                        "reason": "miss",
-                        "wrong_text": wrong_text, "correct_text": correct_text,
-                    })
+                    _record_misapplied(
+                        op_id=op.op_id,
+                        amendment_id=amendment_mid,
+                        statute_id=statute_id,
+                        reason="miss",
+                        surface=_surface_from_op_id(op.op_id),
+                        wrong_text=wrong_text,
+                        correct_text=correct_text,
+                    )
 
         if applied:
             xml_bytes = xml_bytes[:frag_start] + fragment + xml_bytes[frag_end:]
@@ -2521,13 +2902,25 @@ class CorrigendumPatchTable:
             op_id = f"body_patch/{amendment_mid}/{idx}"
             wrong_b = wrong.encode("utf-8")
             count = fragment.count(wrong_b)
-            if count > 1:
-                _MISAPPLIED.append({
-                    "op_id": op_id, "amendment_id": amendment_mid,
-                    "statute_id": statute_id,
-                    "reason": "ambiguous", "count": count,
-                    "wrong_text": wrong, "correct_text": correct,
-                })
+            # Body patches today are (wrong, correct, location) tuples; the
+            # expected_apply_count carrier is wired through OperationSource
+            # for johtolause patches only. Body patches use the default N=1
+            # cardinality invariant here (over-applied → ambiguous). Extending
+            # the body-patch tuple to carry expected_apply_count is a
+            # follow-up; for current data every body patch is N=1.
+            expected_apply_count = 1
+            if count > expected_apply_count:
+                _record_misapplied(
+                    op_id=op_id,
+                    amendment_id=amendment_mid,
+                    statute_id=statute_id,
+                    reason="ambiguous",
+                    surface=_surface_from_op_id(op_id),
+                    count=count,
+                    expected_apply_count=expected_apply_count,
+                    wrong_text=wrong,
+                    correct_text=correct,
+                )
                 continue
             new_frag, ok = _apply_text_replace(fragment, wrong, correct)
             if ok:
@@ -2604,19 +2997,25 @@ class CorrigendumPatchTable:
                 frag_ws = re.sub(r"\s+", " ", _normalize_ws(fragment.decode("utf-8", errors="replace")))
                 correct_ws = re.sub(r"\s+", " ", _normalize_ws(correct)).strip()
                 if correct_ws and correct_ws in frag_ws:
-                    _MISAPPLIED.append({
-                        "op_id": op_id, "amendment_id": amendment_mid,
-                        "statute_id": statute_id,
-                        "reason": "already_applied",
-                        "wrong_text": wrong, "correct_text": correct,
-                    })
+                    _record_misapplied(
+                        op_id=op_id,
+                        amendment_id=amendment_mid,
+                        statute_id=statute_id,
+                        reason="already_applied",
+                        surface=_surface_from_op_id(op_id),
+                        wrong_text=wrong,
+                        correct_text=correct,
+                    )
                 else:
-                    _MISAPPLIED.append({
-                        "op_id": op_id, "amendment_id": amendment_mid,
-                        "statute_id": statute_id,
-                        "reason": "miss",
-                        "wrong_text": wrong, "correct_text": correct,
-                    })
+                    _record_misapplied(
+                        op_id=op_id,
+                        amendment_id=amendment_mid,
+                        statute_id=statute_id,
+                        reason="miss",
+                        surface=_surface_from_op_id(op_id),
+                        wrong_text=wrong,
+                        correct_text=correct,
+                    )
 
         if applied:
             xml_bytes = xml_bytes[:body_start] + fragment + xml_bytes[body_end:]
@@ -2636,6 +3035,84 @@ _PATCH_TABLE: Optional[CorrigendumPatchTable] = None
 # flush_misapplied_records() for feedback-loop diagnostics.
 _MISAPPLIED: list[dict[str, Any]] = []
 
+# Closed vocabulary of misapply reasons. Per AGENTS.md §1.9 (typed carriers
+# over dynamic shape), this is the typed enumeration of every reason a
+# corrigendum/source-defect/retry patch can fail to apply cleanly.
+# Add a new value here ONLY if it is documented, tested, and observable in
+# the misapplied ledger. The enum replaces the prior unbounded ``reason``
+# string; the runtime assertion in ``_record_misapplied`` keeps the list
+# closed as new emission sites appear.
+MISAPPLY_REASONS: frozenset[str] = frozenset(
+    {
+        # Apply-path outcomes.
+        "miss",
+        "ambiguous",
+        "already_applied",
+        # Sub-class of already_applied: wrong_text has zero occurrences AND
+        # the corrigendum's correct_text IS present in source XML — meaning
+        # the source XML LawVM acquired has the corrigendum's effect already
+        # applied (acquisition returned a post-corrigendum version, or the
+        # consolidated text carried the correction). This is an "honest
+        # acceptance" residual — the patch's effect is realised, but the
+        # runtime patch itself could not fire.
+        "already_applied_in_source",
+        "post_patch_xml_invalid",
+        # Typed pathology reasons (with stable FINLAND.* namespaces).
+        "FINLAND.CORRIGENDUM_BODY_LOCATION_FALLBACK_BLOCKED",
+        "FINLAND.CORRIGENDUM_TABLE_UNSUPPORTED",
+        "FINLAND.INLINE_CORRIGENDUM_MISSING_AUTHORIAL_NOTE",
+        "FINLAND.INLINE_CORRIGENDUM_MISSING_WRONG_TEXT",
+        "FINLAND.CORRIGENDUM_ADD_EMPTY_BODY",
+        "FINLAND.CORRIGENDUM_ADD_UNSUPPORTED",
+        # Carrier-load failures (YAML / overlay JSONL).
+        "FINLAND.CORRIGENDUM_SOURCE_DEFECT_YAML_LOAD_FAILED",
+        "FINLAND.CORRIGENDUM_RETRY_OVERLAY_PARSE_FAILED",
+        "FINLAND.CORRIGENDUM_RETRY_OVERLAY_MISSING_STABLE_ID",
+        "FINLAND.CORRIGENDUM_RETRY_OVERLAY_EMPTY_PATCHES",
+        "FINLAND.CORRIGENDUM_RETRY_OVERLAY_DUPLICATE_TARGET",
+        # Closed-set self-enforcement: emitting these means a caller
+        # passed an unrecognised reason/surface; the record still lands.
+        "FINLAND.MISAPPLY_REASON_NOT_IN_CLOSED_SET",
+        "FINLAND.MISAPPLY_SURFACE_NOT_IN_CLOSED_SET",
+    }
+)
+
+# Per-source-surface tag for misapplied records. Distinguishes which carrier
+# produced this misapply, so a per-surface rate can be reported and an
+# adjudicated-but-explained miss can be filtered honestly. Aligned with the
+# three-surface topology: (a) upstream-corrigendum + retry-overlay, (c)
+# source-defect, (b) oracle-override (reserved).
+MISAPPLY_SURFACES: frozenset[str] = frozenset(
+    {
+        "upstream_corrigendum",
+        "retry_overlay",
+        "source_defect",
+        "oracle_override",  # reserved — surface (b), step 6
+    }
+)
+
+
+def _surface_from_op_id(op_id: str) -> str:
+    """Infer the carrier surface (a/b/c) from a patch op_id prefix.
+
+    Used to tag misapply records with which surface produced the failure.
+    The op_id prefix is set at op-construction time in
+    ``CorrigendumPatchTable.load_from_source``. Today's prefixes:
+
+      ``corr/``   → upstream_corrigendum  (LLM-extracted official-row patch)
+      ``retry/``  → retry_overlay          (per-stable_id overlay patch)
+      ``manual/`` → source_defect          (source_defect_fixes_fi.yaml row)
+      ``body_patch/`` → upstream_corrigendum default (tuples don't carry
+                      surface; the source-defect body_text routing is a
+                      known follow-up — step 4's typed carrier addition
+                      defers to the legacy 3-tuple form today).
+    """
+    if op_id.startswith("retry/"):
+        return "retry_overlay"
+    if op_id.startswith("manual/"):
+        return "source_defect"
+    return "upstream_corrigendum"
+
 
 def _record_misapplied(
     *,
@@ -2645,14 +3122,53 @@ def _record_misapplied(
     reason: str,
     wrong_text: str,
     correct_text: str,
+    surface: str = "upstream_corrigendum",
     **extra: object,
 ) -> None:
+    # Closed-enum invariant: a new reason must be added to ``MISAPPLY_REASONS``
+    # so the diagnostic surface stays typed. A violation emits a
+    # ``FINLAND.MISAPPLY_REASON_NOT_IN_CLOSED_SET`` diagnostic that propagates
+    # through the same ledger (§1.10 fail-loud) without silently dropping the
+    # record.
+    if reason not in MISAPPLY_REASONS:
+        _MISAPPLIED.append(
+            {
+                "op_id": op_id,
+                "amendment_id": amendment_id,
+                "statute_id": statute_id,
+                "reason": "FINLAND.MISAPPLY_REASON_NOT_IN_CLOSED_SET",
+                "surface": surface if surface in MISAPPLY_SURFACES else "upstream_corrigendum",
+                "wrong_text": wrong_text,
+                "correct_text": correct_text,
+                "unrecognised_reason": reason,
+                **extra,
+            }
+        )
+        return
+    if surface not in MISAPPLY_SURFACES:
+        # Surface drift smells like a carrier-type leak — surface the
+        # diagnostic rather than silently tagging with the default.
+        _MISAPPLIED.append(
+            {
+                "op_id": op_id,
+                "amendment_id": amendment_id,
+                "statute_id": statute_id,
+                "reason": "FINLAND.MISAPPLY_SURFACE_NOT_IN_CLOSED_SET",
+                "surface": "upstream_corrigendum",
+                "wrong_text": wrong_text,
+                "correct_text": correct_text,
+                "unrecognised_surface": surface,
+                **extra,
+            }
+        )
+        return
     _MISAPPLIED.append(
         {
             "op_id": op_id,
             "amendment_id": amendment_id,
             "statute_id": statute_id,
             "reason": reason,
+            "surface": surface,
             "wrong_text": wrong_text,
             "correct_text": correct_text,
             **extra,

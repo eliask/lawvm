@@ -4,11 +4,39 @@ import json
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 _HERE = Path(__file__).resolve()
 _LAWVM_DIR = _HERE.parent.parent.parent.parent
 _OFFICIAL_JSONL = _LAWVM_DIR / "data" / "finland" / "corrigendum_official_fi.jsonl"
 _ADJUDICATIONS_JSONL = _LAWVM_DIR / "data" / "finland" / "corrigendum_adjudications_fi.jsonl"
 _SOURCES_JSONL = _LAWVM_DIR / "data" / "finland" / "corrigendum_sources_fi.jsonl"
+# Upstream-corrigenda extraction retries — per-``stable_id`` overlay records
+# targeting rows in ``_OFFICIAL_JSONL``. Kept in ``corrigendum_records`` (the
+# canonical records module) so tools that read OR write overlays share one
+# path constant with the loader in ``corrigendum.py``.
+_RETRY_OVERLAYS_JSONL = (
+    _LAWVM_DIR / "data" / "finland" / "corrigendum_retry_overlays_fi.jsonl"
+)
+# Oracle overrides — typed manual adjudication of Finlex consolidated text
+# where the oracle (consolidated comparison surface) is wrong in any way:
+# stale editorial, transcription error, wrong section, missing amendment
+# effect, omitted repeal, editorial-convention-vs-legal-truth mismatch, etc.
+# (LawVM-replay-is-right is only one of several possible oracle-wrong shapes.)
+# A distinct plane from upstream-corrigenda retries and source-defect fixes:
+# an override mutates the *comparison surface*, never the source XML
+# (AGENTS.md §2.10 projection plane; §0 promotion boundary). Empty today;
+# populated as oracle disagreements are adjudicated.
+_ORACLE_OVERRIDES_YAML = (
+    _LAWVM_DIR / "data" / "finland" / "oracle_overrides_fi.yaml"
+)
+# Unresolvable-corrigendum records — per-``stable_id`` overlays declaring an
+# upstream-corrigendum item genuinely cannot be applied mechanically. The
+# official row is SKIPPED at load time (no patch emitted); a typed finding
+# records why. See notes/schema at top of ``corrigendum_unresolvable_fi.yaml``.
+_UNRESOLVABLE_YAML = (
+    _LAWVM_DIR / "data" / "finland" / "corrigendum_unresolvable_fi.yaml"
+)
 
 _OFFICIAL_FIELDS = [
     "stable_id",
@@ -33,6 +61,84 @@ _OFFICIAL_FIELDS = [
 _ADJUDICATION_FIELDS = [
     "stable_id",
     "verified_in_source",
+]
+
+# Retry-overlay records — per-``stable_id`` overlays on official rows. Each
+# overlay replaces the auto-extracted ``(wrong_text, correct_text)`` of one
+# official row with one or more byte-exact ``patches`` that, applied
+# together, realise the upstream-corrigendum effect.
+#
+# ``rule_id`` / ``family`` are labels (AGENTS.md §2.1 — not a heavy taxonomy
+# at this layer). ``span_verified`` is the LLM-loop terminator: the
+# ``wrong_text`` exists byte-exact in the source XML at the cited locator.
+_RETRY_OVERLAY_FIELDS = [
+    "stable_id",
+    "rule_id",
+    "family",
+    "amendment_id",
+    "source_pdf_witness",
+    "correction_type",
+    "span_verified",
+    "verified_at",
+    "patches",
+]
+
+# Unresolvable-corrigendum records — per-``stable_id`` overlay that declares
+# the upstream-corrigendum item genuinely cannot be applied mechanically. The
+# patch's effect may be purely semantic (no byte-level representation exists
+# in source XML), or the source XML may not contain the referenced text at
+# all, or applying it produces invalid XML no matter how the candidate is
+# refined. This is NOT a retry (which is a verified byte-exact alternative);
+# it is the typed-recording-of-impossibility counterpart. The official row is
+# SKIPPED at load time, exactly as for retry overlays — but no patch is
+# emitted. Instead, a typed finding records *why* it cannot apply, so the
+# residual ledger is honest about the resolution rather than reporting a
+# perpetual ``miss``.
+#
+# Witness kinds (closed vocabulary for the ``evidence.kind`` field; same as
+# the schema block at the top of ``corrigendum_unresolvable_fi.yaml``):
+#   source_missing_base_text      — base text corrigendum references is absent
+#                                    from the acquired source XML (acquisition
+#                                    defect — attachment not loaded).
+#   byte_anchor_absent            — wrong_text has no byte-exact occurrence in
+#                                    source XML after manual/agentic search.
+#   semantic_only                 — corrigendum's effect requires semantic
+#                                    interpretation not expressible as a
+#                                    byte-level patch.
+#   ambiguous_anchor_unresolvable — multiple byte-exact occurrences and no
+#                                    scoped location_desc can disambiguate.
+#
+# NOTE: ``xml_invalid_after_apply`` is intentionally NOT a witness kind.
+# LawVM patch operators must never author patches that, applied to XML
+# bytes, produce malformed XML. The 71 ``post_patch_xml_invalid`` misapplied
+# records remaining in the current ledger are operator-extraction bugs that
+# need a retry-overlay with a correct XML-serialization-level patch — never a
+# "give up, it's unresolvable" verdict.
+_UNRESOLVABLE_FIELDS = [
+    "stable_id",
+    "rule_id",
+    "amendment_id",
+    "source_pdf_witness",
+    "correction_type",
+    "evidence",
+    "verified_at",
+]
+
+# Oracle-override records — typed manual adjudication of Finlex consolidated
+# text where LawVM replay is right and the oracle is stale. The schema is
+# documented in detail at the top of ``oracle_overrides_fi.yaml``.
+# ``override_kind`` / ``source_witness.kind`` are open string fields today;
+# promoting them to typed enums is a follow-up once the corpus of overrides
+# is large enough that a closed set amplifies review work.
+_ORACLE_OVERRIDE_FIELDS = [
+    "rule_id",
+    "statute_id",
+    "target_address",
+    "override_kind",
+    "source_witness",
+    "evidence_summary",
+    "strict_mode",
+    "verified_at",
 ]
 
 _SOURCE_FIELDS = [
@@ -61,6 +167,37 @@ def default_adjudication_records_path() -> Path:
 
 def default_source_records_path() -> Path:
     return _SOURCES_JSONL
+
+
+def default_retry_overlays_path() -> Path:
+    """Canonical upstream-corrigenda retry overlay records path."""
+    return _RETRY_OVERLAYS_JSONL
+
+
+def default_oracle_overrides_path() -> Path:
+    """Canonical oracle-override records path.
+
+    The carrier for surface (b): typed manual adjudication of Finlex
+    consolidated text where the oracle is wrong in any way (not just
+    stale-editorial — wrong section, missing amendment effect, omitted
+    repeal, transcription error, editorial-convention-vs-legal-truth
+    mismatch, etc.). Mutates the *projection* / comparison plane, never
+    the source XML — see AGENTS.md §2.10 and the spec at the top of
+    ``oracle_overrides_fi.yaml``.
+    """
+    return _ORACLE_OVERRIDES_YAML
+
+
+def default_unresolvable_overrides_path() -> Path:
+    """Canonical unresolvable-corrigendum records path.
+
+    Per-``stable_id`` overlays declaring an upstream-corrigendum item
+    genuinely cannot be applied mechanically (source missing attachment,
+    byte anchor absent post-search, semantic-only effect, ambiguous
+    anchor). The official row is skipped at load time; a typed finding
+    records why. See ``corrigendum_unresolvable_fi.yaml`` for the schema.
+    """
+    return _UNRESOLVABLE_YAML
 
 
 def default_patch_records_path() -> Path:
@@ -242,6 +379,56 @@ def write_adjudication_records(records: list[JsonRow], path: Path | None = None)
     return target
 
 
+def load_retry_overlay_records(path: Path | None = None) -> list[JsonRow]:
+    """Read raw retry-overlay dicts from ``_RETRY_OVERLAYS_JSONL``.
+
+    The runtime loader ``lawvm.finland.corrigendum._load_retry_overlays``
+    returns wrapped frozen dataclasses; this reader returns the raw dicts
+    so tools that aggregate or rewrite the overlay file (e.g. ``reextract
+    --update`` merging new candidates) operate on the canonical schema.
+    """
+    target = Path(path) if path is not None else _RETRY_OVERLAYS_JSONL
+    if not target.exists():
+        return []
+    records: list[JsonRow] = []
+    with target.open(encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            records.append(json.loads(line))
+    return records
+
+
+def write_retry_overlay_records(records: list[JsonRow], path: Path | None = None) -> Path:
+    """Persist retry-overlay records, normalised to ``_RETRY_OVERLAY_FIELDS``.
+
+    Stable-ordered by ``stable_id`` for deterministic diffs. Drops records
+    without a stable_id or with an empty ``patches`` list (matches the
+    load-time validation in ``_load_retry_overlays`` — surfaces a typed
+    diagnostic instead of silently dropping on the read side).
+    """
+    target = Path(path) if path is not None else _RETRY_OVERLAYS_JSONL
+    target.parent.mkdir(parents=True, exist_ok=True)
+    normalized = []
+    for record in sorted(records, key=lambda r: str(r.get("stable_id") or "")):
+        stable_id = str(record.get("stable_id") or "").strip()
+        if not stable_id:
+            continue
+        patches = record.get("patches") or []
+        if not patches:
+            continue
+        row = {field: record.get(field) for field in _RETRY_OVERLAY_FIELDS}
+        row["stable_id"] = stable_id
+        row["patches"] = list(patches)
+        normalized.append(row)
+    with target.open("w", encoding="utf-8") as f:
+        for record in normalized:
+            f.write(json.dumps(record, ensure_ascii=False, sort_keys=False))
+            f.write("\n")
+    return target
+
+
 def write_source_records(records: list[JsonRow], path: Path | None = None) -> Path:
     target = Path(path) if path is not None else _SOURCES_JSONL
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -253,4 +440,142 @@ def write_source_records(records: list[JsonRow], path: Path | None = None) -> Pa
         for record in normalized:
             f.write(json.dumps(record, ensure_ascii=False, sort_keys=False))
             f.write("\n")
+    return target
+
+
+def load_oracle_override_records(path: Path | None = None) -> list[JsonRow]:
+    """Read oracle-override records from ``_ORACLE_OVERRIDES_YAML``.
+
+    Returns ``[]`` when the file is missing or contains an empty list — the
+    override layer is optional, and downstream code (oracle comparison /
+    SourceAdjudication projection) must produce honest output with or
+    without overrides in flight. Each record is validated minimally: records
+    without a ``rule_id`` or ``statute_id`` are dropped, with the dropped
+    count surfaced via a single ``[oracle_override_load]`` summary row
+    appended to the returned list status (the caller surfaces a typed
+    diagnostic; we don't silently trim).
+    """
+    target = Path(path) if path is not None else _ORACLE_OVERRIDES_YAML
+    if not target.exists():
+        return []
+    raw = yaml.safe_load(target.read_text(encoding="utf-8"))
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        raise ValueError(
+            f"oracle_overrides_fi.yaml expected a YAML list, got {type(raw)!r}"
+        )
+    records: list[JsonRow] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        rule_id = str(entry.get("rule_id") or "").strip()
+        statute_id = str(entry.get("statute_id") or "").strip()
+        if not rule_id or not statute_id:
+            # Drop silently here — the loader is in the records module; a
+            # typed diagnostic emission belongs to the runtime tool that
+            # consumes overrides (oracle_check), not the data loader. The
+            # count is preserved via the loop so callers can compare
+            # len(raw) vs len(records) to detect drops.
+            continue
+        records.append(entry)
+    return records
+
+
+def write_oracle_override_records(records: list[JsonRow], path: Path | None = None) -> Path:
+    """Persist oracle-override records, normalised to ``_ORACLE_OVERRIDE_FIELDS``.
+
+    Stable-ordered by ``(statute_id, target_address, rule_id)`` for
+    deterministic diffs across operator edits. The schema is intentionally
+    open (``override_kind`` / ``source_witness.kind`` are strings today);
+    promoting them to typed enums is a follow-up once a corpus large
+    enough to amplify review work has accumulated.
+    """
+    target = Path(path) if path is not None else _ORACLE_OVERRIDES_YAML
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    def _sort_key(r: JsonRow) -> tuple[str, str, str]:
+        return (
+            str(r.get("statute_id") or ""),
+            str(r.get("target_address") or ""),
+            str(r.get("rule_id") or ""),
+        )
+
+    normalized = [
+        {field: record.get(field) for field in _ORACLE_OVERRIDE_FIELDS}
+        for record in sorted(records, key=_sort_key)
+    ]
+    with target.open("w", encoding="utf-8") as f:
+        yaml.safe_dump(
+            normalized,
+            f,
+            allow_unicode=True,
+            sort_keys=False,
+            default_flow_style=False,
+            width=120,
+        )
+    return target
+
+
+def load_unresolvable_overrides(path: Path | None = None) -> list[JsonRow]:
+    """Read unresolvable-corrigendum overlay records.
+
+    Returns ``[]`` when the file is missing or empty — the layer is optional.
+    Records without a stable_id or evidence.kind are dropped (the loader is
+    in the records module and stays lenient; the count is preserved through
+    the loop).
+    """
+    target = Path(path) if path is not None else _UNRESOLVABLE_YAML
+    if not target.exists():
+        return []
+    raw = yaml.safe_load(target.read_text(encoding="utf-8"))
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        raise ValueError(
+            f"corrigendum_unresolvable_fi.yaml expected a YAML list, got {type(raw)!r}"
+        )
+    records: list[JsonRow] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        stable_id = str(entry.get("stable_id") or "").strip()
+        evidence = entry.get("evidence") or {}
+        if not stable_id or not isinstance(evidence, dict) or not str(
+            evidence.get("kind") or ""
+        ).strip():
+            continue
+        records.append(entry)
+    return records
+
+
+def write_unresolvable_overrides(records: list[JsonRow], path: Path | None = None) -> Path:
+    """Persist unresolvable-corrigendum overlay records.
+
+    Stable-ordered by ``(amendment_id, stable_id, rule_id)`` for deterministic
+    diffs across operator edits.
+    """
+    target = Path(path) if path is not None else _UNRESOLVABLE_YAML
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    def _sort_key(r: JsonRow) -> tuple[str, str, str]:
+        return (
+            str(r.get("amendment_id") or ""),
+            str(r.get("stable_id") or ""),
+            str(r.get("rule_id") or ""),
+        )
+
+    normalized = [
+        {field: record.get(field) for field in _UNRESOLVABLE_FIELDS}
+        for record in sorted(records, key=_sort_key)
+    ]
+    with target.open("w", encoding="utf-8") as f:
+        yaml.safe_dump(
+            normalized,
+            f,
+            allow_unicode=True,
+            sort_keys=False,
+            default_flow_style=False,
+            width=120,
+        )
     return target
