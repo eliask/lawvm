@@ -1333,7 +1333,17 @@ def _safe_path_component(value: str) -> str:
     # `/` (and any other char outside [A-Za-z0-9._-]) to `-`. Contract: callers
     # must split on `/` first; this sanitizer does NOT preserve directory
     # separators and will collapse a `../`-style traversal into a flat token.
-    cleaned = _SAFE_PATH_RE.sub("-", value.strip()).strip("-")
+    #
+    # Trim leading/trailing `.` as well as `-` (iter2 W6 LOW/M-batch Fix 3):
+    # the substring `..` survives the regex sub because `.` is allowed, so a
+    # bare `..` component would otherwise pop out as the literal `..`. Even
+    # though the caller's `__`-join pattern means `..` is valueless as a
+    # traversal vector, leaving it as a path-component leaf is unnecessary
+    # and reads as unsafe to a security reviewer scanning the output. A
+    # leading/trailing-dot strip turns `..`/`.`/`-..-` into the `unknown`
+    # placeholder (since the result is empty) without disturbing interior
+    # dots in legitimate identifiers like `a.b.c-1`.
+    cleaned = _SAFE_PATH_RE.sub("-", value.strip()).strip("-.")
     return cleaned or "unknown"
 
 
