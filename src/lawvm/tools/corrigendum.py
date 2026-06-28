@@ -3435,23 +3435,32 @@ _PDF_MAX_PAGES = 10  # corrigendum notices are short; more pages = bulk/liite/tr
 
 
 def _pdf_page_count(pdf_bytes: bytes) -> int | None:
-    """Return page count via pdfinfo. Returns None if unavailable."""
+    """Return page count via pdfinfo. Returns None if unavailable.
+
+    Uses :class:`tempfile.TemporaryDirectory` so the intermediate PDF file is
+    cleaned up even if ``subprocess.run`` raises (TimeoutExpired, etc.). The
+    prior ``NamedTemporaryFile(delete=False)`` + manual
+    ``Path(tmp_path).unlink(missing_ok=True)`` shape leaked the tempfile on
+    a ``subprocess.TimeoutExpired`` (iter2 W6 LOW-1) — the unlink was placed
+    in-line after the subprocess call, so any exception raised by subprocess
+    skipped the cleanup line. The context-manager exit handles every
+    exit path (normal return, exception, early-return).
+    """
     try:
-        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
-            f.write(pdf_bytes)
-            tmp_path = f.name
-        result = subprocess.run(
-            ["pdfinfo", tmp_path],
-            capture_output=True,
-            timeout=10,
-        )
-        Path(tmp_path).unlink(missing_ok=True)
-        if result.returncode != 0:
+        with tempfile.TemporaryDirectory(prefix="corrigendum_pdf_") as tmpdir:
+            pdf_path = Path(tmpdir) / "input.pdf"
+            pdf_path.write_bytes(pdf_bytes)
+            result = subprocess.run(
+                ["pdfinfo", str(pdf_path)],
+                capture_output=True,
+                timeout=10,
+            )
+            if result.returncode != 0:
+                return None
+            for line in result.stdout.decode("utf-8", errors="replace").splitlines():
+                if line.startswith("Pages:"):
+                    return int(line.split(":", 1)[1].strip())
             return None
-        for line in result.stdout.decode("utf-8", errors="replace").splitlines():
-            if line.startswith("Pages:"):
-                return int(line.split(":", 1)[1].strip())
-        return None
     except (NameError, TypeError, AttributeError):
         raise
     except (FileNotFoundError, subprocess.TimeoutExpired, subprocess.SubprocessError, OSError, ValueError) as e:
@@ -3479,20 +3488,28 @@ _PDF_EXTRACT_MAX_PAGES = 3  # extract up to N pages; liite truncation cuts appen
 
 
 def _pdf_to_text(pdf_bytes: bytes, max_pages: int = _PDF_EXTRACT_MAX_PAGES) -> Optional[str]:
-    """Extract text from first max_pages pages using pdftotext (poppler)."""
+    """Extract text from first max_pages pages using pdftotext (poppler).
+
+    Uses :class:`tempfile.TemporaryDirectory` so the intermediate PDF file is
+    cleaned up even if ``subprocess.run`` raises (TimeoutExpired, etc.). The
+    prior ``NamedTemporaryFile(delete=False)`` + manual
+    ``Path(tmp_path).unlink(missing_ok=True)`` shape leaked the tempfile on
+    a ``subprocess.TimeoutExpired`` (iter2 W6 LOW-1) — the unlink was placed
+    in-line after the subprocess call, so any exception raised by subprocess
+    skipped the cleanup line.
+    """
     try:
-        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
-            f.write(pdf_bytes)
-            tmp_path = f.name
-        result = subprocess.run(
-            ["pdftotext", "-l", str(max_pages), tmp_path, "-"],
-            capture_output=True,
-            timeout=30,
-        )
-        Path(tmp_path).unlink(missing_ok=True)
-        if result.returncode == 0:
-            return result.stdout.decode("utf-8", errors="replace")
-        return None
+        with tempfile.TemporaryDirectory(prefix="corrigendum_pdf_") as tmpdir:
+            pdf_path = Path(tmpdir) / "input.pdf"
+            pdf_path.write_bytes(pdf_bytes)
+            result = subprocess.run(
+                ["pdftotext", "-l", str(max_pages), str(pdf_path), "-"],
+                capture_output=True,
+                timeout=30,
+            )
+            if result.returncode == 0:
+                return result.stdout.decode("utf-8", errors="replace")
+            return None
     except (NameError, TypeError, AttributeError):
         raise  # programming bugs — fail loud
     except FileNotFoundError as e:
@@ -3757,13 +3774,23 @@ async def _reextract_one(
     pdf_text = ""
     if pdf_bytes:
         try:
-            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
-                f.write(pdf_bytes)
-                tmp = f.name
-            r = subprocess.run(["pdftotext", tmp, "-"], capture_output=True, timeout=30)
-            Path(tmp).unlink(missing_ok=True)
-            if r.returncode == 0:
-                pdf_text = r.stdout.decode("utf-8", errors="replace")[:1000]
+            # ``tempfile.TemporaryDirectory`` context manager cleans up the
+            # intermediate PDF on every exit path (normal return, exception,
+            # early-return). The prior ``NamedTemporaryFile(delete=False)`` +
+            # manual ``Path(tmp).unlink(missing_ok=True)`` shape leaked the
+            # tempfile on a ``subprocess.TimeoutExpired`` (iter2 W6 LOW-1) —
+            # the unlink was placed in-line after the subprocess call, so any
+            # exception raised by subprocess skipped the cleanup line.
+            with tempfile.TemporaryDirectory(prefix="corrigendum_pdf_") as tmpdir:
+                pdf_path = Path(tmpdir) / "input.pdf"
+                pdf_path.write_bytes(pdf_bytes)
+                r = subprocess.run(
+                    ["pdftotext", str(pdf_path), "-"],
+                    capture_output=True,
+                    timeout=30,
+                )
+                if r.returncode == 0:
+                    pdf_text = r.stdout.decode("utf-8", errors="replace")[:1000]
         except (NameError, TypeError, AttributeError):
             raise  # programming bugs — fail loud
         except (FileNotFoundError, subprocess.SubprocessError, OSError, UnicodeDecodeError) as e:
