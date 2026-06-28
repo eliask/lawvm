@@ -68,7 +68,23 @@ def _check_server_reachable() -> bool:
         )
         with urllib.request.urlopen(req, timeout=5) as resp:
             return resp.status < 500
-    except Exception:
+    except Exception as exc:
+        # Unexpected probe failure (DNS, connection refused, TLS, etc.):
+        # previously ``return False`` silently swallowed; now route through
+        # ``named_swallow`` so a typed Finding is logged at WARNING with the
+        # probed endpoint as ``clause_text`` (AGENTS.md §1.10 — never silent).
+        from lawvm.core.named_swallow import build_named_swallow_finding, log_emitter
+
+        log_emitter()(
+            build_named_swallow_finding(
+                rule_id="fi_qwen_local_check_server_reachable",
+                exception=exc,
+                op_id=None,
+                clause_text=f"probe endpoint={_CHAT_ENDPOINT}",
+                jurisdiction="fi",
+                source_artifact=_CHAT_ENDPOINT,
+            )
+        )
         return False
 
 

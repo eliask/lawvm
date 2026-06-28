@@ -423,14 +423,48 @@ def run_annotation_independence_census(
             if cheap_signal:
                 try:
                     body_text = decode_body_text(xb)
-                except Exception:
+                except Exception as exc:
+                    # Unexpected body-decode failure: previously set
+                    # ``body_text = None`` silently swallowed; now route
+                    # through ``named_swallow`` so a typed Finding is logged
+                    # at WARNING with the statute id + source name as
+                    # ``clause_text`` (AGENTS.md §1.10 — never silent).
+                    from lawvm.core.named_swallow import build_named_swallow_finding, log_emitter
+
+                    log_emitter()(
+                        build_named_swallow_finding(
+                            rule_id="fi_annotation_independence_census_decode_body_text",
+                            exception=exc,
+                            op_id=None,
+                            clause_text=f"sid={sid} src={src_name}",
+                            jurisdiction="fi",
+                            source_artifact=sid,
+                        )
+                    )
                     body_text = None
 
             try:
                 per_family = census_one_statute(
                     xb, sid, body_text=body_text
                 )
-            except Exception:
+            except Exception as exc:
+                # Unexpected census-one-statute failure: previously
+                # ``continue`` silently swallowed; now route through
+                # ``named_swallow`` so a typed Finding is logged at WARNING
+                # with the statute id + source name as ``clause_text``
+                # (AGENTS.md §1.10 — never silent).
+                from lawvm.core.named_swallow import build_named_swallow_finding, log_emitter
+
+                log_emitter()(
+                    build_named_swallow_finding(
+                        rule_id="fi_annotation_independence_census_one_statute",
+                        exception=exc,
+                        op_id=None,
+                        clause_text=f"sid={sid} src={src_name}",
+                        jurisdiction="fi",
+                        source_artifact=sid,
+                    )
+                )
                 continue
 
             for fam, fd in per_family.items():

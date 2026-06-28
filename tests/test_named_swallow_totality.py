@@ -77,6 +77,30 @@ _MIGRATED_FILES = (
     "src/lawvm/new_zealand/dry_run.py",
     "src/lawvm/tools/_worker_pool.py",
     "src/lawvm/sweden/grafter.py",
+    # Wave 6 (M4) — 7 of the 9 catalog files extend cleanly into the AST
+    # totality surface (the 13 catalog swallows across these files are now
+    # routed through named_swallow). The remaining 2 catalog files
+    # (``finland/amendment_index.py`` and ``sweden/fetch.py``) are NOT
+    # added here because they each contain ADDITIONAL pre-existing
+    # ``except Exception as exc:`` sites that use a DIFFERENT owned
+    # fail-loud idiom — ``_append_amendment_index_diagnostic`` (in
+    # amendment_index.py at swallow sites not in this wave's catalog) and
+    # an inline ``acquisition_failures`` list with rule_id+sfs_id+error_type
+    # (in sweden/fetch.py:2729). Both are OWNED §1.10 emissions through a
+    # domain-specific helper, but the AST scan only recognises the 4
+    # named_swallow primitive symbols. Migrating those pre-existing sites
+    # is out of this catalog's scope (STOP-and-report per the task spec;
+    # the 2 catalog-grade migrations in those files ARE shipped and are
+    # validated by the per-site fire-drill precedent at Wave 4 + the
+    # AST totality on the other 7 files). The pre-existing sites are
+    # candidates for a future named_swallow migration wave.
+    "src/lawvm/finland/llm_backends/qwen_local.py",
+    "src/lawvm/finland/transition_graph_profile.py",
+    "src/lawvm/finland/legal_surface/condition_exception_census.py",
+    "src/lawvm/finland/legal_surface/family_census.py",
+    "src/lawvm/finland/legal_surface/modal_census.py",
+    "src/lawvm/finland/references/annotation_independence_census.py",
+    "src/lawvm/finland/references/broken_detection.py",
 )
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -607,3 +631,164 @@ def test_named_swallow_log_emitter_writes_warning_to_logger(caplog) -> None:
         and "ValueError" in record.getMessage()
         for record in caplog.records
     )
+
+
+# ---------------------------------------------------------------------------
+# Wave 6 (M4) per-site guard-liveness — 3 representative fire-drills out of
+# the 13 migrated catalog sites. The remaining 10 sites are validated by:
+#   (a) the AST totality predicate above (proves the swallow shape is gone
+#       for the 7 files added to _MIGRATED_FILES in this wave),
+#   (b) the named_swallow primitive unit tests (proves the typed Finding
+#       construction + emit logic),
+#   (c) the shared log_emitter() warning-visibility test above.
+# Three fire-drills cover the distinct swallow shapes migrated in this wave:
+#   - amendment_index.py: multi-line body returning None on swallow
+#       (file NOT in _MIGRATED_FILES — pre-existing sites use a different
+#       owned fail-loud idiom and are out of this catalog's scope; the
+#       catalog-grade migration is still validated here)
+#   - transition_graph_profile.py: multi-site util returning "" on swallow
+#   - qwen_local.py: network-probe swallow returning False on swallow
+# Per AGENTS.md §2.9 (guard-liveness): driving a known-violating input
+# through the FULL production path and asserting the diagnostic fires, not
+# just a unit test of the guard.
+# ---------------------------------------------------------------------------
+
+def test_amendment_index_corpus_source_fingerprint_finding_fires_on_swallow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Migrated site: finland/amendment_index.py _corpus_source_fingerprint.
+
+    Drives a synthesized known-violating input (monkeypatch
+    ``_path_from_pathlike`` to raise RuntimeError on the path-probe axis)
+    through the FULL production path and asserts the typed Finding fires with
+    rule_id=``fi_amendment_index_corpus_source_fingerprint`` via lazy-imported
+    log_emitter (matching the sweden/grafter.py precedent).
+    """
+    from typing import cast
+
+    import lawvm.core.named_swallow as ns
+    from lawvm.finland import amendment_index as ai
+    from lawvm.corpus_store import CorpusStore
+
+    captured: list[Finding] = []
+
+    def _capture_emit() -> Callable[[Finding], None]:
+        def _emit(finding: Finding) -> None:
+            captured.append(finding)
+        return _emit
+
+    # The migrated code imports log_emitter INSIDE the except clause (lazy
+    # import); patch at the source module so the function-local
+    # ``from ... import`` rebinds the name to our capturing version.
+    monkeypatch.setattr(ns, "log_emitter", _capture_emit)
+    # Patch _path_from_pathlike to raise — the swallow fires inside the
+    # path-probe loop.
+    def _boom(_v: object) -> Path:
+        raise RuntimeError("simulated path probe boom")
+
+    monkeypatch.setattr(ai, "_path_from_pathlike", _boom)
+    # Cast through CorpusStore to satisfy ty — the function under test only
+    # reads attributes defensively via getattr; an ``object()`` exposes
+    # ``__class__`` which is enough for ``type(cs).__name__`` in clause_text.
+    cs = cast(CorpusStore, object())
+    result = ai._corpus_source_fingerprint(cs)
+    # Default preserved.
+    assert result is None
+    # Typed Finding emitted.
+    assert len(captured) == 1
+    f = captured[0]
+    assert f.kind == NAMED_SWALLOW_FINDING_KIND
+    assert f.blocking is True
+    assert f.detail["rule_id"] == "fi_amendment_index_corpus_source_fingerprint"
+    assert f.detail["exception_type"] == "RuntimeError"
+    assert f.detail["jurisdiction"] == "fi"
+    assert "cs_type=" in f.detail["clause_text"]
+
+
+def test_transition_graph_extract_source_reference_finding_fires_on_swallow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Migrated site: finland/transition_graph_profile.py
+    extract_fi_source_reference (read_amendment swallow).
+
+    Drives a synthesized known-violating input through the FULL production
+    path (a corpus whose read_amendment raises RuntimeError on the read axis)
+    and asserts the typed Finding fires with rule_id=
+    ``fi_transition_graph_extract_source_reference_read_amendment``.
+    """
+    import lawvm.core.named_swallow as ns
+    from lawvm.finland.transition_graph_profile import extract_fi_source_reference
+
+    captured: list[Finding] = []
+
+    def _capture_emit() -> Callable[[Finding], None]:
+        def _emit(finding: Finding) -> None:
+            captured.append(finding)
+        return _emit
+
+    monkeypatch.setattr(ns, "log_emitter", _capture_emit)
+
+    class BoomCorpus:
+        def read_amendment(self, _sid: str) -> bytes:
+            raise RuntimeError("simulated corpus.read_amendment boom")
+
+    result = extract_fi_source_reference(BoomCorpus(), engine_source_id="2023/100")
+    # Empty default preserved.
+    assert result == ""
+    # Typed Finding emitted.
+    assert len(captured) == 1
+    f = captured[0]
+    assert f.kind == NAMED_SWALLOW_FINDING_KIND
+    assert f.blocking is True
+    assert (
+        f.detail["rule_id"]
+        == "fi_transition_graph_extract_source_reference_read_amendment"
+    )
+    assert f.detail["exception_type"] == "RuntimeError"
+    assert f.detail["jurisdiction"] == "fi"
+    assert "engine_source_id=2023/100" in f.detail["clause_text"]
+    assert f.detail["source_artifact"] == "2023/100"
+
+
+def test_qwen_local_check_server_reachable_finding_fires_on_swallow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Migrated site: finland/llm_backends/qwen_local.py _check_server_reachable.
+
+    Drives a synthesized known-violating input through the FULL production
+    path (monkeypatch urllib.request.urlopen to raise RuntimeError on the
+    probe axis) and asserts the typed Finding fires with rule_id=
+    ``fi_qwen_local_check_server_reachable`` via lazy-imported log_emitter.
+    """
+    import urllib.request
+
+    import lawvm.core.named_swallow as ns
+    from lawvm.finland.llm_backends import qwen_local as ql
+
+    captured: list[Finding] = []
+
+    def _capture_emit() -> Callable[[Finding], None]:
+        def _emit(finding: Finding) -> None:
+            captured.append(finding)
+        return _emit
+
+    monkeypatch.setattr(ns, "log_emitter", _capture_emit)
+    # urllib.request is imported lazily inside _check_server_reachable; the
+    # module object is cached so patching the .urlopen attribute on the real
+    # module is picked up by the function-local import.
+    def _boom(_req: object, *args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("simulated urlopen probe boom")
+
+    monkeypatch.setattr(urllib.request, "urlopen", _boom)
+    result = ql._check_server_reachable()
+    # False default preserved.
+    assert result is False
+    # Typed Finding emitted.
+    assert len(captured) == 1
+    f = captured[0]
+    assert f.kind == NAMED_SWALLOW_FINDING_KIND
+    assert f.blocking is True
+    assert f.detail["rule_id"] == "fi_qwen_local_check_server_reachable"
+    assert f.detail["exception_type"] == "RuntimeError"
+    assert f.detail["jurisdiction"] == "fi"
+    assert "probe endpoint=" in f.detail["clause_text"]

@@ -224,7 +224,23 @@ def _se_archive_fetch(
             )
             with urllib.request.urlopen(req, timeout=30) as resp:
                 data = resp.read()
-        except Exception:
+        except Exception as exc:
+            # Unexpected fetch failure (HTTP error, network reset, etc.):
+            # previously ``return None`` silently swallowed; now route through
+            # ``named_swallow`` so a typed Finding is logged at WARNING with the
+            # fetched URL as ``clause_text`` (AGENTS.md §1.10 — never silent).
+            from lawvm.core.named_swallow import build_named_swallow_finding, log_emitter
+
+            log_emitter()(
+                build_named_swallow_finding(
+                    rule_id="se_archive_fetch_url_attempt",
+                    exception=exc,
+                    op_id=None,
+                    clause_text=f"url={url} storage_class={storage_class or 'auto'}",
+                    jurisdiction="se",
+                    source_artifact=url,
+                )
+            )
             return None
         return data if data else None
 

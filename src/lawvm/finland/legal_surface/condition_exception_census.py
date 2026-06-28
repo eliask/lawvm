@@ -281,13 +281,45 @@ def _iter_corpus_sentences(
             continue
         try:
             body = decode_body_text(xb)
-        except Exception:
+        except Exception as exc:
+            # Unexpected body-decode failure: previously ``continue`` silently
+            # swallowed; now route through ``named_swallow`` so a typed Finding
+            # is logged at WARNING with the statute id as ``clause_text``
+            # (AGENTS.md §1.10 — never silent).
+            from lawvm.core.named_swallow import build_named_swallow_finding, log_emitter
+
+            log_emitter()(
+                build_named_swallow_finding(
+                    rule_id="fi_condition_exception_census_decode_body_text",
+                    exception=exc,
+                    op_id=None,
+                    clause_text=f"sid={sid}",
+                    jurisdiction="fi",
+                    source_artifact=sid,
+                )
+            )
             continue
         if not body:
             continue
         try:
             index = build_clause_index(sid, body)
-        except Exception:
+        except Exception as exc:
+            # Unexpected clause-segmentation failure: previously ``continue``
+            # silently swallowed; now route through ``named_swallow`` so a
+            # typed Finding is logged at WARNING with the statute id + body
+            # length as ``clause_text`` (AGENTS.md §1.10 — never silent).
+            from lawvm.core.named_swallow import build_named_swallow_finding, log_emitter
+
+            log_emitter()(
+                build_named_swallow_finding(
+                    rule_id="fi_condition_exception_census_build_clause_index",
+                    exception=exc,
+                    op_id=None,
+                    clause_text=f"sid={sid} body_len={len(body)}",
+                    jurisdiction="fi",
+                    source_artifact=sid,
+                )
+            )
             continue
         for sent in index.sentences:
             yield sid, body[sent.char_start : sent.char_end]

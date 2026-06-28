@@ -601,7 +601,23 @@ def _corpus_source_fingerprint(cs: CorpusStore | None) -> dict[str, object] | No
             "size": int(stat.st_size),
             "mtime_ns": int(stat.st_mtime_ns),
         }
-    except Exception:
+    except Exception as exc:
+        # Unexpected fingerprint failure: previously ``return None`` silently
+        # swallowed; now route through ``named_swallow`` so a typed Finding is
+        # logged at WARNING with the corpus-store type as ``clause_text``
+        # (AGENTS.md §1.10 — never silent).
+        from lawvm.core.named_swallow import build_named_swallow_finding, log_emitter
+
+        log_emitter()(
+            build_named_swallow_finding(
+                rule_id="fi_amendment_index_corpus_source_fingerprint",
+                exception=exc,
+                op_id=None,
+                clause_text=f"cs_type={type(cs).__name__ if cs is not None else 'None'}",
+                jurisdiction="fi",
+                source_artifact=None,
+            )
+        )
         return None
 
 

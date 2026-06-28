@@ -34,13 +34,45 @@ def extract_fi_source_reference(corpus: object, engine_source_id: str) -> str:
     try:
         store = cast(CorpusStore, corpus)
         amendment_xml = store.read_amendment(engine_source_id)
-    except Exception:
+    except Exception as exc:
+        # Unexpected corpus-read failure: previously ``return ""`` silently
+        # swallowed; now route through ``named_swallow`` so a typed Finding is
+        # logged at WARNING with the engine_source_id as ``clause_text``
+        # (AGENTS.md §1.10 — never silent).
+        from lawvm.core.named_swallow import build_named_swallow_finding, log_emitter
+
+        log_emitter()(
+            build_named_swallow_finding(
+                rule_id="fi_transition_graph_extract_source_reference_read_amendment",
+                exception=exc,
+                op_id=None,
+                clause_text=f"engine_source_id={engine_source_id}",
+                jurisdiction="fi",
+                source_artifact=engine_source_id,
+            )
+        )
         return ""
     if not amendment_xml:
         return ""
     try:
         text = amendment_xml.decode("utf-8", "ignore")
-    except Exception:
+    except Exception as exc:
+        # Unexpected decode failure (rare; ``decode(errors="ignore")`` almost
+        # never raises): previously ``return ""`` silently swallowed; now route
+        # through ``named_swallow`` so a typed Finding is logged at WARNING
+        # with the bytes-length as ``clause_text`` (AGENTS.md §1.10 — never silent).
+        from lawvm.core.named_swallow import build_named_swallow_finding, log_emitter
+
+        log_emitter()(
+            build_named_swallow_finding(
+                rule_id="fi_transition_graph_extract_source_reference_decode",
+                exception=exc,
+                op_id=None,
+                clause_text=f"amendment_xml len={len(amendment_xml) if amendment_xml else 0} bytes",
+                jurisdiction="fi",
+                source_artifact=engine_source_id,
+            )
+        )
         return ""
     # lawvm-regex: owning_parser AKN HE-proposal href parse from amendment XML for viewer/export enrichment, structured attribute not prose
     match = _HE_HREF_RE.search(text)
