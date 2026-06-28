@@ -399,7 +399,7 @@ def test_filter_ops_for_ref_slice_prefers_clause_local_effective_ops_for_later_s
         adjudications_out=adjudications,
     )
 
-    assert [op.op_id for op in filtered] == ["later-slice-op"]
+    assert [op.op_id for op in filtered.accepted_items] == ["later-slice-op"]
     assert [adjudication.kind for adjudication in adjudications] == [
         "ee_ref_slice_operation_filtered"
     ]
@@ -447,7 +447,7 @@ def test_filter_ops_for_ref_slice_keeps_unsliced_and_current_local_ops_on_earlie
         adjudications_out=adjudications,
     )
 
-    assert [op.op_id for op in filtered] == ["unsliced-op", "earliest-local-op"]
+    assert [op.op_id for op in filtered.accepted_items] == ["unsliced-op", "earliest-local-op"]
     assert [adjudication.op_id for adjudication in adjudications] == ["later-local-op"]
     assert adjudications[0].detail["reason"] == "op_effective_belongs_to_later_same_act_slice"
 
@@ -475,7 +475,7 @@ def test_filter_ops_for_ref_slice_records_future_effective_rejection() -> None:
         adjudications_out=adjudications,
     )
 
-    assert filtered == []
+    assert list(filtered.accepted_items) == []
     assert [adjudication.kind for adjudication in adjudications] == [
         "ee_ref_slice_operation_filtered"
     ]
@@ -572,7 +572,7 @@ def test_filter_ops_for_ref_slice_keeps_retroactive_local_ops_on_earliest_slice(
         as_of="2021-04-01",
     )
 
-    assert [op.op_id for op in filtered] == ["retroactive-local-op"]
+    assert [op.op_id for op in filtered.accepted_items] == ["retroactive-local-op"]
 
 
 def test_filter_ops_for_ref_slice_keeps_later_local_ops_when_no_later_ref_slice_exists() -> None:
@@ -614,7 +614,7 @@ def test_filter_ops_for_ref_slice_keeps_later_local_ops_when_no_later_ref_slice_
         as_of="2019-01-01",
     )
 
-    assert [op.op_id for op in filtered] == [
+    assert [op.op_id for op in filtered.accepted_items] == [
         "earliest-local-op",
         "later-local-op",
         "latest-local-op",

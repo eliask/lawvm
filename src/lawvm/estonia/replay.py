@@ -787,7 +787,7 @@ def _ee_filter_ops_for_ref_slice(
     all_refs: tuple[AmendmentRef, ...] = (),
     as_of: str = "",
     adjudications_out: list[CompileAdjudication] | None = None,
-) -> list[LegalOperation]:
+) -> FilterResult[LegalOperation]:
     """Filter one act's ops to the executable slice owned by ``ref``.
 
     Earliest known slices may carry unsliced ops plus clause-local ops for the
@@ -833,30 +833,46 @@ def _ee_filter_ops_for_ref_slice(
 
     if any_local_slice_ops:
         filtered_ops: list[LegalOperation] = []
+        rejected_ops: list[RejectedItem[LegalOperation]] = []
+
+        def _record_and_reject(op: LegalOperation, reason: str, *, effective: str = "") -> None:
+            _record_filtered_op(op, reason, effective=effective)
+            rejected_ops.append(
+                RejectedItem(
+                    item=op,
+                    reason=f"{reason}: op effective {effective!r} outside ref slice {ref.joustumine!r}",
+                    reason_code=reason,
+                    blocking=False,
+                )
+            )
+
         for op in ops:
             effective = op.source.effective if op.source is not None else ""
             if not effective:
                 if not has_earlier_slice:
                     filtered_ops.append(op)
                 else:
-                    _record_filtered_op(op, "unsliced_op_after_earlier_same_act_slice", effective=effective)
+                    _record_and_reject(op, "unsliced_op_after_earlier_same_act_slice", effective=effective)
                 continue
             effective_window_date = effective
             if effective < ref.joustumine:
                 if has_earlier_slice:
-                    _record_filtered_op(op, "op_effective_before_ref_after_earlier_same_act_slice", effective=effective)
+                    _record_and_reject(op, "op_effective_before_ref_after_earlier_same_act_slice", effective=effective)
                     continue
                 effective_window_date = ref.joustumine
             if next_later_ref_date and effective_window_date >= next_later_ref_date:
-                _record_filtered_op(op, "op_effective_belongs_to_later_same_act_slice", effective=effective)
+                _record_and_reject(op, "op_effective_belongs_to_later_same_act_slice", effective=effective)
                 continue
             if as_of and effective > as_of:
-                _record_filtered_op(op, "op_effective_after_requested_pit", effective=effective)
+                _record_and_reject(op, "op_effective_after_requested_pit", effective=effective)
                 continue
             filtered_ops.append(op)
-        return filtered_ops
+        return FilterResult(
+            accepted_items=tuple(filtered_ops),
+            rejected_items=tuple(rejected_ops),
+        )
 
-    return ops
+    return filter_result_from_parts(accepted_items=ops)
 
 
 _EE_PENDING_AMENDMENT_PRECOMPOSE_RULE = "ee_pending_amendment_text_precompose"
@@ -1705,14 +1721,14 @@ def replay_ee_to_pit(
                 )
             )
             continue
-        ops = _ee_filter_ops_for_ref_slice(
+        ops = list(_ee_filter_ops_for_ref_slice(
             ops,
             ref=ref,
             base_refs=pair_plan.base_refs,
             all_refs=pair_plan.amendments_to_apply,
             as_of=as_of,
             adjudications_out=slice_filter_adjudications,
-        )
+        ).accepted_items)
 
         # Stamp each op with provenance dates; renumber to global sequence
         ops = [
