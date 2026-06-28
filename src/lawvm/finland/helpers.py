@@ -226,6 +226,121 @@ def may_attach_post_list_loppukappale(node: IRNode) -> bool:
     return classify_rangaistussaannos(node) == "yes"
 
 
+# A criminal-sentencing closing clause begins with the sentencing predicate
+# (``on tuomittava`` / ``tuomitaan``) and carries a penalty expression.  Because
+# the offender subject is supplied by the preceding offence frame ("Joka ..."),
+# the clause cannot grammatically stand as an independent momentti: it is the
+# loppukappale of the offence provision.  A common drafting variant interjects a
+# qualifying clause between ``on`` and ``tuomittava`` ("on, jollei ... ankarampaa
+# rangaistusta, tuomittava ...").  Allow that bounded interjection but anchor on
+# the clause opening so an unrelated sentence that merely contains
+# "on ... tuomittava" is not matched.
+_PENAL_SENTENCING_LEADIN_RE = compile_classifier_regex(
+    r"^\s*on\b[^.]{0,200}?\btuomittava\b|^\s*tuomitaan\b",
+    re.I,
+    classifier_id="fi.helpers.penal_sentencing_leadin_re",
+)
+
+# The rangaistussäännös offence frame is marked by the culpability formula: an
+# offender subject ("Joka ..." or a named subject) qualified by ", joka tahallaan
+# tai (törkeästä) huolimattomuudesta".  Either a leading "Joka"/"Jos" or the
+# embedded culpability clause identifies the frame.
+_PENAL_CULPABILITY_FORMULA_RE = compile_classifier_regex(
+    r"\bjoka\s+tahallaan\b",
+    re.I,
+    classifier_id="fi.helpers.penal_culpability_formula_re",
+)
+
+
+def is_penal_offence_frame_without_sentencing(node: IRNode) -> bool:
+    """Return True for a penal offence frame whose sentencing clause is missing.
+
+    Matches a rangaistussäännös offence frame that opens with the offender
+    formula ("Joka ..." / "Jos ...") and a numbered kohta list, but does NOT yet
+    contain the sentencing command.  Such a frame is grammatically incomplete:
+    the sentencing predicate ("on tuomittava ... sakkoon/vankeuteen") lives in a
+    following sibling that must be folded back as the frame's loppukappale.
+    """
+    has_offence_intro = False
+    for child in node.children:
+        if child.kind in (IRNodeKind.INTRO, IRNodeKind.CONTENT):
+            intro_text = _normalized_node_text(child)
+            intro_lower = intro_text.lower()
+            # lawvm-regex: prefilter offence-formula prefix over the frame's own intro text; classifier only, mints no legal state
+            if intro_text and (
+                _RANGAISTUS_OFFENCE_PREFIX_RE.match(intro_lower)
+                # lawvm-regex: prefilter embedded culpability formula (named-subject offence frame); classifier only
+                or _PENAL_CULPABILITY_FORMULA_RE.search(intro_lower)
+            ):
+                has_offence_intro = True
+            break
+    if not has_offence_intro:
+        return False
+
+    has_numbered_kohta = any(
+        child.kind == IRNodeKind.PARAGRAPH
+        and any(gc.kind is IRNodeKind.NUM for gc in child.children)
+        for child in node.children
+    )
+    if not has_numbered_kohta:
+        return False
+
+    text = _normalized_node_text(node).lower()
+    # lawvm-regex: prefilter sentencing-command presence over the frame's own text; classifier only
+    if _RANGAISTUS_SENTENCING_RE.search(text):
+        return False
+    return True
+
+
+def is_penal_sentencing_closing_clause(node: IRNode) -> bool:
+    """Return True for a content-only sentencing closing clause (loppukappale).
+
+    The clause begins with the sentencing predicate ("on tuomittava" /
+    "tuomitaan") and carries a penalty expression.  It is the grammatical
+    continuation of a preceding offence frame, not an independent momentti.
+    """
+    children = tuple(node.children)
+    if not children:
+        return False
+    if any(
+        child.kind not in (IRNodeKind.CONTENT,)
+        for child in children
+    ):
+        return False
+    text = _normalized_node_text(node)
+    # lawvm-regex: prefilter sentencing-clause lead-in over the clause's own text; classifier only
+    if not _PENAL_SENTENCING_LEADIN_RE.match(text):
+        return False
+    # lawvm-regex: prefilter penalty expression over the clause's own text; classifier only
+    if not _RANGAISTUS_PENALTY_RE.search(text):
+        return False
+    return True
+
+
+# A flat penal block keeps the sentencing clause's qualifiers and further
+# offence frames as their own momentit rather than folding the closing clause.
+# The tell is a sibling that *continues the penal provision*: a "Jollei ..."
+# severity qualifier or another offender frame ("Se, joka ..." / "Joka ...").
+_PENAL_BLOCK_CONTINUATION_RE = compile_classifier_regex(
+    r"^\s*jollei\b|^\s*se,\s*joka\b|^\s*joka\b",
+    re.I,
+    classifier_id="fi.helpers.penal_block_continuation_re",
+)
+
+
+def continues_penal_block(node: IRNode) -> bool:
+    """Return True when a sibling continues a flat penal block.
+
+    Such a sibling ("Jollei ...", "Se, joka ...", "Joka ...") qualifies the
+    sentencing or opens a further offence frame, signalling that Finlex keeps the
+    whole penal provision flat — so the closing sentencing clause must not be
+    folded into the first offence frame.
+    """
+    text = _normalized_node_text(node)
+    # lawvm-regex: prefilter penal-block continuation lead-in over the sibling's own text; classifier only
+    return bool(_PENAL_BLOCK_CONTINUATION_RE.match(text))
+
+
 def _previous_item_token(item_norm: str) -> Optional[str]:
     """Return the label that immediately precedes *item_norm* in Finnish item sequences.
 

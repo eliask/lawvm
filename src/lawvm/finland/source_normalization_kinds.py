@@ -10,6 +10,7 @@ from typing import Final
 
 UNNUMBERED_PEER_REPARENT: Final[str] = "unnumbered_peer_reparent"
 BASE_TAIL_PROSE_ABSORB: Final[str] = "base_tail_prose_absorb"
+BASE_PENAL_SENTENCING_WRAPUP_FOLD: Final[str] = "base_penal_sentencing_wrapup_fold"
 BASE_NUM_IN_INTRO_RECOVERED: Final[str] = "base_num_in_intro_recovered"
 BASE_NUM_IN_INTRO_MISMATCH: Final[str] = "base_num_in_intro_mismatch"
 BASE_DIGIT_RESET_SPLIT: Final[str] = "base_digit_reset_split"

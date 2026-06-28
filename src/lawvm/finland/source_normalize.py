@@ -115,7 +115,13 @@ from lawvm.core.semantic_types import (
     SourceNormalizationFact,
     SourceNormalizationKind,
 )
-from lawvm.finland.helpers import _norm_num_token, may_attach_post_list_loppukappale
+from lawvm.finland.helpers import (
+    _norm_num_token,
+    may_attach_post_list_loppukappale,
+    is_penal_offence_frame_without_sentencing,
+    is_penal_sentencing_closing_clause,
+    continues_penal_block,
+)
 from lawvm.xml_ingest import (
     _paragraph_ends_with_terminal_punctuation,
     _paragraph_has_num,
@@ -135,6 +141,7 @@ from lawvm.finland.source_normalization_kinds import (
     BASE_SECTION_ITEM_SUBSECTION_FOLD,
     BASE_TABLE_NOTE_SUBSECTION_FOLD,
     BASE_TAIL_PROSE_ABSORB,
+    BASE_PENAL_SENTENCING_WRAPUP_FOLD,
     BASE_TABLE_CONTINUATION_SUBSECTION_MERGE,
     BASE_TABLE_CONTINUATION_HEADER_REPAIR,
     BASE_UNNUMBERED_SUBPARAGRAPH_MOMENT_SPLIT,
@@ -988,6 +995,138 @@ def _split_intro_list_tail_moment_subsections(
     )
 
     return children[:idx] + split_subsections + children[idx + 1 :]
+
+
+def _fold_penal_sentencing_wrapup_subsection(
+    children: List[IRNode],
+    statute_id: str,
+    parent_path: Tuple[str, ...],
+    facts: List[SourceNormalizationFact],
+) -> List[IRNode]:
+    """Fold a stray penal sentencing clause back into its offence frame.
+
+    Finnish rangaistussäännös provisions are drafted as one momentti:
+
+        Joka ... [1) ... 7)] on tuomittava ... sakkoon.
+
+    Some Finlex section payloads encode the offence frame (offender formula plus
+    the numbered kohta list) and its sentencing clause ("on tuomittava ...
+    sakkoon/vankeuteen") as two *separate* ``<subsection>`` siblings.  The
+    sentencing clause cannot stand as an independent momentti — its subject is
+    supplied by the offence frame — so it is the loppukappale of the offence
+    momentti, not a peer.  Left split, every later momentti shifts down by one,
+    producing an identical-but-offset wording cascade against the oracle.
+
+    This pass folds the content-only sentencing subsection into the preceding
+    offence-frame subsection as a trailing ``WRAP_UP`` child and decrements the
+    numeric labels of the following sibling subsections so the moment sequence is
+    restored.  It fires only on the positive penal signature (offence formula +
+    numbered list + missing sentencing command in the frame; sentencing lead-in +
+    penalty expression in the immediately following content-only subsection), so
+    a genuinely new numbered momentti is never absorbed.
+    """
+    if not any(child.kind == IRNodeKind.SUBSECTION for child in children):
+        return children
+
+    rewritten: List[IRNode] = []
+    changed = False
+    label_decrement_active = False
+    i = 0
+    while i < len(children):
+        child = children[i]
+        # A genuine loppukappale is a list closure *within* a momentti that is
+        # followed by further momentit (which the fold renumbers down by one).
+        # When the sentencing clause is itself the LAST subsection, Finlex keeps
+        # it as its own momentti, so the fold must not fire; likewise when the
+        # offence frame is preceded by another offence frame, the sentencing
+        # clause serves several frames and stays a standalone momentti.
+        following_subsections = [
+            c for c in children[i + 2 :] if c.kind == IRNodeKind.SUBSECTION
+        ]
+        preceding_offence_frame = any(
+            c.kind == IRNodeKind.SUBSECTION
+            and is_penal_offence_frame_without_sentencing(c)
+            for c in rewritten
+        )
+        # A flat penal block (the clause right after the sentencing continues
+        # the penal provision: "Jollei ..." severity qualifier or another
+        # offender frame) is kept unflattened by Finlex; do not fold.
+        next_continues_penal_block = bool(
+            following_subsections
+        ) and continues_penal_block(following_subsections[0])
+        if (
+            not changed
+            and child.kind == IRNodeKind.SUBSECTION
+            and i + 1 < len(children)
+            and children[i + 1].kind == IRNodeKind.SUBSECTION
+            and following_subsections
+            and not preceding_offence_frame
+            and not next_continues_penal_block
+            and is_penal_offence_frame_without_sentencing(child)
+            and is_penal_sentencing_closing_clause(children[i + 1])
+        ):
+            sentencing = children[i + 1]
+            wrap_text = irnode_to_text(sentencing).strip()
+            folded_frame = IRNode(
+                kind=child.kind,
+                label=child.label,
+                text=child.text,
+                attrs=child.attrs,
+                children=tuple(child.children)
+                + (IRNode(kind=IRNodeKind.WRAP_UP, text=wrap_text),),
+            )
+            rewritten.append(folded_frame)
+            facts.append(
+                SourceNormalizationFact(
+                    statute_id=statute_id,
+                    kind=BASE_PENAL_SENTENCING_WRAPUP_FOLD,
+                    basis=SourceNormalizationBasis.PROFILE_INVALID,
+                    before=(
+                        f"penal offence frame {_node_path_label(child)} and its "
+                        f"sentencing clause {_node_path_label(sentencing)} encoded as "
+                        "two separate subsections"
+                    ),
+                    after=(
+                        "sentencing clause folded as loppukappale wrapUp on the "
+                        "offence frame; following subsections renumbered"
+                    ),
+                    explanation=(
+                        "The source split a single rangaistussäännös momentti into an "
+                        "offence frame (offender formula plus numbered kohta list, no "
+                        "sentencing command) and a following content-only sentencing "
+                        "clause beginning 'on tuomittava ... sakkoon/vankeuteen'.  The "
+                        "clause cannot stand as an independent momentti because its "
+                        "subject is supplied by the offence frame, so it is absorbed as "
+                        "the offence momentti's loppukappale and the later momentit are "
+                        "renumbered down by one."
+                    ),
+                    path=parent_path + (_node_path_label(sentencing),),
+                    confidence=0.95,
+                )
+            )
+            changed = True
+            label_decrement_active = True
+            i += 2
+            continue
+
+        current_value = (
+            _numeric_label_value(child.label)
+            if child.kind == IRNodeKind.SUBSECTION
+            else None
+        )
+        if label_decrement_active and current_value is not None:
+            child = IRNode(
+                kind=child.kind,
+                label=str(current_value - 1),
+                text=child.text,
+                attrs=child.attrs,
+                children=child.children,
+            )
+
+        rewritten.append(child)
+        i += 1
+
+    return rewritten if changed else children
 
 
 def _fold_section_scoped_item_style_subsections(
@@ -4187,6 +4326,9 @@ def normalize_source_ir(
         )
     if ir.kind == IRNodeKind.SECTION:
         initial_children = _split_intro_list_tail_moment_subsections(
+            initial_children, statute_id, current_path, facts
+        )
+        initial_children = _fold_penal_sentencing_wrapup_subsection(
             initial_children, statute_id, current_path, facts
         )
         initial_children = _split_body_heading_into_first_subsection(
