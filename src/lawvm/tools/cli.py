@@ -6438,6 +6438,100 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         help="single-statute mode: print per-section divergence list",
     )
 
+    # --- us-classification ---
+    # Inlined registration (the dispatcher in main() imports
+    # lawvm.tools.us_classification lazily so importing us_classification at
+    # parser-build time is avoided; this keeps the CLI parser build light).
+    us_class_p = sub.add_parser(
+        "us-classification",
+        help="OLRC classification table scraper/index/resolver (USC target resolution)",
+        description=(
+            "Fetch OLRC PL-section -> USC-section classification tables "
+            "from the Wayback Machine, parse them into a typed index, "
+            "serialize to JSON for reuse, and resolve PL sections through "
+            "the index. Integration into the amendatory lowerer is a "
+            "separate step; this command produces the standalone "
+            "evidence-side index."
+        ),
+    )
+    us_class_sub = us_class_p.add_subparsers(
+        dest="us_classification_command", metavar="<subcommand>", required=True
+    )
+
+    usc_fetch_p = us_class_sub.add_parser(
+        "fetch",
+        help="fetch tables from Wayback and build the JSON index",
+        description=(
+            "Fetch the OLRC classification tables for the given Congresses "
+            "via Wayback and serialize the parsed ClassificationIndex to "
+            "JSON. Network-bound; intended to run under "
+            "systemd-run --user --scope -p MemoryMax=16G."
+        ),
+    )
+    usc_fetch_p.add_argument(
+        "--output",
+        "-o",
+        default="data/us_classification_index.json",
+        metavar="PATH",
+        help="output JSON path (default: data/us_classification_index.json)",
+    )
+    usc_fetch_p.add_argument(
+        "--congresses",
+        nargs="*",
+        type=int,
+        metavar="N",
+        help="space-separated Congress numbers (default: 108 through 118)",
+    )
+    usc_fetch_p.add_argument(
+        "--sessions",
+        nargs="*",
+        type=int,
+        metavar="N",
+        help="space-separated session numbers (default: 1 2)",
+    )
+    usc_fetch_p.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        help="print per-table fetch diagnostics",
+    )
+
+    usc_lookup_p = us_class_sub.add_parser(
+        "lookup",
+        help="resolve STATUTE_ID:PL_SECTION pairs against a saved index",
+        description=(
+            "Load a saved JSON index and resolve sample PL-section queries "
+            "through ClassificationIndex.resolve. With no explicit queries, "
+            "runs the built-in sample set."
+        ),
+    )
+    usc_lookup_p.add_argument(
+        "--index",
+        "-i",
+        default="data/us_classification_index.json",
+        metavar="PATH",
+        help="index JSON path (default: data/us_classification_index.json)",
+    )
+    usc_lookup_p.add_argument(
+        "queries",
+        nargs="*",
+        metavar="STATUTE_ID:PL_SECTION",
+        help="one or more queries like 'PL 118-31:101(a)'",
+    )
+
+    usc_stats_p = us_class_sub.add_parser(
+        "show-stats",
+        help="print entry/PL/key counts from a saved index",
+        description="Print high-level entry/PL/key counts from a saved index JSON.",
+    )
+    usc_stats_p.add_argument(
+        "--index",
+        "-i",
+        default="data/us_classification_index.json",
+        metavar="PATH",
+        help="index JSON path (default: data/us_classification_index.json)",
+    )
+
     # --- audit-trail ---
     audit_p = sub.add_parser(
         "audit-trail",
@@ -13820,6 +13914,11 @@ def _main_impl() -> None:
         from lawvm.tools.step_attribution import main as sa_main
 
         sa_main(args)
+
+    elif args.command == "us-classification":
+        from lawvm.tools.us_classification import main as us_classification_main
+
+        us_classification_main(args)
 
     elif args.command == "sweden":
         from lawvm.tools.sweden import main as sweden_main
