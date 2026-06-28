@@ -10822,7 +10822,7 @@ def apply_ee_ops(
                         if pre_node is None or pre_node is not sec_node:
                             lo_ops_out.append(
                                 LegalOperation(
-                                    op_id=f"ee_snap_{op.sequence}_{sec_node.label}",
+                                    op_id=f"ee_snap_{op.sequence}_{sec_node.label}_{len(lo_ops_out)}",
                                     sequence=op.sequence,
                                     action=_to_structural_action("replace"),
                                     target=LegalAddress(path=tuple(sec_path_tuple)),
