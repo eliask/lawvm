@@ -1,0 +1,1230 @@
+{
+  "jurisdiction": "nz",
+  "bench_kind": "actual_replay",
+  "corpus": "data/nz/bench_corpus_smoke.csv",
+  "summary": {
+    "n_works": 33,
+    "n_ok": 33,
+    "n_errors": 0,
+    "n_works_with_replay": 9,
+    "transitions_replayed": 27,
+    "transitions_refused": 1510,
+    "declared_transitions": 1537,
+    "replayed_fraction": 0.017567,
+    "refusals_verification_failed": 96,
+    "refusals_refusal_blocked": 1378,
+    "families_not_attempted": 0,
+    "would_replay_if_refusals_ignored": 122,
+    "hypothetical_replayed_if_refusals_ignored": 149,
+    "would_replay_fraction": 0.096942,
+    "ops_replayed": 47,
+    "target_slice_nodes": 47,
+    "target_slice_agreements": 47,
+    "slice_agreement_ratio": 1.0,
+    "transitions_scored": 27,
+    "text_similarity": 0.886535,
+    "tree_similarity": 0.893261,
+    "tree_similarity_stable": 0.977838,
+    "oracle_agreement_residual_family_counts": {
+      "accepted_non_executable_frontier": 1109,
+      "agreement": 47,
+      "replay_bug": 96,
+      "source_footing_gap": 145,
+      "temporal_mismatch": 260
+    }
+  },
+  "works": [
+    {
+      "work_id": "act_public_1858_38",
+      "families": [
+        "repeal",
+        "text_replace",
+        "replace",
+        "insert"
+      ],
+      "work_status": "OK",
+      "transitions_replayed": 0,
+      "transitions_refused": 0,
+      "ops_replayed": 0,
+      "target_slice_nodes": 0,
+      "target_slice_agreements": 0,
+      "all_slices_agree": true,
+      "refusals_verification_failed": 0,
+      "refusals_refusal_blocked": 0,
+      "families_not_attempted": 0,
+      "would_replay_if_refusals_ignored": 0,
+      "text_similarity": 0.0,
+      "tree_similarity": 0.0,
+      "tree_similarity_stable": 0.0,
+      "residual_family_counts": {
+        "accepted_non_executable_frontier": 4
+      },
+      "transition_scores": []
+    },
+    {
+      "work_id": "act_public_1858_51",
+      "families": [
+        "repeal",
+        "text_replace",
+        "replace",
+        "insert"
+      ],
+      "work_status": "OK",
+      "transitions_replayed": 0,
+      "transitions_refused": 0,
+      "ops_replayed": 0,
+      "target_slice_nodes": 0,
+      "target_slice_agreements": 0,
+      "all_slices_agree": true,
+      "refusals_verification_failed": 0,
+      "refusals_refusal_blocked": 0,
+      "families_not_attempted": 0,
+      "would_replay_if_refusals_ignored": 0,
+      "text_similarity": 0.0,
+      "tree_similarity": 0.0,
+      "tree_similarity_stable": 0.0,
+      "residual_family_counts": {
+        "accepted_non_executable_frontier": 4
+      },
+      "transition_scores": []
+    },
+    {
+      "work_id": "act_public_1871_23",
+      "families": [
+        "repeal",
+        "text_replace",
+        "replace",
+        "insert"
+      ],
+      "work_status": "OK",
+      "transitions_replayed": 1,
+      "transitions_refused": 0,
+      "ops_replayed": 1,
+      "target_slice_nodes": 1,
+      "target_slice_agreements": 1,
+      "all_slices_agree": true,
+      "refusals_verification_failed": 0,
+      "refusals_refusal_blocked": 0,
+      "families_not_attempted": 0,
+      "would_replay_if_refusals_ignored": 0,
+      "text_similarity": 0.687728,
+      "tree_similarity": 0.785714,
+      "tree_similarity_stable": 0.817553,
+      "residual_family_counts": {
+        "accepted_non_executable_frontier": 3,
+        "agreement": 1
+      },
+      "transition_scores": [
+        {
+          "amendment_date_iso": "2017-06-03",
+          "text_similarity": 0.687728,
+          "tree_similarity": 0.785714,
+          "tree_similarity_stable": 0.817553,
+          "path_jaccard": 0.785714,
+          "slice_node_count": 1,
+          "slice_agreements": 1,
+          "ops": 1
+        }
+      ]
+    },
+    {
+      "work_id": "act_public_1871_24",
+      "families": [
+        "repeal",
+        "text_replace",
+        "replace",
+        "insert"
+      ],
+      "work_status": "OK",
+      "transitions_replayed": 0,
+      "transitions_refused": 0,
+      "ops_replayed": 0,
+      "target_slice_nodes": 0,
+      "target_slice_agreements": 0,
+      "all_slices_agree": true,
+      "refusals_verification_failed": 0,
+      "refusals_refusal_blocked": 0,
+      "families_not_attempted": 0,
+      "would_replay_if_refusals_ignored": 0,
+      "text_similarity": 0.0,
+      "tree_similarity": 0.0,
+      "tree_similarity_stable": 0.0,
+      "residual_family_counts": {
+        "accepted_non_executable_frontier": 4
+      },
+      "transition_scores": []
+    },
+    {
+      "work_id": "act_public_1872_13",
+      "families": [
+        "repeal",
+        "text_replace",
+        "replace",
+        "insert"
+      ],
+      "work_status": "OK",
+      "transitions_replayed": 0,
+      "transitions_refused": 0,
+      "ops_replayed": 0,
+      "target_slice_nodes": 0,
+      "target_slice_agreements": 0,
+      "all_slices_agree": true,
+      "refusals_verification_failed": 0,
+      "refusals_refusal_blocked": 0,
+      "families_not_attempted": 0,
+      "would_replay_if_refusals_ignored": 0,
+      "text_similarity": 0.0,
+      "tree_similarity": 0.0,
+      "tree_similarity_stable": 0.0,
+      "residual_family_counts": {
+        "accepted_non_executable_frontier": 4
+      },
+      "transition_scores": []
+    },
+    {
+      "work_id": "act_public_1872_64",
+      "families": [
+        "repeal",
+        "text_replace",
+        "replace",
+        "insert"
+      ],
+      "work_status": "OK",
+      "transitions_replayed": 0,
+      "transitions_refused": 0,
+      "ops_replayed": 0,
+      "target_slice_nodes": 0,
+      "target_slice_agreements": 0,
+      "all_slices_agree": true,
+      "refusals_verification_failed": 0,
+      "refusals_refusal_blocked": 0,
+      "families_not_attempted": 0,
+      "would_replay_if_refusals_ignored": 0,
+      "text_similarity": 0.0,
+      "tree_similarity": 0.0,
+      "tree_similarity_stable": 0.0,
+      "residual_family_counts": {
+        "accepted_non_executable_frontier": 4
+      },
+      "transition_scores": []
+    },
+    {
+      "work_id": "act_public_1873_21",
+      "families": [
+        "repeal",
+        "text_replace",
+        "replace",
+        "insert"
+      ],
+      "work_status": "OK",
+      "transitions_replayed": 0,
+      "transitions_refused": 0,
+      "ops_replayed": 0,
+      "target_slice_nodes": 0,
+      "target_slice_agreements": 0,
+      "all_slices_agree": true,
+      "refusals_verification_failed": 0,
+      "refusals_refusal_blocked": 0,
+      "families_not_attempted": 0,
+      "would_replay_if_refusals_ignored": 0,
+      "text_similarity": 0.0,
+      "tree_similarity": 0.0,
+      "tree_similarity_stable": 0.0,
+      "residual_family_counts": {
+        "accepted_non_executable_frontier": 4
+      },
+      "transition_scores": []
+    },
+    {
+      "work_id": "act_public_1873_49",
+      "families": [
+        "repeal",
+        "text_replace",
+        "replace",
+        "insert"
+      ],
+      "work_status": "OK",
+      "transitions_replayed": 0,
+      "transitions_refused": 0,
+      "ops_replayed": 0,
+      "target_slice_nodes": 0,
+      "target_slice_agreements": 0,
+      "all_slices_agree": true,
+      "refusals_verification_failed": 0,
+      "refusals_refusal_blocked": 0,
+      "families_not_attempted": 0,
+      "would_replay_if_refusals_ignored": 0,
+      "text_similarity": 0.0,
+      "tree_similarity": 0.0,
+      "tree_similarity_stable": 0.0,
+      "residual_family_counts": {
+        "accepted_non_executable_frontier": 4
+      },
+      "transition_scores": []
+    },
+    {
+      "work_id": "act_public_1874_34",
+      "families": [
+        "repeal",
+        "text_replace",
+        "replace",
+        "insert"
+      ],
+      "work_status": "OK",
+      "transitions_replayed": 0,
+      "transitions_refused": 0,
+      "ops_replayed": 0,
+      "target_slice_nodes": 0,
+      "target_slice_agreements": 0,
+      "all_slices_agree": true,
+      "refusals_verification_failed": 0,
+      "refusals_refusal_blocked": 0,
+      "families_not_attempted": 0,
+      "would_replay_if_refusals_ignored": 0,
+      "text_similarity": 0.0,
+      "tree_similarity": 0.0,
+      "tree_similarity_stable": 0.0,
+      "residual_family_counts": {
+        "accepted_non_executable_frontier": 4
+      },
+      "transition_scores": []
+    },
+    {
+      "work_id": "act_public_1874_41",
+      "families": [
+        "repeal",
+        "text_replace",
+        "replace",
+        "insert"
+      ],
+      "work_status": "OK",
+      "transitions_replayed": 0,
+      "transitions_refused": 0,
+      "ops_replayed": 0,
+      "target_slice_nodes": 0,
+      "target_slice_agreements": 0,
+      "all_slices_agree": true,
+      "refusals_verification_failed": 0,
+      "refusals_refusal_blocked": 0,
+      "families_not_attempted": 0,
+      "would_replay_if_refusals_ignored": 0,
+      "text_similarity": 0.0,
+      "tree_similarity": 0.0,
+      "tree_similarity_stable": 0.0,
+      "residual_family_counts": {
+        "accepted_non_executable_frontier": 4
+      },
+      "transition_scores": []
+    },
+    {
+      "work_id": "act_public_1874_44",
+      "families": [
+        "repeal",
+        "text_replace",
+        "replace",
+        "insert"
+      ],
+      "work_status": "OK",
+      "transitions_replayed": 0,
+      "transitions_refused": 0,
+      "ops_replayed": 0,
+      "target_slice_nodes": 0,
+      "target_slice_agreements": 0,
+      "all_slices_agree": true,
+      "refusals_verification_failed": 0,
+      "refusals_refusal_blocked": 0,
+      "families_not_attempted": 0,
+      "would_replay_if_refusals_ignored": 0,
+      "text_similarity": 0.0,
+      "tree_similarity": 0.0,
+      "tree_similarity_stable": 0.0,
+      "residual_family_counts": {
+        "accepted_non_executable_frontier": 4
+      },
+      "transition_scores": []
+    },
+    {
+      "work_id": "act_public_1875_27",
+      "families": [
+        "repeal",
+        "text_replace",
+        "replace",
+        "insert"
+      ],
+      "work_status": "OK",
+      "transitions_replayed": 0,
+      "transitions_refused": 0,
+      "ops_replayed": 0,
+      "target_slice_nodes": 0,
+      "target_slice_agreements": 0,
+      "all_slices_agree": true,
+      "refusals_verification_failed": 0,
+      "refusals_refusal_blocked": 0,
+      "families_not_attempted": 0,
+      "would_replay_if_refusals_ignored": 0,
+      "text_similarity": 0.0,
+      "tree_similarity": 0.0,
+      "tree_similarity_stable": 0.0,
+      "residual_family_counts": {
+        "accepted_non_executable_frontier": 4
+      },
+      "transition_scores": []
+    },
+    {
+      "work_id": "act_public_1875_34",
+      "families": [
+        "repeal",
+        "text_replace",
+        "replace",
+        "insert"
+      ],
+      "work_status": "OK",
+      "transitions_replayed": 0,
+      "transitions_refused": 0,
+      "ops_replayed": 0,
+      "target_slice_nodes": 0,
+      "target_slice_agreements": 0,
+      "all_slices_agree": true,
+      "refusals_verification_failed": 0,
+      "refusals_refusal_blocked": 0,
+      "families_not_attempted": 0,
+      "would_replay_if_refusals_ignored": 0,
+      "text_similarity": 0.0,
+      "tree_similarity": 0.0,
+      "tree_similarity_stable": 0.0,
+      "residual_family_counts": {
+        "accepted_non_executable_frontier": 4
+      },
+      "transition_scores": []
+    },
+    {
+      "work_id": "act_public_1875_45",
+      "families": [
+        "repeal",
+        "text_replace",
+        "replace",
+        "insert"
+      ],
+      "work_status": "OK",
+      "transitions_replayed": 0,
+      "transitions_refused": 0,
+      "ops_replayed": 0,
+      "target_slice_nodes": 0,
+      "target_slice_agreements": 0,
+      "all_slices_agree": true,
+      "refusals_verification_failed": 0,
+      "refusals_refusal_blocked": 0,
+      "families_not_attempted": 0,
+      "would_replay_if_refusals_ignored": 0,
+      "text_similarity": 0.0,
+      "tree_similarity": 0.0,
+      "tree_similarity_stable": 0.0,
+      "residual_family_counts": {
+        "accepted_non_executable_frontier": 4
+      },
+      "transition_scores": []
+    },
+    {
+      "work_id": "act_public_1875_56",
+      "families": [
+        "repeal",
+        "text_replace",
+        "replace",
+        "insert"
+      ],
+      "work_status": "OK",
+      "transitions_replayed": 0,
+      "transitions_refused": 0,
+      "ops_replayed": 0,
+      "target_slice_nodes": 0,
+      "target_slice_agreements": 0,
+      "all_slices_agree": true,
+      "refusals_verification_failed": 0,
+      "refusals_refusal_blocked": 0,
+      "families_not_attempted": 0,
+      "would_replay_if_refusals_ignored": 0,
+      "text_similarity": 0.0,
+      "tree_similarity": 0.0,
+      "tree_similarity_stable": 0.0,
+      "residual_family_counts": {
+        "accepted_non_executable_frontier": 4
+      },
+      "transition_scores": []
+    },
+    {
+      "work_id": "act_public_1875_62",
+      "families": [
+        "repeal",
+        "text_replace",
+        "replace",
+        "insert"
+      ],
+      "work_status": "OK",
+      "transitions_replayed": 0,
+      "transitions_refused": 0,
+      "ops_replayed": 0,
+      "target_slice_nodes": 0,
+      "target_slice_agreements": 0,
+      "all_slices_agree": true,
+      "refusals_verification_failed": 0,
+      "refusals_refusal_blocked": 0,
+      "families_not_attempted": 0,
+      "would_replay_if_refusals_ignored": 0,
+      "text_similarity": 0.0,
+      "tree_similarity": 0.0,
+      "tree_similarity_stable": 0.0,
+      "residual_family_counts": {
+        "accepted_non_executable_frontier": 4
+      },
+      "transition_scores": []
+    },
+    {
+      "work_id": "act_public_1876_10",
+      "families": [
+        "repeal",
+        "text_replace",
+        "replace",
+        "insert"
+      ],
+      "work_status": "OK",
+      "transitions_replayed": 0,
+      "transitions_refused": 0,
+      "ops_replayed": 0,
+      "target_slice_nodes": 0,
+      "target_slice_agreements": 0,
+      "all_slices_agree": true,
+      "refusals_verification_failed": 0,
+      "refusals_refusal_blocked": 0,
+      "families_not_attempted": 0,
+      "would_replay_if_refusals_ignored": 0,
+      "text_similarity": 0.0,
+      "tree_similarity": 0.0,
+      "tree_similarity_stable": 0.0,
+      "residual_family_counts": {
+        "accepted_non_executable_frontier": 4
+      },
+      "transition_scores": []
+    },
+    {
+      "work_id": "act_public_1876_23",
+      "families": [
+        "repeal",
+        "text_replace",
+        "replace",
+        "insert"
+      ],
+      "work_status": "OK",
+      "transitions_replayed": 0,
+      "transitions_refused": 0,
+      "ops_replayed": 0,
+      "target_slice_nodes": 0,
+      "target_slice_agreements": 0,
+      "all_slices_agree": true,
+      "refusals_verification_failed": 0,
+      "refusals_refusal_blocked": 0,
+      "families_not_attempted": 0,
+      "would_replay_if_refusals_ignored": 0,
+      "text_similarity": 0.0,
+      "tree_similarity": 0.0,
+      "tree_similarity_stable": 0.0,
+      "residual_family_counts": {
+        "accepted_non_executable_frontier": 4
+      },
+      "transition_scores": []
+    },
+    {
+      "work_id": "act_public_1876_24",
+      "families": [
+        "repeal",
+        "text_replace",
+        "replace",
+        "insert"
+      ],
+      "work_status": "OK",
+      "transitions_replayed": 0,
+      "transitions_refused": 0,
+      "ops_replayed": 0,
+      "target_slice_nodes": 0,
+      "target_slice_agreements": 0,
+      "all_slices_agree": true,
+      "refusals_verification_failed": 0,
+      "refusals_refusal_blocked": 0,
+      "families_not_attempted": 0,
+      "would_replay_if_refusals_ignored": 0,
+      "text_similarity": 0.0,
+      "tree_similarity": 0.0,
+      "tree_similarity_stable": 0.0,
+      "residual_family_counts": {
+        "accepted_non_executable_frontier": 4
+      },
+      "transition_scores": []
+    },
+    {
+      "work_id": "act_public_1876_31",
+      "families": [
+        "repeal",
+        "text_replace",
+        "replace",
+        "insert"
+      ],
+      "work_status": "OK",
+      "transitions_replayed": 0,
+      "transitions_refused": 0,
+      "ops_replayed": 0,
+      "target_slice_nodes": 0,
+      "target_slice_agreements": 0,
+      "all_slices_agree": true,
+      "refusals_verification_failed": 0,
+      "refusals_refusal_blocked": 0,
+      "families_not_attempted": 0,
+      "would_replay_if_refusals_ignored": 0,
+      "text_similarity": 0.0,
+      "tree_similarity": 0.0,
+      "tree_similarity_stable": 0.0,
+      "residual_family_counts": {
+        "accepted_non_executable_frontier": 4
+      },
+      "transition_scores": []
+    },
+    {
+      "work_id": "act_public_1876_57",
+      "families": [
+        "repeal",
+        "text_replace",
+        "replace",
+        "insert"
+      ],
+      "work_status": "OK",
+      "transitions_replayed": 0,
+      "transitions_refused": 0,
+      "ops_replayed": 0,
+      "target_slice_nodes": 0,
+      "target_slice_agreements": 0,
+      "all_slices_agree": true,
+      "refusals_verification_failed": 0,
+      "refusals_refusal_blocked": 0,
+      "families_not_attempted": 0,
+      "would_replay_if_refusals_ignored": 0,
+      "text_similarity": 0.0,
+      "tree_similarity": 0.0,
+      "tree_similarity_stable": 0.0,
+      "residual_family_counts": {
+        "accepted_non_executable_frontier": 4
+      },
+      "transition_scores": []
+    },
+    {
+      "work_id": "act_public_1876_72",
+      "families": [
+        "repeal",
+        "text_replace",
+        "replace",
+        "insert"
+      ],
+      "work_status": "OK",
+      "transitions_replayed": 0,
+      "transitions_refused": 0,
+      "ops_replayed": 0,
+      "target_slice_nodes": 0,
+      "target_slice_agreements": 0,
+      "all_slices_agree": true,
+      "refusals_verification_failed": 0,
+      "refusals_refusal_blocked": 0,
+      "families_not_attempted": 0,
+      "would_replay_if_refusals_ignored": 0,
+      "text_similarity": 0.0,
+      "tree_similarity": 0.0,
+      "tree_similarity_stable": 0.0,
+      "residual_family_counts": {
+        "accepted_non_executable_frontier": 4
+      },
+      "transition_scores": []
+    },
+    {
+      "work_id": "act_public_1876_79",
+      "families": [
+        "repeal",
+        "text_replace",
+        "replace",
+        "insert"
+      ],
+      "work_status": "OK",
+      "transitions_replayed": 0,
+      "transitions_refused": 0,
+      "ops_replayed": 0,
+      "target_slice_nodes": 0,
+      "target_slice_agreements": 0,
+      "all_slices_agree": true,
+      "refusals_verification_failed": 0,
+      "refusals_refusal_blocked": 0,
+      "families_not_attempted": 0,
+      "would_replay_if_refusals_ignored": 0,
+      "text_similarity": 0.0,
+      "tree_similarity": 0.0,
+      "tree_similarity_stable": 0.0,
+      "residual_family_counts": {
+        "accepted_non_executable_frontier": 4
+      },
+      "transition_scores": []
+    },
+    {
+      "work_id": "act_public_1955_37",
+      "families": [
+        "repeal",
+        "text_replace",
+        "replace",
+        "insert"
+      ],
+      "work_status": "OK",
+      "transitions_replayed": 4,
+      "transitions_refused": 49,
+      "ops_replayed": 7,
+      "target_slice_nodes": 7,
+      "target_slice_agreements": 7,
+      "all_slices_agree": true,
+      "refusals_verification_failed": 3,
+      "refusals_refusal_blocked": 41,
+      "families_not_attempted": 0,
+      "would_replay_if_refusals_ignored": 16,
+      "text_similarity": 0.870923,
+      "tree_similarity": 0.873745,
+      "tree_similarity_stable": 0.991958,
+      "residual_family_counts": {
+        "accepted_non_executable_frontier": 38,
+        "agreement": 7,
+        "replay_bug": 3,
+        "source_footing_gap": 2,
+        "temporal_mismatch": 6
+      },
+      "transition_scores": [
+        {
+          "amendment_date_iso": "2008-09-10",
+          "text_similarity": 0.995102,
+          "tree_similarity": 1.0,
+          "tree_similarity_stable": 0.995102,
+          "path_jaccard": 1.0,
+          "slice_node_count": 1,
+          "slice_agreements": 1,
+          "ops": 1
+        },
+        {
+          "amendment_date_iso": "2013-02-01",
+          "text_similarity": 0.810949,
+          "tree_similarity": 0.8125,
+          "tree_similarity_stable": 0.993279,
+          "path_jaccard": 0.8125,
+          "slice_node_count": 1,
+          "slice_agreements": 1,
+          "ops": 1
+        },
+        {
+          "amendment_date_iso": "2014-04-01",
+          "text_similarity": 0.875576,
+          "tree_similarity": 0.877934,
+          "tree_similarity_stable": 0.99745,
+          "path_jaccard": 0.877934,
+          "slice_node_count": 4,
+          "slice_agreements": 4,
+          "ops": 4
+        },
+        {
+          "amendment_date_iso": "2014-07-28",
+          "text_similarity": 0.802065,
+          "tree_similarity": 0.804545,
+          "tree_similarity_stable": 0.982002,
+          "path_jaccard": 0.804545,
+          "slice_node_count": 1,
+          "slice_agreements": 1,
+          "ops": 1
+        }
+      ]
+    },
+    {
+      "work_id": "act_public_1956_47",
+      "families": [
+        "repeal",
+        "text_replace",
+        "replace",
+        "insert"
+      ],
+      "work_status": "OK",
+      "transitions_replayed": 5,
+      "transitions_refused": 614,
+      "ops_replayed": 10,
+      "target_slice_nodes": 10,
+      "target_slice_agreements": 10,
+      "all_slices_agree": true,
+      "refusals_verification_failed": 1,
+      "refusals_refusal_blocked": 612,
+      "families_not_attempted": 0,
+      "would_replay_if_refusals_ignored": 49,
+      "text_similarity": 0.894397,
+      "tree_similarity": 0.894633,
+      "tree_similarity_stable": 0.977249,
+      "residual_family_counts": {
+        "accepted_non_executable_frontier": 306,
+        "agreement": 10,
+        "replay_bug": 1,
+        "source_footing_gap": 140,
+        "temporal_mismatch": 167
+      },
+      "transition_scores": [
+        {
+          "amendment_date_iso": "2008-10-01",
+          "text_similarity": 0.945596,
+          "tree_similarity": 0.945694,
+          "tree_similarity_stable": 0.999899,
+          "path_jaccard": 0.945694,
+          "slice_node_count": 3,
+          "slice_agreements": 3,
+          "ops": 3
+        },
+        {
+          "amendment_date_iso": "2011-05-01",
+          "text_similarity": 0.744087,
+          "tree_similarity": 0.744554,
+          "tree_similarity_stable": 0.888046,
+          "path_jaccard": 0.744554,
+          "slice_node_count": 4,
+          "slice_agreements": 4,
+          "ops": 4
+        },
+        {
+          "amendment_date_iso": "2013-12-05",
+          "text_similarity": 0.999968,
+          "tree_similarity": 1.0,
+          "tree_similarity_stable": 0.999968,
+          "path_jaccard": 1.0,
+          "slice_node_count": 1,
+          "slice_agreements": 1,
+          "ops": 1
+        },
+        {
+          "amendment_date_iso": "2019-10-24",
+          "text_similarity": 0.999699,
+          "tree_similarity": 1.0,
+          "tree_similarity_stable": 0.999696,
+          "path_jaccard": 1.0,
+          "slice_node_count": 1,
+          "slice_agreements": 1,
+          "ops": 1
+        },
+        {
+          "amendment_date_iso": "2022-09-01",
+          "text_similarity": 0.782634,
+          "tree_similarity": 0.782915,
+          "tree_similarity_stable": 0.998634,
+          "path_jaccard": 0.782915,
+          "slice_node_count": 1,
+          "slice_agreements": 1,
+          "ops": 1
+        }
+      ]
+    },
+    {
+      "work_id": "act_public_1981_23",
+      "families": [
+        "repeal",
+        "text_replace",
+        "replace",
+        "insert"
+      ],
+      "work_status": "OK",
+      "transitions_replayed": 3,
+      "transitions_refused": 110,
+      "ops_replayed": 4,
+      "target_slice_nodes": 4,
+      "target_slice_agreements": 4,
+      "all_slices_agree": true,
+      "refusals_verification_failed": 13,
+      "refusals_refusal_blocked": 89,
+      "families_not_attempted": 0,
+      "would_replay_if_refusals_ignored": 17,
+      "text_similarity": 0.943783,
+      "tree_similarity": 0.945294,
+      "tree_similarity_stable": 0.996158,
+      "residual_family_counts": {
+        "accepted_non_executable_frontier": 68,
+        "agreement": 4,
+        "replay_bug": 13,
+        "temporal_mismatch": 29
+      },
+      "transition_scores": [
+        {
+          "amendment_date_iso": "2012-03-05",
+          "text_similarity": 0.922382,
+          "tree_similarity": 0.925581,
+          "tree_similarity_stable": 0.991866,
+          "path_jaccard": 0.925581,
+          "slice_node_count": 2,
+          "slice_agreements": 2,
+          "ops": 2
+        },
+        {
+          "amendment_date_iso": "2017-03-01",
+          "text_similarity": 0.98457,
+          "tree_similarity": 0.985772,
+          "tree_similarity_stable": 0.996745,
+          "path_jaccard": 0.985772,
+          "slice_node_count": 1,
+          "slice_agreements": 1,
+          "ops": 1
+        },
+        {
+          "amendment_date_iso": "2025-12-20",
+          "text_similarity": 0.924396,
+          "tree_similarity": 0.924528,
+          "tree_similarity_stable": 0.999863,
+          "path_jaccard": 0.924528,
+          "slice_node_count": 1,
+          "slice_agreements": 1,
+          "ops": 1
+        }
+      ]
+    },
+    {
+      "work_id": "act_public_1992_122",
+      "families": [
+        "repeal",
+        "text_replace",
+        "replace",
+        "insert"
+      ],
+      "work_status": "OK",
+      "transitions_replayed": 7,
+      "transitions_refused": 260,
+      "ops_replayed": 15,
+      "target_slice_nodes": 15,
+      "target_slice_agreements": 15,
+      "all_slices_agree": true,
+      "refusals_verification_failed": 68,
+      "refusals_refusal_blocked": 185,
+      "families_not_attempted": 0,
+      "would_replay_if_refusals_ignored": 23,
+      "text_similarity": 0.924729,
+      "tree_similarity": 0.924981,
+      "tree_similarity_stable": 0.997003,
+      "residual_family_counts": {
+        "accepted_non_executable_frontier": 131,
+        "agreement": 15,
+        "replay_bug": 68,
+        "source_footing_gap": 3,
+        "temporal_mismatch": 58
+      },
+      "transition_scores": [
+        {
+          "amendment_date_iso": "2010-08-06",
+          "text_similarity": 0.842612,
+          "tree_similarity": 0.842649,
+          "tree_similarity_stable": 0.998801,
+          "path_jaccard": 0.842649,
+          "slice_node_count": 2,
+          "slice_agreements": 2,
+          "ops": 2
+        },
+        {
+          "amendment_date_iso": "2012-06-30",
+          "text_similarity": 0.999994,
+          "tree_similarity": 1.0,
+          "tree_similarity_stable": 0.999994,
+          "path_jaccard": 1.0,
+          "slice_node_count": 1,
+          "slice_agreements": 1,
+          "ops": 1
+        },
+        {
+          "amendment_date_iso": "2012-10-01",
+          "text_similarity": 0.948513,
+          "tree_similarity": 0.948602,
+          "tree_similarity_stable": 0.991145,
+          "path_jaccard": 0.948602,
+          "slice_node_count": 2,
+          "slice_agreements": 2,
+          "ops": 2
+        },
+        {
+          "amendment_date_iso": "2013-07-01",
+          "text_similarity": 0.965096,
+          "tree_similarity": 0.966348,
+          "tree_similarity_stable": 0.98997,
+          "path_jaccard": 0.966348,
+          "slice_node_count": 6,
+          "slice_agreements": 6,
+          "ops": 6
+        },
+        {
+          "amendment_date_iso": "2017-05-03",
+          "text_similarity": 0.860472,
+          "tree_similarity": 0.860505,
+          "tree_similarity_stable": 0.999965,
+          "path_jaccard": 0.860505,
+          "slice_node_count": 1,
+          "slice_agreements": 1,
+          "ops": 1
+        },
+        {
+          "amendment_date_iso": "2017-07-01",
+          "text_similarity": 0.992093,
+          "tree_similarity": 0.992213,
+          "tree_similarity_stable": 0.99942,
+          "path_jaccard": 0.992213,
+          "slice_node_count": 2,
+          "slice_agreements": 2,
+          "ops": 2
+        },
+        {
+          "amendment_date_iso": "2020-08-07",
+          "text_similarity": 0.864324,
+          "tree_similarity": 0.864552,
+          "tree_similarity_stable": 0.999728,
+          "path_jaccard": 0.864552,
+          "slice_node_count": 1,
+          "slice_agreements": 1,
+          "ops": 1
+        }
+      ]
+    },
+    {
+      "work_id": "act_public_1993_110",
+      "families": [
+        "repeal",
+        "text_replace",
+        "replace",
+        "insert"
+      ],
+      "work_status": "OK",
+      "transitions_replayed": 1,
+      "transitions_refused": 0,
+      "ops_replayed": 1,
+      "target_slice_nodes": 1,
+      "target_slice_agreements": 1,
+      "all_slices_agree": true,
+      "refusals_verification_failed": 0,
+      "refusals_refusal_blocked": 0,
+      "families_not_attempted": 0,
+      "would_replay_if_refusals_ignored": 0,
+      "text_similarity": 0.786221,
+      "tree_similarity": 0.846154,
+      "tree_similarity_stable": 0.786221,
+      "residual_family_counts": {
+        "accepted_non_executable_frontier": 3,
+        "agreement": 1
+      },
+      "transition_scores": [
+        {
+          "amendment_date_iso": "2013-12-05",
+          "text_similarity": 0.786221,
+          "tree_similarity": 0.846154,
+          "tree_similarity_stable": 0.786221,
+          "path_jaccard": 0.846154,
+          "slice_node_count": 1,
+          "slice_agreements": 1,
+          "ops": 1
+        }
+      ]
+    },
+    {
+      "work_id": "act_public_2005_87",
+      "families": [
+        "repeal",
+        "text_replace",
+        "replace",
+        "insert"
+      ],
+      "work_status": "OK",
+      "transitions_replayed": 2,
+      "transitions_refused": 0,
+      "ops_replayed": 5,
+      "target_slice_nodes": 5,
+      "target_slice_agreements": 5,
+      "all_slices_agree": true,
+      "refusals_verification_failed": 0,
+      "refusals_refusal_blocked": 0,
+      "families_not_attempted": 0,
+      "would_replay_if_refusals_ignored": 0,
+      "text_similarity": 0.898885,
+      "tree_similarity": 0.900145,
+      "tree_similarity_stable": 0.99343,
+      "residual_family_counts": {
+        "accepted_non_executable_frontier": 3,
+        "agreement": 5
+      },
+      "transition_scores": [
+        {
+          "amendment_date_iso": "2017-04-19",
+          "text_similarity": 0.899106,
+          "tree_similarity": 0.901235,
+          "tree_similarity_stable": 0.990375,
+          "path_jaccard": 0.901235,
+          "slice_node_count": 4,
+          "slice_agreements": 4,
+          "ops": 4
+        },
+        {
+          "amendment_date_iso": "2019-10-24",
+          "text_similarity": 0.898664,
+          "tree_similarity": 0.899055,
+          "tree_similarity_stable": 0.996484,
+          "path_jaccard": 0.899055,
+          "slice_node_count": 1,
+          "slice_agreements": 1,
+          "ops": 1
+        }
+      ]
+    },
+    {
+      "work_id": "act_public_2006_1",
+      "families": [
+        "repeal",
+        "text_replace",
+        "replace",
+        "insert"
+      ],
+      "work_status": "OK",
+      "transitions_replayed": 3,
+      "transitions_refused": 95,
+      "ops_replayed": 3,
+      "target_slice_nodes": 3,
+      "target_slice_agreements": 3,
+      "all_slices_agree": true,
+      "refusals_verification_failed": 0,
+      "refusals_refusal_blocked": 85,
+      "families_not_attempted": 0,
+      "would_replay_if_refusals_ignored": 15,
+      "text_similarity": 0.804681,
+      "tree_similarity": 0.804782,
+      "tree_similarity_stable": 0.999629,
+      "residual_family_counts": {
+        "accepted_non_executable_frontier": 95,
+        "agreement": 3
+      },
+      "transition_scores": [
+        {
+          "amendment_date_iso": "2009-11-16",
+          "text_similarity": 0.740627,
+          "tree_similarity": 0.740653,
+          "tree_similarity_stable": 0.99997,
+          "path_jaccard": 0.740653,
+          "slice_node_count": 1,
+          "slice_agreements": 1,
+          "ops": 1
+        },
+        {
+          "amendment_date_iso": "2020-08-26",
+          "text_similarity": 0.742221,
+          "tree_similarity": 0.742366,
+          "tree_similarity_stable": 0.999575,
+          "path_jaccard": 0.742366,
+          "slice_node_count": 1,
+          "slice_agreements": 1,
+          "ops": 1
+        },
+        {
+          "amendment_date_iso": "2026-04-05",
+          "text_similarity": 0.931193,
+          "tree_similarity": 0.931328,
+          "tree_similarity_stable": 0.999341,
+          "path_jaccard": 0.931328,
+          "slice_node_count": 1,
+          "slice_agreements": 1,
+          "ops": 1
+        }
+      ]
+    },
+    {
+      "work_id": "act_public_2009_13",
+      "families": [
+        "repeal",
+        "text_replace",
+        "replace",
+        "insert"
+      ],
+      "work_status": "OK",
+      "transitions_replayed": 0,
+      "transitions_refused": 36,
+      "ops_replayed": 0,
+      "target_slice_nodes": 0,
+      "target_slice_agreements": 0,
+      "all_slices_agree": true,
+      "refusals_verification_failed": 3,
+      "refusals_refusal_blocked": 31,
+      "families_not_attempted": 0,
+      "would_replay_if_refusals_ignored": 1,
+      "text_similarity": 0.0,
+      "tree_similarity": 0.0,
+      "tree_similarity_stable": 0.0,
+      "residual_family_counts": {
+        "accepted_non_executable_frontier": 33,
+        "replay_bug": 3
+      },
+      "transition_scores": []
+    },
+    {
+      "work_id": "act_public_2009_38",
+      "families": [
+        "repeal",
+        "text_replace",
+        "replace",
+        "insert"
+      ],
+      "work_status": "OK",
+      "transitions_replayed": 1,
+      "transitions_refused": 0,
+      "ops_replayed": 1,
+      "target_slice_nodes": 1,
+      "target_slice_agreements": 1,
+      "all_slices_agree": true,
+      "refusals_verification_failed": 0,
+      "refusals_refusal_blocked": 0,
+      "families_not_attempted": 0,
+      "would_replay_if_refusals_ignored": 0,
+      "text_similarity": 0.990543,
+      "tree_similarity": 0.992647,
+      "tree_similarity_stable": 0.990543,
+      "residual_family_counts": {
+        "accepted_non_executable_frontier": 3,
+        "agreement": 1
+      },
+      "transition_scores": [
+        {
+          "amendment_date_iso": "2012-02-13",
+          "text_similarity": 0.990543,
+          "tree_similarity": 0.992647,
+          "tree_similarity_stable": 0.990543,
+          "path_jaccard": 0.992647,
+          "slice_node_count": 1,
+          "slice_agreements": 1,
+          "ops": 1
+        }
+      ]
+    },
+    {
+      "work_id": "act_public_2022_77",
+      "families": [
+        "repeal",
+        "text_replace",
+        "replace",
+        "insert"
+      ],
+      "work_status": "OK",
+      "transitions_replayed": 0,
+      "transitions_refused": 346,
+      "ops_replayed": 0,
+      "target_slice_nodes": 0,
+      "target_slice_agreements": 0,
+      "all_slices_agree": true,
+      "refusals_verification_failed": 8,
+      "refusals_refusal_blocked": 335,
+      "families_not_attempted": 0,
+      "would_replay_if_refusals_ignored": 1,
+      "text_similarity": 0.0,
+      "tree_similarity": 0.0,
+      "tree_similarity_stable": 0.0,
+      "residual_family_counts": {
+        "accepted_non_executable_frontier": 338,
+        "replay_bug": 8
+      },
+      "transition_scores": []
+    }
+  ]
+}
