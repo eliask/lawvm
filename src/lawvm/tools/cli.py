@@ -892,19 +892,28 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
             "user can eyeball hotspots without loading the pstats file "
             "separately. Use this BEFORE reasoning about hot paths; code-reading "
             "hypotheses about hot paths are usually wrong (AGENTS.md §2.7). "
-            "Synchronous single-statute only — no parallelism inside the profiler."
+            "Synchronous single-statute only — no parallelism inside the profiler. "
+            "Jurisdiction dispatch: -j fi wraps the FI single-statute replay_xml "
+            "path; -j nz wraps the NZ per-work chain replay "
+            "(build_archived_work_chain_replay over the archived NZ farchive) "
+            "and IGNORES --as-of (the NZ chain runs ALL archived versions of the "
+            "work, not a single-date PIT snapshot — callers pass a placeholder)."
         ),
     )
     profile_p.add_argument(
         "statute_id",
-        help="base act identifier, e.g. 2006/1299",
+        help="base act identifier, e.g. 2006/1299 (FI) or act_public_1992_122 (NZ)",
     )
     profile_p.add_argument(
         "--as-of",
         dest="as_of",
         required=True,
         metavar="YYYY-MM-DD",
-        help="target date for amendments (same semantics as `lawvm replay --as-of`)",
+        help=(
+            "target date for amendments (same semantics as `lawvm replay "
+            "--as-of`); IGNORED for -j nz (the NZ chain replay runs all "
+            "archived versions of the work — pass a placeholder date)"
+        ),
     )
     profile_p.add_argument(
         "--out",
