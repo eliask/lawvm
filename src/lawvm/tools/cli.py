@@ -12881,6 +12881,50 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
     us_evidence_pack_p.add_argument(
         "--json", action="store_true", help="emit the evidence-pack report JSON instead of a summary line"
     )
+
+    us_import_release_p = sub.add_parser(
+        "us-import-release",
+        help="import U.S. Code USLM release-point XML (PL × title) from OLRC via Wayback",
+        description=(
+            "Fetch a USC release-point zip for one Public Law × USC title from "
+            "the OLRC release-point archive (mirrored on the Wayback Machine), "
+            "extract the USLM XML, and store it in the canonical U.S. farchive "
+            "at us://usc/release/pl{congress}-{num}/title{N}.xml. Thin shim over "
+            "lawvm.us_federal.import_release. 404s for unarchived PLs/titles are "
+            "typed skips, never silent drops."
+        ),
+    )
+    us_import_release_p.add_argument(
+        "--congress", type=int, required=True, help="Congress number (e.g. 113)"
+    )
+    us_import_release_p.add_argument(
+        "--pl", type=int, required=True, dest="pl_number",
+        help="Public Law number within that Congress (e.g. 100)",
+    )
+    us_import_release_p.add_argument(
+        "--title", type=int, default=None,
+        help="USC title number (e.g. 10). Required unless --all-titles is set.",
+    )
+    us_import_release_p.add_argument(
+        "--all-titles", action="store_true", dest="all_titles",
+        help="Fetch every USC title (1..54) for this PL; 404s are typed skips.",
+    )
+    us_import_release_p.add_argument(
+        "--timestamp", default="2025",
+        help="Wayback timestamp (YYYY[MMDDHHMMSS]); default '2025' = most recent capture.",
+    )
+    us_import_release_p.add_argument(
+        "--dest", metavar="PATH", default=None,
+        help="explicit farchive path (default: canonical data/us_federal.farchive)",
+    )
+    us_import_release_p.add_argument(
+        "--skip-existing", dest="skip_existing", action="store_true",
+        help="skip titles whose identical content is already stored",
+    )
+    us_import_release_p.add_argument(
+        "--dry-run", dest="dry_run", action="store_true",
+        help="report what would be imported without writing to the farchive",
+    )
     # --- END us_federal jurisdiction tooling ---
 
     # --- recipes ---
@@ -14612,6 +14656,50 @@ def _main_impl() -> None:
         )
         print(
             f"USC import: scanned={report.total_scanned:,} "
+            f"imported={report.total_imported:,} "
+            f"skipped={report.total_skipped:,} errors={report.total_errors:,}"
+        )
+        if report.total_errors:
+            sys.exit(1)
+
+    elif args.command == "us-import-release":
+        from pathlib import Path as _Path
+
+        from lawvm.us_federal.import_release import (
+            import_release_point,
+            import_release_point_titles,
+        )
+
+        if not bool(getattr(args, "all_titles", False)) and getattr(args, "title", None) is None:
+            print(
+                "error: --title is required unless --all-titles is set",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+
+        _dest = _Path(args.dest) if getattr(args, "dest", None) else None
+        if getattr(args, "all_titles", False):
+            report = import_release_point_titles(
+                _dest,
+                int(args.congress),
+                int(args.pl_number),
+                titles=None,
+                timestamp=str(args.timestamp),
+                skip_existing=bool(getattr(args, "skip_existing", False)),
+                dry_run=bool(getattr(args, "dry_run", False)),
+            )
+        else:
+            report = import_release_point(
+                _dest,
+                int(args.congress),
+                int(args.pl_number),
+                int(args.title),
+                timestamp=str(args.timestamp),
+                skip_existing=bool(getattr(args, "skip_existing", False)),
+                dry_run=bool(getattr(args, "dry_run", False)),
+            )
+        print(
+            f"USC release-point import: scanned={report.total_scanned:,} "
             f"imported={report.total_imported:,} "
             f"skipped={report.total_skipped:,} errors={report.total_errors:,}"
         )

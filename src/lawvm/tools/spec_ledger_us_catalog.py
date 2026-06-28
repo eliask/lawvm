@@ -641,6 +641,37 @@ _US_RULE_SPECS: Dict[str, str] = {
         "A USC edition source blob could not be read/parsed at import time — refused "
         "loudly rather than imported partially."
     ),
+    # --- USC release-point import hygiene (Wayback/OLRC acquisition lane) -------------
+    # Acquisition-side typed skips for the release-point lane. None of these
+    # authorize replay: each is a receipt over a missing/unreadable/duplicate
+    # acquisition unit so the lane never disappears silently (AGENTS.md §1.8).
+    "us_release_point_member_not_found": (
+        "A release-point zip fetched from OLRC (via Wayback) contained no XML "
+        "matching the requested USC title — the available member names are embedded "
+        "so triage does not require re-fetching. The title is not silently imported "
+        "from a wrong sibling member."
+    ),
+    "us_release_point_zip_unreadable": (
+        "A release-point zip's bytes could not be parsed as a zip (truncated payload, "
+        "CRC mismatch, or a Wayback HTML error page served as 200) — refused as a "
+        "transport-cleanup skip rather than partially extracted."
+    ),
+    "us_release_point_existing_content_skipped": (
+        "A release-point title's content already exists byte-identically in the "
+        "archive — skipped as idempotent when --skip-existing is set; no replay "
+        "authority touched."
+    ),
+    "us_release_point_http_error": (
+        "The Wayback Machine fetch for a release-point zip returned an HTTP error "
+        "(typically 404 for a PL/title pair OLRC never published or Wayback never "
+        "archived). The HTTP status, reason, and URL are embedded; this is a "
+        "source-pathology receipt, never silently a successful empty import."
+    ),
+    "us_release_point_network_error": (
+        "The Wayback fetch failed at the network/DNS layer (URLError, timeout, "
+        "connection reset). The URL and exception class are embedded so the gap is "
+        "inspectable without re-running the fetch."
+    ),
     # --- USC source-tree parse hygiene ------------------------------------------------
     "us_usc_subsection_parse_ambiguous": (
         "A section's sub-structure (leading (a)/(1)/(A)/(i) markers plus indent depth) "
