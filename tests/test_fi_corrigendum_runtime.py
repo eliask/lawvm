@@ -559,6 +559,55 @@ def test_patch_table_routes_section_num_before_heading_corrigendum_to_body_patch
     ]
 
 
+def test_patch_table_dedupes_whitespace_variant_section_num_corrigenda(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    records_path = tmp_path / "corrigendum_official_fi.jsonl"
+    manual_path = tmp_path / "corrigendum_manual.yaml"
+    manual_path.write_text("[]\n", encoding="utf-8")
+    rows = [
+        {
+            "stable_id": "official#0",
+            "source_pdf": "x",
+            "statute_id": "2003/359",
+            "amendment_id": "359/2003",
+            "lang": "fi",
+            "correction_index": 0,
+            "correction_type": "prose",
+            "location_desc": "Sivulla 1792, pykälän numero",
+            "wrong_text": "9§",
+            "correct_text": "59 §",
+            "parse_error": None,
+        },
+        {
+            "stable_id": "official#1",
+            "source_pdf": "x",
+            "statute_id": "2003/359",
+            "amendment_id": "359/2003",
+            "lang": "fi",
+            "correction_index": 1,
+            "correction_type": "johtolause",
+            "location_desc": "Sivulla 1792, oikea palsta, pykälän numero",
+            "wrong_text": "9 §",
+            "correct_text": "59 §",
+            "parse_error": None,
+        },
+    ]
+    records_path.write_text(
+        "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(corr, "_MANUAL_YAML", manual_path)
+
+    table = corr.CorrigendumPatchTable.load_from_source(records_path)
+
+    assert table._body_patches["2003/359"] == [
+        ("9§", "59 §", "Sivulla 1792, pykälän numero")
+    ]
+
+
 def test_patch_source_body_xml_corrects_unique_section_num_before_heading() -> None:
     xml = b"""\
 <?xml version="1.0" encoding="UTF-8"?>
@@ -582,6 +631,60 @@ def test_patch_source_body_xml_corrects_unique_section_num_before_heading() -> N
     assert b"<num>35 \xc2\xa7</num>" in patched
     assert b"<num>5 \xc2\xa7</num>" not in patched
     assert corr.get_misapplied_records() == []
+
+
+def test_patch_source_body_xml_uses_sibling_sequence_for_ambiguous_section_num() -> None:
+    xml = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<akomaNtoso><act><body>
+  <chapter eId="chp_2"><num>2 luku</num>
+    <section eId="chp_2__sec_9"><num>9 §</num><heading>Lapsi</heading></section>
+    <section eId="chp_2__sec_10"><num>10 §</num><heading>Adoptiolapsi</heading></section>
+  </chapter>
+  <chapter eId="chp_9"><num>9 luku</num>
+    <section eId="chp_9__sec_58"><num>58 §</num><heading>Ilmoitus</heading></section>
+    <section eId="chp_9__sec_9"><num>9 §</num><heading>Alle 12-vuotiaan ottolapsen kansalaisuusilmoitus</heading></section>
+    <section eId="chp_9__sec_60"><num>60 §</num><heading>Määräaika</heading></section>
+  </chapter>
+</body></act></akomaNtoso>""".encode("utf-8")
+    table = corr.CorrigendumPatchTable()
+    table._body_patches["2003/359"] = [
+        ("9§", "59 §", "Sivulla 1792, pykälän numero")
+    ]
+    corr.clear_misapplied_records()
+
+    patched, applied = table.patch_source_body_xml(xml, "2003/359")
+
+    assert applied == ["body_patch/2003/359/0"]
+    assert '<section eId="chp_2__sec_9"><num>9 §</num>'.encode("utf-8") in patched
+    assert '<section eId="chp_9__sec_9"><num>59 §</num>'.encode("utf-8") in patched
+    assert corr.get_misapplied_records() == []
+
+
+def test_patch_source_body_xml_rejects_ambiguous_section_num_without_sequence_witness() -> None:
+    xml = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<akomaNtoso><act><body>
+  <chapter><num>2 luku</num>
+    <section><num>9 §</num></section>
+    <section><num>10 §</num></section>
+  </chapter>
+  <chapter><num>9 luku</num>
+    <section><num>9 §</num></section>
+    <section><num>61 §</num></section>
+  </chapter>
+</body></act></akomaNtoso>""".encode("utf-8")
+    table = corr.CorrigendumPatchTable()
+    table._body_patches["2003/359"] = [
+        ("9§", "59 §", "Sivulla 1792, pykälän numero")
+    ]
+    corr.clear_misapplied_records()
+
+    patched, applied = table.patch_source_body_xml(xml, "2003/359")
+
+    assert applied == []
+    assert patched == xml
+    assert corr.get_misapplied_records()[0]["reason"] == "miss"
 
 
 def test_patch_table_preserves_unsupported_table_corrections(tmp_path: Path, monkeypatch) -> None:

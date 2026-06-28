@@ -30,6 +30,7 @@ from lawvm.uk_legislation.execution_authorization import (
     uk_execution_authorization_from_replay_adjudication,
 )
 from lawvm.uk_legislation.phase_discipline import uk_phase_owner_for_diagnostic
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 if TYPE_CHECKING:
     import argparse
@@ -1711,7 +1712,7 @@ def _residual_execution_exception_observation(
         "exception_message": str(exc),
         "blocking": True,
         "strict_disposition": "block",
-        "quirks_disposition": "record",
+        "quirks_disposition": QuirksDisposition.RECORD,
     }
 
 
@@ -3482,7 +3483,7 @@ def _replay_applicable_effects_with_budget(
                         "reason": "UK candidate effect inspection excluded metadata-only effect rows for this replay regime.",
                         "blocking": False,
                         "strict_disposition": "record",
-                        "quirks_disposition": "record",
+                        "quirks_disposition": QuirksDisposition.RECORD,
                     }
                 )
             continue
@@ -3504,7 +3505,7 @@ def _replay_applicable_effects_with_budget(
                         "reason": "UK candidate effect inspection excluded an effect row that is outside the replay applicability regime.",
                         "blocking": False,
                         "strict_disposition": "record",
-                        "quirks_disposition": "record",
+                        "quirks_disposition": QuirksDisposition.RECORD,
                     }
                 )
             continue
@@ -3535,7 +3536,7 @@ def _replay_applicable_effects_with_budget(
                 "reason": "UK candidate effect inspection stopped at the configured effect budget.",
                 "blocking": False,
                 "strict_disposition": "record",
-                "quirks_disposition": "record",
+                "quirks_disposition": QuirksDisposition.RECORD,
             }
         )
     return (

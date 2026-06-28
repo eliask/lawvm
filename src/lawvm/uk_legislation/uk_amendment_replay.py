@@ -60,6 +60,9 @@ from lawvm.uk_legislation.authority_filter import (
     _apply_uk_authority_mode,
 )
 from lawvm.uk_legislation.compiled_effect_facts import uk_compiled_effect_facts
+from lawvm.uk_legislation.materialization_totality_probe import (
+    probe_uk_materialization_totality,
+)
 from lawvm.uk_legislation.effect_compiler import compile_effect_to_ir_ops
 from lawvm.uk_legislation.effect_source_selection import (
     EffectSourceSelection as _EffectSourceSelection,
@@ -1096,4 +1099,13 @@ class UKReplayPipeline:
             executor.ground_ids()
         if oracle_alignment_events_out is not None:
             oracle_alignment_events_out.extend(dict(event) for event in executor.oracle_alignment_events)
-        return executor.statute.to_irstatute()
+        # Sub-PR C+D: ``executor.statute`` is the immutable ``IRStatute`` — no
+        # ``UKMutableStatute.to_irstatute()`` boundary call left.
+        replayed = executor.statute
+        probe_uk_materialization_totality(
+            base=base_ir,
+            replayed=replayed,
+            adjudications_out=adjudications_out,
+            source_statute=base_ir.statute_id,
+        )
+        return replayed

@@ -42,6 +42,7 @@ Witness ``rule_id`` emitted here (the closed set for this family):
 
 from __future__ import annotations
 
+from lawvm.finland.johtolause.jolloin_pair import JolloinRenumberPair
 from lawvm.finland.johtolause.surface_model import (
     SurfaceNode,
     SurfaceRenumberTail,
@@ -53,8 +54,6 @@ from lawvm.finland.johtolause.surface_model import (
     VerbKind,
 )
 
-# The renumber-pair triple as scan.py emits it: (source_label, dest_label, kind).
-JolloinPair = tuple[str, str, str]
 # Per-consumed-position anchor context: (context_section, context_chapter).
 JolloinContext = tuple[str, str]
 
@@ -74,7 +73,7 @@ def _surface_target_kind_for_pair_kind(pair_kind: str) -> TargetKind:
 
 def build_jolloin_nodes(
     consumed_positions: list[int],
-    jolloin_renumber_pairs: dict[int, list[JolloinPair]],
+    jolloin_renumber_pairs: dict[int, list[JolloinRenumberPair]],
     jolloin_contexts: dict[int, JolloinContext] | None = None,
 ) -> list[SurfaceNode]:
     """Build the ordered SurfaceTargetRef + SurfaceRenumberTail node list.
@@ -82,7 +81,7 @@ def build_jolloin_nodes(
     The pure node-construction half of the prepended jolloin group, byte-identical
     to ``surface_parse.parse``'s native-jolloin block. For each consumed
     ``JOLLOIN_MOVE`` position (in driver-consumption order), each
-    ``(src, dst, pair_kind)`` pair emits:
+    pair emits:
 
       * a ``SurfaceTargetRef`` —
           - for a ``"M"`` (momentti) pair: a SECTION target at the anchor section
@@ -117,8 +116,8 @@ def build_jolloin_nodes(
     for jm_pos in consumed_positions:
         pairs = jolloin_renumber_pairs.get(jm_pos, [])
         context_section, context_chapter = context_map.get(jm_pos, ("", ""))
-        for src, dst, pair_kind in pairs:
-            if pair_kind == "M":
+        for pair in pairs:
+            if pair.kind == "M":
                 if not context_section:
                     # No anchor section for this momentti renumber: the old parser
                     # drops the whole pair (target and its tail).
@@ -128,24 +127,26 @@ def build_jolloin_nodes(
                         kind=TargetKind.SECTION,
                         label=context_section,
                         chapter=context_chapter,
-                        sub_refs=(SurfaceSubRef(momentti=int(src)),),
+                        sub_refs=(SurfaceSubRef(momentti=int(pair.source_label)),),
                         notes=("renumber_clause",),
                         witness=SurfaceWitness(rule_id="fi.jolloin_renumber"),
                     )
                 )
             else:
-                target_kind = _surface_target_kind_for_pair_kind(pair_kind)
+                target_kind = _surface_target_kind_for_pair_kind(pair.kind)
                 nodes.append(
                     SurfaceTargetRef(
                         kind=target_kind,
-                        label=src,
+                        label=pair.source_label,
                         notes=("renumber_clause",),
+                        renumber_dest_chapter=pair.destination_chapter,
+                        renumber_dest_part=pair.destination_part,
                         witness=SurfaceWitness(rule_id="fi.jolloin_renumber"),
                     )
                 )
             nodes.append(
                 SurfaceRenumberTail(
-                    new_label=dst,
+                    new_label=pair.destination_label,
                     witness=SurfaceWitness(rule_id="fi.jolloin_renumber"),
                 )
             )
@@ -154,7 +155,7 @@ def build_jolloin_nodes(
 
 def build_jolloin_group(
     consumed_positions: list[int],
-    jolloin_renumber_pairs: dict[int, list[JolloinPair]],
+    jolloin_renumber_pairs: dict[int, list[JolloinRenumberPair]],
     jolloin_contexts: dict[int, JolloinContext] | None = None,
 ) -> SurfaceVerbGroup | None:
     """Build the synthetic SIIRTAA verb group the old parser prepends, or None.

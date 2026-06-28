@@ -19,7 +19,7 @@ from lawvm.finland.morphology import MorphNumber, generate_forms, head_entry
 _TARGET_ZONE_CUT_RE = re.compile(
     # Historical OCR/source typo seen in 1978/676: ``selaisena kuin``.  It
     # still marks a version-provenance clause, not the amended statute target.
-    r"\bsell?ais(?:ena|ina)\s+kuin\b|\bsiihen\s+myöhemmin\b",
+    r"\bsell?ais(?:ena|ina)(?:\s+kuin|,\s+kuin)\b|\bsiihen\s+myöhemmin\b",
     re.IGNORECASE,
 )
 _WHITESPACE_RE = re.compile(r"\s+")
@@ -129,8 +129,9 @@ def _strip_delegated_authority_prefix_when_target_follows(compact: str) -> str:
 
     candidate = tail[1:].lstrip() if tail.startswith(",") else tail
     candidate_lower = candidate.lower()
-    if candidate_lower.startswith(("sellaisena kuin", "sellaisina kuin")):
-        comma_after_provenance = candidate.find(",")
+    provenance_match = _TARGET_ZONE_CUT_RE.match(candidate_lower)
+    if provenance_match is not None:
+        comma_after_provenance = candidate.find(",", provenance_match.end())
         if comma_after_provenance != -1:
             candidate = candidate[comma_after_provenance + 1 :].lstrip()
         else:

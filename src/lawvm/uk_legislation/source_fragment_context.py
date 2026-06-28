@@ -22,7 +22,12 @@ from lawvm.uk_legislation.source_context import (
     _unique_source_ancestor_chain_by_tag_text,
 )
 from lawvm.uk_legislation.uk_grafter import _clean_num
-from lawvm.uk_legislation.xml_helpers import _direct_structural_num, _tag, _text_content
+from lawvm.uk_legislation.xml_helpers import (
+    _direct_structural_num,
+    _RootScopedCache,
+    _tag,
+    _text_content,
+)
 
 
 # Literal spaces replace \s+ inside optional groups;
@@ -235,27 +240,20 @@ _SOURCE_PARENT_AFTER_ANCHOR_TO_END_SUBSTITUTION_RE = re.compile(
     r"(| (?:the )?words?) ?[—–-]? ?$",
     flags=re.I,
 )
-# lxml _Element objects do not support weak references; use plain dicts.
-# Eviction is handled by explicit evict_source_root_caches() calls.
-_SOURCE_LEAD_TEXT_CACHE: dict[ET._Element, str] = {}
-_SOURCE_TAIL_TEXT_CACHE: dict[ET._Element, str] = {}
-_SOURCE_PARENT_EACH_PROVISION_CACHE: dict[
-    ET._Element, Optional[tuple[tuple[str, ...], str]]
-] = {}
+# lxml _Element objects do not support weak references; use _RootScopedCache
+# so eviction is O(keys-for-this-root) via evict_source_root_caches() (§2.7).
+_SOURCE_LEAD_TEXT_CACHE: _RootScopedCache = _RootScopedCache()
+_SOURCE_TAIL_TEXT_CACHE: _RootScopedCache = _RootScopedCache()
+_SOURCE_PARENT_EACH_PROVISION_CACHE: _RootScopedCache = _RootScopedCache()
 _SOURCE_CHILD_SUBSTITUTION_RE = re.compile(r"\bsubstitut(?:e|ed)\b", flags=re.I)
 
 
 def evict_source_fragment_context_caches(root: Optional[ET._Element]) -> None:
     if root is None:
         return
-    for cache in (
-        _SOURCE_LEAD_TEXT_CACHE,
-        _SOURCE_TAIL_TEXT_CACHE,
-        _SOURCE_PARENT_EACH_PROVISION_CACHE,
-    ):
-        for el in tuple(cache):
-            if el is root or el.getroottree().getroot() is root:
-                cache.pop(el, None)
+    _SOURCE_LEAD_TEXT_CACHE.evict_root(root)
+    _SOURCE_TAIL_TEXT_CACHE.evict_root(root)
+    _SOURCE_PARENT_EACH_PROVISION_CACHE.evict_root(root)
 
 
 def append_source_fragment_context_observations(

@@ -33,6 +33,7 @@ from lawvm.finland.ops import (
 from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.statute import ReplayState
 from lawvm.finland.target_selector_facades import replace_target
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 
 _REJECTED_OPERATION_MESSAGE = "operation rejected before apply"
@@ -669,7 +670,7 @@ def _maybe_rewrite_item_targets_as_subsections(
                     "target_part": result.effective_target_part or "",
                     "op_ids": rewritten_op_ids,
                     "strict_disposition": "allow",
-                    "quirks_disposition": "apply",
+                    "quirks_disposition": QuirksDisposition.APPLY,
                 },
                 source_statute=_source_statute(result.group_ops),
                 blocking=False,
@@ -1097,7 +1098,7 @@ def _maybe_apply_body_chapter_insert_correction(
             "resolved_body_chapter": resolved_body_chapter,
             "blocking": True,
             "strict_disposition": "record",
-            "quirks_disposition": "apply",
+            "quirks_disposition": QuirksDisposition.APPLY,
         },
         source_statute=_source_statute(result.group_ops),
         blocking=False,
@@ -1246,7 +1247,7 @@ def _maybe_apply_replace_to_insert_move(
                 "trigger_evidence": trigger_evidence,
                 "op_ids": tuple(str(op.op_id or "") for op in replacement_ops),
                 "strict_disposition": "allow",
-                "quirks_disposition": "record",
+                "quirks_disposition": QuirksDisposition.RECORD,
             },
             source_statute=_source_statute(replacement_ops),
             blocking=False,
@@ -1283,7 +1284,7 @@ def _maybe_apply_replace_to_insert_move(
             "op_ids": tuple(str(op.op_id or "") for op in replacement_ops),
             "blocking": True,
             "strict_disposition": "block",
-            "quirks_disposition": "record",
+            "quirks_disposition": QuirksDisposition.RECORD,
         },
         source_statute=_source_statute(replacement_ops),
         blocking=False,
@@ -1415,7 +1416,7 @@ def _maybe_apply_descendant_body_chapter_scope(
             "op_ids": tuple(str(op.op_id or "") for op in descendant_replace_ops),
             "blocking": True,
             "strict_disposition": "block",
-            "quirks_disposition": "record",
+            "quirks_disposition": QuirksDisposition.RECORD,
         },
         source_statute=_source_statute(descendant_replace_ops),
         blocking=False,
@@ -1604,7 +1605,7 @@ def _maybe_retarget_live_section(
         "scope_source": retarget_scope_source,
         "blocking": True,
         "strict_disposition": "block",
-        "quirks_disposition": "record",
+        "quirks_disposition": QuirksDisposition.RECORD,
     }
     finding = Finding(
         kind=_LIVE_SECTION_RETARGET_RULE_ID,

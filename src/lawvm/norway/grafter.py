@@ -17,14 +17,23 @@ import copy
 import itertools
 import re
 import tarfile
+from collections import Counter
 from dataclasses import dataclass, replace as dc_replace
+from pathlib import Path
 from typing import Any, Generator, List, Mapping, Optional, Sequence, Tuple, cast
 
 from lxml import etree
 
 from lawvm.core import tree_ops
+from lawvm.core.archive_safety import (
+    ArchiveMemberTooLarge,
+    log_archive_member_too_large,
+    safe_tar_read,
+)
 from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.filter_result import FilterResult, RejectedItem
 from lawvm.core.invariant_profiles import CORE_REPLAY_DELTA_MINIMAL_FAMILIES
+from lawvm.core.xml_parse import parse_corpus_xml
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.roman import roman_to_arabic as _shared_roman_to_int
 from lawvm.core.ir import (
@@ -36,7 +45,15 @@ from lawvm.core.ir import (
     TextPatchSpec,
     TextSelector,
 )
-from lawvm.core.semantic_types import IRNodeKind, StructuralAction, TextPatchKindEnum
+from lawvm.core.semantic_types import (
+    IRNodeKind,
+    StructuralAction,
+    TextPatchKindEnum,
+    structural_action_from_str,
+    structural_action_value,
+)
+from lawvm.core.quirks_disposition import QuirksDisposition
+from lawvm.norway.scope_confidence import NOScopeConfidence
 
 NO_PARSE_REPLACE_PROMOTED_TO_INSERT_FOR_RENUMBER = "no_parse_replace_promoted_to_insert_for_same_target_renumber"
 NO_PARSE_STRUCTURED_TARGET_REBOUND_FROM_LEAD = "no_parse_structured_target_rebound_from_lead"
@@ -44,8 +61,19 @@ NO_PARSE_ACTION_RECOVERED_FROM_STRUCTURED_LEAD = "no_parse_action_recovered_from
 
 
 def _no_action_value(action: StructuralAction | str) -> str:
-    """Normalize action to string value for comparisons and serialization."""
-    return action.value if isinstance(action, StructuralAction) else action
+    """Normalize action to string value for comparisons and serialization.
+
+    Fail-loud on an unrecognized ``str``: the shared jurisdiction-neutral
+    ``structural_action_value`` is intentionally non-validating (it is the
+    inverse direction; a caller may feed an already-valid boundary string).
+    This wrapper is the only Norway action boundary and is reached with raw
+    parsed action strings -- so it routes through ``structural_action_from_str``
+    (raise) to mirror EE/UK's ``_to_structural_action`` and close the
+    producer-side hole where an unknown action would otherwise pass through the
+    comparison/serialization boundary unlabelled.
+    """
+    validated = structural_action_from_str(action, on_unknown="raise")
+    return structural_action_value(validated)
 
 
 def _no_kind_value(kind: IRNodeKind | str) -> str:
@@ -188,9 +216,8 @@ def normalize_lovdata_refid(raw: str) -> Optional[str]:
 
 def _parse_document(html_bytes: bytes) -> etree._Element:
     """Parse Lovdata HTML/XML bytes into a tolerant element tree."""
-    xml_parser = etree.XMLParser(recover=True)
     try:
-        root = etree.fromstring(html_bytes, parser=xml_parser)
+        root = parse_corpus_xml(html_bytes, recover=True)
         if root is not None:
             return root
     except etree.XMLSyntaxError:
@@ -2168,12 +2195,23 @@ def _append_no_structured_parse_recovery_adjudications(
     source_doc: str,
     raw_text: str,
     reason: str,
-    scope_confidence: str,
+    scope_confidence: NOScopeConfidence,
     original_specs: Sequence[tuple[StructuralAction, LegalAddress]],
     recovered_specs: Sequence[tuple[StructuralAction, LegalAddress]],
 ) -> None:
+    """Emit adjudications for a structured-target recovery, carrying a typed scope witness.
+
+    ``scope_confidence`` is a typed ``NOScopeConfidence`` (inheriting the
+    ``lawvm.core.scope_confidence.ScopeConfidence`` marker protocol). The §2.2
+    ladder rung is projected onto the detail-map string surface via
+    ``.rung_id`` so the existing ``core.compile_result``'s string-typed
+    ``scope_confidence`` reader continues to work byte-identically, while the
+    producer boundary stays typed (AGENTS.md §1.9): a bare string cannot cross
+    this signature or the ``LegalOperation.scope_confidence`` waist.
+    """
     if not original_specs or list(original_specs) == list(recovered_specs):
         return
+    scope_confidence_rung = scope_confidence.rung_id
     _append_no_parse_adjudication(
         adjudications_out,
         kind=NO_PARSE_STRUCTURED_TARGET_REBOUND_FROM_LEAD,
@@ -2190,7 +2228,7 @@ def _append_no_structured_parse_recovery_adjudications(
             reason=reason,
             base_id=base_id,
             source_doc=source_doc,
-            scope_confidence=scope_confidence,
+            scope_confidence=scope_confidence_rung,
             original_specs=_no_structured_spec_detail(original_specs),
             recovered_specs=_no_structured_spec_detail(recovered_specs),
             raw_text=raw_text,
@@ -2213,7 +2251,7 @@ def _append_no_structured_parse_recovery_adjudications(
             reason=reason,
             base_id=base_id,
             source_doc=source_doc,
-            scope_confidence=scope_confidence,
+            scope_confidence=scope_confidence_rung,
             original_actions=original_actions,
             recovered_actions=recovered_actions,
             original_specs=_no_structured_spec_detail(original_specs),
@@ -2346,7 +2384,7 @@ def iter_no_document_change_ops(
                             source_doc=source_doc,
                             raw_text=raw_text,
                             reason="cross_base_structured_target_recovered_from_lead",
-                            scope_confidence="inferred_from_payload",
+                            scope_confidence=NOScopeConfidence(rung_id="inferred_from_payload"),
                             original_specs=parsed_specs,
                             recovered_specs=recovered_specs,
                         )
@@ -2383,7 +2421,7 @@ def iter_no_document_change_ops(
                     source_doc=source_doc,
                     raw_text=raw_text,
                     reason="sentence_targets_inferred_from_lead",
-                    scope_confidence="explicit_source_with_context",
+                    scope_confidence=NOScopeConfidence(rung_id="explicit_source_with_context"),
                     original_specs=parsed_specs,
                     recovered_specs=recovered_specs,
                 )
@@ -2404,7 +2442,7 @@ def iter_no_document_change_ops(
                     source_doc=source_doc,
                     raw_text=raw_text,
                     reason="section_target_expanded_to_subsections_from_payload",
-                    scope_confidence="inferred_from_payload",
+                    scope_confidence=NOScopeConfidence(rung_id="inferred_from_payload"),
                     original_specs=parsed_specs,
                     recovered_specs=recovered_specs,
                 )
@@ -2423,7 +2461,7 @@ def iter_no_document_change_ops(
                     source_doc=source_doc,
                     raw_text=raw_text,
                     reason="new_subsection_lead_recovered_insert_action",
-                    scope_confidence="explicit_source_with_context",
+                    scope_confidence=NOScopeConfidence(rung_id="explicit_source_with_context"),
                     original_specs=parsed_specs,
                     recovered_specs=recovered_specs,
                 )
@@ -2444,7 +2482,7 @@ def iter_no_document_change_ops(
                     source_doc=source_doc,
                     raw_text=raw_text,
                     reason="sentence_targets_inferred_from_payload",
-                    scope_confidence="inferred_from_payload",
+                    scope_confidence=NOScopeConfidence(rung_id="inferred_from_payload"),
                     original_specs=parsed_specs,
                     recovered_specs=recovered_specs,
                 )
@@ -2562,7 +2600,7 @@ def iter_no_document_change_ops(
                             phase="parse",
                             family="payload_normalization",
                             blocking=False,
-                            quirks_disposition="apply",
+                            quirks_disposition=QuirksDisposition.APPLY,
                             base_id=base_id,
                             source_doc=source_doc,
                             action=_no_action_value(action),
@@ -4007,8 +4045,193 @@ def apply_no_ops(
     )
 
 
+# ---------------------------------------------------------------------------
+# Typed apply-result carrier (AGENTS.md §1.8 — replay conservation contract).
+#
+# The classic ``apply_no_ops`` returns only the mutated :class:`IRStatute` and
+# shuttles skipped-op evidence through an ``adjudications_out`` out-parameter.
+# The AGENTS.md §1.8 contract requires the apply path to return accepted AND
+# rejected carriers (``FilterResult`` shape) so a downstream consumer cannot
+# silently lose track of filtered ops. ``apply_no_ops_conserved`` is the typed
+# wrapper that mirrors ``apply_no_ops``'s behaviour and surfaces both lanes
+# via the contract-shape FilterResult[LegalOperation]. Production routing to
+# the conserved wrapper is a separate per-frontend decision (AGENTS.md §1.8);
+# this wrapper is added WITHOUT touching callers.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class NOApplyResult:
+    """Typed apply-result conservation carrier (AGENTS.md §1.8).
+
+    Mirrors the FilterResult contract shape: every op in the input set is
+    either in ``applied_ops`` (its binding landed in the output statute) or
+    surfaces as a :class:`RejectedItem[LegalOperation]` witness in
+    ``skipped_items`` with a ``reason`` / ``reason_code`` and ``blocking``
+    disposition. The mutation footprint (the IRStatute returned by
+    :func:`apply_no_ops`) is the ``statute`` field.
+
+    The ``filter_result`` field is the canonical ``FilterResult`` projection
+    of the same accepted/rejected partition, so callers that already consume
+    the shared core type can reuse it without unpacking ``applied_ops`` /
+    ``skipped_items`` separately.
+
+    Recovery adjudications (the ``no_replay_*`` family — e.g.
+    ``no_replay_replace_recovered_by_insert``) are emitted by the bare variant
+    when an op is APPLIED via a named recovery transformation (REPLACE
+    recovered to INSERT, INSERT into an occupied slot recovered to REPLACE,
+    etc.), NOT when it is skipped. They are therefore intentionally NOT in
+    :data:`_NO_SKIP_ADJUDICATION_KINDS`; only the genuine per-op skip kinds
+    (``replay_unsupported_action`` / ``replay_unresolved_target`` /
+    ``replay_noop``) mark an op as rejected. The post-apply
+    ``replay_tree_invariant_violation*`` records are emitted AFTER an op was
+    applied (or raised in strict mode before the conserved wrapper returns),
+    so they are also NOT in the skip set.
+    """
+
+    statute: IRStatute
+    filter_result: "FilterResult[LegalOperation]"
+
+    @property
+    def applied_ops(self) -> tuple["LegalOperation", ...]:
+        return self.filter_result.accepted_items
+
+    @property
+    def skipped_items(self) -> tuple["RejectedItem[LegalOperation]", ...]:
+        return self.filter_result.rejected_items
+
+
+# Per-op skip adjudication kinds emitted by :func:`apply_no_ops`. Each is
+# emitted ONLY at a per-op skip path that emits an adjudication and then
+# ``continue``s (the op is NOT applied). Recovery adjudications
+# (``no_replay_*``) and post-apply violation records
+# (``replay_tree_invariant_violation*``) are intentionally excluded: those are
+# emitted when an op WAS applied (with a recovery transformation or a
+# downstream-invariant finding) rather than skipped.
+_NO_SKIP_ADJUDICATION_KINDS = frozenset(
+    {
+        "replay_unsupported_action",
+        "replay_unresolved_target",
+        "replay_noop",
+    }
+)
+
+
+def apply_no_ops_conserved(
+    statute: IRStatute,
+    ops: List[LegalOperation] | Tuple["LegalOperation", ...],
+    *,
+    adjudications_out: Optional[List[CompileAdjudication]] = None,
+    strict_invariants: bool = True,
+    strict_action_family: bool = False,
+    strict_recovery: bool = False,
+) -> NOApplyResult:
+    """Apply a Norway op set with a typed conservation receipt (§1.8).
+
+    Mirrors :func:`apply_no_ops` exactly (same replay semantics, same
+    ``adjudications_out`` side channel — when the caller passes one, both the
+    conserved typed result AND the existing descriptive adjudications are
+    populated). Returns a :class:`NOApplyResult` whose ``filter_result``
+    partitions every input op into accepted (its replay applied) or rejected
+    (its replay skipped, with a witness adjudication carrying the reason).
+    The contract is monotone: every input op ends up either accepted or
+    rejected, never silently dropped.
+
+    The partition keys on ``op_id`` (the NO bare variant emits one
+    ``CompileAdjudication`` per skipped op carrying that op's ``op_id``). An
+    op is rejected iff its ``op_id`` appears in a per-op SKIP adjudication
+    (``replay_unsupported_action`` / ``replay_unresolved_target`` /
+    ``replay_noop``). Recovery adjudications (``no_replay_*``) and post-apply
+    invariant records (``replay_tree_invariant_violation*``) do NOT mark an op
+    as rejected — those are emitted when the op WAS applied (with a recovery or
+    downstream violation), not when it was skipped. Empty or duplicate
+    ``op_id`` values would mis-partition and are rejected with a
+    ``ValueError`` rather than silently dropping or mis-bucketing an op.
+    """
+    ops_list = list(ops)
+    # Conservation requires a robust op IDENTITY for the accepted/rejected
+    # partition. The op_id string is NOT a safe identity key: it defaults to
+    # "" (a SKIPPED op with an empty op_id would be filtered out of the
+    # skipped set and silently land in the accepted lane — a §1.8
+    # "never silently dropped" violation) and it is not guaranteed unique
+    # (a duplicate/shared op_id mis-partitions both ops). Fail loud on either
+    # degenerate case so the op_id-keyed partition below is provably bijective.
+    op_ids = [op.op_id for op in ops_list]
+    if any(not op_id for op_id in op_ids):
+        empty_positions = [i for i, op_id in enumerate(op_ids) if not op_id]
+        raise ValueError(
+            "apply_no_ops_conserved requires every op to carry a non-empty op_id "
+            "(the conservation partition keys on op_id and an empty op_id would be "
+            f"silently dropped from the skipped lane). Empty op_id at positions {empty_positions}."
+        )
+    if len(set(op_ids)) != len(op_ids):
+        counts = Counter(op_ids)
+        duplicates = sorted(op_id for op_id, n in counts.items() if n > 1)
+        raise ValueError(
+            "apply_no_ops_conserved requires op_ids to be unique (the conservation "
+            "partition keys on op_id and duplicate op_ids would mis-partition). "
+            f"Duplicate op_ids: {duplicates}."
+        )
+    adjudications: List[CompileAdjudication] = list(adjudications_out or [])
+    applied_statute = apply_no_ops(
+        statute,
+        ops_list,
+        adjudications_out=adjudications,
+        strict_invariants=strict_invariants,
+        strict_action_family=strict_action_family,
+        strict_recovery=strict_recovery,
+    )
+    # Partition: an op is REJECTED iff its op_id appears on a per-op SKIP
+    # adjudication. Recovery adjudications (no_replay_*) record transformations
+    # that WERE applied (e.g. REPLACE recovered to INSERT) and must NOT mark
+    # their op as rejected. See ``_NO_SKIP_ADJUDICATION_KINDS`` above.
+    skipped_op_ids = {
+        a.op_id
+        for a in adjudications
+        if a.op_id and a.kind in _NO_SKIP_ADJUDICATION_KINDS
+    }
+    accepted: list[LegalOperation] = []
+    rejected: list[RejectedItem[LegalOperation]] = []
+    for op in ops_list:
+        if op.op_id in skipped_op_ids:
+            matching = [a for a in adjudications if a.op_id == op.op_id and a.kind in _NO_SKIP_ADJUDICATION_KINDS]
+            reason = matching[0].message if matching else "NO replay op skipped without a typed reason."
+            reason_code = matching[0].kind if matching else "no_replay_skipped_unspecified"
+            rejected.append(
+                RejectedItem(
+                    item=op,
+                    reason=reason,
+                    reason_code=reason_code,
+                    blocking=False,
+                )
+            )
+        else:
+            accepted.append(op)
+    # If the caller passed their own adjudications_out, surface there too --
+    # the existing descriptive adjudications path is NOT replaced by the typed
+    # carrier; both share the same evidence ledger (mirrors the SE wrapper).
+    if adjudications_out is not None:
+        adjudications_out.clear()
+        adjudications_out.extend(adjudications)
+    return NOApplyResult(
+        statute=applied_statute,
+        filter_result=FilterResult(
+            accepted_items=tuple(accepted),
+            rejected_items=tuple(rejected),
+        ),
+    )
+
+
 def open_lovdata_archive(tar_bz2_path: str) -> Generator[Tuple[str, bytes], None, None]:
-    """Yield ``(statute_id, bytes)`` pairs from a Lovdata public tarball."""
+    """Yield ``(statute_id, bytes)`` pairs from a Lovdata public tarball.
+
+    Members declaring more bytes than ``$LAWVM_MAX_ARCHIVE_MEMBER_BYTES``
+    are skipped with a structured stderr receipt
+    (:func:`lawvm.core.archive_safety.log_archive_member_too_large`) — the
+    generator's ``(id, bytes)`` signature cannot append to a rejected-items
+    accumulator without breaking the consumer protocol, so the typed
+    diagnostic is logged rather than silently dropped (AGENTS.md §1.8).
+    """
     with tarfile.open(tar_bz2_path, "r:bz2") as tf:
         for member in tf.getmembers():
             if not member.name.endswith(".xml"):
@@ -4016,14 +4239,24 @@ def open_lovdata_archive(tar_bz2_path: str) -> Generator[Tuple[str, bytes], None
             statute_id = lovdata_filename_to_id(member.name)
             if statute_id is None:
                 continue
-            file_obj = tf.extractfile(member)
-            if file_obj is None:
+            try:
+                payload = safe_tar_read(
+                    tf, member, archive_path=Path(tar_bz2_path).name
+                )
+            except ArchiveMemberTooLarge as exc:
+                log_archive_member_too_large(exc)
                 continue
-            yield statute_id, file_obj.read()
+            if payload is None:
+                continue
+            yield statute_id, payload
 
 
 def open_lovdata_amendment_archive(tar_bz2_path: str) -> Generator[Tuple[str, bytes], None, None]:
-    """Yield ``(source_id, bytes)`` pairs from a Lovtidend tarball."""
+    """Yield ``(source_id, bytes)`` pairs from a Lovtidend tarball.
+
+    Oversized members are skipped with a structured stderr receipt
+    (AGENTS.md §1.8) — see :func:`open_lovdata_archive`.
+    """
     with tarfile.open(tar_bz2_path, "r:bz2") as tf:
         for member in tf.getmembers():
             if not member.name.endswith(".xml"):
@@ -4031,7 +4264,13 @@ def open_lovdata_amendment_archive(tar_bz2_path: str) -> Generator[Tuple[str, by
             source_id = lovdata_amendment_filename_to_id(member.name)
             if source_id is None:
                 continue
-            file_obj = tf.extractfile(member)
-            if file_obj is None:
+            try:
+                payload = safe_tar_read(
+                    tf, member, archive_path=Path(tar_bz2_path).name
+                )
+            except ArchiveMemberTooLarge as exc:
+                log_archive_member_too_large(exc)
                 continue
-            yield source_id, file_obj.read()
+            if payload is None:
+                continue
+            yield source_id, payload

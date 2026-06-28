@@ -36,6 +36,7 @@ from lawvm.finland.vts import (
     VtsSkippedTarget,
     VtsSourceDiagnostic,
 )
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 
 def _corpus_stub() -> CorpusStore:
@@ -298,7 +299,7 @@ def test_execute_replay_plan_records_chapter_seed_repair_findings() -> None:
                 chapter_label="7",
                 blocking=False,
                 strict_disposition="block",
-                quirks_disposition="apply",
+                quirks_disposition=QuirksDisposition.APPLY,
             )
         )
         return ir, {("7", "1991/1")}
@@ -384,7 +385,7 @@ def test_execute_replay_plan_records_chapter_seed_source_pathology_findings() ->
                 source_statute="1991/1",
                 blocking=True,
                 strict_disposition="block",
-                quirks_disposition="record",
+                quirks_disposition=QuirksDisposition.RECORD,
             )
         )
         return ir, set()
@@ -443,7 +444,7 @@ def test_execute_replay_plan_records_abridged_base_chapter_findings() -> None:
                 chapter_label="7",
                 blocking=False,
                 strict_disposition="block",
-                quirks_disposition="record",
+                quirks_disposition=QuirksDisposition.RECORD,
             )
         )
         return ir, set()

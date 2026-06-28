@@ -72,6 +72,7 @@ from lawvm.uk_legislation.witnesses import (
     UKLoweredOperationWitness,
     UKProvisionExtractionWitness,
 )
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 
 _UK_SCHEDULE_LIST_ENTRY_TABLE_ROWS_RULE_ID = "uk_effect_schedule_list_entry_table_rows_lowered"
@@ -460,7 +461,7 @@ def _try_lower_schedule_words_before_table_substitution(
                     "ordered_labels": list(ordered_labels),
                     "deferred_to_base_target": False,
                     "strict_disposition": "record",
-                    "quirks_disposition": "skip",
+                    "quirks_disposition": QuirksDisposition.SKIP,
                 },
             )
             return UKScheduleBatchLoweringResult(handled=True)
@@ -491,7 +492,7 @@ def _try_lower_schedule_words_before_table_substitution(
                 "ordered_labels": list(ordered_labels),
                 "deferred_to_base_target": True,
                 "strict_disposition": "record",
-                "quirks_disposition": "skip",
+                "quirks_disposition": QuirksDisposition.SKIP,
             },
         )
         return UKScheduleBatchLoweringResult(handled=True)
@@ -506,8 +507,18 @@ def _try_lower_schedule_words_before_table_substitution(
         node = _parse_section(p1_el, "schedule", force_active=True, pit_date=None, is_eur=False)
         if node is None:
             return None
-        node.attrs["eId"] = f"{schedule_root}-paragraph-{_clean_num(para_label)}"
-        node.attrs["source_rule_id"] = _UK_SCHEDULE_WORDS_BEFORE_TABLE_SUBSTITUTION_RULE_ID
+        # PR2 (audit XJUR-02 / AGENTS.md §2.3): no in-place mutation of the
+        # IRNode returned by ``_parse_section`` (post-N3d-Sub-PR-A: that helper
+        # already builds ``IRNode`` directly); build a new attrs dict and return
+        # a fresh node via ``dataclasses.replace``.
+        node = dc_replace(
+            node,
+            attrs={
+                **dict(node.attrs),
+                "eId": f"{schedule_root}-paragraph-{_clean_num(para_label)}",
+                "source_rule_id": _UK_SCHEDULE_WORDS_BEFORE_TABLE_SUBSTITUTION_RULE_ID,
+            },
+        )
         node = _synthesize_payload_descendant_eids(
             node,
             target=para_addr,
@@ -515,7 +526,12 @@ def _try_lower_schedule_words_before_table_substitution(
             lowering_records_out=lowering_rejections_out,
             allow_payload_identity_synthesis=True,
         )
-        return node.to_irnode()
+        # Sub-PR F (mutable_ir Wave N3d): ``_synthesize_payload_descendant_eids``
+        # is now typed ``IRNode -> IRNode`` (the ``UKMutableNode`` shadow was
+        # deleted) and the ``_parse_section`` upstream has built ``IRNode``
+        # directly since Sub-PR A, so the returned node is already a frozen
+        # ``IRNode`` and no boundary converter is required.
+        return node
 
     lowered_ops: list[LegalOperation] = []
     replace_payload = _build_payload_node(found[target_label], target_label)

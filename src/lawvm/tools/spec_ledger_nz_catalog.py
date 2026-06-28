@@ -196,6 +196,10 @@ _EXTRA_NZ_RULE_SPECS: Dict[str, str] = {
         "The archived on-or-after oracle XML was unreadable — no comparison surface; refusal "
         "rather than fabricated oracle."
     ),
+    "nz_dry_run_amending_act_root": (
+        "A dry-run failure to resolve or parse the amending act XML root is emitted as a "
+        "named source/proof-frame finding rather than swallowed to a missing payload silently."
+    ),
     "nz_dry_run_refused_target_not_present_in_before_tree": (
         "The named target node is absent from the before tree — the op cannot act on it; refusal, "
         "not silent widening of the resolved path."

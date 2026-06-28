@@ -225,6 +225,10 @@ _NO_RULE_SPECS: Dict[str, str] = {
         "A Norway amendment artifact compiled zero change-group matches; the "
         "no-op replay is recorded as a finding so the artifact stays owned."
     ),
+    "no_replay_skipped_unspecified": (
+        "A Norway replay op skipped without a matching typed skip adjudication is "
+        "rejected with an explicit unspecified-skip receipt rather than disappearing."
+    ),
     "no_replay_unknown_effective_skipped": (
         "A Norway amendment's effective status flag was not one of "
         "{contingent, dated, immediate, override}; the unknown status is "

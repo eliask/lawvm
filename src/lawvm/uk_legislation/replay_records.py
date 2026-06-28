@@ -21,6 +21,7 @@ from lawvm.core.target_resolution import (
 )
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.addressing import _action_name
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 
 UK_REPLAY_SCHEDULE_ENTRY_REPEAL_GRANULARITY_BLOCKED_RULE_ID = (
@@ -181,7 +182,7 @@ def uk_replay_recovery_action_target_detail(
             scope_confidence=SCOPE_CONFIDENCE_FALLBACK,
             blocking=False,
             strict_disposition="block",
-            quirks_disposition="apply",
+            quirks_disposition=QuirksDisposition.APPLY,
             detail={
                 "action": _action_name(op.action),
                 "op_id": op.op_id,
@@ -211,7 +212,7 @@ def append_schedule_entry_repeal_granularity_blocked_adjudication(
             "family": "source_schedule_list_entry_elaboration",
             "blocking": True,
             "strict_disposition": "block",
-            "quirks_disposition": "record",
+            "quirks_disposition": QuirksDisposition.RECORD,
         },
     )
 
@@ -243,7 +244,7 @@ def append_same_source_text_patch_overlap_disjoint_adjudication(
             "family": "text_patch_overlap_resolution",
             "blocking": False,
             "strict_disposition": "record",
-            "quirks_disposition": "record",
+            "quirks_disposition": QuirksDisposition.RECORD,
         },
     )
 
@@ -272,7 +273,7 @@ def append_same_source_text_patch_overlap_blocked_adjudication(
             "family": "text_patch_overlap_resolution",
             "blocking": True,
             "strict_disposition": "block",
-            "quirks_disposition": "record",
+            "quirks_disposition": QuirksDisposition.RECORD,
         },
     )
 

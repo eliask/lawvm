@@ -23,17 +23,27 @@ from lawvm.core.comparison_normalization import ComparisonNormalizationRule, nor
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.ir import IRNode, IRStatute, LegalOperation
 from lawvm.core.ir_helpers import ir_statute_from_dict
+from lawvm.core.regex_safety import compile_classifier_regex
 from lawvm.core.semantic_types import FacetKind, IRNodeKind, StructuralAction
 from lawvm.core.source_lane import SourceLaneSelectionEvidence, source_lane_attempt_from_mapping
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 JsonObject = dict[str, Any]
 JsonObjectList = list[JsonObject]
 from lawvm.core import tree_ops
 from lawvm.core.adjudication_evidence import adjudication_finding_evidence_rows
 from lawvm.replay_adjudication import CompileAdjudication
+from lawvm.core.write_receipt import WriteReceipt
 from lawvm.sweden.grafter import SESourceRecord, parse_se_source_record, parse_se_statute
+from lawvm.sweden.se_agreement_residuals import se_replay_agreement_residuals
+from lawvm.sweden.se_coverage_universe import se_coverage_universe_entry, se_coverage_universe_root
+from lawvm.sweden.se_overwrite_event_ledger import (
+    SEOverwriteEvent,
+    se_store_with_overwrite_event,
+)
 from lawvm.sweden.grafter import (
     apply_se_ops,
+    apply_se_ops_conserved,
     build_se_official_base_statute,
     canonicalize_se_table_section_text,
     compile_se_official_act_ops,
@@ -136,7 +146,11 @@ class SESourceBundle:
 
 _WS_RE = re.compile(r"\s+")
 _PAGE_NUMBER_RE = re.compile(r"^\d+$")
-_SFS_HEADER_RE = re.compile(r"^SFS\s+\d{4}:\d+[a-zA-Z]?$", re.IGNORECASE)
+_SFS_HEADER_RE = compile_classifier_regex(
+    r"^SFS\s+\d{4}:\d+[a-zA-Z]?$",
+    re.IGNORECASE,
+    classifier_id="se.fetch.sfs_header_re",
+)
 _PAGE_FURNITURE_RE = re.compile(r"^(Sida|Page)\s+\d+(\s+av\s+\d+)?$", re.IGNORECASE)
 _DIGIT_GARBAGE_RE = re.compile(r"^[0-9:;.,()\-\s]{8,}$")
 # Swedish SFS statute-citation reference line — the standard cross-reference
@@ -1169,6 +1183,7 @@ def fetch_se_official_artifacts(
     force_reextract: bool = False,
     pdf_url_override: str | None = None,
     diagnostics_out: list[dict[str, Any]] | None = None,
+    overwrite_events_out: list[SEOverwriteEvent] | None = None,
 ) -> Optional[SEOfficialArtifacts]:
     """Fetch Sweden official doc page + PDF and archive extracted text.
 
@@ -1327,8 +1342,30 @@ def fetch_se_official_artifacts(
     elif existing_text is None or force_reextract or existing_cleaned is None:
         pdf_text = se_pdf_bytes_to_text(pdf_bytes)
         if pdf_text:
-            archive.store(text_url, pdf_text.encode("utf-8"), storage_class="text")
-            archive.store(cleaned_text_url, clean_se_pdf_text(pdf_text).encode("utf-8"), storage_class="text")
+            # KNOW-01 monotonicity wrap: the force_reextract path overwrites
+            # prior text/cleaned bytes (the cached source-footing mutates).
+            # Pass through se_store_with_overwrite_event so the prior bytes'
+            # sha256 lands in the caller-passed overwrite_events_out ledger
+            # (when provided); the wrapper transparently stores + emits.
+            source_trigger = "force_reextract" if force_reextract else "manual_reingest"
+            se_store_with_overwrite_event(
+                archive,
+                text_url,
+                pdf_text.encode("utf-8"),
+                sfs_id=sfs_id,
+                source_trigger=source_trigger,
+                events_out=overwrite_events_out,
+                storage_class="text",
+            )
+            se_store_with_overwrite_event(
+                archive,
+                cleaned_text_url,
+                clean_se_pdf_text(pdf_text).encode("utf-8"),
+                sfs_id=sfs_id,
+                source_trigger=source_trigger,
+                events_out=overwrite_events_out,
+                storage_class="text",
+            )
         else:
             _record_se_official_artifacts_diagnostic(
                 diagnostics_out,
@@ -1347,9 +1384,22 @@ def fetch_se_official_artifacts(
             cleaned_bytes.decode("utf-8", errors="replace"),
             sfs_id=sfs_id,
         )
-        archive.store(
+        # KNOW-01 wrap (downstream-derived): act_json is derived from
+        # cleaned_bytes (which force_reextract just (re-)stored), so a re-extract
+        # of the cleaned text also re-store()s the cached parsed act text — and
+        # if a prior act_json occupies the locator it is overwritten in place.
+        # The wrapper mirrors the force_reextract branch above: when force_reextract
+        # did NOT fire (e.g. existing_cleaned was None triggering re-derivation
+        # without force_reextract), still scribe the overwrite with the
+        # "manual_reingest" trigger so the audit is complete — the prior content
+        # is recorded either way.
+        se_store_with_overwrite_event(
+            archive,
             act_json_url,
             _json_bytes(se_official_act_text_to_dict(act_text)),
+            sfs_id=sfs_id,
+            source_trigger="force_reextract" if force_reextract else "manual_reingest",
+            events_out=overwrite_events_out,
             storage_class="json",
         )
         if not act_text.is_amending_act:
@@ -1368,9 +1418,16 @@ def fetch_se_official_artifacts(
                     exception_type=type(exc).__name__,
                 )
             else:
-                archive.store(
+                # KNOW-01 wrap (downstream-derived): the base_ir locator is
+                # written from the act text just (re-)derived above. Same
+                # force-reextract / manual-reingest trigger semantics as act_json.
+                se_store_with_overwrite_event(
+                    archive,
                     se_official_base_ir_locator(sfs_id),
                     _json_bytes(base_statute.to_jsonable_dict()),
+                    sfs_id=sfs_id,
+                    source_trigger="force_reextract" if force_reextract else "manual_reingest",
+                    events_out=overwrite_events_out,
                     storage_class="json",
                 )
 
@@ -1429,7 +1486,7 @@ def _record_se_official_artifacts_diagnostic(
                 selected_locator=pdf_url or locator,
                 blocking=blocking,
                 strict_disposition="block" if blocking else "record",
-                quirks_disposition="record",
+                quirks_disposition=QuirksDisposition.RECORD,
                 attempts=tuple(source_lane_attempt_from_mapping(row) for row in pdf_source_attempts),
                 detail=detail,
             ).to_diagnostic_detail()
@@ -3168,7 +3225,73 @@ def _se_replay_unresolved_outcome(
         "invariant_violations": [],
         "typed_invariant_violations": [],
         "adjudications": [],
-        "evidence": {"finding_rows": []},
+        "evidence": {
+            "finding_rows": [],
+            # Keep the §1.8 + §2.3 evidence sub-keys uniform with the
+            # successful path so consumers reading them do not KeyError on
+            # the unresolved-outcome shape (the apply lane did not run, so
+            # both lanes are empty by construction).
+            "agreement_residuals": [],
+            "apply_filter_result": {
+                "accepted_op_count": 0,
+                "rejected_op_count": 0,
+                "rejected_reason_codes": [],
+            },
+            "write_receipts": [],
+        },
+    }
+
+
+def _se_write_receipt_to_projection(receipt: WriteReceipt) -> dict[str, Any]:
+    """Project a :class:`WriteReceipt` into the evidence-plane dossier shape.
+
+    The receipt is the producer-side record of one landed semantic write
+    (AGENTS.md §2.3 + notes/APPLY_RESOLUTION_AND_RECEIPT_CONTRACT.md §4); this
+    projection makes it JSON-serializable so the result dict's ``evidence``
+    subtree can carry it without leaking the typed carrier across the result
+    boundary. ``divergence_explained`` is projected (not recomputed) so a
+    downstream strict-mode audit consumer can classify the receipt as
+    ``qualified`` (named migration rule explains the bound→landed divergence)
+    versus ``violation`` (unexplained) without re-instantiating the typed
+    ``WriteReceipt`` object — the property stays owned by the producer side.
+
+    ``bound_target_path`` / ``landed_primary_path`` / ``renumbered_paths`` are
+    projected as nested lists of ``[kind, label]`` pairs because the typed
+    ``TreePath`` is a tuple of tuples that becomes a list-of-lists under
+    JSON-serialization. ``pre_hashes`` / ``post_hashes`` are ``Mapping[str,str]``
+    at the type level but ``dict`` at runtime (the producer constructs them as
+    plain dicts in :func:`_se_emit_one_op_receipt`), so the projection is a
+    shallow copy.
+    """
+    return {
+        "op_id": receipt.op_id,
+        "helper": receipt.helper,
+        "action": receipt.action,
+        "bound_target_path": [list(step) for step in receipt.bound_target_path]
+        if receipt.bound_target_path is not None
+        else None,
+        "landed_primary_path": [list(step) for step in receipt.landed_primary_path]
+        if receipt.landed_primary_path is not None
+        else None,
+        "created_paths": [[list(step) for step in path] for path in receipt.created_paths],
+        "replaced_paths": [[list(step) for step in path] for path in receipt.replaced_paths],
+        "removed_paths": [[list(step) for step in path] for path in receipt.removed_paths],
+        "renumbered_paths": [
+            [[list(step) for step in from_path], [list(step) for step in to_path]]
+            for from_path, to_path in receipt.renumbered_paths
+        ],
+        "placeholder_created_paths": [
+            [list(step) for step in path] for path in receipt.placeholder_created_paths
+        ],
+        "placeholder_consumed_paths": [
+            [list(step) for step in path] for path in receipt.placeholder_consumed_paths
+        ],
+        "recovery_rule_ids": list(receipt.recovery_rule_ids),
+        "migration_rule_ids": list(receipt.migration_rule_ids),
+        "fallback_rule_ids": list(receipt.fallback_rule_ids),
+        "pre_hashes": dict(receipt.pre_hashes),
+        "post_hashes": dict(receipt.post_hashes),
+        "divergence_explained": receipt.divergence_explained,
     }
 
 
@@ -3360,7 +3483,24 @@ def check_se_official_replay(
         violation.message for violation in se_statute_invariant_violation_records(replay_base_statute)
     }
     replay_adjudications: list[CompileAdjudication] = []
-    replayed = apply_se_ops(replay_base_statute, ops, adjudications_out=replay_adjudications)
+    # Route production through the conserved wrapper (AGENTS.md §1.8 + §2.9
+    # guard-liveness). The bare ``apply_se_ops`` returned only the IRStatute
+    # and shuttled skip-evidence through ``adjudications_out`` side-effect; the
+    # conserved wrapper returns a typed ``SEApplyResult`` whose
+    # ``filter_result`` partitions ops into accepted / RejectedItem witnesses
+    # (the §1.8 "no unsupported lane disappears" contract). ``emit_receipts``
+    # additionally routes per-op ``WriteReceipt`` records (AGENTS.md §2.3 +
+    # notes/APPLY_RESOLUTION_AND_RECEIPT_CONTRACT.md §4) through the production
+    # lane — these were previously reachable only from tests via
+    # ``se_replay_write_receipts``, a §2.9 worst-class silent failure: a guard
+    # that exists but is unreachable from production.
+    apply_result = apply_se_ops_conserved(
+        replay_base_statute,
+        ops,
+        adjudications_out=replay_adjudications,
+        emit_receipts=True,
+    )
+    replayed = apply_result.statute
     skipped_op_ids = {item.op_id for item in replay_adjudications if item.op_id}
     finding_rows = adjudication_finding_evidence_rows(
         replay_adjudications,
@@ -3572,6 +3712,47 @@ def check_se_official_replay(
         "adjudications": [asdict(item) for item in replay_adjudications],
         "evidence": {
             "finding_rows": [row.to_dict() for row in finding_rows],
+            # Typed evidence-plane residuals (§2.10 projection re-derivable
+            # from a committed dossier). Each replay row's classification is
+            # projected to a content-addressed AgreementResidual carrying
+            # family + status + missing_proofs; the residual_id is stable
+            # across reruns so a missing or surplus residual between two
+            # runs becomes detectable. The CLI/aggregate dict above is the
+            # projection; this list IS the evidence-plane dossier it is
+            # re-derived FROM.
+            "agreement_residuals": [
+                r.to_dict()
+                for r in se_replay_agreement_residuals(
+                    {
+                        "amending_sfs_id": amending_sfs_id,
+                        "base_sfs_id": resolved_base_sfs_id,
+                        "rows": rows,
+                    }
+                )
+            ],
+            # Typed apply-result conservation receipt (§1.8 + §2.9). The
+            # filter_result partitions every input op into accepted /
+            # RejectedItem witnesses so a downstream consumer cannot silently
+            # lose track of filtered ops. The write_receipts carry the landed
+            # footprint (created/replaced/removed/renumbered paths) plus
+            # pre/post structural subtree hashes per op (§2.3 + receipt
+            # contract §4). Without these landing on the production result,
+            # the conserved wrapper exists but is unreachable from production
+            # — the §2.9 worst-class silent failure. ``divergence_explained``
+            # is projected here so a strict-mode audit consumer can classify
+            # RENUMBER (and other divergent landed paths) as ``qualified``
+            # without re-instantiating the typed WriteReceipt.
+            "apply_filter_result": {
+                "accepted_op_count": len(apply_result.applied_ops),
+                "rejected_op_count": len(apply_result.skipped_items),
+                "rejected_reason_codes": sorted(
+                    {item.reason_code for item in apply_result.skipped_items if item.reason_code}
+                ),
+            },
+            "write_receipts": [
+                _se_write_receipt_to_projection(r)
+                for r in apply_result.write_receipts
+            ],
         },
         "rows": rows,
     }
@@ -3779,9 +3960,19 @@ def aggregate_se_official_coverage(
     bucket_genuine_mismatch = 0
     bucket_unknown = 0
     error_examples: dict[str, list[str]] = {}
+    # Per-act typed entries for the committed universe root. Building one entry
+    # per scanned act so adding/dropping an act or flipping its outcome
+    # materially changes the root (pro-note §6 UniverseSpec — "no hidden
+    # universe": the omitted-act signal is detectable on a second run).
+    coverage_universe_entries: list[dict[str, Any]] = []
     for summary in act_summaries:
         outcome = str(summary.get("outcome") or "error")
         outcome_counts[outcome] = outcome_counts.get(outcome, 0) + 1
+        # Build the committed-entry fields BEFORE the outcome branch so a
+        # non-replay_ok act still contributes its (sfs_id, outcome, recovery_mode)
+        # to the universe — a missing/surplus act is detectable even when no
+        # bucket counts exist for it. Raises KeyError if outcome is non-empty
+        # and outside the closed set (se_coverage_universe_entry validates).
         if outcome == "replay_ok":
             total_targets += int(summary.get("target_count") or 0)
             total_matches += int(summary.get("match_count") or 0)
@@ -3799,6 +3990,18 @@ def aggregate_se_official_coverage(
             bucket = error_examples.setdefault(key, [])
             if len(bucket) < 5:
                 bucket.append(str(summary.get("amending_sfs_id") or ""))
+        coverage_universe_entries.append(
+            se_coverage_universe_entry(
+                str(summary.get("amending_sfs_id") or ""),
+                base_sfs_id=str(summary.get("base_sfs_id") or ""),
+                outcome=outcome,
+                bucket_genuine_match_count=int(summary.get("bucket_genuine_match_count") or 0),
+                bucket_oracle_version_mismatch_count=int(summary.get("bucket_oracle_version_mismatch_count") or 0),
+                bucket_genuine_mismatch_count=int(summary.get("bucket_genuine_mismatch_count") or 0),
+                bucket_unknown_count=int(summary.get("bucket_unknown_count") or 0),
+                recovery_mode=str(summary.get("recovery_mode") or ""),
+            )
+        )
 
     def _rate(numerator: int, denominator: int) -> float:
         return round(numerator / denominator, 4) if denominator else 0.0
@@ -3834,6 +4037,13 @@ def aggregate_se_official_coverage(
         },
         "classification_counts": dict(sorted(classification_counts.items())),
         "error_examples": {key: error_examples[key] for key in sorted(error_examples)},
+        # Committed content-addressed universe root over the per-act entries
+        # (pro-note §6 UniverseSpec). Adding/dropping an SFS id, or changing
+        # any per-act outcome/bucket, materially changes the root — so a
+        # missing or surplus scanned act is re-detectable on a subsequent
+        # run. The empty-scan case is a committed empty SetRoot (the v0
+        # "declares nothing" omission is committed to, not skipped).
+        "coverage_universe_root": se_coverage_universe_root(coverage_universe_entries),
     }
 
 

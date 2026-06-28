@@ -2203,6 +2203,65 @@ def drill_lineage_cycle_replay_products_build() -> None:
 # ---------------------------------------------------------------------------
 
 
+def drill_commencement_op_without_temporal_authorization_apply_lane() -> None:
+    """COMMENCEMENT.OP_WITHOUT_TEMPORAL_AUTHORIZATION fires from the production
+    compile-timelines lane (D7 / LS-23).
+
+    Production lane: ``compile_timelines_ex`` selects executable ops + temporal
+    events, then invokes the D7 audit ``assert_effect_totality`` (vendored from
+    ``core.commencement_totality_audit``) which emits one Observation per op
+    that is neither commenced (matching ``commence``/``revive`` TemporalEvent
+    via ``group_id`` + scope) nor carries an explicit pending/unresolved/
+    manual-frontier classification. The wire in ``compile_timelines`` then
+    routes each Observation to a TimelineIssue on the issue_sink with
+    ``kind="commencement_op_without_temporal_authorization"``. Without the
+    audit an op with no temporal authority would silently receive a guessed
+    effective date — the §0 forbidden over-repeal direction by way of an
+    unowned temporal op.
+    """
+    from lawvm.core.commencement_totality_audit import (
+        COMMENCEMENT_OP_WITHOUT_TEMPORAL_AUTHORIZATION,
+    )
+    from lawvm.core.ir import IRNode, IRNodeKind, IRStatute, LegalAddress, LegalOperation
+    from lawvm.core.provenance import OperationSource
+    from lawvm.core.semantic_types import StructuralAction
+    from lawvm.core.timeline import compile_timelines_ex
+
+    body = IRNode(kind=IRNodeKind.SECTION, label="1")
+    base = IRStatute(statute_id="ukpga/2020/1", title="d7-drill", body=body)
+    # A REPLACE op with no matching commencement TemporalEvent and no pending
+    # tag — the known-violating input that must surface as a TimelineIssue.
+    op = LegalOperation(
+        op_id="d7-drill-op",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "1"),)),
+        source=OperationSource(statute_id="ukpga/2020/1", effective="2024-01-01"),
+        group_id="d7-drill-no-event",
+    )
+    result = compile_timelines_ex(base, [op])
+    d7_issues = [
+        issue
+        for issue in result.issues
+        if issue.kind == "commencement_op_without_temporal_authorization"
+    ]
+    assert len(d7_issues) == 1, (
+        "D7 audit must fire through the production compile_timelines lane for "
+        f"an op with no commencement event and no pending classification; got "
+        f"{len(d7_issues)} matching issues out of {len(result.issues)}"
+    )
+    issue = d7_issues[0]
+    assert "d7-drill-op" in issue.message
+    assert "d7-drill-no-event" in issue.message
+    assert issue.source_statute == "ukpga/2020/1"
+    # Sanity: the registered FindingSpec code matches the audit module constant
+    # so thending-registry anti-drift check at test_finding_registry.py stays
+    # consistent with this drill's targeted code.
+    assert COMMENCEMENT_OP_WITHOUT_TEMPORAL_AUTHORIZATION == (
+        "COMMENCEMENT.OP_WITHOUT_TEMPORAL_AUTHORIZATION"
+    )
+
+
 def drill_definition_duplicate_definition_surface_totality() -> None:
     """Drive the production SURF-04 sweep into a DUPLICATE_DEFINITION firing.
 
@@ -3720,6 +3779,14 @@ FIRE_DRILLS: Dict[str, Callable[[], None]] = {
     "CHAIN.PROMOTION_CHAIN_INCOMPLETE": drill_promotion_chain_incomplete_promotion_chain,
     "CHAIN.AUTHORITY_BY_ACCUMULATION": drill_authority_by_accumulation_promotion_chain,
     "PROMOTE.STALE_DOWNSTREAM_AFTER_RETRACTION": drill_stale_downstream_after_retraction_promotion_chain,
+    # D7 / LS-23 COMMENCEMENT.EFFECT_TOTALITY — drives the production
+    # compile_timelines lane to surface COMMENCEMENT.OP_WITHOUT_TEMPORAL_
+    # AUTHORIZATION for an op with no commence/revive event and no pending
+    # classification. Audit-vendored in core/commencement_totality_audit.py;
+    # wired in compile_timelines.
+    "COMMENCEMENT.OP_WITHOUT_TEMPORAL_AUTHORIZATION": (
+        drill_commencement_op_without_temporal_authorization_apply_lane
+    ),
 }
 
 # A second, distinct surface for an already-covered code. Tracked separately so
@@ -3911,6 +3978,14 @@ NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
     "TIME.TRIGGER_COVERAGE_INCOMPLETE": ("timeline barrier; needs fixture", "2026-06-20"),
     "TIME.UNRESOLVED_COMMENCEMENT_TRIGGER": ("timeline barrier; needs fixture", "2026-06-20"),
     "uk_replay_text_patch_preimage_drift": ("UK replay text-patch drift; needs UK fixture", "2026-06-20"),
+    # Theme C (§1.10 no-silent-default + §2.6 rule-of-three): the named_swallow
+    # primitive's typed Finding kind. Drill when a fixture exercises an
+    # actual swallow through the production lane (corpus / consolidated_artifacts
+    # / spec_ledger / dry_run / worker_pool / graph sites). The migration tests
+    # in tests/test_named_swallow_totality.py already drive the primitive
+    # directly; the drill needs to drive through the apply-pipeline PhaseResult
+    # surface so the blocking obligation reaches a strict-mode consumer.
+    "UNEXPECTED_PHASE_FAILURE": ("named_swallow primitive; needs pipeline-lane fixture", "2026-06-27"),
 }
 
 # Committed monotone-decreasing debt ceiling for NO_FIRE_DRILL_YET. The allowlist
@@ -4144,6 +4219,11 @@ _PRODUCTION_BUILDER_CALLS = (
     # production validation guards (type checks, effect-graph closure, lineage
     # acyclicity) over the sealed ledger.
     "ReplayProducts(",
+    # D7 / LS-23 COMMENCEMENT.EFFECT_TOTALITY: ``compile_timelines_ex`` is the
+    # public explicit-result compile-timelines entrypoint that surfaces the
+    # D7 audit's TimelineIssues; the wire lives in ``compile_timelines``
+    # itself, which ``compile_timelines_ex`` invokes with an issue_sink.
+    "compile_timelines_ex(",
     # Wave-2 apply-authority closure: the EV-06 gate is the production
     # attestation-policy validator called from _gate_execution_authorization_at_op.
     "gate_unknown_attestation_policy",

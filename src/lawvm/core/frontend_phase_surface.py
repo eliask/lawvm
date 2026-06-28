@@ -15,6 +15,7 @@ from typing import Any, Mapping
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.frozen_values import freeze_mapping
 from lawvm.core.phase_result import Finding
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 
 _FRONTEND_PHASE_FORBIDDEN_SHORTCUTS: tuple[str, ...] = (
@@ -38,7 +39,7 @@ class FrontendDiagnostic:
     message: str
     blocking: bool = False
     strict_disposition: str = "record"
-    quirks_disposition: str = "record"
+    quirks_disposition: QuirksDisposition = QuirksDisposition.RECORD
     safe_default: str = "record_without_replay_authority"
     forbidden_shortcuts: tuple[str, ...] = ()
     detail: Mapping[str, Any] = field(default_factory=dict)

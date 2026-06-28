@@ -240,6 +240,10 @@ _EE_RULE_SPECS: Dict[str, str] = {
     "ee_replay_unsupported_action": "An operative body action the replay kernel cannot execute is recorded as unsupported rather than approximated.",
     "ee_replay_unsupported_heading_target": "A heading-target action the replay kernel cannot execute is recorded as unsupported.",
     "ee_replay_unsupported_statute_title_action": "A statute-title action the replay kernel cannot execute is recorded as unsupported.",
+    "ee_replay_skipped_unspecified": "A replay op skipped without a matching typed skip adjudication is rejected with an explicit unspecified-skip receipt rather than disappearing.",
+
+    # --- §1.7 same-moment cross-act conflict (pre-pass in ordering.py) ---------------
+    "ee_same_moment_cross_act_incompatible_payload_ambiguous": "Two affecting acts that change the same target at the same effective date with incompatible whole-target payloads are surfaced as a §1.7 ambiguity (sequence-order pick unproven) until a precedence claim proves which act prevails; apply order is unchanged, the finding makes the silent pick strict-rejectable.",
 
     # --- Temporal / commencement provenance -------------------------------------------
     "ee_old_format_commencement_whole_act_default": "An unstamped old-format op inherits the whole-act commencement default only when that default is the active reference slice (living spec §77).",
@@ -301,6 +305,7 @@ _EE_RULE_SPECS: Dict[str, str] = {
     # --- Pair / oracle classification + feed-fetch lanes ------------------------------
     "ee_pair_classification": "An explicit base/oracle pair carries a classification of how replay and oracle differ on that pair.",
     "ee_oracle_fetch_failed": "A failure to fetch the oracle consolidation is recorded as a visible failure, not a silent pass.",
+    "ee_spec_ledger_fetch_rt_xml": "A spec-ledger RT XML fetch failure while resolving an oracle as-of date is emitted as a named source-lane finding rather than swallowed to an empty date silently.",
     "ee_oracle_ref_extraction_failed": "An unexpected crash while extracting amendment references from the oracle fails loud (EEOracleRefExtractionCrash, embedding oracle id + source snippet) rather than degrading to an empty oracle.",
     "ee_oracle_parse_failed": "A failure to parse the RT oracle consolidation is recorded as a visible blocking adjudication (oracle id + exception + source snippet) so a replay left uncompared is never read as agreement.",
     "ee_consistency_check_failed": "A crash in the replay/oracle consistency check is recorded as a visible blocking adjudication so an uncompared result (no divergences computed) is never read as agreement.",

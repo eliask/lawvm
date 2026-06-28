@@ -78,6 +78,9 @@ _SE_RULE_SPECS: Dict[str, str] = {
     "se_official_base_ir_build_failed": "A base act for which the non-amending IR seed fails to construct is a typed acquisition failure, not a silent empty body.",
     "se_official_pdf_source_lane_fallback": "When the official SFS PDF is unreachable over HTTP, the acquisition falls back to the legacy SFS PDF index with a typed source-lane note.",
     "se_official_pdf_text_extraction_failed": "When pdftotext fails to extract text from a valid SFS PDF, the row is a typed extraction-failure residual, not a silent empty buffer.",
+    "se_grafter_pdf_bytes_to_text_subprocess": "An unexpected pdftotext subprocess failure while extracting SFS PDF text is emitted as a named acquisition diagnostic, not swallowed to an empty text surface.",
+    "se_grafter_pdf_bytes_to_text_cleanup_unlink": "An unexpected temporary-file cleanup failure after SFS PDF text extraction is emitted as a named acquisition diagnostic, not silently swallowed.",
+    "se_official_artifacts_force_reextract_overwrite": "When ``--force-reextract`` overlays prior bytes at a cached locator, the prior+new content hashes are recorded as a typed SEOverwriteEvent in the caller accumulator — never a silent in-place mutation (KNOW-01 monotonicity + §1.6 no unstated migration at the archive-write boundary).",
 
     # --- Clause-surface parse findings ---------------------------------------------------
     "se_official_clause_renumber_arity_mismatch": "A renumber enacting clause whose source-label list and destination-label list have different arities is a typed parse diagnostic, not a silent best-effort zip.",
@@ -111,6 +114,7 @@ _SE_RULE_SPECS: Dict[str, str] = {
 
     # --- Replay outcome typed signals (§1.0 Mutation Boundary Invariant failures) ----------
     "se_replay_base_surface_contains_post_amendment_targets": "When the contaminated base current surface has post-amendment targets before the amending act's effective date and reverse-patching plateaued, the replay outcome is ``older_base_required`` (a typed frontier signal), not a silent replay.",
+    "se_replay_classification_to_agreement_residual": "Each check_se_official_replay row classification is projected to a typed AgreementResidual carrying residual_id, family, status, missing_proofs — the evidence-plane dossier the CLI/aggregate dict is re-derived FROM (§2.10 projection plane). Closed-vocabulary classification→family mapping; an unknown class raises (§1.10 fail-loud), not a silent drop.",
     "se_replay_destination_missing": "A RENUMBER op whose destination address is absent is a typed replay-skip adjudication, not a silent no-op.",
     "se_replay_payload_missing": "A REPLACE/INSERT op whose payload is missing or wrong-kind is a typed replay-skip adjudication, not a silent default.",
     "se_replay_recovered_base_lacks_required_targets": "When the recovered older-base rebuild still lacks a replay target the amending act needs, the replay outcome is ``precondition_issues_blocking``, not a silent mismatch.",
@@ -120,6 +124,9 @@ _SE_RULE_SPECS: Dict[str, str] = {
     "se_replay_text_replace_no_match": "A TEXT_REPLACE op whose ``selector.match_text`` is not found in the target subtree is a typed replay-skip adjudication, not a silent fallback to whole-section replacement.",
     "se_replay_unsupported_action": "An op whose action is not in the SE replay-supported set is a typed replay-skip adjudication, not a silent pass.",
     "se_replay_unsupported_target_kind": "An op whose target leaf-kind is not in the SE replay-supported set is a typed replay-skip adjudication, not a silent pass.",
+
+    # --- Apply receipt contract (§4 WriteReceipt divergence-naming) -----------------------
+    "se_renumber_relabel": "A RENUMBER op's bound_target_path (source label) vs landed_primary_path (destination label) divergence is the typed named migration for a section relabel/renumber — receipt-audited as ``qualified`` (named-rule-explained divergence), not a ``violation`` (unexplained); the §1.6 unstated-migration invariant risks being violated if the receipt omits this rule id.",
 
     # --- RK current JSON acquisition (the consolidated-text-oracle source) ----------------
     "se_rk_current_fetch_failed": "A network/HTTP/RK failure when fetching the current-text oracle is a typed acquisition residual, not a silent empty buffer.",
@@ -134,4 +141,3 @@ _SE_RULE_SPECS: Dict[str, str] = {
     "se_scraped_doc_entry_invalid_shape": "A scraped doc-page entry that does not decode to a dict is a typed ingestion residual, skipped without fabrication.",
     "se_scraped_doc_entry_unrecognized_url": "A scraped doc-page entry whose URL does not match the SFS doc shape is a typed ingestion residual, skipped without fabrication.",
 }
-

@@ -43,6 +43,7 @@ from lawvm.tools._worker_pool import managed_executor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 if TYPE_CHECKING:
     import argparse
@@ -497,7 +498,7 @@ async def _build_no(
                             "error": str(exc),
                             "blocking": True,
                             "strict_disposition": "block",
-                            "quirks_disposition": "record",
+                            "quirks_disposition": QuirksDisposition.RECORD,
                         }
                     )
                     if verbose:

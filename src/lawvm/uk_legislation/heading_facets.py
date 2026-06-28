@@ -12,7 +12,6 @@ from typing import Any, Optional
 from lawvm.core.ir import LegalAddress
 from lawvm.core.semantic_types import FacetKind
 from lawvm.uk_legislation.addressing import _addr_leaf_kind, _addr_leaf_label, _uk_kind_value
-from lawvm.uk_legislation.mutable_ir import UKMutableNode
 from lawvm.uk_legislation.nlp_parser import parse_fragment_substitution
 from lawvm.uk_legislation.source_context import (
     _source_ancestor_chain,
@@ -83,11 +82,11 @@ def _is_heading_only_ref(ref: str) -> bool:
 
 def _heading_facet_carrier_for_target(
     target: LegalAddress,
-    node: UKMutableNode,
-    parent: Optional[UKMutableNode],
+    node: Any,
+    parent: Any | None,
     *,
     allow_crossheading_parent: bool = False,
-) -> Optional[UKMutableNode]:
+) -> Any | None:
     """Return the replay node whose text owns a UK heading facet target."""
     if target.special is not FacetKind.HEADING:
         return None

@@ -9,12 +9,14 @@ from typing import TYPE_CHECKING, Literal, Mapping, Optional
 import lxml.etree as etree
 
 from lawvm.core.semantic_types import StructuralAction
+from lawvm.core.xml_parse import parse_corpus_xml
 from lawvm.finland.acquisition import build_amendment_acquisition_result
 from lawvm.finland.future_repeal import RepealTargetRef
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.johtolause import extract_legal_ops as extract_johtolause_legal_ops
 from lawvm.finland.metadata import _amendment_effective_date
 from lawvm.finland.vts import VtsSkippedTarget, VtsSourceDiagnostic, extract_voimaantulo_repeals
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 if TYPE_CHECKING:
     from lawvm.corpus_store import CorpusStore
@@ -43,7 +45,7 @@ class PreScanRepealDiagnostic:
     family: str = "future_repeal_prescan"
     blocking: bool = False
     strict_disposition: str = "record"
-    quirks_disposition: str = "record"
+    quirks_disposition: QuirksDisposition = QuirksDisposition.RECORD
 
     def as_detail(self) -> dict[str, object]:
         return {
@@ -145,7 +147,7 @@ def _pre_scan_repeal_targets(
         try:
             eff_date = effective_dates_by_amendment.get(amendment_id)
             if eff_date is None:
-                tree = etree.fromstring(xml_bytes)
+                tree = parse_corpus_xml(xml_bytes)
                 eff_date = _amendment_effective_date(tree)
             if cutoff_date is not None and eff_date is not None and eff_date > cutoff_date:
                 per_amendment.append(targets)

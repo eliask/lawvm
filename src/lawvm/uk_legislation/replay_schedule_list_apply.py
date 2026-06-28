@@ -12,10 +12,10 @@ from dataclasses import dataclass
 import re
 from typing import Any, NamedTuple, Protocol
 
-from lawvm.core.ir import LegalAddress, LegalOperation
+from lawvm.core.ir import IRNode, LegalAddress, LegalOperation
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.addressing import _uk_kind_value
-from lawvm.uk_legislation.mutable_ir import UKMutableNode, uk_replace_children
+from lawvm.uk_legislation.apply_rebuild import uk_replace_children_cow, uk_with_attr_pop
 from lawvm.uk_legislation.replay_records import (
     _append_uk_replay_adjudication,
     uk_replay_action_target_detail,
@@ -95,15 +95,15 @@ _TYPE_LABEL_ENTRY_START_RE = re.compile(
 @dataclass(frozen=True)
 class _GroupedScheduleEntryRow:
     group_index: int
-    group: UKMutableNode
+    group: IRNode
     child_index: int
-    child: UKMutableNode
+    child: IRNode
 
 
 class _ScheduleListEntryRow(NamedTuple):
-    parent: UKMutableNode
+    parent: IRNode
     index: int
-    child: UKMutableNode
+    child: IRNode
 
 
 class _ScheduleListEntryAnchorMatch(NamedTuple):
@@ -112,7 +112,7 @@ class _ScheduleListEntryAnchorMatch(NamedTuple):
 
 
 class _ScheduleListEntryParentDeleteGroup(NamedTuple):
-    parent: UKMutableNode
+    parent: IRNode
     indices: list[int]
 
 
@@ -138,10 +138,16 @@ class _ScheduleListReplaySelf(Protocol):
 
     def _note_structure_mutation(self) -> None: ...
 
+    def _replace_ancestor_chain(
+        self,
+        old_node: IRNode,
+        new_node: IRNode,
+    ) -> bool: ...
+
     def _record_children_splice_mutation_event(
         self,
         *,
-        container: UKMutableNode,
+        container: IRNode,
         helper: str,
         outcome: str,
         reason_code: str,
@@ -153,19 +159,29 @@ class _ScheduleListReplaySelf(Protocol):
 def _replace_schedule_list_children_with_event(
     self: _ScheduleListReplaySelf,
     *,
-    container: UKMutableNode,
-    children: list[UKMutableNode],
+    container: IRNode,
+    children: list[IRNode],
     helper: str,
     outcome: str,
     reason_code: str,
     mark_structure_mutation: bool = True,
 ) -> None:
-    uk_replace_children(container, children)
+    # PR3 (audit XJUR-02 / AGENTS.md §2.3): copy-on-write splice. Build a new
+    # container with the supplied children, then thread the new container up to
+    # the statute root via ``_replace_ancestor_chain``. The chain helper clears
+    # the eID lookup index atomically; the structure mutation serial is bumped
+    # (and node-reference caches cleared) when ``mark_structure_mutation`` is
+    # True, matching the previous in-place semantics. The downstream
+    # ``_record_children_splice_mutation_event`` is given the NEW container so
+    # its ``_tree_path_for_mutable_node`` lookup resolves against the rebuilt
+    # tree rather than the detached OLD container reference.
+    new_container = uk_replace_children_cow(container, children)
+    if not self._replace_ancestor_chain(container, new_container):
+        return
     if mark_structure_mutation:
-        self._clear_eid_lookup_index()
         self._note_structure_mutation()
     self._record_children_splice_mutation_event(
-        container=container,
+        container=new_container,
         helper=helper,
         outcome=outcome,
         reason_code=reason_code,
@@ -237,7 +253,7 @@ class UKReplayScheduleListApplyMixin:
     def _insert_schedule_list_entry_table_rows(
         self: _ScheduleListReplaySelf,
         target: LegalAddress,
-        new_node: UKMutableNode,
+        new_node: IRNode,
         op: LegalOperation,
         selector: dict[str, Any],
     ) -> bool:
@@ -365,8 +381,9 @@ class UKReplayScheduleListApplyMixin:
                 )
                 return False
             insert_index = len(table.children)
-            for row in payload_rows:
-                strip_uk_identity_attrs_recursive(row)
+            # Sub-PR C+D: strip_uk_identity_attrs_recursive is now CoW (returns
+            # new IRNode); rebuild ``payload_rows`` with the stripped clones.
+            payload_rows = [strip_uk_identity_attrs_recursive(row) for row in payload_rows]
             children = list(table.children)
             children[insert_index:insert_index] = payload_rows
             _replace_schedule_list_children_with_event(
@@ -397,7 +414,7 @@ class UKReplayScheduleListApplyMixin:
             )
             return True
         matched_rows: list[_ScheduleTableAnchorRowMatch] = []
-        last_anchor_cell: UKMutableNode | None = None
+        last_anchor_cell: IRNode | None = None
         for row_index, row_cells in expanded_uk_table_rows_with_physical_index(table):
             anchor_cell = row_cells.get(1)
             if anchor_cell is None or anchor_cell is last_anchor_cell:
@@ -491,7 +508,7 @@ class UKReplayScheduleListApplyMixin:
     def _insert_schedule_list_entry(
         self: _ScheduleListReplaySelf,
         target: LegalAddress,
-        new_node: UKMutableNode,
+        new_node: IRNode,
         op: LegalOperation,
         selector: dict[str, Any],
     ) -> bool:
@@ -684,8 +701,7 @@ class UKReplayScheduleListApplyMixin:
                     insert_index=match.index,
                 ),
             )
-            for key in ("eId", "id"):
-                new_node.attrs.pop(key, None)
+            new_node = uk_with_attr_pop(new_node, "eId", "id")
             children = list(match.parent.children)
             children.insert(match.index, new_node)
             _replace_schedule_list_children_with_event(
@@ -773,8 +789,7 @@ class UKReplayScheduleListApplyMixin:
                     insert_index=insert_index,
                 ),
             )
-            for key in ("eId", "id"):
-                new_node.attrs.pop(key, None)
+            new_node = uk_with_attr_pop(new_node, "eId", "id")
             children = list(carrier_node.children)
             children.insert(insert_index, new_node)
             _replace_schedule_list_children_with_event(
@@ -849,8 +864,7 @@ class UKReplayScheduleListApplyMixin:
                     insert_index=insert_index,
                 ),
             )
-            for key in ("eId", "id"):
-                new_node.attrs.pop(key, None)
+            new_node = uk_with_attr_pop(new_node, "eId", "id")
             children = list(carrier_node.children)
             children.insert(insert_index, new_node)
             _replace_schedule_list_children_with_event(
@@ -913,8 +927,7 @@ class UKReplayScheduleListApplyMixin:
                     insert_index=insert_index,
                 ),
             )
-            for key in ("eId", "id"):
-                new_node.attrs.pop(key, None)
+            new_node = uk_with_attr_pop(new_node, "eId", "id")
             children = list(carrier_node.children)
             children.insert(insert_index, new_node)
             _replace_schedule_list_children_with_event(
@@ -1064,8 +1077,7 @@ class UKReplayScheduleListApplyMixin:
                         match_mode=grouped_match_mode,
                     ),
                 )
-                for key in ("eId", "id"):
-                    new_node.attrs.pop(key, None)
+                new_node = uk_with_attr_pop(new_node, "eId", "id")
                 group_children = list(grouped_match.group.children)
                 group_children.insert(insert_index, new_node)
                 _replace_schedule_list_children_with_event(
@@ -1186,8 +1198,7 @@ class UKReplayScheduleListApplyMixin:
 
         anchor_index = matches[0].index
         insert_index = anchor_index if direction == "before" else anchor_index + 1
-        for key in ("eId", "id"):
-            new_node.attrs.pop(key, None)
+        new_node = uk_with_attr_pop(new_node, "eId", "id")
         children = list(carrier_node.children)
         children.insert(insert_index, new_node)
         _replace_schedule_list_children_with_event(
@@ -1270,7 +1281,7 @@ class UKReplayScheduleListApplyMixin:
                 if _uk_kind_value(child.kind) == "schedule_entry"
             ]
         else:
-            def _collect_partition_entry_rows(parent: UKMutableNode) -> None:
+            def _collect_partition_entry_rows(parent: IRNode) -> None:
                 for idx, child in enumerate(parent.children):
                     child_kind = _uk_kind_value(child.kind)
                     if child_kind == "paragraph":
@@ -1280,12 +1291,12 @@ class UKReplayScheduleListApplyMixin:
 
             _collect_partition_entry_rows(carrier_node)
 
-        def _entry_text_norm(child: UKMutableNode) -> str:
+        def _entry_text_norm(child: IRNode) -> str:
             if carrier_kind in {"schedule", "paragraph", "subparagraph"} or local_list_repeal_carrier:
                 return _compact_normalized_text(child.text)
             return _compact_numbered_schedule_entry_text(child.text)
 
-        def _entry_text_article_norm(child: UKMutableNode) -> str:
+        def _entry_text_article_norm(child: IRNode) -> str:
             if carrier_kind in {"schedule", "paragraph", "subparagraph"} or local_list_repeal_carrier:
                 return _compact_schedule_entry_anchor_without_article(child.text)
             return _compact_numbered_schedule_entry_text_without_article(child.text)
@@ -1496,7 +1507,7 @@ class UKReplayScheduleListApplyMixin:
     def _replace_schedule_list_entry(
         self: _ScheduleListReplaySelf,
         target: LegalAddress,
-        new_node: UKMutableNode,
+        new_node: IRNode,
         op: LegalOperation,
         selector: dict[str, Any],
     ) -> bool:
@@ -1741,12 +1752,12 @@ class UKReplayScheduleListApplyMixin:
                 )
         replacement_nodes = (
             tuple(
-                UKMutableNode(
+                IRNode(
                     kind=new_node.kind,
                     label=new_node.label,
                     text=text,
                     attrs=dict(new_node.attrs),
-                    children=[],
+                    children=(),
                 )
                 for text in replacement_texts
                 if text
@@ -1754,9 +1765,12 @@ class UKReplayScheduleListApplyMixin:
             if len(replacement_texts) > 1
             else (new_node,)
         )
-        for replacement_node in replacement_nodes:
-            for key in ("eId", "id"):
-                replacement_node.attrs.pop(key, None)
+        # Sub-PR C+D: IRNode.attrs is a FrozenDict; rebuild via CoW comprehension
+        # rather than the in-place ``.pop`` loop.
+        replacement_nodes = [
+            uk_with_attr_pop(replacement_node, "eId", "id")
+            for replacement_node in replacement_nodes
+        ]
         children = list(carrier_node.children)
         children[replace_start : replace_end + 1] = list(replacement_nodes)
         if len(anchors) > 1:

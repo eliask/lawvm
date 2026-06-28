@@ -32,6 +32,7 @@ from lawvm.uk_legislation.execution_authorization import (
 from lawvm.uk_legislation.specified_provisions import (
     target_appears_in_specified_provisions_preview,
 )
+from lawvm.core.quirks_disposition import QuirksDisposition, coerce_quirks_disposition
 
 
 _FRONTIER_FAMILY_DEFAULTS: Mapping[str, Mapping[str, tuple[str, ...] | str]] = {
@@ -1255,7 +1256,7 @@ def _default_execution_authorization_packet(row: Mapping[str, Any]) -> Mapping[s
             or "unknown"
         ),
         strict_disposition=str(row.get("strict_disposition") or "record"),
-        quirks_disposition=str(row.get("quirks_disposition") or "record"),
+        quirks_disposition=coerce_quirks_disposition(row.get("quirks_disposition") or QuirksDisposition.RECORD),
         validator_status=str(row.get("validator_status") or ""),
     )
     return authorization.to_dict()
@@ -1698,7 +1699,7 @@ def _target_resolution_coverage(
         ),
         blocking=False,
         strict_disposition="record",
-        quirks_disposition="record",
+        quirks_disposition=QuirksDisposition.RECORD,
         detail=detail,
     ).to_diagnostic_detail()
 

@@ -17,6 +17,7 @@ from lawvm.core.temporal_resolution import (
 )
 from lawvm.finland.proof_surface_row_helpers import kind_slug
 from lawvm.finland.recovery_authorization_registry import recovery_authorization_rule
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 def source_completeness_status_row(payload: Mapping[str, Any]) -> dict[str, Any]:
     """Project strict-report source-completeness counts into a passive row."""
@@ -53,7 +54,7 @@ def temporal_resolution_evidence_rows_from_projection_rows(
                 blocking=kind in fail_reason_set,
                 source_locator=str(row.get("source") or ""),
                 strict_disposition="block" if kind in fail_reason_set else "record",
-                quirks_disposition="record",
+                quirks_disposition=QuirksDisposition.RECORD,
                 detail={
                     "finding_kind": kind,
                     "step": str(detail.get("step") or ""),

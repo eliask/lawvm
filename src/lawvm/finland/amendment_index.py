@@ -30,10 +30,12 @@ from lawvm.corpus_store import (
     CorpusStore,
     get_corpus_store,
 )
+from lawvm.core.xml_parse import parse_corpus_xml
 from lawvm.finland.citation_routing import johtolause_cited_target_ids
 from lawvm.finland.fi_dates import parse_fi_day_month_year
 from lawvm.finland.metadata import _statute_issue_date, get_johtolause
 from lawvm.finland.vts import extract_voimaantulo_repeals
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 # Pattern for /akn/fi/act/statute-consolidated/YEAR/NUMBER...
 # or /akn/fi/act/statute/YEAR/NUMBER...
@@ -104,7 +106,7 @@ def _append_amendment_index_diagnostic(
             "reason": reason,
             "blocking": True,
             "strict_disposition": "block",
-            "quirks_disposition": "record",
+            "quirks_disposition": QuirksDisposition.RECORD,
             **detail,
         }
     )
@@ -154,7 +156,7 @@ def _extract_explicit_cross_statute_vts_parents(
     The extractor is intentionally conservative: explicit statute citations only.
     """
     try:
-        tree = etree.fromstring(xml_data)
+        tree = parse_corpus_xml(xml_data)
     except etree.XMLSyntaxError as exc:
         _append_amendment_index_diagnostic(
             diagnostics_out,
@@ -413,7 +415,7 @@ def build_amendment_index(
                     },
                 )
                 continue
-            root = etree.fromstring(xml_data)
+            root = parse_corpus_xml(xml_data)
             title_date_candidate = _parent_title_date_candidate(parent_id, root)
             if title_date_candidate is not None:
                 parent_title_date_candidates.setdefault(

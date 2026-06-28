@@ -47,6 +47,7 @@ from lawvm.finland.recovery_temporal_proof_projector import (
     recovery_execution_authorization_rows_from_projection_rows,
     temporal_resolution_evidence_rows_from_projection_rows,
 )
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 def finland_strict_report_candidate_set_coverages(
     payload: Mapping[str, Any],
@@ -401,7 +402,7 @@ def finland_strict_report_candidate_set_execution_authorizations(
             authorization_rule_id=f"fi_strict_report_candidate_set_{kind_slug(candidate_set_kind)}",
             owner_phase=str(row.get("phase") or "strict_report_projection"),
             strict_disposition="record" if complete else "block",
-            quirks_disposition="record",
+            quirks_disposition=QuirksDisposition.RECORD,
             validator_status=(
                 "candidate_set_complete_requires_separate_execution_authorization"
                 if complete

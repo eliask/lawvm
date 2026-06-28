@@ -59,6 +59,7 @@ from lawvm.finland.replay_products import ReplayProducts
 from lawvm.tools.section_keys import extract_ir_sections
 from lawvm.finland.statute import ReplayResult, ReplayState, StatuteContext
 from tests.corpus_pin_helpers import pinned_replay, replay_xml_for_test
+from lawvm.tools.inspect_amendment import build_amendment_bundle
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,6 +109,122 @@ def compile_amendment_ops(*args: Any, **kwargs: Any) -> Any:
         args = tuple(patched_args)
 
     return _real_compile_amendment_ops(*args, **kwargs)
+
+
+def test_normalize_and_compile_ops_promotes_payload_fixed_term_section_to_temporary() -> None:
+    xml = b"""<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+      <act name="amendment">
+        <docTitle>Testiasetus 8 a \xc2\xa7:n muuttamisesta</docTitle>
+        <body>
+          <hcontainer name="statuteProvisionsWrapper">
+            <section>
+              <num>8 a \xc2\xa7</num>
+              <heading>Raportti</heading>
+              <subsection>
+                <content>
+                  <p>Ministeri\xc3\xb6 laatii raportin.</p>
+                </content>
+              </subsection>
+              <subsection>
+                <content>
+                  <p>T\xc3\xa4m\xc3\xa4 asetus tulee voimaan 1 p\xc3\xa4iv\xc3\xa4n\xc3\xa4 toukokuuta 2019 ja on voimassa 30 p\xc3\xa4iv\xc3\xa4\xc3\xa4n huhtikuuta 2025 asti.</p>
+                </content>
+              </subsection>
+            </section>
+          </hcontainer>
+          <hcontainer name="entryIntoForce">
+            <content>
+              <p>T\xc3\xa4m\xc3\xa4 asetus tulee voimaan 1 p\xc3\xa4iv\xc3\xa4n\xc3\xa4 huhtikuuta 2023.</p>
+            </content>
+          </hcontainer>
+        </body>
+      </act>
+    </akomaNtoso>"""
+    tree = etree.fromstring(xml)
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(IRNode(kind=IRNodeKind.SECTION, label="8a", children=()),),
+        )
+    )
+    phase = normalize_and_compile_ops(
+        "muutetaan testiasetuksen (834/2014) 8 a § seuraavasti:",
+        tree,
+        master=master,
+        amendment_id="2023/197",
+        source_title="Testiasetus 8 a §:n muuttamisesta",
+        used_preamble_body_fallback=False,
+        parent_id="2014/834",
+        strict_profile=None,
+    )
+
+    assert len(phase.output) == 1
+    op = phase.output[0]
+    assert op.target_cols.target_section == "8a"
+    assert op.is_temporary is True
+    assert op.lo is not None
+    assert op.lo.source is not None
+    assert op.lo.source.effective == "2023-04-01"
+    assert op.lo.source.expires == "2025-05-01"
+    assert [(event.kind, event.expires) for event in phase.temporal_events] == [
+        ("commence", ""),
+        ("expire", "2025-05-01"),
+    ]
+    assert {event.scope.target_statute for event in phase.temporal_events} == {"2014/834"}
+
+
+def test_normalize_and_compile_ops_promotes_whole_entry_fixed_term_insert_to_temporary() -> None:
+    xml = b"""<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+      <act name="amendment">
+        <body>
+          <hcontainer name="statuteProvisionsWrapper">
+            <section>
+              <num>8 a \xc2\xa7</num>
+              <heading>Raportti</heading>
+              <subsection>
+                <content>
+                  <p>Ministeri\xc3\xb6 laatii raportin.</p>
+                </content>
+              </subsection>
+            </section>
+          </hcontainer>
+          <hcontainer name="entryIntoForce">
+            <content>
+              <p>T\xc3\xa4m\xc3\xa4 asetus tulee voimaan 1 p\xc3\xa4iv\xc3\xa4n\xc3\xa4 toukokuuta 2019 ja on voimassa 30 p\xc3\xa4iv\xc3\xa4\xc3\xa4n huhtikuuta 2021 asti.</p>
+            </content>
+          </hcontainer>
+        </body>
+      </act>
+    </akomaNtoso>"""
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(IRNode(kind=IRNodeKind.SECTION, label="8", children=()),),
+        )
+    )
+
+    phase = normalize_and_compile_ops(
+        "lisätään testiasetukseen uusi 8 a § seuraavasti:",
+        etree.fromstring(xml),
+        master=master,
+        amendment_id="2019/154",
+        source_title="Testiasetus",
+        used_preamble_body_fallback=False,
+        parent_id="2014/834",
+        strict_profile=None,
+    )
+
+    assert len(phase.output) == 1
+    op = phase.output[0]
+    assert op.op_type is OpType.INSERT
+    assert op.is_temporary is True
+    assert op.lo is not None
+    assert op.lo.source is not None
+    assert op.lo.source.expires == "2021-05-01"
+    assert [(event.kind, event.scope.target_statute, event.expires) for event in phase.temporal_events] == [
+        ("commence", "2014/834", ""),
+        ("expire", "2014/834", "2021-05-01"),
+    ]
 
 
 def test_legal_operation_descendant_only_target_is_not_coerced_to_section() -> None:
@@ -1281,6 +1398,85 @@ def test_compile_fi_facade_rejects_conflicting_duplicate_lifecycle_events(monkey
             canonical_ops=[],
             failed_ops=[],
         )
+
+
+def test_compile_fi_facade_uses_resolved_temporal_lifecycle_over_stale_product_projection(
+    monkeypatch,
+) -> None:
+    def fake_compile_artifacts_from_replay(*_args, **_kwargs):
+        return SimpleNamespace(
+            compiled_ops=[],
+            canonical_ops=[],
+            compile_failures=[],
+            findings=[],
+            strict_fail_reasons=[],
+            source_adjudication=None,
+            replay_meta={},
+            verdict=compute_verdict_from_registry(default_finland_strict_profile(), [], has_internal_failure=False),
+        )
+
+    monkeypatch.setattr(
+        "lawvm.finland._compile._compile_artifacts_from_replay",
+        fake_compile_artifacts_from_replay,
+    )
+    address = LegalAddress(path=(("chapter", "12"), ("section", "127a")))
+    op_effects, _relations, _events = build_finland_effect_lifecycle(
+        target_statute="2003/393",
+        canonical_ops=(
+            LegalOperation(
+                op_id="op_0",
+                sequence=1,
+                action=StructuralAction.INSERT,
+                target=address,
+                source=OperationSource(
+                    statute_id="2008/119",
+                    title="temporary act",
+                    effective="2008-03-01",
+                    expires="2010-07-01",
+                ),
+                group_id="finland-johto:2008/119",
+            ),
+        ),
+        temporal_events=(),
+    )
+    stale_temporal = TemporalEvent(
+        event_id="fi-temporary:2008/119:op_0:expire",
+        kind="expire",
+        scope=TemporalScope(target_statute="2003/393", exact_addresses=(address,)),
+        expires="2010-07-01",
+        source=OperationSource(statute_id="2008/119", expires="2010-07-01"),
+        group_id="finland-johto:2008/119",
+    )
+    resolved_temporal = replace(
+        stale_temporal,
+        expires="2012-07-01",
+        source=OperationSource(statute_id="2008/119", expires="2012-07-01"),
+    )
+    _source_effects, _relations, stale_lifecycle_events = build_finland_effect_lifecycle(
+        target_statute="2003/393",
+        canonical_ops=(),
+        temporal_events=(stale_temporal,),
+        known_source_effects=op_effects,
+    )
+
+    facade = compile_fi_facade_from_replay(
+        parent_id="2003/393",
+        replay_result=_replay_result_stub(
+            temporal_events=(resolved_temporal,),
+            source_effects=op_effects,
+            effect_lifecycle_events=stale_lifecycle_events,
+        ),
+        replay_mode="legal_pit",
+        compiled_ops=[],
+        replay_meta={},
+        canonical_ops=[],
+        failed_ops=[],
+    )
+
+    event = facade.bundle.effect_lifecycle_events[0]
+    assert event.lifecycle_event_id == "fi-effect-lifecycle:fi-temporary:2008/119:op_0:expire"
+    assert event.expires == "2012-07-01"
+    assert event.temporal_event is resolved_temporal
 
 
 def test_compile_fi_facade_reuses_product_source_effects_for_temporal_lifecycle(
@@ -2717,6 +2913,22 @@ def test_replay_xml_1994_1505_materializes_sparse_definition_item_payloads() -> 
     )
 
 
+def test_inspect_amendment_1994_1505_binds_explicit_1a_sparse_item_slot() -> None:
+    bundle = build_amendment_bundle("1994/1505", "2000/345", "legal_pit")
+    group = next(group for group in bundle["groups"] if group["target_norm"] == "3")
+
+    bindings = {
+        binding["op"]: binding
+        for binding in group["sparse_slot_bindings"]
+    }
+    assert bindings["INSERT 1 luku 3 § 1 mom 1a kohta"]["slot_label"] == "1a"
+    assert bindings["INSERT 1 luku 3 § 1 mom 1a kohta"]["slot_index"] == 1
+    assert not any(
+        observation["kind"] == "ELAB.UNASSIGNED_SPARSE_SLOTS"
+        for observation in group["elaboration_observations"]
+    )
+
+
 def test_replay_xml_2014_610_splits_2023_tail_moments_before_2026_renumber() -> None:
     replay = pinned_replay("2014/610", oracle_version="20260352", mode="official_consolidation", quiet=True)
     section = extract_ir_sections(replay.materialized_state.ir)["part:4/chapter:15/section:11"]
@@ -2949,6 +3161,16 @@ def test_normalize_and_compile_ops_2007_473_repairs_split_muutetaan_verb() -> No
     assert [op.description() for op in phase.output] == ["REPLACE 5 luku 16 §"]
 
 
+def test_replay_xml_1991_248_heading_only_op_does_not_smuggle_commencement_body() -> None:
+    replay = replay_xml("1991/248", stop_before="1996/323", mode="legal_pit", quiet=True, build_full_products=False)
+    sections = extract_ir_sections(replay.state.ir)
+    sec = sections["chapter:2a/section:27a"]
+    text = " ".join(irnode_to_text(sec).split())
+
+    assert "alueiden tasapainoiseen kehittämiseen" in text
+    assert "Tämä asetus tulee voimaan 24 päivänä toukokuuta 1996" not in text
+
+
 def test_replay_xml_1996_1200_merges_sparse_omission_item_rows_in_targeted_subsection() -> None:
     replay = pinned_replay("1996/1200", mode="official_consolidation", quiet=True)
     section9 = extract_ir_sections(replay.materialized_state.ir)["section:9"]
@@ -3045,6 +3267,26 @@ def test_replay_xml_2013_1201_carries_renumbered_section_12_moments() -> None:
     assert "5" in subsections
     assert "Kansaneläkelaitos pyytää edellä 2 ja 3 momentissa mainitut tiedot" in subsections["4"]
     assert "Kirjallinen vastaus on toimitettava pyynnön vastaanottamista seuraavien" in subsections["5"]
+
+
+def test_replay_xml_1983_361_moves_current_section_21_to_chapter_7_section_50() -> None:
+    replay = replay_xml(
+        "1983/361",
+        mode="official_consolidation",
+        quiet=True,
+        build_full_products=False,
+    )
+    sections = extract_ir_sections(replay.materialized_state.ir)
+
+    assert "chapter:7/section:50" in sections
+    assert "chapter:4/section:50" not in sections
+
+    section21_text = " ".join(irnode_to_text(sections["chapter:4/section:21"]).split())
+    section50_text = " ".join(irnode_to_text(sections["chapter:7/section:50"]).split())
+
+    assert "Väliaikaisesta määräyksestä" in section21_text
+    assert "Tämä laki tulee voimaan 1 päivänä tammikuuta 1984" not in section21_text
+    assert "Tämä laki tulee voimaan 1 päivänä tammikuuta 1984" in section50_text
 
 
 def test_normalize_and_compile_ops_2021_1289_rehomes_reinstatement_list_to_prior_addresses() -> None:

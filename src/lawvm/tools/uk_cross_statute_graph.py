@@ -258,16 +258,36 @@ class CrossStatuteEdge(NamedTuple):
         }
 
 
-def _affected_statute_id(effect: "UKEffectRecord", *, fallback: str) -> str:
+def _affected_statute_id(
+    effect: "UKEffectRecord",
+    *,
+    fallback: str,
+    unmapped_diagnostics_out: Optional[list[dict[str, Any]]] = None,
+) -> str:
     """Resolve the affected statute id (edge target) from one effect record.
 
     Prefers the explicit affected slug carried on the effect URI; the feed is
     loaded per affected statute, so ``fallback`` (the queried statute id) is the
     safe default when the record carries no usable affected slug.
+
+    For an effect with a non-empty ``affected_class`` that does not map to a
+    real document-type slug — the same anti-example flagged in AGENTS.md §1.10
+    — the former behaviour fell back to ``cls.lower()`` (e.g.
+    ``northernirelandact/2016/10``), producing an edge target that 404s at any
+    downstream archive lookup. The shared ``affecting_class_slug`` helper now
+    raises ``UnmappedAffectingClass`` instead; here we catch that raise and
+    fall through to ``fallback`` (the queried statute id, a defensible
+    self-edge) while emitting a typed ``uk_affected_act_class_unmapped_rejected``
+    finding via ``unmapped_diagnostics_out`` so the residual is owned rather
+    than silent. A soft fall-through is preferred at this site because the
+    cross-statute-graph is a read-only observation surface: a hard crash on one
+    unmapped record would lose every other edge in the same feed.
     """
-    from lawvm.uk_legislation.effects import (
-        _UK_AFFECTING_CLASS_SLUG_MAP,
+    from lawvm.core.diagnostic_records import diagnostic_detail
+    from lawvm.uk_legislation.affecting_class import (
+        UnmappedAffectingClass,
         _UK_AFFECTING_URI_SLUG_RE,
+        affecting_class_slug,
     )
 
     uri_match = _UK_AFFECTING_URI_SLUG_RE.search(_clean(getattr(effect, "affected_uri", "")))
@@ -277,9 +297,35 @@ def _affected_statute_id(effect: "UKEffectRecord", *, fallback: str) -> str:
     year = _clean(getattr(effect, "affected_year", ""))
     number = _clean(getattr(effect, "affected_number", ""))
     if year and number and cls:
-        slug = _UK_AFFECTING_CLASS_SLUG_MAP.get(cls, cls.lower())
-        if slug:
-            return f"{slug}/{year}/{number}"
+        try:
+            slug = affecting_class_slug(cls, year=year, number=number)
+        except UnmappedAffectingClass as exc:
+            if unmapped_diagnostics_out is not None:
+                unmapped_diagnostics_out.append(
+                    diagnostic_detail(
+                        rule_id="uk_affected_act_class_unmapped_rejected",
+                        family="source_pathology",
+                        phase="acquisition",
+                        reason=(
+                            "UK affected act class has no document-type slug mapping and "
+                            "the effect carried no resolvable affected URI, so the edge "
+                            "target id was emited as the source statute id (self-edge "
+                            "fallback). Add a class-to-slug mapping (or a usable "
+                            "AffectingURI) rather than treating this edge as authoritative."
+                        ),
+                        blocking=False,
+                        detail={
+                            "effect_id": _clean(getattr(effect, "effect_id", "")),
+                            "affected_class": exc.cls,
+                            "affected_year": exc.year,
+                            "affected_number": exc.number,
+                            "hint": exc.hint,
+                            "fallback_statute_id": fallback,
+                        },
+                    )
+                )
+            return fallback
+        return f"{slug}/{year}/{number}"
     return fallback
 
 
@@ -288,14 +334,24 @@ def edge_from_effect(
     *,
     affected_statute_id: str,
     base_statute_ids: Optional[set[str]] = None,
+    unmapped_diagnostics_out: Optional[list[dict[str, Any]]] = None,
 ) -> CrossStatuteEdge:
     """Build one cross-statute edge from a single effects-feed record.
 
     Pure: no archive, no replay. ``base_statute_ids`` (when given) is the set of
     statute ids present in the base corpus, used only to flag dangling targets.
+
+    ``unmapped_diagnostics_out`` (when given) receives a typed finding per
+    effect whose affected class fails to resolve to a real document-type slug;
+    the edge is still emitted against the queried statute id (a self-edge
+    fallback) so the cross-statute-graph never silently drops records.
     """
     relation = classify_uk_cross_statute_relation(effect.effect_type)
-    target_statute = _affected_statute_id(effect, fallback=affected_statute_id)
+    target_statute = _affected_statute_id(
+        effect,
+        fallback=affected_statute_id,
+        unmapped_diagnostics_out=unmapped_diagnostics_out,
+    )
     deictic = (
         relation == RELATION_APPLIES_BY_REFERENCE
         and _looks_like_application_by_reference_deixis_source(effect.effect_type)
@@ -303,6 +359,12 @@ def edge_from_effect(
     target_in_base = (
         target_statute in base_statute_ids if base_statute_ids is not None else True
     )
+    # ``effect.affecting_act_id`` raises ``UnmappedAffectingClass`` when the
+    # affecting class is unmapped AND no usable AffectingURI is available
+    # (AGENTS.md §1.10); the cross-statute-graph flags that case from the
+    # AFFECTED side above. For the affecting side, we mirror that handling at
+    # the caller (``edges_for_statute``) via ``affecting_class_is_recognized``,
+    # so a single unmapped-affecting record never crashes the whole feed.
     return CrossStatuteEdge(
         source_statute=_clean(effect.affecting_act_id),
         source_provision=_clean(effect.affecting_provisions),
@@ -328,22 +390,53 @@ def edges_for_statute(
 
     Reuses ``load_effects_for_statute_from_archive`` for parsing; emits one edge
     per effect, canonically sorted. READ-ONLY.
+
+    An effect whose ``affecting_class`` is unmapped AND has no usable
+    AffectingURI cannot resolve a real source statute id — ``effect.
+    affecting_act_id`` raises ``UnmappedAffectingClass`` (AGENTS.md §1.10). Rather
+    than crashing the whole feed, the predicate is checked first, a typed
+    ``uk_affecting_act_class_unmapped_rejected`` finding is emitted via
+    ``parse_rejections_out``, and that one record is skipped; the remaining
+    edges are still produced. The AFFECTED class unmapped case is handled inside
+    ``_affected_statute_id`` (falling back to a self-edge) so the affected side
+    never silent-drops.
     """
     from lawvm.uk_legislation.effects import load_effects_for_statute_from_archive
+    from lawvm.uk_legislation.source_state import (
+        uk_affecting_act_class_unmapped_rejection,
+    )
 
     effects = load_effects_for_statute_from_archive(
         statute_id,
         archive,
         parse_rejections_out=parse_rejections_out,
     )
-    edges = [
-        edge_from_effect(
-            effect,
-            affected_statute_id=statute_id,
-            base_statute_ids=base_statute_ids,
+    edges: list[CrossStatuteEdge] = []
+    for effect in effects:
+        if not effect.affecting_class_is_recognized:
+            # Affecting class has no slug mapping AND no usable AffectingURI;
+            # the source-statute side of the edge cannot be resolved to a real
+            # document-type slug. ``effect.affecting_act_id`` would raise
+            # ``UnmappedAffectingClass`` (AGENTS.md §1.10). Surface the residual
+            # loudly and skip just this record so the rest of the feed survives.
+            if parse_rejections_out is not None:
+                parse_rejections_out.append(
+                    uk_affecting_act_class_unmapped_rejection(
+                        effect_id=str(effect.effect_id or ""),
+                        affecting_act_id="",
+                        locator=str(effect.affecting_uri or ""),
+                        affecting_class=str(effect.affecting_class or ""),
+                    )
+                )
+            continue
+        edges.append(
+            edge_from_effect(
+                effect,
+                affected_statute_id=statute_id,
+                base_statute_ids=base_statute_ids,
+                unmapped_diagnostics_out=parse_rejections_out,
+            )
         )
-        for effect in effects
-    ]
     return tuple(sorted(edges, key=lambda edge: edge.sort_key))
 
 

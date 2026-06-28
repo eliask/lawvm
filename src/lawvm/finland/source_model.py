@@ -40,7 +40,11 @@ if TYPE_CHECKING:
     from lawvm.core.compile_result import StrictProfile
     from lawvm.core.phase_result import PhaseResult
     from lawvm.core.regex_recognition_coverage import RegexRecognitionCoverage
-    from lawvm.finland.metadata import SeparateCommencementLawWitness
+    from lawvm.finland.metadata import (
+        CommencementExpiryOverride,
+        SeparateCommencementLawWitness,
+        TemporarySectionExpiryOverride,
+    )
     from lawvm.finland.amendment_chapter_precreate import (
         PrecreateApplyChaptersResult,
         PrecreatedChaptersResult,
@@ -1367,8 +1371,8 @@ class AmendmentSourceModel:
         self,
         source_statute_id: str,
         *,
-        section_expiry_overrides: tuple[tuple[str, set[str], dt.date], ...] | None = None,
-    ) -> tuple[str, set[str] | None, dt.date] | None:
+        section_expiry_overrides: tuple[TemporarySectionExpiryOverride, ...] | None = None,
+    ) -> CommencementExpiryOverride | None:
         """Return commencement-clause expiry override metadata."""
         from lawvm.finland.metadata import _commencement_expiry_override
 

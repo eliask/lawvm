@@ -10,10 +10,9 @@ matches the affected act's structural eIds.
 
 from __future__ import annotations
 
-from lawvm.core.ir import LegalAddress
+from lawvm.core.ir import IRNode, LegalAddress
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.uk_legislation.effects import UKEffectRecord
-from lawvm.uk_legislation.mutable_ir import UKMutableNode
 from lawvm.uk_legislation.payload_identity import (
     UK_PAYLOAD_FOREIGN_SOURCE_ID_RETARGETED_RULE_ID,
     _is_foreign_physical_source_id,
@@ -42,23 +41,23 @@ def _effect() -> UKEffectRecord:
     )
 
 
-def _section_payload(*, root_id_key: str, root_id_value: str) -> UKMutableNode:
+def _section_payload(*, root_id_key: str, root_id_value: str) -> IRNode:
     """An inserted section whose root carries an identity under *root_id_key*."""
-    return UKMutableNode(
+    return IRNode(
         kind=IRNodeKind.SECTION,
         label="138A",
         attrs={root_id_key: root_id_value},
-        children=[
-            UKMutableNode(
+        children=(
+            IRNode(
                 kind=IRNodeKind.SUBSECTION,
                 label="1",
-                children=[
-                    UKMutableNode(kind=IRNodeKind.PARAGRAPH, label="a"),
-                    UKMutableNode(kind=IRNodeKind.PARAGRAPH, label="b"),
-                ],
+                children=(
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="a"),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="b"),
+                ),
             ),
-            UKMutableNode(kind=IRNodeKind.SUBSECTION, label="2"),
-        ],
+            IRNode(kind=IRNodeKind.SUBSECTION, label="2"),
+        ),
     )
 
 
@@ -140,11 +139,11 @@ def test_whole_chapter_target_reanchored_to_container_eid() -> None:
     container eId (``part-2-chapter-5C``). The chapter payload's foreign physical
     id is re-anchored to that derived eId, and the foreign id is dropped.
     """
-    payload = UKMutableNode(
+    payload = IRNode(
         kind=IRNodeKind.CHAPTER,
         label="Chapter 5C",
         attrs={"id": "p03769"},
-        children=[UKMutableNode(kind=IRNodeKind.SECTION, label="41C")],
+        children=(IRNode(kind=IRNodeKind.SECTION, label="41C"),),
     )
     target = LegalAddress((("part", "2"), ("chapter", "5c")))
     records: list[dict[str, object]] = []
@@ -176,28 +175,28 @@ def test_whole_chapter_child_section_gets_flat_eid() -> None:
     or chapter, so a chapter payload's section children must re-root the
     descendant namespace rather than inherit the container eId.
     """
-    payload = UKMutableNode(
+    payload = IRNode(
         kind=IRNodeKind.CHAPTER,
         label="Chapter 7A",
         attrs={"eId": "part-4-chapter-7A"},
-        children=[
-            UKMutableNode(
+        children=(
+            IRNode(
                 kind=IRNodeKind.SECTION,
                 label="289A",
-                children=[
-                    UKMutableNode(
+                children=(
+                    IRNode(
                         kind=IRNodeKind.SUBSECTION,
                         label="1",
-                        children=[
-                            UKMutableNode(kind=IRNodeKind.PARAGRAPH, label="a"),
-                            UKMutableNode(kind=IRNodeKind.PARAGRAPH, label="b"),
-                        ],
+                        children=(
+                            IRNode(kind=IRNodeKind.PARAGRAPH, label="a"),
+                            IRNode(kind=IRNodeKind.PARAGRAPH, label="b"),
+                        ),
                     ),
-                    UKMutableNode(kind=IRNodeKind.SUBSECTION, label="2"),
-                ],
+                    IRNode(kind=IRNodeKind.SUBSECTION, label="2"),
+                ),
             ),
-            UKMutableNode(kind=IRNodeKind.SECTION, label="289B"),
-        ],
+            IRNode(kind=IRNodeKind.SECTION, label="289B"),
+        ),
     )
     target = LegalAddress((("part", "4"), ("chapter", "7a")))
     records: list[dict[str, object]] = []
@@ -228,7 +227,7 @@ def test_whole_chapter_child_section_gets_flat_eid() -> None:
     assert not any(e.startswith("part-4-chapter-7A-section") for e in eids)
 
 
-def _collect(node: UKMutableNode) -> set[str]:
+def _collect(node: IRNode) -> set[str]:
     eids: set[str] = set()
     identity = str(node.attrs.get("eId") or node.attrs.get("id") or "")
     if identity:

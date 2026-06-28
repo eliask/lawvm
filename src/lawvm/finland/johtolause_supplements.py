@@ -55,6 +55,7 @@ from lawvm.finland.johto_scope_mentions import (
 )
 from lawvm.finland.ops import AmendmentOp, OpType, _lo_with_path_update
 from lawvm.finland.target_selector_facades import fi_section_target, replace_target
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 _SPARSE_OSALTA_ROW_OMISSION_RULE_ID = "fi.sparse_osalta_row_omission_repeal.v1"
 _SPARSE_OSALTA_ROW_OMISSION_TAG = "sparse_osalta_row_omission_repeal"
@@ -416,16 +417,16 @@ def _parse_jolloin_moment_renumber_clauses(
         if anchor is None:
             continue
         section, inserted_moments = anchor
-        for source, destination, kind in pairs:
-            if kind != "M":
+        for pair in pairs:
+            if pair.kind != "M":
                 continue
-            if not source.isdigit() or not destination.isdigit():
+            if not pair.source_label.isdigit() or not pair.destination_label.isdigit():
                 continue
             clauses.append(
                 JolloinMomentRenumberClause(
                     section=section,
-                    source_moment=int(source),
-                    destination_moment=int(destination),
+                    source_moment=int(pair.source_label),
+                    destination_moment=int(pair.destination_label),
                     inserted_moments=inserted_moments,
                 )
             )
@@ -1260,7 +1261,7 @@ def _sparse_osalta_recovery_finding(
             "named_row_targets": (clause.row_target,),
             "raw_text": clause.raw_text,
             "strict_disposition": "record",
-            "quirks_disposition": "record",
+            "quirks_disposition": QuirksDisposition.RECORD,
         },
     )
 

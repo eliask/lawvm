@@ -6,6 +6,7 @@ import re
 from typing import Any, Mapping, Optional, Sequence, assert_never
 
 from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.quirks_disposition import coerce_quirks_disposition
 from lawvm.core.compile_records import CompileRecord, is_blocking_compile_record
 from lawvm.core.ir import IRNode, LegalOperation
 from lawvm.uk_legislation.addressing import _action_name
@@ -586,7 +587,7 @@ def append_manual_compile_frontier_diagnostic(
         manual_compile_rule_id=str(record["manual_compile_rule_id"]),
         owner_phase=str(record["owner_phase"]),
         strict_disposition=str(record["strict_disposition"]),
-        quirks_disposition=str(record["quirks_disposition"]),
+        quirks_disposition=coerce_quirks_disposition(record["quirks_disposition"]),
     ).to_dict()
     record["execution_authorization"] = authorization
     record["executable"] = authorization["executable"]

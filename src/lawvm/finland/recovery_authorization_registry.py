@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 
 _RECOVERY_AUTHORIZATION_REQUIRED_PROOFS: tuple[str, ...] = (
@@ -27,7 +28,7 @@ class FinlandRecoveryAuthorizationRule:
     owner_phase: str
     family: str
     strict_disposition: str = "record"
-    quirks_disposition: str = "record"
+    quirks_disposition: QuirksDisposition = QuirksDisposition.RECORD
     validator_status: str = "not_validated_for_replay_promotion"
     required_proofs: tuple[str, ...] = _RECOVERY_AUTHORIZATION_REQUIRED_PROOFS
     forbidden_shortcuts: tuple[str, ...] = _RECOVERY_AUTHORIZATION_FORBIDDEN_SHORTCUTS

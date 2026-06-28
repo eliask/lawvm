@@ -10,6 +10,7 @@ from lawvm.core.diagnostic_records import (
     diagnostic_detail,
 )
 from lawvm.core.evidence_contracts import CorpusFindingEvidenceRow
+from lawvm.core.quirks_disposition import QuirksDisposition, coerce_quirks_disposition
 
 
 def text_or_none(value: Any) -> str | None:
@@ -151,7 +152,9 @@ def _build_diagnostic_detail(
         reason=text_or_none(detail.get("reason")) or "",
         message=text_or_none(detail.get("message")) or "",
         strict_disposition=strict_disposition,
-        quirks_disposition=text_or_none(detail.get("quirks_disposition")) or "record",
+        quirks_disposition=coerce_quirks_disposition(
+            text_or_none(detail.get("quirks_disposition")) or QuirksDisposition.RECORD
+        ),
         detail=local_detail,
     )
 
@@ -241,7 +244,7 @@ def adjudication_finding_evidence_rows(
                 related_row_ids=(record.op_id,) if record.op_id else (),
                 blocking=bool(detail["blocking"]),
                 strict_disposition=str(detail["strict_disposition"]),
-                quirks_disposition=str(detail["quirks_disposition"]),
+                quirks_disposition=coerce_quirks_disposition(detail["quirks_disposition"]),
                 evidence={
                     "base_id": base_id,
                     "as_of": as_of,

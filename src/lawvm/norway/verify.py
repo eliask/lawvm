@@ -27,7 +27,12 @@ from lawvm.norway.grafter import parse_no_statute
 from lawvm.norway.index import NOAmendmentIndex, build_no_amendment_index, load_no_amendment_index
 from lawvm.norway.inventory import build_no_inventory
 from lawvm.norway.replay import NOReplayResult, replay_no_to_pit
-from lawvm.norway.sources import load_no_current_bytes, resolve_no_source_path
+from lawvm.norway.sources import (
+    load_no_current_bytes,
+    resolve_no_source_path,
+)
+from lawvm.norway.sources import NOReplayStatus
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 _NO_VERIFY_WS_RE = re.compile(r"\s+")
 _NO_VERIFY_PUNCT_RE = re.compile(r"\s+([,.;:])")
@@ -281,7 +286,7 @@ def _no_base_year(base_id: str) -> tuple[int, dict | None]:
             "base_year": 0,
             "blocking": False,
             "strict_disposition": "warn",
-            "quirks_disposition": "record",
+            "quirks_disposition": QuirksDisposition.RECORD,
         }
     return int(segments[2][:4]), None
 
@@ -1083,6 +1088,21 @@ def verify_no_against_current(
         index=index,
         commencement_path=commencement_path,
     )
+    # Closed-set replay_status derivation: REPLACE-IIF over the typed enum —
+    # the only legal values of NOVerifyResult.replay_status per the §1.9
+    # StrEnum closure, so the nested-ternary shape could never produce an
+    # out-of-enum value. The enum carries the bench / scan / report
+    # classification through `==` comparisons byte-for-byte (StrEnum).
+    if replay.error:
+        replay_status: NOReplayStatus = NOReplayStatus.ERROR
+    elif replay.amendments_skipped_contingent:
+        replay_status = NOReplayStatus.BLOCKED_CONTINGENT
+    elif replay.amendments_skipped_unknown_effective:
+        replay_status = NOReplayStatus.BLOCKED_UNKNOWN
+    elif replay.amendments_skipped_missing_source:
+        replay_status = NOReplayStatus.BLOCKED_MISSING_SOURCE
+    else:
+        replay_status = NOReplayStatus.REPLAYED
     result = NOVerifyResult(
         base_id=replay.base_id or base_id,
         as_of=as_of,
@@ -1090,23 +1110,7 @@ def verify_no_against_current(
         indexed_amendment_count=len(indexed_entries),
         applied_amendment_count=len(replay.amendments_applied),
         replay_op_count=replay.n_ops,
-        replay_status=(
-            "error"
-            if replay.error
-            else (
-                "blocked_contingent"
-                if replay.amendments_skipped_contingent
-                else (
-                    "blocked_unknown"
-                    if replay.amendments_skipped_unknown_effective
-                    else (
-                        "blocked_missing_source"
-                        if replay.amendments_skipped_missing_source
-                        else "replayed"
-                    )
-                )
-            )
-        ),
+        replay_status=replay_status,
     )
     if replay.error:
         result.error = replay.error

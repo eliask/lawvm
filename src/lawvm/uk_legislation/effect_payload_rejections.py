@@ -15,6 +15,7 @@ from lawvm.uk_legislation.source_payload_elaboration import (
 )
 from lawvm.uk_legislation.uk_grafter import _clean_num
 from lawvm.uk_legislation.xml_helpers import _tag
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 
 def reject_mixed_heading_structural_insert_missing_payload(
@@ -246,7 +247,7 @@ def reject_body_section_replace_with_unmatched_schedule_payload(
             "target_leaf_label": target_label,
             "payload_tag": _tag(actual_el),
             "strict_disposition": "block",
-            "quirks_disposition": "reject",
+            "quirks_disposition": QuirksDisposition.REJECT,
         },
     )
     return True

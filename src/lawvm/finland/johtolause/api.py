@@ -38,6 +38,7 @@ from lawvm.finland.johtolause.types import ParsedOp
 from lawvm.finland.johtolause.surface_model import TargetKind
 from lawvm.core.clause_ast import ClauseAST
 from lawvm.core.semantic_types import FacetKind, LabelAction
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 if TYPE_CHECKING:
     from lawvm.finland.johtolause.surface_model import (
@@ -1070,7 +1071,7 @@ def _build_finland_frontend_diagnostics(
                 message=message,
                 blocking=False,
                 strict_disposition="record",
-                quirks_disposition="record",
+                quirks_disposition=QuirksDisposition.RECORD,
                 safe_default=safe_default,
                 forbidden_shortcuts=forbidden_shortcuts,
                 detail={"human_diagnostics": tuple(diagnostics)},
@@ -1103,7 +1104,7 @@ def _build_finland_frontend_diagnostics(
                 ),
                 blocking=False,
                 strict_disposition="record",
-                quirks_disposition="record",
+                quirks_disposition=QuirksDisposition.RECORD,
                 safe_default="do_not_claim_new_parser_totality_for_legacy_fallback",
                 forbidden_shortcuts=(
                     "treat_legacy_reference_fallback_as_grammar_owned",
@@ -1127,7 +1128,7 @@ def _build_finland_frontend_diagnostics(
                 message=parse_error,
                 blocking=True,
                 strict_disposition="block",
-                quirks_disposition="record",
+                quirks_disposition=QuirksDisposition.RECORD,
                 safe_default="do_not_promote_failed_parse_to_authority",
                 forbidden_shortcuts=(
                     "swallow_internal_parser_bug",
@@ -1155,7 +1156,7 @@ def _build_finland_frontend_diagnostics(
                 message="Finland clause parse produced residual material.",
                 blocking=False,
                 strict_disposition="record",
-                quirks_disposition="record",
+                quirks_disposition=QuirksDisposition.RECORD,
                 safe_default="record_residuals_without_replay_authority",
                 forbidden_shortcuts=("drop_unconsumed_or_unresolved_parse_material",),
                 detail={
@@ -1176,7 +1177,7 @@ def _build_finland_frontend_diagnostics(
                 message="ClauseAST lowering emitted typed diagnostics.",
                 blocking=False,
                 strict_disposition="record",
-                quirks_disposition="record",
+                quirks_disposition=QuirksDisposition.RECORD,
                 safe_default="record_lowering_diagnostics_without_replay_authority",
                 forbidden_shortcuts=("drop_unlowerable_surface_nodes",),
                 detail={
@@ -1329,9 +1330,22 @@ def _derive_parsed_ops_from_ast(clause_ast: ClauseAST) -> list[ParsedOp]:
             renumber_dest_part = dest_dict.get("part", "")
             if node.action is not LabelAction.HEADING_REPLACE:
                 move_clause_target_unit_kind = infer_move_clause_target_unit_kind(node.destination)
-                if kind is TargetKind.SECTION and move_clause_target_unit_kind == "chapter" and renumber_dest_chapter:
+                is_jolloin_renumber = node.witness_rule_id == "fi.jolloin_renumber"
+                if is_jolloin_renumber:
+                    move_clause_target_unit_kind = None
+                if (
+                    kind is TargetKind.SECTION
+                    and move_clause_target_unit_kind == "chapter"
+                    and renumber_dest_chapter
+                    and not is_jolloin_renumber
+                ):
                     chapter = renumber_dest_chapter
-                elif kind is TargetKind.SECTION and move_clause_target_unit_kind == "part" and renumber_dest_part:
+                elif (
+                    kind is TargetKind.SECTION
+                    and move_clause_target_unit_kind == "part"
+                    and renumber_dest_part
+                    and not is_jolloin_renumber
+                ):
                     part = renumber_dest_part
         elif isinstance(node, LabelAmend) and node.new_label and node.action == LabelAction.RENUMBER:
             renumber_dest = node.new_label

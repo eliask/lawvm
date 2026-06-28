@@ -45,6 +45,7 @@ from lawvm.finland.helpers import _parse_iso_date
 from lawvm.finland.process_request import ProcessAmendmentRequest
 from lawvm.finland.process_result_builder import ProcessAmendmentSinks
 from lawvm.finland.restructure_plan import StructuralTransformPlan
+from lawvm.finland.temporal_rewrites import reconcile_temporal_event_expiry_with_op_sources
 from lawvm.finland.vts import VtsSkippedTarget, VtsSourceDiagnostic
 
 from lawvm.finland.statute import ReplayState, StatuteContext, _serialize_text_node as _serialize_text
@@ -728,6 +729,11 @@ def execute_replay_plan(
                 ir_snapshot=lambda _s=_cp_state: _s.ir,
             ))
         signals.temporal_events.extend(_pm_result.temporal_events)
+        reconcile_temporal_event_expiry_with_op_sources(
+            signals.temporal_events,
+            lo_ops_out,
+            target_statute=plan.parent_id,
+        )
         append_unique_effect_refs(
             signals.source_effects,
             _pm_result.source_effects,

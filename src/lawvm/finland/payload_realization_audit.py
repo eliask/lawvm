@@ -15,6 +15,7 @@ from lawvm.core.payload_realization import (
 )
 from lawvm.core.phase_result import Finding, OBSERVATION_ROLE
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
+from lawvm.finland._receipt_path_norm import _FI_KIND_ALIAS_TO_IR
 from lawvm.finland.ops import ResolvedOp
 
 _REALIZING_ACTION_TYPES = frozenset({"INSERT", "REPLACE"})
@@ -720,14 +721,12 @@ def _walk_ir_with_ancestors(
     return tuple(rows)
 
 
-_TARGET_NODE_KINDS: dict[str, frozenset[IRNodeKind]] = {
-    "part": frozenset({IRNodeKind.PART}),
-    "chapter": frozenset({IRNodeKind.CHAPTER}),
-    "section": frozenset({IRNodeKind.SECTION}),
-    "subsection": frozenset({IRNodeKind.SUBSECTION}),
-    "item": frozenset({IRNodeKind.ITEM, IRNodeKind.PARAGRAPH}),
-    "subitem": frozenset({IRNodeKind.SUBPARAGRAPH}),
-}
+# Finland-local legal-address vocabulary → IR-kind-vocabulary equivalence map
+# for the payload-realization target-binding check. Single source of truth:
+# imported from ``_receipt_path_norm`` so the receipt-side canonicalization
+# (per ``BOUND_TARGET_PATH_NORMALIZATION_DESIGN`` PR1) and the payload
+# realization audit share one fact (rule-of-three per §2.6).
+_TARGET_NODE_KINDS: Mapping[str, frozenset[IRNodeKind]] = _FI_KIND_ALIAS_TO_IR
 
 _FACET_NODE_KINDS: dict[FacetKind, frozenset[IRNodeKind]] = {
     FacetKind.HEADING: frozenset({IRNodeKind.HEADING, IRNodeKind.CROSS_HEADING}),

@@ -14,6 +14,7 @@ from lawvm.core.source_pathology import SourcePathologyProjection, source_pathol
 from lawvm.core.source_witness import SourceWitness
 from lawvm.finland.proof_surface_row_helpers import kind_slug, preview_digest_witness
 from lawvm.finland.source_pathology_proof_registry import source_pathology_proof_rule
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 FAILED_OPERATION_REQUIRED_PROOFS: tuple[str, ...] = (
     "source_identity_proof",
@@ -264,7 +265,7 @@ def failed_operation_execution_authorization(
         authorization_rule_id=f"fi_failed_operation_{kind_slug(reason_code)}",
         owner_phase="replay_apply",
         strict_disposition="block",
-        quirks_disposition="record",
+        quirks_disposition=QuirksDisposition.RECORD,
         validator_status="failed_operation_requires_manual_or_deterministic_resolution",
         required_proofs=FAILED_OPERATION_REQUIRED_PROOFS,
         safe_default=FAILED_OPERATION_SAFE_DEFAULT,

@@ -32,6 +32,7 @@ from lawvm.us_federal.amendatory import (
     RULE_INSERT_NODE_AFTER,
     RULE_REDESIGNATE_PAIRS,
     RULE_REDESIGNATE_RANGE,
+    RULE_REDESIGNATE_TABLE,
     RULE_STRIKE_INSERT,
     RULE_STRIKE_INSERT_END_PUNCT,
     RULE_STRIKE_INSERT_PUNCT_WORD,
@@ -40,6 +41,7 @@ from lawvm.us_federal.amendatory import (
     RULE_STRIKE_UNIT_LIST,
     SENTENCE_STRIKE_FINDING_RULE_ID,
     TAIL_STRIKE_FINDING_RULE_ID,
+    TAIL_STRIKE_INSERT_MISSING_OPERANDS_FINDING_RULE_ID,
     TARGET_UNRESOLVED_FINDING_RULE_ID,
     UNLOWERED_FINDING_RULE_ID,
     _first_usc_ref,
@@ -1177,7 +1179,10 @@ def test_strike_structural_unit_with_future_effective_language_is_not_an_immedia
     instr = report.instructions[0]
     assert instr.operation is None
     assert instr.finding is not None
-    assert instr.finding.rule_id == UNLOWERED_FINDING_RULE_ID
+    # Future-effective strike is owned by the temporal layer; the FUTURE_EFFECTIVE
+    # guard at the top of the strike family emits DEFERRED_AMEND_TO_READ before
+    # any structural-unit / through-tail / tail processing.
+    assert instr.finding.rule_id == DEFERRED_AMEND_TO_READ_FINDING_RULE_ID
 
 
 def test_amend_to_read_with_sunset_language_is_not_an_immediate_replace():
@@ -1464,7 +1469,10 @@ def test_future_effective_multi_strike_is_not_an_immediate_repeal():
     instr = report.instructions[0]
     assert instr.operation is None
     assert instr.finding is not None
-    assert instr.finding.rule_id == UNLOWERED_FINDING_RULE_ID
+    # Future-effective strike is owned by the temporal layer; the FUTURE_EFFECTIVE
+    # guard at the top of the strike family emits DEFERRED_AMEND_TO_READ before
+    # the multi-unit structural-strike path runs.
+    assert instr.finding.rule_id == DEFERRED_AMEND_TO_READ_FINDING_RULE_ID
 
 
 def test_structural_strike_with_list_conjunction_trailing_semicolon():
@@ -1581,6 +1589,52 @@ def test_paired_redesignation_with_list_conjunction():
     assert len(renumbers) == 2
     labels = sorted((o.target.leaf_label(), (o.destination.leaf_label() if o.destination else "")) for o in renumbers)
     assert labels == [("1", "2"), ("2", "3")]
+
+
+def test_redesignate_table_form_lowers_one_renumber_per_row():
+    # 'redesignating the sections as described in the table' — the section-number
+    # pairs live in a sibling <xhtml:table> in the parent subsection. The lowerer
+    # walks the table's <tr> rows, extracting (before, after) from the first and
+    # third <td> columns, and emits one RENUMBER per row. Source witness: PL
+    # 115-282 §103(b) — title-14 sections 1-5 (and 652) → 101-106.
+    body = (
+        '<section identifier="/us/pl/116/900/s1" role="instruction"><num value="1">SEC. 1. </num>'
+        "<content>"
+        '<ref href="/us/usc/t11/s101">Title 11, United States Code</ref> is amended—'
+        '<subsection identifier="/us/pl/116/900/s1/a"><num value="a">(a) </num><content>'
+        '<paragraph identifier="/us/pl/116/900/s1/a/1"><num value="1">(1) </num>'
+        "<content>The sections identified in the table in paragraph (2) are amended—</content>"
+        '<subparagraph identifier="/us/pl/116/900/s1/a/1/A" role="instruction"><num value="A">(A) </num>'
+        '<content>by <amendingAction type="redesignate">redesignating</amendingAction> the sections as described in the table; and</content>'
+        "</subparagraph>"
+        '<subparagraph identifier="/us/pl/116/900/s1/a/1/B"><num value="B">(B) </num>'
+        '<content>by transferring the sections, as necessary.</content>'
+        "</subparagraph></paragraph>"
+        '<paragraph identifier="/us/pl/116/900/s1/a/2"><num value="2">(2) </num>'
+        '<content>The table referred to in paragraph (1) is the following:'
+        '<xhtml:table xmlns:xhtml="http://www.w3.org/1999/xhtml">'
+        '<xhtml:thead><xhtml:tr><xhtml:th>Before</xhtml:th><xhtml:th>Heading</xhtml:th><xhtml:th>After</xhtml:th></xhtml:tr></xhtml:thead>'
+        '<xhtml:tbody>'
+        '<xhtml:tr><xhtml:td>1</xhtml:td><xhtml:td>First</xhtml:td><xhtml:td>101</xhtml:td></xhtml:tr>'
+        '<xhtml:tr><xhtml:td>2</xhtml:td><xhtml:td>Second</xhtml:td><xhtml:td>102</xhtml:td></xhtml:tr>'
+        '<xhtml:tr><xhtml:td>3</xhtml:td><xhtml:td>Third</xhtml:td><xhtml:td>103</xhtml:td></xhtml:tr>'
+        "</xhtml:tbody></xhtml:table></content></paragraph>"
+        "</content></subsection></content></section>"
+    )
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+    table_instrs = [i for i in report.instructions if i.witness_rule_id == RULE_REDESIGNATE_TABLE]
+    assert len(table_instrs) == 1
+    instr = table_instrs[0]
+    assert instr.operation is not None
+    ops = [instr.operation, *instr.extra_operations]
+    assert len(ops) == 3
+    for o in ops:
+        assert o.action is StructuralAction.RENUMBER
+        assert o.destination is not None
+    renumbers = sorted(
+        (o.target.leaf_label(), o.destination.leaf_label() if o.destination else "") for o in ops
+    )
+    assert renumbers == [("1", "101"), ("2", "102"), ("3", "103")]
 
 
 def test_flat_relative_head_inherits_title_from_section_classification():
@@ -2401,6 +2455,7 @@ def test_insert_before_period_at_the_end_lowers_to_terminal_text_replace():
     patch = _patch(instr)
     assert patch.selector.match_text == "."
     assert patch.selector.occurrence == -1
+    assert patch.selector.occurrence_mode == "Last"
     assert patch.replacement == " and section 507(d)."
 
 
@@ -2419,6 +2474,98 @@ def test_insert_after_comma_at_the_end_lowers_to_terminal_text_replace():
     patch = _patch(instr)
     assert patch.selector.match_text == ","
     assert patch.replacement == ", including (i)"
+
+
+def test_insert_before_period_at_the_end_the_following_lowers_to_terminal_text_replace():
+    # Form B: "inserting before the period at the end the following: '<X>'" —
+    # the dominant Form B shape in the 2026-06-24 un-lowered insert_after family
+    # (~2,010 rows). The inserted text is quoted AFTER the "before/after the
+    # <punct>" connector. Source witness: PL 108-136#instr580 (vessel
+    # environmental-remediation insert), PL 108-136#instr695 (14-day period).
+    body = (
+        '<section identifier="/us/pl/116/900/s1" role="instruction"><num>1.</num>'
+        "<content>"
+        '<ref href="/us/usc/t11/s547/b">Section 547(b) of title 11, United States Code</ref>, '
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="insert">inserting</amendingAction> before the period '
+        'at the end the following: '
+        '“<quotedText> and section 507(d)</quotedText>”.'
+        "</content></section>"
+    )
+    instr = _accepted_instr(lower_plaw_amendatory(_synthetic_plaw(body)))
+    assert instr.action == "insert_end_punct"
+    assert instr.witness_rule_id == RULE_INSERT_END_PUNCT
+    patch = _patch(instr)
+    assert patch.selector.match_text == "."
+    assert patch.selector.occurrence == -1
+    assert patch.selector.occurrence_mode == "Last"
+    assert patch.replacement == " and section 507(d)."
+
+
+def test_insert_before_period_the_following_no_at_the_end_lowers():
+    # Form B variant omitting "at the end" — the same drafting form but the
+    # writer drops the explicit "at the end" suffix. The terminal-punct anchor
+    # is still the named period at the end of the target node.
+    body = (
+        '<section identifier="/us/pl/116/900/s1" role="instruction"><num>1.</num>'
+        "<content>"
+        '<ref href="/us/usc/t11/s547/b">Section 547(b) of title 11, United States Code</ref>, '
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="insert">inserting</amendingAction> before the period '
+        'the following: '
+        '“<quotedText>, and that has a population of 50,000 or more individuals</quotedText>”.'
+        "</content></section>"
+    )
+    instr = _accepted_instr(lower_plaw_amendatory(_synthetic_plaw(body)))
+    assert instr.action == "insert_end_punct"
+    patch = _patch(instr)
+    assert patch.selector.match_text == "."
+    assert patch.replacement == ", and that has a population of 50,000 or more individuals."
+
+
+def test_insert_before_semicolon_quoted_no_at_the_end_lowers():
+    # Form C: "inserting before the semicolon '<X>'" — no "at the end", no "the
+    # following:" connector; the inserted text appears directly after the
+    # connector. Source witness: PL 108-136 (financial-repurchase nested-quote
+    # form). The inner straight quotes are nested inside the curly outer pair.
+    body = (
+        '<section identifier="/us/pl/116/900/s1" role="instruction"><num>1.</num>'
+        "<content>"
+        '<ref href="/us/usc/t11/s547/b">Section 547(b) of title 11, United States Code</ref>, '
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="insert">inserting</amendingAction> before the semicolon '
+        '“<quotedText>(whether or not such transaction is a ‘repurchase agreement’).</quotedText>".'
+        "</content></section>"
+    )
+    instr = _accepted_instr(lower_plaw_amendatory(_synthetic_plaw(body)))
+    assert instr.action == "insert_end_punct"
+    patch = _patch(instr)
+    assert patch.selector.match_text == ";"
+    assert patch.replacement == "(whether or not such transaction is a ‘repurchase agreement’).;"
+
+
+def test_insert_long_quoted_before_period_lowers_with_extended_cap():
+    # Form A with a longer inserted literal that the prior 20-char cap silently
+    # blocked. Quoted extension to 400 chars handles the VAWA-style references
+    # (", and (G) any assessments required under section 505B." — ~60 chars).
+    long_ins = (
+        ", and (G) any assessments required under section 505B of this title, "
+        "including any related investigative costs identified by the Commission."
+    )
+    body = (
+        '<section identifier="/us/pl/116/900/s1" role="instruction"><num>1.</num>'
+        "<content>"
+        '<ref href="/us/usc/t11/s547/b">Section 547(b) of title 11, United States Code</ref>, '
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="insert">inserting</amendingAction> '
+        f'“<quotedText>{long_ins}</quotedText>" before the period at the end.'
+        "</content></section>"
+    )
+    instr = _accepted_instr(lower_plaw_amendatory(_synthetic_plaw(body)))
+    assert instr.action == "insert_end_punct"
+    patch = _patch(instr)
+    assert patch.selector.match_text == "."
+    assert patch.replacement == long_ins + "."
 
 
 def test_strike_insert_punctuation_word_lowers_to_text_replace():
@@ -2581,7 +2728,7 @@ def test_through_tail_strike_insert_with_two_quotes_ignored_held_out():
     instr = lower_plaw_amendatory(_synthetic_plaw(body)).instructions[0]
     assert instr.operation is None
     assert instr.finding is not None
-    assert instr.finding.rule_id == UNLOWERED_FINDING_RULE_ID
+    assert instr.finding.rule_id == TAIL_STRIKE_INSERT_MISSING_OPERANDS_FINDING_RULE_ID
 
 
 # ---------------------------------------------------------------------------

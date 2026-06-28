@@ -17,6 +17,7 @@ Properties tested:
     7. PIT coverage  — select_active_version at future date returns something for all
     8. Monotonic PIT — materialize_pit at later date never has fewer provisions than earlier
 """
+
 from __future__ import annotations
 
 import copy
@@ -110,16 +111,12 @@ def test_materialize_pit_keeps_body_level_tombstone_when_same_label_chapter_sect
                         IRNode(
                             kind=IRNodeKind.CHAPTER,
                             label="7",
-                            children=(
-                                IRNode(kind=IRNodeKind.NUM, text="7 luku"),
-                            ),
+                            children=(IRNode(kind=IRNodeKind.NUM, text="7 luku"),),
                         ),
                         IRNode(
                             kind=IRNodeKind.CHAPTER,
                             label="8",
-                            children=(
-                                IRNode(kind=IRNodeKind.NUM, text="8 luku"),
-                            ),
+                            children=(IRNode(kind=IRNodeKind.NUM, text="8 luku"),),
                         ),
                         IRNode(
                             kind=IRNodeKind.SECTION,
@@ -210,9 +207,7 @@ DATE_STRS = st.dates(
     max_value=__import__("datetime").date(2030, 12, 31),
 ).map(str)  # produces "YYYY-MM-DD" strings
 
-SECTION_LABELS = st.text(
-    alphabet=string.digits, min_size=1, max_size=3
-).filter(lambda s: s.isdigit() and int(s) >= 1)
+SECTION_LABELS = st.text(alphabet=string.digits, min_size=1, max_size=3).filter(lambda s: s.isdigit() and int(s) >= 1)
 
 SHORT_TEXT = st.text(
     alphabet=string.ascii_letters + string.digits + " .,;-",
@@ -225,10 +220,7 @@ SHORT_TEXT = st.text(
 def subsections(draw) -> tuple[IRNode, ...]:
     """Generate a list of IRNode subsections."""
     n = draw(st.integers(min_value=1, max_value=6))
-    return tuple(
-        IRNode(kind=IRNodeKind.SUBSECTION, label=str(i), text=draw(SHORT_TEXT))
-        for i in range(1, n + 1)
-    )
+    return tuple(IRNode(kind=IRNodeKind.SUBSECTION, label=str(i), text=draw(SHORT_TEXT)) for i in range(1, n + 1))
 
 
 @st.composite
@@ -306,9 +298,9 @@ def base_statute(draw) -> IRStatute:
             )
             for s_label in section_labels
         ]
-        chapters.append(IRNode(
-            kind=IRNodeKind.CHAPTER, label=ch_label, text=draw(SHORT_TEXT), children=tuple(sections)
-        ))
+        chapters.append(
+            IRNode(kind=IRNodeKind.CHAPTER, label=ch_label, text=draw(SHORT_TEXT), children=tuple(sections))
+        )
     body = IRNode(kind=IRNodeKind.BODY, label=None, text="", children=tuple(chapters))
     supplement_nodes: list[IRNode] = []
     n_supplements = draw(st.integers(min_value=0, max_value=2))
@@ -331,9 +323,7 @@ def base_statute(draw) -> IRStatute:
                     kind=kind,
                     label=label,
                     text=draw(SHORT_TEXT),
-                    children=(
-                        IRNode(kind=child_kind, label="1", text=draw(SHORT_TEXT)),
-                    ),
+                    children=(IRNode(kind=child_kind, label="1", text=draw(SHORT_TEXT)),),
                 )
             )
     return IRStatute(
@@ -348,6 +338,7 @@ def base_statute(draw) -> IRStatute:
 # Property 1: Monotonicity
 # ---------------------------------------------------------------------------
 
+
 @given(base_statute())
 @settings(max_examples=50)
 def test_timeline_versions_are_monotonically_ordered(statute: IRStatute) -> None:
@@ -357,7 +348,7 @@ def test_timeline_versions_are_monotonically_ordered(statute: IRStatute) -> None
         for i, (left_version, right_version) in enumerate(pairwise(tl.versions)):
             assert left_version.effective <= right_version.effective, (
                 f"Timeline {addr}: version {i} effective {left_version.effective!r} "
-                f"> version {i+1} effective {right_version.effective!r}"
+                f"> version {i + 1} effective {right_version.effective!r}"
             )
 
 
@@ -365,21 +356,21 @@ def test_timeline_versions_are_monotonically_ordered(statute: IRStatute) -> None
 # Property 2: Idempotence (no ops → one version per provision)
 # ---------------------------------------------------------------------------
 
+
 @given(base_statute())
 @settings(max_examples=50)
 def test_compile_timelines_no_ops_idempotence(statute: IRStatute) -> None:
     """compile_timelines with no ops produces exactly one version per provision."""
     timelines = compile_timelines(statute, [])
     for addr, tl in timelines.items():
-        assert len(tl.versions) == 1, (
-            f"{addr}: expected 1 version, got {len(tl.versions)}"
-        )
+        assert len(tl.versions) == 1, f"{addr}: expected 1 version, got {len(tl.versions)}"
         assert tl.versions[0].content is not None, f"{addr}: base version has None content"
 
 
 # ---------------------------------------------------------------------------
 # Property 3: Completeness (every provision addressable at base date)
 # ---------------------------------------------------------------------------
+
 
 @given(base_statute())
 @settings(max_examples=50)
@@ -587,12 +578,16 @@ def test_descendant_replace_inherits_active_temporary_parent_expiry() -> None:
         title="Temporary parent expiry inheritance",
         body=IRNode(
             kind=IRNodeKind.BODY,
-            children=(IRNode(
+            children=(
+                IRNode(
                     kind=IRNodeKind.SECTION,
                     label="4",
-                    children=(IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="base 1"),
-                        IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="base 2"),),
-                ),),
+                    children=(
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="base 1"),
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="base 2"),
+                    ),
+                ),
+            ),
         ),
     )
     sec_addr = LegalAddress(path=(("section", "4"),))
@@ -608,9 +603,11 @@ def test_descendant_replace_inherits_active_temporary_parent_expiry() -> None:
                 payload=IRNode(
                     kind=IRNodeKind.SECTION,
                     label="4",
-                    children=(IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="base 1"),
+                    children=(
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="base 1"),
                         IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="base 2"),
-                        IRNode(kind=IRNodeKind.SUBSECTION, label="3", text="temp v1"),),
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="3", text="temp v1"),
+                    ),
                 ),
                 source=OperationSource(
                     statute_id="2020/294",
@@ -659,12 +656,16 @@ def test_descendant_insert_inherits_active_temporary_parent_expiry() -> None:
         title="Temporary parent insert expiry inheritance",
         body=IRNode(
             kind=IRNodeKind.BODY,
-            children=(IRNode(
+            children=(
+                IRNode(
                     kind=IRNodeKind.SECTION,
                     label="4",
-                    children=(IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="base 1"),
-                        IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="base 2"),),
-                ),),
+                    children=(
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="base 1"),
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="base 2"),
+                    ),
+                ),
+            ),
         ),
     )
     sec_addr = LegalAddress(path=(("section", "4"),))
@@ -680,8 +681,10 @@ def test_descendant_insert_inherits_active_temporary_parent_expiry() -> None:
                 payload=IRNode(
                     kind=IRNodeKind.SECTION,
                     label="4",
-                    children=(IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="base 1"),
-                        IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="base 2"),),
+                    children=(
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="base 1"),
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="base 2"),
+                    ),
                 ),
                 source=OperationSource(
                     statute_id="2020/294",
@@ -812,12 +815,16 @@ def test_existing_descendant_replace_under_temporary_parent_stays_durable() -> N
         title="Existing child under temporary parent",
         body=IRNode(
             kind=IRNodeKind.BODY,
-            children=(IRNode(
+            children=(
+                IRNode(
                     kind=IRNodeKind.SECTION,
                     label="4",
-                    children=(IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="base 1"),
-                        IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="base 2"),),
-                ),),
+                    children=(
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="base 1"),
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="base 2"),
+                    ),
+                ),
+            ),
         ),
     )
     sec_addr = LegalAddress(path=(("section", "4"),))
@@ -833,8 +840,10 @@ def test_existing_descendant_replace_under_temporary_parent_stays_durable() -> N
                 payload=IRNode(
                     kind=IRNodeKind.SECTION,
                     label="4",
-                    children=(IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="base 1"),
-                        IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="temp 2"),),
+                    children=(
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="base 1"),
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="temp 2"),
+                    ),
                 ),
                 source=OperationSource(
                     statute_id="2020/294",
@@ -1043,11 +1052,13 @@ def test_same_day_timeline_ties_use_later_apply_order() -> None:
         body=IRNode(
             kind=IRNodeKind.BODY,
             label=None,
-            children=(IRNode(
+            children=(
+                IRNode(
                     kind=IRNodeKind.SECTION,
                     label="7b",
                     text="Original section text.",
-                ),),
+                ),
+            ),
         ),
     )
     addr = LegalAddress(path=(("section", "7b"),))
@@ -1196,11 +1207,7 @@ def test_materialize_pit_records_same_source_equal_rank_selection_conflict() -> 
     assert result.materialization_status == "degraded_timeline_issues"
     assert result.statute.body.children[0].text == "Second text"
     assert result.statute.metadata["materialization_status"] == "degraded_timeline_issues"
-    issues = [
-        issue
-        for issue in result.issues
-        if issue.kind == "equal_rank_same_source_selection_conflict"
-    ]
+    issues = [issue for issue in result.issues if issue.kind == "equal_rank_same_source_selection_conflict"]
     assert len(issues) == 1
     assert issues[0].address == addr
     assert issues[0].source_statute == "2020/10"
@@ -1248,20 +1255,14 @@ def test_materialize_pit_does_not_record_equal_rank_conflict_for_exact_duplicate
 
     result = materialize_pit_ex(timelines, "2021-01-01", base=base)
 
-    assert [
-        issue
-        for issue in result.issues
-        if issue.kind == "equal_rank_same_source_selection_conflict"
-    ] == []
+    assert [issue for issue in result.issues if issue.kind == "equal_rank_same_source_selection_conflict"] == []
 
 
 def test_materialize_pit_keeps_child_tombstone_under_stale_parent_snapshot() -> None:
     """A carried parent snapshot must not suppress an explicit child deletion."""
     chapter_addr = LegalAddress(path=(("chapter", "4"),))
     section_addr = LegalAddress(path=(("chapter", "4"), ("section", "27a")))
-    subsection_addr = LegalAddress(
-        path=(("chapter", "4"), ("section", "27a"), ("subsection", "1"))
-    )
+    subsection_addr = LegalAddress(path=(("chapter", "4"), ("section", "27a"), ("subsection", "1")))
     stale_section = IRNode(
         kind=IRNodeKind.SECTION,
         label="27a",
@@ -1346,9 +1347,7 @@ def test_materialize_pit_keeps_child_tombstone_under_stale_parent_snapshot() -> 
 def test_materialize_pit_keeps_repeal_placeholder_as_descendant_overlay_barrier() -> None:
     """A repealed parent must not rehydrate older active descendant timelines."""
     section_addr = LegalAddress(path=(("chapter", "1"), ("section", "10a")))
-    subsection_addr = LegalAddress(
-        path=(("chapter", "1"), ("section", "10a"), ("subsection", "1"))
-    )
+    subsection_addr = LegalAddress(path=(("chapter", "1"), ("section", "10a"), ("subsection", "1")))
     stale_subsection = IRNode(
         kind=IRNodeKind.SUBSECTION,
         label="1",
@@ -1437,12 +1436,8 @@ def test_materialize_pit_keeps_repeal_placeholder_as_descendant_overlay_barrier(
 def test_materialize_pit_does_not_treat_owned_child_placeholder_as_parent_tombstone() -> None:
     """A placeholder carrying substantive children is not a full parent repeal."""
     section_addr = LegalAddress(path=(("chapter", "1"), ("section", "16")))
-    subsection_1_addr = LegalAddress(
-        path=(("chapter", "1"), ("section", "16"), ("subsection", "1"))
-    )
-    subsection_2_addr = LegalAddress(
-        path=(("chapter", "1"), ("section", "16"), ("subsection", "2"))
-    )
+    subsection_1_addr = LegalAddress(path=(("chapter", "1"), ("section", "16"), ("subsection", "1")))
+    subsection_2_addr = LegalAddress(path=(("chapter", "1"), ("section", "16"), ("subsection", "2")))
     subsection_1 = IRNode(
         kind=IRNodeKind.SUBSECTION,
         label="1",
@@ -1552,24 +1547,32 @@ def test_materialize_pit_applies_nested_section_replace_without_parent_version()
         title="Nested overlay statute",
         body=IRNode(
             kind=IRNodeKind.BODY,
-            children=(IRNode(
+            children=(
+                IRNode(
                     kind=IRNodeKind.PART,
                     label="iv",
-                    children=(IRNode(kind=IRNodeKind.NUM, text="IV OSA"),
+                    children=(
+                        IRNode(kind=IRNodeKind.NUM, text="IV OSA"),
                         IRNode(
                             kind=IRNodeKind.CHAPTER,
                             label="13",
-                            children=(IRNode(kind=IRNodeKind.NUM, text="13 luku"),
+                            children=(
+                                IRNode(kind=IRNodeKind.NUM, text="13 luku"),
                                 IRNode(kind=IRNodeKind.HEADING, text="Avaintieto"),
                                 IRNode(
                                     kind=IRNodeKind.SECTION,
                                     label="4",
-                                    children=(IRNode(kind=IRNodeKind.NUM, text="4 §"),
+                                    children=(
+                                        IRNode(kind=IRNodeKind.NUM, text="4 §"),
                                         IRNode(kind=IRNodeKind.HEADING, text="Avaintietoesite"),
-                                        IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Original content."),),
-                                ),),
-                        ),),
-                ),),
+                                        IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Original content."),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
         ),
     )
     addr = LegalAddress(path=(("part", "iv"), ("chapter", "13"), ("section", "4")))
@@ -1596,12 +1599,14 @@ def test_materialize_pit_applies_nested_section_replace_without_parent_version()
                 payload=IRNode(
                     kind=IRNodeKind.SECTION,
                     label="4",
-                    children=(IRNode(kind=IRNodeKind.NUM, text="4 §"),
+                    children=(
+                        IRNode(kind=IRNodeKind.NUM, text="4 §"),
                         IRNode(
                             kind=IRNodeKind.SUBSECTION,
                             text="4 § on kumottu.",
                             attrs={"lawvm_repeal_placeholder": "1"},
-                        ),),
+                        ),
+                    ),
                     attrs={"lawvm_repeal_placeholder": "1"},
                 ),
                 source=OperationSource(
@@ -1647,7 +1652,10 @@ def test_compile_timelines_accepts_section_replace_under_active_chapter_payload(
                         IRNode(
                             kind=IRNodeKind.SECTION,
                             label="1",
-                            children=(IRNode(kind=IRNodeKind.NUM, text="1 §"), IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Vanha teksti")),
+                            children=(
+                                IRNode(kind=IRNodeKind.NUM, text="1 §"),
+                                IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Vanha teksti"),
+                            ),
                         ),
                     ),
                 ),
@@ -1712,7 +1720,10 @@ def test_materialize_pit_keeps_older_chapter_children_absent_from_later_parent_p
                 payload=IRNode(
                     kind=IRNodeKind.SECTION,
                     label="1a",
-                    children=(IRNode(kind=IRNodeKind.NUM, text="1 a §"), IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Vanha 1a")),
+                    children=(
+                        IRNode(kind=IRNodeKind.NUM, text="1 a §"),
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Vanha 1a"),
+                    ),
                 ),
                 source=OperationSource(
                     statute_id="1994/16",
@@ -1728,7 +1739,10 @@ def test_materialize_pit_keeps_older_chapter_children_absent_from_later_parent_p
                 payload=IRNode(
                     kind=IRNodeKind.SECTION,
                     label="1b",
-                    children=(IRNode(kind=IRNodeKind.NUM, text="1 b §"), IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Vanha 1b")),
+                    children=(
+                        IRNode(kind=IRNodeKind.NUM, text="1 b §"),
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Vanha 1b"),
+                    ),
                 ),
                 source=OperationSource(
                     statute_id="1994/16",
@@ -1747,7 +1761,9 @@ def test_materialize_pit_keeps_older_chapter_children_absent_from_later_parent_p
                     children=(
                         IRNode(kind=IRNodeKind.NUM, text="12 luku"),
                         IRNode(kind=IRNodeKind.SECTION, label="1", children=(IRNode(kind=IRNodeKind.NUM, text="1 §"),)),
-                        IRNode(kind=IRNodeKind.SECTION, label="1c", children=(IRNode(kind=IRNodeKind.NUM, text="1 c §"),)),
+                        IRNode(
+                            kind=IRNodeKind.SECTION, label="1c", children=(IRNode(kind=IRNodeKind.NUM, text="1 c §"),)
+                        ),
                     ),
                 ),
                 source=OperationSource(
@@ -1761,7 +1777,9 @@ def test_materialize_pit_keeps_older_chapter_children_absent_from_later_parent_p
     )
 
     materialized = materialize_pit(timelines, "2026-01-16")
-    chapter = next(child for child in materialized.body.children if child.kind == IRNodeKind.CHAPTER and child.label == "12")
+    chapter = next(
+        child for child in materialized.body.children if child.kind == IRNodeKind.CHAPTER and child.label == "12"
+    )
     section_labels = [child.label for child in chapter.children if child.kind == IRNodeKind.SECTION]
 
     assert "1" in section_labels
@@ -1826,7 +1844,9 @@ def test_materialize_pit_unowned_chapter_snapshot_does_not_mask_live_section_chi
 
     materialized = materialize_pit(timelines, "2003-01-01", base=base)
 
-    chapter = next(child for child in materialized.body.children if child.kind == IRNodeKind.CHAPTER and child.label == "12")
+    chapter = next(
+        child for child in materialized.body.children if child.kind == IRNodeKind.CHAPTER and child.label == "12"
+    )
     section = next(child for child in chapter.children if child.kind == IRNodeKind.SECTION and child.label == "1a")
     assert "selected section text" in irnode_to_text(section)
     assert "stale chapter child text" not in irnode_to_text(section)
@@ -1862,7 +1882,11 @@ def test_materialize_pit_keeps_deep_chapter_descendant_absent_from_later_part_pa
                         label="4",
                         children=(
                             IRNode(kind=IRNodeKind.NUM, text="4 osa"),
-                            IRNode(kind=IRNodeKind.CHAPTER, label="2", children=(IRNode(kind=IRNodeKind.NUM, text="2 luku"),)),
+                            IRNode(
+                                kind=IRNodeKind.CHAPTER,
+                                label="2",
+                                children=(IRNode(kind=IRNodeKind.NUM, text="2 luku"),),
+                            ),
                         ),
                     ),
                     source=OperationSource(statute_id="2019/371", effective="2019-04-01"),
@@ -1875,7 +1899,9 @@ def test_materialize_pit_keeps_deep_chapter_descendant_absent_from_later_part_pa
                 ProvisionVersion(
                     effective="2021-02-01",
                     enacted="2020-12-30",
-                    content=IRNode(kind=IRNodeKind.CHAPTER, label="18", children=(IRNode(kind=IRNodeKind.NUM, text="18 luku"),)),
+                    content=IRNode(
+                        kind=IRNodeKind.CHAPTER, label="18", children=(IRNode(kind=IRNodeKind.NUM, text="18 luku"),)
+                    ),
                     source=OperationSource(statute_id="2020/1256", effective="2021-02-01"),
                 )
             ],
@@ -1917,7 +1943,9 @@ def test_materialize_pit_removes_unique_shallow_section_alias_after_deeper_proje
                 ProvisionVersion(
                     effective="2019-04-01",
                     enacted="2019-03-29",
-                    content=IRNode(kind=IRNodeKind.PART, label="4", children=(IRNode(kind=IRNodeKind.NUM, text="4 osa"),)),
+                    content=IRNode(
+                        kind=IRNodeKind.PART, label="4", children=(IRNode(kind=IRNodeKind.NUM, text="4 osa"),)
+                    ),
                     source=OperationSource(statute_id="2019/371", effective="2019-04-01"),
                 )
             ],
@@ -1928,7 +1956,9 @@ def test_materialize_pit_removes_unique_shallow_section_alias_after_deeper_proje
                 ProvisionVersion(
                     effective="2021-02-01",
                     enacted="2020-12-30",
-                    content=IRNode(kind=IRNodeKind.CHAPTER, label="18", children=(IRNode(kind=IRNodeKind.NUM, text="18 luku"),)),
+                    content=IRNode(
+                        kind=IRNodeKind.CHAPTER, label="18", children=(IRNode(kind=IRNodeKind.NUM, text="18 luku"),)
+                    ),
                     source=OperationSource(statute_id="2020/1256", effective="2021-02-01"),
                 )
             ],
@@ -2039,6 +2069,7 @@ def test_materialize_pit_keeps_unique_shallow_section_tombstone_after_deeper_pro
 # Property 4: Identity (diff same date → empty)
 # ---------------------------------------------------------------------------
 
+
 @given(base_statute(), DATE_STRS)
 @settings(max_examples=50)
 def test_diff_statute_same_date_is_empty(statute: IRStatute, date: str) -> None:
@@ -2051,6 +2082,7 @@ def test_diff_statute_same_date_is_empty(statute: IRStatute, date: str) -> None:
 # ---------------------------------------------------------------------------
 # Property 5: Roundtrip (materialize at base_date has all base provisions)
 # ---------------------------------------------------------------------------
+
 
 @given(base_statute())
 @settings(max_examples=50)
@@ -2066,24 +2098,19 @@ def test_materialize_pit_at_base_has_all_chapters(statute: IRStatute) -> None:
         ch.label for ch in pit.body.children if ch.kind == IRNodeKind.CHAPTER and ch.label is not None
     }
     assert expected_chapter_labels == actual_chapter_labels, (
-        f"Chapter labels differ: expected {expected_chapter_labels}, "
-        f"got {actual_chapter_labels}"
+        f"Chapter labels differ: expected {expected_chapter_labels}, got {actual_chapter_labels}"
     )
-    expected_supplements = {
-        (node.kind, node.label) for node in statute.supplements if node.label is not None
-    }
-    actual_supplements = {
-        (node.kind, node.label) for node in pit.supplements if node.label is not None
-    }
+    expected_supplements = {(node.kind, node.label) for node in statute.supplements if node.label is not None}
+    actual_supplements = {(node.kind, node.label) for node in pit.supplements if node.label is not None}
     assert expected_supplements == actual_supplements, (
-        f"Supplement roots differ: expected {expected_supplements}, "
-        f"got {actual_supplements}"
+        f"Supplement roots differ: expected {expected_supplements}, got {actual_supplements}"
     )
 
 
 # ---------------------------------------------------------------------------
 # Property 6: Content hash equality
 # ---------------------------------------------------------------------------
+
 
 @given(SHORT_TEXT, SHORT_TEXT)
 @settings(max_examples=100)
@@ -2114,6 +2141,7 @@ def test_content_hash_is_64_hex_chars(text: str) -> None:
 # Property 7: PIT coverage at far-future date
 # ---------------------------------------------------------------------------
 
+
 @given(base_statute())
 @settings(max_examples=50)
 def test_select_active_version_at_far_future(statute: IRStatute) -> None:
@@ -2128,6 +2156,7 @@ def test_select_active_version_at_far_future(statute: IRStatute) -> None:
 # ---------------------------------------------------------------------------
 # Property 8: LegalAddress path depth and structure
 # ---------------------------------------------------------------------------
+
 
 @given(base_statute())
 @settings(max_examples=50)
@@ -2146,6 +2175,7 @@ def test_all_addresses_have_nonempty_path(statute: IRStatute) -> None:
 # ---------------------------------------------------------------------------
 # Property 9: irnode_to_text non-empty for leaf nodes
 # ---------------------------------------------------------------------------
+
 
 @given(SHORT_TEXT)
 @settings(max_examples=100)
@@ -2171,6 +2201,7 @@ def test_irnode_to_text_parent_includes_children(p_text: str, c_text: str) -> No
 # Property 10: provision_lineage is same as timeline.versions
 # ---------------------------------------------------------------------------
 
+
 @given(base_statute())
 @settings(max_examples=50)
 def test_provision_lineage_matches_timeline(statute: IRStatute) -> None:
@@ -2178,9 +2209,7 @@ def test_provision_lineage_matches_timeline(statute: IRStatute) -> None:
     timelines = compile_timelines(statute, [])
     for addr, tl in timelines.items():
         lineage = provision_lineage(timelines, addr)
-        assert lineage == tl.versions, (
-            f"{addr}: lineage differs from tl.versions"
-        )
+        assert lineage == tl.versions, f"{addr}: lineage differs from tl.versions"
 
 
 def test_provision_lineage_uses_migration_events_for_current_address_resolution() -> None:
@@ -2320,11 +2349,14 @@ def test_provision_lineage_is_order_independent_for_migration_waves() -> None:
     )
 
     assert resolved == []
-    assert current_address_from_migration_events(
-        old_addr,
-        (second, first),
-        as_of_date="2020-12-31",
-    ) == new_addr
+    assert (
+        current_address_from_migration_events(
+            old_addr,
+            (second, first),
+            as_of_date="2020-12-31",
+        )
+        == new_addr
+    )
 
 
 def test_current_address_from_migration_events_walks_chains_regardless_of_input_order() -> None:
@@ -2476,11 +2508,14 @@ def test_has_only_leaf_stable_scope_renumbers_accepts_prefix_renumber_with_same_
         source_statute="2001/1",
     )
 
-    assert has_only_leaf_stable_scope_renumbers(
-        timelines,
-        (migration_event,),
-        address_prefix_matches=_address_prefix_matches,
-    ) is True
+    assert (
+        has_only_leaf_stable_scope_renumbers(
+            timelines,
+            (migration_event,),
+            address_prefix_matches=_address_prefix_matches,
+        )
+        is True
+    )
 
 
 def test_classify_materialization_lineage_bridge_reports_native_rebirth_and_scope_collision() -> None:
@@ -2629,10 +2664,12 @@ def test_rekey_timelines_with_migration_events_retargets_root_content_in_core() 
         timelines,
         (migration_event,),
         as_of_date="2025-01-01",
-        current_address_with_prefix_migrations_fn=lambda address, events, as_of_date: current_address_with_prefix_migrations_from_events(
-            address,
-            events,
-            as_of_date=as_of_date,
+        current_address_with_prefix_migrations_fn=lambda address, events, as_of_date: (
+            current_address_with_prefix_migrations_from_events(
+                address,
+                events,
+                as_of_date=as_of_date,
+            )
         ),
         address_prefix_matches=_address_prefix_matches,
         retarget_version_content_fn=lambda version, address: _retarget_version_content(
@@ -2700,10 +2737,12 @@ def test_rekey_timelines_splits_undated_renumber_with_same_source_timeline_witne
         timelines,
         (migration_event,),
         as_of_date="2020-01-01",
-        current_address_with_prefix_migrations_fn=lambda address, events, as_of_date: current_address_with_prefix_migrations_from_events(
-            address,
-            events,
-            as_of_date=as_of_date,
+        current_address_with_prefix_migrations_fn=lambda address, events, as_of_date: (
+            current_address_with_prefix_migrations_from_events(
+                address,
+                events,
+                as_of_date=as_of_date,
+            )
         ),
         address_prefix_matches=_address_prefix_matches,
     )
@@ -2767,10 +2806,12 @@ def test_rekey_timelines_native_rebirth_follows_later_descendant_migration() -> 
         timelines,
         migration_events,
         as_of_date="2025-01-01",
-        current_address_with_prefix_migrations_fn=lambda address, events, as_of_date: current_address_with_prefix_migrations_from_events(
-            address,
-            events,
-            as_of_date=as_of_date,
+        current_address_with_prefix_migrations_fn=lambda address, events, as_of_date: (
+            current_address_with_prefix_migrations_from_events(
+                address,
+                events,
+                as_of_date=as_of_date,
+            )
         ),
         address_prefix_matches=_address_prefix_matches,
     )
@@ -2837,9 +2878,7 @@ def test_materialize_pit_structural_renumber_snapshot_does_not_mask_child_timeli
                         kind=IRNodeKind.CHAPTER,
                         label="2",
                         attrs={STRUCTURAL_RENUMBER_SNAPSHOT_ATTR: "1"},
-                        children=(
-                            IRNode(kind=IRNodeKind.SECTION, label="8", text="stale carried text"),
-                        ),
+                        children=(IRNode(kind=IRNodeKind.SECTION, label="8", text="stale carried text"),),
                     ),
                     source=OperationSource(statute_id="2020/1", effective="2021-01-01"),
                 )
@@ -3402,9 +3441,7 @@ def test_materialize_pit_preserves_chapter_payload_over_inactive_section_descend
                             IRNode(
                                 kind=IRNodeKind.SECTION,
                                 label="72a",
-                                children=(
-                                    IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="new subsection"),
-                                ),
+                                children=(IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="new subsection"),),
                             ),
                         ),
                     ),
@@ -3422,9 +3459,7 @@ def test_materialize_pit_preserves_chapter_payload_over_inactive_section_descend
                     content=IRNode(
                         kind=IRNodeKind.SECTION,
                         label="72a",
-                        children=(
-                            IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="expired subsection"),
-                        ),
+                        children=(IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="expired subsection"),),
                     ),
                     source=OperationSource(statute_id="base", effective="0000-00-00", expires="1999-01-01"),
                 )
@@ -3507,9 +3542,7 @@ def test_materialize_pit_preserves_part_payload_over_inactive_section_descendant
                     content=IRNode(
                         kind=IRNodeKind.SECTION,
                         label="10",
-                        children=(
-                            IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="expired subsection"),
-                        ),
+                        children=(IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="expired subsection"),),
                     ),
                     source=OperationSource(statute_id="base", effective="0000-00-00", expires="1999-01-01"),
                 )
@@ -3636,8 +3669,7 @@ def test_materialize_body_child_replacement_overrides_duplicate_carried_snapshot
     sections = [child for child in chapter.children if child.kind is IRNodeKind.SECTION]
     assert [(section.label, section.text) for section in sections] == [("85", "new exact section 85")]
     assert any(
-        issue.kind == "duplicate_selected_child_replaced_by_exact_child_overlay"
-        and issue.address == section_addr
+        issue.kind == "duplicate_selected_child_replaced_by_exact_child_overlay" and issue.address == section_addr
         for issue in issues
     )
 
@@ -3723,14 +3755,10 @@ def test_materialize_body_preserves_duplicate_base_siblings_with_descendant_owne
     assert _find_node_by_label(parts[1], IRNodeKind.SECTION, "34_1") is None
     assert updated_section.children[0].text == "new subsection"
     assert any(
-        issue.kind == "duplicate_base_address_descendant_overlay"
-        and issue.address == part_addr
-        for issue in issues
+        issue.kind == "duplicate_base_address_descendant_overlay" and issue.address == part_addr for issue in issues
     )
     assert any(
-        issue.kind == "duplicate_same_label_child_carried_continuity"
-        and issue.address == part_addr
-        for issue in issues
+        issue.kind == "duplicate_same_label_child_carried_continuity" and issue.address == part_addr for issue in issues
     )
 
 
@@ -3795,9 +3823,7 @@ def test_materialize_body_preserves_duplicate_base_children_under_selected_root(
         (IRNodeKind.DIVISION, "2", "Seaduse jõustumine"),
     ]
     assert any(
-        issue.kind == "duplicate_base_address_descendant_overlay"
-        and issue.address == chapter_addr
-        for issue in issues
+        issue.kind == "duplicate_base_address_descendant_overlay" and issue.address == chapter_addr for issue in issues
     )
     assert any(
         issue.kind == "duplicate_same_label_child_carried_continuity"
@@ -3877,14 +3903,11 @@ def test_materialize_body_preserves_duplicate_selected_children_when_direct_chil
         ("1", "second subsection 1"),
     ]
     assert any(
-        issue.kind == "duplicate_selected_address_descendant_overlay"
-        and issue.address == subsection_addr
+        issue.kind == "duplicate_selected_address_descendant_overlay" and issue.address == subsection_addr
         for issue in issues
     )
     assert any(
-        issue.kind == "duplicate_same_label_child_unresolved"
-        and issue.address == subsection_addr
-        for issue in issues
+        issue.kind == "duplicate_same_label_child_unresolved" and issue.address == subsection_addr for issue in issues
     )
 
 
@@ -4367,9 +4390,15 @@ def test_materialize_pit_keeps_native_chapter_rebirth_at_source_after_later_renu
     chapter_10_node = _find_node_by_label(pit.body, IRNodeKind.CHAPTER, "10")
     chapter_11_node = _find_node_by_label(pit.body, IRNodeKind.CHAPTER, "11")
     chapter_12_node = _find_node_by_label(pit.body, IRNodeKind.CHAPTER, "12")
-    chapter_10_section_4_node = _find_node_by_label(chapter_10_node, IRNodeKind.SECTION, "4") if chapter_10_node is not None else None
-    chapter_11_section_1_node = _find_node_by_label(chapter_11_node, IRNodeKind.SECTION, "1") if chapter_11_node is not None else None
-    chapter_12_section_1_node = _find_node_by_label(chapter_12_node, IRNodeKind.SECTION, "1") if chapter_12_node is not None else None
+    chapter_10_section_4_node = (
+        _find_node_by_label(chapter_10_node, IRNodeKind.SECTION, "4") if chapter_10_node is not None else None
+    )
+    chapter_11_section_1_node = (
+        _find_node_by_label(chapter_11_node, IRNodeKind.SECTION, "1") if chapter_11_node is not None else None
+    )
+    chapter_12_section_1_node = (
+        _find_node_by_label(chapter_12_node, IRNodeKind.SECTION, "1") if chapter_12_node is not None else None
+    )
 
     assert chapter_10_node is not None
     assert chapter_11_node is not None
@@ -4395,6 +4424,7 @@ from lawvm.finland.replay_products import fi_label_norm
 # tree_ops invariant 1: insert_sorted preserves label uniqueness
 # ---------------------------------------------------------------------------
 
+
 @st.composite
 def flat_body_with_unique_sections(draw) -> IRNode:
     """Generate a body IRNode with unique section labels."""
@@ -4407,18 +4437,13 @@ def flat_body_with_unique_sections(draw) -> IRNode:
             unique=True,
         )
     )
-    sections = [
-        IRNode(kind=IRNodeKind.SECTION, label=lbl, text=draw(SHORT_TEXT))
-        for lbl in labels
-    ]
+    sections = [IRNode(kind=IRNodeKind.SECTION, label=lbl, text=draw(SHORT_TEXT)) for lbl in labels]
     return IRNode(kind=IRNodeKind.BODY, label=None, text="", children=tuple(sections))
 
 
 @given(flat_body_with_unique_sections(), SECTION_LABELS, SHORT_TEXT)
 @settings(max_examples=50)
-def test_insert_sorted_preserves_label_uniqueness(
-    body: IRNode, new_label: str, new_text: str
-) -> None:
+def test_insert_sorted_preserves_label_uniqueness(body: IRNode, new_label: str, new_text: str) -> None:
     """insert_sorted into a body with unique labels keeps (kind, label) pairs unique."""
     # Only test when the label is not already present
     existing_labels = {c.label for c in body.children if c.kind == IRNodeKind.SECTION}
@@ -4440,6 +4465,7 @@ def test_insert_sorted_preserves_label_uniqueness(
 # tree_ops invariant 2: remove then insert roundtrip preserves label set
 # ---------------------------------------------------------------------------
 
+
 @given(flat_body_with_unique_sections())
 @settings(max_examples=50)
 def test_remove_at_then_insert_roundtrip(body: IRNode) -> None:
@@ -4457,14 +4483,13 @@ def test_remove_at_then_insert_roundtrip(body: IRNode) -> None:
     after_reinsert = tree_ops.insert_sorted(after_remove, (), target)
 
     result_labels = {c.label for c in after_reinsert.children if c.kind == IRNodeKind.SECTION}
-    assert result_labels == original_labels, (
-        f"Label set changed: original={original_labels}, result={result_labels}"
-    )
+    assert result_labels == original_labels, f"Label set changed: original={original_labels}, result={result_labels}"
 
 
 # ---------------------------------------------------------------------------
 # tree_ops invariant 3: replace_at preserves section label order
 # ---------------------------------------------------------------------------
+
 
 @given(flat_body_with_unique_sections(), SHORT_TEXT)
 @settings(max_examples=50)
@@ -4483,14 +4508,14 @@ def test_replace_at_preserves_structure(body: IRNode, new_text: str) -> None:
 
     result_label_order = [c.label for c in result.children if c.kind == IRNodeKind.SECTION]
     assert result_label_order == original_label_order, (
-        f"Label order changed after replace_at: "
-        f"original={original_label_order}, result={result_label_order}"
+        f"Label order changed after replace_at: original={original_label_order}, result={result_label_order}"
     )
 
 
 # ---------------------------------------------------------------------------
 # Timeline/overlay 4: compile with no ops + materialize roundtrip
 # ---------------------------------------------------------------------------
+
 
 @given(base_statute())
 @settings(max_examples=50)
@@ -4518,22 +4543,16 @@ def test_compile_no_ops_then_materialize_roundtrip(statute: IRStatute) -> None:
 
     base_labels = _collect_section_labels_from_roots((statute.body, *statute.supplements))
     pit_labels = _collect_section_labels_from_roots((pit.body, *pit.supplements))
-    assert base_labels == pit_labels, (
-        f"Section labels differ after roundtrip: "
-        f"base={base_labels}, pit={pit_labels}"
-    )
-    assert [
-        (node.kind, node.label, node.text)
-        for node in pit.supplements
-    ] == [
-        (node.kind, node.label, node.text)
-        for node in statute.supplements
+    assert base_labels == pit_labels, f"Section labels differ after roundtrip: base={base_labels}, pit={pit_labels}"
+    assert [(node.kind, node.label, node.text) for node in pit.supplements] == [
+        (node.kind, node.label, node.text) for node in statute.supplements
     ]
 
 
 # ---------------------------------------------------------------------------
 # Timeline/overlay 5: _apply_overlays with empty active dict is identity
 # ---------------------------------------------------------------------------
+
 
 @given(SHORT_TEXT, SECTION_LABELS, SHORT_TEXT)
 @settings(max_examples=50)
@@ -4545,9 +4564,7 @@ def test_overlay_identity(parent_text: str, child_label: str, child_text: str) -
 
     result = _apply_overlays(content, addr, {})
 
-    assert result.text == content.text, (
-        f"Own text changed: expected {content.text!r}, got {result.text!r}"
-    )
+    assert result.text == content.text, f"Own text changed: expected {content.text!r}, got {result.text!r}"
     assert len(result.children) == len(content.children), (
         f"Children count changed: {len(content.children)} -> {len(result.children)}"
     )
@@ -4563,9 +4580,7 @@ def test_overlay_identity(parent_text: str, child_label: str, child_text: str) -
 
 LABEL_STRS = st.one_of(
     st.integers(min_value=1, max_value=100).map(str),
-    st.builds(lambda n, s: f"{n}{s}",
-              st.integers(min_value=1, max_value=50),
-              st.sampled_from(list("abcdefghij"))),
+    st.builds(lambda n, s: f"{n}{s}", st.integers(min_value=1, max_value=50), st.sampled_from(list("abcdefghij"))),
 )
 
 
@@ -4578,29 +4593,28 @@ def test_sort_label_key_total_order(a: str, b: str) -> None:
     lt = ka < kb
     gt = ka > kb
     eq = ka == kb
-    assert (lt + gt + eq) == 1, (
-        f"Total order violated for {a!r} vs {b!r}: lt={lt}, gt={gt}, eq={eq}"
-    )
+    assert (lt + gt + eq) == 1, f"Total order violated for {a!r} vs {b!r}: lt={lt}, gt={gt}, eq={eq}"
 
 
 # ---------------------------------------------------------------------------
 # Sort key 7: numeric labels 1..20 sort in numeric order
 # ---------------------------------------------------------------------------
 
+
 def test_sort_label_key_numeric_ordering() -> None:
     """Labels '1' through '20' sort in numeric order under _sort_label_key."""
     labels = [str(i) for i in range(1, 21)]
     sorted_labels = sorted(labels, key=_sort_label_key)
-    assert sorted_labels == labels, (
-        f"Numeric sort order wrong: {sorted_labels}"
-    )
+    assert sorted_labels == labels, f"Numeric sort order wrong: {sorted_labels}"
 
 
 # ---------------------------------------------------------------------------
 # Determinism 8: replay_xml is deterministic
 # ---------------------------------------------------------------------------
 
-from lawvm.finland.amendment_selection import resolve_applicable_amendment_records as _resolve_applicable_amendment_records
+from lawvm.finland.amendment_selection import (
+    resolve_applicable_amendment_records as _resolve_applicable_amendment_records,
+)
 from lawvm.finland.corpus import _get_corpus_store
 from lawvm.finland.normalize import _sec1_fallback_peg_skip_required
 from lawvm.finland.process_pipeline import process_muutoslaki
@@ -4634,9 +4648,7 @@ def test_replay_deterministic() -> None:
     master2 = pinned_replay("2009/953")
     text2 = irnode_to_text(master2.ir)
 
-    assert text1 == text2, (
-        "replay_xml is non-deterministic: two calls produced different output"
-    )
+    assert text1 == text2, "replay_xml is non-deterministic: two calls produced different output"
 
 
 def test_omnibus_repeal_sec1_fallback_does_not_skip_parent_repeal(replay_1992_480_finlex_oracle) -> None:
@@ -4826,7 +4838,9 @@ def test_mixed_muutetaan_tail_supplement_recovers_1988_718_base_section_updates(
     master = pinned_replay("1988/718", mode="legal_pit")
     text = master.serialize_text()
 
-    assert "Vuoden 1993 alusta lukien tässä laissa vapaakunnalle säädettyä kokeilua voi harjoittaa myös muu kunta" in text
+    assert (
+        "Vuoden 1993 alusta lukien tässä laissa vapaakunnalle säädettyä kokeilua voi harjoittaa myös muu kunta" in text
+    )
     assert "31 päivään joulukuuta 1996" in text
 
 
@@ -4976,9 +4990,7 @@ def test_sec1_repeal_guard_keeps_single_parent_numbered_enumeration() -> None:
 
 def test_sec1_repeal_guard_skips_citation_free_omnibus_lists() -> None:
     """Citation-free sec_1 repeal lists still need the omnibus PEG skip."""
-    johto = (
-        "kumotaan 1) laki X, 2) laki Y ja 3) laki Z."
-    )
+    johto = "kumotaan 1) laki X, 2) laki Y ja 3) laki Z."
     assert _sec1_fallback_peg_skip_required(johto, "1992/480")
 
 
@@ -5222,9 +5234,7 @@ def test_apply_overlays_records_duplicate_normalized_sibling_issue() -> None:
 
     assert result.children == parent.children
     assert any(
-        issue.kind == "duplicate_normalized_sibling_override"
-        and issue.address == parent_addr
-        for issue in issues
+        issue.kind == "duplicate_normalized_sibling_override" and issue.address == parent_addr for issue in issues
     )
 
 
@@ -5297,7 +5307,8 @@ def test_parent_scoped_sec1_repeals_are_applied() -> None:
     assert "sosiaalilautakunnan ja yksityisen henkilön välillä tehtävään sopimukseen" not in text9
     # §9 should have at least one subsection with lawvm_repeal_placeholder
     repeal_subs = [
-        c for c in secs["9"].children
+        c
+        for c in secs["9"].children
         if c.kind == IRNodeKind.SUBSECTION and c.attrs.get("lawvm_repeal_placeholder") == "1"
     ]
     assert len(repeal_subs) > 0
@@ -5330,10 +5341,7 @@ from lawvm.uk_legislation.uk_amendment_replay import UKReplayExecutor
 
 def _make_uk_statute(sections: list[tuple[str, str]]) -> IRStatute:
     """Build a minimal UK-style IRStatute with flat body sections."""
-    children = [
-        IRNode(kind=IRNodeKind.SECTION, label=label, text=text)
-        for label, text in sections
-    ]
+    children = [IRNode(kind=IRNodeKind.SECTION, label=label, text=text) for label, text in sections]
     return IRStatute(
         statute_id="ukpga/2000/1",
         title="Test Act 2000",
@@ -5490,10 +5498,12 @@ def test_uk_executor_replace_emits_snapshot() -> None:
 
 def test_uk_executor_repeal_emits_tombstone_snapshot() -> None:
     """UKReplayExecutor emits a repeal tombstone snapshot after a repeal op."""
-    statute = _make_uk_statute([
-        ("1", "Section 1 text."),
-        ("2", "Section 2 text."),
-    ])
+    statute = _make_uk_statute(
+        [
+            ("1", "Section 1 text."),
+            ("2", "Section 2 text."),
+        ]
+    )
     lo: List[LegalOperation] = []
 
     executor = UKReplayExecutor(statute, lo_ops_out=lo)
@@ -5560,31 +5570,37 @@ def test_uk_executor_no_snapshots_when_lo_ops_out_is_none() -> None:
 
 def test_uk_compile_timelines_from_snapshots() -> None:
     """compile_timelines on UK lo_ops_out produces correct provision version history."""
-    statute = _make_uk_statute([
-        ("1", "Original section 1."),
-        ("2", "Original section 2."),
-    ])
+    statute = _make_uk_statute(
+        [
+            ("1", "Original section 1."),
+            ("2", "Original section 2."),
+        ]
+    )
     lo: List[LegalOperation] = []
 
     executor = UKReplayExecutor(statute, lo_ops_out=lo)
 
     # Apply two ops: replace s1, then replace s2
-    executor.apply_op(LegalOperation(
-        op_id="op1",
-        sequence=1,
-        action=StructuralAction.REPLACE,
-        target=LegalAddress(path=(("section", "1"),)),
-        payload=IRNode(kind=IRNodeKind.SECTION, label="1", text="Amended section 1 v1."),
-        source=_make_src("ukpga/2005/10", "2005-01-01"),
-    ))
-    executor.apply_op(LegalOperation(
-        op_id="op2",
-        sequence=2,
-        action=StructuralAction.REPLACE,
-        target=LegalAddress(path=(("section", "2"),)),
-        payload=IRNode(kind=IRNodeKind.SECTION, label="2", text="Amended section 2 v1."),
-        source=_make_src("ukpga/2008/4", "2008-06-01"),
-    ))
+    executor.apply_op(
+        LegalOperation(
+            op_id="op1",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "1"),)),
+            payload=IRNode(kind=IRNodeKind.SECTION, label="1", text="Amended section 1 v1."),
+            source=_make_src("ukpga/2005/10", "2005-01-01"),
+        )
+    )
+    executor.apply_op(
+        LegalOperation(
+            op_id="op2",
+            sequence=2,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "2"),)),
+            payload=IRNode(kind=IRNodeKind.SECTION, label="2", text="Amended section 2 v1."),
+            source=_make_src("ukpga/2008/4", "2008-06-01"),
+        )
+    )
 
     timelines = _compile_timelines_with_explicit_temporal_authority(
         statute,
@@ -5672,9 +5688,7 @@ def test_whole_subsection_replace_does_not_splice_stale_items_from_trailing_omis
     # Only kohta 1 and 2 should remain after 2019/1391 replaces the subsection
     assert labels == ["1", "2"], f"Expected only kohta 1 and 2 after 2019/1391 replace; got {labels}"
     # Verify the new kohta 2 text (not the original text with "tai" condition)
-    kohta2_text = " ".join(
-        c.text for p in paras if p.label == "2" for c in p.children if c.kind == IRNodeKind.CONTENT
-    )
+    kohta2_text = " ".join(c.text for p in paras if p.label == "2" for c in p.children if c.kind == IRNodeKind.CONTENT)
     assert "periaatteellisesti huomattava merkitys" in kohta2_text
     # Confirm kohta 3 ("jos vuokrauksella...") is NOT present — it was in the original
     # but was removed by the 2019/1391 whole-subsection replace
@@ -5696,8 +5710,30 @@ def test_sparse_middle_subsection_replaces_follow_explicit_target_moments() -> N
 
 def test_sort_label_key_roman_numerals() -> None:
     """Roman numerals sort by numeric value beyond the old fixed-lookup range."""
-    roman = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X",
-             "XI", "XII", "XIII", "XIV", "XV", "XVI", "XVII", "XVIII", "XIX", "XX", "XXI", "XXX"]
+    roman = [
+        "I",
+        "II",
+        "III",
+        "IV",
+        "V",
+        "VI",
+        "VII",
+        "VIII",
+        "IX",
+        "X",
+        "XI",
+        "XII",
+        "XIII",
+        "XIV",
+        "XV",
+        "XVI",
+        "XVII",
+        "XVIII",
+        "XIX",
+        "XX",
+        "XXI",
+        "XXX",
+    ]
     sorted_roman = sorted(roman, key=_sort_label_key)
     assert sorted_roman == roman, f"Roman numeral order wrong: {sorted_roman}"
 
@@ -5711,6 +5747,7 @@ def test_sort_label_key_roman_numerals() -> None:
 # Bug #2: select_active_version two-rail (temporary overlay priority)
 # ---------------------------------------------------------------------------
 
+
 def test_select_active_version_two_rail_temporary_wins_over_permanent() -> None:
     """select_active_version at a date inside a temporary window returns the
     temporary version, not its same-source deferred permanent version.
@@ -5720,38 +5757,41 @@ def test_select_active_version_two_rail_temporary_wins_over_permanent() -> None:
     over v3.
     """
     addr = LegalAddress(path=(("section", "1"),))
-    tl = ProvisionTimeline(address=addr, versions=[
-        ProvisionVersion(
-            effective="2000-01-01",
-            enacted="2000-01-01",
-            variant_kind="permanent",
-            content=IRNode(kind=IRNodeKind.SECTION, label="1", text="permanent v1"),
-        ),
-        ProvisionVersion(
-            effective="2004-01-01",
-            enacted="2004-01-01",
-            expires="2016-01-01",
-            variant_kind="temporary",
-            content=IRNode(kind=IRNodeKind.SECTION, label="1", text="temporary v2"),
-            source=OperationSource(
-                statute_id="test/temp-window",
-                enacted="2004-01-01",
+    tl = ProvisionTimeline(
+        address=addr,
+        versions=[
+            ProvisionVersion(
+                effective="2000-01-01",
+                enacted="2000-01-01",
+                variant_kind="permanent",
+                content=IRNode(kind=IRNodeKind.SECTION, label="1", text="permanent v1"),
+            ),
+            ProvisionVersion(
                 effective="2004-01-01",
-                expires="2016-01-01",
-            ),
-        ),
-        ProvisionVersion(
-            effective="2010-01-01",
-            enacted="2010-01-01",
-            variant_kind="permanent",
-            content=IRNode(kind=IRNodeKind.SECTION, label="1", text="permanent v3"),
-            source=OperationSource(
-                statute_id="test/temp-window",
                 enacted="2004-01-01",
-                effective="2010-01-01",
+                expires="2016-01-01",
+                variant_kind="temporary",
+                content=IRNode(kind=IRNodeKind.SECTION, label="1", text="temporary v2"),
+                source=OperationSource(
+                    statute_id="test/temp-window",
+                    enacted="2004-01-01",
+                    effective="2004-01-01",
+                    expires="2016-01-01",
+                ),
             ),
-        ),
-    ])
+            ProvisionVersion(
+                effective="2010-01-01",
+                enacted="2010-01-01",
+                variant_kind="permanent",
+                content=IRNode(kind=IRNodeKind.SECTION, label="1", text="permanent v3"),
+                source=OperationSource(
+                    statute_id="test/temp-window",
+                    enacted="2004-01-01",
+                    effective="2010-01-01",
+                ),
+            ),
+        ],
+    )
 
     # At 2012: inside temporary window -> temporary v2 should win
     active = select_active_version(tl, "2012-01-01")
@@ -5778,38 +5818,41 @@ def test_select_active_version_two_rail_temporary_wins_over_permanent() -> None:
 def test_select_active_version_independent_later_background_supersedes_temporary() -> None:
     """A later independent same-address rewrite is lex posterior over an older temporary snapshot."""
     addr = LegalAddress(path=(("section", "1"),))
-    tl = ProvisionTimeline(address=addr, versions=[
-        ProvisionVersion(
-            effective="2000-01-01",
-            enacted="2000-01-01",
-            variant_kind="permanent",
-            content=IRNode(kind=IRNodeKind.SECTION, label="1", text="permanent v1"),
-        ),
-        ProvisionVersion(
-            effective="2004-01-01",
-            enacted="2004-01-01",
-            expires="2016-01-01",
-            variant_kind="temporary",
-            content=IRNode(kind=IRNodeKind.SECTION, label="1", text="temporary v2"),
-            source=OperationSource(
-                statute_id="test/temp-window",
-                enacted="2004-01-01",
+    tl = ProvisionTimeline(
+        address=addr,
+        versions=[
+            ProvisionVersion(
+                effective="2000-01-01",
+                enacted="2000-01-01",
+                variant_kind="permanent",
+                content=IRNode(kind=IRNodeKind.SECTION, label="1", text="permanent v1"),
+            ),
+            ProvisionVersion(
                 effective="2004-01-01",
+                enacted="2004-01-01",
                 expires="2016-01-01",
+                variant_kind="temporary",
+                content=IRNode(kind=IRNodeKind.SECTION, label="1", text="temporary v2"),
+                source=OperationSource(
+                    statute_id="test/temp-window",
+                    enacted="2004-01-01",
+                    effective="2004-01-01",
+                    expires="2016-01-01",
+                ),
             ),
-        ),
-        ProvisionVersion(
-            effective="2010-01-01",
-            enacted="2010-01-01",
-            variant_kind="permanent",
-            content=IRNode(kind=IRNodeKind.SECTION, label="1", text="independent v3"),
-            source=OperationSource(
-                statute_id="test/independent-successor",
-                enacted="2010-01-01",
+            ProvisionVersion(
                 effective="2010-01-01",
+                enacted="2010-01-01",
+                variant_kind="permanent",
+                content=IRNode(kind=IRNodeKind.SECTION, label="1", text="independent v3"),
+                source=OperationSource(
+                    statute_id="test/independent-successor",
+                    enacted="2010-01-01",
+                    effective="2010-01-01",
+                ),
             ),
-        ),
-    ])
+        ],
+    )
 
     active = select_active_version(tl, "2012-01-01")
     assert active is not None
@@ -5946,11 +5989,7 @@ def test_materialize_pit_temporary_parent_masks_only_background_descendants() ->
     }
 
     pit = materialize_pit(timelines, "2016-01-01", base=base)
-    section_node = next(
-        child
-        for child in pit.body.children
-        if child.kind is IRNodeKind.SECTION and child.label == "7"
-    )
+    section_node = next(child for child in pit.body.children if child.kind is IRNodeKind.SECTION and child.label == "7")
     text = irnode_to_text(section_node)
 
     assert "older child 1" not in text
@@ -5970,23 +6009,26 @@ def test_select_active_version_filters_by_territory_applicability() -> None:
         dimension="territory",
         includes=frozenset({"Scotland"}),
     )
-    tl = ProvisionTimeline(address=addr, versions=[
-        ProvisionVersion(
-            effective="2000-01-01",
-            enacted="2000-01-01",
-            variant_kind="permanent",
-            content=IRNode(kind=IRNodeKind.SECTION, label="1", text="England text"),
-            applicability=[england_only],
-        ),
-        ProvisionVersion(
-            effective="2010-01-01",
-            enacted="2010-01-01",
-            variant_kind="temporary",
-            expires="2015-12-31",
-            content=IRNode(kind=IRNodeKind.SECTION, label="1", text="Scotland temp"),
-            applicability=[scotland_only],
-        ),
-    ])
+    tl = ProvisionTimeline(
+        address=addr,
+        versions=[
+            ProvisionVersion(
+                effective="2000-01-01",
+                enacted="2000-01-01",
+                variant_kind="permanent",
+                content=IRNode(kind=IRNodeKind.SECTION, label="1", text="England text"),
+                applicability=[england_only],
+            ),
+            ProvisionVersion(
+                effective="2010-01-01",
+                enacted="2010-01-01",
+                variant_kind="temporary",
+                expires="2015-12-31",
+                content=IRNode(kind=IRNodeKind.SECTION, label="1", text="Scotland temp"),
+                applicability=[scotland_only],
+            ),
+        ],
+    )
 
     england = select_active_version(tl, "2012-01-01", territory="England")
     assert england is not None
@@ -6061,9 +6103,7 @@ def test_materialize_pit_territory_falls_back_when_overlay_scope_mismatches() ->
         base=base,
         territory="England",
     )
-    england_section = next(
-        c for c in pit_england.body.children if c.kind == IRNodeKind.SECTION and c.label == "1"
-    )
+    england_section = next(c for c in pit_england.body.children if c.kind == IRNodeKind.SECTION and c.label == "1")
     assert irnode_to_text(england_section) == "England permanent"
 
     pit_scotland = materialize_pit(
@@ -6072,9 +6112,7 @@ def test_materialize_pit_territory_falls_back_when_overlay_scope_mismatches() ->
         base=base,
         territory="Scotland",
     )
-    scotland_section = next(
-        c for c in pit_scotland.body.children if c.kind == IRNodeKind.SECTION and c.label == "1"
-    )
+    scotland_section = next(c for c in pit_scotland.body.children if c.kind == IRNodeKind.SECTION and c.label == "1")
     assert irnode_to_text(scotland_section) == "Scotland temporary"
 
 
@@ -6126,9 +6164,7 @@ def test_materialize_pit_restores_base_owned_permanent_amendment_after_temporary
         title="Temporary chain",
         body=IRNode(
             kind=IRNodeKind.BODY,
-            children=(
-                IRNode(kind=IRNodeKind.SECTION, label="1", text="base text"),
-            ),
+            children=(IRNode(kind=IRNodeKind.SECTION, label="1", text="base text"),),
         ),
     )
     addr = LegalAddress(path=(("section", "1"),))
@@ -6250,15 +6286,18 @@ def test_select_active_version_ex_marks_missing_territory_scope() -> None:
         dimension="territory",
         includes=frozenset({"England"}),
     )
-    tl = ProvisionTimeline(address=addr, versions=[
-        ProvisionVersion(
-            effective="2000-01-01",
-            enacted="2000-01-01",
-            variant_kind="permanent",
-            content=IRNode(kind=IRNodeKind.SECTION, label="1", text="England text"),
-            applicability=[england_only],
-        ),
-    ])
+    tl = ProvisionTimeline(
+        address=addr,
+        versions=[
+            ProvisionVersion(
+                effective="2000-01-01",
+                enacted="2000-01-01",
+                variant_kind="permanent",
+                content=IRNode(kind=IRNodeKind.SECTION, label="1", text="England text"),
+                applicability=[england_only],
+            ),
+        ],
+    )
 
     selection = select_active_version_ex(tl, "2012-01-01")
 
@@ -6507,8 +6546,179 @@ def test_materialize_pit_keeps_older_section_child_absent_from_later_section_pay
     subsection_labels = [child.label for child in section.children if child.kind == IRNodeKind.SUBSECTION]
 
     assert subsection_labels == ["1", "2", "3"]
-    subsection_1 = next(child for child in section.children if child.kind == IRNodeKind.SUBSECTION and child.label == "1")
+    subsection_1 = next(
+        child for child in section.children if child.kind == IRNodeKind.SUBSECTION and child.label == "1"
+    )
     assert irnode_to_text(subsection_1) == "Older subsection 1"
+
+
+def test_materialize_pit_sparse_parent_overlay_preserves_base_snapshot_tail() -> None:
+    """A sparse parent snapshot must overlay matching children, not replace the full base node."""
+    base = IRStatute(
+        statute_id="test/sparse-parent-tail",
+        title="Sparse parent tail",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="2",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SECTION,
+                            label="10",
+                            children=(
+                                IRNode(kind=IRNodeKind.NUM, text="10 §"),
+                                IRNode(kind=IRNodeKind.HEADING, text="Base heading"),
+                                IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Base first"),
+                                IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="Base second"),
+                                IRNode(kind=IRNodeKind.SUBSECTION, label="3", text="Base third"),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    section_addr = LegalAddress(path=(("chapter", "2"), ("section", "10")))
+    timelines = _compile_timelines_with_explicit_temporal_authority(
+        base,
+        [
+            LegalOperation(
+                op_id="replace_sparse_section_10",
+                sequence=1,
+                action=StructuralAction.REPLACE,
+                target=section_addr,
+                payload=IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="10",
+                    attrs={"lawvm_tail_policy": "preserve_unstated_tail"},
+                    children=(
+                        IRNode(kind=IRNodeKind.NUM, text="10 §"),
+                        IRNode(kind=IRNodeKind.HEADING, text="Updated heading"),
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="New second"),
+                    ),
+                ),
+                source=OperationSource(
+                    statute_id="2010/322",
+                    enacted="2010-04-30",
+                    effective="2010-06-01",
+                ),
+                group_id="g:sparse-parent-tail",
+            ),
+        ],
+        base_date="2007-03-30",
+        temporal_events=(
+            TemporalEvent(
+                event_id="ev:sparse-parent-tail",
+                group_id="g:sparse-parent-tail",
+                kind="commence",
+                activation_rule=ActivationRule(kind="fixed_date", effective_date="2010-06-01"),
+                scope=TemporalScope(target_statute="test/sparse-parent-tail"),
+            ),
+        ),
+    )
+
+    pit = materialize_pit(timelines, "2011-01-01", base=base)
+    chapter = next(c for c in pit.body.children if c.kind == IRNodeKind.CHAPTER and c.label == "2")
+    section = next(c for c in chapter.children if c.kind == IRNodeKind.SECTION and c.label == "10")
+    assert [child.label for child in section.children if child.kind == IRNodeKind.SUBSECTION] == ["1", "2", "3"]
+    assert "Base first" in irnode_to_text(section)
+    assert "New second" in irnode_to_text(section)
+    assert "Base third" in irnode_to_text(section)
+    assert "Base second" not in irnode_to_text(section)
+
+
+def test_materialize_pit_sparse_parent_preserved_tail_does_not_mask_newer_child() -> None:
+    """Inherited sparse-tail filler must not outrank an explicit later child timeline."""
+    base = IRStatute(
+        statute_id="test/sparse-parent-tail-child-override",
+        title="Sparse parent tail child override",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="2",
+                    children=(
+                        IRNode(kind=IRNodeKind.NUM, text="2 §"),
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Base first"),
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="Base second"),
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="3", text="Base third"),
+                    ),
+                ),
+            ),
+        ),
+    )
+    section_addr = LegalAddress(path=(("section", "2"),))
+    subsection_3_addr = LegalAddress(path=(("section", "2"), ("subsection", "3")))
+    timelines = _compile_timelines_with_explicit_temporal_authority(
+        base,
+        [
+            LegalOperation(
+                op_id="replace_sparse_section_2",
+                sequence=1,
+                action=StructuralAction.REPLACE,
+                target=section_addr,
+                payload=IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="2",
+                    attrs={"lawvm_tail_policy": "preserve_unstated_tail"},
+                    children=(
+                        IRNode(kind=IRNodeKind.NUM, text="2 §"),
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="Sparse second"),
+                    ),
+                ),
+                source=OperationSource(
+                    statute_id="2010/1",
+                    enacted="2010-01-01",
+                    effective="2010-01-01",
+                ),
+                group_id="g:sparse-parent-tail",
+            ),
+            LegalOperation(
+                op_id="replace_subsection_3",
+                sequence=2,
+                action=StructuralAction.REPLACE,
+                target=subsection_3_addr,
+                payload=IRNode(kind=IRNodeKind.SUBSECTION, label="3", text="Later explicit third"),
+                source=OperationSource(
+                    statute_id="2018/1",
+                    enacted="2018-01-01",
+                    effective="2018-01-01",
+                ),
+                group_id="g:later-child",
+            ),
+        ],
+        base_date="2007-01-01",
+        temporal_events=(
+            TemporalEvent(
+                event_id="ev:sparse-parent-tail",
+                group_id="g:sparse-parent-tail",
+                kind="commence",
+                activation_rule=ActivationRule(kind="fixed_date", effective_date="2010-01-01"),
+                scope=TemporalScope(target_statute="test/sparse-parent-tail-child-override"),
+            ),
+            TemporalEvent(
+                event_id="ev:later-child",
+                group_id="g:later-child",
+                kind="commence",
+                activation_rule=ActivationRule(kind="fixed_date", effective_date="2018-01-01"),
+                scope=TemporalScope(target_statute="test/sparse-parent-tail-child-override"),
+            ),
+        ),
+    )
+
+    pit = materialize_pit(timelines, "2019-01-01", base=base)
+    section = next(c for c in pit.body.children if c.kind == IRNodeKind.SECTION and c.label == "2")
+    section_text = irnode_to_text(section)
+
+    assert [child.label for child in section.children if child.kind == IRNodeKind.SUBSECTION] == ["1", "2", "3"]
+    assert "Base first" in section_text
+    assert "Sparse second" in section_text
+    assert "Later explicit third" in section_text
+    assert "Base second" not in section_text
+    assert "Base third" not in section_text
 
 
 def test_materialize_pit_exact_section_replace_masks_absent_older_children() -> None:
@@ -6604,12 +6814,14 @@ def test_compile_timelines_seeds_and_materializes_schedule_roots() -> None:
         statute_id="test/schedules",
         title="Schedule timeline test",
         body=IRNode(kind=IRNodeKind.BODY, children=()),
-        supplements=(IRNode(
+        supplements=(
+            IRNode(
                 kind=IRNodeKind.SCHEDULE,
                 label="1",
                 text="Base schedule",
                 children=(IRNode(kind=IRNodeKind.PARAGRAPH, label="1", text="Old para"),),
-            ),),
+            ),
+        ),
     )
     schedule_addr = LegalAddress(path=(("schedule", "1"),))
     timelines = _compile_timelines_with_explicit_temporal_authority(
@@ -7115,11 +7327,7 @@ def test_compile_timelines_records_empty_same_day_interval_issue() -> None:
     assert same_day_issues[0].strict_disposition == "record"
     assert same_day_issues[0].quirks_disposition == "record"
     assert same_day_issues[0].rule_id == "timeline.empty_same_day_interval"
-    assert [
-        warning
-        for warning in captured
-        if "empty same-day temporal interval" in str(warning.message)
-    ] == []
+    assert [warning for warning in captured if "empty same-day temporal interval" in str(warning.message)] == []
 
 
 def test_compile_timelines_embedded_activation_rule_drives_contingent_skip() -> None:
@@ -7963,8 +8171,21 @@ def test_compile_timelines_ambiguous_suffix_records_issue() -> None:
     base = IRStatute(
         statute_id="test/ambig",
         title="Ambiguous suffix test",
-        body=IRNode(kind=IRNodeKind.BODY, children=(IRNode(kind=IRNodeKind.CHAPTER, label="1", children=(IRNode(kind=IRNodeKind.SECTION, label="5", text="ch1 sec5"),)),
-            IRNode(kind=IRNodeKind.CHAPTER, label="2", children=(IRNode(kind=IRNodeKind.SECTION, label="5", text="ch2 sec5"),)),)),
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="1",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="5", text="ch1 sec5"),),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="2",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="5", text="ch2 sec5"),),
+                ),
+            ),
+        ),
     )
     # Op targets section 5 without chapter context — ambiguous suffix
     ambig_addr = LegalAddress(path=(("section", "5"),))
@@ -8016,8 +8237,10 @@ def test_apply_overlays_dup_norm_siblings_exact_label_fallback() -> None:
     content = IRNode(
         kind=IRNodeKind.SECTION,
         label="1",
-        children=(IRNode(kind=IRNodeKind.PARAGRAPH, label="1", text="original para 1"),
-            IRNode(kind=IRNodeKind.PARAGRAPH, label="1.", text="original para 1-dot"),),
+        children=(
+            IRNode(kind=IRNodeKind.PARAGRAPH, label="1", text="original para 1"),
+            IRNode(kind=IRNodeKind.PARAGRAPH, label="1.", text="original para 1-dot"),
+        ),
     )
     parent_addr = LegalAddress(path=(("section", "1"),))
 
@@ -8051,8 +8274,10 @@ def test_apply_overlays_dup_norm_unmatched_override_emits_warning() -> None:
     content = IRNode(
         kind=IRNodeKind.SECTION,
         label="1",
-        children=(IRNode(kind=IRNodeKind.PARAGRAPH, label="1.", text="original para 1-dot"),
-            IRNode(kind=IRNodeKind.PARAGRAPH, label="1..", text="original para 1-dotdot"),),
+        children=(
+            IRNode(kind=IRNodeKind.PARAGRAPH, label="1.", text="original para 1-dot"),
+            IRNode(kind=IRNodeKind.PARAGRAPH, label="1..", text="original para 1-dotdot"),
+        ),
     )
     parent_addr = LegalAddress(path=(("section", "1"),))
 
@@ -8182,7 +8407,9 @@ def test_compile_timelines_temporal_event_not_matched_skips_source_dates() -> No
     assert active_2010_07.effective == "2000-01-01"
 
 
-def test_compile_timelines_finland_johto_temporal_event_mismatch_skips_source_dates_when_provenance_ordering_explicit() -> None:
+def test_compile_timelines_finland_johto_temporal_event_mismatch_skips_source_dates_when_provenance_ordering_explicit() -> (
+    None
+):
     """Finland batch IDs still need explicit temporal events; provenance is ordering-only."""
     base = IRStatute(
         statute_id="test/temporal-not-matched-fi-batch",
@@ -8326,8 +8553,7 @@ def test_compile_timelines_no_temporal_event_not_matched_with_explicit_authority
 
     issue_kinds = {issue.kind for issue in result.issues}
     assert "temporal_event_not_matched" not in issue_kinds, (
-        f"Should NOT emit temporal_event_not_matched with explicit temporal authority, "
-        f"got: {issue_kinds!r}"
+        f"Should NOT emit temporal_event_not_matched with explicit temporal authority, got: {issue_kinds!r}"
     )
     target_tl = result.timelines[addr]
     active_2010_07 = select_active_version(target_tl, "2010-07-01")
@@ -8699,11 +8925,14 @@ def test_renumber_lineage_is_deterministic_under_event_permutation(
     start_addr, final_addr, shuffled_events, version = case
     timelines = {final_addr: ProvisionTimeline(address=final_addr, versions=[version])}
 
-    assert current_address_from_migration_events(
-        start_addr,
-        shuffled_events,
-        as_of_date="2030-12-31",
-    ) == final_addr
+    assert (
+        current_address_from_migration_events(
+            start_addr,
+            shuffled_events,
+            as_of_date="2030-12-31",
+        )
+        == final_addr
+    )
     assert provision_lineage(
         timelines,
         start_addr,

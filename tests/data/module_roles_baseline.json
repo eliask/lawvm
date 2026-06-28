@@ -2,16 +2,15 @@
   "_doc": "Monotone module-role baseline. The `dead` and `test_only_live` sets may only SHRINK: a module born dead must be wired or deleted, never added to the population. The `replay_exercised` map is a SNAPSHOT: a module flipping replay-exercised status (either direction) fails the ratchet until re-baselined. Regenerate with `uv run python scripts/inventory_module_roles.py --update-baseline` after legitimately retiring (deleting) a dead/test-only module, wiring it to a production consumer, or refreshing the replay-coverage snapshot (tests/data/replay_coverage_snapshot.json — see its provenance.refresh_command).",
   "counts": {
     "dead": 73,
-    "live": 1008,
-    "test_only_live": 28
+    "live": 1030,
+    "test_only_live": 27
   },
   "replay_counts": {
     "exercised": 170,
-    "cold": 242,
-    "in_scope": 412
+    "cold": 245,
+    "in_scope": 415
   },
   "dead": [
-    "lawvm.core.certified_transition",
     "lawvm.core.claim_assumption_binding",
     "lawvm.core.compile_metadata_verify",
     "lawvm.core.downgrade_witness",
@@ -82,6 +81,7 @@
     "lawvm.uk_legislation.acquisition_frontier",
     "lawvm.uk_legislation.si_commencement_audit",
     "lawvm.uk_legislation.si_source_semantics",
+    "lawvm.uk_legislation.uk_assumptions",
     "lawvm.us_federal.effect_candidates",
     "lawvm.us_federal.import_statute"
   ],
@@ -90,7 +90,6 @@
     "lawvm.core.claim_surface_manifest",
     "lawvm.core.fire_drill_registry",
     "lawvm.core.invariant_spec",
-    "lawvm.core.materialization_universe",
     "lawvm.core.proof_surfaces",
     "lawvm.eu.eu_acquire",
     "lawvm.eu_lex",
@@ -117,6 +116,7 @@
   ],
   "live_replay_cold": [
     "lawvm.finland._compile",
+    "lawvm.finland._receipt_path_norm",
     "lawvm.finland.actor_mention_extractor",
     "lawvm.finland.agreement_residual_proof_projector",
     "lawvm.finland.apply_intent_facade",
@@ -133,6 +133,7 @@
     "lawvm.finland.claim_kinds.xml_manual_frontier",
     "lawvm.finland.compile",
     "lawvm.finland.corrigendum_proof_projector",
+    "lawvm.finland.definition_introducer",
     "lawvm.finland.delegation",
     "lawvm.finland.effect_lifecycle_projection",
     "lawvm.finland.effect_lifecycle_signals",
@@ -155,6 +156,7 @@
     "lawvm.finland.johtolause.diagnostics",
     "lawvm.finland.johtolause.grammar",
     "lawvm.finland.johtolause.grammar.diff",
+    "lawvm.finland.johtolause.jolloin_pair",
     "lawvm.finland.johtolause.lower_surface",
     "lawvm.finland.johtolause.provenance_span",
     "lawvm.finland.johtolause.rule_registry",
@@ -351,6 +353,7 @@
   },
   "replay_exercised": {
     "lawvm.finland._compile": false,
+    "lawvm.finland._receipt_path_norm": false,
     "lawvm.finland.acquisition": true,
     "lawvm.finland.actor_mention_extractor": false,
     "lawvm.finland.address_parse": true,
@@ -423,6 +426,7 @@
     "lawvm.finland.corrigendum": true,
     "lawvm.finland.corrigendum_proof_projector": false,
     "lawvm.finland.corrigendum_records": true,
+    "lawvm.finland.definition_introducer": false,
     "lawvm.finland.delegation": false,
     "lawvm.finland.editorial_adjudication": false,
     "lawvm.finland.effect_lifecycle_projection": false,
@@ -480,6 +484,7 @@
     "lawvm.finland.johtolause.grammar.sections": true,
     "lawvm.finland.johtolause.grammar.subref": true,
     "lawvm.finland.johtolause.grammar.tail": true,
+    "lawvm.finland.johtolause.jolloin_pair": false,
     "lawvm.finland.johtolause.lexer": true,
     "lawvm.finland.johtolause.lexicon": true,
     "lawvm.finland.johtolause.lower_clause_ast": true,

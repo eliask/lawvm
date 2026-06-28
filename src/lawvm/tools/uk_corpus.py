@@ -51,6 +51,7 @@ from lawvm.uk_legislation.source_state import (
     fetch_uk_multiple_choice_candidate_sources,
     uk_multiple_choice_candidate_data_urls,
 )
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 _LEG_BASE = "https://www.legislation.gov.uk"
 _USER_AGENT = LAWVM_USER_AGENT
@@ -97,7 +98,7 @@ def _affecting_acquisition_event(
         "reason": reason,
         "blocking": blocking,
         "strict_disposition": "block" if blocking else "record",
-        "quirks_disposition": "record",
+        "quirks_disposition": QuirksDisposition.RECORD,
     }
 
 

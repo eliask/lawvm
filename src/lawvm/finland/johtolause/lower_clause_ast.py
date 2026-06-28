@@ -76,6 +76,7 @@ from lawvm.finland.johtolause.surface_resolve import (
     ResolvedVerbGroup,
     ResolutionWitness,
 )
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 
 FI_TEXT_AMEND_UNLOWERABLE_EMPTY_SELECTOR_RULE_ID = "fi.text_amend.unlowerable_empty_selector.v1"
@@ -94,7 +95,7 @@ class ClauseAstLoweringDiagnostic:
     family: str
     reason_code: str
     strict_disposition: str
-    quirks_disposition: str
+    quirks_disposition: QuirksDisposition
     detail: dict[str, object]
 
 
@@ -539,7 +540,7 @@ def _record_unlowerable_special_target(
             family="unsupported_target_granularity",
             reason_code="SPECIAL_SUBPROVISION_HAS_NO_TYPED_ADDRESS",
             strict_disposition="block",
-            quirks_disposition="record",
+            quirks_disposition=QuirksDisposition.RECORD,
             detail={
                 "descriptor": descriptor,
                 "host_target": str(host),
@@ -872,7 +873,7 @@ def _record_unlowerable_text_amend(
             family="unsupported_action",
             reason_code="EMPTY_TEXT_SELECTOR",
             strict_disposition="block",
-            quirks_disposition="record",
+            quirks_disposition=QuirksDisposition.RECORD,
             detail={
                 "old_text": old_text,
                 "new_text": new_text,

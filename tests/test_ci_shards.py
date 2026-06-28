@@ -271,7 +271,7 @@ def test_test_shard_evidence_group_expands_to_subshards() -> None:
     module = _load_test_shard_module()
 
     assert module.expand_shard_names(["evidence"]) == EVIDENCE_EXECUTION_SHARDS
-    assert module.shard_plan("evidence")["assigned_file_count"] == 20
+    assert module.shard_plan("evidence")["assigned_file_count"] == 23
     assert module.affected_shards(["tests/test_evidence.py"]) == ["evidence_claims"]
     assert module.affected_shards(["tests/test_fi_explain_facade.py"]) == ["evidence_reports"]
 
@@ -725,6 +725,43 @@ def test_test_shard_maps_core_and_dependency_changes_to_all() -> None:
 
     assert module.affected_shards(["src/lawvm/core/timeline.py"]) == ["all"]
     assert module.affected_shards(["pyproject.toml"]) == ["all"]
+
+
+def test_test_shard_maps_finland_corrigendum_manual_to_bounded_fi_shards() -> None:
+    module = _load_test_shard_module()
+
+    assert module.affected_shards(
+        [
+            "data/finland/corrigendum_manual.yaml",
+            "tests/test_fi_replay_products.py",
+        ]
+    ) == [
+        "finland_replay_products_core",
+        "finland_replay_rules",
+    ]
+    assert _without_path_expanded_shards(module.affected_plan(
+        ["data/finland/corrigendum_manual.yaml"]
+    )) == {
+        "kind": "lawvm_pytest_affected_shards",
+        "input_paths": ["data/finland/corrigendum_manual.yaml"],
+        "shards": [
+            "finland_replay_products_core",
+            "finland_replay_rules",
+        ],
+        "paths": [
+            {
+                "path": "data/finland/corrigendum_manual.yaml",
+                "shards": [
+                    "finland_replay_products_core",
+                    "finland_replay_rules",
+                ],
+                "reason": (
+                    "known frontend prefix data/finland/corrigendum_manual.yaml maps "
+                    "to finland_replay_products_core, finland_replay_rules"
+                ),
+            }
+        ],
+    }
 
 
 def test_test_shard_maps_shared_non_core_modules_to_bounded_shards() -> None:

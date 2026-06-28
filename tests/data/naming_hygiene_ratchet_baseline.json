@@ -76,7 +76,7 @@
     "sparse_slot_candidate_certificate",
     "sparse_slot_candidate_certificates"
   ],
-  "public_schema_count": 157,
+  "public_schema_count": 159,
   "public_schemas": [
     "lawvm.address_id.v1",
     "lawvm.address_node.v1",
@@ -182,6 +182,8 @@
     "lawvm.residual_ledger.v0",
     "lawvm.residual_ledger_validation.v1",
     "lawvm.scope_predicate.v1",
+    "lawvm.se_coverage_universe.v0",
+    "lawvm.se_overwrite_event.v0",
     "lawvm.selection_candidate_set.v1",
     "lawvm.selection_profile.v1",
     "lawvm.selection_row.v1",

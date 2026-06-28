@@ -48,6 +48,68 @@ class StructuralAction(Enum):
 
 
 # ---------------------------------------------------------------------------
+# StructuralAction string codec (jurisdiction-neutral)
+# ---------------------------------------------------------------------------
+#
+# Frontends carry their lowering decisions as the boundary action strings
+# (``"replace"`` / ``"repeal"`` / ``"insert"`` / ``"renumber"`` /
+# ``"text_replace"`` / ``"text_repeal"`` / ``"heading_replace"`` / ``"meta"``)
+# before constructing a ``LegalOperation``. These two helpers are the single
+# jurisdiction-neutral codec for that boundary, replacing per-frontend
+# duplicates (EE ``grafter._to_structural_action``, UK
+# ``lowering_actions._to_structural_action``, NO ``grafter._no_action_value``).
+#
+# ``structural_action_from_str`` is fail-loud by default: an action string that
+# does not name a member raises ``ValueError`` rather than silently collapsing
+# to ``META`` (the previous per-frontend behaviour, an unowned mislabel
+# channel). Each ``StructuralAction`` member's ``.value`` is, by enum design,
+# exactly the boundary string, so the mapping is the enum constructor itself.
+
+
+def structural_action_from_str(
+    s: str | StructuralAction,
+    *,
+    on_unknown: str = "raise",
+) -> StructuralAction:
+    """Map a boundary action string to its ``StructuralAction`` member.
+
+    ``s`` may already be a ``StructuralAction`` (returned unchanged) or one of
+    the boundary action strings whose value names an enum member.
+
+    ``on_unknown`` governs an unrecognised string:
+        - ``"raise"`` (default): raise ``ValueError`` — fail-loud. An action
+          string that names no member is a real, unhandled vocabulary case and
+          must surface, not be silently mislabelled ``META``.
+        - ``"meta"``: legacy permissive fallback returning ``StructuralAction.META``.
+          Only for explicitly opted-in legacy call sites.
+    """
+    if isinstance(s, StructuralAction):
+        return s
+    try:
+        return StructuralAction(s)
+    except ValueError:
+        pass
+    if on_unknown == "meta":
+        return StructuralAction.META
+    if on_unknown == "raise":
+        raise ValueError(
+            f"unknown structural action string {s!r}; expected one of "
+            f"{sorted(member.value for member in StructuralAction)}"
+        )
+    raise ValueError(f"unknown on_unknown policy {on_unknown!r}; expected 'raise' or 'meta'")
+
+
+def structural_action_value(action: StructuralAction | str) -> str:
+    """Return the boundary string value for a ``StructuralAction`` or string.
+
+    Accepts either a ``StructuralAction`` (returns its ``.value``) or a string
+    already at the boundary (returned unchanged). Jurisdiction-neutral inverse
+    of ``structural_action_from_str`` for comparisons and serialization.
+    """
+    return action.value if isinstance(action, StructuralAction) else action
+
+
+# ---------------------------------------------------------------------------
 # LabelAction -- label/heading-level operations
 # ---------------------------------------------------------------------------
 

@@ -1,4 +1,52 @@
+"""UK CLML source-tree parser: builds a frozen ``IRStatute`` / ``IRNode`` tree
+WITHOUT in-place parse-time mutation.
+
+Construction strategy (Wave N3d Sub-PR A of the mutable_ir ratchet, audit
+XJUR-02, AGENTS.md §2.3 "never mutate the parsed source tree after parse"):
+
+  Parse-time construction in this module uses ONLY:
+    * direct ``IRNode(...)`` constructor calls with VALUED fields (kind,
+      label, text, attrs, children) computed UP-FRONT from the source XML, and
+    * ``dataclasses.replace(node, ...)`` for any post-construction adjustment
+      (inferred container number, p1group heading attachment, sibling-label
+      disambiguation).
+  There are NO in-place ``node.x = y`` writes, ``node.attrs[k] = v`` writes,
+  ``node.children = ...`` writes, or ``node.children.insert(…)`` / ``.append(…)``
+  during parsing. This eliminates the parse-time mutation pattern (the prior
+  ``_add_attrs`` + ``node.children = …`` + ``node.text = …`` sequence).
+
+  String kinds produced by ``_get_kind`` are coerced to ``IRNodeKind`` via
+  ``uk_ir_node_kind`` at the construction site: ``IRNode`` itself does not
+  coerce strings to enum (the core IR contract holds ``kind: IRNodeKind``),
+  whereas the previous ``UKMutableNode.__post_init__`` did. Sites that pass
+  an ``IRNodeKind`` literal are unaffected.
+
+  The IR-tree boundary (``parse_uk_statute_ir`` / ``parse_uk_statute_ir_bytes``
+  → ``IRStatute`` with frozen ``IRNode`` body/supplements) returns the
+  constructed ``IRNode`` tree directly: previously the parser built a
+  ``UKMutableNode`` tree and converted at ``_build_ir_from_root`` via
+  ``to_irnode()``; that boundary call is dropped because the parser already
+  builds ``IRNode`` branches directly. The returned ``IRStatute`` is
+  byte-identical to the pre-Sub-PR-A output (the prior ``UKMutableNode`` →
+  ``to_irnode()`` round-trip produced the same frozen ``IRNode`` shape).
+
+Sibling replay/lowering modules that consume these helpers directly today
+(``effect_payload_normalization``, ``effect_schedule_lowering``,
+``effect_special_lowering``, ``table_selectors``) read the returned ``IRNode``
+via ``IRNode.to_jsonable_dict()`` (same JSON shape as the prior
+``UKMutableNode.to_dict()``) or use it directly. Sub-PR F (mutable_ir Wave N3d,
+final) deleted the ``mutable_ir.py`` shadow module: ``payload_conversion.py``'s
+``_to_mutable_node`` / ``_to_irnode`` now return frozen ``IRNode`` directly
+(identity for ``IRNode`` inputs, recursive dict→``IRNode`` builder for the
+legacy dict-shaped source-payload path), and the in-place ``uk_*`` mutation
+helpers were superseded by the CoW variants in ``apply_rebuild.py``.
+
+Tests pin (1) no in-place mutation during parsing, and (2) byte-identical
+IRNode tree at the parse boundary.
+"""
+
 from lxml import etree as ET
+import dataclasses
 import json
 import re
 import warnings
@@ -11,7 +59,8 @@ from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.ir import IRNode, IRStatute
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.roman import roman_to_arabic as _shared_roman_to_arabic
-from lawvm.uk_legislation.mutable_ir import UKMutableNode
+from lawvm.uk_legislation.apply_rebuild import uk_ir_node_kind
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 _LEG_NS = "http://www.legislation.gov.uk/namespaces/legislation"
 _USER_AGENT = "LawVM-Replayer/1.0"
@@ -343,11 +392,32 @@ def _extract_num(el: Optional[ET._Element]) -> str:
     return _text_content(el)
 
 
-def _add_attrs(node: UKMutableNode, el: ET._Element):
-    for attr in ["eId", "id", "Status", "RestrictStartDate", "RestrictEndDate"]:
+# Source-XML attributes copied onto each parsed IR node so replay can ground by
+# ``eId``/``id`` and respect ``Status``/``RestrictStartDate``/``RestrictEndDate``.
+# Kept as a tuple so callers cannot accidentally mutate the list and alter global
+# state — each consumer materialises its own dict via ``_collect_source_attrs``.
+_SOURCE_ATTR_NAMES: tuple[str, ...] = (
+    "eId",
+    "id",
+    "Status",
+    "RestrictStartDate",
+    "RestrictEndDate",
+)
+
+
+def _collect_source_attrs(el: ET._Element) -> dict[str, str]:
+    """Return the ``eId``/``id``/``Status``/etc. attrs from ``el`` as a dict.
+
+    Pure helper: returns a fresh dict the caller merges into its constructed
+    ``IRNode.attrs``. Replaces the prior ``_add_attrs(node, el)`` mutating helper
+    so the parser never mutates an existing IR node (PR1 migration).
+    """
+    out: dict[str, str] = {}
+    for attr in _SOURCE_ATTR_NAMES:
         val = el.get(attr)
         if val:
-            node.attrs[attr] = val
+            out[attr] = val
+    return out
 
 
 def _roman_to_int(s: str) -> str:
@@ -404,22 +474,33 @@ def _infer_container_number_from_source_uri(el: ET._Element, *, prefix: str) -> 
 
 
 def _maybe_infer_container_number(
-    node: UKMutableNode,
+    node: IRNode,
     el: ET._Element,
     *,
     prefix: str,
     original_label: str,
-) -> None:
+) -> IRNode:
+    """Return ``node`` with a possible inferred container number applied.
+
+    If ``el``'s eId/id uniquely identifies a container number not present in the
+    visible label, return a NEW ``IRNode`` with the inferred label and the four
+    ``source_*`` attrs that witness the inference (rule id, original/inferred
+    label, source identifier). Otherwise return ``node`` unchanged. Pure (PR1
+    migration): the prior helper performed in-place ``node.label = ...`` /
+    ``node.attrs[...] = ...`` writes; this version rebuilds via
+    ``dataclasses.replace``.
+    """
     if _clean_num(original_label) not in {"", prefix}:
-        return
+        return node
     inferred = _infer_container_number_from_source_uri(el, prefix=prefix)
     if not inferred:
-        return
-    node.label = inferred
-    node.attrs["source_rule_id"] = _UK_CONTAINER_NUMBER_INFERRED_RULE_ID
-    node.attrs["source_original_label"] = original_label
-    node.attrs["source_inferred_label"] = inferred
-    node.attrs["source_identifier"] = str(el.get("eId") or el.get("id") or "")
+        return node
+    new_attrs = dict(node.attrs)
+    new_attrs["source_rule_id"] = _UK_CONTAINER_NUMBER_INFERRED_RULE_ID
+    new_attrs["source_original_label"] = original_label
+    new_attrs["source_inferred_label"] = inferred
+    new_attrs["source_identifier"] = str(el.get("eId") or el.get("id") or "")
+    return dataclasses.replace(node, label=inferred, attrs=new_attrs)
 
 
 _UK_TABLE_ROW_TAGS = frozenset({"row", "tr"})
@@ -550,11 +631,11 @@ def _parse_definition_ordered_list(
     el: ET._Element,
     parent_el: ET._Element,
     context: str = "",
-) -> list[UKMutableNode]:
+) -> list[IRNode]:
     term = _definition_ordered_list_term(parent_el, el)
     if not term:
         return []
-    nodes: list[UKMutableNode] = []
+    nodes: list[IRNode] = []
     item_index = 0
     in_body = not context.startswith("schedule")
     for child in el:
@@ -577,19 +658,20 @@ def _parse_definition_ordered_list(
         else:
             kind = IRNodeKind.ITEM
             node_label = None
-        new_node = UKMutableNode(
-            kind=kind,
+        attrs: dict[str, Any] = {
+            "source_rule_id": "uk_definition_ordered_list_child_preserved",
+            "definition_term": term,
+            "definition_child_label": label,
+            "source_tag": _tag(el),
+            "source_list_type": el.get("Type", ""),
+        }
+        attrs.update(_collect_source_attrs(child))
+        new_node = IRNode(
+            kind=uk_ir_node_kind(kind),
             label=node_label,
             text=text,
-            attrs={
-                "source_rule_id": "uk_definition_ordered_list_child_preserved",
-                "definition_term": term,
-                "definition_child_label": label,
-                "source_tag": _tag(el),
-                "source_list_type": el.get("Type", ""),
-            },
+            attrs=attrs,
         )
-        _add_attrs(new_node, child)
         nodes.append(new_node)
     return nodes
 
@@ -600,7 +682,7 @@ def _parse_definition_unordered_list(
     force_active: bool = False,
     pit_date: Optional[str] = None,
     is_eur: bool = False,
-) -> list[UKMutableNode]:
+) -> list[IRNode]:
     """Parse a ``<UnorderedList Class="Definition">`` in body context.
 
     Each top-level ``ListItem`` introduces a definition term and may carry a
@@ -651,7 +733,7 @@ def _parse_definition_unordered_list(
         assert ordered_list is not None
         return _parse_definition_ordered_list(ordered_list, para, context)
 
-    nodes: list[UKMutableNode] = []
+    nodes: list[IRNode] = []
     for item, para, ordered_list, intro in item_infos:
         if not intro and ordered_list is None:
             continue
@@ -666,15 +748,19 @@ def _parse_definition_unordered_list(
         }
         if ordered_list is not None and term:
             attrs["definition_term"] = term
-        node = UKMutableNode(
+        attrs.update(_collect_source_attrs(item))
+        children = (
+            list(_parse_definition_ordered_list(ordered_list, para, context))
+            if ordered_list is not None
+            else []
+        )
+        node = IRNode(
             kind=IRNodeKind.PARAGRAPH,
             label=None,
             text=intro,
             attrs=attrs,
+            children=tuple(children),
         )
-        _add_attrs(node, item)
-        if ordered_list is not None:
-            node.children = _parse_definition_ordered_list(ordered_list, para, context)
         nodes.append(node)
     return nodes
 
@@ -711,8 +797,8 @@ def _parse_generic_ordered_list(
     force_active: bool,
     pit_date: Optional[str],
     is_eur: bool,
-) -> list[UKMutableNode]:
-    nodes: list[UKMutableNode] = []
+) -> list[IRNode]:
+    nodes: list[IRNode] = []
     item_index = 0
     for child in el:
         if _tag(child) != "ListItem":
@@ -739,15 +825,19 @@ def _parse_generic_ordered_list(
                 else:
                     kind = "paragraph"
 
-        new_node = UKMutableNode(
-            kind=cast(IRNodeKind, kind),
+        children = _parse_children(child, context, force_active, pit_date, is_eur)
+        # Original behavior: if the ListItem has structural children, the node
+        # text is empty (children carry the body); otherwise the ListItem's
+        # text content is the node text.  Preserved by computing text upfront.
+        text = "" if children else _text_content(child)
+        attrs = _collect_source_attrs(child)
+        new_node = IRNode(
+            kind=uk_ir_node_kind(kind),
             label=label,
-            text="",
-            children=_parse_children(child, context, force_active, pit_date, is_eur),
+            text=text,
+            attrs=attrs,
+            children=tuple(children),
         )
-        if not new_node.children:
-            new_node.text = _text_content(child)
-        _add_attrs(new_node, child)
         nodes.append(new_node)
     return nodes
 
@@ -762,7 +852,7 @@ def _schedule_list_entry_node(
     source_context: str = "schedule_body",
     source_rule_id: str = _UK_SCHEDULE_LIST_ENTRY_RULE_ID,
     preserve_source_eid: bool = False,
-) -> UKMutableNode | None:
+):
     text = _text_content(el)
     if not text:
         return None
@@ -776,22 +866,21 @@ def _schedule_list_entry_node(
         attrs["source_list_type"] = source_list_type
     if source_decoration:
         attrs["source_decoration"] = source_decoration
-    node = UKMutableNode(
+    if preserve_source_eid:
+        attrs.update(_collect_source_attrs(el))
+    return IRNode(
         kind=IRNodeKind.SCHEDULE_ENTRY,
         label=None,
         text=text,
         attrs=attrs,
     )
-    if preserve_source_eid:
-        _add_attrs(node, el)
-    return node
 
 
-def _parse_schedule_body_list_entries(el: ET._Element, *, start_ordinal: int) -> list[UKMutableNode]:
+def _parse_schedule_body_list_entries(el: ET._Element, *, start_ordinal: int) -> list[IRNode]:
     tag = _tag(el)
     if tag != "UnorderedList":
         return []
-    nodes: list[UKMutableNode] = []
+    nodes: list[IRNode] = []
     for child in el:
         if _tag(child) != "ListItem":
             continue
@@ -807,10 +896,10 @@ def _parse_schedule_body_list_entries(el: ET._Element, *, start_ordinal: int) ->
     return nodes
 
 
-def _parse_non_schedule_list_entries(el: ET._Element, *, context: str, start_ordinal: int) -> list[UKMutableNode]:
+def _parse_non_schedule_list_entries(el: ET._Element, *, context: str, start_ordinal: int) -> list[IRNode]:
     if _tag(el) != "UnorderedList":
         return []
-    nodes: list[UKMutableNode] = []
+    nodes: list[IRNode] = []
     for child in el:
         if _tag(child) != "ListItem":
             continue
@@ -835,10 +924,10 @@ def _parse_schedule_body_p_entries(
     force_active: bool = False,
     pit_date: Optional[str] = None,
     is_eur: bool = False,
-) -> list[UKMutableNode]:
+) -> list[IRNode]:
     if _tag(el) != "P":
         return []
-    nodes: list[UKMutableNode] = []
+    nodes: list[IRNode] = []
     for child in el:
         if _tag(child) == "UnorderedList":
             nodes.extend(_parse_schedule_body_list_entries(child, start_ordinal=start_ordinal + len(nodes)))
@@ -854,9 +943,13 @@ def _parse_schedule_body_p_entries(
         )
         if node is None:
             return []
-        node.text = _local_structural_text(el)
+        # Override default text with structural text and extend children with
+        # the parsed ordered-list items.  Old code did this as in-place
+        # ``node.text = `` / ``node.children.extend(...)``; now an explicit
+        # build via ``dataclasses.replace`` (PR1: no in-place mutation).
+        children: list[IRNode] = []
         for ordered_list in ordered_lists:
-            node.children.extend(
+            children.extend(
                 _parse_generic_ordered_list(
                     ordered_list,
                     "schedule",
@@ -865,6 +958,11 @@ def _parse_schedule_body_p_entries(
                     is_eur,
                 )
             )
+        node = dataclasses.replace(
+            node,
+            text=_local_structural_text(el),
+            children=tuple(children),
+        )
         return [node]
     child_tags = {_tag(child).lower() for child in el}
     if child_tags & _UK_SCHEDULE_ENTRY_BLOCKING_TAGS:
@@ -889,8 +987,8 @@ def _table_attrs(el: ET._Element, names: tuple[str, ...]) -> dict[str, Any]:
     return attrs
 
 
-def _parse_table_row(el: ET._Element, *, header_context: bool) -> UKMutableNode | None:
-    cells: list[UKMutableNode] = []
+def _parse_table_row(el: ET._Element, *, header_context: bool):
+    cells: list[IRNode] = []
     for child in el:
         tag = _tag(child).lower()
         if tag not in _UK_TABLE_CELL_TAGS:
@@ -909,7 +1007,7 @@ def _parse_table_row(el: ET._Element, *, header_context: bool) -> UKMutableNode 
             )
             attrs["source_rule_id"] = "uk_table_cell_ordered_list_units_preserved"
         cells.append(
-            UKMutableNode(
+            IRNode(
                 kind=cell_kind,
                 text=_text_content(child),
                 attrs=attrs,
@@ -917,10 +1015,10 @@ def _parse_table_row(el: ET._Element, *, header_context: bool) -> UKMutableNode 
         )
     if not cells:
         return None
-    return UKMutableNode(
+    return IRNode(
         kind=IRNodeKind.ROW,
         attrs=_table_attrs(el, ("eId", "id")),
-        children=cells,
+        children=tuple(cells),
     )
 
 
@@ -949,8 +1047,8 @@ def _table_cell_ordered_list_units(el: ET._Element) -> list[dict[str, str]]:
     return units
 
 
-def _parse_table_rows(el: ET._Element, *, header_context: bool = False) -> list[UKMutableNode]:
-    rows: list[UKMutableNode] = []
+def _parse_table_rows(el: ET._Element, *, header_context: bool = False) -> list[IRNode]:
+    rows: list[IRNode] = []
     for child in el:
         tag = _tag(child).lower()
         if tag in _UK_TABLE_ROW_TAGS:
@@ -984,15 +1082,15 @@ def _local_table_text(el: ET._Element) -> str:
     return " ".join(" ".join(_collect(el)).split())
 
 
-def _parse_table(el: ET._Element, context, force_active=False, pit_date=None, is_eur=False) -> UKMutableNode | None:
+def _parse_table(el: ET._Element, context, force_active=False, pit_date=None, is_eur=False):
     del context, is_eur
     if _is_zombie(el, force_active, pit_date):
         return None
-    return UKMutableNode(
+    return IRNode(
         kind=IRNodeKind.TABLE,
         text=_local_table_text(el),
         attrs=_table_attrs(el, ("eId", "id")),
-        children=_parse_table_rows(el),
+        children=tuple(_parse_table_rows(el)),
     )
 
 
@@ -1002,16 +1100,23 @@ def _parse_block_amendment_tables(
     force_active=False,
     pit_date=None,
     is_eur=False,
-) -> list[UKMutableNode]:
-    tables: list[UKMutableNode] = []
+) -> list[IRNode]:
+    tables: list[IRNode] = []
     for child in el.iter():
         if child is el or _tag(child) not in {"Table", "table"}:
             continue
         table = _parse_table(child, context, force_active, pit_date, is_eur)
         if table is None:
             continue
-        table.attrs["source_rule_id"] = _UK_BLOCK_AMENDMENT_TABLE_RULE_ID
-        table.attrs["source_container"] = "BlockAmendment"
+        # Old code mutated ``table.attrs[...]`` in place; now rebuild the node
+        # via ``dataclasses.replace`` so the parser never mutates an existing
+        # IRNode (PR1: no in-place mutation).
+        new_attrs = {
+            **dict(table.attrs),
+            "source_rule_id": _UK_BLOCK_AMENDMENT_TABLE_RULE_ID,
+            "source_container": "BlockAmendment",
+        }
+        table = dataclasses.replace(table, attrs=new_attrs)
         tables.append(table)
     return tables
 
@@ -1175,7 +1280,7 @@ def _record_physical_eid_drift(
             "xml_tag": tag,
             "physical_path_key": path_key,
             "strict_disposition": "block",
-            "quirks_disposition": "record",
+            "quirks_disposition": QuirksDisposition.RECORD,
         }
     )
 
@@ -1225,7 +1330,7 @@ def _record_visible_number_eid_alias(
             "visible_number": clean_leaf,
             "physical_path_key": path_key,
             "strict_disposition": "block",
-            "quirks_disposition": "record",
+            "quirks_disposition": QuirksDisposition.RECORD,
         }
     )
 
@@ -1294,8 +1399,8 @@ def _is_zombie(el: ET._Element, force_active: bool = False, pit_date: Optional[s
     return False
 
 
-def _parse_children(parent_el, context, force_active=False, pit_date=None, is_eur=False):
-    children = []
+def _parse_children(parent_el, context, force_active=False, pit_date=None, is_eur=False) -> list[IRNode]:
+    children: list[IRNode] = []
     schedule_entry_ordinal = 1
     structural_tags = (
         "Part",
@@ -1413,10 +1518,10 @@ def _parse_children(parent_el, context, force_active=False, pit_date=None, is_eu
 
 
 def _disambiguate_duplicate_labels(
-    children: list[UKMutableNode],
+    children: list[IRNode],
     parent_el: ET._Element,
     context: str,
-) -> list[UKMutableNode]:
+) -> list[IRNode]:
     """Make sibling labels unique using the source element id when available.
 
     UK current/oracle CLML sometimes carries multiple provisions with the same
@@ -1429,6 +1534,12 @@ def _disambiguate_duplicate_labels(
 
     Schedule payloads rely on their own eId-synthesis duplication guard, so
     this disambiguation is applied only in body context.
+
+    PR1: the prior implementation mutated each ``child.label`` and
+    ``child.attrs`` in place; this returns a NEW list with rebuilt
+    ``IRNode`` instances via ``dataclasses.replace``, so the parser never
+    mutates a node already constructed.  Behavior is byte-identical (same
+    labels, same attrs, same child order).
     """
     if context.startswith("schedule"):
         return children
@@ -1443,9 +1554,11 @@ def _disambiguate_duplicate_labels(
     if not labels_to_fix:
         return children
     seen: dict[str, int] = {}
+    new_children: list[IRNode] = []
     for child in children:
         canonical = child.label
         if not canonical or canonical not in labels_to_fix:
+            new_children.append(child)
             continue
         child_id = (child.attrs.get("id") or child.attrs.get("eId") or "").strip()
         new_label = ""
@@ -1469,14 +1582,23 @@ def _disambiguate_duplicate_labels(
                 # collision with the real numbered sibling of the same kind
                 # (e.g. "\u201c-1" would normalize to "1" and clash with subsection 1).
                 new_label = f"n{seen[canonical]}"
-                child.attrs.setdefault(
-                    "source_rule_id",
-                    "uk_quoted_substitution_payload_sibling_synthesized_label",
-                )
+                # Original behavior: ``child.attrs.setdefault("source_rule_id",
+                # "uk_quoted_substitution_payload_sibling_synthesized_label")``.
+                # Rebuild the attrs dict and IRNode ONLY if the rule_id was
+                # missing (matches setdefault's no-op-when-present semantics).
+                if "source_rule_id" not in child.attrs:
+                    new_attrs = dict(child.attrs)
+                    new_attrs["source_rule_id"] = (
+                        "uk_quoted_substitution_payload_sibling_synthesized_label"
+                    )
+                    new_children.append(
+                        dataclasses.replace(child, label=new_label, attrs=new_attrs)
+                    )
+                    continue
             else:
                 new_label = f"{canonical}-{seen[canonical]}"
-        child.label = new_label
-    return children
+        new_children.append(dataclasses.replace(child, label=new_label))
+    return new_children
 
 
 def _parse_part(el, context, force_active=False, pit_date=None, is_eur=False):
@@ -1485,11 +1607,17 @@ def _parse_part(el, context, force_active=False, pit_date=None, is_eur=False):
     num_el = el.find(f"./{{{_LEG_NS}}}Number")
     num = _extract_num(num_el) or _text_content(num_el)
     title = _text_content(el.find(f"./{{{_LEG_NS}}}Title"))
-    node = UKMutableNode(kind=IRNodeKind.PART, label=num, text=title)
-    _add_attrs(node, el)
+    attrs = _collect_source_attrs(el)
+    children = _parse_children(el, context, force_active, pit_date, is_eur)
+    node = IRNode(
+        kind=IRNodeKind.PART,
+        label=num,
+        text=title,
+        attrs=attrs,
+        children=tuple(children),
+    )
     if not force_active:
-        _maybe_infer_container_number(node, el, prefix="part", original_label=num)
-    node.children = _parse_children(el, context, force_active, pit_date, is_eur)
+        node = _maybe_infer_container_number(node, el, prefix="part", original_label=num)
     return node
 
 
@@ -1498,10 +1626,15 @@ def _parse_chapter(el, context, force_active=False, pit_date=None, is_eur=False)
         return None
     num = _extract_num(el.find(f"./{{{_LEG_NS}}}Number"))
     title = _text_content(el.find(f"./{{{_LEG_NS}}}Title"))
-    node = UKMutableNode(kind=IRNodeKind.CHAPTER, label=num, text=title)
-    _add_attrs(node, el)
-    node.children = _parse_children(el, context, force_active, pit_date, is_eur)
-    return node
+    attrs = _collect_source_attrs(el)
+    children = _parse_children(el, context, force_active, pit_date, is_eur)
+    return IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label=num,
+        text=title,
+        attrs=attrs,
+        children=tuple(children),
+    )
 
 
 _P1GROUP_SECTIONLIKE_HEADING_KINDS = frozenset(
@@ -1515,16 +1648,21 @@ def _parse_p1group(el, context, force_active=False, pit_date=None, is_eur=False)
         return None
     title_el = el.find(f"./{{{_LEG_NS}}}Title")
     title = _text_content(title_el)
-    node = UKMutableNode(kind=IRNodeKind.P1GROUP, label=None, text=title)
-    _add_attrs(node, el)
-    node.children = _parse_children(el, context, force_active, pit_date, is_eur)
-    _attach_p1group_title_to_sole_section(node, title, context)
-    return node
+    attrs = _collect_source_attrs(el)
+    children = _parse_children(el, context, force_active, pit_date, is_eur)
+    node = IRNode(
+        kind=IRNodeKind.P1GROUP,
+        label=None,
+        text=title,
+        attrs=attrs,
+        children=tuple(children),
+    )
+    return _attach_p1group_title_to_sole_section(node, title, context)
 
 
 def _attach_p1group_title_to_sole_section(
-    node: UKMutableNode, title: str, context: str = ""
-) -> None:
+    node: IRNode, title: str, context: str = ""
+) -> IRNode:
     """Carry a ``P1group/Title`` as a ``heading`` child on its sole section.
 
     The CLML wraps each enacted section as
@@ -1544,22 +1682,29 @@ def _attach_p1group_title_to_sole_section(
     title onto that sole paragraph would erase the crossheading wrapper and lose
     the schedule crossheading EID, so the title is preserved on the wrapper in
     schedule context.
+
+    PR1: previously this helper mutated ``section.children`` in place (inserted
+    a heading at index 0) and cleared ``node.text``; it now RETURNS a new
+    ``IRNode`` rebuilt via ``dataclasses.replace`` so the parser never
+    mutates an existing node. Behavior byte-identical (same children, same attrs,
+    same order).
     """
     if not title:
-        return
+        return node
     if str(context or "").startswith("schedule"):
-        return
-    section_children = [
-        child
-        for child in node.children
+        return node
+    section_indices = [
+        i
+        for i, child in enumerate(node.children)
         if child.kind.value in _P1GROUP_SECTIONLIKE_HEADING_KINDS
     ]
-    if len(section_children) != 1:
-        return
-    section = section_children[0]
+    if len(section_indices) != 1:
+        return node
+    section_idx = section_indices[0]
+    section = node.children[section_idx]
     if any(child.kind is IRNodeKind.HEADING for child in section.children):
-        return
-    heading_child = UKMutableNode(
+        return node
+    heading_child = IRNode(
         kind=IRNodeKind.HEADING,
         label=None,
         text=title,
@@ -1568,8 +1713,17 @@ def _attach_p1group_title_to_sole_section(
             "source_rule_id": _UK_P1GROUP_HEADING_CARRIER_RULE_ID,
         },
     )
-    section.children.insert(0, heading_child)
-    node.text = ""
+    new_section = dataclasses.replace(
+        section,
+        children=(heading_child, *section.children),
+    )
+    new_node_children = list(node.children)
+    new_node_children[section_idx] = new_section
+    return dataclasses.replace(
+        node,
+        children=tuple(new_node_children),
+        text="",
+    )
 
 
 def _parse_pgroup(el, context, force_active=False, pit_date=None, is_eur=False):
@@ -1578,18 +1732,19 @@ def _parse_pgroup(el, context, force_active=False, pit_date=None, is_eur=False):
         return None
     title_el = el.find(f"./{{{_LEG_NS}}}Title")
     title = _text_content(title_el)
-    node = UKMutableNode(
+    attrs: dict[str, Any] = {
+        "source_tag": _tag(el),
+        "source_rule_id": "uk_parse_subordinate_pgroup_heading_carrier",
+    }
+    attrs.update(_collect_source_attrs(el))
+    children = _parse_children(el, context, force_active, pit_date, is_eur)
+    return IRNode(
         kind=IRNodeKind.PGROUP,
         label=None,
         text=title,
-        attrs={
-            "source_tag": _tag(el),
-            "source_rule_id": "uk_parse_subordinate_pgroup_heading_carrier",
-        },
+        attrs=attrs,
+        children=tuple(children),
     )
-    _add_attrs(node, el)
-    node.children = _parse_children(el, context, force_active, pit_date, is_eur)
-    return node
 
 
 def _parse_section(el, context, force_active=False, pit_date=None, is_eur=False):
@@ -1597,17 +1752,7 @@ def _parse_section(el, context, force_active=False, pit_date=None, is_eur=False)
         return None
     num = _extract_num(el.find(f"./{{{_LEG_NS}}}Pnumber")) or _extract_num(el.find(f"./{{{_LEG_NS}}}Number"))
     kind = _get_kind(_tag(el), context, is_eur)
-    node = UKMutableNode(kind=cast(IRNodeKind, kind), label=num, text="")
-    _add_attrs(node, el)
-    node.children = _parse_children(el, context, force_active, pit_date, is_eur)
-    if not node.children:
-        node.text = _leaf_provision_text(el)
-    else:
-        node.text = _local_structural_text(el)
-        post_child_tail = _post_child_local_text_tail(el)
-        if post_child_tail:
-            node.attrs["uk_post_child_text_tail"] = post_child_tail
-    return node
+    return _build_provisioned_node(el, kind, num, context, force_active, pit_date, is_eur)
 
 
 def _parse_p2(el, context, force_active=False, pit_date=None, is_eur=False):
@@ -1615,17 +1760,7 @@ def _parse_p2(el, context, force_active=False, pit_date=None, is_eur=False):
         return None
     num = _extract_num(el.find(f"./{{{_LEG_NS}}}Pnumber"))
     kind = _get_kind(_tag(el), context, is_eur)
-    node = UKMutableNode(kind=cast(IRNodeKind, kind), label=num, text="")
-    _add_attrs(node, el)
-    node.children = _parse_children(el, context, force_active, pit_date, is_eur)
-    if not node.children:
-        node.text = _leaf_provision_text(el)
-    else:
-        node.text = _local_structural_text(el)
-        post_child_tail = _post_child_local_text_tail(el)
-        if post_child_tail:
-            node.attrs["uk_post_child_text_tail"] = post_child_tail
-    return node
+    return _build_provisioned_node(el, kind, num, context, force_active, pit_date, is_eur)
 
 
 def _parse_p3(el, context, force_active=False, pit_date=None, is_eur=False):
@@ -1633,17 +1768,7 @@ def _parse_p3(el, context, force_active=False, pit_date=None, is_eur=False):
         return None
     num = _extract_num(el.find(f"./{{{_LEG_NS}}}Pnumber"))
     kind = _get_kind(_tag(el), context, is_eur)
-    node = UKMutableNode(kind=cast(IRNodeKind, kind), label=num, text="")
-    _add_attrs(node, el)
-    node.children = _parse_children(el, context, force_active, pit_date, is_eur)
-    if not node.children:
-        node.text = _leaf_provision_text(el)
-    else:
-        node.text = _local_structural_text(el)
-        post_child_tail = _post_child_local_text_tail(el)
-        if post_child_tail:
-            node.attrs["uk_post_child_text_tail"] = post_child_tail
-    return node
+    return _build_provisioned_node(el, kind, num, context, force_active, pit_date, is_eur)
 
 
 def _parse_p4(el, context, force_active=False, pit_date=None, is_eur=False):
@@ -1651,27 +1776,59 @@ def _parse_p4(el, context, force_active=False, pit_date=None, is_eur=False):
         return None
     num = _extract_num(el.find(f"./{{{_LEG_NS}}}Pnumber"))
     kind = _get_kind(_tag(el), context, is_eur)
-    node = UKMutableNode(kind=cast(IRNodeKind, kind), label=num, text="")
-    _add_attrs(node, el)
-    node.children = _parse_children(el, context, force_active, pit_date, is_eur)
-    if not node.children:
-        node.text = _leaf_provision_text(el)
+    return _build_provisioned_node(el, kind, num, context, force_active, pit_date, is_eur)
+
+
+def _build_provisioned_node(
+    el: ET._Element,
+    kind: str,
+    num: str,
+    context: str,
+    force_active: bool,
+    pit_date: Optional[str],
+    is_eur: bool,
+) -> IRNode:
+    """Build a section-like ``IRNode`` from ``el`` (P1/P2/P3/P4/Section/Article/...).
+
+    Replacement for the four near-identical ``_parse_section``/``_parse_p2``/
+    ``_parse_p3``/``_parse_p4`` bodies that previously shared a
+    ``UKMutableNode`` + ``_add_attrs`` + ``node.children = _parse_children()``
+    + conditional ``node.text = …`` / ``node.attrs["uk_post_child_text_tail"] = …``
+    pattern.  Computes attrs / text / children up front and constructs the
+    ``IRNode`` ONCE (string ``kind`` coerced to ``IRNodeKind`` via
+    ``uk_ir_node_kind``), so no in-place mutation occurs during parsing.
+    """
+    attrs = _collect_source_attrs(el)
+    children = _parse_children(el, context, force_active, pit_date, is_eur)
+    if not children:
+        text = _leaf_provision_text(el)
     else:
-        node.text = _local_structural_text(el)
+        text = _local_structural_text(el)
         post_child_tail = _post_child_local_text_tail(el)
         if post_child_tail:
-            node.attrs["uk_post_child_text_tail"] = post_child_tail
-    return node
+            attrs["uk_post_child_text_tail"] = post_child_tail
+    return IRNode(
+        kind=uk_ir_node_kind(kind),
+        label=num,
+        text=text,
+        attrs=attrs,
+        children=tuple(children),
+    )
 
 
 def _parse_pblock(el, context, force_active=False, pit_date=None, is_eur=False):
     if _is_zombie(el, force_active, pit_date):
         return None
     title = _text_content(el.find(f"./{{{_LEG_NS}}}Title"))
-    node = UKMutableNode(kind=IRNodeKind.CROSSHEADING, label=None, text=title)
-    _add_attrs(node, el)
-    node.children = _parse_children(el, context, force_active, pit_date, is_eur)
-    return node
+    attrs = _collect_source_attrs(el)
+    children = _parse_children(el, context, force_active, pit_date, is_eur)
+    return IRNode(
+        kind=IRNodeKind.CROSSHEADING,
+        label=None,
+        text=title,
+        attrs=attrs,
+        children=tuple(children),
+    )
 
 
 def _parse_schedule_single(el, context, force_active=False, pit_date=None, is_eur=False):
@@ -1685,21 +1842,30 @@ def _parse_schedule_single(el, context, force_active=False, pit_date=None, is_eu
     if title_el is None:
         title_el = el.find(f".//{{{_LEG_NS}}}TitleBlock/{{{_LEG_NS}}}Title")
     title = _text_content(title_el)
-    node = UKMutableNode(kind=IRNodeKind.SCHEDULE, label=num, text=title)
-    _add_attrs(node, el)
-    if not force_active:
-        _maybe_infer_container_number(node, el, prefix="schedule", original_label=raw_num)
+    attrs = _collect_source_attrs(el)
     body = el.find(f".//{{{_LEG_NS}}}ScheduleBody")
-    if body is not None:
-        node.children = _parse_children(body, "schedule", force_active, pit_date, is_eur)
+    children: list[IRNode] = (
+        _parse_children(body, "schedule", force_active, pit_date, is_eur)
+        if body is not None
+        else []
+    )
+    node = IRNode(
+        kind=IRNodeKind.SCHEDULE,
+        label=num,
+        text=title,
+        attrs=attrs,
+        children=tuple(children),
+    )
+    if not force_active:
+        node = _maybe_infer_container_number(node, el, prefix="schedule", original_label=raw_num)
     return node
 
 
-def _parse_schedules(root_el, force_active=False, pit_date=None, is_eur=False):
+def _parse_schedules(root_el, force_active=False, pit_date=None, is_eur=False) -> list[IRNode]:
     s_el = root_el.find(f".//{{{_LEG_NS}}}Schedules")
     if s_el is None:
         return []
-    res = []
+    res: list[IRNode] = []
     for child in s_el:
         if _tag(child) == "Schedule":
             node = _parse_schedule_single(child, "schedule", force_active, pit_date, is_eur)
@@ -1762,8 +1928,8 @@ def _visible_inline_text_preservation_observation(
 
 
 def _source_parse_observations(
-    root_body: UKMutableNode,
-    supplements: list[UKMutableNode],
+    root_body: IRNode,
+    supplements: list[IRNode],
     *,
     statute_id: str,
     version_label: str,
@@ -1772,7 +1938,7 @@ def _source_parse_observations(
     counts: dict[str, int] = {}
     samples: dict[str, list[dict[str, str]]] = {}
 
-    def _walk(node: UKMutableNode) -> None:
+    def _walk(node: IRNode) -> None:
         rule_id = str(node.attrs.get("source_rule_id") or "")
         if rule_id in _SOURCE_PARSE_OBSERVATION_RULE_IDS:
             counts[rule_id] = counts.get(rule_id, 0) + 1
@@ -1930,7 +2096,7 @@ def _build_ir_from_root(
             is_eur = True
             break
 
-    body_nodes = []
+    body_nodes: list[IRNode] = []
     if body_el is not None:
         body_nodes = _parse_children(body_el, "body", False, pit_date, is_eur)
 
@@ -1940,7 +2106,21 @@ def _build_ir_from_root(
             if node:
                 body_nodes.insert(0, node)
 
-    root_body = UKMutableNode(kind=IRNodeKind.BODY, label=None, text="", children=body_nodes)
+    # Parse boundary (Wave N3d Sub-PR A): ``root_body`` and ``schedule_nodes``
+    # are ``IRNode`` trees built WITHOUT in-place parse-time mutation. Each
+    # per-element ``_parse_*`` helper constructs the node once via the
+    # ``IRNode`` constructor (string kinds coerced to ``IRNodeKind`` via
+    # ``uk_ir_node_kind`` at the construction site) with attrs/text/children
+    # computed up-front, and uses ``dataclasses.replace`` for any
+    # post-construction adjustment.  The frozen ``IRStatute`` returned to
+    # callers holds these ``IRNode`` trees directly (no ``UKMutableNode``
+    # intermediate layer at the parse boundary).
+    root_body = IRNode(
+        kind=IRNodeKind.BODY,
+        label=None,
+        text="",
+        children=tuple(body_nodes),
+    )
     schedule_nodes = _parse_schedules(root, False, pit_date, is_eur)
     parse_observations = _source_parse_observations(
         root_body,
@@ -1961,8 +2141,8 @@ def _build_ir_from_root(
     return IRStatute(
         statute_id=sid,
         title=title,
-        body=root_body.to_irnode(),
-        supplements=[schedule.to_irnode() for schedule in schedule_nodes],
+        body=root_body,
+        supplements=schedule_nodes,
         metadata={
             "source_path": source_path,
             "is_eur": is_eur,
@@ -2170,7 +2350,7 @@ def _visit_eid(
                         "xml_tag": tag,
                         "physical_path_key": this_node_path,
                         "strict_disposition": "record",
-                        "quirks_disposition": "record",
+                        "quirks_disposition": QuirksDisposition.RECORD,
                     }
                 )
         if clean_num:
@@ -2243,7 +2423,7 @@ def _visit_eid(
                         "xml_tag": tag,
                         "physical_path_key": this_node_path,
                         "strict_disposition": "record",
-                        "quirks_disposition": "record",
+                        "quirks_disposition": QuirksDisposition.RECORD,
                     }
                 )
 

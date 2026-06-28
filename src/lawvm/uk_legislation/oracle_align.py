@@ -9,6 +9,7 @@ from lawvm.uk_legislation.grounding_classification import (
     classify_suppression_mechanism,
 )
 from lawvm.uk_legislation.uk_amendment_replay import UKReplayExecutor
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 UK_ORACLE_ALIGNMENT_RULE_ID = "uk_oracle_eid_alignment_adapter"
 _TRANSPARENT_WRAPPER_KINDS = frozenset({"p1group", "pblock", "crossheading"})
@@ -56,7 +57,7 @@ class UKOracleAlignmentReport:
     grounding_classification_counts: dict[str, int]
     unclassified_count: int
     strict_disposition: str
-    quirks_disposition: str
+    quirks_disposition: QuirksDisposition
     changes: tuple[UKOracleAlignmentChange, ...] = ()
 
     def to_jsonable_dict(self) -> dict[str, object]:
@@ -117,7 +118,7 @@ def _empty_alignment_report(*, enabled: bool, eid_map: Optional[dict[str, str]])
         grounding_classification_counts={},
         unclassified_count=0,
         strict_disposition="block",
-        quirks_disposition="record",
+        quirks_disposition=QuirksDisposition.RECORD,
     )
 
 
@@ -290,7 +291,7 @@ def _alignment_report(
         grounding_classification_counts=grounding_classification_counts,
         unclassified_count=unclassified_count,
         strict_disposition="block",
-        quirks_disposition="record",
+        quirks_disposition=QuirksDisposition.RECORD,
         changes=tuple(changes),
     )
 
@@ -314,7 +315,9 @@ def align_uk_replay_to_oracle_with_report(
         verbose=verbose,
     )
     executor.ground_ids()
-    aligned = executor.statute.to_irstatute()
+    # Sub-PR C+D: ``executor.statute`` IS the immutable ``IRStatute`` — no
+    # ``to_irstatute()`` boundary call left.
+    aligned = executor.statute
     return UKOracleAlignmentResult(
         statute=aligned,
         report=_alignment_report(

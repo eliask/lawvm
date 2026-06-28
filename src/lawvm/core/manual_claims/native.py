@@ -54,6 +54,7 @@ from lawvm.core.provenance_graph import (
     _sha256,
 )
 from lawvm.core.provenance_graph_storage import GraphStore
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 
 _MANUAL_CLAIM_AUTHORIZATION_FORBIDDEN_SHORTCUTS: tuple[str, ...] = (
@@ -290,7 +291,7 @@ def manual_claim_authorization_projection(
     owner_phase: str = "manual_claim_graph_authorization",
     authorization_rule_id: str = "",
     strict_disposition: str = "",
-    quirks_disposition: str = "record",
+    quirks_disposition: QuirksDisposition = QuirksDisposition.RECORD,
     validator_status: str = "",
     replay_authorized_when_policy_satisfied: bool = False,
 ) -> ExecutionAuthorization:

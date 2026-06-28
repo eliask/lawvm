@@ -19,6 +19,7 @@ from typing import Any, Mapping
 
 from lawvm.core.diagnostic_records import validate_blocking_disposition
 from lawvm.core.frozen_values import freeze_mapping
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,7 +101,7 @@ class CorpusOperationEvidenceRow:
     evidence_status: CorpusRowStatus = CorpusRowStatus.ACCEPTED
     blocking: bool = False
     strict_disposition: str = ""
-    quirks_disposition: str = ""
+    quirks_disposition: QuirksDisposition = QuirksDisposition.UNSET
     finding_ids: tuple[str, ...] = ()
     detail: Mapping[str, Any] = field(default_factory=dict)
 
@@ -138,7 +139,7 @@ class CorpusFindingEvidenceRow:
     related_row_ids: tuple[str, ...] = ()
     blocking: bool = False
     strict_disposition: str = ""
-    quirks_disposition: str = ""
+    quirks_disposition: QuirksDisposition = QuirksDisposition.UNSET
     evidence: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:

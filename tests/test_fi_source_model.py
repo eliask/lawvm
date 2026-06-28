@@ -449,10 +449,10 @@ def test_source_model_exposes_commencement_expiry_override() -> None:
     override = model.commencement_expiry_override("2010/1314")
 
     assert override is not None
-    target_mid, labels, expiry = override
-    assert target_mid == "2004/1428"
-    assert labels is None
-    assert expiry == dt.date(2014, 12, 31)
+    assert override.target_mid == "2004/1428"
+    assert override.labels is None
+    assert override.fallback_effective == dt.date(2005, 1, 1)
+    assert override.expiry == dt.date(2014, 12, 31)
 
 
 def test_source_model_exposes_section_commencement_overrides() -> None:

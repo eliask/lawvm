@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 
@@ -326,10 +327,18 @@ def test_frontend_normalization_runs_through_source_model() -> None:
 
 def test_temporary_payload_expiry_lookup_prefers_source_model_text() -> None:
     source = _source("src/lawvm/finland/frontend_compile.py")
+    tree = ast.parse(source)
 
     assert "lookup_section_payload_text(" in source
     assert "_body_text_for_temporary_op(\n                    op,\n                    muutos_tree=muutos_tree,\n                    source_model=source_model," in source
-    assert "_tag_temporary_ops(\n                ops,\n                amendment_id=amendment_id,\n                muutos_tree=muutos_tree,\n                source_model=source_model," in source
+    assert any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "_tag_temporary_ops"
+        and {keyword.arg for keyword in node.keywords if keyword.arg is not None}
+        >= {"amendment_id", "muutos_tree", "source_model"}
+        for node in ast.walk(tree)
+    )
 
 
 def test_process_pipeline_metadata_reads_use_source_model() -> None:

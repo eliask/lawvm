@@ -15,6 +15,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from lawvm.core.ir import IRNode
+from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.tree_ops import check_invariants
 from lawvm.finland.merge import (
@@ -114,6 +115,37 @@ def omission_subsection_case(draw) -> tuple[IRNode, IRNode, tuple[str, ...]]:
         _omission(),
     )
     return master, amend, touched
+
+
+def test_sparse_item_replacement_accepts_sibling_omission_marker() -> None:
+    """A sibling omission marker witnesses sparse replacement of prefix letters."""
+    master = _para(
+        "1",
+        _num("1"),
+        _intro("0:"),
+        _sp("a", "master a: 0"),
+        _sp("b", "master b: 0"),
+        _sp("c", "master c: 0"),
+    )
+    amend = _sub(
+        "1",
+        _para(
+            "1",
+            _intro("amend 0:"),
+            _sp("a", "amend a: 0"),
+            _sp("b", "amend b: 0"),
+        ),
+        _omission(),
+    )
+
+    result = _merge_sparse_alakohta_replace_ir(master, amend, "1")
+
+    assert result is not None
+    result_map = _subparagraph_by_label(result)
+    assert list(result_map) == ["a", "b", "c"]
+    assert irnode_to_text(result_map["a"]) == "amend a: 0"
+    assert irnode_to_text(result_map["b"]) == "amend b: 0"
+    assert irnode_to_text(result_map["c"]) == "master c: 0"
 
 
 @given(sparse_alakohta_case())

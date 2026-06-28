@@ -55,6 +55,7 @@ from lawvm.finland.johtolause.grammar.containers import (
     recognize_containers,
 )
 from lawvm.finland.johtolause.grammar.jolloin import build_jolloin_group
+from lawvm.finland.johtolause.jolloin_pair import JolloinRenumberPair
 from lawvm.finland.johtolause.grammar.headings import (
     emit_headings_nodes,
     recognize_heading_after_uusi,
@@ -1844,7 +1845,7 @@ def _consume_inline_move_tails(
 
 def _consume_jolloin_move(
     scan: _Scan,
-    jolloin_renumber_pairs: dict[int, list[tuple[str, str, str]]] | None,
+    jolloin_renumber_pairs: dict[int, list[JolloinRenumberPair]] | None,
     consumed_jolloin_positions: list[int] | None,
     consumed_jolloin_contexts: dict[int, tuple[str, str]] | None,
     last_batch: list[SurfaceNode],
@@ -2393,7 +2394,7 @@ def _recognize_first_target_or_empty(
 def _parse_verb_group(
     scan: _Scan,
     ctx: VerbGroupContext,
-    jolloin_renumber_pairs: dict[int, list[tuple[str, str, str]]] | None = None,
+    jolloin_renumber_pairs: dict[int, list[JolloinRenumberPair]] | None = None,
     consumed_jolloin_positions: list[int] | None = None,
     consumed_jolloin_contexts: dict[int, tuple[str, str]] | None = None,
 ) -> tuple[Optional[SourceVerb], list[SurfaceNode], VerbGroupContext]:
@@ -3624,7 +3625,7 @@ def _tail_is_benign(scan: _Scan) -> bool:
 
 def parse(
     tokens: list[Token],
-    jolloin_renumber_pairs: dict[int, list[tuple[str, str, str]]] | None = None,
+    jolloin_renumber_pairs: dict[int, list[JolloinRenumberPair]] | None = None,
 ) -> SurfaceClause:
     """Parse a filtered token stream as a pure structural-target clause.
 

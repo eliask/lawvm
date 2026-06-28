@@ -31,6 +31,7 @@ from lawvm.finland.ops import AmendmentOp
 from lawvm.finland.source_model import AmendmentSourceModel
 from lawvm.finland.temporal_rewrites import _rewrite_lo_op_source_expiry
 from lawvm.finland.vts import VtsSkippedTarget
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 
 RecordProcessFinding = Callable[..., Finding]
@@ -66,7 +67,7 @@ class RouteRejectionDisposition:
     family: str = "source_routing"
     phase: str = "process_muutoslaki.route_rejection"
     strict_disposition: str = "block"
-    quirks_disposition: str = "skip_with_finding"
+    quirks_disposition: QuirksDisposition = QuirksDisposition.SKIP_WITH_FINDING
 
     def as_detail(self, extra: Mapping[str, object] | None = None) -> dict[str, object]:
         detail: dict[str, object] = {
@@ -363,7 +364,10 @@ class ProcessRouteRejectionContext:
         expiry_override = self.source_model.commencement_expiry_override(self.amendment_id)
         if expiry_override is None:
             return
-        target_mid, labels, expiry = expiry_override
+        target_mid = expiry_override.target_mid
+        labels = expiry_override.labels
+        expiry = expiry_override.expiry
+        fallback_effective = expiry_override.fallback_effective
         if target_mid == self.amendment_id:
             return
         scope = sorted(labels) if labels else ["*"]
@@ -383,6 +387,7 @@ class ProcessRouteRejectionContext:
             expiry,
             parent_statute_id=self.parent_id,
             replay_mode=self.replay_mode,
+            fallback_effective=fallback_effective,
             expiry_convention="inclusive_prose",
         ):
             return

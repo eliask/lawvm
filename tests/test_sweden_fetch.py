@@ -3917,6 +3917,157 @@ def test_se_replay_write_receipts_renumber_receipt_is_well_formed() -> None:
     assert post != "", r.post_hashes  # §4 present after
 
 
+def test_check_se_official_replay_emits_renumber_receipt_with_migration_rule_id() -> None:
+    """Fire-drill (§2.9 guard-liveness): the SE RENUMBER receipt with the
+    ``se_renumber_relabel`` migration_rule_id MUST land on the production apply
+    path ``check_se_official_replay`` → ``apply_se_ops_conserved(emit_receipts=True)``
+    → ``se_replay_write_receipts`` → ``_se_emit_one_op_receipt``.
+
+    Pre-fix state:
+    * The production caller at ``fetch.py:3413`` invoked bare ``apply_se_ops``,
+      so the conserved wrapper was exercised only by tests — a §2.9 worst-class
+      silent failure (a guard that exists but is unreachable from production).
+    * Even when the receipt was constructed in tests, ``migration_rule_ids``
+      defaulted to ``()``, so ``WriteReceipt.divergence_explained`` returned
+      False and the receipt audited as ``violation`` in
+      ``build_observed_write_audit`` (a §1.6 unstated-migration violation that
+      strict mode must reject).
+
+    The fix routes production through the conserved wrapper with
+    ``emit_receipts=True`` and names the rule ``se_renumber_relabel`` for the
+    RENUMBER case so the bound→landed divergence is explained.
+    """
+    base_payload = {
+        "beteckning": "2026:998",
+        "rubrik": "Förordning (2026:998) om renumber-fire-drill",
+        "ikraftDateTime": "2026-01-01T00:00:00",
+        "ikraftOvergangsbestammelse": False,
+        "organisation": {"namn": "Socialdepartementet", "namnOchEnhet": "Socialdepartementet"},
+        "forfattningstypNamn": "Förordning",
+        "register": {"forarbeten": None},
+        "fulltext": {
+            "utfardadDateTime": "2025-12-01T00:00:00",
+            "andringInford": None,
+            "forfattningstext": "2 § Flyttbar text.\n\n5 § Annan.\n",
+        },
+        "publiceradDateTime": "2026-01-01T00:00:00",
+        "andringsforfattningar": [],
+    }
+    official_act = {
+        "sfs_id": "2026:999",
+        "title": "Förordning om ändring i förordningen (2026:998) om renumber-fire-drill",
+        "act_type": "förordning",
+        "amended_act_sfs_id": "2026:998",
+        "is_amending_act": True,
+        "published_date": "2026-03-24",
+        "issued_date": "2026-03-19",
+        "enacting_clause": (
+            "Regeringen föreskriver i fråga om förordningen (2026:998) om renumber-fire-drill "
+            "dels att nuvarande 2 § ska betecknas 4 §, dels att 4 § ska ha följande lydelse."
+        ),
+        "effective_clause": "Denna förordning träder i kraft den 15 april 2026.",
+        "affected_section_labels": ["2"],
+        "provisions": [{"label": "4", "text": "Ny lydelse för §4."}],
+        "signatories": [],
+        "footnotes": [],
+    }
+    archive = _FakeArchive(
+        stored={
+            "se://sfs/2026:998/rk.current.json": json.dumps(base_payload, ensure_ascii=False).encode("utf-8"),
+            "se://sfs/2026:999/official.act.json": json.dumps(official_act, ensure_ascii=False).encode("utf-8"),
+        }
+    )
+
+    result = check_se_official_replay(archive, "2026:999")
+
+    # The production lane emits typed write receipts via the conserved
+    # wrapper's `emit_receipts=True` flag (the §2.9 fix). They land on the
+    # result dict's evidence subtree via `_se_write_receipt_to_projection`.
+    write_receipts = result["evidence"]["write_receipts"]
+    renumber_receipts = [r for r in write_receipts if r["action"] == "renumber"]
+    assert len(renumber_receipts) == 1, [r.get("action") for r in write_receipts]
+    receipt = renumber_receipts[0]
+
+    # The §4 receipt contract: bound_target_path (source label) diverges from
+    # landed_primary_path (destination label) — the divergence MUST be
+    # explained by a named migration rule.
+    assert receipt["bound_target_path"] == [["section", "2"]]
+    assert receipt["landed_primary_path"] == [["section", "4"]]
+    # Projection shape: ``renumbered_paths`` is a list of (from_path, to_path)
+    # pairs; each path is a list of ``[kind, label]`` step-lists. For the
+    # RENUMBER 2 → 4, both legs are single-step section paths.
+    assert receipt["renumbered_paths"] == [
+        [[["section", "2"]], [["section", "4"]]],
+    ]
+    assert receipt["migration_rule_ids"] == ["se_renumber_relabel"]
+    assert receipt["recovery_rule_ids"] == []
+    assert receipt["fallback_rule_ids"] == []
+    # bound != landed AND migration_rule_ids non-empty → divergence_explained
+    # is True (the §4 receipt-contract property). Projected into the result
+    # dict so downstream strict-mode audit consumers can classify the receipt
+    # as `qualified` rather than `violation`.
+    assert receipt["divergence_explained"] is True
+
+    # The receipt's pre/post hashes resolve at the destination coordinate
+    # (where the section landed): §4 was ABSENT before, present after.
+    assert list(receipt["pre_hashes"].keys()) == ["section:4"]
+    assert receipt["pre_hashes"]["section:4"] == ""
+    assert receipt["post_hashes"]["section:4"] != ""
+
+    # Reconstruct the typed WriteReceipt from the projection to confirm the
+    # serialized form faithfully represents the typed `divergence_explained`
+    # property — the typed object IS the source of truth (per
+    # notes/APPLY_RESOLUTION_AND_RECEIPT_CONTRACT.md §4), so round-tripping
+    # through the projection proves a future projection-layer rename cannot
+    # fake the audit.
+    from lawvm.core.write_receipt import WriteReceipt
+
+    def _to_path(path_list: list[list[str]]) -> tuple[tuple[str, str], ...]:
+        # Each step is a 2-item ``[kind, label]`` list — unpack explicitly so
+        # ``ty`` infers ``tuple[str, str]`` rather than ``tuple[str, ...]``.
+        return tuple((step[0], step[1]) for step in path_list)
+
+    def _to_paths(paths_list: list[list[list[str]]]) -> tuple[tuple[tuple[str, str], ...], ...]:
+        return tuple(_to_path(p) for p in paths_list)
+
+    def _to_renumbered_paths(
+        renumbered_list: list[list[list[list[str]]]],
+    ) -> tuple[tuple[tuple[tuple[str, str], ...], tuple[tuple[str, str], ...]], ...]:
+        return tuple(
+            (_to_path(from_path), _to_path(to_path))
+            for from_path, to_path in renumbered_list
+        )
+
+    typed = WriteReceipt(
+        op_id=receipt["op_id"],
+        helper=receipt["helper"],
+        action=receipt["action"],
+        bound_target_path=_to_path(receipt["bound_target_path"]),
+        landed_primary_path=_to_path(receipt["landed_primary_path"]),
+        created_paths=_to_paths(receipt["created_paths"]),
+        replaced_paths=_to_paths(receipt["replaced_paths"]),
+        removed_paths=_to_paths(receipt["removed_paths"]),
+        renumbered_paths=_to_renumbered_paths(receipt["renumbered_paths"]),
+        placeholder_created_paths=_to_paths(receipt["placeholder_created_paths"]),
+        placeholder_consumed_paths=_to_paths(receipt["placeholder_consumed_paths"]),
+        recovery_rule_ids=tuple(receipt["recovery_rule_ids"]),
+        migration_rule_ids=tuple(receipt["migration_rule_ids"]),
+        fallback_rule_ids=tuple(receipt["fallback_rule_ids"]),
+        pre_hashes=dict(receipt["pre_hashes"]),
+        post_hashes=dict(receipt["post_hashes"]),
+    )
+    assert typed.divergence_explained is True
+    assert typed.named_rule_ids == ("se_renumber_relabel",)
+
+    # The §1.8 FilterResult landed too — "no unsupported lane disappears":
+    # the synthetic statute produces 2 applied ops (the RENUMBER + the REPLACE
+    # on §4 by the official act's provision list) and zero rejections.
+    apply_filter = result["evidence"]["apply_filter_result"]
+    assert apply_filter["accepted_op_count"] == 2
+    assert apply_filter["rejected_op_count"] == 0
+    assert apply_filter["rejected_reason_codes"] == []
+
+
 def test_apply_se_ops_records_renumber_and_heading_skip_adjudications() -> None:
     payload = {
         "beteckning": "2026:998",
@@ -7038,3 +7189,132 @@ def test_hydrate_se_bundle_live_archives_bundle_and_official_artifacts(monkeypat
     archived_bundle = load_se_bundle_from_archive(archive, "2025:399")
     assert archived_bundle is not None
     assert archived_bundle["official_artifacts"]["pdf_url"] == bundle.official_artifacts.pdf_url
+
+
+# --------------------------------------------------------------------------- #
+# §2.9 production-path fire-drills for the KNOW-01 overwrite_event_ledger.     #
+# --------------------------------------------------------------------------- #
+
+
+def test_fetch_se_official_artifacts_force_reextract_fires_overwrite_events(monkeypatch) -> None:
+    """§2.9 guard-liveness production-path fire-drill for the KNOW-01 overwrite
+    ledger wired at fetch_se_official_artifacts.
+
+    The worst failure class: a check that exists and is registered but
+    unreachable from the production lane. The wrapper at
+    ``se_store_with_overwrite_event`` is wired at the pdf_text +
+    cleaned_text + act_json + base_ir overwrite sites INSIDE
+    fetch_se_official_artifacts — but a unit test of the wrapper alone
+    cannot prove that. This test drives a real overwrite through the
+    production lane:
+
+    * seeds prior bytes at the pdf.text / cleaned.txt / official.act.json
+      locators so re-extraction overlays existing manifestations;
+    * monkeypatches the lower-level fetch + parse helpers (no network);
+    * force_reextract=True through the production function;
+    * asserts the accumulator receives events at the text + cleaned + act_json
+      locators with the seeded prior content's hash as prior_bytes_sha256
+      (NOT blank — the prior manifestation was overwritten; KNOW-01 demands
+      its hash be recorded or the mutation is silent).
+    """
+    import hashlib
+
+    from lawvm.sweden.se_overwrite_event_ledger import SEOverwriteEvent
+
+    sfs_id = "2026:286"
+    doc_url = "https://svenskforfattningssamling.se/doc/2026286.html"
+    pdf_url = "https://svenskforfattningssamling.se/sites/default/files/sfs/2026-03/SFS2026-286.pdf"
+    prior_text = b"prior body text"
+    prior_cleaned = b"prior cleaned text"
+    prior_act_json = b'{"prior_act": true}'
+
+    text_locator = "se://sfs/2026:286/official.pdf.txt"
+    cleaned_locator = "se://sfs/2026:286/official.cleaned.txt"
+    act_json_locator = "se://sfs/2026:286/official.act.json"
+
+    archive = _FakeArchive(
+        fetched={
+            doc_url: b'<a href="/sites/default/files/sfs/2026-03/SFS2026-286.pdf">PDF</a>',
+            pdf_url: b"%PDF-1.7 fake",
+        },
+        stored={
+            text_locator: prior_text,
+            cleaned_locator: prior_cleaned,
+            act_json_locator: prior_act_json,
+        },
+    )
+    monkeypatch.setattr(
+        "lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes: "New extracted PDF text"
+    )
+
+    overwrite_events: list[SEOverwriteEvent] = []
+    bundle = fetch_se_official_artifacts(
+        "2026:286",
+        archive,
+        force_reextract=True,
+        overwrite_events_out=overwrite_events,
+    )
+
+    assert bundle is not None
+    # §2.9: the wrapper actually FIRED (parameter not dead).
+    assert overwrite_events, (
+        "force_reextract=True drive through fetch_se_official_artifacts emitted "
+        "NO overwrite events — overwrite_events_out is unreachable from the "
+        "production lane (§2.9 guard-liveness failure)."
+    )
+    events_by_locator = {event.locator: event for event in overwrite_events}
+
+    # KNOW-01 load-bearing: prior manifestation hash recorded for the text locator.
+    assert text_locator in events_by_locator
+    text_event = events_by_locator[text_locator]
+    assert text_event.prior_bytes_sha256 == "sha256:" + hashlib.sha256(prior_text).hexdigest()
+    assert archive.get(text_locator) == b"New extracted PDF text"
+    assert text_event.source_trigger == "force_reextract"
+    assert text_event.rule_id == "se_official_artifacts_force_reextract_overwrite"
+
+    # Downstream-derived site: act_json must carry the prior act_json's hash
+    # (KNOW-01 for the parsed-act-text manifestation).
+    assert act_json_locator in events_by_locator
+    act_json_event = events_by_locator[act_json_locator]
+    assert (
+        act_json_event.prior_bytes_sha256
+        == "sha256:" + hashlib.sha256(prior_act_json).hexdigest()
+    )
+
+
+def test_fetch_se_official_artifacts_force_reextract_blank_prior_on_first_write(monkeypatch) -> None:
+    """Negative discipline: when force_reextract re-extracts text at a locator
+    with NO prior bytes (fresh first-write inside the re-extract branch), the
+    event's prior_bytes_sha256 is blank — the event records "new manifestation
+    created" rather than "matter mutated". Proves the wrapper's read-before-
+    write discipline (it doesn't silently emit a stale hash on a fresh locator)."""
+    from lawvm.sweden.se_overwrite_event_ledger import SEOverwriteEvent
+
+    sfs_id = "2026:999"
+    doc_url = "https://svenskforfattningssamling.se/doc/2026999.html"
+    pdf_url = "https://svenskforfattningssamling.se/sites/default/files/sfs/2026-12/SFS2026-999.pdf"
+    archive = _FakeArchive(
+        fetched={
+            doc_url: b'<a href="/sites/default/files/sfs/2026-12/SFS2026-999.pdf">PDF</a>',
+            pdf_url: b"%PDF-1.7 fake",
+        }
+    )
+    monkeypatch.setattr(
+        "lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes: "First extracted text"
+    )
+
+    overwrite_events: list[SEOverwriteEvent] = []
+    bundle = fetch_se_official_artifacts(
+        "2026:999",
+        archive,
+        force_reextract=True,
+        overwrite_events_out=overwrite_events,
+    )
+    assert bundle is not None
+
+    text_locator = "se://sfs/2026:999/official.pdf.txt"
+    events_by_locator = {event.locator: event for event in overwrite_events}
+    assert events_by_locator[text_locator].prior_bytes_sha256 == "", (
+        "force_reextract on a fresh locator emitted a non-empty prior_bytes_sha256 — "
+        "the wrapper's read-before-write discipline is broken."
+    )

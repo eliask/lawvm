@@ -304,6 +304,7 @@ def run_apply_supplemental_recovery(
                             amendment_effective_date=request.amendment_effective_date,
                             migration_ledger=request.migration_ledger,
                             log_label="restructure_plan",
+                            source_model=request.source_model,
                         ),
                         _ExecuteRestructurePlanSinks(
                             lo_ops_out=lo_ops_out,

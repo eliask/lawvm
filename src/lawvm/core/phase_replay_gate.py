@@ -14,6 +14,7 @@ from typing import Any, Mapping
 
 from lawvm.core.execution_authorization import ExecutionAuthorization
 from lawvm.core.frozen_values import freeze_mapping
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 
 _PHASE_REPLAY_GATE_FORBIDDEN_SHORTCUTS: tuple[str, ...] = (
@@ -58,7 +59,7 @@ class PhaseLocalReplayGate:
     forbidden_present: tuple[str, ...] = ()
     executable: bool = True
     strict_disposition: str = "record"
-    quirks_disposition: str = "record"
+    quirks_disposition: QuirksDisposition = QuirksDisposition.RECORD
     validator_status: str = "phase_gate_validated"
     safe_default: str = "block_until_phase_local_replay_gate_is_satisfied"
     forbidden_shortcuts: tuple[str, ...] = _PHASE_REPLAY_GATE_FORBIDDEN_SHORTCUTS

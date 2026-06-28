@@ -8,6 +8,7 @@ from typing import Any, Dict, FrozenSet, List, Literal, Mapping, Optional, Tuple
 
 from lawvm.core.frozen_values import FrozenDict, _freeze_value, _jsonable_value
 from lawvm.core.provenance import OperationSource
+from lawvm.core.scope_confidence import ScopeConfidence, coerce_scope_confidence
 from lawvm.core.semantic_types import FacetKind, IRNodeKind, StructuralAction, TextPatchKindEnum
 
 
@@ -82,7 +83,19 @@ class ScopePredicate:
 
 @dataclass(frozen=True, slots=True)
 class TextSelector:
-    """Typed selector for text-level operations."""
+    """Typed selector for text-level operations.
+
+    ``occurrence_mode`` disambiguates the *kind* of occurrence the op targets,
+    resolving the silent conflation between EACH_PLACE (replace every match,
+    str.replace(count=-1) semantics) and LAST/terminal (replace rightmost match
+    ONCE — the terminal-punct edits ``RULE_INSERT_END_PUNCT`` /
+    ``RULE_STRIKE_INSERT_END_PUNCT`` that name a single "the period at the end"
+    anchor). Carried distinct from ``occurrence`` to stay backward-compatible
+    with frontends whose ops still express each-place via ``occurrence=-1``
+    alone: when ``occurrence_mode`` is the default ``"Auto"``, the materializer
+    maps ``occurrence=-1`` to ALL (preserving existing each-place behavior);
+    when it is ``"Last"``, the materializer replaces the rightmost match once.
+    """
 
     match_text: str
     occurrence: int = 0
@@ -96,6 +109,11 @@ class TextSelector:
     # (``occurrence``) apply unchanged, so this field is purely additive for
     # frontends that do not need it.
     end_match_text: Optional[str] = None
+    # When provided, overrides the legacy ``occurrence=-1`` ALL interpretation
+    # in the materializer. ``"Last"`` forces treating the op as terminal-anchor:
+    # replace the W-rightmost occurrence once (the period at the end of the
+    # target node, not every period in the section).
+    occurrence_mode: Literal["Auto", "Last"] = "Auto"
 
     def __post_init__(self) -> None:
         if not self.match_text:
@@ -104,6 +122,10 @@ class TextSelector:
             raise ValueError("TextSelector.occurrence must be >= -1")
         if self.end_occurrence < 0:
             raise ValueError("TextSelector.end_occurrence must be >= 0")
+        if self.occurrence_mode not in ("Auto", "Last"):
+            raise ValueError(
+                f"TextSelector.occurrence_mode must be 'Auto' or 'Last', got {self.occurrence_mode!r}"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,8 +161,14 @@ class LegalOperation:
     group_id: Optional[str] = None
     witness_rule_id: Optional[str] = None
     # Frontend-owned typed riders. Core stores these carriers but does not
-    # interpret jurisdiction-local values.
-    scope_confidence: Any = None
+    # interpret jurisdiction-local values; ``scope_confidence`` is typed as
+    # ``Optional[ScopeConfidence]`` (a marker protocol, see
+    # ``lawvm.core.scope_confidence``) so bare strings fail loud at the
+    # ``__post_init__`` boundary (AGENTS.md §1.9 typed carriers over dynamic
+    # shape, §1.10 fail loud; §2.3 core does not interpret frontend-local
+    # values). Frontends inherit the protocol explicitly so an AST scan can
+    # keep producer-set == protocol-implementer-set.
+    scope_confidence: Optional[ScopeConfidence] = None
     move_clause_target_unit_kind: Optional[str] = None
 
     def __post_init__(self) -> None:
@@ -163,8 +191,17 @@ class LegalOperation:
                 "LegalOperation text_patch is only valid for text_replace/text_repeal/replace "
                 f"got action={self.action!r}"
             )
+        # Fail loud at the core semantic waist: a bare ``str`` here means a
+        # frontend bypassed its typed ``ScopeConfidence`` dataclass and is
+        # smuggling a free-form rung string (AGENTS.md §1.9, §1.10). ``None``
+        # is the legitimate "no witness" sentinel and passes through unchanged.
+        object.__setattr__(
+            self,
+            "scope_confidence",
+            coerce_scope_confidence(self.scope_confidence),
+        )
 
-@dataclass
+@dataclass(slots=True)
 class ProvisionVersion:
     """A single version of a provision in the temporal graph."""
 
@@ -186,7 +223,7 @@ class ProvisionVersion:
             raise ValueError(f"ProvisionVersion expires ({self.expires}) before effective ({self.effective})")
         object.__setattr__(self, "applicability", tuple(self.applicability))
 
-@dataclass
+@dataclass(slots=True)
 class ProvisionTimeline:
     """Complete version history of a single addressable provision."""
 

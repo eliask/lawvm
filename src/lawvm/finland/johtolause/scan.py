@@ -32,6 +32,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional
+from lawvm.finland.johtolause.jolloin_pair import JolloinRenumberPair
 from lawvm.finland.johtolause.lexicon import Token
 
 if TYPE_CHECKING:
@@ -1144,7 +1145,7 @@ def annotate_formal_title_suffix(tokens: list[Token]) -> list[Annotation]:
 
 def _extract_renumber_pairs_from_jolloin_tokens(
     tokens: list[Token], start: int, end: int
-) -> list[tuple[str, str, str]]:
+) -> list[JolloinRenumberPair]:
     """Extract renumber pairs from a jolloin token span.
 
     Handles three patterns:
@@ -1155,8 +1156,9 @@ def _extract_renumber_pairs_from_jolloin_tokens(
       - Moment renumber: NUM [CONJ NUM]* MOMENTTI VERB NUM [CONJ NUM]* MOMENTTI
         e.g. "jolloin nykyinen 4 momentti siirtyy 5 momentiksi"
 
-    Returns a list of (source, destination, kind) triples where kind is 'L'
-    (chapter), 'P' (section), or 'M' (moment).
+    Returns typed source/destination pairs where kind is 'L' (chapter), 'P'
+    (section), or 'M' (moment).  Section destinations may additionally carry a
+    destination chapter for shapes like ``siirtyy uuteen 7 lukuun 50 §:ksi``.
 
     This replaces the regex-based _extract_jolloin_chapter_renumber_pairs()
     in peg3.py — same semantics but operating on classified tokens instead
@@ -1321,7 +1323,22 @@ def _extract_renumber_pairs_from_jolloin_tokens(
         return []
 
     src_groups = _collect_groups_tokens(span[: src_unit_indices[-1]])
-    dst_groups = _collect_groups_tokens(span[verb_idx + 1 : dst_unit_indices[0]])
+    destination_chapter = ""
+    destination_group_start = verb_idx + 1
+    if kind == "P":
+        chapter_indices = [
+            i
+            for i in range(verb_idx + 1, dst_unit_indices[0])
+            if _is_chapter_token(span[i])
+        ]
+        if chapter_indices:
+            chapter_idx = chapter_indices[-1]
+            chapter_groups = _collect_groups_tokens(span[verb_idx + 1 : chapter_idx])
+            chapter_nums = [lbl for g in chapter_groups for lbl in g]
+            if len(chapter_nums) == 1:
+                destination_chapter = chapter_nums[0]
+                destination_group_start = chapter_idx + 1
+    dst_groups = _collect_groups_tokens(span[destination_group_start : dst_unit_indices[0]])
 
     # Flatten groups into individual labels
     src_nums: list[str] = [lbl for g in src_groups for lbl in g]
@@ -1330,7 +1347,31 @@ def _extract_renumber_pairs_from_jolloin_tokens(
     if len(src_nums) != len(dst_nums) or not src_nums:
         return []
 
-    return [(src, dst, kind) for src, dst in zip(src_nums, dst_nums, strict=True)]
+    def _is_contiguous_numeric_range(labels: list[str]) -> bool:
+        if not labels or any(not label.isdigit() for label in labels):
+            return False
+        values = [int(label) for label in labels]
+        return values == list(range(values[0], values[0] + len(values)))
+
+    sorted_src_nums = sorted(src_nums, key=int) if all(label.isdigit() for label in src_nums) else []
+    if (
+        kind == "M"
+        and sorted_src_nums
+        and src_nums != sorted_src_nums
+        and _is_contiguous_numeric_range(dst_nums)
+        and _is_contiguous_numeric_range(sorted_src_nums)
+    ):
+        src_nums = sorted_src_nums
+
+    return [
+        JolloinRenumberPair(
+            source_label=src,
+            destination_label=dst,
+            kind=kind,
+            destination_chapter=destination_chapter,
+        )
+        for src, dst in zip(src_nums, dst_nums, strict=True)
+    ]
 
 
 def annotate_jolloin(tokens: list[Token]) -> list[Annotation]:
@@ -1602,7 +1643,7 @@ def apply_annotations(tokens: list[Token]) -> list[Token]:
 
 def apply_annotations_with_jolloin_pairs(
     tokens: list[Token],
-) -> tuple[list[Token], dict[int, list[tuple[str, str, str]]]]:
+) -> tuple[list[Token], dict[int, list[JolloinRenumberPair]]]:
     """Full annotation pipeline with jolloin renumber pair map.
 
     Runs the same pipeline as apply_annotations() but additionally returns
@@ -1617,8 +1658,7 @@ def apply_annotations_with_jolloin_pairs(
         (filtered_tokens, jolloin_pair_map) where:
             filtered_tokens: same as apply_annotations(tokens)
             jolloin_pair_map: dict mapping JOLLOIN_MOVE token position in
-                filtered_tokens → list of (src_label, dst_label, kind) tuples.
-                kind is 'L' (chapter) or 'P' (section).
+                filtered_tokens → typed source/destination pairs.
                 Only positions with non-empty renumber_pairs appear in the dict.
     """
     # Phase 1: citation + names on raw tokens (identical to apply_annotations)
@@ -1650,7 +1690,7 @@ def apply_annotations_with_jolloin_pairs(
     # jolloin_anns_v contains jolloin annotations in token-stream order.
     # The JOLLOIN_MOVE sentinels in filtered_tokens appear in the same order.
     # We match them positionally.
-    jolloin_pair_map: dict[int, list[tuple[str, str, str]]] = {}
+    jolloin_pair_map: dict[int, list[JolloinRenumberPair]] = {}
     jm_ann_idx = 0
     for pos, tok in enumerate(filtered_tokens):
         if tok.cat == "JOLLOIN_MOVE":
@@ -1659,19 +1699,10 @@ def apply_annotations_with_jolloin_pairs(
                 if ann.detail and ann.detail.get("renumber_pairs"):
                     pairs_raw = ann.detail["renumber_pairs"]
                     if isinstance(pairs_raw, list):
-                        pairs: list[tuple[str, str, str]] = []
+                        pairs: list[JolloinRenumberPair] = []
                         for item in pairs_raw:
-                            if isinstance(item, tuple) and len(item) == 3:
-                                old_label = item[0]
-                                new_label = item[1]
-                                target_label = item[2]
-                                if not (
-                                    isinstance(old_label, str)
-                                    and isinstance(new_label, str)
-                                    and isinstance(target_label, str)
-                                ):
-                                    continue
-                                pairs.append((old_label, new_label, target_label))
+                            if isinstance(item, JolloinRenumberPair):
+                                pairs.append(item)
                         if pairs:
                             jolloin_pair_map[pos] = pairs
             jm_ann_idx += 1

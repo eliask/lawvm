@@ -38,12 +38,14 @@ from typing import Any
 
 from lxml import etree
 from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.xml_parse import parse_corpus_xml
 from lawvm.finland.consolidated_artifacts import (
     build_canonical_consolidated_locator,
     canonical_consolidated_locator,
     extract_consolidated_xml_identity,
 )
 from lawvm.finland.helpers import _parse_iso_date
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 BASE_URL = "https://opendata.finlex.fi/finlex/avoindata/v1"
 _USER_AGENT = "LawVM/0.1 (+https://lawvm.org)"
@@ -124,7 +126,7 @@ def _extract_fin_pit_candidates_from_collection(
 ) -> list[ConsolidatedPitCandidate]:
     """Extract Finnish PIT candidates from one consolidated-collection page."""
     try:
-        root = etree.fromstring(raw)
+        root = parse_corpus_xml(raw)
     except etree.XMLSyntaxError:
         text = raw.decode("utf-8", errors="replace")
         return [
@@ -487,7 +489,7 @@ def _append_sync_latest_pit_diagnostic(
             reason=reason,
             blocking=blocking,
             strict_disposition="block" if blocking else "record",
-            quirks_disposition="record",
+            quirks_disposition=QuirksDisposition.RECORD,
             statute_id=statute_id,
             pit_version=pit_version,
             locator=locator,

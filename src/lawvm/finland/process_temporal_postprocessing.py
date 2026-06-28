@@ -10,6 +10,7 @@ does not apply tree mutations itself.
 from __future__ import annotations
 
 import datetime as dt
+from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Set
 
@@ -49,9 +50,11 @@ from lawvm.finland.temporal_rewrites import (
     _rewrite_lo_op_source_effective_for_chapters,
     _rewrite_lo_op_source_effective_for_address_suffixes,
     _rewrite_lo_op_source_expiry,
+    _rewrite_temporal_event_expiry_for_addresses,
 )
 
 if TYPE_CHECKING:
+    from lawvm.finland.metadata import TemporarySectionExpiryOverride
     from lawvm.finland.statute import ReplayState
 
 
@@ -79,7 +82,7 @@ class ProcessTemporalPostprocessContext:
     process_findings: list[Finding]
     record_finding: RecordProcessFinding
     replay_print: ReplayPrint
-    section_expiry_overrides: tuple[tuple[str, Set[str], dt.date], ...] = ()
+    section_expiry_overrides: tuple[TemporarySectionExpiryOverride, ...] = ()
 
     def run(self) -> None:
         self.collect_law_level_text_patches()
@@ -132,7 +135,10 @@ class ProcessTemporalPostprocessContext:
             section_expiry_overrides=self.section_expiry_overrides,
         )
         if accepted is not None:
-            target_mid, labels, expiry = accepted
+            target_mid = accepted.target_mid
+            labels = accepted.labels
+            expiry = accepted.expiry
+            fallback_effective = accepted.fallback_effective
             if target_mid != self.amendment_id:
                 self.commencement_expiry_override_notes.append(
                     EffectLifecycleOverride(
@@ -143,6 +149,7 @@ class ProcessTemporalPostprocessContext:
                         context="accepted_amendment",
                     )
                 )
+            touched_addresses: list[LegalAddress] = []
             if target_mid != self.amendment_id and _rewrite_lo_op_source_expiry(
                 self.lo_ops_out,
                 target_mid,
@@ -150,15 +157,28 @@ class ProcessTemporalPostprocessContext:
                 expiry,
                 parent_statute_id=self.parent_id,
                 replay_mode=self.replay_mode,
+                fallback_effective=fallback_effective,
                 expiry_convention="inclusive_prose",
+                touched_addresses_out=touched_addresses,
             ):
+                _rewrite_temporal_event_expiry_for_addresses(
+                    self.amendment_temporal_events,
+                    target_mid,
+                    tuple(touched_addresses),
+                    expiry,
+                    replay_mode=self.replay_mode,
+                    expiry_convention="inclusive_prose",
+                )
                 scope = sorted(labels) if labels else ["*"]
                 self.replay_print(
                     f"  [{self.amendment_id}] voimaantulo_expiry_override (accepted): "
                     f"{target_mid} {scope} -> {expiry.isoformat()}"
                 )
 
-        for target_mid, labels, expiry in self.section_expiry_overrides:
+        for override in self.section_expiry_overrides:
+            target_mid = override.target_mid
+            labels = override.labels
+            expiry = override.expiry
             if target_mid == self.amendment_id:
                 self.commencement_expiry_override_notes.append(
                     EffectLifecycleOverride(
@@ -169,6 +189,7 @@ class ProcessTemporalPostprocessContext:
                         context="accepted_section_temporary",
                     )
                 )
+            touched_addresses = []
             if target_mid == self.amendment_id and _rewrite_lo_op_source_expiry(
                 self.lo_ops_out,
                 target_mid,
@@ -177,7 +198,16 @@ class ProcessTemporalPostprocessContext:
                 parent_statute_id=self.parent_id,
                 replay_mode=self.replay_mode,
                 expiry_convention="inclusive_prose",
+                touched_addresses_out=touched_addresses,
             ):
+                _rewrite_temporal_event_expiry_for_addresses(
+                    self.amendment_temporal_events,
+                    target_mid,
+                    tuple(touched_addresses),
+                    expiry,
+                    replay_mode=self.replay_mode,
+                    expiry_convention="inclusive_prose",
+                )
                 scope = sorted(labels) if labels else ["*"]
                 self.replay_print(
                     f"  [{self.amendment_id}] temporary_section_expiry_override (accepted): "
@@ -608,7 +638,7 @@ class ProcessTemporalPostprocessContext:
         )
 
 
-def _section_override_scope(labels: Set[str] | None) -> EffectLifecycleOverrideScope:
+def _section_override_scope(labels: AbstractSet[str] | None) -> EffectLifecycleOverrideScope:
     return EffectLifecycleOverrideScope.sections(sorted(labels or ()))
 
 

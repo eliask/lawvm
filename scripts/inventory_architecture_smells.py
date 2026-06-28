@@ -832,9 +832,11 @@ def witness_liveness_baseline_snapshot(repo_root: Path | None = None) -> dict[st
 #       ``@dataclass`` that mirrors core ``IRNode``: a ``children: list[...]``
 #       field PLUS an ``attrs`` or ``text`` field. Core IR is frozen by design
 #       (``core/ir.py``); a frontend-local MUTABLE mirror is the substrate of a
-#       hidden replay/edit kernel (UK ``UKMutableNode``) — or, more benignly, a
-#       parse-time scratch builder (SE ``_SEMutableNode``). BOTH are recorded;
-#       the baseline states which is a live replay kernel vs a parse builder.
+#       hidden replay/edit kernel (the UK ``UKMutableNode`` shadow was DELETED
+#       in mutable_ir Wave N3d Sub-PR F — its baseline signal was ratcheted
+#       out), or, more benignly, a parse-time scratch builder (SE
+#       ``_SEMutableNode``). BOTH surviving kinds are recorded; the baseline
+#       states which is a live replay kernel vs a parse builder.
 #
 #   (2) ``frontend_pit_materialization`` — a frontend defines a function shaped
 #       like core PIT/timeline materialization (name ``materialize_*`` /
@@ -1095,21 +1097,6 @@ def hidden_replay_kernel_baseline_snapshot(
         "kind_counts": state["kind_counts"],
         "signal_counts": state["signal_counts"],
         "_findings": {
-            "src/lawvm/uk_legislation/mutable_ir.py": (
-                "REAL HIDDEN REPLAY KERNEL (high-value finding for a future "
-                "refactor wave). UKMutableNode/UKMutableStatute are a parallel "
-                "MUTABLE IR mirroring frozen core IRNode; ~26 uk_legislation "
-                "modules (replay_executor, replay_{repeal,replace,insert,renumber,"
-                "text,table,schedule_list}_apply, uk_grafter, …) drive op-effect / "
-                "amendment-replay semantics over it in place (e.g. "
-                "`statute.body.children = []`, uk_replace_children, "
-                "uk_insert_node_sorted) instead of routing through core/tree_ops. "
-                "The module docstring already concedes this ('must not become a "
-                "new shared contract … TODO(arch): replace this mutable mirror … "
-                "once the UK replay executor is fully migrated off in-place tree "
-                "edits'). Recorded as existing debt; do NOT refactor in this audit "
-                "wave."
-            ),
             "src/lawvm/sweden/grafter.py": (
                 "TWO signals, distinct severities. "
                 "(a) parallel_mutable_ir_shadow `_SEMutableNode`: a parse-time "

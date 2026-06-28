@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Optional
 
-from lawvm.core.semantic_types import StructuralAction
+from lawvm.core.semantic_types import StructuralAction, structural_action_from_str
 from lawvm.uk_legislation.effects import _is_uk_repealed_by_effect_type
 
 
@@ -310,17 +310,10 @@ def is_uk_non_textual_modification_effect_type(effect_type: str) -> bool:
 
 
 def _to_structural_action(action: str) -> StructuralAction:
-    """Map lowering action strings to canonical StructuralAction values."""
-    if action == "replace":
-        return StructuralAction.REPLACE
-    if action == "text_replace":
-        return StructuralAction.TEXT_REPLACE
-    if action == "repeal":
-        return StructuralAction.REPEAL
-    if action == "text_repeal":
-        return StructuralAction.TEXT_REPEAL
-    if action == "insert":
-        return StructuralAction.INSERT
-    if action == "renumber":
-        return StructuralAction.RENUMBER
-    return StructuralAction.META
+    """Map lowering action strings to canonical StructuralAction values.
+
+    Fail-loud: an action string naming no ``StructuralAction`` member raises
+    ``ValueError`` rather than silently collapsing to ``META``. Delegates to the
+    shared jurisdiction-neutral codec.
+    """
+    return structural_action_from_str(action, on_unknown="raise")

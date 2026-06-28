@@ -71,6 +71,71 @@ from lawvm.finland.apply_events import (
     _target_address_path_for_rop_event,
     landed_section_event_path,
 )
+
+
+# ---------------------------------------------------------------------------
+# §1.8 (replay conservation) APPLY.OP_SKIPPED_WITNESSED emission helper
+# ---------------------------------------------------------------------------
+# An applyResolvedOp path that emits ``outcome="skipped"`` to its
+# mutation_events_out ledger without a typed Finding OR FailedOp consumes the
+# op silently — the audit mutation_event carries the failure_reason but the
+# apply disposition stays APPLIED. This helper is called at each of the 13
+# ``outcome="skipped"`` sites in apply_typed_dispatch.py so the findings ledger
+# ALSO carries a non-blocking observation with rule_id=reason_code naming the
+# specific skip site (source_not_found, destination_exists,
+# container_op_returned_none, source_address_empty, source_resolved_none,
+# destination_parent_not_found, source_container_missing,
+# resolver_binding_contract_error, unhandled_insert_target /
+# unhandled_repeal_target / unhandled_replace_target,
+# idempotent_repeal_parent_section_absent, ...). Non-blocking so quirks mode
+# continues; the existing FailedOp path for typed-target skips is preserved.
+_APPLY_OP_SKIPPED_WITNESSED_KIND = "APPLY.OP_SKIPPED_WITNESSED"
+
+
+def _emit_apply_op_skipped_witness(
+    findings_out: Optional[List[Finding]],
+    *,
+    rop: ResolvedOp,
+    reason_code: str,
+    failure_reason: str,
+    clause_text: str = "",
+) -> None:
+    """Witness one ``outcome="skipped"`` applyResolvedOp path (§1.8).
+
+    Append a :class:`Finding` with kind ``APPLY.OP_SKIPPED_WITNESSED`` carrying
+    ``rule_id`` = ``reason_code`` (distinguishes the 13 known skip sites),
+    ``failure_reason`` prose, ``op_id``, ``clause_text``, and the rop's
+    source_statute. Non-blocking so quirks mode continues (audit total). The
+    caller may always pass ``findings_out=None`` (no sink wired); in that case
+    the witness is silently not emitted, mirroring how other optional
+    findings_out sinks behave when not plumbed at the call site.
+    """
+    if findings_out is None:
+        return
+    findings_out.append(
+        Finding(
+            kind=_APPLY_OP_SKIPPED_WITNESSED_KIND,
+            role="observation",
+            stage="apply",
+            blocking=False,
+            source_statute=rop.resolved_source_statute or "",
+            detail={
+                "message": (
+                    f"applyResolvedOp outcome='skipped' at reason_code="
+                    f"{reason_code!r}. The mutation-events-out ledger carries "
+                    f"the skip (failure_reason={failure_reason!r}); this "
+                    f"finding is the §1.8 witness so the findings-ledger audit "
+                    f"is total — the disposition tracking applies but the op "
+                    f"did not produce a write."
+                ),
+                "rule_id": reason_code,
+                "reason_code": reason_code,
+                "failure_reason": failure_reason,
+                "op_id": rop.op_id or "",
+                "clause_text": (clause_text or failure_reason)[:400],
+            },
+        )
+    )
 from lawvm.finland.apply_ir_ops import (
     _rebuild_section_with_subsections_ir,
     _rebuild_subsection_with_items_ir,
@@ -618,6 +683,7 @@ def _apply_intent_section_level(
     failed_ops_out: Optional[List[FailedOp]] = None,
     source_pathologies_out: Optional[List[SourcePathology]] = None,
     mutation_events_out: Optional[List[ApplyMutationEvent]] = None,
+    findings_out: Optional[List[Finding]] = None,
     strict_profile: Optional[StrictProfile] = None,
     path_hint: Optional[Path] = None,
     replay_history_ops: Optional[List[_LegalOperation]] = None,
@@ -679,6 +745,13 @@ def _apply_intent_section_level(
     except ValueError as exc:
         logger.warning(
             "  %s → APPLY.RESOLVER_BINDING_CONTRACT_ERROR: %s", ctx_label, exc
+        )
+        _emit_apply_op_skipped_witness(
+            findings_out,
+            rop=rop,
+            reason_code="resolver_binding_contract_error",
+            failure_reason=str(exc),
+            clause_text=f"resolver binding contract error: {exc}",
         )
         _emit_apply_mutation_event_for_rop(
             mutation_events_out,
@@ -921,6 +994,13 @@ def _apply_intent_section_level(
                 ctx_label,
                 rop.resolved_target_label,
             )
+            _emit_apply_op_skipped_witness(
+                findings_out,
+                rop=rop,
+                reason_code="idempotent_repeal_parent_section_absent",
+                failure_reason="parent section already absent (idempotent repeal)",
+                clause_text=f"repeal target subsection label={rop.resolved_target_subsection_label}",
+            )
             _emit_apply_mutation_event_for_rop(
                 mutation_events_out,
                 rop=rop,
@@ -1148,6 +1228,13 @@ def _apply_intent_container(
         return container_result
 
     logger.warning("  %s → container intent dispatch: _apply_container_op returned None", ctx_label)
+    _emit_apply_op_skipped_witness(
+        findings_out,
+        rop=rop,
+        reason_code="container_op_returned_none",
+        failure_reason="_apply_container_op returned None for container intent",
+        clause_text=f"container intent target={rop.target_norm}",
+    )
     _emit_apply_mutation_event_for_rop(
         mutation_events_out,
         rop=rop,
@@ -1216,6 +1303,7 @@ def _apply_intent_replace(
                 failed_ops_out=failed_ops_out,
                 source_pathologies_out=source_pathologies_out,
                 mutation_events_out=mutation_events_out,
+                findings_out=findings_out,
                 strict_profile=strict_profile,
                 path_hint=path_hint,
                 replay_history_ops=replay_history_ops,
@@ -1234,6 +1322,7 @@ def _apply_intent_replace(
                 failed_ops_out=failed_ops_out,
                 source_pathologies_out=source_pathologies_out,
                 mutation_events_out=mutation_events_out,
+                findings_out=findings_out,
                 strict_profile=strict_profile,
                 path_hint=path_hint,
                 replay_history_ops=replay_history_ops,
@@ -1252,6 +1341,7 @@ def _apply_intent_replace(
                 failed_ops_out=failed_ops_out,
                 source_pathologies_out=source_pathologies_out,
                 mutation_events_out=mutation_events_out,
+                findings_out=findings_out,
                 strict_profile=strict_profile,
                 path_hint=path_hint,
                 replay_history_ops=replay_history_ops,
@@ -1290,6 +1380,13 @@ def _apply_intent_replace(
                 rop_description=rop_description,
                 reason=reason,
                 reason_code=reason_code,
+            )
+            _emit_apply_op_skipped_witness(
+                findings_out,
+                rop=rop,
+                reason_code=reason_code,
+                failure_reason=reason,
+                clause_text=f"unhandled Replace target type={type(intent.target).__name__}",
             )
             _emit_apply_mutation_event_for_rop(
                 mutation_events_out,
@@ -1341,6 +1438,7 @@ def _apply_intent_insert(
                 failed_ops_out=failed_ops_out,
                 source_pathologies_out=source_pathologies_out,
                 mutation_events_out=mutation_events_out,
+                findings_out=findings_out,
                 strict_profile=strict_profile,
                 path_hint=path_hint,
                 replay_history_ops=replay_history_ops,
@@ -1359,6 +1457,7 @@ def _apply_intent_insert(
                 failed_ops_out=failed_ops_out,
                 source_pathologies_out=source_pathologies_out,
                 mutation_events_out=mutation_events_out,
+                findings_out=findings_out,
                 strict_profile=strict_profile,
                 path_hint=path_hint,
                 replay_history_ops=replay_history_ops,
@@ -1397,6 +1496,13 @@ def _apply_intent_insert(
                 rop_description=rop_description,
                 reason=reason,
                 reason_code=reason_code,
+            )
+            _emit_apply_op_skipped_witness(
+                findings_out,
+                rop=rop,
+                reason_code=reason_code,
+                failure_reason=reason,
+                clause_text=f"unhandled Insert target type={type(intent.target).__name__}",
             )
             _emit_apply_mutation_event_for_rop(
                 mutation_events_out,
@@ -1445,6 +1551,7 @@ def _apply_intent_repeal(
                 failed_ops_out=failed_ops_out,
                 source_pathologies_out=source_pathologies_out,
                 mutation_events_out=mutation_events_out,
+                findings_out=findings_out,
                 strict_profile=strict_profile,
                 path_hint=path_hint,
                 replay_history_ops=replay_history_ops,
@@ -1462,6 +1569,7 @@ def _apply_intent_repeal(
                 failed_ops_out=failed_ops_out,
                 source_pathologies_out=source_pathologies_out,
                 mutation_events_out=mutation_events_out,
+                findings_out=findings_out,
                 strict_profile=strict_profile,
                 path_hint=path_hint,
                 replay_history_ops=replay_history_ops,
@@ -1500,6 +1608,13 @@ def _apply_intent_repeal(
                 reason=reason,
                 reason_code=reason_code,
             )
+            _emit_apply_op_skipped_witness(
+                findings_out,
+                rop=rop,
+                reason_code=reason_code,
+                failure_reason=reason,
+                clause_text=f"unhandled Repeal target type={type(intent.target).__name__}",
+            )
             _emit_apply_mutation_event_for_rop(
                 mutation_events_out,
                 rop=rop,
@@ -1523,6 +1638,7 @@ def _apply_intent_relabel(
     *,
     failed_ops_out: Optional[List[FailedOp]] = None,
     mutation_events_out: Optional[List[ApplyMutationEvent]] = None,
+    findings_out: Optional[List[Finding]] = None,
     path_hint: Optional[Path] = None,
     migration_ledger: Optional[MigrationLedger] = None,
     write_audits_out: Optional[List[ObservedWriteAudit]] = None,
@@ -1533,6 +1649,13 @@ def _apply_intent_relabel(
         failure_reason: str,
         resolved_target_path: TreePath | None,
     ) -> None:
+        _emit_apply_op_skipped_witness(
+            findings_out,
+            rop=rop,
+            reason_code=reason_tag,
+            failure_reason=failure_reason,
+            clause_text=f"relabel source={rop.target_norm} reason_tag={reason_tag}",
+        )
         _emit_apply_mutation_event_for_rop(
             mutation_events_out,
             rop=rop,
@@ -1627,19 +1750,24 @@ def _apply_intent_relabel(
                     outcome="applied",
                 )
                 if migration_ledger is not None:
-                    from_addr = intent.source.address
-                    to_addr = intent.destination.address
                     source = rop.resolved_op_source
                     effective = (source.effective or source.enacted) if source is not None else ""
                     migration_ledger.record_renumber(
-                        from_addr,
-                        to_addr,
+                        LegalAddress(path=src_path),
+                        LegalAddress(path=landed_path),
                         effective=effective,
                         source_statute=rop.resolved_source_statute,
                     )
                 return state.with_ir(new_ir)
         logger.debug(
             "  %s → Relabel container %s not found (absent — may have been renamed already)", ctx_label, rop.target_norm
+        )
+        _emit_apply_op_skipped_witness(
+            findings_out,
+            rop=rop,
+            reason_code="source_container_missing",
+            failure_reason=f"source container {source_unit_kind}:{rop.target_norm} not found",
+            clause_text=f"relabel source_container_missing kind={source_unit_kind} label={rop.target_norm}",
         )
         _emit_apply_mutation_event_for_rop(
             mutation_events_out,
@@ -1727,13 +1855,11 @@ def _apply_intent_relabel(
                     outcome="applied",
                 )
                 if migration_ledger is not None:
-                    from_addr = intent.source.address
-                    to_addr = intent.destination.address
                     source = rop.resolved_op_source
                     effective = (source.effective or source.enacted) if source is not None else ""
                     migration_ledger.record_renumber(
-                        from_addr,
-                        to_addr,
+                        LegalAddress(path=src_path),
+                        LegalAddress(path=landed_path),
                         effective=effective,
                         source_statute=rop.resolved_source_statute,
                     )
@@ -1835,13 +1961,11 @@ def _apply_intent_relabel(
             outcome="applied",
         )
         if migration_ledger is not None:
-            from_addr = intent.source.address
-            to_addr = intent.destination.address
             source = rop.resolved_op_source
             effective = (source.effective or source.enacted) if source is not None else ""
             migration_ledger.record_renumber(
-                from_addr,
-                to_addr,
+                LegalAddress(path=source_subsection_path),
+                LegalAddress(path=landed_subsection_path),
                 effective=effective,
                 source_statute=rop.resolved_source_statute,
             )
@@ -1965,13 +2089,11 @@ def _apply_intent_relabel(
             outcome="applied",
         )
         if migration_ledger is not None:
-            from_addr = intent.source.address
-            to_addr = intent.destination.address
             source = rop.resolved_op_source
             effective = (source.effective or source.enacted) if source is not None else ""
             migration_ledger.record_renumber(
-                from_addr,
-                to_addr,
+                LegalAddress(path=source_item_path),
+                LegalAddress(path=landed_item_path),
                 effective=effective,
                 source_statute=rop.resolved_source_statute,
             )
@@ -2002,6 +2124,7 @@ def _apply_intent_move(
     *,
     failed_ops_out: Optional[List[FailedOp]] = None,
     mutation_events_out: Optional[List[ApplyMutationEvent]] = None,
+    findings_out: Optional[List[Finding]] = None,
     path_hint: Optional[Path] = None,
     migration_ledger: Optional[MigrationLedger] = None,
     write_audits_out: Optional[List[ObservedWriteAudit]] = None,
@@ -2012,6 +2135,13 @@ def _apply_intent_move(
     source_leaf_kind = source_addr.leaf_kind()
     source_leaf_label = source_addr.leaf_label()
     if not source_leaf_kind or not source_leaf_label:
+        _emit_apply_op_skipped_witness(
+            findings_out,
+            rop=rop,
+            reason_code=_MOVE_SKIP_REASON_CODES["source_address_empty"],
+            failure_reason="Move source address is empty",
+            clause_text=f"move source address path={source_addr.path}",
+        )
         _emit_apply_mutation_event_for_rop(
             mutation_events_out,
             rop=rop,
@@ -2039,6 +2169,13 @@ def _apply_intent_move(
         )
 
     if src_path is None:
+        _emit_apply_op_skipped_witness(
+            findings_out,
+            rop=rop,
+            reason_code=_MOVE_SKIP_REASON_CODES["source_not_found"],
+            failure_reason=f"source {source_leaf_kind}:{source_leaf_label} not found",
+            clause_text=f"move source {source_leaf_kind}:{source_leaf_label} not found in tree",
+        )
         _emit_apply_mutation_event_for_rop(
             mutation_events_out,
             rop=rop,
@@ -2052,6 +2189,13 @@ def _apply_intent_move(
 
     node = _tops.resolve(state.ir, src_path)
     if node is None:
+        _emit_apply_op_skipped_witness(
+            findings_out,
+            rop=rop,
+            reason_code=_MOVE_SKIP_REASON_CODES["source_resolved_none"],
+            failure_reason=f"source {source_leaf_kind}:{source_leaf_label} could not be resolved",
+            clause_text=f"move source {source_leaf_kind}:{source_leaf_label} path-resolved to None",
+        )
         _emit_apply_mutation_event_for_rop(
             mutation_events_out,
             rop=rop,
@@ -2065,6 +2209,13 @@ def _apply_intent_move(
 
     destination_node = _tops.resolve(state.ir, dest_parent_path)
     if destination_node is None:
+        _emit_apply_op_skipped_witness(
+            findings_out,
+            rop=rop,
+            reason_code=_MOVE_SKIP_REASON_CODES["destination_parent_not_found"],
+            failure_reason=f"destination parent {'/'.join(f'{k}:{v}' for k, v in dest_parent_path) or '<root>'} not found",
+            clause_text=f"move destination parent path={dest_parent_path} not found",
+        )
         _emit_apply_mutation_event_for_rop(
             mutation_events_out,
             rop=rop,
@@ -2077,6 +2228,13 @@ def _apply_intent_move(
         return state
 
     if any(child.kind == node.kind and child.label == node.label for child in destination_node.children):
+        _emit_apply_op_skipped_witness(
+            findings_out,
+            rop=rop,
+            reason_code=_MOVE_SKIP_REASON_CODES["destination_exists"],
+            failure_reason=f"destination already contains {node.kind.value}:{node.label}",
+            clause_text=f"move destination already contains kind={node.kind.value} label={node.label}",
+        )
         _emit_apply_mutation_event_for_rop(
             mutation_events_out,
             rop=rop,
@@ -2300,6 +2458,7 @@ def _apply_canonical_intent(
                 ctx_label,
                 failed_ops_out=failed_ops_out,
                 mutation_events_out=mutation_events_out,
+                findings_out=findings_out,
                 path_hint=path_hint,
                 migration_ledger=migration_ledger,
                 write_audits_out=write_audits_out,
@@ -2321,6 +2480,7 @@ def _apply_canonical_intent(
                 ctx_label,
                 failed_ops_out=failed_ops_out,
                 mutation_events_out=mutation_events_out,
+                findings_out=findings_out,
                 path_hint=path_hint,
                 migration_ledger=migration_ledger,
                 write_audits_out=write_audits_out,

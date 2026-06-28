@@ -7,12 +7,12 @@ from functools import lru_cache
 from pathlib import Path
 from typing import NamedTuple, Optional
 
-from lawvm.uk_legislation.xml_helpers import _tag, _text_content
+from lawvm.uk_legislation.xml_helpers import _RootScopedCache, _tag, _text_content
 
 
-# lxml _Element objects do not support weak references; use a plain dict.
-# Eviction is explicit via the compile-loop lifecycle (evict_source_root_caches).
-_INSTRUCTION_TEXT_CACHE: dict[ET._Element, str] = {}
+# lxml _Element objects do not support weak references; use _RootScopedCache
+# so eviction is O(keys-for-this-root) via evict_source_root_caches() (§2.7).
+_INSTRUCTION_TEXT_CACHE: _RootScopedCache = _RootScopedCache()
 _NON_ALNUM_RE = re.compile(r"[^0-9a-zA-Z]")
 _FOR_SUBSTITUTE_INSTRUCTION_RE = re.compile(r"\bfor\b.+\bsubstitute\b")
 _TRAILING_INSERT_OR_SUBSTITUTE_RE = re.compile(r"\b(?:insert|substitute)\s*[—-]?\s*$")
@@ -50,9 +50,19 @@ class UKExtractionContext(NamedTuple):
 # simultaneously active).
 # ---------------------------------------------------------------------------
 
-# lxml _Element objects do not support weak references; use a plain dict.
-# Eviction is explicit via evict_source_root_caches() in the compile loop.
-_EXTRACTION_CONTEXT_CACHE: dict[ET._Element, UKExtractionContext] = {}
+# lxml _Element objects do not support weak references; use _RootScopedCache
+# so eviction is O(keys-for-this-root) via evict_source_root_caches() in the
+# compile loop (source_context.py).  The cached UKExtractionContext holds
+# _Element objects (via parent_map values) that can include root itself;
+# explicit eviction breaks this cycle at compile-loop boundaries.  64 entries
+# is enough for the largest UK statutes (ukpga/1970/9 has ~113 distinct
+# affecting-act roots but within any single compile call far fewer are
+# simultaneously active).
+# ---------------------------------------------------------------------------
+
+# lxml _Element objects do not support weak references; use _RootScopedCache
+# so eviction is O(keys-for-this-root) via evict_source_root_caches() (§2.7).
+_EXTRACTION_CONTEXT_CACHE: _RootScopedCache = _RootScopedCache()
 
 
 def _instruction_text_before_amendment_container(el: ET._Element) -> str:

@@ -11,7 +11,7 @@ from lawvm.core.effect_lifecycle import (
     EffectLifecycleEvent,
     EffectRef,
     EffectRelation,
-    lower_lifecycle_events_to_temporal_events,
+    lower_lifecycle_event_to_temporal_event,
     validate_effect_graph_closure,
     validate_effect_graph_unique_ids,
 )
@@ -71,6 +71,7 @@ from lawvm.finland.post_process import _canonicalize_section_shell_order
 from lawvm.finland.tree_invariant_allowances import (
     is_terminal_fi_commencement_section_violation,
 )
+from lawvm.finland.temporal_rewrites import reconcile_temporal_event_expiry_with_op_sources
 
 if TYPE_CHECKING:
     from lawvm.core.stage_result import AuthoritySurface, StageResult
@@ -1300,6 +1301,23 @@ def _merge_temporal_events(
     return tuple(merged)
 
 
+def _lower_lifecycle_events_without_direct_temporal_duplicates(
+    lifecycle_events: tuple[EffectLifecycleEvent, ...],
+    direct_temporal_events: tuple[TemporalEvent, ...],
+) -> tuple[TemporalEvent, ...]:
+    """Lower lifecycle rows without replaying already-present direct carriers."""
+    direct_event_ids = {event.event_id for event in direct_temporal_events}
+    lowered: list[TemporalEvent] = []
+    for lifecycle_event in lifecycle_events:
+        embedded = lifecycle_event.temporal_event
+        if embedded is not None and embedded.event_id in direct_event_ids:
+            continue
+        event = lower_lifecycle_event_to_temporal_event(lifecycle_event)
+        if event is not None:
+            lowered.append(event)
+    return tuple(lowered)
+
+
 def _cached_temporal_events_from_lo_ops(
     lo_ops: list[LegalOperation],
     *,
@@ -1501,6 +1519,20 @@ def _cited_snapshot_materially_covers_current(
     same-effective snapshot structurally covers the later one and contains
     materially more payload.  If the later snapshot adds content or has equivalent
     coverage, it must stay: it is the actual current amendment payload.
+
+    Material coverage is decided by the typed IRNode payload shape counts only
+    (§1.12 — the typed payload IS the owner). The prior criterion additionally
+    rendered both payloads to text and required ``len(cited_text) >=
+    len(current_text) + 80``; that re-derived semantic authority from a lossier
+    representation, so whitespace, editorial comments, or comment-rich prose could
+    bump the score without bumping typed shape (false positive) and conversely a
+    broader snapshot with terse extra nodes could be missed (false negative). The
+    typed criterion is:
+    (a) ``cited_counts`` covers ``current_counts`` — every ``(kind, label)`` tuple
+        in the current payload appears at least as many times in the cited one;
+    (b) the cited payload carries strictly more shape instances than the current
+        one, so the drop fires only when the cited snapshot is genuinely broader
+        — not when prose merely happens to be longer.
     """
     if current_payload is None or cited_payload is None:
         return False
@@ -1508,11 +1540,7 @@ def _cited_snapshot_materially_covers_current(
     cited_counts = _payload_shape_counts(cited_payload)
     if not all(cited_counts[key] >= count for key, count in current_counts.items()):
         return False
-    if sum(cited_counts.values()) <= sum(current_counts.values()):
-        return False
-    current_text = irnode_to_text(current_payload)
-    cited_text = irnode_to_text(cited_payload)
-    return len(cited_text) >= len(current_text) + 80
+    return sum(cited_counts.values()) > sum(current_counts.values())
 
 
 FI_CITED_VERSION_SNAPSHOT_DROP_RULE_ID = "fi.replay.cited_version_ancestor_snapshot_drop"
@@ -2086,9 +2114,13 @@ def build_replay_products(
     but replay products still preserve a bounded fallback synthesis from
     replay-owned structural ops until the producer path is fully migrated.
     """
+    direct_temporal_events = tuple(temporal_events)
     resolved_temporal_events = _merge_temporal_events(
-        tuple(temporal_events),
-        lower_lifecycle_events_to_temporal_events(effect_lifecycle_events),
+        direct_temporal_events,
+        _lower_lifecycle_events_without_direct_temporal_duplicates(
+            effect_lifecycle_events,
+            direct_temporal_events,
+        ),
     )
     if not build_full_products:
         return ReplayProducts(
@@ -2200,6 +2232,13 @@ def build_replay_products(
             resolved_temporal_events,
             synthesized_temporal_events,
         )
+    reconciled_temporal_events = list(resolved_temporal_events)
+    reconcile_temporal_event_expiry_with_op_sources(
+        reconciled_temporal_events,
+        lo_ops,
+        target_statute=base_ir.statute_id,
+    )
+    resolved_temporal_events = tuple(reconciled_temporal_events)
     # Extract the base statute's issue date (FRBR dateIssued / signature date) so
     # that compile_timelines can set the correct `enacted` date on base provisions.
     # This fixes --query-type in_force for pre-enactment as_of dates: the

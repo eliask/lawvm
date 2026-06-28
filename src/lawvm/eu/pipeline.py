@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import re
 import xml.etree.ElementTree as ET
+from collections import Counter
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.filter_result import FilterResult, RejectedItem
 from lawvm.core.invariant_profiles import CORE_REPLAY_DELTA_MINIMAL_FAMILIES
 from lawvm.core.ir import IRStatute, LegalAddress, LegalOperation, OperationSource, StructuralAction
 from lawvm.core.temporal import TemporalEvent
@@ -20,6 +22,7 @@ from lawvm.eu.grafter import parse_eu_regulation_ir
 from lawvm.eu.ops_parser import EUOpsParser, EUOpsParserDiagnostic
 from lawvm.eu.cellar import NoticeRequest, _request_notice
 from lawvm.replay_adjudication import CompileAdjudication
+from lawvm.core.quirks_disposition import QuirksDisposition, coerce_quirks_disposition
 
 
 # ---------------------------------------------------------------------------
@@ -51,7 +54,7 @@ class EUPipelineDiagnostic:
     exception_type: str
     blocking: bool = True
     strict_disposition: str = "block"
-    quirks_disposition: str = "record"
+    quirks_disposition: QuirksDisposition = QuirksDisposition.RECORD
     detail: dict[str, object] = field(default_factory=dict)
 
     def as_detail(self) -> dict[str, object]:
@@ -445,6 +448,184 @@ def apply_eu_ops(
     )
 
 
+# ---------------------------------------------------------------------------
+# Typed apply-result carrier (AGENTS.md §1.8 — replay conservation contract).
+#
+# The classic ``apply_eu_ops`` returns only the mutated :class:`IRStatute` and
+# shuttles skipped-op evidence through an ``adjudications_out`` out-parameter.
+# The AGENTS.md §1.8 contract requires the apply path to return accepted AND
+# rejected carriers (``FilterResult`` shape) so a downstream consumer cannot
+# silently lose track of filtered ops. ``apply_eu_ops_conserved`` is the typed
+# wrapper that mirrors ``apply_eu_ops``'s behaviour and surfaces both lanes
+# via the contract-shape FilterResult[LegalOperation]. Production routing to
+# the conserved wrapper is a separate per-frontend decision (AGENTS.md §1.8);
+# this wrapper is added WITHOUT touching callers.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class EUApplyResult:
+    """Typed apply-result conservation carrier (AGENTS.md §1.8).
+
+    Mirrors the FilterResult contract shape: every op in the input set is
+    either in ``applied_ops`` (its binding landed in the output statute) or
+    surfaces as a :class:`RejectedItem[LegalOperation]` witness in
+    ``skipped_items`` with a ``reason`` / ``reason_code`` and ``blocking``
+    disposition. The mutation footprint (the IRStatute returned by
+    :func:`apply_eu_ops`) is the ``statute`` field.
+
+    The ``filter_result`` field is the canonical ``FilterResult`` projection
+    of the same accepted/rejected partition, so callers that already consume
+    the shared core type can reuse it without unpacking ``applied_ops`` /
+    ``skipped_items`` separately.
+
+    Note: this is distinct from :class:`EUReplayResult`, which carries the
+    full replay pipeline outputs (baseline, timelines, temporal_events).
+    ``EUApplyResult`` is the per-apply-fold receipt only.
+
+    Post-apply adjudications (``eu_replay_tree_invariant_violation`` and
+    ``text_duplication_warning``) are emitted by the bare variant AFTER an op
+    was applied — they record findings about the resulting body, not a skip
+    of the op. They are intentionally NOT in
+    :data:`_EU_SKIP_ADJUDICATION_KINDS`; only the genuine per-op skip kinds
+    (``eu_replay_text_payload_missing`` / ``eu_replay_target_not_found`` /
+    ``eu_replay_parent_not_found`` / ``eu_replay_insert_parent_scope_unresolved``
+    / ``eu_replay_unsupported_action`` / ``eu_replay_unknown_action``) mark an
+    op as rejected.
+    """
+
+    statute: IRStatute
+    filter_result: "FilterResult[LegalOperation]"
+
+    @property
+    def applied_ops(self) -> tuple["LegalOperation", ...]:
+        return self.filter_result.accepted_items
+
+    @property
+    def skipped_items(self) -> tuple["RejectedItem[LegalOperation]", ...]:
+        return self.filter_result.rejected_items
+
+
+# Per-op skip adjudication kinds emitted by :func:`apply_eu_ops`. Each is
+# emitted ONLY at a per-op skip path that emits an adjudication and then
+# ``continue``s (the op is NOT applied). Post-apply findings
+# (``eu_replay_tree_invariant_violation``, ``text_duplication_warning``) are
+# emitted AFTER an op was applied — they are observations about the resulting
+# body, not skips — and are intentionally excluded from this set.
+_EU_SKIP_ADJUDICATION_KINDS = frozenset(
+    {
+        "eu_replay_text_payload_missing",
+        "eu_replay_target_not_found",
+        "eu_replay_parent_not_found",
+        "eu_replay_insert_parent_scope_unresolved",
+        "eu_replay_unsupported_action",
+        "eu_replay_unknown_action",
+    }
+)
+
+
+def apply_eu_ops_conserved(
+    base: IRStatute,
+    ops: List[LegalOperation] | tuple["LegalOperation", ...],
+    *,
+    adjudications_out: Optional[List[CompileAdjudication]] = None,
+) -> EUApplyResult:
+    """Apply an EU op set with a typed conservation receipt (§1.8).
+
+    Mirrors :func:`apply_eu_ops` exactly (same replay semantics, same
+    ``adjudications_out`` side channel — when the caller passes one, both the
+    conserved typed result AND the existing descriptive adjudications are
+    populated). Returns a :class:`EUApplyResult` whose ``filter_result``
+    partitions every input op into accepted (its replay applied) or rejected
+    (its replay skipped, with a witness adjudication carrying the reason).
+    The contract is monotone: every input op ends up either accepted or
+    rejected, never silently dropped.
+
+    The partition keys on ``op_id`` (the EU bare variant emits one
+    ``CompileAdjudication`` per skipped op carrying that op's ``op_id``). An
+    op is rejected iff its ``op_id`` appears in a per-op SKIP adjudication
+    (``eu_replay_text_payload_missing`` / ``eu_replay_target_not_found`` /
+    ``eu_replay_parent_not_found`` /
+    ``eu_replay_insert_parent_scope_unresolved`` /
+    ``eu_replay_unsupported_action`` / ``eu_replay_unknown_action``).
+    Post-apply findings (``eu_replay_tree_invariant_violation``,
+    ``text_duplication_warning``) record observations after an op WAS applied
+    and must NOT mark their op as rejected. Empty or duplicate ``op_id``
+    values would mis-partition the per-op lane and are rejected with a
+    ``ValueError`` rather than silently dropping or mis-bucketing an op.
+    """
+    ops_list = list(ops)
+    # Conservation requires a robust op IDENTITY for the accepted/rejected
+    # partition. The op_id string is NOT a safe identity key: it defaults to
+    # "" (a SKIPPED op with an empty op_id would be filtered out of the
+    # skipped set and silently land in the accepted lane — a §1.8
+    # "never silently dropped" violation) and it is not guaranteed unique
+    # (a duplicate/shared op_id mis-partitions both ops). Fail loud on either
+    # degenerate case so the op_id-keyed partition below is provably bijective.
+    op_ids = [op.op_id for op in ops_list]
+    if any(not op_id for op_id in op_ids):
+        empty_positions = [i for i, op_id in enumerate(op_ids) if not op_id]
+        raise ValueError(
+            "apply_eu_ops_conserved requires every op to carry a non-empty op_id "
+            "(the conservation partition keys on op_id and an empty op_id would be "
+            f"silently dropped from the skipped lane). Empty op_id at positions {empty_positions}."
+        )
+    if len(set(op_ids)) != len(op_ids):
+        counts = Counter(op_ids)
+        duplicates = sorted(op_id for op_id, n in counts.items() if n > 1)
+        raise ValueError(
+            "apply_eu_ops_conserved requires op_ids to be unique (the conservation "
+            "partition keys on op_id and duplicate op_ids would mis-partition). "
+            f"Duplicate op_ids: {duplicates}."
+        )
+    adjudications: List[CompileAdjudication] = list(adjudications_out or [])
+    applied_statute = apply_eu_ops(
+        base,
+        ops_list,
+        adjudications_out=adjudications,
+    )
+    # Partition: an op is REJECTED iff its op_id appears on a per-op SKIP
+    # adjudication. Post-apply findings (eu_replay_tree_invariant_violation,
+    # text_duplication_warning) record observations after an op WAS applied
+    # and must NOT mark their op as rejected. See
+    # ``_EU_SKIP_ADJUDICATION_KINDS`` above.
+    skipped_op_ids = {
+        a.op_id
+        for a in adjudications
+        if a.op_id and a.kind in _EU_SKIP_ADJUDICATION_KINDS
+    }
+    accepted: list[LegalOperation] = []
+    rejected: list[RejectedItem[LegalOperation]] = []
+    for op in ops_list:
+        if op.op_id in skipped_op_ids:
+            matching = [a for a in adjudications if a.op_id == op.op_id and a.kind in _EU_SKIP_ADJUDICATION_KINDS]
+            reason = matching[0].message if matching else "EU replay op skipped without a typed reason."
+            reason_code = matching[0].kind if matching else "eu_replay_skipped_unspecified"
+            rejected.append(
+                RejectedItem(
+                    item=op,
+                    reason=reason,
+                    reason_code=reason_code,
+                    blocking=False,
+                )
+            )
+        else:
+            accepted.append(op)
+    # If the caller passed their own adjudications_out, surface there too --
+    # the existing descriptive adjudications path is NOT replaced by the typed
+    # carrier; both share the same evidence ledger (mirrors the SE wrapper).
+    if adjudications_out is not None:
+        adjudications_out.clear()
+        adjudications_out.extend(adjudications)
+    return EUApplyResult(
+        statute=applied_statute,
+        filter_result=FilterResult(
+            accepted_items=tuple(accepted),
+            rejected_items=tuple(rejected),
+        ),
+    )
+
+
 @dataclass
 class EUReplayResult:
     """Result of an EU statute replay."""
@@ -472,7 +653,7 @@ def _eu_pipeline_diagnostic_from_cellar_row(celex: str, row: dict[str, Any]) -> 
         exception_type=str(detail.get("reason_code") or row.get("kind") or "cellar_diagnostic"),
         blocking=bool(row.get("blocking", True)),
         strict_disposition=str(row.get("strict_disposition") or "block"),
-        quirks_disposition=str(row.get("quirks_disposition") or "record"),
+        quirks_disposition=coerce_quirks_disposition(row.get("quirks_disposition") or QuirksDisposition.RECORD),
         detail={
             "cellar_source": str(row.get("source") or ""),
             "cellar_detail": dict(detail),

@@ -4,14 +4,13 @@ from __future__ import annotations
 
 from typing import Any, Optional, Protocol
 
-from lawvm.core.ir import LegalAddress, LegalOperation
+from lawvm.core.ir import IRNode, LegalAddress, LegalOperation
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.addressing import _uk_kind_value
 from lawvm.uk_legislation.heading_facets import (
     _UK_REPLAY_CROSSHEADING_AND_STRUCTURAL_REPEAL_RESOLVED_RULE_ID,
     _UK_REPLAY_CROSSHEADING_AND_STRUCTURAL_REPEAL_UNRESOLVED_RULE_ID,
 )
-from lawvm.uk_legislation.mutable_ir import UKMutableNode
 from lawvm.uk_legislation.replay_records import (
     _append_uk_replay_adjudication,
     uk_replay_action_target_detail,
@@ -24,13 +23,13 @@ class _HeadingReplaySelf(Protocol):
 
     def _find_parent_tuple_for_node(
         self,
-        target_node: UKMutableNode,
-    ) -> tuple[Optional[UKMutableNode], Optional[int]]: ...
+        target_node: IRNode,
+    ) -> tuple[Optional[IRNode], Optional[int]]: ...
 
     def _remove_node(
         self,
-        node: UKMutableNode,
-        parent: Optional[UKMutableNode],
+        node: IRNode,
+        parent: Optional[IRNode],
         idx: Optional[int],
     ) -> bool: ...
 
@@ -42,8 +41,8 @@ class UKReplayHeadingApplyMixin:
     def _repeal_crossheading_group(
         self: _HeadingReplaySelf,
         target: LegalAddress,
-        node: UKMutableNode,
-        parent: Optional[UKMutableNode],
+        node: IRNode,
+        parent: Optional[IRNode],
         op: LegalOperation,
         selector: dict[str, Any],
     ) -> bool:

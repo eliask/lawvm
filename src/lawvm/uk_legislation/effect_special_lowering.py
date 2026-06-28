@@ -969,13 +969,11 @@ def lower_uk_after_section_subsection_range_insert_block_amendment(
     for index, label in enumerate(expected_labels):
         payload_el = payload_by_label[label]
         payload_node = _strip_payload_leading_label(
-            irnode_from_dict(
-                _parse_p2(
-                    payload_el,
-                    "body",
-                    force_active=True,
-                    pit_date=None,
-                ).to_dict()
+            _parse_p2(
+                payload_el,
+                "body",
+                force_active=True,
+                pit_date=None,
             )
         )
         target_ref = f"s. {after_section_subsection_range_insert['section']}({label})"

@@ -29,6 +29,7 @@ from lawvm.finland.johtolause.grammar.jolloin import (
     build_jolloin_group,
     build_jolloin_nodes,
 )
+from lawvm.finland.johtolause.jolloin_pair import JolloinRenumberPair
 from lawvm.finland.johtolause.lexer import tokenize
 from lawvm.finland.johtolause.scan import apply_annotations_with_jolloin_pairs
 from lawvm.finland.johtolause.surface_model import (
@@ -151,7 +152,7 @@ def test_section_pair_builds_bare_target_plus_tail() -> None:
     """A P-kind pair → bare SECTION target + renumber tail, no chapter/sub-refs."""
     nodes = build_jolloin_nodes(
         consumed_positions=[5],
-        jolloin_renumber_pairs={5: [("13", "12", "P")]},
+        jolloin_renumber_pairs={5: [JolloinRenumberPair("13", "12", "P")]},
         jolloin_contexts={},
     )
     assert len(nodes) == 2
@@ -172,7 +173,7 @@ def test_chapter_pair_uses_pair_kind_target() -> None:
     """An L-kind pair → CHAPTER target (the pair-kind drives TargetKind)."""
     nodes = build_jolloin_nodes(
         consumed_positions=[3],
-        jolloin_renumber_pairs={3: [("4", "5", "L")]},
+        jolloin_renumber_pairs={3: [JolloinRenumberPair("4", "5", "L")]},
     )
     assert len(nodes) == 2
     tgt = nodes[0]
@@ -185,7 +186,7 @@ def test_momentti_pair_materializes_anchor_section() -> None:
     """An M-kind pair with an anchor → SECTION target + momentti sub-ref."""
     nodes = build_jolloin_nodes(
         consumed_positions=[7],
-        jolloin_renumber_pairs={7: [("2", "3", "M")]},
+        jolloin_renumber_pairs={7: [JolloinRenumberPair("2", "3", "M")]},
         jolloin_contexts={7: ("1", "5")},
     )
     assert len(nodes) == 2
@@ -202,12 +203,12 @@ def test_momentti_pair_without_anchor_is_dropped() -> None:
     """NEGATIVE: an M-kind pair with no anchor section drops the WHOLE pair."""
     nodes = build_jolloin_nodes(
         consumed_positions=[7],
-        jolloin_renumber_pairs={7: [("2", "3", "M")]},
+        jolloin_renumber_pairs={7: [JolloinRenumberPair("2", "3", "M")]},
         jolloin_contexts={},  # no context for pos 7 → ("", "")
     )
     assert nodes == []
     # And the group wrapper returns None (no empty group is prepended).
-    group = build_jolloin_group([7], {7: [("2", "3", "M")]}, {})
+    group = build_jolloin_group([7], {7: [JolloinRenumberPair("2", "3", "M")]}, {})
     assert group is None
 
 
@@ -221,7 +222,12 @@ def test_multiple_pairs_preserve_order() -> None:
     """Multiple pairs at one position emit in order, each target+tail adjacent."""
     nodes = build_jolloin_nodes(
         consumed_positions=[2],
-        jolloin_renumber_pairs={2: [("10", "11", "P"), ("12", "13", "P")]},
+        jolloin_renumber_pairs={
+            2: [
+                JolloinRenumberPair("10", "11", "P"),
+                JolloinRenumberPair("12", "13", "P"),
+            ]
+        },
     )
     assert len(nodes) == 4
     assert isinstance(nodes[0], SurfaceTargetRef) and nodes[0].label == "10"
@@ -232,7 +238,7 @@ def test_multiple_pairs_preserve_order() -> None:
 
 def test_group_verb_is_siirtaa() -> None:
     """The wrapped group is always a SIIRTAA verb group."""
-    group = build_jolloin_group([1], {1: [("3", "4", "P")]})
+    group = build_jolloin_group([1], {1: [JolloinRenumberPair("3", "4", "P")]})
     assert group is not None
     assert group.verb == VerbKind.SIIRTAA
     assert len(group.nodes) == 2

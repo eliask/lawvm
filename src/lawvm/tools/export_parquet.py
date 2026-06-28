@@ -27,6 +27,7 @@ from collections import Counter
 from concurrent.futures import as_completed
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple, cast
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 # Suppress chatty projection warnings during bulk export
 warnings.filterwarnings("ignore", message=".*out-of-order.*")
@@ -100,7 +101,7 @@ def _section_diff_failed_finding(statute_id: str, exc: Exception) -> Dict[str, A
         "phase": "projection",
         "blocking": False,
         "strict_disposition": "record",
-        "quirks_disposition": "record",
+        "quirks_disposition": QuirksDisposition.RECORD,
         "section_diff_status": "section_diff_failed",
         "error_type": type(exc).__name__,
     }

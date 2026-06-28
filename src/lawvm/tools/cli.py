@@ -12,6 +12,7 @@ Subcommands:
     snapshot-debug <statute_id>  Inspect timeline snapshots emitted by one amendment.
     product-debug <statute_id>  Inspect timeline entries and materialization for one amendment.
     phase-witness <statute_id>  Emit a machine-readable amendment phase witness for Finland replay.
+    profile   <statute_id>  cProfile the single-statute compile + replay path (AGENTS.md §2.7).
     oracle-context <statute_id>  Inspect selected Finland oracle locator and version context.
     oracle-text <statute_id>  Fetch oracle consolidated section text at a specific amendment version.
     replay-plan <statute_id>  Inspect replay lineage and oracle selection for one Finland statute.
@@ -637,6 +638,30 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         action="store_true",
         help="emit JSON (includes full per-step detail)",
     )
+    invariant_bisect_p.add_argument(
+        "--as-of",
+        dest="as_of",
+        default="",
+        metavar="YYYY-MM-DD",
+        help=(
+            "EE bisect: target date for amendments effective on or before "
+            "this date. Defaults to today when -j ee and --as-of is omitted. "
+            "Ignored by -j fi / -j uk."
+        ),
+    )
+    invariant_bisect_p.add_argument(
+        "--oracle-id",
+        dest="oracle_id",
+        default="",
+        metavar="AKT_VIIDE",
+        help=(
+            "EE bisect: explicit consolidated oracle aktViide marking the "
+            "end of the amendment scan window (effective amendments between "
+            "base_effective and oracle_effective are scanned). When omitted "
+            "EE tries to auto-resolve an oracle from grupi_id for as_of. "
+            "Ignored by -j fi / -j uk."
+        ),
+    )
 
     # --- self-consistency ---
     self_consistency_p = sub.add_parser(
@@ -853,6 +878,65 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         "--json",
         action="store_true",
         help="emit JSON",
+    )
+
+    # --- profile ---
+    profile_p = sub.add_parser(
+        "profile",
+        parents=_P,
+        help="cProfile the single-statute compile + replay path (AGENTS.md §2.7)",
+        description=(
+            "Wrap the same single-statute compile + replay path as `lawvm "
+            "replay` (FI default) in cProfile. Write a pstats dump to --out "
+            "when supplied, and print a top-N cumtime summary to stdout so the "
+            "user can eyeball hotspots without loading the pstats file "
+            "separately. Use this BEFORE reasoning about hot paths; code-reading "
+            "hypotheses about hot paths are usually wrong (AGENTS.md §2.7). "
+            "Synchronous single-statute only — no parallelism inside the profiler."
+        ),
+    )
+    profile_p.add_argument(
+        "statute_id",
+        help="base act identifier, e.g. 2006/1299",
+    )
+    profile_p.add_argument(
+        "--as-of",
+        dest="as_of",
+        required=True,
+        metavar="YYYY-MM-DD",
+        help="target date for amendments (same semantics as `lawvm replay --as-of`)",
+    )
+    profile_p.add_argument(
+        "--out",
+        dest="out",
+        metavar="PATH.pstats",
+        help=(
+            "write a pstats dump to this path; if omitted, only the cumtime "
+            "summary is printed to stdout"
+        ),
+    )
+    profile_p.add_argument(
+        "--top",
+        type=int,
+        default=25,
+        metavar="N",
+        help="number of rows in the printed cumtime summary (default: 25)",
+    )
+    profile_p.add_argument(
+        "--mode",
+        default="legal_pit",
+        type=replay_mode_argument,
+        choices=["official_consolidation", "legal_pit"],
+        help="replay mode (default: legal_pit, mirrors `lawvm replay`)",
+    )
+    profile_p.add_argument(
+        "--strict",
+        dest="strict",
+        action="store_true",
+        help=(
+            "run in strict mode (FINLAND_INGESTION_V1 profile): heuristics the "
+            "profile forbids are skipped and recorded as adjudications"
+        ),
     )
 
     # --- oracle-context ---
@@ -12879,6 +12963,11 @@ def _main_impl() -> None:
         from lawvm.tools.phase_witness import main as phase_witness_main
 
         phase_witness_main(args)
+
+    elif args.command == "profile":
+        from lawvm.tools.profile import main as profile_main
+
+        profile_main(args)
 
     elif args.command == "oracle-context":
         from lawvm.tools.oracle_context import main as oracle_context_main

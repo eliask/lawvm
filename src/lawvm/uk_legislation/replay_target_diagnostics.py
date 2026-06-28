@@ -6,18 +6,13 @@ import re
 from dataclasses import replace as dc_replace
 from typing import TYPE_CHECKING, Optional, cast
 
-from lawvm.core.ir import LegalAddress, LegalOperation, TextPatchSpec
+from lawvm.core.ir import IRNode, IRStatute, LegalAddress, LegalOperation, TextPatchSpec
 from lawvm.core.semantic_types import TextPatchKindEnum
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.roman import roman_to_arabic as _shared_roman_to_arabic
 from lawvm.uk_legislation.addressing import _addr_container, _addr_leaf_kind, _uk_kind_value
 from lawvm.uk_legislation.canonicalize import uk_is_transparent_wrapper_kind, uk_kind_matches
-from lawvm.uk_legislation.mutable_ir import (
-    UKMutableNode,
-    UKMutableStatute,
-    uk_insert_child_sorted,
-    uk_ir_node_kind,
-)
+from lawvm.uk_legislation.apply_rebuild import uk_ir_node_kind
 from lawvm.uk_legislation.ordering import _label_sort_key
 from lawvm.uk_legislation.replay_records import (
     _append_uk_replay_adjudication,
@@ -46,7 +41,7 @@ _UK_REPLAY_SOURCE_CARRIED_LABELED_CHILD_TEXT_SUBSTITUTION_RULE_ID = (
 )
 
 
-def _descendant_labels_by_kind(node: UKMutableNode, *, kinds: set[str]) -> list[str]:
+def _descendant_labels_by_kind(node: IRNode, *, kinds: set[str]) -> list[str]:
     out: list[str] = []
     stack = list(getattr(node, "children", []) or [])
     while stack:
@@ -89,7 +84,7 @@ def _part_numeric_value(raw: str) -> int | None:
     return _shared_roman_to_arabic(text)
 
 
-def _collect_sectionlike_descendant_labels(node: UKMutableNode | None) -> list[str]:
+def _collect_sectionlike_descendant_labels(node: IRNode | None) -> list[str]:
     if node is None:
         return []
     labels: list[str] = []
@@ -106,7 +101,7 @@ def _collect_sectionlike_descendant_labels(node: UKMutableNode | None) -> list[s
 
 
 class UKReplayTargetDiagnosticsMixin:
-    statute: UKMutableStatute
+    statute: IRStatute
     adjudications_out: list[CompileAdjudication]
 
     if TYPE_CHECKING:
@@ -122,7 +117,7 @@ class UKReplayTargetDiagnosticsMixin:
 
         def _apply_text_replace_on_node_text_only(
             self,
-            node: UKMutableNode,
+            node: IRNode,
             match: str,
             replacement: str,
             occurrence: int,
@@ -131,11 +126,11 @@ class UKReplayTargetDiagnosticsMixin:
             allow_punctuation_spacing: bool = False,
             allow_word_punctuation_elision: bool = False,
             recovery_rule_ids_out: Optional[list[str]] = None,
-        ) -> tuple[UKMutableNode, bool]: ...
+        ) -> tuple[IRNode, bool]: ...
 
         def _apply_text_replace_on_subtree(
             self,
-            node: UKMutableNode,
+            node: IRNode,
             match: str,
             replacement: str,
             occurrence: int,
@@ -144,13 +139,19 @@ class UKReplayTargetDiagnosticsMixin:
             allow_punctuation_spacing: bool = False,
             allow_word_punctuation_elision: bool = False,
             recovery_rule_ids_out: Optional[list[str]] = None,
-        ) -> tuple[UKMutableNode, bool]: ...
+        ) -> tuple[IRNode, bool]: ...
 
-        def _replace_node_in_statute(self, old_node: UKMutableNode, new_node: UKMutableNode) -> bool: ...
+        def _replace_node_in_statute(self, old_node: IRNode, new_node: IRNode) -> bool: ...
 
         def _derive_target_eid(self, addr: LegalAddress) -> str: ...
 
-        def _record_child_inserted(self, parent: UKMutableNode, node: UKMutableNode) -> None: ...
+        def _record_child_inserted(self, parent: IRNode, node: IRNode) -> None: ...
+
+        def _cow_insert_child_sorted_and_record(
+            self,
+            parent: IRNode,
+            new_node: IRNode,
+        ) -> bool: ...
 
         def _log(self, message: str) -> None: ...
 
@@ -693,7 +694,7 @@ class UKReplayTargetDiagnosticsMixin:
         self,
         op: LegalOperation,
         target: LegalAddress,
-        new_node: UKMutableNode,
+        new_node: IRNode,
     ) -> bool:
         witness = _witness_for_op(op)
         extraction = getattr(witness, "extraction_witness", None)
@@ -741,10 +742,16 @@ class UKReplayTargetDiagnosticsMixin:
                 self._replace_node_in_statute(old_parent_node, parent_node)
 
         if not str(new_node.attrs.get("eId") or new_node.attrs.get("id") or ""):
-            new_node.attrs["eId"] = self._derive_target_eid(target)
-        if not uk_insert_child_sorted(parent_node, new_node):
+            # Sub-PR C+D: IRNode.attrs is now a FrozenDict — rebuild via dc_replace.
+            new_node = dc_replace(
+                new_node,
+                attrs={**dict(new_node.attrs), "eId": self._derive_target_eid(target)},
+            )
+        # PR3 (audit XJUR-02 / AGENTS.md §2.3): CoW sorted-insert variant;
+        # rebuilds parent_node + threads up to the statute root without any
+        # in-place mutation of ``parent_node.children``.
+        if not self._cow_insert_child_sorted_and_record(parent_node, new_node):
             return False
-        self._record_child_inserted(parent_node, new_node)
         _append_uk_replay_adjudication(
             self.adjudications_out,
             kind="uk_replay_source_carried_structured_tail_substitution_recovered",
@@ -774,7 +781,7 @@ class UKReplayTargetDiagnosticsMixin:
         self,
         op: LegalOperation,
         target: LegalAddress,
-        node: UKMutableNode,
+        node: IRNode,
         text_patch: TextPatchSpec,
         replacement: str,
     ) -> bool:
@@ -844,7 +851,7 @@ class UKReplayTargetDiagnosticsMixin:
                 part for part in (rebuilt_text, child_shape.parent_prefix) if part
             )
         parent_eid = str(node.attrs.get("eId") or node.attrs.get("id") or "")
-        children: list[UKMutableNode] = []
+        children: list[IRNode] = []
         canonical_child_kind = uk_ir_node_kind(child_kind).value
         for label, child_text in parts:
             child_target = LegalAddress(path=(*tuple(target.path), (canonical_child_kind, label)), special=None)
@@ -855,7 +862,7 @@ class UKReplayTargetDiagnosticsMixin:
             elif parent_eid:
                 attrs["eId"] = f"{parent_eid}-{label}"
             children.append(
-                UKMutableNode(
+                IRNode(
                     kind=uk_ir_node_kind(canonical_child_kind),
                     label=label,
                     text=child_text,

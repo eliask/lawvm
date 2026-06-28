@@ -499,10 +499,19 @@ def run_invariant_detector(
     ir: Any,
     detector: str,
     target_path: str = "",
+    *,
+    definition_introducer_predicate: Callable[[IRNode], bool] | None = None,
 ) -> list[InvariantDetectorResult]:
     """Run a structural/lint detector and return typed results.
 
     The message field intentionally preserves the existing CLI string surface.
+
+    ``definition_introducer_predicate`` (optional) is forwarded to
+    ``build_flattened_sublist_findings`` for the ``flattened_sublist_family``
+    detector. It is the frontend-supplied "is this parent a definition-list
+    introducer?" predicate (Finland wires its FI predicate at the
+    ``invariant-bisect`` CLI dispatch); other callers omit it (AGENTS.md §2.3 —
+    core hosts the hook; it does not interpret frontend-local values).
     """
     if detector not in SUPPORTED_INVARIANT_DETECTORS:
         supported = ", ".join(SUPPORTED_INVARIANT_DETECTORS)
@@ -573,7 +582,11 @@ def run_invariant_detector(
 
     if detector == "flattened_sublist_family":
         results = []
-        for finding in build_flattened_sublist_findings(ir, phase="diagnose_phase"):
+        for finding in build_flattened_sublist_findings(
+            ir,
+            phase="diagnose_phase",
+            definition_introducer_predicate=definition_introducer_predicate,
+        ):
             warning = finding.detail
             kind = str(warning.get("kind") or "?")
             path = str(warning.get("path") or "?")
@@ -647,6 +660,16 @@ def run_invariant_detector_messages(
     ir: Any,
     detector: str,
     target_path: str = "",
+    *,
+    definition_introducer_predicate: Callable[[IRNode], bool] | None = None,
 ) -> list[str]:
     """Compatibility projection for legacy CLI output."""
-    return [result.message for result in run_invariant_detector(ir, detector, target_path)]
+    return [
+        result.message
+        for result in run_invariant_detector(
+            ir,
+            detector,
+            target_path,
+            definition_introducer_predicate=definition_introducer_predicate,
+        )
+    ]

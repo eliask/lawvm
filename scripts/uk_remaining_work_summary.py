@@ -17,6 +17,7 @@ from typing import Any, Iterable, Mapping, Sequence
 from lawvm.core.candidate_set_coverage import CandidateSetCoverage
 from lawvm.core.execution_authorization import ExecutionAuthorization
 from lawvm.core.frontier_work_item import FrontierWorkItem
+from lawvm.core.quirks_disposition import QuirksDisposition
 
 
 _DEFAULT_REFERENCE_BUCKET = "high_fidelity_after_grounding"
@@ -737,7 +738,7 @@ def _execution_authorization(
         authorization_rule_id=f"uk_remaining_work_{spec.lane_id}_non_executable",
         owner_phase=owner_phase,
         strict_disposition="record",
-        quirks_disposition="record",
+        quirks_disposition=QuirksDisposition.RECORD,
         validator_status="remaining_work_summary_projection",
         required_proofs=missing_proofs or ("frontier_review",),
         safe_default="classify_or_queue_without_replay_promotion",
