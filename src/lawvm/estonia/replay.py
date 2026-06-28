@@ -943,15 +943,16 @@ def _ee_precompose_pending_source_act_commencements(
     *,
     as_of: str,
     archive: Any,
+    adjudications_out: list[CompileAdjudication] | None = None,
     successful_xml_cache: dict[str, bytes] | None = None,
-) -> tuple[tuple[AmendmentRef, ...], tuple[CompileAdjudication, ...]]:
+) -> FilterResult[AmendmentRef]:
     """Apply source-backed commencement amendments to pending source-act refs."""
     if len(refs) < 2:
-        return refs, ()
+        return filter_result_from_parts(accepted_items=refs)
 
     xml_by_ref: dict[str, bytes] = {}
     title_by_ref: dict[str, str] = {}
-    adjudications: list[CompileAdjudication] = []
+    adjudications = adjudications_out if adjudications_out is not None else []
     for ref in refs:
         try:
             xml_bytes = _ee_fetch_rt_xml_cached(ref.aktViide, archive, successful_xml_cache)
@@ -1055,7 +1056,7 @@ def _ee_precompose_pending_source_act_commencements(
                     joustumine=replacement_date,
                 )
             )
-    return tuple(sorted(updated_refs, key=_ee_ref_sort_key)), tuple(adjudications)
+    return FilterResult(accepted_items=tuple(sorted(updated_refs, key=_ee_ref_sort_key)))
 
 
 def _ee_precompose_pending_amendment_text_patches(
@@ -1608,12 +1609,15 @@ def replay_ee_to_pit(
         successful_xml_cache=successful_amendment_xml_cache,
     )
     to_apply = list(cancelled_pending_result.accepted_items)
-    to_apply, commencement_precomposition_adjudications = _ee_precompose_pending_source_act_commencements(
+    commencement_precomposition_adjudications: list[CompileAdjudication] = []
+    commencement_precomposition_result = _ee_precompose_pending_source_act_commencements(
         tuple(to_apply),
         as_of=as_of,
         archive=_archive,
+        adjudications_out=commencement_precomposition_adjudications,
         successful_xml_cache=successful_amendment_xml_cache,
     )
+    to_apply = list(commencement_precomposition_result.accepted_items)
     to_skip = [
         ref for ref in pair_plan.base_refs if ref.aktViide not in {x.aktViide for x in to_apply}
     ]

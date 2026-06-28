@@ -937,7 +937,7 @@ def _patch_replay_for_crash_drill(
     monkeypatch.setattr(
         ee_replay,
         "_ee_precompose_pending_source_act_commencements",
-        lambda refs, **kw: (tuple(refs), ()),
+        lambda refs, **kw: filter_result_from_parts(accepted_items=tuple(refs)),
     )
     monkeypatch.setattr(ee_replay, "parse_ee_amendment_ops", lambda *a, **kw: [])
     monkeypatch.setattr(ee_replay, "apply_ee_ops", lambda statute, ops, **kw: statute)

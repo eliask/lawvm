@@ -3655,14 +3655,18 @@ def test_precompose_pending_source_act_commencement_defers_future_effective_act(
         lambda akt_viide, archive: xml_by_id[akt_viide],
     )
 
-    refs, adjudications = _ee_precompose_pending_source_act_commencements(
+    _adjs: list = []
+    _pcompose = _ee_precompose_pending_source_act_commencements(
         (
             _ref("later", "2011-12-08", "2011-12-23"),
             _ref("earlier", "2011-02-17", "2012-01-01"),
         ),
         as_of="2012-02-01",
         archive=None,
+        adjudications_out=_adjs,
     )
+    adjudications = _adjs
+    refs = _pcompose.accepted_items
 
     assert [ref.aktViide for ref in refs] == ["later"]
     assert len(adjudications) == 1
@@ -3691,14 +3695,18 @@ def test_precompose_pending_source_act_commencement_records_fetch_failure(monkey
 
     monkeypatch.setattr("lawvm.estonia.replay.fetch_rt_xml", fake_fetch)
 
-    refs, adjudications = _ee_precompose_pending_source_act_commencements(
+    _adjs: list = []
+    _pcompose = _ee_precompose_pending_source_act_commencements(
         (
             _ref("missing", "2011-02-17", "2012-01-01"),
             _ref("later", "2011-12-08", "2011-12-23"),
         ),
         as_of="2012-02-01",
         archive=None,
+        adjudications_out=_adjs,
     )
+    adjudications = _adjs
+    refs = _pcompose.accepted_items
 
     assert [ref.aktViide for ref in refs] == ["later", "missing"]
     assert len(adjudications) == 1
@@ -3749,14 +3757,18 @@ def test_precompose_pending_source_act_commencement_keeps_now_effective_override
         lambda akt_viide, archive: {"earlier": earlier_xml, "later": later_xml}[akt_viide],
     )
 
-    refs, adjudications = _ee_precompose_pending_source_act_commencements(
+    _adjs: list = []
+    _pcompose = _ee_precompose_pending_source_act_commencements(
         (
             _ref("later", "2011-12-08", "2011-12-23"),
             _ref("earlier", "2011-02-17", "2012-01-01"),
         ),
         as_of="2012-08-01",
         archive=None,
+        adjudications_out=_adjs,
     )
+    adjudications = _adjs
+    refs = _pcompose.accepted_items
 
     assert [(ref.aktViide, ref.joustumine) for ref in refs] == [
         ("later", "2011-12-23"),
@@ -3858,7 +3870,7 @@ def _patch_minimal_ee_replay_pipeline(monkeypatch, ee_replay, *, pair_plan, fetc
     monkeypatch.setattr(
         ee_replay,
         "_ee_precompose_pending_source_act_commencements",
-        lambda refs, **kwargs: (tuple(refs), ()),
+        lambda refs, **kwargs: filter_result_from_parts(accepted_items=tuple(refs)),
     )
     monkeypatch.setattr(ee_replay, "parse_ee_amendment_ops", parse_amendment_ops)
     monkeypatch.setattr(ee_replay, "apply_ee_ops", lambda statute, ops, **kwargs: statute)
