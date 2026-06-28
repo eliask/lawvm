@@ -542,6 +542,19 @@ _US_RULE_SPECS: Dict[str, str] = {
         "rather than composed as a section-tanking divergence that would corrupt a "
         "sibling op's correct materialization of the same section."
     ),
+    # --- Dry-run typed refusals: target-hijacking guard (§1.1) -----------------------
+    "us_dry_run_refused_insert_payload_catchline_section_mismatch": (
+        "Refusal: a whole-section INSERT op's payload opens with a section-level "
+        "catchline (USLM ``§ <num>.`` or Statutes-at-Large ``SEC. <num>.``) whose "
+        "section number does NOT match the op's target section. The amendatory "
+        "lowerer mis-routed the op — most often a Public Law section that creates an "
+        "entirely separate USC section was routed onto an existing section's "
+        "address. Appending the body to the named target would silently materialize "
+        "another section's text under the wrong address (AGENTS.md §1.1: no silent "
+        "target hijacking). Refused (never composed) so the section's other ops "
+        "keep composing on the unchanged before text — the safe wrong "
+        "(over-retention, never over-repeal)."
+    ),
     # --- Temporal refusal: source-side effective/expiry places the op outside the window.
     "us_dry_run_deferred_op_not_yet_effective": (
         "Refusal: the instruction carries a source-side effective or expiry date that "

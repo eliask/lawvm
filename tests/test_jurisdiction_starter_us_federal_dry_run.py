@@ -2402,6 +2402,247 @@ def test_whole_section_replace_keeps_payload_when_catchline_not_delimitable() ->
 
 
 # ---------------------------------------------------------------------------
+# INSERT catchline-mismatch refusal (§1.1: no silent target hijacking)
+# ---------------------------------------------------------------------------
+
+# Real witness: PL 110-246 SEC. 416 ("ANNUAL REPORT.") creates USC 7:228d. The
+# amendatory lowerer dispatched the INSERT op with the Verbatim PL section
+# heading ``SEC. 416.`` as the leading catchline of the payload, but routed the
+# op target onto the *existing* USC 7:228d. The pre-existing dry-run appended
+# the new section's body to the existing section's body, producing a 5752-char
+# materialization against a 376-char oracle — a 15.3x over-insert ``lawvm_wrong``
+# row. The same audit class is present on PL 110-246 SEC. 209 -> 7:7511 (over-
+# insert 10.7x). 123 such mis-routed INSERT ops were identified across the
+# 14 high-activity windows in the post-classification-index bench.
+
+
+def _insert_catchline_mismatch_op(
+    *,
+    target_section: str = "228d",
+    payload_text: str = (
+        "SEC. 416. ANNUAL REPORT."
+        "“(a) In General.—Not later than March 1 of each year, the "
+        "Secretary shall submit to Congress and make publicly available "
+        "a report that—“(1) states, for the preceding year, separately for "
+        "livestock and poultry and separately by enforcement area category."
+    ),
+) -> LegalOperation:
+    return LegalOperation(
+        op_id="PL 110-246#instr640",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(
+            path=(("title", "7"), ("section", target_section))
+        ),
+        payload=IRNode(
+            kind=IRNodeKind.SECTION, label=target_section, text=payload_text
+        ),
+    )
+
+
+def test_insert_with_statutes_at_large_catchline_for_a_different_section_is_refused() -> None:
+    """§1.1 guard-liveness: a whole-section INSERT whose payload opens with a
+    different section's catchline (here Statutes-at-Large ``SEC. 416.`` for
+    an op targeting ``7:228d``) is REFUSED — never composed as a wrong
+    materialization that appends another section's body to this target.
+
+    Real witness: PL 110-246 SEC. 416 creates USC 7:228d (a NEW section); the
+    amendatory lowerer mis-routed the op to the existing target ``title:7/
+    section:228d``. Faithfully appending the body would produce a 15x over-
+    insert over the unchanged 376-char oracle (the section is unchanged
+    in the oracle: PL 110-246 SEC. 416 is a creation elsewhere).
+
+    AGENTS.md §0/§1.1: a mis-routed op is preserved as a typed refusal, never
+    silently composed. The refusal embeds the offending payload preview so
+    a reviewer can triage without re-running extraction (§1.10).
+    """
+    from lawvm.us_federal.dry_run import (
+        US_DRY_RUN_REFUSED_INSERT_CATCHLINE_MISMATCH_RULE_ID,
+    )
+
+    op = _insert_catchline_mismatch_op()
+    before_text = (
+        "Not later than March 1 of each year, the Secretary shall submit to "
+        "Congress and make publicly available a report that— (1) assesses the "
+        "general economic state of the cattle and hog industries."
+    )
+    outcome = _materialize_one(op, before_text)
+    assert isinstance(outcome, USDryRunRefusal)
+    assert outcome.rule_id == US_DRY_RUN_REFUSED_INSERT_CATCHLINE_MISMATCH_RULE_ID
+    assert outcome.target_address == "title:7/section:228d"
+    # The diagnostic embeds the offending payload preview (§1.10) — the
+    # leading catchline_carrier must be visible without re-running extraction.
+    assert "SEC. 416." in outcome.detail["payload_preview"]
+    assert outcome.detail["target_section"] == "228d"
+    assert outcome.detail["payload_catchline_section"] == "416"
+    # The message distinguishes the catchline-section mismatch from any other
+    # refusal class (no opaque "missing source" string; §1.10 says the
+    # diagnostic must name the concrete fix path).
+    assert "INSERT op targets section '228d'" in outcome.message
+    assert "catchline for '416'" in outcome.message
+
+
+def test_insert_with_uslm_catchline_for_a_different_section_is_refused() -> None:
+    """Negative-side coverage for the USLM positive-law form ``§ <num>.`` of the
+    same family. Real witness: PL 116-283 SEC. 1807 routed ``§ 3066.`` (USC
+    5:3066) onto target ``10:2311``. Both catchline forms (USLM ``§`` and
+    Statutes-at-Large ``SEC.``) route through the same detector.
+    """
+    from lawvm.us_federal.dry_run import (
+        US_DRY_RUN_REFUSED_INSERT_CATCHLINE_MISMATCH_RULE_ID,
+    )
+
+    op = _insert_catchline_mismatch_op(
+        target_section="2311",
+        payload_text=(
+            "§ 3066. Assignment and delegation of procurement functions and "
+            "responsibilities: procurements for or with other agencies"
+            "“(a) In General.—The head of an executive agency may delegate..."
+        ),
+    )
+    outcome = _materialize_one(op, "(a) old body for section 2311.")
+    assert isinstance(outcome, USDryRunRefusal)
+    assert outcome.rule_id == US_DRY_RUN_REFUSED_INSERT_CATCHLINE_MISMATCH_RULE_ID
+    assert outcome.detail["target_section"] == "2311"
+    assert outcome.detail["payload_catchline_section"] == "3066"
+    # The payload preview is the leading ~400 chars — covers the catchline and
+    # part of the heading.
+    assert "§ 3066." in outcome.detail["payload_preview"]
+
+
+def test_insert_with_catchline_matching_target_section_is_not_refused() -> None:
+    """Negative test: a legitimate whole-new-section insert whose payload
+    catchline NAMES the target section is NOT refused. The op composes
+    normally (catchline is projected off the body-only oracle surface).
+
+    Guards against an over-broad refusal that would convert whole-new-section
+    creation into a false-positive target-hijacking finding.
+    """
+    from lawvm.us_federal.dry_run import (
+        US_DRY_RUN_REFUSED_INSERT_CATCHLINE_MISMATCH_RULE_ID,
+    )
+
+    op = _insert_catchline_mismatch_op(
+        target_section="228d",
+        payload_text=(
+            "§ 228d. Annual report."
+            "“(a) In General.—Not later than March 1 of each year..."
+        ),
+    )
+    outcome = _materialize_one(op, "(a) old body.")
+    assert not isinstance(outcome, USDryRunRefusal)
+    materialized, signal_rule_id, _disp = outcome
+    assert signal_rule_id == ""
+    assert US_DRY_RUN_REFUSED_INSERT_CATCHLINE_MISMATCH_RULE_ID not in (
+        materialized  # the rule_id cannot ride into the materialized text
+    )
+    # The matching catchline is projected off; the body survives under its own
+    # subsection markers (per the existing strip_replacement_section_catchline
+    # contract — confirmed by test_whole_section_replace_projects_off_its_own_catchline).
+    assert "§ 228d." not in materialized
+    assert "(a) In General." in materialized
+
+
+def test_insert_body_only_payload_is_not_refused_by_catchline_check() -> None:
+    """A body-only insert payload (no leading ``§`` or ``SEC.`` catchline) is
+    NOT refused by the catchline-mismatch check. Body-only insert ops route
+    through the pre-existing append path (the most common sub-section insert).
+    """
+    from lawvm.us_federal.dry_run import US_DRY_RUN_REFUSED_INSERT_CATCHLINE_MISMATCH_RULE_ID
+
+    op = _insert_catchline_mismatch_op(
+        target_section="228d",
+        payload_text="“(a) A new subsection inserted at the end of section 228d.",
+    )
+    outcome = _materialize_one(op, "Existing body text.")
+    assert not isinstance(outcome, USDryRunRefusal)
+    materialized, signal_rule_id, _disp = outcome
+    assert signal_rule_id == ""
+    assert US_DRY_RUN_REFUSED_INSERT_CATCHLINE_MISMATCH_RULE_ID != signal_rule_id
+    # Leading USLM wrapper quote is stripped (existing behavior).
+    assert "Existing body text." in materialized
+    assert "“" not in materialized
+
+
+def _insert_catchline_mismatch_style_op_goes_through_full_dry_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Drives the refusal through the FULL composition path (guard-liveness
+    per AGENTS.md §2.9): the catchline-mismatch refusal fires when the op is
+    lowered by amendatory and routed through build_us_dry_run, not just when
+    _materialize_one is called directly.
+    """
+    from lawvm.us_federal.dry_run import US_DRY_RUN_REFUSED_INSERT_CATCHLINE_MISMATCH_RULE_ID
+
+    op = _insert_catchline_mismatch_op()
+    before = (
+        '<!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml"><head>'
+        "<title>T7</title><!-- AUTHORITIES-USC-TITLE-ENUM:7 --></head><body><div>"
+        "<!-- expcite:TITLE 7!@!CHAPTER 64!@!Sec. 228d -->"
+        '<!-- field-start:head --><h3 class="section-head">&sect;228d. Existing body</h3>'
+        "<!-- field-end:head --><!-- field-start:statute -->"
+        '<p class="statutory-body">This is the existing body of section 228d.</p>'
+        "<!-- field-end:statute --></div></body></html>"
+    ).encode("utf-8")
+    after = before  # oracle unchanged (the mis-routed insert never touched this section)
+
+    class _OneOpReport:
+        enacted = ""
+
+        def operations(self) -> list[LegalOperation]:
+            return [op]
+
+    # Monkeypatch lower_plaw_amendatory so build_us_dry_run sees ONLY the
+    # catchline-mismatch op. This drives the op through the full Phase 1 + Phase 2
+    # composition path (the path real amendatory ops take), not just a unit test
+    # of _materialize_one.
+    monkeypatch.setattr(
+        "lawvm.us_federal.dry_run.lower_plaw_amendatory",
+        lambda *a, **k: _OneOpReport(),
+    )
+    report = build_us_dry_run(
+        before_htm=before,
+        after_htm=after,
+        plaw_blobs={"PL 110-246": b"<uslm/>"},
+        title=7,
+        before_year="2006",
+        after_year="2008",
+    )
+
+    # The mismatched INSERT must surface as a typed refusal, not as a row with
+    # an inflated materialized_text (the §0/§1.1 contract).
+    matching_refusals = [
+        f for f in report.refusals
+        if f.rule_id == US_DRY_RUN_REFUSED_INSERT_CATCHLINE_MISMATCH_RULE_ID
+    ]
+    assert matching_refusals, (
+        "catchline-mismatch INSERT must surface as a typed refusal through "
+        "the full build_us_dry_run path, not just _materialize_one"
+    )
+    assert len(matching_refusals) == 1
+    refusal = matching_refusals[0]
+    assert refusal.target_address == "title:7/section:228d"
+    assert refusal.detail["target_section"] == "228d"
+    assert refusal.detail["payload_catchline_section"] == "416"
+    # No row is produced (the section's only op was refused; before-text
+    # matched oracle anyway — but the row is suppressed because op_ids is
+    # empty). This is the over-retention safe path: not a wrong materialization.
+    rows_for_section = [
+        r for r in report.rows if r.section_key == "7:228d"
+    ]
+    assert rows_for_section == []
+
+
+def test_insert_catchline_mismatch_drives_full_dry_run_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Wrapper that runs the full-path guard-liveness test as a real test
+    function (so the class-style helper doesn't get collected as a test).
+    """
+    _insert_catchline_mismatch_style_op_goes_through_full_dry_run(monkeypatch)
+
+
+# ---------------------------------------------------------------------------
 # Composite ops on ONE sub-section node: running-node threading + dual-identical
 # patch handling (the §130i canary). Two ops against the same node must compose on
 # the running node text, and two SAME-anchor patches must each consume their own

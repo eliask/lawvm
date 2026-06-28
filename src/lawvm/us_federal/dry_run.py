@@ -194,6 +194,22 @@ US_DRY_RUN_REFUSED_TEXT_TARGET_NODE_ABSENT_RULE_ID = (
 US_DRY_RUN_REFUSED_DEFERRED_OP_NOT_YET_EFFECTIVE_RULE_ID = (
     "us_dry_run_deferred_op_not_yet_effective"
 )
+# A whole-section INSERT op whose payload opens with a section-level catchline
+# (USLM positive-law form ``§ <num>. <heading>`` OR Statutes-at-Large form
+# ``SEC. <num>. <heading>``, possibly behind a leading USLM wrapper quote) whose
+# section number DIFFERS from the op's target section. The amendatory lowerer
+# mis-routed the op — most often a Public Law section that creates an entirely
+# separate USC section (e.g. PL 110-246 SEC. 416 creating USC 7:228d, routed to
+# the existing 7:228d target; the payload literally opens with ``SEC. 416.``).
+# Appending the body to the named target would silently materialize another
+# section's text under the wrong address (AGENTS.md §1.1: no silent target
+# hijacking; §0: declared-mutation boundary). Refused so the section's other ops
+# keep composing on the unchanged before text (the safe wrong, over-retention).
+# Source witness: the payload's leading catchline number versus the target's
+# section number; both travel on the typed refusal so a reviewer can audit.
+US_DRY_RUN_REFUSED_INSERT_CATCHLINE_MISMATCH_RULE_ID = (
+    "us_dry_run_refused_insert_payload_catchline_section_mismatch"
+)
 
 # Residual dispositions (AGENTS.md §0/§9). The oracle is a witness; a residual
 # carries which side the gap is on, never a silent repair-to-oracle.
@@ -300,6 +316,44 @@ _SECTION_CATCHLINE_RE = re.compile(
 
 def _payload_section_number(payload_text: str) -> str | None:
     m = _SECTION_CATCHLINE_RE.match(payload_text or "")
+    return m.group("num") if m is not None else None
+
+
+# Statutes-at-Large-style section catchline: ``SEC. <num>. <heading>`` (no ``§``).
+# USLM quotes a Public Law section's heading verbatim into the quotedContent
+# block, so a mis-routed INSERT (PL section X routed to the wrong USC target)
+# carries the PL section's heading at the very start of the payload. Used to
+# detect silent target hijacking for INSERT ops (AGENTS.md §1.1) — the
+# existing ``_SECTION_CATCHLINE_RE`` only recognizes USLM ``§`` form and so
+# misses the Statutes-at-Large shape entirely.
+_INSERT_SEC_CATCHLINE_RE = re.compile(
+    r"^\s*(?:[\"“]\s*)?SEC\.\s*"
+    r"(?P<num>[0-9]+[A-Za-z]*(?:[-‐‑–][0-9]+[A-Za-z]*)?)\.\s*",
+    re.IGNORECASE,
+)
+
+
+def _insert_payload_catchline_section_number(payload_text: str) -> str | None:
+    """Return the leading catchline's section number on an INSERT payload.
+
+    Recognizes both USLM positive-law form (``§ <num>. <heading>``) and
+    Statutes-at-Large form (``SEC. <num>. <heading>``), tolerating an optional
+    leading wrapper double-quote (the USLM converter precedes
+    ``quotedContent`` with ``"``). Returns ``None`` when the payload does not
+    open with a section-level catchline (a body-only insert like ``(a) Foo.``
+    or a fresh-section subsection insert).
+
+    Used by the INSERT-materialization path to detect a mis-routed op whose
+    payload carries a different section's catchline: appending that body to
+    the named target would silently materialize another section's text under
+    the wrong address (AGENTS.md §1.1: no silent target hijacking).
+    """
+    if not payload_text:
+        return None
+    uslm = _payload_section_number(payload_text)
+    if uslm is not None:
+        return uslm
+    m = _INSERT_SEC_CATCHLINE_RE.match(payload_text)
     return m.group("num") if m is not None else None
 
 
@@ -2346,6 +2400,48 @@ def _materialize_one(
         if action is StructuralAction.INSERT:
             payload_text = operation.payload.text
             section_number = _section_target_number(operation.target)
+            # Guard (AGENTS.md §1.1: no silent target hijacking; §0: declared
+            # mutation boundary). When the payload opens with a section-level
+            # catchline (USLM ``§ <num>.`` OR Statutes-at-Large ``SEC. <num>.``)
+            # for a section number DIFFERENT from the op's target, the amendatory
+            # lowerer mis-routed the op — most often a Public Law section that
+            # creates an entirely separate USC section was routed to an existing
+            # target's address (e.g. PL 110-246 SEC. 416 creating USC 7:228d
+            # alongside the existing 7:228d body). Appending the body to the
+            # named target would silently materialize another section's text
+            # under the wrong address. Refuse (never compose) so the section's
+            # other ops keep composing on the unchanged before text (the safe
+            # wrong: over-retention, never over-repeal). Source witness: the
+            # payload's leading catchline number vs the target section number;
+            # both travel on the typed refusal. Embeds the offending payload
+            # preview (§1.10: a diagnostic about source text the pipeline could
+            # not faithfully handle MUST embed the snippet).
+            if section_number is not None:
+                payload_catchline_num = _insert_payload_catchline_section_number(
+                    payload_text
+                )
+                if (
+                    payload_catchline_num is not None
+                    and payload_catchline_num != section_number
+                ):
+                    return USDryRunRefusal(
+                        op_id=op_id,
+                        rule_id=US_DRY_RUN_REFUSED_INSERT_CATCHLINE_MISMATCH_RULE_ID,
+                        message=(
+                            f"INSERT op targets section {section_number!r} but "
+                            f"payload opens with a section catchline for "
+                            f"{payload_catchline_num!r}; appending this body "
+                            f"would silently materialize a different section's "
+                            f"text under the wrong address (AGENTS.md §1.1: no "
+                            f"silent target hijacking)"
+                        ),
+                        target_address=str(operation.target),
+                        detail={
+                            "target_section": section_number,
+                            "payload_catchline_section": payload_catchline_num,
+                            "payload_preview": payload_text[:400],
+                        },
+                    )
             # A whole-new-section insert payload carries its own catchline. Project it
             # off the body-only oracle surface. First strip the leading wrapper
             # smart-quote (the USLM converter precedes "§ <num>." with ""); then
