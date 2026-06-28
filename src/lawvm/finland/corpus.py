@@ -3,6 +3,7 @@
 Pure data-access functions.  No grafter replay logic, no XMLStatute dependency.
 Depends on CorpusStore/Farchive and metadata helpers only.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -16,6 +17,9 @@ from typing import Dict, List, Optional, Protocol, Set, Tuple, cast
 
 import lxml.etree as etree
 
+from lawvm.core.named_swallow import log_emitter, swallow_call
+from lawvm.core.phase_result import Finding
+from lawvm.core.xml_parse import parse_corpus_xml
 from lawvm.corpus_store import get_corpus_store, CorpusStore, oracle_url, statute_url
 from lawvm.finland.consolidated_artifacts import (
     build_consolidated_family_glob,
@@ -27,6 +31,7 @@ from lawvm.finland.consolidated_store import select_cached_consolidated_artifact
 from lawvm.finland.helpers import _parse_iso_date
 from lawvm.finland.oracle_comparison import normalize_finlex_oracle_comparison_text
 from lawvm.finland.oracle_versioned_children import strip_prior_wording_sibling
+
 importlib.import_module("lawvm.finland.inline_repeal_stub")
 from lawvm.finland.metadata import (
     _amendment_effective_date,
@@ -34,12 +39,8 @@ from lawvm.finland.metadata import (
     _statute_id_sort_key,
 )
 
-_SELECTED_CONSOLIDATED_LOCATOR_CACHE: "weakref.WeakKeyDictionary[CorpusStore, dict[tuple[str, str, str, str], tuple[str, SelectionProvenance]]]" = (
-    weakref.WeakKeyDictionary()
-)
-_CONSOLIDATED_ORACLE_CONTEXT_CACHE: "weakref.WeakKeyDictionary[CorpusStore, dict[tuple[str, str, str, str], ConsolidatedOracleContext]]" = (
-    weakref.WeakKeyDictionary()
-)
+_SELECTED_CONSOLIDATED_LOCATOR_CACHE: "weakref.WeakKeyDictionary[CorpusStore, dict[tuple[str, str, str, str], tuple[str, SelectionProvenance]]]" = weakref.WeakKeyDictionary()
+_CONSOLIDATED_ORACLE_CONTEXT_CACHE: "weakref.WeakKeyDictionary[CorpusStore, dict[tuple[str, str, str, str], ConsolidatedOracleContext]]" = weakref.WeakKeyDictionary()
 
 
 def _clear_selected_consolidated_locator_cache_for_tests() -> None:
@@ -79,6 +80,7 @@ def _get_amendment_child_edges_map() -> Dict[str, List[Tuple[str, str]]]:
 # Corpus store singleton
 # ---------------------------------------------------------------------------
 
+
 @lru_cache(maxsize=1)
 def _get_corpus_store() -> CorpusStore:
     """Singleton corpus store for the process."""
@@ -100,9 +102,9 @@ def get_corpus() -> CorpusStore:
 # Consolidated locator access
 # ---------------------------------------------------------------------------
 
+
 class _ArchiveWithLocators(Protocol):
-    def locators(self, pattern: str) -> list[str]:
-        ...
+    def locators(self, pattern: str) -> list[str]: ...
 
 
 def _archive_from_source(source: object) -> object | None:
@@ -113,24 +115,43 @@ def _archive_from_source(source: object) -> object | None:
     return source
 
 
-def list_cached_consolidated_locators(source: object, sid: str | None = None) -> list[str]:
-    """Return cached consolidated artifact/media locators from a store or archive."""
+def list_cached_consolidated_locators(
+    source: object,
+    sid: str | None = None,
+    *,
+    findings_out: Optional[List[Finding]] = None,
+) -> list[str]:
+    """Return cached consolidated artifact/media locators from a store or archive.
+
+    The underlying ``archive.locators(pattern)`` call may raise across archive
+    backends (Farchive, hdsearch, FileNotFoundError-lived caching). Previously
+    the swallow returned ``[]`` silently (AGENTS.md §1.10 silent-fallback). Now
+    routed through ``lawvm.core.named_swallow.swallow_call`` so a typed
+    ``Finding(kind=UNEXPECTED_PHASE_FAILURE)`` is constructed with the offending
+    ``pattern`` as ``clause_text`` and the ``sid`` as ``source_artifact``, then
+    either appended to ``findings_out`` (when the caller plumbs a sink) or
+    raised via ``NamedSwallowNonEmittingSinkError`` — never silently swallowed.
+    """
     archive = _archive_from_source(source)
     if archive is None or not hasattr(archive, "locators"):
         return []
     archive_with_locators = cast(_ArchiveWithLocators, archive)
     pattern = build_consolidated_family_glob(sid=sid)
-    try:
-        locators = archive_with_locators.locators(pattern)
-    except Exception:
-        return []
-    return sorted(
-        {
-            locator
-            for locator in locators
-            if locator.endswith("/main.xml") or "/media/" in locator
-        }
+    # When the caller plumbs a findings_out sink, the typed Finding is appended
+    # there (audit-trail path). When not, fall back to log_emitter so the
+    # swallow is still VISIBLE (stderr WARNING) — never silent (§1.10).
+    emit = None if findings_out is not None else log_emitter()
+    locators = swallow_call(
+        lambda: archive_with_locators.locators(pattern),
+        rule_id="fi_corpus_list_cached_consolidated_locators",
+        default=[],
+        jurisdiction="fi",
+        source_artifact=sid or "",
+        clause_text=f"glob pattern={pattern}",
+        emit=emit,
+        findings_out=findings_out,
     )
+    return sorted({locator for locator in locators if locator.endswith("/main.xml") or "/media/" in locator})
 
 
 def list_cached_consolidated_pit_locators(source: object, sid: str) -> list[str]:
@@ -161,6 +182,7 @@ def list_cached_corrigendum_locators(
 # ---------------------------------------------------------------------------
 # Oracle path index
 # ---------------------------------------------------------------------------
+
 
 def _latest_consolidated_path_by_statute(corpus: Optional[CorpusStore] = None) -> Dict[str, str]:
     """Build {statute_id -> best oracle path} index from the consolidated corpus.
@@ -314,7 +336,7 @@ class ConsolidatedOracleInspection:
 
 def _consolidated_oracle_version_amendment_id(path: str) -> Optional[str]:
     """Extract the amendment statute ID (YYYY/NNN) embedded in a fin@ path."""
-    m = re.search(r'/fin@(\d{4})(\d+)/main\.xml$', path)
+    m = re.search(r"/fin@(\d{4})(\d+)/main\.xml$", path)
     if not m:
         return None
     return f"{m.group(1)}/{int(m.group(2))}"
@@ -335,9 +357,7 @@ def get_consolidated_oracle_context(
     if cached is not None:
         return cached
     locator = _selected_consolidated_locator_for_statute(statute_id, corpus, selector)
-    oracle_version_amendment_id = (
-        _consolidated_oracle_version_amendment_id(locator) if locator else None
-    )
+    oracle_version_amendment_id = _consolidated_oracle_version_amendment_id(locator) if locator else None
     if not locator:
         ctx = ConsolidatedOracleContext(
             locator=locator,
@@ -355,18 +375,18 @@ def get_consolidated_oracle_context(
         )
         corpus_cache[cache_key] = ctx
         return ctx
-    tree = etree.fromstring(oracle_bytes)
+    tree = parse_corpus_xml(oracle_bytes)
     if oracle_version_amendment_id is None:
-        for el in tree.findall('.//{*}FRBRthis'):
-            val = el.get('value', '')
-            m = re.search(r'/fin@(\d{4})(\d+)/', val)
+        for el in tree.findall(".//{*}FRBRthis"):
+            val = el.get("value", "")
+            m = re.search(r"/fin@(\d{4})(\d+)/", val)
             if m:
                 oracle_version_amendment_id = f"{m.group(1)}/{int(m.group(2))}"
                 break
     cutoff_date = None
-    for el in tree.findall('.//{*}FRBRdate'):
-        if el.get('name') == 'dateConsolidated':
-            cutoff_date = _parse_iso_date(el.get('date'))
+    for el in tree.findall(".//{*}FRBRdate"):
+        if el.get("name") == "dateConsolidated":
+            cutoff_date = _parse_iso_date(el.get("date"))
             break
     ctx = ConsolidatedOracleContext(
         locator=locator,
@@ -441,9 +461,7 @@ def get_consolidated_oracle_reflected_source_vts_children(
         corpus = _get_corpus_store()
     child_edges = _get_amendment_child_edges_map().get(statute_id, [])
     source_vts_children = {
-        amendment_id
-        for amendment_id, edge_kind in child_edges
-        if edge_kind == "source_vts_explicit"
+        amendment_id for amendment_id, edge_kind in child_edges if edge_kind == "source_vts_explicit"
     }
     if not source_vts_children:
         return set()
@@ -452,12 +470,12 @@ def get_consolidated_oracle_reflected_source_vts_children(
     if oracle_bytes is None:
         return set()
     try:
-        tree = etree.fromstring(oracle_bytes)
+        tree = parse_corpus_xml(oracle_bytes)
     except etree.XMLSyntaxError:
         return set()
 
     cited_ids: set[str] = set()
-    for ref_el in tree.findall('.//{*}ref'):
+    for ref_el in tree.findall(".//{*}ref"):
         if not _oracle_ref_is_body_surface(ref_el):
             continue
         href = str(ref_el.get("href", "") or "")
@@ -473,7 +491,25 @@ def get_consolidated_oracle_reflected_source_vts_children(
 
 _FINLEX_ORIGINAL_VERSION_ATTR = "{http://data.finlex.fi/schema/finlex}originalVersion"
 _FINLEX_VERSIONED_EID_SUFFIX_RE = re.compile(r"v(?P<version>\d{8})$")
-_ORACLE_FUTURE_REPEAL_NOTICE_RE = re.compile(r"\btulee\s+voimaan\b", re.IGNORECASE)
+
+
+def _oracle_text_mentions_future_commencement(text: str) -> bool:
+    tokens = text.casefold().split()
+    return any(left == "tulee" and right == "voimaan" for left, right in zip(tokens, tokens[1:], strict=False))
+
+
+def _oracle_text_has_full_section_repeal_notice(text: str) -> bool:
+    tokens = text.casefold().replace("§", " § ").split()
+    for idx, token in enumerate(tokens):
+        if token != "§" or idx + 2 >= len(tokens):
+            continue
+        if tokens[idx + 1] != "on" or tokens[idx + 2] != "kumottu":
+            continue
+        if idx >= 1 and tokens[idx - 1].isdigit():
+            return True
+        if idx >= 2 and tokens[idx - 2].isdigit() and tokens[idx - 1].isalpha() and len(tokens[idx - 1]) == 1:
+            return True
+    return False
 
 
 def _finlex_original_version_to_statute_id(value: str) -> str:
@@ -528,7 +564,7 @@ def get_consolidated_oracle_reflected_section_original_versions(
     if oracle_bytes is None:
         return set()
     try:
-        tree = etree.fromstring(oracle_bytes)
+        tree = parse_corpus_xml(oracle_bytes)
     except etree.XMLSyntaxError:
         return set()
 
@@ -546,7 +582,7 @@ def get_consolidated_oracle_reflected_section_original_versions(
         original_version = str(section_el.get(_FINLEX_ORIGINAL_VERSION_ATTR) or "")
         section_eid_base = _finlex_section_eid_base(section_el)
         section_text = " ".join("".join(str(part) for part in section_el.itertext()).split())
-        if _ORACLE_FUTURE_REPEAL_NOTICE_RE.search(section_text):
+        if _oracle_text_mentions_future_commencement(section_text):
             continue
         if original_version:
             if section_eid_base and section_eid_base in current_section_eid_bases:
@@ -560,6 +596,44 @@ def get_consolidated_oracle_reflected_section_original_versions(
                 if statute_id_from_eid:
                     reflected.add(statute_id_from_eid)
     return reflected
+
+
+def get_consolidated_oracle_single_future_repeal_overlay_versions(
+    statute_id: str,
+    corpus: Optional[CorpusStore] = None,
+    selector: ConsolidatedArtifactSelector | None = None,
+) -> set[str]:
+    """Return source ids witnessed by exactly one Finlex future-repeal overlay section."""
+    if corpus is None:
+        corpus = _get_corpus_store()
+    oracle_bytes = get_ground_truth_bytes(statute_id, corpus=corpus, selector=selector)
+    if oracle_bytes is None:
+        return set()
+    try:
+        tree = parse_corpus_xml(oracle_bytes)
+    except etree.XMLSyntaxError:
+        return set()
+
+    overlay_counts: dict[str, int] = {}
+    for section_el in tree.findall(".//{*}section"):
+        section_text = " ".join("".join(str(part) for part in section_el.itertext()).split())
+        if not _oracle_text_has_full_section_repeal_notice(section_text):
+            continue
+        if not _oracle_text_mentions_future_commencement(section_text):
+            continue
+        if "Aiempi sanamuoto kuuluu" not in section_text:
+            continue
+        section_sources: set[str] = set()
+        statute_id_from_version = _finlex_eid_version_to_statute_id(section_el)
+        if statute_id_from_version:
+            section_sources.add(statute_id_from_version)
+        original_version = str(section_el.get(_FINLEX_ORIGINAL_VERSION_ATTR) or "")
+        statute_id_from_original_version = _finlex_original_version_to_statute_id(original_version)
+        if statute_id_from_original_version:
+            section_sources.add(statute_id_from_original_version)
+        for source_id in section_sources:
+            overlay_counts[source_id] = overlay_counts.get(source_id, 0) + 1
+    return {source_id for source_id, count in overlay_counts.items() if count == 1}
 
 
 _ORACLE_REF_METADATA_ANCESTOR_TAGS = frozenset(
@@ -601,8 +675,8 @@ def _oracle_pending_amendment_suspect(
     authoritative, so a missing version pin now means the oracle is absent
     rather than a special case.
     """
-    for inforce_el in oracle_tree.findall('.//{*}dateEntryIntoForce'):
-        date_str = inforce_el.get('date', '')
+    for inforce_el in oracle_tree.findall(".//{*}dateEntryIntoForce"):
+        date_str = inforce_el.get("date", "")
         if not date_str:
             continue
         entry_date = _parse_iso_date(date_str)
@@ -614,19 +688,16 @@ def _oracle_pending_amendment_suspect(
                 continue
             # Walk up to the statuteReference element to find the sibling ref element.
             # Structure: amendedBy > statuteReference > [ref, inForce > dateEntryIntoForce]
-            ref_el = inforce_el.find('../../{*}ref')
+            ref_el = inforce_el.find("../../{*}ref")
             ref_text = ""
             if ref_el is not None:
-                href = ref_el.get('href', '')
-                m = re.search(r'/statute/(\d{4})/(\d+)', href)
+                href = ref_el.get("href", "")
+                m = re.search(r"/statute/(\d{4})/(\d+)", href)
                 if m:
                     ref_text = f"{m.group(1)}/{int(m.group(2))}"
                 else:
                     ref_text = ref_el.text or href
-            return (
-                f"pending: {ref_text} eff {entry_date.isoformat()}"
-                f" > cutoff {cutoff_date.isoformat()}"
-            )
+            return f"pending: {ref_text} eff {entry_date.isoformat()} > cutoff {cutoff_date.isoformat()}"
     return None
 
 
@@ -664,8 +735,8 @@ def get_consolidated_oracle_suspect(
         xml_bytes = corpus.read_source(oracle_version_amendment_id)
         if xml_bytes is None:
             return None
-        tree = etree.fromstring(xml_bytes)
-    except (KeyError, FileNotFoundError):
+        tree = parse_corpus_xml(xml_bytes)
+    except KeyError, FileNotFoundError:
         return None
     eff_date = _amendment_effective_date(tree)
     if eff_date is not None and eff_date > cutoff_date:
@@ -674,7 +745,6 @@ def get_consolidated_oracle_suspect(
     if expiry_date is not None and expiry_date < cutoff_date:
         return f"{oracle_version_amendment_id} expires {expiry_date.isoformat()} < cutoff {cutoff_date.isoformat()}"
     return None
-
 
 
 def get_consolidated_oracle_suspect_cache_only(
@@ -689,7 +759,7 @@ def get_consolidated_oracle_suspect_cache_only(
     if corpus is None:
         try:
             corpus = _get_corpus_store_readonly()
-        except (OSError, RuntimeError):
+        except OSError, RuntimeError:
             return "", ""
 
     archive = getattr(corpus, "_archive", None)
@@ -711,23 +781,23 @@ def get_consolidated_oracle_suspect_cache_only(
     if oracle_bytes is None:
         return "", ""
     try:
-        tree = etree.fromstring(oracle_bytes)
+        tree = parse_corpus_xml(oracle_bytes)
     except etree.XMLSyntaxError:
         return "", ""
 
     oracle_version_amendment_id = _consolidated_oracle_version_amendment_id(path)
     if oracle_version_amendment_id is None:
-        for el in tree.findall('.//{*}FRBRthis'):
-            val = el.get('value', '')
-            m = re.search(r'/fin@(\d{4})(\d+)/', val)
+        for el in tree.findall(".//{*}FRBRthis"):
+            val = el.get("value", "")
+            m = re.search(r"/fin@(\d{4})(\d+)/", val)
             if m:
                 oracle_version_amendment_id = f"{m.group(1)}/{int(m.group(2))}"
                 break
 
     cutoff_date = None
-    for el in tree.findall('.//{*}FRBRdate'):
-        if el.get('name') == 'dateConsolidated':
-            cutoff_date = _parse_iso_date(el.get('date'))
+    for el in tree.findall(".//{*}FRBRdate"):
+        if el.get("name") == "dateConsolidated":
+            cutoff_date = _parse_iso_date(el.get("date"))
             break
 
     if cutoff_date is None or not oracle_version_amendment_id:
@@ -750,7 +820,7 @@ def get_consolidated_oracle_suspect_cache_only(
                     first_pending_detail = f"oracle_missing_version_pin_amendment_uncached:{mid}"
                 continue
             try:
-                source_tree = etree.fromstring(xml_bytes)
+                source_tree = parse_corpus_xml(xml_bytes)
             except etree.XMLSyntaxError:
                 if not first_pending_detail:
                     first_pending_detail = f"oracle_missing_version_pin_amendment_unparseable:{mid}"
@@ -772,7 +842,7 @@ def get_consolidated_oracle_suspect_cache_only(
         return "", f"oracle_version_amendment_id_source_uncached:{oracle_version_amendment_id}"
 
     try:
-        source_tree = etree.fromstring(xml_bytes)
+        source_tree = parse_corpus_xml(xml_bytes)
     except etree.XMLSyntaxError:
         return "", f"oracle_version_amendment_id_source_unparseable:{oracle_version_amendment_id}"
 
@@ -794,6 +864,7 @@ def _oracle_mode_sort_key(statute_id: str) -> Tuple[int, int, str]:
 # Oracle version label
 # ---------------------------------------------------------------------------
 
+
 def _oracle_version_label(path: str) -> str:
     """Return a human-readable label for the oracle version embedded in *path*.
 
@@ -801,7 +872,7 @@ def _oracle_version_label(path: str) -> str:
         'akn/.../fin@20210680/main.xml'  -> 'fin@20210680 (PIT: 680/2021)'
         'akn/.../fin@YYYYNNNN/main.xml'  -> 'fin@YYYYNNNN (PIT: NNNN/YYYY)'
     """
-    m = re.search(r'/fin@(\d{4})(\d+)/main\.xml$', path)
+    m = re.search(r"/fin@(\d{4})(\d+)/main\.xml$", path)
     if m:
         year, num = m.group(1), int(m.group(2))
         return f"fin@{m.group(1)}{m.group(2)} (PIT: {num}/{year})"
@@ -811,6 +882,7 @@ def _oracle_version_label(path: str) -> str:
 # ---------------------------------------------------------------------------
 # Ground-truth text and tree
 # ---------------------------------------------------------------------------
+
 
 def _read_oracle_at_pit(
     statute_id: str,
@@ -836,9 +908,13 @@ def _strip_editorial_note_containers(root: "etree._Element") -> None:
     section_keys._normalize_oracle_section for per-section clones.
     """
     from typing import cast, List
+
     _STRIP_NAMES = (
-        'amendmentEntryIntoForceAndApplianceProvisions',
-        'noteAuthorial', 'signatures', 'conclusions', 'attachments',
+        "amendmentEntryIntoForceAndApplianceProvisions",
+        "noteAuthorial",
+        "signatures",
+        "conclusions",
+        "attachments",
     )
     for name in _STRIP_NAMES:
         for tag in ("hcontainer", "block", "container"):
@@ -877,7 +953,7 @@ def get_ground_truth(
     )
     if oracle_bytes is None:
         return ""
-    tree = etree.fromstring(oracle_bytes)
+    tree = parse_corpus_xml(oracle_bytes)
     body = tree.find(".//{*}body")
     root = body if body is not None else tree
     _strip_editorial_note_containers(root)
@@ -888,13 +964,13 @@ def get_ground_truth(
     from lawvm.finland.oracle_versioned_children import dedup_versioned_children
 
     def _norm_num(t: str | None) -> str:
-        return re.sub(r'\s+', ' ', (t or '').replace('\xa0', ' ')).strip()
+        return re.sub(r"\s+", " ", (t or "").replace("\xa0", " ")).strip()
 
     def _dedup_children(parent, child_tag: str, key_fn):
         """Remove duplicate children of `child_tag`, keeping first by key_fn."""
         seen: Set[object] = set()
         for el in list(parent):
-            if el.tag.split('}')[-1] != child_tag:
+            if el.tag.split("}")[-1] != child_tag:
                 continue
             key = key_fn(el)
             if key is None:
@@ -904,23 +980,25 @@ def get_ground_truth(
             else:
                 seen.add(key)
 
-    for parent in cast(List[etree._Element], root.xpath(
-        './/*[local-name()="hcontainer"]'
-        ' | .//*[local-name()="body"]'
-        ' | .//*[local-name()="chapter"]'
-        ' | .//*[local-name()="part"]'
-        ' | .//*[local-name()="title"]'
-    )):
+    for parent in cast(
+        List[etree._Element],
+        root.xpath(
+            './/*[local-name()="hcontainer"]'
+            ' | .//*[local-name()="body"]'
+            ' | .//*[local-name()="chapter"]'
+            ' | .//*[local-name()="part"]'
+            ' | .//*[local-name()="title"]'
+        ),
+    ):
         _dedup_children(
-            parent, 'section',
-            lambda el: _norm_num(
-                (el.find('{*}num').text if el.find('{*}num') is not None else '')
-            ) or None,
+            parent,
+            "section",
+            lambda el: _norm_num((el.find("{*}num").text if el.find("{*}num") is not None else "")) or None,
         )
-    for sec in root.findall('.//{*}section'):
-        dedup_versioned_children(sec, 'subsection')
-        for sub in sec.findall('{*}subsection'):
-            dedup_versioned_children(sub, 'paragraph')
+    for sec in root.findall(".//{*}section"):
+        dedup_versioned_children(sec, "subsection")
+        for sub in sec.findall("{*}subsection"):
+            dedup_versioned_children(sub, "paragraph")
     text = etree.tostring(root, method="text", encoding="unicode").strip()
     # Strip consolidated-only annotations before scoring.
     return normalize_finlex_oracle_comparison_text(text)
@@ -944,7 +1022,7 @@ def get_ground_truth_tree(
     oracle_bytes = get_ground_truth_bytes(statute_id, corpus=corpus, selector=selector)
     if oracle_bytes is None:
         return None
-    tree = etree.fromstring(oracle_bytes)
+    tree = parse_corpus_xml(oracle_bytes)
     body = tree.find(".//{*}body")
     root = body if body is not None else tree
     _strip_editorial_note_containers(root)

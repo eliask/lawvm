@@ -38,6 +38,7 @@ from typing import Any
 
 from lxml import etree
 from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.xml_parse import parse_corpus_xml
 from lawvm.finland.consolidated_artifacts import (
     build_canonical_consolidated_locator,
     canonical_consolidated_locator,
@@ -125,7 +126,7 @@ def _extract_fin_pit_candidates_from_collection(
 ) -> list[ConsolidatedPitCandidate]:
     """Extract Finnish PIT candidates from one consolidated-collection page."""
     try:
-        root = etree.fromstring(raw)
+        root = parse_corpus_xml(raw)
     except etree.XMLSyntaxError:
         text = raw.decode("utf-8", errors="replace")
         return [

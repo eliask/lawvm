@@ -101,7 +101,7 @@ def ingest_consolidated(
     return timelines
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class ConsistencyDivergence:
     """A divergence between ops-first and consolidated-text timelines at a date."""
 

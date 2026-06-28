@@ -154,6 +154,28 @@ def test_get_johtolause_keeps_as_amended_qualifier_citations() -> None:
     assert not result.startswith("muutetaan (1410/2004)")
 
 
+def test_get_johtolause_keeps_comma_as_amended_qualifier_citation() -> None:
+    xml = _xml(
+        "<preamble>"
+        "  <formula name='enactingClause'>"
+        "    <blockContainer>"
+        "      <block name='substitutions'>"
+        "muutetaan kirkkojärjestyksen 11 §:n 1 momentti sellaisena, kuin "
+        "pykälä muutettiin marraskuun 28 päivänä 2017 (1160/2017) sekä "
+        "kirkkojärjestyksen 12, 17, 19, 21 sekä 27 § seuraavasti:"
+        "      </block>"
+        "    </blockContainer>"
+        "  </formula>"
+        "</preamble>"
+    )
+
+    result = " ".join(get_johtolause(xml).split())
+
+    assert "kirkkojärjestyksen 11 §:n 1 momentti sellaisena, kuin" in result
+    assert "(1160/2017) sekä kirkkojärjestyksen 12, 17, 19, 21 sekä 27 §" in result
+    assert not result.startswith("muutetaan (1160/2017)")
+
+
 def test_get_johtolause_strips_cross_law_descriptive_context() -> None:
     xml = _xml(
         "<preamble>"
@@ -600,9 +622,9 @@ def _section_expiry_by_label(tree: "etree._Element", sid: str) -> dict[str, set[
     from lawvm.finland.metadata import _temporary_section_expiry_overrides
 
     by_label: dict[str, set[dt.date]] = {}
-    for _target_mid, labels, expiry in _temporary_section_expiry_overrides(tree, sid):
-        for label in labels:
-            by_label.setdefault(label, set()).add(expiry)
+    for override in _temporary_section_expiry_overrides(tree, sid):
+        for label in override.labels:
+            by_label.setdefault(label, set()).add(override.expiry)
     return by_label
 
 

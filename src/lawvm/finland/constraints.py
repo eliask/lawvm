@@ -18,6 +18,7 @@ import re
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import TYPE_CHECKING, Iterator, List, Optional, Tuple
 
 import lxml.etree as etree
@@ -43,6 +44,34 @@ _PART_CROSS_HEADING_RE = re.compile(
 _NON_WORD_DIGIT_RE = re.compile(r"[^\d\w]")
 _LETTER_SUFFIX_TARGET_RE = re.compile(r"^(\d+)[a-z]$")
 _ITEM_LABEL_DECORATION_RE = re.compile(r"[)\s.]")
+
+
+# ---------------------------------------------------------------------------
+# Per-label clause-pattern factory — §2.4/§2.7 cache
+#
+# Per-call ``re.search(rf"(?<!\d){label_pat}\s*§", text, flags=re.I)`` inside
+# the constraint loops (``_johtolause_mentions_section`` /
+# ``_c_internal_list_update_not_whole_section_replace``) re-compiles the same
+# escaped label_pat string once per (op × constraint-predicate) evaluation.
+# The set of distinct section labels (digits + optional letter suffix) is
+# bounded and repeats heavily across many constraint predicates evaluated
+# against a single johto in one compilation, so a bounded LRU cache is sound.
+# Mirrors ``us_federal/_word_boundary_pattern``.
+# ---------------------------------------------------------------------------
+
+
+@lru_cache(maxsize=512)
+def _label_clause_pattern(label_pat: str, suffix: str, flags: int) -> "re.Pattern[str]":
+    r"""Compile and cache a ``(?<!\d){label_pat}{suffix}`` label-clause prefilter.
+
+    ``label_pat`` is the caller-constructed escaped pattern fragment for the
+    section label (digits, optional ``\s*`` + letter suffix, or a plain
+    re.escape of the label).  ``suffix`` is a fixed alternation fragment tied
+    to the clause shape: ``\s*§`` (section-sign membership), ``\s*(?:[,;
+    —–\-]|\bja\b|\bsekä\b)`` (list-continuation membership), or
+    ``\s*§\s*:ssä\s+olevaa\b`` (``§:ssä olevaa … luetteloa`` clause guard).
+    """
+    return re.compile(rf"(?<!\d){label_pat}{suffix}", flags=flags)
 
 _CONSTRAINT_REASON_CODES: dict[str, str] = {
     "_c_language_variant": "ELAB.REJECTED_LANGUAGE_VARIANT_ONLY",
@@ -453,10 +482,12 @@ def _johtolause_mentions_section(johto: str, section_label: str) -> bool:
     else:
         label_pat = re.escape(section_label)
     # lawvm-regex: prefilter §-label membership predicate over owned (Zs-normalized) johto with dynamic re.escape'd label (cannot be hoisted); answers yes/no, mints no legal state
-    if re.search(rf"(?<!\d){label_pat}\s*§", text, flags=re.I) is not None:
+    if _label_clause_pattern(label_pat, r"\s*§", re.I).search(text) is not None:
         return True
     # lawvm-regex: prefilter §-label list-continuation membership predicate over owned johto with dynamic re.escape'd label; answers yes/no, mints no legal state
-    m2 = re.search(rf"(?<!\d){label_pat}\s*(?:[,;—–\-]|\bja\b|\bsekä\b)", text, flags=re.I)
+    m2 = _label_clause_pattern(
+        label_pat, r"\s*(?:[,;—–\-]|\bja\b|\bsekä\b)", re.I
+    ).search(text)
     if m2 and "§" in text[m2.start() :]:
         return True
     return False
@@ -1121,7 +1152,11 @@ def _c_internal_list_update_not_whole_section_replace(
     johto = (ctx.johto or "").lower().replace("\xa0", " ")
     section_pat = re.escape(str(op.target_cols.target_section))
     # lawvm-regex: prefilter `N §:ssä olevaa ... luetteloa` clause-shape guard over owned johto with dynamic re.escape'd label; conservative drop guard, mints no legal state
-    if re.search(rf"(?<!\d){section_pat}\s*§\s*:ssä\s+olevaa\b", johto) and "luetteloa" in johto:
+    if (
+        _label_clause_pattern(section_pat, r"\s*§\s*:ssä\s+olevaa\b", 0).search(johto)
+        is not None
+        and "luetteloa" in johto
+    ):
         return False, "internal section list update is not a safe whole-section replace"
     return True, ""
 

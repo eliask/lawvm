@@ -1330,9 +1330,22 @@ def _derive_parsed_ops_from_ast(clause_ast: ClauseAST) -> list[ParsedOp]:
             renumber_dest_part = dest_dict.get("part", "")
             if node.action is not LabelAction.HEADING_REPLACE:
                 move_clause_target_unit_kind = infer_move_clause_target_unit_kind(node.destination)
-                if kind is TargetKind.SECTION and move_clause_target_unit_kind == "chapter" and renumber_dest_chapter:
+                is_jolloin_renumber = node.witness_rule_id == "fi.jolloin_renumber"
+                if is_jolloin_renumber:
+                    move_clause_target_unit_kind = None
+                if (
+                    kind is TargetKind.SECTION
+                    and move_clause_target_unit_kind == "chapter"
+                    and renumber_dest_chapter
+                    and not is_jolloin_renumber
+                ):
                     chapter = renumber_dest_chapter
-                elif kind is TargetKind.SECTION and move_clause_target_unit_kind == "part" and renumber_dest_part:
+                elif (
+                    kind is TargetKind.SECTION
+                    and move_clause_target_unit_kind == "part"
+                    and renumber_dest_part
+                    and not is_jolloin_renumber
+                ):
                     part = renumber_dest_part
         elif isinstance(node, LabelAmend) and node.new_label and node.action == LabelAction.RENUMBER:
             renumber_dest = node.new_label

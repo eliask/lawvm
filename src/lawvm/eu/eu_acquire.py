@@ -480,9 +480,19 @@ def acquire_celex(
 
         if farchive_path is None:
             dest_path, _rule = resolve_farchive_path("eu_cellar.farchive")
+            # Default-resolved path: apply the data-root check with the
+            # explicit-env override channel so LAWVM_FARCHIVE_DB pointing
+            # at an out-of-tree target is honoured (operator trust).
+            dest_explicit_env: str | None = "LAWVM_FARCHIVE_DB"
         else:
             dest_path = Path(farchive_path)
-        validate_farchive_create_path(dest_path)
+            # Caller-supplied path (test fixture, ad-hoc ingest): caller is
+            # the operator-in-trust. Pass explicit_env=None so the data-root
+            # check stays opt-in (Security M2 §4 — backwards-compatible).
+            dest_explicit_env = None
+        validate_farchive_create_path(
+            dest_path, explicit_env=dest_explicit_env
+        )
         run.farchive_path = str(dest_path)
         farchive = Farchive(str(dest_path))
 

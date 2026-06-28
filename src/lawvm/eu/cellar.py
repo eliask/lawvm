@@ -15,6 +15,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from lawvm.core.archive_safety import safe_zip_read
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.source_lane import SourceLaneAttempt, SourceLaneSelectionEvidence
 from lawvm.core.quirks_disposition import QuirksDisposition
@@ -601,7 +602,15 @@ def extract_fmx4_structure(zip_path: Path) -> dict[str, Any]:
             act_name = next((name for name in names if name.endswith(".xml") and ".doc." not in name), "")
         if not act_name:
             raise ValueError(f"No main FMX4 XML found in {zip_path}")
-        root = ET.fromstring(zf.read(act_name))
+        # Per AGENTS.md §1.10 a malicious FMX4 zip could declare a huge
+        # uncompressed main.xml and OOM the process; safe_zip_read checks
+        # the declared size against $LAWVM_MAX_ARCHIVE_MEMBER_BYTES before
+        # materialising. There is no skip accumulator in this one-shot
+        # extract, so a too-large member is a fail-loud exception here —
+        # the caller's responsibility is to triage or raise the cap.
+        root = ET.fromstring(
+            safe_zip_read(zf, act_name, archive_path=str(zip_path))
+        )
         if root.tag != "ACT":
             raise ValueError(f"Expected ACT root in {act_name}, got {root.tag}")
 

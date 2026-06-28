@@ -1894,7 +1894,14 @@ class TestNumberingAnomalies:
     def test_detects_gap_in_sibling_numbering(self) -> None:
         """A gap (1, 2, 4, 5) emits a NUMBERING_REPAIR fact."""
         children = tuple(
-            IRNode(kind=IRNodeKind.PARAGRAPH, label=str(n), text=f"text {n}")
+            IRNode(
+                kind=IRNodeKind.PARAGRAPH,
+                label=str(n),
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text=f"{n})"),
+                    IRNode(kind=IRNodeKind.CONTENT, text=f"text {n}"),
+                ),
+            )
             for n in [1, 2, 4, 5]
         )
         parent = IRNode(kind=IRNodeKind.SUBSECTION, label="1", children=children)
@@ -1910,7 +1917,14 @@ class TestNumberingAnomalies:
     def test_detects_duplicate_and_drops_second(self) -> None:
         """Duplicate labels (1, 2, 2, 3) emit DUPLICATE_DROP and keep first occurrence."""
         children = tuple(
-            IRNode(kind=IRNodeKind.PARAGRAPH, label=str(n), text=f"text {n} v{i}")
+            IRNode(
+                kind=IRNodeKind.PARAGRAPH,
+                label=str(n),
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text=f"{n})"),
+                    IRNode(kind=IRNodeKind.CONTENT, text=f"text {n} v{i}"),
+                ),
+            )
             for i, n in enumerate([1, 2, 2, 3])
         )
         parent = IRNode(kind=IRNodeKind.SUBSECTION, label="1", children=children)
@@ -1924,7 +1938,55 @@ class TestNumberingAnomalies:
         para_children = [c for c in normalized.children if c.kind == IRNodeKind.PARAGRAPH]
         assert len(para_children) == 3
         # First occurrence of label 2 is kept
-        assert para_children[1].text == "text 2 v1"
+        assert irnode_to_text(para_children[1]) == "2) text 2 v1"
+
+    def test_unnumbered_intro_paragraph_reclassified_before_item_run(self) -> None:
+        """A label inferred for intro prose is not a numbered item witness."""
+        parent = IRNode(
+            kind=IRNodeKind.SUBSECTION,
+            label="1",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.PARAGRAPH,
+                    label="1",
+                    children=(
+                        IRNode(kind=IRNodeKind.CONTENT, text="Introductory lead-in:"),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.PARAGRAPH,
+                    label="1",
+                    children=(
+                        IRNode(kind=IRNodeKind.NUM, text="1)"),
+                        IRNode(kind=IRNodeKind.CONTENT, text="first numbered item;"),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.PARAGRAPH,
+                    label="2",
+                    children=(
+                        IRNode(kind=IRNodeKind.NUM, text="2)"),
+                        IRNode(kind=IRNodeKind.CONTENT, text="second numbered item."),
+                    ),
+                ),
+            ),
+        )
+
+        normalized, facts = normalize_source_ir(parent, "2012/179")
+
+        assert normalized.children[0].kind == IRNodeKind.INTRO
+        assert irnode_to_text(normalized.children[0]) == "Introductory lead-in:"
+        paragraphs = [child for child in normalized.children if child.kind == IRNodeKind.PARAGRAPH]
+        assert [irnode_to_text(paragraph) for paragraph in paragraphs] == [
+            "1) first numbered item;",
+            "2) second numbered item.",
+        ]
+        assert any(
+            fact.kind == SourceNormalizationKind.TAG_RECLASSIFY
+            and "leading unnumbered paragraph" in fact.before
+            for fact in facts
+        )
+        assert not any(fact.kind_value == BASE_DUPLICATE_SIBLING_DROP for fact in facts)
 
     def test_repairs_terminal_duplicate_item_after_open_coordinator(self) -> None:
         """A terminal ``1), 2), 2)`` after ``ja`` is a local item-label typo."""

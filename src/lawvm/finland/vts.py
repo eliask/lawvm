@@ -16,6 +16,7 @@ import lxml.etree as etree
 
 from lawvm.core.filter_result import FilterResult
 from lawvm.core.stage_result import PartitionResult, Residual
+from lawvm.core.xml_parse import parse_corpus_xml
 from lawvm.finland.ops import AmendmentOp, OpType
 from lawvm.finland.address_parse import ParsedLegalAddress
 from lawvm.finland.target_selector_facades import (
@@ -350,7 +351,7 @@ def _classify_vts_source_diagnostic(
             source_excerpt=_vts_source_excerpt(xml_bytes),
         )
     try:
-        tree = etree.fromstring(xml_bytes)
+        tree = parse_corpus_xml(xml_bytes)
     except etree.XMLSyntaxError as exc:
         return VtsSourceDiagnostic(
             rule_id=VTS_SOURCE_DIAGNOSTIC_RULE_ID,
@@ -471,7 +472,7 @@ def _voimaantulo_repeal_fragment_for_parent(
     title_variants = _parent_title_variants(parent_title)
 
     try:
-        tree = etree.fromstring(xml_bytes)
+        tree = parse_corpus_xml(xml_bytes)
     except etree.XMLSyntaxError:
         return ""
 
@@ -726,7 +727,7 @@ def _voimaantulo_force_except_fragment_for_parent(
         return ""
     title_variants = _parent_title_variants(parent_title)
     try:
-        tree = etree.fromstring(xml_bytes)
+        tree = parse_corpus_xml(xml_bytes)
     except etree.XMLSyntaxError:
         return ""
 

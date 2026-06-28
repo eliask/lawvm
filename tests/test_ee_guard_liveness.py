@@ -578,6 +578,14 @@ def _fire_drills_target_registered_codes() -> Dict[str, str]:
         "ee_replay_unsupported_statute_title_action": "test_ee_fire_drill_replay_unsupported_statute_title_action_blocks",
         "ee_oracle_parse_failed": "test_ee_fire_drill_oracle_parse_failed_blocks",
         "ee_consistency_check_failed": "test_ee_fire_drill_consistency_check_failed_blocks",
+        # === Existing production-path drills in tests/test_ee_same_moment_ambiguity.py ===
+        # §1.7 same-moment cross-act incompatible-payload finding — drives two
+        # REPLACE ops on the same target at the same effective date from
+        # distinct affecting acts through ``apply_ee_ops`` and asserts the
+        # blocking §1.7 finding fires.
+        "ee_same_moment_cross_act_incompatible_payload_ambiguous": (
+            "test_two_distinct_acts_replace_same_target_same_effective_date_emits_ambiguity_finding"
+        ),
         # === Existing production-path drills in tests/test_ee_apply_semantics.py ===
         "ee_ambiguous_single_occurrence_text_replace": (
             "test_exact_target_insert_after_with_repeated_source_surface_emits_ambiguity"

@@ -4301,16 +4301,33 @@ def _amending_act_root(archive: Any, amending_work_id: str, cache: dict[str, Any
         return cache[amending_work_id]
     from lxml import etree
 
+    from lawvm.core.named_swallow import log_emitter, swallow_call
     from lawvm.new_zealand.dependencies import latest_xml_locator_for_work
 
-    root: Any = None
-    try:
+    def _resolve_amending_root() -> Any:
         _version_id, locator = latest_xml_locator_for_work(archive, amending_work_id)
         data = archive.get(locator) if locator else None
         if data is not None:
-            root = etree.fromstring(data)
-    except Exception:
-        root = None
+            return etree.fromstring(data)
+        return None
+
+    # ``latest_xml_locator_for_work`` and ``etree.fromstring`` may raise across
+    # archive/IO/parse paths. Previously ``except Exception: root = None``
+    # silently swallowed to None (AGENTS.md §1.10 silent-fallback). Now routed
+    # through ``swallow_call`` so a typed Finding is emitted via log_emitter
+    # (WARNING-visibility) carrying the offending ``amending_work_id`` as
+    # ``source_artifact`` and ``clause_text`` (the work-id, truncated 400). On
+    # swallow returns None so the dry-run cache stays miss-shaped and the
+    # consumer detects the missing amending work via its existing None path.
+    root: Any = swallow_call(
+        _resolve_amending_root,
+        rule_id="nz_dry_run_amending_act_root",
+        default=None,
+        jurisdiction="nz",
+        source_artifact=amending_work_id,
+        clause_text=f"amending_work_id={amending_work_id[:400]}",
+        emit=log_emitter(),
+    )
     cache[amending_work_id] = root
     return root
 

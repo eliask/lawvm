@@ -20,6 +20,8 @@ from xml.sax.saxutils import unescape as _xml_unescape
 
 from lxml import etree
 
+from lawvm.core.named_swallow import build_named_swallow_finding, log_emitter
+from lawvm.core.xml_parse import parse_corpus_xml
 from lawvm.finland.helpers import _parse_iso_date
 
 
@@ -286,9 +288,35 @@ def extract_consolidated_xml_identity(
     if fast_identity is not None:
         return fast_identity
 
+    # ``etree.fromstring`` can raise two families: malformed-XML parse errors
+    # (``etree.XMLSyntaxError``/``etree.ParseError``) which are expected and
+    # signal "skip embedded-identity extraction" — these still return the
+    # empty ``ConsolidatedXmlIdentity`` default cleanly. Any OTHER exception
+    # (encoding error, segfault on huge payloads, allocator error) is an
+    # unexpected swallow: previously ``except Exception: return ...`` silently
+    # swallowed to empty identity. Now per AGENTS.md §1.10 the non-ParseError
+    # branch routes through ``build_named_swallow_finding`` + ``log_emitter``
+    # so a typed Finding is logged at WARNING with the offending XML head as
+    # ``clause_text`` (truncated 400 chars).
     try:
-        root = etree.fromstring(xml_bytes)
-    except Exception:
+        root = parse_corpus_xml(xml_bytes)
+    except etree.ParseError:
+        return ConsolidatedXmlIdentity()
+    except Exception as exc:
+        log_emitter()(
+            build_named_swallow_finding(
+                rule_id="fi_consolidated_artifacts_extract_identity_fromstring",
+                exception=exc,
+                op_id=None,
+                clause_text=(
+                    xml_bytes[:400].decode("utf-8", errors="replace")
+                    if xml_bytes
+                    else ""
+                ),
+                jurisdiction="fi",
+                source_artifact=None,
+            )
+        )
         return ConsolidatedXmlIdentity()
 
     embedded_frbrthis = ""

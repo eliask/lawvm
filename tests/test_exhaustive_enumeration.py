@@ -31,7 +31,9 @@ from lawvm.core.ir import (
     TextPatchSpec,
     TextSelector,
 )
+from lawvm.core.scope_confidence import UnregisteredScopeConfidence
 from lawvm.core.semantic_types import FacetKind, IRNodeKind, StructuralAction, TextPatchKindEnum
+from lawvm.norway.scope_confidence import NOScopeConfidence
 from lawvm.core.tree_ops import (
     check_invariants,
     default_label_sort_key,
@@ -390,20 +392,43 @@ class TestIRNodeValidationExhaustive:
         )
 
     def test_legal_operation_frontend_riders_are_named_and_slotted(self) -> None:
-        """Frontend riders are named fields, not dynamic LegalOperation attrs."""
+        """Frontend riders are named fields, not dynamic LegalOperation attrs.
+
+        ``scope_confidence`` is a typed ``ScopeConfidence`` protocol rider
+        (AGENTS.md §1.9): a bare ``str`` now fails loud at
+        ``LegalOperation.__post_init__`` with ``UnregisteredScopeConfidence``
+        instead of being stored as ``Any`` alongside the typed Finland
+        dataclass. ``move_clause_target_unit_kind`` remains a plain string
+        typed carrier (it is the leaf kind label string of the target unit, not
+        a closed discriminator).
+        """
+        witness = NOScopeConfidence(rung_id="explicit_source")
 
         op = LegalOperation(
             op_id="op-1",
             sequence=1,
             action=StructuralAction.REPLACE,
             target=LegalAddress(path=(("section", "1"),)),
-            scope_confidence="explicit_source",
+            scope_confidence=witness,
             move_clause_target_unit_kind="chapter",
         )
 
         assert not hasattr(op, "__dict__")
-        assert op.scope_confidence == "explicit_source"
+        assert op.scope_confidence is witness
         assert op.move_clause_target_unit_kind == "chapter"
+
+        # Production-lane fire-drill: a bare string must NOT cross the typed
+        # waist. ``LegalOperation.__post_init__`` raises rather than silently
+        # co-storing a free-form rung alongside typed ``ScopeConfidence``
+        # instances (AGENTS.md §1.9 + §1.10).
+        with pytest.raises(UnregisteredScopeConfidence):
+            LegalOperation(
+                op_id="op-1",
+                sequence=1,
+                action=StructuralAction.REPLACE,
+                target=LegalAddress(path=(("section", "1"),)),
+                scope_confidence="explicit_source",
+            )
 
 
 class TestLegalAddressExhaustive:

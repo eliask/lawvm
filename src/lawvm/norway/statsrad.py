@@ -24,6 +24,7 @@ from urllib.error import URLError
 from lxml import etree, html
 
 from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.regex_safety import compile_classifier_regex
 from lawvm.norway.sources import open_no_archive, resolve_no_source_path
 from lawvm.core.quirks_disposition import QuirksDisposition
 
@@ -39,7 +40,11 @@ _ARTICLE_ID_RE = re.compile(r"/(id\d{5,})/?(?:\?.*)?$")
 _WS_RE = re.compile(r"\s+")
 _DATE_RE = re.compile(r"\b(\d{1,2})\.\s*([A-Za-zÆØÅæøå]+)\s+(\d{4})\b")
 _ISO_RE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
-_LOVVEDTAK_RE = re.compile(r"\bLovvedtak\s+\d+\s+\(\d{4}-\d{4}\)", re.IGNORECASE)
+_LOVVEDTAK_RE = compile_classifier_regex(
+    r"\bLovvedtak\s+\d+\s+\(\d{4}-\d{4}\)",
+    re.IGNORECASE,
+    classifier_id="no.statsrad.lovvedtak_re",
+)
 _LOV_NR_RE = re.compile(r"\bLov\s+nr\.\s*\d+\b", re.IGNORECASE)
 _COMMENCE_SENTENCE_RE = re.compile(
     r"([^.]{0,120}?\b(?:loven|loven §|lovvedtak|endringsloven)[^.]*?\b"

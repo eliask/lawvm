@@ -204,6 +204,62 @@ def test_cited_version_snapshot_no_drop_keeps_all_ops() -> None:
     assert result.filtered.rejected_items == ()
 
 
+def test_cited_version_snapshot_no_drop_when_text_longer_without_extra_shape() -> None:
+    """Negative: longer cited text alone does not drop the current op.
+
+    The prior decision boundary additionally rendered both payloads to text and
+    required ``len(cited_text) >= len(current_text) + 80``. That signal is a §1.12
+    representation regression — it MISFIRES when a cited snapshot simply carries
+    longer prose (whitespace padding, editorial comments, comment-rich expansion)
+    on the SAME structural shape: a text-length-only boundary would let the drop
+    fire even though the cited payload does not structurally cover any additional
+    state. The typed IRNode payload is the §1.12 owner; the typed shape-counts
+    criterion requires the cited shapes to (a) cover every current ``(kind,
+    label)`` tuple AND (b) carry strictly more shape instances. Neither holds
+    when the cited payload is just longer prose on the same shape, so the drop
+    must NOT fire and the stale current op stays in the stream.
+    """
+    target = LegalAddress(path=(("section", "5"),))
+    # Same structural shape (section + subsection "1") in both payloads, but
+    # the cited snapshot's text is materially longer than current + 80 chars —
+    # the exact signal the prior text-length boundary would have admitted.
+    cited = LegalOperation(
+        op_id="snapshot_section_5_cited",
+        sequence=0,
+        action=StructuralAction.REPLACE,
+        target=target,
+        payload=_snapshot_payload("1", text=" ".join(["content"] * 50)),
+        source=OperationSource(
+            statute_id="2010/100",
+            effective="2024-01-01",
+        ),
+    )
+    stale = LegalOperation(
+        op_id="snapshot_section_5_stale",
+        sequence=0,
+        action=StructuralAction.REPLACE,
+        target=target,
+        payload=_snapshot_payload("1", text="content"),
+        source=OperationSource(
+            statute_id="2024/200",
+            effective="2024-01-01",
+            raw_text=(
+                "muutetaan 5 §:n 1 kohta, sellaisena kuin se on laissa 100/2010"
+            ),
+        ),
+    )
+
+    result = _drop_cited_version_item_ancestor_snapshots([cited, stale])
+
+    # Conservation: every input op is accounted for (accepted + rejected == 2).
+    assert len(result.filtered.accepted_items) + len(result.filtered.rejected_items) == 2
+    # The drop must NOT fire — typed shape counts are equal, so the cited snapshot
+    # does not materially cover the current one despite the longer text.
+    assert result.filtered.rejected_items == ()
+    accepted_ids = {op.op_id for op in result.filtered.accepted_items}
+    assert accepted_ids == {"snapshot_section_5_cited", "snapshot_section_5_stale"}
+
+
 # ---------------------------------------------------------------------------
 # Rank 3 — fallback heuristic op mint is witnessed on the production lane
 # ---------------------------------------------------------------------------

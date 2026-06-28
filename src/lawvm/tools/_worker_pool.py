@@ -11,7 +11,12 @@ import signal
 import types
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import contextmanager
+from logging import getLogger
 from typing import Any, Callable, Iterator, Optional, cast
+
+from lawvm.core.named_swallow import named_swallow
+
+_logger = getLogger(__name__)
 
 
 @contextmanager
@@ -43,14 +48,28 @@ def managed_executor(
     executor = ProcessPoolExecutor(**kwargs)
 
     def _terminate() -> None:
-        try:
+        # ``executor.shutdown`` can race with signal-handler-driven teardown
+        # and raise acrossAsyncResult / BrokenProcessPool paths. Previously
+        # ``except Exception: pass`` silently swallowed to a no-op
+        # (AGENTS.md §1.10 silent-fallback). Now wrapped in ``named_swallow``
+        # so a typed Finding is logged at WARNING carrying the offending
+        # shutdown exception. The default is None (no return value used);
+        # emit-via-log keeps the swallow visible without aborting atexit-driven
+        # teardown during interpreter shutdown.
+        with named_swallow(
+            rule_id="tools_worker_pool_terminate_shutdown",
+            default=None,
+            jurisdiction=None,
+            clause_text=f"max_workers={workers} initializer={getattr(initializer, '__name__', None)}",
+            emit=lambda f: _logger.warning(
+                "named_swallow[%s] during executor shutdown: %s",
+                f.detail.get("rule_id", ""),
+                f.detail.get("exception_message", ""),
+            ),
+        ):
             # cancel_futures=True requires Python 3.9+; available everywhere
             # LawVM runs.
             executor.shutdown(wait=False, cancel_futures=True)
-        except (NameError, TypeError, AttributeError):
-            raise  # programming bugs — fail loud
-        except Exception:
-            pass
 
     atexit.register(_terminate)
 
@@ -88,12 +107,22 @@ def managed_executor(
     finally:
         # Normal exit: clean shutdown (wait for in-flight work to finish).
         # If _terminate() was already called (signal path) this is a no-op.
-        try:
+        # Wrap in ``named_swallow`` so a shutdown failure during finally is
+        # witnessed (WARNING) rather than silently swallowed — AND let the
+        # ``finally`` block continue to unregister atexit/signal handlers so
+        # the process does not leak state.
+        with named_swallow(
+            rule_id="tools_worker_pool_cleanup_shutdown",
+            default=None,
+            jurisdiction=None,
+            clause_text=f"max_workers={workers} cleanup=normal-exit",
+            emit=lambda f: _logger.warning(
+                "named_swallow[%s] during finally executor.shutdown: %s",
+                f.detail.get("rule_id", ""),
+                f.detail.get("exception_message", ""),
+            ),
+        ):
             executor.shutdown(wait=True)
-        except (NameError, TypeError, AttributeError):
-            raise  # programming bugs — fail loud
-        except Exception:
-            pass
         atexit.unregister(_terminate)
         signal.signal(signal.SIGTERM, old_sigterm)
         signal.signal(signal.SIGINT, old_sigint)

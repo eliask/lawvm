@@ -109,6 +109,8 @@ from lawvm.finland.merge import (
 
 logger = logging.getLogger(__name__)
 
+_RESTRUCTURE_RELABEL_DESTINATION_SCAFFOLD_ATTR = "lawvm_restructure_relabel_destination_scaffold"
+
 # Strict-mode blocking code for an unexplained bound→landed mutation-boundary
 # divergence surfaced by the structural StageResult account. Reuses the
 # registered apply-boundary code rather than minting a new one: the registry
@@ -712,6 +714,44 @@ def _insert_or_replace_same_labeled_child(
     if same_path is not None:
         return _tops.replace_at(tree, same_path, child), True
     return _tops.insert_sorted(tree, parent_path, child), False
+
+
+def _same_label_repeal_placeholder_paths(
+    ir: IRNode,
+    *,
+    section_label: str,
+    target_chapter: str,
+    target_part: str | None,
+) -> tuple[Path, ...]:
+    paths: list[Path] = []
+
+    def _walk(node: IRNode, path: Path) -> None:
+        if node.kind is IRNodeKind.SECTION and _same_norm_label(node.label, section_label):
+            labels = {kind: label for kind, label in path}
+            if (
+                node.attrs.get("lawvm_repeal_placeholder") == "1"
+                and labels.get("chapter") != target_chapter
+                and (target_part is None or labels.get("part") == target_part)
+            ):
+                paths.append(path)
+        for child in node.children:
+            _walk(child, path + ((_kind_str(child.kind), child.label or ""),))
+
+    _walk(ir, ())
+    return tuple(paths)
+
+
+def _section_descendants(node: IRNode) -> tuple[IRNode, ...]:
+    found: list[IRNode] = []
+
+    def _walk(current: IRNode) -> None:
+        if current.kind is IRNodeKind.SECTION:
+            found.append(current)
+        for child in current.children:
+            _walk(child)
+
+    _walk(node)
+    return tuple(found)
 
 
 def _part_scaffold_from_cross_heading_marker(
@@ -1972,6 +2012,39 @@ def _apply_container_op(
             return state.with_ir(_tops.remove_at(state.ir, path))
 
     if _op_type == "INSERT" and not _target_paragraph and not _target_item and muutos_ir is not None:
+        if _target_unit_kind == "chapter" and _target_section:
+            for child in _section_descendants(muutos_ir):
+                if not child.label:
+                    continue
+                for stale_placeholder_path in _same_label_repeal_placeholder_paths(
+                    state.ir,
+                    section_label=child.label,
+                    target_chapter=_target_section,
+                    target_part=_target_part,
+                ):
+                    stale_placeholder = _tops.resolve(state.ir, stale_placeholder_path)
+                    if stale_placeholder is None:
+                        continue
+                    if source_pathologies_out is not None:
+                        source_pathologies_out.append(
+                            build_destructive_shape_loss_risk_pathology(
+                                source_statute=view.source_statute or "",
+                                target_unit_kind="section",
+                                target_label=f"{child.label} §",
+                                recovery_kind=RecoveryKind.SECTION_MOVE_INSERT_DESTINATION_REBIND,
+                                live_sibling_count=len(
+                                    [
+                                        c
+                                        for c in stale_placeholder.children
+                                        if c.kind is IRNodeKind.SUBSECTION
+                                    ]
+                                ),
+                                payload_sibling_count=len(
+                                    [c for c in child.children if c.kind is IRNodeKind.SUBSECTION]
+                                ),
+                            )
+                        )
+                    state = state.with_ir(_tops.remove_at(state.ir, stale_placeholder_path))
         if profile.replace_same_numbered_container_insert and _target_unit_kind == "chapter" and path is not None:
             node = _tops.resolve(state.ir, path)
             assert node is not None, f"resolve failed for {path}"
@@ -1991,6 +2064,39 @@ def _apply_container_op(
                 else None
             )
             if _base_path is None:
+                if node.attrs.get(_RESTRUCTURE_RELABEL_DESTINATION_SCAFFOLD_ATTR) == "1":
+                    merged = _merge_same_numbered_container_insert_ir(
+                        node,
+                        muutos_ir,
+                        context=MergeContainerContext(
+                            source_statute=view.source_statute or "",
+                            op_target=f"INSERT {_target_unit_kind}:{_target_section} {kind}",
+                            container_label=node.label or "",
+                        ),
+                    )
+                    merge_rule = "container_insert_restructure_relabel_scaffold_merge"
+                    if merged is None:
+                        merge_rule = "container_insert_restructure_relabel_scaffold_merge_duplicate_labels"
+                        merged = _preserve_live_container_on_merge_duplicate(
+                            source_pathologies_out=source_pathologies_out,
+                            source_statute=view.source_statute or "",
+                            target_unit_kind=_target_unit_kind,
+                            target_label=f"{_target_section} {kind}",
+                            recovery_kind=RecoveryKind.CONTAINER_INSERT_BASE_CHAPTER_MERGE_DUPLICATE_LABELS,
+                            live_node=node,
+                            payload_node=muutos_ir,
+                        )
+                    logger.debug("  %s → container insert merges restructure relabel scaffold", ctx_label)
+                    new_ir = _tops.replace_at(state.ir, path, merged)
+                    landed_path = path[:-1] + (_payload_leaf(merged),)
+                    _emit_container_insert_receipt(
+                        new_ir,
+                        landed_primary_path=landed_path,
+                        replaced_paths=(landed_path,),
+                        recovery_rule_ids=(merge_rule,),
+                        pre_subtrees=((path, node),),
+                    )
+                    return state.with_ir(new_ir)
                 logger.debug("  %s → container insert replaces non-base scaffold (oracle mode)", ctx_label)
                 if source_pathologies_out is not None:
                     source_pathologies_out.append(
@@ -2073,6 +2179,39 @@ def _apply_container_op(
                     target_part=_target_part,
                 )
             if base_path is None:
+                if existing_node.attrs.get(_RESTRUCTURE_RELABEL_DESTINATION_SCAFFOLD_ATTR) == "1":
+                    merged = _merge_same_numbered_container_insert_ir(
+                        existing_node,
+                        muutos_ir,
+                        context=MergeContainerContext(
+                            source_statute=view.source_statute or "",
+                            op_target=f"INSERT {_target_unit_kind}:{_target_section} {kind}",
+                            container_label=existing_node.label or "",
+                        ),
+                    )
+                    merge_rule = "container_insert_restructure_relabel_scaffold_merge"
+                    if merged is None:
+                        merge_rule = "container_insert_restructure_relabel_scaffold_merge_duplicate_labels"
+                        merged = _preserve_live_container_on_merge_duplicate(
+                            source_pathologies_out=source_pathologies_out,
+                            source_statute=view.source_statute or "",
+                            target_unit_kind=_target_unit_kind,
+                            target_label=f"{_target_section} {kind}",
+                            recovery_kind=RecoveryKind.CONTAINER_INSERT_BASE_CHAPTER_MERGE_DUPLICATE_LABELS,
+                            live_node=existing_node,
+                            payload_node=muutos_ir,
+                        )
+                    logger.debug("  %s → container insert merges restructure relabel scaffold", ctx_label)
+                    new_ir = _tops.replace_at(state.ir, path, merged)
+                    landed_path = path[:-1] + (_payload_leaf(merged),)
+                    _emit_container_insert_receipt(
+                        new_ir,
+                        landed_primary_path=landed_path,
+                        replaced_paths=(landed_path,),
+                        recovery_rule_ids=(merge_rule,),
+                        pre_subtrees=((path, existing_node),),
+                    )
+                    return state.with_ir(new_ir)
                 logger.debug("  %s → container insert consumes non-base scaffold", ctx_label)
                 if source_pathologies_out is not None:
                     source_pathologies_out.append(
@@ -3112,7 +3251,7 @@ def _apply_whole_section_op(
                     )
                     if is_placeholder:
                         logger.debug(
-                            "  %s → section move+insert (placeholder) from chapter %s to %s",
+                            "  %s → section insert consumes stale placeholder from chapter %s before landing in %s",
                             ctx_label,
                             existing_chapter,
                             _target_chapter,
@@ -3136,16 +3275,7 @@ def _apply_whole_section_op(
                                     ),
                                 )
                             )
-                        moved_ir = _move_section_payload_to_target_chapter(
-                            state.ir,
-                            existing_path,
-                            _target_chapter,
-                            muutos_ir,
-                            migration_ledger=migration_ledger,
-                            effective=_op_source_effective,
-                            source_statute=_source_statute or "",
-                        )
-                        return state.with_ir(moved_ir)
+                        state = state.with_ir(_tops.remove_at(state.ir, existing_path))
                     elif re.fullmatch(
                         rf"{re.escape(existing_chapter)}[a-z]+", _target_chapter, re.I
                     ) is not None and _body_chapter_move_source(op) == existing_chapter:
@@ -3191,6 +3321,35 @@ def _apply_whole_section_op(
                         )
                         return state.with_ir(moved_ir)
         if _target_chapter:
+            for stale_placeholder_path in _same_label_repeal_placeholder_paths(
+                state.ir,
+                section_label=_ts,
+                target_chapter=_target_chapter,
+                target_part=_target_part,
+            ):
+                stale_placeholder = _tops.resolve(state.ir, stale_placeholder_path)
+                if stale_placeholder is None:
+                    continue
+                if source_pathologies_out is not None:
+                    source_pathologies_out.append(
+                        build_destructive_shape_loss_risk_pathology(
+                            source_statute=_source_statute or "",
+                            target_unit_kind=view.target_unit_kind,
+                            target_label=f"{_ts} §",
+                            recovery_kind=RecoveryKind.SECTION_MOVE_INSERT_DESTINATION_REBIND,
+                            live_sibling_count=len(
+                                [
+                                    c
+                                    for c in stale_placeholder.children
+                                    if c.kind is IRNodeKind.SUBSECTION
+                                ]
+                            ),
+                            payload_sibling_count=len(
+                                [c for c in muutos_ir.children if c.kind is IRNodeKind.SUBSECTION]
+                            ),
+                        )
+                    )
+                state = state.with_ir(_tops.remove_at(state.ir, stale_placeholder_path))
             ch_path = None
             if _target_part:
                 part_path = _find_direct_body_part_path(state.ir, _target_part) or state.find("part", _target_part)

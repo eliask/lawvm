@@ -66,6 +66,9 @@ family below.
   target, action family, payload summary, and rejected rows.
 - Phase diagnosis: explain acquisition, parse, payload, elaboration, lowering,
   replay, timeline, and oracle outcomes separately.
+- Performance profiling: cProfile the single-statute compile + replay path
+  (AGENTS.md §2.7) before reasoning about hot paths; emit a pstats dump plus
+  a stdout cumtime summary.
 - Bisect or blame: identify the source unit or operation that first introduced
   a divergence or structural invariant violation.
 - Frontier ranking: rank fixable candidates separately from source-sparse,
@@ -79,7 +82,8 @@ family below.
 
 Existing examples are uneven but instructive: Finland has `bench`, `frontier`,
 `step-attribution`, `failures`, `oracle-check`, `ops`, `bisect`,
-`diagnose-phase`, and `structural-review`; Estonia has pair/corpus consistency
+`diagnose-phase`, `structural-review`, and `profile` (the §2.7 single-statute
+cProfile entry point); Estonia has pair/corpus consistency
 tools such as `verify-consistency`, `ee-frontier`, `ee-pair-status`, and
 `ee-chain-quality`; UK has `uk-effect`, `uk-effects`, `uk-candidates`,
 `bench -j uk --corpus-stats`, `bench -j uk --curate-corpus`,

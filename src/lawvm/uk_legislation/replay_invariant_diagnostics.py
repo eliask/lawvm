@@ -11,13 +11,12 @@ from typing import NamedTuple, Optional, Protocol, cast
 
 from lawvm.core import tree_ops
 from lawvm.core.invariant_profiles import CORE_REPLAY_DELTA_MINIMAL_FAMILIES
-from lawvm.core.ir import LegalAddress, LegalOperation
+from lawvm.core.ir import IRNode, IRStatute, LegalAddress, LegalOperation
 from lawvm.core.mutation_accounting import build_mutation_invariant_reports
 from lawvm.core.mutation_boundary import TreePathStep, TreePaths
 from lawvm.core.mutation_events import MutationEvent
 from lawvm.core.semantic_types import StructuralAction
 from lawvm.replay_adjudication import CompileAdjudication
-from lawvm.uk_legislation.mutable_ir import UKMutableNode, UKMutableStatute
 from lawvm.uk_legislation.replay_state import NodeLookupResult
 from lawvm.uk_legislation.uk_grafter import _clean_num
 from lawvm.uk_legislation.replay_records import (
@@ -41,13 +40,13 @@ from lawvm.uk_legislation.replay_target_gaps import (
 
 class _InvariantTargetRoot(NamedTuple):
     root_name: str
-    node: UKMutableNode
+    node: IRNode
     initial_path: str
     scope_prefix: str
 
 
 class _InvariantReplaySelf(Protocol):
-    statute: UKMutableStatute
+    statute: IRStatute
     adjudications_out: list[CompileAdjudication]
     mutation_events_out: list[MutationEvent] | None
     _seen_invariant_violations: set[str]
@@ -56,8 +55,8 @@ class _InvariantReplaySelf(Protocol):
 
     def _find_path_to_node(
         self,
-        root: UKMutableNode,
-        target_node: UKMutableNode,
+        root: IRNode,
+        target_node: IRNode,
         path: tuple[int, ...] = (),
     ) -> Optional[tuple[int, ...]]: ...
 
@@ -70,7 +69,7 @@ class _InvariantReplaySelf(Protocol):
         allow_sequence_match: bool = True,
     ) -> NodeLookupResult: ...
 
-    def _eid_candidate_matches_target_leaf(self, node: UKMutableNode, target: LegalAddress) -> bool: ...
+    def _eid_candidate_matches_target_leaf(self, node: IRNode, target: LegalAddress) -> bool: ...
 
     def _find_node_by_target(
         self,
@@ -122,7 +121,7 @@ def _tree_paths_jsonable(paths: TreePaths) -> list[list[tuple[str, str]]]:
 
 
 def _collect_duplicate_order_invariants(
-    root: UKMutableNode, initial_path: str | None = None
+    root: IRNode, initial_path: str | None = None
 ) -> list[str]:
     return [
         violation.message
@@ -131,7 +130,7 @@ def _collect_duplicate_order_invariants(
 
 
 def _collect_duplicate_order_invariant_records(
-    root: UKMutableNode,
+    root: IRNode,
     initial_path: str | None = None,
 ) -> list[tree_ops.TreeInvariantViolation]:
     """Return the structural-invariant records that UK replay diagnostics persist.
@@ -161,7 +160,7 @@ _collect_uk_replay_invariant_records = _collect_duplicate_order_invariant_record
 
 
 class UKReplayInvariantDiagnosticsMixin:
-    statute: UKMutableStatute
+    statute: IRStatute
     adjudications_out: list[CompileAdjudication]
     _seen_invariant_violations: set[str]
     _structure_mutation_serial: int
@@ -180,7 +179,7 @@ class UKReplayInvariantDiagnosticsMixin:
             return {("schedule", clean_label)}
         return {("body", "")}
 
-    def _node_invariant_path(self, root: UKMutableNode, node: UKMutableNode, root_path: str) -> str:
+    def _node_invariant_path(self, root: IRNode, node: IRNode, root_path: str) -> str:
         for child in root.children:
             if child is node:
                 return f"{root_path}/{child.kind.value}:{child.label or '?'}"
@@ -198,7 +197,7 @@ class UKReplayInvariantDiagnosticsMixin:
     def _find_invariant_scope_node(
         self,
         address: LegalAddress,
-    ) -> tuple[UKMutableNode | None, UKMutableNode | None]:
+    ) -> tuple[IRNode | None, IRNode | None]:
         replay = _invariant_replay_self(self)
         node = None
         target_eid = replay._derive_target_eid(address)

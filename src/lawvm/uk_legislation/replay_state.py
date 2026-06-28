@@ -7,46 +7,51 @@ from functools import lru_cache
 from typing import NamedTuple, Optional, Sequence
 
 from lawvm.core.ir_helpers import _kind_str
-from lawvm.core.ir import LegalAddress, LegalOperation
+from lawvm.core.ir import IRNode, IRStatute, LegalAddress, LegalOperation
 from lawvm.core.mutation_boundary import TreePath, TreePaths, tree_path_from_legal_address
 from lawvm.core.mutation_events import MutationEvent
 from lawvm.core.semantic_types import StructuralAction
 from lawvm.uk_legislation.addressing import _action_name
 from lawvm.uk_legislation.canonicalize import UKCanonicalNodeMatch
-from lawvm.uk_legislation.mutable_ir import UKMutableNode, UKMutableStatute, uk_insert_node_sorted
+from lawvm.uk_legislation.apply_rebuild import (
+    uk_insert_child_sorted_cow,
+    uk_insert_node_at_index_cow,
+    uk_insert_node_sorted_cow,
+    uk_replace_children_cow,
+)
 
 _UK_TOP_SCOPED_EID_PREFIXES = frozenset(
     {"annex", "article", "chapter", "division", "part", "schedule", "section"}
 )
 
 class NodeIndexEntry(NamedTuple):
-    node: UKMutableNode
-    parent: Optional[UKMutableNode]
+    node: IRNode
+    parent: Optional[IRNode]
     index: Optional[int]
 
 
 class NodeLookupResult(NamedTuple):
-    node: Optional[UKMutableNode]
-    parent: Optional[UKMutableNode]
+    node: Optional[IRNode]
+    parent: Optional[IRNode]
     index: Optional[int]
 
 
 class ParentIndexEntry(NamedTuple):
-    parent: Optional[UKMutableNode]
+    parent: Optional[IRNode]
     index: Optional[int]
 
 
 class VersionedNodeLookup(NamedTuple):
     structure_mutation_serial: int
-    node: Optional[UKMutableNode]
-    parent: Optional[UKMutableNode]
+    node: Optional[IRNode]
+    parent: Optional[IRNode]
     index: Optional[int]
 
 
 type TargetLookupKey = tuple[tuple[tuple[str, Optional[str]], ...], bool, bool]
 # Key: (id(root_node), kind, label) → (serial, tuple-of-matches capped at 2)
 type _RecursiveMatchAllKey = tuple[int, str, str]
-type _NodeTreePathIndex = dict[int, tuple[UKMutableNode, TreePath]]
+type _NodeTreePathIndex = dict[int, tuple[IRNode, TreePath]]
 type _NodeStructuralShape = tuple[
     object,
     Optional[str],
@@ -91,7 +96,7 @@ def _cached_eid_suffix_alias_keys(eid: str) -> tuple[tuple[str, str], ...]:
     return tuple(aliases)
 
 
-def _identity_index(nodes: Sequence[UKMutableNode], target: UKMutableNode) -> int | None:
+def _identity_index(nodes: Sequence[IRNode], target: IRNode) -> int | None:
     for index, node in enumerate(nodes):
         if node is target:
             return index
@@ -99,7 +104,7 @@ def _identity_index(nodes: Sequence[UKMutableNode], target: UKMutableNode) -> in
 
 
 class UKReplayStateMixin:
-    statute: UKMutableStatute
+    statute: IRStatute
     lo_ops_out: Optional[list[LegalOperation]]
     mutation_events_out: Optional[list[MutationEvent]]
     _current_mutation_op: Optional[LegalOperation]
@@ -120,7 +125,7 @@ class UKReplayStateMixin:
 
         These caches (eid-search, target-lookup, recursive-match,
         recursive-match-all) memoize results that contain references to live
-        ``UKMutableNode`` objects.  Any node replacement — including a
+        ``IRNode`` objects.  Any node replacement — including a
         *text-only* replace that keeps the structural shape unchanged —
         detaches the old node object and substitutes a new one.  If an
         ancestor is mutated in place (same ``id()``) the cache key survives
@@ -138,7 +143,7 @@ class UKReplayStateMixin:
         self._structure_mutation_serial += 1
         self._invalidate_node_lookup_caches()
 
-    def _node_eid_values(self, node: UKMutableNode) -> tuple[str, ...]:
+    def _node_eid_values(self, node: IRNode) -> tuple[str, ...]:
         values: list[str] = []
         for key in ("eId", "id"):
             value = str(node.attrs.get(key) or "").strip()
@@ -224,7 +229,7 @@ class UKReplayStateMixin:
 
     def _index_node_tree_path_subtree(
         self,
-        node: UKMutableNode,
+        node: IRNode,
         path: TreePath,
         index: _NodeTreePathIndex,
     ) -> None:
@@ -244,7 +249,7 @@ class UKReplayStateMixin:
         self._node_tree_path_index = index
         return index
 
-    def _cached_node_tree_path(self, node: UKMutableNode) -> TreePath | None:
+    def _cached_node_tree_path(self, node: IRNode) -> TreePath | None:
         entry = self._ensure_node_tree_path_index().get(id(node))
         if entry is None:
             return None
@@ -254,7 +259,7 @@ class UKReplayStateMixin:
         self._ensure_node_tree_path_index().pop(id(node), None)
         return None
 
-    def _cached_node_tree_path_if_indexed(self, node: UKMutableNode) -> TreePath | None:
+    def _cached_node_tree_path_if_indexed(self, node: IRNode) -> TreePath | None:
         if self._node_tree_path_index is None:
             return None
         entry = self._node_tree_path_index.get(id(node))
@@ -266,7 +271,7 @@ class UKReplayStateMixin:
         self._node_tree_path_index.pop(id(node), None)
         return None
 
-    def _remove_node_tree_path_subtree(self, node: UKMutableNode) -> None:
+    def _remove_node_tree_path_subtree(self, node: IRNode) -> None:
         if self._node_tree_path_index is None:
             return
         stack = [node]
@@ -279,8 +284,8 @@ class UKReplayStateMixin:
 
     def _add_node_tree_path_subtree(
         self,
-        node: UKMutableNode,
-        parent: Optional[UKMutableNode],
+        node: IRNode,
+        parent: Optional[IRNode],
     ) -> None:
         if self._node_tree_path_index is None:
             return
@@ -299,7 +304,7 @@ class UKReplayStateMixin:
             return
         self._index_node_tree_path_subtree(node, path, self._node_tree_path_index)
 
-    def _node_contains_node(self, root: UKMutableNode, target: UKMutableNode) -> bool:
+    def _node_contains_node(self, root: IRNode, target: IRNode) -> bool:
         if root is target:
             return True
         stack = list(root.children)
@@ -383,7 +388,7 @@ class UKReplayStateMixin:
 
     def _recursive_match_cache_key(
         self,
-        node: UKMutableNode,
+        node: IRNode,
         *,
         kind: str,
         label: str,
@@ -495,8 +500,8 @@ class UKReplayStateMixin:
 
     def _index_eid_subtree(
         self,
-        node: UKMutableNode,
-        parent: Optional[UKMutableNode],
+        node: IRNode,
+        parent: Optional[IRNode],
         idx: Optional[int],
         index: dict[str, NodeIndexEntry],
         ambiguous: set[str],
@@ -663,7 +668,7 @@ class UKReplayStateMixin:
             return NodeLookupResult(node=node, parent=None, index=current_idx)
         return _MISSING_NODE_LOOKUP
 
-    def _remove_eid_lookup_subtree(self, node: UKMutableNode) -> None:
+    def _remove_eid_lookup_subtree(self, node: IRNode) -> None:
         self._remove_node_tree_path_subtree(node)
         if self._eid_lookup_index is None:
             return
@@ -688,8 +693,8 @@ class UKReplayStateMixin:
 
     def _add_eid_lookup_subtree(
         self,
-        node: UKMutableNode,
-        parent: Optional[UKMutableNode],
+        node: IRNode,
+        parent: Optional[IRNode],
         idx: Optional[int],
     ) -> None:
         self._add_node_tree_path_subtree(node, parent)
@@ -707,7 +712,7 @@ class UKReplayStateMixin:
             self._eid_suffix_lookup_ambiguous,
         )
 
-    def _record_child_inserted(self, parent: UKMutableNode, node: UKMutableNode) -> None:
+    def _record_child_inserted(self, parent: IRNode, node: IRNode) -> None:
         idx = _identity_index(parent.children, node)
         self._add_eid_lookup_subtree(node, parent, idx)
         created_path = (
@@ -721,7 +726,83 @@ class UKReplayStateMixin:
             helper="_record_child_inserted",
         )
 
-    def _record_supplement_inserted(self, node: UKMutableNode) -> None:
+    def _cow_insert_child_sorted_and_record(
+        self,
+        parent: IRNode,
+        new_node: IRNode,
+    ) -> bool:
+        """PR3 (audit XJUR-02 / AGENTS.md §2.3): copy-on-write replacement for
+        ``uk_insert_child_sorted(parent, new_node) +
+        _record_child_inserted(parent, new_node)``.
+
+        Builds a new parent with ``new_node`` inserted at the sorted position
+        via ``uk_insert_child_sorted_cow``, threads the new parent up to the
+        statute root with ``_replace_ancestor_chain`` (which atomically clears
+        the eID lookup index and node-reference caches), then records the
+        structural mutation event. No in-place mutation of
+        ``parent.children`` occurs at any level.
+
+        Returns True when the insert landed; False when the duplicate
+        (kind, label) guard rejected the insertion (matching the legacy
+        ``uk_insert_child_sorted`` ``False`` return) or when the rebuilt
+        parent could not be threaded to the tree root.
+        """
+        new_parent, inserted_idx = uk_insert_child_sorted_cow(parent, new_node)
+        if inserted_idx is None:
+            return False
+        if not self._replace_ancestor_chain(parent, new_parent):
+            return False
+        self._record_child_inserted(new_parent, new_node)
+        return True
+
+    def _cow_insert_child_at_index_and_record(
+        self,
+        parent: IRNode,
+        idx: int,
+        new_node: IRNode,
+    ) -> bool:
+        """PR3 (audit XJUR-02 / AGENTS.md §2.3): copy-on-write replacement for
+        ``children = list(parent.children); uk_insert_node_at_index(children,
+        idx, new_node); uk_replace_children(parent, children);
+        _record_child_inserted(parent, new_node)``.
+
+        Builds a new parent whose children list has ``new_node`` inserted at
+        ``idx`` (CoW), threads the new parent up to the statute root, then
+        records the structural mutation event.
+        """
+        new_children, ok = uk_insert_node_at_index_cow(list(parent.children), idx, new_node)
+        if not ok:
+            return False
+        new_parent = uk_replace_children_cow(parent, new_children)
+        if not self._replace_ancestor_chain(parent, new_parent):
+            return False
+        self._record_child_inserted(new_parent, new_node)
+        return True
+
+    def _cow_replace_children_and_record(
+        self,
+        parent: IRNode,
+        new_children: list[IRNode],
+        *,
+        new_node: IRNode,
+    ) -> bool:
+        """PR3 (audit XJUR-02 / AGENTS.md §2.3): copy-on-write replacement for
+        ``uk_replace_children(parent, new_children) +
+        _record_child_inserted(parent, node)`` where ``new_node`` is the child
+        that was inserted into ``new_children``.
+
+        Builds a new parent whose children list is exactly ``new_children`` via
+        ``uk_replace_children_cow``, threads the new parent up to the statute
+        root, then records the structural mutation event with ``new_node`` as
+        the inserted child for lineage bookkeeping.
+        """
+        new_parent = uk_replace_children_cow(parent, new_children)
+        if not self._replace_ancestor_chain(parent, new_parent):
+            return False
+        self._record_child_inserted(new_parent, new_node)
+        return True
+
+    def _record_supplement_inserted(self, node: IRNode) -> None:
         idx = _identity_index(self.statute.supplements, node)
         self._add_eid_lookup_subtree(node, None, idx)
         created_path = ((_kind_str(node.kind), node.label or ""),)
@@ -731,15 +812,15 @@ class UKReplayStateMixin:
             helper="_record_supplement_inserted",
         )
 
-    def _child_shape(self, node: UKMutableNode) -> tuple[_NodeStructuralShape, ...]:
+    def _child_shape(self, node: IRNode) -> tuple[_NodeStructuralShape, ...]:
         return tuple(self._structural_shape(child) for child in node.children)
 
-    def _structural_shape(self, node: UKMutableNode) -> _NodeStructuralShape:
+    def _structural_shape(self, node: IRNode) -> _NodeStructuralShape:
         return (node.kind, node.label, self._child_shape(node))
 
     def _eid_lookup_parent_entry(
         self,
-        node: UKMutableNode,
+        node: IRNode,
     ) -> ParentIndexEntry | None:
         if self._eid_lookup_index is None:
             return None
@@ -781,8 +862,8 @@ class UKReplayStateMixin:
 
     def _find_path_to_node(
         self,
-        root: UKMutableNode,
-        target_node: UKMutableNode,
+        root: IRNode,
+        target_node: IRNode,
         path: tuple[int, ...] = (),
     ) -> Optional[tuple[int, ...]]:
         if root is target_node:
@@ -800,10 +881,10 @@ class UKReplayStateMixin:
 
     def _replace_descendant_at_path(
         self,
-        root: UKMutableNode,
+        root: IRNode,
         path: tuple[int, ...],
-        new_node: UKMutableNode,
-    ) -> UKMutableNode:
+        new_node: IRNode,
+    ) -> IRNode:
         if not path:
             return new_node
         idx = path[0]
@@ -813,7 +894,7 @@ class UKReplayStateMixin:
 
     def _parent_tuple_for_path(
         self,
-        root: UKMutableNode,
+        root: IRNode,
         path: tuple[int, ...],
     ) -> ParentIndexEntry:
         if not path:
@@ -823,10 +904,84 @@ class UKReplayStateMixin:
             parent = parent.children[child_idx]
         return ParentIndexEntry(parent=parent, index=path[-1])
 
+    def _remove_descendant_at_path(
+        self,
+        root: IRNode,
+        path: tuple[int, ...],
+    ) -> IRNode:
+        """PR3 (audit XJUR-02 / AGENTS.md §2.3): copy-on-write sibling of
+        ``_replace_descendant_at_path`` that excises the descendant at ``path``
+        instead of replacing it. Returns a NEW ``IRNode`` chain; the
+        original ``root`` and any subtrees along ``path`` are rebuilt via
+        ``dc_replace`` so the caller must thread the new root up to the live
+        statute. Root-level removal is addressed at the supplements list level,
+        so ``path`` MUST be non-empty.
+        """
+        if not path:
+            raise ValueError(
+                "_remove_descendant_at_path: cannot excise root via path descent; "
+                "remove via statute.body assignment or supplements list rebuild"
+            )
+        if len(path) == 1:
+            idx = path[0]
+            new_children = list(root.children)
+            new_children.pop(idx)
+            return dc_replace(root, children=new_children)
+        idx = path[0]
+        children = list(root.children)
+        children[idx] = self._remove_descendant_at_path(children[idx], path[1:])
+        return dc_replace(root, children=children)
+
+    def _replace_ancestor_chain(
+        self,
+        old_node: IRNode,
+        new_node: IRNode,
+    ) -> bool:
+        """PR3 (audit XJUR-02 / AGENTS.md §2.3): thread a CoW-rebuilt node up to
+        the statute root. Finds ``old_node`` in body or supplements, CoW
+        rebuilds the containing root via ``_replace_descendant_at_path`` so the
+        new node takes the old node's place, then assigns the rebuilt root back
+        to ``self.statute.body`` or ``self.statute.supplements`` and clears
+        lookup caches atomically. No in-place mutation of parent.children lists
+        occurs at any level.
+
+        ``new_node`` MUST be the rebuilt version of ``old_node``
+        (``dc_replace(old_node, children=...)`` or
+        ``uk_replace_children_cow(old_node, children)``); the caller is
+        responsible for any subtree changes inside ``new_node``. The chain
+        above ``old_node`` is rebuilt wholesale by this helper.
+
+        Returns True if ``old_node`` was located in body or supplements, False
+        otherwise. The atomic eID-lookup cache clear means lookups after this
+        point rebuild lazily from the new tree state.
+        """
+        body_path = self._find_path_to_node(self.statute.body, old_node)
+        if body_path is not None:
+            new_body = self._replace_descendant_at_path(self.statute.body, body_path, new_node)
+            self.statute = dc_replace(self.statute, body=new_body)
+            self._clear_eid_lookup_index()
+            return True
+        for s_idx, root in enumerate(self.statute.supplements):
+            if root is old_node:
+                new_supplements = list(self.statute.supplements)
+                new_supplements[s_idx] = new_node
+                self.statute = dc_replace(self.statute, supplements=tuple(new_supplements))
+                self._clear_eid_lookup_index()
+                return True
+            supp_path = self._find_path_to_node(root, old_node)
+            if supp_path is not None:
+                new_supp_root = self._replace_descendant_at_path(root, supp_path, new_node)
+                new_supplements = list(self.statute.supplements)
+                new_supplements[s_idx] = new_supp_root
+                self.statute = dc_replace(self.statute, supplements=tuple(new_supplements))
+                self._clear_eid_lookup_index()
+                return True
+        return False
+
     def _find_tree_path_to_node(
         self,
-        root: UKMutableNode,
-        target_node: UKMutableNode,
+        root: IRNode,
+        target_node: IRNode,
         prefix: TreePath = (),
     ) -> TreePath | None:
         if root is target_node:
@@ -844,7 +999,7 @@ class UKReplayStateMixin:
 
     def _tree_path_for_mutable_node_from_parent_index(
         self,
-        node: UKMutableNode,
+        node: IRNode,
     ) -> TreePath | None:
         self._ensure_eid_lookup_index()
         parts: list[tuple[str, str]] = []
@@ -870,7 +1025,7 @@ class UKReplayStateMixin:
                 return None
             current = parent
 
-    def _tree_path_for_mutable_node(self, node: UKMutableNode) -> TreePath | None:
+    def _tree_path_for_mutable_node(self, node: IRNode) -> TreePath | None:
         if self.statute.body is node:
             return ()
         cached_path = self._cached_node_tree_path_if_indexed(node)
@@ -894,8 +1049,8 @@ class UKReplayStateMixin:
 
     def _tree_path_for_known_child(
         self,
-        parent: UKMutableNode,
-        node: UKMutableNode,
+        parent: IRNode,
+        node: IRNode,
     ) -> TreePath | None:
         parent_path = self._tree_path_for_mutable_node(parent)
         if parent_path is None:
@@ -906,7 +1061,7 @@ class UKReplayStateMixin:
         self,
         *,
         old_path: TreePath | None,
-        new_node: UKMutableNode,
+        new_node: IRNode,
     ) -> None:
         if self.mutation_events_out is None or old_path is None:
             return
@@ -990,7 +1145,7 @@ class UKReplayStateMixin:
     def _record_children_splice_mutation_event(
         self,
         *,
-        container: UKMutableNode,
+        container: IRNode,
         helper: str,
         outcome: str,
         reason_code: str,
@@ -1022,7 +1177,7 @@ class UKReplayStateMixin:
         self,
         *,
         old_path: TreePath | None,
-        new_node: UKMutableNode,
+        new_node: IRNode,
         helper: str,
     ) -> None:
         if self.mutation_events_out is None or old_path is None:
@@ -1085,7 +1240,7 @@ class UKReplayStateMixin:
         self,
         *,
         old_path: TreePath | None,
-        new_node: UKMutableNode,
+        new_node: IRNode,
         helper: str,
     ) -> None:
         """Record lineage for a child provision promoted to its parent's sibling."""
@@ -1110,7 +1265,7 @@ class UKReplayStateMixin:
             )
         )
 
-    def _replace_node_in_statute(self, old_node: UKMutableNode, new_node: UKMutableNode) -> bool:
+    def _replace_node_in_statute(self, old_node: IRNode, new_node: IRNode) -> bool:
         replaced = self._do_replace_node_in_statute(old_node, new_node)
         if replaced:
             # A node replacement always detaches the old object and substitutes
@@ -1122,111 +1277,431 @@ class UKReplayStateMixin:
             self._invalidate_node_lookup_caches()
         return replaced
 
-    def _do_replace_node_in_statute(self, old_node: UKMutableNode, new_node: UKMutableNode) -> bool:
+    def _do_replace_node_in_statute(self, old_node: IRNode, new_node: IRNode) -> bool:
         structure_changed = self._structural_shape(old_node) != self._structural_shape(new_node)
         old_path = self._tree_path_for_mutable_node(old_node) if self.mutation_events_out is not None else None
+        # Sub-PR C+D (audit XJUR-02 / AGENTS.md §2.3): with ``self.statute``
+        # being a frozen ``IRStatute``, every replace now goes through a CoW
+        # chain that rebuilds the affected ancestor path bottom-up via
+        # ``dc_replace`` and threads the rebuilt root back into ``self.statute``
+        # itself. The warm EID index entries are RE-KEYED (not nuked) so the EID
+        # lookup hot path stays warm across replaces — preserving the contract
+        # pinned by ``test_executor_replace_*_warm_eid_index`` without
+        # in-place mutation of immutable ``IRNode.children`` tuples.
+        #
+        # The warm-EID fast path navigates up to root via the warm index only
+        # (no ``_find_path_to_node`` calls); the slow fallback uses a path walk
+        # and falls back to ``_clear_eid_lookup_index`` (lazy rebuild) for
+        # non-EID targets where re-keying is more expensive than rebuilding.
+
+        # Body root: direct swap of statute body. No parent chain above body.
         if self.statute.body is old_node:
             self._remove_eid_lookup_subtree(old_node)
-            self.statute.body = new_node
+            self.statute = dc_replace(self.statute, body=new_node)
             self._add_eid_lookup_subtree(new_node, None, None)
-            self._clear_eid_lookup_index()
+            # No ancestor references exist above the body root; only the
+            # id-keyed path index needs invalidation.
+            self._node_tree_path_index = None
             if structure_changed:
                 self._note_structure_mutation()
             self._record_replace_node_mutation_event(old_path=old_path, new_node=new_node)
             return True
-        parent_entry = self._eid_lookup_parent_entry(old_node)
-        if parent_entry is not None:
-            parent, idx = parent_entry
-            if parent is not None and idx is not None:
-                self._remove_eid_lookup_subtree(old_node)
-                parent.children[idx] = new_node
-                self._add_eid_lookup_subtree(new_node, parent, idx)
-                if structure_changed:
-                    self._note_structure_mutation()
-                self._record_replace_node_mutation_event(old_path=old_path, new_node=new_node)
-                return True
-            if idx is not None:
-                self._remove_eid_lookup_subtree(old_node)
-                self.statute.supplements[idx] = new_node
-                self._add_eid_lookup_subtree(new_node, None, idx)
-                if structure_changed:
-                    self._note_structure_mutation()
-                self._record_replace_node_mutation_event(old_path=old_path, new_node=new_node)
-                return True
-        body_path = self._find_path_to_node(self.statute.body, old_node)
-        if body_path is not None:
-            parent, idx = self._parent_tuple_for_path(self.statute.body, body_path)
-            if parent is not None and idx is not None:
-                self._remove_eid_lookup_subtree(old_node)
-                parent.children[idx] = new_node
-                self._add_eid_lookup_subtree(new_node, parent, idx)
-                if structure_changed:
-                    self._note_structure_mutation()
-                self._record_replace_node_mutation_event(old_path=old_path, new_node=new_node)
-                return True
-            self._remove_eid_lookup_subtree(old_node)
-            self.statute.body = self._replace_descendant_at_path(self.statute.body, body_path, new_node)
-            self._clear_eid_lookup_index()
-            if structure_changed:
-                self._note_structure_mutation()
-            self._record_replace_node_mutation_event(old_path=old_path, new_node=new_node)
-            return True
-        for idx, root in enumerate(self.statute.supplements):
+
+        # Supplement root replacement: build a new supplements tuple via
+        # CoW list rebuild (no in-place tuple mutation).
+        for s_idx, root in enumerate(self.statute.supplements):
             if root is old_node:
                 self._remove_eid_lookup_subtree(old_node)
-                self.statute.supplements[idx] = new_node
-                self._add_eid_lookup_subtree(new_node, None, idx)
+                new_supps = list(self.statute.supplements)
+                new_supps[s_idx] = new_node
+                self.statute = dc_replace(self.statute, supplements=tuple(new_supps))
+                self._add_eid_lookup_subtree(new_node, None, s_idx)
+                self._node_tree_path_index = None
                 if structure_changed:
                     self._note_structure_mutation()
                 self._record_replace_node_mutation_event(old_path=old_path, new_node=new_node)
+                return True
+
+        # Warm-EID-indexed CoW fast path: navigate via the warm EID index
+        # so ``_find_path_to_node`` is NOT called (preserves the monkeypatched
+        # invariant pinned by ``test_executor_replace_reuses_eid_lookup_parent_without_path_walk``).
+        parent_entry = self._eid_lookup_parent_entry(old_node)
+        if (
+            parent_entry is not None
+            and parent_entry.parent is not None
+            and parent_entry.index is not None
+        ):
+            parent = parent_entry.parent
+            idx = parent_entry.index
+            if self._cow_replace_in_subtree_preserve_warm_index(
+                old_node=old_node,
+                new_node=new_node,
+                parent=parent,
+                idx=idx,
+            ):
+                if structure_changed:
+                    self._note_structure_mutation()
+                self._record_replace_node_mutation_event(old_path=old_path, new_node=new_node)
+                return True
+
+        # Slow fallback: navigate via path walk. The slow path also uses CoW
+        # chain rebuild but nukes the warm EID index (lazy rebuild) because the
+        # targeted node has no EID to re-key against and rebuilding the index
+        # is cheaper than a full warm-index entry walk for this cold case.
+        if self._cow_replace_in_subtree_via_path_walk(old_node, new_node):
+            if structure_changed:
+                self._note_structure_mutation()
+            self._record_replace_node_mutation_event(old_path=old_path, new_node=new_node)
+            return True
+
+        return False
+
+    def _cow_replace_in_subtree_preserve_warm_index(
+        self,
+        *,
+        old_node: IRNode,
+        new_node: IRNode,
+        parent: IRNode,
+        idx: int,
+    ) -> bool:
+        """CoW-rebuild ancestor chain via the warm EID index only (no path
+        walks), thread the rebuilt root into ``self.statute``, and re-key the
+        warm EID index entries for the rebuilt ancestor path so subsequent EID
+        lookups stay warm without needing a full index rebuild.
+
+        Builds the ``(old, new)`` ancestor chain bottom-up: leaf is
+        ``(old_node, new_node)``, then each ancestor level until the body or
+        a supplement root. Walks up via ``_eid_lookup_parent_entry`` so no
+        ``_find_path_to_node`` call is made (preserves the warm-index hot path
+        contract pinned by the pinned regression tests).
+        """
+        self._remove_eid_lookup_subtree(old_node)
+
+        chain: list[tuple[IRNode, IRNode]] = [(old_node, new_node)]
+        # First-level rebuild: parent with new_node at idx.
+        new_parent_children = list(parent.children)
+        new_parent_children[idx] = new_node
+        new_parent = dc_replace(parent, children=new_parent_children)
+        chain.append((parent, new_parent))
+
+        # Walk up via warm EID index, rebuilding each ancestor.
+        current_old, current_new = parent, new_parent
+        seen_ids: set[int] = {id(old_node)}  # old_node already used as leaf
+        while True:
+            if current_old is self.statute.body:
+                self.statute = dc_replace(self.statute, body=current_new)
+                break
+            supp_idx = _identity_index(self.statute.supplements, current_old)
+            if supp_idx is not None:
+                new_supps = list(self.statute.supplements)
+                new_supps[supp_idx] = current_new
+                self.statute = dc_replace(self.statute, supplements=tuple(new_supps))
+                break
+            if id(current_old) in seen_ids:
+                # Defensive: should not happen because the live tree is acyclic.
+                return False
+            seen_ids.add(id(current_old))
+            gp_entry = self._eid_lookup_parent_entry(current_old)
+            if (
+                gp_entry is None
+                or gp_entry.parent is None
+                or gp_entry.index is None
+            ):
+                # Warm-index navigation incomplete: cannot safely thread.
+                # Caller falls back to the path-walk CoW path.
+                return False
+            grandparent, gp_idx = gp_entry.parent, gp_entry.index
+            new_gp_children = list(grandparent.children)
+            new_gp_children[gp_idx] = current_new
+            new_grandparent = dc_replace(grandparent, children=new_gp_children)
+            chain.append((grandparent, new_grandparent))
+            current_old, current_new = grandparent, new_grandparent
+
+        # Re-key the warm EID index entries using the rebuilt ancestor chain.
+        self._rekey_eid_index_after_cow_chain(chain)
+        # Re-add new_node's subtree EIDs (with the rebuilt immediate parent).
+        self._add_eid_lookup_subtree(new_node, parent=chain[1][1], idx=idx)
+        # id-keyed path index invalidated wholesale; rebuild lazily on access.
+        self._node_tree_path_index = None
+        return True
+
+    def _cow_replace_in_subtree_via_path_walk(
+        self,
+        old_node: IRNode,
+        new_node: IRNode,
+    ) -> bool:
+        """Slow-path CoW chain via path walk. Used when the warm EID index
+        did not yield a parent entry (e.g. a non-EID target leaf). Rebuilds
+        the ancestor chain via ``_replace_descendant_at_path`` and nukes the
+        warm EID index for lazy rebuild on next access."""
+        body_path = self._find_path_to_node(self.statute.body, old_node)
+        if body_path is not None:
+            if not body_path:
+                # old_node IS body — defensive (handled above in caller).
+                self._remove_eid_lookup_subtree(old_node)
+                self.statute = dc_replace(self.statute, body=new_node)
+                self._add_eid_lookup_subtree(new_node, None, None)
+                self._clear_eid_lookup_index()
+                return True
+            new_body, chain = self._replace_descendant_at_path_with_chain(
+                self.statute.body, body_path, new_node
+            )
+            self._remove_eid_lookup_subtree(old_node)
+            self.statute = dc_replace(self.statute, body=new_body)
+            self._rekey_eid_index_after_cow_chain(chain)
+            self._add_eid_lookup_subtree(
+                new_node, parent=chain[1][1], idx=body_path[-1]
+            )
+            self._node_tree_path_index = None
+            return True
+        for s_idx, root in enumerate(self.statute.supplements):
+            if root is old_node:
+                # Already handled in caller; defensive.
+                self._remove_eid_lookup_subtree(old_node)
+                new_supps = list(self.statute.supplements)
+                new_supps[s_idx] = new_node
+                self.statute = dc_replace(self.statute, supplements=tuple(new_supps))
+                self._clear_eid_lookup_index()
                 return True
             sub_path = self._find_path_to_node(root, old_node)
             if sub_path is not None:
-                parent, child_idx = self._parent_tuple_for_path(root, sub_path)
-                if parent is not None and child_idx is not None:
-                    self._remove_eid_lookup_subtree(old_node)
-                    parent.children[child_idx] = new_node
-                    self._add_eid_lookup_subtree(new_node, parent, child_idx)
-                    if structure_changed:
-                        self._note_structure_mutation()
-                    self._record_replace_node_mutation_event(old_path=old_path, new_node=new_node)
-                    return True
+                new_supp_root, chain = self._replace_descendant_at_path_with_chain(
+                    root, sub_path, new_node
+                )
                 self._remove_eid_lookup_subtree(old_node)
-                self.statute.supplements[idx] = self._replace_descendant_at_path(root, sub_path, new_node)
-                self._clear_eid_lookup_index()
-                if structure_changed:
-                    self._note_structure_mutation()
-                self._record_replace_node_mutation_event(old_path=old_path, new_node=new_node)
+                new_supps = list(self.statute.supplements)
+                new_supps[s_idx] = new_supp_root
+                self.statute = dc_replace(self.statute, supplements=tuple(new_supps))
+                self._rekey_eid_index_after_cow_chain(chain)
+                self._add_eid_lookup_subtree(
+                    new_node, parent=chain[1][1], idx=sub_path[-1]
+                )
+                self._node_tree_path_index = None
                 return True
         return False
 
-    def _remove_node(self, node: UKMutableNode, parent: Optional[UKMutableNode], idx: Optional[int]) -> bool:
+    def _replace_descendant_at_path_with_chain(
+        self,
+        root: IRNode,
+        path: tuple[int, ...],
+        new_node: IRNode,
+    ) -> tuple[IRNode, list[tuple[IRNode, IRNode]]]:
+        """CoW-replace the descendant at integer-index ``path`` under ``root``,
+        returning the rebuilt root AND a chain of ``(old, new)`` ancestor pairs
+        leaf-first (i.e. ``[(target, new_node), (parent, new_parent), ...,
+        (root, new_root)]``) so the caller can re-key warm EID index entries.
+        """
+        chain: list[tuple[IRNode, IRNode]] = []
+
+        def _walk(node: IRNode, depth: int) -> IRNode:
+            if depth == len(path):
+                chain.append((node, new_node))
+                return new_node
+            i = path[depth]
+            children = list(node.children)
+            children[i] = _walk(node.children[i], depth + 1)
+            new_node_at_level = dc_replace(node, children=children)
+            chain.append((node, new_node_at_level))
+            return new_node_at_level
+
+        new_root = _walk(root, 0)
+        return new_root, chain
+
+    def _rekey_eid_index_after_cow_chain(
+        self,
+        chain: list[tuple[IRNode, IRNode]],
+    ) -> None:
+        """After a CoW ancestor rebuild, walk the warm EID index entries and
+        for each entry whose ``node`` or ``parent`` references an old ancestor
+        in ``chain``, update the reference to the new ancestor.
+
+        ``chain`` is leaf-first: ``[(old_node, new_node), (parent, new_parent),
+        ..., (root, new_root)]`` inclusive of the rebuilt root.
+
+        Does NOT clear the warm EID index (preserving the contract pinned by
+        ``test_executor_replace_*_warm_eid_index``). The id-keyed node tree
+        path index is invalidated wholesale separately by the caller — CoW
+        changes node ``id()``s along the whole path so partial re-keying isn't
+        cost-effective here.
+        """
+        if not chain:
+            return
+        remap: dict[int, IRNode] = {id(old): new for old, new in chain}
+        if self._eid_lookup_index is not None:
+            new_index: dict[str, NodeIndexEntry] = {}
+            for eid, entry in self._eid_lookup_index.items():
+                node, parent, idx = entry
+                updated_node = remap.get(id(node), node)
+                updated_parent = (
+                    remap.get(id(parent), parent) if parent is not None else None
+                )
+                new_index[eid] = NodeIndexEntry(
+                    node=updated_node, parent=updated_parent, index=idx
+                )
+            self._eid_lookup_index = new_index
+        if self._eid_suffix_lookup_index is not None:
+            new_suffix: dict[tuple[str, str], NodeIndexEntry] = {}
+            for key, entry in self._eid_suffix_lookup_index.items():
+                node, parent, idx = entry
+                updated_node = remap.get(id(node), node)
+                updated_parent = (
+                    remap.get(id(parent), parent) if parent is not None else None
+                )
+                new_suffix[key] = NodeIndexEntry(
+                    node=updated_node, parent=updated_parent, index=idx
+                )
+            self._eid_suffix_lookup_index = new_suffix
+
+    def _remove_node(
+        self,
+        node: IRNode,
+        parent: Optional[IRNode],
+        idx: Optional[int],
+    ) -> bool:
         removed_path = None
         if self.mutation_events_out is not None:
             if parent is not None:
                 removed_path = self._tree_path_for_known_child(parent, node)
             else:
                 removed_path = self._tree_path_for_mutable_node(node)
+        # Sub-PR D (audit XJUR-02 / AGENTS.md §2.3): the in-place
+        # ``parent.children.pop(idx)`` fast path is gone — ``parent.children``
+        # is now an immutable ``Tuple[IRNode, ...]`` once ``self.statute`` is an
+        # ``IRStatute``. CoW chain rebuild via the warm EID index keeps the
+        # warm-index consistency contract preserved.
         if parent is not None and idx is not None:
             self._remove_eid_lookup_subtree(node)
-            parent.children.pop(idx)
-            self._note_structure_mutation()
-            self._record_remove_node_mutation_event(removed_path=removed_path)
-            return True
+            if self._cow_remove_in_parent_preserve_warm_index(
+                node=node, parent=parent, idx=idx
+            ):
+                self._note_structure_mutation()
+                self._record_remove_node_mutation_event(removed_path=removed_path)
+                return True
+            # Warm-index navigation failed: fall back to path-walk CoW chain.
+            if self._cow_remove_via_path_walk(node):
+                self._note_structure_mutation()
+                self._record_remove_node_mutation_event(removed_path=removed_path)
+                return True
         for s_idx, root in enumerate(self.statute.supplements):
             if root is node:
                 self._remove_eid_lookup_subtree(node)
-                self.statute.supplements.pop(s_idx)
+                new_supps = list(self.statute.supplements)
+                popped_s_idx = s_idx
+                new_supps.pop(popped_s_idx)
+                self.statute = dc_replace(self.statute, supplements=tuple(new_supps))
                 self._note_structure_mutation()
                 self._record_remove_node_mutation_event(removed_path=removed_path)
                 return True
         return False
 
+    def _cow_remove_in_parent_preserve_warm_index(
+        self,
+        *,
+        node: IRNode,
+        parent: IRNode,
+        idx: int,
+    ) -> bool:
+        """CoW-rebuild ancestor chain so ``parent.children`` no longer contains
+        ``node`` at ``idx``, navigating via the warm EID index. Re-keys warm
+        EID index entries for the rebuilt ancestor chain. Returns False if the
+        warm index does not yield a clean chain (caller falls back to path walk)."""
+        # First-level rebuild: parent with node popped from children.
+        new_parent_children = list(parent.children)
+        new_parent_children.pop(idx)
+        new_parent = dc_replace(parent, children=new_parent_children)
+        chain: list[tuple[IRNode, IRNode]] = [(parent, new_parent)]
+        current_old, current_new = parent, new_parent
+        seen_ids: set[int] = set()
+        while True:
+            if current_old is self.statute.body:
+                self.statute = dc_replace(self.statute, body=current_new)
+                break
+            supp_idx = _identity_index(self.statute.supplements, current_old)
+            if supp_idx is not None:
+                new_supps = list(self.statute.supplements)
+                new_supps[supp_idx] = current_new
+                self.statute = dc_replace(self.statute, supplements=tuple(new_supps))
+                break
+            if id(current_old) in seen_ids:
+                return False
+            seen_ids.add(id(current_old))
+            gp_entry = self._eid_lookup_parent_entry(current_old)
+            if (
+                gp_entry is None
+                or gp_entry.parent is None
+                or gp_entry.index is None
+            ):
+                return False
+            grandparent, gp_idx = gp_entry.parent, gp_entry.index
+            new_gp_children = list(grandparent.children)
+            new_gp_children[gp_idx] = current_new
+            new_grandparent = dc_replace(grandparent, children=new_gp_children)
+            chain.append((grandparent, new_grandparent))
+            current_old, current_new = grandparent, new_grandparent
+        self._rekey_eid_index_after_cow_chain(chain)
+        self._node_tree_path_index = None
+        return True
+
+    def _cow_remove_via_path_walk(self, node: IRNode) -> bool:
+        """Slow-path CoW chain removal via path walk + ancestor chain."""
+        body_path = self._find_path_to_node(self.statute.body, node)
+        if body_path is not None and body_path:
+            new_body, _chain = self._remove_descendant_at_path_with_chain(
+                self.statute.body, body_path
+            )
+            self.statute = dc_replace(self.statute, body=new_body)
+            self._clear_eid_lookup_index()
+            return True
+        for s_idx, root in enumerate(self.statute.supplements):
+            sub_path = self._find_path_to_node(root, node)
+            if sub_path is not None and sub_path:
+                new_supp_root, _chain = self._remove_descendant_at_path_with_chain(
+                    root, sub_path
+                )
+                new_supps = list(self.statute.supplements)
+                new_supps[s_idx] = new_supp_root
+                self.statute = dc_replace(self.statute, supplements=tuple(new_supps))
+                self._clear_eid_lookup_index()
+                return True
+        return False
+
+    def _remove_descendant_at_path_with_chain(
+        self,
+        root: IRNode,
+        path: tuple[int, ...],
+    ) -> tuple[IRNode, list[tuple[IRNode, IRNode]]]:
+        """CoW-remove the descendant at integer-index ``path`` under ``root``,
+        returning the rebuilt root AND a chain of ``(old, new)`` ancestor pairs
+        leaf-first (i.e. starting ``(parent_of_removed, new_parent), ...`` —
+        the removed node itself is not in the chain since it no longer exists)."""
+        chain: list[tuple[IRNode, IRNode]] = []
+
+        def _walk(node: IRNode, depth: int) -> IRNode:
+            if depth == len(path):
+                # Base case: would only hit if path were empty; defensive.
+                return node
+            i = path[depth]
+            if depth == len(path) - 1:
+                # At parent: pop child at i, do NOT descend into the removed node.
+                new_children = list(node.children)
+                new_children.pop(i)
+                rebuilt = dc_replace(node, children=new_children)
+                chain.append((node, rebuilt))
+                return rebuilt
+            children = list(node.children)
+            children[i] = _walk(node.children[i], depth + 1)
+            rebuilt = dc_replace(node, children=children)
+            chain.append((node, rebuilt))
+            return rebuilt
+
+        new_root = _walk(root, 0)
+        return new_root, chain
+
     def _find_parent_tuple_for_node(
         self,
-        target_node: UKMutableNode,
+        target_node: IRNode,
     ) -> ParentIndexEntry:
-        def _walk(parent: UKMutableNode) -> ParentIndexEntry:
+        def _walk(parent: IRNode) -> ParentIndexEntry:
             for child_idx, child in enumerate(parent.children):
                 if child is target_node:
                     return ParentIndexEntry(parent=parent, index=child_idx)
@@ -1250,9 +1725,22 @@ class UKReplayStateMixin:
                 return found
         return _ROOT_PARENT_INDEX
 
-    def _insert_supplement_sorted(self, new_node: UKMutableNode) -> bool:
-        if not uk_insert_node_sorted(self.statute.supplements, new_node):
+    def _insert_supplement_sorted(self, new_node: IRNode) -> bool:
+        # PR3 (audit XJUR-02 / AGENTS.md §2.3): copy-on-write insert. Build a
+        # new supplements list with ``new_node`` at the sorted position rather
+        # than mutating ``self.statute.supplements`` in place. The atomic clear
+        # in ``_record_supplement_inserted`` covers cache invalidation; the
+        # bookkeeping there looks up ``new_node`` by identity in the freshly
+        # assigned list.
+        new_supplements, inserted_idx = uk_insert_node_sorted_cow(
+            list(self.statute.supplements), new_node
+        )
+        if inserted_idx is None:
             return False
+        # Sub-PR C+D: IRStatute.supplements is Tuple[IRNode, ...]; assign via
+        # ``dataclasses.replace(self.statute, supplements=tuple(list))`` rather
+        # than direct assignment (frozen dataclass).
+        self.statute = dc_replace(self.statute, supplements=tuple(new_supplements))
         self._record_supplement_inserted(new_node)
         return True
 
@@ -1297,7 +1785,7 @@ class UKReplayStateMixin:
 
         # Find the top-level node in the current (post-op) statute state.
         # We look in body children and schedules.
-        top_node: Optional[UKMutableNode] = None
+        top_node: Optional[IRNode] = None
         for child in self.statute.body.children:
             if str(child.kind) == top_kind and (child.label is not None and child.label == top_label):
                 top_node = child
@@ -1329,7 +1817,7 @@ class UKReplayStateMixin:
                     sequence=op.sequence,
                     action=StructuralAction.REPLACE,
                     target=top_addr,
-                    payload=top_node.to_irnode(),
+                    payload=top_node,
                     source=op.source,
                     group_id=op.group_id,
                 )

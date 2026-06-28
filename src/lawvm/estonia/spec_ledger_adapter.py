@@ -17,6 +17,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Dict, Iterator, List, Mapping, Optional
 
+from lawvm.core.named_swallow import swallow_call
 from lawvm.tools.spec_ledger import (
     DivergenceRow,
     LedgerAdapter,
@@ -91,12 +92,32 @@ def _ee_address_key(address: object) -> str:
 
 
 def _ee_resolve_as_of(oracle_id: str, archive: object) -> str:
-    """Resolve an oracle terviktekst's own effective date (its PIT as_of)."""
+    """Resolve an oracle terviktekst's own effective date (its PIT as_of).
+
+    ``fetch_rt_xml`` may raise across network/parse/storage errors. Previously
+    ``except Exception: return ""`` silently swallowed to an empty string
+    (AGENTS.md §1.10 silent-fallback). Now routed through
+    ``lawvm.core.named_swallow.swallow_call`` so a typed Finding is emitted
+    to ``log_emitter`` (WARNING-visibility) carrying the offending
+    ``oracle_id`` as ``source_artifact`` and ``clause_text`` (the EE URL path,
+    truncated 400 chars). On swallow returns "" so the spec-ledger adapter
+    continues to mark this oracle's as-of unresolved rather than aborting a
+    full corpus scan.
+    """
     from lawvm.estonia.fetch import extract_effective_date, fetch_rt_xml
 
-    try:
-        xml_bytes = fetch_rt_xml(oracle_id, archive)
-    except Exception:
+    from lawvm.core.named_swallow import log_emitter
+
+    xml_bytes = swallow_call(
+        lambda: fetch_rt_xml(oracle_id, archive),
+        rule_id="ee_spec_ledger_fetch_rt_xml",
+        default=b"",
+        jurisdiction="ee",
+        source_artifact=oracle_id,
+        clause_text=f"oracle_id={oracle_id[:400]}",
+        emit=log_emitter(),
+    )
+    if xml_bytes == b"":
         return ""
     return extract_effective_date(xml_bytes)
 

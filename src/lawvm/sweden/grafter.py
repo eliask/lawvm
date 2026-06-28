@@ -1109,15 +1109,55 @@ def se_pdf_bytes_to_text(
             return None
         return result.stdout.decode("utf-8", errors="replace")
     except FileNotFoundError:
+        # pdftotext binary is not installed.
         return None
-    except Exception:
+    except (OSError, subprocess.TimeoutExpired):
+        # Expected sub-process failures: file-system I/O errors, timeout, etc.
+        # — narrow and silent (matches the prior swallow's intent).
+        return None
+    except Exception as exc:
+        # Unexpected exception: route through named_swallow so a typed Finding
+        # witnesses the swallow (AGENTS.md §1.10). Previously this branch was
+        # ``except Exception: return None`` silently; now log_emitter emits
+        # a WARNING carrying the offending pdf_bytes head as clause_text.
+        from lawvm.core.named_swallow import build_named_swallow_finding, log_emitter
+
+        log_emitter()(
+            build_named_swallow_finding(
+                rule_id="se_grafter_pdf_bytes_to_text_subprocess",
+                exception=exc,
+                op_id=None,
+                clause_text=(
+                    pdf_bytes[:400].decode("utf-8", errors="replace")
+                    if pdf_bytes
+                    else ""
+                ),
+                jurisdiction="se",
+                source_artifact=pdftotext_bin,
+            )
+        )
         return None
     finally:
         if tmp_path:
             try:
                 Path(tmp_path).unlink(missing_ok=True)
-            except Exception:
+            except OSError:
+                # Expected (file already removed by SIGCHLD race, etc.) — silent.
                 pass
+            except Exception as exc:
+                # Cleanup-path unexpected: witnessed via named_swallow (§1.10).
+                from lawvm.core.named_swallow import build_named_swallow_finding, log_emitter
+
+                log_emitter()(
+                    build_named_swallow_finding(
+                        rule_id="se_grafter_pdf_bytes_to_text_cleanup_unlink",
+                        exception=exc,
+                        op_id=None,
+                        clause_text=f"tmp_path={tmp_path}",
+                        jurisdiction="se",
+                        source_artifact=pdftotext_bin,
+                    )
+                )
 
 
 def _parse_parliamentary_links(sfs_id: str, raw_text: str) -> tuple[SEParliamentaryPackageLink, ...]:
@@ -3744,10 +3784,20 @@ class SEApplyResult:
     of the same accepted/rejected partition, so callers that already consume
     the shared core type can reuse it without unpacking ``applied_ops`` /
     ``skipped_items`` separately.
+
+    The optional ``write_receipts`` field carries per-op landed-write receipts
+    (AGENTS.md §2.3 + notes/APPLY_RESOLUTION_AND_RECEIPT_CONTRACT.md §4) when
+    the conserved wrapper is invoked with ``emit_receipts=True``. Default
+    ``()`` so receipt-free callers (existing tests + the cheaper apply fold)
+    pay no per-op snapshot overhead. Production lanes (e.g. SE fetch's
+    ``check_se_official_replay``) request receipts so the §4 mutation-boundary
+    contract is auditable downstream — without this, a guard that exists but
+    is unreachable from production is the §2.9 worst-case silent failure.
     """
 
     statute: IRStatute
     filter_result: "FilterResult[LegalOperation]"
+    write_receipts: tuple["WriteReceipt", ...] = ()
 
     @property
     def applied_ops(self) -> tuple["LegalOperation", ...]:
@@ -3763,6 +3813,7 @@ def apply_se_ops_conserved(
     ops: list[LegalOperation] | tuple["LegalOperation", ...],
     *,
     adjudications_out: list[CompileAdjudication] | None = None,
+    emit_receipts: bool = False,
 ) -> SEApplyResult:
     """Apply a Sweden op set with a typed conservation receipt (§1.8).
 
@@ -3774,6 +3825,18 @@ def apply_se_ops_conserved(
     (its replay skipped, with a witness adjudication carrying the reason).
     The contract is monotone: every input op ends up either accepted or
     rejected, never silently dropped.
+
+    When ``emit_receipts=True`` is passed, per-op landed-write receipts
+    (§2.3 + notes/APPLY_RESOLUTION_AND_RECEIPT_CONTRACT.md §4) are also
+    produced via :func:`se_replay_write_receipts` and surfaced on
+    :attr:`SEApplyResult.write_receipts`. Each receipt records the landed
+    footprint (created/replaced/removed/renumbered paths) plus pre/post
+    structural subtree hashes for the covering region. Production lanes
+    (SE fetch's ``check_se_official_replay``) pass ``emit_receipts=True`` so
+    the §4 mutation-boundary contract is auditable downstream — without this,
+    a guard that exists but is unreachable from production is the §2.9
+    worst-case silent failure (the bug that previously read: conserved
+    wrapper bypassed by production ``apply_se_ops`` call site).
     """
     ops_list = list(ops)
     # Conservation requires a robust op IDENTITY for the accepted/rejected
@@ -3825,9 +3888,22 @@ def apply_se_ops_conserved(
     if adjudications_out is not None:
         adjudications_out.clear()
         adjudications_out.extend(adjudications)
+    write_receipts: tuple[WriteReceipt, ...] = ()
+    if emit_receipts:
+        # Re-apply one op at a time to snapshot before/after body trees for
+        # per-op WriteReceipt construction (§2.3 receipt contract). The final
+        # statute from this per-op apply matches ``applied`` for Sweden's
+        # REPLACE/INSERT/REPEAL/RENUMBER op families — they are
+        # order-preserving and have no multi-op invariants that branch on
+        # metadata state. The per-op fold is the same algorithm
+        # :func:`se_replay_write_receipts` already runs in tests; routing it
+        # through the conserved wrapper here makes the receipt lane reachable
+        # from production (the §2.9 fix).
+        _, write_receipts = se_replay_write_receipts(statute, ops_list)
     return SEApplyResult(
         statute=applied,
         filter_result=FilterResult(accepted_items=tuple(accepted), rejected_items=tuple(rejected)),
+        write_receipts=write_receipts,
     )
 
 
@@ -4053,6 +4129,21 @@ def _se_emit_one_op_receipt(
     # that categorizes every observed change as a replacement. A finer-grained
     # categorization can be added incrementally as new action families land.
 
+    # Per §4 of the apply-resolution/receipt contract
+    # (notes/APPLY_RESOLUTION_AND_RECEIPT_CONTRACT.md), a divergence between
+    # ``bound_target_path`` (from) and ``landed_primary_path`` (to) MUST be
+    # explained by a named migration rule. The RENUMBER branch above sets the
+    # bound to the source label and the landed to the destination label — they
+    # diverge by construction (a relabel IS the migration). The named rule
+    # ``se_renumber_relabel`` (registered in spec_ledger_se_catalog.py) explains
+    # that divergence so the receipt audits as ``qualified`` (not ``violation``)
+    # in ``build_observed_write_audit`` and ``WriteReceipt.divergence_explained``
+    # returns True. Without it, the SE RENUMBER receipt is a §1.6 unstated
+    # migration violation that strict mode must reject.
+    migration_rule_ids: tuple[str, ...] = ()
+    if action_value == "renumber" and op.destination is not None:
+        migration_rule_ids = ("se_renumber_relabel",)
+
     # pre/post hashes at the covering region of the landed primary path.
     # For REPEAL, the landed path's post node is absent -> post_hash is "".
     pre_hashes: dict[str, str] = {}
@@ -4074,6 +4165,7 @@ def _se_emit_one_op_receipt(
         replaced_paths=replaced_paths,
         removed_paths=removed_paths,
         renumbered_paths=renumbered_paths,
+        migration_rule_ids=migration_rule_ids,
         pre_hashes=pre_hashes,
         post_hashes=post_hashes,
     )

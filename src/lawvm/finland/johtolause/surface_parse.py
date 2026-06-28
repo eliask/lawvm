@@ -16,8 +16,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Optional, TypeVar, cast
 
-from lawvm.finland.johtolause.lexicon import Token, _RANGE_RE
 from lawvm.core.semantic_types import FacetKind
+from lawvm.finland.johtolause.jolloin_pair import JolloinRenumberPair
+from lawvm.finland.johtolause.lexicon import Token, _RANGE_RE
 from lawvm.finland.johtolause.surface_model import (
     BackRefArity,
     ScopeKind,
@@ -175,7 +176,7 @@ class Stream:
 
     tokens: list[Token]
     pos: int = 0
-    jolloin_renumber_pairs: dict[int, list[tuple[str, str, str]]] | None = None
+    jolloin_renumber_pairs: dict[int, list[JolloinRenumberPair]] | None = None
     consumed_jolloin_positions: list[int] | None = None
     consumed_jolloin_contexts: list[tuple[int, str, str]] | None = None
 
@@ -5125,7 +5126,7 @@ def _verb_group(
 
 def parse(
     tokens: list[Token],
-    jolloin_renumber_pairs: dict[int, list[tuple[str, str, str]]] | None = None,
+    jolloin_renumber_pairs: dict[int, list[JolloinRenumberPair]] | None = None,
 ) -> SurfaceClauseModel:
     """Parse filtered token stream into a SurfaceClause.
 
@@ -5273,8 +5274,8 @@ def parse(
         for jm_pos in consumed_jolloin_positions:
             pairs = jolloin_renumber_pairs.get(jm_pos, [])
             context_section, context_chapter = jolloin_context_map.get(jm_pos, ("", ""))
-            for src, dst, pair_kind in pairs:
-                if pair_kind == "M":
+            for pair in pairs:
+                if pair.kind == "M":
                     if not context_section:
                         continue
                     renumber_nodes.append(
@@ -5282,24 +5283,26 @@ def parse(
                             kind=TargetKind.SECTION,
                             label=context_section,
                             chapter=context_chapter,
-                            sub_refs=(SurfaceSubRef(momentti=int(src)),),
+                            sub_refs=(SurfaceSubRef(momentti=int(pair.source_label)),),
                             notes=("renumber_clause",),
                             witness=SurfaceWitness(rule_id="fi.jolloin_renumber"),
                         )
                     )
                 else:
-                    target_kind = _surface_target_kind_for_pair_kind(pair_kind)
+                    target_kind = _surface_target_kind_for_pair_kind(pair.kind)
                     renumber_nodes.append(
                         SurfaceTargetRef(
                             kind=target_kind,
-                            label=src,
+                            label=pair.source_label,
                             notes=("renumber_clause",),
+                            renumber_dest_chapter=pair.destination_chapter,
+                            renumber_dest_part=pair.destination_part,
                             witness=SurfaceWitness(rule_id="fi.jolloin_renumber"),
                         )
                     )
                 renumber_nodes.append(
                     SurfaceRenumberTail(
-                        new_label=dst,
+                        new_label=pair.destination_label,
                         witness=SurfaceWitness(rule_id="fi.jolloin_renumber"),
                     )
                 )

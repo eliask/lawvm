@@ -40,7 +40,10 @@ authority.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Literal, Optional, get_args
+from typing import TYPE_CHECKING, Any, Dict, Literal, Optional, Sequence, Tuple, get_args
+
+if TYPE_CHECKING:
+    from lawvm.core.phase_result import Finding
 
 
 # ---------------------------------------------------------------------------
@@ -497,6 +500,16 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "recovery", "warn", "grafter",
                 "global same-kind+label dedup backstop modified the replay tree",
                 ("safety_invariant", "preservation"), role="observation"),
+    FindingSpec("APPLY.RECEIPT_BOUND_PREFIX_OF_LANDED", "apply_replay_authorization",
+                "audit", "warn", "grafter",
+                "receipt bound_target_path is a strict prefix of landed_primary_path "
+                "(or vice versa); authorized under the receipt_prefix_equivalence rule "
+                "(family presentation_cleanup) with the bound/landed pair preserved as "
+                "the audit witness. Benign-by-relation-shape: the undeclared-touch "
+                "cross-check (no_boundary_violation in aggregate_replay_authority) "
+                "remains the load-bearing independent witness; a dirty cross-check "
+                "still refuses authorization despite the prefix relation",
+                ("comparative", "safety_invariant"), role="observation"),
     FindingSpec("REPLAY.FOLD_TIMELINE_BACKFILL", "replay_products",
                 "recovery", "warn", "grafter",
                 "replay fold section lacked timeline authority and received an owned snapshot graft before PIT materialization",
@@ -1604,6 +1617,47 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "commencement TemporalEvent and without a pending/unresolved/"
                 "manual-frontier classification.",
                 ("temporal_selection", "strictness"), role="observation"),
+    # §1.10 (no broad exception swallowing) + §2.6 (rule of three): the
+    # ``except (NameError, TypeError, AttributeError): raise; except Exception:
+    # <swallow>`` pattern was re-invented 6+ times across the codebase. The
+    # ``named_swallow`` contextmanager (``lawvm.core.named_swallow``) is the
+    # single owned primitive; every swallowed exception is witnessed by a
+    # Finding of this kind, with rule_id naming the call site and
+    # clause_text/op_id/source_artifact/jurisdiction embedding the offending
+    # input so triage does not require re-running extraction. role="obligation"
+    # / blocking=True honours §1.10 ("distinct named diagnostic") and
+    # strict-mode rejectability; the default_enforcement=strict_fail means
+    # strict mode FAILS the run on a swallow (no silent carry-on), quirks mode
+    # still surfaces and continues.
+    FindingSpec("UNEXPECTED_PHASE_FAILURE", "recovery",
+                "recovery", "strict_fail", "named_swallow",
+                "An unexpected exception was caught and swallowed by "
+                "lawvm.core.named_swallow at a rule_id-named recovery site. "
+                "The swallowed exception_type, exception_message, and the "
+                "truncated (~400 char) clause_text are embedded in detail so "
+                "triage does not require re-running extraction. AGENTS.md §1.10: "
+                "the swallow is witnessed (not silent); the typed obligation "
+                "MUST be reviewed before treating the recovered output as valid.",
+                ("provenance", "safety_invariant"), role="obligation"),
+    # §1.8 (replay conservation): an ``applyResolvedOp`` path that emits
+    # ``outcome="skipped"`` to its mutation event ledger without a typed
+    # Finding or FailedOp consumes the op silently (the audit carries the
+    # mutation_event but the disposition stays APPLIED). Each migrated site
+    # now emits this non-blocking observation carrying ``rule_id`` =
+    # the existing ``reason_code`` (source_not_found, destination_exists, …)
+    # so the 13 known skip sites stay distinguishable. non-blocking so quirks
+    # mode continues; the existing FailedOp path for typed-target skips
+    # (sites at reason_code="unhandled_*_target") is preserved — this Finding
+    # is the ADDITIONAL witness that the mutation_event alone was missing.
+    FindingSpec("APPLY.OP_SKIPPED_WITNESSED", "apply",
+                "recovery", "warn", "apply_typed_dispatch",
+                "An applyResolvedOp path emitted outcome=\"skipped\" with a "
+                "reason_code naming the specific skip site (source_not_found, "
+                "destination_exists, container_op_returned_none, …). The "
+                "findings ledger carries the witness so the audit is total "
+                "(AGENTS.md §1.8); the disposition tracking the apply-mutation "
+                "event stays APPLIED but the skip is no longer silent.",
+                ("provenance",), role="observation"),
 )}
 
 
@@ -1673,3 +1727,95 @@ def strict_fail_codes_by_enforcement(enforcement: Enforcement) -> set[str]:
 def strict_fail_codes_by_family(family: FindingFamily) -> set[str]:
     """Return all finding codes in the given family."""
     return {f.code for f in FINDING_REGISTRY.values() if f.family == family}
+
+
+# ---------------------------------------------------------------------------
+# Construction helpers — typed Finding factories for governed registry codes.
+# ---------------------------------------------------------------------------
+
+#: The single Finding kind used to witness a receipt-prefix-equivalence
+#: authorization (PR2 of ``BOUND_TARGET_PATH_NORMALIZATION_DESIGN``). Registered
+#: in ``FINDING_REGISTRY`` above with role="observation", family="audit", and
+#: default_enforcement="warn" — non-blocking so the green corpus proceeds; the
+#: bound/landed pair preserved in the detail map is the audit witness the
+#: §0 prime directive demands for any authority-bearing relation. The
+#: receipt-prefix-equivalence rule (``receipt_prefix_equivalence``, family
+#: ``presentation_cleanup``) is the AGENTS.md §2.1 rule-family tag that owns
+#: this heuristic.
+RECEIPT_BOUND_PREFIX_OF_LANDED_KIND = "APPLY.RECEIPT_BOUND_PREFIX_OF_LANDED"
+
+
+def make_bound_prefix_observation(
+    *,
+    op_id: str,
+    bound_path: Sequence[Tuple[str, str]],
+    landed_path: Sequence[Tuple[str, str]],
+    rule_ids: Sequence[str] = (),
+    source_statute: str = "",
+) -> "Finding":
+    """Construct the typed ``Finding`` witnessing one receipt-prefix-equivalence case.
+
+    PR2 of ``BOUND_TARGET_PATH_NORMALIZATION_DESIGN``: when a receipt's
+    ``bound_target_path`` is a strict prefix of its ``landed_primary_path``
+    (or vice versa), the receipt-boundary arm in
+    :func:`lawvm.finland.apply_replay_authorization._receipt_boundary_authorized`
+    authorizes the write under the receipt-prefix-equivalence rule
+    (``receipt_prefix_equivalence``, family ``presentation_cleanup``). The §0
+    prime directive forbids an *invisible* heuristic: this helper mints the
+    non-blocking observation row that carries the bound/landed pair as the
+    audit witness so a future real divergence of the same shape (e.g. a
+    subsection-bound op whose diff pruned at the parent because the helper
+    silently dropped the descendant write) is visible in the findings ledger.
+
+    The bound/landed paths are carried as lists of ``(kind, label)`` pairs
+    (JSON-serializable) so the witness survives projection through the
+    persisted findings ledger without re-running extraction. The named
+    ``rule_ids`` (the receipt's recovery/migration/fallback rules) are
+    embedded so the audit can correlate the observation with any concurrent
+    rule-authorization on the same receipt.
+
+    Non-blocking (role="observation", blocking=False) by registry contract
+    (``validate_finding_projection`` rejects a blocking observation). Strict
+    mode proceeds; the undeclared-touch cross-check
+    (``no_boundary_violation`` in :func:`aggregate_replay_authority`) is the
+    load-bearing independent witness that refuses authorization when the
+    cross-check is dirty.
+    """
+    from lawvm.core.phase_result import Finding as _Finding
+
+    spec = get_finding_spec(RECEIPT_BOUND_PREFIX_OF_LANDED_KIND)
+    if spec is None:
+        raise ValueError(
+            f"Finding.kind={RECEIPT_BOUND_PREFIX_OF_LANDED_KIND!r} is not registered "
+            f"in lawvm.core.observation_registry.FINDING_REGISTRY; the FindingSpec "
+            f"must be added alongside this helper."
+        )
+    if spec.role == "barrier":
+        raise ValueError(
+            f"Finding.kind={RECEIPT_BOUND_PREFIX_OF_LANDED_KIND!r} has registry role="
+            f"'barrier' but the construction helper builds a runtime Finding, which "
+            f"cannot be a barrier-kind."
+        )
+    detail: Dict[str, Any] = {
+        "message": (
+            "Receipt boundary authorized under the receipt_prefix_equivalence rule "
+            "(family presentation_cleanup): bound_target_path is a strict prefix of "
+            "landed_primary_path (or vice versa). The undeclared-touch cross-check "
+            "(no_boundary_violation in aggregate_replay_authority) is the load-bearing "
+            "independent witness; a dirty cross-check still refuses authorization."
+        ),
+        "op_id": op_id,
+        "bound": [list(step) for step in bound_path],
+        "landed": [list(step) for step in landed_path],
+        "named_rule_ids": list(rule_ids),
+        "rule_family": "presentation_cleanup",
+        "rule_id": "receipt_prefix_equivalence",
+    }
+    return _Finding(
+        kind=RECEIPT_BOUND_PREFIX_OF_LANDED_KIND,
+        role="observation",
+        stage=spec.phase,
+        blocking=False,
+        source_statute=source_statute,
+        detail=detail,
+    )

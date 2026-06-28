@@ -18,6 +18,7 @@ from lawvm.finland.apply_ir_ops import (
     _strip_redundant_paragraph_label_prefixes_ir,
     _strip_standalone_subsection_item_prefixes_ir,
 )
+from lawvm.finland.definition_introducer import fi_definition_list_introducer_predicate
 from lawvm.finland.replay_findings import _emit_structural_dedup_warning
 from lawvm.finland.replay_pipeline import build_tree_invariant_finding
 from lawvm.finland.replay_tree_normalize import hoist_trailing_wrapup_ir
@@ -72,6 +73,7 @@ def project_replay_fold(request: ReplayFoldProjectionRequest) -> ReplayState:
         replay_findings=request.replay_findings,
         replay_meta_out=request.replay_meta_out,
         replay_print=request.replay_print,
+        definition_introducer_predicate=fi_definition_list_introducer_predicate,
     )
 
     replay_fold_state = replay_fold_state.with_ir(_tops.resort_children(replay_fold_state.ir))

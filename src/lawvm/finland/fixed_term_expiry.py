@@ -95,7 +95,7 @@ BLOCKING_UNRESOLVED_EXPIRY_CODES = frozenset(
 _CLAUSE_TEXT_LIMIT = 400
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class FixedTermDiagnostic:
     """One extraction-time diagnostic about fixed-term validity.
 
@@ -112,7 +112,7 @@ class FixedTermDiagnostic:
     clause_text: str = ""
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class FixedTermExtraction:
     """Result of scanning one statute's timelines for fixed-term bounds."""
 

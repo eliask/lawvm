@@ -913,16 +913,32 @@ class TransparentCorpusStore(CorpusStore):
             # Section count from HTML (freshness check)
             html_section_count: int | None = None
             if check_html and source == "api_pit":
-                try:
+                # ``finlex_html.html_section_count`` may raise across network/parse
+                # paths. Previously ``except Exception: html_section_count = None``
+                # silently swallowed to None; now routed through ``named_swallow``
+                # (AGENTS.md §1.10) — the typed Finding is logged at WARNING so a
+                # freshness-check failure is observable while still leaving the
+                # comparison logic to fall back to ``xml_section_count`` only.
+                # Default args bind the loop-driven ``year``/``num``/``html_cache_path``
+                # by value (B023: closure-over-loop-variable is unsafe by reference).
+                def _compute_html_section_count(
+                    year: str = year,
+                    num: str = num,
+                    html_cache_path: "str | Path | None" = html_cache_path,
+                ) -> "int | None":
                     from lawvm.finland.finlex_html import html_section_count as _hsc
-                    html_section_count = _hsc(
-                        year, num,
-                        cache_path=html_cache_path,
-                    )
-                except (NameError, TypeError, AttributeError):
-                    raise  # programming bugs — fail loud
-                except Exception:
-                    html_section_count = None
+                    return _hsc(year, num, cache_path=html_cache_path)
+
+                from lawvm.core.named_swallow import log_emitter, swallow_call
+                html_section_count = swallow_call(
+                    _compute_html_section_count,
+                    rule_id="fi_transparent_store_html_section_count",
+                    default=None,
+                    jurisdiction="fi",
+                    source_statute=f"{year}/{num}",
+                    clause_text=f"year={year} num={num} cache_path={html_cache_path}",
+                    emit=log_emitter(),
+                )
 
             # Determine staleness
             stale = False

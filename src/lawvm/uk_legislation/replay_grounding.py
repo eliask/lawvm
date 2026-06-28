@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import re
-from typing import NamedTuple, Optional
+from dataclasses import replace as dc_replace
+from typing import Any, NamedTuple, Optional, Tuple
 
 import Levenshtein
 
+from lawvm.core.ir import IRNode, IRStatute
 from lawvm.uk_legislation.addressing import _uk_eid_value, _uk_kind_value
 from lawvm.uk_legislation.canonicalize import uk_is_transparent_wrapper_kind, uk_semantic_path_key
 from lawvm.uk_legislation.grounding_classification import classify_suppression_mechanism
-from lawvm.uk_legislation.mutable_ir import UKMutableNode, UKMutableStatute
 from lawvm.uk_legislation.replay_text import _normalize_text_for_grounding
 from lawvm.uk_legislation.uk_grafter import _clean_num, _semantic_hash
 
@@ -21,7 +22,7 @@ class _GroundingTextCandidate(NamedTuple):
     text: str
 
 
-def _grounding_eid(node: UKMutableNode) -> Optional[str]:
+def _grounding_eid(node: IRNode) -> Optional[str]:
     """Return the EID/id from a node's attrs, accepting both UK XML spellings."""
     return _uk_eid_value(node.attrs.get("eId") or node.attrs.get("id"))
 
@@ -55,7 +56,7 @@ def _grounding_clean_label(kind_name: str, label: Optional[str]) -> str:
     return clean_label
 
 
-def _definition_ordered_list_grounding_label(node: UKMutableNode) -> str:
+def _definition_ordered_list_grounding_label(node: IRNode) -> str:
     """Return a source-owned implicit alpha label for definition list children."""
     if node.attrs.get("source_rule_id") != "uk_definition_ordered_list_child_preserved":
         return ""
@@ -76,7 +77,7 @@ def _slugify_grounding_heading(text: str) -> str:
 _GROUNDING_TEXT_EXCLUDED_CHILD_KINDS = frozenset({"heading", "num", "title"})
 
 
-def _grounding_full_text_parts(node: UKMutableNode) -> list[str]:
+def _grounding_full_text_parts(node: IRNode) -> list[str]:
     """Collect raw subtree text parts mirroring the oracle ``_text_content`` shape.
 
     The oracle ``text_map`` hashes ``_text_content`` of the source provision,
@@ -101,12 +102,12 @@ def _grounding_full_text_parts(node: UKMutableNode) -> list[str]:
     return parts
 
 
-def _grounding_node_full_text(node: UKMutableNode) -> str:
+def _grounding_node_full_text(node: IRNode) -> str:
     """Collect normalized full-subtree text for a node, matching oracle text_map."""
     return _normalize_text_for_grounding(" ".join(_grounding_full_text_parts(node)))
 
 
-def _grounding_direct_text(node: UKMutableNode) -> str:
+def _grounding_direct_text(node: IRNode) -> str:
     """Return a node's own visible-number-prefixed direct text for grounding.
 
     The oracle ``text_map``/``hash:`` keys hash ``_text_content`` of the source
@@ -147,7 +148,7 @@ def _grounding_length_window_text_candidates(
 
 
 class UKReplayGroundingMixin:
-    statute: UKMutableStatute
+    statute: IRStatute
     eid_map: dict[str, str]
     text_map: dict[str, str]
     oracle_alignment_events: list[dict[str, object]]
@@ -164,10 +165,21 @@ class UKReplayGroundingMixin:
         # Collect the full set of oracle EID values (the canonical IDs we want to
         # assign).  Used both for pre-seeding and in the main matching loop.
         oracle_id_values: set[str] = set(self.eid_map.values())
-        pending_cleared_events: dict[int, dict[str, object]] = {}
+        # PR2 (audit XJUR-02 / AGENTS.md §2.3): ``pending_cleared_events`` was
+        # keyed by ``id(node)`` so that the multi-pass walk (``_clear_eids`` →
+        # ``_ensure_local_eid`` → ``_ground_node``) could deduplicate matches
+        # against earlier "cleared" entries. With the helpers now each returning
+        # a fresh ``IRNode`` (built via ``dataclasses.replace``),
+        # ``id(node)`` is no longer stable across stages. The dedup key is
+        # instead the node's POSITION-ALONG-ROOT path
+        # (``("body", child_idx, grandchild_idx, …)`` / ``("sup", i, …)``) which
+        # is unaffected by tree rebuilds. This preserves byte-identical dedup
+        # semantics: matched events still suppress the cleared events queued by
+        # the earlier passes for the same logical node.
+        pending_cleared_events: dict[Tuple[Any, ...], dict[str, object]] = {}
 
         def _alignment_event(
-            node: UKMutableNode,
+            node: IRNode,
             *,
             before_eid: Optional[str],
             after_eid: Optional[str],
@@ -196,13 +208,14 @@ class UKReplayGroundingMixin:
             return event
 
         def _queue_cleared_alignment_event(
-            node: UKMutableNode,
+            node: IRNode,
             *,
+            path_key: Tuple[Any, ...],
             before_eid: Optional[str],
             match_method: str,
         ) -> None:
             if before_eid:
-                pending_cleared_events[id(node)] = _alignment_event(
+                pending_cleared_events[path_key] = _alignment_event(
                     node,
                     before_eid=before_eid,
                     after_eid=None,
@@ -211,14 +224,15 @@ class UKReplayGroundingMixin:
                 )
 
         def _append_alignment_event(
-            node: UKMutableNode,
+            node: IRNode,
             *,
+            path_key: Tuple[Any, ...],
             before_eid: Optional[str],
             after_eid: Optional[str],
             match_method: str,
             match_key: Optional[str],
         ) -> None:
-            pending_cleared_events.pop(id(node), None)
+            pending_cleared_events.pop(path_key, None)
             self.oracle_alignment_events.append(
                 _alignment_event(
                     node,
@@ -235,7 +249,7 @@ class UKReplayGroundingMixin:
         # potentially mis-re-grounded to a different oracle EID.
         seen_oracle_ids: set[str] = set()
 
-        def _preseed_correct_eids(node: UKMutableNode) -> None:
+        def _preseed_correct_eids(node: IRNode) -> None:
             eid = _grounding_eid(node)
             if eid and eid in oracle_id_values:
                 seen_oracle_ids.add(eid)
@@ -247,17 +261,29 @@ class UKReplayGroundingMixin:
         for sch in self.statute.supplements:
             _preseed_correct_eids(sch)
 
-        def _clear_eids(node: UKMutableNode) -> None:
-            """Clear EIDs that are NOT already in oracle (those stay for matching)."""
+        def _clear_eids(
+            node: IRNode,
+            path_key: Tuple[Any, ...],
+        ) -> IRNode:
+            """Return a new IRNode with non-oracle EIDs cleared.
+
+            PR2 (audit XJUR-02 / AGENTS.md §2.3): no in-place mutation; each
+            level rebuilds via ``dataclasses.replace`` and returns a fresh
+            ``IRNode``. Cleared alignment events are queued on the
+            path-keyed dict so the later passes can dedupe against the same
+            logical node position even after the tree is rebuilt.
+            """
             eid = _grounding_eid(node)
+            new_attrs = dict(node.attrs)
             if eid and eid not in oracle_id_values:
-                # Non-canonical EID — clear it so the grounding pass can assign
-                # the correct oracle ID.
-                for key in ("eId", "id"):
-                    if key in node.attrs:
-                        del node.attrs[key]
+                # Non-canonical EID — clear it so the grounding pass can
+                # assign the correct oracle ID.
+                new_attrs = {
+                    k: v for k, v in new_attrs.items() if k not in ("eId", "id")
+                }
                 _queue_cleared_alignment_event(
                     node,
+                    path_key=path_key,
                     before_eid=eid,
                     match_method=(
                         "schedule_entry_public_eid_cleared"
@@ -265,46 +291,74 @@ class UKReplayGroundingMixin:
                         else "non_oracle_eid_cleared"
                     ),
                 )
-            # Children may need grounding even if the parent is already correct.
-            for c in node.children:
-                _clear_eids(c)
+            new_node = dc_replace(node, attrs=new_attrs)
+            new_children = [
+                _clear_eids(c, path_key + (i,))
+                for i, c in enumerate(node.children)
+            ]
+            return dc_replace(new_node, children=new_children)
 
         if getattr(self.statute, "body", None):
-            _clear_eids(self.statute.body)
-        for sch in self.statute.supplements:
-            _clear_eids(sch)
+            new_body = _clear_eids(self.statute.body, ("body",))
+            self.statute = dc_replace(self.statute, body=new_body)
+        new_supplements = [
+            _clear_eids(s, ("sup", i))
+            for i, s in enumerate(self.statute.supplements)
+        ]
+        # Sub-PR C+D: IRStatute.supplements is now Tuple[IRNode, ...]; rebuild
+        # via dc_replace (frozen IRStatute cannot be assigned in place).
+        self.statute = dc_replace(self.statute, supplements=tuple(new_supplements))
 
         # Pre-pass: ensure every node has a reasonable local eId.
         # Skip nodes that already have an oracle-canonical EID (under either
         # 'eId' or 'id' key) — those were preserved by _clear_eids and must
         # not be overwritten with a generic local label.
-        def _ensure_local_eid(node: UKMutableNode) -> None:
+        def _ensure_local_eid(
+            node: IRNode,
+            path_key: Tuple[Any, ...],
+        ) -> IRNode:
+            """Return a new IRNode with a reasonable local eId assigned.
+
+            PR2 (audit XJUR-02 / AGENTS.md §2.3): no in-place mutation; the
+            tree is rebuilt at each level via ``dataclasses.replace``.
+            """
             kind_value = _uk_kind_value(node.kind)
             if is_eur and kind_value == "section":
                 kind_value = "article"
+            new_attrs = dict(node.attrs)
             if kind_value == "schedule_entry":
                 before_eid = _grounding_eid(node)
                 if before_eid not in oracle_id_values:
-                    for key in ("eId", "id"):
-                        node.attrs.pop(key, None)
+                    new_attrs = {
+                        k: v for k, v in new_attrs.items() if k not in ("eId", "id")
+                    }
                     _queue_cleared_alignment_event(
                         node,
+                        path_key=path_key,
                         before_eid=before_eid,
                         match_method="schedule_entry_public_eid_cleared",
                     )
-            elif "eId" not in node.attrs and "id" not in node.attrs and kind_value != "body":
+            elif "eId" not in new_attrs and "id" not in new_attrs and kind_value != "body":
                 clean_label = _grounding_clean_label(kind_value, node.label)
                 if clean_label:
-                    node.attrs["eId"] = f"{kind_value}-{clean_label}"
+                    new_attrs["eId"] = f"{kind_value}-{clean_label}"
                 else:
-                    node.attrs["eId"] = kind_value
-            for c in node.children:
-                _ensure_local_eid(c)
+                    new_attrs["eId"] = kind_value
+            new_node = dc_replace(node, attrs=new_attrs)
+            new_children = [
+                _ensure_local_eid(c, path_key + (i,))
+                for i, c in enumerate(node.children)
+            ]
+            return dc_replace(new_node, children=new_children)
 
         if getattr(self.statute, "body", None):
-            _ensure_local_eid(self.statute.body)
-        for sch in self.statute.supplements:
-            _ensure_local_eid(sch)
+            new_body = _ensure_local_eid(self.statute.body, ("body",))
+            self.statute = dc_replace(self.statute, body=new_body)
+        new_supplements = [
+            _ensure_local_eid(s, ("sup", i))
+            for i, s in enumerate(self.statute.supplements)
+        ]
+        self.statute = dc_replace(self.statute, supplements=tuple(new_supplements))
 
         text_candidates_by_len: dict[int, list[_GroundingTextCandidate]] = {}
         for order, (candidate_id, oracle_text) in enumerate(self.text_map.items()):
@@ -313,36 +367,61 @@ class UKReplayGroundingMixin:
             )
         text_candidate_window_cache: dict[int, list[_GroundingTextCandidate]] = {}
 
-        def _ground_node(node: UKMutableNode, parent_path_key, parent_eid=None, ordinal=1, context="body"):
+        def _ground_node(
+            node: IRNode,
+            parent_path_key,
+            parent_eid=None,
+            ordinal=1,
+            context="body",
+            path_key: Tuple[Any, ...] = (),
+        ) -> IRNode:
+            """Return a new IRNode with oracle-aligned eIds.
+
+            PR2 (audit XJUR-02 / AGENTS.md §2.3): every attrs mutation is
+            ``dataclasses.replace`` rather than ``node.attrs[k] = v`` /
+            ``del node.attrs[k]``. Each recursion rebuilds the source node
+            and returns a fresh ``IRNode``. ``path_key`` is the
+            position-along-root tag tracking the same logical node across
+            the pre-pass walks (``_clear_eids`` / ``_ensure_local_eid``) and
+            this main pass; it is used to dedupe cleared events in
+            ``pending_cleared_events``.
+            """
             nonlocal seen_oracle_ids
             parent_eid = _uk_eid_value(parent_eid)
             existing_eid = _uk_eid_value(node.attrs.get("eId") or node.attrs.get("id"))
             if _uk_kind_value(node.kind) == "schedule_entry":
+                new_attrs = dict(node.attrs)
                 if existing_eid and existing_eid in oracle_id_values:
                     seen_oracle_ids.add(existing_eid)
                     child_parent_eid = existing_eid
                 else:
                     child_parent_eid = parent_eid
                     before_eid = existing_eid
-                    for key in ("eId", "id"):
-                        node.attrs.pop(key, None)
+                    new_attrs = {
+                        k: v for k, v in new_attrs.items() if k not in ("eId", "id")
+                    }
                     _queue_cleared_alignment_event(
                         node,
+                        path_key=path_key,
                         before_eid=before_eid,
                         match_method="schedule_entry_public_eid_cleared",
                     )
+                new_node = dc_replace(node, attrs=new_attrs)
                 kind_counts: dict[str, int] = {}
-                for child in node.children:
+                new_children: list[IRNode] = []
+                for i, child in enumerate(node.children):
                     child_kind = _uk_kind_value(child.kind)
                     kind_counts[child_kind] = kind_counts.get(child_kind, 0) + 1
-                    _ground_node(
+                    new_child = _ground_node(
                         child,
                         parent_path_key,
                         child_parent_eid,
                         ordinal=kind_counts[child_kind],
                         context=context,
+                        path_key=path_key + (i,),
                     )
-                return
+                    new_children.append(new_child)
+                return dc_replace(new_node, children=new_children)
             # Fast path: if this node already has a correct oracle EID (preserved
             # from the pre-seed pass), skip the multi-pass matching for this node
             # and recurse into children with updated context.  The EID is already
@@ -366,13 +445,21 @@ class UKReplayGroundingMixin:
                 elif kind_name == "body":
                     new_context = "body"
                 kind_counts: dict[str, int] = {}
-                for child in node.children:
+                new_children: list[IRNode] = []
+                for i, child in enumerate(node.children):
                     child_kind = _uk_kind_value(child.kind)
                     kind_counts[child_kind] = kind_counts.get(child_kind, 0) + 1
-                    _ground_node(
-                        child, next_path_key, existing_eid, ordinal=kind_counts[child_kind], context=new_context
+                    new_child = _ground_node(
+                        child,
+                        next_path_key,
+                        existing_eid,
+                        ordinal=kind_counts[child_kind],
+                        context=new_context,
+                        path_key=path_key + (i,),
                     )
-                return
+                    new_children.append(new_child)
+                # Fast path: no attrs change at this node — rebuild children only.
+                return dc_replace(node, children=new_children)
 
             kind = node.kind
             kind_name = _uk_kind_value(kind).lower()
@@ -645,13 +732,18 @@ class UKReplayGroundingMixin:
 
             if oracle_id:
                 before_eid = _uk_eid_value(node.attrs.get("eId") or node.attrs.get("id"))
-                node.attrs["eId"] = oracle_id
+                # PR2 (audit XJUR-02 / §2.3): no in-place attr mutation —
+                # build a fresh IRNode via ``dataclasses.replace``.
+                node = dc_replace(
+                    node, attrs={**dict(node.attrs), "eId": oracle_id}
+                )
                 seen_oracle_ids.add(oracle_id)
                 oracle_path = _find_best_oracle_path(oracle_id, self.eid_map, context)
                 if oracle_path:
                     next_path_key = oracle_path
                 _append_alignment_event(
                     node,
+                    path_key=path_key,
                     before_eid=before_eid,
                     after_eid=oracle_id,
                     match_method=str(matched_cand).split(":", 1)[0] if matched_cand else "oracle_preserved",
@@ -663,9 +755,13 @@ class UKReplayGroundingMixin:
                 if uk_is_transparent_wrapper_kind(kind_name):
                     if "eId" in node.attrs:
                         before_eid = _uk_eid_value(node.attrs.get("eId"))
-                        del node.attrs["eId"]
+                        new_attrs = {
+                            k: v for k, v in node.attrs.items() if k != "eId"
+                        }
+                        node = dc_replace(node, attrs=new_attrs)
                         _append_alignment_event(
                             node,
+                            path_key=path_key,
                             before_eid=before_eid,
                             after_eid=None,
                             match_method="transparent_wrapper_cleared",
@@ -714,20 +810,30 @@ class UKReplayGroundingMixin:
                     else:
                         fallback_eid = f"{parent_eid}{'' if parent_eid.endswith('-') else '-'}{part}"
                     if not clean_label and kind_name not in {"schedule", "part", "chapter"}:
-                        for key in ("eId", "id"):
-                            node.attrs.pop(key, None)
+                        new_attrs = {
+                            k: v
+                            for k, v in node.attrs.items()
+                            if k not in ("eId", "id")
+                        }
+                        node = dc_replace(node, attrs=new_attrs)
                         _append_alignment_event(
                             node,
+                            path_key=path_key,
                             before_eid=before_eid,
                             after_eid=None,
                             match_method="local_fallback_unlabeled_blocked",
                             match_key=None,
                         )
                     else:
-                        for key in ("eId", "id"):
-                            node.attrs.pop(key, None)
+                        new_attrs = {
+                            k: v
+                            for k, v in node.attrs.items()
+                            if k not in ("eId", "id")
+                        }
+                        node = dc_replace(node, attrs=new_attrs)
                         _append_alignment_event(
                             node,
+                            path_key=path_key,
                             before_eid=before_eid,
                             after_eid=None,
                             match_method="local_fallback_suppressed",
@@ -736,10 +842,15 @@ class UKReplayGroundingMixin:
                 else:
                     before_eid = _uk_eid_value(node.attrs.get("eId") or node.attrs.get("id"))
                     if before_eid:
-                        for key in ("eId", "id"):
-                            node.attrs.pop(key, None)
+                        new_attrs = {
+                            k: v
+                            for k, v in node.attrs.items()
+                            if k not in ("eId", "id")
+                        }
+                        node = dc_replace(node, attrs=new_attrs)
                         _append_alignment_event(
                             node,
+                            path_key=path_key,
                             before_eid=before_eid,
                             after_eid=None,
                             match_method="local_fallback_suppressed",
@@ -754,10 +865,20 @@ class UKReplayGroundingMixin:
                 new_context = "body"
 
             actual_eid = _uk_eid_value(node.attrs.get("eId") or node.attrs.get("id") or parent_eid)
-            for child in node.children:
+            new_children: list[IRNode] = []
+            for i, child in enumerate(node.children):
                 child_kind = _uk_kind_value(child.kind)
                 kind_counts[child_kind] = kind_counts.get(child_kind, 0) + 1
-                _ground_node(child, next_path_key, actual_eid, ordinal=kind_counts[child_kind], context=new_context)
+                new_child = _ground_node(
+                    child,
+                    next_path_key,
+                    actual_eid,
+                    ordinal=kind_counts[child_kind],
+                    context=new_context,
+                    path_key=path_key + (i,),
+                )
+                new_children.append(new_child)
+            return dc_replace(node, children=new_children)
 
         grounded_count = 0
 
@@ -771,16 +892,41 @@ class UKReplayGroundingMixin:
 
         body_node = getattr(self.statute, "body", None)
         if body_node:
+            new_body_children: list[IRNode] = []
             kind_counts = {}
-            for node in body_node.children:
+            for i, node in enumerate(body_node.children):
                 node_kind = _uk_kind_value(node.kind)
                 kind_counts[node_kind] = kind_counts.get(node_kind, 0) + 1
-                _ground_node(node, "body", None, ordinal=kind_counts[node_kind], context="body")
-            _visit_count(body_node)
+                new_child = _ground_node(
+                    node,
+                    "body",
+                    None,
+                    ordinal=kind_counts[node_kind],
+                    context="body",
+                    path_key=("body", i),
+                )
+                new_body_children.append(new_child)
+            self.statute = dc_replace(
+                self.statute,
+                body=dc_replace(body_node, children=new_body_children),
+            )
+            _visit_count(self.statute.body)
 
+        new_supplements: list[IRNode] = []
         for i, sch in enumerate(self.statute.supplements):
-            _ground_node(sch, "", None, ordinal=i + 1, context="schedule")
-            _visit_count(sch)
+            new_sch = _ground_node(
+                sch,
+                "",
+                None,
+                ordinal=i + 1,
+                context="schedule",
+                path_key=("sup", i),
+            )
+            new_supplements.append(new_sch)
+            _visit_count(new_sch)
+        # Sub-PR C+D: IRStatute.supplements is now Tuple[IRNode, ...]; assign
+        # via dc_replace (frozen IRStatute cannot be assigned in place).
+        self.statute = dc_replace(self.statute, supplements=tuple(new_supplements))
 
         self.oracle_alignment_events.extend(pending_cleared_events.values())
         self._log(f"  EXECUTOR: grounded {grounded_count} nodes against Oracle map")

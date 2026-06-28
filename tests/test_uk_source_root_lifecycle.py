@@ -21,6 +21,17 @@ Fix (§source_root_lifecycle):
   3. The try/finally eviction pattern fires on both continue and fall-through
      paths, so every code path through the loop participates.
 
+Coverage model:
+  Every root-keyed (or root-descendant-keyed) module-level cache that
+  evict_source_root_caches touches has a per-cache eviction test below that
+  (a) warms the cache with one root's descendants, (b) verifies the entry
+  survives an unrelated root's eviction, and (c) verifies it is removed when
+  its own root is evicted.  A meta-test (guard-liveness, §2.9) introspects
+  evict_source_root_caches and its listed helpers via AST and asserts that
+  the per-cache tests' explicit registry exactly equals the caches the
+  eviction flow references — so a future cache added to the eviction flow
+  without a per-cache test fails CI.
+
 Tests:
   1. Explicit eviction — parent-map cache entry is removed after evict_source_root_caches()
   2. Explicit eviction — ancestor-chain entry is removed after evict_source_root_caches()
@@ -33,10 +44,19 @@ Tests:
 """
 from __future__ import annotations
 
+import ast
 import gc
+import inspect
+import textwrap
 from lxml import etree as ET
 from typing import Optional
 
+from lawvm.uk_legislation.provision_extractor import (
+    _EXTRACTION_CONTEXT_CACHE,
+    _INSTRUCTION_TEXT_CACHE,
+    _build_extraction_context,
+    _instruction_text_before_amendment_container,
+)
 from lawvm.uk_legislation.source_context import (
     UKAffectingSourceContext,
     _source_broad_repeal_extent_part_cache,
@@ -51,12 +71,26 @@ from lawvm.uk_legislation.source_context import (
     _unique_unnumbered_root_schedule_cache,
     evict_source_root_caches,
 )
+from lawvm.uk_legislation.source_fragment_context import (
+    _SOURCE_LEAD_TEXT_CACHE,
+    _SOURCE_PARENT_EACH_PROVISION_CACHE,
+    _SOURCE_TAIL_TEXT_CACHE,
+    _source_lead_text_before_subordinate_rows,
+    _source_parent_each_provision_substitution_payload,
+    _source_tail_text_after_subordinate_rows,
+    evict_source_fragment_context_caches,
+)
 from lawvm.uk_legislation.table_selectors import (
     _NORMALIZED_ELEMENT_TEXT_CACHE,
     _normalized_element_text,
+    evict_table_selector_caches,
 )
 from lawvm.uk_legislation.table_sources import (
+    _REPEAL_EXTENT_TABLE_CACHE,
+    _UK_FEE_TABLE_INDEX_CACHE,
     _UK_TABLE_ROWSPAN_ROWS_CACHE,
+    _uk_get_fee_table_index,
+    _uk_repeal_extent_source_tables,
     _uk_table_rows_with_rowspans,
 )
 from lawvm.uk_legislation.xml_helpers import (
@@ -64,7 +98,68 @@ from lawvm.uk_legislation.xml_helpers import (
     _TEXT_CONTENT_CACHE,
     _direct_structural_num,
     _text_content,
+    evict_xml_helper_caches,
 )
+
+
+# ---------------------------------------------------------------------------
+# §2.9 guard-liveness: explicit registry of root-keyed caches the
+# evict_source_root_caches flow references.  When you add a new root-keyed
+# cache:
+#   1. add it to evict_source_root_caches (or one of its helpers); AND
+#   2. register its name in _EVICTED_CACHE_NAMES below; AND
+#   3. write a per-cache eviction test below mirroring the existing style.
+# The meta-test test_evict_source_root_caches_pins_all_referenced_caches
+# asserts this registry exactly equals the caches the eviction flow
+# references via AST introspection, so a future cache added to the eviction
+# flow without registering it here fails CI.
+# ---------------------------------------------------------------------------
+_EVICTED_CACHE_NAMES: frozenset[str] = frozenset(
+    {
+        # source_context.py — locally-defined root-keyed caches
+        "_source_parent_map_cache",
+        "_source_ancestor_chain_cache",
+        "_unique_unnumbered_root_schedule_cache",
+        "_source_parent_table_column_omission_cache",
+        "_source_broad_repeal_extent_part_cache",
+        # provision_extractor.py — imported by source_context.evict_*
+        "_EXTRACTION_CONTEXT_CACHE",
+        "_INSTRUCTION_TEXT_CACHE",
+        # source_fragment_context.py — evicted by evict_source_fragment_context_caches
+        "_SOURCE_LEAD_TEXT_CACHE",
+        "_SOURCE_TAIL_TEXT_CACHE",
+        "_SOURCE_PARENT_EACH_PROVISION_CACHE",
+        # table_sources.py — evicted inline by evict_source_root_caches
+        "_REPEAL_EXTENT_TABLE_CACHE",
+        "_UK_TABLE_ROWSPAN_ROWS_CACHE",
+        "_UK_FEE_TABLE_INDEX_CACHE",
+        # table_selectors.py — evicted by evict_table_selector_caches
+        "_NORMALIZED_ELEMENT_TEXT_CACHE",
+        # xml_helpers.py — evicted by evict_xml_helper_caches
+        "_TEXT_CONTENT_CACHE",
+        "_DIRECT_STRUCTURAL_NUM_CACHE",
+    }
+)
+
+# Helper functions other than evict_source_root_caches itself that
+# participate in cache eviction and are introspected by the meta-test.  When
+# you add a new evict_*_caches helper and call it from evict_source_root_caches,
+# register it here so its cache-name references are picked up.
+_EVICT_HELPER_FUNCS: tuple = (
+    evict_source_fragment_context_caches,
+    evict_table_selector_caches,
+    evict_xml_helper_caches,
+)
+
+_EVICT_HELPER_NAMES: frozenset[str] = frozenset(
+    func.__name__ for func in _EVICT_HELPER_FUNCS
+)
+
+
+def _is_evict_cache_name(name: str) -> bool:
+    return name.startswith("_") and (
+        name.endswith("_CACHE") or name.endswith("_cache")
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -380,6 +475,283 @@ def test_source_lane_predicate_caches_evict_with_source_root() -> None:
     evict_source_root_caches(other_root)
     assert other_part not in _source_broad_repeal_extent_part_cache
     assert other_child not in _source_parent_table_column_omission_cache
+
+
+# ---------------------------------------------------------------------------
+# Per-cache eviction tests for caches previously uncovered by the suite.
+# Each mirrors the style above: warm cache with two roots, assert both
+# entries present, evict one root, assert the unmentioned root's entry
+# survives while the evicted root's entry is gone. (§2.9 guard-liveness:
+# every cache registered in _EVICTED_CACHE_NAMES must have a per-cache
+# eviction test so the registry's claim is observable end-to-end.)
+# ---------------------------------------------------------------------------
+
+
+def test_extraction_context_cache_evicts_with_source_root() -> None:
+    """_EXTRACTION_CONTEXT_CACHE (root-keyed) is removed by evict_source_root_caches.
+
+    Holds strong references to root via UKExtractionContext.parent_map values
+    (which include root as a parent element).  Without eviction, every parsed
+    affecting-act root accumulated for the whole compile run (§1.12 / §2.7
+    source-root cache lifecycle).
+    """
+    root = _make_root()
+    other_root = _make_root(_ANOTHER_XML)
+
+    ctx_root = _build_extraction_context(root)
+    ctx_other = _build_extraction_context(other_root)
+    assert ctx_root is not None and ctx_other is not None
+    assert root in _EXTRACTION_CONTEXT_CACHE
+    assert other_root in _EXTRACTION_CONTEXT_CACHE
+
+    evict_source_root_caches(root)
+
+    assert root not in _EXTRACTION_CONTEXT_CACHE
+    assert other_root in _EXTRACTION_CONTEXT_CACHE
+
+    evict_source_root_caches(other_root)
+    assert other_root not in _EXTRACTION_CONTEXT_CACHE
+
+
+def test_instruction_text_cache_evicts_with_source_root() -> None:
+    """_INSTRUCTION_TEXT_CACHE (descendant-keyed) is removed by evict_source_root_caches.
+
+    Keys are arbitrary descendant elements; each key pins the whole parsed
+    tree.  Without eviction this cache grew unbounded across compiles.
+    """
+    root = _make_root(_SOURCE_LANE_PREDICATE_XML)
+    other_root = _make_root(_SOURCE_LANE_PREDICATE_XML)
+    descendant = next(el for el in root.iter() if el.get("id") == "p1-1")
+    other_descendant = next(el for el in other_root.iter() if el.get("id") == "p1-1")
+
+    # Cache is populated even when no BlockAmendment container is present.
+    assert _instruction_text_before_amendment_container(descendant) is not None
+    assert _instruction_text_before_amendment_container(other_descendant) is not None
+    assert descendant in _INSTRUCTION_TEXT_CACHE
+    assert other_descendant in _INSTRUCTION_TEXT_CACHE
+
+    evict_source_root_caches(root)
+
+    assert descendant not in _INSTRUCTION_TEXT_CACHE
+    assert other_descendant in _INSTRUCTION_TEXT_CACHE
+
+    evict_source_root_caches(other_root)
+    assert other_descendant not in _INSTRUCTION_TEXT_CACHE
+
+
+def test_source_lead_text_cache_evicts_with_source_root() -> None:
+    """_SOURCE_LEAD_TEXT_CACHE (descendant-keyed) is removed via
+    evict_source_fragment_context_caches → evict_source_root_caches."""
+    root = _make_root(_SOURCE_LANE_PREDICATE_XML)
+    other_root = _make_root(_SOURCE_LANE_PREDICATE_XML)
+    p1 = next(el for el in root.iter() if el.get("id") == "p1-1")
+    other_p1 = next(el for el in other_root.iter() if el.get("id") == "p1-1")
+
+    assert _source_lead_text_before_subordinate_rows(p1) is not None
+    assert _source_lead_text_before_subordinate_rows(other_p1) is not None
+    assert p1 in _SOURCE_LEAD_TEXT_CACHE
+    assert other_p1 in _SOURCE_LEAD_TEXT_CACHE
+
+    evict_source_root_caches(root)
+
+    assert p1 not in _SOURCE_LEAD_TEXT_CACHE
+    assert other_p1 in _SOURCE_LEAD_TEXT_CACHE
+
+    evict_source_root_caches(other_root)
+    assert other_p1 not in _SOURCE_LEAD_TEXT_CACHE
+
+
+def test_source_tail_text_cache_evicts_with_source_root() -> None:
+    """_SOURCE_TAIL_TEXT_CACHE (descendant-keyed) is removed via
+    evict_source_fragment_context_caches → evict_source_root_caches.
+
+    Cache is populated even for elements whose tail text after subordinate
+    rows is empty (the cache still records the empty string).
+    """
+    root = _make_root(_SOURCE_LANE_PREDICATE_XML)
+    other_root = _make_root(_SOURCE_LANE_PREDICATE_XML)
+    p1 = next(el for el in root.iter() if el.get("id") == "p1-1")
+    other_p1 = next(el for el in other_root.iter() if el.get("id") == "p1-1")
+
+    assert isinstance(_source_tail_text_after_subordinate_rows(p1), str)
+    assert isinstance(_source_tail_text_after_subordinate_rows(other_p1), str)
+    assert p1 in _SOURCE_TAIL_TEXT_CACHE
+    assert other_p1 in _SOURCE_TAIL_TEXT_CACHE
+
+    evict_source_root_caches(root)
+
+    assert p1 not in _SOURCE_TAIL_TEXT_CACHE
+    assert other_p1 in _SOURCE_TAIL_TEXT_CACHE
+
+    evict_source_root_caches(other_root)
+    assert other_p1 not in _SOURCE_TAIL_TEXT_CACHE
+
+
+def test_source_parent_each_provision_cache_evicts_with_source_root() -> None:
+    """_SOURCE_PARENT_EACH_PROVISION_CACHE (descendant-keyed) is removed via
+    evict_source_fragment_context_caches → evict_source_root_caches.
+
+    The cache stores None for non-matching ancestors (negative caching), so
+    the cache entry is populated even on this fixture where no
+    per-provision-substitution instruction text matches.
+    """
+    root = _make_root(_SOURCE_LANE_PREDICATE_XML)
+    other_root = _make_root(_SOURCE_LANE_PREDICATE_XML)
+    p1 = next(el for el in root.iter() if el.get("id") == "p1-1")
+    other_p1 = next(el for el in other_root.iter() if el.get("id") == "p1-1")
+
+    # P1 is in _SOURCE_PARENT_EACH_PROVISION_INSTRUCTION_TAGS, so the cache
+    # records an entry (None for non-matching text) on first call.
+    assert _source_parent_each_provision_substitution_payload(p1) is None
+    assert _source_parent_each_provision_substitution_payload(other_p1) is None
+    assert p1 in _SOURCE_PARENT_EACH_PROVISION_CACHE
+    assert other_p1 in _SOURCE_PARENT_EACH_PROVISION_CACHE
+
+    evict_source_root_caches(root)
+
+    assert p1 not in _SOURCE_PARENT_EACH_PROVISION_CACHE
+    assert other_p1 in _SOURCE_PARENT_EACH_PROVISION_CACHE
+
+    evict_source_root_caches(other_root)
+    assert other_p1 not in _SOURCE_PARENT_EACH_PROVISION_CACHE
+
+
+def test_repeal_extent_table_cache_evicts_with_source_root() -> None:
+    """_REPEAL_EXTENT_TABLE_CACHE (root-keyed) is removed by
+    evict_source_root_caches.
+
+    Cache stores an entry (possibly an empty tuple) for every root scanned,
+    so even roots without a repeal-extent table retain the root.
+    """
+    root = _make_root(_TABLE_XML)
+    other_root = _make_root(_TABLE_XML)
+
+    # _TABLE_XML has no repeal-extent table; result is () but cache is populated.
+    assert _uk_repeal_extent_source_tables(root) == ()
+    assert _uk_repeal_extent_source_tables(other_root) == ()
+    assert root in _REPEAL_EXTENT_TABLE_CACHE
+    assert other_root in _REPEAL_EXTENT_TABLE_CACHE
+
+    evict_source_root_caches(root)
+
+    assert root not in _REPEAL_EXTENT_TABLE_CACHE
+    assert other_root in _REPEAL_EXTENT_TABLE_CACHE
+
+    evict_source_root_caches(other_root)
+    assert other_root not in _REPEAL_EXTENT_TABLE_CACHE
+
+
+def test_uk_fee_table_index_cache_evicts_with_source_root() -> None:
+    """_UK_FEE_TABLE_INDEX_CACHE (root-keyed) is removed by
+    evict_source_root_caches.
+
+    Cache stores an entry (possibly an empty tuple) for every root scanned,
+    so even roots without a fee table retain the root.
+    """
+    root = _make_root(_TABLE_XML)
+    other_root = _make_root(_TABLE_XML)
+
+    # _TABLE_XML has no fee table headers; result is () but cache is populated.
+    assert _uk_get_fee_table_index(root) == ()
+    assert _uk_get_fee_table_index(other_root) == ()
+    assert root in _UK_FEE_TABLE_INDEX_CACHE
+    assert other_root in _UK_FEE_TABLE_INDEX_CACHE
+
+    evict_source_root_caches(root)
+
+    assert root not in _UK_FEE_TABLE_INDEX_CACHE
+    assert other_root in _UK_FEE_TABLE_INDEX_CACHE
+
+    evict_source_root_caches(other_root)
+    assert other_root not in _UK_FEE_TABLE_INDEX_CACHE
+
+
+# ---------------------------------------------------------------------------
+# §2.9 guard-liveness: meta-test that introspects evict_source_root_caches
+# and asserts the per-cache tests above cover every cache the eviction flow
+# references.  A future cache added to the eviction flow without registering
+# it in _EVICTED_CACHE_NAMES (and adding a per-cache test) fails CI.
+# ---------------------------------------------------------------------------
+
+
+def _collect_cache_names_referenced_by_evict() -> set[str]:
+    """Walk the source of evict_source_root_caches plus every helper in
+    _EVICT_HELPER_FUNCS, collecting every identifier ending in _CACHE or
+    _cache via AST. Returns the full set of cache names the eviction flow
+    actually references."""
+    funcs = (evict_source_root_caches, *_EVICT_HELPER_FUNCS)
+    names: set[str] = set()
+    for func in funcs:
+        source = textwrap.dedent(inspect.getsource(func))
+        tree = ast.parse(source)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name) and _is_evict_cache_name(node.id):
+                names.add(node.id)
+            elif isinstance(node, ast.alias) and _is_evict_cache_name(node.name):
+                names.add(node.name)
+            elif isinstance(node, ast.Attribute) and _is_evict_cache_name(node.attr):
+                names.add(node.attr)
+    return names
+
+
+def _collect_helper_calls_in_root_evict() -> set[str]:
+    """Find every evict_*_caches(...) call in evict_source_root_caches' body."""
+    source = textwrap.dedent(inspect.getsource(evict_source_root_caches))
+    tree = ast.parse(source)
+    calls: set[str] = set()
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id.startswith("evict_")
+            and node.func.id.endswith("_caches")
+        ):
+            calls.add(node.func.id)
+    return calls
+
+
+def test_evict_source_root_caches_registry_matches_helpers_called() -> None:
+    """Every evict_*_caches helper called from evict_source_root_caches is
+    registered in _EVICT_HELPER_FUNCS, and vice versa.
+
+    If a future refactor adds a new evict_*_caches helper call to
+    evict_source_root_caches without registering it, this test fails so
+    the cache-name introspection in the next test does not silently miss
+    that helper's referenced caches.
+    """
+    actual = _collect_helper_calls_in_root_evict()
+    expected = set(_EVICT_HELPER_NAMES)
+    assert actual == expected, (
+        "evict_*_caches helper registry drift: "
+        f"called but not registered in test: {actual - expected}; "
+        f"registered but no longer called: {expected - actual}"
+    )
+
+
+def test_evict_source_root_caches_pins_all_referenced_caches() -> None:
+    """Every cache name referenced by evict_source_root_caches (and its
+    registered helpers) is in the explicit registry _EVICTED_CACHE_NAMES,
+    and vice versa.
+
+    This is the §2.9 guard-liveness meta-test.  It fails when:
+      - a future cache is added to the eviction flow without being
+        registered in _EVICTED_CACHE_NAMES (and thus without a per-cache
+        eviction test); OR
+      - a cache is renamed or removed from the eviction flow without
+        updating _EVICTED_CACHE_NAMES.
+    Either direction of drift makes the test fail, so the registry is
+    provably the same set the eviction flow actually touches.
+    """
+    actual = _collect_cache_names_referenced_by_evict()
+    expected = set(_EVICTED_CACHE_NAMES)
+    assert actual == expected, (
+        "evict cache-name registry drift: "
+        f"referenced in eviction but not registered in test (add to "
+        f"_EVICTED_CACHE_NAMES and write a per-cache test): "
+        f"{actual - expected}; "
+        f"registered in test but no longer referenced in eviction flow: "
+        f"{expected - actual}"
+    )
 
 
 # ---------------------------------------------------------------------------

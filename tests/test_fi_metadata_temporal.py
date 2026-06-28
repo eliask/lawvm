@@ -7,6 +7,7 @@ import lxml.etree as etree
 from lawvm.core.ir import LegalAddress
 from lawvm.core.semantic_types import FacetKind
 from lawvm.finland.metadata import (
+    TemporarySectionExpiryOverride,
     _amendment_effective_date_with_step,
     _amendment_expiry_date,
     _chapter_commencement_effective_overrides,
@@ -22,6 +23,18 @@ from lawvm.finland.metadata import (
     _temporary_section_expiry_overrides,
     _temporary_section_expiry_override,
 )
+
+
+def _assert_section_expiry_override(
+    override: TemporarySectionExpiryOverride,
+    *,
+    target_mid: str,
+    labels: set[str],
+    expiry: dt.date,
+) -> None:
+    assert override.target_mid == target_mid
+    assert override.labels == labels
+    assert override.expiry == expiry
 
 
 def _tree(text: str) -> etree._Element:
@@ -142,10 +155,12 @@ def test_temporary_section_expiry_override_parses_direct_source_clause() -> None
     )
     override = _temporary_section_expiry_override(tree, "2020/697")
     assert override is not None
-    target_mid, labels, expiry = override
-    assert target_mid == "2020/697"
-    assert labels == {"5", "8b", "11", "12"}
-    assert expiry.isoformat() == "2020-12-31"
+    _assert_section_expiry_override(
+        override,
+        target_mid="2020/697",
+        labels={"5", "8b", "11", "12"},
+        expiry=dt.date(2020, 12, 31),
+    )
 
 
 def test_temporary_section_expiry_override_accepts_laki_wording() -> None:
@@ -155,10 +170,12 @@ def test_temporary_section_expiry_override_accepts_laki_wording() -> None:
     )
     override = _temporary_section_expiry_override(tree, "2020/697")
     assert override is not None
-    target_mid, labels, expiry = override
-    assert target_mid == "2020/697"
-    assert labels == {"5", "8b", "11", "12"}
-    assert expiry.isoformat() == "2020-12-31"
+    _assert_section_expiry_override(
+        override,
+        target_mid="2020/697",
+        labels={"5", "8b", "11", "12"},
+        expiry=dt.date(2020, 12, 31),
+    )
 
 
 def test_temporary_section_expiry_override_parses_subsection_scoped_sunset() -> None:
@@ -170,10 +187,12 @@ def test_temporary_section_expiry_override_parses_subsection_scoped_sunset() -> 
     override = _temporary_section_expiry_override(tree, "2022/1151")
 
     assert override is not None
-    target_mid, labels, expiry = override
-    assert target_mid == "2022/1151"
-    assert labels == {"51"}
-    assert expiry.isoformat() == "2023-12-31"
+    _assert_section_expiry_override(
+        override,
+        target_mid="2022/1151",
+        labels={"51"},
+        expiry=dt.date(2023, 12, 31),
+    )
 
 
 def test_temporary_section_expiry_override_parses_subsection_scoped_year_end_sunset() -> None:
@@ -185,10 +204,12 @@ def test_temporary_section_expiry_override_parses_subsection_scoped_year_end_sun
     override = _temporary_section_expiry_override(tree, "2010/1172")
 
     assert override is not None
-    target_mid, labels, expiry = override
-    assert target_mid == "2010/1172"
-    assert labels == {"11"}
-    assert expiry.isoformat() == "2014-12-31"
+    _assert_section_expiry_override(
+        override,
+        target_mid="2010/1172",
+        labels={"11"},
+        expiry=dt.date(2014, 12, 31),
+    )
 
 
 def test_temporary_provision_expiry_overrides_parse_mixed_heading_and_moment_scope() -> None:
@@ -270,10 +291,10 @@ def test_temporary_section_expiry_overrides_collect_multiple_clauses() -> None:
         "99 a § 31 päivään toukokuuta 2021."
     )
     overrides = _temporary_section_expiry_overrides(tree, "2020/292")
-    assert overrides == (
-        ("2020/292", {"90a"}, dt.date(2020, 7, 31)),
-        ("2020/292", {"99a"}, dt.date(2021, 5, 31)),
-    )
+    assert {(row.target_mid, row.labels, row.expiry) for row in overrides} == {
+        ("2020/292", frozenset({"90a"}), dt.date(2020, 7, 31)),
+        ("2020/292", frozenset({"99a"}), dt.date(2021, 5, 31)),
+    }
 
 
 def test_temporary_section_expiry_overrides_parse_heading_chained_tail() -> None:
@@ -286,8 +307,9 @@ def test_temporary_section_expiry_overrides_parse_heading_chained_tail() -> None
 
     overrides = _temporary_section_expiry_overrides(tree, "2009/887")
 
-    assert ("2009/887", {"69c"}, dt.date(2012, 12, 31)) in overrides
-    assert ("2009/887", {"69d"}, dt.date(2010, 12, 31)) in overrides
+    rows = {(row.target_mid, row.labels, row.expiry) for row in overrides}
+    assert ("2009/887", frozenset({"69c"}), dt.date(2012, 12, 31)) in rows
+    assert ("2009/887", frozenset({"69d"}), dt.date(2010, 12, 31)) in rows
 
 
 def test_temporary_section_expiry_overrides_parse_added_sections() -> None:
@@ -301,9 +323,10 @@ def test_temporary_section_expiry_overrides_parse_added_sections() -> None:
 
     overrides = _temporary_section_expiry_overrides(tree, "2008/1085")
 
-    assert ("2008/1085", {"43a"}, dt.date(2009, 12, 31)) in overrides
-    assert ("2008/1085", {"43c"}, dt.date(2011, 12, 31)) in overrides
-    assert all(labels != {"43b"} for _target_mid, labels, _expiry in overrides)
+    rows = {(row.target_mid, row.labels, row.expiry) for row in overrides}
+    assert ("2008/1085", frozenset({"43a"}), dt.date(2009, 12, 31)) in rows
+    assert ("2008/1085", frozenset({"43c"}), dt.date(2011, 12, 31)) in rows
+    assert all(row.labels != {"43b"} for row in overrides)
 
 
 def test_temporary_section_expiry_overrides_aggregate_added_section_subsections() -> None:
@@ -329,7 +352,9 @@ def test_temporary_section_expiry_overrides_aggregate_added_section_subsections(
 
     overrides = _temporary_section_expiry_overrides(tree, "2008/1085")
 
-    assert ("2008/1085", {"43b"}, dt.date(2013, 12, 31)) in overrides
+    assert ("2008/1085", frozenset({"43b"}), dt.date(2013, 12, 31)) in {
+        (row.target_mid, row.labels, row.expiry) for row in overrides
+    }
 
 
 def test_infer_expiry_date_from_temporary_payload_text_plural_tax_years() -> None:
@@ -438,10 +463,12 @@ def test_temporary_section_expiry_override_parses_amendment_of_amendment_clause(
     )
     override = _temporary_section_expiry_override(tree, "2021/582")
     assert override is not None
-    target_mid, labels, expiry = override
-    assert target_mid == "2020/697"
-    assert labels == {"5", "8b", "11", "12"}
-    assert expiry.isoformat() == "2021-12-31"
+    _assert_section_expiry_override(
+        override,
+        target_mid="2020/697",
+        labels={"5", "8b", "11", "12"},
+        expiry=dt.date(2021, 12, 31),
+    )
 
 
 def test_temporary_section_expiry_override_parses_lakkaa_olemasta_voimassa_clause() -> None:
@@ -451,14 +478,13 @@ def test_temporary_section_expiry_override_parses_lakkaa_olemasta_voimassa_claus
     )
     override = _temporary_section_expiry_override(tree, "2021/984")
     assert override is not None
-    target_mid, labels, expiry = override
-    assert target_mid == "2021/984"
-    assert labels == {"21b"}
+    assert override.target_mid == "2021/984"
+    assert override.labels == {"21b"}
     # The clause names the cessation day (2022-01-31 = first day NOT in force).
     # The override contract carries the INCLUSIVE last in-force day, so the
     # branch returns the preceding day; the stamp-site conversion (+1) restores
     # the cessation day as the kernel's exclusive cutoff.
-    assert expiry.isoformat() == "2022-01-30"
+    assert override.expiry.isoformat() == "2022-01-30"
 
 
 def test_temporary_section_expiry_override_uses_title_scoped_temporary_target_in_mixed_amendment() -> None:
@@ -476,10 +502,12 @@ def test_temporary_section_expiry_override_uses_title_scoped_temporary_target_in
     )
     override = _temporary_section_expiry_override(tree, "2022/1151")
     assert override is not None
-    target_mid, labels, expiry = override
-    assert target_mid == "2022/1151"
-    assert labels == {"51"}
-    assert expiry.isoformat() == "2023-12-31"
+    _assert_section_expiry_override(
+        override,
+        target_mid="2022/1151",
+        labels={"51"},
+        expiry=dt.date(2023, 12, 31),
+    )
 
 
 def test_temporary_section_expiry_override_en_dash_range() -> None:
@@ -491,9 +519,9 @@ def test_temporary_section_expiry_override_en_dash_range() -> None:
     )
     override = _temporary_section_expiry_override(tree, "2021/876")
     assert override is not None
-    target_mid, labels, expiry = override
-    assert target_mid == "2021/876"
+    assert override.target_mid == "2021/876"
     # Ranges 16a–16g and 58i–58k must be fully expanded
+    labels = override.labels
     assert "16a" in labels
     assert "16b" in labels
     assert "16c" in labels
@@ -507,7 +535,7 @@ def test_temporary_section_expiry_override_en_dash_range() -> None:
     # Individual sections from 'sekä' list
     assert "87a" in labels
     assert "89a" in labels
-    assert expiry.isoformat() == "2021-12-31"
+    assert override.expiry.isoformat() == "2021-12-31"
 
 
 def test_temporary_section_expiry_override_em_dash_range() -> None:
@@ -525,12 +553,11 @@ def test_temporary_section_expiry_override_em_dash_range() -> None:
     )
     override = _temporary_section_expiry_override(tree, "2012/991")
     assert override is not None
-    target_mid, labels, expiry = override
-    assert target_mid == "2012/991"
-    assert "43a" in labels
-    assert "43b" in labels
-    assert "43c" in labels
-    assert expiry.isoformat() == "2016-12-31"
+    assert override.target_mid == "2012/991"
+    assert "43a" in override.labels
+    assert "43b" in override.labels
+    assert "43c" in override.labels
+    assert override.expiry.isoformat() == "2016-12-31"
 
 
 def test_temporary_section_expiry_override_parses_applicability_transfer_window() -> None:
@@ -552,10 +579,12 @@ def test_temporary_section_expiry_override_parses_applicability_transfer_window(
 
     override = _temporary_section_expiry_override(tree, "2007/171")
     assert override is not None
-    target_mid, labels, expiry = override
-    assert target_mid == "2007/171"
-    assert labels == {"43b", "43c"}
-    assert expiry.isoformat() == "2012-12-31"
+    _assert_section_expiry_override(
+        override,
+        target_mid="2007/171",
+        labels={"43b", "43c"},
+        expiry=dt.date(2012, 12, 31),
+    )
 
 
 def test_amendment_expiry_date_phased_entry_lakkaa_returns_none() -> None:
@@ -590,13 +619,12 @@ def test_temporary_section_expiry_override_real_2021_984_clause_only_expires_21b
     override = _temporary_section_expiry_override(tree, "2021/984")
 
     assert override is not None
-    target_mid, labels, expiry = override
-    assert target_mid == "2021/984"
-    assert labels == {"21b"}
+    assert override.target_mid == "2021/984"
+    assert override.labels == {"21b"}
     # 2022-01-31 is the cessation day (first day NOT in force); the override
     # contract carries the INCLUSIVE last in-force day (see the lakkaa branch
     # in _temporary_section_expiry_overrides), so the day before is returned.
-    assert expiry.isoformat() == "2022-01-30"
+    assert override.expiry.isoformat() == "2022-01-30"
 
 
 def test_section_commencement_effective_override_ignores_subsection_targets_and_keeps_whole_section() -> None:
@@ -649,10 +677,12 @@ def test_temporary_section_expiry_override_section_scoped_vuoden_loppuun() -> No
     )
     override = _temporary_section_expiry_override(tree, "2016/1457")
     assert override is not None
-    target_mid, labels, expiry = override
-    assert target_mid == "2016/1457"
-    assert labels == {"12b"}
-    assert expiry.isoformat() == "2018-12-31"
+    _assert_section_expiry_override(
+        override,
+        target_mid="2016/1457",
+        labels={"12b"},
+        expiry=dt.date(2018, 12, 31),
+    )
 
 
 def test_temporary_section_expiry_override_section_scoped_vuoden_loppuun_no_chapter_qualifier() -> None:
@@ -663,10 +693,12 @@ def test_temporary_section_expiry_override_section_scoped_vuoden_loppuun_no_chap
     )
     override = _temporary_section_expiry_override(tree, "2020/123")
     assert override is not None
-    target_mid, labels, expiry = override
-    assert target_mid == "2020/123"
-    assert labels == {"3"}
-    assert expiry.isoformat() == "2020-12-31"
+    _assert_section_expiry_override(
+        override,
+        target_mid="2020/123",
+        labels={"3"},
+        expiry=dt.date(2020, 12, 31),
+    )
 
 
 def test_amendment_expiry_date_section_scoped_vuoden_loppuun_returns_none() -> None:
@@ -839,10 +871,11 @@ def test_commencement_expiry_override_parses_whole_act_target() -> None:
     )
     override = _commencement_expiry_override(tree, "2010/1314")
     assert override is not None
-    target_mid, labels, expiry = override
-    assert target_mid == "2004/1428"
-    assert labels is None
-    assert expiry.isoformat() == "2014-12-31"
+    assert override.target_mid == "2004/1428"
+    assert override.labels is None
+    assert override.fallback_effective is not None
+    assert override.fallback_effective.isoformat() == "2005-01-01"
+    assert override.expiry.isoformat() == "2014-12-31"
 
 
 def test_section_commencement_effective_override_enumerated_sections_share_terminal_sign() -> None:

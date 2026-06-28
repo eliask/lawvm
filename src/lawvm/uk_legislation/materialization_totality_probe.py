@@ -54,6 +54,7 @@ from lawvm.core.materialization_universe import (
     check_materialization_totality,
     universe_from_tree,
 )
+from lawvm.core.quirks_disposition import QuirksDisposition
 from lawvm.replay_adjudication import CompileAdjudication
 
 # UK-scoped universe domain. UK's universe roots must never collide with
@@ -162,7 +163,7 @@ def probe_uk_materialization_totality(
                 "universe_domain": _UK_UNIVERSE_DOMAIN,
                 "probe_mode": "observation_only",
                 "strict_disposition": "record",
-                "quirks_disposition": "record",
+                "quirks_disposition": QuirksDisposition.RECORD,
                 "witness_class": "core.materialization_universe.check_materialization_totality",
                 # The "1929/234 §110-113 rikeslaki content=None masking"
                 # class — the canonical FI totality witness — is the
@@ -199,6 +200,6 @@ def _build_probe_skip_adjudication(
             "reason_code": "probe_skipped",
             "shortfall_probe_skip_reason": str(reason),
             "strict_disposition": "record",
-            "quirks_disposition": "record",
+            "quirks_disposition": QuirksDisposition.RECORD,
         },
     )

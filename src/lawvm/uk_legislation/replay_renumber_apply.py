@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import replace as dc_replace
 from typing import Protocol, cast
 
-from lawvm.core.ir import IRNodeKind, LegalAddress, LegalOperation
+from lawvm.core.ir import IRNode, IRNodeKind, LegalAddress, LegalOperation
 from lawvm.core.ir_helpers import _kind_str
 from lawvm.core.mutation_boundary import TreePath
 from lawvm.core.tree_ops import _NESTING_ORDER
@@ -16,7 +16,7 @@ from lawvm.uk_legislation.metadata_rewrites import (
     _is_uk_parent_sibling_promotion_renumber_shape,
     _renumbered_descendant_text,
 )
-from lawvm.uk_legislation.mutable_ir import UKMutableNode, uk_insert_child_sorted, uk_ir_node_kind
+from lawvm.uk_legislation.apply_rebuild import uk_insert_node_sorted_cow, uk_ir_node_kind
 from lawvm.uk_legislation.replay_records import (
     _append_uk_replay_adjudication,
     uk_replay_blocking_action_target_detail,
@@ -50,26 +50,32 @@ class _RenumberReplaySelf(Protocol):
 
     def _derive_target_eid(self, addr: LegalAddress) -> str: ...
 
-    def _replace_node_in_statute(self, old_node: UKMutableNode, new_node: UKMutableNode) -> bool: ...
+    def _replace_node_in_statute(self, old_node: IRNode, new_node: IRNode) -> bool: ...
 
-    def _remove_eid_lookup_subtree(self, node: UKMutableNode) -> None: ...
+    def _replace_ancestor_chain(
+        self,
+        old_node: IRNode,
+        new_node: IRNode,
+    ) -> bool: ...
+
+    def _remove_eid_lookup_subtree(self, node: IRNode) -> None: ...
 
     def _add_eid_lookup_subtree(
         self,
-        node: UKMutableNode,
-        parent: UKMutableNode | None,
+        node: IRNode,
+        parent: IRNode | None,
         idx: int | None,
     ) -> None: ...
 
     def _note_structure_mutation(self) -> None: ...
 
-    def _tree_path_for_mutable_node(self, node: UKMutableNode) -> TreePath | None: ...
+    def _tree_path_for_mutable_node(self, node: IRNode) -> TreePath | None: ...
 
     def _record_renumber_node_mutation_event(
         self,
         *,
         old_path: TreePath | None,
-        new_node: UKMutableNode,
+        new_node: IRNode,
         helper: str,
     ) -> None: ...
 
@@ -85,7 +91,7 @@ class _RenumberReplaySelf(Protocol):
         self,
         *,
         old_path: TreePath | None,
-        new_node: UKMutableNode,
+        new_node: IRNode,
         helper: str,
     ) -> None: ...
 
@@ -220,7 +226,7 @@ class UKReplayRenumberApplyMixin:
             if child.kind not in (IRNodeKind.HEADING, IRNodeKind.NUM)
             and _kind_str(child.kind) in dest_admitted
         ]
-        child = UKMutableNode(
+        child = IRNode(
             kind=uk_ir_node_kind(destination_kind),
             label=destination_label,
             text=_renumbered_descendant_text(
@@ -229,16 +235,16 @@ class UKReplayRenumberApplyMixin:
                 destination_label=destination_label,
             ),
             attrs={"eId": replay._derive_target_eid(destination)},
-            children=moved_children,
+            children=tuple(moved_children),
         )
         replacement_children = list(retained_children)
         replacement_children.append(child)
-        replacement = UKMutableNode(
+        replacement = IRNode(
             kind=source_node.kind,
             label=source_node.label,
             text="",
             attrs=dict(source_node.attrs),
-            children=replacement_children,
+            children=tuple(replacement_children),
         )
         replaced = replay._replace_node_in_statute(source_node, replacement)
         if replaced and old_path is not None:
@@ -308,14 +314,32 @@ class UKReplayRenumberApplyMixin:
             attrs={**dict(source_node.attrs), "eId": replay._derive_target_eid(destination)},
         )
         old_path = replay._tree_path_for_mutable_node(source_node)
-        replay._remove_eid_lookup_subtree(source_node)
-        source_parent.children.pop(source_idx)
-        uk_insert_child_sorted(source_parent, moved)
-        try:
-            moved_idx = source_parent.children.index(moved)
-        except ValueError:
-            moved_idx = None
-        replay._add_eid_lookup_subtree(moved, source_parent, moved_idx)
+        # PR3 (audit XJUR-02 / AGENTS.md §2.3): combine the remove + sorted-insert
+        # into a single copy-on-write rebuild of ``source_parent`` so no
+        # in-place ``source_parent.children.pop`` / ``children.insert`` ever
+        # runs against the live tree; the rebuilt parent is then threaded up to
+        # the statute root via ``_replace_ancestor_chain``.
+        children_without_source = [
+            child
+            for index, child in enumerate(source_parent.children)
+            if index != source_idx
+        ]
+        new_parent_children, moved_idx = uk_insert_node_sorted_cow(
+            children_without_source, moved
+        )
+        new_source_parent = dc_replace(source_parent, children=new_parent_children)
+        if not replay._replace_ancestor_chain(source_parent, new_source_parent):
+            return False
+        if moved_idx is None:
+            # ``uk_insert_node_sorted_cow`` rejected the insert (duplicate
+            # kind+label after removing the source). This is unreachable here
+            # because the destination-sibling-collision guard above already
+            # filtered this branch, but we record the deduced index by identity
+            # so downstream bookkeeping does not dereference a stale reference.
+            try:
+                moved_idx = new_parent_children.index(moved)
+            except ValueError:
+                moved_idx = None
         replay._note_structure_mutation()
         replay._record_renumber_node_mutation_event(
             old_path=old_path,
@@ -363,14 +387,35 @@ class UKReplayRenumberApplyMixin:
             attrs={**dict(source_node.attrs), "eId": replay._derive_target_eid(destination)},
         )
         old_path = replay._tree_path_for_mutable_node(source_node)
-        replay._remove_eid_lookup_subtree(source_node)
-        source_parent.children.pop(source_idx)
-        uk_insert_child_sorted(grandparent_node, moved)
-        try:
-            moved_idx = grandparent_node.children.index(moved)
-        except ValueError:
-            moved_idx = None
-        replay._add_eid_lookup_subtree(moved, grandparent_node, moved_idx)
+        # PR3 (audit XJUR-02 / AGENTS.md §2.3): copy-on-write remove + insert.
+        # Rebuild ``source_parent`` with the source node excised, then rebuild
+        # ``grandparent_node`` so its children include ``new_source_parent``
+        # (in place of the original ``source_parent``) and ``moved`` at the
+        # sorted position, then thread ``new_grandparent`` up to the statute
+        # root via ``_replace_ancestor_chain``. No in-place
+        # ``source_parent.children.pop`` / ``grandparent_node.children.insert``
+        # occurs against the live tree.
+        children_without_source = [
+            child
+            for index, child in enumerate(source_parent.children)
+            if index != source_idx
+        ]
+        new_source_parent = dc_replace(source_parent, children=children_without_source)
+        grandparent_children_intermediate = [
+            new_source_parent if child is source_parent else child
+            for child in grandparent_node.children
+        ]
+        new_grandparent_children, moved_idx = uk_insert_node_sorted_cow(
+            grandparent_children_intermediate, moved
+        )
+        if moved_idx is None:
+            try:
+                moved_idx = new_grandparent_children.index(moved)
+            except ValueError:
+                moved_idx = None
+        new_grandparent = dc_replace(grandparent_node, children=new_grandparent_children)
+        if not replay._replace_ancestor_chain(grandparent_node, new_grandparent):
+            return False
         replay._note_structure_mutation()
         replay._record_promoted_child_renumber_mutation_event(
             old_path=old_path,

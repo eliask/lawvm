@@ -8,6 +8,7 @@ from typing import Any, Dict, FrozenSet, List, Literal, Mapping, Optional, Tuple
 
 from lawvm.core.frozen_values import FrozenDict, _freeze_value, _jsonable_value
 from lawvm.core.provenance import OperationSource
+from lawvm.core.scope_confidence import ScopeConfidence, coerce_scope_confidence
 from lawvm.core.semantic_types import FacetKind, IRNodeKind, StructuralAction, TextPatchKindEnum
 
 
@@ -160,8 +161,14 @@ class LegalOperation:
     group_id: Optional[str] = None
     witness_rule_id: Optional[str] = None
     # Frontend-owned typed riders. Core stores these carriers but does not
-    # interpret jurisdiction-local values.
-    scope_confidence: Any = None
+    # interpret jurisdiction-local values; ``scope_confidence`` is typed as
+    # ``Optional[ScopeConfidence]`` (a marker protocol, see
+    # ``lawvm.core.scope_confidence``) so bare strings fail loud at the
+    # ``__post_init__`` boundary (AGENTS.md §1.9 typed carriers over dynamic
+    # shape, §1.10 fail loud; §2.3 core does not interpret frontend-local
+    # values). Frontends inherit the protocol explicitly so an AST scan can
+    # keep producer-set == protocol-implementer-set.
+    scope_confidence: Optional[ScopeConfidence] = None
     move_clause_target_unit_kind: Optional[str] = None
 
     def __post_init__(self) -> None:
@@ -184,8 +191,17 @@ class LegalOperation:
                 "LegalOperation text_patch is only valid for text_replace/text_repeal/replace "
                 f"got action={self.action!r}"
             )
+        # Fail loud at the core semantic waist: a bare ``str`` here means a
+        # frontend bypassed its typed ``ScopeConfidence`` dataclass and is
+        # smuggling a free-form rung string (AGENTS.md §1.9, §1.10). ``None``
+        # is the legitimate "no witness" sentinel and passes through unchanged.
+        object.__setattr__(
+            self,
+            "scope_confidence",
+            coerce_scope_confidence(self.scope_confidence),
+        )
 
-@dataclass
+@dataclass(slots=True)
 class ProvisionVersion:
     """A single version of a provision in the temporal graph."""
 
@@ -207,7 +223,7 @@ class ProvisionVersion:
             raise ValueError(f"ProvisionVersion expires ({self.expires}) before effective ({self.effective})")
         object.__setattr__(self, "applicability", tuple(self.applicability))
 
-@dataclass
+@dataclass(slots=True)
 class ProvisionTimeline:
     """Complete version history of a single addressable provision."""
 
