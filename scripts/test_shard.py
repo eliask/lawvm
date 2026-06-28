@@ -792,6 +792,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_bench_contract_adapter.py",
         "test_fi_bench_comparable.py",
         "test_fi_oracle_amb_match.py",
+        "test_fi_segmentation_neutralizer.py",
         "test_bench_curate.py",
         "test_parse_bench.py",
         "test_parse_characterize.py",
@@ -848,7 +849,7 @@ SHARD_GROUPS: dict[str, tuple[str, ...]] = {
 
 SOURCE_SHARD_PREFIXES: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
-        "data/finland/corrigendum_manual.yaml",
+        "data/finland/source_defect_fixes_fi.yaml",
         ("finland_replay_products_core", "finland_replay_rules"),
     ),
     ("src/lawvm/contracts.py", ("core",)),
