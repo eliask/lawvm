@@ -170,6 +170,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_vts.py",
     ),
     "finland_parse_payload": (
+        "test_fi_attachment_ir.py",
         "test_fi_body_*.py",
         "test_fi_definition_introducer.py",
         "test_fi_definition_projection.py",
@@ -406,6 +407,11 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_dual_registration_completeness.py",
         "test_authority_boundary_ratchet.py",
         "test_source_witness_liveness_ratchet.py",
+        # iter2 W6 Fix 5 (guard-liveness review F3): meta-test asserting
+        # ``tests/conftest.py``'s xfail-drift prefixes still XFAIL (catches
+        # silent XPASS drift under ``strict=False``). Marked ``@slow`` —
+        # re-runs all 22 drift prefixes via subprocess when opted in.
+        "test_xfail_drift_markers.py",
         # Audit-invariant registry program (lanes L2a/L2b/L3/L5): control-flow,
         # determinism-spine, typed-carrier, identity-leak, and replay-determinism gates.
         "test_fail_loud_ratchet.py",
