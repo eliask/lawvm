@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace as dc_replace
 from pathlib import Path
 from lxml import etree as ET
 from typing import Any, cast
@@ -31568,7 +31569,17 @@ def test_executor_recursive_match_cache_tracks_structural_mutations(monkeypatch:
     assert cached_parent is parent
     assert cached_idx == idx
 
-    root.children.append(UKMutableNode(kind=IRNodeKind.SUBSECTION, label="2", text="new subsection"))
+    # Sub-PR C+D (audit XJUR-02 / AGENTS.md §2.3): under frozen IRStatute, the
+    # pre-CoW ``root.children.append(...)`` mutation is illegal (children is a
+    # tuple). Restructure via CoW: rebuild the section + body via
+    # ``dc_replace``, thread through ``executor.statute = dc_replace(...)``,
+    # then call ``_note_structure_mutation`` exactly the way the apply path's
+    # structural mutation sites do, so the invariant "serial-bump clears the
+    # recursive-match cache" survives the CoW migration.
+    new_node = IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="new subsection")
+    new_root = dc_replace(root, children=(*root.children, new_node))
+    new_body = dc_replace(executor.statute.body, children=(new_root,))
+    executor.statute = dc_replace(executor.statute, body=new_body)
     executor._note_structure_mutation()
     assert executor._recursive_match_cache == {}
 
@@ -31611,7 +31622,18 @@ def test_executor_recursive_match_cache_preserves_negative_results(monkeypatch: 
     monkeypatch.setattr(replay_target_lookup_mod, "uk_recursive_kind_match", fail_recursive_match)
     assert executor._find_recursive_match(root, "subsection", "9") == (None, None, None)
 
-    root.children.append(UKMutableNode(kind=IRNodeKind.SUBSECTION, label="9", text="new subsection"))
+    # Sub-PR C+D (audit XJUR-02 / AGENTS.md §2.3): under frozen IRStatute, the
+    # pre-CoW ``root.children.append(...)`` mutation is illegal (children is a
+    # tuple). Restructure via CoW: rebuild the section + body via
+    # ``dc_replace``, thread through ``executor.statute = dc_replace(...)``,
+    # then call ``_note_structure_mutation`` exactly the way the apply path's
+    # structural mutation sites do, so the invariant "serial-bump clears the
+    # recursive-match cache (incl. negative-result entries)" survives the
+    # CoW migration.
+    new_node = IRNode(kind=IRNodeKind.SUBSECTION, label="9", text="new subsection")
+    new_root = dc_replace(root, children=(*root.children, new_node))
+    new_body = dc_replace(executor.statute.body, children=(new_root,))
+    executor.statute = dc_replace(executor.statute, body=new_body)
     executor._note_structure_mutation()
     assert executor._recursive_match_cache == {}
 
@@ -72438,8 +72460,17 @@ def test_executor_child_insert_mutation_event_uses_known_parent_path(
         payload=IRNode(kind=IRNodeKind.SECTION, label="1", text=""),
         source=OperationSource(statute_id="uk_test", title="Test Source"),
     )
-    node = UKMutableNode(kind=IRNodeKind.SECTION, label="1", text="")
-    executor.statute.body.children.append(node)
+    node = IRNode(kind=IRNodeKind.SECTION, label="1", text="")
+    # Sub-PR C+D (audit XJUR-02 / AGENTS.md §2.3): under frozen IRStatute, the
+    # pre-CoW ``executor.statute.body.children.append(node)`` mutation is
+    # illegal (children is a tuple). Thread the node into the body via CoW
+    # rebuild + ``self.statute = dc_replace(...)`` exactly the way the apply
+    # path's structural inserts now route through. ``_record_child_inserted``
+    # then runs against the rebuilt live body so its ``parent`` parameter is
+    # identity-attached under the live tree and the known-parent-path
+    # invariant this test pins survives the CoW migration.
+    new_body = dc_replace(executor.statute.body, children=(node,))
+    executor.statute = dc_replace(executor.statute, body=new_body)
     executor._current_mutation_op = op
 
     def fail_recursive_scan(*_args: object, **_kwargs: object) -> None:
@@ -72528,8 +72559,19 @@ def test_executor_tree_path_index_updates_after_child_insert(
     )
     parent = executor.statute.body.children[0]
     assert executor._tree_path_for_mutable_node(parent) == (("section", "1"),)
-    node = UKMutableNode(kind=IRNodeKind.SUBSECTION, label="1", text="")
-    parent.children.append(node)
+    node = IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="")
+    # Sub-PR C+D (audit XJUR-02 / AGENTS.md §2.3): under frozen IRStatute, the
+    # pre-CoW ``parent.children.append(node)`` mutation is illegal (children is
+    # a tuple). Restructure via CoW: rebuild the section into ``new_parent``
+    # with the node attached, thread it through the body + statute via
+    # ``dc_replace``, then ``_record_child_inserted`` runs against the rebuilt
+    # live parent so the known-parent-path invariant this test pins survives
+    # the CoW migration. ``parent`` is re-pointed at the live ``new_parent``
+    # so the downstream path-index lookup identity-matches the live tree.
+    new_parent = dc_replace(parent, children=(node,))
+    new_body = dc_replace(executor.statute.body, children=(new_parent,))
+    executor.statute = dc_replace(executor.statute, body=new_body)
+    parent = new_parent
     executor._current_mutation_op = LegalOperation(
         op_id="uk_test_tree_path_index_insert",
         sequence=1,

@@ -2029,7 +2029,7 @@ def test_executor_blocks_schedule_descendant_body_root_fallback() -> None:
     )
 
     assert [child.label for child in executor.statute.body.children] == ["1"]
-    assert executor.statute.supplements == []
+    assert executor.statute.supplements == ()
     assert len(adjudications) == 1
     assert adjudications[0].kind == "uk_replay_missing_schedule_branch_gap"
     assert classify_uk_replay_adjudication_bucket(adjudications[0].kind) == "source_shape"
@@ -4388,7 +4388,7 @@ def test_executor_applies_labeled_child_end_range_without_target_hijack() -> Non
     # (the mutable working representation), not the immutable IRNode tuple that
     # replay_uk_ops(...) returns. The sibling .children == () assertions in this
     # file all inspect replay_uk_ops results, not executor.statute directly.
-    assert subsection.children == []
+    assert subsection.children == ()
     assert [row.kind for row in adjudications] == ["uk_replay_labeled_child_end_range_applied"]
     assert adjudications[0].detail["blocking"] is False
     assert adjudications[0].detail["strict_disposition"] == "record"
@@ -6987,7 +6987,7 @@ def test_executor_does_not_materialize_labeled_child_text_without_source_rule() 
     )
 
     paragraph = executor.statute.body.children[0].children[0].children[0]
-    assert paragraph.children == []
+    assert paragraph.children == ()
     assert "i first visible limb" in paragraph.text
     assert not any(
         row.kind == "uk_replay_source_carried_labeled_child_text_substitution_recovered"
