@@ -1807,6 +1807,31 @@ def _direct_target_title(target_phrase: str, target_href: str) -> str:
     return ""
 
 
+# Extract the PL section number from a USLM instruction_id path. The path
+# follows the pattern /us/pl/{congress}/{number}/[d{div}/][t{title}/]s{section}/[sub-units].
+# The PL section number is the integer after 's' (the enacted section number).
+_PL_SECTION_FROM_PATH_RE = re.compile(r"/s(\d+[A-Za-z]*)")
+
+
+def _extract_pl_section_from_instruction_id(instruction_id: str, statute_id: str) -> str:
+    """Extract the enacted PL section number from the USLM instruction_id path.
+
+    The instruction_id follows the pattern:
+    ``/us/pl/{congress}/{number}/[d{div}/][t{title}/]s{section}/[sub-units]``
+
+    For compound instructions joined by ``+``, only the first instruction's
+    section is used (the one the classification table would map).
+    """
+    if not instruction_id:
+        return ""
+    # For compound ops joined by '+', take the first segment
+    first_segment = instruction_id.split("+")[0]
+    m = _PL_SECTION_FROM_PATH_RE.search(first_segment)
+    if m is None:
+        return ""
+    return m.group(1)
+
+
 def _resolve_target(
     target_phrase: str,
     target_href: str,
@@ -1814,6 +1839,9 @@ def _resolve_target(
     raw_text: str = "",
     inherited_address: LegalAddress | None = None,
     plaw_title_scope: str = "",
+    classification_index: Any = None,
+    instruction_id: str = "",
+    statute_id: str = "",
 ) -> tuple[LegalAddress | None, str]:
     """Resolve the instruction target; prose is canonical, href corroborates.
 
@@ -1955,6 +1983,25 @@ def _resolve_target(
         meta_addr = parse_relative_usc_target(raw_prefix, inherited_title=plaw_title_scope)
         if meta_addr is not None:
             return _refine_with_leading_subunit_anchor(meta_addr, raw_prefix), "metadata_title"
+
+    # (5) Classification table fallback: when the PLAW carries no USC citation
+    # (no <ref href="/us/usc/...">, no prose "Section X of title N"), consult the
+    # OLRC classification table — which maps PL section numbers to USC title/section
+    # addresses. The table is fetched via Wayback Machine (uscode.house.gov is
+    # geo-blocked). This is an evidence-plane lookup, not a guess: the classification
+    # table is the authoritative OLRC mapping of enacted PL sections to codified
+    # USC sections. §1.1: when the table gives conflicting USC targets for the same
+    # PL section, resolve returns None (ambiguity stays visible).
+    if classification_index is not None and statute_id:
+        pl_section = _extract_pl_section_from_instruction_id(instruction_id, statute_id)
+        if pl_section:
+            cls_addr = classification_index.resolve(statute_id, pl_section)
+            if cls_addr is not None:
+                # Refine with any leading sub-unit anchor from the raw_text prose
+                # (e.g. "in subsection (b)" → add subsection:b to the resolved
+                # section address).
+                refined = _refine_with_leading_subunit_anchor(cls_addr, raw_prefix)
+                return refined, "classification_table"
 
     return None, "unresolved"
 
@@ -3495,6 +3542,7 @@ def _lower_instruction(
     plaw_title_scope: str = "",
     proof_title: str = "11",
     table_redesignate_pairs: tuple[tuple[str, str], ...] = (),
+    classification_index: Any = None,
 ) -> USAmendmentInstruction:
     effective = _parse_effective_date(effective_text or raw_text, enacted)
     expires = _parse_sunset_expiry(expires_text or raw_text, enacted)
@@ -3521,6 +3569,9 @@ def _lower_instruction(
         raw_text=raw_text,
         inherited_address=inherited_address,
         plaw_title_scope=plaw_title_scope,
+        classification_index=classification_index,
+        instruction_id=instruction_id,
+        statute_id=statute_id,
     )
     family = _classify_action(actions, raw_text)
 
@@ -5437,7 +5488,8 @@ def _iter_instruction_units(
 
 
 def lower_plaw_amendatory(
-    data: bytes, *, statute_id: str = "", enacted: str = "", proof_title: str = "11"
+    data: bytes, *, statute_id: str = "", enacted: str = "", proof_title: str = "11",
+    classification_index: Any = None,
 ) -> USAmendatoryReport:
     """Lower one Public Law's USLM amendatory text into candidate operations."""
     root = ET.fromstring(data)
@@ -5595,6 +5647,7 @@ def lower_plaw_amendatory(
             plaw_title_scope=plaw_title_scope,
             proof_title=proof_title,
             table_redesignate_pairs=table_redesignate_pairs,
+            classification_index=classification_index,
         )
         instructions.append(instr)
         if instr.finding is not None:
