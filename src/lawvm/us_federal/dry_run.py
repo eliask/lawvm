@@ -2935,7 +2935,7 @@ def build_us_dry_run(
                 # is preserved (§0: over-retention is the safe wrong).
                 mat_len = len(materialized or "")
                 orc_len = max(len(oracle_text or ""), 1)
-                if mat_len > orc_len * 2 and oracle_changed_here is False:
+                if mat_len > orc_len * 1.5 and oracle_changed_here is False:
                     rule_id = US_DRY_RUN_RESIDUAL_CLAIMED_BUT_ORACLE_UNCHANGED_RULE_ID
                     disposition = DISPOSITION_ORACLE_SUSPECT
                 else:
