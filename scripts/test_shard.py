@@ -548,6 +548,12 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_tree_ops_stage.py",
         "test_tree_ops_roman_labels.py",
         "test_core_tree_invariant_scan_families.py",
+        # iter2 W5 H3: shared §1.7 cross-act same-moment conflict detector
+        # (extracted out of EE/UK into ``lawvm.core.cross_act_same_moment``).
+        # Synthetic op-driven coverage mirroring the §2.9 test pyramid; placed
+        # alongside ``test_named_swallow_totality.py`` / ``test_fi_recovery_kind_enum.py``
+        # in ``core_tree_apply`` per the iter2 W6 shard-registration hint.
+        "test_core_cross_act_same_moment.py",
     ),
     "core_compile_projection": (
         "test_compile_metadata_default_fail_loud.py",
@@ -600,6 +606,11 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     ),
     "core_surface_semantic": (
         "test_core_firewall_no_fi_definition_phrases.py",
+        # iter2 W5 H1: AST-scan no-leak test for the §2.3 core/frontend firewall
+        # fix that moved ``lawvm.core.pool_mention`` (Finnish fiscal doctrine)
+        # into ``lawvm.finland.pool_mention_primitive``. Mirrors the precedent
+        # of ``test_core_firewall_no_fi_definition_phrases.py`` above.
+        "test_core_firewall_no_fi_fiscal_doctrine.py",
         "test_comparison_normalization.py",
         "test_composite_interaction_reference_model.py",
         "test_fi_abstraction_modules.py",
