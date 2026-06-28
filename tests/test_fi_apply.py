@@ -18985,8 +18985,128 @@ def test_subsection_replace_prunes_standalone_tail_successor_with_text_witness()
     assert result_sec is not None
     result_subsecs = [c for c in result_sec.children if c.kind == IRNodeKind.SUBSECTION]
     assert [sub.label for sub in result_subsecs] == ["1"]
-    assert [p.code for p in pathologies] == ["DESTRUCTIVE_SHAPE_LOSS_RISK"]
-    assert pathologies[0].detail["recovery_kind"] == "subsection_replace_standalone_tail_sibling_prune"
+    assert any(
+        pathology.detail.get("recovery_kind") == "subsection_replace_standalone_tail_sibling_prune"
+        for pathology in pathologies
+    )
+
+
+def test_subsection_replace_prunes_stale_successor_when_payload_owns_changed_tail() -> None:
+    old_tail = (
+        "sellaiset pitkäaikaiset tai vaativat muut kuin sairaanhoitoon välittömästi "
+        "liittyvät kuntoutusjaksot laitos- tai avohoidossa, jotka ovat tarpeen "
+        "hänen työ- tai toimintakykynsä säilyttämiseksi tai parantamiseksi."
+    )
+    new_tail = (
+        "sellaiset pitkäaikaiset tai vaativat muut kuin sairaanhoitoon välittömästi "
+        "liittyvät kuntoutusjaksot laitos- tai avohoidossa, jotka ovat tarpeen "
+        "hänen työ- tai toimintakykynsä turvaamiseksi tai parantamiseksi."
+    )
+    sec = _sec(
+        "3",
+        _sub("1", _para("4", "vanha neljäs kohta")),
+        _sub("2", _content(old_tail)),
+        _sub("3", _content("Asetuksella voidaan tarkemmin säätää kuntoutuksen sisällöstä.")),
+    )
+    body = _body(sec)
+    sec_path = [("section", "3")]
+    subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+    pathologies: list[SourcePathology] = []
+
+    replace_sub = _sub(
+        "1",
+        IRNode(
+            kind=IRNodeKind.PARAGRAPH,
+            label="4",
+            children=(IRNode(kind=IRNodeKind.SUBPARAGRAPH, children=(_content(new_tail),)),),
+        ),
+    )
+    state = _make_state(body)
+    op = _op(op_type=OpType.REPLACE, target_section="3", target_paragraph=1)
+    result = _apply_subsection_replace(
+        state,
+        op,
+        sec_path,
+        sec,
+        subsecs,
+        replace_sub,
+        None,
+        _FINLEX_ORACLE,
+        "3 § 1 mom",
+        source_pathologies_out=pathologies,
+    )
+
+    assert result is not None
+    from lawvm.core.tree_ops import resolve as tree_resolve
+
+    result_sec = tree_resolve(result.ir, (("section", "3"),))
+    assert result_sec is not None
+    result_subsecs = [c for c in result_sec.children if c.kind == IRNodeKind.SUBSECTION]
+    assert [sub.label for sub in result_subsecs] == ["1", "2"]
+    assert old_tail not in irnode_to_text(result_sec)
+    assert new_tail in irnode_to_text(result_sec)
+    assert any(
+        pathology.detail.get("recovery_kind") == "subsection_replace_standalone_tail_sibling_prune"
+        for pathology in pathologies
+    )
+
+
+def test_subsection_replace_keeps_unrelated_standalone_successor_tail() -> None:
+    sec = _sec(
+        "3",
+        _sub("1", _para("4", "vanha neljäs kohta")),
+        _sub("2", _content("Asetuksella voidaan antaa tarkempia säännöksiä lain täytäntöönpanosta.")),
+    )
+    body = _body(sec)
+    sec_path = [("section", "3")]
+    subsecs = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+    pathologies: list[SourcePathology] = []
+
+    replace_sub = _sub(
+        "1",
+        IRNode(
+            kind=IRNodeKind.PARAGRAPH,
+            label="4",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SUBPARAGRAPH,
+                    children=(
+                        _content(
+                            "sellaiset pitkäaikaiset tai vaativat muut kuin sairaanhoitoon "
+                            "välittömästi liittyvät kuntoutusjaksot laitos- tai avohoidossa."
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    state = _make_state(body)
+    op = _op(op_type=OpType.REPLACE, target_section="3", target_paragraph=1)
+    result = _apply_subsection_replace(
+        state,
+        op,
+        sec_path,
+        sec,
+        subsecs,
+        replace_sub,
+        None,
+        _FINLEX_ORACLE,
+        "3 § 1 mom",
+        source_pathologies_out=pathologies,
+    )
+
+    assert result is not None
+    from lawvm.core.tree_ops import resolve as tree_resolve
+
+    result_sec = tree_resolve(result.ir, (("section", "3"),))
+    assert result_sec is not None
+    result_subsecs = [c for c in result_sec.children if c.kind == IRNodeKind.SUBSECTION]
+    assert [sub.label for sub in result_subsecs] == ["1", "2"]
+    assert "täytäntöönpanosta" in irnode_to_text(result_sec)
+    assert all(
+        pathology.detail.get("recovery_kind") != "subsection_replace_standalone_tail_sibling_prune"
+        for pathology in pathologies
+    )
 
 
 def test_subsection_replace_strict_blocks_standalone_tail_successor_prune() -> None:

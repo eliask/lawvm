@@ -222,27 +222,85 @@ def _looks_like_standalone_tail_subsection(subsection: IRNode) -> bool:
     return bool(text) and text[:1].isalpha() and text[:1].isupper()
 
 
+def _looks_like_content_only_tail_subsection(subsection: IRNode) -> bool:
+    """Return True for a content-only tail subsection regardless of casing."""
+    if subsection.kind != IRNodeKind.SUBSECTION:
+        return False
+    if any(child.kind == IRNodeKind.PARAGRAPH for child in subsection.children):
+        return False
+    content_children = [
+        child
+        for child in subsection.children
+        if child.kind in (IRNodeKind.CONTENT, IRNodeKind.INTRO) and irnode_to_text(child).strip()
+    ]
+    return len(content_children) == 1
+
+
 def _matches_standalone_tail_subsection_prune_witness(
     replacement: IRNode,
     successor: IRNode,
 ) -> bool:
     """Return True when replacement already absorbs the successor tail text."""
-    if not (
-        _looks_like_standalone_tail_subsection(replacement)
-        and _looks_like_standalone_tail_subsection(successor)
-    ):
+    if not _looks_like_content_only_tail_subsection(successor):
         return False
 
-    replacement_text = " ".join(irnode_to_text(replacement).split())
     successor_text = " ".join(irnode_to_text(successor).split())
-    if not replacement_text or not successor_text:
+    if not successor_text:
         return False
 
-    tail_text = _tail_after_first_sentence(replacement_text)
-    if not tail_text:
-        return False
+    if _looks_like_standalone_tail_subsection(replacement) and _looks_like_standalone_tail_subsection(successor):
+        replacement_text = " ".join(irnode_to_text(replacement).split())
+        if not replacement_text:
+            return False
+        tail_text = _tail_after_first_sentence(replacement_text)
+        if not tail_text:
+            return False
+        return tail_text.rstrip(" .;:!?") == successor_text.rstrip(" .;:!?")
 
-    return tail_text.rstrip(" .;:!?") == successor_text.rstrip(" .;:!?")
+    for tail_text in _owned_paragraph_tail_texts(replacement):
+        if _tail_text_supersedes_successor(tail_text, successor_text):
+            return True
+    return False
+
+
+def _owned_paragraph_tail_texts(replacement: IRNode) -> tuple[str, ...]:
+    """Return explicit paragraph tail descendants that can absorb a sibling tail."""
+    if replacement.kind is not IRNodeKind.SUBSECTION:
+        return ()
+    tails: list[str] = []
+    for paragraph in replacement.children:
+        if paragraph.kind is not IRNodeKind.PARAGRAPH:
+            continue
+        for child in paragraph.children:
+            if child.kind in {IRNodeKind.SUBPARAGRAPH, IRNodeKind.WRAP_UP}:
+                text = " ".join(irnode_to_text(child).split()).strip()
+                if text:
+                    tails.append(text)
+    return tuple(tails)
+
+
+def _tail_text_supersedes_successor(tail_text: str, successor_text: str) -> bool:
+    """Conservative typed-tail equivalence for stale successor pruning.
+
+    This is not a raw source-language parser. It compares two already-owned IR
+    tails: an explicit paragraph descendant in the replacement payload and the
+    immediately following content-only live sibling. The recovery is still
+    emitted as a named pathology and strict mode blocks it.
+    """
+    tail_norm = tail_text.rstrip(" .;:!?")
+    successor_norm = successor_text.rstrip(" .;:!?")
+    if min(len(tail_norm), len(successor_norm)) < 80:
+        return False
+    if tail_norm == successor_norm:
+        return True
+    common_prefix = 0
+    for left, right in zip(tail_norm, successor_norm, strict=False):
+        if left != right:
+            break
+        common_prefix += 1
+    if common_prefix < 40:
+        return False
+    return SequenceMatcher(None, tail_norm, successor_norm).ratio() >= 0.84
 
 
 def _tail_after_first_sentence(text: str) -> str:
@@ -1304,7 +1362,43 @@ def _apply_subsection_replace(
                 attrs=dict(child.attrs),
                 children=tuple(child.children),
             )
-        return _tops._with_children(section, children)
+        return _mark_rebased_section_complete(_tops._with_children(section, children))
+
+    def _mark_rebased_section_complete(section: IRNode) -> IRNode:
+        attrs = dict(section.attrs)
+        attrs["lawvm_tail_policy"] = "replace_if_target_scope_requires"
+        attrs["lawvm_payload_completeness_kind"] = "complete"
+        return IRNode(
+            kind=section.kind,
+            label=section.label,
+            text=section.text,
+            attrs=attrs,
+            children=tuple(section.children),
+        )
+
+    def _remove_subsection_and_rebase_following(section: IRNode, remove_idx: int) -> IRNode:
+        children = list(section.children)
+        subsection_positions = [
+            i for i, child in enumerate(children) if child.kind is IRNodeKind.SUBSECTION
+        ]
+        if remove_idx < 0 or remove_idx >= len(subsection_positions):
+            return section
+        removed_child_pos = subsection_positions[remove_idx]
+        children.pop(removed_child_pos)
+        for child_pos in subsection_positions[remove_idx + 1 :]:
+            adjusted_pos = child_pos - 1
+            child = children[adjusted_pos]
+            label = (child.label or "").strip()
+            if not label.isdigit():
+                continue
+            children[adjusted_pos] = IRNode(
+                kind=child.kind,
+                label=str(int(label) - 1),
+                text=child.text,
+                attrs=dict(child.attrs),
+                children=tuple(child.children),
+            )
+        return _mark_rebased_section_complete(_tops._with_children(section, children))
 
     _replace_sub = amend_sub
     if _replace_sub is not None:
@@ -1503,7 +1597,7 @@ def _apply_subsection_replace(
                             current_subsecs[next_idx],
                         )
                     ):
-                        new_sec = _tops.remove_nth(new_sec, "subsection", next_idx)
+                        new_sec = _remove_subsection_and_rebase_following(new_sec, next_idx)
                 logger.debug("  %s → momentti replace (standalone tail)", ctx_label)
                 _report_fragment_rebound()
                 return _with_preserved_provision_index(
@@ -1780,7 +1874,7 @@ def _apply_subsection_replace(
                         )
                     if strict_profile is not None:
                         return None
-                    new_sec = _tops.remove_nth(new_sec, "subsection", next_idx)
+                    new_sec = _remove_subsection_and_rebase_following(new_sec, next_idx)
             new_sec = _trim_earlier_sibling_duplicate_prefix(new_sec, n, replacement)
             if stale_fragment_idx is not None:
                 new_sec = _tops.remove_nth(new_sec, "subsection", stale_fragment_idx)
