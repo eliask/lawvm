@@ -42,6 +42,7 @@ from lawvm.estonia.grafter import (
     _strict_title_match_para,
     _title_matches_para,
     apply_ee_ops,
+    apply_ee_ops_conserved,
     parse_ee_amendment_ops,
     parse_ee_statute,
 )
@@ -1447,6 +1448,10 @@ class EEPitResult:
     # Optional replay-adjudication stream from operation application.
     adjudications: list[CompileAdjudication] = field(default_factory=list)
 
+    # Conserved apply-phase partition (§1.8): every input op accepted or
+    # rejected with a RejectedItem receipt.
+    apply_filter_result: Optional[FilterResult] = None
+
     def to_replay_summary(self) -> ReplaySummary:
         """Project this EE-specific result onto the shared ``ReplaySummary``
         contract from ``core/replay_contracts.py``, giving downstream
@@ -1906,12 +1911,25 @@ def replay_ee_to_pit(
     lo_ops_out: list[LegalOperation] = []
     adjudications: list[CompileAdjudication] = []
     try:
-        result.replayed = apply_ee_ops(
-            base,
-            all_ops,
-            lo_ops_out=lo_ops_out,
-            adjudications_out=adjudications,
-        )
+        try:
+            apply_result = apply_ee_ops_conserved(
+                base,
+                all_ops,
+                lo_ops_out=lo_ops_out,
+                adjudications_out=adjudications,
+            )
+            result.replayed = apply_result.statute
+            result.apply_filter_result = apply_result.filter_result
+        except ValueError:
+            # Fall back to non-conserved apply when op_id uniqueness
+            # preconditions fail (duplicate op_ids from same-target
+            # text_replace runs in old-format wrapper blocks).
+            result.replayed = apply_ee_ops(
+                base,
+                all_ops,
+                lo_ops_out=lo_ops_out,
+                adjudications_out=adjudications,
+            )
     # lawvm-failloud (AGENTS.md §1.10): NOT a silent swallow. An apply-stage
     # failure is recorded as a distinct, self-evidencing "Failed to apply ops:
     # {e}" banner (exception embedded) that classify_ee_replayability maps to
