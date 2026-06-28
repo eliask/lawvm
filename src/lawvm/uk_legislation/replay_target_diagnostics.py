@@ -12,7 +12,7 @@ from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.roman import roman_to_arabic as _shared_roman_to_arabic
 from lawvm.uk_legislation.addressing import _addr_container, _addr_leaf_kind, _uk_kind_value
 from lawvm.uk_legislation.canonicalize import uk_is_transparent_wrapper_kind, uk_kind_matches
-from lawvm.uk_legislation.mutable_ir import uk_ir_node_kind
+from lawvm.uk_legislation.apply_rebuild import uk_ir_node_kind
 from lawvm.uk_legislation.ordering import _label_sort_key
 from lawvm.uk_legislation.replay_records import (
     _append_uk_replay_adjudication,

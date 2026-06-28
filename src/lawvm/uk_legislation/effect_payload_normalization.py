@@ -23,7 +23,7 @@ from lawvm.uk_legislation.effect_payload_rejections import (
 )
 from lawvm.uk_legislation.lowering_records import _append_uk_effect_lowering_observation
 from lawvm.uk_legislation.metadata_rewrites import _select_whole_schedule_element
-from lawvm.uk_legislation.mutable_ir import UKMutableNode, uk_ir_node_kind
+from lawvm.uk_legislation.apply_rebuild import uk_ir_node_kind
 from lawvm.uk_legislation.payload_conversion import _to_mutable_node
 from lawvm.uk_legislation.payload_identity import (
     _synthesize_payload_descendant_eids,
@@ -86,7 +86,7 @@ def _is_schedule_target(target: LegalAddress) -> bool:
     return bool(target.path) and _addr_container(target) == "schedule"
 
 
-def _synthetic_paragraph_wrapping_table(table_node: UKMutableNode) -> UKMutableNode:
+def _synthetic_paragraph_wrapping_table(table_node: IRNode) -> IRNode:
     """Wrap a bare table node in an unlabelled paragraph for schedule-p1group grouping.
 
     ``P1group`` does not admit ``table`` children directly, but a ``P1group`` of
@@ -97,17 +97,17 @@ def _synthetic_paragraph_wrapping_table(table_node: UKMutableNode) -> UKMutableN
     attrs["source_rule_id"] = _UK_EFFECT_SCHEDULE_PART_P1GROUP_WRAPPER_RULE_ID
     attrs["source_tag"] = table_node.attrs.get("source_tag", "Table")
     attrs["promoted_from_kind"] = "table"
-    return UKMutableNode(
+    return IRNode(
         kind=IRNodeKind.PARAGRAPH,
         label=None,
         text="",
         attrs=attrs,
-        children=[table_node],
+        children=(table_node,),
     )
 
 
 def _normalize_inserted_schedule_part_p1group_wrapping(
-    payload_node_mut: Optional[UKMutableNode],
+    payload_node_mut: Optional[IRNode],
     curr_action: str,
     target: LegalAddress,
     effect: UKEffectRecord,
@@ -115,7 +115,7 @@ def _normalize_inserted_schedule_part_p1group_wrapping(
     extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
-) -> Optional[UKMutableNode]:
+) -> Optional[IRNode]:
     """Wrap direct paragraph-level children of an inserted schedule part in p1group.
 
     UK affecting XML sometimes places ``P1`` paragraphs or tables directly inside
@@ -140,14 +140,14 @@ def _normalize_inserted_schedule_part_p1group_wrapping(
     children_needing_wrap = {"paragraph", "subparagraph", "item", "point", "table"}
     existing_grouping_kinds = {"p1group", "pblock", "crossheading", "crossHeading"}
     wrapped_run_count = 0
-    new_children: list[UKMutableNode] = []
-    current_run: list[UKMutableNode] = []
+    new_children: list[IRNode] = []
+    current_run: list[IRNode] = []
 
     def _flush_run() -> None:
         nonlocal current_run, wrapped_run_count
         if not current_run:
             return
-        run_children: list[UKMutableNode] = []
+        run_children: list[IRNode] = []
         for child in current_run:
             if child.kind.value == "table":
                 run_children.append(_synthetic_paragraph_wrapping_table(child))
@@ -156,7 +156,7 @@ def _normalize_inserted_schedule_part_p1group_wrapping(
         if len(run_children) == 1 and run_children[0].kind.value == "p1group":
             new_children.append(run_children[0])
         else:
-            wrapper = UKMutableNode(
+            wrapper = IRNode(
                 kind=IRNodeKind.P1GROUP,
                 label=None,
                 text="",
@@ -164,7 +164,7 @@ def _normalize_inserted_schedule_part_p1group_wrapping(
                     "source_rule_id": _UK_EFFECT_SCHEDULE_PART_P1GROUP_WRAPPER_RULE_ID,
                     "source_tag": "synthetic",
                 },
-                children=list(run_children),
+                children=tuple(run_children),
             )
             new_children.append(wrapper)
             wrapped_run_count += 1
@@ -184,7 +184,7 @@ def _normalize_inserted_schedule_part_p1group_wrapping(
     if wrapped_run_count == 0:
         return payload_node_mut
 
-    # PR2 (audit XJUR-02 / AGENTS.md §2.3): build a new UKMutableNode via
+    # PR2 (audit XJUR-02 / AGENTS.md §2.3): build a new IRNode via
     # ``dataclasses.replace`` rather than mutating ``children`` in place.
     payload_node_mut = dc_replace(payload_node_mut, children=list(new_children))
     _append_uk_effect_lowering_observation(
@@ -213,7 +213,7 @@ def _normalize_inserted_schedule_part_p1group_wrapping(
 
 
 def _normalize_inserted_schedule_part_direct_child_p1group_wrapping(
-    payload_node_mut: Optional[UKMutableNode],
+    payload_node_mut: Optional[IRNode],
     curr_action: str,
     target: LegalAddress,
     effect: UKEffectRecord,
@@ -221,7 +221,7 @@ def _normalize_inserted_schedule_part_direct_child_p1group_wrapping(
     extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
-) -> Optional[UKMutableNode]:
+) -> Optional[IRNode]:
     """Wrap a paragraph/table payload inserted directly under a schedule Part.
 
     Some schedule amendments target ``Part X/paragraph N`` but the extracted
@@ -245,7 +245,7 @@ def _normalize_inserted_schedule_part_direct_child_p1group_wrapping(
     if child_kind == "table":
         inner_node = _synthetic_paragraph_wrapping_table(payload_node_mut)
 
-    wrapper = UKMutableNode(
+    wrapper = IRNode(
         kind=IRNodeKind.P1GROUP,
         label=None,
         text="",
@@ -253,7 +253,7 @@ def _normalize_inserted_schedule_part_direct_child_p1group_wrapping(
             "source_rule_id": _UK_EFFECT_SCHEDULE_PART_P1GROUP_WRAPPER_RULE_ID,
             "source_tag": "synthetic",
         },
-        children=[inner_node],
+        children=(inner_node,),
     )
     _append_uk_effect_lowering_observation(
         lowering_rejections_out,
@@ -280,7 +280,7 @@ def _normalize_inserted_schedule_part_direct_child_p1group_wrapping(
 
 
 def _normalize_schedule_subparagraph_definition_schedule_entries(
-    payload_node_mut: Optional[UKMutableNode],
+    payload_node_mut: Optional[IRNode],
     curr_action: str,
     target: LegalAddress,
     effect: UKEffectRecord,
@@ -288,7 +288,7 @@ def _normalize_schedule_subparagraph_definition_schedule_entries(
     extracted_el: Optional[ET._Element],
     extracted_text: Optional[str],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
-) -> Optional[UKMutableNode]:
+) -> Optional[IRNode]:
     """Promote schedule_entry definition items out of schedule subparagraphs.
 
     In schedule-paragraph source XML, ``<UnorderedList Class="Definition">``
@@ -309,13 +309,13 @@ def _normalize_schedule_subparagraph_definition_schedule_entries(
     promoted_count = 0
 
     def _walk(
-        node: UKMutableNode, *, is_root: bool = False
-    ) -> tuple[UKMutableNode, list[UKMutableNode]]:
+        node: IRNode, *, is_root: bool = False
+    ) -> tuple[IRNode, list[IRNode]]:
         """Return ``(new_node, promoted_siblings)`` for *node*.
 
         PR2 (audit XJUR-02 / AGENTS.md §2.3): no in-place mutation of the
         parsed payload node. Each level rebuilds its children via
-        ``dataclasses.replace`` and returns a fresh ``UKMutableNode``.
+        ``dataclasses.replace`` and returns a fresh ``IRNode``.
 
         *promoted_siblings* are synthetic PARAGRAPH nodes derived from
         schedule_entry children of a subparagraph descendant (when that
@@ -326,10 +326,10 @@ def _normalize_schedule_subparagraph_definition_schedule_entries(
         """
         nonlocal promoted_count
         surviving_children = list(node.children)
-        promoted_entries: list[UKMutableNode] = []
+        promoted_entries: list[IRNode] = []
         if not is_root and node.kind.value == "subparagraph":
-            entries: list[UKMutableNode] = []
-            others: list[UKMutableNode] = []
+            entries: list[IRNode] = []
+            others: list[IRNode] = []
             for child in surviving_children:
                 if child.kind.value == "schedule_entry" and not child.children:
                     entries.append(child)
@@ -338,7 +338,7 @@ def _normalize_schedule_subparagraph_definition_schedule_entries(
             if entries:
                 surviving_children = others
                 promoted_entries = [
-                    UKMutableNode(
+                    IRNode(
                         kind=IRNodeKind.PARAGRAPH,
                         label=None,
                         text=entry.text,
@@ -355,7 +355,7 @@ def _normalize_schedule_subparagraph_definition_schedule_entries(
                 ]
                 promoted_count += len(promoted_entries)
 
-        new_children: list[UKMutableNode] = []
+        new_children: list[IRNode] = []
         for child in surviving_children:
             new_child, child_promoted = _walk(child, is_root=False)
             new_children.append(new_child)
@@ -810,7 +810,7 @@ def prepare_uk_operation_payload_node(
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> UKPayloadNodePreparation:
     """Prepare the structural payload node and enforce payload safety gates."""
-    payload_node_mut: Optional[UKMutableNode] = _to_mutable_node(content_ir) if content_ir else None
+    payload_node_mut: Optional[IRNode] = _to_mutable_node(content_ir) if content_ir else None
     if (
         payload_node_mut is not None
         and target_replacement_leaf_override
@@ -818,7 +818,7 @@ def prepare_uk_operation_payload_node(
         and payload_node_mut.kind.value == _uk_core_kind_alias_value(target_replacement_leaf_kind)
     ):
         # PR2 (audit XJUR-02 / AGENTS.md §2.3): no in-place mutation of the
-        # parsed payload node; rebuild a fresh UKMutableNode via
+        # parsed payload node; rebuild a fresh IRNode via
         # ``dataclasses.replace`` for any post-construction adjustment.
         payload_node_mut = dc_replace(
             payload_node_mut, label=target_replacement_leaf_override
@@ -1041,7 +1041,7 @@ def prepare_uk_operation_payload_node(
         return UKPayloadNodePreparation(payload_node=None, skip_effect=True)
 
     return UKPayloadNodePreparation(
-        payload_node=payload_node_mut.to_irnode() if payload_node_mut is not None else None,
+        payload_node=payload_node_mut,
     )
 
 

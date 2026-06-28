@@ -2,27 +2,82 @@
 
 This module exists only as a jurisdiction-local adaptation layer after PR3 of
 the mutable_ir ratchet (audit XJUR-02 / AGENTS.md §2.3) introduced CoW variants
-of the in-place ``uk_*`` mutation helpers from ``mutable_ir.py``. PR4 of the
-same ratchet relocated these CoW helpers out of ``mutable_ir.py`` so that the
-``mutable_ir`` shadow module's eventual deletion does not need to touch any of
-the apply sites that already route through CoW.
+of the in-place ``uk_*`` mutation helpers originally defined in
+``mutable_ir.py``. PR4 of the same ratchet relocated these CoW helpers out of
+``mutable_ir.py`` so that the ``mutable_ir`` shadow module's eventual deletion
+does not need to touch any of the apply sites that already route through CoW.
 
 Sub-PR C+D (mutable_ir Wave N3d): these helpers now operate on the frozen
 ``IRNode`` tree directly (the ``UKMutableStatute`` mirror was retired at the
 ``replay_executor`` boundary). They MUST NOT mutate inputs in place; the
 helpers themselves only build fresh nodes / fresh lists via
 ``dataclasses.replace``.
+
+Sub-PR F (mutable_ir Wave N3d, final): the ``uk_ir_node_kind`` (UK-local
+source/address kind alias coercion) and ``uk_has_same_kind_label_child``
+helpers were relocated here from ``mutable_ir.py`` just before that shadow
+module's deletion, since CoW helpers in this module and the
+``uk_grafter``/``replay_{renumber,target_diagnostics}_apply`` modules must
+continue to coerce UK source kind strings (e.g. ``"point"``→``ITEM``,
+``"article"``→``SECTION``) to core ``IRNodeKind`` at construction sites.
 """
 
 from __future__ import annotations
 
+from dataclasses import replace as dc_replace
 from typing import Any
 
 from lawvm.core.ir import IRNode
-from lawvm.uk_legislation.mutable_ir import (
-    uk_has_same_kind_label_child,
-)
-from dataclasses import replace as dc_replace
+from lawvm.core.semantic_types import IRNodeKind
+
+
+def uk_ir_node_kind(kind: Any) -> IRNodeKind:
+    """Coerce UK-local source/address kind aliases to core IR node kinds.
+
+    UK source XML / address surfaces carry legacy string aliases that pre-date
+    the frozen core ``IRNodeKind`` (``"point"``→``ITEM``, ``"article"``→
+    ``SECTION``). This helper is a single coercion point kept at the CoW/kind
+    boundary so callers that pass ``str`` kinds (parsed from source XML) reuse
+    the same coercion as the frozen ``IRNode`` constructor; for inputs that are
+    already ``IRNodeKind`` it is a typed identity. Relocated here from
+    ``mutable_ir.py`` (Sub-PR F) so that ``mutable_ir`` can be deleted while
+    the alias-coercion contract stays in a single, audited place.
+    """
+    if isinstance(kind, IRNodeKind):
+        return kind
+    if isinstance(kind, str):
+        if kind == "point":
+            return IRNodeKind.ITEM
+        if kind == "article":
+            return IRNodeKind.SECTION
+        return IRNodeKind(kind)
+    raise TypeError(
+        f"uk_ir_node_kind must be a string or IRNodeKind, got {type(kind).__name__}"
+    )
+
+
+def uk_has_same_kind_label_child(
+    children: list[IRNode],
+    new_node: IRNode,
+) -> bool:
+    """Return True if ``children`` already contains a (kind, label) sibling.
+
+    The duplicate-(kind,label) guard drives every CoW insert helper
+    (``uk_insert_node_at_index_cow`` / ``uk_insert_node_sorted_cow``) and the
+    in-place variant historically living in ``mutable_ir.py``. Relocated here
+    (Sub-PR F) to keep the guard next to its only CoW consumers.
+    """
+    from lawvm.uk_legislation.uk_grafter import _clean_num
+
+    if new_node.label:
+        insert_kind = uk_ir_node_kind(new_node.kind)
+        insert_label = _clean_num(new_node.label or "")
+        return any(
+            uk_ir_node_kind(child.kind) == insert_kind
+            and _clean_num(child.label or "") == insert_label
+            for child in children
+        )
+    return False
 
 
 def uk_with_attr_set(node: IRNode, key: str, value: Any) -> IRNode:
@@ -97,9 +152,8 @@ def uk_insert_node_sorted_cow(
     if uk_has_same_kind_label_child(children, new_node):
         return list(children), None
     new_children = list(children)
-    # ``uk_insert_into_children`` accepts list[IRNode] and mutates it; UKMutableNode
-    # is structurally compatible (same .kind/.label/.attrs/.children shape the
-    # ordering logic consults). We pass a mutable copy and return it.
+    # ``uk_insert_into_children`` accepts list[IRNode] and mutates it; we pass a
+    # mutable copy and return it (the caller never aliases the input list).
     uk_insert_into_children(
         new_children,
         new_node,

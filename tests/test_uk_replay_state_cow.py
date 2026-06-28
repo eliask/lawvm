@@ -4,26 +4,28 @@
 Pins four invariants that ``replay_state.py`` now provides after the
 in-place-mutation rewrite to copy-on-write rebuilds:
 
-  * (1) The ``IRStatute`` produced by ``replay_uk_ops`` (via
-    ``UKReplayExecutor.statute.to_irstatute()``) IS the frozen
-    ``IRNode``-rooted tree — no ``UKMutableNode`` shadow survives past the
-    executor boundary.
+  * (1) The ``IRStatute`` produced by ``replay_uk_ops`` IS the frozen
+    ``IRNode``-rooted tree (post-Sub-PR-F: the prior ``to_irstatute()``
+    boundary converter and ``UKMutableNode`` shadow were deleted; the executor
+    statute IS the immutable core ``IRStatute`` directly).
   * (2) Mutating ``.children`` / ``.attrs`` / ``.label`` / ``.text`` on any
     frozen ``IRNode`` in that tree raises ``dataclasses.FrozenInstanceError``.
   * (3) Idempotency: replaying the same ops twice produces structurally
     identical final ``IRStatute`` trees (modulo op-id minting, which is
     controlled by the caller-supplied op inputs).
   * (4) Each op in a REPLACE + INSERT + REPEAL sequence leaves the body
-    ``children`` tuple ``IRNode``-typed (no UKMutableNode leaks intermediate
-    ops, end-to-end across the mutate-bookkeeping chain built in PR3).
+    ``children`` tuple ``IRNode``-typed end-to-end across the mutate-bookkeeping
+    chain built in PR3.
 
-These guards are PR3-specific: a future change that re-introduces an
-in-place ``parent.children.pop`` / ``parent.children[idx] = new_node`` would
-either:
-  * break the frozen-tuple property if it did so on an ``IRNode`` shared with
-    the live tree (silent regression), or
-  * leak a ``UKMutableNode`` past the boundary → making (1) a failing test
-    rather than a hidden regression.
+Sub-PR F (mutable_ir Wave N3d, final) removed the prior
+``TestPR3NoUKMutableNodeLeaks`` class — once ``mutable_ir.py`` was deleted
+there is no shadow class to detect, so the leak-detection guard no longer
+adds coverage. The frozen-IRNode-type and frozen-field assertions below
+remain load-bearing: a future change that re-introduces an in-place
+``parent.children.pop`` / ``parent.children[idx] = new_node`` would still
+break the frozen-tuple property if it did so on an ``IRNode`` shared with
+the live tree (silent regression), making (1) a failing test rather than a
+hidden regression.
 """
 from __future__ import annotations
 
@@ -34,7 +36,6 @@ import pytest
 
 from lawvm.core.ir import IRNode, IRStatute, LegalAddress, LegalOperation, OperationSource
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
-from lawvm.uk_legislation.mutable_ir import UKMutableNode
 from lawvm.uk_legislation.uk_amendment_replay import UKReplayExecutor, replay_uk_ops
 
 
@@ -160,16 +161,6 @@ def _multi_op_sequence() -> list[LegalOperation]:
 # ---------------------------------------------------------------------------
 
 
-def _collect_mutable_leaks(node: Any) -> list[Any]:
-    """Return every ``UKMutableNode`` reachable from ``node`` (recursive)."""
-    leaks: list[Any] = []
-    if isinstance(node, UKMutableNode):
-        leaks.append(node)
-    for child in getattr(node, "children", ()):
-        leaks.extend(_collect_mutable_leaks(child))
-    return leaks
-
-
 def _collect_irnode_kinds(node: Any) -> list[str]:
     """Recursively collect ``str(node.kind)`` values for structural equality."""
     kinds = [str(getattr(node, "kind", ""))]
@@ -190,34 +181,15 @@ class TestPR3BoundaryIsFrozenIRNode:
     def test_result_statute_body_is_frozen_irnode(self) -> None:
         replayed = replay_uk_ops(_multi_section_base(), _multi_op_sequence())
         assert isinstance(replayed.body, IRNode)
-        assert not isinstance(replayed.body, UKMutableNode)
         # ``children`` MUST be a tuple (frozen IR invariant); a leaked list would
-        # indicate a UKMutableNode shadow slipping through the boundary.
+        # indicate a mutable shadow slipping through the boundary.
         assert isinstance(replayed.body.children, tuple)
 
     def test_result_statute_supplements_are_frozen_irnode(self) -> None:
         replayed = replay_uk_ops(_multi_section_base(), _multi_op_sequence())
         for supplement in replayed.supplements:
             assert isinstance(supplement, IRNode)
-            assert not isinstance(supplement, UKMutableNode)
             assert isinstance(supplement.children, tuple)
-
-
-class TestPR3NoUKMutableNodeLeaks:
-    """(1b) No ``UKMutableNode`` survives past the executor boundary."""
-
-    def test_no_mutable_leak_in_body(self) -> None:
-        replayed = replay_uk_ops(_multi_section_base(), _multi_op_sequence())
-        leaks = _collect_mutable_leaks(replayed.body)
-        assert not leaks, f"UKMutableNode leaked into boundary IR body: {leaks!r}"
-
-    def test_no_mutable_leak_in_supplements(self) -> None:
-        replayed = replay_uk_ops(_multi_section_base(), _multi_op_sequence())
-        for supplement in replayed.supplements:
-            leaks = _collect_mutable_leaks(supplement)
-            assert not leaks, (
-                f"UKMutableNode leaked into boundary IR supplement: {leaks!r}"
-            )
 
 
 class TestPR3MutationRaisesFrozenInstanceError:
@@ -259,18 +231,18 @@ class TestPR3MultiOpShape:
     def test_each_intermediate_op_yields_frozen_irnode_boundary(self) -> None:
         """Run each op through the executor directly (not via ``replay_uk_ops``)
         so the ``executor.statute.body`` after each op is asserted against the
-        ``to_irnode`` boundary, exercising CoW helper for every action family."""
+        frozen IRNode boundary, exercising the CoW helper for every action family."""
         executor = UKReplayExecutor(_multi_section_base())
         for op in _multi_op_sequence():
             executor.apply_op(op)
-            # The UKMutableStatute remains internally mutable (PR4 deletes it);
-            # but the IRNode produced at the ``to_irnode`` boundary is frozen.
+            # Sub-PR C+D/F: ``executor.statute`` IS the immutable ``IRStatute``
+            # (the prior ``UKMutableStatute`` mirror was deleted); assert the
+            # frozen-IRNode + tuple-children invariant directly.
             frozen_body = executor.statute.body
             assert isinstance(frozen_body, IRNode)
             assert isinstance(frozen_body.children, tuple)
             for child in frozen_body.children:
                 assert isinstance(child, IRNode)
-                assert not isinstance(child, UKMutableNode)
 
 
 class TestPR3Idempotency:

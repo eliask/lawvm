@@ -832,9 +832,11 @@ def witness_liveness_baseline_snapshot(repo_root: Path | None = None) -> dict[st
 #       ``@dataclass`` that mirrors core ``IRNode``: a ``children: list[...]``
 #       field PLUS an ``attrs`` or ``text`` field. Core IR is frozen by design
 #       (``core/ir.py``); a frontend-local MUTABLE mirror is the substrate of a
-#       hidden replay/edit kernel (UK ``UKMutableNode``) — or, more benignly, a
-#       parse-time scratch builder (SE ``_SEMutableNode``). BOTH are recorded;
-#       the baseline states which is a live replay kernel vs a parse builder.
+#       hidden replay/edit kernel (the UK ``UKMutableNode`` shadow was DELETED
+#       in mutable_ir Wave N3d Sub-PR F — its baseline signal was ratcheted
+#       out), or, more benignly, a parse-time scratch builder (SE
+#       ``_SEMutableNode``). BOTH surviving kinds are recorded; the baseline
+#       states which is a live replay kernel vs a parse builder.
 #
 #   (2) ``frontend_pit_materialization`` — a frontend defines a function shaped
 #       like core PIT/timeline materialization (name ``materialize_*`` /
@@ -1095,38 +1097,6 @@ def hidden_replay_kernel_baseline_snapshot(
         "kind_counts": state["kind_counts"],
         "signal_counts": state["signal_counts"],
         "_findings": {
-            "src/lawvm/uk_legislation/mutable_ir.py": (
-                "REAL HIDDEN REPLAY KERNEL (high-value finding for a future "
-                "refactor wave). UKMutableNode/UKMutableStatute are a parallel "
-                "MUTABLE IR mirroring frozen core IRNode; ~25 uk_legislation "
-                "modules (replay_executor, replay_{repeal,replace,insert,renumber,"
-                "text,table,schedule_list}_apply, …) drive op-effect / "
-                "amendment-replay semantics over it in place (e.g. "
-                "`statute.body.children = []`, uk_replace_children, "
-                "uk_insert_node_sorted) instead of routing through core/tree_ops. "
-                "uk_grafter (PR1 of the mutable_ir ratchet, audit XJUR-02) no "
-                "longer mutates UKMutableNode in place during parsing — it "
-                "constructs each node once via the constructor with fields "
-                "computed up-front and uses dataclasses.replace for any "
-                "post-construction adjustment. PR2 of the ratchet extended that "
-                "discipline to the leaf-side payload + effect normalization "
-                "modules "
-                "(effect_payload_normalization, effect_schedule_lowering, "
-                "effect_special_lowering — surveyed and verified mutation-free, "
-                "payload_identity, replay_grounding): each in-place "
-                "`node.attrs[k] = v` / `del node.attrs[k]` / "
-                "`node.children = ...` write is now `dataclasses.replace(node, "
-                "...)` returning a fresh UKMutableNode, with the caller "
-                "rebinding the return value. replay_grounding's "
-                "`pending_cleared_events` dedup was refactored from "
-                "`id(node)`-keyed (broken by tree rebuilds) to path-position "
-                "keying so the matched-supersedes-cleared semantics survive "
-                "functional rebuilds byte-identically. The mutable_ir module "
-                "docstring already concedes this ('must not become a new shared "
-                "contract … TODO(arch): replace this mutable mirror … once the "
-                "UK replay executor is fully migrated off in-place tree edits'). "
-                "Recorded as existing debt; do NOT refactor in this audit wave."
-            ),
             "src/lawvm/sweden/grafter.py": (
                 "TWO signals, distinct severities. "
                 "(a) parallel_mutable_ir_shadow `_SEMutableNode`: a parse-time "

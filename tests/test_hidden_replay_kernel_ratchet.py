@@ -26,16 +26,17 @@ signals per frontend file:
     (constructs ``IRNode``/``IRStatute`` in its own body) AND does not delegate to
     a core PIT/timeline entry or ``tree_ops`` mutator.
 
-The current baseline is **4 signals across 2 files** (the discovered real state):
-  * ``uk_legislation/mutable_ir.py`` — UKMutableNode, the substrate of the UK
-    replay kernel (~26 modules apply op-effects over it in place);
+The current baseline is **3 signals across 1 frontend** (mutable_ir Wave N3d
+Sub-PR F deleted ``uk_legislation/mutable_ir.py`` in-tree, ratcheting the count
+4→3 and the file-count 2→1):
   * ``sweden/grafter.py`` — _SEMutableNode (a benign parse builder) + two genuine
     hand-rolled PIT-materialization functions.
-Both are recorded as existing debt with reasons in the baseline ``_findings``;
-this wave AUDITS the boundary, it does not refactor it. The proposed finding-kind
-``XJUR.HIDDEN_REPLAY_KERNEL_IN_FRONTEND`` is carried in the failure message; like
-the other static ratchets it registers no ``observation_registry`` kind — there
-is no production sink, the gate IS the enforcement.
+Sweden is recorded as existing debt with a stated reason in the baseline
+``_findings``; this wave AUDITS the boundary, it does not refactor it. The
+proposed finding-kind ``XJUR.HIDDEN_REPLAY_KERNEL_IN_FRONTEND`` is carried in
+the failure message; like the other static ratchets it registers no
+``observation_registry`` kind — there is no production sink, the gate IS the
+enforcement.
 """
 from __future__ import annotations
 
@@ -154,11 +155,14 @@ class TestHiddenReplayKernelBaselineShape:
             )
 
     def test_recorded_real_kernels_are_present(self) -> None:
-        """Guards the two high-value findings against silent baseline laundering:
-        the UK mutable-IR kernel and the SE hand-rolled PIT must stay recorded."""
+        """Guards the high-value SE finding against silent baseline laundering:
+        the SE hand-rolled PIT must stay recorded, and the SE shadow class
+        must stay recorded as the residual ``parallel_mutable_ir_shadow``
+        signal. The UK mutable-IR kernel that previously anchored this test
+        was deleted in mutable_ir Wave N3d Sub-PR F (the parallel-mutable-IR
+        signal count fell 2→1; the baseline was ratcheted down)."""
         baseline = _load_baseline()
         counts = baseline["signal_counts"]
-        assert counts.get("src/lawvm/uk_legislation/mutable_ir.py", 0) >= 1
         assert counts.get("src/lawvm/sweden/grafter.py", 0) >= 1
         assert baseline["kind_counts"].get("frontend_pit_materialization", 0) >= 1
         assert baseline["kind_counts"].get("parallel_mutable_ir_shadow", 0) >= 1

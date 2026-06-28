@@ -57,7 +57,6 @@ from lawvm.uk_legislation.effect_temporal_cessation import (
     UK_TEMPORAL_CEASES_TO_HAVE_EFFECT_REPLAY_EXCLUDED_RULE_ID,
 )
 from lawvm.uk_legislation.lowering_records import append_replay_applicability_filter_diagnostic
-from lawvm.uk_legislation.mutable_ir import UKMutableNode
 from lawvm.uk_legislation.replay_applicability import should_replay_nonstructural_ops
 from lawvm.uk_legislation.replay_invariant_diagnostics import (
     _collect_duplicate_order_invariants,
@@ -23216,7 +23215,7 @@ def test_replay_source_carried_table_entry_paragraph_substitution_blocks_duplica
     # ``children=(row, row)`` — the SAME Python ``IRNode`` object appearing
     # twice. That is a degenerate input no real parser produces. Pre-CoW
     # ``UKMutableStatute.from_irstatute`` deep-cloned the tree into distinct
-    # ``UKMutableNode`` instances (masking the degeneracy). Under frozen
+    # ``IRNode`` instances (masking the degeneracy). Under frozen
     # ``IRStatute`` the executor stores the input tree directly, so the
     # ``is``-based rowspan deduplication in ``resolve_unique_uk_table_entry_cell``
     # (replay_table_geometry.py:1308) collapses the two ``row`` entries into one
@@ -48351,7 +48350,7 @@ def test_replay_schedule_list_entry_table_rows_blocks_duplicate_anchor() -> None
     # ``children=(duplicate_row, duplicate_row)`` — the SAME Python ``IRNode``
     # object appearing twice. That is a degenerate input no real parser
     # produces. Pre-CoW ``UKMutableStatute.from_irstatute`` deep-cloned the
-    # tree into distinct ``UKMutableNode`` instances (masking the degeneracy).
+    # tree into distinct ``IRNode`` instances (masking the degeneracy).
     # Under frozen ``IRStatute`` the executor stores the input tree directly,
     # so the ``is``-based rowspan deduplication at
     # ``replay_schedule_list_apply.py:420`` (``anchor_cell is last_anchor_cell``)
@@ -49209,9 +49208,9 @@ def test_parse_schedule_group_note_target_rejects_multi_child_surface() -> None:
 
 
 def test_match_schedule_group_note_carriers_without_fake_paragraphs() -> None:
-    group = UKMutableNode(kind=IRNodeKind.CHAPTER, label="Group 6— Education")
-    different_group = UKMutableNode(kind=IRNodeKind.CHAPTER, label="Group 60— Health")
-    notes = UKMutableNode(kind=IRNodeKind.P1GROUP, text="Notes:")
+    group = IRNode(kind=IRNodeKind.CHAPTER, label="Group 6— Education")
+    different_group = IRNode(kind=IRNodeKind.CHAPTER, label="Group 60— Health")
+    notes = IRNode(kind=IRNodeKind.P1GROUP, text="Notes:")
 
     assert uk_match_kind_label(group, "chapter", "group 6")
     assert not uk_match_kind_label(different_group, "chapter", "group 6")
@@ -72713,7 +72712,7 @@ def test_executor_scopes_schedule_descendant_invariant_scan_to_parent(
     executor: Any = UKReplayExecutor(statute, adjudications_out=[])
     scanned_roots: list[tuple[str, str | None]] = []
 
-    def collect_scanned_root(root: UKMutableNode, **_kwargs: object) -> list[str]:
+    def collect_scanned_root(root: IRNode, **_kwargs: object) -> list[str]:
         scanned_roots.append((root.kind.value, root.label))
         return []
 

@@ -34,9 +34,12 @@ Sibling replay/lowering modules that consume these helpers directly today
 (``effect_payload_normalization``, ``effect_schedule_lowering``,
 ``effect_special_lowering``, ``table_selectors``) read the returned ``IRNode``
 via ``IRNode.to_jsonable_dict()`` (same JSON shape as the prior
-``UKMutableNode.to_dict()``) or use it directly. ``payload_conversion.py``'s
-``_to_mutable_node`` and ``_to_irnode`` remain the only ``UKMutableNode``
-bridges still routed through replay-time helper code.
+``UKMutableNode.to_dict()``) or use it directly. Sub-PR F (mutable_ir Wave N3d,
+final) deleted the ``mutable_ir.py`` shadow module: ``payload_conversion.py``'s
+``_to_mutable_node`` / ``_to_irnode`` now return frozen ``IRNode`` directly
+(identity for ``IRNode`` inputs, recursive dict→``IRNode`` builder for the
+legacy dict-shaped source-payload path), and the in-place ``uk_*`` mutation
+helpers were superseded by the CoW variants in ``apply_rebuild.py``.
 
 Tests pin (1) no in-place mutation during parsing, and (2) byte-identical
 IRNode tree at the parse boundary.
@@ -56,7 +59,7 @@ from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.ir import IRNode, IRStatute
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.roman import roman_to_arabic as _shared_roman_to_arabic
-from lawvm.uk_legislation.mutable_ir import uk_ir_node_kind
+from lawvm.uk_legislation.apply_rebuild import uk_ir_node_kind
 from lawvm.core.quirks_disposition import QuirksDisposition
 
 _LEG_NS = "http://www.legislation.gov.uk/namespaces/legislation"

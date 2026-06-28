@@ -16,8 +16,7 @@ from lawvm.uk_legislation.metadata_rewrites import (
     _is_uk_parent_sibling_promotion_renumber_shape,
     _renumbered_descendant_text,
 )
-from lawvm.uk_legislation.apply_rebuild import uk_insert_node_sorted_cow
-from lawvm.uk_legislation.mutable_ir import uk_ir_node_kind
+from lawvm.uk_legislation.apply_rebuild import uk_insert_node_sorted_cow, uk_ir_node_kind
 from lawvm.uk_legislation.replay_records import (
     _append_uk_replay_adjudication,
     uk_replay_blocking_action_target_detail,
