@@ -36,7 +36,7 @@ The root is not yet wired into the pack manifest / compile dossier, and the UK
 ``must`` only — per ``notes_internal/uk_totality_must_trace_verification.md`` —
 so adding them yields zero matches; deliberate deferral).
 
-The four entries below encode the four load-bearing UK non-guarantees:
+The six entries below encode the six load-bearing UK non-guarantees:
 
 1. **Effects-assisted + oracle-alignment lane is not source-first.** The
    ``--source-first-candidate`` preset marks the cleanest currently-expressible
@@ -232,9 +232,21 @@ def build_uk_assumption_register() -> tuple[AssumptionRegister, ...]:
             kind="parser_incomplete",
             scope=(
                 "UK `strict_profile` absence: UK has no strict_profile lane "
-                "(unlike Finland's hardened strict profile). The dormant-checker "
-                "probes wired in this frontend (`mutation_boundary_per_op_probe.py`, "
-                "`materialization_totality_probe.py`) emit NON-BLOCKING "
+                "(unlike Finland's hardened strict profile — the FI StrictProfile "
+                "is a per-recovery-pattern typed carrier at "
+                "`core/compile_result.StrictProfile` with `allows_X` bool "
+                "fields consumed inside apply sites' recovery branches, NOT a "
+                "bool that promotes probe emissions from non-blocking to "
+                "blocking — verified against the codebase 2026-06-28). The 8 "
+                "dormant-checker probes wired at the UK `apply_ops` fold-exit "
+                "(`mutation_boundary_per_op_probe` at per-apply, "
+                "`materialization_totality_probe`, `identity_intrinsic_probe` "
+                "(LS-12/LS-13), `lineage_acyclic_probe` (LS-11), "
+                "`commencement_effect_totality_probe` (LS-23), "
+                "`overlay_authorization_probe` (D8), "
+                "`observation_promoted_to_authority_probe` (D11, "
+                "forward-compat no-op), `unknown_attestation_policy_probe` "
+                "(D12, forward-compat no-op)) emit NON-BLOCKING "
                 "`uk_replay_*_observed` adjudications — observation-only by "
                 "default, not strict failures. A violation that the probe "
                 "could block in FI stays as a recorded observation in UK: the "
@@ -243,29 +255,49 @@ def build_uk_assumption_register() -> tuple[AssumptionRegister, ...]:
             ),
             effect="qualifies",
             expires_when=(
-                "a UK strict-profile lane is added that flips "
-                "`uk_replay_mutation_boundary_per_op_violation_observed` and "
-                "`uk_replay_materialization_totality_silent_drop_observed` from "
-                "non-blocking adjudications to blocking findings, AND corpus "
-                "triage confirms the flipped gate does not regress the bench "
-                "beyond the §0 over-retention tolerance."
+                "a UK strict-profile lane is added that inventories UK's "
+                "apply-path recovery branches, builds an `UK_INGESTION_V1` "
+                "preset mirroring FI's `default_finland_strict_profile()` "
+                "shape with bespoke `allows_X` fields per UK recovery pattern, "
+                "and wires user-facing CLI to inject. (Per session-3 reality "
+                "check: this is multi-session design-heavy — NOT the single-"
+                "session probe-flip the prior framing expected. The 8 env-"
+                "gated probes are ready to be UPGRADED when a strict_profile "
+                "lands but the upgrade requires the per-recovery-pattern "
+                "carrier + the recovery-branch consume sites, not a bool flip.)"
             ),
             public_message=(
-                "LawVM does NOT guarantee that UK enforces the materialization-"
-                "totality or per-op mutation-boundary invariants to block. The "
-                "probes are wired observation-only (`uk_replay_*_observed`); v0 "
-                "is discipline-disclosing-first-step posture, not strict-mode "
-                "enforcement. A silent-drop or per-op boundary violation is "
-                "RECORDED as an audit event, not a hard compile failure — UK "
-                "would benefit from a strict-profile lane before this assumption "
-                "expires."
+                "LawVM does NOT guarantee that UK enforces the 9 D-item "
+                "invariants to block. The 8 env-gated probes are wired "
+                "observation-only (`uk_replay_*_observed`); v0 is discipline-"
+                "disclosing-first-step posture, not strict-mode enforcement. "
+                "A materialization-totality silent-drop, per-op mutation-"
+                "boundary escape, identity-intrinsic leak, lineage cycle, "
+                "commencement-effect totality shortfall, overlay-authorization "
+                "breach, observation-promoted-to-authority breach, or unknown-"
+                "attestation-policy cite is RECORDED as an audit event, not a "
+                "hard compile failure — UK would benefit from a strict-profile "
+                "lane before this assumption expires."
             ),
             witness_rule_id="uk_replay_materialization_totality_silent_drop_observed",
             finding_refs=(
                 "src/lawvm/uk_legislation/mutation_boundary_per_op_probe.py::module docstring",
                 "src/lawvm/uk_legislation/materialization_totality_probe.py::module docstring",
+                "src/lawvm/uk_legislation/identity_intrinsic_probe.py::module docstring",
+                "src/lawvm/uk_legislation/lineage_acyclic_probe.py::module docstring",
+                "src/lawvm/uk_legislation/commencement_effect_totality_probe.py::module docstring",
+                "src/lawvm/uk_legislation/overlay_authorization_probe.py::module docstring",
+                "src/lawvm/uk_legislation/observation_promoted_to_authority_probe.py::module docstring",
+                "src/lawvm/uk_legislation/unknown_attestation_policy_probe.py::module docstring",
                 "tests/test_uk_mutation_boundary_per_op_probe.py::test_probe_disabled_by_default",
                 "tests/test_uk_materialization_totality_probe.py::test_probe_disabled_by_default",
+                "tests/test_uk_identity_intrinsic_probe.py::test_probe_disabled_by_default",
+                "tests/test_uk_lineage_acyclic_probe.py::test_probe_disabled_by_default",
+                "tests/test_uk_commencement_effect_totality_probe.py::test_probe_disabled_by_default",
+                "tests/test_uk_overlay_authorization_probe.py::test_probe_disabled_by_default",
+                "tests/test_uk_observation_promoted_to_authority_probe.py::test_probe_disabled_by_default",
+                "tests/test_uk_unknown_attestation_policy_probe.py::test_probe_disabled_by_default",
+                "notes_internal/uk_dormant_probe_playbook_2026_06_28.md",
             ),
         ),
         AssumptionRegister(
