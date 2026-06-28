@@ -12734,6 +12734,11 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         action="store_true",
         help="emit the machine-readable JSON report instead of the summary",
     )
+    us_dry_run_p.add_argument(
+        "--classification-index",
+        type=str, default="",
+        help="path to a serialized classification-table JSON index (PL§→USC§ resolver)",
+    )
 
     us_source_p = sub.add_parser(
         "us-source",
@@ -14698,12 +14703,28 @@ def _main_impl() -> None:
                     file=sys.stderr,
                 )
                 sys.exit(1)
+            _cls_index = None
+            _cls_path = getattr(args, "classification_index", "") or ""
+            if _cls_path:
+                import os
+                if os.path.exists(_cls_path):
+                    from lawvm.us_federal.classification_tables import (
+                        ClassificationEntry, ClassificationIndex,
+                    )
+                    with open(_cls_path) as _f:
+                        _cls_data = json.load(_f)
+                    _cls_entries = [ClassificationEntry(**e) for e in _cls_data["entries"]]
+                    _cls_index = ClassificationIndex(_cls_entries)
+                else:
+                    print(f"warning: classification index not found at {_cls_path}", file=sys.stderr)
+
             _report = build_us_dry_run_from_archive(
                 _archive,
                 title=args.title,
                 before_year=args.before_year,
                 after_year=args.after_year,
                 plaw_locators=_locators,
+                classification_index=_cls_index,
             )
         finally:
             _archive.close()
