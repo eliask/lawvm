@@ -788,6 +788,13 @@ def _obs(kind: str, stage: str, **detail: Any) -> ElaborationObservation:
 
 def _slot_ir_has_item(node: IRNode, target: str) -> bool:
     target_key = leaf_label_identity_key(target)
+    if (
+        target_key
+        and not target_key.isdigit()
+        and node.label
+        and leaf_label_identity_key(node.label) == target_key
+    ):
+        return True
     compound_match = re.fullmatch(r"(\d+)([a-z])", target_key)
     compound_parent_seen = False
     compound_flat_subitem_seen = False

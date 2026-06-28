@@ -59,6 +59,7 @@ from lawvm.finland.replay_products import ReplayProducts
 from lawvm.tools.section_keys import extract_ir_sections
 from lawvm.finland.statute import ReplayResult, ReplayState, StatuteContext
 from tests.corpus_pin_helpers import pinned_replay, replay_xml_for_test
+from lawvm.tools.inspect_amendment import build_amendment_bundle
 
 
 @dataclass(frozen=True, slots=True)
@@ -2909,6 +2910,22 @@ def test_replay_xml_1994_1505_materializes_sparse_definition_item_payloads() -> 
         finding.kind == "COVERAGE.PAYLOAD_REALIZATION_GAP"
         and finding.source_statute == "2000/345"
         for finding in replay.findings
+    )
+
+
+def test_inspect_amendment_1994_1505_binds_explicit_1a_sparse_item_slot() -> None:
+    bundle = build_amendment_bundle("1994/1505", "2000/345", "legal_pit")
+    group = next(group for group in bundle["groups"] if group["target_norm"] == "3")
+
+    bindings = {
+        binding["op"]: binding
+        for binding in group["sparse_slot_bindings"]
+    }
+    assert bindings["INSERT 1 luku 3 § 1 mom 1a kohta"]["slot_label"] == "1a"
+    assert bindings["INSERT 1 luku 3 § 1 mom 1a kohta"]["slot_index"] == 1
+    assert not any(
+        observation["kind"] == "ELAB.UNASSIGNED_SPARSE_SLOTS"
+        for observation in group["elaboration_observations"]
     )
 
 
