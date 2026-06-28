@@ -305,6 +305,29 @@ _NO_RULE_SPECS: Dict[str, str] = {
         "no_replay_renumber_occupied_destination_removed — names the specific "
         "destination-clearing recovery contract."
     ),
+    # --- Apply receipt contract (§4 WriteReceipt divergence-naming) ----------------------
+    # Mirrors SE's ``se_renumber_relabel`` (``sweden/grafter.py:4145``) and EE's
+    # ``_EE_SECTION_SEQUENCE_RENUMBER_RULE`` (``estonia/peg.py:1225``) — a RENUMBER
+    # op mints an identity migration (bound source label → landed destination
+    # label) that the §1.6 unstated-migration invariant MUST carry with a named
+    # rule id. Stamped on the op at mint time as ``witness_rule_id`` (the
+    # parse→apply waist proof). Receipt-side ``migration_rule_ids`` stamping is
+    # pending the per-op ``WriteReceipt`` helper for NO (split across iter2 W5 H2
+    # op-side stamping + a future receipt-helper task — see
+    # https://github.com/elias/lawvm/issues/iter2-w5-h2-no-receipt-helper).
+    "no_section_renumber_relabel": (
+        "A Norway RENUMBER op's bound_target_path (source label) vs "
+        "landed_primary_path (destination label) divergence is the typed named "
+        "migration for a section relabel/renumber — ``witness_rule_id`` stamped "
+        "on the op at mint time so the §1.6 unstated-migration invariant's "
+        "identity migration has a named owner at the parse→apply waist (mirrors "
+        "EE's ``_EE_SECTION_SEQUENCE_RENUMBER_RULE`` on op construction). The "
+        "name ``section`` describes the dominant case but the rule id is the "
+        "broad family owner for every RENUMBER op (one id per family, mirroring "
+        "SE's single ``se_renumber_relabel``). Receipt-side "
+        "``migration_rule_ids`` stamping requires a per-op ``WriteReceipt`` "
+        "helper that does not yet exist in the NO frontend."
+    ),
     "no_replace_missing_last_item_append_to_parent": (
         "Detail rule id on an insert-recovery of a missing-target replace that "
         "appended an item to the parent — names the specific replace→insert "

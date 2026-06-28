@@ -23,7 +23,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Optional
 
-from lawvm.core.pool_mention import QuantityKind, PoolResolutionConfidence
+from lawvm.finland.pool_mention_primitive import QuantityKind, PoolResolutionConfidence
 
 # ---------------------------------------------------------------------------
 # Fixture type

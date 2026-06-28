@@ -10708,7 +10708,22 @@ def apply_ee_ops_conserved(
             "partition keys on op_id and duplicate op_ids would mis-partition). "
             f"Duplicate op_ids: {duplicates}."
         )
-    adjudications: list[CompileAdjudication] = list(adjudications_out or [])
+    # Trust the bare-apply contract: ``apply_ee_ops`` appends each per-op
+    # adjudication to ``adjudications_out`` in place via
+    # :func:`_append_ee_replay_adjudication` (``.append`` on the passed list
+    # — never a re-bind). Routing the caller's list directly through bare
+    # apply means a mid-apply raise (e.g. the §1.10 fail-loud path under
+    # ``strict_action_family=True`` for NO/EU-style future EE strict modes,
+    # or any other bare-apply exception) preserves the recovery adjudication
+    # witnesses emitted BEFORE the raise on the caller's accumulator — the
+    # caller can then diagnose via the partial adjudications (AGENTS.md §1.0
+    # evidence is not silently destroyed). When the caller did not pass an
+    # ``adjudications_out``, use a throwaway local buffer so bare-apply's
+    # mutations stay scoped and the partition below still has a source to
+    # read from.
+    adjudications: list[CompileAdjudication] = (
+        adjudications_out if adjudications_out is not None else []
+    )
     applied_statute = apply_ee_ops(
         statute,
         ops_list,
@@ -10744,12 +10759,12 @@ def apply_ee_ops_conserved(
             )
         else:
             accepted.append(op)
-    # If the caller passed their own adjudications_out, surface there too --
-    # the existing descriptive adjudications path is NOT replaced by the typed
-    # carrier; both share the same evidence ledger (mirrors the SE wrapper).
-    if adjudications_out is not None:
-        adjudications_out.clear()
-        adjudications_out.extend(adjudications)
+    # Propagation: bare apply already mutated ``adjudications_out`` in place
+    # (the caller's list when one was provided) — no local-copy / clear /
+    # extend round-trip needed. The previous local-copy-then-extend pattern
+    # silently dropped bare-apply's partial adjudication witness when bare
+    # apply raised mid-fold (the §1.0 evidence-loss failure); routing the
+    # caller's list directly closes that hole.
     return EEApplyResult(
         statute=applied_statute,
         filter_result=FilterResult(

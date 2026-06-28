@@ -5,14 +5,17 @@ semantic-field dataclasses at phase boundaries be `@dataclass(frozen=True,
 slots=True)` so the legal-state, evidence, and source planes stay
 type-distinct and a value cannot silently mutate across a phase seam.
 
-This is a targeted ratchet over the five semantic carriers named in the
-§1.9 task ("Frozen/slots discipline for legal-state carriers"):
+This is a targeted ratchet over the seven semantic carriers named across the
+§1.9 task ("Frozen/slots discipline for legal-state carriers") and its
+Wave-2 follow-up (scope-confidence protocol riders):
 
   - lawvm.core.ir:ProvisionVersion        (legal-state plane)
   - lawvm.core.ir:ProvisionTimeline       (legal-state plane)
   - lawvm.core.timeline_consistency:ConsistencyDivergence  (evidence plane)
   - lawvm.finland.fixed_term_expiry:FixedTermDiagnostic   (evidence plane)
   - lawvm.finland.fixed_term_expiry:FixedTermExtraction   (evidence plane)
+  - lawvm.finland.ops:ScopeConfidence     (Wave-2 — scope-confidence carrier)
+  - lawvm.norway.scope_confidence:NOScopeConfidence  (Wave-2 — NO sibling)
 
 Each in-scope carrier MUST be `@dataclass(frozen=True, slots=True)`,
 unless it is registered in ``_BLOCKED_MIGRATION`` (a typed carrier that
@@ -67,6 +70,21 @@ _IN_SCOPE_CARRIERS: tuple[Carrier, ...] = (
         "lawvm.finland.fixed_term_expiry",
         "FixedTermExtraction",
         "src/lawvm/finland/fixed_term_expiry.py",
+    ),
+    # --- Wave-2 follow-up: scope-confidence protocol riders
+    # (AGENTS.md §1.9 / §2.2 — frontend-owned typed witness stored on
+    # ``LegalOperation.scope_confidence``; the marker protocol lives in
+    # ``lawvm.core.scope_confidence`` and these are the producer instances
+    # registered by the AST parity check in test_scope_confidence_protocol.py).
+    Carrier(
+        "lawvm.finland.ops",
+        "ScopeConfidence",
+        "src/lawvm/finland/ops.py",
+    ),
+    Carrier(
+        "lawvm.norway.scope_confidence",
+        "NOScopeConfidence",
+        "src/lawvm/norway/scope_confidence.py",
     ),
 )
 

@@ -326,3 +326,194 @@ class TestValidXmlParsesCorrectly:
                 "config must set resolve_entities=False so entity expansion "
                 "never runs."
             )
+
+
+# ---------------------------------------------------------------------------
+# Group D — iter2 W5 M7 production-lane fire-drill: drive
+# ``finland.consolidated_store._is_self_comparable_with_tolerance`` (the migrated
+# call site) with the same external-entity / billion-laughs payloads as Group A
+# / B and pin that NO entity substitution or external fetch leaks through the
+# production path. Pre-fix this site used ``etree.fromstring`` directly with
+# lxml's defaults — the migration to ``parse_corpus_xml`` closed the XXE /
+# billion-laughs exposure; these tests drive the production lane so a future
+# revert (or a new raw ``etree.fromstring`` re-introduced here) fails loudly
+# rather than silently going back to the dangerous baseline.
+# ---------------------------------------------------------------------------
+
+
+# A version tag of the form ``YYYYNNNN`` (8 digits) is the format the migrated
+# site's ``_version_tag_to_amendment_id`` accepts. ``20230101`` -> amendment
+# id ``2023/101``, which the fake archive resolves to a sentinel URL.
+_CONSOLIDATED_VERSION_TAG = "20230101"
+
+
+class _FakeArchive:
+    """Minimal ``ConsolidatedArchiveLike`` whose ``get`` always returns the
+    pre-loaded bytes (the malicious payload). Pre-fix, raw ``etree.fromstring``
+    parsed these bytes with the dangerous lxml defaults; now
+    ``parse_corpus_xml`` is the parse path."""
+
+    def __init__(self, payload: bytes) -> None:
+        self._payload = payload
+        self.get_calls: list[str] = []
+
+    def get(self, url: str) -> bytes | None:  # noqa: D401 - protocol impl
+        self.get_calls.append(url)
+        return self._payload
+
+    def locators(self, pattern: str = "%") -> list[str]:  # noqa: D401 - protocol impl
+        return []
+
+
+class TestConsolidatedStoreParseCorpusXmlMigration:
+    """``consolidated_store._is_self_comparable_with_tolerance`` must parse its
+    source bytes through the hardened ``parse_corpus_xml`` config so an
+    external-entity payload cannot leak expanded content or trigger an external
+    fetch through the production bench-comparable check."""
+
+    def test_billion_laughs_payload_does_not_expand_through_production_path(
+        self,
+    ) -> None:
+        from lawvm.finland.consolidated_store import (
+            CachedConsolidatedArtifact,
+            _is_self_comparable_with_tolerance,
+        )
+
+        artifact = CachedConsolidatedArtifact(
+            sid="2023/101",
+            locator="finlex://sd-cons/2023/101/fin/main.xml",
+            canonical_locator="finlex://sd-cons/2023/101/fin/main.xml",
+            xml=b"<ignored/>",
+            version_tag=_CONSOLIDATED_VERSION_TAG,
+            date_consolidated=None,
+        )
+        archive = _FakeArchive(_BILLION_LAUGHS_XML)
+
+        # The function is allowed to either raise a typed XMLSyntaxError (which
+        # would be CAUGHT inside the function and translate to (False, False)),
+        # or return (False, False) directly when ordering_date is None on the
+        # entity-reference tree. Either path is acceptable. The load-bearing
+        # assertion is that the function never silently expands the entities
+        # and never hangs / blows memory. Use tracemalloc as the budget guard
+        # mirroring Group A.
+        import datetime as _dt
+
+        tracemalloc.start()
+        try:
+            ok, tolerance_applied = _is_self_comparable_with_tolerance(
+                artifact, archive, as_of=_dt.date(2023, 1, 1)
+            )
+        finally:
+            current, peak = tracemalloc.get_traced_memory()
+            tracemalloc.stop()
+
+        # Bench-comparable must NOT hold — the payload carries no recognizable
+        # commencement / effective-date metadata regardless of parse outcome.
+        assert ok is False
+        assert tolerance_applied is False
+        # Memory budget: the billion-laughs payload would expand to ~387MB
+        # under default lxml without the amplification-factor cap. 10MB ceiling
+        # mirrors Group A.
+        assert peak < 10 * 1024 * 1024, (
+            f"_is_self_comparable_with_tolerance expanded the billion-laughs "
+            f"payload past the 10MB memory budget: peak={peak} bytes — the "
+            "site must route through parse_corpus_xml (resolve_entities=False) "
+            "so the expansion step never runs."
+        )
+
+    def test_external_dtd_payload_does_not_fetch_network_through_production_path(
+        self,
+        block_network: Any,
+    ) -> None:
+        from lawvm.finland.consolidated_store import (
+            CachedConsolidatedArtifact,
+            _is_self_comparable_with_tolerance,
+        )
+
+        artifact = CachedConsolidatedArtifact(
+            sid="2023/101",
+            locator="finlex://sd-cons/2023/101/fin/main.xml",
+            canonical_locator="finlex://sd-cons/2023/101/fin/main.xml",
+            xml=b"<ignored/>",
+            version_tag=_CONSOLIDATED_VERSION_TAG,
+            date_consolidated=None,
+        )
+        archive = _FakeArchive(_EXTERNAL_DTD_XML)
+
+        # The function must drive the parse without ever hitting a network
+        # sentinel. ``no_network=True`` / ``load_dtd=False`` from the hardened
+        # config are the load-bearing guarantees; if a future revert path is
+        # introduced, the ``block_network`` fixture will raise on the first
+        # socket call.
+        import datetime as _dt
+
+        try:
+            _is_self_comparable_with_tolerance(
+                artifact, archive, as_of=_dt.date(2023, 1, 1)
+            )
+        except _NetworkCallSentinel as exc:
+            pytest.fail(str(exc))
+        except etree.XMLSyntaxError:
+            # Acceptable:parse may reject the unresolved external reference.
+            pass
+
+    def test_xxe_payload_does_not_substitute_entity_text_in_production_path(
+        self,
+        block_network: Any,
+    ) -> None:
+        # Drive the production lane with an XXE exfiltration payload and verify
+        # that the entity's SYSTEM URL target never appears in any post-parse
+        # serialized output (mirrors Group B's existing assertion but through
+        # the migrated call site).
+        from lawvm.finland.consolidated_store import (
+            CachedConsolidatedArtifact,
+            _is_self_comparable_with_tolerance,
+        )
+
+        xxe_xml = (
+            b'<?xml version="1.0"?>'
+            b'<!DOCTYPE root ['
+            b'  <!ENTITY xxe SYSTEM "http://lawvm-test-sentinel.invalid/secret.txt">'
+            b']>'
+            b'<root><effectiveDate>2023-01-01</effectiveDate>&xxe;</root>'
+        )
+        artifact = CachedConsolidatedArtifact(
+            sid="2023/101",
+            locator="finlex://sd-cons/2023/101/fin/main.xml",
+            canonical_locator="finlex://sd-cons/2023/101/fin/main.xml",
+            xml=b"<ignored/>",
+            version_tag=_CONSOLIDATED_VERSION_TAG,
+            date_consolidated=None,
+        )
+        archive = _FakeArchive(xxe_xml)
+
+        import datetime as _dt
+
+        raised = False
+        try:
+            _is_self_comparable_with_tolerance(
+                artifact, archive, as_of=_dt.date(2023, 1, 1)
+            )
+        except _NetworkCallSentinel as exc:
+            pytest.fail(str(exc))
+        except _ENTITY_REJECTION_EXCS:
+            raised = True
+
+        # If the parse raised (entity rejection), the invariant is satisfied
+        # by definition. The interesting failure mode is the parse-completes
+        # path: the entity reference must NOT have been substituted with file
+        # content. We re-parse via parse_corpus_xml directly to inspect the
+        # serialized form rather than instrumenting the production function's
+        # internals — the parse is the same code path the function uses.
+        if not raised:
+            try:
+                tree = parse_corpus_xml(xxe_xml)
+            except _ENTITY_REJECTION_EXCS:
+                return
+            if tree is not None:
+                serialized = etree.tostring(tree, encoding="unicode")
+                assert "secret.txt" not in serialized, (
+                    "parse_corpus_xml resolved an external entity in the "
+                    "production lane of _is_self_comparable_with_tolerance; "
+                    "the XXE exfiltration vector is open."
+                )

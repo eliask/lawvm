@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any, List, Optional
 
 from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.filter_result import FilterResult
 from lawvm.core.source_lane import SourceLaneAttempt, SourceLaneSelectionEvidence
 from lawvm.core.temporal import TemporalEvent, TemporalScope
 from lawvm.replay_adjudication import CompileAdjudication, SourceAdjudication
@@ -39,7 +40,15 @@ from lawvm.estonia.grafter import (
     _old_format_commencement_date,
     _strict_title_match_para,
     _title_matches_para,
-    apply_ee_ops,
+    # Re-exported for the EE guard-liveness test helper
+    # ``_patch_replay_for_crash_drill`` in ``tests/test_ee_guard_liveness.py``,
+    # which monkeypatches this module-level reference to short-circuit the
+    # apply step in upstream-crash drills. The production lane now routes
+    # through ``apply_ee_ops_conserved``; this bare import is retained so the
+    # test helper's ``setattr(ee_replay, "apply_ee_ops", ...)`` does not raise
+    # ``AttributeError`` after the migration.
+    apply_ee_ops,  # noqa: F401
+    apply_ee_ops_conserved,
     parse_ee_amendment_ops,
     parse_ee_statute,
 )
@@ -1414,6 +1423,17 @@ class EEPitResult:
     # Optional replay-adjudication stream from operation application.
     adjudications: list[CompileAdjudication] = field(default_factory=list)
 
+    # Typed apply-result conservation receipt (AGENTS.md §1.8 + §2.9
+    # guard-liveness). Populated when the production apply lane routes
+    # through ``apply_ee_ops_conserved``: partitions every input op into
+    # ``accepted_items`` (its binding landed in ``replayed``) or
+    # ``rejected_items`` (its replay skipped, with a typed ``RejectedItem``
+    # witness carrying ``reason`` / ``reason_code`` / ``blocking``). Without
+    # this field the conserved wrapper exists but is unreachable from
+    # production — the §2.9 worst-class silent failure (a guard that exists
+    # but is unreachable from the production lane).
+    apply_filter_result: Optional[FilterResult[LegalOperation]] = None
+
 
 # ---------------------------------------------------------------------------
 # Main pipeline
@@ -1828,12 +1848,23 @@ def replay_ee_to_pit(
     lo_ops_out: list[LegalOperation] = []
     adjudications: list[CompileAdjudication] = []
     try:
-        result.replayed = apply_ee_ops(
+        # Route production through the conserved wrapper (AGENTS.md §1.8 +
+        # §2.9 guard-liveness). The bare ``apply_ee_ops`` returned only the
+        # IRStatute and shuttled skip-evidence through ``adjudications_out``
+        # side-effect; the conserved wrapper returns a typed ``EEApplyResult``
+        # whose ``filter_result`` partitions ops into accepted /
+        # RejectedItem witnesses (the §1.8 "no unsupported lane disappears"
+        # contract). Without routing production here, the conserved wrapper
+        # would be exercised only by tests — a §2.9 worst-class silent
+        # failure (a guard that exists but is unreachable from production).
+        apply_result = apply_ee_ops_conserved(
             base,
             all_ops,
             lo_ops_out=lo_ops_out,
             adjudications_out=adjudications,
         )
+        result.replayed = apply_result.statute
+        result.apply_filter_result = apply_result.filter_result
     # lawvm-failloud (AGENTS.md §1.10): NOT a silent swallow. An apply-stage
     # failure is recorded as a distinct, self-evidencing "Failed to apply ops:
     # {e}" banner (exception embedded) that classify_ee_replayability maps to

@@ -1590,6 +1590,7 @@ def _iter_unstructured_no_change_groups(
                         source=OperationSource(statute_id=source_id, raw_text=lead, title=lead_base_id),
                         provenance_tags=(f"base_act:{lead_base_id}", "fallback:unstructured"),
                         group_id=f"{source_id}:{lead_base_id}:{sequence}",
+                        witness_rule_id="no_section_renumber_relabel",
                     )
                 )
                 sequence += 1
@@ -1865,6 +1866,7 @@ def _iter_unstructured_no_change_groups(
                     source=OperationSource(statute_id=source_id, raw_text=lead, title=lead_base_id),
                     provenance_tags=(f"base_act:{lead_base_id}", "fallback:unstructured"),
                     group_id=f"{source_id}:{lead_base_id}:{sequence}",
+                    witness_rule_id="no_section_renumber_relabel",
                 )
             )
             sequence += 1
@@ -1892,6 +1894,7 @@ def _iter_unstructured_no_change_groups(
                         source=OperationSource(statute_id=source_id, raw_text=lead, title=lead_base_id),
                         provenance_tags=(f"base_act:{lead_base_id}", "fallback:unstructured"),
                         group_id=f"{source_id}:{lead_base_id}:{sequence}",
+                        witness_rule_id="no_section_renumber_relabel",
                     )
                 )
                 sequence += 1
@@ -2564,6 +2567,7 @@ def iter_no_document_change_ops(
                         ),
                         provenance_tags=(f"base_act:{base_id}",),
                         group_id=f"{source_id}:{source_doc}:{sequence}",
+                        witness_rule_id="no_section_renumber_relabel",
                     )
                 )
                 sequence += 1
@@ -4172,7 +4176,20 @@ def apply_no_ops_conserved(
             "partition keys on op_id and duplicate op_ids would mis-partition). "
             f"Duplicate op_ids: {duplicates}."
         )
-    adjudications: List[CompileAdjudication] = list(adjudications_out or [])
+    # Trust the bare-apply contract: ``apply_no_ops`` appends each per-op
+    # adjudication to ``adjudications_out`` in place. Routing the caller's
+    # list directly through bare apply means a mid-apply raise (the §1.10
+    # fail-loud path under ``strict_action_family=True`` for the
+    # NO insert-occupied-target recovery collision) preserves the recovery
+    # adjudication witnesses emitted BEFORE the raise on the caller's
+    # accumulator — the caller can then diagnose via the partial
+    # adjudications (AGENTS.md §1.0 evidence is not silently destroyed).
+    # When the caller did not pass an ``adjudications_out``, use a throwaway
+    # local buffer so bare-apply's mutations stay scoped and the partition
+    # below still has a source to read from.
+    adjudications: List[CompileAdjudication] = (
+        adjudications_out if adjudications_out is not None else []
+    )
     applied_statute = apply_no_ops(
         statute,
         ops_list,
@@ -4207,12 +4224,15 @@ def apply_no_ops_conserved(
             )
         else:
             accepted.append(op)
-    # If the caller passed their own adjudications_out, surface there too --
-    # the existing descriptive adjudications path is NOT replaced by the typed
-    # carrier; both share the same evidence ledger (mirrors the SE wrapper).
-    if adjudications_out is not None:
-        adjudications_out.clear()
-        adjudications_out.extend(adjudications)
+    # Propagation: bare apply already mutated ``adjudications_out`` in place
+    # (the caller's list when one was provided) — no local-copy / clear /
+    # extend round-trip needed. The previous local-copy-then-extend pattern
+    # silently dropped bare-apply's partial adjudication witness when bare
+    # apply raised mid-fold (the §1.0 evidence-loss failure mode that
+    # ``test_replay_no_to_pit_strict_action_family_rejects_recovery``
+    # surfaced — bare apply raised after emitting the recovery adjudication
+    # witness, but the caller's ``adjudications_out`` stayed empty); routing
+    # the caller's list directly closes that hole.
     return NOApplyResult(
         statute=applied_statute,
         filter_result=FilterResult(

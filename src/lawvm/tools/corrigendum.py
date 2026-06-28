@@ -65,7 +65,9 @@ import re
 import subprocess
 import sys
 import tempfile
+from collections import defaultdict
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 from typing import Any, Iterable, Literal, Optional, cast
 
@@ -81,13 +83,16 @@ from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector
 from lawvm.finland.corrigendum_records import (
     default_adjudication_records_path,
     default_official_records_path,
+    default_retry_overlays_path,
     default_source_records_path,
     load_adjudication_records,
     load_official_records,
     load_patch_records,
+    load_retry_overlay_records,
     load_source_records,
     write_adjudication_records,
     write_official_records,
+    write_retry_overlay_records,
     write_source_records,
 )
 from lawvm.finland.source_witness_proof_projector import corrigendum_source_witness
@@ -112,7 +117,7 @@ _LAWVM_DIR = _HERE.parent.parent.parent.parent
 _OFFICIAL_TEXT = default_official_records_path()
 _ADJUDICATIONS_TEXT = default_adjudication_records_path()
 _SOURCES_TEXT = default_source_records_path()
-_MANUAL_YAML = _LAWVM_DIR / "data" / "finland" / "corrigendum_manual.yaml"
+_SOURCE_DEFECT_YAML = _LAWVM_DIR / "data" / "finland" / "source_defect_fixes_fi.yaml"
 _LLAMA_URL = os.environ.get("LLAMA_API_BASE", "http://localhost:8080") + "/v1/chat/completions"
 # Conservative input-size guard: corrigendum PDFs are short documents.
 # If a PDF produces more text than this, something is wrong (merged PDF, wrong file, etc.).
@@ -2009,9 +2014,9 @@ def build_manual_template_bundle(
         source_xml = None
 
     manual_entries: JsonRows = []
-    if _MANUAL_YAML.exists():
+    if _SOURCE_DEFECT_YAML.exists():
         try:
-            loaded = yaml.safe_load(_MANUAL_YAML.read_text(encoding="utf-8")) or []
+            loaded = yaml.safe_load(_SOURCE_DEFECT_YAML.read_text(encoding="utf-8")) or []
             if isinstance(loaded, list):
                 for entry in loaded:
                     if not isinstance(entry, dict):
@@ -2096,7 +2101,7 @@ def build_manual_template_bundle(
         "amendment_id": amendment_id,
         "records_path": str(path),
         "include_all": include_all,
-        "manual_yaml_path": str(_MANUAL_YAML),
+        "source_defect_yaml_path": str(_SOURCE_DEFECT_YAML),
         "manual_entry_count": len(manual_entries),
         "already_covered": already_covered,
         "attachment_only_entry_count": attachment_only_entry_count,
@@ -2443,7 +2448,7 @@ def build_provenance_bundle(
 
     manual_entries = [
         entry
-        for entry in _load_manual_override_entries(_MANUAL_YAML)
+        for entry in _load_manual_override_entries(_SOURCE_DEFECT_YAML)
         if str(entry.get("amendment_id", "")).strip() == amendment_id
     ]
 
@@ -2506,7 +2511,7 @@ def build_provenance_bundle(
     bundle: dict[str, Any] = {
         "amendment_id": amendment_id,
         "records_path": str(path),
-        "manual_yaml_path": str(_MANUAL_YAML),
+        "source_defect_yaml_path": str(_SOURCE_DEFECT_YAML),
         "row_count": len(rendered_rows),
         "verified_count": sum(1 for row in rendered_rows if row["current_verified"] is True),
         "attachment_only_count": sum(1 for row in rendered_rows if row["attachment_only"]),
@@ -2546,8 +2551,8 @@ def build_overview_bundle(
         )
     )
 
-    manual_entries = _load_manual_override_entries(_MANUAL_YAML)
-    manual_counts = _load_manual_override_counts(_MANUAL_YAML)
+    manual_entries = _load_manual_override_entries(_SOURCE_DEFECT_YAML)
+    manual_counts = _load_manual_override_counts(_SOURCE_DEFECT_YAML)
     source_records = [
         record
         for record in load_source_records(_SOURCES_TEXT)
@@ -2681,7 +2686,7 @@ def build_overview_bundle(
         "mode": "live" if live else "stored",
         "limit": int(limit),
         "records_path": str(path),
-        "manual_yaml_path": str(_MANUAL_YAML),
+        "source_defect_yaml_path": str(_SOURCE_DEFECT_YAML),
         "official_item_count": len(records),
         "amendment_count": len(amendment_stats),
         "source_pdf_count": len({str(record.get("source_pdf") or "") for record in records if record.get("source_pdf")}),
@@ -2718,7 +2723,7 @@ def build_review_bundle(
         raise SystemExit(str(result.error))
 
     dbp = db_path or _OFFICIAL_TEXT
-    manual_counts = _load_manual_override_counts(_MANUAL_YAML)
+    manual_counts = _load_manual_override_counts(_SOURCE_DEFECT_YAML)
     amendment_groups: dict[str, JsonRow] = {}
     unblamed_sections: JsonRows = []
     all_sections: JsonRows = []
@@ -2993,7 +2998,7 @@ def _cmd_manual_template(args) -> None:
             f"# NOTE: {bundle['amendment_id']} already has "
             f"{bundle['manual_entry_count']} manual override "
             f"entr{'y' if bundle['manual_entry_count'] == 1 else 'ies'} "
-            f"in {bundle['manual_yaml_path']}\n"
+            f"in {bundle['source_defect_yaml_path']}\n"
         )
     if bundle.get("already_covered"):
         print(
@@ -3078,7 +3083,7 @@ def _cmd_overview(args) -> None:
         return
 
     print(f"Records      : {bundle['records_path']}")
-    print(f"Manual YAML  : {bundle['manual_yaml_path']}")
+    print(f"Manual YAML  : {bundle['source_defect_yaml_path']}")
     print(f"Mode         : {bundle['mode']}")
     print(f"Official     : {bundle['official_item_count']} items")
     print(f"Amendments   : {bundle['amendment_count']}")
@@ -3264,7 +3269,7 @@ def _cmd_provenance(args) -> None:
     print(f"Manual exact : {bundle['manual_exact_count']}")
     print(f"Attachment   : {bundle['attachment_only_count']}")
     print(f"Open manual  : {bundle['open_manual_candidate_count']}")
-    print(f"Manual YAML  : {bundle['manual_entry_count']} entries in {bundle['manual_yaml_path']}")
+    print(f"Manual YAML  : {bundle['manual_entry_count']} entries in {bundle['source_defect_yaml_path']}")
     print()
     print(
         "IDX  TYPE          DB  CUR  STATUS                      PDF                   LOCATION"
@@ -3881,8 +3886,13 @@ def _cmd_reextract(args) -> None:
     all 6 apply passes), then calls the local LLM with both the PDF and XML for
     context to find the correct wrong_text in the XML.
 
-    Updates the git official corpus in place if --update is given, with sqlite
-    mirrored only as a convenience artifact when it exists.
+    With ``--update``, verified candidates are written to
+    ``data/finland/corrigendum_retry_overlays_fi.jsonl`` as per-``stable_id``
+    overlays. The official corpus (``corrigendum_official_fi.jsonl``) is left
+    UNTOUCHED — the official row stays a witness to what the LLM originally
+    produced; the retry overlay is the execution-authorized candidate that
+    replaces the auto-extracted (wrong_text, correct_text) at load time
+    (AGENTS.md §0 promotion chain; §2.10 evidence ≠ authority).
     """
     sys.path.insert(0, str(_LAWVM_DIR / "src"))
     from lawvm.finland.corrigendum import (
@@ -4018,26 +4028,108 @@ def _cmd_reextract(args) -> None:
     print(f"\nSummary: {len(results)} LLM calls, {len(improved)} proposed changes, {applies_n} verified")
 
     if update_db and improved:
-        official_records = load_official_records(_OFFICIAL_TEXT)
-        updated_by_id = {str(row.get("stable_id") or ""): dict(row) for row in official_records}
-        updated = 0
+        # Group verified improved patches by their overlay-target stable_id.
+        # Each overlay aggregates one or more byte-exact patches that, applied
+        # together, realise the upstream-corrigendum effect — the auto-extracted
+        # (wrong_text, correct_text) on the official row is REPLACED only at
+        # load time when the row's stable_id matches an overlay target.
+        #
+        # This rewire is the §0/§1.8 fix: the previous code MUTATED the
+        # official row's wrong_text/correct_text in
+        # corrigendum_official_fi.jsonl in place, silently overwriting the
+        # LLM's *witness* (what the LLM originally produced) with the
+        # loop's winner — promoting a candidate to authority without a
+        # promotion boundary, and collapsing the evidence plane onto the
+        # authority plane (AGENTS.md §2.10). The official row stays a
+        # witness to LLM output; the retry overlay is the
+        # execution-authorized candidate.
+        by_stable_id: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for item in improved:
             if not item["applies"]:
                 continue
-            parts = str(item["op_id"]).split("/")
-            idx = int(parts[3])
-            stable_id = _stable_id(pdf_map.get(item["op_id"], ""), idx)
-            row = updated_by_id.get(stable_id)
-            if row is None:
+            op_id = str(item["op_id"] or "")
+            # Only official-row (corr/*) op_ids are reextraction candidates.
+            # retry/* and manual/* ops are already overlaid / owned by the
+            # source-defect surface — they are not reextraction inputs.
+            if not op_id.startswith("corr/"):
                 continue
-            row["wrong_text"] = item["new_wrong"]
-            row["correct_text"] = item["new_correct"]
-            updated_by_id[stable_id] = row
-            updated += 1
-        write_official_records(list(updated_by_id.values()), _OFFICIAL_TEXT)
-        print(f"Updated {updated} rows in official text corpus.")
+            parts = op_id.split("/")
+            if len(parts) < 4:
+                continue
+            try:
+                idx = int(parts[3])
+            except ValueError:
+                continue
+            stable_id = _stable_id(pdf_map.get(op_id, ""), idx)
+            if not stable_id or stable_id.startswith("unknown"):
+                continue
+            by_stable_id[stable_id].append(item)
+
+        if not by_stable_id:
+            print("No retry overlays to write (all improved patches filtered).")
+            return
+
+        overlays_path = default_retry_overlays_path()
+        # Preserve existing overlays not targeted by this run — operators may
+        # have curated overlays by hand for other stable_ids. We mutate only
+        # overlays for stable_ids this run produced verified patches for.
+        existing_overlays = load_retry_overlay_records(overlays_path)
+        overlays_by_id: dict[str, dict[str, Any]] = {
+            str(r.get("stable_id") or ""): dict(r) for r in existing_overlays
+        }
+        # Resolve official rows once to inherit source_pdf / amendment_id /
+        # correction_type (the overlay mirrors these for traceability; they
+        # are NOT load-bearing for apply, which uses just stable_id + patches).
+        official_by_id = {
+            str(r.get("stable_id") or ""): r
+            for r in load_official_records(_OFFICIAL_TEXT)
+        }
+        today_iso = date.today().isoformat()
+        body_types = {"prose", "footnote", "metadata", "sami_translation"}
+        written = 0
+        for stable_id, items in by_stable_id.items():
+            official_row = official_by_id.get(stable_id, {})
+            first = items[0]
+            amendment_id = str(first.get("amendment_id") or official_row.get("amendment_id") or "")
+            source_pdf_witness = str(official_row.get("source_pdf") or "")
+            row_correction_type = str(official_row.get("correction_type") or "johtolause")
+            overlay_correction_type = (
+                "body_text" if row_correction_type in body_types else row_correction_type
+            )
+            patches = []
+            for item in items:
+                new_wrong = str(item.get("new_wrong") or "").strip()
+                new_correct = str(item.get("new_correct") or "").strip()
+                if new_wrong and new_correct and new_wrong != new_correct:
+                    patches.append(
+                        {"wrong_text": new_wrong, "correct_text": new_correct}
+                    )
+            if not patches:
+                continue
+            overlays_by_id[stable_id] = {
+                "stable_id": stable_id,
+                "rule_id": "FINLAND.CORR.EXTRACTION_RETRY",
+                "family": "extraction_retry",
+                "amendment_id": amendment_id,
+                "source_pdf_witness": source_pdf_witness,
+                "correction_type": overlay_correction_type,
+                "span_verified": True,
+                "verified_at": today_iso,
+                "patches": patches,
+            }
+            written += 1
+        write_retry_overlay_records(list(overlays_by_id.values()), overlays_path)
+        print(f"Wrote {written} retry overlays to {overlays_path}.")
+        print(
+            "(official records untouched — LLM candidates overlay as "
+            "execution-authorized patches; the official row stays a witness "
+            "to what the LLM originally produced.)"
+        )
     elif improved and not update_db:
-        print("(dry run — use --update to apply changes to the official text corpus)")
+        print(
+            "(dry run — use --update to write retry overlays to "
+            "corrigendum_retry_overlays_fi.jsonl)"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -4571,12 +4663,12 @@ def register_cli(sub: Any) -> None:
 
     corr_manual_p = corr_sub.add_parser(
         "manual-template",
-        help="emit YAML scaffold entries for corrigendum_manual.yaml from classified patches",
+        help="emit YAML scaffold entries for source_defect_fixes_fi.yaml from classified patches",
         description=(
             "Load one amendment's classified corrigendum items from the git-tracked "
             "corrigendum corpus, "
             "filter to the items that still do not match source XML by default, and emit "
-            "a ready-to-paste YAML scaffold for corrigendum_manual.yaml."
+            "a ready-to-paste YAML scaffold for source_defect_fixes_fi.yaml."
         ),
     )
     corr_manual_p.add_argument(

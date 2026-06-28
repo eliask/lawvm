@@ -1678,6 +1678,38 @@ def _try_recognize_target(
     return None
 
 
+def _anaphoric_sen_precedes_section_heading_target(scan: _Scan) -> bool:
+    """True iff the cursor sits on an anaphoric ``sen`` / ``sitä`` WORD that opens a
+    ``<num-run> §:ILL otsikko`` section-heading insertion target.
+
+    The narrow shape ``sen 2 ja 3 §:ään otsikko``: a bare anaphoric ``sen`` / ``sitä``
+    ("its") pronoun, a section number run (``NUM`` plus optional ``LETTER`` / ``DASH``
+    / list separators), a ``PYKALA`` in the illative (``§:ään``), then an ``OTSIKKO``
+    within the heading window. This is the section-OWN-heading facet insert the
+    insertion family recognizes once the ``sen`` is out of the way; the cue is kept
+    tight (PYKALA in ILL closing on OTSIKKO) so the skip never disturbs a ``sen``
+    that anchors any other continuation.
+    """
+    toks = scan.cur.tokens
+    n = len(toks)
+    i = scan.pos
+    t = toks[i] if i < n else None
+    if not (t and t.cat == "WORD" and (t.text or "").lower() in ("sen", "sitä")):
+        return False
+    i += 1
+    # A real section number run must follow (at least one NUM).
+    j = i
+    while j < n and toks[j].cat in ("NUM", "LETTER", "DASH", "CONJ", "COMMA"):
+        j += 1
+    if j == i or j >= n or not any(toks[k].cat == "NUM" for k in range(i, j)):
+        return False
+    # The run must close on a §:ILL target carrying a heading (``otsikko``).
+    if toks[j].cat != "PYKALA" or toks[j].case != "ILL":
+        return False
+    k = j + 1
+    return any(toks[m].cat == "OTSIKKO" for m in range(k, min(k + 3, n)))
+
+
 def _recognize_one_target(
     scan: _Scan,
     chapter: str = "",
@@ -1706,6 +1738,20 @@ def _recognize_one_target(
     doc_saved = scan.pos
     t = scan.peek()
     if t and t.cat == "DOC" and t.case == "GEN":
+        scan.advance()
+        _skip_sentinels(scan)
+
+    # Optional anaphoric ``sen`` / ``sitä`` ("its") WORD opening a continuation
+    # batch whose target is a section heading scoped to the just-resumed chapter:
+    # ``lisätään … uusi 1 a–1 d § ja sen 2 ja 3 §:ään otsikko``. The ``sen`` points
+    # at the chapter the preceding ``N lukuun`` batch established; the heading-facet
+    # insertion arm (``<num> §:ILL otsikko``) follows it. Both the old parser and
+    # the section/insertion families stop on the bare ``sen`` WORD and drop the
+    # whole heading batch — a genuine bug confirmed against the Finlex oracle (the
+    # consolidated text carries the new section heading). Skip the anaphor ONLY when
+    # it directly precedes that ``<num-run> §:ILL otsikko`` heading shape, so the
+    # existing insertion arm owns it; every other ``sen`` context is untouched.
+    if _anaphoric_sen_precedes_section_heading_target(scan):
         scan.advance()
         _skip_sentinels(scan)
 

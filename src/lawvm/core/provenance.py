@@ -148,6 +148,16 @@ class OperationSource:
     legal_status: LegalStatus = COMMENCED_STATUS
     branch_id: str = ""
     scenario_id: str = ""
+    # Apply-cardinality invariant (corrigendum/source-defect retry patches).
+    # Expected exact-occurrence count when this op is applied to its source XML
+    # fragment. Default 1: the patch should match exactly one byte span. The
+    # apply loop at lawvm.finland.corrigendum.patch_source_xml checks
+    # `count == expected_apply_count` and emits typed findings otherwise
+    # (``ambiguous`` when count > expected, ``under_applied`` when count <
+    # expected — both first-class residuals per AGENTS.md §1.8). Patches that
+    # legitimately target N>1 occurrences (e.g. table-row fixes that repeat)
+    # opt in by setting this explicitly; default behaviour is unchanged.
+    expected_apply_count: int = 1
 
     def __post_init__(self) -> None:
         expiry_chain = tuple(self.expiry_chain)

@@ -1070,6 +1070,109 @@ def _looks_like_value_table(t: str) -> bool:
     return num_units >= 1 or (bare_nums >= 3 and bool(re.search(r'(?:pinta-?ala|korvaus|ha|mk)', t, re.I)))
 
 
+# ---------------------------------------------------------------------------
+# Segmentation-displacement neutralizer (amb-style, CONSERVATIVE exact-equality)
+#
+# When position-based alignment fails, the SAME provision text can surface as
+# BOTH a ``unit_missing_right`` (a unit present in LawVM but "absent" in the
+# oracle, carrying ``left_text``) AND a ``unit_missing_left`` (present in the
+# oracle but "absent" in LawVM, carrying ``right_text``) within the SAME
+# section — i.e. one unit displaced to a different tree position. That is zero
+# information loss: the content is identical, only the unit tree differs.
+#
+# This mirrors the ``amb`` oracle-version neutralizer: it only ever flips a
+# penalized section to neutralized, never the reverse, and matches on EXACT
+# ``_normalize_wording_for_diff`` string equality — never a similarity ratio,
+# so fabricated / genuinely-different / near-miss text always stays penalized.
+# A left-only or right-only unit with NO exact-normalized twin on the other
+# side is left untouched (genuine missing/extra content, or real misalignment),
+# which is the critical safety boundary.
+# ---------------------------------------------------------------------------
+
+# Unit kinds whose missing-event carries real provision text. Facet add/remove
+# events (intro/wrapUp/region facets) are deliberately EXCLUDED — they are a
+# different projection family handled by the presentation detector, and pairing
+# them here would risk collapsing a genuine facet change.
+_SEGMENTATION_PAIR_EVENT_KINDS = frozenset({"unit_missing_left", "unit_missing_right"})
+
+
+def segmentation_displacement_pairs(events: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """Exact-equality displaced-unit pairs inside one section's diff.
+
+    Returns a witness record per matched pair: a ``unit_missing_right`` whose
+    ``_normalize_wording_for_diff``-normalized ``left_text`` EXACTLY equals the
+    normalized ``right_text`` of a still-unmatched ``unit_missing_left`` in the
+    same section (one-to-one greedy multiset match). The match is exact string
+    equality only — never a ratio — so it can only ever forgive a provable
+    double-count of identical text displaced to a different tree position, never
+    fabricated or near-miss replay text. Same-section by construction (the caller
+    passes one section's events), so it can never pair across provisions.
+    """
+    from lawvm.semantic.diff import _normalize_wording_for_diff
+
+    left_only = [e for e in events if e.get("kind") == "unit_missing_right"]
+    right_only = [e for e in events if e.get("kind") == "unit_missing_left"]
+    if not left_only or not right_only:
+        return []
+
+    # Bucket right-only units by their normalized text; empty normalizations are
+    # never eligible (an empty unit is not a content displacement).
+    right_buckets: dict[str, list[dict[str, Any]]] = {}
+    for e in right_only:
+        norm = _normalize_wording_for_diff(e.get("right_text") or "", e.get("unit_label") or "")
+        if norm:
+            right_buckets.setdefault(norm, []).append(e)
+
+    pairs: list[dict[str, str]] = []
+    for left in left_only:
+        norm = _normalize_wording_for_diff(left.get("left_text") or "", left.get("unit_label") or "")
+        if not norm:
+            continue
+        bucket = right_buckets.get(norm)
+        if not bucket:
+            continue
+        right = bucket.pop(0)
+        pairs.append(
+            {
+                "normalized": norm,
+                "left_text": left.get("left_text") or "",
+                "right_text": right.get("right_text") or "",
+                "left_unit_kind": left.get("unit_kind") or "",
+                "right_unit_kind": right.get("unit_kind") or "",
+            }
+        )
+    return pairs
+
+
+def is_segmentation_displacement_neutralized(
+    sd: dict[str, Any], events: list[dict[str, Any]]
+) -> bool:
+    """Return True iff a section's ENTIRE penalizable diff is displaced units.
+
+    The section is neutralized only when every event is one half of an exact
+    displacement pair (equal counts of ``unit_missing_left`` /
+    ``unit_missing_right`` with exact-normalized text equality) and there is no
+    label difference and no other event kind. This is the conservative,
+    headline-moving case: such a section is a pure reordering with provably zero
+    information loss (LawVM's units == the oracle's units, only the tree position
+    differs). A section that ALSO carries genuine divergence (a wording change, a
+    facet delta, an unmatched missing unit) is NOT neutralized — it stays
+    penalized, so real divergence is never papered over.
+    """
+    if sd.get("label", 0):
+        return False
+    if not events:
+        return False
+    # Only displacement-eligible kinds may appear, or there is a genuine diff.
+    if not all(e.get("kind") in _SEGMENTATION_PAIR_EVENT_KINDS for e in events):
+        return False
+    pairs = segmentation_displacement_pairs(events)
+    # Every event must be accounted for by a matched pair: each pair consumes one
+    # left-only and one right-only event, so 2 * len(pairs) == len(events) holds
+    # iff there are no unmatched (genuinely missing/extra) units.
+    return bool(pairs) and 2 * len(pairs) == len(events)
+
+
 # Safe registration to avoid import cycles with projection (which imports
 # some symbol names from here for kumottu regex construction).
 # The actual register calls are inside a function executed at module load.

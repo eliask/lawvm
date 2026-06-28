@@ -24,6 +24,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import csv
+import hashlib
 import io
 import json
 import os
@@ -641,6 +642,19 @@ def _section_diff_is_bench_neutralized(
     )
 
 
+def _seg_text_witness(normalized_text: str) -> str:
+    """Auditable pointer for a neutralized segmentation-displacement pair.
+
+    Embeds a short content hash plus a leading snippet of the matched
+    (normalized) provision text so a reviewer can confirm the neutralization was
+    a legitimate double-count, not a masked real divergence. Mirrors amb's
+    opaque-but-self-evidencing witness style.
+    """
+    digest = hashlib.sha1(normalized_text.encode("utf-8")).hexdigest()[:12]
+    snippet = normalized_text[:60].replace("\n", " ")
+    return f"{digest}/{snippet!r}"
+
+
 @dataclass(frozen=True, slots=True)
 class _BenchSemanticScore:
     structural_similarity: float
@@ -697,6 +711,10 @@ def _semantic_section_score(sid: str, master: Any, *, text_scores: bool) -> _Ben
         extract_oracle_sections,
         oracle_amb_alternate_match,
         reconcile_unique_unscoped_aliases,
+    )
+    from lawvm.finland.oracle_comparison import (
+        is_segmentation_displacement_neutralized,
+        segmentation_displacement_pairs,
     )
     from lawvm.tools.structural_review import is_oracle_content_absent
     from lawvm.xml_ingest import xml_element_to_text
@@ -786,6 +804,27 @@ def _semantic_section_score(sid: str, master: Any, *, text_scores: bool) -> _Ben
                 neutralized = True
                 amb_witnesses.append(amb_witness)
                 print(f"WARNING oracle suspect: version selection alternate match {amb_witness}")
+        if has_diff and not neutralized:
+            # Segmentation-displacement (amb-style): the SAME provision text
+            # surfaces as both a unit_missing_left and a unit_missing_right in
+            # this section -> one unit displaced to a different tree position,
+            # zero information loss. Neutralize only when EXACT-normalized pairs
+            # explain the section's ENTIRE diff (no unmatched/extra divergence);
+            # a near-miss or genuinely-missing unit keeps the section penalized.
+            seg_pairs = (
+                segmentation_displacement_pairs(events)
+                if is_segmentation_displacement_neutralized(sd, events)
+                else []
+            )
+            if seg_pairs:
+                neutralized = True
+                for pair in seg_pairs:
+                    witness = (
+                        f"segmentation_displacement_match section={key} "
+                        f"text=@{_seg_text_witness(pair['normalized'])}"
+                    )
+                    amb_witnesses.append(witness)
+                    print(f"WARNING oracle suspect: segmentation displacement match {witness}")
         for event in events:
             if isinstance(event, dict):
                 event_counts[event.get("kind", "unknown")] += 1
@@ -884,6 +923,8 @@ def bench_penalized_section_keys(sid: str, master: Any) -> tuple[set[str], bool]
             continue
         if non_editorial.get(sec_key, {}).get("amb_alternate_match"):
             continue  # replay matched a non-chosen attested oracle version (amb)
+        if non_editorial.get(sec_key, {}).get("seg_displacement_match"):
+            continue  # whole-section diff is a unit displaced in the tree (zero info loss)
         penalized.add(sec_key)
     return penalized, False
 

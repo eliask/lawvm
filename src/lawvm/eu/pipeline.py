@@ -578,7 +578,19 @@ def apply_eu_ops_conserved(
             "partition keys on op_id and duplicate op_ids would mis-partition). "
             f"Duplicate op_ids: {duplicates}."
         )
-    adjudications: List[CompileAdjudication] = list(adjudications_out or [])
+    # Trust the bare-apply contract: ``apply_eu_ops`` appends each per-op
+    # adjudication to ``adjudications_out`` in place. Routing the caller's
+    # list directly through bare apply means a mid-apply raise (any §1.10
+    # fail-loud path) preserves the witnesses emitted BEFORE the raise on the
+    # caller's accumulator — the caller can then diagnose via the partial
+    # adjudications (AGENTS.md §1.0 evidence is not silently destroyed).
+    # When the caller did not pass an ``adjudications_out``, use a throwaway
+    # local buffer so bare-apply's mutations stay scoped and the partition
+    # below still has a source to read from. Mirrors the EE/NO/SE wrappers
+    # (conserved-wrapper consistency fix).
+    adjudications: List[CompileAdjudication] = (
+        adjudications_out if adjudications_out is not None else []
+    )
     applied_statute = apply_eu_ops(
         base,
         ops_list,
@@ -611,12 +623,12 @@ def apply_eu_ops_conserved(
             )
         else:
             accepted.append(op)
-    # If the caller passed their own adjudications_out, surface there too --
-    # the existing descriptive adjudications path is NOT replaced by the typed
-    # carrier; both share the same evidence ledger (mirrors the SE wrapper).
-    if adjudications_out is not None:
-        adjudications_out.clear()
-        adjudications_out.extend(adjudications)
+    # Propagation: bare apply already mutated ``adjudications_out`` in place
+    # (the caller's list when one was provided) — no local-copy / clear /
+    # extend round-trip needed. The previous local-copy-then-extend pattern
+    # silently dropped bare-apply's partial adjudication witness when bare
+    # apply raised mid-fold (the §1.0 evidence-loss failure); routing the
+    # caller's list directly closes that hole.
     return EUApplyResult(
         statute=applied_statute,
         filter_result=FilterResult(
@@ -638,6 +650,16 @@ class EUReplayResult:
     cutoff_date: Optional[str] = None
     adjudications: List[CompileAdjudication] = field(default_factory=list)
     temporal_events: tuple[TemporalEvent, ...] = ()
+    # Typed apply-result conservation receipt (AGENTS.md §1.8 + §2.9
+    # guard-liveness). Populated when the production apply lane routes
+    # through ``apply_eu_ops_conserved``: partitions every input op into
+    # ``accepted_items`` (its binding landed in ``replayed``) or
+    # ``rejected_items`` (its replay skipped, with a typed ``RejectedItem``
+    # witness carrying ``reason`` / ``reason_code`` / ``blocking``). Without
+    # this field the conserved wrapper exists but is unreachable from
+    # production — the §2.9 worst-class silent failure (a guard that exists
+    # but is unreachable from the production lane).
+    apply_filter_result: Optional[FilterResult[LegalOperation]] = None
 
 
 def _eu_pipeline_diagnostic_from_cellar_row(celex: str, row: dict[str, Any]) -> EUPipelineDiagnostic:
@@ -894,12 +916,23 @@ class EUReplayPipeline:
             for act_celex, diagnostic in self.parser_diagnostics
         )
 
-        # Apply ops to produce replayed statute
-        replayed = apply_eu_ops(
+        # Apply ops to produce replayed statute.
+        # Route production through the conserved wrapper (AGENTS.md §1.8 +
+        # §2.9 guard-liveness). The bare ``apply_eu_ops`` returned only the
+        # IRStatute and shuttled skip-evidence through ``adjudications_out``
+        # side-effect; the conserved wrapper returns a typed ``EUApplyResult``
+        # whose ``filter_result`` partitions ops into accepted /
+        # RejectedItem witnesses (the §1.8 "no unsupported lane disappears"
+        # contract). Without routing production here, the conserved wrapper
+        # would be exercised only by tests — a §2.9 worst-class silent
+        # failure (a guard that exists but is unreachable from production).
+        apply_result = apply_eu_ops_conserved(
             baseline,
             ops,
             adjudications_out=adjudications,
         )
+        replayed = apply_result.statute
+        apply_filter_result = apply_result.filter_result
         replay_text_duplication_findings = build_text_duplication_findings(
             replayed.body,
             phase="replay_fold",
@@ -941,4 +974,5 @@ class EUReplayPipeline:
             adjudications=adjudications,
             cutoff_date=cutoff_date,
             temporal_events=temporal_events,
+            apply_filter_result=apply_filter_result,
         )

@@ -11,6 +11,7 @@ from typing import Protocol
 
 from lxml import etree
 
+from lawvm.core.xml_parse import parse_corpus_xml
 from lawvm.finland.consolidated_artifacts import (
     artifact_record,
     canonical_consolidated_locator,
@@ -187,7 +188,15 @@ def _is_self_comparable_with_tolerance(
     if source_bytes is None:
         return False, False
     try:
-        tree = etree.fromstring(source_bytes)
+        # iter2 W5 M7 (security review): route through the hardened lxml config
+        # (``resolve_entities=False`` / ``no_network=True`` / ``load_dtd=False``)
+        # via ``parse_corpus_xml`` so corpus-XML parses are pinned in one auditable
+        # place (AGENTS.md §1.10 / §2.6). Previously this used raw lxml defaults
+        # against ``etree``'s ``resolve_entities=True`` baseline — billion-laughs
+        # / XXE exposure on the bench-comparable check. The ratchet at
+        # ``tests/data/corpus_xml_parser_baseline.json`` drops the count for this
+        # file once this is in.
+        tree = parse_corpus_xml(source_bytes)
     except etree.XMLSyntaxError:
         return False, False
 

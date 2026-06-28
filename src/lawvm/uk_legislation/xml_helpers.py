@@ -1,6 +1,7 @@
 """Shared XML helpers for the UK legislation frontend."""
 from __future__ import annotations
 
+import copy
 from lxml import etree as ET
 from functools import lru_cache
 from typing import Any, Sequence
@@ -217,7 +218,15 @@ def _structural_children(el: ET._Element) -> tuple[ET._Element, ...]:
 
 
 def _clone_element(el: ET._Element) -> ET._Element:
-    return ET.fromstring(ET.tostring(el, encoding="unicode"))
+    # perf (iter2 W5 M6): ``copy.deepcopy`` is the canonical lxml-endorsed
+    # element clone — it preserves tag/text/tail/attrib/children/nsmap exactly
+    # without a serialize→parse round-trip. The prior
+    # ``ET.fromstring(ET.tostring(el, encoding="unicode"))`` form was O(S) over
+    # the subtree AND ran a full XML re-tokenization; the 3 callers
+    # (``source_payload_elaboration.py:138/404/411``) sit on the per-amendment-
+    # block hot path. Behavior is byte-identical for well-formed subtrees
+    # (pinned by tests/test_uk_xml_helpers.py::test_clone_element_deepcopy_*).
+    return copy.deepcopy(el)
 
 
 def get_all_eids(nodes: Sequence[IRNode]) -> list[str]:

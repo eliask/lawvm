@@ -29,12 +29,12 @@ _PRIMARY_TIER_ORDER = [
     "PROVED_REPLAY_BUG",
     "UNRESOLVED",
 ]
-_MANUAL_DATASET = Path(__file__).resolve().parent.parent.parent.parent / "data" / "finland" / "corrigendum_manual.yaml"
+_SOURCE_DEFECT_DATASET = Path(__file__).resolve().parent.parent.parent.parent / "data" / "finland" / "source_defect_fixes_fi.yaml"
 _PROOF_CONTRACT_VERSION = "lawvm-proof-v1"
 _PROOF_STATUS = "defeasible_current_system"
 
 __all__ = [
-    "_MANUAL_DATASET",
+    "_SOURCE_DEFECT_DATASET",
     "_ORACLE_INCORRECT_DIAGNOSES",
     "_PRIMARY_TIER_ORDER",
     "_PROOF_CONTRACT_VERSION",

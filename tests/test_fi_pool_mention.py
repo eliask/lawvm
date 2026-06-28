@@ -11,7 +11,9 @@ Per AGENTS.md §15 test categories:
   7. Schema-stability tests -- parquet column order + dtypes pinned.
 
 Module coverage:
-  - lawvm.core.pool_mention (PoolMention, QuantityKind, PoolResolutionConfidence, etc.)
+  - lawvm.core.pool_mention (ProvisionMention marker protocol -- the abstract base)
+  - lawvm.finland.pool_mention_primitive (PoolMention, QuantityKind,
+    PoolResolutionConfidence, pool_canonical_id, pool_mention_to_row, etc.)
   - lawvm.finland.pool_mention_extractor (extraction entry points)
   - lawvm.finland.canonical_budget_line_registry (REGISTRY, BudgetLine)
   - lawvm.finland.conformance_corpus.pools.fixtures (conformance fixtures)
@@ -23,13 +25,15 @@ from typing import Any, Dict, cast
 
 import pytest
 
-from lawvm.core.pool_mention import (
+from lawvm.core.pool_mention import ProvisionMention
+from lawvm.finland.pool_mention_primitive import (
     AmbiguousPoolMention,
     BudgetLineRenumberingObservation,
     PoolMention,
     PoolResolutionConfidence,
     QuantityKind,
     RejectedPoolCandidate,
+    pool_canonical_id,
     pool_mention_to_row,
 )
 from lawvm.finland.pool_mention_extractor import (
@@ -888,3 +892,122 @@ class TestSchemaStability:
         row = pool_mention_to_row(mention)
         actual_cols = list(row.keys())
         assert actual_cols == self.EXPECTED_COLUMNS
+
+
+# ===========================================================================
+# Category 8: iter2 W5 H1 cross-module move regression
+# ===========================================================================
+
+
+class TestCrossModuleMoveRegression:
+    """Finnish fiscal doctrine now lives in ``finland.pool_mention_primitive``.
+
+    Pins the §2.3 crystallization: the abstract ``ProvisionMention`` protocol
+    is the only resident of ``lawvm.core.pool_mention``; the concrete
+    ``PoolMention``/``QuantityKind``/``PoolResolutionConfidence`` primitive,
+    the canonical-id factory, and the parquet serializer live in
+    ``lawvm.finland.pool_mention_primitive``. Behavior is byte-identical to
+    the pre-move layout; these tests pin the post-move wiring so a future
+    re-leak is caught at unit-test time, not at code review.
+    """
+
+    def test_concrete_primitive_imported_from_finland_not_core(self) -> None:
+        """Concrete primitive lives in finland, not core.
+
+        Importing the symbols from ``lawvm.finland.pool_mention_primitive``
+        must succeed (this is the post-move home); importing them from
+        ``lawvm.core.pool_mention`` must fail with AttributeError (the
+        concrete names are no longer in core).
+        """
+        # Symbol is importable from the finland primitive.
+        from lawvm.finland.pool_mention_primitive import PoolMention as FiPoolMention  # noqa: F401
+
+        assert FiPoolMention is PoolMention  # re-import resolves to the same class.
+
+        # The concrete symbols are gone from core (only ProvisionMention lives there).
+        import lawvm.core.pool_mention as core_mod
+
+        assert not hasattr(core_mod, "PoolMention")
+        assert not hasattr(core_mod, "QuantityKind")
+        assert not hasattr(core_mod, "PoolResolutionConfidence")
+        assert not hasattr(core_mod, "AmbiguousPoolMention")
+        assert not hasattr(core_mod, "BudgetLineRenumberingObservation")
+        assert not hasattr(core_mod, "RejectedPoolCandidate")
+        assert not hasattr(core_mod, "pool_canonical_id")
+        assert not hasattr(core_mod, "pool_mention_to_row")
+
+    def test_concrete_primitive_inherits_core_protocol(self) -> None:
+        """``PoolMention`` explicitly inherits ``ProvisionMention``.
+
+        Mirrors the ``ScopeConfidence`` precedent: explicit protocol
+        inheritance registers the frontend dataclass as a producer in the
+        AST-scan parity check, keeping the producer set equal to the
+        protocol-implementer set.
+        """
+        mention = PoolMention(
+            source_provision_ref="711/2022/3",
+            quantity_phrase="28.91.50",
+            pool_canonical_id="fi.budget.28.91.50",
+            quantity_kind=QuantityKind.BUDGET_LINE,
+            resolution_confidence=PoolResolutionConfidence.EXACT,
+            numeric_value=None,
+            unit=None,
+            source_span_file=None,
+            source_span_byte_offset=None,
+            source_span_byte_len=None,
+            valid_at_start=None,
+            valid_at_end=None,
+        )
+        # runtime_checkable structural conformance.
+        assert isinstance(mention, ProvisionMention)
+        # Explicit name in MRO -- not just structural conformance, but
+        # the AST parity-check relies on the explicit `class PoolMention(ProvisionMention)`.
+        assert ProvisionMention.__name__ in {
+            base.__name__ for base in type(mention).__mro__
+        }
+
+    def test_pool_canonical_id_factory_byte_identical(self) -> None:
+        """``pool_canonical_id('28.91.50') == 'fi.budget.28.91.50'``.
+
+        The post-move factory (in ``finland.pool_mention_primitive``) must
+        produce the same canonical-id form the pre-move private
+        ``_canonical_id_from_code`` helper produced. The old helper did an
+        identity ``.replace('.', '.')`` no-op, so the post-move factory
+        (which omits that no-op) is byte-identical.
+        """
+        assert pool_canonical_id("28.91.50") == "fi.budget.28.91.50"
+        assert pool_canonical_id("1.2.3") == "fi.budget.1.2.3"
+
+    def test_extract_to_row_round_trip_post_move(self) -> None:
+        """Extraction -> pool_mention_to_row round-trip works post-move.
+
+        Drives the full production path (BudgetLineRecognizer ->
+        _resolve_budget_line -> PoolMention -> pool_mention_to_row) to
+        confirm that no stage was broken by the import rewiring.
+        Mirrors the focus of the wave-2 ``tarkoitetaan`` regression.
+        """
+        from lawvm.finland.conformance_corpus.pools.fixtures import EXACT_BUDGET_LINE
+
+        result = extract_pool_mentions(
+            EXACT_BUDGET_LINE.xml_bytes,
+            EXACT_BUDGET_LINE.source_statute_id,
+        )
+
+        assert result.mentions, "EXACT_BUDGET_LINE fixture must produce at least one mention"
+        bl_mentions = [
+            m for m in result.mentions
+            if m.quantity_kind == QuantityKind.BUDGET_LINE
+        ]
+        assert bl_mentions, "EXACT_BUDGET_LINE fixture must produce a BUDGET_LINE mention"
+        exact = [
+            m for m in bl_mentions
+            if m.resolution_confidence == PoolResolutionConfidence.EXACT
+        ]
+        assert exact, "EXACT_BUDGET_LINE fixture must produce an EXACT match"
+        # The factory was used internally for the canonical-id form -- pin it.
+        assert exact[0].pool_canonical_id == pool_canonical_id("28.91.50")
+        # Serializer still works on a post-move PoolMention instance.
+        row = pool_mention_to_row(exact[0])
+        assert row["pool_canonical_id"] == "fi.budget.28.91.50"
+        assert row["quantity_kind"] == "budget_line"
+        assert row["resolution_confidence"] == "exact"

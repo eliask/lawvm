@@ -4524,12 +4524,12 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
 
     corr_manual_p = corr_sub.add_parser(
         "manual-template",
-        help="emit YAML scaffold entries for corrigendum_manual.yaml from classified patches",
+        help="emit YAML scaffold entries for source_defect_fixes_fi.yaml from classified patches",
         description=(
             "Load one amendment's classified corrigendum items from the git-tracked "
             "corrigendum corpus, "
             "filter to the items that still do not match source XML by default, and emit "
-            "a ready-to-paste YAML scaffold for corrigendum_manual.yaml."
+            "a ready-to-paste YAML scaffold for source_defect_fixes_fi.yaml."
         ),
     )
     corr_manual_p.add_argument(
