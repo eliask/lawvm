@@ -48,6 +48,59 @@ class VersionedNodeLookup(NamedTuple):
     index: Optional[int]
 
 
+class UKCoWAncestorChainLocateFailed(Exception):
+    """Raised when ``_remove_node`` / ``_do_replace_node_in_statute`` cannot
+    locate the target node through EITHER the warm EID index CoW chain OR the
+    path-walk fallback (iter2 W5 M3, silent-failure review).
+
+    Pre-fix the unreachable-else tail of both CoW chain handlers returned
+    ``False`` silently. The caller at ``replay_repeal_apply.py:289-294``
+    discarded the boolean and unconditionally called
+    ``_record_repealed_target(target)`` — recording a repeal that never landed
+    against the live tree (over-repeal risk, AGENTS.md §0). Evidence used to
+    diagnose the missing target should never be re-derived from the live tree
+    guess either (§1.11 / §1.12): the typed carrier is the receipt of failure,
+    not a ``return False`` the caller silently swallows.
+
+    The exception carries the original ``(target, parent, idx)`` tuple passed
+    to the CoW chain entry so the caller can route it into a typed
+    ``uk_replay_cow_chain_locate_failed`` adjudication rather than recording a
+    false repeal. ``parent`` / ``idx`` are ``None`` for the replace path,
+    where the original ``_do_replace_node_in_statute`` only had ``old_node``
+    to thread into the warm-index lookup.
+    """
+
+    target: IRNode
+    parent: Optional[IRNode]
+    idx: Optional[int]
+
+    def __init__(
+        self,
+        *,
+        target: IRNode,
+        parent: Optional[IRNode] = None,
+        idx: Optional[int] = None,
+    ) -> None:
+        object.__setattr__(self, "target", target)
+        object.__setattr__(self, "parent", parent)
+        object.__setattr__(self, "idx", idx)
+        parent_repr = (
+            f" parent={parent.kind.value}:{parent.label!r}"
+            if parent is not None
+            else " parent=None"
+        )
+        idx_repr = f" idx={idx}" if idx is not None else " idx=None"
+        super().__init__(
+            "UK replay CoW chain fail-loud: both the warm EID index CoW "
+            "rebuild (``_cow_*_preserve_warm_index``) AND the path-walk "
+            "fallback (``_cow_*_via_path_walk``) failed to locate the "
+            f"target={target.kind.value}:{target.label!r}{parent_repr}{idx_repr}. "
+            "Previously this branch silently returned False and the caller "
+            "unconditionally recorded a repeal/replace that never landed "
+            "(AGENTS.md §0 over-repeal risk)."
+        )
+
+
 type TargetLookupKey = tuple[tuple[tuple[str, Optional[str]], ...], bool, bool]
 # Key: (id(root_node), kind, label) → (serial, tuple-of-matches capped at 2)
 type _RecursiveMatchAllKey = tuple[int, str, str]
@@ -1359,7 +1412,21 @@ class UKReplayStateMixin:
             self._record_replace_node_mutation_event(old_path=old_path, new_node=new_node)
             return True
 
-        return False
+        # iter2 W5 M3 (silent-failure review): the prior unreachable-else tail
+        # returned ``False`` silently, allowing callers that discard the
+        # boolean (e.g. the many ``self._replace_node_in_statute(node, rebuilt)``
+        # call sites in replay_text_apply / replay_table_apply / replay_renumber
+        # _apply / replay_replace_apply) to continue as if the replace had
+        # landed. The typed exception closes the silent-drop path: BOTH the
+        # warm EID index CoW rebuild (``_cow_replace_in_subtree_preserve_warm_
+        # index`` above) AND the path-walk CoW fallback
+        # (``_cow_replace_in_subtree_via_path_walk`` above) failed to route
+        # ``old_node`` to a parent in the live tree. ``old_node`` is the only
+        # identity available here — there is no parent/idx at this tail because
+        # the warm-index lookup either returned None or its returned parent
+        # failed to chain to a root (handled by the Cow helpers' own
+        # ``return False`` branches above).
+        raise UKCoWAncestorChainLocateFailed(target=old_node)
 
     def _cow_replace_in_subtree_preserve_warm_index(
         self,
@@ -1659,7 +1726,18 @@ class UKReplayStateMixin:
                 self._note_structure_mutation()
                 self._record_remove_node_mutation_event(removed_path=removed_path)
                 return True
-        return False
+        # iter2 W5 M3 (silent-failure review): the prior unreachable-else tail
+        # returned ``False`` silently, which the caller discarded before
+        # recording a repeal that never landed against the live tree (over-
+        # repeal risk, AGENTS.md §0). Both branches that reach here only do
+        # so after the warm EID index CoW chain AND the path-walk fallback
+        # already failed for the parent-with-idx case (above) AND the
+        # supplements loop above did not find the node by identity — at which
+        # point continuing to model the call as a "no-op success" is exactly
+        # the silent-heuristic shape §0 forbids. Fail loud with a typed
+        # exception so the caller can route this into a typed adjudication
+        # rather than a silent ``_record_repealed_target(target)``.
+        raise UKCoWAncestorChainLocateFailed(target=node, parent=parent, idx=idx)
 
     def _cow_remove_in_parent_preserve_warm_index(
         self,

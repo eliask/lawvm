@@ -13,7 +13,7 @@ from lawvm.uk_legislation.replay_records import (
     uk_replay_action_target_detail,
     uk_replay_blocking_action_target_detail,
 )
-from lawvm.uk_legislation.replay_state import NodeLookupResult
+from lawvm.uk_legislation.replay_state import NodeLookupResult, UKCoWAncestorChainLocateFailed
 from lawvm.uk_legislation.replay_target_gaps import uk_missing_source_target_gap
 
 
@@ -92,6 +92,48 @@ class _RepealReplaySelf(Protocol):
 
 def _repeal_replay_self(replay: object) -> _RepealReplaySelf:
     return cast(_RepealReplaySelf, replay)
+
+
+def _record_cow_chain_locate_failed(
+    replay: _RepealReplaySelf,
+    *,
+    op: LegalOperation,
+    target: LegalAddress,
+    exc: UKCoWAncestorChainLocateFailed,
+) -> None:
+    """iter2 W5 M3: fail-loud receipt for the over-repeal risk class.
+
+    ``_remove_node`` raised ``UKCoWAncestorChainLocateFailed`` because BOTH
+    the warm EID index CoW chain AND the path-walk fallback failed to locate
+    the target. Previously this branch silently returned ``False``, the
+    caller discarded the boolean, and ``_record_repealed_target(target)``
+    recorded a repeal that never landed against the live tree — over-repeal
+    risk per AGENTS.md §0. The typed exception carries the original
+    ``(target, parent, idx)`` tuple so the adjudication can show the
+    exact triple that failed to route (rather than re-derive a lossy
+    surrogate — §1.11 / §1.12).
+    """
+    _append_uk_replay_adjudication(
+        replay.adjudications_out,
+        kind="uk_replay_cow_chain_locate_failed",
+        message=(
+            "UK replay skipped repeal: CoW chain (warm EID index) AND "
+            "path-walk fallback both failed to locate the resolved target — "
+            "the node resolved by the target lookup is no longer routable "
+            "through the live tree (over-repeal risk, AGENTS.md §0)."
+        ),
+        op=op,
+        detail=uk_replay_blocking_action_target_detail(
+            op,
+            target,
+            reason_code="cow_ancestor_chain_locate_failed",
+        ),
+    )
+    # Mirror the early-return pattern of the other blocking branches above
+    # (e.g. ``uk_replay_target_not_found``): emit invariant + snapshot so the
+    # op's effect on the tree is still observable in the per-op account.
+    replay._record_invariant_violations(op)
+    replay._emit_top_section_snapshot(op)
 
 
 class UKReplayRepealApplyMixin:
@@ -286,11 +328,26 @@ class UKReplayRepealApplyMixin:
             return
         if parent and idx is not None:
             replay._log(f"  EXECUTOR: repealing {node.kind} {node.label} from parent {parent.kind} {parent.label}")
-            replay._remove_node(node, parent, idx)
+            # iter2 W5 M3: gate ``_record_repealed_target(target)`` on the
+            # successful CoW-chain remove. If both the warm-index CoW chain
+            # AND the path-walk fallback fail to locate the target, the
+            # typed ``UKCoWAncestorChainLocateFailed`` exception fires from
+            # ``_remove_node``; emit a typed adjudication recording the fail
+            # and SKIP the false ``_record_repealed_target(target)`` call
+            # (over-repeal risk, AGENTS.md §0).
+            try:
+                replay._remove_node(node, parent, idx)
+            except UKCoWAncestorChainLocateFailed as exc:
+                _record_cow_chain_locate_failed(replay, op=op, target=target, exc=exc)
+                return
             replay._record_repealed_target(target)
         elif node in replay.statute.supplements:
             replay._log(f"  EXECUTOR: repealing schedule {node.label}")
-            replay._remove_node(node, None, None)
+            try:
+                replay._remove_node(node, None, None)
+            except UKCoWAncestorChainLocateFailed as exc:
+                _record_cow_chain_locate_failed(replay, op=op, target=target, exc=exc)
+                return
             replay._record_repealed_target(target)
         replay._record_invariant_violations(op)
         replay._emit_top_section_snapshot(op)

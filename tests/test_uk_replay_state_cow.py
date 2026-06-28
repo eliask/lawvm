@@ -38,7 +38,7 @@ import pytest
 
 from lawvm.core.ir import IRNode, IRStatute, LegalAddress, LegalOperation, OperationSource
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
-from lawvm.uk_legislation.replay_state import NodeIndexEntry
+from lawvm.uk_legislation.replay_state import NodeIndexEntry, UKCoWAncestorChainLocateFailed
 from lawvm.uk_legislation.uk_amendment_replay import UKReplayExecutor, replay_uk_ops
 
 
@@ -652,4 +652,189 @@ class TestWaveN3dCoWReKeyPerfInRegression:
             f"Patched CoW re-key took >5s on a {self.N_SECTIONS}x"
             f"{self.N_SUBSECTIONS_PER_SECTION}x{self.N_PARAGRAPHS_PER_SUBSECTION} "
             f"statute with {self.N_OPS} replaces — performance regression."
+        )
+
+
+# ---------------------------------------------------------------------------
+# iter2 W5 M3 — UKCoWAncestorChainLocateFailed fail-loud (silent-failure
+# review). The unreachable-else tail of ``_remove_node`` /
+# ``_do_replace_node_in_statute`` was a silent ``return False``; the caller at
+# ``replay_repeal_apply.py:289-294`` discarded the boolean and unconditionally
+# called ``_record_repealed_target(target)`` — recording a repeal that never
+# landed against the live tree (AGENTS.md §0 over-repeal risk). These tests
+# pin the fail-loud behaviour:
+#
+#   (1) ``_remove_node`` raises ``UKCoWAncestorChainLocateFailed`` (with the
+#       right target / parent / idx) when BOTH the warm EID index CoW chain
+#       AND the path-walk fallback fail to locate the target — a §2.9
+#       guard-liveness fire-drill that drives the production path through the
+#       live ``UKReplayExecutor`` (not a unit test of the exception class).
+#   (2) ``_do_replace_node_in_statute`` raises the same exception when both
+#       Cow paths fail.
+#   (3) The production caller catches the exception via ``apply_op``, emits
+#       a typed ``uk_replay_cow_chain_locate_failed`` adjudication, and DOES
+#       NOT record the false repeal (over-repeal risk closed).
+# ---------------------------------------------------------------------------
+
+
+class TestUKCoWAncestorChainLocateFailed:
+    """The unreachable-else tail of ``_remove_node`` /
+    ``_do_replace_node_in_statute`` MUST raise when both CoW paths fail
+    rather than silently returning ``False`` (AGENTS.md §0)."""
+
+    def _resolve_live_section_five(
+        self, executor: UKReplayExecutor
+    ) -> tuple[IRNode, IRNode, int]:
+        """Resolve section-5 + its parent + index through the warm EID
+        lookup so the call has real production-lane identities (not orphans
+        manufactured solely for the test)."""
+        node, parent, idx = executor._find_node_and_parent_statute("section-5")
+        assert node is not None, "section-5 must resolve via the warm EID index"
+        assert parent is not None, "section-5's parent must resolve"
+        assert idx is not None, "section-5's index must resolve"
+        # Live identity check — the warm EID index returned the live node.
+        assert node is executor.statute.body.children[4]
+        return node, parent, idx
+
+    def test_remove_node_raises_when_both_cow_paths_fail(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """§2.9 guard-liveness: drive the production ``UKReplayExecutor``
+        path with both Cow paths forced to fail, assert the typed exception
+        fires with the right target identity."""
+        executor = UKReplayExecutor(_multi_section_base_with_eids())
+        node_5, parent_5, idx_5 = self._resolve_live_section_five(executor)
+
+        # Force the unreachable-else tail: BOTH Cow paths return False so the
+        # supplements loop is the only remaining success path — and section-5
+        # is not a supplement root, so the loop yields no match either.
+        monkeypatch.setattr(
+            executor,
+            "_cow_remove_in_parent_preserve_warm_index",
+            lambda *, node, parent, idx: False,
+        )
+        monkeypatch.setattr(
+            executor,
+            "_cow_remove_via_path_walk",
+            lambda _node: False,
+        )
+
+        with pytest.raises(UKCoWAncestorChainLocateFailed) as exc_info:
+            executor._remove_node(node_5, parent_5, idx_5)
+
+        # The typed carrier preserves the exact triple that failed — no
+        # surrogate, no re-derivation from a lossy representation (§1.11 /
+        # §1.12). Identity equality (``is``) is the load-bearing check: a
+        # copy or rebuilt surrogate would defeat the audit.
+        assert exc_info.value.target is node_5
+        assert exc_info.value.parent is parent_5
+        assert exc_info.value.idx == idx_5
+
+    def test_replace_node_in_statute_raises_when_both_cow_paths_fail(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The audit in §3 of the brief covers the same unreachable-else tail
+        in ``_do_replace_node_in_statute`` — same fail-loud contract, same
+        carrier, identical reasoning (the prior ``return False`` was silently
+        swallowed by every ``self._replace_node_in_statute(node, rebuilt)``
+        call site in replay_text_apply / replay_table_apply / replay_renumber
+        _apply / replay_replace_apply)."""
+        executor = UKReplayExecutor(_multi_section_base_with_eids())
+        node_5, _parent_5, _idx_5 = self._resolve_live_section_five(executor)
+
+        replacement = IRNode(
+            kind=node_5.kind,
+            label=node_5.label,
+            text="Replacement section five text.",
+            attrs=dict(node_5.attrs),
+        )
+
+        monkeypatch.setattr(
+            executor,
+            "_cow_replace_in_subtree_preserve_warm_index",
+            lambda *, old_node, new_node, parent, idx: False,
+        )
+        monkeypatch.setattr(
+            executor,
+            "_cow_replace_in_subtree_via_path_walk",
+            lambda _old_node, _new_node: False,
+        )
+
+        with pytest.raises(UKCoWAncestorChainLocateFailed) as exc_info:
+            executor._do_replace_node_in_statute(node_5, replacement)
+
+        # ``old_node`` is the only identity available at this tail — the
+        # warm-index lookup either returned None or its returned parent
+        # failed to chain to a root, so the exception carries target only
+        # (parent=None, idx=None). The audit witness is the target identity.
+        assert exc_info.value.target is node_5
+        assert exc_info.value.parent is None
+        assert exc_info.value.idx is None
+
+    def test_apply_repeal_op_catches_failure_and_does_not_record_false_repeal(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """§2.9 production-lane fire-drill: drive ``executor.apply_op`` with a
+        real REPEAL op + monkeypatched Cow paths that force the fail-loud. The
+        caller at ``replay_repeal_apply.py:287-303`` MUST:
+          (a) catch ``UKCoWAncestorChainLocateFailed``,
+          (b) emit a typed ``uk_replay_cow_chain_locate_failed`` adjudication,
+          (c) SKIP the false ``_record_repealed_target(target)`` call (over-
+              repeal risk, AGENTS.md §0).
+        """
+        executor = UKReplayExecutor(_multi_section_base_with_eids())
+        # Warm the EID index so the production resolve path uses the Cow path
+        # (matches what a real replay does after the first lookup).
+        executor._ensure_eid_lookup_index()
+
+        monkeypatch.setattr(
+            executor,
+            "_cow_remove_in_parent_preserve_warm_index",
+            lambda *, node, parent, idx: False,
+        )
+        monkeypatch.setattr(
+            executor,
+            "_cow_remove_via_path_walk",
+            lambda _node: False,
+        )
+
+        repeal_op = _repeal_op("5", op_id="uk-rel-cow-fail-drill")
+        # The production apply_op path MUST NOT raise: the typed exception
+        # MUST be caught at the application layer and routed into a typed
+        # adjudication. If this raises, the M3 caller contract is broken.
+        executor.apply_op(repeal_op)
+
+        # (a) + (b): a ``uk_replay_cow_chain_locate_failed`` adjudication
+        # was emitted, recording the over-repeal-prevention finding.
+        cow_chain_adjudications = [
+            adj
+            for adj in executor.adjudications_out
+            if "cow_chain_locate_failed" in str(getattr(adj, "kind", ""))
+        ]
+        assert cow_chain_adjudications, (
+            "apply_op(repeal_op) under a forced CoW-chain failure MUST emit a "
+            "uk_replay_cow_chain_locate_failed adjudication; got: "
+            f"{[getattr(a, 'kind', '<no kind>') for a in executor.adjudications_out]}"
+        )
+
+        # (c): ``_record_repealed_target(target)`` was NOT called for section-5
+        # — the over-repeal would have polluted ``_repealed_target_prefixes``
+        # and started hiding future ops that target section-5 or its
+        # descendants via ``_target_under_repealed_prefix``.
+        target_text = str(repeal_op.target or "").strip()
+        assert target_text, "repeal op must carry a non-empty target for the test"
+        assert target_text not in executor._repealed_target_prefixes, (
+            "executor._repealed_target_prefixes leaked a false "
+            f"section-5 repeal ({target_text!r}) under the forced CoW-chain "
+            "failure — the §0 over-repeal risk fired."
+        )
+
+        # Defence-in-depth: the live tree is unchanged. Section-5 is still
+        # present in the body's children tuple because the failed remove
+        # mutated nothing (CoW-chain rebuild never reached the body root).
+        labels_after = [c.label for c in executor.statute.body.children]
+        assert labels_after == ["1", "2", "3", "4", "5", "6", "7"], (
+            "executor.statute.body.children labels changed under a forced "
+            "CoW-chain failure — the fail-loud catch path leaked a tree "
+            f"mutation: {labels_after}."
         )
