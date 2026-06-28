@@ -1099,7 +1099,9 @@ class UKReplayPipeline:
             executor.ground_ids()
         if oracle_alignment_events_out is not None:
             oracle_alignment_events_out.extend(dict(event) for event in executor.oracle_alignment_events)
-        replayed = executor.statute.to_irstatute()
+        # Sub-PR C+D: ``executor.statute`` is the immutable ``IRStatute`` — no
+        # ``UKMutableStatute.to_irstatute()`` boundary call left.
+        replayed = executor.statute
         probe_uk_materialization_totality(
             base=base_ir,
             replayed=replayed,

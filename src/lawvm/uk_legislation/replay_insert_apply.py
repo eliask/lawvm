@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Optional, Protocol, cast
 
-from lawvm.core.ir import IRNode, LegalAddress, LegalOperation
+from lawvm.core.ir import IRNode, IRStatute, LegalAddress, LegalOperation
 from lawvm.uk_legislation.addressing import (
     _addr_container,
     _addr_field,
@@ -14,12 +14,9 @@ from lawvm.uk_legislation.addressing import (
     _canonicalize_schedule_paragraph_eid_label,
     _schedule_target_levels,
 )
+from lawvm.uk_legislation.apply_rebuild import uk_with_attr_set
 from lawvm.uk_legislation.authority_filter import _following_eid, _preceding_eid
 from lawvm.uk_legislation.canonicalize import uk_find_body_predecessor_parent
-from lawvm.uk_legislation.mutable_ir import (
-    UKMutableNode,
-    UKMutableStatute,
-)
 from lawvm.uk_legislation.ordering import _label_sort_key
 from lawvm.uk_legislation.provenance_notes import (
     _schedule_list_entry_selector,
@@ -57,7 +54,7 @@ _TOP_SCOPED_EID_PREFIXES = frozenset(
 
 
 class _InsertReplaySelf(Protocol):
-    statute: UKMutableStatute
+    statute: IRStatute
     eid_map: dict[str, str]
     adjudications_out: list[CompileAdjudication]
 
@@ -86,7 +83,7 @@ class _InsertReplaySelf(Protocol):
     def _insert_schedule_list_entry_table_rows(
         self,
         target: LegalAddress,
-        new_node: UKMutableNode,
+        new_node: IRNode,
         op: LegalOperation,
         selector: dict[str, Any],
     ) -> bool: ...
@@ -94,7 +91,7 @@ class _InsertReplaySelf(Protocol):
     def _insert_schedule_list_entry(
         self,
         target: LegalAddress,
-        new_node: UKMutableNode,
+        new_node: IRNode,
         op: LegalOperation,
         selector: dict[str, Any],
     ) -> bool: ...
@@ -102,7 +99,7 @@ class _InsertReplaySelf(Protocol):
     def _insert_table_cell_child_list_item(
         self,
         target: LegalAddress,
-        new_node: UKMutableNode,
+        new_node: IRNode,
         op: LegalOperation,
         selector: dict[str, Any],
     ) -> bool: ...
@@ -110,7 +107,7 @@ class _InsertReplaySelf(Protocol):
     def _insert_table_column(
         self,
         target: LegalAddress,
-        new_node: UKMutableNode,
+        new_node: IRNode,
         op: LegalOperation,
         selector: dict[str, Any],
     ) -> bool: ...
@@ -118,7 +115,7 @@ class _InsertReplaySelf(Protocol):
     def _insert_table_entry_row(
         self,
         target: LegalAddress,
-        new_node: UKMutableNode,
+        new_node: IRNode,
         op: LegalOperation,
         selector: dict[str, Any],
     ) -> bool: ...
@@ -141,31 +138,31 @@ class _InsertReplaySelf(Protocol):
 
     def _log(self, message: str) -> None: ...
 
-    def _record_child_inserted(self, parent: UKMutableNode, node: UKMutableNode) -> None: ...
+    def _record_child_inserted(self, parent: IRNode, node: IRNode) -> None: ...
 
-    def _record_supplement_inserted(self, node: UKMutableNode) -> None: ...
+    def _record_supplement_inserted(self, node: IRNode) -> None: ...
 
-    def _insert_supplement_sorted(self, new_node: UKMutableNode) -> bool: ...
+    def _insert_supplement_sorted(self, new_node: IRNode) -> bool: ...
 
     def _cow_insert_child_sorted_and_record(
         self,
-        parent: UKMutableNode,
-        new_node: UKMutableNode,
+        parent: IRNode,
+        new_node: IRNode,
     ) -> bool: ...
 
     def _cow_insert_child_at_index_and_record(
         self,
-        parent: UKMutableNode,
+        parent: IRNode,
         idx: int,
-        new_node: UKMutableNode,
+        new_node: IRNode,
     ) -> bool: ...
 
     def _cow_replace_children_and_record(
         self,
-        parent: UKMutableNode,
-        new_children: list[UKMutableNode],
+        parent: IRNode,
+        new_children: list[IRNode],
         *,
-        new_node: UKMutableNode,
+        new_node: IRNode,
     ) -> bool: ...
 
     def _cached_exact_eid_lookup(self, eid: str) -> NodeLookupResult: ...
@@ -196,7 +193,7 @@ def _normalized_definition_text(text: object) -> str:
     return " ".join(str(text or "").split()).strip().lower()
 
 
-def _definition_child_identity(node: UKMutableNode) -> tuple[str, str]:
+def _definition_child_identity(node: IRNode) -> tuple[str, str]:
     return (
         _normalized_definition_text(node.attrs.get("definition_term")),
         _clean_num(str(node.attrs.get("definition_child_label") or "")),
@@ -204,13 +201,13 @@ def _definition_child_identity(node: UKMutableNode) -> tuple[str, str]:
 
 
 class UKReplayInsertApplyMixin:
-    statute: UKMutableStatute
+    statute: IRStatute
     eid_map: dict[str, str]
 
     def _skip_insert_if_parent_already_has_target_child(
         self,
         *,
-        parent_node: UKMutableNode,
+        parent_node: IRNode,
         target: LegalAddress,
         op: LegalOperation,
         target_resolution_recovery: str,
@@ -281,7 +278,7 @@ class UKReplayInsertApplyMixin:
         self,
         op: LegalOperation,
         target: LegalAddress,
-        node: UKMutableNode | None,
+        node: IRNode | None,
         insert_existing_target_resolution: str,
     ) -> None:
         replay = _insert_replay_self(self)
@@ -359,7 +356,7 @@ class UKReplayInsertApplyMixin:
             # Clone payload so repeated ops (same source for multiple targets) don't share nodes
             inserted = self._insert_node_v2(
                 target,
-                UKMutableNode.from_dict(op.payload.to_jsonable_dict()),
+                op.payload,
                 op,
             )
             if inserted:
@@ -486,7 +483,7 @@ class UKReplayInsertApplyMixin:
     def _insert_node_v2(
         self,
         target: LegalAddress,
-        new_node: UKMutableNode,
+        new_node: IRNode,
         op: LegalOperation,
     ) -> bool:
         replay = _insert_replay_self(self)
@@ -541,12 +538,12 @@ class UKReplayInsertApplyMixin:
             find_node_and_parent_statute=self._find_node_and_parent_statute,
             label_sort_key=_label_sort_key,
         )
-        parent_node = cast(Optional[UKMutableNode], parent_node)
+        parent_node = cast(Optional[IRNode], parent_node)
         target_eid = self._derive_target_eid(target)
         if target_eid and "eId" not in new_node.attrs and "id" not in new_node.attrs:
-            new_node.attrs["eId"] = target_eid
+            new_node = uk_with_attr_set(new_node, "eId", target_eid)
 
-        def _inherit_parent_local_eid(parent_node: UKMutableNode, candidate: UKMutableNode) -> UKMutableNode:
+        def _inherit_parent_local_eid(parent_node: IRNode, candidate: IRNode) -> IRNode:
             parent_eid = str(parent_node.attrs.get("eId") or parent_node.attrs.get("id") or "")
             current_eid = str(candidate.attrs.get("eId") or candidate.attrs.get("id") or "")
             label = str(candidate.label or _addr_leaf_label(target) or "").strip()
@@ -577,9 +574,9 @@ class UKReplayInsertApplyMixin:
             if target_eid and (
                 _addr_container(target) == "schedule" or is_body_structural_container
             ):
-                candidate.attrs["eId"] = target_eid
+                candidate = uk_with_attr_set(candidate, "eId", target_eid)
                 return candidate
-            candidate.attrs["eId"] = f"{parent_eid}-{label}"
+            candidate = uk_with_attr_set(candidate, "eId", f"{parent_eid}-{label}")
             return candidate
 
         if parent_node and insert_idx is not None:
@@ -664,7 +661,7 @@ class UKReplayInsertApplyMixin:
             if new_kind in _sch_structural:
                 sch_node, _, _ = replay._find_node_by_target(target)
                 if sch_node:
-                    sch_node = cast(UKMutableNode, sch_node)
+                    sch_node = cast(IRNode, sch_node)
                     if self._skip_insert_if_parent_already_has_target_child(
                         parent_node=sch_node,
                         target=target,
@@ -692,7 +689,7 @@ class UKReplayInsertApplyMixin:
                 label_sort_key=_label_sort_key,
             )
             if pred_parent is not None and pred_idx is not None:
-                pred_parent = cast(UKMutableNode, pred_parent)
+                pred_parent = cast(IRNode, pred_parent)
                 if self._skip_insert_if_parent_already_has_target_child(
                     parent_node=pred_parent,
                     target=target,
@@ -743,7 +740,7 @@ class UKReplayInsertApplyMixin:
                     return True
                 new_node = _inherit_parent_local_eid(p_node, new_node)
                 replay._log(f"  EXECUTOR: inserting {new_node.kind} {new_node.label} into parent {parent_eid}")
-                parent_node = cast(UKMutableNode, p_node)
+                parent_node = cast(IRNode, p_node)
                 # PR3 (audit XJUR-02 / AGENTS.md §2.3): CoW sorted-insert
                 # variant; rebuilds parent_node + threads up to the statute root.
                 return replay._cow_insert_child_sorted_and_record(parent_node, new_node)
@@ -810,7 +807,7 @@ class UKReplayInsertApplyMixin:
     def _insert_definition_child_structural_sibling(
         self,
         target: LegalAddress,
-        new_node: UKMutableNode,
+        new_node: IRNode,
         op: LegalOperation,
     ) -> bool:
         replay = _insert_replay_self(self)
@@ -954,7 +951,7 @@ class UKReplayInsertApplyMixin:
         )
         return True
 
-    def _eid_candidate_matches_target_leaf(self, node: UKMutableNode, target: LegalAddress) -> bool:
+    def _eid_candidate_matches_target_leaf(self, node: IRNode, target: LegalAddress) -> bool:
         leaf_kind = _addr_leaf_kind(target)
         if not leaf_kind:
             return True
@@ -1156,7 +1153,7 @@ class UKReplayInsertApplyMixin:
 
     def _find_node_and_parent(
         self,
-        node: UKMutableNode,
+        node: IRNode,
         eid: str,
         *,
         allow_sequence_match: bool = True,

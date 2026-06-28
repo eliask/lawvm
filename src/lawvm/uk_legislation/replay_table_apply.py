@@ -5,11 +5,10 @@ import re
 from dataclasses import replace as dc_replace
 from typing import Any, NamedTuple, Protocol
 
-from lawvm.core.ir import LegalAddress, LegalOperation
+from lawvm.core.ir import IRNode, LegalAddress, LegalOperation
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.addressing import _uk_kind_value
 from lawvm.uk_legislation.apply_rebuild import uk_replace_children_cow
-from lawvm.uk_legislation.mutable_ir import UKMutableNode
 from lawvm.uk_legislation.replay_records import (
     _append_uk_replay_adjudication,
     uk_replay_action_target_detail,
@@ -62,21 +61,21 @@ _TABLE_CELL_SUBPARAGRAPH_SPLIT_RE = re.compile(r"(\n{4,})")
 
 
 class _TableCellParagraphSubstitutionResult(NamedTuple):
-    cell: UKMutableNode
+    cell: IRNode
     applied: bool
     reason_code: str
     detail: dict[str, Any]
 
 
 class _PendingTableColumnSpanAttrs(NamedTuple):
-    spanner: UKMutableNode
+    spanner: IRNode
     attrs: dict[str, Any]
 
 
 class _PendingTableColumnCellInsertion(NamedTuple):
-    row: UKMutableNode
+    row: IRNode
     insert_index: int
-    cell: UKMutableNode
+    cell: IRNode
 
 
 class _TableReplaySelf(Protocol):
@@ -97,16 +96,16 @@ class _TableReplaySelf(Protocol):
 
     def _replace_ancestor_chain(
         self,
-        old_node: UKMutableNode,
-        new_node: UKMutableNode,
+        old_node: IRNode,
+        new_node: IRNode,
     ) -> bool: ...
 
-    def _replace_node_in_statute(self, old_node: UKMutableNode, new_node: UKMutableNode) -> bool: ...
+    def _replace_node_in_statute(self, old_node: IRNode, new_node: IRNode) -> bool: ...
 
     def _record_children_splice_mutation_event(
         self,
         *,
-        container: UKMutableNode,
+        container: IRNode,
         helper: str,
         outcome: str,
         reason_code: str,
@@ -116,7 +115,7 @@ class _TableReplaySelf(Protocol):
 def _record_table_structure_splice(
     self: _TableReplaySelf,
     *,
-    container: UKMutableNode,
+    container: IRNode,
     helper: str,
     outcome: str,
     reason_code: str,
@@ -131,7 +130,7 @@ def _record_table_structure_splice(
     )
 
 
-def _table_cell_ordered_list_units(cell: UKMutableNode) -> list[dict[str, str]]:
+def _table_cell_ordered_list_units(cell: IRNode) -> list[dict[str, str]]:
     raw = cell.attrs.get("source_ordered_list_units_json")
     if not isinstance(raw, str) or not raw:
         return []
@@ -161,10 +160,10 @@ def _table_cell_ordered_list_units(cell: UKMutableNode) -> list[dict[str, str]]:
 
 
 def _replace_table_cell_ordered_list_text(
-    cell: UKMutableNode,
+    cell: IRNode,
     old_units: list[dict[str, str]],
     new_units: list[dict[str, str]],
-) -> UKMutableNode | None:
+) -> IRNode | None:
     if not old_units:
         return None
     text = str(cell.text or "")
@@ -197,7 +196,7 @@ class UKReplayTableApplyMixin:
     def _insert_table_cell_child_list_item(
         self: _TableReplaySelf,
         target: LegalAddress,
-        new_node: UKMutableNode,
+        new_node: IRNode,
         op: LegalOperation,
         selector: dict[str, Any],
     ) -> bool:
@@ -391,7 +390,7 @@ class UKReplayTableApplyMixin:
     def _insert_table_column(
         self: _TableReplaySelf,
         target: LegalAddress,
-        new_node: UKMutableNode,
+        new_node: IRNode,
         op: LegalOperation,
         selector: dict[str, Any],
     ) -> bool:
@@ -544,15 +543,110 @@ class UKReplayTableApplyMixin:
                 ),
             )
             return False
+        # Sub-PR C+D (audit XJUR-02 / AGENTS.md §2.3): CoW rebuild of the
+        # affected rows + table. The pre-CoW shape mutated ``spanner.attrs``
+        # in place (valid on the former UKMutableNode) and slice-assigned into
+        # ``row.children`` (a list). ``IRNode`` is frozen, so rebuild each
+        # affected row via ``dc_replace`` and thread the new rows up through a
+        # fresh table via ``uk_replace_children_cow`` plus
+        # ``_replace_ancestor_chain``. Each row gets EITHER a spanner update OR
+        # a cell insertion (the planning loop's ``continue`` enforces this), so
+        # ``new_rows_by_index`` accumulates one new row per affected
+        # ``plan.row_index`` without overlap.
+        new_rows_by_index: dict[int, IRNode] = {}
         for span_attrs in pending_span_attrs:
-            span_attrs.spanner.attrs = span_attrs.attrs
-        for insertion in pending_cell_insertions:
-            insertion.row.children[insertion.insert_index : insertion.insert_index] = [
-                insertion.cell
-            ]
+            spanner = span_attrs.spanner
+            new_spanner = dc_replace(
+                spanner,
+                attrs={**dict(spanner.attrs), **dict(span_attrs.attrs)},
+            )
+            parent_plan_index = next(
+                (
+                    plan_index
+                    for plan_index, plan in enumerate(plans)
+                    for owned_range in plan.owned_ranges
+                    if owned_range.cell is spanner
+                ),
+                None,
+            )
+            if parent_plan_index is None:
+                # ``spanner`` is always a member of some ``owned_ranges`` entry —
+                # if this branch fires, the planning loop invariant is wrong.
+                reason = "spanner_parent_row_not_found"
+                break
+            parent_plan = plans[parent_plan_index]
+            parent_row_index = parent_plan.row_index
+            parent_physical_index = next(
+                owned_range.physical_index
+                for owned_range in parent_plan.owned_ranges
+                if owned_range.cell is spanner
+            )
+            parent_row = new_rows_by_index.get(
+                parent_row_index,
+                table.children[parent_row_index],
+            )
+            new_parent_children = (
+                parent_row.children[:parent_physical_index]
+                + (new_spanner,)
+                + parent_row.children[parent_physical_index + 1 :]
+            )
+            new_rows_by_index[parent_row_index] = dc_replace(
+                parent_row,
+                children=new_parent_children,
+            )
+        if not reason:
+            for insertion in pending_cell_insertions:
+                target_plan_index = next(
+                    plan_index
+                    for plan_index, plan in enumerate(plans)
+                    if plan.row is insertion.row
+                )
+                target_row_index = plans[target_plan_index].row_index
+                base_row = new_rows_by_index.get(
+                    target_row_index,
+                    table.children[target_row_index],
+                )
+                new_children = (
+                    base_row.children[: insertion.insert_index]
+                    + (insertion.cell,)
+                    + base_row.children[insertion.insert_index :]
+                )
+                new_rows_by_index[target_row_index] = dc_replace(
+                    base_row,
+                    children=new_children,
+                )
+        if reason:
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind=_UK_REPLAY_TABLE_COLUMN_INSERT_UNRESOLVED_RULE_ID,
+                message="UK replay could not apply the planned table-column insert via CoW rebuild.",
+                op=op,
+                detail=uk_replay_blocking_action_target_detail(
+                    op,
+                    target,
+                    selector=dict(selector),
+                    reason_code=reason,
+                    payload_row_count=len(payload_cells_result.cells),
+                    payload_rows_consumed=payload_index,
+                    adjusted_spans=0,
+                    inserted_cells=0,
+                    planned_adjusted_spans=adjusted_spans,
+                    planned_inserted_cells=inserted_cells,
+                    partial_mutation_applied=False,
+                    matched_rows=tuple(matched_rows[:5]),
+                    family="source_table_elaboration",
+                ),
+            )
+            return False
+        new_table_children = tuple(
+            new_rows_by_index.get(i, original_row)
+            for i, original_row in enumerate(table.children)
+        )
+        new_table = uk_replace_children_cow(table, list(new_table_children))
+        self._replace_ancestor_chain(table, new_table)
         _record_table_structure_splice(
             self,
-            container=table,
+            container=new_table,
             helper="_insert_table_column",
             outcome="table_column_inserted",
             reason_code="source_owned_between_columns_selector",
@@ -582,7 +676,7 @@ class UKReplayTableApplyMixin:
     def _insert_table_entry_row(
         self: _TableReplaySelf,
         target: LegalAddress,
-        new_node: UKMutableNode,
+        new_node: IRNode,
         op: LegalOperation,
         selector: dict[str, Any],
     ) -> bool:
@@ -682,18 +776,22 @@ class UKReplayTableApplyMixin:
                 )
                 return False
             source_cell = inserted_rows[0].children[0]
-            expanded_cells: list[UKMutableNode] = []
+            expanded_cells: list[IRNode] = []
             for column_index in range(1, table_column_count + 1):
-                cell = UKMutableNode.from_irnode(source_cell.to_irnode())
-                cell.attrs = {**dict(cell.attrs), "column_index": str(column_index)}
+                # Sub-PR C+D: IRNode is immutable; clone via ``dc_replace``
+                # so each expanded cell is a fresh IRNode with its own attrs.
+                cell = dc_replace(
+                    source_cell,
+                    attrs={**dict(source_cell.attrs), "column_index": str(column_index)},
+                )
                 expanded_cells.append(cell)
             inserted_rows = [
-                UKMutableNode(
+                IRNode(
                     kind=inserted_rows[0].kind,
                     label=inserted_rows[0].label,
                     text=inserted_rows[0].text,
                     attrs={**dict(inserted_rows[0].attrs), "expanded_column_count": str(table_column_count)},
-                    children=expanded_cells,
+                    children=tuple(expanded_cells),
                 )
             ]
         for row in inserted_rows:
@@ -735,7 +833,7 @@ class UKReplayTableApplyMixin:
     def _replace_table_entry_rows(
         self: _TableReplaySelf,
         target: LegalAddress,
-        new_node: UKMutableNode,
+        new_node: IRNode,
         op: LegalOperation,
         selector: dict[str, Any],
     ) -> bool:
@@ -834,7 +932,7 @@ class UKReplayTableApplyMixin:
 
     def _apply_source_carried_table_cell_paragraph_substitution(
         self: _TableReplaySelf,
-        cell: UKMutableNode,
+        cell: IRNode,
         match_text: str,
         replacement: str,
     ) -> _TableCellParagraphSubstitutionResult:
