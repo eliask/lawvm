@@ -502,6 +502,10 @@ def get_consolidated_oracle_reflected_source_vts_children(
 _FINLEX_ORIGINAL_VERSION_ATTR = "{http://data.finlex.fi/schema/finlex}originalVersion"
 _FINLEX_VERSIONED_EID_SUFFIX_RE = re.compile(r"v(?P<version>\d{8})$")
 _ORACLE_FUTURE_REPEAL_NOTICE_RE = re.compile(r"\btulee\s+voimaan\b", re.IGNORECASE)
+_ORACLE_FULL_SECTION_REPEAL_NOTICE_RE = re.compile(
+    r"\b\d+(?:\s+[a-z])?\s*§\s+on kumottu\b",
+    re.IGNORECASE,
+)
 
 
 def _finlex_original_version_to_statute_id(value: str) -> str:
@@ -588,6 +592,44 @@ def get_consolidated_oracle_reflected_section_original_versions(
                 if statute_id_from_eid:
                     reflected.add(statute_id_from_eid)
     return reflected
+
+
+def get_consolidated_oracle_single_future_repeal_overlay_versions(
+    statute_id: str,
+    corpus: Optional[CorpusStore] = None,
+    selector: ConsolidatedArtifactSelector | None = None,
+) -> set[str]:
+    """Return source ids witnessed by exactly one Finlex future-repeal overlay section."""
+    if corpus is None:
+        corpus = _get_corpus_store()
+    oracle_bytes = get_ground_truth_bytes(statute_id, corpus=corpus, selector=selector)
+    if oracle_bytes is None:
+        return set()
+    try:
+        tree = parse_corpus_xml(oracle_bytes)
+    except etree.XMLSyntaxError:
+        return set()
+
+    overlay_counts: dict[str, int] = {}
+    for section_el in tree.findall(".//{*}section"):
+        section_text = " ".join("".join(str(part) for part in section_el.itertext()).split())
+        if not _ORACLE_FULL_SECTION_REPEAL_NOTICE_RE.search(section_text):
+            continue
+        if not _ORACLE_FUTURE_REPEAL_NOTICE_RE.search(section_text):
+            continue
+        if "Aiempi sanamuoto kuuluu" not in section_text:
+            continue
+        section_sources: set[str] = set()
+        statute_id_from_version = _finlex_eid_version_to_statute_id(section_el)
+        if statute_id_from_version:
+            section_sources.add(statute_id_from_version)
+        original_version = str(section_el.get(_FINLEX_ORIGINAL_VERSION_ATTR) or "")
+        statute_id_from_original_version = _finlex_original_version_to_statute_id(original_version)
+        if statute_id_from_original_version:
+            section_sources.add(statute_id_from_original_version)
+        for source_id in section_sources:
+            overlay_counts[source_id] = overlay_counts.get(source_id, 0) + 1
+    return {source_id for source_id, count in overlay_counts.items() if count == 1}
 
 
 _ORACLE_REF_METADATA_ANCESTOR_TAGS = frozenset(

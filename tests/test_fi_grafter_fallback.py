@@ -16109,6 +16109,7 @@ def test_official_consolidation_horizon_uses_oracle_version_non_repeal_op_effect
             ],
             legal_operations=legal_operations,
             oracle_reflected_section_original_versions=("2024/538",),
+            oracle_single_future_repeal_overlay_versions=(),
             replay_print=lambda _message: None,
         )
     )
@@ -16154,6 +16155,7 @@ def test_official_consolidation_horizon_does_not_use_unreflected_non_repeal_op_e
             ],
             legal_operations=legal_operations,
             oracle_reflected_section_original_versions=(),
+            oracle_single_future_repeal_overlay_versions=(),
             replay_print=lambda _message: None,
         )
     )
@@ -16199,6 +16201,7 @@ def test_official_consolidation_horizon_splits_future_repeal_expiry_cutoff() -> 
             ],
             legal_operations=legal_operations,
             oracle_reflected_section_original_versions=(),
+            oracle_single_future_repeal_overlay_versions=(),
             replay_print=lambda _message: None,
         )
     )
@@ -16206,6 +16209,116 @@ def test_official_consolidation_horizon_splits_future_repeal_expiry_cutoff() -> 
     assert decision.materialize_as_of == "2006-01-01"
     assert decision.expires_as_of == "2005-11-11"
     assert decision.oracle_materialize_as_of == "2006-01-01"
+
+
+def test_official_consolidation_horizon_does_not_project_mixed_future_repeal() -> None:
+    legal_operations = [
+        LegalOperation(
+            op_id="repeal_section_15b",
+            sequence=0,
+            action=StructuralAction.REPEAL,
+            target=LegalAddress(path=(("section", "15b"),)),
+            source=OperationSource(
+                statute_id="2026/377",
+                effective="2027-01-01",
+            ),
+        ),
+        LegalOperation(
+            op_id="insert_section_15k",
+            sequence=1,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("section", "15k"),)),
+            payload=IRNode(kind=IRNodeKind.SECTION, label="15k", text="Future text"),
+            source=OperationSource(
+                statute_id="2026/377",
+                effective="2027-01-01",
+            ),
+        ),
+    ]
+
+    decision = choose_replay_horizon(
+        ReplayHorizonRequest(
+            mode="official_consolidation",
+            as_of="",
+            cutoff_date=dt.date(2026, 5, 22),
+            amendment_records=[
+                {
+                    "statute_id": "2026/377",
+                    "included": True,
+                    "effective_date": dt.date(2027, 1, 1),
+                    "issue_date": dt.date(2026, 5, 22),
+                }
+            ],
+            oracle_version_amendment_id="2026/377",
+            compiled_ops=[
+                {"source_statute": "2026/377", "action": "repeal"},
+                {"source_statute": "2026/377", "action": "insert"},
+            ],
+            legal_operations=legal_operations,
+            oracle_reflected_section_original_versions=(),
+            oracle_single_future_repeal_overlay_versions=("2026/377",),
+            replay_print=lambda _message: None,
+        )
+    )
+
+    assert decision.materialize_as_of == "2026-05-22"
+    assert decision.expires_as_of == "2026-05-22"
+    assert decision.oracle_materialize_as_of == "2026-05-22"
+
+
+def test_official_consolidation_horizon_projects_mixed_future_body_without_repeal_overlay() -> None:
+    legal_operations = [
+        LegalOperation(
+            op_id="repeal_section_15b",
+            sequence=0,
+            action=StructuralAction.REPEAL,
+            target=LegalAddress(path=(("section", "15b"),)),
+            source=OperationSource(
+                statute_id="2026/377",
+                effective="2027-01-01",
+            ),
+        ),
+        LegalOperation(
+            op_id="insert_section_15k",
+            sequence=1,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("section", "15k"),)),
+            payload=IRNode(kind=IRNodeKind.SECTION, label="15k", text="Future text"),
+            source=OperationSource(
+                statute_id="2026/377",
+                effective="2027-01-01",
+            ),
+        ),
+    ]
+
+    decision = choose_replay_horizon(
+        ReplayHorizonRequest(
+            mode="official_consolidation",
+            as_of="",
+            cutoff_date=dt.date(2026, 5, 22),
+            amendment_records=[
+                {
+                    "statute_id": "2026/377",
+                    "included": True,
+                    "effective_date": dt.date(2027, 1, 1),
+                    "issue_date": dt.date(2026, 5, 22),
+                }
+            ],
+            oracle_version_amendment_id="2026/377",
+            compiled_ops=[
+                {"source_statute": "2026/377", "action": "repeal"},
+                {"source_statute": "2026/377", "action": "insert"},
+            ],
+            legal_operations=legal_operations,
+            oracle_reflected_section_original_versions=("2026/377",),
+            oracle_single_future_repeal_overlay_versions=(),
+            replay_print=lambda _message: None,
+        )
+    )
+
+    assert decision.materialize_as_of == "2027-01-01"
+    assert decision.expires_as_of == "2027-01-01"
+    assert decision.oracle_materialize_as_of == "2027-01-01"
 
 
 def test_extract_temporary_targets_infers_host_section_for_moment_only_scope() -> None:

@@ -788,6 +788,40 @@ def test_extract_oracle_sections_keeps_future_repeal_overlay_section() -> None:
     assert set(oracle_keys) == {"section:11"}
 
 
+def test_extract_oracle_sections_excludes_future_overlay_insert_siblings() -> None:
+    """Mixed future repeal+insert overlays should not score future inserts as current."""
+    oracle = etree.fromstring(
+        """
+        <statute xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <body>
+            <section eId="sec_15bv20260377">
+              <num>15 b §</num>
+              <content>
+                <p>15 b § on kumottu L:lla 22.5.2026/377, joka tulee voimaan 1.1.2027. Aiempi sanamuoto kuuluu:</p>
+              </content>
+            </section>
+            <section eId="sec_15bv20110873">
+              <num>15 b §</num>
+              <heading>Poliisihenkilöstön täydentäminen</heading>
+              <subsection><content><p>current text</p></content></subsection>
+            </section>
+            <section eId="sec_15kv20260377">
+              <num>15 k §</num>
+              <heading>Poliisin reservi</heading>
+              <subsection><content><p>future text</p></content></subsection>
+            </section>
+          </body>
+        </statute>
+        """
+    )
+
+    oracle_keys = extract_oracle_sections(oracle)
+
+    assert set(oracle_keys) == {"section:15b"}
+    text = etree.tostring(oracle_keys["section:15b"], method="text", encoding="unicode")
+    assert "current text" in text
+
+
 def test_extract_oracle_sections_excludes_valiaikaisesti_tombstone() -> None:
     """A 'väliaikaisesti' tombstone section (N § oli voimassa väliaikaisesti DATES.) must be filtered.
 

@@ -980,6 +980,20 @@ def test_replay_xml_2022_213_keeps_future_repeal_at_oracle_cutoff() -> None:
     assert "3) 4)" not in text
 
 
+def test_replay_xml_1992_110_does_not_project_mixed_future_repeal_insert() -> None:
+    replay = pinned_replay("1992/110", mode="official_consolidation", quiet=True)
+
+    assert replay.materialization_spec is not None
+    assert replay.materialization_spec.as_of < "2027-01-01"
+    section_15b = replay.materialized_state.find_section("15b")
+    section_15k = replay.materialized_state.find_section("15k")
+
+    assert section_15b is not None
+    text_15b = " ".join(irnode_to_text(section_15b).split())
+    assert "Poliisihenkilöstön täydentäminen" in text_15b
+    assert section_15k is None
+
+
 def test_replay_xml_2021_616_applies_corrigendum_without_collapsing_spacing() -> None:
     replay = pinned_replay("2021/616", mode="official_consolidation", quiet=True)
 
