@@ -2929,6 +2929,23 @@ def test_inspect_amendment_1994_1505_binds_explicit_1a_sparse_item_slot() -> Non
     )
 
 
+def test_inspect_amendment_1997_396_keeps_explicit_45_subsection_shell() -> None:
+    bundle = build_amendment_bundle("1997/396", "2001/1119", "legal_pit")
+    group = next(group for group in bundle["groups"] if group["target_norm"] == "45")
+
+    assert group["ops_raw"] == ["REPLACE 10 luku 45 § 1 mom"]
+    assert group["ops_after_normalization"] == ["REPLACE 10 luku 45 § 1 mom"]
+    assert group["ops_final"] == ["REPLACE 10 luku 45 § 1 mom"]
+    assert not any(
+        pathology["code"] == "PARTIAL_WHOLE_SECTION_PAYLOAD"
+        for pathology in group["source_pathologies"]
+    )
+    assert any(
+        pathology["code"] == "SUBSECTION_SHELL_REPLACE_KEPT"
+        for pathology in group["source_pathologies"]
+    )
+
+
 def test_replay_xml_2014_610_splits_2023_tail_moments_before_2026_renumber() -> None:
     replay = pinned_replay("2014/610", oracle_version="20260352", mode="official_consolidation", quiet=True)
     section = extract_ir_sections(replay.materialized_state.ir)["part:4/chapter:15/section:11"]
