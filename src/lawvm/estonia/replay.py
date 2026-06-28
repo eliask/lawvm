@@ -31,6 +31,7 @@ from lawvm.core.source_lane import SourceLaneAttempt, SourceLaneSelectionEvidenc
 from lawvm.core.temporal import TemporalEvent, TemporalScope
 from lawvm.replay_adjudication import CompileAdjudication, SourceAdjudication
 from lawvm.core.ir import IRStatute, LegalAddress, LegalOperation, OperationSource, ProvisionTimeline, StructuralAction
+from lawvm.core.replay_contracts import ReplaySummary
 from lawvm.core.timeline import compile_timelines, materialize_pit
 from lawvm.core.timeline_consistency import ingest_consolidated, verify_consistency
 from lawvm.estonia.grafter import (
@@ -1445,6 +1446,47 @@ class EEPitResult:
 
     # Optional replay-adjudication stream from operation application.
     adjudications: list[CompileAdjudication] = field(default_factory=list)
+
+    def to_replay_summary(self) -> ReplaySummary:
+        """Project this EE-specific result onto the shared ``ReplaySummary``
+        contract from ``core/replay_contracts.py``, giving downstream
+        tooling (bench / frontier / cross-jurisdiction commands) a
+        jurisdiction-agnostic output shape.
+
+        Maps EE-specific fields (``grupi_id``, ``source_basis``,
+        ``comparison_class``, etc.) into ``detail``; the core
+        ``ReplaySummary`` fields (amendment_count, applied_count,
+        divergence_count, consistent, etc.) are populated directly from
+        the EE-parallel fields."""
+        has_oracle = self.oracle is not None and self.error is None
+        return ReplaySummary(
+            jurisdiction="ee",
+            base_id=self.base_id,
+            as_of=self.as_of,
+            title=self.base_title,
+            replay_status="error" if self.error else "ok",
+            error=self.error,
+            oracle_id=self.oracle_id or "",
+            source_id="",
+            amendment_count=len(self.amendments_total),
+            applied_count=len(self.amendments_applied),
+            skipped_count=len(self.amendments_skipped),
+            failed_count=len(self.amendments_failed),
+            op_count=self.n_ops,
+            consistent=(not bool(self.divergences)) if has_oracle else None,
+            divergence_count=len(self.divergences) if has_oracle else None,
+            steps=(),
+            text_view=None,
+            detail={
+                "source_basis": self.source_basis,
+                "comparison_class": self.comparison_class,
+                "grupi_id": self.grupi_id or "",
+                "n_mismatch": self.n_mismatch,
+                "n_ops_missing": self.n_ops_missing,
+                "n_con_missing": self.n_con_missing,
+                "adjudication_count": len(self.adjudications),
+            },
+        )
 
 
 # ---------------------------------------------------------------------------

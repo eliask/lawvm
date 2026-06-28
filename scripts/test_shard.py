@@ -49,6 +49,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_ee_inspect_source.py",
         "test_ee_new_tools.py",
         "test_ee_pair_planning.py",
+        "test_ee_replay_summary.py",
         "test_ee_replayability_frontier.py",
         "test_ee_reporting_tools.py",
         "test_ee_residual_inventory.py",
