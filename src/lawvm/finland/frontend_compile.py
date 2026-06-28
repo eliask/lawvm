@@ -2133,8 +2133,21 @@ def _infer_corroborated_body_scope_for_live_stem_insert(
     target_stem = _section_stem(section_label)
     if target_stem is None:
         return None
+    target_match = _SECTION_LABEL_ORDER_RE.fullmatch(section_label)
+    target_suffix = target_match.group(2).lower() if target_match is not None else ""
+
+    def _is_whole_section_target(candidate: AmendmentOp) -> bool:
+        return (
+            candidate.target_cols.target_unit_kind == "section"
+            and bool(candidate.target_cols.target_section)
+            and candidate.target_cols.target_paragraph is None
+            and candidate.target_cols.target_item is None
+            and candidate.target_cols.target_special is None
+        )
 
     corroborating_labels: set[str] = set()
+    same_body_existing_edit_labels: set[str] = set()
+    same_body_whole_section_repeal = False
     for other in ops:
         if other is op or other.target_cols.target_unit_kind != "section" or not other.target_cols.target_section:
             continue
@@ -2150,14 +2163,46 @@ def _infer_corroborated_body_scope_for_live_stem_insert(
         other_label = _norm_num_token(other.target_cols.target_section)
         if other_label == section_label:
             continue
+        if other.op_type == OpType.REPEAL and _is_whole_section_target(other):
+            same_body_whole_section_repeal = True
         if source_model.body_has_section(
             other_label,
             target_chapter=body_chapter,
             target_part=body_part,
         ):
+            same_body_existing_edit_labels.add(other_label)
             other_stem = _section_stem(other_label)
             if other_stem is not None and abs(other_stem - target_stem) <= 1:
                 corroborating_labels.add(other_label)
+
+    source_labels = [
+        _norm_num_token(label)
+        for label in source_model.body_real_chapter_section_labels(body_chapter)
+    ]
+    try:
+        idx = source_labels.index(section_label)
+    except ValueError:
+        return None
+    adjacent = {
+        source_labels[pos]
+        for pos in (idx - 1, idx + 1)
+        if 0 <= pos < len(source_labels)
+    }
+    preceding_existing_edits = [
+        label for label in source_labels[:idx] if label in same_body_existing_edit_labels
+    ]
+    following_existing_edits = [
+        label for label in source_labels[idx + 1 :] if label in same_body_existing_edit_labels
+    ]
+    immediate_next_label = source_labels[idx + 1] if idx + 1 < len(source_labels) else None
+    if (
+        target_suffix == "a"
+        and not same_body_whole_section_repeal
+        and not preceding_existing_edits
+        and immediate_next_label in same_body_existing_edit_labels
+        and len(following_existing_edits) >= 2
+    ):
+        return body_part, body_chapter
 
     if not corroborating_labels:
         return None
@@ -2186,19 +2231,6 @@ def _infer_corroborated_body_scope_for_live_stem_insert(
     if not has_internal_reference_witness:
         return None
 
-    source_labels = [
-        _norm_num_token(label)
-        for label in source_model.body_real_chapter_section_labels(body_chapter)
-    ]
-    try:
-        idx = source_labels.index(section_label)
-    except ValueError:
-        return None
-    adjacent = {
-        source_labels[pos]
-        for pos in (idx - 1, idx + 1)
-        if 0 <= pos < len(source_labels)
-    }
     if adjacent & corroborating_labels:
         return body_part, body_chapter
     return None
