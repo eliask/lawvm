@@ -2047,6 +2047,30 @@ def test_replay_xml_1973_692_splits_cross_paragraph_sparse_item_payload() -> Non
     assert {"6", "10"} <= third_item_labels
 
 
+def test_replay_xml_1995_1522_preserves_cross_paragraph_plain_subsection_tail() -> None:
+    replay = replay_xml_for_test(
+        "1995/1522",
+        mode="official_consolidation",
+        quiet=True,
+        build_full_products=False,
+    )
+
+    section = replay.materialized_state.find_section("18")
+    assert section is not None
+    subsections = {
+        child.label: child for child in section.children if child.kind is IRNodeKind.SUBSECTION and child.label
+    }
+    second = subsections["2"]
+    second_text = " ".join(irnode_to_text(second).split())
+    second_item_labels = [
+        child.label for child in second.children if child.kind is IRNodeKind.PARAGRAPH and child.label
+    ]
+
+    assert second_item_labels == [str(i) for i in range(1, 11)]
+    assert "turvallisuus- ja puolustusasiain komitea" in second_text
+    assert "VPU Pukutehdas Oy" in second_text
+
+
 def test_replay_xml_recovers_1935_419_full_section_replace_for_1922_312_section_8() -> None:
     """Authority-citation lead-ins must not collapse 1935/419 to a fake 6 § replace."""
     replay = pinned_replay("1922/312", mode="official_consolidation", quiet=True)
