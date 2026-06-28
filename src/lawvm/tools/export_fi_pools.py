@@ -20,7 +20,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from lawvm.core.pool_mention import pool_mention_to_row
+from lawvm.finland.pool_mention_primitive import pool_mention_to_row
 
 
 def _load_corpus_store() -> Any:
