@@ -525,6 +525,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # Wave N3a PR1 (BOUND_TARGET_PATH_NORMALIZATION_DESIGN): wrapper-strip +
         # kind-alias canonicalization for the op-level WriteReceipt.bound_target_path.
         "test_fi_receipt_path_norm.py",
+        "test_fi_receipt_prefix_eq.py",
         "test_fi_item_relabel_replay.py",
         "test_fi_chapter_seed.py",
         "test_fi_constraints.py",

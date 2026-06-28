@@ -225,12 +225,18 @@ class WriteReceipt:
 
     @property
     def divergence_explained(self) -> bool:
-        """True when bound==landed, or the divergence carries a named rule.
+        """True when the typed bound→landed relation is replay-authorized.
 
         ``False`` means an unexplained mutation-boundary divergence: strict
         mode must turn this into a blocking residual (contract §4); it is
         never silently acceptable.
         """
+        if self.divergence_kind is not None:
+            return self.divergence_kind in {
+                DivergenceKind.EXACT_MATCH,
+                DivergenceKind.EXPLAINED_BY_RULE,
+                DivergenceKind.PREFIX_OF_LANDED,
+            }
         if self.bound_target_path == self.landed_primary_path:
             return True
         return bool(self.named_rule_ids)
