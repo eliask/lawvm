@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import Any, Optional, Protocol, cast
 
-from lawvm.core.ir import LegalAddress, LegalOperation
+from lawvm.core.ir import IRNode, LegalAddress, LegalOperation
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.heading_facets import _UK_REPLAY_CROSSHEADING_AND_STRUCTURAL_REPEAL_UNRESOLVED_RULE_ID
-from lawvm.uk_legislation.mutable_ir import UKMutableNode, UKMutableStatute
+from lawvm.uk_legislation.mutable_ir import UKMutableStatute
 from lawvm.uk_legislation.provenance_notes import _crossheading_group_repeal_selector, _schedule_list_entry_repeal_selector
 from lawvm.uk_legislation.replay_records import (
     _append_uk_replay_adjudication,
@@ -45,8 +45,8 @@ class _RepealReplaySelf(Protocol):
     def _repeal_crossheading_group(
         self,
         target: LegalAddress,
-        node: UKMutableNode,
-        parent: Optional[UKMutableNode],
+        node: IRNode,
+        parent: Optional[IRNode],
         op: LegalOperation,
         selector: dict[str, Any],
     ) -> bool: ...
@@ -83,8 +83,8 @@ class _RepealReplaySelf(Protocol):
 
     def _remove_node(
         self,
-        node: UKMutableNode,
-        parent: Optional[UKMutableNode],
+        node: IRNode,
+        parent: Optional[IRNode],
         idx: Optional[int],
     ) -> bool: ...
 
@@ -120,8 +120,8 @@ class UKReplayRepealApplyMixin:
         self,
         op: LegalOperation,
         target: LegalAddress,
-        node: UKMutableNode | None,
-        parent: UKMutableNode | None,
+        node: IRNode | None,
+        parent: IRNode | None,
         idx: int | None,
     ) -> None:
         replay = _repeal_replay_self(self)

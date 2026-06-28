@@ -8,7 +8,6 @@ from lawvm.core.ir import IRNode, LegalAddress
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.uk_legislation.addressing import _addr_container, _addr_leaf_kind, _addr_leaf_label
 from lawvm.uk_legislation.canonicalize import uk_kind_matches
-from lawvm.uk_legislation.mutable_ir import UKMutableNode
 from lawvm.uk_legislation.target_parser import _parse_affected_target, _split_metadata_provisions
 from lawvm.uk_legislation.uk_grafter import _LEG_NS, _clean_num, _extract_num
 from lawvm.uk_legislation.xml_helpers import _clone_element, _direct_structural_num, _structural_children, _tag, _text_content
@@ -415,7 +414,7 @@ def _with_trailing_subordinate_siblings(
     return clone
 
 
-def _is_non_substantive_structural_payload(node: Optional[UKMutableNode]) -> bool:
+def _is_non_substantive_structural_payload(node: Optional[IRNode]) -> bool:
     """Return True for placeholder structural payloads like '77 . . . .'.
 
     These appear in some affecting-act extracts as numbering plus dot leaders
@@ -467,7 +466,7 @@ def _source_payload_matches_target_leaf(content_ir: Optional[dict[str, Any]], ta
 def _is_broad_schedule_flat_replace_payload(
     *,
     target: LegalAddress,
-    payload_node: Optional[UKMutableNode],
+    payload_node: Optional[IRNode],
     actual_source_el: Optional[ET._Element],
 ) -> bool:
     """Return True when a broad schedule/part replace would erase descendants.
