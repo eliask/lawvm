@@ -862,6 +862,7 @@ def compute_statute_section_diffs(
         oracle_amb_alternate_match,
         reconcile_unique_unscoped_aliases,
     )
+    from lawvm.finland.oracle_comparison import is_segmentation_displacement_neutralized
     from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
     from typing import cast
 
@@ -937,6 +938,22 @@ def compute_statute_section_diffs(
             if amb_witness is not None:
                 item["amb_alternate_match"] = True
                 item["amb_witness"] = amb_witness
+            else:
+                # Segmentation-displacement neutralizer (amb-style): the same
+                # provision text surfaces as both a unit_missing_left and a
+                # unit_missing_right in this section -> a unit displaced to a
+                # different tree position, zero information loss. Stash the verdict
+                # so bench_penalized_section_keys forgives it IDENTICALLY to the
+                # headline _semantic_section_score path ("exact set the bench
+                # scores" contract). Only the amb-not-matched branch reaches here,
+                # mirroring the bench ordering (amb is tried first).
+                sd_payload = item.get("semantic_diff")
+                if isinstance(sd_payload, dict):
+                    sd_events = sd_payload.get("events", [])
+                    if isinstance(sd_events, list) and is_segmentation_displacement_neutralized(
+                        sd_payload, sd_events
+                    ):
+                        item["seg_displacement_match"] = True
             sections[key] = item
 
     return sections, False
