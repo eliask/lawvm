@@ -271,7 +271,7 @@ class SectionPathResolutionReason(StrEnum):
     FOLLOW_SAME_WAVE_MIGRATION = "follow_same_wave_migration"
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ScopeConfidence(_CoreScopeConfidenceProtocol):
     """Finland-local unified witness for chapter-scope resolution provenance.
 
