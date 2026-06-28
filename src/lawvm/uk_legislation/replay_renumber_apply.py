@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import replace as dc_replace
 from typing import Protocol, cast
 
-from lawvm.core.ir import IRNodeKind, LegalAddress, LegalOperation
+from lawvm.core.ir import IRNode, IRNodeKind, LegalAddress, LegalOperation
 from lawvm.core.ir_helpers import _kind_str
 from lawvm.core.mutation_boundary import TreePath
 from lawvm.core.tree_ops import _NESTING_ORDER
@@ -17,10 +17,7 @@ from lawvm.uk_legislation.metadata_rewrites import (
     _renumbered_descendant_text,
 )
 from lawvm.uk_legislation.apply_rebuild import uk_insert_node_sorted_cow
-from lawvm.uk_legislation.mutable_ir import (
-    UKMutableNode,
-    uk_ir_node_kind,
-)
+from lawvm.uk_legislation.mutable_ir import uk_ir_node_kind
 from lawvm.uk_legislation.replay_records import (
     _append_uk_replay_adjudication,
     uk_replay_blocking_action_target_detail,
@@ -54,32 +51,32 @@ class _RenumberReplaySelf(Protocol):
 
     def _derive_target_eid(self, addr: LegalAddress) -> str: ...
 
-    def _replace_node_in_statute(self, old_node: UKMutableNode, new_node: UKMutableNode) -> bool: ...
+    def _replace_node_in_statute(self, old_node: IRNode, new_node: IRNode) -> bool: ...
 
     def _replace_ancestor_chain(
         self,
-        old_node: UKMutableNode,
-        new_node: UKMutableNode,
+        old_node: IRNode,
+        new_node: IRNode,
     ) -> bool: ...
 
-    def _remove_eid_lookup_subtree(self, node: UKMutableNode) -> None: ...
+    def _remove_eid_lookup_subtree(self, node: IRNode) -> None: ...
 
     def _add_eid_lookup_subtree(
         self,
-        node: UKMutableNode,
-        parent: UKMutableNode | None,
+        node: IRNode,
+        parent: IRNode | None,
         idx: int | None,
     ) -> None: ...
 
     def _note_structure_mutation(self) -> None: ...
 
-    def _tree_path_for_mutable_node(self, node: UKMutableNode) -> TreePath | None: ...
+    def _tree_path_for_mutable_node(self, node: IRNode) -> TreePath | None: ...
 
     def _record_renumber_node_mutation_event(
         self,
         *,
         old_path: TreePath | None,
-        new_node: UKMutableNode,
+        new_node: IRNode,
         helper: str,
     ) -> None: ...
 
@@ -95,7 +92,7 @@ class _RenumberReplaySelf(Protocol):
         self,
         *,
         old_path: TreePath | None,
-        new_node: UKMutableNode,
+        new_node: IRNode,
         helper: str,
     ) -> None: ...
 
@@ -230,7 +227,7 @@ class UKReplayRenumberApplyMixin:
             if child.kind not in (IRNodeKind.HEADING, IRNodeKind.NUM)
             and _kind_str(child.kind) in dest_admitted
         ]
-        child = UKMutableNode(
+        child = IRNode(
             kind=uk_ir_node_kind(destination_kind),
             label=destination_label,
             text=_renumbered_descendant_text(
@@ -239,16 +236,16 @@ class UKReplayRenumberApplyMixin:
                 destination_label=destination_label,
             ),
             attrs={"eId": replay._derive_target_eid(destination)},
-            children=moved_children,
+            children=tuple(moved_children),
         )
         replacement_children = list(retained_children)
         replacement_children.append(child)
-        replacement = UKMutableNode(
+        replacement = IRNode(
             kind=source_node.kind,
             label=source_node.label,
             text="",
             attrs=dict(source_node.attrs),
-            children=replacement_children,
+            children=tuple(replacement_children),
         )
         replaced = replay._replace_node_in_statute(source_node, replacement)
         if replaced and old_path is not None:

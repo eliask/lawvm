@@ -14,9 +14,10 @@ uppercase node.
 """
 from __future__ import annotations
 
+from dataclasses import replace as dc_replace
+
 from lawvm.core.ir import IRNode, IRStatute
 from lawvm.core.semantic_types import IRNodeKind
-from lawvm.uk_legislation.mutable_ir import UKMutableNode
 from lawvm.uk_legislation.replay_executor import UKReplayExecutor
 
 
@@ -53,12 +54,14 @@ def _make_executor_with_uppercase_inserted_node() -> UKReplayExecutor:
     )
     executor = UKReplayExecutor(statute)
     section = executor.statute.body.children[0]
-    inserted = UKMutableNode(
+    inserted = IRNode(
         kind=IRNodeKind.SUBSECTION,
         label="1A",
         attrs={"eId": "section-1-1A"},
     )
-    section.children.append(inserted)
+    new_section = dc_replace(section, children=section.children + (inserted,))
+    assert executor._replace_node_in_statute(section, new_section)
+    section = new_section
     executor._record_child_inserted(section, inserted)
     return executor
 

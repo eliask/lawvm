@@ -4,10 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from lawvm.core.ir import LegalAddress, LegalOperation, TextPatchSpec
+from lawvm.core.ir import IRNode, LegalAddress, LegalOperation, TextPatchSpec
 from lawvm.core.semantic_types import FacetKind, TextPatchKindEnum
 from lawvm.uk_legislation.addressing import _addr_leaf_kind
-from lawvm.uk_legislation.mutable_ir import UKMutableNode
 from lawvm.uk_legislation.replay_target_gaps import uk_broad_schedule_table_shape_gap
 from lawvm.uk_legislation.replay_text import (
     _article_phrase_content_word_present,
@@ -97,8 +96,8 @@ def classify_uk_replay_text_miss(
     *,
     op: LegalOperation,
     target: LegalAddress,
-    node: UKMutableNode,
-    heading_carrier: UKMutableNode | None,
+    node: IRNode,
+    heading_carrier: IRNode | None,
     text_patch: TextPatchSpec,
     replacement: str,
     prior_same_target_text_patch_count: int,

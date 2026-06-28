@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace as dc_replace
 from pathlib import Path
 from lxml import etree as ET
 from typing import Any, cast
@@ -23211,6 +23212,29 @@ def test_replay_source_carried_table_entry_paragraph_substitution_blocks_duplica
             IRNode(kind=IRNodeKind.CELL, text="one\n\n\n\n\n\n\n\ntwo"),
         ),
     )
+    # Sub-PR C+D (audit XJUR-02 / AGENTS.md §2.3): pre-CoW this fixture used
+    # ``children=(row, row)`` — the SAME Python ``IRNode`` object appearing
+    # twice. That is a degenerate input no real parser produces. Pre-CoW
+    # ``UKMutableStatute.from_irstatute`` deep-cloned the tree into distinct
+    # ``UKMutableNode`` instances (masking the degeneracy). Under frozen
+    # ``IRStatute`` the executor stores the input tree directly, so the
+    # ``is``-based rowspan deduplication in ``resolve_unique_uk_table_entry_cell``
+    # (replay_table_geometry.py:1308) collapses the two ``row`` entries into one
+    # matching cell, mis-classifying a duplicate-row table as a single match
+    # instead of ``entry_cell_ambiguous``. Mirror real parser output by emitting
+    # two DISTINCT IRNode instances for the two duplicate rows (structurally
+    # equal but identity-distinct, as parsing two distinct XML elements would
+    # produce). The ``is`` rowspan dedup is semantically correct (replacing it
+    # with ``==`` would break ambiguity detection for legitimately-distinct
+    # but textually-equal cells across rows, which is the entire invariant
+    # this test pins).
+    row2 = IRNode(
+        kind=IRNodeKind.ROW,
+        children=(
+            IRNode(kind=IRNodeKind.CELL, text="The Information Commissioner"),
+            IRNode(kind=IRNodeKind.CELL, text="one\n\n\n\n\n\n\n\ntwo"),
+        ),
+    )
     base = IRStatute(
         statute_id="asp/2002/11",
         title="Test Act",
@@ -23219,7 +23243,7 @@ def test_replay_source_carried_table_entry_paragraph_substitution_blocks_duplica
             IRNode(
                 kind=IRNodeKind.SCHEDULE,
                 label="5",
-                children=(IRNode(kind=IRNodeKind.TABLE, children=(row, row)),),
+                children=(IRNode(kind=IRNodeKind.TABLE, children=(row, row2)),),
             ),
         ),
     )
@@ -31303,19 +31327,27 @@ def test_executor_replace_reuses_eid_lookup_parent_without_path_walk(monkeypatch
     def fail_path_lookup(*_args: object, **_kwargs: object) -> None:
         raise AssertionError("eId parent entry should avoid replay-wide path search")
 
-    replacement = UKMutableNode(
+    replacement = IRNode(
         kind=IRNodeKind.SUBSECTION,
         label="1",
         text="new text",
         attrs={"eId": "section-1-1"},
-        children=[UKMutableNode(kind=IRNodeKind.PARAGRAPH, label="a", text="new child")],
+        children=(IRNode(kind=IRNodeKind.PARAGRAPH, label="a", text="new child"),),
     )
     monkeypatch.setattr(executor, "_find_path_to_node", fail_path_lookup)
 
     assert executor._replace_node_in_statute(old_node, replacement)
-    assert executor.statute.body.children[0].children[0] is replacement
+    # Sub-PR C+D: under CoW (frozen ``IRStatute`` + ancestor rebuild) the
+    # identity-leaf at ``body.children[0].children[0]`` may not be ``is replacement``
+    # if a tree-rebuild rebuilds the leaf — pin structural equivalence (full
+    # IRNode dataclass equality) so the assertion survives identity churn while
+    # still verifying the replacement landed at the expected tree position.
+    live_replacement = executor.statute.body.children[0].children[0]
+    assert live_replacement == replacement
+    # Warm EID index stays consistent post-replace: the ``section-1-1`` entry
+    # still resolves to the live replacement node under the rebuilt parent.
     assert executor._eid_lookup_index is not None
-    assert executor._eid_lookup_index["section-1-1"][0] is replacement
+    assert executor._eid_lookup_index["section-1-1"][0] is live_replacement
     assert executor._eid_lookup_index["section-1-1"][1] is executor.statute.body.children[0]
     assert executor._eid_lookup_index["section-1-1"][2] == 0
 
@@ -31357,11 +31389,17 @@ def test_executor_replace_non_eid_child_does_not_clear_warm_eid_index(
         raise AssertionError("non-EID child replacement should preserve the warm EID index")
 
     monkeypatch.setattr(executor, "_clear_eid_lookup_index", fail_clear)
-    replacement = UKMutableNode(kind=IRNodeKind.PARAGRAPH, label="a", text="new child")
+    replacement = IRNode(kind=IRNodeKind.PARAGRAPH, label="a", text="new child")
 
     assert executor._replace_node_in_statute(old_child, replacement)
-    assert section.children[0] is replacement
-    assert executor._find_node_and_parent_statute("section-1")[0] is section
+    # Sub-PR C+D: under CoW (frozen ``IRStatute`` + ancestor rebuild) the
+    # originally-found ``section`` object is REPLACED with a rebuilt identical
+    # IRNode; assert the replacement lands at the live-tree position using
+    # structural equivalence (full IRNode equality) and that the warm EID
+    # index still returns the same live section1 instance found via lookup.
+    live_section = executor.statute.body.children[0]
+    assert live_section.children[0] == replacement
+    assert executor._find_node_and_parent_statute("section-1")[0] is live_section
 
 
 def test_executor_target_lookup_cache_tracks_structural_mutations() -> None:
@@ -31531,7 +31569,17 @@ def test_executor_recursive_match_cache_tracks_structural_mutations(monkeypatch:
     assert cached_parent is parent
     assert cached_idx == idx
 
-    root.children.append(UKMutableNode(kind=IRNodeKind.SUBSECTION, label="2", text="new subsection"))
+    # Sub-PR C+D (audit XJUR-02 / AGENTS.md §2.3): under frozen IRStatute, the
+    # pre-CoW ``root.children.append(...)`` mutation is illegal (children is a
+    # tuple). Restructure via CoW: rebuild the section + body via
+    # ``dc_replace``, thread through ``executor.statute = dc_replace(...)``,
+    # then call ``_note_structure_mutation`` exactly the way the apply path's
+    # structural mutation sites do, so the invariant "serial-bump clears the
+    # recursive-match cache" survives the CoW migration.
+    new_node = IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="new subsection")
+    new_root = dc_replace(root, children=(*root.children, new_node))
+    new_body = dc_replace(executor.statute.body, children=(new_root,))
+    executor.statute = dc_replace(executor.statute, body=new_body)
     executor._note_structure_mutation()
     assert executor._recursive_match_cache == {}
 
@@ -31574,7 +31622,18 @@ def test_executor_recursive_match_cache_preserves_negative_results(monkeypatch: 
     monkeypatch.setattr(replay_target_lookup_mod, "uk_recursive_kind_match", fail_recursive_match)
     assert executor._find_recursive_match(root, "subsection", "9") == (None, None, None)
 
-    root.children.append(UKMutableNode(kind=IRNodeKind.SUBSECTION, label="9", text="new subsection"))
+    # Sub-PR C+D (audit XJUR-02 / AGENTS.md §2.3): under frozen IRStatute, the
+    # pre-CoW ``root.children.append(...)`` mutation is illegal (children is a
+    # tuple). Restructure via CoW: rebuild the section + body via
+    # ``dc_replace``, thread through ``executor.statute = dc_replace(...)``,
+    # then call ``_note_structure_mutation`` exactly the way the apply path's
+    # structural mutation sites do, so the invariant "serial-bump clears the
+    # recursive-match cache (incl. negative-result entries)" survives the
+    # CoW migration.
+    new_node = IRNode(kind=IRNodeKind.SUBSECTION, label="9", text="new subsection")
+    new_root = dc_replace(root, children=(*root.children, new_node))
+    new_body = dc_replace(executor.statute.body, children=(new_root,))
+    executor.statute = dc_replace(executor.statute, body=new_body)
     executor._note_structure_mutation()
     assert executor._recursive_match_cache == {}
 
@@ -48288,6 +48347,27 @@ def test_replay_schedule_list_entry_table_rows_blocks_duplicate_anchor() -> None
         kind=IRNodeKind.ROW,
         children=(IRNode(kind=IRNodeKind.CELL, text="NHS Education for Scotland"),),
     )
+    # Sub-PR C+D (audit XJUR-02 / AGENTS.md §2.3): pre-CoW this fixture used
+    # ``children=(duplicate_row, duplicate_row)`` — the SAME Python ``IRNode``
+    # object appearing twice. That is a degenerate input no real parser
+    # produces. Pre-CoW ``UKMutableStatute.from_irstatute`` deep-cloned the
+    # tree into distinct ``UKMutableNode`` instances (masking the degeneracy).
+    # Under frozen ``IRStatute`` the executor stores the input tree directly,
+    # so the ``is``-based rowspan deduplication at
+    # ``replay_schedule_list_apply.py:420`` (``anchor_cell is last_anchor_cell``)
+    # collapses the two ``duplicate_row`` entries into one match, mis-classifying
+    # a duplicate-anchor table as a single matched anchor instead of
+    # ``anchor_not_unique_or_payload_empty``. Mirror real parser output by emitting
+    # two DISTINCT IRNode instances for the two duplicate rows (structurally
+    # equal but identity-distinct, as parsing two distinct XML elements would
+    # produce). The ``is`` rowspan dedup is semantically correct (replacing it
+    # with ``==`` would break ambiguity detection for legitimately-distinct
+    # but textually-equal cells across rows, which is the entire invariant
+    # this test pins).
+    duplicate_row2 = IRNode(
+        kind=IRNodeKind.ROW,
+        children=(IRNode(kind=IRNodeKind.CELL, text="NHS Education for Scotland"),),
+    )
     base = IRStatute(
         statute_id="asp/2002/11",
         title="Test Act",
@@ -48297,7 +48377,7 @@ def test_replay_schedule_list_entry_table_rows_blocks_duplicate_anchor() -> None
                 kind=IRNodeKind.SCHEDULE,
                 label="5",
                 children=(
-                    IRNode(kind=IRNodeKind.TABLE, children=(duplicate_row, duplicate_row)),
+                    IRNode(kind=IRNodeKind.TABLE, children=(duplicate_row, duplicate_row2)),
                 ),
             ),
         ),
@@ -60222,7 +60302,7 @@ def test_oracle_grounding_does_not_create_public_schedule_entry_eids() -> None:
     )
 
     executor.ground_ids()
-    result = executor.statute.to_irstatute()
+    result = executor.statute
     schedule_entry = result.supplements[0].children[0]
 
     assert schedule_entry.kind is IRNodeKind.SCHEDULE_ENTRY
@@ -63378,7 +63458,7 @@ def test_executor_replace_overwrites_existing_subsection_with_leaf_payload() -> 
     subsection = section.children[0]
     assert subsection.attrs["eId"] == "section-5C-5"
     assert subsection.text == "New subsection text"
-    assert subsection.children == []
+    assert subsection.children == ()
 
 
 def test_executor_text_replace_uses_fragment_substitution_fallback_when_primary_misses() -> None:
@@ -63521,7 +63601,7 @@ def test_executor_repeal_collapses_oracle_zombie_schedule_root() -> None:
 
     executor.apply_op(op)
 
-    assert executor.statute.supplements == []
+    assert executor.statute.supplements == ()
 
 
 def test_executor_repeal_collapses_oracle_zombie_nested_part() -> None:
@@ -63560,7 +63640,7 @@ def test_executor_repeal_collapses_oracle_zombie_nested_part() -> None:
     executor.apply_op(op)
 
     schedule = executor.statute.supplements[0]
-    assert schedule.children == []
+    assert schedule.children == ()
 
 
 def test_replay_uk_ops_collapses_top_level_part_zombie() -> None:
@@ -70044,7 +70124,7 @@ def test_executor_insert_into_existing_unnumbered_schedule_root() -> None:
 
     executor.apply_op(op)
 
-    assert executor.statute.body.children == []
+    assert executor.statute.body.children == ()
     assert len(executor.statute.supplements) == 1
     schedule = executor.statute.supplements[0]
     assert [child.kind for child in schedule.children] == [IRNodeKind.CROSSHEADING]
@@ -71821,7 +71901,6 @@ def test_executor_does_not_report_preexisting_invariant_as_replay_violation() ->
 
 def test_uk_replay_fast_invariant_scan_matches_persisted_generic_subset() -> None:
     from lawvm.core import tree_ops
-    from lawvm.uk_legislation.mutable_ir import UKMutableNode
 
     root = IRNode(
         kind=IRNodeKind.BODY,
@@ -71850,7 +71929,7 @@ def test_uk_replay_fast_invariant_scan_matches_persisted_generic_subset() -> Non
         if "duplicate " in violation or " out of order:" in violation
     ]
 
-    assert _collect_duplicate_order_invariants(UKMutableNode.from_irnode(root)) == generic_subset
+    assert _collect_duplicate_order_invariants(root) == generic_subset
 
 
 def test_uk_replay_projects_flattened_sublist_lints_to_adjudications() -> None:
@@ -72381,8 +72460,17 @@ def test_executor_child_insert_mutation_event_uses_known_parent_path(
         payload=IRNode(kind=IRNodeKind.SECTION, label="1", text=""),
         source=OperationSource(statute_id="uk_test", title="Test Source"),
     )
-    node = UKMutableNode(kind=IRNodeKind.SECTION, label="1", text="")
-    executor.statute.body.children.append(node)
+    node = IRNode(kind=IRNodeKind.SECTION, label="1", text="")
+    # Sub-PR C+D (audit XJUR-02 / AGENTS.md §2.3): under frozen IRStatute, the
+    # pre-CoW ``executor.statute.body.children.append(node)`` mutation is
+    # illegal (children is a tuple). Thread the node into the body via CoW
+    # rebuild + ``self.statute = dc_replace(...)`` exactly the way the apply
+    # path's structural inserts now route through. ``_record_child_inserted``
+    # then runs against the rebuilt live body so its ``parent`` parameter is
+    # identity-attached under the live tree and the known-parent-path
+    # invariant this test pins survives the CoW migration.
+    new_body = dc_replace(executor.statute.body, children=(node,))
+    executor.statute = dc_replace(executor.statute, body=new_body)
     executor._current_mutation_op = op
 
     def fail_recursive_scan(*_args: object, **_kwargs: object) -> None:
@@ -72439,7 +72527,7 @@ def test_executor_remove_mutation_event_uses_known_parent_path(
 
     assert executor._remove_node(node, executor.statute.body, 0) is True
 
-    assert executor.statute.body.children == []
+    assert executor.statute.body.children == ()
     assert len(mutation_events) == 1
     event = mutation_events[0]
     assert event.helper == "_remove_node"
@@ -72471,8 +72559,19 @@ def test_executor_tree_path_index_updates_after_child_insert(
     )
     parent = executor.statute.body.children[0]
     assert executor._tree_path_for_mutable_node(parent) == (("section", "1"),)
-    node = UKMutableNode(kind=IRNodeKind.SUBSECTION, label="1", text="")
-    parent.children.append(node)
+    node = IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="")
+    # Sub-PR C+D (audit XJUR-02 / AGENTS.md §2.3): under frozen IRStatute, the
+    # pre-CoW ``parent.children.append(node)`` mutation is illegal (children is
+    # a tuple). Restructure via CoW: rebuild the section into ``new_parent``
+    # with the node attached, thread it through the body + statute via
+    # ``dc_replace``, then ``_record_child_inserted`` runs against the rebuilt
+    # live parent so the known-parent-path invariant this test pins survives
+    # the CoW migration. ``parent`` is re-pointed at the live ``new_parent``
+    # so the downstream path-index lookup identity-matches the live tree.
+    new_parent = dc_replace(parent, children=(node,))
+    new_body = dc_replace(executor.statute.body, children=(new_parent,))
+    executor.statute = dc_replace(executor.statute, body=new_body)
+    parent = new_parent
     executor._current_mutation_op = LegalOperation(
         op_id="uk_test_tree_path_index_insert",
         sequence=1,
@@ -72528,7 +72627,7 @@ def test_executor_tree_path_index_removes_deleted_subtree() -> None:
     assert executor._remove_node(node, executor.statute.body, 0) is True
 
     assert executor._cached_node_tree_path_if_indexed(node) is None
-    assert executor.statute.body.children == []
+    assert executor.statute.body.children == ()
 
 
 def test_target_resolution_address_uses_indexed_path_resolver() -> None:
@@ -72789,8 +72888,8 @@ def test_executor_sequence_match_does_not_alias_section_1_1_to_section_11() -> N
     )
 
     section_1, section_11 = executor.statute.body.children
-    assert section_1.children == []
-    assert section_11.children == []
+    assert section_1.children == ()
+    assert section_11.children == ()
 
 
 def test_executor_refuses_impossible_body_root_fallback_for_descendant_insert() -> None:
@@ -72813,7 +72912,7 @@ def test_executor_refuses_impossible_body_root_fallback_for_descendant_insert() 
         )
     )
 
-    assert executor.statute.body.children == []
+    assert executor.statute.body.children == ()
 
 
 def _schedule_paragraph_node(label: str, text: str, extra_children: tuple[IRNode, ...] = ()) -> IRNode:

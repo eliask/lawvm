@@ -7,30 +7,46 @@ same ratchet relocated these CoW helpers out of ``mutable_ir.py`` so that the
 ``mutable_ir`` shadow module's eventual deletion does not need to touch any of
 the apply sites that already route through CoW.
 
-These helpers accept the still-mutable ``UKMutableNode`` (which is the runtime
-intermediate representation used by the UK replay engine). They MUST NOT be
-mutated in place by callers; the helpers themselves only build fresh nodes /
-fresh lists via ``dataclasses.replace``.
+Sub-PR C+D (mutable_ir Wave N3d): these helpers now operate on the frozen
+``IRNode`` tree directly (the ``UKMutableStatute`` mirror was retired at the
+``replay_executor`` boundary). They MUST NOT mutate inputs in place; the
+helpers themselves only build fresh nodes / fresh lists via
+``dataclasses.replace``.
 """
 
 from __future__ import annotations
 
-from typing import cast
+from typing import Any
 
 from lawvm.core.ir import IRNode
 from lawvm.uk_legislation.mutable_ir import (
-    UKMutableNode,
     uk_has_same_kind_label_child,
 )
 from dataclasses import replace as dc_replace
 
 
+def uk_with_attr_set(node: IRNode, key: str, value: Any) -> IRNode:
+    """Sub-PR C+D CoW helper: return a NEW ``IRNode`` with ``node.attrs[key]``
+    set to ``value``. ``IRNode.attrs`` is a ``FrozenDict`` so the in-place
+    ``node.attrs[k] = v`` mutation pattern (valid on the former UKMutableNode)
+    is replaced by this CoW rebuild helper at every apply-site."""
+    return dc_replace(node, attrs={**dict(node.attrs), key: value})
+
+
+def uk_with_attr_pop(node: IRNode, *keys: str) -> IRNode:
+    """Sub-PR C+D CoW helper: return a NEW ``IRNode`` with ``node.attrs`` minus
+    every key in ``*keys``. Replaces ``node.attrs.pop(key, None)`` mutation."""
+    pop_set = set(keys)
+    new_attrs = {k: v for k, v in node.attrs.items() if k not in pop_set}
+    return dc_replace(node, attrs=new_attrs)
+
+
 def uk_replace_children_cow(
-    node: UKMutableNode,
-    new_children: list[UKMutableNode],
-) -> UKMutableNode:
+    node: IRNode,
+    new_children: list[IRNode],
+) -> IRNode:
     """PR3 (audit XJUR-02 / AGENTS.md §2.3): copy-on-write variant of
-    ``uk_replace_children``. Returns a NEW ``UKMutableNode`` with the supplied
+    ``uk_replace_children``. Returns a NEW ``IRNode`` with the supplied
     children, sharing every other field, instead of mutating in place.
 
     The mutation_boundary / replay invariants depend on every node upstream of
@@ -42,10 +58,10 @@ def uk_replace_children_cow(
 
 
 def uk_insert_node_at_index_cow(
-    children: list[UKMutableNode],
+    children: list[IRNode],
     index: int,
-    new_node: UKMutableNode,
-) -> tuple[list[UKMutableNode], bool]:
+    new_node: IRNode,
+) -> tuple[list[IRNode], bool]:
     """PR3 (audit XJUR-02 / AGENTS.md §2.3): copy-on-write variant of
     ``uk_insert_node_at_index``. Returns a NEW list with ``new_node`` inserted
     at ``index`` instead of mutating the input. The original list is left
@@ -62,9 +78,9 @@ def uk_insert_node_at_index_cow(
 
 
 def uk_insert_node_sorted_cow(
-    children: list[UKMutableNode],
-    new_node: UKMutableNode,
-) -> tuple[list[UKMutableNode], int | None]:
+    children: list[IRNode],
+    new_node: IRNode,
+) -> tuple[list[IRNode], int | None]:
     """PR3 (audit XJUR-02 / AGENTS.md §2.3): copy-on-write variant of
     ``uk_insert_node_sorted``. Returns ``(new_children, inserted_idx_or_None)``
     instead of mutating the input list in place.
@@ -85,8 +101,8 @@ def uk_insert_node_sorted_cow(
     # is structurally compatible (same .kind/.label/.attrs/.children shape the
     # ordering logic consults). We pass a mutable copy and return it.
     uk_insert_into_children(
-        cast(list[IRNode], new_children),
-        cast(IRNode, new_node),
+        new_children,
+        new_node,
         label_sort_key=_label_sort_key,
     )
     try:
@@ -97,9 +113,9 @@ def uk_insert_node_sorted_cow(
 
 
 def uk_insert_child_sorted_cow(
-    parent: UKMutableNode,
-    new_node: UKMutableNode,
-) -> tuple[UKMutableNode, int | None]:
+    parent: IRNode,
+    new_node: IRNode,
+) -> tuple[IRNode, int | None]:
     """PR3 (audit XJUR-02 / AGENTS.md §2.3): copy-on-write variant of
     ``uk_insert_child_sorted``. Returns ``(new_parent, inserted_idx_or_None)``
     instead of mutating ``parent.children`` in place.
@@ -109,6 +125,6 @@ def uk_insert_child_sorted_cow(
     that intend to thread the new parent up the replay tree should treat that
     case as a no-op rather than building a shell parent.
     """
-    new_children, inserted_idx = uk_insert_node_sorted_cow(parent.children, new_node)
+    new_children, inserted_idx = uk_insert_node_sorted_cow(list(parent.children), new_node)
     new_parent = uk_replace_children_cow(parent, new_children)
     return new_parent, inserted_idx

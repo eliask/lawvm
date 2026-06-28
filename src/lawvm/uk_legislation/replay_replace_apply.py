@@ -5,11 +5,11 @@ from __future__ import annotations
 from dataclasses import replace as dc_replace
 from typing import Any, Protocol
 
-from lawvm.core.ir import LegalAddress, LegalOperation
+from lawvm.core.ir import IRNode, IRStatute, LegalAddress, LegalOperation
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.addressing import _addr_leaf_kind, _addr_leaf_label
 from lawvm.uk_legislation.canonicalize import uk_kind_matches
-from lawvm.uk_legislation.mutable_ir import UKMutableNode, UKMutableStatute
+from lawvm.uk_legislation.apply_rebuild import uk_with_attr_set
 from lawvm.uk_legislation.provenance_notes import (
     _schedule_list_entry_replace_selector,
     _table_row_replace_selector,
@@ -43,7 +43,7 @@ _UK_REPLAY_REPLACE_MATERIALIZED_AS_INSERT_FOR_MISSING_LEAF_RULE_ID = (
 
 
 class _ReplaceReplaySelf(Protocol):
-    statute: UKMutableStatute
+    statute: IRStatute
     adjudications_out: list[CompileAdjudication]
 
     def _find_node_by_target(
@@ -55,12 +55,12 @@ class _ReplaceReplaySelf(Protocol):
         target_resolution_op: LegalOperation | None = None,
     ) -> NodeLookupResult: ...
 
-    def _replace_node_in_statute(self, old_node: UKMutableNode, new_node: UKMutableNode) -> bool: ...
+    def _replace_node_in_statute(self, old_node: IRNode, new_node: IRNode) -> bool: ...
 
     def _replace_schedule_list_entry(
         self,
         target: LegalAddress,
-        new_node: UKMutableNode,
+        new_node: IRNode,
         op: LegalOperation,
         selector: dict[str, Any],
     ) -> bool: ...
@@ -68,7 +68,7 @@ class _ReplaceReplaySelf(Protocol):
     def _replace_table_entry_rows(
         self,
         target: LegalAddress,
-        new_node: UKMutableNode,
+        new_node: IRNode,
         op: LegalOperation,
         selector: dict[str, Any],
     ) -> bool: ...
@@ -81,9 +81,9 @@ class _ReplaceReplaySelf(Protocol):
 
     def _apply_text_substitution_on_node(
         self,
-        node: UKMutableNode,
+        node: IRNode,
         subs: list[dict[str, Any]],
-    ) -> tuple[UKMutableNode, tuple[dict[str, Any], ...]]: ...
+    ) -> tuple[IRNode, tuple[dict[str, Any], ...]]: ...
 
     def _malformed_target_gap(self, target: LegalAddress) -> bool: ...
 
@@ -99,13 +99,13 @@ class _ReplaceReplaySelf(Protocol):
         self,
         op: LegalOperation,
         target: LegalAddress,
-        new_node: UKMutableNode,
+        new_node: IRNode,
     ) -> bool: ...
 
     def _insert_node_v2(
         self,
         target: LegalAddress,
-        new_node: UKMutableNode,
+        new_node: IRNode,
         op: LegalOperation,
     ) -> bool: ...
 
@@ -122,7 +122,7 @@ class _ReplaceReplaySelf(Protocol):
     def _replace_definition_child_structural_substitution(
         self,
         target: LegalAddress,
-        new_node: UKMutableNode,
+        new_node: IRNode,
         op: LegalOperation,
     ) -> bool: ...
 
@@ -130,8 +130,8 @@ class _ReplaceReplaySelf(Protocol):
 def _source_label_changing_substitution_detail(
     op: LegalOperation,
     target: LegalAddress,
-    node: UKMutableNode,
-    new_node: UKMutableNode,
+    node: IRNode,
+    new_node: IRNode,
 ) -> dict[str, object]:
     return uk_replay_action_target_detail(
         op,
@@ -147,7 +147,7 @@ class UKReplayReplaceApplyMixin:
     def _replace_definition_child_structural_substitution(
         self: _ReplaceReplaySelf,
         target: LegalAddress,
-        new_node: UKMutableNode,
+        new_node: IRNode,
         op: LegalOperation,
     ) -> bool:
         if new_node.attrs.get("source_rule_id") != UK_DEFINITION_CHILD_STRUCTURAL_SUBSTITUTION_RULE_ID:
@@ -197,7 +197,7 @@ class UKReplayReplaceApplyMixin:
             )
             return True
 
-        matches: list[UKMutableNode] = []
+        matches: list[IRNode] = []
         stack = list(parent_node.children)
         while stack:
             current = stack.pop()
@@ -231,7 +231,7 @@ class UKReplayReplaceApplyMixin:
         existing = matches[0]
         existing_eid = str(existing.attrs.get("eId") or existing.attrs.get("id") or "")
         if existing_eid:
-            new_node.attrs["eId"] = existing_eid
+            new_node = uk_with_attr_set(new_node, "eId", existing_eid)
         self._replace_node_in_statute(existing, new_node)
         _append_uk_replay_adjudication(
             self.adjudications_out,
@@ -256,8 +256,8 @@ class UKReplayReplaceApplyMixin:
         self: _ReplaceReplaySelf,
         op: LegalOperation,
         target: LegalAddress,
-        node: UKMutableNode | None,
-        parent: UKMutableNode | None,
+        node: IRNode | None,
+        parent: IRNode | None,
         idx: int | None,
         target_found: bool,
     ) -> None:
@@ -281,7 +281,7 @@ class UKReplayReplaceApplyMixin:
                     ),
                 )
                 return
-            new_node = UKMutableNode.from_dict(op.payload.to_jsonable_dict())
+            new_node = op.payload
             if self._replace_schedule_list_entry(
                 target,
                 new_node,
@@ -311,7 +311,7 @@ class UKReplayReplaceApplyMixin:
                     ),
                 )
                 return
-            new_node = UKMutableNode.from_dict(op.payload.to_jsonable_dict())
+            new_node = op.payload
             if self._replace_table_entry_rows(
                 target,
                 new_node,
@@ -365,8 +365,10 @@ class UKReplayReplaceApplyMixin:
                     detail=uk_replay_blocking_action_target_detail(op, target),
                 )
         elif op.payload is not None:
-            # Clone payload so repeated ops don't share state
-            new_node = UKMutableNode.from_dict(op.payload.to_jsonable_dict())
+            # Sub-PR C+D: ``IRNode`` is immutable — no per-op cloning needed
+            # to keep repeated ops from sharing state; ``op.payload`` itself
+            # is safe to thread into the live tree directly.
+            new_node = op.payload
             if self._replace_definition_child_structural_substitution(target, new_node, op):
                 self._record_invariant_violations(op)
                 self._emit_top_section_snapshot(op)
@@ -380,7 +382,7 @@ class UKReplayReplaceApplyMixin:
                     )
                     existing_eid = str(node.attrs.get("eId") or node.attrs.get("id") or "")
                     if existing_eid and not label_changing_substitution:
-                        new_node.attrs["eId"] = existing_eid
+                        new_node = uk_with_attr_set(new_node, "eId", existing_eid)
                     if parent and idx is not None:
                         self._replace_node_in_statute(node, new_node)
                         if label_changing_substitution:
@@ -427,7 +429,7 @@ class UKReplayReplaceApplyMixin:
                 else:
                     existing_eid = str(node.attrs.get("eId") or node.attrs.get("id") or "")
                     if existing_eid:
-                        new_node.attrs["eId"] = existing_eid
+                        new_node = uk_with_attr_set(new_node, "eId", existing_eid)
                     if parent and idx is not None:
                         self._replace_node_in_statute(node, new_node)
                         self._record_invariant_violations(op)

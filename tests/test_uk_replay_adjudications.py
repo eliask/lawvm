@@ -42,6 +42,7 @@ from lawvm.uk_legislation.replay_text_apply import (
     _rewrite_flat_definition_child_inner_text,
     _rewrite_flat_definition_child_ordinal_text,
 )
+from lawvm.uk_legislation.replay_state import NodeLookupResult
 from lawvm.uk_legislation.replay_target_gaps import uk_item_order_shape_gap
 from lawvm.uk_legislation.source_adjudication import classify_uk_replay_adjudication_bucket
 from lawvm.uk_legislation.uk_amendment_replay import (
@@ -652,7 +653,7 @@ def test_replace_descendant_at_path_is_copy_on_write() -> None:
     executor = UKReplayExecutor(_base_statute_sections_1_2())
     old_body = executor.statute.body
     old_section = old_body.children[0]
-    replacement = UKMutableNode(kind=IRNodeKind.SECTION, label="1", text="Replacement section one.")
+    replacement = IRNode(kind=IRNodeKind.SECTION, label="1", text="Replacement section one.")
 
     rebuilt = executor._replace_descendant_at_path(old_body, (0,), replacement)
 
@@ -1647,17 +1648,17 @@ def test_find_text_range_start_index_rejects_missing_anchor() -> None:
 
 
 def test_find_descendant_path_by_kind_label_returns_first_document_order_match() -> None:
-    root = UKMutableNode(
+    root = IRNode(
         kind=IRNodeKind.SECTION,
         label="1",
-        children=[
-            UKMutableNode(kind=IRNodeKind.PARAGRAPH, label="a"),
-            UKMutableNode(
+        children=(
+            IRNode(kind=IRNodeKind.PARAGRAPH, label="a"),
+            IRNode(
                 kind=IRNodeKind.SUBSECTION,
                 label="1",
-                children=[UKMutableNode(kind=IRNodeKind.PARAGRAPH, label="a")],
+                children=(IRNode(kind=IRNodeKind.PARAGRAPH, label="a"),),
             ),
-        ],
+        ),
     )
 
     assert _find_descendant_path_by_kind_label(root, kind="paragraph", label="a") == (0,)
@@ -1665,14 +1666,14 @@ def test_find_descendant_path_by_kind_label_returns_first_document_order_match()
 
 
 def test_collect_descendant_paths_by_label_and_kinds_preserves_document_order() -> None:
-    root = UKMutableNode(
+    root = IRNode(
         kind=IRNodeKind.SECTION,
         label="1",
-        children=[
-            UKMutableNode(kind=IRNodeKind.ITEM, label="2"),
-            UKMutableNode(kind=IRNodeKind.PARAGRAPH, label="2"),
-            UKMutableNode(kind=IRNodeKind.SUBPARAGRAPH, label="3"),
-        ],
+        children=(
+            IRNode(kind=IRNodeKind.ITEM, label="2"),
+            IRNode(kind=IRNodeKind.PARAGRAPH, label="2"),
+            IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="3"),
+        ),
     )
 
     assert _collect_descendant_paths_by_label_and_kinds(
@@ -2029,7 +2030,7 @@ def test_executor_blocks_schedule_descendant_body_root_fallback() -> None:
     )
 
     assert [child.label for child in executor.statute.body.children] == ["1"]
-    assert executor.statute.supplements == []
+    assert executor.statute.supplements == ()
     assert len(adjudications) == 1
     assert adjudications[0].kind == "uk_replay_missing_schedule_branch_gap"
     assert classify_uk_replay_adjudication_bucket(adjudications[0].kind) == "source_shape"
@@ -4388,7 +4389,7 @@ def test_executor_applies_labeled_child_end_range_without_target_hijack() -> Non
     # (the mutable working representation), not the immutable IRNode tuple that
     # replay_uk_ops(...) returns. The sibling .children == () assertions in this
     # file all inspect replay_uk_ops results, not executor.statute directly.
-    assert subsection.children == []
+    assert subsection.children == ()
     assert [row.kind for row in adjudications] == ["uk_replay_labeled_child_end_range_applied"]
     assert adjudications[0].detail["blocking"] is False
     assert adjudications[0].detail["strict_disposition"] == "record"
@@ -5251,9 +5252,9 @@ def test_executor_guards_sibling_renumber_collision_after_destination_lookup_mis
         allow_compound_subsection_alias: bool = False,
         allow_recursive_match: bool = True,
         target_resolution_op: LegalOperation | None = None,
-    ) -> tuple[UKMutableNode | None, UKMutableNode | None, int | None]:
+    ) -> NodeLookupResult:
         if target.path == (("section", "8"),):
-            return None, None, None
+            return NodeLookupResult(None, None, None)
         return real_find_node_by_target(
             target,
             allow_compound_subsection_alias=allow_compound_subsection_alias,
@@ -6987,7 +6988,7 @@ def test_executor_does_not_materialize_labeled_child_text_without_source_rule() 
     )
 
     paragraph = executor.statute.body.children[0].children[0].children[0]
-    assert paragraph.children == []
+    assert paragraph.children == ()
     assert "i first visible limb" in paragraph.text
     assert not any(
         row.kind == "uk_replay_source_carried_labeled_child_text_substitution_recovered"

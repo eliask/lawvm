@@ -26,7 +26,7 @@ def _normalized_replay_subtree_text(node: IRNode | UKMutableNode) -> str:
     return _normalize_text_for_grounding(" ".join(parts))
 
 
-def _node_text_contains_text(node: UKMutableNode, needle: str) -> bool:
+def _node_text_contains_text(node: IRNode | UKMutableNode, needle: str) -> bool:
     """Return whether *needle* is present in one node text field only."""
     normalized_needle = " ".join((needle or "").split())
     if not normalized_needle:
@@ -36,7 +36,7 @@ def _node_text_contains_text(node: UKMutableNode, needle: str) -> bool:
     return normalized_needle in text or bool(re.search(pattern, text, flags=re.I))
 
 
-def _subtree_contains_text(node: UKMutableNode, needle: str) -> bool:
+def _subtree_contains_text(node: IRNode | UKMutableNode, needle: str) -> bool:
     """Return whether *needle* is already present in the target subtree text."""
     normalized_needle = " ".join((needle or "").split())
     if not normalized_needle:
@@ -52,7 +52,7 @@ def _subtree_contains_text(node: UKMutableNode, needle: str) -> bool:
     return False
 
 
-def _subtree_text_match_count(node: UKMutableNode, needle: str) -> int:
+def _subtree_text_match_count(node: IRNode | UKMutableNode, needle: str) -> int:
     """Count whitespace-flexible text matches across a mutable subtree."""
     normalized_needle = " ".join((needle or "").split())
     if not normalized_needle:

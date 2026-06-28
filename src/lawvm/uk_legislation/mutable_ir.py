@@ -128,7 +128,10 @@ def uk_replace_children(node: UKMutableNode, new_children: list[UKMutableNode]) 
     return True
 
 
-def uk_has_same_kind_label_child(children: list[UKMutableNode], new_node: UKMutableNode) -> bool:
+def uk_has_same_kind_label_child(
+    children: list[UKMutableNode] | list[IRNode],
+    new_node: UKMutableNode | IRNode,
+) -> bool:
     from lawvm.uk_legislation.uk_grafter import _clean_num
 
     if new_node.label:

@@ -1,11 +1,11 @@
 """UK replay table geometry helpers."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace as dc_replace
 from typing import Any, NamedTuple
 
+from lawvm.core.ir import IRNode
 from lawvm.uk_legislation.addressing import _uk_kind_value
-from lawvm.uk_legislation.mutable_ir import UKMutableNode
 from lawvm.uk_legislation.replay_text import _compact_normalized_text
 from lawvm.uk_legislation.uk_grafter import _clean_num
 
@@ -14,34 +14,34 @@ from lawvm.uk_legislation.uk_grafter import _clean_num
 class UKTableOwnedColumnRange:
     start_col: int
     end_col: int
-    cell: UKMutableNode
+    cell: IRNode
     physical_index: int
 
 
 @dataclass(frozen=True, slots=True)
 class UKTableColumnInsertPlan:
     row_index: int
-    row: UKMutableNode
-    row_cells: dict[int, UKMutableNode]
+    row: IRNode
+    row_cells: dict[int, IRNode]
     owned_ranges: list[UKTableOwnedColumnRange]
 
 
 @dataclass(frozen=True, slots=True)
 class UKTableCellMatches:
-    cells: list[UKMutableNode]
+    cells: list[IRNode]
     row_previews: list[str]
 
 
 @dataclass(frozen=True, slots=True)
 class UKTableColumnPayloadCells:
-    cells: list[UKMutableNode]
+    cells: list[IRNode]
     reason_code: str
     detail: dict[str, object]
 
 
 @dataclass(frozen=True, slots=True)
 class UKTableRowInsertResolution:
-    table: UKMutableNode | None
+    table: IRNode | None
     insert_index: int | None
     reason_code: str
     detail: dict[str, Any]
@@ -49,7 +49,7 @@ class UKTableRowInsertResolution:
 
 @dataclass(frozen=True, slots=True)
 class UKTableRowReplaceSpanResolution:
-    table: UKMutableNode | None
+    table: IRNode | None
     start_index: int | None
     end_index: int | None
     reason_code: str
@@ -58,20 +58,20 @@ class UKTableRowReplaceSpanResolution:
 
 @dataclass(frozen=True, slots=True)
 class UKTableSelectorTables:
-    tables: list[UKMutableNode]
+    tables: list[IRNode]
     detail: dict[str, Any]
 
 
 @dataclass(frozen=True, slots=True)
 class UKTableCellResolution:
-    cell: UKMutableNode | None
+    cell: IRNode | None
     reason_code: str
     detail: dict[str, Any]
 
 
 @dataclass(frozen=True, slots=True)
 class UKTableCellsResolution:
-    cells: list[UKMutableNode]
+    cells: list[IRNode]
     reason_code: str
     detail: dict[str, Any]
 
@@ -84,13 +84,13 @@ class _UKTableAnchorRowMatch:
 
 @dataclass(frozen=True, slots=True)
 class _UKTableAnchorTableMatch:
-    table: UKMutableNode
+    table: IRNode
     matches: tuple[_UKTableAnchorRowMatch, ...]
 
 
 @dataclass(frozen=True, slots=True)
 class _UKTableEntryCellMatch:
-    cell: UKMutableNode
+    cell: IRNode
     row_preview: str
 
 
@@ -114,29 +114,33 @@ class _UKTableRelatingAnchorMatches:
 
 @dataclass(frozen=True, slots=True)
 class _UKDescendantTableMatch:
-    table: UKMutableNode
+    table: IRNode
     path: tuple[str, ...]
 
 
-type ExpandedTableRows = list[dict[int, UKMutableNode]]
+type ExpandedTableRows = list[dict[int, IRNode]]
 
 
 class UKExpandedTableRow(NamedTuple):
     physical_index: int
-    cells_by_column: dict[int, UKMutableNode]
+    cells_by_column: dict[int, IRNode]
 
 
 type ExpandedTableRowsWithPhysicalIndex = list[UKExpandedTableRow]
 
 
-def strip_uk_identity_attrs_recursive(node: UKMutableNode) -> None:
-    for key in ("eId", "id"):
-        node.attrs.pop(key, None)
-    for child in node.children:
-        strip_uk_identity_attrs_recursive(child)
+def strip_uk_identity_attrs_recursive(node: IRNode) -> IRNode:
+    """Sub-PR C+D (audit XJUR-02 / AGENTS.md §2.3): CoW variant — was an
+    in-place mutator that popped ``eId``/``id`` from ``node.attrs`` and
+    recursed. ``IRNode.attrs`` is now an immutable ``FrozenDict`` so the
+    function returns a freshly-rebuilt ``IRNode`` (with the identity keys
+    filtered) instead of mutating in place."""
+    new_attrs = {k: v for k, v in node.attrs.items() if k not in ("eId", "id")}
+    new_children = tuple(strip_uk_identity_attrs_recursive(c) for c in node.children)
+    return dc_replace(node, attrs=new_attrs, children=new_children)
 
 
-def uk_table_cell_span(cell: UKMutableNode) -> tuple[int, int]:
+def uk_table_cell_span(cell: IRNode) -> tuple[int, int]:
     try:
         rowspan = int(str(cell.attrs.get("rowspan") or "1"))
     except ValueError:
@@ -154,22 +158,22 @@ def uk_table_cell_span(cell: UKMutableNode) -> tuple[int, int]:
     return max(rowspan, 1), max(colspan, 1)
 
 
-def expanded_uk_table_rows(table: UKMutableNode) -> ExpandedTableRows:
+def expanded_uk_table_rows(table: IRNode) -> ExpandedTableRows:
     return [row_cells for _, row_cells in expanded_uk_table_rows_with_physical_index(table)]
 
 
 def expanded_uk_table_rows_with_physical_index(
-    table: UKMutableNode,
+    table: IRNode,
 ) -> ExpandedTableRowsWithPhysicalIndex:
     rows: list[UKExpandedTableRow] = []
-    active_rowspans: dict[int, tuple[int, UKMutableNode]] = {}
+    active_rowspans: dict[int, tuple[int, IRNode]] = {}
     for row_index, row in enumerate(table.children):
         if _uk_kind_value(row.kind).lower() != "row":
             continue
-        row_cells: dict[int, UKMutableNode] = {
+        row_cells: dict[int, IRNode] = {
             col: cell for col, (_, cell) in active_rowspans.items()
         }
-        next_rowspans: dict[int, tuple[int, UKMutableNode]] = {
+        next_rowspans: dict[int, tuple[int, IRNode]] = {
             col: (remaining - 1, cell)
             for col, (remaining, cell) in active_rowspans.items()
             if remaining > 1
@@ -195,7 +199,7 @@ def expanded_uk_table_rows_with_physical_index(
 
 
 def uk_table_column_payload_cells(
-    new_node: UKMutableNode,
+    new_node: IRNode,
 ) -> UKTableColumnPayloadCells:
     if _uk_kind_value(new_node.kind).lower() != "table":
         return UKTableColumnPayloadCells(
@@ -212,7 +216,7 @@ def uk_table_column_payload_cells(
             reason_code="payload_has_no_rows",
             detail={"payload_row_count": 0},
         )
-    payload_cells: list[UKMutableNode] = []
+    payload_cells: list[IRNode] = []
     for row_index, row in enumerate(payload_rows):
         row_cells = [
             child
@@ -229,8 +233,7 @@ def uk_table_column_payload_cells(
                     "payload_row_count": len(payload_rows),
                 },
             )
-        cloned = UKMutableNode.from_irnode(row_cells[0].to_irnode())
-        strip_uk_identity_attrs_recursive(cloned)
+        cloned = strip_uk_identity_attrs_recursive(row_cells[0])
         payload_cells.append(cloned)
     return UKTableColumnPayloadCells(
         cells=payload_cells,
@@ -240,17 +243,17 @@ def uk_table_column_payload_cells(
 
 
 def uk_table_column_insert_plans(
-    table: UKMutableNode,
+    table: IRNode,
 ) -> list[UKTableColumnInsertPlan]:
     plans: list[UKTableColumnInsertPlan] = []
-    active_rowspans: dict[int, tuple[int, UKMutableNode]] = {}
+    active_rowspans: dict[int, tuple[int, IRNode]] = {}
     for row_index, row in enumerate(table.children):
         if _uk_kind_value(row.kind).lower() != "row":
             continue
-        row_cells: dict[int, UKMutableNode] = {
+        row_cells: dict[int, IRNode] = {
             col: cell for col, (_, cell) in active_rowspans.items()
         }
-        next_rowspans: dict[int, tuple[int, UKMutableNode]] = {
+        next_rowspans: dict[int, tuple[int, IRNode]] = {
             col: (remaining - 1, cell)
             for col, (remaining, cell) in active_rowspans.items()
             if remaining > 1
@@ -294,7 +297,7 @@ def uk_table_column_insert_plans(
 
 
 def uk_table_selector_tables(
-    node: UKMutableNode,
+    node: IRNode,
     selector: dict[str, Any],
 ) -> UKTableSelectorTables:
     tables = [
@@ -334,8 +337,8 @@ def uk_table_selector_tables(
     )
 
 
-def _unique_row_cells(row_cells: dict[int, UKMutableNode]) -> list[UKMutableNode]:
-    cells: list[UKMutableNode] = []
+def _unique_row_cells(row_cells: dict[int, IRNode]) -> list[IRNode]:
+    cells: list[IRNode] = []
     seen: set[int] = set()
     for _col, cell in sorted(row_cells.items()):
         cell_id = id(cell)
@@ -346,7 +349,7 @@ def _unique_row_cells(row_cells: dict[int, UKMutableNode]) -> list[UKMutableNode
     return cells
 
 
-def _is_entry_group_heading(row_cells: dict[int, UKMutableNode]) -> bool:
+def _is_entry_group_heading(row_cells: dict[int, IRNode]) -> bool:
     cells = _unique_row_cells(row_cells)
     texts = [str(cell.text or "").strip() for cell in cells]
     if len(cells) == 1 and texts[0]:
@@ -368,11 +371,11 @@ def _table_entry_article_tolerant_anchor_variants(text: str) -> tuple[str, ...]:
 
 
 def _unique_descendant_uk_tables(
-    node: UKMutableNode,
+    node: IRNode,
 ) -> UKTableSelectorTables:
     matches: list[_UKDescendantTableMatch] = []
 
-    def _walk(candidate: UKMutableNode, path: tuple[str, ...]) -> None:
+    def _walk(candidate: IRNode, path: tuple[str, ...]) -> None:
         for child_index, child in enumerate(candidate.children):
             child_kind = _uk_kind_value(child.kind).lower()
             child_label = str(child.label or "")
@@ -398,11 +401,11 @@ def _unique_descendant_uk_tables(
 
 
 def resolve_uk_table_entry_row_insert_index(
-    node: UKMutableNode,
+    node: IRNode,
     selector: dict[str, Any],
 ) -> UKTableRowInsertResolution:
     def result(
-        table: UKMutableNode | None,
+        table: IRNode | None,
         insert_index: int | None,
         reason_code: str,
         detail: dict[str, Any],
@@ -485,7 +488,7 @@ def resolve_uk_table_entry_row_insert_index(
             for candidate_table in tables:
                 candidate_rows = expanded_uk_table_rows_with_physical_index(candidate_table)
                 candidate_matches: list[_UKTableAnchorRowMatch] = []
-                last_candidate_cell: UKMutableNode | None = None
+                last_candidate_cell: IRNode | None = None
                 for row_index, row_cells in candidate_rows:
                     target_cell = row_cells.get(column_index)
                     if target_cell is None:
@@ -702,7 +705,7 @@ def resolve_uk_table_entry_row_insert_index(
         )
 
     matching_rows: list[_UKTableInsertRowMatch] = []
-    last_target_cell: UKMutableNode | None = None
+    last_target_cell: IRNode | None = None
     for row_index, row_cells in expanded_rows:
         if selector_mode == "relating_entry":
             row_match_cells = [
@@ -822,7 +825,7 @@ def resolve_uk_table_entry_row_insert_index(
 
 
 def resolve_uk_table_entry_row_replace_span(
-    node: UKMutableNode,
+    node: IRNode,
     selector: dict[str, Any],
 ) -> UKTableRowReplaceSpanResolution:
     """Resolve rows named by a table-entry replacement selector.
@@ -832,7 +835,7 @@ def resolve_uk_table_entry_row_replace_span(
     form a contiguous span.
     """
     def result(
-        table: UKMutableNode | None,
+        table: IRNode | None,
         start_index: int | None,
         end_index: int | None,
         reason_code: str,
@@ -963,11 +966,11 @@ def resolve_uk_table_entry_row_replace_span(
 
 
 def resolve_unique_uk_table_relating_cell(
-    node: UKMutableNode,
+    node: IRNode,
     selector: dict[str, Any],
 ) -> UKTableCellResolution:
     def result(
-        cell: UKMutableNode | None,
+        cell: IRNode | None,
         reason_code: str,
         detail: dict[str, Any],
     ) -> UKTableCellResolution:
@@ -986,7 +989,7 @@ def resolve_unique_uk_table_relating_cell(
     carrier_detail = table_selection.detail
     candidate_tables = tables
     if len(candidate_tables) != 1:
-        filtered_tables: list[UKMutableNode] = []
+        filtered_tables: list[IRNode] = []
         filtered_rows: list[str] = []
         for candidate_table in candidate_tables:
             candidate_matches = _matching_uk_table_relating_cells(
@@ -1044,12 +1047,12 @@ def resolve_unique_uk_table_relating_cell(
 
 
 def _matching_uk_table_relating_cells(
-    table: UKMutableNode,
+    table: IRNode,
     *,
     column_index: int,
     relating_norm: str,
 ) -> UKTableCellMatches:
-    matching_cells: list[UKMutableNode] = []
+    matching_cells: list[IRNode] = []
     matching_rows: list[str] = []
     for row_cells in expanded_uk_table_rows(table):
         row_texts = [
@@ -1069,11 +1072,11 @@ def _matching_uk_table_relating_cells(
 
 
 def resolve_unique_uk_table_entry_cells(
-    node: UKMutableNode,
+    node: IRNode,
     selector: dict[str, Any],
 ) -> UKTableCellsResolution:
     def result(
-        cells: list[UKMutableNode],
+        cells: list[IRNode],
         reason_code: str,
         detail: dict[str, Any],
     ) -> UKTableCellsResolution:
@@ -1142,11 +1145,11 @@ def resolve_unique_uk_table_entry_cells(
 
 
 def resolve_unique_uk_table_entry_text_cell(
-    node: UKMutableNode,
+    node: IRNode,
     selector: dict[str, Any],
 ) -> UKTableCellResolution:
     def result(
-        cell: UKMutableNode | None,
+        cell: IRNode | None,
         reason_code: str,
         detail: dict[str, Any],
     ) -> UKTableCellResolution:
@@ -1166,7 +1169,7 @@ def resolve_unique_uk_table_entry_text_cell(
     carrier_detail = table_selection.detail
     candidate_tables = tables
     if len(candidate_tables) != 1:
-        filtered_tables: list[UKMutableNode] = []
+        filtered_tables: list[IRNode] = []
         filtered_rows: list[str] = []
         for candidate_table in candidate_tables:
             candidate_matches = _matching_uk_table_entry_text_cells(
@@ -1228,14 +1231,14 @@ def resolve_unique_uk_table_entry_text_cell(
 
 
 def _matching_uk_table_entry_text_cells(
-    table: UKMutableNode,
+    table: IRNode,
     *,
     selector_mode: str,
     match_norm: str,
     relating_norm: str,
     entry_label_norm: str,
 ) -> UKTableCellMatches:
-    matching_cells: list[UKMutableNode] = []
+    matching_cells: list[IRNode] = []
     matching_rows: list[str] = []
     for row_cells in expanded_uk_table_rows(table):
         row_texts = [
@@ -1267,11 +1270,11 @@ def _matching_uk_table_entry_text_cells(
 
 
 def resolve_unique_uk_table_entry_cell(
-    node: UKMutableNode,
+    node: IRNode,
     selector: dict[str, Any],
 ) -> UKTableCellResolution:
     def result(
-        cell: UKMutableNode | None,
+        cell: IRNode | None,
         reason_code: str,
         detail: dict[str, Any],
     ) -> UKTableCellResolution:
@@ -1291,7 +1294,7 @@ def resolve_unique_uk_table_entry_cell(
     if len(tables) != 1:
         return result(None, "table_not_unique", {"table_count": len(tables), **carrier_detail})
 
-    matching_cells: list[UKMutableNode] = []
+    matching_cells: list[IRNode] = []
     matching_rows: list[str] = []
     for row_cells in expanded_uk_table_rows(tables[0]):
         if not any(
@@ -1334,11 +1337,11 @@ def resolve_unique_uk_table_entry_cell(
 
 
 def resolve_unique_uk_table_column_text_cell(
-    node: UKMutableNode,
+    node: IRNode,
     selector: dict[str, Any],
 ) -> UKTableCellResolution:
     def result(
-        cell: UKMutableNode | None,
+        cell: IRNode | None,
         reason_code: str,
         detail: dict[str, Any],
     ) -> UKTableCellResolution:
@@ -1360,7 +1363,7 @@ def resolve_unique_uk_table_column_text_cell(
     carrier_detail = table_selection.detail
     candidate_tables = tables
     if len(candidate_tables) != 1:
-        filtered_tables: list[UKMutableNode] = []
+        filtered_tables: list[IRNode] = []
         filtered_rows: list[str] = []
         for candidate_table in candidate_tables:
             candidate_matches = _matching_uk_table_column_text_cells(
@@ -1424,7 +1427,7 @@ def resolve_unique_uk_table_column_text_cell(
 
 
 def _matching_uk_table_column_text_cells(
-    table: UKMutableNode,
+    table: IRNode,
     *,
     column_index: int,
     row_index: int = 0,
@@ -1432,7 +1435,7 @@ def _matching_uk_table_column_text_cells(
     match_norm: str,
     full_cell_match: bool = False,
 ) -> UKTableCellMatches:
-    matching_cells: list[UKMutableNode] = []
+    matching_cells: list[IRNode] = []
     matching_rows: list[str] = []
     for physical_row_index, row_cells in expanded_uk_table_rows_with_physical_index(table):
         if row_index >= 1:
@@ -1463,12 +1466,12 @@ def _matching_uk_table_column_text_cells(
 
 
 def resolve_uk_table_entry_inline_cell(
-    node: UKMutableNode,
+    node: IRNode,
     selector: dict[str, Any],
 ) -> UKTableCellResolution:
     """Resolve a source-owned "nth entry in column N relating to X" table cell."""
     def result(
-        cell: UKMutableNode | None,
+        cell: IRNode | None,
         reason_code: str,
         detail: dict[str, Any],
     ) -> UKTableCellResolution:
@@ -1501,7 +1504,7 @@ def resolve_uk_table_entry_inline_cell(
     if len(tables) != 1:
         return result(None, "table_not_unique", {"table_count": len(tables), **carrier_detail})
 
-    matching_cells: list[UKMutableNode] = []
+    matching_cells: list[IRNode] = []
     matching_rows: list[str] = []
     for row_cells in expanded_uk_table_rows(tables[0]):
         target_cell = row_cells.get(column_index)

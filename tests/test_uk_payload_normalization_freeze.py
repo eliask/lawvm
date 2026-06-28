@@ -288,7 +288,7 @@ class TestReplayGroundingFreezesAtBoundary:
             text_map={},
         )
         executor.ground_ids()
-        ir = executor.statute.to_irstatute()
+        ir = executor.statute
 
         section = ir.body.children[0]
         assert isinstance(section, IRNode)
@@ -303,7 +303,7 @@ class TestReplayGroundingFreezesAtBoundary:
             text_map={},
         )
         executor.ground_ids()
-        ir = executor.statute.to_irstatute()
+        ir = executor.statute
         section = ir.body.children[0]
         with pytest.raises(dataclasses.FrozenInstanceError):
             setattr(section, field, [])
@@ -316,7 +316,7 @@ class TestReplayGroundingFreezesAtBoundary:
             text_map={},
         )
         executor.ground_ids()
-        ir = executor.statute.to_irstatute()
+        ir = executor.statute
         leaks = _collect_mutable_leaks(ir.body)
         assert leaks == [], f"UKMutableNode leaked into boundary IR body: {leaks!r}"
         for supplement in ir.supplements:
