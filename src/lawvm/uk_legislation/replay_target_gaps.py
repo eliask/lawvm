@@ -3,8 +3,9 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
+from typing import Any
 
-from lawvm.core.ir import IRNode, LegalAddress, LegalOperation
+from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.core import tree_ops
 from lawvm.uk_legislation.addressing import (
     _action_name,
@@ -117,7 +118,7 @@ def uk_table_target_shape_gap(target: LegalAddress) -> bool:
     return any(_clean_num(label or "") == "table" for _, label in path)
 
 
-def uk_broad_schedule_table_shape_gap(target: LegalAddress, node: IRNode) -> bool:
+def uk_broad_schedule_table_shape_gap(target: LegalAddress, node: Any) -> bool:
     path = target.path
     if _addr_container(target) != "schedule" or not path:
         return False
@@ -480,7 +481,7 @@ def uk_malformed_target_schedule_root_label_gap(target: LegalAddress) -> bool:
 
 def uk_existing_target_insert_gap(
     target: LegalAddress,
-    node: IRNode | None,
+    node: Any | None,
     op: LegalOperation,
 ) -> bool:
     if _action_name(op.action) != "insert" or node is None:
@@ -511,7 +512,7 @@ def uk_existing_target_insert_gap(
 
 
 def uk_existing_target_insert_already_materialized(
-    node: IRNode | None,
+    node: Any | None,
     op: LegalOperation,
 ) -> bool:
     payload = op.payload
@@ -523,7 +524,7 @@ def uk_existing_target_insert_already_materialized(
 
 
 def uk_existing_target_insert_conflict_detail(
-    node: IRNode | None,
+    node: Any | None,
     op: LegalOperation,
 ) -> dict[str, str] | None:
     payload = op.payload

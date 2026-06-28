@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
-from typing import Optional
+from typing import Any, Optional
 
 from lawvm.core.ir import IRNode
 
@@ -38,13 +38,13 @@ class UKNumericListTrailingCommaSubtreeReplacement:
 @dataclass(frozen=True, slots=True)
 class _UKTextNodeWalkEntry:
     path: tuple[int, ...]
-    node: IRNode
+    node: Any
 
 
 @dataclass(frozen=True, slots=True)
 class _UKTextMatchCandidate:
     path: tuple[int, ...]
-    node: IRNode
+    node: Any
     match: re.Match[str]
 
 
@@ -136,7 +136,7 @@ def _walk_text_nodes(node: IRNode) -> list[_UKTextNodeWalkEntry]:
 
 
 def _node_text_patch_preimage_present(
-    node: IRNode,
+    node: Any,
     match: str,
     occurrence: int,
     end_occurrence: int = 0,
@@ -153,7 +153,7 @@ def _node_text_patch_preimage_present(
     return re.search(pattern, text, flags=re.I) is not None
 
 
-def _rotated_trailing_comma_omission_match(match: str, node: IRNode) -> Optional[str]:
+def _rotated_trailing_comma_omission_match(match: str, node: Any) -> Optional[str]:
     """Return a unique `X` preimage for a quoted omission selector shaped as `X,`.
 
     Some UK effect/source surfaces quote the logical omitted phrase with a
@@ -233,7 +233,7 @@ def _numeric_list_trailing_comma_replacement_text(
 
 
 def _numeric_list_trailing_comma_subtree_replacement(
-    node: IRNode,
+    node: Any,
     match: str,
     replacement: str,
     occurrence: int,
