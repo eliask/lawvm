@@ -1350,6 +1350,40 @@ _AMENDING_ACT_OWN_SCHEDULE_DIRECTIVE = re.compile(
     re.IGNORECASE,
 )
 
+# Stronger directive form that ALSO names the carrier's structural-leaf kind:
+# "the Part set out in Schedule K of this Act" / "the Schedule 2A set out in
+# Schedule K of this Act". The kind word tells us the SHAPE of the payload the
+# amending act delegates to its own schedule — used by the caller to scope the
+# directive so it does NOT fire for sibling INLINE ``<amend>`` instructions
+# sourced from the same amending provision (an amending prov that mixes one
+# delegation instruction with many inline amendments would otherwise have the
+# delegation trigger for every op, producing false-positive
+# ``structural_amending_act_named_schedule_no_amend_child_matches_target_leaf``
+# blockers where the carrier's payload kind does not match the inline op's
+# target leaf). Group 1 = kind word; group 2 = carrier schedule label. The
+# kind word's own label is OPTIONAL: the prose may name the kind generically
+# ("the Part set out in Schedule K of this Act" — a NEW Part whose label is
+# implied) OR specifically ("the Schedule 2A set out in Schedule K of this
+# Act" — replaces a specific named schedule).
+_AMENDING_ACT_OWN_SCHEDULE_DIRECTIVE_WITH_KIND = re.compile(
+    r"\b(Part|Subpart|Schedule|Section|clause)(?:\s+[0-9]+[A-Za-z]*)?\s+set out in\s+"
+    r"Schedule\s+([0-9]+[A-Za-z]*)\s+of\s+this\s+Act\b",
+    re.IGNORECASE,
+)
+
+# NZ drafting kind-word -> the canonical IRNode kind used in target_leaf_kind.
+# Bounded to the kind words the directive-with-kind regex actually captures;
+# "Section"/"clause" both map to ``prov`` (NZ's statutory-section kind) because
+# schedules use "clause" interchangeably with "section" for the same prov-level
+# leaf (the source's own structural-kind alias, not a label coincidence).
+_AMENDING_ACT_SCHEDULE_KIND_WORD_TO_IR_KIND: dict[str, str] = {
+    "part": "part",
+    "subpart": "subpart",
+    "schedule": "schedule",
+    "section": "prov",
+    "clause": "prov",
+}
+
 # Schedule-indirection amending provisions ("Amend the Acts set out in the
 # tables in Schedules 1 to 32 of this Act, in each case,—" / "Amend the
 # enactments specified in Schedule N ... as set out in that schedule") deliver
@@ -1588,7 +1622,7 @@ _AMENDING_ACT_SCHEDULE_PAYLOAD_CONTAINERS = _AMEND_CONTAINER_KINDS | frozenset(
 
 def _amending_node_directs_to_amending_act_schedule(
     amending_node: etree._Element,
-) -> str | None:
+) -> tuple[str, str | None] | None:
     """Return the amending act's carrier-schedule label referenced by the
     directive ("Schedule K of this Act"), or ``None`` when no such directive
     is present.
@@ -1602,14 +1636,35 @@ def _amending_node_directs_to_amending_act_schedule(
     from the source itself. Returns ``None`` for amending provisions that do
     not delegate by this form (the inline ``<amend>``-subtree path stays in
     force).
+
+    The STRONGER form ("the Part set out in Schedule K of this Act" /
+    "the Schedule 2A set out in Schedule K of this Act") also names the
+    carrier's structural-leaf kind; the returned tuple carries that kind as
+    the second element (or ``None`` for the bare "Schedule K of this Act"
+    form). The caller uses the kind hint to scope the directive to the
+    specific instruction whose delegated payload shape matches the caller's
+    ``target_leaf_kind`` -- without this, an amending provision that mixes
+    one delegation instruction with many INLINE ``<amend>`` instructions
+    would have the delegation trigger fire for every inline op, producing
+    false-positive ``..._no_amend_child_matches_target_leaf`` blockers
+    where the carrier's payload kind does not match the inline op's target
+    leaf. AGENTS §1.0/§1.1: the kind hint is evidence-scoping of a directive
+    the source already states, never a target-scope broadening.
     """
 
     for text_node in amending_node.iter():
         if not isinstance(text_node.tag, str) or _localname(text_node) != "text":
             continue
-        match = _AMENDING_ACT_OWN_SCHEDULE_DIRECTIVE.search(_node_text(text_node))
-        if match:
-            return _normalize_text(match.group(1))
+        flat_text = _node_text(text_node)
+        kind_match = _AMENDING_ACT_OWN_SCHEDULE_DIRECTIVE_WITH_KIND.search(flat_text)
+        if kind_match:
+            kind_word = _normalize_text(kind_match.group(1)).lower()
+            schedule_label = _normalize_text(kind_match.group(2))
+            kind_hint = _AMENDING_ACT_SCHEDULE_KIND_WORD_TO_IR_KIND.get(kind_word)
+            return (schedule_label, kind_hint)
+        bare_match = _AMENDING_ACT_OWN_SCHEDULE_DIRECTIVE.search(flat_text)
+        if bare_match:
+            return (_normalize_text(bare_match.group(1)), None)
     return None
 
 
@@ -1763,12 +1818,38 @@ def _try_amending_act_own_schedule_delegation(
     blocker or successful :class:`NZStructuralReplacement` is returned -- the
     caller MUST surface it to the dry-run refusal/refusal path so the typed
     blocker is visible in receipts.
+
+    When the directive's prose names the carrier's payload kind ("the Part set
+    out in Schedule K of this Act"), the kind hint is matched against
+    ``target_leaf_kind`` via the canonical ``_kind_matches_target_leaf``
+    predicate (reusing the ``subprov``/``label-para`` alias set). A mismatch
+    returns ``None`` so the directive does NOT fire for sibling INLINE
+    ``<amend>`` instructions sourced from the same amending prov -- the
+    inline path runs unchanged, the existing blocker stands. This scoping
+    is the owned fix for the false-positive
+    ``structural_amending_act_named_schedule_no_amend_child_matches_target_leaf``
+    blockers on amending provs that mix one schedule-delegation instruction
+    with many inline amendments whose target-leaf kind differs from the
+    carrier's payload kind (a directive that delegates "the Part set out in
+    Schedule K of this Act" must NOT fire for an inline op whose target leaf
+    is a ``prov``). AGENTS §1.0/§1.1: the kind hint narrows a directive the
+    source already states; it never broadens target scope, never guesses.
     """
 
     if amending_act_root is None:
         return None
-    schedule_label = _amending_node_directs_to_amending_act_schedule(amending_node)
-    if schedule_label is None:
+    directive = _amending_node_directs_to_amending_act_schedule(amending_node)
+    if directive is None:
+        return None
+    schedule_label, carrier_target_kind_hint = directive
+    if carrier_target_kind_hint is not None and not _kind_matches_target_leaf(
+        carrier_target_kind_hint, target_leaf_kind
+    ):
+        # The directive's carrier payload kind (e.g. "Part") does not match
+        # the caller's target-leaf kind (e.g. "prov"); the directive is for a
+        # DIFFERENT instruction sourced from this amending prov. Do not fire
+        # the schedule-delegation resolver; the inline ``<amend>``-subtree
+        # path runs unchanged and its existing blocker stands.
         return None
     return _extract_from_amending_act_named_schedule(
         amending_act_root,

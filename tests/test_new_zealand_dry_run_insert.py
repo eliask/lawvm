@@ -52,6 +52,7 @@ from lawvm.new_zealand.source_tree import (
     NZ_STRUCTURAL_INSERT_BLOCKED_NO_MATCHING_CHILD,
     NZ_STRUCTURAL_INSERT_BLOCKED_SCHEDULE_INDIRECTION,
     NZ_STRUCTURAL_INSERT_BLOCKED_SINGLE_MATCH_WRONG_SECTION,
+    NZ_STRUCTURAL_REPLACE_BLOCKED_NO_MATCHING_CHILD,
     NZStructuralReplacement,
     extract_structural_insertion,
     extract_structural_replacement,
@@ -1895,3 +1896,110 @@ def test_amending_act_own_schedule_delegation_blocks_when_no_leaf_matches() -> N
         amending_act_root=root,
     )
     assert result_i == NZ_STRUCTURAL_BLOCKED_AMENDING_ACT_SCHEDULE_NO_MATCH
+
+
+# --- Carrier-kind-hinted directive scoping (AGENTS §1.0/§1.1). ---
+#
+# An amending provision may mix a SINGLE schedule-delegation instruction
+# ("In Schedule 1, insert the Part set out in Schedule 1 of this Act")
+# with many INLINE ``<amend>`` instructions sourced from the same prov.
+# Prior to the carrier-kind-hint scoping, the directive predicate scanned
+# the whole amending prov's text and matched the delegation phrase for EVERY
+# op sourced from that prov -- including the inline ``prov``-level amendments
+# whose target-leaf kind did not match the carrier's "Part" payload kind.
+# Result: ~false-positive ``structural_amending_act_named_schedule_no_amend_child_matches_target_leaf``
+# blockers on ``act_public_2022_77`` (amending prov LMS794578 of
+# ``act_public_2023_52``): the directive fired for the inline
+# ``prov``-resolution refusals where the carrier Schedule 1 holds a ``Part``,
+# producing a no-leaf-match blocker instead of the inline ``<amend>``-path's
+# own (correct) no-matching-child blocker.
+#
+# The fix: when the directive's prose names the carrier's payload kind
+# ("the Part set out in Schedule K of this Act"), the directive fires ONLY
+# when the caller's ``target_leaf_kind`` matches the named kind. Else it does
+# not fire, the inline ``<amend>`` path runs unchanged, and its blocker
+# (which accurately reflects the inline amend's actual no-match) stands.
+_MIXED_INLINE_AND_SCHEDULE_DELEGATION_XML = b"""\
+<act>
+  <body>
+    <prov id="OP"><label>42</label><heading>Schedule 1 amended</heading><prov.body>
+      <subprov><label>1</label><para>
+        <text>After section 5, insert:</text>
+        <amend><prov id="AM5A"><label>5A</label><heading>Inline inserted section</heading><prov.body>
+          <para><text>5A Brand new inline insert body.</text></para>
+        </prov.body></prov></amend>
+      </para></subprov>
+      <subprov><label>2</label><para>
+        <text>In Schedule 1, insert the Part set out in Schedule 1 of this Act as the last Part.</text>
+      </para></subprov>
+    </prov.body></prov>
+  </body>
+  <schedule id="SCH1"><label>1</label><heading>Carrier holding the delegated Part</heading>
+    <part id="P9"><label>9</label><heading>Delegated Part 9 heading</heading>
+      <para><text>9 Carrier Part body from amending act Schedule 1.</text></para>
+    </part>
+  </schedule>
+</act>
+"""
+
+
+def test_amending_act_own_schedule_delegation_skipped_when_carrier_kind_mismatches_inline_op() -> None:
+    """The directive's carrier payload is a ``Part`` ("the Part set out in
+    Schedule 1 of this Act"), but the caller is resolving an inline
+    ``prov``-level insert (kind "prov"). The directive must NOT fire --
+    carrier_target_kind_hint="part" mismatches target_leaf_kind="prov" -- so
+    the inline ``<amend>``-subtree path runs unchanged. The amend subtree
+    inserts ``prov:5A`` while the caller requests ``prov:999Z`` (a label no
+    inline amend matches); the existing inline
+    ``NZ_STRUCTURAL_INSERT_BLOCKED_NO_MATCHING_CHILD`` blocker stands.
+    Prior to the kind-hint scoping this same call returned the false-positive
+    ``NZ_STRUCTURAL_BLOCKED_AMENDING_ACT_SCHEDULE_NO_MATCH`` blocker because
+    the directive fired and the carrier Schedule 1 had no ``prov:999Z``."""
+    root = etree.fromstring(_MIXED_INLINE_AND_SCHEDULE_DELEGATION_XML)
+    node = _amending_node(_MIXED_INLINE_AND_SCHEDULE_DELEGATION_XML, "OP")
+    result = extract_structural_insertion(
+        node,
+        inserted_leaf_kind="prov",
+        inserted_leaf_label="999Z",
+        amending_act_root=root,
+    )
+    assert result == NZ_STRUCTURAL_INSERT_BLOCKED_NO_MATCHING_CHILD
+
+
+def test_amending_act_own_schedule_delegation_fires_when_carrier_kind_matches_target_leaf() -> None:
+    """Positive counterpart: the caller's target leaf is ``part:9`` and the
+    directive's carrier payload is "the Part set out in Schedule 1 of this
+    Act". The kind hint "part" matches target_leaf_kind "part" so the
+    directive fires; the carrier Schedule 1 supplies the nested ``part:9``,
+    which is returned cleanly (the inline ``<amend>`` path is bypassed
+    because the directive legitimately owns the payload for this leaf)."""
+    root = etree.fromstring(_MIXED_INLINE_AND_SCHEDULE_DELEGATION_XML)
+    node = _amending_node(_MIXED_INLINE_AND_SCHEDULE_DELEGATION_XML, "OP")
+    result = extract_structural_insertion(
+        node,
+        inserted_leaf_kind="part",
+        inserted_leaf_label="9",
+        amending_act_root=root,
+    )
+    assert isinstance(result, NZStructuralReplacement)
+    assert result.root.kind == "part"
+    assert result.root.label == "9"
+    assert "Delegated Part 9 heading" in result.root.heading
+    assert "Carrier Part body from amending act Schedule 1" in result.root.text
+
+
+def test_amending_act_own_schedule_delegation_negative_for_inline_replace_prov_match() -> None:
+    """Symmetric negative on the REPLACE path: the directive's "Part" carrier
+    kind does not match a ``prov``-level replace target. The inline
+    ``<amend>``-subtree path's existing blocker stands unchanged (the
+    amending prov carries an inline ``prov:5A`` amend, not the requested
+    ``prov:999Z``); the directive does NOT fire."""
+    root = etree.fromstring(_MIXED_INLINE_AND_SCHEDULE_DELEGATION_XML)
+    node = _amending_node(_MIXED_INLINE_AND_SCHEDULE_DELEGATION_XML, "OP")
+    result = extract_structural_replacement(
+        node,
+        target_leaf_kind="prov",
+        target_leaf_label="999Z",
+        amending_act_root=root,
+    )
+    assert result == NZ_STRUCTURAL_REPLACE_BLOCKED_NO_MATCHING_CHILD
