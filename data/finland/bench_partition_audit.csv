@@ -3330,7 +3330,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 23,2001/322,core,,,OK
 23,2010/1386,core,,,OK
 23,2011/948,suspect,oracle_suspect,2025/713 eff 2026-01-01 > cutoff 2025-06-27,
-24,1990/650,core,,,OK
+24,1990/650,suspect,oracle_suspect,2020/793 eff 2020-11-23 > cutoff 2020-11-13; oracle-check classifies current residuals as EDITORIAL_CONVENTION,OK
 24,1990/846,suspect,oracle_suspect,2011/548 eff 2011-06-01 > cutoff 2011-05-05,
 24,1992/379,suspect,oracle_suspect,2014/618 eff 2014-08-15 > cutoff 2014-08-08,
 24,1993/1189,suspect,oracle_suspect,2025/1489 eff 2026-01-01 > cutoff 2025-12-30,

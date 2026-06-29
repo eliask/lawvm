@@ -1982,6 +1982,38 @@ def test_precreate_chapter_membership_migrates_flat_sections_by_source_starts() 
     ]
 
 
+def test_letter_suffix_chapter_absorption_stops_before_commencement_section() -> None:
+    """Letter-chapter trailing absorption must not swallow terminal commencement sections."""
+    from lawvm.finland.apply_structure_ops import (
+        _absorb_trailing_wrapper_sections_into_letter_suffix_chapter,
+    )
+
+    state = ReplayState(
+        ir=_body(
+            _chapter("11a"),
+            _sec("51a"),
+            _sec("99"),
+            _sec("60", IRNode(kind=IRNodeKind.HEADING, text="Voimaantulo")),
+        )
+    )
+    result = _absorb_trailing_wrapper_sections_into_letter_suffix_chapter(
+        state,
+        chapter_path=(("chapter", "11a"),),
+        merged_chapter=_chapter("11a"),
+    )
+
+    chapter = result.chapter
+    assert [child.label for child in chapter.children if child.kind is IRNodeKind.SECTION] == [
+        "51a",
+        "99",
+    ]
+    assert result.adopted_paths == ((("section", "51a"),), (("section", "99"),))
+    root_sections = [
+        child.label for child in result.root.children if child.kind is IRNodeKind.SECTION
+    ]
+    assert root_sections == ["60"]
+
+
 def test_precreate_single_unnumbered_chapter_heading_migrates_chapter_sections() -> None:
     """A source-body chapter number can own an unnumbered ``uusi luvun otsikko``."""
     from lxml import etree
@@ -2336,6 +2368,24 @@ def test_2011_948_2021_546_chapter_5a_boundary_and_later_inserts() -> None:
     assert chapters["6"][:8] == ["45", "46", "47", "47a", "48", "49", "49a", "49b"]
     assert [event.witness.get("section_label") for event in migrations] == ["44"]
     assert tree_invariant_findings == []
+
+
+def test_1990_650_2003_127_chapter_11a_does_not_absorb_voimaantulo_section() -> None:
+    """Real corpus anchor for finite source-chapter membership bounds."""
+    replay = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(
+            parent_id="1990/650",
+            mode="official_consolidation",
+            quiet=True,
+        ),
+    )
+
+    assert replay.materialized_state.find_section("60", "11a") is None
+    assert all(
+        record.address != "chapter:11a/section:60"
+        for record in replay.products.fold_timeline_backfills
+    )
 
 
 def test_1992_733_2002_716_chapter_payload_adoption_tombstones_old_section_32() -> None:
