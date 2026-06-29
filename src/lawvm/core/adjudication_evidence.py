@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Iterable, Mapping, cast
+from typing import Any, Iterable, Mapping, cast, overload
 
 from lawvm.core.diagnostic_records import (
     BLOCKING_STRICT_DISPOSITIONS,
@@ -56,6 +56,22 @@ def _require_phase(raw_phase: Any, *, kind: str) -> str:
     return phase
 
 
+@overload
+def _adjudication_input(
+    adjudication: Mapping[str, Any],
+    *,
+    default_kind: str,
+) -> AdjudicationEvidenceInput: ...
+
+
+@overload
+def _adjudication_input(
+    adjudication: CompileAdjudicationProtocol,
+    *,
+    default_kind: str,
+) -> AdjudicationEvidenceInput: ...
+
+
 def _adjudication_input(
     adjudication: CompileAdjudicationProtocol | Mapping[str, Any],
     *,
@@ -63,12 +79,18 @@ def _adjudication_input(
 ) -> AdjudicationEvidenceInput:
     coerce_adjudication(adjudication)
     if isinstance(adjudication, Mapping):
-        # ``cast``-help narrow the union for ty: ``Protocol | Mapping[str, Any]``
-        # narrows to ``Mapping[str, Any]`` after the isinstance check at runtime,
-        # but ty emits a spurious ``Never`` overload variant on the union's
-        # ``Mapping.get`` resolution without the explicit ``cast`` (see the
-        # module docstring of ``typed_carrier_protocols`` for the longer note).
-        mapping_view = cast(Mapping[str, Any], adjudication)
+        # ``@overload`` pair above gives ty the explicit case split for the
+        # ``Mapping`` vs typed-instance branches at the function boundary; the
+        # local helper ``_mapping_view`` below isolates the one residual
+        # ``cast`` workaround for the ``Protocol | Mapping[str, Any]`` union
+        # narrowing quirk documented in ``typed_carrier_protocols`` (after a
+        # bare ``isinstance(.., Mapping)`` narrowing, ty emits a spurious
+        # ``Never`` overload variant on ``Mapping.get`` because the Protocol
+        # branch narrows to ``CompileAdjudicationProtocol & Top[Mapping]``,
+        # whose data attributes like ``kind: str`` shadow the ``Mapping.get``
+        # resolution). Runtime behaviour is unchanged: ``isinstance`` is the
+        # runtime guard; the cast is the ty-only narrowing hint.
+        mapping_view = _mapping_view(adjudication)
         raw_kind = mapping_view.get("kind")
         raw_detail = mapping_view.get("detail")
         raw_op_id = mapping_view.get("op_id")
@@ -96,6 +118,22 @@ def _adjudication_input(
     )
 
 
+@overload
+def _adjudication_kind(
+    adjudication: Mapping[str, Any],
+    *,
+    default_kind: str,
+) -> str: ...
+
+
+@overload
+def _adjudication_kind(
+    adjudication: CompileAdjudicationProtocol,
+    *,
+    default_kind: str,
+) -> str: ...
+
+
 def _adjudication_kind(
     adjudication: CompileAdjudicationProtocol | Mapping[str, Any],
     *,
@@ -103,11 +141,46 @@ def _adjudication_kind(
 ) -> str:
     coerce_adjudication(adjudication)
     if isinstance(adjudication, Mapping):
-        mapping_view = cast(Mapping[str, Any], adjudication)
+        # See ``_adjudication_input`` for the ``@overload``-vs-``cast`` note;
+        # the ``_mapping_view`` helper centralizes the residual cast for the
+        # union narrowing quirk documented in ``typed_carrier_protocols``.
+        mapping_view = _mapping_view(adjudication)
         raw_kind = mapping_view.get("kind")
     else:
         raw_kind = getattr(adjudication, "kind", None)
     return text_or_none(raw_kind) or default_kind
+
+
+def _mapping_view(
+    adjudication: CompileAdjudicationProtocol | Mapping[str, Any],
+) -> Mapping[str, Any]:
+    """Isolate the ``cast(Mapping[str, Any], adjudication)`` workaround.
+
+    Per DEFERRED_ROADMAP.md D4: ty emits a spurious ``Never`` overload variant
+    on ``Mapping.get`` resolution after a bare ``isinstance(.., Mapping)``
+    narrowing of ``CompileAdjudicationProtocol | Mapping[str, Any]`` — the
+    union narrows to ``CompileAdjudicationProtocol & Top[Mapping]`` whose
+    data attributes (``kind: str`` etc. from the Protocol) shadow ``Mapping.get``
+    resolution (see the module docstring of ``typed_carrier_protocols`` for
+    the longer note). The cleanest local fix is the typed local-variable
+    annotation ``mapping_view: Mapping[str, Any] = adjudication``; however, ty
+    rejects that annotation for the same intersection reason. The remaining
+    options were ``typing.overload`` at the function boundary (declared above
+    on both ``_adjudication_input`` and ``_adjudication_kind`` for call-site
+    clarity — they do NOT resolve the in-body narrowing) and isolating the
+    residual ``cast`` in this one helper (this function) so the workaround is
+    visible at a single site rather than duplicated across both callers
+    (DEFERRED_ROADMAP.md D4 option (c)). Runtime behaviour: ``isinstance`` is
+    the runtime guard (assertion mirrors the prior ``if`` branch); ``cast`` is
+    a ty-only narrowing hint that returns the same object at runtime.
+
+    The reciprocal options that would eliminate the ``cast`` entirely
+    (option (b): make typed carriers explicitly inherit the Protocol under
+    ``TYPE_CHECKING``) touch >2 source files beyond ``adjudication_evidence.py``
+    and are deferred per the D4 STOP-and-report guard.
+    """
+    assert isinstance(adjudication, Mapping)
+    return cast(Mapping[str, Any], adjudication)
 
 
 def adjudication_kind_counts(adjudications: Iterable[Any]) -> dict[str, int]:
