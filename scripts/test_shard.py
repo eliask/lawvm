@@ -463,6 +463,11 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     "core_ir_contracts": (
         "test_quirks_disposition_enum.py",
         "test_scope_confidence_protocol.py",
+        # iter3 W1 Fix 4: mirror of ``test_scope_confidence_protocol.py`` for the
+        # typed ``ClaimAssertion`` / ``ExecutionAuthorizationResult`` /
+        # ``CompileAdjudicationProtocol`` carrier Protocols at the core boundary
+        # (AGENTS.md §1.9 typed carriers over dynamic shape + §1.10 fail-loud).
+        "test_typed_carrier_protocols.py",
         "test_fi_address_parse.py",
         "test_irnodekind_stringly_typed_gate.py",
         "test_fi_admissible_binding.py",
@@ -617,6 +622,11 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # into ``lawvm.finland.pool_mention_primitive``. Mirrors the precedent
         # of ``test_core_firewall_no_fi_definition_phrases.py`` above.
         "test_core_firewall_no_fi_fiscal_doctrine.py",
+        # iter3 W1 Fix 4: AST-scan §2.3 firewall test — no ``lawvm.finland.<module>``
+        # implementation-level paths anywhere in ``lawvm.core.*``. Mirrors the
+        # ``test_core_firewall_no_fi_fiscal_doctrine.py`` precedent (W7 M13 arch
+        # review MEDIUM-2 lift of 13 ``lawvm.finland.X.Y`` paths out of core).
+        "test_core_firewall_no_finland_module_paths.py",
         "test_comparison_normalization.py",
         "test_composite_interaction_reference_model.py",
         "test_fi_abstraction_modules.py",
