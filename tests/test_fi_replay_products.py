@@ -825,6 +825,19 @@ def test_replay_xml_1990_1295_materialized_state_drops_lone_unanchored_scoped_du
     assert "section:59a" in sections
 
 
+def test_replay_xml_1993_1507_splits_treaty_protocol_second_moment() -> None:
+    """1993/1508 section 1 source carries two momentti in one XML paragraph."""
+    replay = replay_xml_for_test("1993/1507", mode="official_consolidation", quiet=True)
+
+    section = replay.materialized_state.find_section("1")
+
+    assert section is not None
+    subsections = [child for child in section.children if child.kind is IRNodeKind.SUBSECTION]
+    assert [subsection.label for subsection in subsections] == ["1", "2"]
+    assert "2 momentissa tarkoitetulla tarkistuspöytäkirjalla." in irnode_to_text(subsections[0])
+    assert irnode_to_text(subsections[1]).startswith("Brysselissä 17 päivänä maaliskuuta 1993")
+
+
 def test_2017_236_materialized_state_drops_expired_exact_temporary_moments() -> None:
     replay = replay_xml_for_test("2017/236", mode="official_consolidation", quiet=True)
 

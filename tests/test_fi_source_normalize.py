@@ -39,6 +39,7 @@ from lawvm.finland.source_normalization_kinds import (
     BASE_DUPLICATE_TAIL_SPLIT,
     BASE_HEADING_BODY_SUBSECTION_SPLIT,
     BASE_INTRO_LIST_TAIL_MOMENT_SPLIT,
+    BASE_TREATY_PROTOCOL_MOMENT_SPLIT,
     BASE_SECTION_ITEM_SUBSECTION_FOLD,
     BASE_TABLE_NOTE_SUBSECTION_FOLD,
     BASE_TABLE_CONTINUATION_SUBSECTION_MERGE,
@@ -64,6 +65,10 @@ def test_source_normalization_fact_finding_kind_resolves_registered_base_codes()
     assert (
         source_normalization_fact_finding_kind("base_intro_list_tail_moment_split")
         == "BASE_INTRO_LIST_TAIL_MOMENT_SPLIT"
+    )
+    assert (
+        source_normalization_fact_finding_kind("base_treaty_protocol_moment_split")
+        == "BASE_TREATY_PROTOCOL_MOMENT_SPLIT"
     )
     assert (
         source_normalization_fact_finding_kind("base_table_continuation_subsection_merge")
@@ -123,6 +128,85 @@ def _plain_subsection_node() -> IRNode:
 
 
 class TestTagReclassify:
+    def test_splits_treaty_protocol_paragraph_with_explicit_second_moment_reference(self) -> None:
+        """A treaty protocol source paragraph may encode two self-referenced momentit."""
+        section = IRNode(
+            kind=IRNodeKind.SECTION,
+            label="1",
+            children=(
+                IRNode(kind=IRNodeKind.NUM, text="1 §"),
+                IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="1",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.CONTENT,
+                            text=(
+                                "Portossa 2 päivänä toukokuuta 1992 Suomen tasavallan, Islannin "
+                                "tasavallan, Itävallan tasavallan, Liechtensteinin ruhtinaskunnan, "
+                                "Norjan kuningaskunnan, Ruotsin kuningaskunnan ja Sveitsin "
+                                "valaliiton välillä valvontaviranomaisen ja tuomioistuimen "
+                                "perustamisesta tehdyn EFTA-valtioiden sopimuksen (sopimus) sekä "
+                                "sen pöytäkirjojen määräykset ovat, mikäli ne kuuluvat "
+                                "lainsäädännön alaan, voimassa siten tarkistettuina kuin siitä on "
+                                "sovittu 2 momentissa tarkoitetulla tarkistuspöytäkirjalla. "
+                                "Brysselissä 17 päivänä maaliskuuta 1993 Suomen tasavallan, Islannin "
+                                "tasavallan, Itävallan tasavallan, Liechtensteinin ruhtinaskunnan, "
+                                "Norjan kuningaskunnan ja Ruotsin kuningaskunnan välisen "
+                                "valvontaviranomaisen ja tuomioistuimen perustamisesta tehdyn "
+                                "EFTA-valtioiden sopimuksen tarkistamista koskevan pöytäkirjan "
+                                "määräykset ovat, mikäli ne kuuluvat lainsäädännön alaan, voimassa "
+                                "niin kuin siitä on sovittu."
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        normalized, facts = normalize_source_ir(section, "1993/1508")
+
+        subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
+        assert [subsection.label for subsection in subsections] == ["1", "2"]
+        assert "2 momentissa tarkoitetulla tarkistuspöytäkirjalla." in irnode_to_text(subsections[0])
+        assert irnode_to_text(subsections[1]).startswith("Brysselissä 17 päivänä maaliskuuta 1993")
+        assert check_invariants(normalized) == []
+
+        split_facts = [
+            fact for fact in facts if fact.kind_value == BASE_TREATY_PROTOCOL_MOMENT_SPLIT
+        ]
+        assert len(split_facts) == 1
+        assert split_facts[0].basis_value == SourceNormalizationBasis.PROFILE_INVALID.value
+        assert "subsection:1" in split_facts[0].path
+
+    def test_treaty_protocol_split_requires_explicit_second_moment_reference(self) -> None:
+        """Ordinary two-sentence treaty prose is not split without the typed cue."""
+        section = IRNode(
+            kind=IRNodeKind.SECTION,
+            label="1",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="1",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.CONTENT,
+                            text=(
+                                "Sopimuksen pöytäkirjojen määräykset ovat voimassa. "
+                                "Brysselissä allekirjoitetun pöytäkirjan määräykset ovat voimassa."
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        normalized, facts = normalize_source_ir(section, "2020/1")
+
+        subsections = [child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION]
+        assert [subsection.label for subsection in subsections] == ["1"]
+        assert not any(fact.kind_value == BASE_TREATY_PROTOCOL_MOMENT_SPLIT for fact in facts)
+
     def test_splits_intro_list_tail_moments_into_peer_subsections(self) -> None:
         """Multiple explicit first-moment tail prose children are later momentit."""
         section = IRNode(

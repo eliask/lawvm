@@ -132,6 +132,7 @@ from lawvm.finland.source_normalization_kinds import (
     BASE_DOTTED_PARAGRAPH_SUBSECTION_PROMOTION,
     BASE_INTRO_LIST_RESTART_SPLIT,
     BASE_INTRO_LIST_TAIL_MOMENT_SPLIT,
+    BASE_TREATY_PROTOCOL_MOMENT_SPLIT,
     BASE_DUPLICATE_SIBLING_DROP,
     BASE_DUPLICATE_TAIL_SPLIT,
     BASE_NUM_IN_INTRO_MISMATCH,
@@ -991,6 +992,104 @@ def _split_intro_list_tail_moment_subsections(
             ),
             path=parent_path + (_node_path_label(subsection),),
             confidence=0.94,
+        )
+    )
+
+    return children[:idx] + split_subsections + children[idx + 1 :]
+
+
+_TREATY_PROTOCOL_SPLIT_MARKER = "2 momentissa tarkoitetulla tarkistuspöytäkirjalla."
+
+
+def _split_treaty_protocol_self_referenced_moment(
+    children: List[IRNode],
+    statute_id: str,
+    parent_path: Tuple[str, ...],
+    facts: List[SourceNormalizationFact],
+) -> List[IRNode]:
+    """Split a treaty protocol paragraph that explicitly references its own second moment.
+
+    Witness family: one section-local subsection contains a single content
+    paragraph whose first sentence says the treaty is effective as agreed in
+    ``2 momentissa`` and whose following sentence is the referenced protocol
+    moment.  The split is authorized by the typed local shape plus treaty
+    protocol vocabulary, not by a loose sentence-boundary guess.
+    """
+    subsection_indices = [
+        idx for idx, child in enumerate(children) if child.kind == IRNodeKind.SUBSECTION
+    ]
+    if len(subsection_indices) != 1:
+        return children
+
+    idx = subsection_indices[0]
+    subsection = children[idx]
+    base_label = _numeric_label_value(subsection.label)
+    if base_label not in (None, 1):
+        return children
+
+    semantic_children = [child for child in subsection.children if child.kind != IRNodeKind.NUM]
+    if len(semantic_children) != 1 or semantic_children[0].kind != IRNodeKind.CONTENT:
+        return children
+
+    text = " ".join(irnode_to_text(semantic_children[0]).split())
+    marker_pos = text.find(_TREATY_PROTOCOL_SPLIT_MARKER)
+    if marker_pos < 0:
+        return children
+
+    split_pos = marker_pos + len(_TREATY_PROTOCOL_SPLIT_MARKER)
+    first_text = text[:split_pos].strip()
+    second_text = text[split_pos:].strip()
+    if not (
+        first_text
+        and second_text.startswith("Brysselissä ")
+        and "sopimuksen" in first_text
+        and "pöytäkirjojen määräykset" in first_text
+        and "tarkistamista koskevan pöytäkirjan määräykset" in second_text
+        and second_text.endswith(".")
+    ):
+        return children
+
+    first_attrs = dict(subsection.attrs)
+    second_attrs = dict(subsection.attrs)
+    first_attrs["lawvm_source_normalization_rule"] = "fi_treaty_protocol_moment_split_v1"
+    second_attrs["lawvm_source_normalization_rule"] = "fi_treaty_protocol_moment_split_v1"
+    if subsection.label is not None:
+        second_attrs["lawvm_source_normalization_original_label"] = str(subsection.label)
+
+    split_subsections = [
+        IRNode(
+            kind=IRNodeKind.SUBSECTION,
+            label="1",
+            attrs=first_attrs,
+            children=(IRNode(kind=IRNodeKind.CONTENT, text=first_text),),
+        ),
+        IRNode(
+            kind=IRNodeKind.SUBSECTION,
+            label="2",
+            attrs=second_attrs,
+            children=(IRNode(kind=IRNodeKind.CONTENT, text=second_text),),
+        ),
+    ]
+
+    facts.append(
+        SourceNormalizationFact(
+            statute_id=statute_id,
+            kind=BASE_TREATY_PROTOCOL_MOMENT_SPLIT,
+            basis=SourceNormalizationBasis.PROFILE_INVALID,
+            before=(
+                f"{_node_path_label(subsection)} carried one content paragraph "
+                "with explicit reference to 2 momentti and a treaty protocol sentence"
+            ),
+            after="split into subsection:1 and subsection:2 treaty protocol moments",
+            explanation=(
+                "The source encoded two legal momentti inside one subsection. "
+                "The first sentence explicitly refers to the second moment's "
+                "revision protocol, and the following Bryssel protocol sentence "
+                "is that referenced moment. Split the source paragraph into two "
+                "peer momentti subsections with a typed source-normalization witness."
+            ),
+            path=parent_path + (_node_path_label(subsection),),
+            confidence=0.98,
         )
     )
 
@@ -4499,6 +4598,9 @@ def normalize_source_ir(
         )
     if ir.kind == IRNodeKind.SECTION:
         initial_children = _split_intro_list_tail_moment_subsections(
+            initial_children, statute_id, current_path, facts
+        )
+        initial_children = _split_treaty_protocol_self_referenced_moment(
             initial_children, statute_id, current_path, facts
         )
         initial_children = _fold_penal_sentencing_wrapup_subsection(
