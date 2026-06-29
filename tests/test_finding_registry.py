@@ -345,6 +345,14 @@ def test_base_section_item_subsection_fold_registry_code_is_observation() -> Non
     validate_finding_projection(spec.code, "observation", False)
 
 
+def test_base_dash_bullet_item_continuation_registry_code_is_observation() -> None:
+    spec = get_finding_spec("BASE_DASH_BULLET_ITEM_CONTINUATION")
+    assert spec is not None
+    assert spec.role == "observation"
+    assert spec.is_barrier is False
+    validate_finding_projection(spec.code, "observation", False)
+
+
 def test_base_intro_list_tail_moment_split_registry_code_is_observation() -> None:
     spec = get_finding_spec("BASE_INTRO_LIST_TAIL_MOMENT_SPLIT")
     assert spec is not None

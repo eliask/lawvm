@@ -494,7 +494,8 @@ def get_consolidated_oracle_reflected_source_vts_children(
 _FINLEX_ORIGINAL_VERSION_ATTR = "{http://data.finlex.fi/schema/finlex}originalVersion"
 _FINLEX_VERSIONED_EID_SUFFIX_RE = re.compile(r"v(?P<version>\d{8})$")
 _FINLEX_CHAPTER_EID_RE = re.compile(r"(?:^|__)chp_(?P<label>[^_]+)")
-_FINLEX_SECTION_EID_RE = re.compile(r"(?:^|__)sec_(?P<label>[^_]+?)(?:v\d{8})?$")
+_FINLEX_SECTION_EID_RE = re.compile(r"(?:^|__)sec_(?P<label>\d{1,6}[a-z]?)$")
+_FINLEX_VERSIONED_SECTION_EID_RE = re.compile(r"(?:^|__)sec_(?P<label>\d{1,6}[a-z]?)v\d{8}$")
 _FINLEX_CHAPTER_NUM_RE = re.compile(r"^\s*(?P<label>\d+[a-z]?)\s*luku\b", re.IGNORECASE)
 _FINLEX_SECTION_NUM_RE = re.compile(r"^\s*(?P<label>\d+[a-z]?)\s*§", re.IGNORECASE)
 
@@ -590,7 +591,8 @@ def _finlex_section_label(el: etree._Element) -> str:
     num_match = _FINLEX_SECTION_NUM_RE.match(_finlex_num_text(el))
     if num_match is not None:
         return num_match.group("label")
-    eid_match = _FINLEX_SECTION_EID_RE.search(str(el.get("eId") or ""))
+    eid = str(el.get("eId") or "")
+    eid_match = _FINLEX_VERSIONED_SECTION_EID_RE.search(eid) or _FINLEX_SECTION_EID_RE.search(eid)
     return eid_match.group("label") if eid_match is not None else ""
 
 

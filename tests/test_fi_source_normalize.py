@@ -34,6 +34,7 @@ from lawvm.finland.source_normalize import (
 from lawvm.finland.source_normalization_kinds import (
     BASE_DIGIT_RESET_SPLIT,
     BASE_DOTTED_PARAGRAPH_SUBSECTION_PROMOTION,
+    BASE_DASH_BULLET_ITEM_CONTINUATION,
     BASE_INTRO_LIST_RESTART_SPLIT,
     BASE_DUPLICATE_SIBLING_DROP,
     BASE_DUPLICATE_TAIL_SPLIT,
@@ -58,6 +59,10 @@ from lawvm.finland.source_normalization_kinds import (
 def test_source_normalization_fact_finding_kind_resolves_registered_base_codes() -> None:
     assert source_normalization_fact_finding_kind("tail_prose_absorb") == "BASE_TAIL_PROSE_ABSORB"
     assert source_normalization_fact_finding_kind("base_tail_prose_absorb") == "BASE_TAIL_PROSE_ABSORB"
+    assert (
+        source_normalization_fact_finding_kind("base_dash_bullet_item_continuation")
+        == "BASE_DASH_BULLET_ITEM_CONTINUATION"
+    )
     assert (
         source_normalization_fact_finding_kind("base_dotted_paragraph_subsection_promotion")
         == "BASE_DOTTED_PARAGRAPH_SUBSECTION_PROMOTION"
@@ -644,6 +649,104 @@ class TestTagReclassify:
         fold_facts = [fact for fact in facts if fact.kind_value == BASE_SECTION_ITEM_SUBSECTION_FOLD]
         assert len(fold_facts) == 1
         assert fold_facts[0].basis_value == SourceNormalizationBasis.IMPOSSIBLE_NUMBERING.value
+
+    def test_attaches_same_subsection_dash_bullet_peers_to_numbered_items(self) -> None:
+        """Dash bullet paragraph peers are item content, not tail-prose wrapUps."""
+        section = IRNode(
+            kind=IRNodeKind.SECTION,
+            label="7",
+            children=(
+                IRNode(kind=IRNodeKind.NUM, text="7 §"),
+                IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="2",
+                    children=(
+                        IRNode(kind=IRNodeKind.INTRO, text="Tiedostoon on merkittävä seuraavat tiedot:"),
+                        IRNode(
+                            kind=IRNodeKind.PARAGRAPH,
+                            label="1",
+                            children=(
+                                IRNode(kind=IRNodeKind.NUM, text="1)"),
+                                IRNode(kind=IRNodeKind.CONTENT, text="kauppaerää myytäessä:"),
+                            ),
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.PARAGRAPH,
+                            children=(IRNode(kind=IRNodeKind.CONTENT, text="– myyjä;"),),
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.PARAGRAPH,
+                            children=(IRNode(kind=IRNodeKind.CONTENT, text="– kauppaerän merkki;"),),
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.PARAGRAPH,
+                            label="2",
+                            children=(
+                                IRNode(kind=IRNodeKind.NUM, text="2)"),
+                                IRNode(kind=IRNodeKind.CONTENT, text="kauppaerää ostettaessa:"),
+                            ),
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.PARAGRAPH,
+                            children=(IRNode(kind=IRNodeKind.CONTENT, text="– toimituspäivä."),),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        normalized, facts = normalize_source_ir(section, "2020/644-fixture")
+
+        subsection = next(child for child in normalized.children if child.kind == IRNodeKind.SUBSECTION)
+        paragraphs = [child for child in subsection.children if child.kind == IRNodeKind.PARAGRAPH]
+        assert [paragraph.label for paragraph in paragraphs] == ["1", "2"]
+        assert "– myyjä" in irnode_to_text(paragraphs[0])
+        assert "– kauppaerän merkki" in irnode_to_text(paragraphs[0])
+        assert "– toimituspäivä" in irnode_to_text(paragraphs[1])
+        assert not any(child.kind == IRNodeKind.WRAP_UP for paragraph in paragraphs for child in paragraph.children)
+        assert len([fact for fact in facts if fact.kind_value == BASE_DASH_BULLET_ITEM_CONTINUATION]) == 3
+        assert not any(fact.kind_value == BASE_TAIL_PROSE_ABSORB for fact in facts)
+        assert check_invariants(normalized) == []
+
+    def test_real_2020_644_section_7_attaches_dash_bullets_to_numbered_items(self) -> None:
+        """Regression: section 7 has dash-bullet item continuations, not peer momentit."""
+        from lawvm.corpus_store import get_corpus_store
+
+        xml = get_corpus_store().read_source("2020/644")
+        assert xml is not None
+        root = etree.fromstring(xml if isinstance(xml, bytes) else xml.encode("utf-8"))
+        body = root.find(".//{*}body")
+        raw = fi_xml_to_ir_node(body if body is not None else root, _fi_label_postprocessor)
+
+        normalized, facts = normalize_source_ir(raw, "2020/644")
+
+        section_7: IRNode | None = None
+        pending = list(normalized.children)
+        while pending:
+            candidate = pending.pop()
+            if candidate.kind == IRNodeKind.SECTION and candidate.label == "7":
+                section_7 = candidate
+                break
+            pending.extend(candidate.children)
+        assert section_7 is not None
+
+        subsections = [child for child in section_7.children if child.kind == IRNodeKind.SUBSECTION]
+        assert [subsection.label for subsection in subsections] == ["1", "2", "3"]
+        paragraphs = [child for child in subsections[1].children if child.kind == IRNodeKind.PARAGRAPH]
+        assert [paragraph.label for paragraph in paragraphs] == ["1", "2"]
+        assert "ensimmäisen ostajan" in irnode_to_text(paragraphs[0])
+        assert "kauppaerän paino/ostettu määrä" in irnode_to_text(paragraphs[1])
+        assert "toimituspäivä." in irnode_to_text(paragraphs[1])
+        assert not any(child.kind == IRNodeKind.WRAP_UP for paragraph in paragraphs for child in paragraph.children)
+        assert check_invariants(normalized) == []
+
+        assert any(fact.kind_value == BASE_DASH_BULLET_ITEM_CONTINUATION for fact in facts)
+        assert any(fact.kind_value == BASE_SECTION_ITEM_SUBSECTION_FOLD for fact in facts)
+        assert any(
+            fact.kind_value == SourceNormalizationKind.NUMBERING_REPAIR.value
+            and fact.basis_value == SourceNormalizationBasis.MONOTONIC_LOCAL_REPAIR.value
+            for fact in facts
+        )
 
     def test_folds_connector_wrapper_before_next_section_item_carrier(self) -> None:
         """Connector-only wrappers may belong to a split section-level item run."""

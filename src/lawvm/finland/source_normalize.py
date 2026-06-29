@@ -135,6 +135,7 @@ from lawvm.finland.source_normalization_kinds import (
     BASE_TREATY_PROTOCOL_MOMENT_SPLIT,
     BASE_DUPLICATE_SIBLING_DROP,
     BASE_DUPLICATE_TAIL_SPLIT,
+    BASE_DASH_BULLET_ITEM_CONTINUATION,
     BASE_NUM_IN_INTRO_MISMATCH,
     BASE_NUM_IN_INTRO_RECOVERED,
     BASE_HEADING_BODY_SUBSECTION_SPLIT,
@@ -162,6 +163,7 @@ _DOTTED_MOMENT_INTRO_RE = re.compile(r"^\s*(\d+)\.\s+")
 _LETTER_LABEL_RE = re.compile(r"^[a-z]$")
 _ARABIC_LABEL_RE = re.compile(r"^\d+[a-z]?$")
 _GLUED_ITEM_COORDINATORS = ("seka", "sekä", "ja")
+_SUBSECTION_EID_LABEL_RE = re.compile(r"(?:^|__)subsec_(?P<label>\d+[a-z]?)$")
 
 
 def source_normalization_fact_finding_kind(kind_value: str) -> str | None:
@@ -181,6 +183,13 @@ def _node_path_label(node: IRNode) -> str:
     kind_str = str(node.kind)
     label_str = str(node.label) if node.label is not None else "?"
     return f"{kind_str}:{label_str}"
+
+
+def _subsection_eid_label(node: IRNode) -> str:
+    if node.kind is not IRNodeKind.SUBSECTION:
+        return ""
+    match = _SUBSECTION_EID_LABEL_RE.search(str(node.attrs.get("eId") or ""))
+    return match.group("label") if match is not None else ""
 
 
 def _is_item_style_subsection(node: IRNode) -> bool:
@@ -1408,9 +1417,9 @@ def _fold_unlabelled_numeric_list_continuation_subsections(
     Some source XML wraps an unnumbered continuation paragraph and the
     following numbered kohdat in a fresh unlabelled subsection.  When the first
     numbered kohta in that wrapper is the exact successor of the previous
-    subsection's last kohta, the wrapper is source transport: the prose belongs
-    as tail_prose on the previous kohta and the numbered kohdat continue the
-    previous subsection's list.
+    subsection's last kohta, the wrapper is source transport: prose belongs as
+    tail_prose on the previous kohta, while dash-bullet lines are ordinary item
+    content and the numbered kohdat continue the previous subsection's list.
     """
     if len(children) < 2:
         return children
@@ -1434,8 +1443,10 @@ def _fold_unlabelled_numeric_list_continuation_subsections(
             continue
 
         prior_paragraphs = [c for c in child.children if c.kind == IRNodeKind.PARAGRAPH]
-        wrapper_paragraphs = [c for c in wrapper.children if c.kind == IRNodeKind.PARAGRAPH]
-        if not prior_paragraphs or not wrapper_paragraphs:
+        wrapper_numbered_paragraphs = [
+            c for c in wrapper.children if c.kind == IRNodeKind.PARAGRAPH and _paragraph_has_num_child(c)
+        ]
+        if not prior_paragraphs or not wrapper_numbered_paragraphs:
             rewritten.append(child)
             i += 1
             continue
@@ -1461,7 +1472,7 @@ def _fold_unlabelled_numeric_list_continuation_subsections(
             i += 1
             continue
 
-        first_wrapper = wrapper_paragraphs[0]
+        first_wrapper = wrapper_numbered_paragraphs[0]
         last_prior_value = _numeric_label_value(last_prior.label)
         first_wrapper_value = _numeric_label_value(first_wrapper.label)
         if (
@@ -1476,7 +1487,8 @@ def _fold_unlabelled_numeric_list_continuation_subsections(
         prose_children = tuple(
             c
             for c in wrapper.children
-            if c.kind not in {IRNodeKind.PARAGRAPH, IRNodeKind.OMISSION}
+            if not (c.kind == IRNodeKind.PARAGRAPH and _paragraph_has_num_child(c))
+            and c.kind is not IRNodeKind.OMISSION
             and irnode_to_text(c).strip()
         )
         omissions = tuple(c for c in wrapper.children if c.kind == IRNodeKind.OMISSION)
@@ -1489,6 +1501,98 @@ def _fold_unlabelled_numeric_list_continuation_subsections(
         if _NUM_IN_INTRO_RE.match(peer_text):
             rewritten.append(child)
             i += 1
+            continue
+
+        all_prose_children_are_dash = all(_node_text_starts_with_dash_bullet(c) for c in prose_children)
+        has_unnumbered_paragraph_prose = any(
+            c.kind == IRNodeKind.PARAGRAPH and not _paragraph_has_num_child(c) for c in prose_children
+        )
+        if has_unnumbered_paragraph_prose and not all_prose_children_are_dash:
+            rewritten.append(child)
+            i += 1
+            continue
+
+        if all_prose_children_are_dash:
+            repaired_child_children = list(child.children)
+            current_item_idx = max(
+                idx for idx, current in enumerate(repaired_child_children) if current is last_prior
+            )
+            dash_count = 0
+            moved_labels: list[str | None] = []
+            for wrapper_child in wrapper.children:
+                if wrapper_child.kind is IRNodeKind.OMISSION:
+                    continue
+                if wrapper_child.kind == IRNodeKind.PARAGRAPH and _paragraph_has_num_child(wrapper_child):
+                    repaired_child_children.append(wrapper_child)
+                    current_item_idx = len(repaired_child_children) - 1
+                    moved_labels.append(wrapper_child.label)
+                    continue
+                if not irnode_to_text(wrapper_child).strip():
+                    continue
+                current_item = repaired_child_children[current_item_idx]
+                continuation = _content_continuation_from_paragraph(wrapper_child)
+                repaired_child_children[current_item_idx] = IRNode(
+                    kind=current_item.kind,
+                    label=current_item.label,
+                    text=current_item.text,
+                    attrs=current_item.attrs,
+                    children=tuple(current_item.children) + continuation,
+                )
+                dash_count += 1
+
+            repaired_child = IRNode(
+                kind=child.kind,
+                label=child.label,
+                text=child.text,
+                attrs=child.attrs,
+                children=tuple(repaired_child_children),
+            )
+            rewritten.append(repaired_child)
+            rewritten.extend(omissions)
+            facts.append(
+                SourceNormalizationFact(
+                    statute_id=statute_id,
+                    kind=BASE_SECTION_ITEM_SUBSECTION_FOLD,
+                    basis=SourceNormalizationBasis.IMPOSSIBLE_NUMBERING,
+                    before=(
+                        f"dash-bullet numeric-list continuation wrapper {_node_path_label(wrapper)} "
+                        f"after {_node_path_label(child)}; first wrapped kohta {first_wrapper.label!r}"
+                    ),
+                    after=(
+                        f"folded wrapped kohdat {moved_labels!r} into {_node_path_label(child)} "
+                        f"and attached {dash_count} dash-bullet continuation(s) to their owning kohdat"
+                    ),
+                    explanation=(
+                        "The unlabelled subsection has no momentti number and its numbered "
+                        "kohdat continue the previous subsection's numeric kohta sequence. "
+                        "Every non-numbered substantive wrapper node is a dash bullet, so "
+                        "those nodes are item-local content rather than tail_prose."
+                    ),
+                    path=parent_path + (_node_path_label(wrapper),),
+                    confidence=0.97,
+                )
+            )
+            facts.append(
+                SourceNormalizationFact(
+                    statute_id=statute_id,
+                    kind=BASE_DASH_BULLET_ITEM_CONTINUATION,
+                    basis=SourceNormalizationBasis.PROFILE_INVALID,
+                    before=(
+                        f"dash-bullet continuation wrapper {_node_path_label(wrapper)} "
+                        f"after {_node_path_label(child)}; bullet count {dash_count}"
+                    ),
+                    after="attached dash-bullet wrapper payload as content on the owning numbered kohdat",
+                    explanation=(
+                        "Dash-bullet lines inside a numeric-list continuation wrapper are "
+                        "content of the surrounding numbered kohdat. Treating them as "
+                        "tail_prose would create a wrapUp facet and reorder list text."
+                    ),
+                    path=parent_path + (_node_path_label(wrapper),),
+                    confidence=0.97,
+                )
+            )
+            changed = True
+            i += 2
             continue
 
         existing_tail_idx: int | None = None
@@ -1527,7 +1631,7 @@ def _fold_unlabelled_numeric_list_continuation_subsections(
             idx for idx, current in enumerate(repaired_child_children) if current is last_prior
         )
         repaired_child_children[last_prior_idx] = repaired_last_prior
-        repaired_child_children.extend(wrapper_paragraphs)
+        repaired_child_children.extend(wrapper_numbered_paragraphs)
         repaired_child = IRNode(
             kind=child.kind,
             label=child.label,
@@ -1551,7 +1655,7 @@ def _fold_unlabelled_numeric_list_continuation_subsections(
                 after=(
                     f"absorbed wrapper prose as wrapUp(__tail_prose__=1) on kohta "
                     f"{last_prior.label!r}; moved wrapped kohdat "
-                    f"{[paragraph.label for paragraph in wrapper_paragraphs]!r} into {_node_path_label(child)}"
+                    f"{[paragraph.label for paragraph in wrapper_numbered_paragraphs]!r} into {_node_path_label(child)}"
                 ),
                 explanation=(
                     "The unlabelled subsection has no momentti number and its "
@@ -1566,6 +1670,144 @@ def _fold_unlabelled_numeric_list_continuation_subsections(
         )
         changed = True
         i += 2
+
+    return rewritten if changed else children
+
+
+def _fold_dash_only_subsection_into_previous_item(
+    children: List[IRNode],
+    statute_id: str,
+    parent_path: Tuple[str, ...],
+    facts: List[SourceNormalizationFact],
+) -> List[IRNode]:
+    """Fold a dash-only synthetic subsection into the previous numbered item."""
+    if len(children) < 2:
+        return children
+
+    rewritten: list[IRNode] = []
+    changed = False
+    i = 0
+    while i < len(children):
+        child = children[i]
+        if child.kind != IRNodeKind.SUBSECTION or i + 1 >= len(children):
+            rewritten.append(child)
+            i += 1
+            continue
+
+        wrapper = children[i + 1]
+        if wrapper.kind != IRNodeKind.SUBSECTION or any(c.kind == IRNodeKind.NUM for c in wrapper.children):
+            rewritten.append(child)
+            i += 1
+            continue
+
+        child_paragraphs = [
+            c for c in child.children if c.kind == IRNodeKind.PARAGRAPH and _paragraph_has_num_child(c)
+        ]
+        if not child_paragraphs:
+            rewritten.append(child)
+            i += 1
+            continue
+
+        payload = tuple(c for c in wrapper.children if irnode_to_text(c).strip())
+        if not payload or not all(_node_text_starts_with_dash_bullet(c) for c in payload):
+            rewritten.append(child)
+            i += 1
+            continue
+
+        last_item = child_paragraphs[-1]
+        repaired_child_children = list(child.children)
+        last_item_idx = max(idx for idx, current in enumerate(repaired_child_children) if current is last_item)
+        continuation: list[IRNode] = []
+        for payload_node in payload:
+            continuation.extend(_content_continuation_from_paragraph(payload_node))
+        if not continuation:
+            rewritten.append(child)
+            i += 1
+            continue
+
+        repaired_last_item = IRNode(
+            kind=last_item.kind,
+            label=last_item.label,
+            text=last_item.text,
+            attrs=last_item.attrs,
+            children=tuple(last_item.children) + tuple(continuation),
+        )
+        repaired_child_children[last_item_idx] = repaired_last_item
+        repaired_child = IRNode(
+            kind=child.kind,
+            label=child.label,
+            text=child.text,
+            attrs=child.attrs,
+            children=tuple(repaired_child_children),
+        )
+        rewritten.append(repaired_child)
+        consumed = 2
+        next_sibling = children[i + 2] if i + 2 < len(children) else None
+        child_label_value = _numeric_label_value(child.label)
+        next_eid_label = _subsection_eid_label(next_sibling) if next_sibling is not None else ""
+        next_eid_value = _numeric_label_value(next_eid_label)
+        if (
+            next_sibling is not None
+            and next_sibling.kind is IRNodeKind.SUBSECTION
+            and child_label_value is not None
+            and next_eid_value == child_label_value + 1
+            and str(next_sibling.label or "") != next_eid_label
+        ):
+            rewritten.append(
+                IRNode(
+                    kind=next_sibling.kind,
+                    label=next_eid_label,
+                    text=next_sibling.text,
+                    attrs=next_sibling.attrs,
+                    children=next_sibling.children,
+                )
+            )
+            facts.append(
+                SourceNormalizationFact(
+                    statute_id=statute_id,
+                    kind=SourceNormalizationKind.NUMBERING_REPAIR,
+                    basis=SourceNormalizationBasis.MONOTONIC_LOCAL_REPAIR,
+                    before=(
+                        f"subsection label {next_sibling.label!r} follows removed dash-only "
+                        f"wrapper {_node_path_label(wrapper)} but source eId declares "
+                        f"{next_eid_label!r}"
+                    ),
+                    after=f"relabelled subsection to eId-backed label {next_eid_label!r}",
+                    explanation=(
+                        "After a synthetic dash-only wrapper is folded into the previous "
+                        "numeric list item, the following subsection's parser ordinal is stale. "
+                        "The source eId carries the explicit subsection label, so the repair "
+                        "uses that witness rather than positional guessing."
+                    ),
+                    path=parent_path + (_node_path_label(next_sibling),),
+                    confidence=0.97,
+                )
+            )
+            consumed = 3
+        facts.append(
+            SourceNormalizationFact(
+                statute_id=statute_id,
+                kind=BASE_DASH_BULLET_ITEM_CONTINUATION,
+                basis=SourceNormalizationBasis.PROFILE_INVALID,
+                before=(
+                    f"dash-only subsection wrapper {_node_path_label(wrapper)} after "
+                    f"numeric-list subsection {_node_path_label(child)}; bullet count {len(payload)}"
+                ),
+                after=(
+                    f"attached dash-only subsection payload as content continuation on "
+                    f"preceding kohta {last_item.label!r}; wrapper removed from sibling list"
+                ),
+                explanation=(
+                    "The unnumbered subsection has no momentti number and contains only "
+                    "dash-bullet text immediately after a numeric kohta list. It is source "
+                    "transport for the final numbered item, not a peer momentti."
+                ),
+                path=parent_path + (_node_path_label(wrapper),),
+                confidence=0.97,
+            )
+        )
+        changed = True
+        i += consumed
 
     return rewritten if changed else children
 
@@ -4072,14 +4314,16 @@ def _reparent_sub_clause_with_list_peers(
 
 
 # ---------------------------------------------------------------------------
-# BASE_TAIL_PROSE_ABSORB: absorb tail_prose unnumbered peers as wrapUp
+# BASE_TAIL_PROSE_ABSORB / BASE_DASH_BULLET_ITEM_CONTINUATION:
+# absorb unnumbered peers after numbered items with typed ownership.
 # ---------------------------------------------------------------------------
 #
-# Finnish source XML sometimes contains unnumbered <paragraph> siblings that
-# carry only plain text (no <subparagraph> children).  These are the
-# ``tail_prose`` sub-type: a closing or qualifying sentence that follows a
-# numbered kohta list — analogous to the penal ``loppukappale`` described in
-# Lainkirjoittajan opas.
+# Finnish source XML sometimes contains unnumbered <paragraph> siblings after
+# numbered kohdat. Plain prose peers are the ``tail_prose`` sub-type: a closing
+# or qualifying sentence that follows a numbered kohta list — analogous to the
+# penal ``loppukappale`` described in Lainkirjoittajan opas. Dash-bullet peers
+# are different: they are item-local list lines and must remain ordinary content
+# on the preceding numbered kohta, not become a wrapUp facet.
 #
 # No amendment in the corpus targets these fragments at sub-unit level, so
 # absorption is cosmetic: the peer's text is folded into a WRAP_UP facet on
@@ -4091,7 +4335,8 @@ def _reparent_sub_clause_with_list_peers(
 #   1. The peer has SUBPARAGRAPH children — handled by T4a.
 #   2. The peer's content text starts with N)/N. prefix — likely num_in_intro
 #      (T4c), skip to avoid double-handling.
-#   3. No preceding numbered kohta exists — cannot absorb without anchor.
+#   3. Dash-bullet peer — attach as content continuation, not wrapUp.
+#   4. No preceding numbered kohta exists — cannot absorb without anchor.
 #
 # Note: ``_merge_split_numbered_paragraph_continuations`` in ``xml_ingest.py``
 # already merges many of these cases at parse time (when the preceding para
@@ -4115,6 +4360,14 @@ def _paragraph_content_text(para: IRNode) -> str:
         if child.kind == IRNodeKind.INTRO:
             return (child.text or "").strip()
     return (para.text or "").strip()
+
+
+def _content_continuation_from_paragraph(paragraph: IRNode) -> tuple[IRNode, ...]:
+    payload = tuple(child for child in paragraph.children if child.kind != IRNodeKind.NUM)
+    if payload:
+        return payload
+    text = (paragraph.text or "").strip()
+    return (IRNode(kind=IRNodeKind.CONTENT, text=text),) if text else ()
 
 
 def _absorb_tail_prose_peers(
@@ -4182,6 +4435,47 @@ def _absorb_tail_prose_peers(
         # Collect the peer's full text content.
         peer_text = irnode_to_text(child).strip()
         peer_eId = child.attrs.get("eId", "")
+
+        if _node_text_starts_with_dash_bullet(child):
+            continuation = _content_continuation_from_paragraph(child)
+            if not continuation:
+                rewritten.append(child)
+                continue
+            new_kohta = IRNode(
+                kind=last_numbered_para.kind,
+                label=last_numbered_para.label,
+                text=last_numbered_para.text,
+                attrs=last_numbered_para.attrs,
+                children=tuple(last_numbered_para.children) + continuation,
+            )
+            rewritten[last_numbered_idx] = new_kohta
+            last_numbered_para = new_kohta
+            facts.append(
+                SourceNormalizationFact(
+                    statute_id=statute_id,
+                    kind=BASE_DASH_BULLET_ITEM_CONTINUATION,
+                    basis=SourceNormalizationBasis.PROFILE_INVALID,
+                    before=(
+                        f"dash-bullet paragraph peer (eId={peer_eId!r}) "
+                        f"following numbered kohta {last_numbered_para.label!r}; "
+                        f"text excerpt: {peer_text[:80]!r}"
+                    ),
+                    after=(
+                        f"attached dash-bullet peer as content continuation on preceding kohta "
+                        f"{new_kohta.label!r}; peer removed from sibling list"
+                    ),
+                    explanation=(
+                        "The unnumbered peer begins with a dash bullet inside a numbered "
+                        "kohta list. Finnish source transport uses this shape for item-local "
+                        "bullet lines, not legal tail prose. The bullet is therefore attached "
+                        "as ordinary content to the preceding numbered kohta, preserving text "
+                        "order without creating a wrapUp facet."
+                    ),
+                    path=parent_path,
+                    confidence=0.97,
+                )
+            )
+            continue
 
         # Check if the preceding kohta already has a tail_prose WRAP_UP.
         existing_tail_wu_idx: Optional[int] = None
@@ -4622,6 +4916,9 @@ def normalize_source_ir(
             initial_children, statute_id, current_path, facts
         )
         initial_children = _fold_unlabelled_numeric_list_continuation_subsections(
+            initial_children, statute_id, current_path, facts
+        )
+        initial_children = _fold_dash_only_subsection_into_previous_item(
             initial_children, statute_id, current_path, facts
         )
         initial_children = _fold_table_note_subsections_into_previous_moment(
