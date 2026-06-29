@@ -1666,16 +1666,30 @@ class UKReplayStateMixin:
         """
         if self._node_tree_path_index is None or not chain:
             return  # Cold path: nothing to re-key.
-        # Skip chain[0]: the replaced leaf's path entries were either
-        # already removed by ``_remove_eid_lookup_subtree`` (replace case)
-        # or never present (remove case — chain[0] = the rebuilt parent of
-        # the popped leaf, so its entry is still id(old_parent) → patched).
-        # Only chain[1:] (rebuilt ancestor identities) need re-keying.
-        for i in range(1, len(chain)):
+        # Iterate from index 0 so both REPLACE and REMOVE paths re-key every
+        # rebuilt ancestor identity in ``chain``:
+        #   * REPLACE: ``chain[0] = (old_leaf, new_leaf)`` — the leaf's
+        #     path-index entry was already popped upstream by
+        #     ``_remove_eid_lookup_subtree(old_node)``; ``pop(id(old_leaf))``
+        #     returns ``None`` harmlessly and the ``continue`` below skips it.
+        #     New leaf entries are re-added by the caller's
+        #     ``_add_eid_lookup_subtree(new_node, ...)``.
+        #   * REMOVE: ``chain[0] = (old_parent, new_parent)`` — the leaf's
+        #     subtree was popped by ``_remove_eid_lookup_subtree`` but the
+        #     parent's entry was NOT (it is still live and indexed by
+        #     ``id(old_parent)``). Iterating from 0 here pops the stale entry
+        #     and re-inserts it keyed by ``id(new_parent)`` so survivor
+        #     descendant path lookups continue to hit the warm fast-path.
+        # Skipping ``chain[0]`` (the prior ``range(1, len(chain))`` form) was
+        # SAFE for REPLACE (no-op) but WRONG for REMOVE — stale ghost entries
+        # keyed by ``id(old_parent)`` accumulated ~1 per CoW-remove op and
+        # ``id(new_parent)`` was never inserted, breaking warm-path lookups for
+        # every descendant of the rebuilt parent.
+        for i in range(0, len(chain)):
             old, new = chain[i]
             old_entry = self._node_tree_path_index.pop(id(old), None)
             if old_entry is None:
-                continue  # Not indexed (e.g. chain[0] leaf case above).
+                continue  # Not indexed (REPLACE-path chain[0] leaf case above).
             if id(new) == id(old):
                 # Defensive: dc_replace always mints a fresh IRNode, so id
                 # differs; but if a future no-op CoW path returns the same

@@ -838,3 +838,163 @@ class TestUKCoWAncestorChainLocateFailed:
             "CoW-chain failure — the fail-loud catch path leaked a tree "
             f"mutation: {labels_after}."
         )
+
+
+# ---------------------------------------------------------------------------
+# iter3 W1 Fix 1 — CoW REMOVE-path one-character bug in
+# ``_rekey_node_tree_path_index_after_cow_chain`` (replay_state.py line 1674).
+#
+# The buggy ``range(1, len(chain))`` skipped ``chain[0]`` — SAFE for the
+# REPLACE path (where ``chain[0] = (old_leaf, new_leaf)`` and the leaf's
+# path-index entries were already popped upstream by
+# ``_remove_eid_lookup_subtree``) but WRONG for the REMOVE path
+# (``_cow_remove_in_parent_preserve_warm_index`` at line 1742 builds a chain
+# whose ``chain[0] = (old_parent, new_parent)`` is the rebuilt parent of the
+# popped leaf). For a top-level REPEAL the parent IS the body root, so:
+#   * ``id(old_body)`` stayed in ``_node_tree_path_index`` forever (ghost
+#     entry pinned the orphaned body object in memory).
+#   * ``id(new_body)`` was NEVER inserted, so subsequent descendant-target
+#     ops lost their warm fast-path resolution against the rebuilt body and
+#     accumulated ghost entries ~1 per CoW-remove op (monotone across replays).
+#
+# Fix: ONE CHARACTER — ``range(1, ...)`` -> ``range(0, ...)``. The REPLACE
+# path stays safe because ``pop(id(old_leaf))`` returns ``None`` (already
+# popped by ``_remove_eid_lookup_subtree``) and the early-``continue`` skips
+# harmlessly. The new leaf is then re-added by the caller's
+# ``_add_eid_lookup_subtree(new_node, ...)``.
+# ---------------------------------------------------------------------------
+
+
+class TestRekeyNodeTreePathIndexRemovePathChain0:
+    """Iter3 W1 Fix 1 regression: pins that ``_rekey_node_tree_path_index_after_cow_chain``
+    correctly re-keys ``chain[0]`` for the REMOVE path (where ``chain[0] =
+    (old_parent, new_parent)`` is the rebuilt parent of the popped leaf)."""
+
+    def test_repeal_top_section_pops_old_body_id_and_inserts_new(self) -> None:
+        """Drive a REPEAL op through the production ``UKReplayExecutor`` path
+        against a warm ``_node_tree_path_index`` and assert post-op:
+          * ``id(new_body)`` IS in ``_node_tree_path_index`` (rebuilt parent
+            was correctly re-keyed with its fresh id).
+          * ``id(old_body)`` is NOT in ``_node_tree_path_index`` (stale ghost
+            entry was popped by the same iteration).
+          * Subsequent descendant-target ops still hit the warm path-index
+            fast-path against the rebuilt body (the lookup returns the cached
+            path rather than None).
+        With the prior ``range(1, len(chain))`` skip, ``id(old_body)`` stayed
+        forever AND ``id(new_body)`` was never inserted — descendants survived
+        only because their own ``id()``s were untouched, but lookups against
+        the rebuilt body itself returned None (lost fast-path)."""
+        executor = UKReplayExecutor(_multi_section_base_with_eids())
+        old_body = executor.statute.body
+        # Warm the path index BEFORE the CoW-remove so the production path
+        # executes ``_remove_node_tree_path_subtree`` + the
+        # ``_rekey_node_tree_path_index_after_cow_chain`` chain rather than
+        # returning early on the cold path (``_node_tree_path_index is None``).
+        executor._ensure_node_tree_path_index()
+        assert id(old_body) in executor._node_tree_path_index, (
+            "Sanity check failed: pre-repeal body id must be in the warm path "
+            "index — otherwise the regression is masked (cold path returns "
+            "early in _rekey_node_tree_path_index_after_cow_chain)."
+        )
+        pre_op_entry_count = len(executor._node_tree_path_index)
+
+        executor.apply_op(_repeal_op("5", op_id="uk-cow-remove-path-1"))
+
+        new_body = executor.statute.body
+        assert new_body is not old_body, (
+            "Sanity check failed: REPEAL §5 did NOT CoW-rebuild the body root "
+            "(bug is masked — chain[0] for the REMOVE path is the rebuilt body)."
+        )
+        # Fix invariant #1: the rebuilt parent's id IS indexed (chain[0] re-keyed).
+        assert id(new_body) in executor._node_tree_path_index, (
+            "REMOVE-path CoW re-key did NOT insert id(new_body) — stale ghost "
+            "entry leaves subsequent descendant ops unable to hit the warm "
+            "path-index fast-path for the rebuilt body. Iter3 W1 Fix 1 regression."
+        )
+        # Fix invariant #2: the old body's id was popped (no ghost accumulation).
+        assert id(old_body) not in executor._node_tree_path_index, (
+            "REMOVE-path CoW re-key left id(old_body) in the warm path index — "
+            "stale ghost entry would accumulate (~1 per CoW-remove op, monotone "
+            "across replays) and pin the old body in memory. "
+            "Iter3 W1 Fix 1 regression."
+        )
+        # Fix invariant #3: subsequent descendant-target ops still hit the warm
+        # fast-path. Looking up the rebuilt body's cached path returns ``()``
+        # (root) — with the bug, this returned None because id(new_body) was
+        # never inserted (fell back to ``_tree_path_for_mutable_node``'s
+        # ``self.statute.body is node`` early-return, masking the warm-path loss
+        # for the body itself but not for ops needing parent_path lookup).
+        cached_body_path = executor._cached_node_tree_path_if_indexed(new_body)
+        assert cached_body_path == (), (
+            "Warm path-index fast-path returned "
+            f"{cached_body_path!r} for the rebuilt body — expected () (root). "
+            "Descendant ops that thread the body's cached path fall back to "
+            "the slow path-walk + wholesale-drop lazy-rebuild. "
+            "Iter3 W1 Fix 1 regression."
+        )
+        # Net entry-count delta = -1 (section-5's entry popped by
+        # ``_remove_node_tree_path_subtree``; body's id re-keyed, not added —
+        # zero net change for the body itself, only the repealed section
+        # accounts for the count drop).
+        post_op_entry_count = len(executor._node_tree_path_index)
+        assert post_op_entry_count == pre_op_entry_count - 1, (
+            f"Entry count changed by {post_op_entry_count - pre_op_entry_count} "
+            "— expected -1 (section-5 popped; body re-keyed, not added). A "
+            "delta of 0 indicates the bug: id(old_body) was never popped AND "
+            "id(new_body) was never inserted (both stay or both missing from "
+            "the count)."
+        )
+
+    def test_chained_repeal_replace_does_not_accumulate_ghost_entries(self) -> None:
+        """§2.9 no-leak: drive a REMOVE + REPLACE sequence through the
+        production path and assert the warm path index never accumulates stale
+        body-id entries. With the prior ``range(1, ...)`` skip:
+          * REPEAL §5 leaves ``id(body_v1)`` ghost + ``id(body_v2)`` absent.
+          * REPLACE §4 then re-builds body_v2 → body_v3 with chain[1] =
+            (body_v2, body_v3); ``pop(id(body_v2))`` returns None (never
+            inserted), so the loop ``continue``s and ``id(body_v3)`` is also
+            never inserted — ghosts stack one per CoW op, monotonically.
+        With the fix, every rebuilt body id is correctly re-keyed, so after
+        N ops the index carries exactly ONE body entry (the live ``id(body_vN)``).
+        """
+        executor = UKReplayExecutor(_multi_section_base_with_eids())
+        body_v0 = executor.statute.body
+        executor._ensure_node_tree_path_index()
+        body_ids_seen: set[int] = {id(body_v0)}
+
+        executor.apply_op(_repeal_op("5", op_id="uk-cow-remove-path-2a"))
+        body_v1 = executor.statute.body
+        body_ids_seen.add(id(body_v1))
+        # After REPEAL §5 the rebuilt body's id MUST be in the index now
+        # (not left as a future ghost after the next op).
+        assert id(body_v1) in executor._node_tree_path_index, (
+            "After REPEAL §5 the rebuilt body's id is NOT in the warm path "
+            "index — the second op's chain re-key will be a no-op against "
+            "the missing entry, accumulating the bug."
+        )
+
+        # Second op: REPLACE §4 forces a fresh CoW-rebuild of body_v1 → body_v2.
+        executor.apply_op(_replace_op_with_eid("4", "Replaced four.", op_id="uk-cow-remove-path-2b"))
+        body_v2 = executor.statute.body
+        body_ids_seen.add(id(body_v2))
+
+        # Final invariant: exactly ONE body-id entry is in the index (the live
+        # body_v2); every prior body-id has been popped, never stacked.
+        live_body_ids_in_index = {
+            node_id
+            for node_id, (node, _path) in (executor._node_tree_path_index or {}).items()
+            if node is body_v2
+        }
+        assert live_body_ids_in_index == {id(body_v2)}, (
+            f"Expected exactly one live body entry keyed by id(body_v2); "
+            f"found {live_body_ids_in_index!r}. Prior body ids in index: "
+            f"{body_ids_seen - {id(body_v2)}} (ghost stack SHOULD be empty)."
+        )
+        # Defence-in-depth: every prior body-id is gone (no ghost accumulation).
+        prior_body_ids = body_ids_seen - {id(body_v2)}
+        for prior_id in prior_body_ids:
+            assert prior_id not in executor._node_tree_path_index, (
+                f"Ghost entry survived: id of a prior body root ({prior_id}) is "
+                "still in the warm path index — monotone accumulation across "
+                "CoW-remove ops (Iter3 W1 Fix 1 regression)."
+            )
