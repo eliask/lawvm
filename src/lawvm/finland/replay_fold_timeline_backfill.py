@@ -5,7 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterator, cast
 
-from lawvm.core.ir import IRNode, IRStatute, LegalAddress, LegalOperation, OperationSource, ProvisionTimeline
+from lawvm.core.ir import (
+    IRNode,
+    IRStatute,
+    LegalAddress,
+    LegalOperation,
+    OperationSource,
+    ProvisionTimeline,
+)
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.provenance import MigrationEvent
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
@@ -312,6 +319,29 @@ def _active_migration_signature_key(
     )
 
 
+def _has_same_moment_exact_section_snapshot(
+    lo_ops: list[LegalOperation],
+    address: LegalAddress,
+    *,
+    source_statute: str,
+    effective: str,
+) -> bool:
+    for op in lo_ops:
+        if op.target != address:
+            continue
+        if not op.op_id.startswith("snapshot_section_"):
+            continue
+        if op.payload is None or op.payload.kind is not IRNodeKind.SECTION:
+            continue
+        if op.payload.attrs.get("lawvm_payload_completeness_kind") != "complete":
+            continue
+        if op.source is None:
+            continue
+        if op.source.statute_id == source_statute and op.source.effective == effective:
+            return True
+    return False
+
+
 def append_fold_timeline_backfill_ops(
     *,
     lo_ops: list[LegalOperation],
@@ -383,6 +413,22 @@ def append_fold_timeline_backfill_ops(
             and not _node_content_matches(timeline_content, node)
             and _address_has_migration_authority(address, migration_events)
         )
+        source_statute, effective = _migration_source_for_address(
+            address,
+            migration_events,
+        )
+        if (
+            stale_migration_authority
+            and source_statute
+            and effective
+            and _has_same_moment_exact_section_snapshot(
+                lo_ops,
+                address,
+                source_statute=source_statute,
+                effective=effective,
+            )
+        ):
+            continue
         if not stale_migration_authority and _has_timeline_authority(
             preview.rekeyed_timelines,
             address,
@@ -390,10 +436,6 @@ def append_fold_timeline_backfill_ops(
             active_content_cache=active_content_cache,
         ):
             continue
-        source_statute, effective = _migration_source_for_address(
-            address,
-            migration_events,
-        )
         if not source_statute or not effective:
             source_statute = base_statute_id
             effective = as_of

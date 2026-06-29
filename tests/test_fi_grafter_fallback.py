@@ -16554,6 +16554,57 @@ def test_official_consolidation_horizon_splits_future_repeal_expiry_cutoff() -> 
     assert decision.oracle_materialize_as_of == "2006-01-01"
 
 
+def test_official_consolidation_horizon_keeps_item_future_repeal_at_cutoff() -> None:
+    legal_operations = [
+        LegalOperation(
+            op_id="repeal_section_3_item_3",
+            sequence=0,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "3"), ("subsection", "1"), ("item", "3"))),
+            payload=IRNode(
+                kind=IRNodeKind.PARAGRAPH,
+                label="3",
+                attrs={"lawvm_repeal_placeholder": "1"},
+            ),
+            source=OperationSource(
+                statute_id="2026/45",
+                effective="2026-06-19",
+            ),
+        )
+    ]
+
+    decision = choose_replay_horizon(
+        ReplayHorizonRequest(
+            mode="official_consolidation",
+            as_of="",
+            cutoff_date=dt.date(2026, 1, 16),
+            amendment_records=[
+                {
+                    "statute_id": "2026/45",
+                    "included": True,
+                    "effective_date": dt.date(2026, 6, 19),
+                    "issue_date": dt.date(2026, 1, 16),
+                }
+            ],
+            oracle_version_amendment_id="2026/45",
+            compiled_ops=[
+                {
+                    "source_statute": "2026/45",
+                    "action": "repeal",
+                }
+            ],
+            legal_operations=legal_operations,
+            oracle_reflected_section_original_versions=(),
+            oracle_single_future_repeal_overlay_versions=(),
+            replay_print=lambda _message: None,
+        )
+    )
+
+    assert decision.materialize_as_of == "2026-01-16"
+    assert decision.expires_as_of == "2026-01-16"
+    assert decision.oracle_materialize_as_of == "2026-01-16"
+
+
 def test_official_consolidation_horizon_does_not_project_mixed_future_repeal() -> None:
     legal_operations = [
         LegalOperation(

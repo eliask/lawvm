@@ -87,6 +87,7 @@ class RecoveryKind(StrEnum):
     SECTION_SNAPSHOT_PRESERVE_LIVE_FOLD_FOR_DESCENDANT_SCOPED_ITEM = "section_snapshot_preserve_live_fold_for_descendant_scoped_item"
     SECTION_SNAPSHOT_REBASE_ON_LATEST_EXACT_PARENT = "section_snapshot_rebase_on_latest_exact_parent"
     SECTION_SNAPSHOT_REPEAL_ABSENT_COMPLETE_REPLACEMENT_SUBSECTION = "section_snapshot_repeal_absent_complete_replacement_subsection"
+    SECTION_SNAPSHOT_SCOPED_ITEM_PAYLOAD_BIND = "section_snapshot_scoped_item_payload_bind"
     SECTION_SNAPSHOT_SINGLE_SUBSECTION_SPARSE_MERGE = "section_snapshot_single_subsection_sparse_merge"
     SHARED_TAIL_ITEM_REPLACE_SANITIZE = "shared_tail_item_replace_sanitize"
     SINGLE_SUBSECTION_ITEM_FALLBACK = "single_subsection_item_fallback"

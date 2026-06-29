@@ -20,7 +20,8 @@ adjudication (not pure comparison normalization).
 from __future__ import annotations
 
 import re
-from typing import Any
+from collections.abc import Mapping, Sequence
+from typing import Any, cast
 
 from lawvm.core.comparison_normalization import ComparisonNormalizationRule, normalize_comparison_text
 
@@ -953,7 +954,7 @@ def _is_value_table_owner_projection_diff(events: list[dict[str, Any]]) -> bool:
     return _normalize_for_pres_text(intro_text) == _normalize_for_pres_text(wording_text)
 
 
-def is_presentation_structural_diff(sd: dict[str, Any], events: list[dict[str, Any]]) -> bool:
+def is_presentation_structural_diff(sd: Mapping[str, Any], events: Sequence[Mapping[str, Any]]) -> bool:
     """Return True if the section diff is purely FI oracle presentation artifact
     in lists, tables, schedules, or appendices (for bench structural scoring).
 
@@ -963,6 +964,8 @@ def is_presentation_structural_diff(sd: dict[str, Any], events: list[dict[str, A
     chem lists (name patterns + wrapups), geo name lists under region facets, list ordinal
     prefixes in wording, Liite/amend notes, one-sided split wording (concat vs units).
     """
+    sd = cast(dict[str, Any], sd)
+    events = cast(list[dict[str, Any]], events)
     if sd.get("label", 0):
         return False
     if not events:
@@ -1145,7 +1148,7 @@ def segmentation_displacement_pairs(events: list[dict[str, Any]]) -> list[dict[s
 
 
 def is_segmentation_displacement_neutralized(
-    sd: dict[str, Any], events: list[dict[str, Any]]
+    sd: Mapping[str, Any], events: Sequence[Mapping[str, Any]]
 ) -> bool:
     """Return True iff a section's ENTIRE penalizable diff is displaced units.
 
@@ -1159,6 +1162,8 @@ def is_segmentation_displacement_neutralized(
     facet delta, an unmatched missing unit) is NOT neutralized — it stays
     penalized, so real divergence is never papered over.
     """
+    sd = cast(dict[str, Any], sd)
+    events = cast(list[dict[str, Any]], events)
     if sd.get("label", 0):
         return False
     if not events:

@@ -39,7 +39,12 @@ _SCRIPT_PATH = _REPO_ROOT / "scripts" / "inventory_module_roles.py"
 # the monotone rule already forbids growth.  This allowlist exists so a module
 # can be intentionally retained dead WITHOUT re-baselining (e.g. a freshly added
 # frontier module pending wiring), with the reason recorded here.
-DEAD_ALLOWLIST: dict[str, str] = {}
+DEAD_ALLOWLIST: dict[str, str] = {
+    "lawvm.core.cross_act_same_moment": (
+        "Shared same-moment conflict detector frontier; synthetic coverage exists, "
+        "production EE/UK wiring is intentionally deferred to the refactor wave."
+    ),
+}
 
 
 def _load_inventory_module() -> Any:

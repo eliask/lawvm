@@ -4681,7 +4681,7 @@ def test_generic_preamble_sec1_repeal_keeps_inserted_chapter_live_before_repeal(
     master = pinned_replay("1990/1247", mode="official_consolidation")
     secs = _extract_sections_ir(master.ir)
 
-    assert sorted(secs) == ["2", "3", "4", "5", "7", "8", "9"]
+    assert sorted(secs) == ["1", "2", "3", "4", "5", "6b", "6c", "6d", "7", "8", "9"]
 
 
 def test_large_johtolause_subsection_insert_supplement_recovers_missing_moments(

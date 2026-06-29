@@ -533,3 +533,67 @@ def test_sub_clause_with_list_unchanged_by_t4b() -> None:
     assert not tail_wus, (
         f"T4b must not add __tail_prose__ WRAP_UP for sub_clause_with_list, got {len(tail_wus)}"
     )
+
+
+def test_unlabelled_numeric_list_continuation_wrapper_absorbed() -> None:
+    """A transport subsection must not split one numeric kohta list."""
+    sec = _section(
+        "2",
+        [
+            _subsection(
+                "1",
+                "Tässä laissa tarkoitetaan:",
+                [
+                    _numbered_paragraph("19", "yhdeksännellätoista määritelmällä testisisältöä;"),
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="20",
+                        children=(
+                            _num("20)"),
+                            _intro("kahdennellakymmenennellä määritelmällä tarkoitetaan:"),
+                            IRNode(
+                                kind=IRNodeKind.SUBPARAGRAPH,
+                                label="a",
+                                children=(_num("a)"), _content("alakohdan a sisältö;")),
+                            ),
+                            IRNode(
+                                kind=IRNodeKind.SUBPARAGRAPH,
+                                label="b",
+                                children=(_num("b)"), _content("alakohdan b sisältö")),
+                            ),
+                        ),
+                    ),
+                ],
+            ),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                children=(
+                    _intro("ja jonka toiminta johtuu suoraan tästä tehtävästä;"),
+                    _numbered_paragraph("21", "seuraavalla määritelmällä testisisältöä;"),
+                    _numbered_paragraph("22", "viimeisellä määritelmällä testisisältöä."),
+                ),
+            ),
+        ],
+    )
+    raw_ir = _body_with_section(sec)
+    base_ir, facts = normalize_source_ir(raw_ir, "2021/947-wrapper-fixture")
+
+    sec = _find_section(base_ir, "2")
+    assert sec is not None
+    violations = check_invariants(sec)
+    assert not violations, f"Tree violations: {violations}"
+
+    subsections = [c for c in sec.children if c.kind == IRNodeKind.SUBSECTION]
+    assert len(subsections) == 1
+    paragraphs = [c for c in subsections[0].children if c.kind == IRNodeKind.PARAGRAPH]
+    assert [paragraph.label for paragraph in paragraphs] == ["19", "20", "21", "22"]
+
+    kohta20 = next(paragraph for paragraph in paragraphs if paragraph.label == "20")
+    wrapups = [c for c in kohta20.children if c.kind == IRNodeKind.WRAP_UP]
+    assert len(wrapups) == 1
+    assert wrapups[0].attrs.get("__tail_prose__") == "1"
+    assert "toiminta johtuu" in (wrapups[0].text or "")
+
+    absorb_facts = [f for f in facts if f.kind_value == BASE_TAIL_PROSE_ABSORB]
+    assert len(absorb_facts) == 1
+    assert "numeric-list continuation wrapper" in absorb_facts[0].before

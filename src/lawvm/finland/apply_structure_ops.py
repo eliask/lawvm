@@ -137,6 +137,13 @@ class LetterSuffixChapterAbsorptionResult:
     adopted_paths: tuple[tuple[tuple[str, str], ...], ...]
 
 
+def _section_is_commencement_terminal(node: IRNode) -> bool:
+    for child in node.children:
+        if child.kind is IRNodeKind.HEADING and "voimaantulo" in (child.text or "").casefold():
+            return True
+    return False
+
+
 def _absorb_trailing_wrapper_sections_into_letter_suffix_chapter(
     state,
     *,
@@ -181,6 +188,8 @@ def _absorb_trailing_wrapper_sections_into_letter_suffix_chapter(
             break
         if candidate.kind is not IRNodeKind.SECTION or not candidate.label:
             break
+        if _section_is_commencement_terminal(candidate):
+            break
         adopted_sections.append(candidate)
         adopted_paths.append(parent_path + (("section", candidate.label),))
         scan_index += 1
@@ -191,6 +200,8 @@ def _absorb_trailing_wrapper_sections_into_letter_suffix_chapter(
         for reverse_index in range(len(parent_node.children) - 1, -1, -1):
             candidate = parent_node.children[reverse_index]
             if candidate.kind is not IRNodeKind.SECTION or not candidate.label:
+                break
+            if _section_is_commencement_terminal(candidate):
                 break
             terminal_sections.append(candidate)
             terminal_paths.append(parent_path + (("section", candidate.label),))

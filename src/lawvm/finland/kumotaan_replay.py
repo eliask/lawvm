@@ -9,12 +9,14 @@ from __future__ import annotations
 
 import datetime as dt
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, replace as dc_replace
 from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple
 
 from lawvm.core.ir import IRNode, LegalAddress, OperationSource
 from lawvm.core.ir import LegalOperation as _LegalOperation
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
+from lawvm.finland.kumotaan import KumotaanItemTarget
 from lawvm.finland.helpers import _norm_num_token
 from lawvm.finland.scoped_section_resolver import section_paths_for_label
 
@@ -26,6 +28,7 @@ FI_RECOVERY_PURE_KUMOTAAN_REPEAL_RULE_ID = "fi.recovery.pure_kumotaan_repeal"
 FI_RECOVERY_PURE_KUMOTAAN_SUBSECTION_REPEAL_RULE_ID = (
     "fi.recovery.pure_kumotaan_subsection_repeal"
 )
+FI_RECOVERY_PURE_KUMOTAAN_ITEM_REPEAL_RULE_ID = "fi.recovery.pure_kumotaan_item_repeal"
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,7 +46,7 @@ class PureKumotaanInjectedRepeal:
     target_norm: str
     target_chapter: str = ""
 
-    def finding_detail(self) -> dict[str, object]:
+    def finding_detail(self) -> Mapping[str, object]:
         detail: dict[str, object] = {
             "rule_id": self.rule_id,
             "op_id": self.op_id,
@@ -76,7 +79,7 @@ class PureKumotaanSubsectionSkippedTarget:
     subsection_labels: tuple[str, ...]
     candidate_paths: tuple[LegalAddress, ...] = ()
 
-    def finding_detail(self) -> dict[str, object]:
+    def finding_detail(self) -> Mapping[str, object]:
         return {
             "rule_id": self.rule_id,
             "reason": self.reason,
@@ -84,6 +87,30 @@ class PureKumotaanSubsectionSkippedTarget:
             "target_subsections": self.subsection_labels,
             "candidate_paths": tuple(str(path) for path in self.candidate_paths),
         }
+
+
+@dataclass(frozen=True, slots=True)
+class PureKumotaanItemSkippedTarget:
+    """Visible witness for a pure-kumotaan item injection that did not run."""
+
+    rule_id: str
+    reason: str
+    section_label: str
+    item_label: str
+    subsection_label: str | None = None
+    candidate_paths: tuple[LegalAddress, ...] = ()
+
+    def finding_detail(self) -> Mapping[str, object]:
+        detail: dict[str, object] = {
+            "rule_id": self.rule_id,
+            "reason": self.reason,
+            "target_section": self.section_label,
+            "target_item": self.item_label,
+            "candidate_paths": tuple(str(path) for path in self.candidate_paths),
+        }
+        if self.subsection_label:
+            detail["target_subsection"] = self.subsection_label
+        return detail
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,12 +123,30 @@ class PureKumotaanSubsectionInjectionResult:
 
 
 @dataclass(frozen=True, slots=True)
+class PureKumotaanItemInjectionResult:
+    """Typed result for pure-kumotaan item replay-product injection."""
+
+    injected_count: int
+    skipped_targets: tuple[PureKumotaanItemSkippedTarget, ...] = ()
+    injected: tuple[PureKumotaanInjectedRepeal, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class _ResolvedKumotaanSubsectionSection:
     """Resolved full-address section target for pure-kumotaan subsection injection."""
 
     section_path: tuple[tuple[str, str], ...]
     section_node: IRNode
     source_scoped: bool
+
+
+@dataclass(frozen=True, slots=True)
+class _ResolvedKumotaanItemTarget:
+    """Resolved full-address item target for pure-kumotaan item injection."""
+
+    item_path: tuple[tuple[str, str], ...]
+    section_path: tuple[tuple[str, str], ...]
+    subsection_label: str
 
 
 def _rewrite_kumotaan_snapshot_replaces_to_repeal(
@@ -708,12 +753,28 @@ def _inject_pure_kumotaan_subsection_repeal_ops(
         if sub_path is not None:
             covered.add(sub_path)
 
-    def _same_group_snapshot_carries_subsection(
+    def _same_group_snapshot_carries_renumber_destination(
         section_path: tuple[tuple[str, str], ...],
         sub_label: str,
     ) -> bool:
         sub_norm = _norm_num_token(sub_label)
         if not sub_norm:
+            return False
+        cleaned_source = re.sub(r"\s+", " ", source_raw_text or "").lower()
+        if "jolloin" not in cleaned_source or "siirty" not in cleaned_source:
+            return False
+        # lawvm-regex: owning_parser same-amendment `jolloin ... momentti siirtyy`
+        # destination guard; only prevents placeholder injection when the
+        # carried snapshot subsection is expressly the renumber destination.
+        # lawvm-regex: owning_parser same-amendment jolloin-renumber destination guard
+        if re.search(
+            r"\bjolloin\b.{0,240}?\b(?:nykyinen|muutettu)\b.{0,80}?"
+            r"\d+\s+momentti\s+siirty\w*\s+"
+            + re.escape(sub_norm)
+            + r"\s+momentiksi\b",
+            cleaned_source,
+            flags=re.I,
+        ) is None:
             return False
         for lo in lo_ops_out:
             src = lo.source
@@ -766,7 +827,7 @@ def _inject_pure_kumotaan_subsection_repeal_ops(
             target_path = resolved.section_path + (("subsection", sub_label),)
             if target_path in covered:
                 continue
-            if _same_group_snapshot_carries_subsection(resolved.section_path, sub_label):
+            if _same_group_snapshot_carries_renumber_destination(resolved.section_path, sub_label):
                 continue
             # Check that the subsection exists in the current IR.
             sub_exists = any(
@@ -815,6 +876,269 @@ def _inject_pure_kumotaan_subsection_repeal_ops(
             )
 
     return PureKumotaanSubsectionInjectionResult(
+        injected_count=injected,
+        skipped_targets=tuple(skipped),
+        injected=tuple(injected_records),
+    )
+
+
+def _item_path_from_target(target: LegalAddress) -> tuple[tuple[str, str], ...] | None:
+    path: list[tuple[str, str]] = []
+    saw_section = False
+    saw_subsection = False
+    for kind, label in target.path:
+        kind_text = str(kind)
+        label_text = str(label)
+        if not label_text:
+            continue
+        path.append((kind_text, label_text))
+        if kind_text == "section":
+            saw_section = True
+        if kind_text == "subsection":
+            saw_subsection = True
+        if kind_text == "item":
+            return tuple(path) if saw_section and saw_subsection else None
+    return None
+
+
+def _resolve_pure_kumotaan_item_target(
+    *,
+    lo_ops_out: list[_LegalOperation],
+    amendment_id: str,
+    target: KumotaanItemTarget,
+    state: ReplayState,
+) -> tuple[_ResolvedKumotaanItemTarget | None, PureKumotaanItemSkippedTarget | None]:
+    if target.chapter_label:
+        raw_path = state.find_section_path(target.section_label, target.chapter_label)
+        section_node = state.find_section(target.section_label, target.chapter_label)
+        if raw_path is None or section_node is None:
+            return (
+                None,
+                PureKumotaanItemSkippedTarget(
+                    rule_id="fi_pure_kumotaan_item_requires_resolved_section_scope",
+                    reason="section_not_found_in_explicit_chapter_scope",
+                    section_label=target.section_label,
+                    subsection_label=target.subsection_label,
+                    item_label=target.item_label,
+                ),
+            )
+        section_path = _non_empty_path(raw_path)
+    else:
+        resolved, skipped_subsection = _resolve_pure_kumotaan_subsection_section(
+            lo_ops_out=lo_ops_out,
+            amendment_id=amendment_id,
+            section_label=target.section_label,
+            sub_labels=[target.subsection_label or target.item_label],
+            state=state,
+        )
+        if skipped_subsection is not None:
+            return (
+                None,
+                PureKumotaanItemSkippedTarget(
+                    rule_id="fi_pure_kumotaan_item_requires_unambiguous_section_scope",
+                    reason=skipped_subsection.reason,
+                    section_label=target.section_label,
+                    subsection_label=target.subsection_label,
+                    item_label=target.item_label,
+                    candidate_paths=skipped_subsection.candidate_paths,
+                ),
+            )
+        if resolved is None:
+            return None, None
+        section_path = resolved.section_path
+        section_node = resolved.section_node
+
+    item_norm = _norm_num_token(target.item_label)
+    if not item_norm:
+        return None, None
+
+    if target.subsection_label is not None:
+        sub_norm = _norm_num_token(target.subsection_label)
+        subsection = next(
+            (
+                child
+                for child in section_node.children
+                if child.kind is IRNodeKind.SUBSECTION
+                and child.label
+                and _norm_num_token(child.label) == sub_norm
+            ),
+            None,
+        )
+        if subsection is None:
+            return (
+                None,
+                PureKumotaanItemSkippedTarget(
+                    rule_id="fi_pure_kumotaan_item_requires_existing_subsection",
+                    reason="explicit_subsection_not_found",
+                    section_label=target.section_label,
+                    subsection_label=target.subsection_label,
+                    item_label=target.item_label,
+                ),
+            )
+        if not any(
+            child.kind is IRNodeKind.PARAGRAPH
+            and child.label
+            and _norm_num_token(child.label) == item_norm
+            for child in subsection.children
+        ):
+            return (
+                None,
+                PureKumotaanItemSkippedTarget(
+                    rule_id="fi_pure_kumotaan_item_requires_existing_item",
+                    reason="explicit_subsection_item_not_found",
+                    section_label=target.section_label,
+                    subsection_label=target.subsection_label,
+                    item_label=target.item_label,
+                ),
+            )
+        item_path = section_path + (("subsection", sub_norm), ("item", item_norm))
+        return (
+            _ResolvedKumotaanItemTarget(
+                item_path=item_path,
+                section_path=section_path,
+                subsection_label=sub_norm,
+            ),
+            None,
+        )
+
+    candidates: list[tuple[str, tuple[tuple[str, str], ...]]] = []
+    for subsection in section_node.children:
+        if subsection.kind is not IRNodeKind.SUBSECTION or not subsection.label:
+            continue
+        sub_norm = _norm_num_token(subsection.label)
+        if not sub_norm:
+            continue
+        if any(
+            child.kind is IRNodeKind.PARAGRAPH
+            and child.label
+            and _norm_num_token(child.label) == item_norm
+            for child in subsection.children
+        ):
+            candidates.append((sub_norm, section_path + (("subsection", sub_norm), ("item", item_norm))))
+
+    if len(candidates) == 1:
+        sub_norm, item_path = candidates[0]
+        return (
+            _ResolvedKumotaanItemTarget(
+                item_path=item_path,
+                section_path=section_path,
+                subsection_label=sub_norm,
+            ),
+            None,
+        )
+    if len(candidates) > 1:
+        return (
+            None,
+            PureKumotaanItemSkippedTarget(
+                rule_id="fi_pure_kumotaan_item_requires_unambiguous_subsection_scope",
+                reason="ambiguous_item_label_without_subsection_scope",
+                section_label=target.section_label,
+                item_label=target.item_label,
+                candidate_paths=tuple(LegalAddress(path=path) for _sub, path in candidates),
+            ),
+        )
+    return (
+        None,
+        PureKumotaanItemSkippedTarget(
+            rule_id="fi_pure_kumotaan_item_requires_existing_item",
+            reason="item_not_found_in_resolved_section",
+            section_label=target.section_label,
+            item_label=target.item_label,
+        ),
+    )
+
+
+def _inject_pure_kumotaan_item_repeal_ops(
+    lo_ops_out: List[_LegalOperation],
+    *,
+    amendment_id: str,
+    source_title: str,
+    kumotaan_item_targets: tuple[KumotaanItemTarget, ...],
+    amendment_effective_date: dt.date,
+    amendment_issue_date: Optional[dt.date] = None,
+    state: ReplayState,
+    source_raw_text: str = "",
+) -> PureKumotaanItemInjectionResult:
+    """Inject REPLACE repeal-placeholder lo_ops for pure item-level kumotaan clauses."""
+    if not kumotaan_item_targets:
+        return PureKumotaanItemInjectionResult(injected_count=0)
+
+    covered: set[tuple[tuple[str, str], ...]] = set()
+    for lo in lo_ops_out:
+        src = lo.source
+        if src is None or src.statute_id != amendment_id:
+            continue
+        if lo.action not in (StructuralAction.REPEAL, StructuralAction.REPLACE):
+            continue
+        item_path = _item_path_from_target(lo.target)
+        if item_path is not None:
+            covered.add(item_path)
+
+    effective_iso = amendment_effective_date.isoformat()
+    enacted_iso = amendment_issue_date.isoformat() if amendment_issue_date else effective_iso
+    repeal_src = OperationSource(
+        statute_id=amendment_id,
+        title=source_title,
+        enacted=enacted_iso,
+        effective=effective_iso,
+        raw_text=source_raw_text.strip(),
+    )
+
+    injected = 0
+    injected_records: list[PureKumotaanInjectedRepeal] = []
+    skipped: list[PureKumotaanItemSkippedTarget] = []
+    for target in kumotaan_item_targets:
+        resolved, skip = _resolve_pure_kumotaan_item_target(
+            lo_ops_out=lo_ops_out,
+            amendment_id=amendment_id,
+            target=target,
+            state=state,
+        )
+        if skip is not None:
+            skipped.append(skip)
+            continue
+        if resolved is None or resolved.item_path in covered:
+            continue
+
+        op_id = (
+            f"pure_item_repeal_{target.section_label}_"
+            f"{resolved.subsection_label}_{target.item_label}_{amendment_id}"
+        )
+        item_placeholder = IRNode(
+            kind=IRNodeKind.PARAGRAPH,
+            label=_norm_num_token(target.item_label),
+            attrs={"lawvm_repeal_placeholder": "1"},
+            children=(),
+        )
+        lo_ops_out.append(
+            _LegalOperation(
+                op_id=op_id,
+                sequence=0,
+                action=StructuralAction.REPLACE,
+                target=LegalAddress(path=resolved.item_path),
+                payload=item_placeholder,
+                source=repeal_src,
+                group_id=f"finland-johto:{amendment_id}",
+                witness_rule_id=FI_RECOVERY_PURE_KUMOTAAN_ITEM_REPEAL_RULE_ID,
+            )
+        )
+        covered.add(resolved.item_path)
+        injected += 1
+        chapter_label = next(
+            (label for kind, label in reversed(resolved.section_path) if kind == "chapter"),
+            "",
+        )
+        injected_records.append(
+            PureKumotaanInjectedRepeal(
+                rule_id=FI_RECOVERY_PURE_KUMOTAAN_ITEM_REPEAL_RULE_ID,
+                op_id=op_id,
+                target_unit_kind="item",
+                target_norm=f"{target.section_label}:{resolved.subsection_label}:{target.item_label}",
+                target_chapter=(chapter_label or "").lower(),
+            )
+        )
+
+    return PureKumotaanItemInjectionResult(
         injected_count=injected,
         skipped_targets=tuple(skipped),
         injected=tuple(injected_records),
