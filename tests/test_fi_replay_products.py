@@ -1471,6 +1471,53 @@ def test_replay_xml_2007_829_pure_kumotaan_subsection_repeals_section_36_subsect
     )
 
 
+def test_replay_xml_2021_947_definition_items_continue_after_tail_prose_wrapper() -> None:
+    replay = replay_xml_for_test("2021/947", mode="official_consolidation", quiet=True)
+
+    section = replay.products.materialized_state.find_section("2", "1")
+    assert section is not None
+    subsections = [child for child in section.children if child.kind == IRNodeKind.SUBSECTION]
+    assert len(subsections) == 1
+
+    paragraphs = [child for child in subsections[0].children if child.kind == IRNodeKind.PARAGRAPH]
+    assert [paragraph.label for paragraph in paragraphs[-21:]] == [
+        "20",
+        "21",
+        "22",
+        "23",
+        "24",
+        "25",
+        "26",
+        "27",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32",
+        "33",
+        "34",
+        "35",
+        "36",
+        "37",
+        "38",
+        "39",
+        "40",
+    ]
+    kohta20 = next(paragraph for paragraph in paragraphs if paragraph.label == "20")
+    tail_wrapups = [
+        child
+        for child in kohta20.children
+        if child.kind == IRNodeKind.WRAP_UP and child.attrs.get("__tail_prose__") == "1"
+    ]
+    assert len(tail_wrapups) == 1
+    assert "toiminta johtuu suoraan tästä tehtävästä" in (tail_wrapups[0].text or "")
+
+    assert any(
+        finding.kind == "BASE_TAIL_PROSE_ABSORB" and "numeric-list continuation wrapper" in str(finding.detail)
+        for finding in replay.findings
+    )
+
+
 def test_replay_xml_1998_132_sparse_osalta_omission_repeals_branch_row() -> None:
     replay_meta: dict[str, object] = {}
     replay = replay_xml_for_test("1998/132", mode="legal_pit", quiet=True, replay_meta_out=replay_meta)

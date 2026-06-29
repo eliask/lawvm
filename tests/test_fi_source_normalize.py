@@ -43,6 +43,7 @@ from lawvm.finland.source_normalization_kinds import (
     BASE_TABLE_NOTE_SUBSECTION_FOLD,
     BASE_TABLE_CONTINUATION_SUBSECTION_MERGE,
     BASE_TABLE_CONTINUATION_HEADER_REPAIR,
+    BASE_TAIL_PROSE_ABSORB,
     BASE_UNNUMBERED_SUBPARAGRAPH_MOMENT_SPLIT,
     TRAILING_CHAPTER_REPARENT,
 )
@@ -1113,6 +1114,7 @@ class TestTagReclassify:
             "4) kuluttajalla"
         )
         assert not any(fact.kind_value == BASE_SECTION_ITEM_SUBSECTION_FOLD for fact in facts)
+        assert not any(fact.kind_value == BASE_TAIL_PROSE_ABSORB for fact in facts)
 
     def test_real_1998_711_dash_definition_list_preserves_all_items(self) -> None:
         """Regression: 1998/711 section 2 is a single definition-list moment."""

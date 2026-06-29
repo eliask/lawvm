@@ -1298,6 +1298,179 @@ def _fold_unlabelled_paragraph_list_subsection_wrappers(
     return rewritten if changed else children
 
 
+def _fold_unlabelled_numeric_list_continuation_subsections(
+    children: List[IRNode],
+    statute_id: str,
+    parent_path: Tuple[str, ...],
+    facts: List[SourceNormalizationFact],
+) -> List[IRNode]:
+    """Fold a transport subsection that split a numeric kohta list.
+
+    Some source XML wraps an unnumbered continuation paragraph and the
+    following numbered kohdat in a fresh unlabelled subsection.  When the first
+    numbered kohta in that wrapper is the exact successor of the previous
+    subsection's last kohta, the wrapper is source transport: the prose belongs
+    as tail_prose on the previous kohta and the numbered kohdat continue the
+    previous subsection's list.
+    """
+    if len(children) < 2:
+        return children
+
+    rewritten: list[IRNode] = []
+    changed = False
+    i = 0
+    while i < len(children):
+        child = children[i]
+        if child.kind != IRNodeKind.SUBSECTION or i + 1 >= len(children):
+            rewritten.append(child)
+            i += 1
+            continue
+
+        wrapper = children[i + 1]
+        if wrapper.kind != IRNodeKind.SUBSECTION or any(
+            c.kind == IRNodeKind.NUM for c in wrapper.children
+        ):
+            rewritten.append(child)
+            i += 1
+            continue
+
+        prior_paragraphs = [c for c in child.children if c.kind == IRNodeKind.PARAGRAPH]
+        wrapper_paragraphs = [c for c in wrapper.children if c.kind == IRNodeKind.PARAGRAPH]
+        if not prior_paragraphs or not wrapper_paragraphs:
+            rewritten.append(child)
+            i += 1
+            continue
+
+        last_prior = prior_paragraphs[-1]
+        substantive_child_kinds = {
+            IRNodeKind.PARAGRAPH,
+            IRNodeKind.CONTENT,
+            IRNodeKind.INTRO,
+            IRNodeKind.WRAP_UP,
+            IRNodeKind.SUBPARAGRAPH,
+        }
+        last_substantive_child = next(
+            (
+                c
+                for c in reversed(child.children)
+                if c.kind in substantive_child_kinds and irnode_to_text(c).strip()
+            ),
+            None,
+        )
+        if last_substantive_child is not last_prior:
+            rewritten.append(child)
+            i += 1
+            continue
+
+        first_wrapper = wrapper_paragraphs[0]
+        last_prior_value = _numeric_label_value(last_prior.label)
+        first_wrapper_value = _numeric_label_value(first_wrapper.label)
+        if (
+            last_prior_value is None
+            or first_wrapper_value is None
+            or first_wrapper_value != last_prior_value + 1
+        ):
+            rewritten.append(child)
+            i += 1
+            continue
+
+        prose_children = tuple(
+            c
+            for c in wrapper.children
+            if c.kind not in {IRNodeKind.PARAGRAPH, IRNodeKind.OMISSION}
+            and irnode_to_text(c).strip()
+        )
+        omissions = tuple(c for c in wrapper.children if c.kind == IRNodeKind.OMISSION)
+        if not prose_children:
+            rewritten.append(child)
+            i += 1
+            continue
+
+        peer_text = "\n\n".join(irnode_to_text(c).strip() for c in prose_children)
+        if _NUM_IN_INTRO_RE.match(peer_text):
+            rewritten.append(child)
+            i += 1
+            continue
+
+        existing_tail_idx: int | None = None
+        for pi, pc in enumerate(last_prior.children):
+            if pc.kind == IRNodeKind.WRAP_UP and pc.attrs.get("__tail_prose__"):
+                existing_tail_idx = pi
+                break
+
+        if existing_tail_idx is not None:
+            existing_tail = last_prior.children[existing_tail_idx]
+            tail = IRNode(
+                kind=IRNodeKind.WRAP_UP,
+                text=(existing_tail.text or "") + "\n\n" + peer_text,
+                attrs={"__tail_prose__": "1"},
+                children=existing_tail.children,
+            )
+            last_prior_children = list(last_prior.children)
+            last_prior_children[existing_tail_idx] = tail
+        else:
+            tail = IRNode(
+                kind=IRNodeKind.WRAP_UP,
+                text=peer_text,
+                attrs={"__tail_prose__": "1"},
+            )
+            last_prior_children = list(last_prior.children) + [tail]
+
+        repaired_last_prior = IRNode(
+            kind=last_prior.kind,
+            label=last_prior.label,
+            text=last_prior.text,
+            attrs=last_prior.attrs,
+            children=tuple(last_prior_children),
+        )
+        repaired_child_children = list(child.children)
+        last_prior_idx = max(
+            idx for idx, current in enumerate(repaired_child_children) if current is last_prior
+        )
+        repaired_child_children[last_prior_idx] = repaired_last_prior
+        repaired_child_children.extend(wrapper_paragraphs)
+        repaired_child = IRNode(
+            kind=child.kind,
+            label=child.label,
+            text=child.text,
+            attrs=child.attrs,
+            children=tuple(repaired_child_children),
+        )
+
+        rewritten.append(repaired_child)
+        rewritten.extend(omissions)
+        facts.append(
+            SourceNormalizationFact(
+                statute_id=statute_id,
+                kind=BASE_TAIL_PROSE_ABSORB,
+                basis=SourceNormalizationBasis.PROFILE_INVALID,
+                before=(
+                    f"unlabelled numeric-list continuation wrapper {_node_path_label(wrapper)} "
+                    f"after {_node_path_label(child)}; intro excerpt: {peer_text[:80]!r}; "
+                    f"first wrapped kohta {first_wrapper.label!r}"
+                ),
+                after=(
+                    f"absorbed wrapper prose as wrapUp(__tail_prose__=1) on kohta "
+                    f"{last_prior.label!r}; moved wrapped kohdat "
+                    f"{[paragraph.label for paragraph in wrapper_paragraphs]!r} into {_node_path_label(child)}"
+                ),
+                explanation=(
+                    "The unlabelled subsection has no momentti number and its "
+                    "numbered kohdat continue the previous subsection's numeric "
+                    "kohta sequence.  The wrapper is therefore source transport, "
+                    "not a peer momentti: its prose is tail_prose for the previous "
+                    "kohta and its numbered kohdat remain in the same list."
+                ),
+                path=parent_path + (_node_path_label(wrapper),),
+                confidence=0.97,
+            )
+        )
+        changed = True
+        i += 2
+
+    return rewritten if changed else children
+
+
 def _content_item_subsection_payload(node: IRNode) -> tuple[int, IRNode] | None:
     if node.kind != IRNodeKind.SUBSECTION:
         return None
@@ -4344,6 +4517,9 @@ def normalize_source_ir(
             initial_children, statute_id, current_path, facts
         )
         initial_children = _fold_unlabelled_paragraph_list_subsection_wrappers(
+            initial_children, statute_id, current_path, facts
+        )
+        initial_children = _fold_unlabelled_numeric_list_continuation_subsections(
             initial_children, statute_id, current_path, facts
         )
         initial_children = _fold_table_note_subsections_into_previous_moment(
