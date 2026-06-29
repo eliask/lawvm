@@ -7775,7 +7775,7 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
     nz_closure_p.add_argument("--max-versions", type=int, default=None, metavar="N", help="maximum versions")
     nz_closure_p.add_argument("--no-xml", action="store_true", help="capture API JSON only")
     nz_closure_p.add_argument("--refetch", action="store_true", help="refetch even when locator is cached")
-    nz_closure_p.add_argument("--delay", type=float, default=0.5, metavar="SECONDS", help="delay between requests")
+    nz_closure_p.add_argument("--delay", type=float, default=0.05, metavar="SECONDS", help="minimum delay when X-RateLimit headers absent (default: 0.05; adaptive 50pct-of-remaining-quota rate when headers present)")
     nz_closure_p.add_argument("--request-budget", type=int, default=None, metavar="N", help="stop after N requests")
     nz_closure_p.add_argument(
         "--reserve-remaining",

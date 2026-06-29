@@ -254,7 +254,12 @@ class NZProgressReporter:
 
 
 class NZRateLimitGate:
-    """Conservative client-side gate for API v0 quota/burst protection."""
+    """Minimal client-side gate: floor delay between requests + stop at reserve.
+
+    No artificial throttle — races as fast as the API allows until
+    remaining drops to reserve_remaining. With --sleep-on-rate-limit,
+    sleeps until the reset window and continues; otherwise stops.
+    """
 
     def __init__(
         self,
@@ -263,11 +268,12 @@ class NZRateLimitGate:
         request_budget: int | None,
         reserve_remaining: int,
     ) -> None:
-        self.delay = max(delay, 0.0)
+        self.floor_delay = max(delay, 0.0)
         self.request_budget = request_budget
         self.reserve_remaining = max(reserve_remaining, 0)
         self.requests = 0
         self.remaining: int | None = None
+        self.limit: int | None = None
         self.reset_utc: str = ""
         self._last_request = 0.0
 
@@ -280,8 +286,8 @@ class NZRateLimitGate:
 
     def before_request(self) -> None:
         elapsed = time.monotonic() - self._last_request
-        if self._last_request and elapsed < self.delay:
-            time.sleep(self.delay - elapsed)
+        if self._last_request and elapsed < self.floor_delay:
+            time.sleep(self.floor_delay - elapsed)
         self._last_request = time.monotonic()
         self.requests += 1
 
@@ -297,6 +303,12 @@ class NZRateLimitGate:
                 self.remaining = int(remaining)
             except ValueError:
                 self.remaining = None
+        limit_val = _header_get(headers, "X-RateLimit-Limit")
+        if limit_val:
+            try:
+                self.limit = int(limit_val)
+            except ValueError:
+                self.limit = None
         reset = _header_get(headers, "X-RateLimit-Reset")
         if reset:
             self.reset_utc = reset
