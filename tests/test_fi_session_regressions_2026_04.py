@@ -2429,6 +2429,92 @@ def test_2014_527_2026_178_section_225_binds_item_payload_to_scoped_subsection()
     )
 
 
+def test_2009_862_2018_936_chaptered_section_snapshot_backfills_active_timeline() -> None:
+    """A complete section snapshot must not block fold backfill when the active timeline is stale."""
+    replay = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(
+            parent_id="2009/862",
+            mode="official_consolidation",
+            quiet=True,
+        ),
+    )
+
+    section_1 = replay.materialized_state.find_section("1", "1")
+    assert section_1 is not None
+    heading = next(
+        child.text
+        for child in section_1.children
+        if child.kind is IRNodeKind.HEADING
+    )
+
+    assert heading == "Asema ja toiminta-ajatus"
+    assert any(
+        record.address == "chapter:1/section:1"
+        for record in replay.products.fold_timeline_backfills
+    )
+
+
+def test_2000_1106_2004_1265_sparse_section_snapshot_keeps_live_subitems() -> None:
+    """Sparse top-level section timelines must not hide live subitems during PIT materialization."""
+    replay = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(
+            parent_id="2000/1106",
+            mode="official_consolidation",
+            quiet=True,
+        ),
+    )
+
+    section_1 = replay.materialized_state.find_section("1")
+    assert section_1 is not None
+    subsection_1 = next(
+        child for child in section_1.children if child.kind is IRNodeKind.SUBSECTION and child.label == "1"
+    )
+    paragraph_2 = next(
+        child for child in subsection_1.children if child.kind is IRNodeKind.PARAGRAPH and child.label == "2"
+    )
+    subitem_labels = [
+        child.label for child in paragraph_2.children if child.kind is IRNodeKind.SUBPARAGRAPH
+    ]
+
+    assert subitem_labels == ["a", "b", "c", "d", "e", "f", "g", "h", "i"]
+    assert any(
+        record.address == "section:1"
+        for record in replay.products.fold_timeline_backfills
+    )
+
+
+def test_2022_1267_2025_1280_item_intro_backfill_preserves_subitems() -> None:
+    """A section timeline for an item-intro amendment must preserve the item's live subitems."""
+    replay = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(
+            parent_id="2022/1267",
+            mode="official_consolidation",
+            quiet=True,
+        ),
+    )
+
+    section_2 = replay.materialized_state.find_section("2", "1")
+    assert section_2 is not None
+    subsection_1 = next(
+        child for child in section_2.children if child.kind is IRNodeKind.SUBSECTION and child.label == "1"
+    )
+    paragraph_1 = next(
+        child for child in subsection_1.children if child.kind is IRNodeKind.PARAGRAPH and child.label == "1"
+    )
+    subitem_labels = [
+        child.label for child in paragraph_1.children if child.kind is IRNodeKind.SUBPARAGRAPH
+    ]
+
+    assert subitem_labels == ["a", "b", "c"]
+    assert any(
+        record.address == "chapter:1/section:2"
+        for record in replay.products.fold_timeline_backfills
+    )
+
+
 def test_1992_733_2002_716_chapter_payload_adoption_tombstones_old_section_32() -> None:
     """Real corpus anchor: §32 stays in chapter 5 per the Finlex oracle.
 
