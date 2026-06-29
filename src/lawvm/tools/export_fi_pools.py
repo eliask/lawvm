@@ -55,7 +55,7 @@ def _project_pools_for_statute(
 
     mention_rows: List[Dict[str, Any]] = []
     for mention in result.mentions:
-        row = pool_mention_to_row(mention)
+        row: Dict[str, Any] = dict(pool_mention_to_row(mention))
         row["source_statute_id"] = statute_id
         mention_rows.append(row)
 

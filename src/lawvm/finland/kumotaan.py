@@ -148,6 +148,16 @@ class KumotaanRecycleGuardResult:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class KumotaanItemTarget:
+    """Typed item-level target extracted from a pure ``kumotaan`` clause."""
+
+    section_label: str
+    subsection_label: str | None
+    item_label: str
+    chapter_label: str | None = None
+
+
 def _freeze_chapter_section_map(
     mapping: Dict[Optional[str], List[str]],
 ) -> tuple[tuple[str | None, tuple[str, ...]], ...]:
@@ -572,6 +582,65 @@ def _extract_kumotaan_subsection_refs(johto: str) -> Dict[str, List[str]]:
                     result[sec_label].append(lbl)
 
     return result
+
+
+def _extract_kumotaan_item_refs(johto: str) -> tuple[KumotaanItemTarget, ...]:
+    """Extract item-level repeal refs from kumotaan clauses using the shared grammar.
+
+    Handles pure clauses such as ``kumotaan ... 2 §:n 4 kohta`` and
+    ``2 §:n 1 momentin 4 kohta``. The clause boundary is only a lexer-level
+    window; target structure is delegated to ``references.sections`` so this
+    function does not authorize legal targets from substring shape alone.
+    """
+    text = johto.lower()
+    # lawvm-regex: owning_parser clause-boundary segmenter for the kumotaan sub-clause; target structure delegated to references.sections
+    kumotaan_match = re.search(
+        r'kumotaan\b(.*?)(?:muutetaan|lisätään|seuraavasti|sekä\s+muutetaan|sekä\s+lisätään|$)',
+        text,
+        re.DOTALL,
+    )
+    if not kumotaan_match:
+        return ()
+
+    full_body = kumotaan_match.group(1)
+    kumotaan_text = _strip_source_provenance_tail(full_body)
+    # lawvm-regex: prefilter multi-statute GUARD; counts distinct statute ids, not a producer
+    statute_refs = re.findall(r'\d+/\d{2,4}', kumotaan_text)
+    if len(set(statute_refs)) > 1:
+        return ()
+
+    targets: list[KumotaanItemTarget] = []
+    seen: set[tuple[str | None, str, str | None, str]] = set()
+    for offset, ch in enumerate(kumotaan_text):
+        if not ch.isdigit():
+            continue
+        parsed = parse_body_provision_tail_spanned(_deglue_run(kumotaan_text[offset:]))
+        if not parsed.targets:
+            continue
+        consumed = parsed.consumed_text.strip()
+        if not consumed or "§" not in consumed:
+            continue
+        for target in parsed.targets:
+            if not target.section_label or target.item_label is None:
+                continue
+            key = (
+                target.chapter,
+                target.section_label.lower(),
+                str(target.subsection_num) if target.subsection_num is not None else None,
+                target.item_label.lower(),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            targets.append(
+                KumotaanItemTarget(
+                    section_label=target.section_label.lower(),
+                    subsection_label=str(target.subsection_num) if target.subsection_num is not None else None,
+                    item_label=target.item_label.lower(),
+                    chapter_label=target.chapter.lower() if target.chapter else None,
+                )
+            )
+    return tuple(targets)
 
 
 def _extract_kumotaan_container_refs(johto: str) -> Dict[TargetUnitKind, List[str]]:

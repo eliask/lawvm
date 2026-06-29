@@ -35,7 +35,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from enum import Enum
-from typing import Optional, Tuple
+from typing import Optional, Tuple, TypedDict
 
 from lawvm.core.pool_mention import ProvisionMention
 
@@ -79,6 +79,24 @@ class PoolResolutionConfidence(Enum):
 
     UNRESOLVED = "unresolved"
     """No registry hit; canonical ID is None."""
+
+
+class PoolMentionRow(TypedDict, total=False):
+    """Projection row for one Finland pool mention."""
+
+    source_statute_id: str
+    source_provision_ref_str: str
+    quantity_phrase: str
+    pool_canonical_id: Optional[str]
+    quantity_kind: str
+    resolution_confidence: str
+    numeric_value: Optional[float]
+    unit: Optional[str]
+    source_span_file: Optional[str]
+    source_span_byte_offset: Optional[int]
+    source_span_byte_len: Optional[int]
+    valid_at_start: Optional[str]
+    valid_at_end: Optional[str]
 
 
 # ---------------------------------------------------------------------------
@@ -274,7 +292,7 @@ def pool_canonical_id(momentti_code: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def pool_mention_to_row(mention: PoolMention) -> dict[str, object]:
+def pool_mention_to_row(mention: PoolMention) -> PoolMentionRow:
     """Serialize a PoolMention to a flat dict for Parquet/JSONL output.
 
     Column names are stable per the brief's schema spec
@@ -301,6 +319,7 @@ __all__ = [
     "AmbiguousPoolMention",
     "BudgetLineRenumberingObservation",
     "PoolMention",
+    "PoolMentionRow",
     "PoolResolutionConfidence",
     "QuantityKind",
     "RejectedPoolCandidate",

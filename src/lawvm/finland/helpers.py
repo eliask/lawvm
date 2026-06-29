@@ -22,6 +22,7 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.roman import roman_to_arabic as _roman_to_arabic_shared
 
 _NUM_TOKEN_STRIP_RE = re.compile(r"[)\s§.]")
+# lawvm-regex: prefilter conservative penal heading-name evidence over normalized heading/intro text; classifier only
 _RANGAISTUS_HEADING_NAME_RE = compile_classifier_regex(r"\b(rangaistus|rikos)\b", classifier_id="fi.helpers.rangaistus_heading_name_re")
 _SECTION_SORT_RE = re.compile(r"^(\d+)([a-z]*)$")
 _SECTION_SORT_NON_DIGIT_RE = re.compile(r"[^0-9]")
@@ -266,8 +267,8 @@ def is_penal_offence_frame_without_sentencing(node: IRNode) -> bool:
         if child.kind in (IRNodeKind.INTRO, IRNodeKind.CONTENT):
             intro_text = _normalized_node_text(child)
             intro_lower = intro_text.lower()
-            # lawvm-regex: prefilter offence-formula prefix over the frame's own intro text; classifier only, mints no legal state
             if intro_text and (
+                # lawvm-regex: prefilter offence-formula prefix over the frame's own intro text; classifier only, mints no legal state
                 _RANGAISTUS_OFFENCE_PREFIX_RE.match(intro_lower)
                 # lawvm-regex: prefilter embedded culpability formula (named-subject offence frame); classifier only
                 or _PENAL_CULPABILITY_FORMULA_RE.search(intro_lower)

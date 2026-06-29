@@ -36,6 +36,7 @@ from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector
 from lawvm.finland.corpus import get_corpus
 from lawvm.finland.metadata import get_johtolause
 from lawvm.finland.kumotaan_replay import (
+    FI_RECOVERY_PURE_KUMOTAAN_ITEM_REPEAL_RULE_ID,
     _inject_pure_kumotaan_subsection_repeal_ops,
     _live_suffix_section_labels_for_numeric_kumotaan_ranges,
 )
@@ -1141,6 +1142,53 @@ def test_replay_xml_2011_806_pure_kumotaan_subsection_keeps_chapter_scope() -> N
     )
     assert chapter_3_subsection_3.attrs.get("lawvm_repeal_placeholder") is None
     assert replay.materialized_state.find_section("21", "8") is not None
+
+
+def test_replay_xml_2007_1175_pure_kumotaan_item_repeals_item_four() -> None:
+    """2009/664 pure-kumotaan clause repeals 2 §:n 4 kohta with no body payload."""
+    lo_ops: list[LegalOperation] = []
+    cutoff_replay = pinned_replay(
+        "2007/1175",
+        oracle_version="20090664",
+        mode="official_consolidation",
+        quiet=True,
+        lo_ops_out=lo_ops,
+    )
+
+    pure_ops = [
+        op
+        for op in lo_ops
+        if op.source is not None
+        and op.source.statute_id == "2009/664"
+        and op.witness_rule_id == FI_RECOVERY_PURE_KUMOTAAN_ITEM_REPEAL_RULE_ID
+    ]
+    assert len(pure_ops) == 1
+    assert pure_ops[0].target == LegalAddress(path=(("section", "2"), ("subsection", "1"), ("item", "4")))
+    assert pure_ops[0].payload is not None
+    assert pure_ops[0].payload.attrs.get("lawvm_repeal_placeholder") == "1"
+
+    cutoff_section = cutoff_replay.materialized_state.find_section("2")
+    assert cutoff_section is not None
+    cutoff_text = " ".join(irnode_to_text(cutoff_section).split())
+    assert "aikataulun mukainen yhteysalusliikenne (liite 4); sekä" in cutoff_text
+
+    effective_replay = pinned_replay(
+        "2007/1175",
+        oracle_version="20090664",
+        mode="official_consolidation",
+        quiet=True,
+        as_of="2009-09-01",
+    )
+    section = effective_replay.materialized_state.find_section("2")
+    assert section is not None
+    subsection = next(child for child in section.children if child.kind is IRNodeKind.SUBSECTION and child.label == "1")
+    item4 = next(
+        child
+        for child in subsection.children
+        if child.kind is IRNodeKind.PARAGRAPH and child.label == "4"
+    )
+    assert item4.attrs.get("lawvm_repeal_placeholder") == "1"
+    assert "aikataulun mukainen yhteysalusliikenne" not in " ".join(irnode_to_text(item4).split())
 
 
 @pytest.mark.slow
@@ -4298,12 +4346,11 @@ def test_replay_xml_1951_83_ignores_self_relabel_bridge_from_1982_601() -> None:
 
 
 def test_replay_xml_recycle_rename_kumotaan_muutetaan_preserves_new_section_2010_128() -> None:
-    """Recycle-and-rename: section in both kumotaan AND muutetaan must survive as new content.
+    """Kumotaan section plus later muutetaan section must preserve new content.
 
-    2019/1330 repeals old §44 (kumotaan 43 ja 44 §) and simultaneously
-    introduces new §44 content (muutetaan ... 44 §). The kumotaan-muutetaan
-    recycle guard must exclude §44 from the expiry override so the new §44
-    is preserved permanently rather than being converted to a repeal.
+    The corrected 2019/1330 source repeals §43 and separately changes §44.
+    Since §44 is not in the kumotaan clause, preserving it must not depend on
+    the recycle guard firing.
 
     Regression for the bug where _rewrite_kumotaan_snapshot_replaces_to_repeal
     incorrectly converted the new §44 to a REPEAL, leaving it absent from
@@ -4314,7 +4361,7 @@ def test_replay_xml_recycle_rename_kumotaan_muutetaan_preserves_new_section_2010
     # §43 was genuinely repealed by 2019/1330 (not in muutetaan)
     assert replay.materialized_state.find_section("43") is None, "§43 should be repealed"
 
-    # §44 was recycled: old §44 repealed, new §44 introduced via muutetaan
+    # §44 was introduced via muutetaan and must not be converted to a repeal.
     sec44 = replay.materialized_state.find_section("44")
     assert sec44 is not None, "§44 (new Ahvenanmaa content) must be present after recycle fix"
     recycle_findings = [
@@ -4322,8 +4369,15 @@ def test_replay_xml_recycle_rename_kumotaan_muutetaan_preserves_new_section_2010
         for finding in replay.findings
         if finding.kind == "PARSE.REPEAL_RECYCLE_GUARD" and finding.source_statute == "2019/1330"
     ]
-    assert recycle_findings
-    assert recycle_findings[0].detail["recycled_labels"] == ("44",)
+    assert not recycle_findings
+    pure_repeal_findings = [
+        finding
+        for finding in replay.findings
+        if finding.kind == "PARSE.PURE_REPEAL_CLAUSE_RECONSTRUCTED"
+        and finding.source_statute == "2019/1330"
+        and finding.detail.get("target_norm") == "43"
+    ]
+    assert pure_repeal_findings
 
 
 def test_replay_xml_later_inserted_whole_section_repeal_respects_oracle_horizon(

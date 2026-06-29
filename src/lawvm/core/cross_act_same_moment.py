@@ -123,13 +123,13 @@ validator in this module are the binding surface (mirrors UK's
 """
 from __future__ import annotations
 
-import re
 from collections.abc import Iterable, Sequence as AbcSequence
 from dataclasses import dataclass, field
 from typing import Any, Callable, NamedTuple, Optional, Sequence
 
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.ir import LegalOperation
+from lawvm.core.regex_safety import compile_classifier_regex
 from lawvm.core.semantic_types import StructuralAction
 from lawvm.replay_adjudication import CompileAdjudication
 
@@ -203,8 +203,16 @@ _DEFAULT_WHOLE_TARGET_REPLACEMENT_ACTIONS: frozenset[StructuralAction] = frozens
     {StructuralAction.REPLACE}
 )
 
-_ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-_PREFIX_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+# lawvm-regex: prefilter schema validation for typed SameMomentPrecedenceClaim dates; mints no legal state
+_ISO_DATE_RE = compile_classifier_regex(
+    r"^\d{4}-\d{2}-\d{2}$",
+    classifier_id="core.cross_act_same_moment.iso_date",
+)
+# lawvm-regex: prefilter schema validation for frontend finding prefixes; mints no legal state
+_PREFIX_RE = compile_classifier_regex(
+    r"^[a-z][a-z0-9_]*$",
+    classifier_id="core.cross_act_same_moment.finder_prefix",
+)
 
 
 #─ Carrier dataclasses─────────────────────────────────────────────────────
@@ -411,6 +419,7 @@ def _validate_finder_kind_prefix(prefix: str) -> None:
     cross-frontend collisions (e.g. ``"_same_moment_..."`` finding kinds shared
     across frontends defeats the per-frontend audit-trail invariant).
     """
+    # lawvm-regex: prefilter schema validation for frontend finding prefixes; mints no legal state
     if not prefix or not _PREFIX_RE.match(str(prefix)):
         raise ValueError(
             f"finder_kind_prefix must be a non-empty lowercase ASCII identifier "
@@ -718,6 +727,7 @@ def _schema_error(claim: SameMomentPrecedenceClaim) -> str:
         return f"unsupported claim_kind {claim.claim_kind!r}; expected {SAME_MOMENT_PRECEDENCE_CLAIM_KIND!r}"
     if not claim.claim_id:
         return "missing claim_id"
+    # lawvm-regex: prefilter schema validation for typed SameMomentPrecedenceClaim dates; mints no legal state
     if not _ISO_DATE_RE.match(str(claim.effective_date)):
         return f"effective_date {claim.effective_date!r} is not an ISO date"
     if not claim.affected_target.strip():

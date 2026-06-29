@@ -72,6 +72,11 @@ _FI_RULE_SPECS_SUPPLEMENT: Dict[str, str] = {
         "repeal-placeholder REPLACE from a raw 'N §:n M momentti' kumotaan clause when "
         "no body op covered the subsection (witnessed reconstruction with a finding)."
     ),
+    "fi.recovery.pure_kumotaan_item_repeal": (
+        "Pure-kumotaan item repeal injection reconstructs an item repeal-placeholder "
+        "REPLACE from a raw 'N §:n K kohta' kumotaan clause when no body op covered "
+        "the item (witnessed reconstruction with a finding)."
+    ),
     # --- structural target references (surface_parse / rule_registry) ---
     "fi.section_ref_pykala_prefix": (
         "A genitive-plural prefix citation 'pykälien N, M ...' targets the listed live "

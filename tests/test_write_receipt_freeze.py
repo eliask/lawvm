@@ -18,6 +18,8 @@ Run:
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import pytest
 
 from lawvm.core.frozen_values import FrozenDict
@@ -61,38 +63,45 @@ class TestWriteReceiptHashesAreFrozen:
 
     def test_setitem_on_pre_hashes_raises(self) -> None:
         receipt = _bare_receipt()
+        hashes = cast(Any, receipt.pre_hashes)
         with pytest.raises(TypeError, match="FrozenDict is immutable"):
-            receipt.pre_hashes["section/1"] = "tampered"
+            hashes["section/1"] = "tampered"
 
     def test_setitem_on_post_hashes_raises(self) -> None:
         receipt = _bare_receipt()
+        hashes = cast(Any, receipt.post_hashes)
         with pytest.raises(TypeError, match="FrozenDict is immutable"):
-            receipt.post_hashes["section/1"] = "tampered"
+            hashes["section/1"] = "tampered"
 
     def test_setitem_new_key_on_pre_hashes_raises(self) -> None:
         receipt = _bare_receipt()
+        hashes = cast(Any, receipt.pre_hashes)
         with pytest.raises(TypeError, match="FrozenDict is immutable"):
-            receipt.pre_hashes["section/new"] = "tampered"
+            hashes["section/new"] = "tampered"
 
     def test_pop_on_pre_hashes_raises(self) -> None:
         receipt = _bare_receipt()
+        hashes = cast(Any, receipt.pre_hashes)
         with pytest.raises(TypeError, match="FrozenDict is immutable"):
-            receipt.pre_hashes.pop("section/1")
+            hashes.pop("section/1")
 
     def test_clear_on_post_hashes_raises(self) -> None:
         receipt = _bare_receipt()
+        hashes = cast(Any, receipt.post_hashes)
         with pytest.raises(TypeError, match="FrozenDict is immutable"):
-            receipt.post_hashes.clear()
+            hashes.clear()
 
     def test_update_on_pre_hashes_raises(self) -> None:
         receipt = _bare_receipt()
+        hashes = cast(Any, receipt.pre_hashes)
         with pytest.raises(TypeError, match="FrozenDict is immutable"):
-            receipt.pre_hashes.update({"section/1": "tampered"})
+            hashes.update({"section/1": "tampered"})
 
     def test_setdefault_on_post_hashes_raises(self) -> None:
         receipt = _bare_receipt()
+        hashes = cast(Any, receipt.post_hashes)
         with pytest.raises(TypeError, match="FrozenDict is immutable"):
-            receipt.post_hashes.setdefault("section/2", "tampered")
+            hashes.setdefault("section/2", "tampered")
 
 
 class TestWriteReceiptDefaultFactoriesProduceFrozen:
@@ -119,8 +128,9 @@ class TestWriteReceiptDefaultFactoriesProduceFrozen:
             bound_target_path=None,
             landed_primary_path=None,
         )
+        hashes = cast(Any, receipt.pre_hashes)
         with pytest.raises(TypeError, match="FrozenDict is immutable"):
-            receipt.pre_hashes["any"] = "rejected"
+            hashes["any"] = "rejected"
 
 
 class TestWriteReceiptFreezeIsDeep:
@@ -137,8 +147,9 @@ class TestWriteReceiptFreezeIsDeep:
         cloned = copy.deepcopy(receipt)
         assert isinstance(cloned.pre_hashes, FrozenDict)
         assert isinstance(cloned.post_hashes, FrozenDict)
+        hashes = cast(Any, cloned.pre_hashes)
         with pytest.raises(TypeError, match="FrozenDict is immutable"):
-            cloned.pre_hashes["section/1"] = "tampered"
+            hashes["section/1"] = "tampered"
 
     def test_underlying_dict_passing_is_copied_not_aliased(self) -> None:
         # Mutating the source dict after construction MUST NOT leak into the

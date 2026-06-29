@@ -7,8 +7,8 @@
   },
   "replay_counts": {
     "exercised": 170,
-    "cold": 245,
-    "in_scope": 415
+    "cold": 247,
+    "in_scope": 417
   },
   "dead": [
     "lawvm.core.claim_assumption_binding",
@@ -396,6 +396,7 @@
     "lawvm.finland.citation_routing": true,
     "lawvm.finland.claim_kinds": false,
     "lawvm.finland.claim_kinds.inline_statute_resolution": false,
+    "lawvm.finland.claim_kinds.oracle_override": false,
     "lawvm.finland.claim_kinds.xml_manual_frontier": false,
     "lawvm.finland.compile": false,
     "lawvm.finland.compile_amendment": true,
@@ -604,6 +605,7 @@
     "lawvm.finland.payload_realization_audit": false,
     "lawvm.finland.periodic_table": false,
     "lawvm.finland.pool_mention_extractor": false,
+    "lawvm.finland.pool_mention_primitive": false,
     "lawvm.finland.post_process": true,
     "lawvm.finland.process_acquisition": true,
     "lawvm.finland.process_apply_fold": false,

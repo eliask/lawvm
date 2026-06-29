@@ -23,11 +23,13 @@ from lawvm.core.tree_ops import normalized_label_key
 from lawvm.finland.johtolause import extract_law_level_text_patch_los as _extract_law_level_patch_los
 from lawvm.finland.kumotaan import (
     _extract_kumotaan_chapter_section_map,
+    _extract_kumotaan_item_refs,
     _extract_kumotaan_subsection_refs,
     kumotaan_recycle_guard_result,
 )
 from lawvm.finland.kumotaan_replay import (
     PureKumotaanInjectedRepeal,
+    _inject_pure_kumotaan_item_repeal_ops,
     _inject_pure_kumotaan_repeal_ops,
     _inject_pure_kumotaan_subsection_repeal_ops,
     _live_suffix_section_labels_for_numeric_kumotaan_ranges,
@@ -540,43 +542,74 @@ class ProcessTemporalPostprocessContext:
             if pure_count:
                 self.replay_print(f"  [{self.amendment_id}] pure_kumotaan_repeal_injected: {pure_count} section(s)")
 
-        johto_for_subsection = self.johto
-        if not _extract_kumotaan_subsection_refs(self.johto):
+        johto_for_subprovision = self.johto
+        if not _extract_kumotaan_subsection_refs(self.johto) and not _extract_kumotaan_item_refs(self.johto):
             body_repeal = self.source_model.operative_body_repeal_candidate()
             if body_repeal:
-                johto_for_subsection = self.johto + " " + body_repeal
-        subsection_map = _extract_kumotaan_subsection_refs(johto_for_subsection)
-        if not subsection_map:
-            return
-        pure_subsection_result = _inject_pure_kumotaan_subsection_repeal_ops(
-            self.lo_ops_out,
-            amendment_id=self.amendment_id,
-            source_title=self.source_title,
-            kumotaan_subsection_map=subsection_map,
-            amendment_effective_date=self.amendment_effective_date,
-            amendment_issue_date=self.amendment_issue_date,
-            state=self.state,
-            source_raw_text=johto_for_subsection,
-        )
-        for skipped in pure_subsection_result.skipped_targets:
-            self.record_finding(
-                kind="APPLY.UNCOVERED_BODY_RECOVERY_SKIPPED",
-                message="Pure kumotaan subsection injection skipped an unresolved target.",
-                source_statute=self.amendment_id,
-                detail={
-                    "message": "Pure kumotaan subsection injection skipped an unresolved target.",
-                    **skipped.finding_detail(),
-                },
-                role="observation",
-                blocking=False,
+                johto_for_subprovision = self.johto + " " + body_repeal
+        subsection_map = _extract_kumotaan_subsection_refs(johto_for_subprovision)
+        if subsection_map:
+            pure_subsection_result = _inject_pure_kumotaan_subsection_repeal_ops(
+                self.lo_ops_out,
+                amendment_id=self.amendment_id,
+                source_title=self.source_title,
+                kumotaan_subsection_map=subsection_map,
+                amendment_effective_date=self.amendment_effective_date,
+                amendment_issue_date=self.amendment_issue_date,
+                state=self.state,
+                source_raw_text=johto_for_subprovision,
             )
-        self._emit_pure_kumotaan_injection_findings(pure_subsection_result.injected)
-        pure_subsection_count = pure_subsection_result.injected_count
-        if pure_subsection_count:
-            self.replay_print(
-                f"  [{self.amendment_id}] pure_kumotaan_subsection_repeal_injected: "
-                f"{pure_subsection_count} subsection(s)"
+            for skipped in pure_subsection_result.skipped_targets:
+                self.record_finding(
+                    kind="APPLY.UNCOVERED_BODY_RECOVERY_SKIPPED",
+                    message="Pure kumotaan subsection injection skipped an unresolved target.",
+                    source_statute=self.amendment_id,
+                    detail={
+                        "message": "Pure kumotaan subsection injection skipped an unresolved target.",
+                        **skipped.finding_detail(),
+                    },
+                    role="observation",
+                    blocking=False,
+                )
+            self._emit_pure_kumotaan_injection_findings(pure_subsection_result.injected)
+            pure_subsection_count = pure_subsection_result.injected_count
+            if pure_subsection_count:
+                self.replay_print(
+                    f"  [{self.amendment_id}] pure_kumotaan_subsection_repeal_injected: "
+                    f"{pure_subsection_count} subsection(s)"
+                )
+
+        item_targets = _extract_kumotaan_item_refs(johto_for_subprovision)
+        if item_targets:
+            pure_item_result = _inject_pure_kumotaan_item_repeal_ops(
+                self.lo_ops_out,
+                amendment_id=self.amendment_id,
+                source_title=self.source_title,
+                kumotaan_item_targets=item_targets,
+                amendment_effective_date=self.amendment_effective_date,
+                amendment_issue_date=self.amendment_issue_date,
+                state=self.state,
+                source_raw_text=johto_for_subprovision,
             )
+            for skipped in pure_item_result.skipped_targets:
+                self.record_finding(
+                    kind="APPLY.UNCOVERED_BODY_RECOVERY_SKIPPED",
+                    message="Pure kumotaan item injection skipped an unresolved target.",
+                    source_statute=self.amendment_id,
+                    detail={
+                        "message": "Pure kumotaan item injection skipped an unresolved target.",
+                        **skipped.finding_detail(),
+                    },
+                    role="observation",
+                    blocking=False,
+                )
+            self._emit_pure_kumotaan_injection_findings(pure_item_result.injected)
+            pure_item_count = pure_item_result.injected_count
+            if pure_item_count:
+                self.replay_print(
+                    f"  [{self.amendment_id}] pure_kumotaan_item_repeal_injected: "
+                    f"{pure_item_count} item(s)"
+                )
 
     def _emit_pure_kumotaan_injection_findings(
         self,
