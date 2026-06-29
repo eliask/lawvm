@@ -6104,6 +6104,10 @@ def extract_ee_ops(
                     payload = _set_sentence_insert_payload_attrs(payload, clean)
             ops.append(LegalOperation(
                 op_id=f"ee-{op_action}-item-{sect_label}-{item_label}-{seq}-{source.statute_id}",
+                sequence=seq,
+                action=_to_structural_action(op_action),
+                target=addr,
+                payload=payload,
                 source=source,
                 provenance_tags=(
                     *op_provenance_tags,
