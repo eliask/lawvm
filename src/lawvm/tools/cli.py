@@ -408,12 +408,6 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         help="PIT date for --json/--hashes section selection (YYYY-MM-DD; "
         "default: replay cutoff)",
     )
-    dump_p.add_argument(
-        "--ir-labels",
-        action="store_true",
-        help="show raw IRNode kinds (CHAPTER/SECTION/CONTENT etc.) instead of "
-        "pretty human-readable labels (1 luku / 1 § etc.)",
-    )
 
     # --- show (pretty human-readable statute tree) ---
     show_p = sub.add_parser(
@@ -428,7 +422,7 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
             "text (gated by --hyperlinks). SDOC-13: a projection must "
             "include attachments/schedules unless explicitly scoped out "
             "via --no-attachments. The technical IR-label view is `lawvm "
-            "dump --ir-labels`; `show` is the human counterpart."
+            "dump`; `show` is the human counterpart."
         ),
     )
     show_p.add_argument("statute_id", help="statute ID, e.g. 2006/1299")

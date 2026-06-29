@@ -361,10 +361,11 @@ def test_dump_main_default_output_unchanged_without_flags(monkeypatch, capsys) -
     )
 
     out = capsys.readouterr().out
-    # The apply path emits the statute header followed by the rendered tree
-    # (which is empty for the empty BODY IR we supplied, plus a trailing
-    # newline). The byte-exact value is pinned here as a stable-output regression.
-    assert out == "Statute: 2000/1\nStage  : APPLY (full replay)\n\n\n"
+    # The apply path now always emits the IR-label technical tree (the
+    # ``--ir-labels`` flag was removed; ``lawvm dump`` is IR-only by design —
+    # ``lawvm show`` is the pretty human-readable counterpart). For the
+    # empty BODY IR we supplied, the output is "BODY" on its own line.
+    assert out == "Statute: 2000/1\nStage  : APPLY (full replay)\n\nBODY\n"
     assert called["statute_id"] == "2000/1"
 
 
@@ -406,4 +407,5 @@ def test_dump_main_human_as_of_uses_materialized_ir(monkeypatch, capsys) -> None
 
     out = capsys.readouterr().out
     assert called["as_of"] == "2022-01-01"
-    assert out == "Statute: 2000/1\nStage  : APPLY (full replay)\n\nLIVE\n"
+    # IR-only output under dump: BODY root with the CONTENT "LIVE" child.
+    assert out == 'Statute: 2000/1\nStage  : APPLY (full replay)\n\nBODY\n  CONTENT "LIVE"\n'
