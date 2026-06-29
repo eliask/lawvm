@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, fields
-from typing import Any, Mapping, cast
+from typing import TYPE_CHECKING, Any, Mapping, cast
 
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.frozen_values import freeze_mapping
 from lawvm.core.phase_replay_gate import PhaseLocalReplayGate
+
+if TYPE_CHECKING:
+    from lawvm.core.typed_carrier_protocols import (
+        ClaimAssertion,
+        ExecutionAuthorizationResult,
+    )
 
 
 _FRONTIER_WORK_ITEM_REPORT_FORBIDDEN_SHORTCUTS: tuple[str, ...] = (
@@ -401,8 +407,8 @@ def frontier_work_item_evidence_report(
 def frontier_work_item_claim_closure_report(
     work_item: FrontierWorkItem | Mapping[str, Any],
     *,
-    assertion: Any,
-    authorization_result: Any,
+    assertion: ClaimAssertion | Mapping[str, Any],
+    authorization_result: ExecutionAuthorizationResult | Mapping[str, Any],
     phase_replay_gate: PhaseLocalReplayGate | None = None,
     jurisdiction: str = "",
     report_kind: str = "frontier_work_item_claim_closure",

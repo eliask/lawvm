@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Mapping, cast
 
 from lawvm.core.diagnostic_records import (
     BLOCKING_STRICT_DISPOSITIONS,
@@ -11,6 +11,10 @@ from lawvm.core.diagnostic_records import (
 )
 from lawvm.core.evidence_contracts import CorpusFindingEvidenceRow
 from lawvm.core.quirks_disposition import QuirksDisposition, coerce_quirks_disposition
+from lawvm.core.typed_carrier_protocols import (
+    CompileAdjudicationProtocol,
+    coerce_adjudication,
+)
 
 
 def text_or_none(value: Any) -> str | None:
@@ -53,18 +57,25 @@ def _require_phase(raw_phase: Any, *, kind: str) -> str:
 
 
 def _adjudication_input(
-    adjudication: Any,
+    adjudication: CompileAdjudicationProtocol | Mapping[str, Any],
     *,
     default_kind: str,
 ) -> AdjudicationEvidenceInput:
+    coerce_adjudication(adjudication)
     if isinstance(adjudication, Mapping):
-        raw_kind = adjudication.get("kind")
-        raw_detail = adjudication.get("detail")
-        raw_op_id = adjudication.get("op_id")
-        raw_source_statute = adjudication.get("source_statute")
-        raw_message = adjudication.get("message")
-        raw_blocking = adjudication.get("blocking")
-        raw_phase = adjudication.get("phase")
+        # ``cast``-help narrow the union for ty: ``Protocol | Mapping[str, Any]``
+        # narrows to ``Mapping[str, Any]`` after the isinstance check at runtime,
+        # but ty emits a spurious ``Never`` overload variant on the union's
+        # ``Mapping.get`` resolution without the explicit ``cast`` (see the
+        # module docstring of ``typed_carrier_protocols`` for the longer note).
+        mapping_view = cast(Mapping[str, Any], adjudication)
+        raw_kind = mapping_view.get("kind")
+        raw_detail = mapping_view.get("detail")
+        raw_op_id = mapping_view.get("op_id")
+        raw_source_statute = mapping_view.get("source_statute")
+        raw_message = mapping_view.get("message")
+        raw_blocking = mapping_view.get("blocking")
+        raw_phase = mapping_view.get("phase")
     else:
         raw_kind = getattr(adjudication, "kind", None)
         raw_detail = getattr(adjudication, "detail", None)
@@ -85,9 +96,15 @@ def _adjudication_input(
     )
 
 
-def _adjudication_kind(adjudication: Any, *, default_kind: str) -> str:
+def _adjudication_kind(
+    adjudication: CompileAdjudicationProtocol | Mapping[str, Any],
+    *,
+    default_kind: str,
+) -> str:
+    coerce_adjudication(adjudication)
     if isinstance(adjudication, Mapping):
-        raw_kind = adjudication.get("kind")
+        mapping_view = cast(Mapping[str, Any], adjudication)
+        raw_kind = mapping_view.get("kind")
     else:
         raw_kind = getattr(adjudication, "kind", None)
     return text_or_none(raw_kind) or default_kind
@@ -180,7 +197,9 @@ def adjudication_record_diagnostic_detail(record: Mapping[str, Any]) -> dict[str
     )
 
 
-def adjudication_diagnostic_detail(adjudication: Any) -> dict[str, Any]:
+def adjudication_diagnostic_detail(
+    adjudication: CompileAdjudicationProtocol | Mapping[str, Any],
+) -> dict[str, Any]:
     """Build the shared diagnostic envelope for a CompileAdjudication-like object."""
 
     record = _adjudication_input(adjudication, default_kind="compile_adjudication")
@@ -206,7 +225,7 @@ def _adjudication_finding_id(
 
 
 def adjudication_finding_evidence_rows(
-    adjudications: Iterable[Any],
+    adjudications: Iterable[CompileAdjudicationProtocol | Mapping[str, Any]],
     *,
     frontend_id: str,
     base_id: str,
