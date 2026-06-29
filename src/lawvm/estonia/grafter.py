@@ -3246,7 +3246,7 @@ def _parse_generic_minister_rename_ops(
     )
     ops.append(
         LegalOperation(
-            op_id=f"ee-generic-minister-rename-plural-{source_id}",
+            op_id=f"ee-generic-minister-rename-plural-{source_id}-{len(ops)}",
             sequence=1,
             action=_to_structural_action("text_replace"),
             target=LegalAddress(path=()),
@@ -3696,7 +3696,7 @@ def _parse_old_format_direct_title_unnumbered_text_replace_ops(
         if case_inflected:
             payload_attrs["case_inflected"] = True
         return LegalOperation(
-            op_id=f"ee-old-format-direct-title-text-replace-{source_id}",
+            op_id=f"ee-old-format-direct-title-text-replace-{source_id}-{len(body_text)}",
             sequence=1,
             action=StructuralAction.TEXT_REPLACE,
             target=LegalAddress(path=()),
