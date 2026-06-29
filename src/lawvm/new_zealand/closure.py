@@ -130,7 +130,7 @@ def _run_sync(
     max_versions_per_work: int | None,
     args: Any,
 ) -> NZSyncStats:
-    archive = open_farchive(db_path)
+    archive = open_farchive(db_path, readonly=False)
     try:
         return sync_nz_corpus(
             archive,
@@ -168,7 +168,7 @@ def _dependency_report_for_work(
     work_id: str,
     state: NZClosureState,
 ) -> NZDependencyReport | None:
-    archive = open_farchive(db_path)
+    archive = open_farchive(db_path, readonly=False)
     try:
         version_id, xml_locator = latest_xml_locator_for_work(archive, work_id)
         if not xml_locator:
