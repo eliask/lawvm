@@ -337,4 +337,19 @@ _EE_RULE_SPECS: Dict[str, str] = {
     "ee_structural_heading_replace_from_amending_act": "A provision heading/title (pealkiri) is replaced or text-edited with the content the amending act supplies.",
     "ee_generic_minister_title_substitution": "§107³ ministerial-title harmonisation: legacy minister titles are globally replaced with 'valdkonna eest vastutav minister' (with the plural collapse) across the statute.",
     "ee_generic_ministry_reorganization": "§105¹⁹ ministry-reorganisation name substitution: a renamed/merged ministry's old name is globally replaced with its new name, honouring explicit per-statute exceptions.",
+
+    # --- Apply-fold orchestration failure (replay.py production caller) ----------------
+    # iter3 W3 (silent-failure review HIGH #1): when ``apply_ee_ops_conserved`` raises
+    # mid-fold, the production caller ``replay_ee_to_pit`` catches broadly
+    # (``except Exception as e:``) and appends a non-blocking
+    # ``ee_replay_apply_raise`` orchestration adjudication per §1.10 (embedding
+    # ``exception_type`` / ``exception`` / ``clause_text`` via the existing
+    # ``_ee_orchestration_adjudication`` helper) before stamping
+    # ``result.error = f"Failed to apply ops: {e}"`` (the blocking gate —
+    # ``classify_ee_replayability`` maps it to ``REPLAY_ERROR_OTHER``). The
+    # adjudication is a WITNESS, not the gate; bare-apply's partial witnesses
+    # (appended in place before the raise by the conserved wrapper) persist on
+    # ``result.adjudications`` — §1.0 evidence-not-silently-destroyed contract.
+    # Mirrors the NO/EU/SE precedent (silent-failure review HIGH #1-3).
+    "ee_replay_apply_raise": "An apply-fold exception raised mid-``apply_ee_ops_conserved`` is a non-blocking typed orchestration adjudication carrying the exception type/exception/clause_text snippet per §1.10 (the blocking gate stays on ``result.error``); bare-apply's partial witnesses persist on the production result's adjudication ledger — §1.0 evidence-not-silently-destroyed contract.",
 }
