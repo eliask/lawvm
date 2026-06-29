@@ -186,6 +186,8 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_attachment_merge.py",
         # SDOC invariants — pinned against the D0 attachment-IR fixture.
         "test_fi_sdoc_invariants.py",
+        # D4 footnote scoped collation (doc3 D4).
+        "test_fi_footnote_collation.py",
         "test_fi_body_*.py",
         "test_fi_definition_introducer.py",
         "test_fi_definition_projection.py",
