@@ -37,6 +37,7 @@ from lawvm.finland.corpus import get_corpus
 from lawvm.finland.metadata import get_johtolause
 from lawvm.finland.kumotaan_replay import (
     FI_RECOVERY_PURE_KUMOTAAN_ITEM_REPEAL_RULE_ID,
+    FI_RECOVERY_PURE_KUMOTAAN_SUBSECTION_REPEAL_RULE_ID,
     _inject_pure_kumotaan_subsection_repeal_ops,
     _live_suffix_section_labels_for_numeric_kumotaan_ranges,
 )
@@ -1323,6 +1324,101 @@ def test_pure_kumotaan_subsection_injection_skips_label_reused_by_same_group_sna
 
     assert result.injected_count == 0
     assert [op.op_id for op in lo_ops] == ["snapshot_section_32"]
+
+
+def test_pure_kumotaan_subsection_injection_overrides_stale_snapshot_carry() -> None:
+    section_path = (("chapter", "7"), ("section", "36"))
+    lo_ops: list[LegalOperation] = [
+        LegalOperation(
+            op_id="snapshot_section_36",
+            sequence=0,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=section_path),
+            payload=IRNode(
+                kind=IRNodeKind.SECTION,
+                label="36",
+                children=(
+                    IRNode(kind=IRNodeKind.SUBSECTION, label="1"),
+                    IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="stale carried text"),
+                ),
+            ),
+            source=OperationSource(statute_id="2008/617"),
+        )
+    ]
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="7",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="36",
+                        children=(
+                            IRNode(kind=IRNodeKind.SUBSECTION, label="1"),
+                            IRNode(kind=IRNodeKind.SUBSECTION, label="2"),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    result = _inject_pure_kumotaan_subsection_repeal_ops(
+        lo_ops,
+        amendment_id="2008/617",
+        source_title="",
+        kumotaan_subsection_map={"36": ["2"]},
+        amendment_effective_date=dt.date(2008, 10, 6),
+        state=ReplayState(ir=body),
+        source_raw_text="kumotaan 36 §:n 2 momentti, muutetaan 36 §:n 1 momentti seuraavasti:",
+    )
+
+    assert result.injected_count == 1
+    injected = lo_ops[-1]
+    assert injected.op_id == "pure_subsec_repeal_36_2_2008/617"
+    assert injected.target == LegalAddress(path=section_path + (("subsection", "2"),))
+    assert injected.witness_rule_id == FI_RECOVERY_PURE_KUMOTAAN_SUBSECTION_REPEAL_RULE_ID
+    assert injected.payload is not None
+    assert injected.payload.attrs.get("lawvm_repeal_placeholder") == "1"
+
+
+def test_replay_xml_2007_829_pure_kumotaan_subsection_repeals_section_36_subsection_2() -> None:
+    """2008/617 repeals 36 §:n 2 momentti even though the body rewrites §36."""
+    lo_ops: list[LegalOperation] = []
+    replay = replay_xml_for_test(
+        "2007/829",
+        mode="legal_pit",
+        quiet=True,
+        lo_ops_out=lo_ops,
+        as_of="2008-10-06",
+    )
+
+    pure_ops = [
+        op
+        for op in lo_ops
+        if op.source is not None
+        and op.source.statute_id == "2008/617"
+        and op.witness_rule_id == FI_RECOVERY_PURE_KUMOTAAN_SUBSECTION_REPEAL_RULE_ID
+    ]
+    assert {op.target for op in pure_ops} >= {
+        LegalAddress(path=(("chapter", "5"), ("section", "26"), ("subsection", "4"))),
+        LegalAddress(path=(("chapter", "7"), ("section", "36"), ("subsection", "2"))),
+    }
+
+    section = replay.products.materialized_state.find_section("36", "7")
+    assert section is not None
+    subsection = next(child for child in section.children if child.kind is IRNodeKind.SUBSECTION and child.label == "2")
+    assert subsection.attrs.get("lawvm_repeal_placeholder") == "1"
+    assert "Leasingkustannuksilla tarkoitetaan" not in " ".join(irnode_to_text(subsection).split())
+    assert any(
+        finding.kind == "PARSE.PURE_REPEAL_CLAUSE_RECONSTRUCTED"
+        and finding.source_statute == "2008/617"
+        and finding.detail.get("rule_id") == FI_RECOVERY_PURE_KUMOTAAN_SUBSECTION_REPEAL_RULE_ID
+        and finding.detail.get("target_norm") == "36:2"
+        for finding in replay.findings
+    )
 
 
 def test_replay_xml_1998_132_sparse_osalta_omission_repeals_branch_row() -> None:

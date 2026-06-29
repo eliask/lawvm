@@ -753,12 +753,28 @@ def _inject_pure_kumotaan_subsection_repeal_ops(
         if sub_path is not None:
             covered.add(sub_path)
 
-    def _same_group_snapshot_carries_subsection(
+    def _same_group_snapshot_carries_renumber_destination(
         section_path: tuple[tuple[str, str], ...],
         sub_label: str,
     ) -> bool:
         sub_norm = _norm_num_token(sub_label)
         if not sub_norm:
+            return False
+        cleaned_source = re.sub(r"\s+", " ", source_raw_text or "").lower()
+        if "jolloin" not in cleaned_source or "siirty" not in cleaned_source:
+            return False
+        # lawvm-regex: owning_parser same-amendment `jolloin ... momentti siirtyy`
+        # destination guard; only prevents placeholder injection when the
+        # carried snapshot subsection is expressly the renumber destination.
+        # lawvm-regex: owning_parser same-amendment jolloin-renumber destination guard
+        if re.search(
+            r"\bjolloin\b.{0,240}?\b(?:nykyinen|muutettu)\b.{0,80}?"
+            r"\d+\s+momentti\s+siirty\w*\s+"
+            + re.escape(sub_norm)
+            + r"\s+momentiksi\b",
+            cleaned_source,
+            flags=re.I,
+        ) is None:
             return False
         for lo in lo_ops_out:
             src = lo.source
@@ -811,7 +827,7 @@ def _inject_pure_kumotaan_subsection_repeal_ops(
             target_path = resolved.section_path + (("subsection", sub_label),)
             if target_path in covered:
                 continue
-            if _same_group_snapshot_carries_subsection(resolved.section_path, sub_label):
+            if _same_group_snapshot_carries_renumber_destination(resolved.section_path, sub_label):
                 continue
             # Check that the subsection exists in the current IR.
             sub_exists = any(

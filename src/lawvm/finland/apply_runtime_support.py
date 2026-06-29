@@ -4203,6 +4203,31 @@ def _emit_section_snapshot(
             if _snapshot_targets_subsection_only(rop) and _snapshot_subsection_target_label(rop)
         }
 
+        def _latest_prior_exact_target_is_repeal_placeholder(child_path: Path) -> bool:
+            latest_key: tuple[str, str, int] | None = None
+            latest_is_placeholder = False
+            for index, prior in enumerate(lo_ops_out):
+                if prior.target.special is not None or prior.target.path != child_path:
+                    continue
+                prior_source = prior.source
+                prior_effective = ""
+                prior_enacted = ""
+                if prior_source is not None:
+                    prior_effective = prior_source.effective or prior_source.enacted or ""
+                    prior_enacted = prior_source.enacted or ""
+                if op_source.effective and prior_effective and prior_effective >= op_source.effective:
+                    continue
+                key = (prior_effective, prior_enacted, index)
+                if latest_key is not None and key <= latest_key:
+                    continue
+                latest_key = key
+                payload_attrs = prior.payload.attrs if prior.payload is not None else {}
+                latest_is_placeholder = (
+                    prior.action is StructuralAction.REPEAL
+                    or payload_attrs.get("lawvm_repeal_placeholder") == "1"
+                )
+            return latest_is_placeholder
+
         def _prior_paragraph_labels_for_subsection(child_path: Path) -> set[str]:
             labels: set[str] = set()
             base_child = _subsection_node_from_base_ir(base_ir, child_path)
@@ -4256,6 +4281,13 @@ def _emit_section_snapshot(
                 continue
             child_path = section_path + (("subsection", child.label),)
             assert child.label is not None
+            if (
+                child_norm_label not in current_group_subsection_targets
+                and not _snapshot_payload_is_complete_owner(payload)
+                and child.attrs.get("lawvm_repeal_placeholder") != "1"
+                and _latest_prior_exact_target_is_repeal_placeholder(child_path)
+            ):
+                continue
             child_payload = (
                 _drop_expired_temporary_paragraph_children(
                     child_path,

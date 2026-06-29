@@ -1506,6 +1506,12 @@ def materialize_pit_ex(
                 # snapshots can carry stale descendants, so they must not mask
                 # the tombstone that cuts that carried content out.
                 continue
+            if _content_is_repeal_placeholder(child_v.content):
+                # Same-source parent snapshots can carry structural children
+                # from sparse source payloads. An exact active child placeholder
+                # is the typed repeal witness for that address and must remain
+                # visible instead of being masked by the parent snapshot.
+                continue
             if (
                 (
                     _parent_content_masks_child(
