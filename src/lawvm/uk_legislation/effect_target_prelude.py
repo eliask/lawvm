@@ -736,6 +736,38 @@ def reject_external_or_partial_whole_act_scope(
             )
         )
         if not explicit_whole_act_repeal:
+            _uk_sp = active_uk_strict_profile()
+            if (
+                _uk_sp is not None
+                and _uk_sp.allows_uk_empty_effect_type_whole_act
+            ):
+                _append_uk_effect_lowering_observation(
+                    lowering_rejections_out,
+                    rule_id="uk_strict_profile_lifted_empty_effect_type_whole_act",
+                    family="unsupported_target_scope",
+                    reason_code="strict_profile_authorized_empty_type_whole_act",
+                    reason=(
+                        "Strict profile loaded with "
+                        "allows_uk_empty_effect_type_whole_act=True; the "
+                        "empty-type whole-Act action is explicitly authorized "
+                        "to proceed — risking an inferred destructive op from "
+                        "incidental source text."
+                    ),
+                    effect=effect,
+                    extracted_el=extracted_el,
+                    extracted_text=extracted_text,
+                    detail={
+                        "strict_profile_name": _uk_sp.core_profile.name,
+                        "target_ref": t_str,
+                        "target": str(target),
+                        "lifted_rejection_rule_id": (
+                            "uk_effect_empty_type_whole_act_action_rejected"
+                        ),
+                        "strict_disposition": "proceed",
+                        "quirks_disposition": QuirksDisposition.APPLY,
+                    },
+                )
+                return False
             _append_uk_effect_lowering_rejection(
                 lowering_rejections_out,
                 rule_id="uk_effect_empty_type_whole_act_action_rejected",
@@ -763,6 +795,38 @@ def reject_external_or_partial_whole_act_scope(
         else ""
     )
     if not whole_act_partial_repeal_exceptions:
+        return False
+    _uk_sp = active_uk_strict_profile()
+    if (
+        _uk_sp is not None
+        and _uk_sp.allows_uk_partial_whole_act_repeal
+    ):
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id="uk_strict_profile_lifted_partial_whole_act_repeal",
+            family="unsupported_target_scope",
+            reason_code="strict_profile_authorized_partial_whole_act_repeal",
+            reason=(
+                "Strict profile loaded with "
+                "allows_uk_partial_whole_act_repeal=True; the partial "
+                "whole-Act repeal with broad negative scope is explicitly "
+                "authorized to proceed — the exception provisions will be "
+                "carried in the audit payload."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "strict_profile_name": _uk_sp.core_profile.name,
+                "target_ref": t_str,
+                "exception_provisions": whole_act_partial_repeal_exceptions,
+                "lifted_rejection_rule_id": (
+                    "uk_effect_partial_whole_act_repeal_rejected"
+                ),
+                "strict_disposition": "proceed",
+                "quirks_disposition": QuirksDisposition.APPLY,
+            },
+        )
         return False
     _append_uk_effect_lowering_rejection(
         lowering_rejections_out,
