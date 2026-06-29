@@ -7938,7 +7938,8 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         metavar="PATH",
         help="write resumable closure state summary (default: .tmp/nz_closure_state.json)",
     )
-    nz_closure_p.add_argument("--verbose", "-v", action="store_true", help="print rate-limit waits")
+    nz_closure_p.add_argument("--verbose", "-v", action="store_true", help="print rate-limit waits, discovery events, and one nz-sync progress line every --progress-interval acquisition events (default: 25)")
+    nz_closure_p.add_argument("--progress-interval", type=int, default=25, metavar="N", help="print one progress line every N acquisition events (default: 25; use --verbose to enable)")
     nz_source_p = nz_corpus_sub.add_parser(
         "source-summary",
         help="parse archived NZ XML into a typed source-tree summary",
