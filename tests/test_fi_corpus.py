@@ -535,6 +535,28 @@ def test_oracle_reflected_section_original_versions_reads_versioned_subsections(
     assert "2024/118" in got
 
 
+def test_oracle_reflected_section_original_versions_reads_child_repeal_notice() -> None:
+    sid = "2020/389"
+    oracle_path = "akn/fi/act/statute-consolidated/2020/389/fin@20220512/main.xml"
+    oracle_xml = f"""
+    <akn xmlns="{_AKN_NS}" xmlns:finlex="{_FINLEX_NS}">
+      <body>
+        <section eId="sec_12">
+          <num>12 §</num>
+          <subsection eId="sec_12__subsec_8v20220512">
+            <content><p>8 momentti on kumottu A:lla 28.6.2022/512.</p></content>
+          </subsection>
+        </section>
+      </body>
+    </akn>
+    """.encode("utf-8")
+    fake = _FakeCorpus({sid: oracle_path}, {oracle_path: oracle_xml})
+
+    got = corpus.get_consolidated_oracle_reflected_section_original_versions(sid, cast(Any, fake))
+
+    assert got == {"2022/512"}
+
+
 def test_get_ground_truth_preserves_distinct_same_slot_versioned_subsections() -> None:
     """Full-text oracle extraction must preserve distinct same-eId-base siblings.
 

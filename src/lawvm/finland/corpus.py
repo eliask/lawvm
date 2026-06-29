@@ -530,6 +530,18 @@ def _oracle_text_has_full_chapter_repeal_notice(text: str) -> bool:
     return False
 
 
+def _oracle_text_has_full_subsection_repeal_notice(text: str) -> bool:
+    tokens = text.casefold().split()
+    for idx, token in enumerate(tokens):
+        if token != "momentti" or idx + 2 >= len(tokens):
+            continue
+        if tokens[idx + 1] != "on" or tokens[idx + 2] != "kumottu":
+            continue
+        if idx >= 1 and tokens[idx - 1].isdigit():
+            return True
+    return False
+
+
 def _finlex_original_version_to_statute_id(value: str) -> str:
     token = value.strip().lstrip("@")
     if len(token) < 5 or not token.isdigit():
@@ -711,11 +723,15 @@ def get_consolidated_oracle_reflected_section_original_versions(
             statute_id_from_version = _finlex_original_version_to_statute_id(original_version)
             if statute_id_from_version:
                 reflected.add(statute_id_from_version)
-        if _finlex_el_has_versioned_eid(section_el):
-            for provision_el in section_el.findall(".//{*}subsection"):
-                statute_id_from_eid = _finlex_eid_version_to_statute_id(provision_el)
-                if statute_id_from_eid:
-                    reflected.add(statute_id_from_eid)
+        for provision_el in section_el.findall(".//{*}subsection"):
+            statute_id_from_eid = _finlex_eid_version_to_statute_id(provision_el)
+            if not statute_id_from_eid:
+                continue
+            provision_text = " ".join("".join(str(part) for part in provision_el.itertext()).split())
+            if _finlex_el_has_versioned_eid(section_el) or _oracle_text_has_full_subsection_repeal_notice(
+                provision_text
+            ):
+                reflected.add(statute_id_from_eid)
     return reflected
 
 
