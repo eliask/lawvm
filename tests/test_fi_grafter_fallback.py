@@ -16508,7 +16508,8 @@ def test_official_consolidation_horizon_does_not_use_unreflected_non_repeal_op_e
     assert decision.oracle_materialize_as_of == "2026-05-29"
 
 
-def test_official_consolidation_horizon_splits_future_repeal_expiry_cutoff() -> None:
+def test_official_consolidation_horizon_keeps_single_future_section_repeal_at_cutoff() -> None:
+    """One future section repeal cannot move the whole-statute materialization horizon."""
     legal_operations = [
         LegalOperation(
             op_id="repeal_section_19",
@@ -16549,9 +16550,9 @@ def test_official_consolidation_horizon_splits_future_repeal_expiry_cutoff() -> 
         )
     )
 
-    assert decision.materialize_as_of == "2006-01-01"
+    assert decision.materialize_as_of == "2005-11-11"
     assert decision.expires_as_of == "2005-11-11"
-    assert decision.oracle_materialize_as_of == "2006-01-01"
+    assert decision.oracle_materialize_as_of == "2005-11-11"
 
 
 def test_official_consolidation_horizon_keeps_multi_section_future_repeal_at_cutoff() -> None:
@@ -16666,7 +16667,8 @@ def test_official_consolidation_horizon_keeps_ordinary_mixed_future_repeal_at_cu
     assert decision.oracle_materialize_as_of == "1995-03-17"
 
 
-def test_official_consolidation_horizon_splits_generic_section_one_chapter_future_repeal() -> None:
+def test_official_consolidation_horizon_keeps_generic_section_one_chapter_future_repeal_at_cutoff() -> None:
+    """Future generic §1 + chapter repeals do not authorize a detached hybrid horizon."""
     legal_operations = [
         LegalOperation(
             op_id="repeal_section_1",
@@ -16717,9 +16719,9 @@ def test_official_consolidation_horizon_splits_generic_section_one_chapter_futur
         )
     )
 
-    assert decision.materialize_as_of == "2023-01-01"
+    assert decision.materialize_as_of == "2022-12-29"
     assert decision.expires_as_of == "2022-12-29"
-    assert decision.oracle_materialize_as_of == "2023-01-01"
+    assert decision.oracle_materialize_as_of == "2022-12-29"
 
 
 def test_official_consolidation_horizon_uses_reflected_future_repeal_effective_date() -> None:

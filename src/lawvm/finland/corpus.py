@@ -624,6 +624,7 @@ def get_consolidated_oracle_absent_repeal_target_versions(
     present_chapters: set[str] = set()
     chapter_repeal_shell_sources: set[tuple[str, str]] = set()
     present_sections: set[tuple[str, str]] = set()
+    section_repeal_shell_sources: set[tuple[str, str, str]] = set()
     for chapter_el in tree.findall(".//{*}chapter"):
         chapter_label = _finlex_chapter_label(chapter_el)
         if chapter_label:
@@ -651,6 +652,14 @@ def get_consolidated_oracle_absent_repeal_target_versions(
             chapter_label = _finlex_chapter_label(ancestor)
             break
         present_sections.add((chapter_label, section_label))
+        section_text = " ".join("".join(str(part) for part in section_el.itertext()).split())
+        if _oracle_text_has_full_section_repeal_notice(section_text):
+            source_id = _finlex_eid_version_to_statute_id(section_el)
+            if not source_id:
+                original_version = str(section_el.get(_FINLEX_ORIGINAL_VERSION_ATTR) or "")
+                source_id = _finlex_original_version_to_statute_id(original_version)
+            if source_id:
+                section_repeal_shell_sources.add((chapter_label, section_label, source_id))
 
     absent_versions: set[str] = set()
     for lo in legal_operations:
@@ -668,6 +677,9 @@ def get_consolidated_oracle_absent_repeal_target_versions(
             continue
         if target_kind == "section":
             chapter_label = next((label for kind, label in lo.target.path if kind == "chapter"), "")
+            if (chapter_label, target_label, lo.source.statute_id) in section_repeal_shell_sources:
+                absent_versions.add(lo.source.statute_id)
+                continue
             if chapter_label:
                 if (chapter_label, target_label) not in present_sections:
                     absent_versions.add(lo.source.statute_id)

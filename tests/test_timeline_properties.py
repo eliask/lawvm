@@ -4676,12 +4676,28 @@ def test_generic_preamble_sec1_repeal_recovers_shared_section_sign_list() -> Non
     assert "3" not in secs
 
 
-def test_generic_preamble_sec1_repeal_keeps_inserted_chapter_live_before_repeal() -> None:
-    """Detached-horizon oracle replay keeps inserted chapter content live pre-repeal."""
+def test_generic_preamble_sec1_repeal_uses_oracle_cutoff_without_detached_horizon() -> None:
+    """Future-effective generic repeal does not create a hybrid materialization surface."""
     master = pinned_replay("1990/1247", mode="official_consolidation")
     secs = _extract_sections_ir(master.ir)
 
-    assert sorted(secs) == ["1", "2", "3", "4", "5", "6b", "6c", "6d", "7", "8", "9"]
+    assert sorted(secs) == ["2", "3", "4", "5", "7", "8", "9"]
+
+
+def test_single_future_section_repeal_does_not_expire_unrelated_fee_versions() -> None:
+    """2005/886 only repeals 2002/1126 §19; it must not horizon-shift §§14-18."""
+    master = pinned_replay("2002/1126", mode="official_consolidation")
+    secs = _extract_sections_ir(master.ir)
+
+    assert "19" in secs
+    assert "17a" not in secs
+    assert "17b" not in secs
+    assert "17c" not in secs
+    assert "18" in secs
+    assert "Teleurakoinnin rekisteröintimaksut" in irnode_to_text(secs["14"])
+    assert "Teleurakoinnin valvontamaksut" in irnode_to_text(secs["15"])
+    assert "Televerkon numerointimaksut" in irnode_to_text(secs["16"])
+    assert "Tietoturvaloukkausten valvontamaksut" in irnode_to_text(secs["18"])
 
 
 def test_large_johtolause_subsection_insert_supplement_recovers_missing_moments(

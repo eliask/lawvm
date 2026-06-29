@@ -480,6 +480,40 @@ def test_oracle_absent_repeal_target_versions_records_missing_chapter_target() -
     assert got == {"2023/741"}
 
 
+def test_oracle_absent_repeal_target_versions_records_section_repeal_shell() -> None:
+    sid = "1988/989"
+    oracle_path = "akn/fi/act/statute-consolidated/1988/989/fin@20020688/main.xml"
+    oracle_xml = f"""
+    <akn xmlns="{_AKN_NS}" xmlns:finlex="{_FINLEX_NS}">
+      <body>
+        <section eId="sec_6"><num>6 §</num></section>
+        <section eId="sec_7v20020688">
+          <num>7 §</num>
+          <content><p>7 § on kumottu L:lla 9.8.2002/688.</p></content>
+        </section>
+      </body>
+    </akn>
+    """.encode("utf-8")
+    fake = _FakeCorpus({sid: oracle_path}, {oracle_path: oracle_xml})
+    operations = (
+        LegalOperation(
+            op_id="repeal_section_7",
+            sequence=0,
+            action=StructuralAction.REPEAL,
+            target=LegalAddress(path=(("section", "7"),)),
+            source=OperationSource(statute_id="2002/688", effective="2002-10-01"),
+        ),
+    )
+
+    got = corpus.get_consolidated_oracle_absent_repeal_target_versions(
+        sid,
+        operations,
+        cast(Any, fake),
+    )
+
+    assert got == {"2002/688"}
+
+
 def test_oracle_reflected_section_original_versions_excludes_shadow_when_current_section_exists() -> None:
     sid = "2012/960"
     oracle_path = "akn/fi/act/statute-consolidated/2012/960/fin@20251505/main.xml"
