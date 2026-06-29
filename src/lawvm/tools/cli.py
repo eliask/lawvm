@@ -7868,7 +7868,7 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
     nz_closure_p.add_argument(
         "--all-acts",
         action="store_true",
-        help="sync latest versions/XML for all search-discovered Acts instead of dependency closure",
+        help="discover all Acts via search, acquire their latest XML, THEN run full transitive dependency closure on every archived work_id (default --dependency-depth still applies)",
     )
     nz_closure_p.add_argument("--search-term", default="", metavar="TEXT", help="optional all-acts search term")
     nz_closure_p.add_argument(
