@@ -1793,6 +1793,7 @@ def replay_ee_to_pit(
                     raw_text=op.source.raw_text if op.source else "",
                 ),
                 sequence=global_seq + i,
+                op_id=f"{op.op_id}-{global_seq + i}",
             )
             for i, op in enumerate(ops)
         ]
