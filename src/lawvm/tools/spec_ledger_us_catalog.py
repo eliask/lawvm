@@ -682,6 +682,18 @@ _US_RULE_SPECS: Dict[str, str] = {
         "A parsed USC title document yielded no sections — flagged (an empty parse is "
         "never silently a valid title)."
     ),
+    "us_uslm_section_without_number": (
+        "A USLM <section> element had no parseable section number in its <num> "
+        "value attribute or text; skipped as a typed finding."
+    ),
+    "us_uslm_section_not_located_in_blob": (
+        "A USLM XML section could not be located in the raw blob for text extraction; "
+        "skipped rather than producing an empty-section parse."
+    ),
+    "us_uslm_node_without_num": (
+        "A USLM structural element (subsection/paragraph/etc.) had no <num> child; "
+        "its structural level was inferred from nesting depth but the label is unknown."
+    ),
     "us_usc_duplicate_section_number": (
         "A parsed USC title carried two sections with the same number — flagged rather "
         "than one silently shadowing the other."
