@@ -140,14 +140,15 @@ def probe_uk_timeline_invariants(
     statute_id = str(source_statute or base_ir.statute_id or "")
     # Per FI's pattern at replay_products.py — read base_date from
     # base_ir.metadata if pit_date wasn't supplied explicitly. The CLI's
-    # ``--pit-date YYYY-MM-DD`` may NOT propagate to base_ir.metadata today
-    # (verified on ukpga/1990/8 2026-06-29: base_ir.metadata carries neither
-    # effective_date nor enacted_date when invoked via lawvm uk-replay);
-    # surface that via the probe-skipped diagnostic.
+    # ``--pit-date YYYY-MM-DD`` is threaded into base_ir.metadata by
+    # ``_build_ir_from_root`` (uk_grafter.py:2141) — preferred key is
+    # ``pit_date``; falls back to legacy ``effective_date``/``enacted_date``
+    # for back-compat with callers that set those directly.
     if not pit_date:
         metadata = base_ir.metadata or {}
         pit_date = str(
-            metadata.get("effective_date")
+            metadata.get("pit_date")
+            or metadata.get("effective_date")
             or metadata.get("enacted_date")
             or ""
         )
@@ -158,11 +159,11 @@ def probe_uk_timeline_invariants(
                     statute_id=statute_id,
                     reason=(
                         "pit_date_unavailable: base_ir.metadata carries no "
-                        "effective_date or enacted_date AND the caller did not "
-                        "supply an explicit pit_date argument; check_all_"
-                        "timeline_invariants_typed requires a non-empty "
-                        "as_of to select versions. Fix: thread --pit-date "
-                        "from the lawvm uk-replay CLI into base_ir.metadata."
+                        "pit_date / effective_date / enacted_date AND the "
+                        "caller did not supply an explicit pit_date argument; "
+                        "check_all_timeline_invariants_typed requires a "
+                        "non-empty as_of to select versions. Fix: invoke "
+                        "lawvm uk-replay with --pit-date YYYY-MM-DD."
                     ),
                 )
             )
