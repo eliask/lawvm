@@ -242,6 +242,9 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # Duplicate pure-kumotaan REPEAL suppression regression (kumotaan_replay.py:406 +
         # PureKumotaanInjectedRepeal witness for §2.10 monotone evidence).
         "test_fi_duplicate_repeal_suppression.py",
+        # §39 misparenting regression — operative section railed into attachments wrapper
+        # vs re-homed into statuteProvisionsWrapper (replay_products.py:1125).
+        "test_fi_sec39_misparenting.py",
     ),
     "finland_replay_products_support": (
         "test_fi_replay_fold_timeline_backfill.py",
