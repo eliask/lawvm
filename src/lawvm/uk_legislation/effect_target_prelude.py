@@ -314,6 +314,7 @@ def reject_unsupported_target_facet(
     source_root: Optional[ET._Element],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> bool:
+    _uk_strict_profile = active_uk_strict_profile()
     if action == "insert" and _is_crossheading_only_ref(t_str):
         # The effect target names a cross-heading facet (e.g. "s. 221
         # cross-heading", "insert the heading before that section"). The only
@@ -328,6 +329,34 @@ def reject_unsupported_target_facet(
         # at a mis-resolved body location, which corrupts the tree.
         if structured_crossheading_op_built:
             return True
+        if (
+            _uk_strict_profile is not None
+            and _uk_strict_profile.allows_uk_crossheading_insert
+        ):
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id="uk_strict_profile_lifted_crossheading_insert",
+                family="unsupported_target_facet",
+                reason_code="strict_profile_authorized_crossheading_insert",
+                reason=(
+                    "Strict profile loaded with allows_uk_crossheading_insert="
+                    "True; the cross-heading insert without a standalone Pblock "
+                    "payload is explicitly authorized — the instruction-text "
+                    "paragraph WILL be coerced at a potentially mis-resolved body "
+                    "location. Tree-corruption risk accepted."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "strict_profile_name": _uk_strict_profile.core_profile.name,
+                    "target_ref": t_str,
+                    "lifted_rejection_rule_id": "uk_effect_crossheading_insert_rejected",
+                    "strict_disposition": "proceed",
+                    "quirks_disposition": QuirksDisposition.APPLY,
+                },
+            )
+            return False
         _append_uk_effect_lowering_rejection(
             lowering_rejections_out,
             rule_id="uk_effect_crossheading_insert_rejected",
@@ -359,6 +388,33 @@ def reject_unsupported_target_facet(
         }
         if modeled_target is not None:
             detail["modeled_target"] = str(modeled_target)
+        if (
+            _uk_strict_profile is not None
+            and _uk_strict_profile.allows_uk_schedule_note_target
+        ):
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id="uk_strict_profile_lifted_schedule_note_target",
+                family="unsupported_target_facet",
+                reason_code="strict_profile_authorized_schedule_note_target",
+                reason=(
+                    "Strict profile loaded with allows_uk_schedule_note_target="
+                    "True; the schedule-note target is explicitly allowed to "
+                    "proceed — lowering will attempt to coerce the note into "
+                    "paragraph/subparagraph structure."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "strict_profile_name": _uk_strict_profile.core_profile.name,
+                    **detail,
+                    "lifted_rejection_rule_id": "uk_effect_schedule_note_target_rejected",
+                    "strict_disposition": "proceed",
+                    "quirks_disposition": QuirksDisposition.APPLY,
+                },
+            )
+            return False
         _append_uk_effect_lowering_rejection(
             lowering_rejections_out,
             rule_id="uk_effect_schedule_note_target_rejected",
@@ -381,6 +437,33 @@ def reject_unsupported_target_facet(
         extracted_el=extracted_el,
         source_root=source_root,
     ):
+        if (
+            _uk_strict_profile is not None
+            and _uk_strict_profile.allows_uk_heading_only_facet
+        ):
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id="uk_strict_profile_lifted_heading_only_facet",
+                family="unsupported_target_facet",
+                reason_code="strict_profile_authorized_heading_only_facet",
+                reason=(
+                    "Strict profile loaded with allows_uk_heading_only_facet="
+                    "True; the heading-only facet is explicitly allowed to "
+                    "proceed — lowering will attempt to mutate the host "
+                    "provision body unsafely."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "strict_profile_name": _uk_strict_profile.core_profile.name,
+                    "target_ref": t_str,
+                    "lifted_rejection_rule_id": "uk_effect_heading_only_ref_rejected",
+                    "strict_disposition": "proceed",
+                    "quirks_disposition": QuirksDisposition.APPLY,
+                },
+            )
+            return False
         _append_uk_effect_lowering_rejection(
             lowering_rejections_out,
             rule_id="uk_effect_heading_only_ref_rejected",
