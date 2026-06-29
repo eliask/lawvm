@@ -179,6 +179,8 @@ def _run_sync(
                 rate_limit_retry_attempts=args.rate_limit_retry_attempts,
                 diagnostics_jsonl=Path(args.diagnostics_jsonl) if args.diagnostics_jsonl else None,
                 verbose=args.verbose,
+                progress=args.verbose or getattr(args, 'progress', False),
+                progress_interval=args.progress_interval,
             ),
         )
     finally:
