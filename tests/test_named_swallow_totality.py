@@ -101,6 +101,29 @@ _MIGRATED_FILES = (
     "src/lawvm/finland/legal_surface/modal_census.py",
     "src/lawvm/finland/references/annotation_independence_census.py",
     "src/lawvm/finland/references/broken_detection.py",
+    # Iter5 C2 carve-out: ``tools/corrigendum.py`` uses a DIFFERENT owned
+    # fail-loud idiom — ``_emit_corrigendum_failure`` + the
+    # ``CorrigendumApplyFailure`` (frozen + slots) dataclass — rather than the
+    # ``named_swallow`` primitive. It pre-dates the named_swallow migration
+    # wave but satisfies the same §1.10 contract: a typed diagnostic
+    # distinguishing the failure mode (rule_id, step, exception_kind,
+    # corrigendum_id, snippet ≤400 chars) printed to stderr so triage does
+    # not require re-running extraction (mirrors ``_append_amendment_index_diagnostic``
+    # and the sweden/fetch.py acquisition_failures list above). The AST scan
+    # below recognises ``_emit_corrigendum_failure`` as a valid routed
+    # primitive ONLY for this file via the file-scoped carve-out set
+    # (``_FILE_SCOPED_ADDITIONAL_FAILURE_HANDLERS`` below); the
+    # ``named_swallow`` primitive symbols stay pure (the 4 entries in
+    # ``_KNOWN_SWALLOW_HANDLERS``). The per-site fire-drills are pinned in
+    # ``tests/test_corrigendum_fail_loud.py`` (shape + 13 of the 14 call
+    # sites exercised, including the D8 ``corrigendum_reextract_phase1`` /
+    # ``corrigendum_reextract_phase2`` LLM-fanout guard-liveness
+    # assertions). Folding ``_emit_corrigendum_failure`` into
+    # ``named_swallow`` itself is a future migration (would require
+    # threading a ``findings_out`` sink through every corrigendum cli entry
+    # point — out of this fix's scope; the carve-out is the §2.6 totality
+    # gate so the file is no longer invisible to the predicate).
+    "src/lawvm/tools/corrigendum.py",
 )
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -114,8 +137,26 @@ _KNOWN_SWALLOW_HANDLERS = {
 }
 _KNOWN_SWALLOW_MODULE = "lawvm.core.named_swallow"
 
+# File-scoped additional owned-fail-loud primitives recognised by the AST
+# totality scan (carve-out set, mirrors the ``_append_amendment_index_diagnostic``
+# idiom documented in the ``_MIGRATED_FILES`` Wave 6 comment above). A file
+# listed here uses a DIFFERENT but owned §1.10 fail-loud idiom — a typed
+# diagnostic carrier embedding the offending snippet (≤400 chars), printed to
+# stderr so triage does not require re-running extraction. The totality
+# predicate treats handlers routing through any of these names as valid (the
+# ``named_swallow`` primitive set stays pure; this is the carve-out gate so
+# the file is no longer invisible to the predicate). Folding these into
+# ``named_swallow`` itself is the future migration shape.
+_FILE_SCOPED_ADDITIONAL_FAILURE_HANDLERS: dict[str, frozenset[str]] = {
+    "src/lawvm/tools/corrigendum.py": frozenset({"_emit_corrigendum_failure"}),
+}
 
-def _find_inline_silent_swallow_offenders(file_path: Path) -> list[str]:
+
+def _find_inline_silent_swallow_offenders(
+    file_path: Path,
+    *,
+    rel_path: str | None = None,
+) -> list[str]:
     """Find an in-line ``except Exception:`` clause that swallows silently.
 
     The forbidden shape in any migrated file is::
@@ -128,11 +169,20 @@ def _find_inline_silent_swallow_offenders(file_path: Path) -> list[str]:
     where the body of ``except Exception:`` is anything OTHER than:
       - passing the exception to a named_swallow primitive (which witnesses it),
       - re-raising via ``raise`` (programming bugs that already propagate),
-      - a logging call that emits the typed Finding (log_emitter from named_swallow).
+      - a logging call that emits the typed Finding (log_emitter from named_swallow),
+      - routing through a file-scoped additional owned-fail-loud primitive (carve-out
+        set ``_FILE_SCOPED_ADDITIONAL_FAILURE_HANDLERS`` — e.g. ``_emit_corrigendum_failure``
+        in ``tools/corrigendum.py``; mirrors the ``_append_amendment_index_diagnostic``
+        precedent documented in the ``_MIGRATED_FILES`` Wave 6 comment).
 
     Returns a list of ``filename:lineno`` strings for each offender. An empty list
     means the totality holds.
     """
+    additional_handlers = (
+        _FILE_SCOPED_ADDITIONAL_FAILURE_HANDLERS.get(rel_path, frozenset())
+        if rel_path is not None
+        else frozenset()
+    )
     offenders: list[str] = []
     try:
         source = file_path.read_text(encoding="utf-8")
@@ -162,54 +212,77 @@ def _find_inline_silent_swallow_offenders(file_path: Path) -> list[str]:
         if not is_broad:
             continue
         # Now check the ``except Exception:`` body — is it routed through the
-        # named_swallow primitive?
-        handler_uses_named_swallow_primitive = _handler_routes_to_named_swallow(node)
+        # named_swallow primitive (or a file-scoped additional owned-fail-loud
+        # primitive like ``_emit_corrigendum_failure`` per the carve-out)?
+        handler_uses_named_swallow_primitive = _handler_routes_to_named_swallow(
+            node, additional_handlers=additional_handlers
+        )
         if handler_uses_named_swallow_primitive:
             continue
         # Otherwise: offender — the swallow is in-line, NOT routed through
-        # the named_swallow primitive.
+        # the named_swallow primitive (or a file-scoped additional owned-fail-loud
+        # primitive per the carve-out).
         offenders.append(
             f"{file_path.name}:{node.lineno} in-line except Exception swallow "
             f"(route through lawvm.core.named_swallow.named_swallow/"
-            f"swallow_call/build_named_swallow_finding)"
+            f"swallow_call/build_named_swallow_finding"
+            + (
+                " or _emit_corrigendum_failure (file-scoped carve-out)"
+                if additional_handlers
+                else ""
+            )
+            + ")"
         )
     return offenders
 
 
-def _handler_routes_to_named_swallow(handler: ast.ExceptHandler) -> bool:
+def _handler_routes_to_named_swallow(
+    handler: ast.ExceptHandler,
+    *,
+    additional_handlers: frozenset[str] = frozenset(),
+) -> bool:
     """Check if the handler body uses a named_swallow primitive.
 
     Recognises patterns where the handler body calls
     ``log_emitter()(build_named_swallow_finding(...))`` OR contains a
     ``with named_swallow(...)`` OR a call to ``swallow_call(...)`` OR
     ``build_named_swallow_finding(...)``.
+
+    ``additional_handlers`` is the file-scoped carve-out set (e.g.
+    ``_emit_corrigendum_failure`` for ``tools/corrigendum.py``) — a handler
+    routing through any of those names also counts as routed (OWNED §1.10
+    idiom mirroring ``named_swallow``'s contract; documented in the
+    ``_MIGRATED_FILES`` Wave 6 comment). Mirrors the
+    ``_append_amendment_index_diagnostic`` precedent.
     """
+    recognized = _KNOWN_SWALLOW_HANDLERS | additional_handlers
     for child in ast.walk(handler):
         if isinstance(child, ast.Call):
             func = child.func
-            # build_named_swallow_finding(...)
-            if isinstance(func, ast.Name) and func.id in _KNOWN_SWALLOW_HANDLERS:
+            # build_named_swallow_finding(...) (or a file-scoped carve-out like
+            # _emit_corrigendum_failure(...)).
+            if isinstance(func, ast.Name) and func.id in recognized:
                 return True
             # log_emitter()(...) — call on call result; walk the call graph
             if isinstance(func, ast.Call):
                 inner = func.func
-                if isinstance(inner, ast.Name) and inner.id in _KNOWN_SWALLOW_HANDLERS:
+                if isinstance(inner, ast.Name) and inner.id in recognized:
                     return True
         if isinstance(child, ast.With):
             # ``with named_swallow(...) as ...:``
             for item in child.items:
                 ctx = item.context_expr
                 if isinstance(ctx, ast.Call) and isinstance(ctx.func, ast.Name):
-                    if ctx.func.id in _KNOWN_SWALLOW_HANDLERS:
+                    if ctx.func.id in recognized:
                         return True
                 # ``with named_swallow(...)`` (no ``as``) — function attribute access
                 if isinstance(ctx, ast.Call):
                     func = ctx.func
-                    if isinstance(func, ast.Attribute) and func.attr in _KNOWN_SWALLOW_HANDLERS:
+                    if isinstance(func, ast.Attribute) and func.attr in recognized:
                         return True
         # An attribute call like ``named_swallow.swallow_call(...)`` or
         # ``lawvm.core.named_swallow.swallow_call(...)`` is in primitive use.
-        if isinstance(child, ast.Attribute) and child.attr in _KNOWN_SWALLOW_HANDLERS:
+        if isinstance(child, ast.Attribute) and child.attr in recognized:
             return True
     return False
 
@@ -244,7 +317,9 @@ def test_totality_predicate_no_inline_silent_swallow_in_migrated_files() -> None
                 f"{rel_path}: migrated file missing; update _MIGRATED_FILES"
             )
             continue
-        all_offenders.extend(_find_inline_silent_swallow_offenders(migrated_path))
+        all_offenders.extend(
+            _find_inline_silent_swallow_offenders(migrated_path, rel_path=rel_path)
+        )
     assert not all_offenders, (
         "In-line silent ``except Exception:`` swallows remain in migrated files "
         "(Theme C — §2.6 rule-of-three totality violation; route through "
@@ -252,6 +327,68 @@ def test_totality_predicate_no_inline_silent_swallow_in_migrated_files() -> None
         "build_named_swallow_finding instead): "
         + "; ".join(all_offenders)
     )
+
+
+# ---------------------------------------------------------------------------
+# Iter5 C2 guard-liveness — pin the file-scoped carve-out for the
+# ``_emit_corrigendum_failure`` owned §1.10 fail-loud idiom in
+# ``tools/corrigendum.py`` (mirrors the ``_append_amendment_index_diagnostic``
+# precedent documented in the ``_MIGRATED_FILES`` Wave 6 comment). The totality
+# predicate above recognises ``_emit_corrigendum_failure`` as a valid routed
+# primitive ONLY via this carve-out set; if the carve-out were removed, every
+# ``except Exception: _emit_corrigendum_failure(...)`` site in
+# ``tools/corrigendum.py`` would be flagged as an in-line offender. This test
+# pins the carve-out independently of the AST scan output so the §1.10 gate
+# cannot be silently disabled.
+# ---------------------------------------------------------------------------
+
+def test_corrigendum_py_is_in_migrated_files_with_emit_corrigendum_failure_carve_out() -> None:
+    """``tools/corrigendum.py`` is in ``_MIGRATED_FILES`` and uses a documented
+    file-scoped owned §1.10 fail-loud idiom (``_emit_corrigendum_failure``)
+    recognised by the AST totality scan via the carve-out set.
+
+    Guard-liveness: removing either side of the carve-out (the file entry OR
+    the handler name) silently disables the §1.10 totality gate for this
+    file's 13 swallow sites — this test makes that disabling a failing
+    regression rather than a silent drift.
+    """
+    assert "src/lawvm/tools/corrigendum.py" in _MIGRATED_FILES, (
+        "tools/corrigendum.py must be in _MIGRATED_FILES so its "
+        "``except Exception: _emit_corrigendum_failure(...)`` sites are "
+        "covered by the totality predicate"
+    )
+    carve_out = _FILE_SCOPED_ADDITIONAL_FAILURE_HANDLERS.get(
+        "src/lawvm/tools/corrigendum.py"
+    )
+    assert carve_out is not None, (
+        "tools/corrigendum.py requires a file-scoped carve-out entry in "
+        "``_FILE_SCOPED_ADDITIONAL_FAILURE_HANDLERS`` — its swallow sites "
+        "route through ``_emit_corrigendum_failure`` (the owned §1.10 "
+        "fail-loud idiom), not the named_swallow primitive"
+    )
+    assert "_emit_corrigendum_failure" in carve_out, (
+        "the carve-out for tools/corrigendum.py must recognise "
+        "``_emit_corrigendum_failure`` as a valid routed primitive"
+    )
+
+
+def test_corrigendum_py_emit_corrigendum_failure_is_frozen_slots_dataclass() -> None:
+    """The carve-out primitive ``CorrigendumApplyFailure`` is itself a typed,
+    frozen + slots dataclass (§1.9) carrying ``rule_id`` / ``exception_kind``
+    / ``snippet`` (≤400 chars) — the §1.10 owned-fail-loud shape. Pinning this
+    here keeps the carve-out gate defensible: any future drift that drops the
+    typed shape (e.g. collapses back to a bare ``print``) is a failing
+    regression. Per-site fire-drills live in ``test_corrigendum_fail_loud.py``.
+    """
+    from lawvm.tools.corrigendum import CorrigendumApplyFailure
+
+    assert hasattr(CorrigendumApplyFailure, "__slots__")
+    # §1.9 — frozen + slots typed carrier for the diagnostic.
+    import dataclasses as _dc
+
+    assert _dc.is_dataclass(CorrigendumApplyFailure)
+    fields = {f.name for f in _dc.fields(CorrigendumApplyFailure)}
+    assert {"rule_id", "step", "exception_kind", "snippet"} <= fields
 
 
 # ---------------------------------------------------------------------------
