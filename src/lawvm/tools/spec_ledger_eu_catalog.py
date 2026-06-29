@@ -99,4 +99,24 @@ _EU_RULE_SPECS: Dict[str, str] = {
     # evidence-not-silently-destroyed contract. Mirrors the NO/EE/SE precedent
     # (silent-failure review HIGH #1-3).
     "eu_replay_apply_raise": "An apply-fold exception raised mid-``apply_eu_ops_conserved`` is a non-blocking typed orchestration adjudication carrying the exception type/exception/clause_text snippet per §1.10 (the blocking gate stays on ``EUReplayResult.error``); bare-apply's partial witnesses persist on the production result's adjudication ledger — §1.0 evidence-not-silently-destroyed contract.",
+
+    # --- Apply receipt contract (§4 WriteReceipt divergence-naming) ----------------------
+    # Mirrors SE's ``se_renumber_relabel`` (``sweden/grafter.py:4145``),
+    # NO's ``no_section_renumber_relabel`` (``norway/grafter.py:4367``), and
+    # EE's ``_EE_SECTION_SEQUENCE_RENUMBER_RULE`` (``estonia/peg.py:1225``) —
+    # a RENUMBER op mints an identity migration (bound source label → landed
+    # destination label) that the §1.6 unstated-migration invariant MUST carry
+    # with a named rule id. Stamped on the per-op ``WriteReceipt`` (mirrors
+    # SE at ``sweden/grafter.py:4157`` and NO at ``norway/grafter.py:4448``)
+    # by ``_eu_emit_one_op_receipt`` so the bound→landed divergence audits
+    # as ``qualified`` (named-rule-explained divergence) in
+    # ``build_observed_write_audit``, not as ``violation`` (unexplained) —
+    # the §1.6 unstated-migration invariant risks being violated if the
+    # receipt omits this rule id.
+    #
+    # Forward-registered ahead of the EU bare apply landing RENUMBER support
+    # (renumber is in the EU bare variant's unsupported-action set today);
+    # the receipt helper's RENUMBER branch is named-and-witnessed so the
+    # rule id is auditable the moment RENUMBER apply support ships.
+    "eu_renumber_relabel": "An EU RENUMBER op's bound_target_path (source label) vs landed_primary_path (destination label) divergence is the typed named migration for a section relabel/renumber — receipt-audited as ``qualified`` (named-rule-explained divergence), not a ``violation`` (unexplained); the §1.6 unstated-migration invariant risks being violated if the receipt omits this rule id.",
 }
