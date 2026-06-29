@@ -2,7 +2,7 @@
 
 Core owns ONLY the marker protocol that frontend concrete dataclasses inherit.
 The concrete Finnish primitive lives in
-``lawvm.finland.pool_mention_primitive`` (AGENTS.md §2.3 -- jurisdiction-local
+``fi.frontend.pool_mention_primitive`` (AGENTS.md §2.3 -- jurisdiction-local
 drafting idioms live in the frontend, not in core).
 
 Mirrors the ``ScopeConfidence`` precedent (``lawvm.core.scope_confidence``): a
@@ -16,8 +16,8 @@ ever enter ``src/lawvm/core/**/*.py``. Core does NOT interpret frontend-local
 fields (AGENTS.md §2.3); the protocol is a typed boundary, not a vocabulary.
 
 This module has no Finland-specific imports. Concrete Finland extraction and
-projection live in ``lawvm.finland.pool_mention_extractor`` /
-``lawvm.finland.pool_mention_primitive``.
+projection live in ``fi.frontend.pool_mention_extractor`` /
+``fi.frontend.pool_mention_primitive``.
 """
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ class ProvisionMention(Protocol):
     """Marker protocol for the frontend-owned typed pool/quantity mention rider.
 
     A frontend's concrete PoolMention dataclass (e.g.
-    ``lawvm.finland.pool_mention_primitive.PoolMention``) explicitly inherits
+    ``fi.frontend.pool_mention_primitive.PoolMention``) explicitly inherits
     this protocol so:
       * it is structurally a no-op (the protocol has no required members), AND
       * it registers the frontend dataclass as a producer in the AST-scan

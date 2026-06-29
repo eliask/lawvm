@@ -12,7 +12,6 @@
     "src/lawvm/core/materialization_universe.py": 1,
     "src/lawvm/core/must_trace.py": 1,
     "src/lawvm/core/observation_registry.py": 1,
-    "src/lawvm/core/pool_mention.py": 4,
     "src/lawvm/core/preparatory_reference.py": 1,
     "src/lawvm/core/recovery_kind.py": 1,
     "src/lawvm/core/reference_mention.py": 2,
@@ -20,5 +19,5 @@
     "src/lawvm/core/strict_profile_registry.py": 1,
     "src/lawvm/core/tree_ops.py": 1
   },
-  "total": 44
+  "total": 40
 }
