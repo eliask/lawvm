@@ -12098,7 +12098,7 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
     # accept
     claim_accept_p = claim_sub.add_parser(
         "accept",
-        help="accept a proposed claim (marks review_status=human_reviewed)",
+        help="accept a proposed claim (marks review_status=verified_manual)",
     )
     claim_accept_p.add_argument("claim_id", help="claim ID (full SHA-256 hex)")
 
@@ -12128,7 +12128,7 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
     claim_list_p.add_argument("--layer", choices=["substrate", "extraction", "correction", "adjudication"],
                                help="filter by claim layer")
     claim_list_p.add_argument("--review-status", dest="review_status",
-                               choices=["proposed", "second_pass_correlated", "human_reviewed"],
+                               choices=["proposed", "second_pass_correlated", "verified_manual"],
                                help="filter by review status")
     claim_list_p.add_argument("--status",
                                choices=["proposed", "accepted", "rejected", "retracted",

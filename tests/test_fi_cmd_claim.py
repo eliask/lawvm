@@ -209,7 +209,7 @@ def test_claim_list_filters_by_status_and_review_status(tmp_path: Path, capsys):
         kind=None,
         layer=None,
         status="accepted",
-        review_status="human_reviewed",
+        review_status="verified_manual",
         has_attestation_kind=None,
         graph_store_root=_graph_root(tmp_path),
     ))
@@ -217,7 +217,7 @@ def test_claim_list_filters_by_status_and_review_status(tmp_path: Path, capsys):
     assert rc == 0
     out = capsys.readouterr().out
     assert "accepted" in out
-    assert "human_reviewed" in out
+    assert "verified_manual" in out
     assert "fi.v1.INLINE_STATUTE_RESOLUTION" in out
 
     rc = cmd_list(_make_args(
@@ -242,7 +242,7 @@ def test_claim_list_parser_accepts_graph_filters() -> None:
         "--status",
         "accepted",
         "--review-status",
-        "human_reviewed",
+        "verified_manual",
         "--has-attestation-kind",
         "reviewed",
     ])
@@ -250,7 +250,7 @@ def test_claim_list_parser_accepts_graph_filters() -> None:
     assert args.command == "claim"
     assert args.claim_subcommand == "list"
     assert args.status == "accepted"
-    assert args.review_status == "human_reviewed"
+    assert args.review_status == "verified_manual"
     assert args.has_attestation_kind == "reviewed"
 
 

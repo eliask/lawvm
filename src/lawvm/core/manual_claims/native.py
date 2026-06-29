@@ -100,7 +100,7 @@ def manual_claim_review_status(
     review_status = "proposed"
     for attestation in sorted(tuple(attestations), key=lambda item: item.produced_at):
         if attestation.attestation_kind == "reviewed":
-            review_status = "human_reviewed"
+            review_status = "verified_manual"
     return review_status
 
 

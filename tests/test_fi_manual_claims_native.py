@@ -125,7 +125,7 @@ def test_manual_claim_status_helpers_derive_graph_native_state(tmp_path):
     reviewed_id = attest(store, assertion_id, "reviewed", {"accepted": True}, producer)
     reviewed = store.read_attestation(reviewed_id)
     assert manual_claim_lifecycle_status([submitted, reviewed]) == "accepted"
-    assert manual_claim_review_status([submitted, reviewed]) == "human_reviewed"
+    assert manual_claim_review_status([submitted, reviewed]) == "verified_manual"
 
     retracted_id = attest(store, assertion_id, "retracted", {"reason": "test"}, producer)
     retracted = store.read_attestation(retracted_id)
