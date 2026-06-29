@@ -6,9 +6,9 @@ from dataclasses import replace as dc_replace
 from typing import Any, NamedTuple, Protocol
 
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation
+from lawvm.core.tree_ops import with_children
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.addressing import _uk_kind_value
-from lawvm.uk_legislation.apply_rebuild import uk_replace_children_cow
 from lawvm.uk_legislation.replay_records import (
     _append_uk_replay_adjudication,
     uk_replay_action_target_detail,
@@ -548,7 +548,7 @@ class UKReplayTableApplyMixin:
         # in place (valid on the former UKMutableNode) and slice-assigned into
         # ``row.children`` (a list). ``IRNode`` is frozen, so rebuild each
         # affected row via ``dc_replace`` and thread the new rows up through a
-        # fresh table via ``uk_replace_children_cow`` plus
+        # fresh table via ``tree_ops.with_children`` plus
         # ``_replace_ancestor_chain``. Each row gets EITHER a spanner update OR
         # a cell insertion (the planning loop's ``continue`` enforces this), so
         # ``new_rows_by_index`` accumulates one new row per affected
@@ -642,7 +642,7 @@ class UKReplayTableApplyMixin:
             new_rows_by_index.get(i, original_row)
             for i, original_row in enumerate(table.children)
         )
-        new_table = uk_replace_children_cow(table, list(new_table_children))
+        new_table = with_children(table, list(new_table_children))
         self._replace_ancestor_chain(table, new_table)
         _record_table_structure_splice(
             self,
@@ -800,7 +800,7 @@ class UKReplayTableApplyMixin:
         children[row_insert.insert_index:row_insert.insert_index] = inserted_rows
         # PR3 (audit XJUR-02 / AGENTS.md §2.3): CoW rebuild of the table + thread
         # up to the statute root. No in-place mutation of ``row_insert.table.children``.
-        new_table = uk_replace_children_cow(row_insert.table, children)
+        new_table = with_children(row_insert.table, children)
         self._replace_ancestor_chain(row_insert.table, new_table)
         _record_table_structure_splice(
             self,
@@ -900,7 +900,7 @@ class UKReplayTableApplyMixin:
         children[row_span.start_index:row_span.end_index] = replacement_rows
         # PR3 (audit XJUR-02 / AGENTS.md §2.3): CoW rebuild of the table + thread
         # up to the statute root. No in-place mutation of ``row_span.table.children``.
-        new_table = uk_replace_children_cow(row_span.table, children)
+        new_table = with_children(row_span.table, children)
         self._replace_ancestor_chain(row_span.table, new_table)
         _record_table_structure_splice(
             self,

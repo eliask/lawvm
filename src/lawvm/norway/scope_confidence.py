@@ -56,7 +56,7 @@ _VALID_NO_SCOPE_CONFIDENCE_RUNGS: frozenset[str] = frozenset(
 )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class NOScopeConfidence(_CoreScopeConfidenceProtocol):
     """Norway-local typed witness for scope-resolution provenance.
 

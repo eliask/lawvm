@@ -41,7 +41,14 @@ from lawvm.estonia.grafter import (
     _old_format_commencement_date,
     _strict_title_match_para,
     _title_matches_para,
-    apply_ee_ops,
+# Re-exported for the EE guard-liveness test helper
+    # ``_patch_replay_for_crash_drill`` in ``tests/test_ee_guard_liveness.py``,
+    # which monkeypatches this module-level reference to short-circuit the
+    # apply step in upstream-crash drills. The production lane now routes
+    # through ``apply_ee_ops_conserved``; this bare import is retained so the
+    # test helper's ``setattr(ee_replay, "apply_ee_ops", ...)`` does not raise
+    # ``AttributeError`` after the migration.
+    apply_ee_ops,  # noqa: F401
     apply_ee_ops_conserved,
     parse_ee_amendment_ops,
     parse_ee_statute,
@@ -1448,9 +1455,16 @@ class EEPitResult:
     # Optional replay-adjudication stream from operation application.
     adjudications: list[CompileAdjudication] = field(default_factory=list)
 
-    # Conserved apply-phase partition (§1.8): every input op accepted or
-    # rejected with a RejectedItem receipt.
-    apply_filter_result: Optional[FilterResult] = None
+    # Typed apply-result conservation receipt (AGENTS.md §1.8 + §2.9
+    # guard-liveness). Populated when the production apply lane routes
+    # through ``apply_ee_ops_conserved``: partitions every input op into
+    # ``accepted_items`` (its binding landed in ``replayed``) or
+    # ``rejected_items`` (its replay skipped, with a typed ``RejectedItem``
+    # witness carrying ``reason`` / ``reason_code`` / ``blocking``). Without
+    # this field the conserved wrapper exists but is unreachable from
+    # production — the §2.9 worst-class silent failure (a guard that exists
+    # but is unreachable from the production lane).
+    apply_filter_result: Optional[FilterResult[LegalOperation]] = None
 
     def to_replay_summary(self) -> ReplaySummary:
         """Project this EE-specific result onto the shared ``ReplaySummary``
@@ -1910,36 +1924,21 @@ def replay_ee_to_pit(
 
     # ── Step 5: Apply ops ─────────────────────────────────────────────────────
     lo_ops_out: list[LegalOperation] = []
-    adjudications: list[CompileAdjudication] = []
-    try:
-        try:
-            apply_result = apply_ee_ops_conserved(
-                base,
-                all_ops,
-                lo_ops_out=lo_ops_out,
-                adjudications_out=adjudications,
-            )
-            result.replayed = apply_result.statute
-            result.apply_filter_result = apply_result.filter_result
-        except ValueError:
-            # Fall back to non-conserved apply when op_id uniqueness
-            # preconditions fail (duplicate op_ids from same-target
-            # text_replace runs in old-format wrapper blocks).
-            result.replayed = apply_ee_ops(
-                base,
-                all_ops,
-                lo_ops_out=lo_ops_out,
-                adjudications_out=adjudications,
-            )
-    # lawvm-failloud (AGENTS.md §1.10): NOT a silent swallow. An apply-stage
-    # failure is recorded as a distinct, self-evidencing "Failed to apply ops:
-    # {e}" banner (exception embedded) that classify_ee_replayability maps to
-    # REPLAY_ERROR_OTHER; the broad catch is intentional because the failure is
-    # surfaced and classified, never absorbed into a partial/guessed tree.
-    except Exception as e:
-        result.error = f"Failed to apply ops: {e}"
-        return result
-
+    # Pre-populate the production result's adjudication ledger with the
+    # upstream-phase adjudications (oracle parse / cancellation filter /
+    # commencement precomposition / slice filter / source-lane failure /
+    # precomposition) BEFORE routing it through ``apply_ee_ops_conserved``.
+    # Bare apply appends per-op skip + cross-act evidence in place via
+    # ``_append_ee_replay_adjudication`` (``.append`` on the passed list —
+    # never a re-bind); routing ``result.adjudications`` directly means a
+    # mid-apply raise preserves BOTH the upstream-phase adjudications AND
+    # bare-apply's partial witnesses on the caller's accumulator — the
+    # §1.0 "evidence is not silently destroyed" contract. Mirrors the NO
+    # production caller at ``norway/replay.py:487``
+    # (``adjudications_out=result.adjudications``); closes the silent-failure
+    # review HIGH #1 partial-loss hole (iter2 W2 closed the conserved-WRAPPER
+    # propagate-on-raise; this threads the production caller's accumulator
+    # through that wrapper so the wrapper's propagation contract is reached).
     result.adjudications = [
         *oracle_parse_adjudications,
         *cancellation_filter_adjudications,
@@ -1947,8 +1946,77 @@ def replay_ee_to_pit(
         *slice_filter_adjudications,
         *source_lane_failure_adjudications,
         *precomposition_adjudications,
-        *adjudications,
     ]
+    try:
+        # Route production through the conserved wrapper (AGENTS.md §1.8 +
+        # §2.9 guard-liveness). The bare ``apply_ee_ops`` returned only the
+        # IRStatute and shuttled skip-evidence through ``adjudications_out``
+        # side-effect; the conserved wrapper returns a typed ``EEApplyResult``
+        # whose ``filter_result`` partitions ops into accepted /
+        # RejectedItem witnesses (the §1.8 "no unsupported lane disappears"
+        # contract). Without routing production here, the conserved wrapper
+        # would be exercised only by tests — a §2.9 worst-class silent
+        # failure (a guard that exists but is unreachable from production).
+        apply_result = apply_ee_ops_conserved(
+            base,
+            all_ops,
+            lo_ops_out=lo_ops_out,
+            adjudications_out=result.adjudications,
+        )
+        result.replayed = apply_result.statute
+        result.apply_filter_result = apply_result.filter_result
+    # lawvm-failloud (AGENTS.md §1.10): NOT a silent swallow. An apply-stage
+    # failure is recorded as a distinct, self-evidencing "Failed to apply ops:
+    # {e}" banner (exception embedded) that classify_ee_replayability maps to
+    # REPLAY_ERROR_OTHER; the broad catch is intentional because the failure is
+    # surfaced and classified, never absorbed into a partial/guessed tree.
+    # ``result.adjudications`` already carries the upstream-phase adjudications
+    # AND bare-apply's partial witnesses (appended in place before the raise);
+    # the conserved wrapper routes ``adjudications_out`` directly through bare
+    # apply so partials persist (iter2 W2 propagation-on-raise fix). The typed
+    # ``ee_replay_apply_raise`` orchestration adjudication appended below
+    # embeds the exception truncated to a ~400 char ``clause_text`` snippet per
+    # §1.10 so a downstream consumer can diagnose the apply raise without
+    # re-running extraction (silent-failure review HIGH #1). The adjudication
+    # is non-blocking — it is a WITNESS, not the gate. The blocking gate lives
+    # on ``result.error`` (the EE/NO convention for apply-fold failure: it
+    # short-circuits ``replay_ee_to_pit`` and ``classify_ee_replayability``
+    # maps it to ``REPLAY_ERROR_OTHER``). Mirrors the EE conserved-wrapper's
+    # ``RejectedItem.blocking=False`` witness pattern.
+    except Exception as e:
+        result.adjudications.append(
+            _ee_orchestration_adjudication(
+                kind="ee_replay_apply_raise",
+                message=f"Estonia replay apply raised {type(e).__name__}: {e}",
+                source_statute=base.statute_id,
+                detail={
+                    "reason": (
+                        "apply_ee_ops_conserved raised mid-fold; partial "
+                        "witnesses preserved on result.adjudications"
+                    ),
+                    "exception_type": type(e).__name__,
+                    "exception": str(e),
+                    # iter4 W1 M2 (silent-failure review M2): ``clause_text``
+                    # currently carries the apply-raise exception string
+                    # (``str(e)[:400]``), NOT the §1.10 source-text snippet.
+                    # The per-op source_clause_extract extraction is deferred per
+                    # task #50 — at the apply_raise catch site bare-apply has
+                    # raised mid-fold without exposing the failing op's source
+                    # span, so the only immediately-available diagnostic snippet
+                    # IS the exception string. Once task #50 lands the per-op
+                    # source_anchor sink through bare-apply's raise path, this
+                    # will carry source text per §1.10 embed-snippet contract
+                    # (mirrors the NO precedent at norway/replay.py no_replay_apply_raise).
+                    "clause_text": str(e)[:400],
+                },
+                phase="replay",
+                family="orchestration_failure",
+                blocking=False,
+            )
+        )
+        result.error = f"Failed to apply ops: {e}"
+        return result
+
     result.applied_snapshot_ops = tuple(lo_ops_out)
     _log(f"Timeline snapshots emitted: {len(lo_ops_out)}")
 

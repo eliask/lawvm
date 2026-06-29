@@ -162,7 +162,7 @@ def _make_inline_claim(
 
 def _make_accepted_state(
     claim_id: str,
-    review_status: ReviewStatus = ReviewStatus.HUMAN_REVIEWED,
+    review_status: ReviewStatus = ReviewStatus.VERIFIED_MANUAL,
     validator_status: ValidatorStatus = ValidatorStatus.SPAN_VERIFIED,
 ) -> ClaimState:
     return ClaimState(
@@ -209,7 +209,7 @@ def _make_null_fi_refs_row(
         "source_witness_type": "finlex_akn",
         "claim_id": None,
         "validator_status": "span_verified",
-        "review_status": "human_reviewed",
+        "review_status": "verified_manual",
         "replay_authorized": True,
         # Surface fact column (A1) — production deterministic rows always carry
         # it, so the fixture must too or the pinned-schema write fails loud.
@@ -287,7 +287,7 @@ def test_strict_with_attested_claims_fills_null_slots(tmp_path: Path):
     claim = _make_inline_claim(source_witness_type=SourceWitnessType.OPERATOR_FILING)
     state = _make_accepted_state(
         claim.claim_id,
-        review_status=ReviewStatus.HUMAN_REVIEWED,
+        review_status=ReviewStatus.VERIFIED_MANUAL,
         validator_status=ValidatorStatus.SPAN_VERIFIED,
     )
 
@@ -448,12 +448,12 @@ def test_ambiguous_claim_set_rejects_row_in_strict(tmp_path: Path):
 
     state_a = _make_accepted_state(
         claim_a.claim_id,
-        review_status=ReviewStatus.HUMAN_REVIEWED,
+        review_status=ReviewStatus.VERIFIED_MANUAL,
         validator_status=ValidatorStatus.SPAN_VERIFIED,
     )
     state_b = _make_accepted_state(
         claim_b.claim_id,
-        review_status=ReviewStatus.HUMAN_REVIEWED,
+        review_status=ReviewStatus.VERIFIED_MANUAL,
         validator_status=ValidatorStatus.SPAN_VERIFIED,
     )
 
@@ -525,7 +525,7 @@ def test_composition_decision_event_logged():
             ProfileTag.STRICT_WITH_ATTESTED_CLAIMS,
             _make_accepted_state(
                 claim.claim_id,
-                review_status=ReviewStatus.HUMAN_REVIEWED,
+                review_status=ReviewStatus.VERIFIED_MANUAL,
                 validator_status=ValidatorStatus.SPAN_VERIFIED,
             ),
             True,
@@ -693,7 +693,7 @@ def test_strict_profile_bridge_blocks_when_attested_channel_disabled():
     claim = _make_inline_claim(source_witness_type=SourceWitnessType.OPERATOR_FILING)
     state = _make_accepted_state(
         claim.claim_id,
-        review_status=ReviewStatus.HUMAN_REVIEWED,
+        review_status=ReviewStatus.VERIFIED_MANUAL,
         validator_status=ValidatorStatus.SPAN_VERIFIED,
     )
 
@@ -716,7 +716,7 @@ def test_strict_profile_bridge_accepts_reviewed_reference_resolution_claim():
     claim = _make_inline_claim(source_witness_type=SourceWitnessType.OPERATOR_FILING)
     state = _make_accepted_state(
         claim.claim_id,
-        review_status=ReviewStatus.HUMAN_REVIEWED,
+        review_status=ReviewStatus.VERIFIED_MANUAL,
         validator_status=ValidatorStatus.SPAN_VERIFIED,
     )
 

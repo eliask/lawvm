@@ -10,6 +10,7 @@ from typing import Final
 
 UNNUMBERED_PEER_REPARENT: Final[str] = "unnumbered_peer_reparent"
 BASE_TAIL_PROSE_ABSORB: Final[str] = "base_tail_prose_absorb"
+BASE_PENAL_SENTENCING_WRAPUP_FOLD: Final[str] = "base_penal_sentencing_wrapup_fold"
 BASE_NUM_IN_INTRO_RECOVERED: Final[str] = "base_num_in_intro_recovered"
 BASE_NUM_IN_INTRO_MISMATCH: Final[str] = "base_num_in_intro_mismatch"
 BASE_DIGIT_RESET_SPLIT: Final[str] = "base_digit_reset_split"
@@ -17,6 +18,7 @@ BASE_DUPLICATE_TAIL_SPLIT: Final[str] = "base_duplicate_tail_split"
 BASE_DUPLICATE_SIBLING_DROP: Final[str] = "base_duplicate_sibling_drop"
 BASE_INTRO_LIST_RESTART_SPLIT: Final[str] = "base_intro_list_restart_split"
 BASE_INTRO_LIST_TAIL_MOMENT_SPLIT: Final[str] = "base_intro_list_tail_moment_split"
+BASE_TREATY_PROTOCOL_MOMENT_SPLIT: Final[str] = "base_treaty_protocol_moment_split"
 BASE_SECTION_ITEM_SUBSECTION_FOLD: Final[str] = "base_section_item_subsection_fold"
 BASE_TABLE_NOTE_SUBSECTION_FOLD: Final[str] = "base_table_note_subsection_fold"
 BASE_DOTTED_PARAGRAPH_SUBSECTION_PROMOTION: Final[str] = "base_dotted_paragraph_subsection_promotion"
@@ -38,6 +40,7 @@ FINLAND_SOURCE_NORMALIZATION_KINDS: Final[tuple[str, ...]] = (
     BASE_DUPLICATE_SIBLING_DROP,
     BASE_INTRO_LIST_RESTART_SPLIT,
     BASE_INTRO_LIST_TAIL_MOMENT_SPLIT,
+    BASE_TREATY_PROTOCOL_MOMENT_SPLIT,
     BASE_SECTION_ITEM_SUBSECTION_FOLD,
     BASE_TABLE_NOTE_SUBSECTION_FOLD,
     BASE_DOTTED_PARAGRAPH_SUBSECTION_PROMOTION,

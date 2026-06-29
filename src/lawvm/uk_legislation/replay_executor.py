@@ -54,10 +54,11 @@ class UKReplayExecutor(
     UKReplayRepealApplyMixin,
     UKReplayReplaceApplyMixin,
 ):
-    # Sub-PR C+D: explicit class-level annotation so ty narrows
-    # ``UKReplayExecutor.statute`` to ``IRStatute`` regardless of the
-    # ``UKMutableStatute`` annotation still present on the (yet-unmigrated)
-    # sibling apply mixins. Sub-PR B-completion will widen their annotations.
+    # Sub-PR C+D (mutable_ir Wave N3d, now complete): explicit class-level
+    # annotation so ty narrows ``UKReplayExecutor.statute`` to ``IRStatute``.
+    # The historical ``UKMutableStatute`` annotation on sibling apply mixins
+    # was widened to ``IRNode``/``IRStatute`` when mutable_ir Wave N3d Sub-PR B
+    # completed and the ``mutable_ir.py`` shadow module was deleted.
     statute: IRStatute
     def __init__(
         self,
@@ -73,8 +74,10 @@ class UKReplayExecutor(
         # All downstream mutation now goes through
         # ``self.statute = dataclasses.replace(self.statute, body=..., supplements=...)``
         # because ``IRStatute`` is a frozen dataclass — no in-place writes
-        # survive past the boundary. Sub-PR B-completion will widen the
-        # ``UKMutableNode``-typed fields in apply modules to ``IRNode``.
+        # survive past the boundary. Sub-PR B-completion widened the previously
+        # ``UKMutableNode``-typed fields in apply modules to ``IRNode``; the
+        # ``mutable_ir.py`` shadow module (including ``UKMutableNode``,
+        # ``UKMutableStatute``) is now deleted.
         self.statute: IRStatute = statute
         self.eid_map = eid_map or {}
         self.text_map = text_map or {}
@@ -132,9 +135,9 @@ class UKReplayExecutor(
         # ``self._current_mutation_op`` so the snapshot is consistent with the
         # op that produced it. ``boundary_probe_enabled`` is a cached env
         # read — checked once per apply (cheap) so the snapshot is only
-        # taken when opted in (default-off preserves byte-stable bench output
-        # + avoid the ``UKMutableNode.to_irnode`` deep-copy cost on the hot
-        # path; AGENTS.md §2.7).
+        # taken when opted in (default-off preserves byte-stable bench output;
+        # the fold is now frozen-``IRStatute`` so the ``before_snapshot``/``after_snapshot``
+        # pair is a direct reference with no deep-copy; AGENTS.md §2.7).
         boundary_probe_on = boundary_probe_enabled()
         before_snapshot = (
             self.statute.body if boundary_probe_on else None

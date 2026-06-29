@@ -6,30 +6,35 @@ how a provision is addressed:
 
   - ``oracle-text``  took the eId form ``chp_3__sec_1``
   - ``provision-state`` / ``timeline`` took ``chapter:3/section:1`` and
-    subsection (momentti) ``.../subsection:2``
+    subsection (Finlex: momentti) ``.../subsection:2``
 
 Neither is human-stable. This module adds ONE canonical, human-stable surface
 form that lowers to the existing ``chapter:/section:/subsection:/paragraph:``
 locator string, so every command inherits it for free. The lowering is purely
 additive: legacy forms (``chapter:3/section:1``, ``chp_3__sec_1``, ``1 §``) are
-returned unchanged so existing callers keep working.
+returned unchanged so existing callers keep working. The canonical vocabulary
+is jurisdiction-neutral (subsection/paragraph); the Finlex aliases momentti
+and kohta are noted only as a jurisdiction-local alias for the same levels,
+not as canonical names.
 
 Canonical form::
 
-    §<chapter>:<section>[.<momentti>[.<kohta>]]
+    §<chapter>:<section>[.<subsection>[.<paragraph>]]
 
 Examples::
 
     §3:1     → chapter:3/section:1
-    §3:1.2   → chapter:3/section:1/subsection:2     (momentti 2)
+    §3:1.2   → chapter:3/section:1/subsection:2
     §7       → section:7                              (flat / chapterless statute)
-    §7.1.3   → section:7/subsection:1/paragraph:3    (momentti 1, kohta 3)
+    §7.1.3   → section:7/subsection:1/paragraph:3
 
-Semantic rule (load-bearing, from the Finlex XML): the subsection (momentti)
-index is the **materialized in-force ordinal**, NOT the raw ``subsec_N`` eId.
-The downstream resolver (``provision-state``) already keys the subsection on the
-post-strip materialized sequence, so this module only has to lower ``.N`` to
-``subsection:N`` and let the resolver do the right thing.
+Semantic rule (load-bearing, from the Finlex XML grammar via the Finland
+frontend): the subsection index is the **materialized in-force ordinal**, NOT
+the raw ``subsec_N`` eId. The downstream resolver (``provision-state``) already
+keys the subsection on the post-strip materialized sequence, so this module only
+has to lower ``.N`` to ``subsection:N`` and let the resolver do the right thing.
+Finlex's "momentti"/"kohta" wording is the same level pair surfaced as the
+canonical subsection/paragraph here.
 """
 from __future__ import annotations
 
@@ -37,8 +42,10 @@ import re
 from dataclasses import dataclass
 
 # A canonical §-selector: optional leading "§", then chapter:section or a bare
-# section, then up to two dotted subsection/paragraph components
-# (momentti/kohta in the Finlex source grammar).
+# section, then up to two dotted subsection/paragraph components.
+# In the Finlex source grammar (Finland frontend) these levels surface as
+# "momentti" (subsection) and "kohta" (paragraph); the canonical LawVM vocabulary
+# here is jurisdiction-neutral and points to them only as a jurisdiction alias.
 #   §3:1.2   §7   §7.1.3   3:1   §14 b   §3:1 a
 # Labels may carry a trailing letter (e.g. "14 b", "3a"); the public LawVM
 # locator form compacts that suffix ("14b") so it can be handed directly to
@@ -49,8 +56,8 @@ _SECTION_SELECTOR_RE = re.compile(
     ^\s*§?\s*
     (?:(?P<chapter>{_LABEL})\s*:\s*)?       # optional  <chapter>:
     (?P<section>{_LABEL})                    # required  <section>
-    (?:\.\s*(?P<subsection>{_LABEL}))?       # optional  .<subsection>  (momentti)
-    (?:\.\s*(?P<paragraph>{_LABEL}))?        # optional  .<paragraph>   (kohta)
+    (?:\.\s*(?P<subsection>{_LABEL}))?       # optional  .<subsection>
+    (?:\.\s*(?P<paragraph>{_LABEL}))?        # optional  .<paragraph>
     \s*$
     """,
     re.VERBOSE,
@@ -63,13 +70,13 @@ class ParsedSelector:
 
     chapter: str | None
     section: str
-    subsection: str | None  # momentti, in the Finlex source grammar
-    paragraph: str | None  # kohta, in the Finlex source grammar
+    subsection: str | None  # Finlex alias: momentti
+    paragraph: str | None  # Finlex alias: kohta
     locator: str  # e.g. "chapter:3/section:1/subsection:2"
 
     @property
     def is_section_scope(self) -> bool:
-        """True when no subsection/paragraph (momentti/kohta) is given (whole section)."""
+        """True when no subsection/paragraph is given (whole section)."""
         return self.subsection is None and self.paragraph is None
 
 
@@ -183,14 +190,13 @@ def to_locator_string(s: str) -> str:
 
 
 def section_scope_locator(s: str) -> str:
-    """Lower a selector to its SECTION-scope locator (drop subsection/paragraph,
-    i.e. momentti/kohta).
+    """Lower a selector to its SECTION-scope locator (drop subsection/paragraph).
 
     Used where only section-granularity resolution is available (the oracle
-    consolidated resolver segments whole <section> elements, not subsection
-    (momentti)). For
-    a canonical ``§3:1.2`` this returns ``chapter:3/section:1``; for an already
-    section-scoped or legacy form it returns ``to_locator_string(s)`` unchanged.
+    consolidated resolver segments whole <section> elements, not subsections).
+    For a canonical ``§3:1.2`` this returns ``chapter:3/section:1``; for an
+    already section-scoped or legacy form it returns ``to_locator_string(s)``
+    unchanged.
     """
     parsed = parse_section_selector(s.strip()) if s else None
     if parsed is not None:
@@ -211,8 +217,7 @@ def section_scope_locator(s: str) -> str:
 
 
 def has_subprovision(s: str) -> bool:
-    """True if the selector addresses below the section (subsection/paragraph,
-    i.e. momentti/kohta)."""
+    """True if the selector addresses below the section (subsection/paragraph)."""
     parsed = parse_section_selector(s.strip()) if s else None
     if parsed is not None:
         return not parsed.is_section_scope

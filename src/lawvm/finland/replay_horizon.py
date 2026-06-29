@@ -207,6 +207,14 @@ def choose_replay_horizon(request: ReplayHorizonRequest) -> ReplayHorizonDecisio
                     and lo_src.statute_id == oracle_vid_id
                 ):
                     continue
+                if (
+                    oracle_vid_repeal_only_future
+                    and oracle_cutoff_iso is not None
+                    and lo_eff > oracle_cutoff_iso
+                    and is_repeal_like
+                    and not _can_detach_expiry_for_future_repeal(lo)
+                ):
+                    continue
                 if oracle_materialize_as_of is None or lo_eff > oracle_materialize_as_of:
                     oracle_materialize_as_of = lo_eff
                     if (

@@ -30,7 +30,16 @@ Mapping contract:
   residue carries the recovery-mode signal so the SEAggregateReporter can
   surface how much of the corpus is in this non-scored-but-flagged lane.
 * ``outcome == "error"``: ``CRASH`` with the cached ``error_type`` /
-  ``error_detail`` as witnesses — a genuine failure that fails the bench.
+  ``error_detail`` / ``clause_text`` as witnesses — a genuine failure that
+  fails the bench. iter4 W1 (C2): ``apply_raise`` (a genuine apply-fold raise
+  caught by ``check_se_official_replay``'s try/except — silent-failure review
+  HIGH #3) is now bucketed as top-level ``outcome == "error"`` by
+  :func:`scan_se_official_replay_act`'s explicit ``SE_REPLAY_OUTCOME_APPLY_RAISE``
+  branch (pre-fix it collapsed to ``"older_base_required"`` and was mis-routed
+  here as :class:`BenchStatus.SOURCE_UNAVAILABLE` — the §2.9 worst-class silent
+  failure). The witness tuple carries ``clause_text`` (the §1.10 source-text
+  snippet / exception string) so the diagnostic is visible without re-running
+  extraction.
 """
 
 from __future__ import annotations
@@ -101,12 +110,24 @@ def se_bench_unit_result(summary: Mapping[str, Any]) -> BenchUnitResult:
         )
     # ``outcome == "error"`` (or any unrecognised outcome) — a genuine
     # failure. Cache the typed error class/detail as witness for triage
-    # rather than letting the crash disappear into the aggregate.
+    # rather than letting the crash disappear into the aggregate. iter4 W1
+    # (C2, silent-failure review HIGH #3): apply_raise is now bucketed as
+    # top-level ``outcome == "error"`` by :func:`scan_se_official_replay_act`'s
+    # explicit ``SE_REPLAY_OUTCOME_APPLY_RAISE`` branch (pre-fix it fell through
+    # to the ``"older_base_required"`` collapse and was mis-routed here as
+    # :class:`BenchStatus.SOURCE_UNAVAILABLE` — the §2.9 worst-class silent
+    # failure). The ``clause_text`` field carries the §1.10 source-text snippet
+    # (or the apply-raise exception string truncated to ~400 chars when no
+    # per-op source_clause_extract is in scope — deferred per task #50; see
+    # the iter4 W1 M2 comment-clarification at ``sweden/fetch.py:3604+``);
+    # ``se_bench.py``'s CRASH witnesses pull it as a third triage surface so
+    # the diagnostic snippet is visible without re-running extraction.
     witnesses = tuple(
         str(part)
         for part in (
             summary.get("error_type") or "",
             summary.get("error_detail") or "",
+            summary.get("clause_text") or "",
         )
         if part
     )

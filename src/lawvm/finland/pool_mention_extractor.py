@@ -41,13 +41,14 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import List, Optional, Tuple
 
-from lawvm.core.pool_mention import (
+from lawvm.finland.pool_mention_primitive import (
     AmbiguousPoolMention,
     BudgetLineRenumberingObservation,
     PoolMention,
     PoolResolutionConfidence,
     QuantityKind,
     RejectedPoolCandidate,
+    pool_canonical_id,
 )
 from lawvm.finland.canonical_budget_line_registry import REGISTRY
 
@@ -168,11 +169,6 @@ _YEAR_REF_RE = re.compile(
     r"\b(?:vuoden|vuonna|vuosina|v\.\s*)\s*\d{4}\b",
     re.IGNORECASE,
 )
-
-
-def _canonical_id_from_code(momentti_code: str) -> str:
-    """Build a canonical ID from a momentti code '28.91.50' -> 'fi.budget.28.91.50'."""
-    return "fi.budget." + momentti_code.replace(".", ".")
 
 
 def _parse_numeric(value_str: str) -> Optional[float]:
@@ -485,7 +481,7 @@ def _resolve_budget_line(
 
     # No exact match: try lineage resolution across years
     # Build a provisional canonical_id from the code to probe the lineage table
-    _provisional_id = _canonical_id_from_code(code)
+    _provisional_id = pool_canonical_id(code)
     # Check if there's a year in the registry that has this code
     for check_year in REGISTRY.available_years():
         cid, cands = REGISTRY.lookup_by_code(code, check_year)

@@ -25,8 +25,11 @@ from __future__ import annotations
 
 from typing import Any, List, cast
 
+import pytest
+
 from lawvm.core import tree_ops as _tops
 from lawvm.core.compile_result import StrictProfile
+from lawvm.core.frozen_values import FrozenDict
 from lawvm.core.ir import IRNode
 from lawvm.core.mutation_accounting import observed_vs_declared_cross_check
 from lawvm.core.observed_write_audit import ObservedWriteAudit
@@ -444,3 +447,155 @@ def test_receipt_from_diff_records_landed_reality() -> None:
     # declared footprint covers the observed change ⇒ a clean audit.
     audit = _tops.build_observed_write_audit(before, after, receipt)
     assert audit.audit_status == "clean"
+
+
+# ---------------------------------------------------------------------------
+# iter2 W5 M5 — Post-construction freeze of ``WriteReceipt.pre_hashes`` /
+# ``post_hashes``. ``pre_hashes`` / ``post_hashes`` are canonical structural
+# subtree hashes that downstream consumers (mutation events, certificate
+# transition leaves) read as evidence (AGENTS.md §1.9 / §1.10 at a typed
+# semantic boundary). A late mutation would silently rewrite history — exactly
+# the silent-failure shape §0 / §1.10 forbid. ``ExecutionAuthorization.detail``
+# took this shape via ``freeze_mapping``; these tests pin the parallel
+# behaviour on ``WriteReceipt`` after ``__post_init__`` (mirror).
+# ---------------------------------------------------------------------------
+
+
+def _bare_receipt_for_freeze_test(
+    *,
+    pre_hashes: dict[str, str] | None = None,
+    post_hashes: dict[str, str] | None = None,
+) -> WriteReceipt:
+    """Build a minimal receipt exercising only the hash-mapping fields."""
+    return WriteReceipt(
+        op_id="op-test-001",
+        helper="test_helper",
+        action="REPLACE",
+        bound_target_path=None,
+        landed_primary_path=None,
+        pre_hashes=pre_hashes or {"section/1": "abc123"},
+        post_hashes=post_hashes or {"section/1": "def456"},
+    )
+
+
+class TestWriteReceiptHashesAreFrozen:
+    """``pre_hashes`` / ``post_hashes`` MUST be ``FrozenDict`` instances that
+    reject mutation post-construction, mirroring ``ExecutionAuthorization.detail``."""
+
+    def test_pre_hashes_is_frozendict_instance(self) -> None:
+        receipt = _bare_receipt_for_freeze_test()
+        assert isinstance(receipt.pre_hashes, FrozenDict), (
+            "pre_hashes must be frozen via freeze_mapping at __post_init__; "
+            "a plain dict would let late mutation silently rewrite history."
+        )
+
+    def test_post_hashes_is_frozendict_instance(self) -> None:
+        receipt = _bare_receipt_for_freeze_test()
+        assert isinstance(receipt.post_hashes, FrozenDict), (
+            "post_hashes must be frozen via freeze_mapping at __post_init__; "
+            "a plain dict would let late mutation silently rewrite history."
+        )
+
+    def test_setitem_on_pre_hashes_raises(self) -> None:
+        receipt = _bare_receipt_for_freeze_test()
+        # Cast to FrozenDict so ty accepts the mutating call — the field's
+        # declared type is ``Mapping[str, str]`` (read-only), but at runtime
+        # the value IS a FrozenDict whose ``__setitem__`` override raises.
+        pre_hashes = cast(FrozenDict, receipt.pre_hashes)
+        with pytest.raises(TypeError, match="FrozenDict is immutable"):
+            pre_hashes["section/1"] = "tampered"
+
+    def test_setitem_on_post_hashes_raises(self) -> None:
+        receipt = _bare_receipt_for_freeze_test()
+        post_hashes = cast(FrozenDict, receipt.post_hashes)
+        with pytest.raises(TypeError, match="FrozenDict is immutable"):
+            post_hashes["section/1"] = "tampered"
+
+    def test_setitem_new_key_on_pre_hashes_raises(self) -> None:
+        receipt = _bare_receipt_for_freeze_test()
+        pre_hashes = cast(FrozenDict, receipt.pre_hashes)
+        with pytest.raises(TypeError, match="FrozenDict is immutable"):
+            pre_hashes["section/new"] = "tampered"
+
+    def test_pop_on_pre_hashes_raises(self) -> None:
+        receipt = _bare_receipt_for_freeze_test()
+        pre_hashes = cast(FrozenDict, receipt.pre_hashes)
+        with pytest.raises(TypeError, match="FrozenDict is immutable"):
+            pre_hashes.pop("section/1")
+
+    def test_clear_on_post_hashes_raises(self) -> None:
+        receipt = _bare_receipt_for_freeze_test()
+        post_hashes = cast(FrozenDict, receipt.post_hashes)
+        with pytest.raises(TypeError, match="FrozenDict is immutable"):
+            post_hashes.clear()
+
+    def test_update_on_pre_hashes_raises(self) -> None:
+        receipt = _bare_receipt_for_freeze_test()
+        pre_hashes = cast(FrozenDict, receipt.pre_hashes)
+        with pytest.raises(TypeError, match="FrozenDict is immutable"):
+            pre_hashes.update({"section/1": "tampered"})
+
+    def test_setdefault_on_post_hashes_raises(self) -> None:
+        receipt = _bare_receipt_for_freeze_test()
+        post_hashes = cast(FrozenDict, receipt.post_hashes)
+        with pytest.raises(TypeError, match="FrozenDict is immutable"):
+            post_hashes.setdefault("section/2", "tampered")
+
+
+class TestWriteReceiptDefaultFactoriesProduceFrozen:
+    """The default_factory=dict defaults MUST also produce frozen dicts when no
+    value is supplied, so callers building a receipt without explicit hashes
+    cannot accidentally receive a mutable dict at the boundary."""
+
+    def test_default_pre_hashes_is_frozen(self) -> None:
+        receipt = WriteReceipt(
+            op_id="op-test-002",
+            helper="test_helper",
+            action="REPLACE",
+            bound_target_path=None,
+            landed_primary_path=None,
+        )
+        assert isinstance(receipt.pre_hashes, FrozenDict)
+        assert isinstance(receipt.post_hashes, FrozenDict)
+
+    def test_default_pre_hashes_rejects_mutation(self) -> None:
+        receipt = WriteReceipt(
+            op_id="op-test-003",
+            helper="test_helper",
+            action="REPLACE",
+            bound_target_path=None,
+            landed_primary_path=None,
+        )
+        pre_hashes = cast(FrozenDict, receipt.pre_hashes)
+        with pytest.raises(TypeError, match="FrozenDict is immutable"):
+            pre_hashes["any"] = "rejected"
+
+
+class TestWriteReceiptFreezeIsDeep:
+    """Nested values inside the hash mappings must also be frozen —
+    ``freeze_mapping`` recursively freezes nested containers (per
+    ``core/frozen_values.py``); this guards against the case where a caller
+    hands in a dict-of-dict and would otherwise receive a partially-mutable
+    view."""
+
+    def test_deepcopy_round_trip_preserves_freeze(self) -> None:
+        import copy
+
+        receipt = _bare_receipt_for_freeze_test()
+        cloned = copy.deepcopy(receipt)
+        assert isinstance(cloned.pre_hashes, FrozenDict)
+        assert isinstance(cloned.post_hashes, FrozenDict)
+        pre_hashes = cast(FrozenDict, cloned.pre_hashes)
+        with pytest.raises(TypeError, match="FrozenDict is immutable"):
+            pre_hashes["section/1"] = "tampered"
+
+    def test_underlying_dict_passing_is_copied_not_aliased(self) -> None:
+        # Mutating the source dict after construction MUST NOT leak into the
+        # receipt — the freeze is a value copy, not a reference alias.
+        pre_source = {"section/1": "abc123"}
+        receipt = _bare_receipt_for_freeze_test(pre_hashes=pre_source)
+        pre_source["section/1"] = "tampered"
+        assert receipt.pre_hashes["section/1"] == "abc123", (
+            "freeze_mapping must deep-copy its input so the receipt's view "
+            "is unaffected by later mutation of the source mapping."
+        )

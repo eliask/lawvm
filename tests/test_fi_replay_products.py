@@ -35,7 +35,10 @@ from lawvm.finland.compile_amendment import compile_amendment_ops
 from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector
 from lawvm.finland.corpus import get_corpus
 from lawvm.finland.metadata import get_johtolause
+from lawvm.finland.kumotaan import _extract_kumotaan_subsection_refs
 from lawvm.finland.kumotaan_replay import (
+    FI_RECOVERY_PURE_KUMOTAAN_ITEM_REPEAL_RULE_ID,
+    FI_RECOVERY_PURE_KUMOTAAN_SUBSECTION_REPEAL_RULE_ID,
     _inject_pure_kumotaan_subsection_repeal_ops,
     _live_suffix_section_labels_for_numeric_kumotaan_ranges,
 )
@@ -822,6 +825,19 @@ def test_replay_xml_1990_1295_materialized_state_drops_lone_unanchored_scoped_du
     assert "section:59a" in sections
 
 
+def test_replay_xml_1993_1507_splits_treaty_protocol_second_moment() -> None:
+    """1993/1508 section 1 source carries two momentti in one XML paragraph."""
+    replay = replay_xml_for_test("1993/1507", mode="official_consolidation", quiet=True)
+
+    section = replay.materialized_state.find_section("1")
+
+    assert section is not None
+    subsections = [child for child in section.children if child.kind is IRNodeKind.SUBSECTION]
+    assert [subsection.label for subsection in subsections] == ["1", "2"]
+    assert "2 momentissa tarkoitetulla tarkistuspöytäkirjalla." in irnode_to_text(subsections[0])
+    assert irnode_to_text(subsections[1]).startswith("Brysselissä 17 päivänä maaliskuuta 1993")
+
+
 def test_2017_236_materialized_state_drops_expired_exact_temporary_moments() -> None:
     replay = replay_xml_for_test("2017/236", mode="official_consolidation", quiet=True)
 
@@ -1143,6 +1159,53 @@ def test_replay_xml_2011_806_pure_kumotaan_subsection_keeps_chapter_scope() -> N
     assert replay.materialized_state.find_section("21", "8") is not None
 
 
+def test_replay_xml_2007_1175_pure_kumotaan_item_repeals_item_four() -> None:
+    """2009/664 pure-kumotaan clause repeals 2 §:n 4 kohta with no body payload."""
+    lo_ops: list[LegalOperation] = []
+    cutoff_replay = pinned_replay(
+        "2007/1175",
+        oracle_version="20090664",
+        mode="official_consolidation",
+        quiet=True,
+        lo_ops_out=lo_ops,
+    )
+
+    pure_ops = [
+        op
+        for op in lo_ops
+        if op.source is not None
+        and op.source.statute_id == "2009/664"
+        and op.witness_rule_id == FI_RECOVERY_PURE_KUMOTAAN_ITEM_REPEAL_RULE_ID
+    ]
+    assert len(pure_ops) == 1
+    assert pure_ops[0].target == LegalAddress(path=(("section", "2"), ("subsection", "1"), ("item", "4")))
+    assert pure_ops[0].payload is not None
+    assert pure_ops[0].payload.attrs.get("lawvm_repeal_placeholder") == "1"
+
+    cutoff_section = cutoff_replay.materialized_state.find_section("2")
+    assert cutoff_section is not None
+    cutoff_text = " ".join(irnode_to_text(cutoff_section).split())
+    assert "aikataulun mukainen yhteysalusliikenne (liite 4); sekä" in cutoff_text
+
+    effective_replay = pinned_replay(
+        "2007/1175",
+        oracle_version="20090664",
+        mode="official_consolidation",
+        quiet=True,
+        as_of="2009-09-01",
+    )
+    section = effective_replay.materialized_state.find_section("2")
+    assert section is not None
+    subsection = next(child for child in section.children if child.kind is IRNodeKind.SUBSECTION and child.label == "1")
+    item4 = next(
+        child
+        for child in subsection.children
+        if child.kind is IRNodeKind.PARAGRAPH and child.label == "4"
+    )
+    assert item4.attrs.get("lawvm_repeal_placeholder") == "1"
+    assert "aikataulun mukainen yhteysalusliikenne" not in " ".join(irnode_to_text(item4).split())
+
+
 @pytest.mark.slow
 def test_replay_xml_1980_55_sec1_keeper_repeal_list_reaches_section_12f() -> None:
     """2015/521 sec_1 fallback must not truncate parent-owned targets after a conjunction."""
@@ -1275,6 +1338,197 @@ def test_pure_kumotaan_subsection_injection_skips_label_reused_by_same_group_sna
 
     assert result.injected_count == 0
     assert [op.op_id for op in lo_ops] == ["snapshot_section_32"]
+
+
+def test_pure_kumotaan_subsection_injection_overrides_stale_snapshot_carry() -> None:
+    section_path = (("chapter", "7"), ("section", "36"))
+    lo_ops: list[LegalOperation] = [
+        LegalOperation(
+            op_id="snapshot_section_36",
+            sequence=0,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=section_path),
+            payload=IRNode(
+                kind=IRNodeKind.SECTION,
+                label="36",
+                children=(
+                    IRNode(kind=IRNodeKind.SUBSECTION, label="1"),
+                    IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="stale carried text"),
+                ),
+            ),
+            source=OperationSource(statute_id="2008/617"),
+        )
+    ]
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="7",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="36",
+                        children=(
+                            IRNode(kind=IRNodeKind.SUBSECTION, label="1"),
+                            IRNode(kind=IRNodeKind.SUBSECTION, label="2"),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    result = _inject_pure_kumotaan_subsection_repeal_ops(
+        lo_ops,
+        amendment_id="2008/617",
+        source_title="",
+        kumotaan_subsection_map={"36": ["2"]},
+        amendment_effective_date=dt.date(2008, 10, 6),
+        state=ReplayState(ir=body),
+        source_raw_text="kumotaan 36 §:n 2 momentti, muutetaan 36 §:n 1 momentti seuraavasti:",
+    )
+
+    assert result.injected_count == 1
+    injected = lo_ops[-1]
+    assert injected.op_id == "pure_subsec_repeal_36_2_2008/617"
+    assert injected.target == LegalAddress(path=section_path + (("subsection", "2"),))
+    assert injected.witness_rule_id == FI_RECOVERY_PURE_KUMOTAAN_SUBSECTION_REPEAL_RULE_ID
+    assert injected.payload is not None
+    assert injected.payload.attrs.get("lawvm_repeal_placeholder") == "1"
+
+
+def test_extract_kumotaan_subsection_refs_normalizes_split_momentti_unit() -> None:
+    johto = (
+        "kumotaan työttömyysturvalain (602/84) 16 §:n 6 mo- mentti, "
+        "26 §:n 3 momentti ja 48 §:n 4 momentti, muutetaan 12 §"
+    )
+
+    assert _extract_kumotaan_subsection_refs(johto) == {
+        "16": ["6"],
+        "26": ["3"],
+        "48": ["4"],
+    }
+
+
+def test_replay_xml_1984_602_pure_kumotaan_split_momentti_repeals_section_16_subsection_6() -> None:
+    """1996/666 writes ``16 §:n 6 mo- mentti``; the split unit still repeals §16(6)."""
+    lo_ops: list[LegalOperation] = []
+    replay = replay_xml_for_test(
+        "1984/602",
+        mode="official_consolidation",
+        quiet=True,
+        lo_ops_out=lo_ops,
+    )
+
+    pure_ops = [
+        op
+        for op in lo_ops
+        if op.source is not None
+        and op.source.statute_id == "1996/666"
+        and op.witness_rule_id == FI_RECOVERY_PURE_KUMOTAAN_SUBSECTION_REPEAL_RULE_ID
+    ]
+    assert {op.target for op in pure_ops} >= {
+        LegalAddress(path=(("chapter", "4"), ("section", "16"), ("subsection", "6"))),
+        LegalAddress(path=(("chapter", "6"), ("section", "26"), ("subsection", "3"))),
+    }
+
+    section = replay.products.materialized_state.find_section("16", "4")
+    assert section is not None
+    subsection = next(child for child in section.children if child.kind is IRNodeKind.SUBSECTION and child.label == "6")
+    assert subsection.attrs.get("lawvm_repeal_placeholder") == "1"
+    assert "Osa-aikaeläkettä saavan henkilön" not in " ".join(irnode_to_text(subsection).split())
+    assert any(
+        finding.kind == "PARSE.PURE_REPEAL_CLAUSE_RECONSTRUCTED"
+        and finding.source_statute == "1996/666"
+        and finding.detail.get("rule_id") == FI_RECOVERY_PURE_KUMOTAAN_SUBSECTION_REPEAL_RULE_ID
+        and finding.detail.get("target_norm") == "16:6"
+        for finding in replay.findings
+    )
+
+
+def test_replay_xml_2007_829_pure_kumotaan_subsection_repeals_section_36_subsection_2() -> None:
+    """2008/617 repeals 36 §:n 2 momentti even though the body rewrites §36."""
+    lo_ops: list[LegalOperation] = []
+    replay = replay_xml_for_test(
+        "2007/829",
+        mode="legal_pit",
+        quiet=True,
+        lo_ops_out=lo_ops,
+        as_of="2008-10-06",
+    )
+
+    pure_ops = [
+        op
+        for op in lo_ops
+        if op.source is not None
+        and op.source.statute_id == "2008/617"
+        and op.witness_rule_id == FI_RECOVERY_PURE_KUMOTAAN_SUBSECTION_REPEAL_RULE_ID
+    ]
+    assert {op.target for op in pure_ops} >= {
+        LegalAddress(path=(("chapter", "5"), ("section", "26"), ("subsection", "4"))),
+        LegalAddress(path=(("chapter", "7"), ("section", "36"), ("subsection", "2"))),
+    }
+
+    section = replay.products.materialized_state.find_section("36", "7")
+    assert section is not None
+    subsection = next(child for child in section.children if child.kind is IRNodeKind.SUBSECTION and child.label == "2")
+    assert subsection.attrs.get("lawvm_repeal_placeholder") == "1"
+    assert "Leasingkustannuksilla tarkoitetaan" not in " ".join(irnode_to_text(subsection).split())
+    assert any(
+        finding.kind == "PARSE.PURE_REPEAL_CLAUSE_RECONSTRUCTED"
+        and finding.source_statute == "2008/617"
+        and finding.detail.get("rule_id") == FI_RECOVERY_PURE_KUMOTAAN_SUBSECTION_REPEAL_RULE_ID
+        and finding.detail.get("target_norm") == "36:2"
+        for finding in replay.findings
+    )
+
+
+def test_replay_xml_2021_947_definition_items_continue_after_tail_prose_wrapper() -> None:
+    replay = replay_xml_for_test("2021/947", mode="official_consolidation", quiet=True)
+
+    section = replay.products.materialized_state.find_section("2", "1")
+    assert section is not None
+    subsections = [child for child in section.children if child.kind == IRNodeKind.SUBSECTION]
+    assert len(subsections) == 1
+
+    paragraphs = [child for child in subsections[0].children if child.kind == IRNodeKind.PARAGRAPH]
+    assert [paragraph.label for paragraph in paragraphs[-21:]] == [
+        "20",
+        "21",
+        "22",
+        "23",
+        "24",
+        "25",
+        "26",
+        "27",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32",
+        "33",
+        "34",
+        "35",
+        "36",
+        "37",
+        "38",
+        "39",
+        "40",
+    ]
+    kohta20 = next(paragraph for paragraph in paragraphs if paragraph.label == "20")
+    tail_wrapups = [
+        child
+        for child in kohta20.children
+        if child.kind == IRNodeKind.WRAP_UP and child.attrs.get("__tail_prose__") == "1"
+    ]
+    assert len(tail_wrapups) == 1
+    assert "toiminta johtuu suoraan tästä tehtävästä" in (tail_wrapups[0].text or "")
+
+    assert any(
+        finding.kind == "BASE_TAIL_PROSE_ABSORB" and "numeric-list continuation wrapper" in str(finding.detail)
+        for finding in replay.findings
+    )
 
 
 def test_replay_xml_1998_132_sparse_osalta_omission_repeals_branch_row() -> None:
@@ -4298,32 +4552,41 @@ def test_replay_xml_1951_83_ignores_self_relabel_bridge_from_1982_601() -> None:
 
 
 def test_replay_xml_recycle_rename_kumotaan_muutetaan_preserves_new_section_2010_128() -> None:
-    """Recycle-and-rename: section in both kumotaan AND muutetaan must survive as new content.
+    """§44 amended-only (muutetaan) after Finlex corrigendum 2019/1330 #0.
 
-    2019/1330 repeals old §44 (kumotaan 43 ja 44 §) and simultaneously
-    introduces new §44 content (muutetaan ... 44 §). The kumotaan-muutetaan
-    recycle guard must exclude §44 from the expiry override so the new §44
-    is preserved permanently rather than being converted to a repeal.
+    Finlex corrigendum SK 2019/1330 #0 corrected the johtolause of amendment
+    2019/1330: §44 was NOT in the kumotaan list (corrected to "kumotaan 43 §,
+    sekä" from the mis-printed "kumotaan 43 ja 44 §"). After applying the
+    retry-overlay, §44 survives via muutetaan alone — no recycle guard fires.
 
     Regression for the bug where _rewrite_kumotaan_snapshot_replaces_to_repeal
     incorrectly converted the new §44 to a REPEAL, leaving it absent from
-    the materialized product.
+    the materialized product. The pure-repeal clause reconstruction for §43
+    must also fire as a typed finding (alt-repo assertion).
     """
     replay = pinned_replay("2010/128", mode="official_consolidation", quiet=True)
-
-    # §43 was genuinely repealed by 2019/1330 (not in muutetaan)
     assert replay.materialized_state.find_section("43") is None, "§43 should be repealed"
 
-    # §44 was recycled: old §44 repealed, new §44 introduced via muutetaan
+    # §44 was introduced via muutetaan and must not be converted to a repeal.
     sec44 = replay.materialized_state.find_section("44")
-    assert sec44 is not None, "§44 (new Ahvenanmaa content) must be present after recycle fix"
+    assert sec44 is not None, "§44 must be present (amended via muutetaan only)"
     recycle_findings = [
+        finding for finding in replay.findings
+        if finding.kind == "PARSE.REPEAL_RECYCLE_GUARD"
+        and finding.source_statute == "2019/1330"
+    ]
+    assert not recycle_findings, (
+        "REPEAL_RECYCLE_GUARD should not fire after corrigendum "
+        "removed §44 from the kumotaan list"
+    )
+    pure_repeal_findings = [
         finding
         for finding in replay.findings
-        if finding.kind == "PARSE.REPEAL_RECYCLE_GUARD" and finding.source_statute == "2019/1330"
+        if finding.kind == "PARSE.PURE_REPEAL_CLAUSE_RECONSTRUCTED"
+        and finding.source_statute == "2019/1330"
+        and finding.detail.get("target_norm") == "43"
     ]
-    assert recycle_findings
-    assert recycle_findings[0].detail["recycled_labels"] == ("44",)
+    assert pure_repeal_findings
 
 
 def test_replay_xml_later_inserted_whole_section_repeal_respects_oracle_horizon(

@@ -67,18 +67,20 @@ class TestSafePathComponentDisallowedChars:
     """Negative tests — disallowed chars are stripped to `-`."""
 
     def test_strips_directory_separators_from_traversal_vector(self) -> None:
-        """`_safe_path_component("../../etc/passwd")` strips every `/`.
+        """`_safe_path_component("../../etc/passwd")` strips every `/` and `.`.
 
         With the old permissive regex (`[^A-Za-z0-9._/-]+`), `/` was allowed
         and this input was returned unchanged. With `/` dropped from the
         allowed class, every `/` collapses to `-`, leaving a flat token
         with no path separators.
 
-        Note: `.` is intentionally preserved (see the `a.b.c-1` positive
-        test), so the literal substring `".."` survives in the result.
-        That is acceptable because `..` is only a traversal vector when
-        combined with `/` — once `/` is gone, the result is a flat string
-        the filesystem treats as a single filename, not a path.
+        Iter2 W6 LOW/M-batch Fix 3 tightened the trailing-character strip
+        from ``.strip("-")`` to ``.strip("-.")`` so that leading/trailing
+        dots are also removed. Interior `.` in legitimate identifiers like
+        ``a.b.c-1`` is preserved (positive test above), but a bare ``..``
+        traversal fragment collapses to the ``unknown`` placeholder because
+        the result is empty after the strip — so ``..`` no longer survives
+        in the output even as a flat-string filename.
         """
         result = _safe_path_component("../../etc/passwd")
         assert "/" not in result, (
@@ -126,6 +128,36 @@ class TestSafePathComponentDisallowedChars:
         assert _safe_path_component("") == "unknown"
         assert _safe_path_component("   ") == "unknown"
         assert _safe_path_component("\t\n") == "unknown"
+
+    # Iter2 W6 LOW/M-batch Fix 3: leading/trailing dots are also stripped
+    # (previously the `.` char was preserved verbatim by the regex, so a
+    # bare `..` segment would survive as a literal `..` filename even though
+    # it had no traversal value once `/` was gone — it just alarmed security
+    # reviewers reading the projection output). With `.strip("-.")` the
+    # leading/trailing-dot class is removed; the interior-dot contract for
+    # legitimate identifiers like `a.b.c-1` is preserved.
+    @pytest.mark.parametrize(
+        "value,expected",
+        [
+            ("..", "unknown"),
+            (".", "unknown"),
+            ("...", "unknown"),
+            (".-.", "unknown"),
+            ("-.foo.-", "foo"),
+            (".foo.", "foo"),
+            ("..foo..", "foo"),
+            # Interior dots in legitimate identifiers are preserved.
+            ("a.b.c-1", "a.b.c-1"),
+            ("1.0", "1.0"),
+        ],
+    )
+    def test_strips_leading_trailing_dots_after_substitution(
+        self, value: str, expected: str
+    ) -> None:
+        """`..`/`.`/`...` collapse to ``unknown``; interior dots survive."""
+        assert _safe_path_component(value) == expected, (
+            f"_safe_path_component({value!r}) should yield {expected!r}"
+        )
 
 
 class TestSafePathComponentDirectorySeparatorContract:
@@ -210,9 +242,12 @@ class TestStatuteMarkdownPathProductionLane:
         neutralized: the caller's `split("/")` separates it into parts
         (`["..", "..", "etc", "passwd"]`), each part is sanitized, and the
         parts are joined with `__` — producing a flat filename with no `/`
-        and no directory-traversal semantics. The `..` substrings survive
-        as literal filename characters (because `.` is allowed), but they
-        cannot escape the `acts/<jurisdiction>/` directory without `/`."""
+        and no directory-traversal semantics. Per iter2 W6 LOW/M-batch
+        Fix 3, the ``..``-parts collapse to the ``unknown`` placeholder
+        (interior ``.`` is preserved but leading/trailing dots are stripped),
+        so the resulting filename is e.g.
+        ``unknown__unknown__etc__passwd.md`` — flat, no `/`, no remaining
+        ``..`` substring to alarm a security scanner."""
         path = _statute_markdown_path("../../etc/passwd", jurisdiction="fi")
         assert path.startswith("acts/fi/")
         filename = path.removeprefix("acts/fi/")
@@ -223,6 +258,13 @@ class TestStatuteMarkdownPathProductionLane:
         )
         assert "__" in filename, (
             f"caller must join parts with `__`, got {filename!r}"
+        )
+        # Iter2 W6 LOW/M-batch Fix 3: the `..` substrings no longer survive
+        # as flat-string filename fragments — the leading/trailing-dot strip
+        # in `_safe_path_component` collapses them to `unknown`.
+        assert ".." not in filename, (
+            f"`..` traversal fragment must not survive in the sanitized "
+            f"filename (got {filename!r})"
         )
         # The filename must end with the `.md` extension — proving the path
         # stays inside the `acts/<jurisdiction>/` directory as a markdown file.

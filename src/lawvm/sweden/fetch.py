@@ -16,13 +16,14 @@ import re
 import time
 from pathlib import Path
 import subprocess
-from typing import Any, Callable, Literal, Protocol, Optional, assert_never, cast
+from typing import Any, Callable, List, Literal, Protocol, Optional, assert_never, cast
 from urllib.parse import urlencode, urljoin
 
 from lawvm.core.comparison_normalization import ComparisonNormalizationRule, normalize_comparison_text
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.ir import IRNode, IRStatute, LegalOperation
 from lawvm.core.ir_helpers import ir_statute_from_dict
+from lawvm.core.phase_result import Finding
 from lawvm.core.regex_safety import compile_classifier_regex
 from lawvm.core.semantic_types import FacetKind, IRNodeKind, StructuralAction
 from lawvm.core.source_lane import SourceLaneSelectionEvidence, source_lane_attempt_from_mapping
@@ -224,7 +225,33 @@ def _se_archive_fetch(
             )
             with urllib.request.urlopen(req, timeout=30) as resp:
                 data = resp.read()
-        except Exception:
+        except Exception as exc:
+            # Unexpected fetch failure (HTTP error, network reset, etc.):
+            # previously ``return None`` silently swallowed; now route through
+            # ``named_swallow`` so a typed Finding is logged at WARNING with the
+            # fetched URL as ``clause_text`` (AGENTS.md §1.10 — never silent).
+            #
+            # log_emitter sanctioned (iter3 W2 §3.2 evidence-path audit):
+            # this swallow lives inside the ``_attempt`` nested closure of
+            # ``_se_archive_fetch`` (acquisition I/O boundary). No findings_out
+            # accumulator is in scope at closure level; threading one up through
+            # ``_se_archive_fetch``'s signature would ripple to its callers
+            # across the sweden acquisition pipeline (5+ call sites). Per
+            # ``core/named_swallow.py`` docstring's IO/utility-boundary sanctioned
+            # use, the swallow stays on log_emitter (stderr WARNING) —
+            # acquisition-path evidence-ledger reach is Wave-N+1 work.
+            from lawvm.core.named_swallow import build_named_swallow_finding, log_emitter
+
+            log_emitter()(
+                build_named_swallow_finding(
+                    rule_id="se_archive_fetch_url_attempt",
+                    exception=exc,
+                    op_id=None,
+                    clause_text=f"url={url} storage_class={storage_class or 'auto'}",
+                    jurisdiction="se",
+                    source_artifact=url,
+                )
+            )
             return None
         return data if data else None
 
@@ -1184,6 +1211,7 @@ def fetch_se_official_artifacts(
     pdf_url_override: str | None = None,
     diagnostics_out: list[dict[str, Any]] | None = None,
     overwrite_events_out: list[SEOverwriteEvent] | None = None,
+    findings_out: Optional[List[Finding]] = None,
 ) -> Optional[SEOfficialArtifacts]:
     """Fetch Sweden official doc page + PDF and archive extracted text.
 
@@ -1197,6 +1225,17 @@ def fetch_se_official_artifacts(
     - extracted raw text is archived at `se://.../official.pdf.txt`
     - deterministic cleaned text is archived at `se://.../official.cleaned.txt`
     - structured parsed act text is archived at `se://.../official.act.json`
+
+    ``findings_out`` threads a per-statute audit-trail sink for the named-swallow
+    sites inside this fetch lane (currently ``se_pdf_bytes_to_text``'s subprocess-
+    failure swallow at the PDF-text extraction boundary). When the caller plumbs
+    a ``list[Finding]`` (e.g. from a replay/PIT compilation ledger) the typed
+    Finding lands in that audit-trail list — closing the §3.2 evidence-path
+    answerability gap; when not plumbed (default for the CLI/cache-management
+    callers — IO/utility boundary carve-out per ``core/named_swallow.py``'s
+    ``log_emitter`` helper), the swallow falls back to stderr WARNING so it
+    remains visible. Type-distinct from ``overwrite_events_out``
+    (``list[SEOverwriteEvent]``) — plane-distinct per §2.10, never collapsed.
     """
     doc_url = se_official_doc_url(sfs_id)
     pdf_source_attempts: list[dict[str, str]] = []
@@ -1340,7 +1379,12 @@ def fetch_se_official_artifacts(
             storage_class="text",
         )
     elif existing_text is None or force_reextract or existing_cleaned is None:
-        pdf_text = se_pdf_bytes_to_text(pdf_bytes)
+        # Thread ``findings_out`` into ``se_pdf_bytes_to_text``'s named-swallow
+        # sink so the typed Finding lands in the per-statute audit-trail list when
+        # the caller plumbed one (e.g. a replay/PIT compile ledger) — closing the
+        # §3.2 evidence-path answerability gap. Default-None falls through to
+        # ``log_emitter`` (sanctioned IO/utility carve-out per ``named_swallow``).
+        pdf_text = se_pdf_bytes_to_text(pdf_bytes, findings_out=findings_out)
         if pdf_text:
             # KNOW-01 monotonicity wrap: the force_reextract path overwrites
             # prior text/cleaned bytes (the cached source-footing mutates).
@@ -2710,13 +2754,21 @@ def plan_se_older_base_rebuild(
             return
         try:
             fetch_se_official_artifacts(sfs_id, archive)
-        except Exception as exc:  # noqa: BLE001 — acquisition boundary; surfaced as a typed residual below
+        except Exception as exc:  # noqa: BLE001 — acquisition boundary; no source clause text available; treat as IO/utility boundary per named_swallow module docstring
             acquisition_failures.append(
                 {
                     "rule_id": "se_official_artifacts_fetch_failed",
                     "sfs_id": sfs_id,
                     "error_type": type(exc).__name__,
                     "error_message": str(exc),
+                    # §1.10 honesty: this is a fetch-time IO/utility boundary
+                    # (network acquisition of an archived SFS act), so there
+                    # is no source clause text in scope to embed. Mirrors the
+                    # ``named_swallow`` module docstring's IO/utility-boundary
+                    # exception: the residual is named/witnessed by
+                    # ``rule_id`` + ``sfs_id`` + ``error_type`` +
+                    # ``error_message`` rather than fabricated source text.
+                    "clause_text": "",
                 }
             )
 
@@ -3179,6 +3231,20 @@ def analyze_se_official_replay_feasibility(
 SE_REPLAY_OUTCOME_REPLAY_FEASIBLE = "replay_feasible"
 SE_REPLAY_OUTCOME_OLDER_BASE_REQUIRED = "older_base_required"
 SE_REPLAY_OUTCOME_PRECONDITION_ISSUES_BLOCKING = "precondition_issues_blocking"
+#: iter3 W3 (silent-failure review HIGH #3) added the apply-raise catch at
+#: ``check_se_official_replay``'s try/except, returning a structured
+#: ``outcome='apply_raise'`` dict via ``_se_replay_unresolved_outcome``. iter4 W1
+#: (C2, this commit) adds the explicit constant so :func:`scan_se_official_replay_act`'s
+#: typed-outcome dispatcher can distinguish ``apply_raise`` (a CRASH — genuine
+#: apply-fold failure) from the manual-compilation-frontier outcomes
+#: (``older_base_required`` / ``precondition_issues_blocking`` — non-scored
+#: ``SOURCE_UNAVAILABLE``). Pre-fix the scan lane collapsed ALL non-feasible
+#: outcomes to top-level ``"outcome": "older_base_required"`` at line ~3972, so
+#: the bench comparator (``tools/se_bench.py:90-101``) misclassified genuine
+#: apply-fold raises as :class:`BenchStatus.SOURCE_UNAVAILABLE` (manual
+#: frontier) — the §2.9 worst-class silent failure: a guard that exists but
+#: whose misclassification prevents the crash from surfacing in the aggregate.
+SE_REPLAY_OUTCOME_APPLY_RAISE = "apply_raise"
 
 
 def _se_replay_unresolved_outcome(
@@ -3493,14 +3559,112 @@ def check_se_official_replay(
     # notes/APPLY_RESOLUTION_AND_RECEIPT_CONTRACT.md §4) through the production
     # lane — these were previously reachable only from tests via
     # ``se_replay_write_receipts``, a §2.9 worst-class silent failure: a guard
-    # that exists but is unreachable from production.
-    apply_result = apply_se_ops_conserved(
-        replay_base_statute,
-        ops,
-        adjudications_out=replay_adjudications,
-        emit_receipts=True,
-    )
-    replayed = apply_result.statute
+    # that exists but is unreachable from production. ``replay_adjudications``
+    # is the local-list accumulator routed directly through bare apply by the
+    # conserved wrapper; on a mid-apply raise, bare-apply's partial witnesses
+    # emitted BEFORE the raise persist on this accumulator — the §1.0
+    # evidence-not-silently-destroyed contract. Mirrors the NO/EE/EU
+    # production-caller pattern (silent-failure review HIGH #3 — iter2 W2
+    # closed the conserved-wrapper propagate-on-raise; this wrap surfaces the
+    # partial list on the production return dict instead of letting the raw
+    # exception discard it).
+    try:
+        apply_result = apply_se_ops_conserved(
+            replay_base_statute,
+            ops,
+            adjudications_out=replay_adjudications,
+            emit_receipts=True,
+        )
+        replayed = apply_result.statute
+    except Exception as e:
+        # ``replay_adjudications`` already carries bare-apply's partial
+        # witnesses (appended in place before the raise; the conserved wrapper
+        # routes ``adjudications_out`` directly through bare apply so partials
+        # persist — iter2 W2). Emit a typed ``se_replay_apply_raise``
+        # orchestration adjudication per §1.10 (embedding the exception
+        # truncated to a ~400 char ``clause_text`` snippet via
+        # ``diagnostic_detail``) so a downstream consumer can diagnose the
+        # apply raise without re-running extraction. Return a structured
+        # ``outcome``-bearing dict mirroring the existing
+        # ``_se_replay_unresolved_outcome`` shape so the scan lane's
+        # typed-outcome dispatcher (line ~3880: ``typed_outcome !=
+        # SE_REPLAY_OUTCOME_REPLAY_FEASIBLE``) buckets it correctly; the
+        # preserved partial witnesses are projected onto the dict's
+        # ``adjudications`` key, overriding the empty-list default at
+        # ``_se_replay_unresolved_outcome`` line 3243. The adjudication is
+        # non-blocking — it is a WITNESS, not the gate. The blocking gate lives
+        # on the structured ``outcome='apply_raise'`` signal (the SE convention
+        # for apply-fold failure that the scan-lane dispatcher keys on).
+        replay_adjudications.append(
+            CompileAdjudication(
+                kind="se_replay_apply_raise",
+                message=f"Sweden replay apply raised {type(e).__name__}: {e}",
+                source_statute=resolved_base_sfs_id,
+                blocking=False,
+                phase="replay",
+                detail=diagnostic_detail(
+                    rule_id="se_replay_apply_raise",
+                    phase="replay",
+                    blocking=False,
+                    family="orchestration_failure",
+                    reason=(
+                        "apply_se_ops_conserved raised mid-fold; partial "
+                        "witnesses preserved on replay_adjudications"
+                    ),
+                    exception_type=type(e).__name__,
+                    exception=str(e),
+                    # iter4 W1 M2 (silent-failure review M2): ``clause_text``
+                    # currently carries the apply-raise exception string
+                    # (``str(e)[:400]``), NOT the §1.10 source-text snippet.
+                    # The per-op source_clause_extract extraction is deferred
+                    # per task #50 — at the apply_raise catch site bare-apply
+                    # has raised mid-fold without exposing the failing op's
+                    # source span, so the only immediately-available diagnostic
+                    # snippet IS the exception string. Once task #50 lands
+                    # the per-op source_anchor sink through bare-apply's raise
+                    # path, this will carry source text per §1.10 embed-snippet
+                    # contract (mirrors the NO precedent at
+                    # norway/replay.py no_replay_apply_raise and the EE precedent
+                    # at estonia/replay.py ee_replay_apply_raise). The twin
+                    # ``clause_text`` site below (in the
+                    # ``_se_replay_unresolved_outcome`` outcome_detail) carries
+                    # the same deferred-str(e) ``clause_text`` slot — the same
+                    # comment applies.
+                    clause_text=str(e)[:400],
+                ),
+            )
+        )
+        raise_return = _se_replay_unresolved_outcome(
+            amending_sfs_id=amending_sfs_id,
+            base_sfs_id=resolved_base_sfs_id,
+            effective_date=effective_date,
+            pre_date=pre_date,
+            recovery_mode=recovery_mode,
+            outcome="apply_raise",
+            reason_code="se_replay_apply_raise",
+            message=f"Sweden replay apply raised {type(e).__name__}: {e}",
+            outcome_detail={
+                "exception_type": type(e).__name__,
+                "exception": str(e),
+                # iter4 W1 M2 (silent-failure review M2): twin ``clause_text``
+                # slot — same deferred-str(e) representation as the inline
+                # ``se_replay_apply_raise`` adjudication above (line ~3625).
+                # ``clause_text`` currently carries the apply-raise exception
+                # string, NOT the §1.10 source-text snippet; the per-op
+                # source_clause_extract is deferred per task #50 (mirrors the
+                # EE/EU/NO precedent at their respective ``*_replay_apply_raise``
+                # emission sites — see estalia/replay.py, eu/pipeline.py,
+                # norway/replay.py).
+                "clause_text": str(e)[:400],
+            },
+        )
+        # Override the empty-list default at
+        # ``_se_replay_unresolved_outcome`` line 3243 with the preserved
+        # partial-witness projection (mirrors the success-path shape at line
+        # ~3728: ``"adjudications": [asdict(item) for item in
+        # replay_adjudications]``).
+        raise_return["adjudications"] = [asdict(item) for item in replay_adjudications]
+        return raise_return
     skipped_op_ids = {item.op_id for item in replay_adjudications if item.op_id}
     finding_rows = adjudication_finding_evidence_rows(
         replay_adjudications,
@@ -3849,7 +4013,15 @@ def scan_se_official_replay_act(
 
     Returns a flat, picklable summary (no IR objects) so it can be produced inside
     a worker process and aggregated in the parent. ``outcome`` is one of
-    ``replay_ok`` / ``older_base_required`` / ``error``.
+    ``replay_ok`` / ``older_base_required`` / ``error``. iter4 W1 (C2,
+    silent-failure review HIGH #3): ``apply_raise`` (a genuine apply-fold raise
+    caught by :func:`check_se_official_replay`'s try/except) is routed to
+    top-level ``outcome == "error"`` rather than collapsed into the
+    manual-compilation-frontier ``"older_base_required"`` lane — so the bench
+    comparator (:mod:`lawvm.tools.se_bench`) routes it to
+    :class:`BenchStatus.CRASH` (not :class:`BenchStatus.SOURCE_UNAVAILABLE`),
+    closing the §2.9 worst-class silent failure where an apply_raise guard
+    existed but its misclassification prevented the crash from surfacing.
     """
     try:
         result = check_se_official_replay(archive, amending_sfs_id)
@@ -3861,6 +4033,53 @@ def scan_se_official_replay_act(
             "error_detail": str(exc),
         }
     typed_outcome = str(result.get("outcome") or SE_REPLAY_OUTCOME_REPLAY_FEASIBLE)
+    if typed_outcome == SE_REPLAY_OUTCOME_APPLY_RAISE:
+        # iter4 W1 (C2, silent-failure review HIGH #3): ``apply_raise`` is a
+        # CRASH (genuine apply-fold failure — ``apply_se_ops_conserved`` raised
+        # mid-fold and the production caller's on-raise handling surfaced it as
+        # ``outcome='apply_raise'`` / ``reason_code='se_replay_apply_raise'``),
+        # NOT a manual-compilation frontier state. Pre-fix this fell through to
+        # the ``typed_outcome != SE_REPLAY_OUTCOME_REPLAY_FEASIBLE`` branch
+        # below, which collapses ALL non-feasible outcomes to top-level
+        # ``"outcome": "older_base_required"`` — and the bench comparator at
+        # ``tools/se_bench.py:90-101`` then routes that to
+        # :class:`BenchStatus.SOURCE_UNAVAILABLE`, silently misclassifying a
+        # genuine apply-fold raise as "the source does not deterministically
+        # specify the replayable base" (manual-compilation frontier). That is
+        # the §2.9 worst-class silent failure: the apply_raise guard exists but
+        # its misclassification prevents the crash from surfacing in the
+        # aggregate. The bench comparator routes ``outcome == "error"`` →
+        # :class:`BenchStatus.CRASH` (``se_bench.py:113-117``); we surface the
+        # preserved-partial-witness detail and the typed §1.10
+        # exception_type/exception/clause_text snippet as ``error_type`` /
+        # ``error_detail`` / ``clause_text`` on the summary so the bench's CRASH
+        # witnesses (``se_bench.py:105-112``) carry them — sees §1.10
+        # embed-snippet contract: a residual needing triage does not require
+        # re-running extraction.
+        apply_raise_detail = dict(result.get("outcome_detail") or {})
+        # Carry the preserved partial adjudications forward (the §1.0
+        # evidence-not-silently-destroyed contract from iter3 W3's
+        # ``replay_adjudications`` list projection).
+        preserved_adjudications = list(result.get("adjudications") or [])
+        return {
+            "amending_sfs_id": amending_sfs_id,
+            "outcome": "error",
+            "error_type": str(apply_raise_detail.get("exception_type") or ""),
+            "error_detail": str(apply_raise_detail.get("exception") or ""),
+            # §1.10 source-text witness slot; on apply-raise the failing
+            # exception message is the only immediately-available snippet (the
+            # per-op source_clause_extract extraction is deferred per task #50;
+            # see the iter4 W1 M2 comment-clarification at fetch.py:3604+).
+            # Carried as ``clause_text`` so the bench's CRASH witnesses include
+            # it; ``str(e)[:400]`` mirroring the §1.10 contract shape.
+            "clause_text": str(apply_raise_detail.get("clause_text") or "")[:400],
+            "reason_code": str(result.get("reason_code") or ""),
+            "typed_outcome": typed_outcome,
+            "base_sfs_id": str(result.get("base_sfs_id") or ""),
+            "effective_date": str(result.get("effective_date") or ""),
+            "recovery_mode": str(result.get("recovery_mode") or ""),
+            "adjudications": preserved_adjudications,
+        }
     if typed_outcome != SE_REPLAY_OUTCOME_REPLAY_FEASIBLE:
         # The structured ``outcome`` signal from check_se_official_replay
         # carries the typed  older_base_required / precondition_issues_blocking

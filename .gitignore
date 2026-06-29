@@ -22,10 +22,14 @@ data/**
 !data/fi/v1/evidence_policy/
 !data/fi/v1/evidence_policy/*.json
 !data/finland/
-!data/finland/corrigendum_manual.yaml
 !data/finland/corrigendum_official_fi.jsonl
 !data/finland/corrigendum_adjudications_fi.jsonl
 !data/finland/corrigendum_sources_fi.jsonl
+!data/finland/corrigendum_misapplied_fi.jsonl
+!data/finland/corrigendum_retry_overlays_fi.jsonl
+!data/finland/corrigendum_unresolvable_fi.yaml
+!data/finland/oracle_overrides_fi.yaml
+!data/finland/source_defect_fixes_fi.yaml
 !data/finland/bench_corpus.csv
 !data/finland/bench_corpus_curated217.csv
 !data/finland/bench_corpus_notes.md
@@ -262,3 +266,4 @@ pyrightconfig.json
 # regenerable artifacts; never commit them.
 reports/
 viewer/data
+data/finland/.attachment_ir_cache/

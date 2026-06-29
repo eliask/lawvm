@@ -1,0 +1,1038 @@
+# LawVM-authored source-defect patches (no upstream corrigendum).
+#
+# Each entry repairs a defect in the BASE source XML itself — OCR
+# substitutions, glued tokens, line-end hyphenation, wrong section
+# eIds — where NO official Finlex corrigendum exists. The witness
+# for each is a typed source_witness (kind: typographic_impossibility |
+# ordinal_structure | multi_acquisition_corroboration |
+# finlex_publication_backfill); the consolidated Finlex oracle is NEVER
+# used as truth where an intrinsic witness is defensible — that is the
+# AGENTS.md §2.10 plane-collapse smell this typed carrier closes.
+#
+# This file REPLACES legacy corrigendum_manual.yaml for source-defect
+# patches. Upstream-corrigenda extraction retries live in
+# corrigendum_retry_overlays_fi.jsonl as per-stable_id overlays.
+# See notes/manual_claims/MANUAL_COMPILATION_CLAIMS.md and
+# AGENTS.md §0 (no silent mutation) / §2.1 (rule family ownership) /
+# §2.10 (planes stay type-distinct).
+#
+# Schema:
+#   - amendment_id: "NUM/YEAR"        (e.g. 41/1965)
+#     rule_id:    FINLAND.SOURCE_DEFECT.* stable identifier
+#     family:     presentation_cleanup | source_pathology_ocr |
+#                 structural_label_mislabel | table_completeness |
+#                 source_pathology       (label only — AGENTS §2.1)
+#     source_witness:
+#       kind: typographic_impossibility | ordinal_structure |
+#            multi_acquisition_corroboration |
+#            finlex_publication_backfill
+#       detail: <family-specific reason summary>
+#       corroborators: [<locator>, ...]   # only for corroboration kinds
+#     wrong_text:    exact bytes in source XML
+#     correct_text:  corrected bytes
+#     correction_type: johtolause | body_text   (routing flag)
+#     expected_apply_count: N        # default 1; ≥1 expected byte-spans
+#     notes:                          human-readable explanation
+#     verified: "YYYY-MM-DD"
+
+- amendment_id: 91/1982
+  rule_id: FINLAND.SOURCE_DEFECT.SECTION_EID_MISLABEL
+  family: structural_label_mislabel
+  source_witness:
+    kind: ordinal_structure
+    detail: The statute's own ordinal structure (chapter sequence + downstream references) intrinsic-confirms the corrected
+      label. No oracle citation.
+  wrong_text: |-
+    <section eId="sec_131">
+                        <num>131 §</num>
+                        <subsection eId="sec_131__subsec_1">
+                            <intro eId="sec_131__subsec_1__intro">
+                                <p>Maa-aineslain 2 §:n 1 momentin 2 kohdassa tarkoitettuna lupana tai suunnitelmana pidetään:</p>
+                            </intro>
+                            <paragraph eId="sec_131__subsec_1__para_1">
+                                <num>1)</num>
+                                <content>
+                                    <p>rakennuslupaa;</p>
+                                </content>
+                            </paragraph>
+                            <paragraph eId="sec_131__subsec_1__para_2">
+                                <num>2)</num>
+                                <content>
+                                    <p>yleisistä teistä annetussa laissa (243/54) tarkoitettua tiesuunnitelmaa;</p>
+                                </content>
+                            </paragraph>
+                            <paragraph eId="sec_131__subsec_1__para_3">
+                                <num>3)</num>
+                                <content>
+                                    <p>yksityisistä teistä annetussa laissa (358/ 62) tarkoitetussa tietoimituksessa annettua päätöstä;</p>
+                                </content>
+                            </paragraph>
+                            <paragraph eId="sec_131__subsec_1__para_4">
+                                <num>4)</num>
+                                <content>
+                                    <p>kiinteän omaisuuden ja erityisten oikeuksien lunastuksesta annetussa laissa (603/77) tarkoitettua lunastuslupaa;</p>
+                                </content>
+                            </paragraph>
+                            <paragraph eId="sec_131__subsec_1__para_5">
+                                <num>5)</num>
+                                <content>
+                                    <p>ilmailulaissa (595/64) tarkoitettua lupaa yleisen tai yksityisen lentopaikan rakentamiseen ja pitoon;</p>
+                                </content>
+                            </paragraph>
+                            <paragraph eId="sec_131__subsec_1__para_6">
+                                <num>6)</num>
+                                <content>
+                                    <p>vesilaissa (264/61) tarkoitettua lupaa vesistöön rakentamiseen; sekä</p>
+                                </content>
+                            </paragraph>
+                            <paragraph eId="sec_131__subsec_1__para_7">
+                                <num>7)</num>
+                                <content>
+                                    <p>muuta näihin verrattavaa lupaa tai suunnitelmaa.</p>
+                                </content>
+                            </paragraph>
+                        </subsection>
+                    </section>
+  correct_text: |-
+    <section eId="sec_1">
+                        <num>1 §</num>
+                        <subsection eId="sec_1__subsec_1">
+                            <intro eId="sec_1__subsec_1__intro">
+                                <p>Maa-aineslain 2 §:n 1 momentin 2 kohdassa tarkoitettuna lupana tai suunnitelmana pidetään:</p>
+                            </intro>
+                            <paragraph eId="sec_1__subsec_1__para_1">
+                                <num>1)</num>
+                                <content>
+                                    <p>rakennuslupaa;</p>
+                                </content>
+                            </paragraph>
+                            <paragraph eId="sec_1__subsec_1__para_2">
+                                <num>2)</num>
+                                <content>
+                                    <p>yleisistä teistä annetussa laissa (243/54) tarkoitettua tiesuunnitelmaa;</p>
+                                </content>
+                            </paragraph>
+                            <paragraph eId="sec_1__subsec_1__para_3">
+                                <num>3)</num>
+                                <content>
+                                    <p>yksityisistä teistä annetussa laissa (358/ 62) tarkoitetussa tietoimituksessa annettua päätöstä;</p>
+                                </content>
+                            </paragraph>
+                            <paragraph eId="sec_1__subsec_1__para_4">
+                                <num>4)</num>
+                                <content>
+                                    <p>kiinteän omaisuuden ja erityisten oikeuksien lunastuksesta annetussa laissa (603/77) tarkoitettua lunastuslupaa;</p>
+                                </content>
+                            </paragraph>
+                            <paragraph eId="sec_1__subsec_1__para_5">
+                                <num>5)</num>
+                                <content>
+                                    <p>ilmailulaissa (595/64) tarkoitettua lupaa yleisen tai yksityisen lentopaikan rakentamiseen ja pitoon;</p>
+                                </content>
+                            </paragraph>
+                            <paragraph eId="sec_1__subsec_1__para_6">
+                                <num>6)</num>
+                                <content>
+                                    <p>vesilaissa (264/61) tarkoitettua lupaa vesistöön rakentamiseen; sekä</p>
+                                </content>
+                            </paragraph>
+                            <paragraph eId="sec_1__subsec_1__para_7">
+                                <num>7)</num>
+                                <content>
+                                    <p>muuta näihin verrattavaa lupaa tai suunnitelmaa.</p>
+                                </content>
+                            </paragraph>
+                        </subsection>
+                    </section>
+  correction_type: body_text
+  notes: 'LawVM-editorial source-defect fix (no_official_corrigendum_found): base source XML labels first section as sec_131
+    / 131 §, while consolidated Finlex and legal sequence identify it as 1 §; exact full-section fragment patch repairs structural
+    identity and eIds before replay.'
+  verified: '2026-06-17'
+  expected_apply_count: 1
+- amendment_id: 1161/1991
+  rule_id: FINLAND.SOURCE_DEFECT.EMPTY_SECTION_SHELL
+  family: structural_label_mislabel
+  source_witness:
+    kind: finlex_publication_backfill
+    corroborators: []
+    detail: Cached consolidated Finlex acquisition corroborates the corrected text. This is one corroborator — the structure
+      admits a list; additional acquisition lanes (Finlex HTML, alternative manifestations) append here.
+  wrong_text: |-
+    <section eId="sec_9">
+                        <num>9 § </num>
+                    </section>
+  correct_text: |-
+    <section eId="sec_9">
+                        <num>9 §</num>
+                        <heading eId="sec_9__heading">Voimaantulo</heading>
+                        <subsection eId="sec_9__subsec_1">
+                            <content>
+                                <p>Tämä asetus tulee voimaan 1 päivänä lokakuuta 1991.</p>
+                            </content>
+                        </subsection>
+                        <subsection eId="sec_9__subsec_2">
+                            <content>
+                                <p>Ennen tämän asetuksen voimaantuloa voidaan ryhtyä sen täytäntöönpanon edellyttämiin toimenpiteisiin.</p>
+                            </content>
+                        </subsection>
+                    </section>
+  correction_type: body_text
+  notes: 'LawVM-editorial source-defect fix (no_official_corrigendum_found): enacted SD source XML has an empty section 9
+    shell; consolidated Finlex section 9 is tagged finlex:vsId=''1161/1991'', so the missing Voimaantulo body is source-owned
+    by the base act.'
+  verified: '2026-06-21'
+  expected_apply_count: 1
+- amendment_id: 1973/650
+  rule_id: FINLAND.SOURCE_DEFECT.SECTION_EID_MISLABEL
+  family: structural_label_mislabel
+  source_witness:
+    kind: ordinal_structure
+    detail: The statute's own ordinal structure (chapter sequence + downstream references) intrinsic-confirms the corrected
+      label. No oracle citation.
+  wrong_text: |-
+    <section eId="chp_3__sec_3">
+                        <num>3§</num>
+                        <subsection eId="chp_3__sec_3__subsec_1">
+                            <content>
+                                <p>Asunto-oikeuden puheenjohtajan päätökseen jättää asia tutkimatta saa hakea muutosta hovioikeudella. Valituskirjelmä ja valituksenalainen päätös on annettava asunto-oikeuden kansliaan kahden viikon kuluessa päätöksen tiedoksi saamisesta. Valitusasiakirjat on tuomioistuimen toimesta viivytyksettä lähetettävä hovioikeudelle. </p>
+                            </content>
+                        </subsection>
+                    </section>
+  correct_text: |-
+    <section eId="chp_3__sec_28">
+                        <num>28§</num>
+                        <subsection eId="chp_3__sec_28__subsec_1">
+                            <content>
+                                <p>Asunto-oikeuden puheenjohtajan päätökseen jättää asia tutkimatta saa hakea muutosta hovioikeudella. Valituskirjelmä ja valituksenalainen päätös on annettava asunto-oikeuden kansliaan kahden viikon kuluessa päätöksen tiedoksi saamisesta. Valitusasiakirjat on tuomioistuimen toimesta viivytyksettä lähetettävä hovioikeudelle. </p>
+                            </content>
+                        </subsection>
+                    </section>
+  correction_type: body_text
+  notes: 'LawVM-editorial base-source defect fix (no_official_corrigendum_found): enacted source XML labels the chapter 3
+    provision between 27 § and 29 § as chp_3__sec_3 / 3 §, while consolidated Finlex and the chapter-local sequence identify
+    the same source-owned text as 28 §; exact full-section fragment patch repairs structural identity and eIds before replay.'
+  verified: '2026-06-22'
+  expected_apply_count: 1
+- amendment_id: 1966/258
+  rule_id: FINLAND.SOURCE_DEFECT.SECTION_EID_MISLABEL
+  family: structural_label_mislabel
+  source_witness:
+    kind: ordinal_structure
+    detail: The statute's own ordinal structure (chapter sequence + downstream references) intrinsic-confirms the corrected
+      label. No oracle citation.
+  wrong_text: |-
+    <section eId="chp_6__sec_75">
+                        <num>75§</num>
+                        <subsection eId="chp_6__sec_75__subsec_1">
+                            <content>
+                                <p>Jos asianosaisten kesken on ilmaantunut erimielisyyttä vuokrasuhteesta johtuvassa asiassa, toimittaa asutuslautakunta heidän yhteisestä pyynnöstään sovittelun. Jos sovinto saadaan aikaan, on asutuslautakunnan laadittava sovintokirja, joka asianosaisten on allekirjoitettava. Asutuslautakunnan on sovintokirjaan lisäksi merkittävä, että se on tässä lainkohdassa tarkoitettu sovintokirja. </p>
+                            </content>
+                        </subsection>
+                    </section>
+  correct_text: |-
+    <section eId="chp_6__sec_78">
+                        <num>78§</num>
+                        <subsection eId="chp_6__sec_78__subsec_1">
+                            <content>
+                                <p>Jos asianosaisten kesken on ilmaantunut erimielisyyttä vuokrasuhteesta johtuvassa asiassa, toimittaa asutuslautakunta heidän yhteisestä pyynnöstään sovittelun. Jos sovinto saadaan aikaan, on asutuslautakunnan laadittava sovintokirja, joka asianosaisten on allekirjoitettava. Asutuslautakunnan on sovintokirjaan lisäksi merkittävä, että se on tässä lainkohdassa tarkoitettu sovintokirja. </p>
+                            </content>
+                        </subsection>
+                    </section>
+  correction_type: body_text
+  notes: 'LawVM-editorial base-source defect fix (no_official_corrigendum_found): enacted source XML labels the chapter 6
+    provision between 77 § and 79 § as chp_6__sec_75 / 75 §, while the neighbouring 79 § refers to 78 § and 2010/1140 later
+    replaces 78 §; exact full-section fragment patch repairs structural identity and eIds before replay.'
+  verified: '2026-06-27'
+  expected_apply_count: 1
+- amendment_id: 1208/1991
+  rule_id: FINLAND.SOURCE_DEFECT.OCR_CHAR_SUBSTITUTION
+  family: source_pathology_ocr
+  source_witness:
+    kind: multi_acquisition_corroboration
+    corroborators:
+    - fin@20061451
+    detail: Cached consolidated Finlex acquisition corroborates the corrected text. This is one corroborator — the structure
+      admits a list; additional acquisition lanes (Finlex HTML, alternative manifestations) append here.
+  wrong_text: koko naan luovuttu
+  correct_text: kokonaan luovuttu
+  correction_type: body_text
+  notes: 'LawVM-editorial base-source defect fix (no_official_corrigendum_found): enacted §2 text has OCR split ''koko naan'';
+    cached consolidated XML fin@20061451 has ''kokonaan''. Minimal body_text patch applies only when the exact faulty phrase
+    is present.'
+  verified: '2026-06-21'
+  expected_apply_count: 1
+- amendment_id: 1208/1991
+  rule_id: FINLAND.SOURCE_DEFECT.MISSING_COMPOUND_HYPHEN
+  family: source_pathology_ocr
+  source_witness:
+    kind: multi_acquisition_corroboration
+    corroborators:
+    - fin@20061451
+    detail: Cached consolidated Finlex acquisition corroborates the corrected text. This is one corroborator — the structure
+      admits a list; additional acquisition lanes (Finlex HTML, alternative manifestations) append here.
+  wrong_text: Taajamaalueilla luokitus
+  correct_text: Taajama-alueilla luokitus
+  correction_type: body_text
+  notes: 'LawVM-editorial base-source defect fix (no_official_corrigendum_found): enacted §8 text has missing compound hyphen
+    ''Taajamaalueilla''; cached consolidated XML fin@20061451 has ''Taajama-alueilla''. Minimal body_text patch applies only
+    when the exact faulty phrase is present.'
+  verified: '2026-06-21'
+  expected_apply_count: 1
+- amendment_id: 1208/1991
+  rule_id: FINLAND.SOURCE_DEFECT.MISSING_COMPOUND_HYPHEN
+  family: source_pathology_ocr
+  source_witness:
+    kind: multi_acquisition_corroboration
+    corroborators:
+    - fin@20061451
+    detail: Cached consolidated Finlex acquisition corroborates the corrected text. This is one corroborator — the structure
+      admits a list; additional acquisition lanes (Finlex HTML, alternative manifestations) append here.
+  wrong_text: rantaalueiden tuulisuus
+  correct_text: ranta-alueiden tuulisuus
+  correction_type: body_text
+  notes: 'LawVM-editorial base-source defect fix (no_official_corrigendum_found): enacted §7 text has missing compound hyphen
+    ''rantaalueiden''; cached consolidated XML fin@20061451 has ''ranta-alueiden''. Minimal body_text patch applies only when
+    the exact faulty phrase is present.'
+  verified: '2026-06-21'
+  expected_apply_count: 1
+- amendment_id: 1208/1991
+  rule_id: FINLAND.SOURCE_DEFECT.OCR_CHAR_SUBSTITUTION
+  family: source_pathology_ocr
+  source_witness:
+    kind: multi_acquisition_corroboration
+    corroborators:
+    - fin@20061451
+    detail: Cached consolidated Finlex acquisition corroborates the corrected text. This is one corroborator — the structure
+      admits a list; additional acquisition lanes (Finlex HTML, alternative manifestations) append here.
+  wrong_text: varustet tujen rakennettujen teiden
+  correct_text: varustettujen rakennettujen teiden
+  correction_type: body_text
+  notes: 'LawVM-editorial base-source defect fix (no_official_corrigendum_found): enacted §5 text has OCR split ''varustet
+    tujen''; cached consolidated XML fin@20061451 has ''varustettujen''. Minimal body_text patch applies only when the exact
+    faulty phrase is present.'
+  verified: '2026-06-21'
+  expected_apply_count: 1
+- amendment_id: 1208/1991
+  rule_id: FINLAND.SOURCE_DEFECT.OCR_CHAR_SUBSTITUTION
+  family: source_pathology_ocr
+  source_witness:
+    kind: multi_acquisition_corroboration
+    corroborators:
+    - fin@20061451
+    detail: Cached consolidated Finlex acquisition corroborates the corrected text. This is one corroborator — the structure
+      admits a list; additional acquisition lanes (Finlex HTML, alternative manifestations) append here.
+  wrong_text: vastaava pätevyys(<i>veroluokittaja</i>)
+  correct_text: vastaava pätevyys (<i>veroluokittaja</i>)
+  correction_type: body_text
+  notes: 'LawVM-editorial base-source defect fix (no_official_corrigendum_found): enacted §12 XML is missing a visible space
+    before the italicized parenthetical term; cached consolidated XML fin@20061451 has the space. Minimal body_text patch
+    applies only when the exact faulty inline-markup fragment is present.'
+  verified: '2026-06-21'
+  expected_apply_count: 1
+- amendment_id: 1208/1991
+  rule_id: FINLAND.SOURCE_DEFECT.OCR_CHAR_SUBSTITUTION
+  family: source_pathology_ocr
+  source_witness:
+    kind: multi_acquisition_corroboration
+    corroborators:
+    - fin@20061451
+    detail: Cached consolidated Finlex acquisition corroborates the corrected text. This is one corroborator — the structure
+      admits a list; additional acquisition lanes (Finlex HTML, alternative manifestations) append here.
+  wrong_text: vuodelta 1991 toimirerravassa verotuksessa. Asetuksen 17§:ää sovelletan
+  correct_text: vuodelta 1991 toimitettavassa verotuksessa. Asetuksen 17 §:ää sovelletaan
+  correction_type: body_text
+  notes: 'LawVM-editorial base-source defect fix (no_official_corrigendum_found): enacted §25 text has OCR ''toimirerravassa'',
+    missing space in ''17§:ää'', and OCR ''sovelletan''; cached consolidated XML fin@20061451 has the corrected visible text.
+    Minimal body_text patch applies only when the exact faulty phrase is present.'
+  verified: '2026-06-21'
+  expected_apply_count: 1
+- amendment_id: 1208/1991
+  rule_id: FINLAND.SOURCE_DEFECT.OCR_CHAR_SUBSTITUTION
+  family: source_pathology_ocr
+  source_witness:
+    kind: multi_acquisition_corroboration
+    corroborators:
+    - fin@20061451
+    detail: Cached consolidated Finlex acquisition corroborates the corrected text. This is one corroborator — the structure
+      admits a list; additional acquisition lanes (Finlex HTML, alternative manifestations) append here.
+  wrong_text: maatilaatalouden tuloveroastesus
+  correct_text: maatilatalouden tuloveroasetus
+  correction_type: body_text
+  notes: 'LawVM-editorial base-source defect fix (no_official_corrigendum_found): enacted §25 text has OCR ''maatilaatalouden
+    tuloveroastesus''; cached consolidated XML fin@20061451 has ''maatilatalouden tuloveroasetus''. Minimal body_text patch
+    applies only when the exact faulty phrase is present.'
+  verified: '2026-06-21'
+  expected_apply_count: 1
+- amendment_id: 1578/1992
+  rule_id: FINLAND.SOURCE_DEFECT.OCR_CHAR_SUBSTITUTION
+  family: source_pathology_ocr
+  source_witness:
+    kind: multi_acquisition_corroboration
+    corroborators: []
+    detail: Cached consolidated Finlex acquisition corroborates the corrected text. This is one corroborator — the structure
+      admits a list; additional acquisition lanes (Finlex HTML, alternative manifestations) append here.
+  wrong_text: konkursissa varojen tilittämiseen
+  correct_text: konkurssissa varojen tilittämiseen
+  correction_type: body_text
+  notes: 'LawVM-editorial source-defect fix (no_official_corrigendum_found): enacted base §3 has ''konkursissa''; consolidated
+    Finlex has the grammatically and legally correct ''konkurssissa''.'
+  verified: '2026-06-21'
+  expected_apply_count: 1
+- amendment_id: 1776/1995
+  rule_id: FINLAND.SOURCE_DEFECT.OCR_CHAR_SUBSTITUTION
+  family: source_pathology_ocr
+  source_witness:
+    kind: multi_acquisition_corroboration
+    corroborators: []
+    detail: Cached consolidated Finlex acquisition corroborates the corrected text. This is one corroborator — the structure
+      admits a list; additional acquisition lanes (Finlex HTML, alternative manifestations) append here.
+  wrong_text: ei saada sen vakuutema olevasta pantista
+  correct_text: ei saada sen vakuutena olevasta pantista
+  correction_type: body_text
+  notes: 'LawVM-editorial source-defect fix (no_official_corrigendum_found): amendment §9 payload has ''vakuutema''; consolidated
+    Finlex has ''vakuutena''.'
+  verified: '2026-06-21'
+  expected_apply_count: 1
+- amendment_id: 383/1988
+  rule_id: FINLAND.SOURCE_DEFECT.GLUED_PYKALA_TOKEN
+  family: presentation_cleanup
+  source_witness:
+    kind: typographic_impossibility
+    detail: The Finlex drafting grammar never permits the glued form; the source XML artifact is intrinsically ill-formed
+      at this token.
+  wrong_text: kumotun 18§:n
+  correct_text: kumotun 18 §:n
+  correction_type: johtolause
+  notes: 'LawVM-editorial source-defect fix (no_official_corrigendum_found): glued pykälä token ''18§'' → ''18 §'' in the
+    section reference; offending source text ''kumotun 18§:n tilalle''. New grammar parser declines the glued shape (out-of-scope
+    insertion shape); minimal unglue restores parse.'
+  verified: '2026-06-16'
+  expected_apply_count: 1
+- amendment_id: 383/1988
+  rule_id: FINLAND.SOURCE_DEFECT.GLUED_PYKALA_TOKEN
+  family: presentation_cleanup
+  source_witness:
+    kind: typographic_impossibility
+    detail: The Finlex drafting grammar never permits the glued form; the source XML artifact is intrinsically ill-formed
+      at this token.
+  wrong_text: 'kuuluva 18§:'
+  correct_text: 'kuuluva 18 §:'
+  correction_type: johtolause
+  notes: 'LawVM-editorial source-defect fix (no_official_corrigendum_found): glued pykälä token ''18§'' → ''18 §'' in the
+    trailing insertion anchor ''uusi näin kuuluva 18§:''.'
+  verified: '2026-06-16'
+  expected_apply_count: 1
+- amendment_id: 990/1988
+  rule_id: FINLAND.SOURCE_DEFECT.GLUED_PYKALA_TOKEN
+  family: presentation_cleanup
+  source_witness:
+    kind: typographic_impossibility
+    detail: The Finlex drafting grammar never permits the glued form; the source XML artifact is intrinsically ill-formed
+      at this token.
+  wrong_text: kumotun 5§:n
+  correct_text: kumotun 5 §:n
+  correction_type: johtolause
+  notes: 'LawVM-editorial source-defect fix (no_official_corrigendum_found): glued pykälä token ''5§'' → ''5 §'' in the section
+    reference ''kumotun 5§:n tilalle''.'
+  verified: '2026-06-16'
+  expected_apply_count: 1
+- amendment_id: 990/1988
+  rule_id: FINLAND.SOURCE_DEFECT.GLUED_PYKALA_TOKEN
+  family: presentation_cleanup
+  source_witness:
+    kind: typographic_impossibility
+    detail: The Finlex drafting grammar never permits the glued form; the source XML artifact is intrinsically ill-formed
+      at this token.
+  wrong_text: 'kuuluva 5§:'
+  correct_text: 'kuuluva 5 §:'
+  correction_type: johtolause
+  notes: 'LawVM-editorial source-defect fix (no_official_corrigendum_found): glued pykälä token ''5§'' → ''5 §'' in the trailing
+    insertion anchor ''uusi näin kuuluva 5§:''.'
+  verified: '2026-06-16'
+  expected_apply_count: 1
+- amendment_id: 1027/1989
+  rule_id: FINLAND.SOURCE_DEFECT.GLUED_PYKALA_TOKEN
+  family: presentation_cleanup
+  source_witness:
+    kind: typographic_impossibility
+    detail: The Finlex drafting grammar never permits the glued form; the source XML artifact is intrinsically ill-formed
+      at this token.
+  wrong_text: kumotun 2§:n
+  correct_text: kumotun 2 §:n
+  correction_type: johtolause
+  notes: 'LawVM-editorial source-defect fix (no_official_corrigendum_found): glued pykälä token ''2§'' → ''2 §'' in the section
+    reference ''kumotun 2§:n tilalle''.'
+  verified: '2026-06-16'
+  expected_apply_count: 1
+- amendment_id: 1027/1989
+  rule_id: FINLAND.SOURCE_DEFECT.GLUED_PYKALA_TOKEN
+  family: presentation_cleanup
+  source_witness:
+    kind: typographic_impossibility
+    detail: The Finlex drafting grammar never permits the glued form; the source XML artifact is intrinsically ill-formed
+      at this token.
+  wrong_text: 'kuuluva 2§:'
+  correct_text: 'kuuluva 2 §:'
+  correction_type: johtolause
+  notes: 'LawVM-editorial source-defect fix (no_official_corrigendum_found): glued pykälä token ''2§'' → ''2 §'' in the trailing
+    insertion anchor ''uusi näin kuuluva 2§:''.'
+  verified: '2026-06-16'
+  expected_apply_count: 1
+- amendment_id: 23/1989
+  rule_id: FINLAND.SOURCE_DEFECT.GLUED_PYKALA_TOKEN
+  family: presentation_cleanup
+  source_witness:
+    kind: typographic_impossibility
+    detail: The Finlex drafting grammar never permits the glued form; the source XML artifact is intrinsically ill-formed
+      at this token.
+  wrong_text: kumotun 2§:n
+  correct_text: kumotun 2 §:n
+  correction_type: johtolause
+  notes: 'LawVM-editorial source-defect fix (no_official_corrigendum_found): glued pykälä token ''2§'' → ''2 §'' in the section
+    reference ''kumotun 2§:n tilalle''.'
+  verified: '2026-06-16'
+  expected_apply_count: 1
+- amendment_id: 23/1989
+  rule_id: FINLAND.SOURCE_DEFECT.GLUED_PYKALA_TOKEN
+  family: presentation_cleanup
+  source_witness:
+    kind: typographic_impossibility
+    detail: The Finlex drafting grammar never permits the glued form; the source XML artifact is intrinsically ill-formed
+      at this token.
+  wrong_text: 'kuuluva 2§:'
+  correct_text: 'kuuluva 2 §:'
+  correction_type: johtolause
+  notes: 'LawVM-editorial source-defect fix (no_official_corrigendum_found): glued pykälä token ''2§'' → ''2 §'' in the trailing
+    insertion anchor ''uusi näin kuuluva 2§:''.'
+  verified: '2026-06-16'
+  expected_apply_count: 1
+- amendment_id: 24/1989
+  rule_id: FINLAND.SOURCE_DEFECT.GLUED_PYKALA_TOKEN
+  family: presentation_cleanup
+  source_witness:
+    kind: typographic_impossibility
+    detail: The Finlex drafting grammar never permits the glued form; the source XML artifact is intrinsically ill-formed
+      at this token.
+  wrong_text: kumotun 2§:n
+  correct_text: kumotun 2 §:n
+  correction_type: johtolause
+  notes: 'LawVM-editorial source-defect fix (no_official_corrigendum_found): glued pykälä token ''2§'' → ''2 §'' in the section
+    reference ''kumotun 2§:n tilalle''.'
+  verified: '2026-06-16'
+  expected_apply_count: 1
+- amendment_id: 24/1989
+  rule_id: FINLAND.SOURCE_DEFECT.GLUED_PYKALA_TOKEN
+  family: presentation_cleanup
+  source_witness:
+    kind: typographic_impossibility
+    detail: The Finlex drafting grammar never permits the glued form; the source XML artifact is intrinsically ill-formed
+      at this token.
+  wrong_text: 'kuuluva 2§:'
+  correct_text: 'kuuluva 2 §:'
+  correction_type: johtolause
+  notes: 'LawVM-editorial source-defect fix (no_official_corrigendum_found): glued pykälä token ''2§'' → ''2 §'' in the trailing
+    insertion anchor ''uusi näin kuuluva 2§:''.'
+  verified: '2026-06-16'
+  expected_apply_count: 1
+- amendment_id: 25/1989
+  rule_id: FINLAND.SOURCE_DEFECT.GLUED_PYKALA_TOKEN
+  family: presentation_cleanup
+  source_witness:
+    kind: typographic_impossibility
+    detail: The Finlex drafting grammar never permits the glued form; the source XML artifact is intrinsically ill-formed
+      at this token.
+  wrong_text: kumotun 2§:n
+  correct_text: kumotun 2 §:n
+  correction_type: johtolause
+  notes: 'LawVM-editorial source-defect fix (no_official_corrigendum_found): glued pykälä token ''2§'' → ''2 §'' in the section
+    reference ''kumotun 2§:n tilalle''.'
+  verified: '2026-06-16'
+  expected_apply_count: 1
+- amendment_id: 25/1989
+  rule_id: FINLAND.SOURCE_DEFECT.GLUED_PYKALA_TOKEN
+  family: presentation_cleanup
+  source_witness:
+    kind: typographic_impossibility
+    detail: The Finlex drafting grammar never permits the glued form; the source XML artifact is intrinsically ill-formed
+      at this token.
+  wrong_text: 'kuuluva 2§:'
+  correct_text: 'kuuluva 2 §:'
+  correction_type: johtolause
+  notes: 'LawVM-editorial source-defect fix (no_official_corrigendum_found): glued pykälä token ''2§'' → ''2 §'' in the trailing
+    insertion anchor ''uusi näin kuuluva 2§:''.'
+  verified: '2026-06-16'
+  expected_apply_count: 1
+- amendment_id: 703/1989
+  rule_id: FINLAND.SOURCE_DEFECT.GLUED_PYKALA_TOKEN
+  family: presentation_cleanup
+  source_witness:
+    kind: typographic_impossibility
+    detail: The Finlex drafting grammar never permits the glued form; the source XML artifact is intrinsically ill-formed
+      at this token.
+  wrong_text: kumotun 20§:n
+  correct_text: kumotun 20 §:n
+  correction_type: johtolause
+  notes: 'LawVM-editorial source-defect fix (no_official_corrigendum_found): glued pykälä token ''20§'' → ''20 §'' in the
+    section reference ''kumotun 20§:n tilalle''.'
+  verified: '2026-06-16'
+  expected_apply_count: 1
+- amendment_id: 703/1989
+  rule_id: FINLAND.SOURCE_DEFECT.GLUED_PYKALA_TOKEN
+  family: presentation_cleanup
+  source_witness:
+    kind: typographic_impossibility
+    detail: The Finlex drafting grammar never permits the glued form; the source XML artifact is intrinsically ill-formed
+      at this token.
+  wrong_text: 'kuuluva 20§:'
+  correct_text: 'kuuluva 20 §:'
+  correction_type: johtolause
+  notes: 'LawVM-editorial source-defect fix (no_official_corrigendum_found): glued pykälä token ''20§'' → ''20 §'' in the
+    trailing insertion anchor ''uusi näin kuuluva 20§:''.'
+  verified: '2026-06-16'
+  expected_apply_count: 1
+- amendment_id: 268/1978
+  rule_id: FINLAND.SOURCE_DEFECT.GLUED_PERIOD_TOKEN
+  family: presentation_cleanup
+  source_witness:
+    kind: typographic_impossibility
+    detail: The Finlex drafting grammar never permits the glued form; the source XML artifact is intrinsically ill-formed
+      at this token.
+  wrong_text: uusi.3 momentti
+  correct_text: uusi 3 momentti
+  correction_type: johtolause
+  notes: 'LawVM-editorial source-defect fix (no_official_corrigendum_found): glued period ''uusi.3'' → ''uusi 3'' in ''78
+    §:ään uusi.3 momentti''. New grammar parser declines (undecodable insertion continuation); minimal unglue restores parse.'
+  verified: '2026-06-16'
+  expected_apply_count: 1
+- amendment_id: 1998/1195
+  rule_id: FINLAND.SOURCE_DEFECT.DITTOGRAPHIC_DUPLICATE
+  family: presentation_cleanup
+  source_witness:
+    kind: typographic_impossibility
+    detail: The Finlex drafting grammar never permits the glued form; the source XML artifact is intrinsically ill-formed
+      at this token.
+  wrong_text: uusi momentti 3 momentti
+  correct_text: uusi 3 momentti
+  correction_type: johtolause
+  notes: 'LawVM-editorial source-defect fix (no_official_corrigendum_found): dittographic ''momentti'' in ''10 §:ään uusi
+    momentti 3 momentti'' → ''uusi 3 momentti''; disambiguated by the jolloin renumber clause ''nykyinen 3 momentti siirtyy
+    4 momentiksi'' (insert a new 3rd momentti, current 3rd shifts to 4th).'
+  verified: '2026-06-16'
+  expected_apply_count: 1
+- amendment_id: 354/1989
+  rule_id: FINLAND.SOURCE_DEFECT.ESCAPED_TRANSPORT_MARKER
+  family: presentation_cleanup
+  source_witness:
+    kind: multi_acquisition_corroboration
+    corroborators: []
+    detail: Cached consolidated Finlex acquisition corroborates the corrected text. This is one corroborator — the structure
+      admits a list; additional acquisition lanes (Finlex HTML, alternative manifestations) append here.
+  wrong_text: Tämä laki tulee voimaan 1 päivänä touko>kuuta 1989.
+  correct_text: Tämä laki tulee voimaan 1 päivänä toukokuuta 1989.
+  correction_type: body_text
+  notes: 'LawVM-editorial base-source defect fix (no_official_corrigendum_found): source XML section 6 contains escaped stray
+    marker ''touko&gt;kuuta''; official consolidation has ''toukokuuta''. Minimal body_text patch applies only when the exact
+    faulty sentence is present.'
+  verified: '2026-06-17'
+  expected_apply_count: 1
+- amendment_id: 762/1986
+  rule_id: FINLAND.SOURCE_DEFECT.OCR_CHAR_SUBSTITUTION
+  family: source_pathology_ocr
+  source_witness:
+    kind: multi_acquisition_corroboration
+    corroborators:
+    - fin@19900674
+    detail: Cached consolidated Finlex acquisition corroborates the corrected text. This is one corroborator — the structure
+      admits a list; additional acquisition lanes (Finlex HTML, alternative manifestations) append here.
+  wrong_text: Valtion palvelussuhteen jatkuvuuden turvaaminen voidaan hallitusmuodon 86 §:ssä säädettyjen perusteiden ja muutoin
+    säädettyjen kelpoisuusvaatimusten ohella ottaa huomioon täytettäessä valtion virkaa, johon nimittää muu virnaomainen kuin
+    tasavallan presidentti, valtioneuvosta, korkein oikeus tai korkein hallinto-oikeus.
+  correct_text: Valtion palvelussuhteen jatkuvuuden turvaaminen voidaan hallitusmuodon 86 §:ssä säädettyjen perusteiden ja
+    muutoin säädettyjen kelpoisuusvaatimusten ohella ottaa huomioon täytettäessä valtion virkaa, johon nimittää muu viranomainen
+    kuin tasavallan presidentti, valtioneuvosto, korkein oikeus tai korkein hallinto-oikeus.
+  correction_type: body_text
+  notes: 'LawVM-editorial base-source defect fix (no_official_corrigendum_found): original source XML has ''virnaomainen''
+    and ''valtioneuvosta''; cached consolidated XML fin@19900674 and Finlex HTML have ''viranomainen'' and ''valtioneuvosto''.
+    Minimal body_text patch applies only when the exact faulty sentence is present.'
+  verified: '2026-06-19'
+  expected_apply_count: 1
+- amendment_id: 41/1965
+  rule_id: FINLAND.SOURCE_DEFECT.OCR_CHAR_SUBSTITUTION
+  family: source_pathology_ocr
+  source_witness:
+    kind: multi_acquisition_corroboration
+    corroborators:
+    - fin@20240771
+    detail: Cached consolidated Finlex acquisition corroborates the corrected text. This is one corroborator — the structure
+      admits a list; additional acquisition lanes (Finlex HTML, alternative manifestations) append here.
+  wrong_text: Milloin laissa tai asetuksessa on viitattu lainkohtaan, jonka sijaan on tullut uuden perintökaaren säännös,
+    on tätä sen asemasta sovellettava.
+  correct_text: Milloin laissa tai asetuksessa on viitattu lainkohtaan, jonka sijaan on tullut uuden perintökaaren säännös,
+    on tätä sen asemesta sovellettava.
+  correction_type: body_text
+  notes: 'LawVM-editorial base-source defect fix (no_official_corrigendum_found): original source XML has ''asemasta''; cached
+    consolidated XML fin@20240771 has ''asemesta''. Minimal body_text patch applies only when the exact faulty sentence is
+    present.'
+  verified: '2026-06-19'
+  expected_apply_count: 1
+- amendment_id: 41/1965
+  rule_id: FINLAND.SOURCE_DEFECT.OCR_CHAR_SUBSTITUTION
+  family: source_pathology_ocr
+  source_witness:
+    kind: multi_acquisition_corroboration
+    corroborators:
+    - fin@20240771
+    detail: Cached consolidated Finlex acquisition corroborates the corrected text. This is one corroborator — the structure
+      admits a list; additional acquisition lanes (Finlex HTML, alternative manifestations) append here.
+  wrong_text: Mitä avioliittolain voimaanpanosta annetun lain 6 §:n 2 momentissa säädetään eräiden ennen avioliittolain voimaantuloa
+    siitettyjen lasten oikeudellisesta asemasta, on edelleen voimassa myös täilaisten lasten perintöoikeudesta ja oikeudesta
+    periä tällainen lapsi.
+  correct_text: Mitä avioliittolain voimaanpanosta annetun lain 6 §:n 2 momentissa säädetään eräiden ennen avioliittolain
+    voimaantuloa siitettyjen lasten oikeudellisesta asemasta, on edelleen voimassa myös tällaisten lasten perintöoikeudesta
+    ja oikeudesta periä tällainen lapsi.
+  correction_type: body_text
+  notes: 'LawVM-editorial base-source defect fix (no_official_corrigendum_found): original source XML has OCR ''täilaisten'';
+    cached consolidated XML fin@20240771 has ''tällaisten''. Minimal body_text patch applies only when the exact faulty sentence
+    is present.'
+  verified: '2026-06-19'
+  expected_apply_count: 1
+- amendment_id: 41/1965
+  rule_id: FINLAND.SOURCE_DEFECT.OCR_CHAR_SUBSTITUTION
+  family: source_pathology_ocr
+  source_witness:
+    kind: multi_acquisition_corroboration
+    corroborators:
+    - fin@20240771
+    detail: Cached consolidated Finlex acquisition corroborates the corrected text. This is one corroborator — the structure
+      admits a list; additional acquisition lanes (Finlex HTML, alternative manifestations) append here.
+  wrong_text: VaLtion oikeutta kuolleen henkilön jäämistöön valvoo valtiokonttori.
+  correct_text: Valtion oikeutta kuolleen henkilön jäämistöön valvoo valtiokonttori.
+  correction_type: body_text
+  notes: 'LawVM-editorial base-source defect fix (no_official_corrigendum_found): original source XML has OCR ''VaLtion'';
+    cached consolidated XML fin@20240771 has ''Valtion''. Minimal body_text patch applies only when the exact faulty sentence
+    is present.'
+  verified: '2026-06-19'
+  expected_apply_count: 1
+- amendment_id: 41/1965
+  rule_id: FINLAND.SOURCE_DEFECT.OCR_CHAR_SUBSTITUTION
+  family: source_pathology_ocr
+  source_witness:
+    kind: multi_acquisition_corroboration
+    corroborators:
+    - fin@20240771
+    detail: Cached consolidated Finlex acquisition corroborates the corrected text. This is one corroborator — the structure
+      admits a list; additional acquisition lanes (Finlex HTML, alternative manifestations) append here.
+  wrong_text: Mitä uuden perintökaaren 9 luvun 2 §:ssä säädetään sen hyväksi tehdystä testamentista, joka testamentin tekijän
+    kuollessa ei vielä ole syntynyt eikä siitetty, on, jollei erityisistä seikoista muuta johdu, vastaavasti sovellettava
+    lahjaan tal muuhun sen hyväksi tehtyyn oikeustoimeen, joka oikeustointa päätettäessä ei vielä ele syntynyt eikä siitetty.
+  correct_text: Mitä uuden perintökaaren 9 luvun 2 §:ssä säädetään sen hyväksi tehdystä testamentista, joka testamentin tekijän
+    kuollessa ei vielä ole syntynyt eikä siitetty, on, jollei erityisistä seikoista muuta johdu, vastaavasti sovellettava
+    lahjaan tai muuhun sen hyväksi tehtyyn oikeustoimeen, joka oikeustointa päätettäessä ei vielä ole syntynyt eikä siitetty.
+  correction_type: body_text
+  notes: 'LawVM-editorial base-source defect fix (no_official_corrigendum_found): original source XML has OCR ''tal'' and
+    ''ele''; cached consolidated XML fin@20240771 has ''tai'' and ''ole''. Minimal body_text patch applies only when the exact
+    faulty sentence is present.'
+  verified: '2026-06-19'
+  expected_apply_count: 1
+- amendment_id: 41/1965
+  rule_id: FINLAND.SOURCE_DEFECT.OCR_CHAR_SUBSTITUTION
+  family: source_pathology_ocr
+  source_witness:
+    kind: multi_acquisition_corroboration
+    corroborators:
+    - fin@20240771
+    detail: Cached consolidated Finlex acquisition corroborates the corrected text. This is one corroborator — the structure
+      admits a list; additional acquisition lanes (Finlex HTML, alternative manifestations) append here.
+  wrong_text: Luovutus konkurssiin tai pesänselvittäjän hallittavaksi käsittää puolisoiden pesän koko omaisuuden, mikäli puolin
+    oikeudesta omaisuuden erottamiseen ei muuta johdu. Pesänselvittäjäksi on määrättävä eloonjäänyt puoliso, jollei erityisiä
+    vastasyitä ole.
+  correct_text: Luovutus konkurssiin tai pesänselvittäjän hallittavaksi käsittää puolisoiden pesän koko omaisuuden, mikäli
+    puolison oikeudesta omaisuuden erottamiseen ei muuta johdu. Pesänselvittäjäksi on määrättävä eloonjäänyt puoliso, jollei
+    erityisiä vastasyitä ole.
+  correction_type: body_text
+  notes: 'LawVM-editorial base-source defect fix (no_official_corrigendum_found): original source XML has OCR ''puolin oikeudesta'';
+    cached consolidated XML fin@20240771 has ''puolison oikeudesta''. Minimal body_text patch applies only when the exact
+    faulty item text is present.'
+  verified: '2026-06-19'
+  expected_apply_count: 1
+- amendment_id: 41/1965
+  rule_id: FINLAND.SOURCE_DEFECT.OCR_CHAR_SUBSTITUTION
+  family: source_pathology_ocr
+  source_witness:
+    kind: multi_acquisition_corroboration
+    corroborators:
+    - fin@20240771
+    detail: Cached consolidated Finlex acquisition corroborates the corrected text. This is one corroborator — the structure
+      admits a list; additional acquisition lanes (Finlex HTML, alternative manifestations) append here.
+  wrong_text: Perukirjan on merkittävä puolisoiden pesän omaisuus ja velat. Uuden perintökaaren 20 luvun 4 §:n 3 momentin
+    säännöstä ennakon merkitsemisestä perukirjaan on sovellettava myös ennakkoon, joka on annettu yhteisestä omaisuudesta.
+  correct_text: Perukirjaan on merkittävä puolisoiden pesän omaisuus ja velat. Uuden perintökaaren 20 luvun 4 §:n 3 momentin
+    säännöstä ennakon merkitsemisestä perukirjaan on sovellettava myös ennakkoon, joka on annettu yhteisestä omaisuudesta.
+  correction_type: body_text
+  notes: 'LawVM-editorial base-source defect fix (no_official_corrigendum_found): original source XML has OCR ''Perukirjan'';
+    cached consolidated XML fin@20240771 has ''Perukirjaan''. Minimal body_text patch applies only when the exact faulty item
+    text is present.'
+  verified: '2026-06-19'
+  expected_apply_count: 1
+- amendment_id: 41/1965
+  rule_id: FINLAND.SOURCE_DEFECT.OCR_CHAR_SUBSTITUTION
+  family: source_pathology_ocr
+  source_witness:
+    kind: multi_acquisition_corroboration
+    corroborators:
+    - fin@20240771
+    detail: Cached consolidated Finlex acquisition corroborates the corrected text. This is one corroborator — the structure
+      admits a list; additional acquisition lanes (Finlex HTML, alternative manifestations) append here.
+  wrong_text: Mitä uuden perintökaaren 21 luvussa sanotaan, on sovellettava puolisoiden pesän varoihin ja velkoihin. Jos puolisoiden
+    pesän omaisuus laissa säädetyssä ajassa luovutetaan konkurssiin tai pesänselvittäjän hallittavaksi, on kuitenkin eloonjääneen
+    puolison velkavastuusta voimassa, mitä siitä konkurssin varalta on onnen 1 päivää tammikuuta 1930 voimassa olleessa laissa
+    säädetty. Omaisuuden erilleen ottamisesta konkurssissa on niin ikään ennen mainittua päivää voimassa ollutta lakia noudatettava.
+  correct_text: Mitä uuden perintökaaren 21 luvussa sanotaan, on sovellettava puolisoiden pesän varoihin ja velkoihin. Jos
+    puolisoiden pesän omaisuus laissa säädetyssä ajassa luovutetaan konkurssiin tai pesänselvittäjän hallittavaksi, on kuitenkin
+    eloonjääneen puolison velkavastuusta voimassa, mitä siitä konkurssin varalta on ennen 1 päivää tammikuuta 1930 voimassa
+    olleessa laissa säädetty. Omaisuuden erilleen ottamisesta konkurssissa on niin ikään ennen mainittua päivää voimassa ollutta
+    lakia noudatettava.
+  correction_type: body_text
+  notes: 'LawVM-editorial base-source defect fix (no_official_corrigendum_found): original source XML has OCR ''onnen 1 päivää'';
+    cached consolidated XML fin@20240771 has ''ennen 1 päivää''. Minimal body_text patch applies only when the exact faulty
+    item text is present.'
+  verified: '2026-06-19'
+  expected_apply_count: 1
+- amendment_id: 41/1965
+  rule_id: FINLAND.SOURCE_DEFECT.OCR_CHAR_SUBSTITUTION
+  family: source_pathology_ocr
+  source_witness:
+    kind: multi_acquisition_corroboration
+    corroborators:
+    - fin@20240771
+    detail: Cached consolidated Finlex acquisition corroborates the corrected text. This is one corroborator — the structure
+      admits a list; additional acquisition lanes (Finlex HTML, alternative manifestations) append here.
+  wrong_text: Omaisuuden osoituksessa saakoon eloonjäänyt puoliso hänelle tulevan etuosan jakamattomasta pesästä ja sen jälkeen
+    naimaosansa.
+  correct_text: Omaisuuden osituksessa saakoon eloonjäänyt puoliso hänelle tulevan etuosan jakamattomasta pesästä ja sen jälkeen
+    naimaosansa.
+  correction_type: body_text
+  notes: 'LawVM-editorial base-source defect fix (no_official_corrigendum_found): original source XML has OCR ''osoituksessa'';
+    cached consolidated XML fin@20240771 has ''osituksessa''. Minimal body_text patch applies only when the exact faulty item
+    text is present.'
+  verified: '2026-06-19'
+  expected_apply_count: 1
+- amendment_id: 41/1965
+  rule_id: FINLAND.SOURCE_DEFECT.OCR_CHAR_SUBSTITUTION
+  family: source_pathology_ocr
+  source_witness:
+    kind: multi_acquisition_corroboration
+    corroborators:
+    - fin@20240771
+    detail: Cached consolidated Finlex acquisition corroborates the corrected text. This is one corroborator — the structure
+      admits a list; additional acquisition lanes (Finlex HTML, alternative manifestations) append here.
+  wrong_text: Sopimuksen kuolinpesän yhteishallinnosta on, jolloi toisin ole sovittu, katsottava käsittävän puolisoiden pesän
+    koko omaisuuden.
+  correct_text: Sopimuksen kuolinpesän yhteishallinnosta on, jollei toisin ole sovittu, katsottava käsittävän puolisoiden
+    pesän koko omaisuuden.
+  correction_type: body_text
+  notes: 'LawVM-editorial base-source defect fix (no_official_corrigendum_found): original source XML has OCR ''jolloi'';
+    cached consolidated XML fin@20240771 has ''jollei''. Minimal body_text patch applies only when the exact faulty item text
+    is present.'
+  verified: '2026-06-19'
+  expected_apply_count: 1
+- amendment_id: 494/1981
+  rule_id: FINLAND.SOURCE_DEFECT.OCR_CHAR_SUBSTITUTION
+  family: source_pathology_ocr
+  source_witness:
+    kind: multi_acquisition_corroboration
+    corroborators:
+    - fin@20151630
+    detail: Cached consolidated Finlex acquisition corroborates the corrected text. This is one corroborator — the structure
+      admits a list; additional acquisition lanes (Finlex HTML, alternative manifestations) append here.
+  wrong_text: Valtion on pyrittävä huolehtimaan siitä, että saariston vakinaisella väestöllä on käytettävissään asumisen,
+    toimeentulon ja välttämättömän asioina kannalta tarpeelliset liikenne- ja kuljetuspalvelut, sekä siitä, että nämä palvelut
+    ovat mahdollisimman joustavat ja ilmaiset tai hinnaltaan kohtuulliset.
+  correct_text: Valtion on pyrittävä huolehtimaan siitä, että saariston vakinaisella väestöllä on käytettävissään asumisen,
+    toimeentulon ja välttämättömän asioinnin kannalta tarpeelliset liikenne- ja kuljetuspalvelut, sekä siitä, että nämä palvelut
+    ovat mahdollisimman joustavat ja ilmaiset tai hinnaltaan kohtuulliset.
+  correction_type: body_text
+  notes: 'LawVM-editorial base-source defect fix (no_official_corrigendum_found): original source XML has OCR ''asioina'';
+    cached consolidated XML fin@20151630 has ''asioinnin''. Minimal body_text patch applies only when the exact faulty sentence
+    is present.'
+  verified: '2026-06-19'
+  expected_apply_count: 1
+- amendment_id: 494/1981
+  rule_id: FINLAND.SOURCE_DEFECT.OCR_CHAR_SUBSTITUTION
+  family: source_pathology_ocr
+  source_witness:
+    kind: multi_acquisition_corroboration
+    corroborators:
+    - fin@20151630
+    detail: Cached consolidated Finlex acquisition corroborates the corrected text. This is one corroborator — the structure
+      admits a list; additional acquisition lanes (Finlex HTML, alternative manifestations) append here.
+  wrong_text: Milloin saariston vakinaiselle väestölle korvataan valtion varoista 1 momentissa tarkoitetuista matkoista aiheutuneita
+    kustannuksia, on vesitse tehty matka otettava huomioon lisäkustannuksena siten kuin erikseen säädetä.
+  correct_text: Milloin saariston vakinaiselle väestölle korvataan valtion varoista 1 momentissa tarkoitetuista matkoista
+    aiheutuneita kustannuksia, on vesitse tehty matka otettava huomioon lisäkustannuksena siten kuin erikseen säädetään.
+  correction_type: body_text
+  notes: 'LawVM-editorial base-source defect fix (no_official_corrigendum_found): original source XML has OCR/truncated verb
+    ''säädetä''; cached consolidated XML fin@20151630 has ''säädetään''. Minimal body_text patch applies only when the exact
+    faulty sentence is present.'
+  verified: '2026-06-19'
+  expected_apply_count: 1
+- amendment_id: 494/1981
+  rule_id: FINLAND.SOURCE_DEFECT.OCR_CHAR_SUBSTITUTION
+  family: source_pathology_ocr
+  source_witness:
+    kind: multi_acquisition_corroboration
+    corroborators:
+    - fin@20151630
+    detail: Cached consolidated Finlex acquisition corroborates the corrected text. This is one corroborator — the structure
+      admits a list; additional acquisition lanes (Finlex HTML, alternative manifestations) append here.
+  wrong_text: Edellä 1 momentissa tarkoitetuiksi peruspalveluiksi katsotaan terveys- ja sosiaalitoimen, koulu- ja kulttuuritoimen,
+    kaupan ja tietoliikenteen tavanomaiset lakipalvelut sekä sähköenergia.
+  correct_text: Edellä 1 momentissa tarkoitetuiksi peruspalveluiksi katsotaan terveys- ja sosiaalitoimen, koulu- ja kulttuuritoimen,
+    kaupan ja tietoliikenteen tavanomaiset lähipalvelut sekä sähköenergia.
+  correction_type: body_text
+  notes: 'LawVM-editorial base-source defect fix (no_official_corrigendum_found): original source XML has OCR ''lakipalvelut'';
+    cached consolidated XML fin@20151630 has ''lähipalvelut''. Minimal body_text patch applies only when the exact faulty
+    sentence is present.'
+  verified: '2026-06-19'
+  expected_apply_count: 1
+- amendment_id: 494/1981
+  rule_id: FINLAND.SOURCE_DEFECT.OCR_CHAR_SUBSTITUTION
+  family: source_pathology_ocr
+  source_witness:
+    kind: multi_acquisition_corroboration
+    corroborators:
+    - fin@20151630
+    detail: Cached consolidated Finlex acquisition corroborates the corrected text. This is one corroborator — the structure
+      admits a list; additional acquisition lanes (Finlex HTML, alternative manifestations) append here.
+  wrong_text: Valtioneuvosto määrää saaristokunniksi ne kunnat, joissa saaristo-olot ovat olennaisena esteenä kunnan kehitykselle.
+    Valtioneuvosto voi erityisestä syystä päättää, että saaristokuntaa koskevia säännöksiä sovelletaan myös muun
+  correct_text: Valtioneuvosto määrää saaristokunniksi ne kunnat, joissa saaristo-olot ovat olennaisena esteenä kunnan kehitykselle.
+    Valtioneuvosto voi erityisestä syystä päättää, että saaristokuntaa koskevia säännöksiä sovelletaan myös muun kunnan saaristo-osaan.
+  correction_type: body_text
+  notes: 'LawVM-editorial base-source defect fix (no_official_corrigendum_found): original source XML truncates the sentence
+    after ''myös muun''; cached consolidated XML fin@20151630 has the complete sentence. Minimal body_text patch applies only
+    when the exact faulty sentence is present.'
+  verified: '2026-06-19'
+  expected_apply_count: 1
+- amendment_id: 1982/182
+  rule_id: FINLAND.SOURCE_DEFECT.LINE_END_HYPHENATION
+  family: presentation_cleanup
+  source_witness:
+    kind: multi_acquisition_corroboration
+    corroborators: []
+    detail: Cached consolidated Finlex acquisition corroborates the corrected text. This is one corroborator — the structure
+      admits a list; additional acquisition lanes (Finlex HTML, alternative manifestations) append here.
+  wrong_text: merkit 375 (taksiasema-alue), 571 (taajama) ja 572 (taajama päättyy) on otettava käyttöön heti tämän asetuksen
+    tullessa voi- maan;
+  correct_text: merkit 375 (taksiasema-alue), 571 (taajama) ja 572 (taajama päättyy) on otettava käyttöön heti tämän asetuksen
+    tullessa voimaan;
+  correction_type: body_text
+  notes: 'LawVM-editorial base-source defect fix (no_official_corrigendum_found): source XML has broken line-end hyphenation
+    ''voi- maan''; cached consolidated witness has ''voimaan''. Minimal body_text patch applies only when the exact faulty
+    item text is present.'
+  verified: '2026-06-21'
+  expected_apply_count: 1
+- amendment_id: 1982/182
+  rule_id: FINLAND.SOURCE_DEFECT.LINE_END_HYPHENATION
+  family: presentation_cleanup
+  source_witness:
+    kind: multi_acquisition_corroboration
+    corroborators: []
+    detail: Cached consolidated Finlex acquisition corroborates the corrected text. This is one corroborator — the structure
+      admits a list; additional acquisition lanes (Finlex HTML, alternative manifestations) append here.
+  wrong_text: merkit 322 (polkupyörällä ja mopolla ajo kielletty), 323 (jalankulku kielletty), 416 (pakollinen kiertosuunta),
+    563 (moottoriliikennetie) ja 564 (moottoriliikennetie päättyy) on otettava käyttöön vuoden 1983 loppuun men- nessä; sekä
+  correct_text: merkit 322 (polkupyörällä ja mopolla ajo kielletty), 323 (jalankulku kielletty), 416 (pakollinen kiertosuunta),
+    563 (moottoriliikennetie) ja 564 (moottoriliikennetie päättyy) on otettava käyttöön vuoden 1983 loppuun mennessä; sekä
+  correction_type: body_text
+  notes: 'LawVM-editorial base-source defect fix (no_official_corrigendum_found): source XML has broken line-end hyphenation
+    ''men- nessä''; cached consolidated witness has ''mennessä''. Minimal body_text patch applies only when the exact faulty
+    item text is present.'
+  verified: '2026-06-21'
+  expected_apply_count: 1
+- amendment_id: 1982/182
+  rule_id: FINLAND.SOURCE_DEFECT.OCR_CHAR_SUBSTITUTION
+  family: source_pathology_ocr
+  source_witness:
+    kind: multi_acquisition_corroboration
+    corroborators: []
+    detail: Cached consolidated Finlex acquisition corroborates the corrected text. This is one corroborator — the structure
+      admits a list; additional acquisition lanes (Finlex HTML, alternative manifestations) append here.
+  wrong_text: merkit 312 (moottorikäyttöisellä ajoneuvolla ajo kielletty), 313 (kuorma- ja pakettiautolla ajo kielletty),
+    316 (moottoripyörällä ajo kielletty), 551 (yksisuuntainen tie), 621 ja 622 (ajokaistaopastus) ja merkki 623 (ajokaistan
+    päättyminen) on otettava käyttöön vuoden
+  correct_text: merkit 312 (moottorikäyttöisellä ajoneuvolla ajo kielletty), 313 (kuorma- ja pakettiautolla ajo kielletty),
+    316 (moottoripyörällä ajo kielletty), 551 (yksisuuntainen tie), 621 ja 622 (ajokaistaopastus) ja merkki 623 (ajokaistan
+    päättyminen) on otettava käyttöön vuoden 1990 loppuun mennessä.
+  correction_type: body_text
+  notes: 'LawVM-editorial base-source defect fix (no_official_corrigendum_found): source XML truncates chapter 9 section 57
+    item c after ''vuoden''; cached consolidated witness has the complete deadline ''vuoden 1990 loppuun mennessä''. Minimal
+    body_text patch applies only when the exact faulty item text is present.'
+  verified: '2026-06-21'
+  expected_apply_count: 1
+- amendment_id: 1982/182
+  rule_id: FINLAND.SOURCE_DEFECT.ASCII_HYPHEN_FOR_RANGE_DASH
+  family: presentation_cleanup
+  source_witness:
+    kind: multi_acquisition_corroboration
+    corroborators: []
+    detail: Cached consolidated Finlex acquisition corroborates the corrected text. This is one corroborator — the structure
+      admits a list; additional acquisition lanes (Finlex HTML, alternative manifestations) append here.
+  wrong_text: Aikaisempien määräysten mukaisia ryhmitysmerkkejä voidaan käyttää merkkien 412-415 (pakollinen ajosuunta) sekä
+    40 §:n mukaisten ajokaistanuolten asemesta vuoden 1990 loppuun saakka.
+  correct_text: Aikaisempien määräysten mukaisia ryhmitysmerkkejä voidaan käyttää merkkien 412–415 (pakollinen ajosuunta)
+    sekä 40 §:n mukaisten ajokaistanuolten asemesta vuoden 1990 loppuun saakka.
+  correction_type: body_text
+  notes: 'LawVM-editorial base-source defect fix (no_official_corrigendum_found): source XML has ASCII hyphen in the sign-number
+    range ''412-415''; cached consolidated witness has en dash ''412–415''. Minimal body_text patch applies only when the
+    exact faulty subsection text is present.'
+  verified: '2026-06-21'
+  expected_apply_count: 1
+- amendment_id: 2007/491
+  rule_id: FINLAND.SOURCE_DEFECT.SECTION_EID_MISLABEL
+  family: structural_label_mislabel
+  source_witness:
+    kind: ordinal_structure
+    detail: The statute's own ordinal structure (chapter sequence + downstream references) intrinsic-confirms the corrected
+      label. No oracle citation.
+  wrong_text: |-
+    <tr>
+                                        <td class="align-left colsep-0 rowsep-0 valign-TOP">
+                                            <p>2) hirvenvasa</p>
+                                        </td>
+                                        <td class="align-left colsep-0 rowsep-0 valign-TOP">
+                                            <p>50 euroa</p>
+                                        </td>
+                                    </tr>
+  correct_text: |-
+    <tr>
+                                        <td class="align-left colsep-0 rowsep-0 valign-TOP">
+                                            <p>2) hirvenvasa</p>
+                                        </td>
+                                        <td class="align-left colsep-0 rowsep-0 valign-TOP">
+                                            <p>50 euroa</p>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="align-left colsep-0 rowsep-0 valign-TOP">
+                                            <p>3) aikuinen kuusipeura, saksanhirvi, japaninpeura, valkohäntäpeura tai metsäpeura</p>
+                                        </td>
+                                        <td class="align-left colsep-0 rowsep-0 valign-TOP">
+                                            <p>17 euroa</p>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="align-left colsep-0 rowsep-0 valign-TOP">
+                                            <p>4) kuusipeuran, saksanhirven, japaninpeuran, valkohäntäpeuran tai metsäpeuran vasa</p>
+                                        </td>
+                                        <td class="align-left colsep-0 rowsep-0 valign-TOP">
+                                            <p>8 euroa.</p>
+                                        </td>
+                                    </tr>
+  correction_type: body_text
+  notes: 'LawVM-editorial amendment-source defect fix (no_official_corrigendum_found): original 2007/491 body XML omits §2
+    fee rows 3 and 4, while cached consolidated XML fin@20080137 carries them under sec_2v20070491 eIds. Minimal table-row
+    insertion applies only when the exact faulty second row is present.'
+  verified: '2026-06-21'
+  expected_apply_count: 1

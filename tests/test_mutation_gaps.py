@@ -28,6 +28,7 @@ from lawvm.core.tree_ops import (
     remove_at,
     replace_at,
     strip_nodes,
+    with_children,
 )
 from lawvm.core.timeline import (
     _eligible,
@@ -109,6 +110,60 @@ def test_with_children_preserves_attrs_through_remove_at():
     )
     result = remove_at(body, [("section", "2")])
     assert result.attrs == {"meta": "value"}, f"remove_at dropped body attrs: got {result.attrs!r}"
+
+
+def test_with_children_replaces_children_and_shares_other_fields():
+    """iter2 W7 L1 regression for the public ``with_children`` API contract.
+
+    Pins the full promotion contract for the now-public kernel CoW helper:
+    ``with_children(node, new_children)`` MUST produce a NEW ``IRNode`` whose
+    ``children`` is exactly the supplied sequence (coerced to the frozen tuple
+    shape), while ``kind`` / ``label`` / ``text`` / ``attrs`` are SHARED from
+    the original node by value. The UK-local duplicating helper
+    (``uk_replace_children_cow``) was deleted in favour of routing through
+    this single core primitive, so the public-name contract is now the only
+    rebuild-with-children path on the replay lane.
+    """
+    original = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="5",
+        text="original section text",
+        attrs={"eId": "section-5", "note": "keep-me"},
+        children=(IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="original sub"),),
+    )
+    new_children_tuple = (
+        IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="replaced sub"),
+        IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="appended sub"),
+    )
+    new_children_list = list(new_children_tuple)
+
+    # Tuple input (the canonical frozen-IR shape).
+    result_tuple = with_children(original, new_children_tuple)
+    assert result_tuple is not original, "with_children must return a NEW IRNode"
+    assert result_tuple.children == new_children_tuple, (
+        f"with_children did not install the new children tuple: got {result_tuple.children!r}"
+    )
+    assert isinstance(result_tuple.children, tuple)
+    # Shared fields — the rebuild must not perturb kind/label/text/attrs.
+    assert result_tuple.kind is original.kind
+    assert result_tuple.label == original.label
+    assert result_tuple.text == original.text
+    assert result_tuple.attrs == original.attrs
+    # Mutating the source list AFTER the call MUST NOT leak into the result
+    # (the helper copies via ``tuple(children)`` in the ``IRNode``
+    # ``__post_init__``).
+    assert result_tuple.children == tuple(new_children_list)
+
+    # List input is accepted by ``Sequence`` parameter (existing finland call
+    # sites pass ``list(_tops._with_children(...))``); the public API must
+    # continue to coerce to a frozen tuple.
+    result_list = with_children(original, new_children_list)
+    assert isinstance(result_list.children, tuple)
+    assert result_list.children == new_children_tuple
+    new_children_list.append(IRNode(kind=IRNodeKind.SUBSECTION, label="3", text="post-call"))
+    assert result_list.children == new_children_tuple, (
+        "with_children aliased the input list — post-call mutation leaked"
+    )
 
 
 # ============================================================================

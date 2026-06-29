@@ -727,12 +727,12 @@ def test_test_shard_maps_core_and_dependency_changes_to_all() -> None:
     assert module.affected_shards(["pyproject.toml"]) == ["all"]
 
 
-def test_test_shard_maps_finland_corrigendum_manual_to_bounded_fi_shards() -> None:
+def test_test_shard_maps_finland_source_defect_fixes_to_bounded_fi_shards() -> None:
     module = _load_test_shard_module()
 
     assert module.affected_shards(
         [
-            "data/finland/corrigendum_manual.yaml",
+            "data/finland/source_defect_fixes_fi.yaml",
             "tests/test_fi_replay_products.py",
         ]
     ) == [
@@ -740,23 +740,23 @@ def test_test_shard_maps_finland_corrigendum_manual_to_bounded_fi_shards() -> No
         "finland_replay_rules",
     ]
     assert _without_path_expanded_shards(module.affected_plan(
-        ["data/finland/corrigendum_manual.yaml"]
+        ["data/finland/source_defect_fixes_fi.yaml"]
     )) == {
         "kind": "lawvm_pytest_affected_shards",
-        "input_paths": ["data/finland/corrigendum_manual.yaml"],
+        "input_paths": ["data/finland/source_defect_fixes_fi.yaml"],
         "shards": [
             "finland_replay_products_core",
             "finland_replay_rules",
         ],
         "paths": [
             {
-                "path": "data/finland/corrigendum_manual.yaml",
+                "path": "data/finland/source_defect_fixes_fi.yaml",
                 "shards": [
                     "finland_replay_products_core",
                     "finland_replay_rules",
                 ],
                 "reason": (
-                    "known frontend prefix data/finland/corrigendum_manual.yaml maps "
+                    "known frontend prefix data/finland/source_defect_fixes_fi.yaml maps "
                     "to finland_replay_products_core, finland_replay_rules"
                 ),
             }

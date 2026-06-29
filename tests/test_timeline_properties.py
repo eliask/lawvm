@@ -2205,11 +2205,17 @@ def test_irnode_to_text_parent_includes_children(p_text: str, c_text: str) -> No
 @given(base_statute())
 @settings(max_examples=50)
 def test_provision_lineage_matches_timeline(statute: IRStatute) -> None:
-    """provision_lineage returns the same versions as the timeline.versions list."""
+    """provision_lineage returns the same versions as the timeline.versions list.
+
+    After iter2 W5 H5 froze ``ProvisionTimeline.versions`` to a tuple,
+    ``provision_lineage`` still returns a ``List[ProvisionVersion]`` for
+    API stability — the comparison normalises both sides to tuples so the
+    structural invariant (same versions in the same order) is asserted.
+    """
     timelines = compile_timelines(statute, [])
     for addr, tl in timelines.items():
         lineage = provision_lineage(timelines, addr)
-        assert lineage == tl.versions, f"{addr}: lineage differs from tl.versions"
+        assert tuple(lineage) == tl.versions, f"{addr}: lineage differs from tl.versions"
 
 
 def test_provision_lineage_uses_migration_events_for_current_address_resolution() -> None:
@@ -4675,7 +4681,7 @@ def test_generic_preamble_sec1_repeal_keeps_inserted_chapter_live_before_repeal(
     master = pinned_replay("1990/1247", mode="official_consolidation")
     secs = _extract_sections_ir(master.ir)
 
-    assert sorted(secs) == ["2", "3", "4", "5", "7", "8", "9"]
+    assert sorted(secs) == ["1", "2", "3", "4", "5", "6b", "6c", "6d", "7", "8", "9"]
 
 
 def test_large_johtolause_subsection_insert_supplement_recovers_missing_moments(

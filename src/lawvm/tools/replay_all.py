@@ -151,15 +151,26 @@ def main(args: Any) -> int:
         file=sys.stderr,
     )
 
+    from lawvm.finland.transparent_store import is_known_missing_source
+
     replayed = 0
     failed = 0
+    expected_missing = 0
     failures: List[Tuple[str, str]] = []
     t0 = time.time()
 
     def _record(statute_id: str, ok: bool, replay_status: str, idx: int) -> None:
-        nonlocal replayed, failed
+        nonlocal replayed, failed, expected_missing
         if ok:
             replayed += 1
+        elif is_known_missing_source(statute_id):
+            # Curated known-missing source: no source-act XML exists to replay
+            # from (pre-digitization-era statutes that have only a consolidated
+            # oracle, or not-yet-published recent acts — all listed in
+            # data/finland/known_missing_sources.txt). The bench excludes these
+            # via is_known_missing_source too; they are expected non-replayable,
+            # NOT replay failures, and must not inflate the failure count.
+            expected_missing += 1
         else:
             failed += 1
             if len(failures) < 200:
@@ -204,6 +215,7 @@ def main(args: Any) -> int:
     print(f"corpus total : {total_in_corpus}", file=sys.stderr)
     print(f"attempted    : {attempted}", file=sys.stderr)
     print(f"replayed ok  : {replayed}", file=sys.stderr)
+    print(f"expected missing-source : {expected_missing}", file=sys.stderr)
     print(f"failed       : {failed}", file=sys.stderr)
     print(f"elapsed      : {elapsed:.1f}s", file=sys.stderr)
     if failures:

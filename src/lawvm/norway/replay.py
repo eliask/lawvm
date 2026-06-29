@@ -15,9 +15,10 @@ import re
 import sys
 from dataclasses import dataclass, field, replace as dc_replace
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Tuple
 
 from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.filter_result import FilterResult, RejectedItem
 from lawvm.core.ir import IRStatute, LegalOperation
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.temporal_resolution import (
@@ -27,6 +28,7 @@ from lawvm.core.temporal_resolution import (
     TemporalResolutionEvidence,
     TemporalResolutionStatus,
 )
+from lawvm.core.write_receipt import WriteReceipt
 from lawvm.norway.commencement import (
     apply_no_commencement_overrides,
     load_no_commencement_overrides,
@@ -34,7 +36,7 @@ from lawvm.norway.commencement import (
 from lawvm.norway.grafter import (
     NO_PARSE_REPLACE_PROMOTED_TO_INSERT_FOR_RENUMBER,
     apply_no_heading_groups,
-    apply_no_ops,
+    apply_no_ops_conserved,
     iter_no_document_change_ops,
     parse_no_heading_groups,
     parse_no_statute,
@@ -136,6 +138,46 @@ class NOReplayResult:
     adjudications: List[CompileAdjudication] = field(default_factory=list)
     n_ops: int = 0
     error: Optional[str] = None
+    # §1.8 typed receipts for archive members that declared more bytes than
+    # ``$LAWVM_MAX_ARCHIVE_MEMBER_BYTES`` and were skipped by the underlying
+    # Lovdata tarball loaders (``load_no_amendment_artifact_bytes`` /
+    # ``_iter_current_artifacts_from_dir`` / etc.). Populated by
+    # :func:`replay_no_to_pit` threading a sink into
+    # ``load_no_amendment_artifact_bytes`` — the production-lane fire-drill
+    # (§2.9 guard-liveness). Without this field the typed-receipt upgrade at
+    # the loader level exists but is unreachable from production: a guard
+    # that exists but is unreachable from the production lane is the §2.9
+    # worst-class silent failure. Receipt shape: ``RejectedItem[str]``
+    # where ``item`` is the rejected ``member_name`` and ``reason_code`` is
+    # ``no_archive_member_too_large``; ``blocking=False`` (the cap is
+    # operator-tunable; over-retention per §0). The companion §1.8 receipt
+    # for missing-source amendments stays in
+    # ``amendments_skipped_missing_source`` + ``adjudications`` (the prior
+    # surface, preserved).
+    archive_rejected_items: List[RejectedItem[str]] = field(default_factory=list)
+    # Typed apply-result conservation receipt (AGENTS.md §1.8 + §2.9
+    # guard-liveness). Populated when the production apply lane routes
+    # through ``apply_no_ops_conserved``: partitions every input op into
+    # ``accepted_items`` (its binding landed in ``replayed``) or
+    # ``rejected_items`` (its replay skipped, with a typed ``RejectedItem``
+    # witness carrying ``reason`` / ``reason_code`` / ``blocking``). Without
+    # this field the conserved wrapper exists but is unreachable from
+    # production — the §2.9 worst-class silent failure (a guard that exists
+    # but is unreachable from the production lane).
+    apply_filter_result: Optional[FilterResult[LegalOperation]] = None
+    # Per-op landed-write receipts (AGENTS.md §2.3 +
+    # notes/APPLY_RESOLUTION_AND_RECEIPT_CONTRACT.md §4). Populated when the
+    # production apply lane routes through ``apply_no_ops_conserved`` with
+    # ``emit_receipts=True`` (the §2.9 guard-liveness fix so the receipt
+    # lane is reachable from production, not just from tests via
+    # ``no_replay_write_receipts``). Each receipt records the landed
+    # footprint (created/replaced/removed/renumbered paths) plus pre/post
+    # structural subtree hashes per op, and the ``migration_rule_ids`` stamp
+    # that explains the bound→landed divergence on a RENUMBER
+    # (``no_section_renumber_relabel`` — mirrors SE's ``se_renumber_relabel``
+    # at sweden/fetch.py:3497). Mirrors SE's ``write_receipts`` surface on
+    # the production result carrier.
+    write_receipts: Tuple[WriteReceipt, ...] = ()
 
 
 def _normalize_base_id(base_id: str) -> str:
@@ -309,7 +351,25 @@ def replay_no_to_pit(
             )
             continue
 
-        html_bytes = load_no_amendment_artifact_bytes(source_id, entry.archive, entry.member_name, data_dir)
+        # Thread the §1.8 typed-receipt sink (AGENTS.md §1.8) — when
+        # ``load_no_amendment_artifact_bytes`` skips an oversized archive
+        # member, the typed ``RejectedItem`` witness lands in
+        # ``result.archive_rejected_items`` (visible in the accumulator plane
+        # downstream tooling reads, not a stderr line that disappears). The
+        # ``None``-return branch below continues to surface the prior
+        # missing-source adjudication — these are complementary §1.8 receipts:
+        # the typed receipt explains WHY the bytes were unavailable
+        # (oversize cap), the adjudication records the replay-side consequence
+        # (amendment skipped). This is the §2.9 guard-liveness fix so the
+        # typed-receipt upgrade at the loader level is reachable from the
+        # production replay lane, not just from unit tests of the loader.
+        html_bytes = load_no_amendment_artifact_bytes(
+            source_id,
+            entry.archive,
+            entry.member_name,
+            data_dir,
+            rejected_items=result.archive_rejected_items,
+        )
         if html_bytes is None:
             result.amendments_skipped_missing_source.append(source_id)
             result.adjudications.append(
@@ -402,16 +462,92 @@ def replay_no_to_pit(
             )
         )
     try:
-        result.replayed = apply_no_ops(
+        # Route production through the conserved wrapper (AGENTS.md §1.8 +
+        # §2.9 guard-liveness). The bare ``apply_no_ops`` returned only the
+        # IRStatute and shuttled skip-evidence through ``adjudications_out``
+        # side-effect; the conserved wrapper returns a typed ``NOApplyResult``
+        # whose ``filter_result`` partitions ops into accepted /
+        # RejectedItem witnesses (the §1.8 "no unsupported lane disappears"
+        # contract). Without routing production here, the conserved wrapper
+        # would be exercised only by tests — a §2.9 worst-class silent
+        # failure (a guard that exists but is unreachable from production).
+        # ``emit_receipts=True`` additionally routes per-op ``WriteReceipt``
+        # records (AGENTS.md §2.3 + notes/APPLY_RESOLUTION_AND_RECEIPT_CONTRACT.md
+        # §4) through the production lane — these were previously reachable
+        # only from tests via ``no_replay_write_receipts``, a §2.9 worst-class
+        # silent failure. Each receipt carries the landed footprint
+        # (created/replaced/removed/renumbered paths) plus pre/post structural
+        # subtree hashes per op, and the ``migration_rule_ids`` stamp that
+        # explains the bound→landed divergence on a RENUMBER
+        # (``no_section_renumber_relabel`` — mirrors SE's
+        # ``se_renumber_relabel`` at sweden/fetch.py:3497).
+        apply_result = apply_no_ops_conserved(
             base_statute,
             ops,
             adjudications_out=result.adjudications,
             strict_action_family=strict_action_family,
+            emit_receipts=True,
         )
+        result.replayed = apply_result.statute
+        result.apply_filter_result = apply_result.filter_result
+        result.write_receipts = apply_result.write_receipts
         if heading_groups:
             result.replayed = apply_no_heading_groups(result.replayed, heading_groups)
-    except ValueError as exc:
-        result.error = str(exc)
+    # lawvm-failloud (AGENTS.md §1.10): NOT a silent swallow. An apply-stage
+    # failure is recorded as a distinct, self-evidencing
+    # ``result.error = f"Failed to apply ops: {exc}"`` (exception embedded) —
+    # the blocking gate per the EE/NO convention for apply-fold failure
+    # (``classify_no_replayability`` and CLI tooling map a non-None ``result.error``
+    # to a blocking replay-failure). iter4 W1 (silent-failure review HIGH #2):
+    # widened from ``except ValueError as exc`` to ``except Exception as exc``
+    # matching the EE/EU/SE precedent (silent-failure review HIGH #1-3) — NO
+    # was the WEAKEST contract of the 4 (only caught ``ValueError``, letting
+    # ``AssertionError`` / ``KeyError`` / ``TypeError`` / internal-tree-invariant
+    # exceptions escape into the production lane as bare tracebacks and silently
+    # discard bare-apply's partial witnesses). The broad catch is intentional
+    # because the failure is surfaced on ``result.error`` (gate) AND as a typed
+    # ``no_replay_apply_raise`` orchestration adjudication (witness, non-blocking
+    # — mirrors the EE/SE conserved-wrapper ``RejectedItem.blocking=False``).
+    # ``result.adjudications`` already carries the upstream-phase adjudications
+    # AND bare-apply's partial witnesses (appended in place before the raise by
+    # the conserved wrapper which threads ``adjudications_out=result.adjudications``
+    # directly through bare apply per iter2 W2 propagation-on-raise fix). The
+    # typed ``no_replay_apply_raise`` orchestration adjudication appended below
+    # embeds the exception truncated to a ~400 char ``clause_text`` snippet per
+    # §1.10 so a downstream consumer can diagnose the apply raise without
+    # re-running extraction. The adjudication is a WITNESS, not the gate;
+    # ``result.error`` IS the gate.
+    except Exception as exc:
+        result.adjudications.append(
+            CompileAdjudication(
+                kind="no_replay_apply_raise",
+                message=f"Norway replay apply raised {type(exc).__name__}: {exc}",
+                source_statute=result.base_id,
+                blocking=False,
+                phase="replay",
+                detail=diagnostic_detail(
+                    rule_id="no_replay_apply_raise",
+                    phase="replay",
+                    family="orchestration_failure",
+                    blocking=False,
+                    reason=(
+                        "apply_no_ops_conserved raised mid-fold; partial "
+                        "witnesses preserved on result.adjudications"
+                    ),
+                    exception_type=type(exc).__name__,
+                    exception=str(exc),
+                    # §1.10 source-text witness slot; on apply-raise the failing
+                    # exception message is the only immediately-available snippet
+                    # (the per-op source_clause_extract extraction is deferred
+                    # per task #50; see the iter4 W1 M2 comment-clarification at
+                    # estonia/replay.py:1921 / eu/pipeline.py:993 /
+                    # sweden/fetch.py:3576+).
+                    clause_text=str(exc)[:400],
+                ),
+            )
+        )
+        result.error = f"Failed to apply ops: {exc}"
+        return result
     return result
 
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing_extensions import override
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, FrozenSet, List, Literal, Mapping, Optional, Tuple
+from typing import Any, Dict, FrozenSet, List, Literal, Mapping, Optional, Sequence, Tuple
 
 from lawvm.core.frozen_values import FrozenDict, _freeze_value, _jsonable_value
 from lawvm.core.provenance import OperationSource
@@ -170,6 +170,22 @@ class LegalOperation:
     # keep producer-set == protocol-implementer-set.
     scope_confidence: Optional[ScopeConfidence] = None
     move_clause_target_unit_kind: Optional[str] = None
+    # Per-op verbatim source substring (Option C / lightest source-anchor
+    # seam): the literal source-clause text that produced THIS op, set where
+    # the parser mints the LegalOperation. Distinct from the
+    # amendment-level ``OperationSource.raw_text`` (the whole johtolause)
+    # and from the byte-span ``OperationSource.source_anchor``: this field
+    # is the per-op ``clause_text`` that ``compute_source_anchor`` looks up
+    # verbatim in the raw amendment bytes to produce a per-op ``SourceAnchor``
+    # (task #50). Empty by default — populated per-op by the parser's minting
+    # sites (e.g. ``finland.johtolause.extract_legal_ops_from_parse_result``
+    # / ``extract_law_level_text_patch_los``); downstream threading into
+    # ``OperationSource.source_anchor`` is owned by the frontend compile
+    # loop. Carries verbatim source text and is **not** replay authority —
+    # it is evidence footing (Surface/Source plane, §2.10) for the receipt's
+    # per-op anchor witness; replay consumes only the typed
+    # ``OperationSource.source_anchor`` (§1.11, §1.12).
+    raw_text: str = ""
 
     def __post_init__(self) -> None:
         if not isinstance(self.action, StructuralAction):
@@ -178,6 +194,10 @@ class LegalOperation:
             )
         object.__setattr__(self, "applicability", tuple(self.applicability))
         object.__setattr__(self, "provenance_tags", tuple(self.provenance_tags))
+        if not isinstance(self.raw_text, str):
+            raise TypeError(
+                f"LegalOperation.raw_text must be a str, got {type(self.raw_text).__name__}"
+            )
         if self.anchor is not None and self.action is not StructuralAction.INSERT:
             raise ValueError(f"LegalOperation anchor is only valid for insert; got action={self.action!r}")
         if self.destination is not None and self.action is not StructuralAction.RENUMBER:
@@ -201,7 +221,7 @@ class LegalOperation:
             coerce_scope_confidence(self.scope_confidence),
         )
 
-@dataclass(slots=True)
+@dataclass(frozen=True, slots=True)
 class ProvisionVersion:
     """A single version of a provision in the temporal graph."""
 
@@ -211,7 +231,12 @@ class ProvisionVersion:
     variant_kind: Literal["permanent", "temporary"] = "permanent"
     content: Optional["IRNode"] = None
     source: Optional[OperationSource] = None
-    applicability: List[ScopePredicate] = field(default_factory=list)
+    # ``Sequence[ScopePredicate]`` (the read-only covariant protocol) rather
+    # than ``List[...]`` — matches the ``ProvisionTimeline.versions`` precedent
+    # (iter2 H5): declared read-only at the type level, runtime-coerced to a
+    # ``tuple`` via ``__post_init__`` so callers may pass either a list literal
+    # or a tuple while stored mutation is impossible (§1.9 immutable carriers).
+    applicability: Sequence[ScopePredicate] = field(default_factory=list)
     content_hash: str = ""
 
     def __post_init__(self) -> None:
@@ -223,12 +248,30 @@ class ProvisionVersion:
             raise ValueError(f"ProvisionVersion expires ({self.expires}) before effective ({self.effective})")
         object.__setattr__(self, "applicability", tuple(self.applicability))
 
-@dataclass(slots=True)
+@dataclass(frozen=True, slots=True)
 class ProvisionTimeline:
-    """Complete version history of a single addressable provision."""
+    """Complete version history of a single addressable provision.
+
+    ``versions`` is annotated as ``Sequence[ProvisionVersion]`` (the
+    read-only covariant protocol) and stored at runtime as a ``tuple``
+    via ``__post_init__`` — this satisfies §1.9's immutable-carrier rule
+    at both the type level (no ``append``/``sort``/``pop`` on the
+    declared protocol) and runtime (tuple raises ``AttributeError`` on
+    any mutation attempt). Every append/sort/replace goes through
+    ``dataclasses.replace`` so historical state cannot silently mutate
+    across a phase seam. Callers may ergonomically pass either a list
+    or tuple literal at construction.
+    """
 
     address: LegalAddress
-    versions: List[ProvisionVersion] = field(default_factory=list)
+    versions: Sequence[ProvisionVersion] = field(default_factory=tuple)
+
+    def __post_init__(self) -> None:
+        # Coerce any iterable passed at construction (list/tuple) to a tuple
+        # so callers may write ``versions=[v1, v2]`` ergonomically while the
+        # stored value remains immutable and the declared ``Sequence``
+        # contract is satisfied.
+        object.__setattr__(self, "versions", tuple(self.versions))
 
 
 @dataclass(frozen=True, slots=True)

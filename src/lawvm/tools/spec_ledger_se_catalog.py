@@ -140,4 +140,32 @@ _SE_RULE_SPECS: Dict[str, str] = {
     # --- Scraped-doc ingestion -----------------------------------------------------------
     "se_scraped_doc_entry_invalid_shape": "A scraped doc-page entry that does not decode to a dict is a typed ingestion residual, skipped without fabrication.",
     "se_scraped_doc_entry_unrecognized_url": "A scraped doc-page entry whose URL does not match the SFS doc shape is a typed ingestion residual, skipped without fabrication.",
+
+    # --- Archive acquisition I/O boundary (named_swallow at fetch.py::_se_archive_fetch) --
+    # iter2 W6 M4 (4e9aa5ab): previously ``return None`` silently swallowed
+    # unexpected HTTP/network resets inside ``_se_archive_fetch::_attempt``; now
+    # routes through ``named_swallow`` so a typed Finding is logged at WARNING
+    # with the fetched URL + storage_class as ``clause_text`` (AGENTS.md §1.10).
+    # The swallow lives on ``log_emitter`` (acquisition I/O boundary sanctioned
+    # per ``core/named_swallow.py`` docstring); the evidence-ledger reach is
+    # Wave-N+1 (no findings_out accumulator in scope at closure level).
+    "se_archive_fetch_url_attempt": "An unexpected HTTP/network failure inside ``_se_archive_fetch::_attempt`` is a named-swallow Finding (WARNING, with fetched URL + storage_class as ``clause_text`` per §1.10), not a silent ``return None`` that lets replay proceed against an empty buffer.",
+
+    # --- Apply-fold orchestration failure (fetch.py production caller) ------------------
+    # iter3 W3 (silent-failure review HIGH #3): when ``apply_se_ops_conserved``
+    # raises mid-fold, the production caller ``check_se_official_replay``
+    # catches broadly (``except Exception as e:``) and appends a non-blocking
+    # ``se_replay_apply_raise`` orchestration adjudication per §1.10 (embedding
+    # ``exception_type`` / ``exception`` / ``clause_text`` via
+    # ``diagnostic_detail``) before returning a structured
+    # ``outcome='apply_raise'`` / ``reason_code='se_replay_apply_raise'`` dict
+    # via ``_se_replay_unresolved_outcome`` (the blocking gate — SE convention
+    # for apply-fold failure that the scan-lane typed-outcome dispatcher keys on,
+    # distinct from the manual-compilation-frontier ``older_base_required`` /
+    # ``precondition_issues_blocking`` outcomes). The adjudication is a
+    # WITNESS, not the gate; bare-apply's partial witnesses (appended in place
+    # before the raise by the conserved wrapper) persist on the returned
+    # dict's ``adjudications`` key — §1.0 evidence-not-silently-destroyed
+    # contract. Mirrors the NO/EE/EU precedent (silent-failure review HIGH #1-3).
+    "se_replay_apply_raise": "An apply-fold exception raised mid-``apply_se_ops_conserved`` is a non-blocking typed orchestration adjudication carrying the exception type/exception/clause_text snippet per §1.10 (the blocking gate is the structured ``outcome='apply_raise'`` signal); bare-apply's partial witnesses persist on the returned dict's ``adjudications`` key — §1.0 evidence-not-silently-destroyed contract.",
 }

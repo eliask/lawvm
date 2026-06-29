@@ -715,6 +715,25 @@ class TransparentCorpusStore(CorpusStore):
         return best_data
 
     @override
+    def read_attachment_media(self, sid: str, filename: str) -> bytes | None:
+        """Read attachment PDF — tries sd-cons (versioned) then sd/ (original)."""
+        pattern = f"finlex://sd-cons/{sid}/fin@%/media/{filename}"
+        urls = self._archive.locators(pattern)
+        best_data: bytes | None = None
+        best_pit = -2
+        for url in urls:
+            m = re.search(r"/fin@(\d+)/", url)
+            pit_key = int(m.group(1)) if m else -1
+            if pit_key > best_pit:
+                data = self._archive.get(url)
+                if data is not None:
+                    best_pit = pit_key
+                    best_data = data
+        if best_data is not None:
+            return best_data
+        return self._archive.get(f"finlex://sd/{sid}/fin/media/{filename}")
+
+    @override
     def list_statute_ids(self) -> list[str]:
         """List all statute IDs present in the Farchive (source XMLs)."""
         sids: list[str] = []

@@ -271,7 +271,7 @@ class SectionPathResolutionReason(StrEnum):
     FOLLOW_SAME_WAVE_MIGRATION = "follow_same_wave_migration"
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ScopeConfidence(_CoreScopeConfidenceProtocol):
     """Finland-local unified witness for chapter-scope resolution provenance.
 
@@ -2910,6 +2910,17 @@ def _build_canonical_intent(rop: ResolvedOp) -> "CanonicalIntent | None":
         # text the pipeline could not handle MUST embed the offending
         # clause/snippet" — rop.description() is the op description surface, the
         # canonical clause-text witness available at this point.
+        #
+        # log_emitter sanctioned (iter3 W2 §3.2 STOP-and-report):
+        # ``_build_canonical_intent(rop)`` has 10+ test callers and 2 production
+        # callers inside the ``ResolvedOp`` builder chain (``ops.py:1808,2515``);
+        # the production sites do not carry a per-statute ``findings_out``
+        # accumulator in scope at the rop builder boundary. Threading one would
+        # require non-trivial arg-passing through the rop builder + the apply
+        # fold + tests (5+ call sites, signature blast). Per ``core/named_swallow.py``
+        # docstring's IO/utility-boundary sanctioned use, the swallow stays on
+        # log_emitter (stderr WARNING); per-statute evidence-ledger reach for the
+        # intent builder is a Wave-N+1 task for the orchestrator.
         from lawvm.core.named_swallow import build_named_swallow_finding, log_emitter
 
         log_emitter()(

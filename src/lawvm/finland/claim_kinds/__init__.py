@@ -17,8 +17,13 @@ Currently registered:
   fi.v1.MUTATION_BOUNDARY_RESOLUTION — mutation-boundary proof boundary
   fi.v1.FAILED_OPERATION_RESOLUTION — failed-operation proof boundary
   fi.v1.CORRIGENDUM_UNSUPPORTED_PATCH_RESOLUTION — unsupported corrigendum patch boundary
+  fi.v1.ORACLE_OVERRIDE — projection-plane override: oracle (consolidated
+      comparison surface) is wrong in any way and the proof is in the cited
+      witness. NOT a replay-authorising claim — mutates the comparison/
+      projection plane only (AGENTS.md §2.10).
 """
 import importlib
 
 importlib.import_module("lawvm.finland.claim_kinds.inline_statute_resolution")
 importlib.import_module("lawvm.finland.claim_kinds.xml_manual_frontier")
+importlib.import_module("lawvm.finland.claim_kinds.oracle_override")

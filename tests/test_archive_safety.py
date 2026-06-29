@@ -6,6 +6,12 @@ above the cap and verifies:
 * the diagnostic carries (archive_path, member_name, declared_size, cap_bytes),
 * a small member passes through unchanged (negative case),
 * a malformed env var fails loud per AGENTS.md §1.10.
+
+Wave 3 production-bypass fire-drills: drives the actual EU grafter
+``parse_fmx4`` zip-ingestion path (src/lawvm/eu/grafter.py:92) and the
+corrigendum integration-doc contract (src/lawvm/finland/corrigendum.py:34) so a
+regression that re-introduces bare ``zf.read()`` at either site fails here
+rather than silently re-opening the decompression-bomb surface.
 """
 
 from __future__ import annotations
@@ -13,6 +19,7 @@ from __future__ import annotations
 import io
 import tarfile
 import zipfile
+from pathlib import Path
 
 import pytest
 
@@ -166,3 +173,133 @@ def test_log_archive_member_too_large_emits_structured_stderr(
     assert "10000000" in captured
     assert "1048576" in captured
     assert "LAWVM_MAX_ARCHIVE_MEMBER_BYTES" in captured
+
+
+# ---------------------------------------------------------------------------
+# Wave 3 production-bypass fire-drills (Security M1)
+#
+# These drive the actual production ingestion paths that were previously
+# bypassing safe_zip_read: src/lawvm/eu/grafter.py:92 (EUIRGrafter.parse_fmx4)
+# and src/lawvm/finland/corrigendum.py:34 (integration-doc contract for the
+# Population B zip-read in process_muutoslaki). A regression that
+# re-introduces bare zf.read() at either site fails here rather than silently
+# re-opening the decompression-bomb surface. Per AGENTS.md §2.9 — guard-
+# liveness: every new guard needs a test that drives a known-violating input
+# through the FULL production path, not just a unit test of the guard.
+# ---------------------------------------------------------------------------
+
+
+def _build_fmx4_zip(zip_path: Path, member_name: str, payload: bytes) -> Path:
+    """Write a single-member FMX4-shaped zip to ``zip_path``."""
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_STORED) as zf:
+        zf.writestr(member_name, payload)
+    return zip_path
+
+
+def test_eu_grafter_parse_fmx4_raises_on_oversized_zip_member(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Fire-drill: parse_fmx4 must refuse an FMX4 zip member that exceeds the cap.
+
+    Sets the cap to 1KB and feeds a real >1KB FMX4 XML zip through the
+    production ``EUIRGrafter.parse_fmx4`` path. The cap check must fire
+    BEFORE the bytes are materialised, and the typed receipt must carry the
+    caller-provided ``archive_path`` (the xml_path) and the resolved member
+    name.  If this regresses to bare ``zf.read()``, the test will OOM or,
+    worse, silently accept the bomb — both are security failures.
+    """
+    cap = 1024  # 1 KB
+    monkeypatch.setenv("LAWVM_MAX_ARCHIVE_MEMBER_BYTES", str(cap))
+
+    # FMX4 main-act XML: name must contain "01000101" or "000101" (per the
+    # grafter's pattern-based act selection at src/lawvm/eu/grafter.py:86),
+    # and the payload must be larger than `cap` to trip the check.
+    member_name = "01000101.xml"
+    # ~4 KB of valid XML content — well above the 1KB cap, well below the
+    # test runner's memory budget.
+    body = b"<ACT><TITLE>cap-bypass fire drill</TITLE>" + (b" " * (cap * 4)) + b"</ACT>"
+    zip_path = tmp_path / "oversized.zip"
+    _build_fmx4_zip(zip_path, member_name, body)
+
+    from lawvm.eu.grafter import EUIRGrafter
+
+    grafter = EUIRGrafter(celex="32000R0001")
+    with pytest.raises(ArchiveMemberTooLarge) as exc_info:
+        grafter.parse_fmx4(zip_path)
+
+    diag = exc_info.value.diagnostic
+    # archive_path MUST be the xml_path so triage points at the right file:
+    assert diag.archive_path == str(zip_path)
+    assert diag.member_name == member_name
+    assert diag.declared_size > cap
+    assert diag.cap_bytes == cap
+    assert "LAWVM_MAX_ARCHIVE_MEMBER_BYTES" in diag.render_reason()
+
+
+def test_eu_grafter_parse_fmx4_admits_small_zip_member(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Negative: a small FMX4 zip passes through parse_fmx4 unchanged.
+
+    A small valid XML must round-trip through ``parse_fmx4`` and yield a
+    statute whose title matches the source XML — proving the Wave 3 cap
+    is not over-rejecting legitimate input.
+    """
+    # Default 100MB cap from archive_max_member_bytes() applies.
+    monkeypatch.delenv("LAWVM_MAX_ARCHIVE_MEMBER_BYTES", raising=False)
+
+    member_name = "01000101.xml"
+    payload = b"<ACT><TITLE>small negative case</TITLE><ENACTING.TERMS/></ACT>"
+    zip_path = tmp_path / "small.zip"
+    _build_fmx4_zip(zip_path, member_name, payload)
+
+    from lawvm.eu.grafter import EUIRGrafter
+
+    grafter = EUIRGrafter(celex="32000R0001")
+    statute = grafter.parse_fmx4(zip_path)
+
+    assert statute.title == "small negative case"
+    assert statute.statute_id == "32000R0001"
+
+
+def test_corrigendum_integration_doc_references_safe_zip_read() -> None:
+    """Contract test: the corrigendum.py integration-doc example must show
+    ``safe_zip_read``, not bare ``zf.read()``.
+
+    ``src/lawvm/finland/corrigendum.py:34`` is the integration-pattern
+    example for Population B (``process_muutoslaki``'s zip-read of the
+    amendment's main.xml). Iter 2's security review flagged this example
+    — the production code that imports the integration pattern copies
+    whatever shape the docstring documents, so the docstring MUST show
+    the Wave 3 secure pattern. A regression that re-writes the example
+    back to ``zf.read(...)`` fails here.
+
+    The check is narrowly scoped to the bypass shape (``= zf.read(`` —
+    assignment from bare zf.read) so the comment warning against bare
+    zf.read() is itself allowed; only the actual insecure call shape
+    registers as a regression.
+    """
+    import lawvm.finland.corrigendum as corrigendum_mod
+
+    doc = corrigendum_mod.__doc__ or ""
+    # Reject the bypass shape — assignment from bare zf.read without the cap:
+    assert "= zf.read(" not in doc, (
+        "corrigendum.py integration docstring must NOT show '= zf.read(' "
+        "(bare zf.read bypass); it should show safe_zip_read "
+        "(Wave 3 decompression-bomb cap, Security M1)"
+    )
+    # Require the secure shape — safe_zip_read with archive_path receipt:
+    assert "safe_zip_read(" in doc, (
+        "corrigendum.py integration docstring must show safe_zip_read "
+        "for the Population B zip-read integration example"
+    )
+    assert "ArchiveMemberTooLarge" in doc, (
+        "corrigendum.py integration docstring must show the "
+        "ArchiveMemberTooLarge receipt shape, not just safe_zip_read()"
+    )
+    assert "archive_path=" in doc, (
+        "corrigendum.py integration docstring must show archive_path= "
+        "as the receipt field on safe_zip_read (AGENTS.md §1.8/§1.10)"
+    )

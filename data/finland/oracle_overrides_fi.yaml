@@ -1,0 +1,73 @@
+# Oracle-override records — typed manual adjudication of Finlex consolidated
+# text where the oracle (consolidated comparison surface) is wrong in any way:
+# stale editor's version that wasn't updated after a corrigendum, a plain
+# transcription error in the consolidated feed, wrong section number,
+# missing amendment-effect row, omitted repeal, an editorial convention
+# applied where legal-truth carries otherwise, etc. LawVM-replay-is-right is
+# only ONE of several possible oracle-wrong shapes; don't pre-narrow.
+#
+# Distinct from corrigendum source-defect fixes (these do NOT mutate source
+# XML — they mark the comparison surface so rows with active overrides are
+# filtered from the divergence count honestly). Per AGENTS.md §2.10, an
+# oracle-override mutates the *projection* / comparison-surface plane, not
+# the legal-state plane. The law is whatever the source XML (passed through
+# replay) yields; the override just declares "this consolidated-oracle row
+# does not represent canonical truth and we have proof."
+#
+# Witness standard — the strictest of the three surfaces (a/b/c). The proof
+# must come from the source artifacts, not from a LawVM-internal assertion
+# that "we are right". Witness kinds:
+#   original_promulgation   — the promulgation artifact itself shows the
+#                              correct text (rare; whoever published the
+#                              consolidated version mis-transcribed)
+#   later_corrigendum       — a Finlex corrigendum PDF (sha256'd in
+#                              corrigendum_sources_fi.jsonl) attests the
+#                              correct text; the consolidated version was
+#                              never updated to apply it
+#   explicit_editorial_marker — the consolidated XML itself carries a
+#                              finlex:vsId or finlex:editorialNote showing
+#                              the editorial convention applied (this can
+#                              *prove* the consolidated-side choice is
+#                              editorial, not legal-truth)
+#   multi_acquisition_corroboration — multiple independent acquisitions
+#                              (Finlex HTML page + cached consolidated XML
+#                              + alternative manifestation) all carry a
+#                              different text than this oracle caption;
+#                              the consolidated version contradicts them
+#   intrinsic_legal_reason  — the law's own ordinal structure, internal
+#                              cross-references, or scope/confidence rules
+#                              prove the consolidated oracle is wrong
+#                              without an external artifact
+#
+# An override NEVER authorises a source XML mutation. It ONLY authorises
+# the oracle-comparison projection to drop or annotate the divergent row.
+# This is the §0 promotion chain: source_witness → claim → adjudication
+# override → projection filter. Fail loud if any caller tries to wire
+# this into replay write paths.
+#
+# Schema:
+#   - rule_id:     FINLAND.ORACLE.* stable identifier
+#     statute_id:  "NUM/YEAR" (the consolidated oracle's base statute)
+#     target_address: legal-address surface the override applies to
+#                    (e.g. "chapter:4/section:20" or
+#                     "statute:1995/1552/chapter:4/section:20/subsection:1")
+#     override_kind: stale_editorial | transcription | wrong_section |
+#                    missing_amendment_effect | omitted_repeal |
+#                    wrong_provision_number | misapplied_corrigendum |
+#                    editorial_convention_priority | missing_section |
+#                    wrong_chapter_scope | other
+#     source_witness:
+#       kind: original_promulgation | later_corrigendum |
+#             explicit_editorial_marker | multi_acquisition_corroboration |
+#             intrinsic_legal_reason
+#       locator: "akn/fi/.../..."   # locator; absent when intrinsic
+#       detail: family-specific witness summary
+#     evidence_summary: "human-readable explanation; bounded"
+#     strict_mode: warn | block | fail
+#     verified_at: "YYYY-MM-DD"
+#
+# Empty today — populate as oracle discrepancies are adjudicated. Each row
+# here is a §0-owned promotion boundary: explicit, witnessed,
+# strict-mode-rejectable, and traceable.
+
+[]

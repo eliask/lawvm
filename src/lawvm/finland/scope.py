@@ -76,6 +76,38 @@ _FI_SENTENCE_BOUNDARY_RE = re.compile(r"(?<=[.!?])\s+(?=[A-ZÅÄÖ])")
 _FI_SCOPE_VERB_RE = re.compile(r"\b(?:kumotaan|muutetaan|lisätään|siirretään)\b[: ]*", re.I)
 
 
+# ---------------------------------------------------------------------------
+# Per-label clause-pattern factory — §2.4/§2.7 cache
+#
+# Per-call ``re.search(rf"\b{label}\s*§", chunk, flags=re.I)`` inside
+# ``_chapter_chunk_mentions_section_label`` / ``_chapter_chunk_mentions_lo``
+# re-compiles the same escaped label string once per (op × scope-resolver
+# predicate) evaluation.  The set of distinct section labels (digits, optional
+# letter suffix) AND the small family of suffix shapes (``\s*§``,
+# ``\s*§:n?\s+otsikko\b``, ``\s+moment\w*``, ``\s+kohta\b``, ...) is bounded
+# and repeats heavily across many calls in one compilation, so a bounded LRU
+# cache is sound.  Mirrors ``finland.constraints._label_clause_pattern`` but
+# uses ``\b`` (the incumbent scope.py recognizer style) instead of
+# ``(?<!\d)`` — both prefixes are equivalent for digit-only labels.
+# ---------------------------------------------------------------------------
+
+
+@lru_cache(maxsize=512)
+def _scope_section_pattern(label_pat: str, suffix: str, flags: int) -> "re.Pattern[str]":
+    r"""Compile and cache a ``\b{label_pat}{suffix}`` scope.py clause prefilter.
+
+    ``label_pat`` is the caller-constructed escaped pattern fragment for the
+    section label (``re.escape(sec_label)``, ``re.escape(target)``, or
+    ``rf"{re.escape(base)}\s*{re.escape(letter_suffix)}"``).  ``suffix`` is a
+    fixed alternation fragment tied to the clause shape — ``\s*§`` (plain
+    section-sign membership), ``\s*§(?!\s*:n?\b)`` (whole-section carry guard),
+    ``\s*§:n?\s+otsikko\b`` (heading), ``\s*§:n?\s+{subsec}\s+moment\w*``
+    (subsection+moment), ``\s+moment\w*`` / ``\s+kohta\b`` (subsection/item
+    without §).
+    """
+    return re.compile(rf"\b{label_pat}{suffix}", flags=flags)
+
+
 @dataclass(frozen=True, slots=True)
 class _ChapterSectionIndex:
     chapter_sections_by_part: dict[str | None, dict[str, set[str]]]
@@ -835,7 +867,9 @@ def _chapter_chunk_mentions_section_label(chunk: str, section_label: str) -> boo
     norm = _norm_num_token(section_label)
     m = re.fullmatch(r"(\d+)([a-z]?)", norm, flags=re.I)
     if not m:
-        return re.search(rf"\b{re.escape(section_label)}\s*§", chunk, flags=re.I) is not None
+        return _scope_section_pattern(
+            re.escape(section_label), r"\s*§", re.I
+        ).search(chunk) is not None
 
     base, suffix = m.groups()
 
@@ -850,12 +884,12 @@ def _chapter_chunk_mentions_section_label(chunk: str, section_label: str) -> boo
     # Whole-section carry-forward must not latch onto subsection-qualified
     # mentions like ``1 §:n 4 momentti`` when choosing the governing chapter
     # chunk for a later plain ``1 §`` op.
-    direct_pat = (
-        rf"\b{re.escape(base)}\s*{re.escape(suffix)}\s*§(?!\s*:n?\b)"
+    direct_label_pat = (
+        rf"{re.escape(base)}\s*{re.escape(suffix)}"
         if suffix
-        else rf"\b{re.escape(base)}\s*§(?!\s*:n?\b)"
+        else re.escape(base)
     )
-    if re.search(direct_pat, chunk, flags=re.I):
+    if _scope_section_pattern(direct_label_pat, r"\s*§(?!\s*:n?\b)", re.I).search(chunk):
         return True
     genitive_pat = (
         rf"\b{re.escape(base)}\s*{re.escape(suffix)}\s*§:n?\b"
@@ -899,7 +933,7 @@ def _chapter_chunk_mentions_lo(chunk: str, lo: _LegalOperation) -> bool:
     special = lo.target.special
 
     def _moment_in_chunk(target: int) -> bool:
-        if re.search(rf"\b{target}\s+moment\w*", chunk, flags=re.I):
+        if _scope_section_pattern(str(target), r"\s+moment\w*", re.I).search(chunk):
             return True
         for a, b in re.findall(r"(\d+)\s*[–-]\s*(\d+)\s+moment\w*", chunk, flags=re.I):
             lo_, hi = sorted((int(a), int(b)))
@@ -917,7 +951,7 @@ def _chapter_chunk_mentions_lo(chunk: str, lo: _LegalOperation) -> bool:
         return False
 
     def _item_in_chunk(target: str) -> bool:
-        if re.search(rf"\b{re.escape(target)}\s+kohta\b", chunk, flags=re.I):
+        if _scope_section_pattern(re.escape(target), r"\s+kohta\b", re.I).search(chunk):
             return True
         if target.isdigit():
             wanted = int(target)
@@ -933,25 +967,27 @@ def _chapter_chunk_mentions_lo(chunk: str, lo: _LegalOperation) -> bool:
         return False
 
     if special == "heading":
-        return re.search(rf"\b{sec}\s*§:n?\s+otsikko\b", chunk, flags=re.I) is not None
+        return _scope_section_pattern(sec, r"\s*§:n?\s+otsikko\b", re.I).search(chunk) is not None
     if special == "intro":
         if subsec is not None:
-            return re.search(
-                rf"\b{sec}\s*§:n?\s+{subsec}\s+moment\w*\s+johdantokappale\b",
-                chunk,
-                flags=re.I,
-            ) is not None
-        return re.search(rf"\b{sec}\s*§:n?\s+johdantokappale\b", chunk, flags=re.I) is not None
+            return _scope_section_pattern(
+                sec, rf"\s*§:n?\s+{subsec}\s+moment\w*\s+johdantokappale\b", re.I
+            ).search(chunk) is not None
+        return _scope_section_pattern(sec, r"\s*§:n?\s+johdantokappale\b", re.I).search(chunk) is not None
     if subsec is not None and item is not None:
-        if _item_in_chunk(str(item)) and re.search(rf"\b{sec}\s*§", chunk, flags=re.I):
+        if _item_in_chunk(str(item)) and _scope_section_pattern(sec, r"\s*§", re.I).search(chunk):
             return True
-        if not re.search(rf"\b{sec}\s*§:n?\s+{subsec}\s+moment\w*", chunk, flags=re.I):
+        if not _scope_section_pattern(
+            sec, rf"\s*§:n?\s+{subsec}\s+moment\w*", re.I
+        ).search(chunk):
             return False
         return _item_in_chunk(str(item))
     if subsec is not None:
-        if re.search(rf"\b{sec}\s*§", chunk, flags=re.I) and _moment_in_chunk(int(subsec)):
+        if _scope_section_pattern(sec, r"\s*§", re.I).search(chunk) and _moment_in_chunk(int(subsec)):
             return True
-        return re.search(rf"\b{sec}\s*§:n?\s+{subsec}(?:\s+ja\s+\d+)?\s+moment", chunk, flags=re.I) is not None
+        return _scope_section_pattern(
+            sec, rf"\s*§:n?\s+{subsec}(?:\s+ja\s+\d+)?\s+moment", re.I
+        ).search(chunk) is not None
     return _chapter_chunk_mentions_section_label(chunk, sec_label)
 
 

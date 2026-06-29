@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import datetime as dt
-from dataclasses import dataclass
+from dataclasses import dataclass, replace as dataclasses_replace
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Literal, Optional
 
 if TYPE_CHECKING:
@@ -351,6 +351,33 @@ def prepare_replay_plan(
         base_source_correction_op_ids = []
 
     ctx = StatuteContext.from_xml(orig_bytes, label_postprocessor)
+    # Build the attachment-supplement tuple for this statute — extract
+    # ``<a href="media/N.pdf">`` links from the (patched) consolidated XML
+    # and fetch + parse each PDF via the corpus store. The supplements
+    # ride on StatuteContext as a projection-sidecar tuple; the replay
+    # fold does not consume them (they're attachment content, not body
+    # effect), but ``lawvm show`` / ``lawvm dump`` projection paths
+    # surface them per SDOC-13 (a projection must include attachments
+    # unless explicitly scoped out). Built here so the supplement tuple
+    # traces through master.ctx as part of the standard replay plan —
+    # existing tests that build StatuteContext indirectly continue to
+    # receive an empty tuple.
+    from lawvm.finland.attachment_ir import (
+        build_attachment_ir_supplements,
+        extract_attachment_pdf_links,
+    )
+    att_links = extract_attachment_pdf_links(orig_bytes)
+    if att_links:
+        att_supplements = build_attachment_ir_supplements(
+            cs=corpus,
+            sid=parent_id,
+            links=att_links,
+            source_ref_prefix=f"finlex://sd-cons/{parent_id}/media",
+        )
+        if att_supplements:
+            ctx = dataclasses_replace(
+                ctx, attachment_supplements=tuple(att_supplements)
+            )
     initial_state = ReplayState(ir=ctx.base_ir)
     replay_profile = get_replay_profile(mode)
     amendment_selection_residuals: list[AmendmentSourcePathology] = []

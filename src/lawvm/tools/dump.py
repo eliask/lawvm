@@ -28,7 +28,7 @@ from lawvm.finland.metadata import _normalize_johtolause_verbs, get_johtolause
 from lawvm.finland.normalize import parse_ops_fallback_heuristic
 from lawvm.finland.ops import AmendmentOp
 from lawvm.finland.scope import assign_chapter_scope_from_johtolause as _assign_chapter_scope_from_johtolause
-from lawvm.finland.xml_statute import XMLStatute, serialize_text as _serialize_ir_text
+from lawvm.finland.xml_statute import XMLStatute
 from lawvm.finland.replay_entrypoint import replay_xml
 from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
 from lawvm.finland.citation_routing import OP_KEYWORDS
@@ -345,7 +345,16 @@ def _dump_apply(
         print(f"Statute: {sid}")
         print("Stage  : APPLY (full replay)")
         print()
-        print(_serialize_ir_text(_comparison_ir(master)) if as_of else master.serialize_text())
+        # ``dump`` always shows technical IR labels (KIND/LABEL/text-snippet)
+        # — the pretty human-readable projection is ``lawvm show``'s job. The
+        # dump CLI is an IR-inspection tool, not a statute reader.
+        from lawvm.finland.ir_tree_dump import format_ir_tree
+        replay_ir = _comparison_ir(master) if as_of else master.ir
+        att_supps = getattr(getattr(master, "ctx", None), "attachment_supplements", ())
+        print(format_ir_tree(replay_ir))
+        for supp in att_supps:
+            print(f"\n[Attachment: {supp.pdf_name}]")
+            print(format_ir_tree(supp.ir))
         return
 
     # Filter to address

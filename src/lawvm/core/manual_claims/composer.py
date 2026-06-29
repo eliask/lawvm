@@ -167,16 +167,16 @@ def derive_composition_decision(
     strict_with_attested_claims:
       authorized=True requires ALL of:
         - state.status == accepted
-        - state.review_status == human_reviewed
+        - state.review_status == verified_manual
         - state.validator_status in {span_verified, entailment_verified, migration_revalidated}
         - source_witness_type in {finlex_corrigendum, external_archival, operator_filing}
-          OR (source_witness_type == llm_proposal AND review_status == human_reviewed)
+          OR (source_witness_type == llm_proposal AND review_status == verified_manual)
         - For semantic compilation claims: additionally replay_authorized=True
           (not yet wired to a real validator; returns False for unknown kinds)
 
     non_strict_with_claims:
-      As strict but WITHOUT the review_status == human_reviewed requirement.
-      entailment_verified LLM proposals are admissible without human review.
+      As strict but WITHOUT the review_status == verified_manual requirement.
+      entailment_verified LLM proposals are admissible without manual verification.
 
     exploratory:
       Accepts any claim with state.status == accepted.
@@ -370,20 +370,20 @@ def _derive(
 
     if profile == ProfileTag.STRICT_WITH_ATTESTED_CLAIMS:
         if is_llm:
-            if state.review_status != ReviewStatus.HUMAN_REVIEWED:
+            if state.review_status != ReviewStatus.VERIFIED_MANUAL:
                 return _reject("rejected_unreviewed_llm")
         elif not is_attested:
             # finlex_akn claims go through deterministic path, not here
             return _reject("rejected_non_attested_witness")
-        if state.review_status != ReviewStatus.HUMAN_REVIEWED:
+        if state.review_status != ReviewStatus.VERIFIED_MANUAL:
             return _reject("rejected_unreviewed_llm")
 
     elif profile == ProfileTag.NON_STRICT_WITH_CLAIMS:
         if is_llm:
-            # Entailment-verified LLM proposals are admissible without human review.
+            # Entailment-verified LLM proposals are admissible without manual verification.
             # second_pass_correlated alone is NOT enough.
             if state.validator_status != ValidatorStatus.ENTAILMENT_VERIFIED:
-                if state.review_status != ReviewStatus.HUMAN_REVIEWED:
+                if state.review_status != ReviewStatus.VERIFIED_MANUAL:
                     return _reject("rejected_unreviewed_llm")
         elif not is_attested:
             return _reject("rejected_non_attested_witness")

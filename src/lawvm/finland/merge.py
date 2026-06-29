@@ -2640,7 +2640,15 @@ def _drop_suspicious_partial_subsection_shell_replaces(
     amend_subsections = [c for c in muutos_ir.children if c.kind is IRNodeKind.SUBSECTION]
     if live_heading is None or amend_heading is None or live_heading.text == amend_heading.text:
         return group_ops, [], []
-    kept_shell_clause = _explicit_heading_and_plain_subsection_replace_source_clause(group_ops)
+    kept_shell_clause = _explicit_plain_subsection_replace_source_clause(
+        group_ops,
+        require_heading_op=True,
+    )
+    if kept_shell_clause is None and len(amend_subsections) == 1:
+        kept_shell_clause = _explicit_plain_subsection_replace_source_clause(
+            group_ops,
+            require_heading_op=False,
+        )
     if kept_shell_clause is not None:
         keep_witness = build_subsection_shell_replace_kept_pathology(
             source_statute=next(
@@ -2710,20 +2718,26 @@ def _drop_suspicious_partial_subsection_shell_replaces(
     return filtered, pathologies, rejected_ops
 
 
-def _explicit_heading_and_plain_subsection_replace_source_clause(
+def _explicit_plain_subsection_replace_source_clause(
     group_ops: List["AmendmentOp"],
+    *,
+    require_heading_op: bool,
 ) -> Optional[str]:
     """Return the source clause that targets a plain subsection, else ``None``.
 
-    A non-``None`` return means the group carries an explicit otsikko op AND a
-    plain-subsection-targeted replace whose source text names the plain
-    ``N momentti``; the whole-section shell is then legitimate and must be KEPT.
-    The returned clause is the witness text for the keep decision. The plain-
-    subsection predicate is owned by ``scope.source_targets_plain_subsection_moment``
-    rather than an inline ``raw_text`` regex (AGENTS.md §1.12 reach-back).
+    When ``require_heading_op`` is true, a non-``None`` return means the group
+    carries an explicit ``otsikko`` op AND a plain-subsection-targeted replace.
+    When it is false, the caller has already proven a single-subsection shell;
+    the shell heading is treated as source context only and is not replay
+    authority. In both cases the source text must name the plain ``N momentti``.
+    The returned clause is the witness text for the keep decision.
+
+    The plain-subsection predicate is owned by
+    ``scope.source_targets_plain_subsection_moment`` rather than an inline
+    ``raw_text`` regex (AGENTS.md §1.12 reach-back).
     """
     has_heading_op = any(str(op.target_cols.target_special or "").strip() == "otsikko" for op in group_ops)
-    if not has_heading_op:
+    if require_heading_op and not has_heading_op:
         return None
     for op in group_ops:
         if (

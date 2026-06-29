@@ -4,6 +4,7 @@ Subcommands:
     bisect    <statute_id>  Find which amendment damages a statute's score.
     bisect-section <statute_id>  Find which amendment damages one section.
     dump      <statute_id>  Inspect pipeline state at a named stage.
+    show      <statute_id>  Pretty human-readable statute tree (body + attachments, OSC 8 hyperlinks).
     source-dump <statute_id>  Inspect raw archived source XML with line numbers.
     fi-source-label-audit     Compare Finland source XML label normalization policies.
     inspect-amendment <statute_id>  Inspect one amendment's compile/payload path.
@@ -114,6 +115,7 @@ from typing import TextIO
 from lawvm.tools.uk_replay_regime import UK_APPLICABILITY_MODE_CHOICES
 from lawvm.tools.uk_replay_regime import add_uk_replay_regime_arguments
 from lawvm.tools.replay_mode_arg import replay_mode_argument
+from lawvm.tools.hyperlinks import HYPERLINK_MODES
 
 # Inlined from lawvm.core.invariant_detectors.SUPPORTED_INVARIANT_DETECTORS.
 # Used only as argparse choices= — no need to import the full module (which pulls
@@ -405,6 +407,66 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         metavar="DATE",
         help="PIT date for --json/--hashes section selection (YYYY-MM-DD; "
         "default: replay cutoff)",
+    )
+
+    # --- show (pretty human-readable statute tree) ---
+    show_p = sub.add_parser(
+        "show",
+        parents=_P,
+        help="pretty human-readable statute tree (Finnish legal labels)",
+        description=(
+            "Show the full statute tree — body + attachments + tables + "
+            "footnotes — in a single pretty human-readable view. Finnish "
+            "legal convention (1 luku, 5 §, a) kohta). OSC 8 terminal "
+            "hyperlinks wrap YEAR/NUMBER statute-id tokens in the rendered "
+            "text (gated by --hyperlinks). SDOC-13: a projection must "
+            "include attachments/schedules unless explicitly scoped out "
+            "via --no-attachments. The technical IR-label view is `lawvm "
+            "dump`; `show` is the human counterpart."
+        ),
+    )
+    show_p.add_argument("statute_id", help="statute ID, e.g. 2006/1299")
+    show_p.add_argument(
+        "--as-of",
+        dest="as_of",
+        metavar="DATE",
+        help="PIT date (YYYY-MM-DD; default: replay cutoff)",
+    )
+    show_p.add_argument(
+        "--address",
+        metavar="ADDR",
+        help="scope the view to one provision, e.g. "
+        "'chapter:1/section:5' or 'appendix:Liite_1'. Documents are walked "
+        "only on the body root; attachments are skipped when --address is "
+        "set.",
+    )
+    show_p.add_argument(
+        "--no-attachments",
+        dest="no_attachments",
+        action="store_true",
+        help="exclude attachment/schedule trees from the projection. By "
+        "default attachments are included (SDOC-13).",
+    )
+    show_p.add_argument(
+        "--hyperlinks",
+        choices=HYPERLINK_MODES,
+        default="auto",
+        help="OSC 8 terminal hyperlinks on YEAR/NUMBER statute-id tokens "
+        "(default: auto — enabled when stdout is a TTY).",
+    )
+    show_p.add_argument(
+        "--max-text",
+        dest="max_text",
+        type=int,
+        default=None,
+        help="optional maximum characters per body line before clipping "
+        "(default: no truncation — full text renders per user directive)",
+    )
+    show_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit canonical ir_serialize JSON (body + attachments) rather "
+        "than the pretty human view.",
     )
 
     # --- source-dump ---
@@ -4524,12 +4586,12 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
 
     corr_manual_p = corr_sub.add_parser(
         "manual-template",
-        help="emit YAML scaffold entries for corrigendum_manual.yaml from classified patches",
+        help="emit YAML scaffold entries for source_defect_fixes_fi.yaml from classified patches",
         description=(
             "Load one amendment's classified corrigendum items from the git-tracked "
             "corrigendum corpus, "
             "filter to the items that still do not match source XML by default, and emit "
-            "a ready-to-paste YAML scaffold for corrigendum_manual.yaml."
+            "a ready-to-paste YAML scaffold for source_defect_fixes_fi.yaml."
         ),
     )
     corr_manual_p.add_argument(
@@ -12031,7 +12093,7 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
     # accept
     claim_accept_p = claim_sub.add_parser(
         "accept",
-        help="accept a proposed claim (marks review_status=human_reviewed)",
+        help="accept a proposed claim (marks review_status=verified_manual)",
     )
     claim_accept_p.add_argument("claim_id", help="claim ID (full SHA-256 hex)")
 
@@ -12061,7 +12123,7 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
     claim_list_p.add_argument("--layer", choices=["substrate", "extraction", "correction", "adjudication"],
                                help="filter by claim layer")
     claim_list_p.add_argument("--review-status", dest="review_status",
-                               choices=["proposed", "second_pass_correlated", "human_reviewed"],
+                               choices=["proposed", "second_pass_correlated", "verified_manual"],
                                help="filter by review status")
     claim_list_p.add_argument("--status",
                                choices=["proposed", "accepted", "rejected", "retracted",
@@ -12911,6 +12973,11 @@ def _main_impl() -> None:
         from lawvm.tools.dump import main as dump_main
 
         dump_main(args)
+
+    elif args.command == "show":
+        from lawvm.tools.show import main as show_main
+
+        show_main(args)
 
     elif args.command == "source-dump":
         from lawvm.tools.source_dump import main as source_dump_main

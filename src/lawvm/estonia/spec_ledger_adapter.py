@@ -18,6 +18,7 @@ from collections import defaultdict
 from typing import Dict, Iterator, List, Mapping, Optional
 
 from lawvm.core.named_swallow import swallow_call
+from lawvm.core.phase_result import Finding
 from lawvm.tools.spec_ledger import (
     DivergenceRow,
     LedgerAdapter,
@@ -91,23 +92,35 @@ def _ee_address_key(address: object) -> str:
     return "/".join(f"{kind}:{label}" for kind, label in path)
 
 
-def _ee_resolve_as_of(oracle_id: str, archive: object) -> str:
+def _ee_resolve_as_of(
+    oracle_id: str,
+    archive: object,
+    *,
+    findings_out: Optional[List[Finding]] = None,
+) -> str:
     """Resolve an oracle terviktekst's own effective date (its PIT as_of).
 
     ``fetch_rt_xml`` may raise across network/parse/storage errors. Previously
     ``except Exception: return ""`` silently swallowed to an empty string
     (AGENTS.md §1.10 silent-fallback). Now routed through
-    ``lawvm.core.named_swallow.swallow_call`` so a typed Finding is emitted
-    to ``log_emitter`` (WARNING-visibility) carrying the offending
-    ``oracle_id`` as ``source_artifact`` and ``clause_text`` (the EE URL path,
-    truncated 400 chars). On swallow returns "" so the spec-ledger adapter
-    continues to mark this oracle's as-of unresolved rather than aborting a
-    full corpus scan.
+    ``lawvm.core.named_swallow.swallow_call`` so a typed Finding is constructed
+    carrying the offending ``oracle_id`` as ``source_artifact`` and
+    ``clause_text`` (the EE URL path, truncated 400 chars). When the caller
+    plumbs ``findings_out`` the Finding is appended there (per-statute
+    audit-trail sink, threaded from the caller); otherwise ``log_emitter``
+    keeps stderr WARNING visibility — never silent. On swallow returns "" so
+    the spec-ledger adapter continues to mark this oracle's as-of unresolved
+    rather than aborting a full corpus scan.
     """
     from lawvm.estonia.fetch import extract_effective_date, fetch_rt_xml
 
     from lawvm.core.named_swallow import log_emitter
 
+    # Sink dispatch mirrors corpus.py:122 named_swallow precedent: when the
+    # caller plumbed ``findings_out``, the Finding lands in that audit-trail
+    # list; when not, ``log_emitter`` keeps stderr WARNING visibility so the
+    # swallow is still observed at this acquisition boundary.
+    emit = None if findings_out is not None else log_emitter()
     xml_bytes = swallow_call(
         lambda: fetch_rt_xml(oracle_id, archive),
         rule_id="ee_spec_ledger_fetch_rt_xml",
@@ -115,7 +128,8 @@ def _ee_resolve_as_of(oracle_id: str, archive: object) -> str:
         jurisdiction="ee",
         source_artifact=oracle_id,
         clause_text=f"oracle_id={oracle_id[:400]}",
-        emit=log_emitter(),
+        emit=emit,
+        findings_out=findings_out,
     )
     if xml_bytes == b"":
         return ""
@@ -142,6 +156,14 @@ def ee_ledger_inputs(sids: List[str], mode: Mode) -> Iterator[StatuteLedgerInput
         base_id, _, oracle_id = sid.partition("/")
         if not base_id or not oracle_id:
             continue
+        # findings_out=None sanctioned: ``ee_ledger_inputs`` is a registered
+        # ``LedgerInputsFn = Callable[[List[str], Mode], Iterable[...]]`` — its
+        # signature is fixed by ``lawvm.tools.spec_ledger.LedgerAdapter`` and
+        # widening to accept a ``list[Finding]`` would cascade 5+ sites
+        # (LedgerInputsFn type + LedgerAdapter + run_ledger + the fi/ee/uk
+        # adapter functions + their tests). That is the documented structural
+        # gap for iter4 W2 — the swallow falls through to ``log_emitter``
+        # (core/named_swallow.py docstring's IO/utility carve-out) — never silent.
         as_of = _ee_resolve_as_of(oracle_id, archive)
         if not as_of:
             continue

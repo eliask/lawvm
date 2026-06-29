@@ -32,7 +32,7 @@ from lawvm.finland.johtolause.api import (
     ClauseParseResult,
     derive_features,
 )
-from lawvm.finland.johtolause.surface_model import ScopeKind, SurfaceSubRef
+from lawvm.finland.johtolause.surface_model import ScopeKind, SurfaceSubRef, SurfaceTextAmend
 from lawvm.finland.johtolause.surface_resolve import (
     ResolvedDescendantCoordination,
     ResolvedHeadingPlacement,
@@ -293,6 +293,53 @@ def extract_legal_ops(johto_text: str,
     return extract_legal_ops_from_parse_result(result)
 
 
+def _raw_text_for_text_amend(johto_text: str, ta: SurfaceTextAmend) -> str:
+    """Per-op verbatim source substring for one text-amend op (task #50).
+
+    Returns the verbatim ``johto_text`` slice spanning from the ``old_text``
+    token through the ``new_text`` token, so each per-op ``LegalOperation.raw_text``
+    differs from its siblings and ``compute_source_anchor(raw_bytes,
+    clause_text=op.raw_text)`` can land a per-op byte anchor that
+    distinguishes which clause produced which op. When the phrase-boundary
+    search fails the function falls back to ``ta.old_text`` alone (still
+    verbatim, though short — ``compute_source_anchor`` will refuse, not
+    guess, when the substring is ambiguous: §1.10 fail-loud, §0 no
+    fabricated anchors). Empty when the op has no verbatim anchor.
+
+    The search uses the QUOTED form ``"old_text"``/``"new_text"`` because
+    the regex extractor (``_extract_text_amend_clauses``) strips the
+    surrounding quotes from ``old``/``new`` capture groups. Re-attaching
+    them here unambiguously locates the AMEND-PHRASE occurrence
+    (``sana "X" korvataan sanalla "Y"``) rather than any stray prose mention
+    of the same word — the quotes are required syntax of Finnish text-amend
+    prose, so the per-op anchor always lands at the clause, not at prose.
+
+    This is the lightest source-anchor seam (Option C) — the per-op
+    ``raw_text`` is evidence footing (§2.10 Source plane) consumable only
+    through a typed ``SourceAnchor`` later; it is not itself replay
+    authority (§1.11, §1.12).
+    """
+    if not ta.old_text:
+        return ""
+    # Search the quoted amend-phrase marker. The extractor strips quotes, so
+    # we re-attach them to disambiguate the clause occurrence from any stray
+    # prose mention of the bare word.
+    quoted_old = f'"{ta.old_text}"'
+    old_idx = johto_text.find(quoted_old)
+    if old_idx < 0:
+        # Fall back to the bare word if the quoted form is absent (still
+        # verbatim — may be ambiguous downstream; compute_source_anchor
+        # will refuse rather than guess when that happens).
+        return ta.old_text
+    if not ta.new_text:
+        return johto_text[old_idx : old_idx + len(quoted_old)]
+    quoted_new = f'"{ta.new_text}"'
+    new_idx = johto_text.find(quoted_new, old_idx + len(quoted_old))
+    if new_idx < 0:
+        return ta.old_text
+    return johto_text[old_idx : new_idx + len(quoted_new)]
+
+
 def extract_law_level_text_patch_los(
     johto_text: str,
     amendment_id: str = "",
@@ -306,6 +353,12 @@ def extract_law_level_text_patch_los(
     These ops are SKIPPED by AmendmentOp.from_lo() (no structural compilation)
     but are collected by extract_law_level_text_patches() after materialization
     to apply global text replacements across the entire statute.
+
+    Each minted op carries a per-op ``raw_text`` — the verbatim substring of
+    ``johto_text`` that produced THIS op — so downstream
+    ``compute_source_anchor`` can land a distinct per-op ``SourceAnchor``
+    (task #50): the receipt ``source_anchor`` then carries the byte span of
+    the SPECIFIC clause, not the whole-johtolause amendment-level span.
 
     Args:
         johto_text:    The normalized johtolause text.
@@ -352,6 +405,13 @@ def extract_law_level_text_patch_los(
                 target=LegalAddress(path=()),
                 text_patch=patch,
                 source=source,
+                # Per-op verbatim source substring (task #50 Option C): the
+                # clause-phrase slice of `johto_text` from `old_text` through
+                # `new_text`, distinct per amend so the per-op SourceAnchor
+                # computes a per-clause byte span rather than the
+                # amendment-level span. Empty fail-safe `""` is honoured by
+                # downstream anchor computators (they return None — fail loud).
+                raw_text=_raw_text_for_text_amend(text, ta),
             )
         )
     return ops

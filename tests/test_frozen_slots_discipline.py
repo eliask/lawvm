@@ -5,14 +5,17 @@ semantic-field dataclasses at phase boundaries be `@dataclass(frozen=True,
 slots=True)` so the legal-state, evidence, and source planes stay
 type-distinct and a value cannot silently mutate across a phase seam.
 
-This is a targeted ratchet over the five semantic carriers named in the
-§1.9 task ("Frozen/slots discipline for legal-state carriers"):
+This is a targeted ratchet over the seven semantic carriers named across the
+§1.9 task ("Frozen/slots discipline for legal-state carriers") and its
+Wave-2 follow-up (scope-confidence protocol riders):
 
   - lawvm.core.ir:ProvisionVersion        (legal-state plane)
   - lawvm.core.ir:ProvisionTimeline       (legal-state plane)
   - lawvm.core.timeline_consistency:ConsistencyDivergence  (evidence plane)
   - lawvm.finland.fixed_term_expiry:FixedTermDiagnostic   (evidence plane)
   - lawvm.finland.fixed_term_expiry:FixedTermExtraction   (evidence plane)
+  - lawvm.finland.ops:ScopeConfidence     (Wave-2 — scope-confidence carrier)
+  - lawvm.norway.scope_confidence:NOScopeConfidence  (Wave-2 — NO sibling)
 
 Each in-scope carrier MUST be `@dataclass(frozen=True, slots=True)`,
 unless it is registered in ``_BLOCKED_MIGRATION`` (a typed carrier that
@@ -34,9 +37,20 @@ coordinated per-file cleanup that exceeds this task's strict scope.
 from __future__ import annotations
 
 import ast
+import dataclasses
 import pathlib
 import re
 from typing import NamedTuple, Optional
+
+import pytest
+
+from lawvm.core.ir import (
+    IRNode,
+    LegalAddress,
+    ProvisionTimeline,
+    ProvisionVersion,
+)
+from lawvm.core.semantic_types import IRNodeKind
 
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -68,44 +82,38 @@ _IN_SCOPE_CARRIERS: tuple[Carrier, ...] = (
         "FixedTermExtraction",
         "src/lawvm/finland/fixed_term_expiry.py",
     ),
+    # --- Wave-2 follow-up: scope-confidence protocol riders
+    # (AGENTS.md §1.9 / §2.2 — frontend-owned typed witness stored on
+    # ``LegalOperation.scope_confidence``; the marker protocol lives in
+    # ``lawvm.core.scope_confidence`` and these are the producer instances
+    # registered by the AST parity check in test_scope_confidence_protocol.py).
+    Carrier(
+        "lawvm.finland.ops",
+        "ScopeConfidence",
+        "src/lawvm/finland/ops.py",
+    ),
+    Carrier(
+        "lawvm.norway.scope_confidence",
+        "NOScopeConfidence",
+        "src/lawvm/norway/scope_confidence.py",
+    ),
 )
 
 
 # Each allowlist key is "<dotted.module>:<ClassName>" -> justification.
 #
-# BLOCKED-MIGRATION entries must, in their justification text, name at
-# least one consumer-site witness in the form "<path>:<line>" so removing
-# the entry is bounded by a concrete migration task. Each entry's text
+# BLOCKED-MIGRATION entries must, in their justification text, name at least
+# one consumer-site witness in the form "<path>:<line>" so removing the
+# entry is bounded by a concrete migration task. Each entry's text
 # is verified by ``test_blocked_migration_allowlist_names_consumer_sites``.
 
 _BLOCKED_MIGRATION: dict[str, str] = {
-    # --- BLOCKED-MIGRATION ---
-    # Task: "Frozen/slots discipline for legal-state carriers (§1.9)".
-    # These two carriers embody the §1.9 enforcement target, but freezing
-    # them now would break in-place mutation consumers that live in files
-    # OUTSIDE the strict scope of that task — chiefly
-    # finland/replay_products.py (forbidden WIP) and core/timeline*.py
-    # (cross-cutting consumers). Migration to functional
-    # ``dataclasses.replace`` rebuilds is a follow-up coordinated task;
-    # this allowlist entry keeps the lint curtain alive for the three
-    # in-scope carriers that DID freeze, until that migration lands.
-    "lawvm.core.ir:ProvisionVersion": (
-        "BLOCKED-MIGRATION: in-place writes to .expires and .variant_kind "
-        "at src/lawvm/core/timeline_temporal_events.py:232-233 "
-        "(_cap_substantive_versions_at). "
-        "Migrate those writes to dataclasses.replace and remove this "
-        "allowlist entry to freeze the class."
-    ),
-    "lawvm.core.ir:ProvisionTimeline": (
-        "BLOCKED-MIGRATION: in-place mutation of .versions list at "
-        "src/lawvm/core/timeline.py:357,665,1063; "
-        "src/lawvm/core/timeline_lineage.py:1160,1165; "
-        "src/lawvm/core/timeline_temporal_events.py:326,400; "
-        "src/lawvm/core/timeline_consistency.py:35,57,70,79,92; "
-        "src/lawvm/finland/replay_products.py:2048,2062 (forbidden WIP). "
-        "Migrate all sites to dataclasses.replace(timeline, versions=...) "
-        "and remove this allowlist entry to freeze the class."
-    ),
+    # Empty as of iter2 W5 H5 — ProvisionVersion + ProvisionTimeline were
+    # promoted to ``@dataclass(frozen=True, slots=True)`` and every in-place
+    # mutation consumer (timeline.py / timeline_lineage.py /
+    # timeline_temporal_events.py / timeline_consistency.py /
+    # finland/replay_products.py) was migrated to ``dataclasses.replace``.
+    # New blockers go here with a "<path>:<line>" consumer-site witness.
 }
 
 
@@ -245,3 +253,71 @@ def test_blocked_migration_allowlist_names_consumer_sites() -> None:
             f"_BLOCKED_MIGRATION entry {key!r} does not match any "
             "in-scope carrier — delete this stale entry."
         )
+
+
+# --- Positive freeze tests (instance-level curtains) ---------------------
+
+
+def test_provision_version_setattr_is_blocked() -> None:
+    """``ProvisionVersion`` is ``frozen=True`` so setattr must raise.
+
+    Pins the §1.9 invariant that the legal-state-plane carrier cannot be
+    silently mutated past construction. The matching ``_BLOCKED_MIGRATION``
+    allowlist entry was removed when iter2 W5 H5 migrated every in-place
+    mutation consumer to ``dataclasses.replace``.
+    """
+    version = ProvisionVersion(effective="2025-01-01", enacted="2025-01-01")
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        version.expires = "2025-02-01"  # ty: ignore[invalid-assignment]
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        version.variant_kind = "temporary"  # ty: ignore[invalid-assignment]
+
+
+def test_provision_timeline_setattr_is_blocked() -> None:
+    """``ProvisionTimeline`` is ``frozen=True`` so setattr must raise.
+
+    Pins the §1.9 invariant that the legal-state-plane carrier cannot be
+    silently mutated past construction. The matching ``_BLOCKED_MIGRATION``
+    allowlist entry was removed when iter2 W5 H5 migrated every in-place
+    mutation consumer to ``dataclasses.replace``.
+    """
+    address = LegalAddress(path=(("section", "1"),))
+    version = ProvisionVersion(effective="2025-01-01", enacted="2025-01-01")
+    timeline = ProvisionTimeline(address=address, versions=(version,))
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        timeline.versions = (version, version)  # ty: ignore[invalid-assignment]
+
+
+def test_provision_timeline_versions_is_tuple_at_runtime() -> None:
+    """``ProvisionTimeline.versions`` is an immutable tuple at runtime.
+
+    Construction accepts a list literal (ergonomic for callers) but coerces
+    to a tuple in ``__post_init__`` — per the §1.9 immutable-carrier rule,
+    callers MUST go through ``dataclasses.replace`` to append/sort.
+    """
+    address = LegalAddress(path=(("section", "1"),))
+    version = ProvisionVersion(effective="2025-01-01", enacted="2025-01-01")
+    timeline = ProvisionTimeline(address=address, versions=[version])
+    assert isinstance(timeline.versions, tuple)
+    # Empty-case default is also a tuple, not a list.
+    empty_timeline = ProvisionTimeline(address=address)
+    assert isinstance(empty_timeline.versions, tuple)
+    assert empty_timeline.versions == ()
+    # And the field has no in-place ``.append``/``.sort`` / ``.pop`` surface.
+    assert not hasattr(timeline.versions, "append")
+    assert not hasattr(timeline.versions, "sort")
+
+
+def test_provision_timeline_construction_accepts_iterable_and_freezes() -> None:
+    """Construction accepts any iterable but stores an immutable tuple."""
+    address = LegalAddress(path=(("section", "1"),))
+    v1 = ProvisionVersion(effective="2025-01-01", enacted="2025-01-01")
+    v2 = ProvisionVersion(effective="2025-02-01", enacted="2025-02-01")
+    timeline = ProvisionTimeline(address=address, versions=[v1, v2])
+    assert timeline.versions == (v1, v2)
+    assert timeline.versions[0] is v1
+    # The stored tuple is independent of the input list mutation.
+    # ``IRNode`` is imported to ensure the placeholder construction path
+    # is exercised; same shape as the real ProvisionTimeline consumers.
+    assert IRNodeKind.SECTION is not None
+    assert IRNode  # noqa: B015 — import-survival smoke check

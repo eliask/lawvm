@@ -88,7 +88,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 1,1993/1385,suspect,oracle_suspect,1999/76 eff 1999-02-03 > cutoff 1999-01-29,
 1,1993/1388,suspect,oracle_suspect,1999/112 eff 1999-02-10 > cutoff 1999-02-04,
 1,1993/1403,suspect,oracle_suspect,1995/814 eff 1995-06-01 > cutoff 1995-05-18,
-1,1993/1507,core,,,OK
+1,1993/1507,suspect,oracle_suspect,structural miss fixed; remaining current residual is section 3 virka-avusta/virka avusta editorial spacing only,OK
 1,1993/1643,suspect,oracle_suspect,1994/877 eff 1994-10-17 > cutoff 1994-10-07,
 1,1993/358,suspect,oracle_suspect,1996/379 eff 1996-06-10 > cutoff 1996-06-07,
 1,1993/452,suspect,oracle_suspect,1995/1102 eff 1995-09-06 > cutoff 1995-08-30,
@@ -930,7 +930,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 1,2023/1281,suspect,oracle_suspect,2025/398 eff 2025-08-01 > cutoff 2025-06-10,
 1,2023/1288,suspect,oracle_suspect,2024/753 eff 2025-01-01 > cutoff 2024-12-05,
 1,2023/1296,suspect,oracle_suspect,2026/54 eff 2026-05-01 > cutoff 2026-01-16,
-1,2023/1308,core,,,OK
+1,2023/1308,suspect,oracle_suspect,2026/187 eff 2026-03-31 > cutoff 2026-03-20; oracle-check classifies substantive divergences as ORACLE_STALE,OK
 1,2023/160,core,,,OK
 1,2023/166,core,,,OK
 1,2023/186,suspect,oracle_suspect,2026/32 eff 2026-11-20 > cutoff 2026-01-16,
@@ -1493,7 +1493,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 2,2022/1334,core,,,OK
 2,2022/1381,core,,,OK
 2,2022/15,core,,,OK
-2,2022/290,core,,,OK
+2,2022/290,suspect,oracle_suspect,2024/629 eff 2025-01-01 > cutoff 2024-11-14; current oracle-check reports no divergences,OK
 2,2022/423,suspect,oracle_suspect,2024/896 eff 2025-01-01 > cutoff 2024-12-19,
 2,2022/711,core,,,OK
 2,2022/800,suspect,oracle_suspect,2025/1321 eff 2026-01-01 > cutoff 2025-12-18,
@@ -1504,7 +1504,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 2,2023/1171,suspect,oracle_suspect,2024/391 eff 2024-07-01 > cutoff 2024-06-20,
 2,2023/1221,core,,,OK
 2,2023/126,suspect,oracle_suspect,base_oracle_only despite amendment 2023/1056 eff 2023-12-04 <= cutoff 2024-05-30,OK
-2,2023/1270,core,,,OK
+2,2023/1270,suspect,oracle_suspect,2025/440 eff 2026-01-01 > cutoff 2025-06-27; oracle-check classifies residuals as EDITORIAL_CONVENTION/LIITE_DIFF,OK
 2,2023/128,core,,,OK
 2,2023/134,suspect,oracle_suspect,2025/309 eff 2025-06-17 > cutoff 2025-06-12,
 2,2023/266,suspect,oracle_suspect,2024/98 eff 2024-03-16 > cutoff 2024-02-29,
@@ -2020,7 +2020,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 4,2002/1200,core,,,OK
 4,2002/388,suspect,oracle_suspect,2009/1008 eff 2010-01-01 > cutoff 2009-12-03,
 4,2002/560,suspect,oracle_suspect,2007/1003 eff 2008-01-01 > cutoff 2007-11-09,
-4,2002/563,core,,,OK
+4,2002/563,suspect,oracle_suspect,2019/1194 eff 2020-01-01 > cutoff 2019-11-29; oracle-check classifies remaining divergence as ORACLE_STALE,OK
 4,2002/767,suspect,oracle_suspect,2011/83 eff 2011-04-01 > cutoff 2011-02-01,
 4,2002/789,suspect,oracle_suspect,2025/919 eff 2026-01-01 > cutoff 2025-10-09,
 4,2003/1116,suspect,oracle_suspect,2015/1370 eff 2016-01-01 > cutoff 2015-11-26,
@@ -2136,7 +2136,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 4,2015/327,core,,,OK
 4,2015/430,core,,,OK
 4,2015/523,core,,,OK
-4,2015/549,core,,,OK
+4,2015/549,suspect,oracle_suspect,2022/529 eff 2022-09-01 > cutoff 2022-06-30; current explain reports all sections at or above threshold,OK
 4,2015/80,suspect,oracle_suspect,2021/874 eff 2021-10-18 > cutoff 2021-10-14,
 4,2015/817,suspect,oracle_suspect,2024/740 eff 2025-01-01 > cutoff 2024-12-05,
 4,2016/1134,core,,,OK
@@ -2177,7 +2177,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 4,2022/1393,suspect,oracle_suspect,2025/1270 eff 2026-01-01 > cutoff 2025-12-18,
 4,2023/359,suspect,oracle_suspect,2025/1328 eff 2026-01-01 > cutoff 2025-12-18,
 4,2023/381,suspect,oracle_suspect,2025/730 eff 2026-01-01 > cutoff 2025-12-22,
-4,2023/564,core,,,OK
+4,2023/564,suspect,oracle_suspect,2025/480 eff 2026-01-01 > cutoff 2025-06-27; current oracle-check reports no divergences,OK
 4,2023/657,suspect,oracle_suspect,2025/1103 eff 2026-01-01 > cutoff 2025-11-07,
 4,2023/71,suspect,oracle_suspect,2025/665 eff 2026-01-01 > cutoff 2025-12-22,
 4,2025/124,core,,,OK
@@ -2336,7 +2336,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 5,2015/1360,core,,,OK
 5,2015/1709,core,,,OK
 5,2015/237,suspect,oracle_suspect,2021/346 eff 2021-04-26 > cutoff 2021-04-22,
-5,2015/254,core,,,OK
+5,2015/254,suspect,oracle_suspect,2022/784 eff 2023-01-01 > cutoff 2022-08-26; oracle-check classifies residuals as EDITORIAL_CONVENTION/LIITE_DIFF,OK
 5,2015/390,suspect,oracle_suspect,2025/618 eff 2026-01-01 > cutoff 2025-06-27,
 5,2015/5,suspect,oracle_suspect,2020/1098 eff 2021-01-01 > cutoff 2020-12-17,
 5,2015/584,core,,,OK
@@ -2674,7 +2674,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 7,2019/552,suspect,oracle_suspect,2025/1159 eff 2026-05-01 > cutoff 2025-12-05,
 7,2019/872,suspect,oracle_suspect,2025/739 eff 2026-01-01 > cutoff 2025-06-27,
 7,2020/508,suspect,oracle_suspect,base_oracle_only despite amendment 2020/963 eff 2020-12-11 <= cutoff 2022-05-20,OK
-7,2021/1333,core,,,OK
+7,2021/1333,suspect,oracle_suspect,2025/407 eff 2025-09-01 > cutoff 2025-06-27; oracle-check classifies residuals as ORACLE_STALE,OK
 7,2021/615,suspect,oracle_suspect,2025/1110 eff 2026-01-01 > cutoff 2025-12-05,
 7,2021/617,suspect,oracle_suspect,2025/391 eff 2026-01-01 > cutoff 2025-06-27,
 7,2021/76,suspect,oracle_suspect,2025/631 eff 2026-01-01 > cutoff 2025-06-27,
@@ -2705,7 +2705,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 8,1991/1723,suspect,oracle_suspect,2005/728 eff 2005-10-01 > cutoff 2005-09-02,
 8,1991/735,suspect,oracle_suspect,1996/1099 eff 1997-01-01 > cutoff 1996-12-20,
 8,1992/150,suspect,oracle_suspect,2022/427 eff 2022-06-16 > cutoff 2022-06-10,
-8,1993/58,core,,,OK
+8,1993/58,suspect,oracle_suspect,2023/630 eff 2023-06-01 > cutoff 2023-03-30; structural item-4 residual is future-effective oracle content,OK
 8,1993/635,suspect,oracle_suspect,2007/690 eff 2007-07-01 > cutoff 2007-06-14,
 8,1994/211,suspect,oracle_suspect,2015/1242 eff 2015-10-01 > cutoff 2015-09-24,
 8,1994/999,suspect,oracle_suspect,2002/562 eff 2002-08-01 > cutoff 2002-06-27,
@@ -2761,8 +2761,8 @@ amendments,statute_id,bucket,reason,detail,last_status
 8,2015/34,core,,,OK
 8,2015/4,core,,,OK
 8,2016/1050,core,,,OK
-8,2016/1144,core,,,OK
-8,2016/1398,core,,,OK
+8,2016/1144,suspect,oracle_suspect,2025/856 eff 2025-09-01 > cutoff 2025-08-01; oracle-check classifies residuals as EDITORIAL_CONVENTION,OK
+8,2016/1398,suspect,oracle_suspect,2026/433 eff 2026-06-01 > cutoff 2026-05-29; oracle-check classifies residuals as EDITORIAL_CONVENTION/LIITE_DIFF/ORACLE_STALE,OK
 8,2016/1503,suspect,oracle_suspect,2025/1005 eff 2026-01-01 > cutoff 2025-11-14,
 8,2017/176,core,,,OK
 8,2017/293,suspect,oracle_suspect,2025/737 eff 2026-01-01 > cutoff 2025-12-30,
@@ -2858,7 +2858,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 9,2020/566,core,,,OK
 9,2020/615,core,,,OK
 9,2021/327,suspect,oracle_suspect,2025/1244 eff 2026-01-01 > cutoff 2025-12-16,
-9,2022/739,core,,,OK
+9,2022/739,suspect,oracle_suspect,2026/290 eff 2026-05-01 > cutoff 2026-04-17; oracle-check classifies remaining divergences as EDITORIAL_CONVENTION,OK
 10,1901/15-001,suspect,oracle_suspect,1994/390 eff 1994-07-01 > cutoff 1994-05-27,
 10,1960/270,suspect,oracle_suspect,2003/1288 eff 2004-01-01 > cutoff 2003-12-30,
 10,1972/484,core,,,OK
@@ -2866,7 +2866,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 10,1979/319,suspect,oracle_suspect,1995/1210 eff 1995-11-01 > cutoff 1995-10-27,
 10,1986/64,suspect,oracle_suspect,2025/801 eff 2026-01-01 > cutoff 2025-06-27,
 10,1986/914,suspect,oracle_suspect,2002/403 eff 2002-09-01 > cutoff 2002-05-24,
-10,1987/320,core,,,OK
+10,1987/320,suspect,source_pathology,oracle-check classifies current residuals as SOURCE_PATHOLOGY/EDITORIAL_CONVENTION with one REPLAY_EXTRA/UNKNOWN tail row,OK
 10,1987/627,suspect,oracle_suspect,2002/975 eff 2003-01-01 > cutoff 2002-11-25,
 10,1988/460,core,,,OK
 10,1991/1083,suspect,oracle_suspect,2026/117 eff 2026-09-01 > cutoff 2026-02-05,
@@ -2924,7 +2924,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 11,1991/183,suspect,oracle_suspect,2007/1233 eff 2008-01-01 > cutoff 2007-12-13,
 11,1994/1415,core,,,OK
 11,1994/4,suspect,oracle_suspect,2021/471 eff 2021-06-10 > cutoff 2021-06-04,
-11,1994/831,core,,,OK
+11,1994/831,suspect,source_pathology,oracle-check classifies remaining section 1 divergence as SOURCE_PATHOLOGY,OK
 11,1995/109,suspect,oracle_suspect,2024/31 eff 2025-01-01 > cutoff 2024-10-18,
 11,1995/1552,core,,,OK
 11,1997/210,core,,,OK
@@ -2952,7 +2952,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 11,2006/255,suspect,oracle_suspect,2019/630 eff 2019-06-01 > cutoff 2019-05-10,
 11,2006/308,notruth,no_truth_from_run,,NO_TRUTH
 11,2006/607,suspect,oracle_suspect,2023/437 eff 2024-01-01 > cutoff 2023-03-23,
-11,2006/693,core,,,OK
+11,2006/693,suspect,oracle_suspect,oracle-check classifies remaining substantive divergence as ORACLE_STALE against source 2013/262; other rows are EDITORIAL_CONVENTION,OK
 11,2007/1307,notruth,no_truth_from_run,,NO_TRUTH
 11,2007/334,notruth,no_truth_from_run,,NO_TRUTH
 11,2007/527,core,,,OK
@@ -2990,7 +2990,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 12,1994/1072,suspect,oracle_suspect,2016/629 eff 2016-08-19 > cutoff 2016-08-12,
 12,1995/1112,suspect,oracle_suspect,2009/1011 eff 2010-01-01 > cutoff 2009-12-03,
 12,1995/1557,suspect,oracle_suspect,2006/1101 eff 2007-01-01 > cutoff 2006-12-08,
-12,1996/396,core,,,OK
+12,1996/396,suspect,oracle_suspect,2012/629 eff 2013-01-01 > cutoff 2012-11-15; current explain reports all sections at or above threshold,OK
 12,1996/619,suspect,oracle_suspect,2025/423 eff 2026-01-01 > cutoff 2025-06-27,
 12,1998/214,core,,,OK
 12,1998/633,suspect,oracle_suspect,2025/612 eff 2026-01-01 > cutoff 2025-12-30,
@@ -3063,7 +3063,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 13,2018/714,suspect,oracle_suspect,2025/619 eff 2026-01-01 > cutoff 2025-12-22,
 13,2020/1269,suspect,oracle_suspect,2024/400 eff 2024-09-02 > cutoff 2024-06-28,
 13,2021/612,core,,,OK
-13,2023/380,core,,,OK
+13,2023/380,suspect,oracle_suspect,2026/50 eff 2026-05-01 > cutoff 2026-01-16; oracle-check classifies residuals as EDITORIAL_CONVENTION,OK
 14,1938/23,core,,,OK
 14,1970/456,suspect,oracle_suspect,2015/660 eff 2016-01-01 > cutoff 2015-05-22,
 14,1971/221,suspect,oracle_suspect,2019/551 eff 2019-05-01 > cutoff 2019-04-26,
@@ -3127,9 +3127,9 @@ amendments,statute_id,bucket,reason,detail,last_status
 15,2006/671,suspect,oracle_suspect,2024/4 eff 2025-12-08 > cutoff 2023-12-21,
 15,2007/1277,notruth,no_truth_from_run,,NO_TRUTH
 15,2008/373,suspect,oracle_suspect,2025/744 eff 2026-01-01 > cutoff 2025-06-27,
-15,2010/290,core,,,OK
+15,2010/290,suspect,oracle_suspect,2026/44 eff 2026-06-19 > cutoff 2026-01-16; oracle-check classifies residuals as ORACLE_STALE/EDITORIAL_CONVENTION,OK
 15,2011/1563,suspect,oracle_suspect,2025/650 eff 2026-01-01 > cutoff 2025-06-27,
-15,2012/980,core,,,OK
+15,2012/980,suspect,oracle_suspect,2024/742 eff 2025-01-01 > cutoff 2024-12-05; oracle-check classifies residuals as ORACLE_STALE/SOURCE_PATHOLOGY/EDITORIAL_CONVENTION,OK
 15,2013/1015,suspect,oracle_suspect,2025/1217 eff 2025-12-31 > cutoff 2025-12-12,
 15,2013/1078,suspect,oracle_suspect,2026/1 eff 2026-01-07 > cutoff 2026-01-05,
 15,2013/870,core,,,OK
@@ -3167,7 +3167,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 16,2010/754,suspect,oracle_suspect,2025/421 eff 2026-01-01 > cutoff 2025-06-27,
 16,2011/746,core,,,OK
 16,2013/192,suspect,oracle_suspect,2021/1072 eff 2022-01-01 > cutoff 2021-12-03,
-16,2016/549,core,,,OK
+16,2016/549,suspect,oracle_suspect,2025/791 eff 2026-01-01 > cutoff 2025-06-27; oracle-check classifies residuals as EDITORIAL_CONVENTION/ORACLE_STALE,OK
 16,2018/1373,suspect,oracle_suspect,2024/387 eff 2025-01-01 > cutoff 2024-06-20,
 17,1920/26,suspect,oracle_suspect,2023/773 eff 2025-01-01 > cutoff 2023-04-21,
 17,1969/10,core,,,OK
@@ -3216,7 +3216,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 18,2004/1058,suspect,oracle_suspect,2025/534 eff 2026-01-01 > cutoff 2025-06-27,
 18,2007/121,suspect,oracle_suspect,2014/173 eff 2014-03-15 > cutoff 2014-03-07,
 18,2007/370,notruth,no_truth_from_run,,NO_TRUTH
-18,2008/503,core,,,OK
+18,2008/503,suspect,oracle_suspect,2016/857 eff 2017-01-01 > cutoff 2016-10-14; oracle-check classifies residuals as EDITORIAL_CONVENTION/ORACLE_STALE,OK
 18,2010/310,suspect,oracle_suspect,2026/140 eff 2026-07-01 > cutoff 2026-02-19,
 18,2010/503,core,,,OK
 18,2013/588,suspect,oracle_suspect,2025/1383 eff 2026-01-01 > cutoff 2025-12-22,
@@ -3309,12 +3309,12 @@ amendments,statute_id,bucket,reason,detail,last_status
 22,1996/1231,core,,,OK
 22,1997/48,core,,,OK
 22,2002/1305,suspect,oracle_suspect,2023/400 eff 2025-01-01 > cutoff 2023-03-23,
-22,2003/541,core,,,OK
+22,2003/541,suspect,oracle_suspect,2018/98 eff 2019-06-01 > cutoff 2018-01-30; oracle-check classifies residuals as ORACLE_STALE/SOURCE_PATHOLOGY/EDITORIAL_CONVENTION,OK
 22,2004/699,core,,,OK
 22,2005/503,suspect,oracle_suspect,2025/701 eff 2026-01-01 > cutoff 2025-06-27,
 22,2010/703,suspect,oracle_suspect,2026/57 eff 2026-05-01 > cutoff 2026-01-16,
 22,2014/932,suspect,oracle_suspect,2025/604 eff 2026-01-01 > cutoff 2025-12-30,
-22,2015/459,core,,,OK
+22,2015/459,suspect,oracle_suspect,2026/64 eff 2026-05-01 > cutoff 2026-01-16; oracle-check classifies residuals as EDITORIAL_CONVENTION/ORACLE_STALE/SOURCE_PATHOLOGY,OK
 23,1966/298,suspect,oracle_suspect,2004/1296 eff 2005-01-01 > cutoff 2004-12-30,
 23,1969/444,suspect,oracle_suspect,2006/1303 eff 2007-01-01 > cutoff 2006-12-22,
 23,1986/585,suspect,oracle_suspect,2016/95 eff 2017-01-01 > cutoff 2016-01-29,
@@ -3330,7 +3330,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 23,2001/322,core,,,OK
 23,2010/1386,core,,,OK
 23,2011/948,suspect,oracle_suspect,2025/713 eff 2026-01-01 > cutoff 2025-06-27,
-24,1990/650,core,,,OK
+24,1990/650,suspect,oracle_suspect,2020/793 eff 2020-11-23 > cutoff 2020-11-13; oracle-check classifies current residuals as EDITORIAL_CONVENTION,OK
 24,1990/846,suspect,oracle_suspect,2011/548 eff 2011-06-01 > cutoff 2011-05-05,
 24,1992/379,suspect,oracle_suspect,2014/618 eff 2014-08-15 > cutoff 2014-08-08,
 24,1993/1189,suspect,oracle_suspect,2025/1489 eff 2026-01-01 > cutoff 2025-12-30,
@@ -3354,7 +3354,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 25,2007/570,notruth,no_truth_from_run,,NO_TRUTH
 25,2011/805,suspect,oracle_suspect,2025/93 eff 2025-12-01 > cutoff 2025-03-14,
 25,2015/234,suspect,oracle_suspect,base_oracle_only despite amendment 2015/1437 eff 2015-12-14 <= cutoff 2023-05-25,OK
-25,2016/768,core,,,OK
+25,2016/768,suspect,oracle_suspect,2026/283 eff 2026-05-01 > cutoff 2026-04-17; oracle-check classifies residuals as EDITORIAL_CONVENTION/ORACLE_STALE,OK
 26,1967/550,suspect,oracle_suspect,2016/717 eff 2017-01-01 > cutoff 2016-08-25,
 26,1982/182,suspect,source_pathology,base chapter 4 absent plus traffic-sign image/catalog payload frontier; journaled source-acquisition lane,OK
 26,1988/423,suspect,oracle_suspect,2024/757 eff 2025-01-01 > cutoff 2024-12-05,
@@ -3448,9 +3448,9 @@ amendments,statute_id,bucket,reason,detail,last_status
 38,1978/591,suspect,oracle_suspect,2004/645 eff 2005-01-01 > cutoff 2004-07-09,
 38,1994/674,core,,,OK
 38,2005/767,suspect,oracle_suspect,2026/115 eff 2026-09-01 > cutoff 2026-02-05,
-38,2007/393,core,,,OK
+38,2007/393,suspect,oracle_suspect,2026/239 eff 2026-04-10 > cutoff 2026-04-09; oracle-check classifies current residuals as EDITORIAL_CONVENTION,OK
 38,2007/705,core,,,OK
-38,2011/756,core,,,OK
+38,2011/756,suspect,oracle_suspect,2026/413 eff 2026-06-01 > cutoff 2026-05-29; oracle-check classifies residuals as EDITORIAL_CONVENTION/ORACLE_STALE,OK
 38,2014/610,suspect,oracle_suspect,2026/39 eff 2026-11-20 > cutoff 2026-01-16,
 39,1973/36,suspect,oracle_suspect,2016/1504 eff 2017-03-01 > cutoff 2016-12-29,
 39,1976/693,suspect,oracle_suspect,2015/1043 eff 2016-01-01 > cutoff 2015-08-07,
@@ -3469,7 +3469,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 42,1994/971,core,,,OK
 42,1998/632,core,,,OK
 42,2003/1281,suspect,oracle_suspect,2024/815 eff 2025-01-01 > cutoff 2024-12-19,
-42,2006/1272,core,,,OK
+42,2006/1272,suspect,source_pathology,oracle-check classifies current residuals as SOURCE_PATHOLOGY/EDITORIAL_CONVENTION,OK
 42,2008/521,suspect,oracle_suspect,2024/989 eff 2025-01-17 > cutoff 2024-12-19,
 42,2009/558,suspect,oracle_suspect,2025/1455 eff 2026-01-01 > cutoff 2025-12-30,
 42,2010/1207,suspect,oracle_suspect,2026/24 eff 2026-03-01 > cutoff 2026-01-16,
@@ -3492,7 +3492,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 47,1998/532,suspect,oracle_suspect,2024/706 eff 2025-01-01 > cutoff 2024-12-05,
 48,2014/917,suspect,oracle_suspect,2025/1150 eff 2026-01-01 > cutoff 2025-12-05,
 49,1997/354,suspect,oracle_suspect,2025/213 eff 2026-01-01 > cutoff 2025-05-06,
-49,2012/916,core,,,OK
+49,2012/916,suspect,oracle_suspect,2024/443 eff 2024-09-01 > cutoff 2024-06-28; oracle-check classifies residuals as ORACLE_STALE/SOURCE_PATHOLOGY/EDITORIAL_CONVENTION,OK
 50,1979/1062,suspect,oracle_suspect,2007/870 eff 2007-10-15 > cutoff 2007-10-05,
 50,1992/1164,notruth,no_truth_from_run,,NO_TRUTH
 50,1994/1482,suspect,oracle_suspect,2019/1038 eff 2020-11-01 > cutoff 2020-10-22,
@@ -3501,14 +3501,14 @@ amendments,statute_id,bucket,reason,detail,last_status
 51,2005/566,core,,,OK
 52,1984/603,suspect,oracle_suspect,2026/52 eff 2026-05-01 > cutoff 2026-01-16,
 52,1992/734,suspect,oracle_suspect,2025/1096 eff 2026-01-01 > cutoff 2025-12-05,
-52,2014/527,core,,,OK
+52,2014/527,suspect,oracle_suspect,2026/312 eff 2027-01-01 > cutoff 2026-04-24; remaining 225 section residual is source/oracle subsection-shape convention after 2026/178 scoped item payload fix,OK
 53,2006/1280,core,,,OK
 53,2009/1705,suspect,oracle_suspect,2025/1371 eff 2026-08-01 > cutoff 2025-12-22,
 54,1987/450,suspect,oracle_suspect,2013/773 eff 2013-12-01 > cutoff 2013-11-08,
 54,2017/320,suspect,oracle_suspect,2025/1000 eff 2026-04-01 > cutoff 2025-11-14,
 55,1993/1054,core,,,OK
 57,1978/38,core,,,OK
-57,1992/1256,core,,,OK
+57,1992/1256,suspect,source_pathology,oracle-check classifies current large residual set as SOURCE_PATHOLOGY/EDITORIAL_CONVENTION with four ORACLE_STALE rows,OK
 57,1997/1412,suspect,oracle_suspect,2026/26 eff 2026-02-01 > cutoff 2026-01-16,
 58,2006/395,core,,,OK
 59,1992/1257,suspect,oracle_suspect,2019/31 eff 2019-01-21 > cutoff 2019-01-10,
@@ -3528,19 +3528,19 @@ amendments,statute_id,bucket,reason,detail,last_status
 73,1963/473,suspect,oracle_suspect,2004/47 eff 2004-02-01 > cutoff 2004-01-22,
 74,2002/672,suspect,oracle_suspect,2025/1149 eff 2026-01-01 > cutoff 2025-12-22,
 81,1956/72,suspect,oracle_suspect,2006/1118 eff 2007-01-01 > cutoff 2006-12-08,
-81,1998/555,core,,,OK
+81,1998/555,suspect,oracle_suspect,2026/51 eff 2026-05-01 > cutoff 2026-01-16; oracle-check classifies residuals as ORACLE_STALE/EDITORIAL_CONVENTION,OK
 86,1994/65,core,,,OK
 91,1966/280,suspect,oracle_suspect,2005/194 eff 2005-04-15 > cutoff 2005-04-01,
-92,2008/878,core,,,OK
+92,2008/878,suspect,oracle_suspect,2026/355 eff 2026-06-01 > cutoff 2026-05-08; oracle-check classifies residuals as EDITORIAL_CONVENTION/ORACLE_STALE,OK
 97,1981/267,suspect,oracle_suspect,2019/1539 eff 2020-01-01 > cutoff 2019-12-30,
 108,1995/1558,suspect,oracle_suspect,2025/1043 eff 2026-01-01 > cutoff 2025-12-05,
 112,1948/608,suspect,oracle_suspect,2015/486 eff 2015-05-01 > cutoff 2015-04-24,
 118,2004/301,suspect,oracle_suspect,2025/582 eff 2026-01-01 > cutoff 2025-12-22,
 134,1968/360,suspect,oracle_suspect,2025/1145 eff 2026-01-01 > cutoff 2025-12-05,
-147,2004/1224,core,,,OK
+147,2004/1224,suspect,oracle_suspect,2026/55 eff 2026-05-01 > cutoff 2026-01-16; oracle-check residuals classify as editorial convention/oracle stale/source pathology,OK
 149,1993/1501,core,,,OK
 163,1961/395,suspect,oracle_suspect,2005/1119 eff 2006-01-01 > cutoff 2005-12-22,
-166,2002/1290,core,,,OK
+166,2002/1290,suspect,oracle_suspect,2026/327 eff 2026-05-01 > cutoff 2026-04-24; oracle-check classifies residuals as ORACLE_STALE/EDITORIAL_CONVENTION/SOURCE_PATHOLOGY,OK
 169,1963/364,suspect,oracle_suspect,2004/639 eff 2005-01-01 > cutoff 2004-07-09,
 198,1734/4-000,suspect,oracle_suspect,2025/560 eff 2026-01-01 > cutoff 2025-06-27,
 238,1992/1535,suspect,oracle_suspect,large tax-law comparison/adjudication surface journaled; current oracle-check mostly editorial/oracle-stale,OK

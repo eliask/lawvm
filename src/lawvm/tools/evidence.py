@@ -50,7 +50,7 @@ from lawvm.finland.transparent_store import is_known_missing_source
 
 
 from lawvm.tools._evidence_helpers import (
-    _MANUAL_DATASET,
+    _SOURCE_DEFECT_DATASET,
     _ORACLE_INCORRECT_DIAGNOSES,
     _PRIMARY_TIER_ORDER,
     _REPLAY_BUG_DIAGNOSES,
@@ -3235,7 +3235,7 @@ def review_bundle_artifacts(
 
 
 def _load_manual_override_counts(path: Optional[Path] = None) -> Dict[str, int]:
-    target = Path(path) if path is not None else _MANUAL_DATASET
+    target = Path(path) if path is not None else _SOURCE_DEFECT_DATASET
     if not target.exists():
         return {}
     data = yaml.safe_load(target.read_text(encoding="utf-8")) or []

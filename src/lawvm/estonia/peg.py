@@ -5660,7 +5660,7 @@ def extract_ee_ops(
                 payload = None
                 _selection_meta_note = encode_ee_selection_meta_note(subsection_selection_meta)
             ops.append(LegalOperation(
-                op_id=f"ee-{action}-{str(addr)}-{seq}-{seq}-{source.statute_id}",
+                op_id=f"ee-{action}-{str(addr)}-{seq}-{source.statute_id}",
                 sequence=seq,
                 action=_to_structural_action(action),
                 target=addr,
@@ -6103,12 +6103,7 @@ def extract_ee_ops(
                 else:
                     payload = _set_sentence_insert_payload_attrs(payload, clean)
             ops.append(LegalOperation(
-                op_id=f"ee-{op_action}-item-{sect_label}-{item_label}-{seq}-{seq}-{source.statute_id}",
-                sequence=seq,
-                action=_to_structural_action(op_action),
-                target=addr,
-                payload=payload,
-                text_patch=_typed_text_replace_patch(old_t, new_t) if op_action == "text_replace" else None,
+                op_id=f"ee-{op_action}-item-{sect_label}-{item_label}-{seq}-{source.statute_id}",
                 source=source,
                 provenance_tags=(
                     *op_provenance_tags,
@@ -7514,16 +7509,11 @@ def extract_ee_ops(
         else None
     )
     ops.append(LegalOperation(
-        op_id=f"ee-{action}-{str(target)}-{seq}-{seq}-{source.statute_id}",
+        op_id=f"ee-{action}-{str(target)}-{seq}-{source.statute_id}",
         sequence=seq,
         action=_to_structural_action(action),
         target=target,
         payload=payload,
-        text_patch=standard_text_patch,
-        source=source,
-        provenance_tags=(clean[:200],)
-        + ((target_label_space_rule,) if target_label_space_rule else ())
-        + ((str(payload.attrs["source_family"]),) if payload is not None and payload.attrs.get("source_family") else ()),
         witness_rule_id=target_label_space_rule
         or (str(payload.attrs["source_family"]) if payload is not None and payload.attrs.get("source_family") else None),
     ))

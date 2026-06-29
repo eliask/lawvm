@@ -96,16 +96,25 @@ def _forged_pv(
     expires: str,
     variant_kind: Literal["permanent", "temporary"] = "temporary",
 ) -> ProvisionVersion:
-    """Construct a corrupted imported version without running post-init guards."""
+    """Construct a corrupted imported version without running post-init guards.
+
+    Iter2 W5 H5 froze ``ProvisionVersion`` (``@dataclass(frozen=True,
+    slots=True)``); the existing ``object.__new__(ProvisionVersion)``
+    bypass already skips ``__init__`` and ``__post_init__``, so per-field
+    assignment now must go through ``object.__setattr__`` to also bypass the
+    frozen-instance guard. This is consistent with the helper's stated
+    intent: forge a malformed instance past both the constructor and the
+    immutability check so the typed invariant checker can be exercised.
+    """
     version = object.__new__(ProvisionVersion)
-    version.effective = effective
-    version.enacted = effective
-    version.expires = expires
-    version.variant_kind = variant_kind
-    version.content = IRNode(kind=IRNodeKind.SECTION, label="1", text="forged")
-    version.source = OperationSource(statute_id="test/forged")
-    version.applicability = ()
-    version.content_hash = ""
+    object.__setattr__(version, "effective", effective)
+    object.__setattr__(version, "enacted", effective)
+    object.__setattr__(version, "expires", expires)
+    object.__setattr__(version, "variant_kind", variant_kind)
+    object.__setattr__(version, "content", IRNode(kind=IRNodeKind.SECTION, label="1", text="forged"))
+    object.__setattr__(version, "source", OperationSource(statute_id="test/forged"))
+    object.__setattr__(version, "applicability", ())
+    object.__setattr__(version, "content_hash", "")
     return version
 
 

@@ -353,6 +353,14 @@ def test_base_intro_list_tail_moment_split_registry_code_is_observation() -> Non
     validate_finding_projection(spec.code, "observation", False)
 
 
+def test_base_treaty_protocol_moment_split_registry_code_is_observation() -> None:
+    spec = get_finding_spec("BASE_TREATY_PROTOCOL_MOMENT_SPLIT")
+    assert spec is not None
+    assert spec.role == "observation"
+    assert spec.is_barrier is False
+    validate_finding_projection(spec.code, "observation", False)
+
+
 def test_base_dotted_paragraph_subsection_promotion_registry_code_is_observation() -> None:
     spec = get_finding_spec("BASE_DOTTED_PARAGRAPH_SUBSECTION_PROMOTION")
     assert spec is not None

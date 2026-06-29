@@ -30,17 +30,62 @@ def fi_amendment_url(_canonical_id: str, engine_id: str) -> str:
 
 
 def extract_fi_source_reference(corpus: object, engine_source_id: str) -> str:
-    """Return the first Finnish HE reference attached to an amendment source."""
+    """Return the first Finnish HE reference attached to an amendment source.
+
+    log_emitter sanctioned (iter3 W2 §3.2 STOP-and-report, applies to BOTH
+    swallows below): this function is wired as the ``source_reference`` callback
+    on ``TransitionGraphExportProfile`` (see line ~112 in this file). That
+    profile's callable type is ``SourceReferenceExtractor = Callable[[object, str], str]``
+    (public contract in ``tools/transition_graph_profile.py``). Adding a
+    ``findings_out`` parameter to this function would change the public callback
+    signature and ripple through the export-profile type and all its consumers
+    (signature blast across 2 modules + the viewer). Per ``core/named_swallow.py``
+    docstring's IO/utility-boundary sanctioned use, the swallows stay on
+    log_emitter (stderr WARNING); per-statute evidence-ledger reach for the
+    transition-graph export is Wave-N+1 work for the orchestrator.
+    """
     try:
         store = cast(CorpusStore, corpus)
         amendment_xml = store.read_amendment(engine_source_id)
-    except Exception:
+    except Exception as exc:
+        # Unexpected corpus-read failure: previously ``return ""`` silently
+        # swallowed; now route through ``named_swallow`` so a typed Finding is
+        # logged at WARNING with the engine_source_id as ``clause_text``
+        # (AGENTS.md §1.10 — never silent).
+        from lawvm.core.named_swallow import build_named_swallow_finding, log_emitter
+
+        log_emitter()(
+            build_named_swallow_finding(
+                rule_id="fi_transition_graph_extract_source_reference_read_amendment",
+                exception=exc,
+                op_id=None,
+                clause_text=f"engine_source_id={engine_source_id}",
+                jurisdiction="fi",
+                source_artifact=engine_source_id,
+            )
+        )
         return ""
     if not amendment_xml:
         return ""
     try:
         text = amendment_xml.decode("utf-8", "ignore")
-    except Exception:
+    except Exception as exc:
+        # Unexpected decode failure (rare; ``decode(errors="ignore")`` almost
+        # never raises): previously ``return ""`` silently swallowed; now route
+        # through ``named_swallow`` so a typed Finding is logged at WARNING
+        # with the bytes-length as ``clause_text`` (AGENTS.md §1.10 — never silent).
+        from lawvm.core.named_swallow import build_named_swallow_finding, log_emitter
+
+        log_emitter()(
+            build_named_swallow_finding(
+                rule_id="fi_transition_graph_extract_source_reference_decode",
+                exception=exc,
+                op_id=None,
+                clause_text=f"amendment_xml len={len(amendment_xml) if amendment_xml else 0} bytes",
+                jurisdiction="fi",
+                source_artifact=engine_source_id,
+            )
+        )
         return ""
     # lawvm-regex: owning_parser AKN HE-proposal href parse from amendment XML for viewer/export enrichment, structured attribute not prose
     match = _HE_HREF_RE.search(text)

@@ -75,8 +75,8 @@ def test_cli_parser_accepts_corrigendum_manual_template() -> None:
 
 
 def test_manual_corrigendum_overrides_reject_non_object_entries(tmp_path: Path) -> None:
-    manual_yaml = tmp_path / "corrigendum_manual.yaml"
-    manual_yaml.write_text(
+    source_defect_yaml = tmp_path / "source_defect_fixes.yaml"
+    source_defect_yaml.write_text(
         "\n".join(
             [
                 "- amendment_id: 991/2012",
@@ -91,10 +91,10 @@ def test_manual_corrigendum_overrides_reject_non_object_entries(tmp_path: Path) 
     )
 
     with pytest.raises(ValueError, match="non-object entries at indexes: 1, 2"):
-        corr_tools._load_manual_override_entries(manual_yaml)
+        corr_tools._load_manual_override_entries(source_defect_yaml)
 
     with pytest.raises(ValueError, match="non-object entries at indexes: 1, 2"):
-        corr_tools._load_manual_override_counts(manual_yaml)
+        corr_tools._load_manual_override_counts(source_defect_yaml)
 
 
 def test_corrigendum_manual_template_prints_yaml(capsys, monkeypatch) -> None:
@@ -105,7 +105,7 @@ def test_corrigendum_manual_template_prints_yaml(capsys, monkeypatch) -> None:
             "amendment_id": amendment_id,
             "records_path": "/tmp/corrigendum_official_fi.jsonl",
             "include_all": include_all,
-            "manual_yaml_path": "/tmp/corrigendum_manual.yaml",
+            "source_defect_yaml_path": "/tmp/source_defect_fixes.yaml",
             "manual_entry_count": 0,
             "already_covered": False,
             "attachment_only_entry_count": 0,
@@ -141,7 +141,7 @@ def test_corrigendum_manual_template_prints_no_rows_message(capsys, monkeypatch)
             "amendment_id": amendment_id,
             "records_path": "/tmp/corrigendum_official_fi.jsonl",
             "include_all": include_all,
-            "manual_yaml_path": "/tmp/corrigendum_manual.yaml",
+            "source_defect_yaml_path": "/tmp/source_defect_fixes.yaml",
             "manual_entry_count": 0,
             "already_covered": False,
             "attachment_only_entry_count": 0,
@@ -166,7 +166,7 @@ def test_corrigendum_manual_template_notes_existing_manual_override(capsys, monk
             "amendment_id": amendment_id,
             "records_path": "/tmp/corrigendum_official_fi.jsonl",
             "include_all": include_all,
-            "manual_yaml_path": "/tmp/corrigendum_manual.yaml",
+            "source_defect_yaml_path": "/tmp/source_defect_fixes.yaml",
             "manual_entry_count": 2,
             "already_covered": False,
             "attachment_only_entry_count": 0,
@@ -191,7 +191,7 @@ def test_corrigendum_manual_template_notes_attachment_only_rows(capsys, monkeypa
             "amendment_id": amendment_id,
             "records_path": "/tmp/corrigendum_official_fi.jsonl",
             "include_all": include_all,
-            "manual_yaml_path": "/tmp/corrigendum_manual.yaml",
+            "source_defect_yaml_path": "/tmp/source_defect_fixes.yaml",
             "manual_entry_count": 0,
             "already_covered": False,
             "attachment_only_entry_count": 6,
@@ -216,7 +216,7 @@ def test_corrigendum_manual_template_suppresses_db_rows_when_already_covered(cap
             "amendment_id": amendment_id,
             "records_path": "/tmp/corrigendum_official_fi.jsonl",
             "include_all": include_all,
-            "manual_yaml_path": "/tmp/corrigendum_manual.yaml",
+            "source_defect_yaml_path": "/tmp/source_defect_fixes.yaml",
             "manual_entry_count": 2,
             "already_covered": True,
             "attachment_only_entry_count": 0,
@@ -260,7 +260,7 @@ def test_build_manual_template_bundle_exports_frontier_surface(monkeypatch, tmp_
             },
         ],
     )
-    monkeypatch.setattr(corr_tools, "_MANUAL_YAML", tmp_path / "corrigendum_manual.yaml")
+    monkeypatch.setattr(corr_tools, "_SOURCE_DEFECT_YAML", tmp_path / "source_defect_fixes.yaml")
 
     class _Store:
         def read_source(self, sid):
@@ -383,7 +383,7 @@ def test_build_review_bundle_links_source_pathology_amendment_to_current_section
         + '","verified_in_source":1,"correction_type":"johtolause"}\n',
         encoding="utf-8",
     )
-    monkeypatch.setattr(corr_tools, "_MANUAL_YAML", tmp_path / "corrigendum_manual.yaml")
+    monkeypatch.setattr(corr_tools, "_SOURCE_DEFECT_YAML", tmp_path / "source_defect_fixes.yaml")
     monkeypatch.setattr(
         oracle_check,
         "_classify_statute",
@@ -539,7 +539,7 @@ def test_corrigendum_provenance_prints_summary(capsys, monkeypatch) -> None:
             "attachment_only_count": 0,
             "open_manual_candidate_count": 0,
             "manual_entry_count": 2,
-            "manual_yaml_path": "/tmp/corrigendum_manual.yaml",
+            "source_defect_yaml_path": "/tmp/source_defect_fixes.yaml",
             "rows": [
                 {
                     "correction_index": 0,
@@ -582,7 +582,7 @@ def test_corrigendum_overview_prints_summary(capsys, monkeypatch) -> None:
         lambda db_path=None, limit=10, live=False: {
             "mode": "stored",
             "records_path": "/tmp/corrigendum_official_fi.jsonl",
-            "manual_yaml_path": "/tmp/corrigendum_manual.yaml",
+            "source_defect_yaml_path": "/tmp/source_defect_fixes.yaml",
             "official_item_count": 12,
             "amendment_count": 5,
             "source_pdf_count": 4,
@@ -664,15 +664,15 @@ def test_build_provenance_bundle_classifies_row_statuses(monkeypatch, tmp_path: 
         ],
     )
 
-    manual_yaml = tmp_path / "corrigendum_manual.yaml"
-    manual_yaml.write_text(
+    source_defect_yaml = tmp_path / "source_defect_fixes.yaml"
+    source_defect_yaml.write_text(
         "- amendment_id: \"442/2016\"\n"
         "  wrong_text: \"gamma\"\n"
         "  correct_text: \"delta\"\n"
         "  correction_type: johtolause\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(corr_tools, "_MANUAL_YAML", manual_yaml)
+    monkeypatch.setattr(corr_tools, "_SOURCE_DEFECT_YAML", source_defect_yaml)
 
     class _Store:
         def read_source(self, sid):
@@ -749,7 +749,7 @@ def test_build_overview_bundle_counts_statuses(monkeypatch, tmp_path: Path) -> N
             },
         ],
     )
-    monkeypatch.setattr(corr_tools, "_MANUAL_YAML", tmp_path / "corrigendum_manual.yaml")
+    monkeypatch.setattr(corr_tools, "_SOURCE_DEFECT_YAML", tmp_path / "source_defect_fixes.yaml")
     monkeypatch.setattr(
         corr_tools,
         "load_source_records",
@@ -758,7 +758,7 @@ def test_build_overview_bundle_counts_statuses(monkeypatch, tmp_path: Path) -> N
             {"lang": "fi", "date_status": "xml_ref_without_date"},
         ],
     )
-    (tmp_path / "corrigendum_manual.yaml").write_text(
+    (tmp_path / "source_defect_fixes.yaml").write_text(
         "- amendment_id: \"442/2016\"\n"
         "  wrong_text: \"alpha\"\n"
         "  correct_text: \"beta2\"\n"

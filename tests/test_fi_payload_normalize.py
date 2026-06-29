@@ -6892,6 +6892,70 @@ def test_normalize_group_payload_keeps_explicit_heading_and_subsection_replace_s
     assert "New first moment" in " ".join(irnode_to_text(mapped).split())
 
 
+def test_normalize_group_payload_keeps_explicit_plain_subsection_replace_shell_without_heading_op() -> None:
+    live_sec = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="45",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="45 §"),
+            IRNode(kind=IRNodeKind.HEADING, text="Oldheading"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(
+                    IRNode(kind=IRNodeKind.INTRO, text="Old intro"),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="1", children=(IRNode(kind=IRNodeKind.CONTENT, text="Old item"),)),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="2", children=(IRNode(kind=IRNodeKind.CONTENT, text="Stale item"),)),
+                ),
+            ),
+        ),
+    )
+    ctx = _mock_ctx("section", "45", target_chapter="10", live_node=live_sec)
+    subsection_op = AmendmentOp(
+        op_type=OpType.REPLACE,
+        target_kind=TargetKind.SECTION,
+        target_section="45",
+        target_chapter="10",
+        target_paragraph=1,
+        source_statute="2001/1119",
+        lo=LegalOperation(
+            op_id="subsec1",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("chapter", "10"), ("section", "45"), ("subsection", "1"))),
+            source=OperationSource(
+                statute_id="2001/1119",
+                raw_text="muutetaan 45 §:n 1 momentti seuraavasti:",
+            ),
+        ),
+    )
+    muutos_ir = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="45",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="45 §"),
+            IRNode(kind=IRNodeKind.HEADING, text="Old heading"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=(
+                    IRNode(kind=IRNodeKind.INTRO, text="New intro"),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="1", children=(IRNode(kind=IRNodeKind.CONTENT, text="New item"),)),
+                ),
+            ),
+        ),
+    )
+
+    got = elaborate_payload_against_live(ctx, [subsection_op], muutos_ir, set())
+
+    assert [op.description() for op in got.group_ops] == ["REPLACE 10 luku 45 § 1 mom"]
+    assert got.rejected_ops == ()
+    assert [p.code for p in _pathologies(got)] == ["SUBSECTION_SHELL_REPLACE_KEPT"]
+    mapped = got.subsec_map.for_op(subsection_op)
+    assert mapped is not None
+    assert "New item" in " ".join(irnode_to_text(mapped).split())
+
+
 def test_normalize_group_payload_merges_plain_subsection_shell_continuation_slot() -> None:
     live_sec = IRNode(
         kind=IRNodeKind.SECTION,

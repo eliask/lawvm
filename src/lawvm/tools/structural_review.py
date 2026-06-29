@@ -438,6 +438,53 @@ _DIFF_MARK_PR = "  +F "   # only on Finlex (right) side
 _DIFF_MARK_K  = "  K  "   # kumottu/tombstone
 _DIFF_MARK_S  = "  S  "   # structural mismatch
 _DIFF_MARK_HD = "     "   # header/context (no marker)
+_DIFF_MARK_NEUTRAL = "  ≈  "  # raw-unequal but normalization-equal (presentation only, NOT counted)
+
+_NEUTRAL_TAG = " [norm-equal: presentation, not counted]"
+
+
+def _facet_norm_equal(fkey: str, lt: str, rt: str, *, left_label: str, right_label: str) -> bool:
+    """True when a raw-unequal facet pair collapses to equal under the SAME
+    normalizer the bench/event path uses (``_normalize_heading_for_diff`` for
+    headings, ``_normalize_wording_for_diff`` otherwise). Such pairs produce no
+    event and do not count toward err%, so the dump must mark them distinctly.
+    """
+    from lawvm.semantic.diff import (
+        _normalize_heading_for_diff,
+        _normalize_wording_for_diff,
+    )
+
+    if fkey == "heading":
+        return _normalize_heading_for_diff(lt) == _normalize_heading_for_diff(rt)
+    return (
+        _normalize_wording_for_diff(lt, left_label)
+        == _normalize_wording_for_diff(rt, right_label)
+    )
+
+
+def _aligned_child_has_counted_diff(c: dict[str, Any]) -> bool:
+    """True when an aligned child contributes a COUNTED diff: one side missing,
+    or a facet pair that is raw-unequal AND not collapsed by the event-path
+    normalizer. Normalization-neutral facet pairs are excluded so a parent whose
+    only child differences are cosmetic does not render as counted/``~``.
+    """
+    if c.get("left") is None or c.get("right") is None:
+        return True
+    cl = c.get("left") or {}
+    cr = c.get("right") or {}
+    cl_label = cl.get("label", "") or ""
+    cr_label = cr.get("label", "") or ""
+    facets = c.get("facets", {})
+    for fk in ("heading", "intro", "wording", "wrapUp"):
+        lt, rt = _aligned_facet_texts(facets, fk)
+        if (lt, rt) == ("", ""):
+            continue
+        if lt == rt:
+            continue
+        if _facet_norm_equal(fk, lt, rt, left_label=cl_label, right_label=cr_label):
+            continue
+        return True
+    return False
 
 
 def _render_aligned_node(
@@ -492,6 +539,8 @@ def _render_aligned_node(
     # Both sides present — compare facets
     assert left is not None and right is not None
     node_label = _node_label_line(left)
+    left_label = left.get("label", "") or ""
+    right_label = right.get("label", "") or ""
     aligned_facets = node.get("facets", {})
     any_facet_diff = False
     facet_lines: list[tuple[bool, str]] = []
@@ -503,6 +552,15 @@ def _render_aligned_node(
             continue
         if lt == rt:
             facet_lines.append((False, f"{_DIFF_MARK_HD}{inner_pad}{flabel}: {lt}"))
+        elif _facet_norm_equal(fkey, lt, rt, left_label=left_label, right_label=right_label):
+            # Raw text differs but the event/bench normalizer collapses the pair
+            # to equal: it produces NO event and does NOT count. Render distinctly
+            # so auditors see the presentation artifact without mistaking it for a
+            # counted diff. Treated as a NON-diff for the node-level marker.
+            if lt:
+                facet_lines.append((False, f"{_DIFF_MARK_NEUTRAL}{inner_pad}{flabel}: {lt}{_NEUTRAL_TAG}"))
+            if rt:
+                facet_lines.append((False, f"{_DIFF_MARK_NEUTRAL}{inner_pad}{flabel}: {rt}{_NEUTRAL_TAG}"))
         else:
             any_facet_diff = True
             if lt:
@@ -520,12 +578,7 @@ def _render_aligned_node(
     # Determine node-level marker
     aligned_children = node.get("children", [])
     any_child_diff = any(
-        c.get("left") is None or c.get("right") is None
-        or any(
-            _aligned_facet_texts(c.get("facets", {}), fk) != ("", "")
-            and _aligned_facet_texts(c.get("facets", {}), fk)[0] != _aligned_facet_texts(c.get("facets", {}), fk)[1]
-            for fk in ("heading", "intro", "wording", "wrapUp")
-        )
+        _aligned_child_has_counted_diff(c)
         for c in aligned_children if isinstance(c, dict)
     )
 
@@ -809,6 +862,7 @@ def compute_statute_section_diffs(
         oracle_amb_alternate_match,
         reconcile_unique_unscoped_aliases,
     )
+    from lawvm.finland.oracle_comparison import is_segmentation_displacement_neutralized
     from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
     from typing import cast
 
@@ -884,6 +938,22 @@ def compute_statute_section_diffs(
             if amb_witness is not None:
                 item["amb_alternate_match"] = True
                 item["amb_witness"] = amb_witness
+            else:
+                # Segmentation-displacement neutralizer (amb-style): the same
+                # provision text surfaces as both a unit_missing_left and a
+                # unit_missing_right in this section -> a unit displaced to a
+                # different tree position, zero information loss. Stash the verdict
+                # so bench_penalized_section_keys forgives it IDENTICALLY to the
+                # headline _semantic_section_score path ("exact set the bench
+                # scores" contract). Only the amb-not-matched branch reaches here,
+                # mirroring the bench ordering (amb is tried first).
+                sd_payload = item.get("semantic_diff")
+                if isinstance(sd_payload, dict):
+                    sd_events = sd_payload.get("events", [])
+                    if isinstance(sd_events, list) and is_segmentation_displacement_neutralized(
+                        sd_payload, sd_events
+                    ):
+                        item["seg_displacement_match"] = True
             sections[key] = item
 
     return sections, False

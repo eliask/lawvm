@@ -64,7 +64,8 @@ from lawvm.core.statute_facets import is_statute_title_address, replace_statute_
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.core import tree_ops
 from lawvm.estonia.act_identity_registry import lookup_ee_act_identity
-from lawvm.estonia.ordering import detect_ee_same_moment_cross_act_conflicts
+from lawvm.core.cross_act_same_moment import detect_cross_act_same_moment_conflicts
+from lawvm.estonia.ordering import ee_same_moment_payloads_incompatible
 from lawvm.estonia.peg import (
     _EE_DASH_CLASS,
     _EE_SUPERSCRIPT_DIGIT_CLASS,
@@ -10574,8 +10575,21 @@ def apply_ee_ops(
     # path; the finding surfaces the silent sequence-order pick so strict mode
     # can reject. The cross-act finding carries an empty op_id so the
     # conserved-wrapper partition (which keys per-op skips by op_id) is
-    # unaffected. See src/lawvm/estonia/ordering.py for the full contract.
-    detect_ee_same_moment_cross_act_conflicts(ops, adjudications_out=adjudications_out)
+    # unaffected.
+    #
+    # Routed through the shared module (§2.5 retirement of the standalone EE
+    # detector): the EE-specific compatibility predicate
+    # ``ee_same_moment_payloads_incompatible`` is supplied so the finding
+    # output is byte-identical to the pre-migration standalone behaviour. The
+    # parity gate is pinned in
+    # ``tests/test_ee_cross_act_same_moment_parity.py``; the migration plan
+    # lives in ``notes/CROSS_ACT_SAME_MOMENT_MIGRATION_PLAN.md``.
+    detect_cross_act_same_moment_conflicts(
+        ops,
+        finder_kind_prefix="ee",
+        incompatible_payload_predicate=ee_same_moment_payloads_incompatible,
+        adjudications_out=adjudications_out,
+    )
 
     # The shared IR is frozen; replay can use the baseline body directly and
     # let tree_ops return new nodes for each change.
@@ -10902,10 +10916,11 @@ class EEApplyResult:
     of the same accepted/rejected partition, so callers that already consume
     the shared core type can reuse it without unpacking ``applied_ops`` /
     ``skipped_items`` separately. Cross-act findings (e.g. the §1.7 same-moment
-    finding emitted by :func:`detect_ee_same_moment_cross_act_conflicts`)
-    carry an empty ``op_id`` so they DO NOT mark any op as rejected — those
-    ops WERE applied (in sequence order); the finding is a cross-cutting
-    evidence row, not a per-op skip.
+    finding emitted by
+    :func:`lawvm.core.cross_act_same_moment.detect_cross_act_same_moment_conflicts`
+    with ``finder_kind_prefix="ee"``) carry an empty ``op_id`` so they DO NOT
+    mark any op as rejected — those ops WERE applied (in sequence order); the
+    finding is a cross-cutting evidence row, not a per-op skip.
 
     Recovery-rule adjudications (e.g. ``ee_text_replace_unique_descendant_*`` /
     ``ee_section_item_replace_unique_descendant_item`` /
@@ -11010,7 +11025,22 @@ def apply_ee_ops_conserved(
             "partition keys on op_id and duplicate op_ids would mis-partition). "
             f"Duplicate op_ids: {duplicates}."
         )
-    adjudications: list[CompileAdjudication] = list(adjudications_out or [])
+    # Trust the bare-apply contract: ``apply_ee_ops`` appends each per-op
+    # adjudication to ``adjudications_out`` in place via
+    # :func:`_append_ee_replay_adjudication` (``.append`` on the passed list
+    # — never a re-bind). Routing the caller's list directly through bare
+    # apply means a mid-apply raise (e.g. the §1.10 fail-loud path under
+    # ``strict_action_family=True`` for NO/EU-style future EE strict modes,
+    # or any other bare-apply exception) preserves the recovery adjudication
+    # witnesses emitted BEFORE the raise on the caller's accumulator — the
+    # caller can then diagnose via the partial adjudications (AGENTS.md §1.0
+    # evidence is not silently destroyed). When the caller did not pass an
+    # ``adjudications_out``, use a throwaway local buffer so bare-apply's
+    # mutations stay scoped and the partition below still has a source to
+    # read from.
+    adjudications: list[CompileAdjudication] = (
+        adjudications_out if adjudications_out is not None else []
+    )
     applied_statute = apply_ee_ops(
         statute,
         ops_list,
@@ -11046,12 +11076,12 @@ def apply_ee_ops_conserved(
             )
         else:
             accepted.append(op)
-    # If the caller passed their own adjudications_out, surface there too --
-    # the existing descriptive adjudications path is NOT replaced by the typed
-    # carrier; both share the same evidence ledger (mirrors the SE wrapper).
-    if adjudications_out is not None:
-        adjudications_out.clear()
-        adjudications_out.extend(adjudications)
+    # Propagation: bare apply already mutated ``adjudications_out`` in place
+    # (the caller's list when one was provided) — no local-copy / clear /
+    # extend round-trip needed. The previous local-copy-then-extend pattern
+    # silently dropped bare-apply's partial adjudication witness when bare
+    # apply raised mid-fold (the §1.0 evidence-loss failure); routing the
+    # caller's list directly closes that hole.
     return EEApplyResult(
         statute=applied_statute,
         filter_result=FilterResult(

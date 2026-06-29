@@ -36,6 +36,7 @@ Run:
 from __future__ import annotations
 from lawvm.core.canonical_intent import Relabel
 from lawvm.core.ir import LegalAddress, LegalOperation, OperationSource
+from lawvm.core.recovery_kind import RecoveryKind
 
 import datetime as dt
 from typing import List, Optional, Set, Tuple
@@ -56,7 +57,7 @@ from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector
 from lawvm.finland.johtolause.api import parse_clause
 from lawvm.finland.ops import OpType, AmendmentOp, ResolvedOp, get_replay_profile
 from lawvm.finland.replay_entrypoint import replay_xml
-from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
+from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
 from lawvm.finland.standalone_targets import StandaloneSectionTarget
 from lawvm.finland.statute import ReplayState
 from lawvm.finland.restructure_plan import resolved_op_is_owned_by_restructure_plan as _resolved_op_is_owned_by_restructure_plan
@@ -1982,6 +1983,38 @@ def test_precreate_chapter_membership_migrates_flat_sections_by_source_starts() 
     ]
 
 
+def test_letter_suffix_chapter_absorption_stops_before_commencement_section() -> None:
+    """Letter-chapter trailing absorption must not swallow terminal commencement sections."""
+    from lawvm.finland.apply_structure_ops import (
+        _absorb_trailing_wrapper_sections_into_letter_suffix_chapter,
+    )
+
+    state = ReplayState(
+        ir=_body(
+            _chapter("11a"),
+            _sec("51a"),
+            _sec("99"),
+            _sec("60", IRNode(kind=IRNodeKind.HEADING, text="Voimaantulo")),
+        )
+    )
+    result = _absorb_trailing_wrapper_sections_into_letter_suffix_chapter(
+        state,
+        chapter_path=(("chapter", "11a"),),
+        merged_chapter=_chapter("11a"),
+    )
+
+    chapter = result.chapter
+    assert [child.label for child in chapter.children if child.kind is IRNodeKind.SECTION] == [
+        "51a",
+        "99",
+    ]
+    assert result.adopted_paths == ((("section", "51a"),), (("section", "99"),))
+    root_sections = [
+        child.label for child in result.root.children if child.kind is IRNodeKind.SECTION
+    ]
+    assert root_sections == ["60"]
+
+
 def test_precreate_single_unnumbered_chapter_heading_migrates_chapter_sections() -> None:
     """A source-body chapter number can own an unnumbered ``uusi luvun otsikko``."""
     from lxml import etree
@@ -2336,6 +2369,150 @@ def test_2011_948_2021_546_chapter_5a_boundary_and_later_inserts() -> None:
     assert chapters["6"][:8] == ["45", "46", "47", "47a", "48", "49", "49a", "49b"]
     assert [event.witness.get("section_label") for event in migrations] == ["44"]
     assert tree_invariant_findings == []
+
+
+def test_1990_650_2003_127_chapter_11a_does_not_absorb_voimaantulo_section() -> None:
+    """Real corpus anchor for finite source-chapter membership bounds."""
+    replay = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(
+            parent_id="1990/650",
+            mode="official_consolidation",
+            quiet=True,
+        ),
+    )
+
+    assert replay.materialized_state.find_section("60", "11a") is None
+    assert all(
+        record.address != "chapter:11a/section:60"
+        for record in replay.products.fold_timeline_backfills
+    )
+
+
+def test_2014_527_2026_178_section_225_binds_item_payload_to_scoped_subsection() -> None:
+    """Same-label carried items from shifted moments must not override scoped item payloads."""
+    source_pathologies = []
+    replay = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(
+            parent_id="2014/527",
+            mode="official_consolidation",
+            quiet=True,
+        ),
+        sinks=ReplayXmlSinks(source_pathologies_out=source_pathologies),
+    )
+
+    section_225 = replay.materialized_state.find_section("225", "20")
+    assert section_225 is not None
+    subsection_1 = next(
+        child
+        for child in section_225.children
+        if child.kind is IRNodeKind.SUBSECTION and child.label == "1"
+    )
+    item_7 = next(
+        child
+        for child in subsection_1.children
+        if child.kind is IRNodeKind.PARAGRAPH and child.label == "7"
+    )
+    item_7_text = " ".join(irnode_to_text(item_7).split())
+
+    assert "teollisuuspäästöportaalin perustamisesta" in item_7_text
+    assert "rikkoo otsoniasetuksen 4 tai 5 artiklan" not in item_7_text
+    assert all(
+        record.address != "chapter:20/section:225"
+        for record in replay.products.fold_timeline_backfills
+    )
+    assert any(
+        row.source_statute == "2026/178"
+        and row.detail.get("recovery_kind") == RecoveryKind.SECTION_SNAPSHOT_SCOPED_ITEM_PAYLOAD_BIND
+        for row in source_pathologies
+    )
+
+
+def test_2009_862_2018_936_chaptered_section_snapshot_backfills_active_timeline() -> None:
+    """A complete section snapshot must not block fold backfill when the active timeline is stale."""
+    replay = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(
+            parent_id="2009/862",
+            mode="official_consolidation",
+            quiet=True,
+        ),
+    )
+
+    section_1 = replay.materialized_state.find_section("1", "1")
+    assert section_1 is not None
+    heading = next(
+        child.text
+        for child in section_1.children
+        if child.kind is IRNodeKind.HEADING
+    )
+
+    assert heading == "Asema ja toiminta-ajatus"
+    assert any(
+        record.address == "chapter:1/section:1"
+        for record in replay.products.fold_timeline_backfills
+    )
+
+
+def test_2000_1106_2004_1265_sparse_section_snapshot_keeps_live_subitems() -> None:
+    """Sparse top-level section timelines must not hide live subitems during PIT materialization."""
+    replay = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(
+            parent_id="2000/1106",
+            mode="official_consolidation",
+            quiet=True,
+        ),
+    )
+
+    section_1 = replay.materialized_state.find_section("1")
+    assert section_1 is not None
+    subsection_1 = next(
+        child for child in section_1.children if child.kind is IRNodeKind.SUBSECTION and child.label == "1"
+    )
+    paragraph_2 = next(
+        child for child in subsection_1.children if child.kind is IRNodeKind.PARAGRAPH and child.label == "2"
+    )
+    subitem_labels = [
+        child.label for child in paragraph_2.children if child.kind is IRNodeKind.SUBPARAGRAPH
+    ]
+
+    assert subitem_labels == ["a", "b", "c", "d", "e", "f", "g", "h", "i"]
+    assert any(
+        record.address == "section:1"
+        for record in replay.products.fold_timeline_backfills
+    )
+
+
+def test_2022_1267_2025_1280_item_intro_backfill_preserves_subitems() -> None:
+    """A section timeline for an item-intro amendment must preserve the item's live subitems."""
+    replay = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(
+            parent_id="2022/1267",
+            mode="official_consolidation",
+            quiet=True,
+        ),
+    )
+
+    section_2 = replay.materialized_state.find_section("2", "1")
+    assert section_2 is not None
+    subsection_1 = next(
+        child for child in section_2.children if child.kind is IRNodeKind.SUBSECTION and child.label == "1"
+    )
+    paragraph_1 = next(
+        child for child in subsection_1.children if child.kind is IRNodeKind.PARAGRAPH and child.label == "1"
+    )
+    subitem_labels = [
+        child.label for child in paragraph_1.children if child.kind is IRNodeKind.SUBPARAGRAPH
+    ]
+
+    assert subitem_labels == ["a", "b", "c"]
+    assert any(
+        record.address == "chapter:1/section:2"
+        for record in replay.products.fold_timeline_backfills
+    )
 
 
 def test_1992_733_2002_716_chapter_payload_adoption_tombstones_old_section_32() -> None:

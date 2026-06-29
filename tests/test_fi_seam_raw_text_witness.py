@@ -30,9 +30,12 @@ from lawvm.finland.frontend_compile import (
 )
 from lawvm.finland.effect_lowering import lower_johto_effects
 from lawvm.finland.kumotaan_replay import (
+    FI_RECOVERY_PURE_KUMOTAAN_ITEM_REPEAL_RULE_ID,
     FI_RECOVERY_PURE_KUMOTAAN_REPEAL_RULE_ID,
+    _inject_pure_kumotaan_item_repeal_ops,
     _inject_pure_kumotaan_repeal_ops,
 )
+from lawvm.finland.kumotaan import KumotaanItemTarget
 from lawvm.finland.replay_products import (
     FI_CITED_VERSION_SNAPSHOT_DROP_RULE_ID,
     _drop_cited_version_item_ancestor_snapshots,
@@ -118,6 +121,107 @@ def test_pure_kumotaan_repeal_injection_negative_when_already_covered() -> None:
     assert result.injected_count == 0
     assert result.injected == ()
     assert lo_ops == [existing]
+
+
+def test_pure_kumotaan_item_repeal_injection_is_witnessed() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="2",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SUBSECTION,
+                        label="1",
+                        children=(
+                            IRNode(kind=IRNodeKind.PARAGRAPH, label="4"),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    state = ReplayState(ir=body)
+    lo_ops: list[LegalOperation] = []
+
+    result = _inject_pure_kumotaan_item_repeal_ops(
+        lo_ops,
+        amendment_id="2025/900",
+        source_title="Asetus",
+        kumotaan_item_targets=(
+            KumotaanItemTarget(section_label="2", subsection_label=None, item_label="4"),
+        ),
+        amendment_effective_date=dt.date(2025, 6, 1),
+        amendment_issue_date=dt.date(2025, 1, 1),
+        state=state,
+        source_raw_text="kumotaan 2 §:n 4 kohta",
+    )
+
+    assert result.injected_count == 1
+    assert len(lo_ops) == 1
+    injected_op = lo_ops[0]
+    assert injected_op.action is StructuralAction.REPLACE
+    assert injected_op.target == LegalAddress(path=(("section", "2"), ("subsection", "1"), ("item", "4")))
+    assert injected_op.payload is not None
+    assert injected_op.payload.attrs.get("lawvm_repeal_placeholder") == "1"
+    assert injected_op.witness_rule_id == FI_RECOVERY_PURE_KUMOTAAN_ITEM_REPEAL_RULE_ID
+
+    record = result.injected[0]
+    assert record.op_id == injected_op.op_id
+    assert record.rule_id == FI_RECOVERY_PURE_KUMOTAAN_ITEM_REPEAL_RULE_ID
+    assert record.target_unit_kind == "item"
+    assert record.target_norm == "2:1:4"
+    assert record.finding_detail()["rule_id"] == FI_RECOVERY_PURE_KUMOTAAN_ITEM_REPEAL_RULE_ID
+
+
+def test_pure_kumotaan_item_repeal_injection_skips_ambiguous_subsection_scope() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="2",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SUBSECTION,
+                        label="1",
+                        children=(IRNode(kind=IRNodeKind.PARAGRAPH, label="4"),),
+                    ),
+                    IRNode(
+                        kind=IRNodeKind.SUBSECTION,
+                        label="2",
+                        children=(IRNode(kind=IRNodeKind.PARAGRAPH, label="4"),),
+                    ),
+                ),
+            ),
+        ),
+    )
+    state = ReplayState(ir=body)
+    lo_ops: list[LegalOperation] = []
+
+    result = _inject_pure_kumotaan_item_repeal_ops(
+        lo_ops,
+        amendment_id="2025/900",
+        source_title="Asetus",
+        kumotaan_item_targets=(
+            KumotaanItemTarget(section_label="2", subsection_label=None, item_label="4"),
+        ),
+        amendment_effective_date=dt.date(2025, 6, 1),
+        amendment_issue_date=dt.date(2025, 1, 1),
+        state=state,
+        source_raw_text="kumotaan 2 §:n 4 kohta",
+    )
+
+    assert result.injected_count == 0
+    assert lo_ops == []
+    assert len(result.skipped_targets) == 1
+    skipped = result.skipped_targets[0]
+    assert skipped.reason == "ambiguous_item_label_without_subsection_scope"
+    assert {address.path for address in skipped.candidate_paths} == {
+        (("section", "2"), ("subsection", "1"), ("item", "4")),
+        (("section", "2"), ("subsection", "2"), ("item", "4")),
+    }
 
 
 # ---------------------------------------------------------------------------

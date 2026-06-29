@@ -21,7 +21,7 @@
   rationale: "validation rigor, not who produced the claim"
 
 - layer: correction
-  rule: "(validator_status=entailment_verified AND review_status=human_reviewed) only"
+  rule: "(validator_status=entailment_verified AND review_status=verified_manual) only"
   rationale: "overriding deterministic source requires both validation AND review"
 
 - layer: adjudication

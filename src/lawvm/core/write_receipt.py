@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Mapping, Optional
 
+from lawvm.core.frozen_values import freeze_mapping
 from lawvm.core.mutation_boundary import RenumberedTreePaths, TreePath, TreePaths
 
 if TYPE_CHECKING:
@@ -193,6 +194,19 @@ class WriteReceipt:
     # genuine verbatim contiguous span; None (fail-loud) otherwise. Carries the
     # source provenance the certificate's source_anchor needs (trace spec §7).
     source_anchor: "SourceAnchor | None" = None
+
+    def __post_init__(self) -> None:
+        # Mirror ExecutionAuthorization.detail: freeze the mappings so callers
+        # cannot mutate ``pre_hashes`` / ``post_hashes`` post-construction. The
+        # receipt is the producer-side record of a landed write; downstream
+        # consumers (mutation events, certificate transition leaves) read these
+        # hashes as evidence. A late mutation of the dict would silently
+        # rewrite history — exactly the silent-failure shape AGENTS.md §1.9 /
+        # §1.10 forbids at a typed semantic boundary. ``WriteReceipt`` is
+        # ``frozen=True, slots=True``, so ``object.__setattr__`` is the only
+        # way to write the frozen-mapping field post-init.
+        object.__setattr__(self, "pre_hashes", freeze_mapping(self.pre_hashes))
+        object.__setattr__(self, "post_hashes", freeze_mapping(self.post_hashes))
 
     @property
     def declared_footprint(self) -> TreePaths:
