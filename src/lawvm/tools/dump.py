@@ -351,7 +351,13 @@ def _dump_apply(
         from lawvm.finland.ir_tree_dump import format_ir_tree
         replay_ir = _comparison_ir(master) if as_of else master.ir
         att_supps = getattr(getattr(master, "ctx", None), "attachment_supplements", ())
-        print(format_ir_tree(replay_ir))
+        # Sourced-repeal tombstones: surface each dropped address inline at its
+        # label-sorted position so a reviewer can see what was repealed and why
+        # (AGENTS.md §0 — over-repeal visibility). Surfacing is additive
+        # evidence — the IR tree itself is unchanged.
+        products = getattr(master, "products", None)
+        tombstones = tuple(getattr(products, "tombstones", ()) or ()) if products is not None else ()
+        print(format_ir_tree(replay_ir, tombstones=tombstones))
         for supp in att_supps:
             print(f"\n[Attachment: {supp.pdf_name}]")
             print(format_ir_tree(supp.ir))

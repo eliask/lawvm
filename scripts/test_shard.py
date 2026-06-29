@@ -772,6 +772,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_diff.py",
         "test_dump.py",
         "test_dump_json_hashes.py",
+        "test_dump_tombstone_render.py",
         # `lawvm show` — pretty human-readable statute tree; counterpart to dump.
         "test_tools_show.py",
         "test_fi_freshness_tool.py",

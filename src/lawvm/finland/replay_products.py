@@ -43,6 +43,7 @@ from lawvm.core.timeline_results import (
     MaterializationLineagePlan,
     TimelineIssue,
     Timelines,
+    TombstoneRecord,
 )
 from lawvm.core.timeline_addresses import _retarget_version_content
 from lawvm.core.tree_ops import (
@@ -175,6 +176,14 @@ class ReplayProducts:
     cited_version_parse_residuals: tuple["CitedVersionParseResidual", ...] = ()
     materialization_issues: tuple[TimelineIssue, ...] = ()
     materialization_coverage: Optional[MaterializationCoverage] = None
+    # Sourced-repeal tombstones dropped from the materialized IR tree
+    # (AGENTS.md §0 — over-repeal visibility). Each entry is an address whose
+    # selected version at PIT ``as_of`` was silent (``content=None``) with a
+    # sourced repeal; materialization drops it from the IR tree and this
+    # carrier surfaces it so projection paths (``lawvm show`` / ``lawvm dump``)
+    # can render the tombstone inline at its target position. Additive
+    # evidence only — never re-mints the address in the IR tree.
+    tombstones: tuple[TombstoneRecord, ...] = ()
     # StageResult-endgame: the full typed materialization account (coverage +
     # residuals + findings), carried so the certificate dossier routes it into a
     # per-stage account subroot instead of discarding it. ``None`` only on the
@@ -2427,6 +2436,7 @@ def build_replay_products(
         cited_version_parse_residuals=cited_version_parse_residuals,
         materialization_issues=materialization_result.issues,
         materialization_coverage=materialization_result.certificate,
+        tombstones=materialization_result.tombstones,
         materialization_stage=materialization_stage,
         materialization_spec=MaterializationSpec(
             as_of=as_of,

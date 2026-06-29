@@ -33,10 +33,19 @@ Two formats:
 """
 from __future__ import annotations
 
-from typing import Optional, Sequence
+from typing import TYPE_CHECKING, Callable, Optional, Sequence
 
 from lawvm.core.ir import IRNode
+from lawvm.core.ir_helpers import _kind_str
 from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.timeline_addresses import _sort_label_key
+
+if TYPE_CHECKING:
+    from lawvm.core.timeline_results import TombstoneRecord
+
+
+# Parent-path → sorted tombstones for the children of that parent.
+_TombstoneGroups = dict[tuple[tuple[str, str], ...], list["TombstoneRecord"]]
 
 
 def _clip(text: str, max_text: Optional[int]) -> str:
@@ -81,16 +90,35 @@ _KIND_LABELS_FI: dict[str, str] = {
 }
 
 
-def format_ir_tree(root: IRNode, *, indent: int = 0, max_text: Optional[int] = None) -> str:
+def format_ir_tree(
+    root: IRNode,
+    *,
+    indent: int = 0,
+    max_text: Optional[int] = None,
+    tombstones: Sequence["TombstoneRecord"] = (),
+) -> str:
     """Technical IR tree dump: KIND [label] text-snippet.
 
     ``max_text=None`` (default) means no truncation — every IRNode's text
     renders in full per the user's "no truncation" directive. Pass an int
     to clip debug snippets to N chars (a ``…`` marker is appended at the
     clip point so the snippet remains greppable in IR-debug output).
+
+    ``tombstones``: optional sequence of :class:`TombstoneRecord` for
+    sourced-repeal addresses dropped from the materialized IR tree. Each
+    tombstone is rendered inline at its target address's position with a
+    ``[TOMBSTONED]`` marker carrying the source statute, effective/enacted
+    dates, and variant_kind (AGENTS.md §0 — over-repeal visibility). The IR
+    tree itself is unchanged: surfacing is additive evidence, not a
+    re-mint of the dropped node. Tombstones whose parent path is not
+    represented in the tree (parent that itself was repealed) are omitted
+    — they have no in-tree position to render at and would otherwise surface
+    a phantom address; their absence is preserved as evidence on
+    :class:`ReplayProducts`.
     """
+    tombstone_groups = _group_tombstones_by_parent(tombstones)
     lines: list[str] = []
-    _format_node_technical(root, lines, indent, max_text)
+    _format_node_technical(root, lines, indent, max_text, tombstone_groups, ())
     return "\n".join(lines)
 
 
@@ -101,6 +129,7 @@ def format_ir_pretty(
     max_text: Optional[int] = None,
     show_tables: bool = True,
     max_table_rows: int = 5,
+    tombstones: Sequence["TombstoneRecord"] = (),
 ) -> str:
     """Human-readable pretty statute dump (Finnish legal convention).
 
@@ -118,14 +147,150 @@ def format_ir_pretty(
     - SCHEDULE_ENTRY → ``[alaviite N] text``
 
     No IRNode kind names — just human-readable legal labels and text content.
+
+    ``tombstones``: optional sequence of :class:`TombstoneRecord` rendered
+    inline at their target address's position with a ``[TOMBSTONED]`` marker
+    (AGENTS.md §0 — over-repeal visibility). The IR tree itself is
+    unchanged; tombstones surface as additive evidence at their label-sorted
+    sibling position so a reviewer sees what was dropped and why.
     """
+    tombstone_groups = _group_tombstones_by_parent(tombstones)
     lines: list[str] = []
-    _format_node_pretty(root, lines, indent, max_text, show_tables, max_table_rows)
+    _format_node_pretty(
+        root, lines, indent, max_text, show_tables, max_table_rows, tombstone_groups, ()
+    )
     return "\n".join(lines)
 
 
+def _kind_name(node: IRNode) -> str:
+    """Return the uppercase IRNodeKind name used by the technical dumper."""
+    return str(node.kind.name if hasattr(node.kind, "name") else node.kind)
+
+
+def _group_tombstones_by_parent(
+    tombstones: Sequence["TombstoneRecord"],
+) -> _TombstoneGroups:
+    """Group tombstones by their parent address path (sorted by label).
+
+    Each tombstone's address path is non-empty; its parent path is
+    ``address.path[:-1]``. Tombstones whose parent path is ``()`` (tombstoned
+    top-level nodes) are grouped under the empty tuple, the root's
+    current_path.
+    """
+    grouped: _TombstoneGroups = {}
+    for tomb in tombstones:
+        if not tomb.address.path:
+            continue
+        parent_path = tomb.address.path[:-1]
+        grouped.setdefault(parent_path, []).append(tomb)
+    for parent_path in grouped:
+        grouped[parent_path].sort(key=lambda t: _sort_label_key(t.label))
+    return grouped
+
+
+def _pending_tombstones_for(
+    node: IRNode,
+    tombstone_groups: _TombstoneGroups | None,
+    parent_path: tuple[tuple[str, str], ...],
+) -> list["TombstoneRecord"]:
+    """Return tombstones for this parent path, deduped against existing children.
+
+    A tombstone whose (kind, label) matches an existing labeled child is
+    suppressed — the address is present in the tree (a stale tombstone
+    record or a repurposed label) and rendering both would duplicate the
+    entry. This never re-mints a tombstoned address: surfacing is additive.
+    """
+    if tombstone_groups is None:
+        return []
+    pending = list(tombstone_groups.get(parent_path, ()))
+    if not pending:
+        return []
+    existing: set[tuple[str, str]] = set()
+    for child in node.children:
+        if child.label is None:
+            continue
+        existing.add((_kind_str(child.kind), child.label))
+    deduped = [tomb for tomb in pending if (tomb.kind, tomb.label) not in existing]
+    deduped.sort(key=lambda t: _sort_label_key(t.label))
+    return deduped
+
+
+def _drain_tombstones_before_child(
+    lines: list[str],
+    pending: list["TombstoneRecord"],
+    drain_idx: int,
+    indent: int,
+    threshold_label: Optional[str],
+    formatter: Callable[["TombstoneRecord", int], str],
+) -> int:
+    """Render pending tombstones whose label_sort < threshold_label.
+
+    Returns the new drain index. Unlabeled (None/empty) threshold labels
+    drain nothing — the threshold child sits at a position where tombstones
+    would interleave out of order against an unlabeled sibling.
+    """
+    if not pending or drain_idx >= len(pending) or not threshold_label:
+        return drain_idx
+    threshold_key = _sort_label_key(threshold_label)
+    while (
+        drain_idx < len(pending)
+        and _sort_label_key(pending[drain_idx].label) < threshold_key
+    ):
+        lines.append(formatter(pending[drain_idx], indent))
+        drain_idx += 1
+    return drain_idx
+
+
+def _drain_remaining_tombstones(
+    lines: list[str],
+    pending: list["TombstoneRecord"],
+    drain_idx: int,
+    indent: int,
+    formatter: Callable[["TombstoneRecord", int], str],
+) -> None:
+    """Render any tombstones remaining after all children of one container."""
+    while drain_idx < len(pending):
+        lines.append(formatter(pending[drain_idx], indent))
+        drain_idx += 1
+
+
+def _format_tombstone_line_technical(tomb: "TombstoneRecord", indent: int) -> str:
+    prefix = "  " * indent
+    op_id_part = f'op_id="{tomb.op_id}"' if tomb.op_id else 'op_id="?"'
+    return (
+        f"{prefix}{tomb.kind.upper()} \"{tomb.label}\" "
+        f"[TOMBSTONED — REPEALED by {op_id_part} "
+        f"source=\"{tomb.source_statute}\" "
+        f"effective=\"{tomb.effective}\" enacted=\"{tomb.enacted}\" "
+        f"variant_kind=\"{tomb.variant_kind}\"]"
+    )
+
+
+def _format_tombstone_line_pretty(tomb: "TombstoneRecord", indent: int) -> str:
+    prefix = "  " * indent
+    op_id_part = f'op_id="{tomb.op_id}"' if tomb.op_id else 'op_id="?"'
+    kind_label = _KIND_LABELS_FI.get(tomb.kind.upper(), "")
+    suffix = (
+        f"{tomb.label} {kind_label}"
+        if kind_label
+        else f"{tomb.kind.upper()} \"{tomb.label}\""
+    )
+    return (
+        f"{prefix}{suffix} "
+        f"[TOMBSTONED — REPEALED by {op_id_part} "
+        f"source=\"{tomb.source_statute}\" "
+        f"effective=\"{tomb.effective}\" enacted=\"{tomb.enacted}\" "
+        f"variant_kind=\"{tomb.variant_kind}\"]"
+    )
+
+
 def _format_node_technical(
-    node: IRNode, lines: list[str], indent: int, max_text: Optional[int]
+    node: IRNode,
+    lines: list[str],
+    indent: int,
+    max_text: Optional[int],
+    tombstone_groups: _TombstoneGroups | None = None,
+    current_path: tuple[tuple[str, str], ...] = (),
 ) -> None:
     prefix = "  " * indent
     parts: list[str] = []
@@ -142,9 +307,21 @@ def _format_node_technical(
                 snippet += "…"
         snippet = snippet.replace("\n", " ")
         parts.append(f'"{snippet}"')
-    lines.append(f"{prefix}{' '.join(parts)}")
+    lines.append(f"{prefix}{" ".join(parts)}")
+    pending_tombs = _pending_tombstones_for(node, tombstone_groups, current_path)
+    drain_idx = 0
     for child in node.children:
-        _format_node_technical(child, lines, indent + 1, max_text)
+        drain_idx = _drain_tombstones_before_child(
+            lines, pending_tombs, drain_idx, indent + 1, child.label,
+            _format_tombstone_line_technical,
+        )
+        child_path = current_path + ((_kind_str(child.kind), child.label or ""),)
+        _format_node_technical(
+            child, lines, indent + 1, max_text, tombstone_groups, child_path
+        )
+    _drain_remaining_tombstones(
+        lines, pending_tombs, drain_idx, indent + 1, _format_tombstone_line_technical
+    )
 
 
 def _format_node_pretty(
@@ -154,6 +331,8 @@ def _format_node_pretty(
     max_text: Optional[int],
     show_tables: bool,
     max_table_rows: int,
+    tombstone_groups: _TombstoneGroups | None = None,
+    current_path: tuple[tuple[str, str], ...] = (),
 ) -> None:
     prefix = "  " * indent
     kind_str = str(node.kind.name if hasattr(node.kind, "name") else node.kind)
@@ -162,17 +341,17 @@ def _format_node_pretty(
 
     if kind_str == "HCONTAINER":
         # Root — just walk children
-        for child in node.children:
-            _format_node_pretty(
-                child, lines, indent, max_text, show_tables, max_table_rows
-            )
+        _render_pretty_children_with_tombstones(
+            node, lines, indent, max_text, show_tables, max_table_rows,
+            tombstone_groups, current_path,
+        )
         return
 
     if kind_str == "BODY":
-        for child in node.children:
-            _format_node_pretty(
-                child, lines, indent, max_text, show_tables, max_table_rows
-            )
+        _render_pretty_children_with_tombstones(
+            node, lines, indent, max_text, show_tables, max_table_rows,
+            tombstone_groups, current_path,
+        )
         return
 
     if kind_str == "CHAPTER":
@@ -182,12 +361,10 @@ def _format_node_pretty(
             lines.append(f"{prefix}{label} luku {heading}")
         else:
             lines.append(f"{prefix}{label} luku")
-        for child in node.children:
-            if str(child.kind.name if hasattr(child.kind, "name") else child.kind) in ("HEADING", "NUM"):
-                continue
-            _format_node_pretty(
-                child, lines, indent + 1, max_text, show_tables, max_table_rows
-            )
+        _render_pretty_children_with_tombstones(
+            node, lines, indent + 1, max_text, show_tables, max_table_rows,
+            tombstone_groups, current_path, skip_kinds=("HEADING", "NUM"),
+        )
         return
 
     if kind_str == "SECTION":
@@ -196,20 +373,18 @@ def _format_node_pretty(
             lines.append(f"{prefix}{label} § {heading}")
         else:
             lines.append(f"{prefix}{label} §")
-        for child in node.children:
-            if str(child.kind.name if hasattr(child.kind, "name") else child.kind) in ("HEADING", "NUM"):
-                continue
-            _format_node_pretty(
-                child, lines, indent + 1, max_text, show_tables, max_table_rows
-            )
+        _render_pretty_children_with_tombstones(
+            node, lines, indent + 1, max_text, show_tables, max_table_rows,
+            tombstone_groups, current_path, skip_kinds=("HEADING", "NUM"),
+        )
         return
 
     if kind_str == "SUBSECTION":
         lines.append(f"{prefix}{label} momentti")
-        for child in node.children:
-            _format_node_pretty(
-                child, lines, indent + 1, max_text, show_tables, max_table_rows
-            )
+        _render_pretty_children_with_tombstones(
+            node, lines, indent + 1, max_text, show_tables, max_table_rows,
+            tombstone_groups, current_path,
+        )
         return
 
     if kind_str == "PARAGRAPH":
@@ -218,14 +393,17 @@ def _format_node_pretty(
             lines.append(f"{prefix}{label}. {_clip(text, max_text)}")
         elif text:
             lines.append(f"{prefix}{_clip(text, max_text)}")
-        # Walk children (items, etc.)
-        for child in node.children:
-            child_kind = str(child.kind.name if hasattr(child.kind, "name") else child.kind)
-            if child_kind in ("NUM",) or (child_kind == "CONTENT" and not child.text):
-                continue
-            _format_node_pretty(
-                child, lines, indent + 1, max_text, show_tables, max_table_rows
-            )
+        # Walk children (items, etc.) — skip NUM and empty CONTENT shells.
+        def _paragraph_skip(child: IRNode, _child_kind: str) -> bool:
+            if _child_kind == "NUM":
+                return True
+            if _child_kind == "CONTENT" and not child.text:
+                return True
+            return False
+        _render_pretty_children_with_tombstones(
+            node, lines, indent + 1, max_text, show_tables, max_table_rows,
+            tombstone_groups, current_path, skip_predicate=_paragraph_skip,
+        )
         return
 
     if kind_str == "ITEM":
@@ -233,10 +411,10 @@ def _format_node_pretty(
             lines.append(f"{prefix}{label}) {_clip(text, max_text)}")
         elif text:
             lines.append(f"{prefix}{_clip(text, max_text)}")
-        for child in node.children:
-            _format_node_pretty(
-                child, lines, indent + 1, max_text, show_tables, max_table_rows
-            )
+        _render_pretty_children_with_tombstones(
+            node, lines, indent + 1, max_text, show_tables, max_table_rows,
+            tombstone_groups, current_path,
+        )
         return
 
     if kind_str == "HEADING":
@@ -247,10 +425,10 @@ def _format_node_pretty(
     if kind_str in ("CONTENT", "P", "I"):
         if text:
             lines.append(f"{prefix}{_clip(text, max_text)}")
-        for child in node.children:
-            _format_node_pretty(
-                child, lines, indent + 1, max_text, show_tables, max_table_rows
-            )
+        _render_pretty_children_with_tombstones(
+            node, lines, indent + 1, max_text, show_tables, max_table_rows,
+            tombstone_groups, current_path,
+        )
         return
 
     if kind_str == "INTRO":
@@ -260,18 +438,18 @@ def _format_node_pretty(
 
     if kind_str == "APPENDIX":
         lines.append(f"{prefix}{label}")
-        for child in node.children:
-            _format_node_pretty(
-                child, lines, indent + 1, max_text, show_tables, max_table_rows
-            )
+        _render_pretty_children_with_tombstones(
+            node, lines, indent + 1, max_text, show_tables, max_table_rows,
+            tombstone_groups, current_path,
+        )
         return
 
     if kind_str == "SCHEDULE":
         lines.append(f"{prefix}Liite {label.replace('liite_', '') if label else ''}")
-        for child in node.children:
-            _format_node_pretty(
-                child, lines, indent + 1, max_text, show_tables, max_table_rows
-            )
+        _render_pretty_children_with_tombstones(
+            node, lines, indent + 1, max_text, show_tables, max_table_rows,
+            tombstone_groups, current_path,
+        )
         return
 
     if kind_str == "SCHEDULE_ENTRY":
@@ -289,10 +467,61 @@ def _format_node_pretty(
     # Fallback: kind label + text + children
     if text:
         lines.append(f"{prefix}{_clip(text, max_text)}")
+    _render_pretty_children_with_tombstones(
+        node, lines, indent + 1, max_text, show_tables, max_table_rows,
+        tombstone_groups, current_path,
+    )
+
+
+def _render_pretty_children_with_tombstones(
+    node: IRNode,
+    lines: list[str],
+    child_indent: int,
+    max_text: Optional[int],
+    show_tables: bool,
+    max_table_rows: int,
+    tombstone_groups: _TombstoneGroups | None,
+    parent_path: tuple[tuple[str, str], ...],
+    *,
+    skip_kinds: tuple[str, ...] = (),
+    skip_predicate: Callable[[IRNode, str], bool] | None = None,
+) -> None:
+    """Render node's children interleaved with sibling tombstones.
+
+    Tombstones whose parent path matches ``parent_path`` are drained into
+    label-sorted position relative to the existing labeled children: a
+    tombstone appears before the first child whose ``_sort_label_key`` is
+    strictly greater. Tombstones that match no existing child label render
+    after the last labeled child if no larger threshold child exists.
+
+    A child is skipped when its kind string is in ``skip_kinds`` OR
+    ``skip_predicate(child, child_kind_str)`` returns True. Skipped children
+    do not trigger tombstone drain (their label is not a sort threshold).
+    """
+    pending_tombs = _pending_tombstones_for(node, tombstone_groups, parent_path)
+    drain_idx = 0
     for child in node.children:
-        _format_node_pretty(
-            child, lines, indent + 1, max_text, show_tables, max_table_rows
+        child_kind_str = str(
+            child.kind.name if hasattr(child.kind, "name") else child.kind
         )
+        if child_kind_str in skip_kinds:
+            continue
+        if skip_predicate is not None and skip_predicate(child, child_kind_str):
+            continue
+        drain_idx = _drain_tombstones_before_child(
+            lines, pending_tombs, drain_idx, child_indent, child.label,
+            _format_tombstone_line_pretty,
+        )
+        # Path tracking uses ``_kind_str`` (IRNodeKind.value, lowercase) so it
+        # matches ``LegalAddress.path`` tuples coming from the timeline waist.
+        child_path = parent_path + ((_kind_str(child.kind), child.label or ""),)
+        _format_node_pretty(
+            child, lines, child_indent, max_text, show_tables, max_table_rows,
+            tombstone_groups, child_path,
+        )
+    _drain_remaining_tombstones(
+        lines, pending_tombs, drain_idx, child_indent, _format_tombstone_line_pretty
+    )
 
 
 def _format_table(
@@ -340,19 +569,31 @@ def format_statute_with_attachments(
     *,
     max_text: Optional[int] = None,
     max_table_rows: int = 5,
+    tombstones: Sequence["TombstoneRecord"] = (),
 ) -> str:
     """Full statute pretty-print: body + attachment supplements.
 
     Body walks the replay IR tree. Attachments walk the
     ``AttachmentIRSupplement.ir`` tree, each preceded by a header line.
+    Tombstones surface inline at their target address position in the
+    body walk (AGENTS.md §0 — over-repeal visibility).
     """
     parts: list[str] = []
-    parts.append(format_ir_pretty(body_ir, max_text=max_text, max_table_rows=max_table_rows))
+    parts.append(
+        format_ir_pretty(
+            body_ir,
+            max_text=max_text,
+            max_table_rows=max_table_rows,
+            tombstones=tombstones,
+        )
+    )
     if attachment_supplements:
         parts.append(f"\n--- Attachments ({len(attachment_supplements)}) ---")
         for supp in attachment_supplements:
             parts.append(f"\n[{supp.pdf_name} ({supp.pdf_text_length} chars)]")
-            parts.append(format_ir_pretty(supp.ir, max_text=max_text, max_table_rows=max_table_rows))
+            parts.append(
+                format_ir_pretty(supp.ir, max_text=max_text, max_table_rows=max_table_rows)
+            )
     return "\n".join(parts)
 
 
@@ -415,6 +656,7 @@ def format_unified_statute(
     *,
     max_text: Optional[int] = None,
     max_table_rows: int = 5,
+    tombstones: Sequence["TombstoneRecord"] = (),
 ) -> str:
     """Pretty-print the merged body + attachment tree in one walk.
 
@@ -423,6 +665,14 @@ def format_unified_statute(
     walks the merged HCONTAINER → [BODY, APPENDIX_1, ...] tree as one
     continuous document. Functions as a behavioural mirror of how
     :func:`format_ir_pretty` would render the same tree.
+
+    Tombstones surface inline at their target address position in the merged
+    body walk (AGENTS.md §0 — over-repeal visibility).
     """
     merged = merge_attachments_into_root(body_ir, attachment_supplements)
-    return format_ir_pretty(merged, max_text=max_text, max_table_rows=max_table_rows)
+    return format_ir_pretty(
+        merged,
+        max_text=max_text,
+        max_table_rows=max_table_rows,
+        tombstones=tombstones,
+    )

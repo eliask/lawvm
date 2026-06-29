@@ -71,6 +71,7 @@ from lawvm.core.timeline_materialization import (
     SPARSE_PARENT_OVERLAY_POLICY as _SPARSE_PARENT_OVERLAY_POLICY,
     SPARSE_PRESERVED_TAIL_ATTR as _SPARSE_PRESERVED_TAIL_ATTR,
     apply_overlays as _apply_overlays_impl,
+    collect_tombstones as _collect_tombstones,
     materialize_body as _materialize_body,
     materialize_root_nodes as _materialize_root_nodes,
     project_materialization_selection_states as _project_materialization_selection_states,
@@ -1701,6 +1702,7 @@ def materialize_pit_ex(
             ambiguous_address_count=len(ambiguous_addresses),
             required_dimensions=tuple(sorted(degraded_dimensions)),
         ),
+        tombstones=_collect_tombstones(active, active_versions),
     )
 
 

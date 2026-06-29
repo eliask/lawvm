@@ -24,7 +24,9 @@ from __future__ import annotations
 
 import re
 import sys
+from typing import Sequence
 
+from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core import tree_ops as _tops
 from lawvm.core.regex_safety import compile_classifier_regex
@@ -71,14 +73,32 @@ def _hyperlink_statute_tokens(text: str, *, enabled: bool) -> str:
     return _STATUTE_TOKEN_RE.sub(_wrap, text)
 
 
-def _render_text(body_ir, att_supps, *, max_text: int | None, include_attachments: bool) -> str:
+def _render_text(
+    body_ir: IRNode,
+    att_supps: Sequence,
+    *,
+    max_text: int | None,
+    include_attachments: bool,
+    tombstones: Sequence = (),
+) -> str:
     if include_attachments:
         # SDOC-13 unified projection — attachments render as APPENDIX
-        # siblings of BODY under one HCONTAINER root (one walk).
+        # siblings of BODY under one HCONTAINER root (one walk). Tombstones
+        # surface inline at their target address position in the body walk
+        # (AGENTS.md §0 — over-repeal visibility).
         return format_unified_statute(
-            body_ir, att_supps, max_text=max_text, max_table_rows=5
+            body_ir,
+            att_supps,
+            max_text=max_text,
+            max_table_rows=5,
+            tombstones=tombstones,
         )
-    return format_ir_pretty(body_ir, max_text=max_text, max_table_rows=5)
+    return format_ir_pretty(
+        body_ir,
+        max_text=max_text,
+        max_table_rows=5,
+        tombstones=tombstones,
+    )
 
 
 def main(args) -> None:
@@ -116,6 +136,8 @@ def main(args) -> None:
 
     body_ir = master.ir
     att_supps = tuple(getattr(getattr(master, "ctx", None), "attachment_supplements", ()))
+    products = getattr(master, "products", None)
+    tombstones = tuple(getattr(products, "tombstones", ()) or ())
 
     if address:
         # Scoped view: resolve the address against the materialised tree
@@ -178,6 +200,7 @@ def main(args) -> None:
         att_supps,
         max_text=max_text,
         include_attachments=include_attachments,
+        tombstones=tombstones,
     )
     print(_hyperlink_statute_tokens(render, enabled=link_enabled))
 
