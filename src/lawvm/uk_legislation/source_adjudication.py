@@ -414,6 +414,7 @@ UK_REPLAY_BUG_ADJUDICATION_KINDS = frozenset(
         "uk_replay_payload_missing",
         "uk_replay_text_patch_missing_structured_payload",
         "uk_replay_unsupported_action",
+        "uk_replay_cow_chain_locate_failed",
     }
 )
 
