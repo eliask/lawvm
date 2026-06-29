@@ -213,3 +213,57 @@ def test_uk_wide_si_whole_act_repeal_is_not_devolved_frontier() -> None:
         classification["rule_id"]
         != "uk_manual_frontier_devolved_extent_limited_repeal_out_of_scope"
     )
+
+
+def test_strict_profile_not_allowed_still_blocks(monkeypatch) -> None:
+    """§2.9 disposition 2: strict-profile loaded (default preset) but
+    ``allows_uk_devolved_extent_repeal=False`` — block preserved."""
+    monkeypatch.setenv("LAWVM_UK_STRICT_PROFILE", "uk_ingestion_v1")
+    effect = _whole_act_repeal_effect(affecting_class="ScottishStatutoryInstrument")
+    rejected, rejections = _reject(effect)
+    assert rejected is True
+    assert any(
+        r.get("rule_id")
+        == "uk_effect_devolved_whole_act_repeal_extent_limited_rejected"
+        for r in rejections
+    ), "block MUST fire when strict-not-allowed"
+    assert not any(
+        r.get("rule_id") == "uk_strict_profile_lifted_devolved_extent_repeal"
+        for r in rejections
+    ), "lift observation must NOT fire when not allowed"
+
+
+def test_strict_profile_allowed_lifts_block_with_audit(monkeypatch) -> None:
+    """§2.9 disposition 3: strict-profile loaded with
+    ``allows_uk_devolved_extent_repeal=True`` — block LIFTED with audited
+    observation. The most dangerous lift in the suite because it directly
+    risks §0-forbidden over-repeal (destroying surviving E&W text).
+
+    The §0 evidence ledger records WHO authorized + why."""
+    import lawvm.uk_legislation.effect_target_prelude as mod
+    from lawvm.uk_legislation.strict_profile import UK_INGESTION_V1, UkStrictProfile
+
+    allowed_profile = UkStrictProfile(
+        core_profile=UK_INGESTION_V1,
+        allows_uk_devolved_extent_repeal=True,
+    )
+    monkeypatch.setattr(
+        mod, "active_uk_strict_profile", lambda: allowed_profile
+    )
+    effect = _whole_act_repeal_effect(affecting_class="ScottishStatutoryInstrument")
+    rejected, rejections = _reject(effect)
+    assert rejected is False, "block must be LIFTED when strict-allows"
+    lift = [
+        r for r in rejections
+        if r.get("rule_id") == "uk_strict_profile_lifted_devolved_extent_repeal"
+    ]
+    assert lift, "lift audit observation MUST be emitted"
+    assert lift[0]["reason_code"] == (
+        "strict_profile_authorized_devolved_whole_act_repeal"
+    )
+    assert lift[0]["strict_disposition"] == "proceed"
+    assert "OVER-REPEAL" in lift[0].get("reason", "")
+    assert (
+        "uk_effect_devolved_whole_act_repeal_extent_limited_rejected"
+        not in {r.get("rule_id") for r in rejections}
+    ), "block-rejection receipt must NOT fire when lift is active"

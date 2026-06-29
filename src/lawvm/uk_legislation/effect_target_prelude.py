@@ -68,6 +68,7 @@ from lawvm.uk_legislation.whole_act_text_patch import (
 )
 from lawvm.uk_legislation.xml_helpers import _tag
 from lawvm.core.quirks_disposition import QuirksDisposition
+from lawvm.uk_legislation.strict_profile import active_uk_strict_profile
 
 
 _UK_ENACTED_SCHEDULE_TABLE_ROW_PART_TARGET_RULE_ID = (
@@ -518,6 +519,56 @@ def reject_external_or_partial_whole_act_scope(
         # retains (over-application, §2.1). Any genuinely complete repeal is
         # carried by a separate UK-wide effect row, so blocking this devolved row
         # never loses a truly-spent Act.
+        #
+        # STRICT-PROFILE GATE (Tier C PR2, site 2):
+        # When the active strict-profile explicitly allows
+        # ``allows_uk_devolved_extent_repeal=True``, the default-blocking
+        # shape is CONDITIONALLY LIFTED — the strict-profile explicitly
+        # authorizes the devolved whole-Act repeal to proceed as a UK-wide
+        # deletion. This is the MOST DANGEROUS strict-profile lift in the
+        # suite because it directly risks §0-forbidden over-repeal
+        # (destroying surviving England-and-Wales text). The lift IS
+        # AUDITED: a non-blocking observation records the authorization so
+        # the §0 evidence ledger remains readable.
+        uk_strict_profile = active_uk_strict_profile()
+        if (
+            uk_strict_profile is not None
+            and uk_strict_profile.allows_uk_devolved_extent_repeal
+        ):
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id="uk_strict_profile_lifted_devolved_extent_repeal",
+                family="unsupported_target_scope",
+                reason_code="strict_profile_authorized_devolved_whole_act_repeal",
+                reason=(
+                    "§0 WARNING: Strict profile loaded with "
+                    "allows_uk_devolved_extent_repeal=True; the devolved "
+                    "whole-Act repeal is explicitly authorized to proceed as "
+                    "a UK-wide deletion — this RISKS OVER-REPEAL (destroying "
+                    "surviving England-and-Wales text). The authorization is "
+                    "audited so the §0 evidence ledger records WHO authorized "
+                    "the destructive deletion + why."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "strict_profile_name": uk_strict_profile.core_profile.name,
+                    "target_ref": t_str,
+                    "target": str(target),
+                    "effect_type": effect_type,
+                    "action": action,
+                    "affecting_act_id": effect.affecting_act_id,
+                    "affecting_class": effect.affecting_class,
+                    "affected_class": effect.affected_class,
+                    "lifted_rejection_rule_id": (
+                        "uk_effect_devolved_whole_act_repeal_extent_limited_rejected"
+                    ),
+                    "strict_disposition": "proceed",
+                    "quirks_disposition": QuirksDisposition.APPLY,
+                },
+            )
+            return False  # Lift the block — let the repeal proceed.
         _append_uk_effect_lowering_rejection(
             lowering_rejections_out,
             rule_id="uk_effect_devolved_whole_act_repeal_extent_limited_rejected",
