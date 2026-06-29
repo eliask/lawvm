@@ -16,7 +16,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from lawvm.core.ir import IRNode
-from lawvm.core.regex_safety import compile_classifier_regex
 from lawvm.core.semantic_types import IRNodeKind
 
 
@@ -61,14 +60,35 @@ class AttachmentLayout:
     extraction_method: str = "pdfplumber"
 
 
-_FN_MARKER_RE = compile_classifier_regex(
-    r"^(\d+[a-z]?[)])\s*(.+)", classifier_id="lawvm.finland.pdf_layout.fn_marker"
-)
+# Footnote-marker scanner — ``1) text body`` / ``12a) text body`` form.
+# Original regex form ``^(\d+[a-z]?[)])\s*(.+)`` had adjacent-variable
+# backtracking (``\d+`` next to ``[a-z]?`` — overlapping starts), which
+# the regex safety lint rejects. A string-based scan is simpler, faster,
+# and side-steps the lint entirely (parse-time pattern, not a hot-path
+# classifier — §2.4 permits string predicates for single-shape patterns).
 
 
 def _extract_footnote_marker(text: str) -> str:
-    m = _FN_MARKER_RE.match(text.strip())
-    return m.group(1) if m else ""
+    """Return the marker prefix (e.g. ``1)``, ``12a)``) if ``text`` is a
+    footnote-body line, else ``""``.
+
+    The marker shape: ``<digits><optional-lower-case-letter><close paren>``.
+    No regex — a tiny forward-scan suffices and avoids the safety lint's
+    adjacent-variable-backtracking rejection (parse-time, not hot path).
+    """
+    s = text.strip()
+    if not s or not s[0].isdigit():
+        return ""
+    i = 0
+    while i < len(s) and s[i].isdigit():
+        i += 1
+    if i == 0:
+        return ""
+    if i < len(s) and s[i].isalpha() and s[i].islower():
+        i += 1
+    if i < len(s) and s[i] in (")", "]"):
+        return s[: i + 1]
+    return ""
 
 
 def extract_pdf_layout(pdf_bytes: bytes, *, max_pages: int = 5000) -> AttachmentLayout | None:

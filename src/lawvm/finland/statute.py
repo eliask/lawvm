@@ -159,6 +159,17 @@ class StatuteContext:
     # ingest actually dropped a child / guessed a positional label / repaired
     # structure, so a clean parse leaves this an empty mapping.
     ingest_metadata: Mapping[str, Any] = field(default_factory=dict)
+    # Parsed attachment-PDF content (each entry an AttachmentIRSupplement
+    # carrying the PDF→IRNode tree). Built post-from_xml by
+    # ``prepare_replay_plan`` (the corpus-store-aware builder) from
+    # ``<a href="media/N.pdf">`` links in the consolidated source XML +
+    # ``corpus.read_attachment_media``. Default empty tuple preserves the
+    # ``StatuteContext.from_xml`` call sites that do not extract attachments
+    # (e.g. tests, amendment-only builders) — the supplements are an
+    # opt-in enrichment set, not load-bearing for correctness of the body
+    # replay fold. Per SDOC-13 projections include attachments unless scoped
+    # out (``lawvm show --no-attachments``).
+    attachment_supplements: tuple = field(default_factory=tuple)
 
     @classmethod
     def from_xml(cls, xml_bytes: bytes, label_postprocessor=None) -> "StatuteContext":
