@@ -121,6 +121,10 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     "sweden_misc": (
         "test_sweden_grafter.py",
         "test_sweden_tools.py",
+        # iter4 W1 C2: applies-raise scan-lane bucketing integration test (drives
+        # apply_raise through scan_se_official_replay_act → asserts
+        # BenchStatus.CRASH, not SOURCE_UNAVAILABLE).
+        "test_se_scan_lane_apply_raise_bucketing.py",
     ),
     "uk": (
         "test_uk_*.py",
@@ -739,6 +743,10 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_spec_ledger_ee.py",
         "test_spec_ledger_no_catalog.py",
         "test_spec_ledger_nz_catalog.py",
+        # iter4 W1 C1: new EU spec_ledger catalog (mirror of SE/EE/the-UK precedent
+        # shape; 5-test anti-drift guard — coverage + dead + non-empty + excluded
+        # + dir-present). Previously EU had NO AST-discovery catalog at all.
+        "test_spec_ledger_eu_catalog.py",
         "test_delegate_tool.py",
         "test_fi_spec_ledger_catalog.py",
         "test_diagnose_phase.py",

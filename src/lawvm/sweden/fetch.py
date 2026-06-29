@@ -3223,6 +3223,20 @@ def analyze_se_official_replay_feasibility(
 SE_REPLAY_OUTCOME_REPLAY_FEASIBLE = "replay_feasible"
 SE_REPLAY_OUTCOME_OLDER_BASE_REQUIRED = "older_base_required"
 SE_REPLAY_OUTCOME_PRECONDITION_ISSUES_BLOCKING = "precondition_issues_blocking"
+#: iter3 W3 (silent-failure review HIGH #3) added the apply-raise catch at
+#: ``check_se_official_replay``'s try/except, returning a structured
+#: ``outcome='apply_raise'`` dict via ``_se_replay_unresolved_outcome``. iter4 W1
+#: (C2, this commit) adds the explicit constant so :func:`scan_se_official_replay_act`'s
+#: typed-outcome dispatcher can distinguish ``apply_raise`` (a CRASH — genuine
+#: apply-fold failure) from the manual-compilation-frontier outcomes
+#: (``older_base_required`` / ``precondition_issues_blocking`` — non-scored
+#: ``SOURCE_UNAVAILABLE``). Pre-fix the scan lane collapsed ALL non-feasible
+#: outcomes to top-level ``"outcome": "older_base_required"`` at line ~3972, so
+#: the bench comparator (``tools/se_bench.py:90-101``) misclassified genuine
+#: apply-fold raises as :class:`BenchStatus.SOURCE_UNAVAILABLE` (manual
+#: frontier) — the §2.9 worst-class silent failure: a guard that exists but
+#: whose misclassification prevents the crash from surfacing in the aggregate.
+SE_REPLAY_OUTCOME_APPLY_RAISE = "apply_raise"
 
 
 def _se_replay_unresolved_outcome(
@@ -3965,7 +3979,15 @@ def scan_se_official_replay_act(
 
     Returns a flat, picklable summary (no IR objects) so it can be produced inside
     a worker process and aggregated in the parent. ``outcome`` is one of
-    ``replay_ok`` / ``older_base_required`` / ``error``.
+    ``replay_ok`` / ``older_base_required`` / ``error``. iter4 W1 (C2,
+    silent-failure review HIGH #3): ``apply_raise`` (a genuine apply-fold raise
+    caught by :func:`check_se_official_replay`'s try/except) is routed to
+    top-level ``outcome == "error"`` rather than collapsed into the
+    manual-compilation-frontier ``"older_base_required"`` lane — so the bench
+    comparator (:mod:`lawvm.tools.se_bench`) routes it to
+    :class:`BenchStatus.CRASH` (not :class:`BenchStatus.SOURCE_UNAVAILABLE`),
+    closing the §2.9 worst-class silent failure where an apply_raise guard
+    existed but its misclassification prevented the crash from surfacing.
     """
     try:
         result = check_se_official_replay(archive, amending_sfs_id)
@@ -3977,6 +3999,53 @@ def scan_se_official_replay_act(
             "error_detail": str(exc),
         }
     typed_outcome = str(result.get("outcome") or SE_REPLAY_OUTCOME_REPLAY_FEASIBLE)
+    if typed_outcome == SE_REPLAY_OUTCOME_APPLY_RAISE:
+        # iter4 W1 (C2, silent-failure review HIGH #3): ``apply_raise`` is a
+        # CRASH (genuine apply-fold failure — ``apply_se_ops_conserved`` raised
+        # mid-fold and the production caller's on-raise handling surfaced it as
+        # ``outcome='apply_raise'`` / ``reason_code='se_replay_apply_raise'``),
+        # NOT a manual-compilation frontier state. Pre-fix this fell through to
+        # the ``typed_outcome != SE_REPLAY_OUTCOME_REPLAY_FEASIBLE`` branch
+        # below, which collapses ALL non-feasible outcomes to top-level
+        # ``"outcome": "older_base_required"`` — and the bench comparator at
+        # ``tools/se_bench.py:90-101`` then routes that to
+        # :class:`BenchStatus.SOURCE_UNAVAILABLE`, silently misclassifying a
+        # genuine apply-fold raise as "the source does not deterministically
+        # specify the replayable base" (manual-compilation frontier). That is
+        # the §2.9 worst-class silent failure: the apply_raise guard exists but
+        # its misclassification prevents the crash from surfacing in the
+        # aggregate. The bench comparator routes ``outcome == "error"`` →
+        # :class:`BenchStatus.CRASH` (``se_bench.py:113-117``); we surface the
+        # preserved-partial-witness detail and the typed §1.10
+        # exception_type/exception/clause_text snippet as ``error_type`` /
+        # ``error_detail`` / ``clause_text`` on the summary so the bench's CRASH
+        # witnesses (``se_bench.py:105-112``) carry them — sees §1.10
+        # embed-snippet contract: a residual needing triage does not require
+        # re-running extraction.
+        apply_raise_detail = dict(result.get("outcome_detail") or {})
+        # Carry the preserved partial adjudications forward (the §1.0
+        # evidence-not-silently-destroyed contract from iter3 W3's
+        # ``replay_adjudications`` list projection).
+        preserved_adjudications = list(result.get("adjudications") or [])
+        return {
+            "amending_sfs_id": amending_sfs_id,
+            "outcome": "error",
+            "error_type": str(apply_raise_detail.get("exception_type") or ""),
+            "error_detail": str(apply_raise_detail.get("exception") or ""),
+            # §1.10 source-text witness slot; on apply-raise the failing
+            # exception message is the only immediately-available snippet (the
+            # per-op source_clause_extract extraction is deferred per task #50;
+            # see the iter4 W1 M2 comment-clarification at fetch.py:3604+).
+            # Carried as ``clause_text`` so the bench's CRASH witnesses include
+            # it; ``str(e)[:400]`` mirroring the §1.10 contract shape.
+            "clause_text": str(apply_raise_detail.get("clause_text") or "")[:400],
+            "reason_code": str(result.get("reason_code") or ""),
+            "typed_outcome": typed_outcome,
+            "base_sfs_id": str(result.get("base_sfs_id") or ""),
+            "effective_date": str(result.get("effective_date") or ""),
+            "recovery_mode": str(result.get("recovery_mode") or ""),
+            "adjudications": preserved_adjudications,
+        }
     if typed_outcome != SE_REPLAY_OUTCOME_REPLAY_FEASIBLE:
         # The structured ``outcome`` signal from check_se_official_replay
         # carries the typed  older_base_required / precondition_issues_blocking
