@@ -40,8 +40,10 @@ _PARA_KUMOTTU_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
-# eId suffix that marks a synthetic versioned paragraph in oracle consolidated XML.
-_PARA_VERSIONED_EID_RE = re.compile(r'.*para_\d+v\d{8}$')
+# eId shape for an oracle paragraph slot. Most inline repeal stubs carry a
+# version suffix, but older Finlex bodies also emit plain para_N slots with the
+# same italic editorial text and source reference.
+_PARA_EID_RE = re.compile(r'.*para_\d+(?:v\d{8})?$')
 
 
 # ---------------------------------------------------------------------------
@@ -53,7 +55,7 @@ def _is_paragraph_level_kumottu_stub(para: etree._Element) -> bool:
 
     Detection criteria (all must hold):
 
-    1. ``eId`` matches ``.*para_\\d+v\\d{8}$`` — synthetic versioned suffix.
+    1. ``eId`` matches a paragraph slot, optionally with a versioned suffix.
     2. No ``<num>`` child — stubs carry no item number.
     3. Text content (stripped, normalised whitespace) matches the Finnish
        repeal phrasing ``N kohta on kumottu A:lla DD.MM.YYYY/NNNN``, optionally
@@ -65,9 +67,9 @@ def _is_paragraph_level_kumottu_stub(para: etree._Element) -> bool:
     from the oracle semantic tree before comparison so they do not produce
     spurious ``unit_added_right`` diff events.
     """
-    # 1. eId suffix check
+    # 1. eId paragraph-slot check
     eid = para.get("eId", "")
-    if not _PARA_VERSIONED_EID_RE.match(eid):
+    if not _PARA_EID_RE.match(eid):
         return False
 
     # 2. No <num> child

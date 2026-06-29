@@ -99,6 +99,7 @@ class ReplayHorizonRequest:
     oracle_reflected_section_original_versions: Iterable[str]
     oracle_single_future_repeal_overlay_versions: Iterable[str]
     replay_print: Callable[[str], None]
+    oracle_absent_repeal_target_versions: Iterable[str] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,6 +124,11 @@ def choose_replay_horizon(request: ReplayHorizonRequest) -> ReplayHorizonDecisio
         single_future_repeal_overlay_versions = frozenset(
             str(source_id)
             for source_id in request.oracle_single_future_repeal_overlay_versions
+            if str(source_id)
+        )
+        absent_repeal_target_versions = frozenset(
+            str(source_id)
+            for source_id in request.oracle_absent_repeal_target_versions
             if str(source_id)
         )
         oracle_cutoff_iso: Optional[str] = (
@@ -172,6 +178,8 @@ def choose_replay_horizon(request: ReplayHorizonRequest) -> ReplayHorizonDecisio
             if (
                 rec_sid == oracle_vid_id
                 and oracle_vid_repeal_only_future
+                and rec_sid not in reflected_section_original_versions
+                and rec_sid not in absent_repeal_target_versions
                 and oracle_cutoff_iso is not None
                 and eff_iso is not None
                 and eff_iso > oracle_cutoff_iso
@@ -212,6 +220,7 @@ def choose_replay_horizon(request: ReplayHorizonRequest) -> ReplayHorizonDecisio
                     and oracle_cutoff_iso is not None
                     and lo_eff > oracle_cutoff_iso
                     and is_repeal_like
+                    and lo_src.statute_id not in absent_repeal_target_versions
                     and not _can_detach_expiry_for_future_repeal(lo)
                 ):
                     continue
@@ -222,6 +231,7 @@ def choose_replay_horizon(request: ReplayHorizonRequest) -> ReplayHorizonDecisio
                         and oracle_vid_repeal_only_future
                         and oracle_cutoff_iso is not None
                         and lo_eff > oracle_cutoff_iso
+                        and lo_src.statute_id not in absent_repeal_target_versions
                     ):
                         oracle_expiry_as_of = oracle_cutoff_iso
                     op_family = "REPEAL" if is_repeal_like else "non-REPEAL"

@@ -7,6 +7,8 @@ from typing import Any, cast
 import lxml.etree as etree
 
 from lawvm import corpus_store as shared_corpus
+from lawvm.core.ir import LegalAddress, LegalOperation, OperationSource
+from lawvm.core.semantic_types import StructuralAction
 from lawvm.finland import corpus
 from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector
 from lawvm.finland.corpus import _oracle_pending_amendment_suspect
@@ -439,6 +441,43 @@ def test_single_future_repeal_overlay_versions_excludes_broad_overlay_families()
     got = corpus.get_consolidated_oracle_single_future_repeal_overlay_versions(sid, cast(Any, fake))
 
     assert got == set()
+
+
+def test_oracle_absent_repeal_target_versions_records_missing_chapter_target() -> None:
+    sid = "2015/1635"
+    oracle_path = "akn/fi/act/statute-consolidated/2015/1635/fin@20230741/main.xml"
+    oracle_xml = f"""
+    <akn xmlns="{_AKN_NS}" xmlns:finlex="{_FINLEX_NS}">
+      <body>
+        <chapter eId="chp_1">
+          <num>1 luku</num>
+          <section eId="chp_1__sec_1"><num>1 §</num></section>
+        </chapter>
+        <chapter eId="chp_3v20230741">
+          <num>3 luku</num>
+          <p>3 luku on kumottu L:lla 14.4.2023/741.</p>
+        </chapter>
+      </body>
+    </akn>
+    """.encode("utf-8")
+    fake = _FakeCorpus({sid: oracle_path}, {oracle_path: oracle_xml})
+    operations = (
+        LegalOperation(
+            op_id="repeal_chapter_3",
+            sequence=0,
+            action=StructuralAction.REPEAL,
+            target=LegalAddress(path=(("chapter", "3"),)),
+            source=OperationSource(statute_id="2023/741", effective="2026-01-01"),
+        ),
+    )
+
+    got = corpus.get_consolidated_oracle_absent_repeal_target_versions(
+        sid,
+        operations,
+        cast(Any, fake),
+    )
+
+    assert got == {"2023/741"}
 
 
 def test_oracle_reflected_section_original_versions_excludes_shadow_when_current_section_exists() -> None:
