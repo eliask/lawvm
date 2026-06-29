@@ -738,23 +738,55 @@ def _compile_effect_to_ir_ops_impl(
     )
     if action == "insert" and definition_child_structural_insert is not None:
         if definition_child_structural_insert.get("blocking"):
-            _append_uk_effect_lowering_rejection(
-                lowering_rejections_out,
-                rule_id=str(definition_child_structural_insert["rule_id"]),
-                family=str(definition_child_structural_insert["family"]),
-                reason_code=str(definition_child_structural_insert["reason_code"]),
-                reason=str(definition_child_structural_insert["reason"]),
-                effect=effect,
-                extracted_el=extracted_el,
-                extracted_text=extracted_text,
-                detail={
-                    key: value
-                    for key, value in definition_child_structural_insert.items()
-                    if key not in {"rule_id", "family", "reason_code", "reason"}
-                },
-            )
-            _mark_lower_phase("compile_lower_special")
-            return []
+            _uk_sp = active_uk_strict_profile()
+            if (
+                _uk_sp is not None
+                and _uk_sp.allows_uk_definition_child_structural_insert
+            ):
+                _append_uk_effect_lowering_observation(
+                    lowering_rejections_out,
+                    rule_id="uk_strict_profile_lifted_definition_child_structural_insert",
+                    family="definition_entry_elaboration",
+                    reason_code="strict_profile_authorized_definition_child_structural_insert",
+                    reason=(
+                        "Strict profile loaded with "
+                        "allows_uk_definition_child_structural_insert=True; "
+                        "the blocking definition-child structural insert is "
+                        "explicitly authorized to proceed past the blocking "
+                        "flag — lowering will attempt the child insert."
+                    ),
+                    effect=effect,
+                    extracted_el=extracted_el,
+                    extracted_text=extracted_text,
+                    detail={
+                        "strict_profile_name": _uk_sp.core_profile.name,
+                        "lifted_blocking_rule_id": str(
+                            definition_child_structural_insert.get("rule_id", "")
+                        ),
+                        "strict_disposition": "proceed",
+                        "quirks_disposition": QuirksDisposition.APPLY,
+                    },
+                )
+                # Fall through to the lower_uk_definition_child_structural_
+                # sibling_insert call below — don't return [].
+            else:
+                _append_uk_effect_lowering_rejection(
+                    lowering_rejections_out,
+                    rule_id=str(definition_child_structural_insert["rule_id"]),
+                    family=str(definition_child_structural_insert["family"]),
+                    reason_code=str(definition_child_structural_insert["reason_code"]),
+                    reason=str(definition_child_structural_insert["reason"]),
+                    effect=effect,
+                    extracted_el=extracted_el,
+                    extracted_text=extracted_text,
+                    detail={
+                        key: value
+                        for key, value in definition_child_structural_insert.items()
+                        if key not in {"rule_id", "family", "reason_code", "reason"}
+                    },
+                )
+                _mark_lower_phase("compile_lower_special")
+                return []
         ops = lower_uk_definition_child_structural_sibling_insert(
             effect=effect,
             extracted_el=extracted_el,

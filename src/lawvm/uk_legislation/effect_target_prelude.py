@@ -532,6 +532,39 @@ def reject_structural_pseudo_definition_target(
         return False
     if not any(str(label).strip().lower() in {"defn", "defns"} for _kind, label in target.path):
         return False
+    _uk_sp = active_uk_strict_profile()
+    if (
+        _uk_sp is not None
+        and _uk_sp.allows_uk_definition_pseudo_target
+    ):
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id="uk_strict_profile_lifted_definition_pseudo_target",
+            family="definition_entry_elaboration",
+            reason_code="strict_profile_authorized_definition_pseudo_target",
+            reason=(
+                "Strict profile loaded with "
+                "allows_uk_definition_pseudo_target=True; the pseudo-"
+                "definition target is explicitly allowed to proceed — the "
+                "metadata-path definition entry will be replayed without "
+                "a definition-entry compiler."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "strict_profile_name": _uk_sp.core_profile.name,
+                "target_ref": t_str,
+                "target": str(target),
+                "action": action,
+                "lifted_rejection_rule_id": (
+                    "uk_effect_structural_pseudo_definition_target_rejected"
+                ),
+                "strict_disposition": "proceed",
+                "quirks_disposition": QuirksDisposition.APPLY,
+            },
+        )
+        return False
     _append_uk_effect_lowering_rejection(
         lowering_rejections_out,
         rule_id="uk_effect_structural_pseudo_definition_target_rejected",
