@@ -890,13 +890,13 @@ class TestRekeyNodeTreePathIndexRemovePathChain0:
         # executes ``_remove_node_tree_path_subtree`` + the
         # ``_rekey_node_tree_path_index_after_cow_chain`` chain rather than
         # returning early on the cold path (``_node_tree_path_index is None``).
-        executor._ensure_node_tree_path_index()
-        assert id(old_body) in executor._node_tree_path_index, (
+        path_index = executor._ensure_node_tree_path_index()
+        assert id(old_body) in path_index, (
             "Sanity check failed: pre-repeal body id must be in the warm path "
             "index — otherwise the regression is masked (cold path returns "
             "early in _rekey_node_tree_path_index_after_cow_chain)."
         )
-        pre_op_entry_count = len(executor._node_tree_path_index)
+        pre_op_entry_count = len(path_index)
 
         executor.apply_op(_repeal_op("5", op_id="uk-cow-remove-path-1"))
 
@@ -905,14 +905,25 @@ class TestRekeyNodeTreePathIndexRemovePathChain0:
             "Sanity check failed: REPEAL §5 did NOT CoW-rebuild the body root "
             "(bug is masked — chain[0] for the REMOVE path is the rebuilt body)."
         )
+        # Type-narrow: ``_node_tree_path_index`` stays Optional until narrowed;
+        # re-fetch via ``_ensure_node_tree_path_index`` which returns the
+        # (still-warm, post-CoW) non-Optional reference. This is load-bearing
+        # — if the warm index was NOT maintained (the bug's secondary failure
+        # mode), ``_ensure_node_tree_path_index`` would silently rebuild it and
+        # mask the regression. The non-None assertion below catches that.
+        path_index_after = executor._ensure_node_tree_path_index()
+        assert executor._node_tree_path_index is not None, (
+            "Warm path-index was cleared during the REMOVE-path CoW chain — "
+            "the bug's lazy-rebuild fallback would mask the regression."
+        )
         # Fix invariant #1: the rebuilt parent's id IS indexed (chain[0] re-keyed).
-        assert id(new_body) in executor._node_tree_path_index, (
+        assert id(new_body) in path_index_after, (
             "REMOVE-path CoW re-key did NOT insert id(new_body) — stale ghost "
             "entry leaves subsequent descendant ops unable to hit the warm "
             "path-index fast-path for the rebuilt body. Iter3 W1 Fix 1 regression."
         )
         # Fix invariant #2: the old body's id was popped (no ghost accumulation).
-        assert id(old_body) not in executor._node_tree_path_index, (
+        assert id(old_body) not in path_index_after, (
             "REMOVE-path CoW re-key left id(old_body) in the warm path index — "
             "stale ghost entry would accumulate (~1 per CoW-remove op, monotone "
             "across replays) and pin the old body in memory. "
@@ -936,7 +947,7 @@ class TestRekeyNodeTreePathIndexRemovePathChain0:
         # ``_remove_node_tree_path_subtree``; body's id re-keyed, not added —
         # zero net change for the body itself, only the repealed section
         # accounts for the count drop).
-        post_op_entry_count = len(executor._node_tree_path_index)
+        post_op_entry_count = len(path_index_after)
         assert post_op_entry_count == pre_op_entry_count - 1, (
             f"Entry count changed by {post_op_entry_count - pre_op_entry_count} "
             "— expected -1 (section-5 popped; body re-keyed, not added). A "
@@ -967,7 +978,11 @@ class TestRekeyNodeTreePathIndexRemovePathChain0:
         body_ids_seen.add(id(body_v1))
         # After REPEAL §5 the rebuilt body's id MUST be in the index now
         # (not left as a future ghost after the next op).
-        assert id(body_v1) in executor._node_tree_path_index, (
+        path_index_after_1 = executor._ensure_node_tree_path_index()
+        assert executor._node_tree_path_index is not None, (
+            "Warm path-index was cleared during the REMOVE-path CoW chain."
+        )
+        assert id(body_v1) in path_index_after_1, (
             "After REPEAL §5 the rebuilt body's id is NOT in the warm path "
             "index — the second op's chain re-key will be a no-op against "
             "the missing entry, accumulating the bug."
@@ -980,9 +995,13 @@ class TestRekeyNodeTreePathIndexRemovePathChain0:
 
         # Final invariant: exactly ONE body-id entry is in the index (the live
         # body_v2); every prior body-id has been popped, never stacked.
+        path_index_after_2 = executor._ensure_node_tree_path_index()
+        assert executor._node_tree_path_index is not None, (
+            "Warm path-index was cleared during the chained REPLACE-path CoW chain."
+        )
         live_body_ids_in_index = {
             node_id
-            for node_id, (node, _path) in (executor._node_tree_path_index or {}).items()
+            for node_id, (node, _path) in path_index_after_2.items()
             if node is body_v2
         }
         assert live_body_ids_in_index == {id(body_v2)}, (
@@ -993,7 +1012,7 @@ class TestRekeyNodeTreePathIndexRemovePathChain0:
         # Defence-in-depth: every prior body-id is gone (no ghost accumulation).
         prior_body_ids = body_ids_seen - {id(body_v2)}
         for prior_id in prior_body_ids:
-            assert prior_id not in executor._node_tree_path_index, (
+            assert prior_id not in path_index_after_2, (
                 f"Ghost entry survived: id of a prior body root ({prior_id}) is "
                 "still in the warm path index — monotone accumulation across "
                 "CoW-remove ops (Iter3 W1 Fix 1 regression)."
