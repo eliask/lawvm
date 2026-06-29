@@ -31,11 +31,37 @@ reject-list of common smuggle types (``str``/``None``/``int``/``tuple``/etc.);
 any other typed instance is presumed to conform structurally and is left
 for the downstream reader (which raises ``AttributeError`` on a genuinely
 missing field).
+
+Sanctioned ``Any`` exception: ``ExecutionAuthorizationResult.subject`` is
+annotated ``"ArtifactRef"`` (a typed-runtime-checked structural carrier
+forward-referenced under ``TYPE_CHECKING`` from ``core.provenance_graph``),
+NOT ``Any``.  It is the one site where the boundary waives the general
+no-``Any`` discipline in favour of carrying the proven-shared content
+address of the authorized artifact: ``ArtifactRef`` is a frozen ``slots``
+dataclass whose ``__post_init__`` validates non-empty ``artifact_type`` /
+``artifact_id`` / ``content_hash`` (the typed rebuttal to a smuggled bare
+string), and ``frontier_work_item._authorization_result_mapping`` reads
+``result.subject.artifact_id`` via attribute access that raises
+``AttributeError`` on a missing field rather than silently degrading.  It
+does NOT bypass the Protocol contract: ``Mapping[str, Any]`` adapters
+still flow through ``isinstance(.., Mapping)`` unchanged, and the
+``coerce_authorization_result`` reject-list fires on every common smuggle
+type exactly as it does for ``ClaimAssertion`` / ``CompileAdjudicationProtocol``.
 """
 
 from __future__ import annotations
 
-from typing import Any, Mapping, Protocol
+from typing import TYPE_CHECKING, Any, Mapping, Protocol
+
+if TYPE_CHECKING:
+    # ``ArtifactRef`` is imported only under ``TYPE_CHECKING`` because
+    # ``typed_carrier_protocols`` is a low-level boundary module consumed by
+    # ``frontier_work_item`` (and indirectly by modules that import
+    # ``provenance_graph``); an unconditional import would not create a cycle
+    # today, but the string-annotation form keeps the boundary module
+    # side-effect-free and forward-references the carrier the same way
+    # ``AuthorizationResult.subject`` is typed at its definition site.
+    from lawvm.core.provenance_graph import ArtifactRef
 
 
 # Common smuggle types rejected at the boundary. ``bool`` is intentionally
@@ -169,14 +195,16 @@ class ExecutionAuthorizationResult(Protocol):
     """Typed authorization-result carrier at the core boundary.
 
     Conforms: ``core.evidence_kernel.AuthorizationResult`` and any third-party
-    mapping adapter.  ``subject`` is required at the top level; nested
+    mapping adapter.  ``subject`` is the typed-runtime-checked structural
+    carrier ``ArtifactRef`` (the sanctioned exception to the module's general
+    no-``Any`` discipline — see the module docstring); nested
     ``subject.artifact_id`` access is validated by the downstream consumer
     (``_authorization_result_mapping`` raises ``AttributeError`` on a missing
     ``artifact_id`` rather than silently degrading).  Not marked
     ``@runtime_checkable`` (see module docstring).
     """
 
-    subject: Any  # consumer reads `.artifact_id`; nested attribute validated by AttributeError
+    subject: "ArtifactRef"  # consumer reads `.artifact_id`; nested attribute validated by AttributeError
     policy_id: str
     profile_name: str
     authorized: bool
