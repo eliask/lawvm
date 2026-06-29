@@ -2754,13 +2754,21 @@ def plan_se_older_base_rebuild(
             return
         try:
             fetch_se_official_artifacts(sfs_id, archive)
-        except Exception as exc:  # noqa: BLE001 — acquisition boundary; surfaced as a typed residual below
+        except Exception as exc:  # noqa: BLE001 — acquisition boundary; no source clause text available; treat as IO/utility boundary per named_swallow module docstring
             acquisition_failures.append(
                 {
                     "rule_id": "se_official_artifacts_fetch_failed",
                     "sfs_id": sfs_id,
                     "error_type": type(exc).__name__,
                     "error_message": str(exc),
+                    # §1.10 honesty: this is a fetch-time IO/utility boundary
+                    # (network acquisition of an archived SFS act), so there
+                    # is no source clause text in scope to embed. Mirrors the
+                    # ``named_swallow`` module docstring's IO/utility-boundary
+                    # exception: the residual is named/witnessed by
+                    # ``rule_id`` + ``sfs_id`` + ``error_type`` +
+                    # ``error_message`` rather than fabricated source text.
+                    "clause_text": "",
                 }
             )
 

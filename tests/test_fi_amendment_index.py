@@ -314,6 +314,119 @@ def test_build_amendment_index_records_skipped_source_artifacts() -> None:
     assert diagnostics[1]["quirks_disposition"] == "record"
 
 
+def test_extract_explicit_cross_statute_vts_parents_records_clause_text_on_vts_extraction_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AGENTS.md §1.10 / §2.9: a swallowed ``extract_voimaantulo_repeals``
+    exception MUST embed a truncated ``clause_text`` of the source xml_data so
+    triaging the residual does not require re-running extraction (the typed
+    rebuttal to silently-defensive defaults). Covers both
+    ``_append_amendment_index_diagnostic`` call sites at the
+    ``fi_amendment_index_source_vts_parent_extraction_failed`` rule_id.
+    """
+    source_xml = (
+        '<act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
+        "<body>"
+        '<hcontainer eId="entryIntoForce" name="entryIntoForce">'
+        "<content><p>Tämä laki kumotaan asetus (506/1986).</p></content>"
+        "</hcontainer>"
+        "</body></act>"
+    ).encode("utf-8")
+
+    class _ProbeVtsFailure(RuntimeError):
+        pass
+
+    def _raise_on_extract(*args: object, **kwargs: object) -> bool:
+        raise _ProbeVtsFailure("synthetic extract_voimaantulo_repeals failure")
+
+    monkeypatch.setattr(
+        amendment_index, "extract_voimaantulo_repeals", _raise_on_extract
+    )
+
+    diagnostics: list[dict[str, object]] = []
+    candidates = amendment_index._extract_explicit_cross_statute_vts_parents(
+        source_xml,
+        "2024/123",
+        diagnostics_out=diagnostics,
+    )
+
+    # Sanity: the extraction returned no parents (the exception was caught).
+    assert candidates == set()
+    # Both call sites fired: the first loop over ``cited_ids`` discovered
+    # ``(506/1986)`` and the second loop is untouched because no dated
+    # parent-title candidates are passed in. The single diagnostic emitted is
+    # the ``extract_voimaantulo_repeals`` failure.
+    assert [item["rule_id"] for item in diagnostics] == [
+        "fi_amendment_index_source_vts_parent_extraction_failed"
+    ]
+    diagnostic = diagnostics[0]
+    # §1.10: ``clause_text`` embeds the verbatim source xml_data ~400 chars.
+    assert diagnostic["clause_text"] == source_xml.decode("utf-8", errors="replace")
+    # The marker fires only when the source exceeds the ~400-char bound; the
+    # negative guard (no truncation marker on a short source) is asserted
+    # here too, mirroring ``test_truncate_repr_helper_short_value_is_unchanged``
+    # in ``tests/test_typed_carrier_protocols.py``.
+    assert "…[truncated]" not in str(diagnostic["clause_text"])
+    # Per-site fields stay inline (not absorbed into ``clause_text``): the
+    # parent_id (normalized to ``YEAR/NUMBER`` form by
+    # ``_normalize_source_citation_id``) and exception_type identify the root
+    # cause without re-running.
+    assert diagnostic["parent_id"] == "1986/506"
+    assert diagnostic["exception_type"] == "_ProbeVtsFailure"
+
+
+def test_extract_explicit_cross_statute_vts_parents_clause_text_truncates_long_source_xml(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AGENTS.md §1.10: ``clause_text`` MUST be bounded to ~400 chars with a
+    truncation marker when the source xml_data exceeds the bound — mirrors the
+    ``core.named_swallow._truncate_clause_text`` precedent; mirrors
+    ``test_unregistered_claim_assertion_truncates_large_value_repr`` in
+    ``tests/test_typed_carrier_protocols.py``.
+    """
+    # Build a >400-char source XML that retains a citation the VTS extractor
+    # recognises (so the exception path fires): the citation is what routes
+    # into ``extract_voimaantulo_repeals``; the long filler exercises the
+    # truncation ceiling.
+    long_filler = "etuä " * 200  # ~1000 chars
+    source_xml = (
+        '<act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">'
+        "<body>"
+        '<hcontainer eId="entryIntoForce" name="entryIntoForce">'
+        f"<content><p>Tämä laki kumotaan asetus (506/1986). {long_filler}</p></content>"
+        "</hcontainer>"
+        "</body></act>"
+    ).encode("utf-8")
+
+    class _ProbeVtsFailure(RuntimeError):
+        pass
+
+    def _raise_on_extract(*args: object, **kwargs: object) -> bool:
+        raise _ProbeVtsFailure("synthetic extract_voimaantulo_repeals failure")
+
+    monkeypatch.setattr(
+        amendment_index, "extract_voimaantulo_repeals", _raise_on_extract
+    )
+
+    diagnostics: list[dict[str, object]] = []
+    amendment_index._extract_explicit_cross_statute_vts_parents(
+        source_xml,
+        "2024/123",
+        diagnostics_out=diagnostics,
+    )
+
+    assert len(diagnostics) == 1
+    clause_text = str(diagnostics[0]["clause_text"])
+    # The truncation marker is present and the payload is bounded to the §1.10
+    # ceiling + the marker suffix (mirrors ``_truncate_xml_clause_text``).
+    assert "…[truncated]" in clause_text
+    assert len(clause_text) <= amendment_index._XML_CLAUSE_TEXT_MAX_CHARS + len(
+        "…[truncated]"
+    )
+    # The full unbounded source MUST NOT fit in the clause_text slot.
+    assert source_xml.decode("utf-8", errors="replace") not in clause_text
+
+
 def test_ensure_amendment_index_rebuilds_old_two_column_schema(tmp_path: Path) -> None:
     csv_path = tmp_path / "amendment_parents.csv"
     csv_path.write_text("amendment_id,parent_id\n1991/806,1986/506\n", encoding="utf-8")

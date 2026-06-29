@@ -113,6 +113,34 @@ def _append_amendment_index_diagnostic(
     )
 
 
+# §1.10: ``clause_text`` slot truncates the offending source xml_data to
+# ~400 chars (mirrors ``core.named_swallow._truncate_clause_text``) so triaging
+# a residual does not require re-running extraction against a stale
+# amendment-id. UTF-8 decoded with ``errors="replace"`` because the diagnostic
+# is for an ``extract_voimaantulo_repeals`` failure: the source data may
+# already be malformed at byte boundaries, and we prefer to surface a
+# printable (if lossy) witness over an opaque ``bytes`` repr that itself
+# obscures the offending fragment.
+_XML_CLAUSE_TEXT_MAX_CHARS = 400
+
+
+def _truncate_xml_clause_text(xml_data: bytes) -> str:
+    """Truncate ``xml_data`` to a printable ~400-char ``clause_text`` witness.
+
+    Mirrors ``core.named_swallow._truncate_clause_text`` for the two
+    ``_append_amendment_index_diagnostic`` sites that emit on
+    ``extract_voimaantulo_repeals`` failure: the verbatim source bytes are the
+    evidence footing the diagnostic must carry so triage does not re-run
+    extraction (AGENTS.md §1.10). UTF-8 ``errors="replace"`` because the
+    diagnostic path is precisely the branch where the source may be
+    byte-malformed; the truncation marker is the §1.10 ceiling.
+    """
+    text = xml_data.decode("utf-8", errors="replace")
+    if len(text) <= _XML_CLAUSE_TEXT_MAX_CHARS:
+        return text
+    return text[:_XML_CLAUSE_TEXT_MAX_CHARS] + "…[truncated]"
+
+
 def _make_statute_id(year: str, num_raw: str) -> str:
     """Normalize statute ID to YYYY/NUMBER format."""
     if '-' in num_raw:
@@ -221,6 +249,12 @@ def _extract_explicit_cross_statute_vts_parents(
             if extract_voimaantulo_repeals(xml_data, parent_id):
                 candidates.add(parent_id)
         except Exception as exc:
+            # §1.10: ``clause_text`` is the truncated UTF-8-decoded (errors=
+            # "replace") source xml_data so triaging the residual does not
+            # require re-running extraction against a stale amendment-id. The
+            # parent_id / amendment_id / exception fields above are the
+            # weakly-typed reduction; ``clause_text`` is the verbatim source
+            # witness (mirrors ``core.named_swallow._truncate_clause_text``).
             _append_amendment_index_diagnostic(
                 diagnostics_out,
                 rule_id="fi_amendment_index_source_vts_parent_extraction_failed",
@@ -233,6 +267,7 @@ def _extract_explicit_cross_statute_vts_parents(
                     "edge_kind": "source_vts_explicit",
                     "exception_type": type(exc).__name__,
                     "error": str(exc),
+                    "clause_text": _truncate_xml_clause_text(xml_data),
                 },
             )
             continue
@@ -246,6 +281,10 @@ def _extract_explicit_cross_statute_vts_parents(
                 ):
                     candidates.add(parent_id)
             except Exception as exc:
+                # §1.10 ``clause_text`` witness — see the matching
+                # ``except`` above; kept duplicated rather than threaded
+                # through a helper because the truncation is the only
+                # shared text (the per-site distinct fields stay inline).
                 _append_amendment_index_diagnostic(
                     diagnostics_out,
                     rule_id="fi_amendment_index_source_vts_parent_extraction_failed",
@@ -258,6 +297,7 @@ def _extract_explicit_cross_statute_vts_parents(
                         "edge_kind": "source_vts_explicit",
                         "exception_type": type(exc).__name__,
                         "error": str(exc),
+                        "clause_text": _truncate_xml_clause_text(xml_data),
                     },
                 )
                 continue

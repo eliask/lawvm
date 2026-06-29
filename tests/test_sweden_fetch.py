@@ -6624,8 +6624,17 @@ def test_plan_se_older_base_rebuild_surfaces_fetch_missing_failure_as_typed_diag
         and failure.get("sfs_id") == "2015:284"
         and failure.get("error_type") == "ConnectionError"
         and "simulated cloudflare block" in failure.get("error_message", "")
+        # §1.10 honesty: this is a fetch-time IO/utility boundary (network
+        # acquisition of an archived SFS act), so there is no source clause
+        # text in scope to embed — ``clause_text`` is the empty string rather
+        # than a fabricated source-text witness. The residual is named/
+        # witnessed by ``rule_id`` + ``sfs_id`` + ``error_type`` +
+        # ``error_message``; the explicit empty ``clause_text`` documents the
+        # §1.10 fact rather than faking content (mirrors ``named_swallow``
+        # module docstring's IO/utility-boundary exception).
+        and failure.get("clause_text", "MISSING") == ""
         for failure in failures
-    ), f"acquisition failure diagnostic missing required fields: {failures}"
+    ), f"acquisition failure diagnostic missing required fields (incl. clause_text): {failures}"
     # And the surface lane still records the unavailability honestly.
     assert result["base_seed"]["official_act_available"] is False
 
