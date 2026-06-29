@@ -181,6 +181,9 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     ),
     "finland_parse_payload": (
         "test_fi_attachment_ir.py",
+        # SDOC-13 unified tree merge helper — attachments as APPENDIX
+        # siblings of BODY under one HCONTAINER root.
+        "test_fi_attachment_merge.py",
         # SDOC invariants — pinned against the D0 attachment-IR fixture.
         "test_fi_sdoc_invariants.py",
         "test_fi_body_*.py",

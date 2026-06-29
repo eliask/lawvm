@@ -30,7 +30,7 @@ from lawvm.core import tree_ops as _tops
 from lawvm.core.regex_safety import compile_classifier_regex
 from lawvm.finland.ir_tree_dump import (
     format_ir_pretty,
-    format_statute_with_attachments,
+    format_unified_statute,
 )
 from lawvm.finland.replay_entrypoint import replay_xml
 from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
@@ -73,7 +73,9 @@ def _hyperlink_statute_tokens(text: str, *, enabled: bool) -> str:
 
 def _render_text(body_ir, att_supps, *, max_text: int, include_attachments: bool) -> str:
     if include_attachments:
-        return format_statute_with_attachments(
+        # SDOC-13 unified projection — attachments render as APPENDIX
+        # siblings of BODY under one HCONTAINER root (one walk).
+        return format_unified_statute(
             body_ir, att_supps, max_text=max_text, max_table_rows=5
         )
     return format_ir_pretty(body_ir, max_text=max_text, max_table_rows=5)

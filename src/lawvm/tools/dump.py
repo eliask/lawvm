@@ -349,7 +349,6 @@ def _dump_apply(
         print()
         from lawvm.finland.ir_tree_dump import (
             format_ir_tree,
-            format_statute_with_attachments,
         )
         replay_ir = _comparison_ir(master) if as_of else master.ir
         att_supps = getattr(getattr(master, "ctx", None), "attachment_supplements", ())
@@ -359,7 +358,14 @@ def _dump_apply(
                 print(f"\n[Attachment: {supp.pdf_name}]")
                 print(format_ir_tree(supp.ir, max_text=120))
         else:
-            print(format_statute_with_attachments(replay_ir, att_supps, max_text=200, max_table_rows=5))
+            # SDOC-13 unified projection: attachments render as APPENDIX
+            # siblings of BODY under one HCONTAINER root. The supplements
+            # tuple remains the internal source-of-truth sidecar; the
+            # projection walks a single merged tree (per §2.10 a
+            # projection is never the source of truth, but must be
+            # derivable from the committed dossier).
+            from lawvm.finland.ir_tree_dump import format_unified_statute
+            print(format_unified_statute(replay_ir, att_supps, max_text=200, max_table_rows=5))
         return
 
     # Filter to address

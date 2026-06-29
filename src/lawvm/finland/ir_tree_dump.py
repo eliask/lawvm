@@ -36,6 +36,7 @@ from __future__ import annotations
 from typing import Sequence
 
 from lawvm.core.ir import IRNode
+from lawvm.core.semantic_types import IRNodeKind
 
 
 # Human-readable labels for each IRNodeKind (Finnish legal convention).
@@ -325,3 +326,75 @@ def format_statute_with_attachments(
             parts.append(f"\n[{supp.pdf_name} ({supp.pdf_text_length} chars)]")
             parts.append(format_ir_pretty(supp.ir, max_text=max_text, max_table_rows=max_table_rows))
     return "\n".join(parts)
+
+
+def merge_attachments_into_root(
+    body_ir: IRNode,
+    attachment_supplements: Sequence,
+) -> IRNode:
+    """Merge body + attachment IRs under a single HCONTAINER root (SDOC-13).
+
+    Per SDOC-13 (``a projection must include attachments/schedules unless
+    explicitly scoped out``) and the architectural target in
+    ``notes_internal/REMAINING_WORK.md``: today attachment_supplements is
+    a separate tuple on StatuteContext. Target: attachments are siblings
+    of BODY under one HCONTAINER root — one tree, one walk, one dump
+    output.
+
+    This helper is the **projection-plane** merge: it builds a unified
+    IRNode tree (BODY + APPENDIX siblings under HCONTAINER) from the
+    existing master body + supplements tuple. The internal supplements
+    sidecar remains the source of truth for the producer/writer; this
+    helper is what walkers/projections consume when they want a single
+    tree (per §2.10 — ``a projection is never the source of truth; it
+    must be re-derivable from a committed dossier``).
+
+    Each ``AttachmentIRSupplement.ir`` is wrapped as an APPENDIX node so
+    its children render transparently through the pretty-printer's
+    HCONTAINER-walks-children handler (e.g. ``format_ir_pretty`` already
+    treats HCONTAINER as a transparent scope).
+
+    Backwards-compatible: callers without supplements (empty sequence)
+    receive the body IR unchanged (no extra wrapping layer).
+    """
+    if not attachment_supplements:
+        return body_ir
+
+    appendix_children: list[IRNode] = []
+    for idx, supp in enumerate(attachment_supplements):
+        supp_ir = supp.ir
+        # Use the supplement's pdf_name (without .pdf suffix) as the
+        # APPENDIX label; fall back to a positional label when missing.
+        supp_label = getattr(supp, "pdf_name", "") or f"attachment_{idx + 1}"
+        supp_label = supp_label.removesuffix(".pdf")
+        appendix_children.append(
+            IRNode(
+                kind=IRNodeKind.APPENDIX,
+                label=supp_label,
+                children=supp_ir.children,
+            )
+        )
+
+    return IRNode(
+        kind=IRNodeKind.HCONTAINER,
+        children=(body_ir, *appendix_children),
+    )
+
+
+def format_unified_statute(
+    body_ir: IRNode,
+    attachment_supplements: Sequence,
+    *,
+    max_text: int = 200,
+    max_table_rows: int = 5,
+) -> str:
+    """Pretty-print the merged body + attachment tree in one walk.
+
+    SDOC-13-ready counterpart to :func:`format_statute_with_attachments`:
+    rather than body separately + attachments separately-with-headers,
+    walks the merged HCONTAINER → [BODY, APPENDIX_1, ...] tree as one
+    continuous document. Functions as a behavioural mirror of how
+    :func:`format_ir_pretty` would render the same tree.
+    """
+    merged = merge_attachments_into_root(body_ir, attachment_supplements)
+    return format_ir_pretty(merged, max_text=max_text, max_table_rows=max_table_rows)
