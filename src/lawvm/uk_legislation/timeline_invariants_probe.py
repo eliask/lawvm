@@ -124,6 +124,14 @@ def probe_uk_timeline_invariants(
     ``adjudications_out`` when non-empty). Emits nothing when the audit
     yields zero violations (the v0 default — empty Timelines yields zero
     violations per the audit's iter-empty-dict-no-op shape).
+
+    When the caller cannot supply a pit_date AND the base_ir.metadata does
+    not carry effective_date/enacted_date, the probe emits a
+    ``uk_replay_timeline_invariants_probe_skipped`` diagnostic naming the
+    ``pit_date_unavailable`` reason — never raises, never silently omits.
+    Mirrors the §2.9 worst-class discipline: a check that exists but is
+    unreachable from production is forbidden; here the probe runs and IS
+    audible about why it could not finish.
     """
     if not _probe_enabled():
         return []
@@ -131,7 +139,11 @@ def probe_uk_timeline_invariants(
         return []
     statute_id = str(source_statute or base_ir.statute_id or "")
     # Per FI's pattern at replay_products.py — read base_date from
-    # base_ir.metadata if pit_date wasn't supplied explicitly.
+    # base_ir.metadata if pit_date wasn't supplied explicitly. The CLI's
+    # ``--pit-date YYYY-MM-DD`` may NOT propagate to base_ir.metadata today
+    # (verified on ukpga/1990/8 2026-06-29: base_ir.metadata carries neither
+    # effective_date nor enacted_date when invoked via lawvm uk-replay);
+    # surface that via the probe-skipped diagnostic.
     if not pit_date:
         metadata = base_ir.metadata or {}
         pit_date = str(
@@ -139,6 +151,22 @@ def probe_uk_timeline_invariants(
             or metadata.get("enacted_date")
             or ""
         )
+    if not pit_date:
+        if adjudications_out is not None:
+            adjudications_out.append(
+                _build_probe_skip_adjudication(
+                    statute_id=statute_id,
+                    reason=(
+                        "pit_date_unavailable: base_ir.metadata carries no "
+                        "effective_date or enacted_date AND the caller did not "
+                        "supply an explicit pit_date argument; check_all_"
+                        "timeline_invariants_typed requires a non-empty "
+                        "as_of to select versions. Fix: thread --pit-date "
+                        "from the lawvm uk-replay CLI into base_ir.metadata."
+                    ),
+                )
+            )
+        return []
     try:
         temporal_events = _uk_temporal_events_from_ops(
             ops,

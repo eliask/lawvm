@@ -34,6 +34,7 @@ import pytest
 
 from lawvm.core.ir import IRNode, IRStatute, LegalAddress, LegalOperation
 from lawvm.core.provenance import OperationSource
+from lawvm.core.quirks_disposition import QuirksDisposition
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.timeline_invariants_probe import (
@@ -152,6 +153,50 @@ def test_probe_skips_when_ops_empty() -> None:
     assert probe_uk_timeline_invariants(base, (), adjudications_out=out) == []
     # compile_timelines may or may not find base-date warnings; the probe
     # surfaces any found violations but never raises.
+
+
+def test_probe_skips_cleanly_with_diagnostic_when_pit_date_unavailable() -> None:
+    """§2.9 regression: a base_ir whose metadata carries no `effective_date`
+    AND whose caller passes no explicit `pit_date` MUST trigger a clean
+    probe-skipped diagnostic — NOT propagate the audit's
+    `ValueError('as_of must be non-empty')` exception. This was verified
+    on ukpga/1990/8 via lawvm uk-replay CLI 2026-06-29 (the CLI does not
+    currently thread `--pit-date YYYY-MM-DD` into base_ir.metadata)."""
+    base_no_dates = IRStatute(
+        statute_id="timeline/skip/1",
+        title="",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(kind=IRNodeKind.SECTION, label="1", children=()),
+            ),
+        ),
+        supplements=(),
+        metadata={},  # No effective_date AND no enacted_date.
+    )
+    op = _op(op_id="op-test", group_id="g-test")
+    adjudications: list[CompileAdjudication] = []
+    violations = probe_uk_timeline_invariants(
+        base_no_dates,
+        (op,),
+        adjudications_out=adjudications,
+        source_statute="timeline/skip/1",
+        pit_date="",  # Caller did NOT supply a pit_date either.
+    )
+    assert violations == []
+    skips = [
+        a for a in adjudications
+        if a.kind == "uk_replay_timeline_invariants_probe_skipped"
+    ]
+    assert len(skips) == 1, (
+        "expected exactly one probe-skipped diagnostic naming the "
+        "pit_date_unavailable reason. Got: {}".format(skips)
+    )
+    detail = skips[0].detail
+    assert detail["reason_code"] == "probe_skipped"
+    assert "pit_date_unavailable" in detail["shortfall_probe_skip_reason"]
+    assert detail["quirks_disposition"] == QuirksDisposition.RECORD
+    assert skips[0].blocking is False
 
 
 def test_probe_reachable_through_pipeline_apply_ops_no_ops(monkeypatch) -> None:
