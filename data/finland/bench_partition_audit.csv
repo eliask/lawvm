@@ -2866,7 +2866,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 10,1979/319,suspect,oracle_suspect,1995/1210 eff 1995-11-01 > cutoff 1995-10-27,
 10,1986/64,suspect,oracle_suspect,2025/801 eff 2026-01-01 > cutoff 2025-06-27,
 10,1986/914,suspect,oracle_suspect,2002/403 eff 2002-09-01 > cutoff 2002-05-24,
-10,1987/320,core,,,OK
+10,1987/320,suspect,source_pathology,oracle-check classifies current residuals as SOURCE_PATHOLOGY/EDITORIAL_CONVENTION with one REPLAY_EXTRA/UNKNOWN tail row,OK
 10,1987/627,suspect,oracle_suspect,2002/975 eff 2003-01-01 > cutoff 2002-11-25,
 10,1988/460,core,,,OK
 10,1991/1083,suspect,oracle_suspect,2026/117 eff 2026-09-01 > cutoff 2026-02-05,
@@ -3127,9 +3127,9 @@ amendments,statute_id,bucket,reason,detail,last_status
 15,2006/671,suspect,oracle_suspect,2024/4 eff 2025-12-08 > cutoff 2023-12-21,
 15,2007/1277,notruth,no_truth_from_run,,NO_TRUTH
 15,2008/373,suspect,oracle_suspect,2025/744 eff 2026-01-01 > cutoff 2025-06-27,
-15,2010/290,core,,,OK
+15,2010/290,suspect,oracle_suspect,2026/44 eff 2026-06-19 > cutoff 2026-01-16; oracle-check classifies residuals as ORACLE_STALE/EDITORIAL_CONVENTION,OK
 15,2011/1563,suspect,oracle_suspect,2025/650 eff 2026-01-01 > cutoff 2025-06-27,
-15,2012/980,core,,,OK
+15,2012/980,suspect,oracle_suspect,2024/742 eff 2025-01-01 > cutoff 2024-12-05; oracle-check classifies residuals as ORACLE_STALE/SOURCE_PATHOLOGY/EDITORIAL_CONVENTION,OK
 15,2013/1015,suspect,oracle_suspect,2025/1217 eff 2025-12-31 > cutoff 2025-12-12,
 15,2013/1078,suspect,oracle_suspect,2026/1 eff 2026-01-07 > cutoff 2026-01-05,
 15,2013/870,core,,,OK
@@ -3528,7 +3528,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 73,1963/473,suspect,oracle_suspect,2004/47 eff 2004-02-01 > cutoff 2004-01-22,
 74,2002/672,suspect,oracle_suspect,2025/1149 eff 2026-01-01 > cutoff 2025-12-22,
 81,1956/72,suspect,oracle_suspect,2006/1118 eff 2007-01-01 > cutoff 2006-12-08,
-81,1998/555,core,,,OK
+81,1998/555,suspect,oracle_suspect,2026/51 eff 2026-05-01 > cutoff 2026-01-16; oracle-check classifies residuals as ORACLE_STALE/EDITORIAL_CONVENTION,OK
 86,1994/65,core,,,OK
 91,1966/280,suspect,oracle_suspect,2005/194 eff 2005-04-15 > cutoff 2005-04-01,
 92,2008/878,core,,,OK
@@ -3540,7 +3540,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 147,2004/1224,core,,,OK
 149,1993/1501,core,,,OK
 163,1961/395,suspect,oracle_suspect,2005/1119 eff 2006-01-01 > cutoff 2005-12-22,
-166,2002/1290,core,,,OK
+166,2002/1290,suspect,oracle_suspect,2026/327 eff 2026-05-01 > cutoff 2026-04-24; oracle-check classifies residuals as ORACLE_STALE/EDITORIAL_CONVENTION/SOURCE_PATHOLOGY,OK
 169,1963/364,suspect,oracle_suspect,2004/639 eff 2005-01-01 > cutoff 2004-07-09,
 198,1734/4-000,suspect,oracle_suspect,2025/560 eff 2026-01-01 > cutoff 2025-06-27,
 238,1992/1535,suspect,oracle_suspect,large tax-law comparison/adjudication surface journaled; current oracle-check mostly editorial/oracle-stale,OK
