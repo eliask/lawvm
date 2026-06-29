@@ -660,6 +660,19 @@ class EUReplayResult:
     # production — the §2.9 worst-class silent failure (a guard that exists
     # but is unreachable from the production lane).
     apply_filter_result: Optional[FilterResult[LegalOperation]] = None
+    # Apply-fold raise signal (silent-failure review HIGH #2). Mirrors the
+    # EE/NO production-caller contract: when ``apply_eu_ops_conserved`` raises
+    # mid-fold, the partial witnesses emitted BEFORE the raise (pipeline
+    # diagnostics + parser diagnostics + bare-apply's per-op skips) ARE
+    # preserved on ``adjudications`` (the conserved wrapper routes
+    # ``adjudications_out`` directly through bare apply), and a typed
+    # ``eu_replay_apply_raise`` orchestration adjudication is appended per
+    # §1.10 with the exception embedded as a ~400 char ``clause_text`` snippet
+    # so a downstream consumer can diagnose the raise without re-running
+    # extraction. ``error`` carries the same exception summary as a string for
+    # parity with the EE/NO ``result.error = f"Failed to apply ops: {e}"``
+    # pattern (mirrors ``EEPitResult.error`` / ``NOReplayResult.error``).
+    error: Optional[str] = None
 
 
 def _eu_pipeline_diagnostic_from_cellar_row(celex: str, row: dict[str, Any]) -> EUPipelineDiagnostic:
@@ -926,13 +939,73 @@ class EUReplayPipeline:
         # contract). Without routing production here, the conserved wrapper
         # would be exercised only by tests — a §2.9 worst-class silent
         # failure (a guard that exists but is unreachable from production).
-        apply_result = apply_eu_ops_conserved(
-            baseline,
-            ops,
-            adjudications_out=adjudications,
-        )
-        replayed = apply_result.statute
-        apply_filter_result = apply_result.filter_result
+        # ``adjudications`` (the local list pre-populated with pipeline +
+        # parser diagnostics above) IS routed directly through bare apply by
+        # the conserved wrapper; on a mid-apply raise, bare-apply's partial
+        # witnesses emitted BEFORE the raise persist on this accumulator —
+        # the §1.0 evidence-not-silently-destroyed contract. Mirrors the
+        # NO/EE production caller pattern (silent-failure review HIGH #2 —
+        # iter2 W2 closed the conserved-wrapper propagate-on-raise; this wrap
+        # surfaces the partial list on the production result instead of
+        # letting the raw exception discard it).
+        try:
+            apply_result = apply_eu_ops_conserved(
+                baseline,
+                ops,
+                adjudications_out=adjudications,
+            )
+            replayed = apply_result.statute
+            apply_filter_result = apply_result.filter_result
+        except Exception as e:
+            # ``adjudications`` already carries pipeline + parser diagnostics
+            # AND bare-apply's partial witnesses (appended in place before
+            # the raise; the conserved wrapper routes ``adjudications_out``
+            # directly through bare apply so partials persist — iter2 W2).
+            # Emit a typed ``eu_replay_apply_raise`` orchestration adjudication
+            # per §1.10 (embedding the exception truncated to a ~400 char
+            # ``clause_text`` snippet via ``diagnostic_detail``) so a
+            # downstream consumer can diagnose the apply raise without
+            # re-running extraction. Return a typed ``EUReplayResult``
+            # mirroring the EE/NO on-raise shape: ``replayed``/``timelines``
+            # stay ``None`` (apply did not produce a tree), ``error`` carries
+            # the exception summary (the blocking gate — the EE/NO convention
+            # for apply-fold failure), and ``adjudications`` carries the
+            # preserved partial ledger. The adjudication is non-blocking — it
+            # is a WITNESS, not the gate; ``error`` IS the gate.
+            adjudications.append(
+                CompileAdjudication(
+                    kind="eu_replay_apply_raise",
+                    message=f"EU replay apply raised {type(e).__name__}: {e}",
+                    source_statute=celex,
+                    blocking=False,
+                    phase="replay",
+                    detail=diagnostic_detail(
+                        rule_id="eu_replay_apply_raise",
+                        phase="replay",
+                        blocking=False,
+                        family="orchestration_failure",
+                        reason=(
+                            "apply_eu_ops_conserved raised mid-fold; partial "
+                            "witnesses preserved on adjudications"
+                        ),
+                        exception_type=type(e).__name__,
+                        exception=str(e),
+                        clause_text=str(e)[:400],
+                    ),
+                )
+            )
+            return EUReplayResult(
+                celex=celex,
+                baseline=baseline,
+                replayed=None,
+                ops=ops,
+                timelines=None,
+                adjudications=adjudications,
+                cutoff_date=cutoff_date,
+                temporal_events=temporal_events,
+                apply_filter_result=None,
+                error=f"Failed to apply ops: {e}",
+            )
         replay_text_duplication_findings = build_text_duplication_findings(
             replayed.body,
             phase="replay_fold",

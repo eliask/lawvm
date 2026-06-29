@@ -1846,7 +1846,29 @@ def replay_ee_to_pit(
 
     # ── Step 5: Apply ops ─────────────────────────────────────────────────────
     lo_ops_out: list[LegalOperation] = []
-    adjudications: list[CompileAdjudication] = []
+    # Pre-populate the production result's adjudication ledger with the
+    # upstream-phase adjudications (oracle parse / cancellation filter /
+    # commencement precomposition / slice filter / source-lane failure /
+    # precomposition) BEFORE routing it through ``apply_ee_ops_conserved``.
+    # Bare apply appends per-op skip + cross-act evidence in place via
+    # ``_append_ee_replay_adjudication`` (``.append`` on the passed list —
+    # never a re-bind); routing ``result.adjudications`` directly means a
+    # mid-apply raise preserves BOTH the upstream-phase adjudications AND
+    # bare-apply's partial witnesses on the caller's accumulator — the
+    # §1.0 "evidence is not silently destroyed" contract. Mirrors the NO
+    # production caller at ``norway/replay.py:487``
+    # (``adjudications_out=result.adjudications``); closes the silent-failure
+    # review HIGH #1 partial-loss hole (iter2 W2 closed the conserved-WRAPPER
+    # propagate-on-raise; this threads the production caller's accumulator
+    # through that wrapper so the wrapper's propagation contract is reached).
+    result.adjudications = [
+        *oracle_parse_adjudications,
+        *cancellation_filter_adjudications,
+        *commencement_precomposition_adjudications,
+        *slice_filter_adjudications,
+        *source_lane_failure_adjudications,
+        *precomposition_adjudications,
+    ]
     try:
         # Route production through the conserved wrapper (AGENTS.md §1.8 +
         # §2.9 guard-liveness). The bare ``apply_ee_ops`` returned only the
@@ -1861,7 +1883,7 @@ def replay_ee_to_pit(
             base,
             all_ops,
             lo_ops_out=lo_ops_out,
-            adjudications_out=adjudications,
+            adjudications_out=result.adjudications,
         )
         result.replayed = apply_result.statute
         result.apply_filter_result = apply_result.filter_result
@@ -1870,19 +1892,42 @@ def replay_ee_to_pit(
     # {e}" banner (exception embedded) that classify_ee_replayability maps to
     # REPLAY_ERROR_OTHER; the broad catch is intentional because the failure is
     # surfaced and classified, never absorbed into a partial/guessed tree.
+    # ``result.adjudications`` already carries the upstream-phase adjudications
+    # AND bare-apply's partial witnesses (appended in place before the raise);
+    # the conserved wrapper routes ``adjudications_out`` directly through bare
+    # apply so partials persist (iter2 W2 propagation-on-raise fix). The typed
+    # ``ee_replay_apply_raise`` orchestration adjudication appended below
+    # embeds the exception truncated to a ~400 char ``clause_text`` snippet per
+    # §1.10 so a downstream consumer can diagnose the apply raise without
+    # re-running extraction (silent-failure review HIGH #1). The adjudication
+    # is non-blocking — it is a WITNESS, not the gate. The blocking gate lives
+    # on ``result.error`` (the EE/NO convention for apply-fold failure: it
+    # short-circuits ``replay_ee_to_pit`` and ``classify_ee_replayability``
+    # maps it to ``REPLAY_ERROR_OTHER``). Mirrors the EE conserved-wrapper's
+    # ``RejectedItem.blocking=False`` witness pattern.
     except Exception as e:
+        result.adjudications.append(
+            _ee_orchestration_adjudication(
+                kind="ee_replay_apply_raise",
+                message=f"Estonia replay apply raised {type(e).__name__}: {e}",
+                source_statute=base.statute_id,
+                detail={
+                    "reason": (
+                        "apply_ee_ops_conserved raised mid-fold; partial "
+                        "witnesses preserved on result.adjudications"
+                    ),
+                    "exception_type": type(e).__name__,
+                    "exception": str(e),
+                    "clause_text": str(e)[:400],
+                },
+                phase="replay",
+                family="orchestration_failure",
+                blocking=False,
+            )
+        )
         result.error = f"Failed to apply ops: {e}"
         return result
 
-    result.adjudications = [
-        *oracle_parse_adjudications,
-        *cancellation_filter_adjudications,
-        *commencement_precomposition_adjudications,
-        *slice_filter_adjudications,
-        *source_lane_failure_adjudications,
-        *precomposition_adjudications,
-        *adjudications,
-    ]
     result.applied_snapshot_ops = tuple(lo_ops_out)
     _log(f"Timeline snapshots emitted: {len(lo_ops_out)}")
 

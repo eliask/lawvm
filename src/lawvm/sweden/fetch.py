@@ -229,6 +229,16 @@ def _se_archive_fetch(
             # previously ``return None`` silently swallowed; now route through
             # ``named_swallow`` so a typed Finding is logged at WARNING with the
             # fetched URL as ``clause_text`` (AGENTS.md §1.10 — never silent).
+            #
+            # log_emitter sanctioned (iter3 W2 §3.2 evidence-path audit):
+            # this swallow lives inside the ``_attempt`` nested closure of
+            # ``_se_archive_fetch`` (acquisition I/O boundary). No findings_out
+            # accumulator is in scope at closure level; threading one up through
+            # ``_se_archive_fetch``'s signature would ripple to its callers
+            # across the sweden acquisition pipeline (5+ call sites). Per
+            # ``core/named_swallow.py`` docstring's IO/utility-boundary sanctioned
+            # use, the swallow stays on log_emitter (stderr WARNING) —
+            # acquisition-path evidence-ledger reach is Wave-N+1 work.
             from lawvm.core.named_swallow import build_named_swallow_finding, log_emitter
 
             log_emitter()(
@@ -3509,14 +3519,86 @@ def check_se_official_replay(
     # notes/APPLY_RESOLUTION_AND_RECEIPT_CONTRACT.md §4) through the production
     # lane — these were previously reachable only from tests via
     # ``se_replay_write_receipts``, a §2.9 worst-class silent failure: a guard
-    # that exists but is unreachable from production.
-    apply_result = apply_se_ops_conserved(
-        replay_base_statute,
-        ops,
-        adjudications_out=replay_adjudications,
-        emit_receipts=True,
-    )
-    replayed = apply_result.statute
+    # that exists but is unreachable from production. ``replay_adjudications``
+    # is the local-list accumulator routed directly through bare apply by the
+    # conserved wrapper; on a mid-apply raise, bare-apply's partial witnesses
+    # emitted BEFORE the raise persist on this accumulator — the §1.0
+    # evidence-not-silently-destroyed contract. Mirrors the NO/EE/EU
+    # production-caller pattern (silent-failure review HIGH #3 — iter2 W2
+    # closed the conserved-wrapper propagate-on-raise; this wrap surfaces the
+    # partial list on the production return dict instead of letting the raw
+    # exception discard it).
+    try:
+        apply_result = apply_se_ops_conserved(
+            replay_base_statute,
+            ops,
+            adjudications_out=replay_adjudications,
+            emit_receipts=True,
+        )
+        replayed = apply_result.statute
+    except Exception as e:
+        # ``replay_adjudications`` already carries bare-apply's partial
+        # witnesses (appended in place before the raise; the conserved wrapper
+        # routes ``adjudications_out`` directly through bare apply so partials
+        # persist — iter2 W2). Emit a typed ``se_replay_apply_raise``
+        # orchestration adjudication per §1.10 (embedding the exception
+        # truncated to a ~400 char ``clause_text`` snippet via
+        # ``diagnostic_detail``) so a downstream consumer can diagnose the
+        # apply raise without re-running extraction. Return a structured
+        # ``outcome``-bearing dict mirroring the existing
+        # ``_se_replay_unresolved_outcome`` shape so the scan lane's
+        # typed-outcome dispatcher (line ~3880: ``typed_outcome !=
+        # SE_REPLAY_OUTCOME_REPLAY_FEASIBLE``) buckets it correctly; the
+        # preserved partial witnesses are projected onto the dict's
+        # ``adjudications`` key, overriding the empty-list default at
+        # ``_se_replay_unresolved_outcome`` line 3243. The adjudication is
+        # non-blocking — it is a WITNESS, not the gate. The blocking gate lives
+        # on the structured ``outcome='apply_raise'`` signal (the SE convention
+        # for apply-fold failure that the scan-lane dispatcher keys on).
+        replay_adjudications.append(
+            CompileAdjudication(
+                kind="se_replay_apply_raise",
+                message=f"Sweden replay apply raised {type(e).__name__}: {e}",
+                source_statute=resolved_base_sfs_id,
+                blocking=False,
+                phase="replay",
+                detail=diagnostic_detail(
+                    rule_id="se_replay_apply_raise",
+                    phase="replay",
+                    blocking=False,
+                    family="orchestration_failure",
+                    reason=(
+                        "apply_se_ops_conserved raised mid-fold; partial "
+                        "witnesses preserved on replay_adjudications"
+                    ),
+                    exception_type=type(e).__name__,
+                    exception=str(e),
+                    clause_text=str(e)[:400],
+                ),
+            )
+        )
+        raise_return = _se_replay_unresolved_outcome(
+            amending_sfs_id=amending_sfs_id,
+            base_sfs_id=resolved_base_sfs_id,
+            effective_date=effective_date,
+            pre_date=pre_date,
+            recovery_mode=recovery_mode,
+            outcome="apply_raise",
+            reason_code="se_replay_apply_raise",
+            message=f"Sweden replay apply raised {type(e).__name__}: {e}",
+            outcome_detail={
+                "exception_type": type(e).__name__,
+                "exception": str(e),
+                "clause_text": str(e)[:400],
+            },
+        )
+        # Override the empty-list default at
+        # ``_se_replay_unresolved_outcome`` line 3243 with the preserved
+        # partial-witness projection (mirrors the success-path shape at line
+        # ~3728: ``"adjudications": [asdict(item) for item in
+        # replay_adjudications]``).
+        raise_return["adjudications"] = [asdict(item) for item in replay_adjudications]
+        return raise_return
     skipped_op_ids = {item.op_id for item in replay_adjudications if item.op_id}
     finding_rows = adjudication_finding_evidence_rows(
         replay_adjudications,

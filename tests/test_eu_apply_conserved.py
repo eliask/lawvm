@@ -295,3 +295,163 @@ def test_replay_statute_routes_apply_through_conserved_wrapper(monkeypatch, tmp_
     input_ids = {op.op_id for op in synthesized_ops}
     assert accepted_ids | rejected_ids == input_ids
     assert accepted_ids & rejected_ids == set()  # disjoint
+
+
+def test_replay_statute_propagates_partial_adjudications_on_apply_raise(
+    monkeypatch, tmp_path
+) -> None:
+    """§2.9 + §1.0/§1.8/§1.10 fire-drill (silent-failure review HIGH #2):
+
+    When ``apply_eu_ops_conserved`` raises mid-apply, the production lane
+    ``EUReplayPipeline.replay_statute`` MUST:
+
+    * preserve the partial adjudication witnesses emitted BEFORE the raise on
+      ``EUReplayResult.adjudications`` (the §1.0 "evidence is not silently
+      destroyed" + §1.8 "no unsupported lane disappears" contracts). Pre-fix
+      state: the EU production caller had NO try/except at the apply call
+      site — bare-apply raised raw, the local ``adjudications`` list
+      (pre-populated with pipeline + parser diagnostics) was discarded
+      entirely by the propagating exception.
+    * append a typed ``eu_replay_apply_raise`` orchestration adjudication per
+      §1.10 embed-exception-as-clause-text rule (so a downstream consumer can
+      diagnose the apply raise without re-running extraction);
+    * return a typed ``EUReplayResult`` with ``replayed``/``timelines`` /
+      ``apply_filter_result`` left ``None`` (apply did not produce a tree) and
+      ``error`` carrying the exception summary (mirrors the EE/NO on-raise
+      shape — ``result.error = f"Failed to apply ops: {e}"``).
+
+    Mirrors ``test_replay_ee_to_pit_propagates_partial_adjudications_on_apply_raise``
+    (the EE production-caller fire-drill), the NO precedent
+    ``test_replay_no_to_pit_strict_action_family_rejects_recovery`` (end-to-end
+    assertion shape), and the upstream-phase monkeypatch pattern of
+    ``test_replay_statute_routes_apply_through_conserved_wrapper`` (the
+    production-routing spy test for the EU happy path).
+    """
+    from lawvm.eu.pipeline import EUReplayPipeline, EUReplayResult
+    from lawvm.replay_adjudication import CompileAdjudication
+
+    baseline = _baseline_statute()
+    baseline_path = tmp_path / "32000R0000_baseline.xhtml"
+    baseline_path.write_text("<dummy/>")
+
+    synthesized_ops = [
+        _replace_op(op_id="eu-replace-ok", sequence=1, section_label="1", text="replacement"),
+        _replace_op(op_id="eu-replace-then-raise", sequence=2, section_label="9", text="replacement"),
+    ]
+
+    def fake_compile_ops_for_statute(_self, celex: str):
+        assert celex == "32000R0000"
+        return synthesized_ops
+
+    def fake_parse_eu_regulation_ir(_path: object, celex: str) -> IRStatute:
+        assert celex == "32000R0000"
+        return baseline
+
+    monkeypatch.setattr(EUReplayPipeline, "compile_ops_for_statute", fake_compile_ops_for_statute)
+    monkeypatch.setattr("lawvm.eu.pipeline.parse_eu_regulation_ir", fake_parse_eu_regulation_ir)
+    monkeypatch.setattr("lawvm.eu.pipeline.compile_timelines", lambda *a, **kw: "timelines")
+    monkeypatch.setattr("lawvm.eu.pipeline.materialize_pit", lambda *a, **kw: baseline)
+
+    raise_message = "synthesized mid-apply raise (e.g. eu strict_action_family=True)"
+
+    # Spy: replace ``apply_eu_ops_conserved`` in the pipeline module with a
+    # wrapper that (a) appends a known pre-raise adjudication to
+    # ``adjudications_out`` (mirroring what bare apply does when it processes
+    # the synthesized skip op BEFORE the §1.10 fail-loud raise), then (b)
+    # raises ValueError. Mirrors the NO precedent at
+    # ``test_apply_no_ops_conserved_propagates_recovery_adjudication_on_raise``
+    # — bare apply first emits the skip then raises; here the skip + raise is
+    # wired through the spy so the EU production caller's on-raise handling
+    # is reached through the FULL ``replay_statute`` path (the §2.9
+    # guard-liveness discipline — every guard needs a test that drives a
+    # known-violating input through the full production path).
+    def spy_apply_eu_ops_conserved(base_arg, ops, **kwargs):
+        adjudications_out = kwargs.get("adjudications_out")
+        if adjudications_out is not None:
+            adjudications_out.append(
+                CompileAdjudication(
+                    kind="eu_replay_target_not_found",
+                    message=(
+                        "Synthesized pre-raise skip adjudication — op target "
+                        "not in the baseline body (mirrors bare-apply's per-op "
+                        "skip emission BEFORE the §1.10 fail-loud raise)."
+                    ),
+                    source_statute="2026/2",
+                    blocking=False,
+                    phase="replay",
+                    op_id="eu-replace-then-raise",
+                    detail={
+                        "rule_id": "eu_replay_target_not_found",
+                        "phase": "replay",
+                        "blocking": False,
+                    },
+                )
+            )
+        raise ValueError(raise_message)
+
+    monkeypatch.setattr(
+        "lawvm.eu.pipeline.apply_eu_ops_conserved",
+        spy_apply_eu_ops_conserved,
+    )
+
+    result: EUReplayResult = EUReplayPipeline(cache_dir=tmp_path).replay_statute("32000R0000")
+
+    # The apply raise is surfaced on ``result.error`` (the new field added
+    # alongside this fire-drill — silent-failure review HIGH #2). Pre-fix
+    # the raw exception propagated to the caller and there was no
+    # ``result.error`` field at all.
+    assert result.error is not None, (
+        "result.error is None despite apply_eu_ops_conserved raising — the "
+        "production caller's on-raise handling regressed (§2.9 worst-class "
+        "silent failure: a guard that exists but cannot fire)."
+    )
+    assert "Failed to apply ops" in result.error
+    assert raise_message in result.error
+
+    # Apply did not produce a tree — ``replayed`` / ``timelines`` /
+    # ``apply_filter_result`` stay ``None`` (mirrors the EE/NO on-raise shape
+    # where ``result.replayed`` stays ``None`` when apply raised).
+    assert result.replayed is None
+    assert result.timelines is None
+    assert result.apply_filter_result is None
+
+    # §1.0 / §1.8 partial-witness preservation: the pre-raise skip adjudication
+    # emitted by the spy IS on ``result.adjudications``. Pre-fix the local
+    # list was discarded by the propagating exception.
+    pre_raise = [
+        a for a in result.adjudications if a.kind == "eu_replay_target_not_found"
+    ]
+    assert pre_raise, (
+        "result.adjudications does not carry the pre-raise eu_replay_target_"
+        "not_found witness — the §1.0/§1.8 partial-loss failure (silent-"
+        "failure review HIGH #2: pre-fix the raw exception discarded the "
+        "local adjudications list before construction of EUReplayResult)."
+    )
+    assert pre_raise[0].op_id == "eu-replace-then-raise"
+
+    # §1.10 typed orchestration adjudication: ``eu_replay_apply_raise`` IS on
+    # the result with ``exception_type`` / ``exception`` / ``clause_text``
+    # fields embedded in its ``detail``.
+    orchestration = next(
+        (a for a in result.adjudications if a.kind == "eu_replay_apply_raise"),
+        None,
+    )
+    assert orchestration is not None, (
+        "result.adjudications does not carry the typed eu_replay_apply_raise "
+        "orchestration adjudication — the §1.10 embed-snippet contract is "
+        "unmet (silent-failure review HIGH #2)."
+    )
+    assert orchestration.detail["exception_type"] == "ValueError"
+    assert orchestration.detail["exception"] == raise_message
+    assert orchestration.detail["clause_text"] == raise_message  # ≤400 chars
+    # The orchestration adjudication is non-blocking — it is a WITNESS, not the
+    # gate (mirrors the EE conserved-wrapper's ``RejectedItem.blocking=False``
+    # pattern). The blocking gate lives on ``result.error`` (the new field on
+    # ``EUReplayResult`` carried alongside this fire-drill — silent-failure
+    # review HIGH #2; mirrors the EE/NO ``result.error = f"Failed to apply
+    # ops: {e}"`` convention).
+    assert orchestration.blocking is False
+    assert orchestration.phase == "replay"
+    assert orchestration.source_statute == "32000R0000"
+    assert orchestration.detail["rule_id"] == "eu_replay_apply_raise"
+    assert orchestration.detail["family"] == "orchestration_failure"

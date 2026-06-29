@@ -7318,3 +7318,197 @@ def test_fetch_se_official_artifacts_force_reextract_blank_prior_on_first_write(
         "force_reextract on a fresh locator emitted a non-empty prior_bytes_sha256 — "
         "the wrapper's read-before-write discipline is broken."
     )
+
+
+def test_check_se_official_replay_propagates_partial_adjudications_on_apply_raise(
+    monkeypatch,
+) -> None:
+    """§2.9 + §1.0/§1.8/§1.10 fire-drill (silent-failure review HIGH #3):
+
+    When ``apply_se_ops_conserved`` raises mid-apply, the production lane
+    ``check_se_official_replay`` MUST:
+
+    * preserve the partial adjudication witnesses emitted BEFORE the raise on
+      the returned ``adjudications`` list (the §1.0 "evidence is not silently
+      destroyed" + §1.8 "no unsupported lane disappears" contracts). Pre-fix
+      state: the SE production caller had NO try/except at the apply call site
+      — bare-apply raised raw, the local ``replay_adjudications`` list was
+      discarded entirely by the propagating exception.
+    * append a typed ``se_replay_apply_raise`` orchestration adjudication per
+      §1.10 embed-exception-as-clause-text rule (so a downstream consumer can
+      diagnose the apply raise without re-running extraction);
+    * return a structured ``outcome='apply_raise'`` /
+      ``reason_code='se_replay_apply_raise'`` dict mirroring the existing
+      ``_se_replay_unresolved_outcome`` shape so the scan-lane
+      ``typed_outcome != SE_REPLAY_OUTCOME_REPLAY_FEASIBLE`` dispatcher
+      (line ~3880) buckets it correctly downstream.
+
+    Mirrors ``test_replay_ee_to_pit_propagates_partial_adjudications_on_apply_raise``
+    (the EE production-caller fire-drill), the NO precedent
+    ``test_replay_no_to_pit_strict_action_family_rejects_recovery`` (end-to-end
+    assertion shape), and the upstream-phase fixture pattern of
+    ``test_check_se_official_replay_collects_skipped_replay_ops_as_adjudications``
+    (the SE production-routing happy-path test). Iter2 W2 closed the
+    conserved-wrapper propagate-on-raise contract; iter3 W3 (this test) pins
+    the production caller's half of the contract — the wrapper's propagation
+    is unreachable from production unless the caller's on-raise wrap surfaces
+    the partial list on the returned dict.
+    """
+    base_payload = {
+        "beteckning": "2026:777",
+        "rubrik": "Förordning (2026:777) om test",
+        "ikraftDateTime": "2026-01-01T00:00:00",
+        "ikraftOvergangsbestammelse": False,
+        "organisation": {"namn": "Socialdepartementet", "namnOchEnhet": "Socialdepartementet"},
+        "forfattningstypNamn": "Förordning",
+        "register": {"forarbeten": None},
+        "fulltext": (
+            "2 § /Upphör att gälla U:2026-04-15/\n"
+            "Gammal lydelse.\n\n"
+            "2 § /Träder i kraft I:2026-04-15/\n"
+            "Ny lydelse. Förordning (2026:286).\n"
+        ),
+        "publiceradDateTime": "2026-01-01T00:00:00",
+        "andringsforfattningar": [],
+    }
+    official_act = {
+        "sfs_id": "2026:286",
+        "title": "Förordning om ändring i förordningen (2026:777) om test",
+        "act_type": "förordning",
+        "amended_act_sfs_id": "2026:777",
+        "is_amending_act": True,
+        "published_date": "2026-04-20",
+        "issued_date": "2026-04-18",
+        "enacting_clause": "Regeringen föreskriver att 2 § förordningen (2026:777) om test ska ha följande lydelse.",
+        "effective_clause": "Denna förordning träder i kraft den 15 april 2026.",
+        "affected_section_labels": ["2"],
+        "provisions": [{"label": "2", "text": "Ny lydelse."}],
+        "signatories": [],
+        "footnotes": [],
+    }
+    valid_op = LegalOperation(
+        op_id="se_official_replace_2",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "2"),)),
+        payload=IRNode(kind=IRNodeKind.SECTION, label="2", text="Ny lydelse."),
+        source=OperationSource(statute_id="2026:286", effective="2026-04-15"),
+    )
+    archive = _FakeArchive(
+        stored={
+            "se://sfs/2026:777/rk.current.json": json.dumps(base_payload, ensure_ascii=False).encode("utf-8"),
+            "se://sfs/2026:286/official.act.json": json.dumps(official_act, ensure_ascii=False).encode("utf-8"),
+            "se://sfs/2026:286/official.ops.json": json.dumps(
+                [se_legal_operation_to_dict(op) for op in [valid_op]],
+                ensure_ascii=False,
+            ).encode("utf-8"),
+        }
+    )
+
+    raise_message = "synthesized mid-apply raise (e.g. se strict_action_family=True)"
+
+    # Spy: replace ``apply_se_ops_conserved`` in the fetch module with a
+    # wrapper that (a) appends a known pre-raise adjudication to
+    # ``adjudications_out`` (mirroring what bare apply does when it processes
+    # the synthesized skip op BEFORE the §1.10 fail-loud raise), then (b)
+    # raises ValueError. Mirrors the NO precedent at
+    # ``test_apply_no_ops_conserved_propagates_recovery_adjudication_on_raise``
+    # and the EE/EU fire-drill tests — bare apply first emits the skip then
+    # raises; here the skip + raise is wired through the spy so the SE
+    # production caller's on-raise handling is reached through the FULL
+    # ``check_se_official_replay`` path (the §2.9 guard-liveness discipline).
+    def spy_apply_se_ops_conserved(statute, ops, **kwargs):
+        adjudications_out = kwargs.get("adjudications_out")
+        if adjudications_out is not None:
+            adjudications_out.append(
+                CompileAdjudication(
+                    kind="se_replay_target_not_found",
+                    message=(
+                        "Synthesized pre-raise skip adjudication — op target "
+                        "not in the baseline body (mirrors bare-apply's per-op "
+                        "skip emission BEFORE the §1.10 fail-loud raise)."
+                    ),
+                    source_statute="2026:286",
+                    blocking=False,
+                    phase="replay",
+                    op_id="se_official_replace_2",
+                    detail={
+                        "rule_id": "se_replay_target_not_found",
+                        "phase": "replay",
+                        "blocking": False,
+                    },
+                )
+            )
+        raise ValueError(raise_message)
+
+    monkeypatch.setattr(
+        "lawvm.sweden.fetch.apply_se_ops_conserved",
+        spy_apply_se_ops_conserved,
+    )
+
+    result = check_se_official_replay(archive, "2026:286")
+
+    # The apply raise is surfaced as a structured ``outcome='apply_raise'`` /
+    # ``reason_code='se_replay_apply_raise'`` dict (mirrors the existing
+    # ``_se_replay_unresolved_outcome`` shape from the precondition-issues /
+    # older-base-required branches). Pre-fix the raw exception propagated to
+    # the caller and there was no structured return at all.
+    assert result["outcome"] == "apply_raise", (
+        f"result['outcome'] is {result['outcome']!r}, expected 'apply_raise' — "
+        "the production caller's on-raise handling regressed (§2.9 worst-class "
+        "silent failure: a guard that exists but cannot fire)."
+    )
+    assert result["reason_code"] == "se_replay_apply_raise"
+    assert raise_message in result["message"]
+    assert result["target_count"] == 0  # apply lane did not run
+    assert result["match_count"] == 0
+    assert result["rows"] == []
+
+    # §1.0 / §1.8 partial-witness preservation: the pre-raise skip adjudication
+    # emitted by the spy IS on ``result['adjudications']``. Pre-fix the local
+    # list was discarded by the propagating exception (silent-failure review
+    # HIGH #3).
+    pre_raise = [
+        a for a in result["adjudications"] if a.get("kind") == "se_replay_target_not_found"
+    ]
+    assert pre_raise, (
+        "result['adjudications'] does not carry the pre-raise "
+        "se_replay_target_not_found witness — the §1.0/§1.8 partial-loss "
+        "failure (silent-failure review HIGH #3: pre-fix the raw exception "
+        "discarded replay_adjudications before the success-path dict "
+        "construction projected it onto 'adjudications')."
+    )
+    assert pre_raise[0]["op_id"] == "se_official_replace_2"
+
+    # §1.10 typed orchestration adjudication: ``se_replay_apply_raise`` IS on
+    # the returned dict's ``adjudications`` list with ``exception_type`` /
+    # ``exception`` / ``clause_text`` embedded in its ``detail`` dict.
+    orchestration = next(
+        (a for a in result["adjudications"] if a.get("kind") == "se_replay_apply_raise"),
+        None,
+    )
+    assert orchestration is not None, (
+        "result['adjudications'] does not carry the typed "
+        "se_replay_apply_raise orchestration adjudication — the §1.10 "
+        "embed-snippet contract is unmet (silent-failure review HIGH #3)."
+    )
+    assert orchestration["detail"]["exception_type"] == "ValueError"
+    assert orchestration["detail"]["exception"] == raise_message
+    assert orchestration["detail"]["clause_text"] == raise_message  # ≤400 chars
+    # The orchestration adjudication is non-blocking — it is a WITNESS, not
+    # the gate (mirrors the EE conserved-wrapper's
+    # ``RejectedItem.blocking=False`` pattern). The blocking gate lives on
+    # the structured ``outcome='apply_raise'`` signal — the SE convention for
+    # apply-fold failure that the scan-lane typed-outcome dispatcher keys on.
+    assert orchestration["blocking"] is False
+    assert orchestration["phase"] == "replay"
+    assert orchestration["source_statute"] == "2026:777"  # resolved base sfs
+    assert orchestration["detail"]["rule_id"] == "se_replay_apply_raise"
+    assert orchestration["detail"]["family"] == "orchestration_failure"
+
+    # The structured exception fields are also projected onto
+    # ``outcome_detail`` so downstream dispatch (e.g. scan_se_official_replay_act)
+    # can route on them without re-parsing the typed adjudication ledger.
+    assert result["outcome_detail"]["exception_type"] == "ValueError"
+    assert result["outcome_detail"]["exception"] == raise_message
+    assert result["outcome_detail"]["clause_text"] == raise_message
