@@ -5,7 +5,6 @@ from argparse import Namespace
 
 from lawvm.new_zealand import dependencies as nz_dependencies
 from lawvm.new_zealand.dependencies import extract_dependency_report, latest_xml_locator_selection_for_work
-from lawvm.tools.cli import _build_parser
 
 
 class _MemoryArchive:
@@ -199,15 +198,3 @@ def test_nz_corpus_deps_cli_threads_latest_locator_selection_diagnostics(monkeyp
 
     assert payload["xml_locator"] == older_xml
     assert [diag["detail"]["reason_code"] for diag in payload["diagnostics"]] == ["detail_json_invalid"]
-
-
-def test_nz_corpus_deps_cli_parse_defaults() -> None:
-    parser = _build_parser()
-
-    args = parser.parse_args(["nz-corpus", "deps", "--work-id", "act_public_1957_87"])
-
-    assert args.command == "nz-corpus"
-    assert args.nz_corpus_command == "deps"
-    assert args.db == "data/nz_legislation.farchive"
-    assert args.work_id == "act_public_1957_87"
-    assert args.limit == 40

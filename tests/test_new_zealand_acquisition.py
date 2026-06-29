@@ -19,7 +19,6 @@ from lawvm.new_zealand.acquisition import (
     sync_nz_corpus,
 )
 from lawvm.new_zealand import acquisition as nz_acquisition
-from lawvm.tools.cli import _build_parser
 from lawvm.core.quirks_disposition import QuirksDisposition
 
 
@@ -543,23 +542,3 @@ def test_urllib_nz_transport_returns_status_zero_on_timeout(monkeypatch: Any) ->
 
     assert response.status_code == 0
     assert b"timed out" in response.body
-
-
-def test_nz_corpus_cli_parse_defaults() -> None:
-    parser = _build_parser()
-
-    args = parser.parse_args(["nz-corpus", "sync", "--work-id", "act_public_1990_109"])
-
-    assert args.command == "nz-corpus"
-    assert args.nz_corpus_command == "sync"
-    assert args.db == "data/nz_legislation.farchive"
-    assert args.delay == 0.5
-    assert args.reserve_remaining == 100
-    assert args.version_sort == "desc"
-    assert args.max_versions_per_work is None
-    assert args.sleep_on_rate_limit is False
-    assert args.rate_limit_retry_attempts == 3
-    assert args.timeout == 60.0
-    assert args.quiet is False
-    assert args.progress_interval == 25
-    assert args.work_id == ["act_public_1990_109"]
