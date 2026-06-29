@@ -6,6 +6,7 @@ that feed the registry-backed target gates.
 """
 from __future__ import annotations
 
+import copy
 import re
 from dataclasses import dataclass, replace
 from functools import lru_cache
@@ -3535,7 +3536,17 @@ def parse_preambul_single_target_ops(
         first_t = ET.SubElement(first_st, _ns(ns_str, "tavatekst"))
         first_t.text = intro_tava
     for child in direct_sisu_blocks:
-        cloned_child = ET.fromstring(ET.tostring(child, encoding="utf-8"))
+        # ``copy.deepcopy`` preserves tag / text / tail / attrib / children /
+        # nsmap exactly while producing a fully independent subtree (a true
+        # deep copy — descendants are value-equal but identity-distinct). The
+        # prior ``ET.fromstring(ET.tostring(child, encoding="utf-8"))`` form
+        # round-tripped through serialization which (a) is O(N) in tree size
+        # for what is an in-memory operation and (b) loses nsmap inheritance
+        # on namespace-tagged descendants on certain CPython versions. The
+        # deepcopy migration preserves byte-identical serialization (pinned
+        # in ``tests/test_ee_target_resolution_deepcopy.py`` — mirrors the
+        # iter2 W5 M6 ``_clone_element`` precedent at tests/test_uk_xml_helpers.py).
+        cloned_child = copy.deepcopy(child)
         for text_el in cloned_child.iter(_ns(ns_str, "tavatekst")):
             extracted_text = tavatekst_text(text_el, ns_str)
             text_el.clear()
