@@ -638,6 +638,112 @@ def test_unregistered_adjudication_carrier_message_embeds_type_and_repr() -> Non
 
 
 # --------------------------------------------------------------------------- #
+# iter3 W1 Fix 5: §1.10 fail-loud diagnostics MUST embed the offending value
+# bounded to ~400 chars. Without truncation, a smuggled list / dict / deep
+# object can carry MBs of repr — unbounded ``value!r`` in the diagnostic
+# message would (a) blow CI log noise past actionable triage bounds, (b) re-
+# introduce the silent-failure cost shape §1.10 forbids (a "fail loud" that
+# nobody can read is just as opaque as ``pass``), and (c) allocate a multi-MB
+# string per failed boundary coercion. Mirrors
+# ``core.named_swallow._truncate_clause_text`` precedent.
+# --------------------------------------------------------------------------- #
+
+
+# Module-scope constant mirrors the production _BOUND_REPR_MAX_CHARS = 400 so the
+# test asserts the bound precisely (a divergence would silently break the
+# truncation marker or trim too aggressively).
+_TRUNCATION_MARKER = "…[truncated]"
+
+
+def _make_large_smuggle_value(target_repr_len: int = 5000) -> str:
+    """Build a smuggle value whose ``repr()`` exceeds 400 chars (a string of
+    ``target_repr_len // 4`` repetitions of ``"abcd"`` makes repr roughly
+    ``target_repr_len`` chars long, including the surrounding ``'...'``)."""
+    inner = "abcd" * (target_repr_len // 4)
+    return inner
+
+
+def test_unregistered_claim_assertion_truncates_large_value_repr() -> None:
+    """``UnregisteredClaimAssertion`` embeds a bounded (~400-char) repr of the
+    offending value rather than unbounded ``value!r`` (AGENTS.md §1.10)."""
+    large_value = _make_large_smuggle_value(5000)
+    err = UnregisteredClaimAssertion(large_value)
+    message = str(err)
+    # Type name is always preserved (the ~400-char bound is on the repr payload,
+    # not the surrounding label).
+    assert "str" in message
+    # Truncation marker is present when repr exceeds the bound.
+    assert _TRUNCATION_MARKER in message
+    # The full unbounded repr must NOT fit in the message.
+    assert repr(large_value) not in message
+    # Total message length is bounded by the helper constant + a reasonable
+    # prefix ceiling (~120 chars for the message label + type name + repr
+    # opener) + the truncation marker.
+    from lawvm.core.typed_carrier_protocols import _BOUND_REPR_MAX_CHARS
+
+    assert len(message) < _BOUND_REPR_MAX_CHARS + 200, (
+        f"Truncated message is {len(message)} chars — exceeds the ~400-char "
+        "bound + label ceiling; the truncation helper is not being applied."
+    )
+
+
+def test_unregistered_authorization_result_truncates_large_value_repr() -> None:
+    """Sibling test for ``UnregisteredAuthorizationResult``: same truncated
+    repr contract (mirrored carrier, same §1.10 invariant)."""
+    large_value = _make_large_smuggle_value(5000)
+    err = UnregisteredAuthorizationResult(large_value)
+    message = str(err)
+    assert "str" in message
+    assert _TRUNCATION_MARKER in message
+    assert repr(large_value) not in message
+    from lawvm.core.typed_carrier_protocols import _BOUND_REPR_MAX_CHARS
+
+    assert len(message) < _BOUND_REPR_MAX_CHARS + 200
+
+
+def test_unregistered_adjudication_carrier_truncates_large_value_repr() -> None:
+    """Sibling test for ``UnregisteredAdjudicationCarrier``: same truncated
+    repr contract (mirrored carrier, same §1.10 invariant)."""
+    large_value = _make_large_smuggle_value(5000)
+    err = UnregisteredAdjudicationCarrier(large_value)
+    message = str(err)
+    assert "str" in message
+    assert _TRUNCATION_MARKER in message
+    assert repr(large_value) not in message
+    from lawvm.core.typed_carrier_protocols import _BOUND_REPR_MAX_CHARS
+
+    assert len(message) < _BOUND_REPR_MAX_CHARS + 200
+
+
+def test_truncate_repr_helper_short_value_is_unchanged() -> None:
+    """Negative test: a short value whose repr fits within the bound is
+    embedded verbatim — no truncation marker, no false shortening (the
+    helper is the §1.10 ceiling, never the floor)."""
+    from lawvm.core.typed_carrier_protocols import _truncate_repr
+
+    short_value = "smuggled_kind"
+    truncated = _truncate_repr(short_value)
+    assert truncated == repr(short_value)
+    assert _TRUNCATION_MARKER not in truncated
+
+
+def test_truncate_repr_helper_long_value_is_bounded_with_marker() -> None:
+    """Direct unit test of the ``_truncate_repr`` helper: a value whose
+    repr exceeds ``_BOUND_REPR_MAX_CHARS`` is truncated to that length + the
+    marker suffix."""
+    from lawvm.core.typed_carrier_protocols import _BOUND_REPR_MAX_CHARS, _truncate_repr
+
+    large_value = _make_large_smuggle_value(_BOUND_REPR_MAX_CHARS * 5)
+    truncated = _truncate_repr(large_value)
+    assert _TRUNCATION_MARKER in truncated
+    assert len(truncated) <= _BOUND_REPR_MAX_CHARS + len(_TRUNCATION_MARKER)
+    # The bound is exclusive of the marker: the raw payload stops at exactly
+    # ``_BOUND_REPR_MAX_CHARS`` chars before the ``…[truncated]`` suffix.
+    raw_payload = truncated.removesuffix(_TRUNCATION_MARKER)
+    assert len(raw_payload) == _BOUND_REPR_MAX_CHARS
+
+
+# --------------------------------------------------------------------------- #
 # Surface smoke: re-export the Protocols + coerce helpers from the module under
 # test (catches accidental ``__all__`` drift / typo'd import path).
 # --------------------------------------------------------------------------- #

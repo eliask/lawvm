@@ -59,6 +59,33 @@ _SMUGGLE_TYPES: tuple[type, ...] = (
 )
 
 
+# §1.10 fail-loud carrier diagnostics MUST embed the offending value bounded
+# to ~400 chars (mirrors ``core/named_swallow._truncate_clause_text``). A
+# smuggled list / dict / deep-immutable could legitimately carry MBs of repr —
+# unbounded ``value!r`` in the diagnostic message would (a) blow CI log noise
+# past actionable triage bounds, (b) allocate a multi-MB string per failed
+# boundary coercion, and (c) re-introduce the silent-failure cost shape §1.10
+# forbids (a "fail loud" that nobody can read is just as opaque as ``pass``).
+_BOUND_REPR_MAX_CHARS = 400
+
+
+def _truncate_repr(value: object, max_len: int = _BOUND_REPR_MAX_CHARS) -> str:
+    """Truncate ``repr(value)`` to ``max_len`` chars with a marker when longer.
+
+    Mirrors ``core/named_swallow._truncate_clause_text`` for the carrier
+    boundary diagnostics (``UnregisteredClaimAssertion`` /
+    ``UnregisteredAuthorizationResult`` / ``UnregisteredAdjudicationCarrier``),
+    so the §1.10-distinct named diagnostic embeds an offending ~400-char
+    snippet rather than unbounded ``value!r``. Always preserves the type-name
+    prefix (already separate in the f-string); only the embedded repr payload
+    is bounded.
+    """
+    text = repr(value)
+    if len(text) <= max_len:
+        return text
+    return text[:max_len] + "…[truncated]"
+
+
 # --------------------------------------------------------------------------- #
 # ClaimAssertion carrier
 # --------------------------------------------------------------------------- #
@@ -103,7 +130,8 @@ class UnregisteredClaimAssertion(TypeError):
         self.value = value
         super().__init__(
             f"claim assertion must be a typed ClaimAssertion instance or a "
-            f"Mapping[str, Any] adapter; got {type(value).__name__}: {value!r}"
+            f"Mapping[str, Any] adapter; got {type(value).__name__}: "
+            f"{_truncate_repr(value)}"
         )
 
 
@@ -175,7 +203,7 @@ class UnregisteredAuthorizationResult(TypeError):
         super().__init__(
             f"authorization_result must be a typed ExecutionAuthorizationResult "
             f"instance or a Mapping[str, Any] adapter; got {type(value).__name__}: "
-            f"{value!r}"
+            f"{_truncate_repr(value)}"
         )
 
 
@@ -245,7 +273,8 @@ class UnregisteredAdjudicationCarrier(TypeError):
         self.value = value
         super().__init__(
             f"adjudication must be a typed CompileAdjudicationProtocol instance "
-            f"or a Mapping[str, Any] adapter; got {type(value).__name__}: {value!r}"
+            f"or a Mapping[str, Any] adapter; got {type(value).__name__}: "
+            f"{_truncate_repr(value)}"
         )
 
 
