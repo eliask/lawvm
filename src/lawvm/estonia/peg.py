@@ -1796,6 +1796,7 @@ def _extract_flat_sectionless_singleton_subsection_ops(
     scoped_body = re.sub(r"^\s*(?:määruse|seaduse)\s+", "", clean, count=1, flags=re.IGNORECASE)
     scoped_clean = f"paragrahvi 1 {scoped_body}"
     scoped_ops = extract_ee_ops(scoped_clean, source, seq_start=seq)
+    seq += len(scoped_ops)
     if not scoped_ops:
         return []
     recovered: list[LegalOperation] = []
@@ -6432,10 +6433,12 @@ def extract_ee_ops(
     # Emit the renumber first, but do not return: the later insert/replace path
     # still needs to compile from the same instruction.
     subsection_renumber_ops = _subsection_renumber_then_insert_ops(clean, source, seq_start=seq)
+    seq += len(subsection_renumber_ops)
     if subsection_renumber_ops:
         return list(subsection_renumber_ops)
 
     senine_subsection_renumber_ops = _senine_text_subsection_renumber_then_insert_ops(clean, source, seq_start=seq)
+    seq += len(senine_subsection_renumber_ops)
     if senine_subsection_renumber_ops:
         return list(senine_subsection_renumber_ops)
 
