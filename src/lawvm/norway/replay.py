@@ -493,8 +493,61 @@ def replay_no_to_pit(
         result.write_receipts = apply_result.write_receipts
         if heading_groups:
             result.replayed = apply_no_heading_groups(result.replayed, heading_groups)
-    except ValueError as exc:
-        result.error = str(exc)
+    # lawvm-failloud (AGENTS.md §1.10): NOT a silent swallow. An apply-stage
+    # failure is recorded as a distinct, self-evidencing
+    # ``result.error = f"Failed to apply ops: {exc}"`` (exception embedded) —
+    # the blocking gate per the EE/NO convention for apply-fold failure
+    # (``classify_no_replayability`` and CLI tooling map a non-None ``result.error``
+    # to a blocking replay-failure). iter4 W1 (silent-failure review HIGH #2):
+    # widened from ``except ValueError as exc`` to ``except Exception as exc``
+    # matching the EE/EU/SE precedent (silent-failure review HIGH #1-3) — NO
+    # was the WEAKEST contract of the 4 (only caught ``ValueError``, letting
+    # ``AssertionError`` / ``KeyError`` / ``TypeError`` / internal-tree-invariant
+    # exceptions escape into the production lane as bare tracebacks and silently
+    # discard bare-apply's partial witnesses). The broad catch is intentional
+    # because the failure is surfaced on ``result.error`` (gate) AND as a typed
+    # ``no_replay_apply_raise`` orchestration adjudication (witness, non-blocking
+    # — mirrors the EE/SE conserved-wrapper ``RejectedItem.blocking=False``).
+    # ``result.adjudications`` already carries the upstream-phase adjudications
+    # AND bare-apply's partial witnesses (appended in place before the raise by
+    # the conserved wrapper which threads ``adjudications_out=result.adjudications``
+    # directly through bare apply per iter2 W2 propagation-on-raise fix). The
+    # typed ``no_replay_apply_raise`` orchestration adjudication appended below
+    # embeds the exception truncated to a ~400 char ``clause_text`` snippet per
+    # §1.10 so a downstream consumer can diagnose the apply raise without
+    # re-running extraction. The adjudication is a WITNESS, not the gate;
+    # ``result.error`` IS the gate.
+    except Exception as exc:
+        result.adjudications.append(
+            CompileAdjudication(
+                kind="no_replay_apply_raise",
+                message=f"Norway replay apply raised {type(exc).__name__}: {exc}",
+                source_statute=result.base_id,
+                blocking=False,
+                phase="replay",
+                detail=diagnostic_detail(
+                    rule_id="no_replay_apply_raise",
+                    phase="replay",
+                    family="orchestration_failure",
+                    blocking=False,
+                    reason=(
+                        "apply_no_ops_conserved raised mid-fold; partial "
+                        "witnesses preserved on result.adjudications"
+                    ),
+                    exception_type=type(exc).__name__,
+                    exception=str(exc),
+                    # §1.10 source-text witness slot; on apply-raise the failing
+                    # exception message is the only immediately-available snippet
+                    # (the per-op source_clause_extract extraction is deferred
+                    # per task #50; see the iter4 W1 M2 comment-clarification at
+                    # estonia/replay.py:1921 / eu/pipeline.py:993 /
+                    # sweden/fetch.py:3576+).
+                    clause_text=str(exc)[:400],
+                ),
+            )
+        )
+        result.error = f"Failed to apply ops: {exc}"
+        return result
     return result
 
 

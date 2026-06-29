@@ -274,10 +274,189 @@ def test_replay_no_to_pit_strict_action_family_rejects_recovery(tmp_path) -> Non
     )
 
     assert result.error is not None
+    # iter4 W1 (HIGH #2): widened from ``except ValueError`` to
+    # ``except Exception`` matching the EE/EU/SE precedent (silent-failure review
+    # HIGH #1-3). The gate-message convention now mirrors the EE/EU/SE pattern:
+    # ``f"Failed to apply ops: {exc}"`` (the original ValueError's message — which
+    # embeds the "action-family recovery" string — is preserved inside the
+    # exception repr, so the substring assertion still holds).
     assert "action-family recovery" in result.error
-    assert [(item.kind, item.detail["rule_id"]) for item in result.adjudications] == [
+    assert "Failed to apply ops" in result.error
+    # iter4 W1 (HIGH #2): the strict_action_family raise IS an apply-raise event,
+    # so the typed ``no_replay_apply_raise`` orchestration adjudication (per §1.10
+    # — embedding exception_type / exception / clause_text) MUST be on the
+    # adjudication ledger alongside the pre-raise per-op skip. Ex-assertion was a
+    # fragile exact-count equality (pre-fix: 1 item); the structural-invariant
+    # form (AGENTS.md §2.9 — do not pin exact counts a concurrent improvement
+    # will break) asserts the pre-raise skip is the first item AND the
+    # apply_raise orchestration is present with the correct shape.
+    assert [(item.kind, item.detail["rule_id"]) for item in result.adjudications[:1]] == [
         ("no_replay_insert_occupied_target_replaced", "no_insert_occupied_target_replace")
     ]
+    apply_raise_adjudications = [
+        a for a in result.adjudications if a.kind == "no_replay_apply_raise"
+    ]
+    assert len(apply_raise_adjudications) == 1, (
+        f"expected exactly one no_replay_apply_raise orchestration adjudication "
+        f"on the apply-raise catch; found {len(apply_raise_adjudications)}."
+    )
+    assert apply_raise_adjudications[0].detail["rule_id"] == "no_replay_apply_raise"
+    assert apply_raise_adjudications[0].detail["family"] == "orchestration_failure"
+    assert apply_raise_adjudications[0].detail["phase"] == "replay"
+    assert apply_raise_adjudications[0].blocking is False  # WITNESS, not gate
+    assert apply_raise_adjudications[0].detail["exception_type"] == "ValueError"
+    assert "action-family recovery" in apply_raise_adjudications[0].detail["exception"]
+    assert "action-family recovery" in apply_raise_adjudications[0].detail["clause_text"]
+
+
+def test_replay_no_to_pit_propagates_partial_adjudications_on_apply_raise(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    """§2.9 + §1.0/§1.8/§1.10 fire-drill (iter4 W1 HIGH #2 — mirror EE/EU/SE pattern):
+    ``replay_no_to_pit`` production caller MUST propagate bare-apply's partial
+    adjudication witnesses across an apply-fold raise (§1.0 evidence-not-
+    silently-destroyed + §1.8 no-unsupported-lane-disappears) AND emit a typed
+    ``no_replay_apply_raise`` orchestration adjudication per §1.10 embedding the
+    exception (exception_type / exception / clause_text ~400 char snippet).
+
+    Pre-fix (iter2 W4): the NO production caller caught only ``ValueError`` and
+    set ``result.error = str(exc)`` — the broad-catch family of NO was the
+    WEAKEST contract of the four (EE/EU/SE catch ``Exception``, mirroring
+    silent-failure review HIGH #1-3). Any non-ValueError raise
+    (``AssertionError`` / ``KeyError`` / ``TypeError`` / internal tree-invariant
+    exception) escaped as a bare traceback in the production lane, and
+    bare-apply's partial witnesses were silently discarded by the propagating
+    exception (the §1.0 partial-loss hole). iter4 W1 (HIGH #2) widens the
+    catch to ``Exception`` and emits the typed ``no_replay_apply_raise``
+    orchestration adjudication mirroring the EE/EU/SE precedent.
+
+    Drives the FULL ``replay_no_to_pit`` production path (§2.9 guard-liveness:
+    the new ``except Exception as exc:`` + adjudication emission must fire from
+    the production lane, not just from a unit test of the catch predicate) by
+    monkeypatching ``apply_no_ops_conserved`` in the norway.replay module with a
+    spy that appends a known pre-raise skip adjudication to
+    ``adjudications_out`` (mirrors bare-apply's per-op skip emission BEFORE the
+    §1.10 fail-loud raise) then raises ValueError. Mirrors the EE/AU precedent
+    at ``tests/test_ee_apply_conserved.py::test_replay_ee_to_pit_propagates_partial_adjudications_on_apply_raise``
+    and ``tests/test_eu_apply_conserved.py::test_replay_statute_propagates_partial_adjudications_on_apply_raise``.
+    """
+    from lawvm.replay_adjudication import CompileAdjudication
+
+    archive_path = tmp_path / "lovtidend-avd1-2001-2025.tar.bz2"
+    _write_archive(
+        archive_path,
+        [
+            ("lti/2025/nl-20250101-001.xml", _BASE_XML),
+            ("lti/2025/nl-20250202-005.xml", _occupied_insert_amendment_xml("2025-02-10")),
+        ],
+    )
+
+    raise_message = "synthesized mid-apply raise (mirrors EE/EU/SE fire-drill pattern)"
+
+    def spy_apply_no_ops_conserved(statute, ops, **kwargs):
+        adjudications_out = kwargs.get("adjudications_out")
+        if adjudications_out is not None:
+            adjudications_out.append(
+                CompileAdjudication(
+                    kind="no_replay_target_not_found_in_spy",
+                    message=(
+                        "Synthesized pre-raise adjudication — op target not in "
+                        "the baseline body (mirrors bare-apply's per-op skip "
+                        "emission BEFORE the §1.10 fail-loud raise)."
+                    ),
+                    source_statute="no/lovtid/2025-02-02-5",
+                    blocking=False,
+                    phase="replay",
+                    op_id="no_spy_replace",
+                    detail={
+                        "rule_id": "no_replay_target_not_found_in_spy",
+                        "phase": "replay",
+                        "blocking": False,
+                    },
+                )
+            )
+        raise ValueError(raise_message)
+
+    monkeypatch.setattr(
+        "lawvm.norway.replay.apply_no_ops_conserved",
+        spy_apply_no_ops_conserved,
+    )
+
+    result = replay_no_to_pit(
+        "no/lov/2025-01-01-1",
+        as_of="2025-02-15",
+        data_dir=tmp_path,
+    )
+
+    # The blocking gate lives on ``result.error`` (the EE/NO convention for
+    # apply-fold failure — ``classify_no_replayability`` and CLI tooling map a
+    # non-None ``result.error`` to a blocking replay-failure). Pre-fix the gate
+    # was ``result.error = str(exc)`` (only set for ValueError); post-fix it is
+    # ``result.error = f"Failed to apply ops: {exc}"`` (matching the EE/EU/SE
+    # convention so the gate is observable for ANY exception, not only
+    # ValueError).
+    assert result.error is not None, (
+        "result.error is None — the apply-raise gate did not fire (§2.9 "
+        "worst-class silent failure: guard unreachable from production)."
+    )
+    assert "Failed to apply ops" in result.error, (
+        f"result.error={result.error!r} — expected to mirror the EE/EU/SE "
+        f"'Failed to apply ops: ...' gate-message convention (iter4 W1 HIGH #2)."
+    )
+    assert raise_message in result.error
+    # The apply did not produce a tree — ``result.replayed`` stays None.
+    assert result.replayed is None, (
+        f"result.replayed={result.replayed!r} — expected None (apply raised "
+        f"mid-fold; the conserved wrapper never returned a statute)."
+    )
+
+    # §1.0 / §1.8 partial-witness preservation: the pre-raise skip adjudication
+    # emitted by the spy IS on ``result.adjudications``. Pre-fix (iter2 W4) the
+    # local list was discarded by the propagating ValueError exception (silent-
+    # failure review HIGH #2: production caller was the WEAKEST contract of the
+    # four, only catching ValueError and never threading the witness).
+    pre_raise = [
+        a for a in result.adjudications if a.kind == "no_replay_target_not_found_in_spy"
+    ]
+    assert pre_raise, (
+        "result.adjudications does not carry the pre-raise "
+        "no_replay_target_not_found_in_spy witness — the §1.0/§1.8 "
+        "partial-loss failure (the broad-catch fix did not thread the "
+        "conserved wrapper's ``adjudications_out`` accumulator through "
+        "to the production result)."
+    )
+    assert pre_raise[0].op_id == "no_spy_replace"
+
+    # §1.10 typed orchestration adjudication: ``no_replay_apply_raise`` IS on
+    # ``result.adjudications`` with ``exception_type`` / ``exception`` /
+    # ``clause_text`` fields embedded in its ``detail``. Pre-fix (iter2 W4) NO
+    # had NO orchestration adjudication at all (only ``result.error = str(exc)``)
+    # — a downstream consumer had to re-run extraction to diagnose the raise.
+    orchestration = next(
+        (a for a in result.adjudications if a.kind == "no_replay_apply_raise"),
+        None,
+    )
+    assert orchestration is not None, (
+        "result.adjudications does not carry the typed "
+        "no_replay_apply_raise orchestration adjudication — the §1.10 "
+        "embed-snippet contract is unmet (silent-failure review HIGH #2: "
+        "NO was the weakest of the four apply-raise contracts)."
+    )
+    assert orchestration.detail["exception_type"] == "ValueError", (
+        f"orchestration.detail[exception_type]={orchestration.detail.get('exception_type')!r}; "
+        f"expected 'ValueError'."
+    )
+    assert orchestration.detail["exception"] == raise_message
+    assert orchestration.detail["clause_text"] == raise_message  # ≤400 chars
+    # The orchestration adjudication is non-blocking — it is a WITNESS, not the
+    # gate (mirrors the EE/SE conserved-wrapper ``RejectedItem.blocking=False``
+    # pattern). The blocking gate lives on ``result.error``.
+    assert orchestration.blocking is False
+    assert orchestration.phase == "replay"
+    assert orchestration.source_statute == "no/lov/2025-01-01-1"
+    assert orchestration.detail["rule_id"] == "no_replay_apply_raise"
+    assert orchestration.detail["family"] == "orchestration_failure"
 
 
 def test_replay_no_to_pit_surfaces_parse_action_family_promotion(tmp_path) -> None:

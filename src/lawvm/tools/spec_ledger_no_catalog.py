@@ -234,6 +234,55 @@ _NO_RULE_SPECS: Dict[str, str] = {
         "{contingent, dated, immediate, override}; the unknown status is "
         "recorded as blocking, never silently guessed."
     ),
+    # --- Apply-fold orchestration failure (replay.py production caller) ---------------
+    # iter4 W1 (silent-failure review HIGH #2): when ``apply_no_ops_conserved``
+    # raises mid-fold, the production caller ``replay_no_to_pit`` catches broadly
+    # (``except Exception as exc:`` — widened from ``except ValueError`` to mirror
+    # the EE/EU/SE precedent, since NO was previously the WEAKEST contract of the
+    # four, letting ``AssertionError`` / ``KeyError`` / ``TypeError`` / internal-
+    # tree-invariant exceptions escape into the production lane as bare tracebacks
+    # and silently discard bare-apply's partial witnesses) and appends a
+    # non-blocking ``no_replay_apply_raise`` orchestration adjudication per
+    # §1.10 (embedding ``exception_type`` / ``exception`` / ``clause_text`` via
+    # ``diagnostic_detail``) before stamping
+    # ``result.error = f"Failed to apply ops: {exc}"`` (the blocking gate —
+    # ``classify_no_replayability`` and CLI tooling map a non-None
+    # ``result.error`` to a blocking replay-failure). The adjudication is a
+    # WITNESS, not the gate; bare-apply's partial witnesses (appended in place
+    # before the raise by the conserved wrapper which threads
+    # ``adjudications_out=result.adjudications`` directly through bare apply per
+    # iter2 W2 propagation-on-raise fix) persist on ``result.adjudications`` —
+    # §1.0 evidence-not-silently-destroyed contract. Mirrors the EE/EU/SE
+    # precedent (silent-failure review HIGH #1-3).
+    "no_replay_apply_raise": (
+        "An apply-fold exception raised mid-``apply_no_ops_conserved`` is a "
+        "non-blocking typed orchestration adjudication carrying the exception "
+        "type/exception/clause_text snippet per §1.10 (the blocking gate stays "
+        "on ``result.error``); bare-apply's partial witnesses persist on the "
+        "production result's adjudication ledger — §1.0 "
+        "evidence-not-silently-destroyed contract."
+    ),
+    # --- Archive-size capped §1.8 receipts (iter2 W7 M9 5081fd10) --------------------
+    # iter2 W7 M9 added ``NO_ARCHIVE_MEMBER_TOO_LARGE_REASON_CODE`` in both
+    # ``norway/grafter.py:4591`` and ``norway/sources.py:61`` (twin definitions
+    # to avoid a circular top-level import; both must agree byte-for-byte) as
+    # a typed ``RejectedItem[str]`` receipt reason_code for archive members
+    # that declare more bytes than ``$LAWVM_MAX_ARCHIVE_MEMBER_BYTES`` and are
+    # skipped by the Lovdata tarball loaders. Previously the skip surfaced as
+    # a stderr log line (silently dropped evidence); the typed receipt upgrades
+    # the §1.8 conservation-lane surface so the skip is owned (non-blocking —
+    # operator-tunable cap, over-retention per §0). iter4 W1 added the matching
+    # believed_spec entry (pre-existing uncataloged since iter2 W7 — concurrent
+    # fix to make ``test_every_discovered_rule_id_is_cataloged`` green so the
+    # HIGH-2 ``no_replay_apply_raise`` entry can land on a green NO catalog).
+    "no_archive_member_too_large": (
+        "A Norway archive member (tarball row) that declares more bytes than "
+        "``$LAWVM_MAX_ARCHIVE_MEMBER_BYTES`` is skipped by the Lovdata loader "
+        "(``open_lovdata_archive`` / ``_iter_current_artifacts_from_dir``) with "
+        "a typed ``RejectedItem[str]`` receipt (``reason_code="
+        "no_archive_member_too_large``, ``blocking=False``) so the §1.8 "
+        "conservation-lane inspects the skip — never a silent stderr drop."
+    ),
     "no_repeal_payload_dropped": (
         "A Norway REPEAL/TEXT_REPEAL op arrived at the generic structured-spec mint "
         "boundary carrying a non-None payload (the candidate map is consulted for all "
