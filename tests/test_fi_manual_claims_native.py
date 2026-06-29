@@ -534,6 +534,191 @@ def test_manual_claim_frontier_closure_report_forwards_phase_replay_gate(
     }
 
 
+def test_manual_claim_frontier_closure_report_accepts_typed_provenance_assertion(
+    tmp_path,
+):
+    """Positive use-site (US-action) guard for the tightened ``assertion`` waist.
+
+    The wrapper at ``manual_claims/native.py`` narrowed ``assertion: object`` to
+    ``ClaimAssertion | Mapping[str, Any]`` (AGENTS.md §1.9).  A typed
+    ``ProvenanceAssertion`` -- the canonical typed carrier -- must traverse the
+    boundary unchanged and still produce the passive read-model report.
+
+    Guard-liveness (AGENTS.md §2.9): this exercises the typed-carrier lane of
+    the production path through ``manual_claim_frontier_closure_report``; if a
+    future change re-widens to ``object`` or breaks the conformant-carrier
+    dispatch, this assert fails instead of silently degrading.
+    """
+    from lawvm.core.provenance_graph import SourceRef
+
+    store = _make_store(tmp_path)
+    producer = _make_producer()
+    src = SourceRef(
+        artifact_digest="a" * 64,
+        structural_locator="chapter:1/section:2",
+        bounded_quote_hash="b" * 64,
+        normalization_policy_id="v1",
+        byte_range=(0, 100),
+    )
+    # ``target`` carries the ``frontier_ref`` linkage the closure row reads via
+    # ``_claim_frontier_ref`` (mirrors the dict-shape ``target`` in the existing
+    # passive-read-model test, but on the canonical typed carrier).
+    typed_assertion = ProvenanceAssertion(
+        assertion_id="__ph__",
+        schema_version="v1",
+        jurisdiction="fi",
+        kind="fi.v1.INLINE_STATUTE_RESOLUTION",
+        layer="extraction",
+        scope={"statute_id": "555/2024"},
+        target={"frontier_ref": "fi-frontier-inline-ref", "ref": "chapter:1/section:2"},
+        value={"resolution": "laki 1/2024"},
+        source_refs=(src,),
+        dependency_refs=(),
+        valid_at=Interval(start=date(2024, 1, 1)),
+    )
+    canonical = assertion_canonical_payload(typed_assertion)
+    typed_assertion = ProvenanceAssertion(
+        assertion_id=_sha256(canonical),
+        schema_version="v1",
+        jurisdiction="fi",
+        kind="fi.v1.INLINE_STATUTE_RESOLUTION",
+        layer="extraction",
+        scope={"statute_id": "555/2024"},
+        target={"frontier_ref": "fi-frontier-inline-ref", "ref": "chapter:1/section:2"},
+        value={"resolution": "laki 1/2024"},
+        source_refs=(src,),
+        dependency_refs=(),
+        valid_at=Interval(start=date(2024, 1, 1)),
+    )
+
+    assertion_id = submit_assertion(store, typed_assertion, producer)
+    attest_id = attest(store, assertion_id, "span_verified", {}, producer)
+
+    reg_hash = attestation_kind_registry_hash()
+    builder = GraphBuilder(attestation_kind_registry_hash_val=reg_hash)
+    builder.add_assertion(store.read_assertion(assertion_id))
+    builder.add_attestation(store.read_attestation(attest_id))
+    graph = builder.finalize()
+    store.write_graph(graph)
+
+    result = query_state_from_store(
+        graph_store=store,
+        snapshot_hash=graph.snapshot_hash,
+        subject_id=assertion_id,
+        policy=EvidenceGraphPredicate(
+            predicate_id="fi.v1.INLINE_STATUTE_RESOLUTION.strict",
+            claim_kind="fi.v1.INLINE_STATUTE_RESOLUTION",
+            required=(exists("span_verified"),),
+        ),
+        profile=StrictProfile(name="fi_strict"),
+        at=datetime.now(tz=timezone.utc),
+    )
+    typed_assertion_read = store.read_assertion(assertion_id)
+
+    report = manual_claim_frontier_closure_report(
+        frontier_work_item={
+            "work_item_id": "fi-frontier-inline-ref",
+            "jurisdiction": "fi",
+            "source_artifact_id": "555/2024",
+            "source_unit_id": "chapter:1/section:2",
+            "owner_phase": "surface_extraction",
+            "frontier_family": "fi_inline_statute_resolution",
+            "frontier_status": "manual_claim_needed",
+            "required_claim_kind": "fi.v1.INLINE_STATUTE_RESOLUTION",
+            "required_proofs": ["phase_local_replay_authorization"],
+            "safe_default": "do_not_use_reference_claim_as_replay_authority",
+            "forbidden_shortcuts": ["manual_claim_as_replay_authorization"],
+            "executable": False,
+            "replay_authorized": False,
+            "authorization_status": "blocked_manual_claim_required",
+        },
+        assertion=typed_assertion_read,
+        authorization_result=result,
+        jurisdiction="fi",
+    )
+    data = report.to_dict()
+
+    assert result.authorized is True
+    assert data["report_kind"] == "manual_claim_frontier_closure"
+    assert data["replay_claims"] is False
+    assert data["summary"]["closure_status_counts"] == {
+        "evidence_policy_satisfied_phase_gate_required": 1
+    }
+    assert data["rows"][0]["frontier_ref"] == "fi-frontier-inline-ref"
+    assert data["rows"][0]["assertion_id"] == assertion_id
+    assert data["rows"][0]["policy_authorized"] is True
+
+
+def test_manual_claim_frontier_closure_report_rejects_bare_string_assertion(
+    tmp_path,
+):
+    """Negative guard-liveness fire-drill for the tightened ``assertion`` waist.
+
+    A bare ``str`` smuggled past the new typed
+    ``ClaimAssertion | Mapping[str, Any]`` parameter still fails loud at the
+    downstream ``_claim_assertion_mapping`` ``TypeError`` boundary in
+    ``frontier_work_item.frontier_work_item_claim_closure_report`` (preserved
+    by the typed-parameters change).  This asserts the smuggle produces a
+    fail-loud receipt at the production-lane boundary rather than silently
+    degrading to ``getattr(..., None)`` defaults (AGENTS.md §1.10).
+
+    Drives the bare-string through ``manual_claim_frontier_closure_report``
+    (the wrapper) -- not just the underlying frontier-work-item closure -- so
+    the guard covers the production path the wrapper exposes (AGENTS.md §2.9
+    guard-liveness: drive a known-violating input through the FULL production
+    path, not a unit test of the guard function).
+    """
+    store = _make_store(tmp_path)
+    producer = _make_producer()
+    assertion = _make_test_assertion(kind="fi.v1.INLINE_STATUTE_RESOLUTION")
+
+    assertion_id = submit_assertion(store, assertion, producer)
+    attest_id = attest(store, assertion_id, "span_verified", {}, producer)
+
+    reg_hash = attestation_kind_registry_hash()
+    builder = GraphBuilder(attestation_kind_registry_hash_val=reg_hash)
+    builder.add_assertion(store.read_assertion(assertion_id))
+    builder.add_attestation(store.read_attestation(attest_id))
+    graph = builder.finalize()
+    store.write_graph(graph)
+
+    result = query_state_from_store(
+        graph_store=store,
+        snapshot_hash=graph.snapshot_hash,
+        subject_id=assertion_id,
+        policy=EvidenceGraphPredicate(
+            predicate_id="fi.v1.INLINE_STATUTE_RESOLUTION.strict",
+            claim_kind="fi.v1.INLINE_STATUTE_RESOLUTION",
+            required=(exists("span_verified"),),
+        ),
+        profile=StrictProfile(name="fi_strict"),
+        at=datetime.now(tz=timezone.utc),
+    )
+
+    with pytest.raises(TypeError):
+        manual_claim_frontier_closure_report(
+            frontier_work_item={
+                "work_item_id": "fi-frontier-smuggle-probe",
+                "jurisdiction": "fi",
+                "source_artifact_id": "555/2024",
+                "source_unit_id": "chapter:1/section:2",
+                "owner_phase": "surface_extraction",
+                "frontier_family": "fi_inline_statute_resolution",
+                "frontier_status": "manual_claim_needed",
+                "required_claim_kind": "fi.v1.INLINE_STATUTE_RESOLUTION",
+                "required_proofs": ["phase_local_replay_authorization"],
+                "safe_default": "do_not_use_reference_claim_as_replay_authority",
+                "forbidden_shortcuts": ["manual_claim_as_replay_authorization"],
+                "executable": False,
+                "replay_authorized": False,
+                "authorization_status": "blocked_manual_claim_required",
+            },
+            assertion="bare_string_assertion",  # ty: ignore[invalid-argument-type]
+            authorization_result=result,
+            jurisdiction="fi",
+        )
+
+
 # ---------------------------------------------------------------------------
 # test_migration_one_shot_idempotent (required)
 # ---------------------------------------------------------------------------

@@ -21,7 +21,7 @@ Design
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Iterable, Mapping
+from typing import TYPE_CHECKING, Any, Iterable, Mapping
 
 from lawvm.core.compile_result import StrictProfile
 from lawvm.core.evidence_kernel import (
@@ -55,6 +55,13 @@ from lawvm.core.provenance_graph import (
 )
 from lawvm.core.provenance_graph_storage import GraphStore
 from lawvm.core.quirks_disposition import QuirksDisposition
+
+if TYPE_CHECKING:
+    # ``ClaimAssertion`` is the typed-Protocol waist for ``assertion`` at the
+    # ``frontier_work_item_claim_closure_report`` boundary (AGENTS.md §1.9).
+    # Imported under ``TYPE_CHECKING`` to avoid a runtime cycle through
+    # ``typed_carrier_protocols`` and resolved as a string annotation below.
+    from lawvm.core.typed_carrier_protocols import ClaimAssertion
 
 
 _MANUAL_CLAIM_AUTHORIZATION_FORBIDDEN_SHORTCUTS: tuple[str, ...] = (
@@ -386,7 +393,7 @@ def manual_claim_authorization_evidence_report(
 def manual_claim_frontier_closure_report(
     *,
     frontier_work_item: FrontierWorkItem | Mapping[str, object],
-    assertion: object,
+    assertion: "ClaimAssertion | Mapping[str, Any]",
     authorization_result: AuthorizationResult,
     phase_replay_gate: PhaseLocalReplayGate | None = None,
     jurisdiction: str = "",
