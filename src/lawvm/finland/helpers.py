@@ -266,9 +266,8 @@ def is_penal_offence_frame_without_sentencing(node: IRNode) -> bool:
         if child.kind in (IRNodeKind.INTRO, IRNodeKind.CONTENT):
             intro_text = _normalized_node_text(child)
             intro_lower = intro_text.lower()
-            # lawvm-regex: prefilter offence-formula prefix over the frame's own intro text; classifier only, mints no legal state
             if intro_text and (
-                _RANGAISTUS_OFFENCE_PREFIX_RE.match(intro_lower)
+                _RANGAISTUS_OFFENCE_PREFIX_RE.match(intro_lower)  # lawvm-regex: prefilter offence-formula prefix over the frame's own intro text; classifier only, mints no legal state
                 # lawvm-regex: prefilter embedded culpability formula (named-subject offence frame); classifier only
                 or _PENAL_CULPABILITY_FORMULA_RE.search(intro_lower)
             ):
