@@ -528,6 +528,12 @@ def test_reextract_one_cleans_up_tempfile_on_pdftotext_timeout_expired(
     # A finding must surface the pdftotext timeout (§1.10 — never silent).
     err = capsys.readouterr().err
     assert "corrigendum_reextract_pdf_text" in err
+    # D8 guard-liveness: the Phase-1 LLM swallow (the RuntimeError from
+    # _StubResponseCtx.__aenter__) MUST be routed through
+    # ``_emit_corrigendum_failure(rule_id="corrigendum_reextract_phase1")``
+    # so the failure is no longer silent (the prior shape returned
+    # ``{"error": f"phase1: {e}"}`` with no named diagnostic).
+    assert "corrigendum_reextract_phase1" in err
     # TemporaryDirectory was used and cleaned up.
     assert _TrackingTempDir._seen, "TemporaryDirectory was never used"
     for tmp in _TrackingTempDir._seen:
@@ -536,3 +542,97 @@ def test_reextract_one_cleans_up_tempfile_on_pdftotext_timeout_expired(
     # Defensive: assert the asyncio event loop closed cleanly (no leaked
     # tasks / sessions on the stub side).
     del unittest.mock  # silence unused-import lint expectation if any
+
+
+def test_reextract_one_phase2_swallow_emits_corrigendum_reextract_phase2_finding(
+    monkeypatch, capsys
+) -> None:
+    """D8 guard-liveness: ``_reextract_one`` Phase-2 LLM swallow routes
+    through ``_emit_corrigendum_failure(rule_id="corrigendum_reextract_phase2")``.
+
+    Drives a known-violating input through the FULL production path: stub
+    ``aiohttp.ClientSession.post`` so the Phase-1 call succeeds (returns a
+    known-good ``choices[0].message.content``) and the Phase-2 call raises
+    RuntimeError inside ``__aenter__``. The Phase-2 ``except Exception``
+    branch must route through ``_emit_corrigendum_failure`` (D8) — the prior
+    shape silently returned ``{"error": f"phase2: {e}"}`` with no named
+    diagnostic. Phase-1 ``raw_p1`` MUST survive into the returned dict
+    (``raw=raw_p1`` preserved by the recovery semantics).
+
+    The pdf_text block uses an empty ``pdf_bytes`` so it short-circuits
+    without invoking ``subprocess.run`` (the focus here is the Phase-2 LLM
+    swallow, not the leaked-tempfile regression covered above).
+    """
+    import asyncio
+
+    # Phase-call counter: 0 = phase-1 (succeeds), 1 = phase-2 (raises).
+    call_count = [0]
+
+    class _StubResponseSuccess:
+        async def __aenter__(self_inner) -> "_StubResponseSuccess":
+            return self_inner
+
+        async def __aexit__(self_inner, *exc: object) -> bool:
+            return False
+
+        async def json(self_inner) -> dict[str, object]:
+            # Phase-1 response: a line number the parser can accept so the
+            # function reaches Phase-2. ``raw_p1`` survives into the
+            # returned dict's ``raw`` field per the recovery contract.
+            # ``1`` keeps the test within the single-line ``lines`` array
+            # produced by the XML below.
+            return {"choices": [{"message": {"content": "1"}}]}
+
+    class _StubResponseFail:
+        async def __aenter__(self_inner) -> None:
+            raise RuntimeError("stub phase-2 __aenter__ failure (no LLM in test)")
+
+        async def __aexit__(self_inner, *exc: object) -> bool:
+            return False
+
+    class _StubSession:
+        def post(self, url: str, **_: object) -> object:
+            n = call_count[0]
+            call_count[0] += 1
+            if n == 0:
+                return _StubResponseSuccess()
+            return _StubResponseFail()
+
+    # Real TemporaryDirectory (no leak-tracking needed here — focus is the
+    # Phase-2 emission). ``pdf_bytes=None`` skips the pdf_text block.
+    async def _call() -> dict[str, object]:
+        sem = asyncio.Semaphore(1)
+        # Provide real text content so the tag-strip + whitespace-collapse
+        # in ``_reextract_one`` yields a non-empty ``lines`` array (the
+        # ``line_num <= len(lines)`` guard requires at least one line).
+        xml_bytes = b"<root>hello world</root>"
+        return await corr._reextract_one(
+            _StubSession(),  # type: ignore
+            sem,
+            "2024/7",
+            "wrong",
+            "correct",
+            "op-7",
+            xml_bytes,
+            None,  # pdf_bytes
+        )
+
+    result = asyncio.run(_call())
+
+    # Recovery preserved: the returned dict carries the ``error`` key per
+    # the prior Phase-2 contract, and ``raw`` carries the Phase-1 response
+    # (raw_p1) — D8 must not change this.
+    assert isinstance(result, dict)
+    assert "error" in result
+    error_str = result["error"]
+    assert isinstance(error_str, str)
+    assert "phase2" in error_str
+    # raw preserves the Phase-1 response (raw_p1) — the recovery contract.
+    assert result.get("raw") == "1"
+    # D8 guard-liveness: the Phase-2 swallow MUST emit the typed
+    # ``corrigendum_reextract_phase2`` CorrigendumApplyFailure diagnostic.
+    err = capsys.readouterr().err
+    assert "corrigendum_reextract_phase2" in err
+    # corrigendum_id (amendment_id) and snippet (op_id) surface per §1.10.
+    assert "2024/7" in err
+    assert "op-7" in err

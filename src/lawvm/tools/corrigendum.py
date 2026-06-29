@@ -3839,6 +3839,17 @@ async def _reextract_one(
         except (NameError, TypeError, AttributeError):
             raise  # programming bugs — fail loud
         except Exception as e:
+            # §1.10: route the LLM phase-1 swallow through the owned fail-loud
+            # diagnostic so the failure is no longer silent (mirrors the
+            # ``corrigendum_reextract_pdf_text`` precedent above). The caller
+            # still receives the prior ``error`` field (behavior preserved).
+            _emit_corrigendum_failure(
+                rule_id="corrigendum_reextract_phase1",
+                step="reextract.phase1_llm",
+                exc=e,
+                corrigendum_id=amendment_id,
+                snippet=op_id,
+            )
             return {"op_id": op_id, "raw": "", "parsed": None, "error": f"phase1: {e}"}
 
     # Parse line number
@@ -3871,6 +3882,17 @@ async def _reextract_one(
         except (NameError, TypeError, AttributeError):
             raise  # programming bugs — fail loud
         except Exception as e:
+            # §1.10: route the LLM phase-2 swallow through the owned fail-loud
+            # diagnostic so the failure is no longer silent (mirrors the
+            # ``corrigendum_reextract_phase1`` precedent above). The caller
+            # still receives the prior ``error`` field (behavior preserved).
+            _emit_corrigendum_failure(
+                rule_id="corrigendum_reextract_phase2",
+                step="reextract.phase2_llm",
+                exc=e,
+                corrigendum_id=amendment_id,
+                snippet=op_id,
+            )
             return {"op_id": op_id, "raw": raw_p1, "parsed": None, "error": f"phase2: {e}"}
 
     # Strip any tags from the phase-2 response
