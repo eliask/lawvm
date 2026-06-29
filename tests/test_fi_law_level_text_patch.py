@@ -14,6 +14,7 @@ from lawvm.core.ir import (
     TextPatchSpec,
     TextSelector,
 )
+from lawvm.core.provenance import compute_source_anchor
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction, TextPatchKindEnum
 from lawvm.finland.johtolause import extract_law_level_text_patch_los
 from lawvm.finland.ops import (
@@ -380,3 +381,145 @@ class TestExtractLawLevelTextPatchLos:
         assert patches[0].patch.replacement == "Lupa- ja valvontavirasto"
         assert patches[0].source_amendment == "2025/572"
         assert patches[0].effective == "2025-07-01"
+
+
+# ---------------------------------------------------------------------------
+# Per-op raw_text source-anchor (task #50, Option C)
+# ---------------------------------------------------------------------------
+#
+# extract_law_level_text_patch_los is the in-scope mint site for per-op
+# `LegalOperation.raw_text`: each text-amend op carries the verbatim clause
+# phrase that produced THIS op (distinct from the amendment-level
+# `OperationSource.raw_text`). These tests pin the typed waist the field
+# establishes so the downstream frontend-compile threading into
+# `OperationSource.source_anchor` is reducible to a per-op rather than an
+# amendment-level anchor.
+
+
+class TestExtractLawLevelTextPatchLosPerOpRawText:
+    def test_single_unscoped_amend_carries_verbatim_phrase_as_raw_text(self):
+        """The op's raw_text is the verbatim 'sana X korvataan sanalla Y' phrase."""
+        johto = 'sana "lupaviranomainen" korvataan sanalla "Lupa- ja valvontavirasto"'
+        [op] = extract_law_level_text_patch_los(johto, amendment_id="2025/572")
+        # Substring starts at old_text, ends after new_text — verbatim source.
+        assert op.raw_text.startswith('"lupaviranomainen"')
+        assert op.raw_text.endswith('"Lupa- ja valvontavirasto"')
+        # Round-trip: the raw_text is a contiguous substring of the johto.
+        assert op.raw_text in johto
+
+    def test_multi_amend_johto_produces_distinct_per_op_raw_text(self):
+        """Two text amends in one johtolause → distinct per-op raw_text values."""
+        johto = (
+            'Tässä laissa sana "lupaviranomainen" korvataan sanalla "Lupa- ja valvontavirasto", '
+            'sana "lääninhallitus" korvataan sanalla "aluehallintovirasto".'
+        )
+        ops = extract_law_level_text_patch_los(johto, amendment_id="2025/572")
+        assert len(ops) == 2
+        # Each op raw_text is non-empty and distinct.
+        assert ops[0].raw_text and ops[1].raw_text
+        assert ops[0].raw_text != ops[1].raw_text
+        # Each op raw_text is anchored at its own old_text token.
+        assert "lupaviranomainen" in ops[0].raw_text
+        assert "lääninhallitus" in ops[1].raw_text
+        # Sanity: each verbatim raw_text substring is locatable in the johto.
+        assert ops[0].raw_text in johto
+        assert ops[1].raw_text in johto
+
+    def test_distinct_per_op_raw_text_yields_distinct_per_op_source_anchors(self):
+        """End-to-end per-op anchor feasibility: same raw bytes + distinct per-op
+        clause_text → distinct per-op SourceAnchor byte spans + quote hashes.
+
+        Pins the typed-waist promotion chain at the level available in this
+        scope window: the per-op `raw_text` is the verbatim `clause_text` input
+        that `compute_source_anchor` locates in the raw amendment bytes and
+        emits a distinct `SourceAnchor` per clause, distinct from the
+        amendment-level anchor.
+        """
+        johto = (
+            'sana "lupaviranomainen" korvataan sanalla "Lupa- ja valvontavirasto", '
+            'sana "lääninhallitus" korvataan sanalla "aluehallintovirasto".'
+        )
+        ops = extract_law_level_text_patch_los(johto, amendment_id="2025/572")
+        assert len(ops) == 2
+        assert ops[0].raw_text != ops[1].raw_text
+        # Raw amendment bytes carry both verbatim clause substrings — each
+        # appears exactly once, so compute_source_anchor's uniqueness check
+        # passes (§1.10: ambiguous → None, not guessed).
+        raw_bytes = (
+            b"<amendment>"
+            b"<johtolause>"
+            + johto.encode("utf-8") +
+            b"</johtolause>"
+            b"</amendment>"
+        )
+        anchor_a = compute_source_anchor(
+            source_artifact_id="2025/572",
+            raw_bytes=raw_bytes,
+            clause_text=ops[0].raw_text,
+        )
+        anchor_b = compute_source_anchor(
+            source_artifact_id="2025/572",
+            raw_bytes=raw_bytes,
+            clause_text=ops[1].raw_text,
+        )
+        assert anchor_a is not None, "per-op raw_text for op 0 must locate verbatim"
+        assert anchor_b is not None, "per-op raw_text for op 1 must locate verbatim"
+        # Distinct per-clause byte spans — the contract of per-op anchor.
+        assert anchor_a.byte_offset != anchor_b.byte_offset
+        assert anchor_a.quote_hash != anchor_b.quote_hash
+        assert anchor_a != anchor_b
+
+    def test_empty_johto_no_ops_no_raw_text(self):
+        """Fail-safe: no amends → empty op list → no raw_text minting at all."""
+        ops = extract_law_level_text_patch_los("")
+        assert ops == []
+
+    def test_section_scoped_amend_skipped_does_not_mint_raw_text(self):
+        """Section-scoped text amend is NOT a law-level patch — no op minted,
+        therefore no raw_text. (Section-scoped path is handled elsewhere with
+        its own mint site — out of scope for this field's minting here.)"""
+        johto = '5 §:ssä sana "lääninhallitus" korvataan sanalla "aluehallintovirasto"'
+        ops = extract_law_level_text_patch_los(johto)
+        assert ops == []
+
+    def test_raw_text_substring_only_finds_amend_phrase_not_earlier_occurrence(self):
+        """When the old_text appears MULTIPLE times in the johto, the raw_text
+        for the text-amend op is bounded to the amend-phrase occurrence (the
+        one inside quotes followed by 'korvataan'), not any earlier stray
+        prose mention of the same bare word.
+
+        This guarantees the per-op SourceAnchor lands at the AMEND clause
+        position, not at any unrelated earlier mention of the same word.
+        """
+        johto = (
+            # Earlier stray mention of lupaviranomainen — NOT in quotes, so
+            # the quoted-form search (``"lupaviranomainen"``) must skip this
+            # and land at the amend-phrase occurrence below.
+            'Käsittelyssä lupaviranomainen toteaa, että '
+            'sana "lupaviranomainen" korvataan sanalla "Lupa- ja valvontavirasto".'
+        )
+        [op] = extract_law_level_text_patch_los(johto)
+        # op.raw_text must NOT contain the stray prose context (``toteaa`` is
+        # the word that immediately followed the stray unquoted occurrence),
+        # proving the helper bounded the slice to the amend-phrase occurrence
+        # rather than capturing text across the stray mention.
+        assert "toteaa" not in op.raw_text
+        # op.raw_text must START at the amend-phrase opening quote and END at
+        # the amend-phrase closing quote — the quoted-form search landed at
+        # the amend-phrase occurrence specifically.
+        assert op.raw_text.startswith('"lupaviranomainen"')
+        assert op.raw_text.endswith('"Lupa- ja valvontavirasto"')
+        # And verifiably contains the amend-phrase connective.
+        assert "korvataan sanalla" in op.raw_text
+        # Locate the amend-phrase occurrence we expect the helper to have
+        # picked (second occurrence of the bare word is the amend-phrase one).
+        first_idx = johto.find("lupaviranomainen")
+        second_idx = johto.find("lupaviranomainen", first_idx + 1)
+        assert second_idx > first_idx
+        # The amend-phrase bare word is the SECOND occurrence; op.raw_text must
+        # contain THAT occurrence (not the stray first one). The lupaviranomainen
+        # token inside op.raw_text appears at second_idx in johto.
+        raw_idx = johto.find(op.raw_text)
+        assert raw_idx >= second_idx - 1  # off-by-one for the opening quote
+        # And it must NOT contain the stray first occurrence's surrounding
+        # context (proof: ``toteaa`` is absent — checked above).

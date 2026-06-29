@@ -170,6 +170,22 @@ class LegalOperation:
     # keep producer-set == protocol-implementer-set.
     scope_confidence: Optional[ScopeConfidence] = None
     move_clause_target_unit_kind: Optional[str] = None
+    # Per-op verbatim source substring (Option C / lightest source-anchor
+    # seam): the literal source-clause text that produced THIS op, set where
+    # the parser mints the LegalOperation. Distinct from the
+    # amendment-level ``OperationSource.raw_text`` (the whole johtolause)
+    # and from the byte-span ``OperationSource.source_anchor``: this field
+    # is the per-op ``clause_text`` that ``compute_source_anchor`` looks up
+    # verbatim in the raw amendment bytes to produce a per-op ``SourceAnchor``
+    # (task #50). Empty by default — populated per-op by the parser's minting
+    # sites (e.g. ``finland.johtolause.extract_legal_ops_from_parse_result``
+    # / ``extract_law_level_text_patch_los``); downstream threading into
+    # ``OperationSource.source_anchor`` is owned by the frontend compile
+    # loop. Carries verbatim source text and is **not** replay authority —
+    # it is evidence footing (Surface/Source plane, §2.10) for the receipt's
+    # per-op anchor witness; replay consumes only the typed
+    # ``OperationSource.source_anchor`` (§1.11, §1.12).
+    raw_text: str = ""
 
     def __post_init__(self) -> None:
         if not isinstance(self.action, StructuralAction):
@@ -178,6 +194,10 @@ class LegalOperation:
             )
         object.__setattr__(self, "applicability", tuple(self.applicability))
         object.__setattr__(self, "provenance_tags", tuple(self.provenance_tags))
+        if not isinstance(self.raw_text, str):
+            raise TypeError(
+                f"LegalOperation.raw_text must be a str, got {type(self.raw_text).__name__}"
+            )
         if self.anchor is not None and self.action is not StructuralAction.INSERT:
             raise ValueError(f"LegalOperation anchor is only valid for insert; got action={self.action!r}")
         if self.destination is not None and self.action is not StructuralAction.RENUMBER:
@@ -211,7 +231,12 @@ class ProvisionVersion:
     variant_kind: Literal["permanent", "temporary"] = "permanent"
     content: Optional["IRNode"] = None
     source: Optional[OperationSource] = None
-    applicability: List[ScopePredicate] = field(default_factory=list)
+    # ``Sequence[ScopePredicate]`` (the read-only covariant protocol) rather
+    # than ``List[...]`` — matches the ``ProvisionTimeline.versions`` precedent
+    # (iter2 H5): declared read-only at the type level, runtime-coerced to a
+    # ``tuple`` via ``__post_init__`` so callers may pass either a list literal
+    # or a tuple while stored mutation is impossible (§1.9 immutable carriers).
+    applicability: Sequence[ScopePredicate] = field(default_factory=list)
     content_hash: str = ""
 
     def __post_init__(self) -> None:
