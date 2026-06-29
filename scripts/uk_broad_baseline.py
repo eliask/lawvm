@@ -978,12 +978,21 @@ def score_one(statute_id: str) -> dict[str, Any]:
                 # (deterministic_gap). The wire is §1.8 evidence, not authority —
                 # firing does not demote either class (resolution per spec §9
                 # via attestation retraction or claim promotion).
-                result["compare_adjudication_rows"] = _emit_compare_adjudication_rows(
-                    statute_id=statute_id,
-                    manual_frontier_records=manual_frontier_records,
-                    oracle_suspect_eids=oracle_only_eids,
-                    deterministic_gap_eids=replay_only_eids,
-                )
+                result["compare_adjudication_rows"] = [
+                    {
+                        "statute_id": row.statute_id,
+                        "eid": row.eid,
+                        "classification": row.classification,
+                        "source_rule_id": row.source_rule_id,
+                        "witness": row.witness,
+                    }
+                    for row in _emit_compare_adjudication_rows(
+                        statute_id=statute_id,
+                        manual_frontier_records=manual_frontier_records,
+                        oracle_suspect_eids=oracle_only_eids,
+                        deterministic_gap_eids=replay_only_eids,
+                    )
+                ]
                 result.update(
                     _oracle_only_addition_change_id_evidence(
                         current_xml=current,
