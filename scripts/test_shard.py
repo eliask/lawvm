@@ -287,6 +287,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_timeline_hook.py",
         "test_fi_timeline_robust_corpus.py",
         "test_fi_timeline_version_dedupe.py",
+        "test_fi_temporary_expiry_tombstone.py",
         "test_fi_scoped_section_resolver.py",
         "test_fi_resolve.py",
         "test_fi_resolve_defined_terms.py",

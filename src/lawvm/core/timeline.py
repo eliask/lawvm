@@ -20,7 +20,7 @@ Executable temporal authority is carried by explicit temporal events.
 from __future__ import annotations
 
 from dataclasses import replace as dc_replace
-from typing import Any, Callable, Dict, List, Literal, Optional, Set, Tuple
+from typing import AbstractSet, Any, Callable, Dict, List, Literal, Mapping, Optional, Set, Tuple
 
 from lawvm.core.ir import (
     IRNode,
@@ -87,6 +87,7 @@ from lawvm.core.timeline_results import (
     TimelineIssue,
     TimelineIssueKind,
     Timelines,
+    TombstoneRecord,
     materialization_result_to_stage_account,
 )
 from lawvm.core.timeline_selection import (
@@ -1163,6 +1164,80 @@ def materialize_pit_staged(
     return materialization_result_to_stage_account(result)
 
 
+def _collect_temporary_expiry_tombstones(
+    inactive_temporary_tombstone_version_by_projected_address: "Mapping[LegalAddress, ProvisionVersion]",
+    *,
+    active: "Mapping[LegalAddress, Optional[IRNode]]",
+    active_versions: "Mapping[LegalAddress, ProvisionVersion]",
+    already_tombstoned: "AbstractSet[LegalAddress]",
+) -> tuple[TombstoneRecord, ...]:
+    """Mint ``temporary_expiry`` tombstones for §0 sunset-expiry silent-drops.
+
+    An address qualifies when every version it ever had was a
+    ``variant_kind="temporary"`` version now past its ``expires``, NO repeal was
+    ever issued, and it is therefore absent from the materialized IR tree with no
+    repeal placeholder for ``collect_tombstones`` to surface (the active-version
+    selector returned ``None``). Witness: 2002/1290 ch4/§9, ch4/§10, ch5/§3a,
+    ch11/§4e, ch2a/§12b — inserted as COVID-era / transitional temporaries that
+    expired and were never repealed.
+
+    A record is minted ONLY for an address that is genuinely dropped: not present
+    with content in ``active`` (a later durable version revived it), not carrying
+    a selected version in ``active_versions`` (then it is a normal repeal handled
+    by ``collect_tombstones``), and not already covered by a repeal tombstone.
+
+    One tombstone is minted per dropped SUBTREE ROOT, matching the repeal
+    ``collect_tombstones`` convention (which never nests a child tombstone under a
+    tombstoned parent): a candidate whose ancestor is itself tombstoned (by a
+    repeal tombstone or by a higher temporary-expiry candidate) is suppressed, so
+    the subtree dies under a single carrier rather than one record per descendant.
+    """
+    candidate_addresses: set[LegalAddress] = set()
+    for address, version in inactive_temporary_tombstone_version_by_projected_address.items():
+        if not address.path:
+            continue
+        if address in already_tombstoned:
+            continue
+        if active.get(address) is not None:
+            continue  # a later durable version carries content here — not dropped
+        if active_versions.get(address) is not None:
+            continue  # a selected version exists — a normal repeal, not a sunset
+        source = version.source
+        if source is None or not source.statute_id:
+            continue
+        candidate_addresses.add(address)
+
+    def _has_tombstoned_ancestor(address: LegalAddress) -> bool:
+        for depth in range(1, len(address.path)):
+            ancestor = LegalAddress(path=address.path[:depth])
+            if ancestor in already_tombstoned or ancestor in candidate_addresses:
+                return True
+        return False
+
+    tombstones: list[TombstoneRecord] = []
+    for address in candidate_addresses:
+        if _has_tombstoned_ancestor(address):
+            continue  # subtree root already carries the tombstone
+        version = inactive_temporary_tombstone_version_by_projected_address[address]
+        source = version.source
+        assert source is not None  # candidate filter guaranteed a sourced version
+        kind, label = address.path[-1]
+        tombstones.append(
+            TombstoneRecord(
+                address=address,
+                kind=kind,
+                label=label,
+                source_statute=source.statute_id,
+                effective=version.expires or source.effective or version.effective,
+                enacted=source.enacted or version.enacted,
+                variant_kind="temporary",
+                op_id="",
+                disposition="temporary_expiry",
+            )
+        )
+    return tuple(sorted(tombstones, key=lambda tomb: tomb.address.path))
+
+
 def materialize_pit_ex(
     timelines: Timelines,
     as_of: str,
@@ -1225,6 +1300,13 @@ def materialize_pit_ex(
     selection_issues: List[TimelineIssue] = []
     inactive_expiry_by_address: Dict[LegalAddress, str] = {}
     inactive_temporary_expiry_by_address: Dict[LegalAddress, str] = {}
+    # The winning (latest-expiring) expired-temporary version per address, kept so
+    # a §0 ``temporary_expiry`` tombstone can be minted for an address that
+    # silently dropped out of the materialized state because every version it
+    # ever had was a sunset temporary now past its ``expires`` and NO repeal was
+    # ever issued (the active-version selector returns None, so no repeal
+    # placeholder reaches ``collect_tombstones``). Witness: 2002/1290 ch4/§9.
+    inactive_temporary_tombstone_version_by_address: Dict[LegalAddress, ProvisionVersion] = {}
     if timelines:
         _validate_selection_query(
             as_of=as_of,
@@ -1301,6 +1383,20 @@ def materialize_pit_ex(
             expired_temporary_versions = [v for v in expired_versions if v.variant_kind == "temporary"]
             if expired_temporary_versions and len(expired_temporary_versions) == len(expired_versions):
                 inactive_temporary_expiry_by_address[address] = max(v.expires or "" for v in expired_temporary_versions)
+                # A §0 silent-drop candidate: every version this address ever had
+                # is a sunset temporary now past its ``expires`` with NO repeal
+                # ever issued. Keep the latest-expiring sourced version so a
+                # ``temporary_expiry`` tombstone can account for the disappearance.
+                sourced_expired_temporaries = [
+                    v
+                    for v in expired_temporary_versions
+                    if v.source is not None and v.source.statute_id
+                ]
+                if sourced_expired_temporaries:
+                    inactive_temporary_tombstone_version_by_address[address] = max(
+                        sourced_expired_temporaries,
+                        key=lambda v: (v.expires or "", v.enacted or "", v.effective or ""),
+                    )
 
     active, active_versions, ambiguous_address_tuple = _project_materialization_selection_states(
         selection_states,
@@ -1337,6 +1433,24 @@ def materialize_pit_ex(
         current_expiry = inactive_temporary_expiry_by_projected_address.get(projected_address, "")
         if expiry > current_expiry:
             inactive_temporary_expiry_by_projected_address[projected_address] = expiry
+    # Project the §0 temporary-expiry tombstone source-versions onto the address
+    # visible at ``as_of`` (same lineage projection as the expiry maps above), so
+    # a later-migrated address surfaces the tombstone at its current position.
+    inactive_temporary_tombstone_version_by_projected_address: Dict[LegalAddress, ProvisionVersion] = {}
+    for address, version in inactive_temporary_tombstone_version_by_address.items():
+        projected_address = (
+            _current_address_from_migration_events(
+                address,
+                migration_events,
+                as_of_date=as_of,
+                address_prefix_matches=_address_prefix_matches,
+            )
+            if migration_events
+            else address
+        )
+        existing = inactive_temporary_tombstone_version_by_projected_address.get(projected_address)
+        if existing is None or (version.expires or "") > (existing.expires or ""):
+            inactive_temporary_tombstone_version_by_projected_address[projected_address] = version
     title_address = statute_title_address()
     title = base.title if base else ""
     title_content = active.pop(title_address, None)
@@ -1688,6 +1802,19 @@ def materialize_pit_ex(
         supplements=supplements,
         metadata=metadata,
     )
+    repeal_tombstones = _collect_tombstones(active, active_versions)
+    # §0 over-repeal visibility (AGENTS.md): an address whose every version was a
+    # sunset temporary now past ``expires`` and that was NEVER repealed drops out
+    # of the materialized state with NO repeal placeholder, so ``collect_tombstones``
+    # (which keys off a selected ``content=None`` repeal version) never sees it.
+    # Mint a distinct ``temporary_expiry`` tombstone so the disappearance is
+    # accounted for in ``products.tombstones`` rather than vanishing silently.
+    temporary_expiry_tombstones = _collect_temporary_expiry_tombstones(
+        inactive_temporary_tombstone_version_by_projected_address,
+        active=active,
+        active_versions=active_versions,
+        already_tombstoned={tomb.address for tomb in repeal_tombstones},
+    )
     return MaterializationResult(
         materialization_status=materialization_status,
         statute=statute,
@@ -1702,7 +1829,12 @@ def materialize_pit_ex(
             ambiguous_address_count=len(ambiguous_addresses),
             required_dimensions=tuple(sorted(degraded_dimensions)),
         ),
-        tombstones=_collect_tombstones(active, active_versions),
+        tombstones=tuple(
+            sorted(
+                (*repeal_tombstones, *temporary_expiry_tombstones),
+                key=lambda tomb: tomb.address.path,
+            )
+        ),
     )
 
 

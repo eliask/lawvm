@@ -257,9 +257,14 @@ def _drain_remaining_tombstones(
 def _format_tombstone_line_technical(tomb: "TombstoneRecord", indent: int) -> str:
     prefix = "  " * indent
     op_id_part = f'op_id="{tomb.op_id}"' if tomb.op_id else 'op_id="?"'
+    cause = (
+        "EXPIRED (temporary)"
+        if tomb.disposition == "temporary_expiry"
+        else f"REPEALED by {op_id_part}"
+    )
     return (
         f"{prefix}{tomb.kind.upper()} \"{tomb.label}\" "
-        f"[TOMBSTONED — REPEALED by {op_id_part} "
+        f"[TOMBSTONED — {cause} "
         f"source=\"{tomb.source_statute}\" "
         f"effective=\"{tomb.effective}\" enacted=\"{tomb.enacted}\" "
         f"variant_kind=\"{tomb.variant_kind}\"]"
@@ -275,9 +280,14 @@ def _format_tombstone_line_pretty(tomb: "TombstoneRecord", indent: int) -> str:
         if kind_label
         else f"{tomb.kind.upper()} \"{tomb.label}\""
     )
+    cause = (
+        "MÄÄRÄAIKAINEN — VANHENTUNUT"
+        if tomb.disposition == "temporary_expiry"
+        else f"REPEALED by {op_id_part}"
+    )
     return (
         f"{prefix}{suffix} "
-        f"[TOMBSTONED — REPEALED by {op_id_part} "
+        f"[TOMBSTONED — {cause} "
         f"source=\"{tomb.source_statute}\" "
         f"effective=\"{tomb.effective}\" enacted=\"{tomb.enacted}\" "
         f"variant_kind=\"{tomb.variant_kind}\"]"

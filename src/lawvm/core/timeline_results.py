@@ -382,6 +382,17 @@ class TombstoneRecord:
     re-mints the address in the IR tree. ``op_id`` defaults to empty because the
     op identity rides the :class:`LegalOperation` stream above the timeline
     waist; the timeline owner sees ``ProvisionVersion.source``.
+
+    ``disposition`` distinguishes the two ways an address becomes a §0
+    accounted-for absence: ``"repeal"`` (default) is the classic sourced repeal —
+    a selected version carries ``content=None`` (the silent repeal placeholder).
+    ``"temporary_expiry"`` is the lifecycle absence of a provision that was
+    inserted as a ``variant_kind="temporary"`` version with an explicit
+    ``expires`` date now in the past and was NEVER repealed: the active-version
+    selector returns ``None`` so no repeal placeholder exists, yet the provision
+    has silently dropped out of the materialized state. Both dispositions surface
+    here so over-repeal AND sunset-expiry are equally visible (AGENTS.md §0); the
+    distinction lets a projection render "kumottu" vs "määräaikainen — vanhentunut".
     """
 
     address: LegalAddress
@@ -392,6 +403,7 @@ class TombstoneRecord:
     enacted: str = ""
     variant_kind: Literal["permanent", "temporary"] = "permanent"
     op_id: str = ""
+    disposition: Literal["repeal", "temporary_expiry"] = "repeal"
 
     def __post_init__(self) -> None:
         if not self.address.path:
@@ -405,6 +417,10 @@ class TombstoneRecord:
         if self.variant_kind not in {"permanent", "temporary"}:
             raise ValueError(
                 "TombstoneRecord.variant_kind must be 'permanent' or 'temporary'"
+            )
+        if self.disposition not in {"repeal", "temporary_expiry"}:
+            raise ValueError(
+                "TombstoneRecord.disposition must be 'repeal' or 'temporary_expiry'"
             )
 
 
