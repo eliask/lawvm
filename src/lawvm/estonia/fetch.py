@@ -306,9 +306,17 @@ def _looks_like_html(data: bytes) -> bool:
 
 def _curl(url: str, archive: Any) -> Optional[bytes]:
     """Fetch URL via curl and store in archive. Returns bytes or None."""
-    with tempfile.NamedTemporaryFile(suffix=".tmp", delete=False) as f:
-        tmp_path = Path(f.name)
-    try:
+    # ``tempfile.TemporaryDirectory`` context manager cleans up the intermediate
+    # curl output file on every exit path (normal return, exception, early-
+    # return). The prior ``NamedTemporaryFile(suffix=".tmp", delete=False)`` +
+    # ``finally: tmp_path.unlink(missing_ok=True)`` shape worked but leaked
+    # the tempfile if the body raised an exception BEFORE the ``finally`` ran
+    # (e.g. an interrupt between the ``with`` exit and the ``try`` entry —
+    # ``delete=False`` means ``NamedTemporaryFile.__exit__`` does not unlink).
+    # The directory-scoped context manager closes that race (mirrors the
+    # corrigendum.py ``_pdf_page_count`` migration at iter2 W6 LOW-1).
+    with tempfile.TemporaryDirectory(prefix="ee_fetch_curl_") as tmpdir:
+        tmp_path = Path(tmpdir) / "input.tmp"
         result = subprocess.run(
             ["curl", "-s", "-A", _UA, "-L", "--max-time", "30",
              "-o", str(tmp_path),
@@ -325,8 +333,6 @@ def _curl(url: str, archive: Any) -> Optional[bytes]:
         data = tmp_path.read_bytes()
         archive.store(url, data)
         return data
-    finally:
-        tmp_path.unlink(missing_ok=True)
 
 
 # ---------------------------------------------------------------------------

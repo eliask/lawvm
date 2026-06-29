@@ -1111,17 +1111,31 @@ def se_pdf_bytes_to_text(
     """
     tmp_path: Optional[str] = None
     try:
-        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as handle:
-            handle.write(pdf_bytes)
-            tmp_path = handle.name
-        result = subprocess.run(
-            [pdftotext_bin, tmp_path, "-"],
-            capture_output=True,
-            timeout=timeout,
-        )
-        if result.returncode != 0:
-            return None
-        return result.stdout.decode("utf-8", errors="replace")
+        # ``tempfile.TemporaryDirectory`` context manager cleans up the
+        # intermediate PDF on every exit path (normal return, exception,
+        # early-return). The prior ``NamedTemporaryFile(delete=False)`` shape
+        # placed the cleanup ``Path(tmp_path).unlink(missing_ok=True)`` in the
+        # ``finally`` block below — necessary because the file was created
+        # outside a context manager and had to be manually unlinked; with the
+        # directory-scoped tempdir the context manager already handles cleanup
+        # by the time the ``finally`` block runs, so the ``Path.unlink`` there
+        # is now defense-in-depth (a no-op for the current tempdir-scoped
+        # pdf_path, retained so the ``cleanup_unlink`` named_swallow witness
+        # path below stays reachable for any future codepath that escapes the
+        # tempdir). Mirrors the corrigendum.py ``_pdf_page_count`` migration
+        # at iter2 W6 LOW-1 (tests/test_corrigendum_fail_loud.py).
+        with tempfile.TemporaryDirectory(prefix="se_grafter_pdf_") as tmpdir:
+            pdf_path = Path(tmpdir) / "input.pdf"
+            pdf_path.write_bytes(pdf_bytes)
+            tmp_path = str(pdf_path)
+            result = subprocess.run(
+                [pdftotext_bin, tmp_path, "-"],
+                capture_output=True,
+                timeout=timeout,
+            )
+            if result.returncode != 0:
+                return None
+            return result.stdout.decode("utf-8", errors="replace")
     except FileNotFoundError:
         # pdftotext binary is not installed.
         return None
