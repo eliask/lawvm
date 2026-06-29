@@ -57,6 +57,10 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     "estonia_replay_semantics": (
         "test_ee_apply_conserved.py",
         "test_ee_apply_semantics.py",
+        # §2.5 retirement parity gate for the EE same-moment cross-act detector.
+        "test_ee_cross_act_same_moment_parity.py",
+        # D7 deepcopy migration tests for estonia/target_resolution.py.
+        "test_ee_target_resolution_deepcopy.py",
         "test_ee_blame_provision_walk.py",
         "test_ee_instruction_waist.py",
         "test_ee_parser_normalization.py",
@@ -125,6 +129,8 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # apply_raise through scan_se_official_replay_act → asserts
         # BenchStatus.CRASH, not SOURCE_UNAVAILABLE).
         "test_se_scan_lane_apply_raise_bucketing.py",
+        # SE conserved apply wrapper fire-drill tests (AGENTS.md §1.8, §2.9).
+        "test_se_apply_conserved.py",
     ),
     "uk": (
         "test_uk_*.py",
@@ -175,6 +181,8 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     ),
     "finland_parse_payload": (
         "test_fi_attachment_ir.py",
+        # SDOC invariants — pinned against the D0 attachment-IR fixture.
+        "test_fi_sdoc_invariants.py",
         "test_fi_body_*.py",
         "test_fi_definition_introducer.py",
         "test_fi_definition_projection.py",
@@ -238,6 +246,8 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     "finland_replay_rules": (
         "test_fi_corrigendum_*.py",
         "test_corrigendum_fail_loud.py",
+        # §1.10 guard-liveness tests for scripts/diff_pdf_xml_corrigenda.py.
+        "test_diff_pdf_xml_corrigenda_fail_loud.py",
         "test_fi_guard_liveness.py",
         "test_filter_conservation_ratchet.py",
         "test_scope_source_ratchet.py",
@@ -472,6 +482,8 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # ``CompileAdjudicationProtocol`` carrier Protocols at the core boundary
         # (AGENTS.md §1.9 typed carriers over dynamic shape + §1.10 fail-loud).
         "test_typed_carrier_protocols.py",
+        # D1 node-kind registry: governed IRNodeKind specs + validator.
+        "test_core_node_kind_registry.py",
         "test_fi_address_parse.py",
         "test_irnodekind_stringly_typed_gate.py",
         "test_fi_admissible_binding.py",
@@ -753,6 +765,8 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_diff.py",
         "test_dump.py",
         "test_dump_json_hashes.py",
+        # `lawvm show` — pretty human-readable statute tree; counterpart to dump.
+        "test_tools_show.py",
         "test_fi_freshness_tool.py",
         "test_fi_provision_state.py",
         "test_fi_parse_view.py",
