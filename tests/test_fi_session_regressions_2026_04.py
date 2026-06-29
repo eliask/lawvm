@@ -36,6 +36,7 @@ Run:
 from __future__ import annotations
 from lawvm.core.canonical_intent import Relabel
 from lawvm.core.ir import LegalAddress, LegalOperation, OperationSource
+from lawvm.core.recovery_kind import RecoveryKind
 
 import datetime as dt
 from typing import List, Optional, Set, Tuple
@@ -56,7 +57,7 @@ from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector
 from lawvm.finland.johtolause.api import parse_clause
 from lawvm.finland.ops import OpType, AmendmentOp, ResolvedOp, get_replay_profile
 from lawvm.finland.replay_entrypoint import replay_xml
-from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
+from lawvm.finland.replay_request import ReplayXmlRequest, ReplayXmlSinks, call_replay_xml
 from lawvm.finland.standalone_targets import StandaloneSectionTarget
 from lawvm.finland.statute import ReplayState
 from lawvm.finland.restructure_plan import resolved_op_is_owned_by_restructure_plan as _resolved_op_is_owned_by_restructure_plan
@@ -2385,6 +2386,46 @@ def test_1990_650_2003_127_chapter_11a_does_not_absorb_voimaantulo_section() -> 
     assert all(
         record.address != "chapter:11a/section:60"
         for record in replay.products.fold_timeline_backfills
+    )
+
+
+def test_2014_527_2026_178_section_225_binds_item_payload_to_scoped_subsection() -> None:
+    """Same-label carried items from shifted moments must not override scoped item payloads."""
+    source_pathologies = []
+    replay = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(
+            parent_id="2014/527",
+            mode="official_consolidation",
+            quiet=True,
+        ),
+        sinks=ReplayXmlSinks(source_pathologies_out=source_pathologies),
+    )
+
+    section_225 = replay.materialized_state.find_section("225", "20")
+    assert section_225 is not None
+    subsection_1 = next(
+        child
+        for child in section_225.children
+        if child.kind is IRNodeKind.SUBSECTION and child.label == "1"
+    )
+    item_7 = next(
+        child
+        for child in subsection_1.children
+        if child.kind is IRNodeKind.PARAGRAPH and child.label == "7"
+    )
+    item_7_text = " ".join(irnode_to_text(item_7).split())
+
+    assert "teollisuuspäästöportaalin perustamisesta" in item_7_text
+    assert "rikkoo otsoniasetuksen 4 tai 5 artiklan" not in item_7_text
+    assert all(
+        record.address != "chapter:20/section:225"
+        for record in replay.products.fold_timeline_backfills
+    )
+    assert any(
+        row.source_statute == "2026/178"
+        and row.detail.get("recovery_kind") == RecoveryKind.SECTION_SNAPSHOT_SCOPED_ITEM_PAYLOAD_BIND
+        for row in source_pathologies
     )
 
 

@@ -3501,7 +3501,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 51,2005/566,core,,,OK
 52,1984/603,suspect,oracle_suspect,2026/52 eff 2026-05-01 > cutoff 2026-01-16,
 52,1992/734,suspect,oracle_suspect,2025/1096 eff 2026-01-01 > cutoff 2025-12-05,
-52,2014/527,core,,,OK
+52,2014/527,suspect,oracle_suspect,2026/312 eff 2027-01-01 > cutoff 2026-04-24; remaining 225 section residual is source/oracle subsection-shape convention after 2026/178 scoped item payload fix,OK
 53,2006/1280,core,,,OK
 53,2009/1705,suspect,oracle_suspect,2025/1371 eff 2026-08-01 > cutoff 2025-12-22,
 54,1987/450,suspect,oracle_suspect,2013/773 eff 2013-12-01 > cutoff 2013-11-08,
@@ -3537,7 +3537,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 112,1948/608,suspect,oracle_suspect,2015/486 eff 2015-05-01 > cutoff 2015-04-24,
 118,2004/301,suspect,oracle_suspect,2025/582 eff 2026-01-01 > cutoff 2025-12-22,
 134,1968/360,suspect,oracle_suspect,2025/1145 eff 2026-01-01 > cutoff 2025-12-05,
-147,2004/1224,core,,,OK
+147,2004/1224,suspect,oracle_suspect,2026/55 eff 2026-05-01 > cutoff 2026-01-16; oracle-check residuals classify as editorial convention/oracle stale/source pathology,OK
 149,1993/1501,core,,,OK
 163,1961/395,suspect,oracle_suspect,2005/1119 eff 2006-01-01 > cutoff 2005-12-22,
 166,2002/1290,suspect,oracle_suspect,2026/327 eff 2026-05-01 > cutoff 2026-04-24; oracle-check classifies residuals as ORACLE_STALE/EDITORIAL_CONVENTION/SOURCE_PATHOLOGY,OK
