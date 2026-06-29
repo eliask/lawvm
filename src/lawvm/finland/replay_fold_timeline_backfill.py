@@ -106,6 +106,30 @@ def _node_content_matches(left: IRNode, right: IRNode) -> bool:
     )
 
 
+def _remove_normalized_text_once(text: str, needle: str) -> str:
+    index = text.find(needle)
+    if index < 0:
+        return text
+    return " ".join((text[:index] + " " + text[index + len(needle) :]).split())
+
+
+def _fold_parent_text_is_conserved_after_missing_descendants(
+    *,
+    parent_text: str,
+    fold_text: str,
+    missing_descendant_texts: tuple[str, ...],
+) -> bool:
+    if not missing_descendant_texts:
+        return False
+    remaining_fold_text = fold_text
+    for descendant_text in sorted(missing_descendant_texts, key=len, reverse=True):
+        remaining_fold_text = _remove_normalized_text_once(
+            remaining_fold_text,
+            descendant_text,
+        )
+    return remaining_fold_text == parent_text or parent_text in remaining_fold_text
+
+
 def _provision_roots(ir: IRNode) -> tuple[IRNode, ...]:
     if (
         len(ir.children) == 1
@@ -132,7 +156,12 @@ def _iter_fold_section_nodes(
         return
     children = _provision_roots(node) if node.kind is IRNodeKind.BODY else node.children
     for child in children:
-        if child.kind in {IRNodeKind.PART, IRNodeKind.CHAPTER, IRNodeKind.HCONTAINER}:
+        if child.kind in {
+            IRNodeKind.PART,
+            IRNodeKind.CHAPTER,
+            IRNodeKind.HCONTAINER,
+            IRNodeKind.SECTION,
+        }:
             yield from _iter_fold_section_nodes(child, path)
 
 
@@ -222,6 +251,78 @@ def _timeline_intentionally_absent(
         if expires and expires <= as_of:
             return True
     return False
+
+
+def _find_descendant_by_relative_path(
+    root: IRNode,
+    relative_path: tuple[tuple[str, str], ...],
+) -> IRNode | None:
+    current = root
+    for kind, label in relative_path:
+        current = next(
+            (
+                child
+                for child in current.children
+                if child.kind.value == kind and child.label == label
+            ),
+            None,
+        )
+        if current is None:
+            return None
+    return current
+
+
+def _stale_parent_hides_active_fold_descendant(
+    timelines: dict[LegalAddress, ProvisionTimeline],
+    address: LegalAddress,
+    *,
+    parent_timeline_content: IRNode,
+    fold_node: IRNode,
+    as_of: str,
+    active_content_cache: dict[LegalAddress, IRNode | None],
+) -> bool:
+    """Return whether a stale parent version hides live descendant timelines.
+
+    Sparse amendment payloads can compile a parent section/subsection timeline
+    version that omits live child provisions even though those child timelines
+    remain active and the replay fold still contains them. In that case a fold
+    section snapshot is a conservation repair, not a generic preference for the
+    fold over the timeline.
+    """
+    parent_text = _normalized_node_text(parent_timeline_content)
+    fold_text = _normalized_node_text(fold_node)
+    missing_descendant_texts: list[str] = []
+    for descendant_address in timelines:
+        if descendant_address == address:
+            continue
+        if not _address_is_prefix(address, descendant_address):
+            continue
+        descendant_content = _active_timeline_content(
+            timelines,
+            descendant_address,
+            as_of=as_of,
+            cache=active_content_cache,
+        )
+        if descendant_content is None:
+            continue
+        fold_descendant = _find_descendant_by_relative_path(
+            fold_node,
+            descendant_address.path[len(address.path) :],
+        )
+        if fold_descendant is None:
+            continue
+        descendant_text = _normalized_node_text(descendant_content)
+        if (
+            descendant_text
+            and descendant_text not in parent_text
+            and _node_content_matches(descendant_content, fold_descendant)
+        ):
+            missing_descendant_texts.append(descendant_text)
+    return _fold_parent_text_is_conserved_after_missing_descendants(
+        parent_text=parent_text,
+        fold_text=fold_text,
+        missing_descendant_texts=tuple(missing_descendant_texts),
+    )
 
 
 def _has_timeline_authority(
@@ -325,6 +426,7 @@ def _has_same_moment_exact_section_snapshot(
     *,
     source_statute: str,
     effective: str,
+    timeline_content: IRNode,
 ) -> bool:
     for op in lo_ops:
         if op.target != address:
@@ -337,7 +439,11 @@ def _has_same_moment_exact_section_snapshot(
             continue
         if op.source is None:
             continue
-        if op.source.statute_id == source_statute and op.source.effective == effective:
+        if (
+            op.source.statute_id == source_statute
+            and op.source.effective == effective
+            and _node_content_matches(op.payload, timeline_content)
+        ):
             return True
     return False
 
@@ -408,10 +514,26 @@ def append_fold_timeline_backfill_ops(
             as_of=as_of,
             cache=active_content_cache,
         )
+        stale_timeline_authority = timeline_content is not None and not _node_content_matches(
+            timeline_content,
+            node,
+        )
         stale_migration_authority = (
-            timeline_content is not None
-            and not _node_content_matches(timeline_content, node)
+            stale_timeline_authority
+            and timeline_content is not None
             and _address_has_migration_authority(address, migration_events)
+        )
+        stale_parent_hides_descendants = (
+            stale_timeline_authority
+            and timeline_content is not None
+            and _stale_parent_hides_active_fold_descendant(
+                preview.rekeyed_timelines,
+                address,
+                parent_timeline_content=timeline_content,
+                fold_node=node,
+                as_of=as_of,
+                active_content_cache=active_content_cache,
+            )
         )
         source_statute, effective = _migration_source_for_address(
             address,
@@ -426,10 +548,12 @@ def append_fold_timeline_backfill_ops(
                 address,
                 source_statute=source_statute,
                 effective=effective,
+                timeline_content=timeline_content,
             )
         ):
             continue
-        if not stale_migration_authority and _has_timeline_authority(
+        stale_backfill_authorized = stale_migration_authority or stale_parent_hides_descendants
+        if not stale_backfill_authorized and _has_timeline_authority(
             preview.rekeyed_timelines,
             address,
             as_of=as_of,
