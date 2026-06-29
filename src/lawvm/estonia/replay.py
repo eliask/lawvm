@@ -1918,6 +1918,17 @@ def replay_ee_to_pit(
                     ),
                     "exception_type": type(e).__name__,
                     "exception": str(e),
+                    # iter4 W1 M2 (silent-failure review M2): ``clause_text``
+                    # currently carries the apply-raise exception string
+                    # (``str(e)[:400]``), NOT the §1.10 source-text snippet.
+                    # The per-op source_clause_extract extraction is deferred per
+                    # task #50 — at the apply_raise catch site bare-apply has
+                    # raised mid-fold without exposing the failing op's source
+                    # span, so the only immediately-available diagnostic snippet
+                    # IS the exception string. Once task #50 lands the per-op
+                    # source_anchor sink through bare-apply's raise path, this
+                    # will carry source text per §1.10 embed-snippet contract
+                    # (mirrors the NO precedent at norway/replay.py no_replay_apply_raise).
                     "clause_text": str(e)[:400],
                 },
                 phase="replay",

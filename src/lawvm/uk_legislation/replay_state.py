@@ -1651,13 +1651,37 @@ class UKReplayStateMixin:
         chain: list[tuple[IRNode, IRNode]],
     ) -> None:
         """Patch ``_node_tree_path_index`` in place: for each ``(old, new)``
-        pair in ``chain[1:]`` (the rebuilt ancestors; ``chain[0]`` is the
-        replaced leaf, whose subtree entries were already handled by the
-        caller's ``_remove_eid_lookup_subtree`` + ``_add_eid_lookup_subtree``
-        calls), pop the entry keyed by ``id(old)`` and re-insert keyed by
-        ``id(new)`` carrying the same path. CoW chain rebuild preserves
-        ``kind`` / ``label`` sequences, so the survivor's path is unchanged
-        — only ``id()``s along the ancestor path are swapped.
+        pair in ``chain`` (iterating from index 0 — post iter3 W1 Fix 1, the
+        prior ``chain[1:]`` form was SAFE for REPLACE but WRONG for REMOVE),
+        pop the entry keyed by ``id(old)`` and re-insert keyed by ``id(new)``
+        carrying the same path. CoW chain rebuild preserves ``kind`` / ``label``
+        sequences, so the survivor's path is unchanged — only ``id()``s along
+        the ancestor path are swapped.
+
+        For ``chain[0]`` (the rebuilt leaf for REPLACE, the rebuilt parent for
+        REMOVE):
+          * REPLACE-path: ``chain[0] = (old_leaf, new_leaf)`` — the leaf's
+            path-index entry was already popped upstream by the caller's
+            ``_remove_eid_lookup_subtree(old_node)``; the ``pop(id(old_leaf))``
+            here returns ``None`` harmlessly and the ``continue`` below skips it
+            (the new leaf entries are re-added by the caller's
+            ``_add_eid_lookup_subtree(new_node, ...)``). Pre-fix ``chain[1:]``
+            was a no-op for this case — iterating ``chain[:]`` is SAFE because
+            the defensive ``None``-skip keeps the iteration idempotent for
+            REPLACE.
+          * REMOVE-path: ``chain[0] = (old_parent, new_parent)`` — the leaf's
+            subtree was popped by ``_remove_eid_lookup_subtree`` but the
+            parent's entry was NOT (still live, indexed by ``id(old_parent)``).
+            Pre-fix ``chain[1:]`` WRONG: this stale ghost entry keyed by
+            ``id(old_parent)`` accumulated ~1 per CoW-remove op and the entry
+            keyed by ``id(new_parent)`` was never inserted, breaking warm-path
+            lookups for every descendant of the rebuilt parent. Post-fix
+            ``chain[:]`` iteration pops the stale ``id(old_parent)`` entry and
+            re-inserts it keyed by ``id(new_parent)`` so survivor-descendant
+            path lookups continue to hit the warm fast-path.
+
+        See the inline comment at the iteration (line ~1669-1687) for the full
+        REPLACE-vs-REMOVE derivation.
 
         Cost: O(chain_len) dict ops vs. the prior O(S) wholesale-drop +
         O(S) lazy-rebuild-from-walk on next access (S = full statute tree
