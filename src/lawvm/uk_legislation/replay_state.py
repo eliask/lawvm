@@ -11,13 +11,13 @@ from lawvm.core.ir import IRNode, IRStatute, LegalAddress, LegalOperation
 from lawvm.core.mutation_boundary import TreePath, TreePaths, tree_path_from_legal_address
 from lawvm.core.mutation_events import MutationEvent
 from lawvm.core.semantic_types import StructuralAction
+from lawvm.core.tree_ops import with_children
 from lawvm.uk_legislation.addressing import _action_name
 from lawvm.uk_legislation.canonicalize import UKCanonicalNodeMatch
 from lawvm.uk_legislation.apply_rebuild import (
     uk_insert_child_sorted_cow,
     uk_insert_node_at_index_cow,
     uk_insert_node_sorted_cow,
-    uk_replace_children_cow,
 )
 
 _UK_TOP_SCOPED_EID_PREFIXES = frozenset(
@@ -46,6 +46,59 @@ class VersionedNodeLookup(NamedTuple):
     node: Optional[IRNode]
     parent: Optional[IRNode]
     index: Optional[int]
+
+
+class UKCoWAncestorChainLocateFailed(Exception):
+    """Raised when ``_remove_node`` / ``_do_replace_node_in_statute`` cannot
+    locate the target node through EITHER the warm EID index CoW chain OR the
+    path-walk fallback (iter2 W5 M3, silent-failure review).
+
+    Pre-fix the unreachable-else tail of both CoW chain handlers returned
+    ``False`` silently. The caller at ``replay_repeal_apply.py:289-294``
+    discarded the boolean and unconditionally called
+    ``_record_repealed_target(target)`` — recording a repeal that never landed
+    against the live tree (over-repeal risk, AGENTS.md §0). Evidence used to
+    diagnose the missing target should never be re-derived from the live tree
+    guess either (§1.11 / §1.12): the typed carrier is the receipt of failure,
+    not a ``return False`` the caller silently swallows.
+
+    The exception carries the original ``(target, parent, idx)`` tuple passed
+    to the CoW chain entry so the caller can route it into a typed
+    ``uk_replay_cow_chain_locate_failed`` adjudication rather than recording a
+    false repeal. ``parent`` / ``idx`` are ``None`` for the replace path,
+    where the original ``_do_replace_node_in_statute`` only had ``old_node``
+    to thread into the warm-index lookup.
+    """
+
+    target: IRNode
+    parent: Optional[IRNode]
+    idx: Optional[int]
+
+    def __init__(
+        self,
+        *,
+        target: IRNode,
+        parent: Optional[IRNode] = None,
+        idx: Optional[int] = None,
+    ) -> None:
+        object.__setattr__(self, "target", target)
+        object.__setattr__(self, "parent", parent)
+        object.__setattr__(self, "idx", idx)
+        parent_repr = (
+            f" parent={parent.kind.value}:{parent.label!r}"
+            if parent is not None
+            else " parent=None"
+        )
+        idx_repr = f" idx={idx}" if idx is not None else " idx=None"
+        super().__init__(
+            "UK replay CoW chain fail-loud: both the warm EID index CoW "
+            "rebuild (``_cow_*_preserve_warm_index``) AND the path-walk "
+            "fallback (``_cow_*_via_path_walk``) failed to locate the "
+            f"target={target.kind.value}:{target.label!r}{parent_repr}{idx_repr}. "
+            "Previously this branch silently returned False and the caller "
+            "unconditionally recorded a repeal/replace that never landed "
+            "(AGENTS.md §0 over-repeal risk)."
+        )
 
 
 type TargetLookupKey = tuple[tuple[tuple[str, Optional[str]], ...], bool, bool]
@@ -773,7 +826,7 @@ class UKReplayStateMixin:
         new_children, ok = uk_insert_node_at_index_cow(list(parent.children), idx, new_node)
         if not ok:
             return False
-        new_parent = uk_replace_children_cow(parent, new_children)
+        new_parent = with_children(parent, new_children)
         if not self._replace_ancestor_chain(parent, new_parent):
             return False
         self._record_child_inserted(new_parent, new_node)
@@ -792,11 +845,11 @@ class UKReplayStateMixin:
         that was inserted into ``new_children``.
 
         Builds a new parent whose children list is exactly ``new_children`` via
-        ``uk_replace_children_cow``, threads the new parent up to the statute
+        ``tree_ops.with_children``, threads the new parent up to the statute
         root, then records the structural mutation event with ``new_node`` as
         the inserted child for lineage bookkeeping.
         """
-        new_parent = uk_replace_children_cow(parent, new_children)
+        new_parent = with_children(parent, new_children)
         if not self._replace_ancestor_chain(parent, new_parent):
             return False
         self._record_child_inserted(new_parent, new_node)
@@ -947,7 +1000,7 @@ class UKReplayStateMixin:
 
         ``new_node`` MUST be the rebuilt version of ``old_node``
         (``dc_replace(old_node, children=...)`` or
-        ``uk_replace_children_cow(old_node, children)``); the caller is
+        ``tree_ops.with_children(old_node, children)``); the caller is
         responsible for any subtree changes inside ``new_node``. The chain
         above ``old_node`` is rebuilt wholesale by this helper.
 
@@ -1359,7 +1412,21 @@ class UKReplayStateMixin:
             self._record_replace_node_mutation_event(old_path=old_path, new_node=new_node)
             return True
 
-        return False
+        # iter2 W5 M3 (silent-failure review): the prior unreachable-else tail
+        # returned ``False`` silently, allowing callers that discard the
+        # boolean (e.g. the many ``self._replace_node_in_statute(node, rebuilt)``
+        # call sites in replay_text_apply / replay_table_apply / replay_renumber
+        # _apply / replay_replace_apply) to continue as if the replace had
+        # landed. The typed exception closes the silent-drop path: BOTH the
+        # warm EID index CoW rebuild (``_cow_replace_in_subtree_preserve_warm_
+        # index`` above) AND the path-walk CoW fallback
+        # (``_cow_replace_in_subtree_via_path_walk`` above) failed to route
+        # ``old_node`` to a parent in the live tree. ``old_node`` is the only
+        # identity available here — there is no parent/idx at this tail because
+        # the warm-index lookup either returned None or its returned parent
+        # failed to chain to a root (handled by the Cow helpers' own
+        # ``return False`` branches above).
+        raise UKCoWAncestorChainLocateFailed(target=old_node)
 
     def _cow_replace_in_subtree_preserve_warm_index(
         self,
@@ -1584,13 +1651,37 @@ class UKReplayStateMixin:
         chain: list[tuple[IRNode, IRNode]],
     ) -> None:
         """Patch ``_node_tree_path_index`` in place: for each ``(old, new)``
-        pair in ``chain[1:]`` (the rebuilt ancestors; ``chain[0]`` is the
-        replaced leaf, whose subtree entries were already handled by the
-        caller's ``_remove_eid_lookup_subtree`` + ``_add_eid_lookup_subtree``
-        calls), pop the entry keyed by ``id(old)`` and re-insert keyed by
-        ``id(new)`` carrying the same path. CoW chain rebuild preserves
-        ``kind`` / ``label`` sequences, so the survivor's path is unchanged
-        — only ``id()``s along the ancestor path are swapped.
+        pair in ``chain`` (iterating from index 0 — post iter3 W1 Fix 1, the
+        prior ``chain[1:]`` form was SAFE for REPLACE but WRONG for REMOVE),
+        pop the entry keyed by ``id(old)`` and re-insert keyed by ``id(new)``
+        carrying the same path. CoW chain rebuild preserves ``kind`` / ``label``
+        sequences, so the survivor's path is unchanged — only ``id()``s along
+        the ancestor path are swapped.
+
+        For ``chain[0]`` (the rebuilt leaf for REPLACE, the rebuilt parent for
+        REMOVE):
+          * REPLACE-path: ``chain[0] = (old_leaf, new_leaf)`` — the leaf's
+            path-index entry was already popped upstream by the caller's
+            ``_remove_eid_lookup_subtree(old_node)``; the ``pop(id(old_leaf))``
+            here returns ``None`` harmlessly and the ``continue`` below skips it
+            (the new leaf entries are re-added by the caller's
+            ``_add_eid_lookup_subtree(new_node, ...)``). Pre-fix ``chain[1:]``
+            was a no-op for this case — iterating ``chain[:]`` is SAFE because
+            the defensive ``None``-skip keeps the iteration idempotent for
+            REPLACE.
+          * REMOVE-path: ``chain[0] = (old_parent, new_parent)`` — the leaf's
+            subtree was popped by ``_remove_eid_lookup_subtree`` but the
+            parent's entry was NOT (still live, indexed by ``id(old_parent)``).
+            Pre-fix ``chain[1:]`` WRONG: this stale ghost entry keyed by
+            ``id(old_parent)`` accumulated ~1 per CoW-remove op and the entry
+            keyed by ``id(new_parent)`` was never inserted, breaking warm-path
+            lookups for every descendant of the rebuilt parent. Post-fix
+            ``chain[:]`` iteration pops the stale ``id(old_parent)`` entry and
+            re-inserts it keyed by ``id(new_parent)`` so survivor-descendant
+            path lookups continue to hit the warm fast-path.
+
+        See the inline comment at the iteration (line ~1669-1687) for the full
+        REPLACE-vs-REMOVE derivation.
 
         Cost: O(chain_len) dict ops vs. the prior O(S) wholesale-drop +
         O(S) lazy-rebuild-from-walk on next access (S = full statute tree
@@ -1599,16 +1690,30 @@ class UKReplayStateMixin:
         """
         if self._node_tree_path_index is None or not chain:
             return  # Cold path: nothing to re-key.
-        # Skip chain[0]: the replaced leaf's path entries were either
-        # already removed by ``_remove_eid_lookup_subtree`` (replace case)
-        # or never present (remove case — chain[0] = the rebuilt parent of
-        # the popped leaf, so its entry is still id(old_parent) → patched).
-        # Only chain[1:] (rebuilt ancestor identities) need re-keying.
-        for i in range(1, len(chain)):
+        # Iterate from index 0 so both REPLACE and REMOVE paths re-key every
+        # rebuilt ancestor identity in ``chain``:
+        #   * REPLACE: ``chain[0] = (old_leaf, new_leaf)`` — the leaf's
+        #     path-index entry was already popped upstream by
+        #     ``_remove_eid_lookup_subtree(old_node)``; ``pop(id(old_leaf))``
+        #     returns ``None`` harmlessly and the ``continue`` below skips it.
+        #     New leaf entries are re-added by the caller's
+        #     ``_add_eid_lookup_subtree(new_node, ...)``.
+        #   * REMOVE: ``chain[0] = (old_parent, new_parent)`` — the leaf's
+        #     subtree was popped by ``_remove_eid_lookup_subtree`` but the
+        #     parent's entry was NOT (it is still live and indexed by
+        #     ``id(old_parent)``). Iterating from 0 here pops the stale entry
+        #     and re-inserts it keyed by ``id(new_parent)`` so survivor
+        #     descendant path lookups continue to hit the warm fast-path.
+        # Skipping ``chain[0]`` (the prior ``range(1, len(chain))`` form) was
+        # SAFE for REPLACE (no-op) but WRONG for REMOVE — stale ghost entries
+        # keyed by ``id(old_parent)`` accumulated ~1 per CoW-remove op and
+        # ``id(new_parent)`` was never inserted, breaking warm-path lookups for
+        # every descendant of the rebuilt parent.
+        for i in range(0, len(chain)):
             old, new = chain[i]
             old_entry = self._node_tree_path_index.pop(id(old), None)
             if old_entry is None:
-                continue  # Not indexed (e.g. chain[0] leaf case above).
+                continue  # Not indexed (REPLACE-path chain[0] leaf case above).
             if id(new) == id(old):
                 # Defensive: dc_replace always mints a fresh IRNode, so id
                 # differs; but if a future no-op CoW path returns the same
@@ -1659,7 +1764,18 @@ class UKReplayStateMixin:
                 self._note_structure_mutation()
                 self._record_remove_node_mutation_event(removed_path=removed_path)
                 return True
-        return False
+        # iter2 W5 M3 (silent-failure review): the prior unreachable-else tail
+        # returned ``False`` silently, which the caller discarded before
+        # recording a repeal that never landed against the live tree (over-
+        # repeal risk, AGENTS.md §0). Both branches that reach here only do
+        # so after the warm EID index CoW chain AND the path-walk fallback
+        # already failed for the parent-with-idx case (above) AND the
+        # supplements loop above did not find the node by identity — at which
+        # point continuing to model the call as a "no-op success" is exactly
+        # the silent-heuristic shape §0 forbids. Fail loud with a typed
+        # exception so the caller can route this into a typed adjudication
+        # rather than a silent ``_record_repealed_target(target)``.
+        raise UKCoWAncestorChainLocateFailed(target=node, parent=parent, idx=idx)
 
     def _cow_remove_in_parent_preserve_warm_index(
         self,

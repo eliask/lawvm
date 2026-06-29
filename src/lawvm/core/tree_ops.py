@@ -102,8 +102,18 @@ def normalized_label_key(label: Optional[str]) -> str:
     return _norm(label or "")
 
 
-def _with_children(node: IRNode, children: Sequence[IRNode]) -> IRNode:
-    """Create a new IRNode with different children, sharing everything else."""
+def with_children(node: IRNode, children: Sequence[IRNode]) -> IRNode:
+    """Return a NEW ``IRNode`` with ``children`` replaced, sharing every other field.
+
+    Public kernel helper for copy-on-write rebuild along the path from a
+    mutated subtree back to the root (AGENTS.md §2.3 — frontends route their
+    CoW rebuilds through this single core primitive so the IRNode identity /
+    immutability invariant is owned in one place). The originally private
+    ``_with_children`` name is retained as a module-level alias so existing
+    call sites (``_tops._with_children`` in finland, plus
+    ``tests/test_mutation_gaps.py``) continue to resolve; new call sites
+    should use the public name.
+    """
     return IRNode(
         kind=node.kind,
         label=node.label,
@@ -111,6 +121,15 @@ def _with_children(node: IRNode, children: Sequence[IRNode]) -> IRNode:
         attrs=dict(node.attrs),
         children=tuple(children),
     )
+
+
+# Backward-compat alias — the formerly private ``_with_children`` symbol is
+# retained because many frontend modules (``_tops._with_children`` in
+# ``finland/*``) and ``tests/test_mutation_gaps.py`` still reference it by
+# that name. iter2 W7 L1 promotes the function to public ``with_children``;
+# the alias keeps the rename's external blast radius at zero. New code should
+# import ``with_children`` directly.
+_with_children = with_children
 
 
 @lru_cache(maxsize=16384)

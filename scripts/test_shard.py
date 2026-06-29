@@ -57,6 +57,10 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     "estonia_replay_semantics": (
         "test_ee_apply_conserved.py",
         "test_ee_apply_semantics.py",
+        # §2.5 retirement parity gate for the EE same-moment cross-act detector.
+        "test_ee_cross_act_same_moment_parity.py",
+        # D7 deepcopy migration tests for estonia/target_resolution.py.
+        "test_ee_target_resolution_deepcopy.py",
         "test_ee_blame_provision_walk.py",
         "test_ee_instruction_waist.py",
         "test_ee_parser_normalization.py",
@@ -121,6 +125,12 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     "sweden_misc": (
         "test_sweden_grafter.py",
         "test_sweden_tools.py",
+        # iter4 W1 C2: applies-raise scan-lane bucketing integration test (drives
+        # apply_raise through scan_se_official_replay_act → asserts
+        # BenchStatus.CRASH, not SOURCE_UNAVAILABLE).
+        "test_se_scan_lane_apply_raise_bucketing.py",
+        # SE conserved apply wrapper fire-drill tests (AGENTS.md §1.8, §2.9).
+        "test_se_apply_conserved.py",
     ),
     "uk": (
         "test_uk_*.py",
@@ -170,6 +180,14 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_vts.py",
     ),
     "finland_parse_payload": (
+        "test_fi_attachment_ir.py",
+        # SDOC-13 unified tree merge helper — attachments as APPENDIX
+        # siblings of BODY under one HCONTAINER root.
+        "test_fi_attachment_merge.py",
+        # SDOC invariants — pinned against the D0 attachment-IR fixture.
+        "test_fi_sdoc_invariants.py",
+        # D4 footnote scoped collation (doc3 D4).
+        "test_fi_footnote_collation.py",
         "test_fi_body_*.py",
         "test_fi_definition_introducer.py",
         "test_fi_definition_projection.py",
@@ -221,6 +239,12 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     "finland_replay_products_core": (
         "test_fi_replay_products.py",
         "test_fi_seam_raw_text_witness.py",
+        # Duplicate pure-kumotaan REPEAL suppression regression (kumotaan_replay.py:406 +
+        # PureKumotaanInjectedRepeal witness for §2.10 monotone evidence).
+        "test_fi_duplicate_repeal_suppression.py",
+        # §39 misparenting regression — operative section railed into attachments wrapper
+        # vs re-homed into statuteProvisionsWrapper (replay_products.py:1125).
+        "test_fi_sec39_misparenting.py",
     ),
     "finland_replay_products_support": (
         "test_fi_replay_fold_timeline_backfill.py",
@@ -233,6 +257,8 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     "finland_replay_rules": (
         "test_fi_corrigendum_*.py",
         "test_corrigendum_fail_loud.py",
+        # §1.10 guard-liveness tests for scripts/diff_pdf_xml_corrigenda.py.
+        "test_diff_pdf_xml_corrigenda_fail_loud.py",
         "test_fi_guard_liveness.py",
         "test_filter_conservation_ratchet.py",
         "test_scope_source_ratchet.py",
@@ -406,6 +432,11 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_dual_registration_completeness.py",
         "test_authority_boundary_ratchet.py",
         "test_source_witness_liveness_ratchet.py",
+        # iter2 W6 Fix 5 (guard-liveness review F3): meta-test asserting
+        # ``tests/conftest.py``'s xfail-drift prefixes still XFAIL (catches
+        # silent XPASS drift under ``strict=False``). Marked ``@slow`` —
+        # re-runs all 22 drift prefixes via subprocess when opted in.
+        "test_xfail_drift_markers.py",
         # Audit-invariant registry program (lanes L2a/L2b/L3/L5): control-flow,
         # determinism-spine, typed-carrier, identity-leak, and replay-determinism gates.
         "test_fail_loud_ratchet.py",
@@ -458,6 +489,13 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     "core_ir_contracts": (
         "test_quirks_disposition_enum.py",
         "test_scope_confidence_protocol.py",
+        # iter3 W1 Fix 4: mirror of ``test_scope_confidence_protocol.py`` for the
+        # typed ``ClaimAssertion`` / ``ExecutionAuthorizationResult`` /
+        # ``CompileAdjudicationProtocol`` carrier Protocols at the core boundary
+        # (AGENTS.md §1.9 typed carriers over dynamic shape + §1.10 fail-loud).
+        "test_typed_carrier_protocols.py",
+        # D1 node-kind registry: governed IRNodeKind specs + validator.
+        "test_core_node_kind_registry.py",
         "test_fi_address_parse.py",
         "test_irnodekind_stringly_typed_gate.py",
         "test_fi_admissible_binding.py",
@@ -550,6 +588,12 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_tree_ops_stage.py",
         "test_tree_ops_roman_labels.py",
         "test_core_tree_invariant_scan_families.py",
+        # iter2 W5 H3: shared §1.7 cross-act same-moment conflict detector
+        # (extracted out of EE/UK into ``lawvm.core.cross_act_same_moment``).
+        # Synthetic op-driven coverage mirroring the §2.9 test pyramid; placed
+        # alongside ``test_named_swallow_totality.py`` / ``test_fi_recovery_kind_enum.py``
+        # in ``core_tree_apply`` per the iter2 W6 shard-registration hint.
+        "test_core_cross_act_same_moment.py",
     ),
     "core_compile_projection": (
         "test_compile_metadata_default_fail_loud.py",
@@ -602,6 +646,16 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     ),
     "core_surface_semantic": (
         "test_core_firewall_no_fi_definition_phrases.py",
+        # iter2 W5 H1: AST-scan no-leak test for the §2.3 core/frontend firewall
+        # fix that moved ``lawvm.core.pool_mention`` (Finnish fiscal doctrine)
+        # into ``lawvm.finland.pool_mention_primitive``. Mirrors the precedent
+        # of ``test_core_firewall_no_fi_definition_phrases.py`` above.
+        "test_core_firewall_no_fi_fiscal_doctrine.py",
+        # iter3 W1 Fix 4: AST-scan §2.3 firewall test — no ``lawvm.finland.<module>``
+        # implementation-level paths anywhere in ``lawvm.core.*``. Mirrors the
+        # ``test_core_firewall_no_fi_fiscal_doctrine.py`` precedent (W7 M13 arch
+        # review MEDIUM-2 lift of 13 ``lawvm.finland.X.Y`` paths out of core).
+        "test_core_firewall_no_finland_module_paths.py",
         "test_comparison_normalization.py",
         "test_composite_interaction_reference_model.py",
         "test_fi_abstraction_modules.py",
@@ -714,12 +768,19 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_spec_ledger_ee.py",
         "test_spec_ledger_no_catalog.py",
         "test_spec_ledger_nz_catalog.py",
+        # iter4 W1 C1: new EU spec_ledger catalog (mirror of SE/EE/the-UK precedent
+        # shape; 5-test anti-drift guard — coverage + dead + non-empty + excluded
+        # + dir-present). Previously EU had NO AST-discovery catalog at all.
+        "test_spec_ledger_eu_catalog.py",
         "test_delegate_tool.py",
         "test_fi_spec_ledger_catalog.py",
         "test_diagnose_phase.py",
         "test_diff.py",
         "test_dump.py",
         "test_dump_json_hashes.py",
+        "test_dump_tombstone_render.py",
+        # `lawvm show` — pretty human-readable statute tree; counterpart to dump.
+        "test_tools_show.py",
         "test_fi_freshness_tool.py",
         "test_fi_provision_state.py",
         "test_fi_parse_view.py",
@@ -758,6 +819,9 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_graph_export.py",
         "test_markdown_git_export.py",
         "test_export_markdown_git_safe_path.py",
+        # iter2 W6 Fix 2 (MEDIUM-3): curl argv ``--`` separator for NO + EE
+        # fetch paths (argument-injection guard).
+        "test_curl_separator.py",
         "test_import_zip.py",
         "test_parallel_corpus_determinism.py",
         "test_projection_freshness.py",

@@ -13,9 +13,10 @@ import re
 from typing import Any, NamedTuple, Protocol
 
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation
+from lawvm.core.tree_ops import with_children
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.addressing import _uk_kind_value
-from lawvm.uk_legislation.apply_rebuild import uk_replace_children_cow, uk_with_attr_pop
+from lawvm.uk_legislation.apply_rebuild import uk_with_attr_pop
 from lawvm.uk_legislation.replay_records import (
     _append_uk_replay_adjudication,
     uk_replay_action_target_detail,
@@ -175,7 +176,7 @@ def _replace_schedule_list_children_with_event(
     # ``_record_children_splice_mutation_event`` is given the NEW container so
     # its ``_tree_path_for_mutable_node`` lookup resolves against the rebuilt
     # tree rather than the detached OLD container reference.
-    new_container = uk_replace_children_cow(container, children)
+    new_container = with_children(container, children)
     if not self._replace_ancestor_chain(container, new_container):
         return
     if mark_structure_mutation:

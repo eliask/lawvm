@@ -36,7 +36,7 @@ Sibling replay/lowering modules that consume these helpers directly today
 via ``IRNode.to_jsonable_dict()`` (same JSON shape as the prior
 ``UKMutableNode.to_dict()``) or use it directly. Sub-PR F (mutable_ir Wave N3d,
 final) deleted the ``mutable_ir.py`` shadow module: ``payload_conversion.py``'s
-``_to_mutable_node`` / ``_to_irnode`` now return frozen ``IRNode`` directly
+``_to_mutable_node`` now returns frozen ``IRNode`` directly
 (identity for ``IRNode`` inputs, recursive dict→``IRNode`` builder for the
 legacy dict-shaped source-payload path), and the in-place ``uk_*`` mutation
 helpers were superseded by the CoW variants in ``apply_rebuild.py``.

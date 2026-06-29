@@ -77,6 +77,53 @@ _MIGRATED_FILES = (
     "src/lawvm/new_zealand/dry_run.py",
     "src/lawvm/tools/_worker_pool.py",
     "src/lawvm/sweden/grafter.py",
+    # Wave 6 (M4) — 7 of the 9 catalog files extend cleanly into the AST
+    # totality surface (the 13 catalog swallows across these files are now
+    # routed through named_swallow). The remaining 2 catalog files
+    # (``finland/amendment_index.py`` and ``sweden/fetch.py``) are NOT
+    # added here because they each contain ADDITIONAL pre-existing
+    # ``except Exception as exc:`` sites that use a DIFFERENT owned
+    # fail-loud idiom — ``_append_amendment_index_diagnostic`` (in
+    # amendment_index.py at swallow sites not in this wave's catalog) and
+    # an inline ``acquisition_failures`` list with rule_id+sfs_id+error_type
+    # (in sweden/fetch.py:2729). Both are OWNED §1.10 emissions through a
+    # domain-specific helper, but the AST scan only recognises the 4
+    # named_swallow primitive symbols. Migrating those pre-existing sites
+    # is out of this catalog's scope (STOP-and-report per the task spec;
+    # the 2 catalog-grade migrations in those files ARE shipped and are
+    # validated by the per-site fire-drill precedent at Wave 4 + the
+    # AST totality on the other 7 files). The pre-existing sites are
+    # candidates for a future named_swallow migration wave.
+    "src/lawvm/finland/llm_backends/qwen_local.py",
+    "src/lawvm/finland/transition_graph_profile.py",
+    "src/lawvm/finland/legal_surface/condition_exception_census.py",
+    "src/lawvm/finland/legal_surface/family_census.py",
+    "src/lawvm/finland/legal_surface/modal_census.py",
+    "src/lawvm/finland/references/annotation_independence_census.py",
+    "src/lawvm/finland/references/broken_detection.py",
+    # Iter5 C2 carve-out: ``tools/corrigendum.py`` uses a DIFFERENT owned
+    # fail-loud idiom — ``_emit_corrigendum_failure`` + the
+    # ``CorrigendumApplyFailure`` (frozen + slots) dataclass — rather than the
+    # ``named_swallow`` primitive. It pre-dates the named_swallow migration
+    # wave but satisfies the same §1.10 contract: a typed diagnostic
+    # distinguishing the failure mode (rule_id, step, exception_kind,
+    # corrigendum_id, snippet ≤400 chars) printed to stderr so triage does
+    # not require re-running extraction (mirrors ``_append_amendment_index_diagnostic``
+    # and the sweden/fetch.py acquisition_failures list above). The AST scan
+    # below recognises ``_emit_corrigendum_failure`` as a valid routed
+    # primitive ONLY for this file via the file-scoped carve-out set
+    # (``_FILE_SCOPED_ADDITIONAL_FAILURE_HANDLERS`` below); the
+    # ``named_swallow`` primitive symbols stay pure (the 4 entries in
+    # ``_KNOWN_SWALLOW_HANDLERS``). The per-site fire-drills are pinned in
+    # ``tests/test_corrigendum_fail_loud.py`` (shape + 13 of the 14 call
+    # sites exercised, including the D8 ``corrigendum_reextract_phase1`` /
+    # ``corrigendum_reextract_phase2`` LLM-fanout guard-liveness
+    # assertions). Folding ``_emit_corrigendum_failure`` into
+    # ``named_swallow`` itself is a future migration (would require
+    # threading a ``findings_out`` sink through every corrigendum cli entry
+    # point — out of this fix's scope; the carve-out is the §2.6 totality
+    # gate so the file is no longer invisible to the predicate).
+    "src/lawvm/tools/corrigendum.py",
 )
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -90,8 +137,26 @@ _KNOWN_SWALLOW_HANDLERS = {
 }
 _KNOWN_SWALLOW_MODULE = "lawvm.core.named_swallow"
 
+# File-scoped additional owned-fail-loud primitives recognised by the AST
+# totality scan (carve-out set, mirrors the ``_append_amendment_index_diagnostic``
+# idiom documented in the ``_MIGRATED_FILES`` Wave 6 comment above). A file
+# listed here uses a DIFFERENT but owned §1.10 fail-loud idiom — a typed
+# diagnostic carrier embedding the offending snippet (≤400 chars), printed to
+# stderr so triage does not require re-running extraction. The totality
+# predicate treats handlers routing through any of these names as valid (the
+# ``named_swallow`` primitive set stays pure; this is the carve-out gate so
+# the file is no longer invisible to the predicate). Folding these into
+# ``named_swallow`` itself is the future migration shape.
+_FILE_SCOPED_ADDITIONAL_FAILURE_HANDLERS: dict[str, frozenset[str]] = {
+    "src/lawvm/tools/corrigendum.py": frozenset({"_emit_corrigendum_failure"}),
+}
 
-def _find_inline_silent_swallow_offenders(file_path: Path) -> list[str]:
+
+def _find_inline_silent_swallow_offenders(
+    file_path: Path,
+    *,
+    rel_path: str | None = None,
+) -> list[str]:
     """Find an in-line ``except Exception:`` clause that swallows silently.
 
     The forbidden shape in any migrated file is::
@@ -104,11 +169,20 @@ def _find_inline_silent_swallow_offenders(file_path: Path) -> list[str]:
     where the body of ``except Exception:`` is anything OTHER than:
       - passing the exception to a named_swallow primitive (which witnesses it),
       - re-raising via ``raise`` (programming bugs that already propagate),
-      - a logging call that emits the typed Finding (log_emitter from named_swallow).
+      - a logging call that emits the typed Finding (log_emitter from named_swallow),
+      - routing through a file-scoped additional owned-fail-loud primitive (carve-out
+        set ``_FILE_SCOPED_ADDITIONAL_FAILURE_HANDLERS`` — e.g. ``_emit_corrigendum_failure``
+        in ``tools/corrigendum.py``; mirrors the ``_append_amendment_index_diagnostic``
+        precedent documented in the ``_MIGRATED_FILES`` Wave 6 comment).
 
     Returns a list of ``filename:lineno`` strings for each offender. An empty list
     means the totality holds.
     """
+    additional_handlers = (
+        _FILE_SCOPED_ADDITIONAL_FAILURE_HANDLERS.get(rel_path, frozenset())
+        if rel_path is not None
+        else frozenset()
+    )
     offenders: list[str] = []
     try:
         source = file_path.read_text(encoding="utf-8")
@@ -138,54 +212,77 @@ def _find_inline_silent_swallow_offenders(file_path: Path) -> list[str]:
         if not is_broad:
             continue
         # Now check the ``except Exception:`` body — is it routed through the
-        # named_swallow primitive?
-        handler_uses_named_swallow_primitive = _handler_routes_to_named_swallow(node)
+        # named_swallow primitive (or a file-scoped additional owned-fail-loud
+        # primitive like ``_emit_corrigendum_failure`` per the carve-out)?
+        handler_uses_named_swallow_primitive = _handler_routes_to_named_swallow(
+            node, additional_handlers=additional_handlers
+        )
         if handler_uses_named_swallow_primitive:
             continue
         # Otherwise: offender — the swallow is in-line, NOT routed through
-        # the named_swallow primitive.
+        # the named_swallow primitive (or a file-scoped additional owned-fail-loud
+        # primitive per the carve-out).
         offenders.append(
             f"{file_path.name}:{node.lineno} in-line except Exception swallow "
             f"(route through lawvm.core.named_swallow.named_swallow/"
-            f"swallow_call/build_named_swallow_finding)"
+            f"swallow_call/build_named_swallow_finding"
+            + (
+                " or _emit_corrigendum_failure (file-scoped carve-out)"
+                if additional_handlers
+                else ""
+            )
+            + ")"
         )
     return offenders
 
 
-def _handler_routes_to_named_swallow(handler: ast.ExceptHandler) -> bool:
+def _handler_routes_to_named_swallow(
+    handler: ast.ExceptHandler,
+    *,
+    additional_handlers: frozenset[str] = frozenset(),
+) -> bool:
     """Check if the handler body uses a named_swallow primitive.
 
     Recognises patterns where the handler body calls
     ``log_emitter()(build_named_swallow_finding(...))`` OR contains a
     ``with named_swallow(...)`` OR a call to ``swallow_call(...)`` OR
     ``build_named_swallow_finding(...)``.
+
+    ``additional_handlers`` is the file-scoped carve-out set (e.g.
+    ``_emit_corrigendum_failure`` for ``tools/corrigendum.py``) — a handler
+    routing through any of those names also counts as routed (OWNED §1.10
+    idiom mirroring ``named_swallow``'s contract; documented in the
+    ``_MIGRATED_FILES`` Wave 6 comment). Mirrors the
+    ``_append_amendment_index_diagnostic`` precedent.
     """
+    recognized = _KNOWN_SWALLOW_HANDLERS | additional_handlers
     for child in ast.walk(handler):
         if isinstance(child, ast.Call):
             func = child.func
-            # build_named_swallow_finding(...)
-            if isinstance(func, ast.Name) and func.id in _KNOWN_SWALLOW_HANDLERS:
+            # build_named_swallow_finding(...) (or a file-scoped carve-out like
+            # _emit_corrigendum_failure(...)).
+            if isinstance(func, ast.Name) and func.id in recognized:
                 return True
             # log_emitter()(...) — call on call result; walk the call graph
             if isinstance(func, ast.Call):
                 inner = func.func
-                if isinstance(inner, ast.Name) and inner.id in _KNOWN_SWALLOW_HANDLERS:
+                if isinstance(inner, ast.Name) and inner.id in recognized:
                     return True
         if isinstance(child, ast.With):
             # ``with named_swallow(...) as ...:``
             for item in child.items:
                 ctx = item.context_expr
                 if isinstance(ctx, ast.Call) and isinstance(ctx.func, ast.Name):
-                    if ctx.func.id in _KNOWN_SWALLOW_HANDLERS:
+                    if ctx.func.id in recognized:
                         return True
                 # ``with named_swallow(...)`` (no ``as``) — function attribute access
                 if isinstance(ctx, ast.Call):
                     func = ctx.func
-                    if isinstance(func, ast.Attribute) and func.attr in _KNOWN_SWALLOW_HANDLERS:
+                    if isinstance(func, ast.Attribute) and func.attr in recognized:
                         return True
         # An attribute call like ``named_swallow.swallow_call(...)`` or
         # ``lawvm.core.named_swallow.swallow_call(...)`` is in primitive use.
-        if isinstance(child, ast.Attribute) and child.attr in _KNOWN_SWALLOW_HANDLERS:
+        if isinstance(child, ast.Attribute) and child.attr in recognized:
             return True
     return False
 
@@ -220,7 +317,9 @@ def test_totality_predicate_no_inline_silent_swallow_in_migrated_files() -> None
                 f"{rel_path}: migrated file missing; update _MIGRATED_FILES"
             )
             continue
-        all_offenders.extend(_find_inline_silent_swallow_offenders(migrated_path))
+        all_offenders.extend(
+            _find_inline_silent_swallow_offenders(migrated_path, rel_path=rel_path)
+        )
     assert not all_offenders, (
         "In-line silent ``except Exception:`` swallows remain in migrated files "
         "(Theme C — §2.6 rule-of-three totality violation; route through "
@@ -228,6 +327,68 @@ def test_totality_predicate_no_inline_silent_swallow_in_migrated_files() -> None
         "build_named_swallow_finding instead): "
         + "; ".join(all_offenders)
     )
+
+
+# ---------------------------------------------------------------------------
+# Iter5 C2 guard-liveness — pin the file-scoped carve-out for the
+# ``_emit_corrigendum_failure`` owned §1.10 fail-loud idiom in
+# ``tools/corrigendum.py`` (mirrors the ``_append_amendment_index_diagnostic``
+# precedent documented in the ``_MIGRATED_FILES`` Wave 6 comment). The totality
+# predicate above recognises ``_emit_corrigendum_failure`` as a valid routed
+# primitive ONLY via this carve-out set; if the carve-out were removed, every
+# ``except Exception: _emit_corrigendum_failure(...)`` site in
+# ``tools/corrigendum.py`` would be flagged as an in-line offender. This test
+# pins the carve-out independently of the AST scan output so the §1.10 gate
+# cannot be silently disabled.
+# ---------------------------------------------------------------------------
+
+def test_corrigendum_py_is_in_migrated_files_with_emit_corrigendum_failure_carve_out() -> None:
+    """``tools/corrigendum.py`` is in ``_MIGRATED_FILES`` and uses a documented
+    file-scoped owned §1.10 fail-loud idiom (``_emit_corrigendum_failure``)
+    recognised by the AST totality scan via the carve-out set.
+
+    Guard-liveness: removing either side of the carve-out (the file entry OR
+    the handler name) silently disables the §1.10 totality gate for this
+    file's 13 swallow sites — this test makes that disabling a failing
+    regression rather than a silent drift.
+    """
+    assert "src/lawvm/tools/corrigendum.py" in _MIGRATED_FILES, (
+        "tools/corrigendum.py must be in _MIGRATED_FILES so its "
+        "``except Exception: _emit_corrigendum_failure(...)`` sites are "
+        "covered by the totality predicate"
+    )
+    carve_out = _FILE_SCOPED_ADDITIONAL_FAILURE_HANDLERS.get(
+        "src/lawvm/tools/corrigendum.py"
+    )
+    assert carve_out is not None, (
+        "tools/corrigendum.py requires a file-scoped carve-out entry in "
+        "``_FILE_SCOPED_ADDITIONAL_FAILURE_HANDLERS`` — its swallow sites "
+        "route through ``_emit_corrigendum_failure`` (the owned §1.10 "
+        "fail-loud idiom), not the named_swallow primitive"
+    )
+    assert "_emit_corrigendum_failure" in carve_out, (
+        "the carve-out for tools/corrigendum.py must recognise "
+        "``_emit_corrigendum_failure`` as a valid routed primitive"
+    )
+
+
+def test_corrigendum_py_emit_corrigendum_failure_is_frozen_slots_dataclass() -> None:
+    """The carve-out primitive ``CorrigendumApplyFailure`` is itself a typed,
+    frozen + slots dataclass (§1.9) carrying ``rule_id`` / ``exception_kind``
+    / ``snippet`` (≤400 chars) — the §1.10 owned-fail-loud shape. Pinning this
+    here keeps the carve-out gate defensible: any future drift that drops the
+    typed shape (e.g. collapses back to a bare ``print``) is a failing
+    regression. Per-site fire-drills live in ``test_corrigendum_fail_loud.py``.
+    """
+    from lawvm.tools.corrigendum import CorrigendumApplyFailure
+
+    assert hasattr(CorrigendumApplyFailure, "__slots__")
+    # §1.9 — frozen + slots typed carrier for the diagnostic.
+    import dataclasses as _dc
+
+    assert _dc.is_dataclass(CorrigendumApplyFailure)
+    fields = {f.name for f in _dc.fields(CorrigendumApplyFailure)}
+    assert {"rule_id", "step", "exception_kind", "snippet"} <= fields
 
 
 # ---------------------------------------------------------------------------
@@ -607,3 +768,412 @@ def test_named_swallow_log_emitter_writes_warning_to_logger(caplog) -> None:
         and "ValueError" in record.getMessage()
         for record in caplog.records
     )
+
+
+# ---------------------------------------------------------------------------
+# Wave 6 (M4) per-site guard-liveness — 3 representative fire-drills out of
+# the 13 migrated catalog sites. The remaining 10 sites are validated by:
+#   (a) the AST totality predicate above (proves the swallow shape is gone
+#       for the 7 files added to _MIGRATED_FILES in this wave),
+#   (b) the named_swallow primitive unit tests (proves the typed Finding
+#       construction + emit logic),
+#   (c) the shared log_emitter() warning-visibility test above.
+# Three fire-drills cover the distinct swallow shapes migrated in this wave:
+#   - amendment_index.py: multi-line body returning None on swallow
+#       (file NOT in _MIGRATED_FILES — pre-existing sites use a different
+#       owned fail-loud idiom and are out of this catalog's scope; the
+#       catalog-grade migration is still validated here)
+#   - transition_graph_profile.py: multi-site util returning "" on swallow
+#   - qwen_local.py: network-probe swallow returning False on swallow
+# Per AGENTS.md §2.9 (guard-liveness): driving a known-violating input
+# through the FULL production path and asserting the diagnostic fires, not
+# just a unit test of the guard.
+# ---------------------------------------------------------------------------
+
+def test_amendment_index_corpus_source_fingerprint_finding_fires_on_swallow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Migrated site: finland/amendment_index.py _corpus_source_fingerprint.
+
+    Drives a synthesized known-violating input (monkeypatch
+    ``_path_from_pathlike`` to raise RuntimeError on the path-probe axis)
+    through the FULL production path and asserts the typed Finding fires with
+    rule_id=``fi_amendment_index_corpus_source_fingerprint`` via lazy-imported
+    log_emitter (matching the sweden/grafter.py precedent).
+    """
+    from typing import cast
+
+    import lawvm.core.named_swallow as ns
+    from lawvm.finland import amendment_index as ai
+    from lawvm.corpus_store import CorpusStore
+
+    captured: list[Finding] = []
+
+    def _capture_emit() -> Callable[[Finding], None]:
+        def _emit(finding: Finding) -> None:
+            captured.append(finding)
+        return _emit
+
+    # The migrated code imports log_emitter INSIDE the except clause (lazy
+    # import); patch at the source module so the function-local
+    # ``from ... import`` rebinds the name to our capturing version.
+    monkeypatch.setattr(ns, "log_emitter", _capture_emit)
+    # Patch _path_from_pathlike to raise — the swallow fires inside the
+    # path-probe loop.
+    def _boom(_v: object) -> Path:
+        raise RuntimeError("simulated path probe boom")
+
+    monkeypatch.setattr(ai, "_path_from_pathlike", _boom)
+    # Cast through CorpusStore to satisfy ty — the function under test only
+    # reads attributes defensively via getattr; an ``object()`` exposes
+    # ``__class__`` which is enough for ``type(cs).__name__`` in clause_text.
+    cs = cast(CorpusStore, object())
+    result = ai._corpus_source_fingerprint(cs)
+    # Default preserved.
+    assert result is None
+    # Typed Finding emitted.
+    assert len(captured) == 1
+    f = captured[0]
+    assert f.kind == NAMED_SWALLOW_FINDING_KIND
+    assert f.blocking is True
+    assert f.detail["rule_id"] == "fi_amendment_index_corpus_source_fingerprint"
+    assert f.detail["exception_type"] == "RuntimeError"
+    assert f.detail["jurisdiction"] == "fi"
+    assert "cs_type=" in f.detail["clause_text"]
+
+
+def test_transition_graph_extract_source_reference_finding_fires_on_swallow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Migrated site: finland/transition_graph_profile.py
+    extract_fi_source_reference (read_amendment swallow).
+
+    Drives a synthesized known-violating input through the FULL production
+    path (a corpus whose read_amendment raises RuntimeError on the read axis)
+    and asserts the typed Finding fires with rule_id=
+    ``fi_transition_graph_extract_source_reference_read_amendment``.
+    """
+    import lawvm.core.named_swallow as ns
+    from lawvm.finland.transition_graph_profile import extract_fi_source_reference
+
+    captured: list[Finding] = []
+
+    def _capture_emit() -> Callable[[Finding], None]:
+        def _emit(finding: Finding) -> None:
+            captured.append(finding)
+        return _emit
+
+    monkeypatch.setattr(ns, "log_emitter", _capture_emit)
+
+    class BoomCorpus:
+        def read_amendment(self, _sid: str) -> bytes:
+            raise RuntimeError("simulated corpus.read_amendment boom")
+
+    result = extract_fi_source_reference(BoomCorpus(), engine_source_id="2023/100")
+    # Empty default preserved.
+    assert result == ""
+    # Typed Finding emitted.
+    assert len(captured) == 1
+    f = captured[0]
+    assert f.kind == NAMED_SWALLOW_FINDING_KIND
+    assert f.blocking is True
+    assert (
+        f.detail["rule_id"]
+        == "fi_transition_graph_extract_source_reference_read_amendment"
+    )
+    assert f.detail["exception_type"] == "RuntimeError"
+    assert f.detail["jurisdiction"] == "fi"
+    assert "engine_source_id=2023/100" in f.detail["clause_text"]
+    assert f.detail["source_artifact"] == "2023/100"
+
+
+def test_qwen_local_check_server_reachable_finding_fires_on_swallow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Migrated site: finland/llm_backends/qwen_local.py _check_server_reachable.
+
+    Drives a synthesized known-violating input through the FULL production
+    path (monkeypatch urllib.request.urlopen to raise RuntimeError on the
+    probe axis) and asserts the typed Finding fires with rule_id=
+    ``fi_qwen_local_check_server_reachable`` via lazy-imported log_emitter.
+    """
+    import urllib.request
+
+    import lawvm.core.named_swallow as ns
+    from lawvm.finland.llm_backends import qwen_local as ql
+
+    captured: list[Finding] = []
+
+    def _capture_emit() -> Callable[[Finding], None]:
+        def _emit(finding: Finding) -> None:
+            captured.append(finding)
+        return _emit
+
+    monkeypatch.setattr(ns, "log_emitter", _capture_emit)
+    # urllib.request is imported lazily inside _check_server_reachable; the
+    # module object is cached so patching the .urlopen attribute on the real
+    # module is picked up by the function-local import.
+    def _boom(_req: object, *args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("simulated urlopen probe boom")
+
+    monkeypatch.setattr(urllib.request, "urlopen", _boom)
+    result = ql._check_server_reachable()
+    # False default preserved.
+    assert result is False
+    # Typed Finding emitted.
+    assert len(captured) == 1
+    f = captured[0]
+    assert f.kind == NAMED_SWALLOW_FINDING_KIND
+    assert f.blocking is True
+    assert f.detail["rule_id"] == "fi_qwen_local_check_server_reachable"
+    assert f.detail["exception_type"] == "RuntimeError"
+    assert f.detail["jurisdiction"] == "fi"
+    assert "probe endpoint=" in f.detail["clause_text"]
+
+
+# ---------------------------------------------------------------------------
+# iter3 Wave 2 (W2) — findings_out-threaded fire-drills (arch HIGH H1, §3.2).
+#
+# These three representative fire-drills complement the precedent log_emitter-
+# patch drills above: they plumb ``findings_out=<list>`` directly into the
+# migrated sites and assert the typed Finding LANDS IN the per-statute audit-
+# trail list (not just stderr). They are the evidence-path-answerability
+# witnesses for the §3.2 migration from ``emit=log_emitter()`` to
+# ``findings_out=<accumulator>`` where a sink IS in scope at the swallow site.
+# The remaining 10 swallows in the W2 catalog stay on log_emitter with the
+# sanctioned-use comment per ``core/named_swallow.py`` docstring's IO/utility-
+# boundary carve-out (see per-site audit notes inline).
+# ---------------------------------------------------------------------------
+
+
+def test_se_pdf_bytes_to_text_findings_out_sink_receives_finding(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Migrated site: sweden/grafter.py se_pdf_bytes_to_text (Wave 4 representative).
+
+    Drives a known-violating input through the FULL production path (monkeypatch
+    ``subprocess.run`` to raise ValueError — the non-FileNotFoundError, non-OSError,
+    non-subprocess.TimeoutExpired branch) and passes ``findings_out=<sink>``
+    directly. Asserts the typed Finding lands in the sink (not via the lazy
+    log_emitter fallback) — the §3.2 evidence-ledger-reach assertion for a
+    Wave 4 production-path site.
+    """
+    import lawvm.sweden.grafter as se
+
+    # Force a non-expected exception so the named_swallow branch fires.
+    def _boom_run(*_a: Any, **_kw: Any) -> Any:
+        raise ValueError("simulated unexpected subprocess.run error")
+
+    monkeypatch.setattr(se.subprocess, "run", _boom_run)
+    sink: list[Finding] = []
+    result = se.se_pdf_bytes_to_text(
+        b"%PDF-1.4 fake pdf",
+        findings_out=sink,
+    )
+    # None returned (default preserved).
+    assert result is None
+    # The typed Finding was appended to the plumbed findings_out list (the
+    # per-statute audit-trail sink) — NOT via the lazy log_emitter() fallback.
+    assert len(sink) == 1
+    f = sink[0]
+    assert f.kind == NAMED_SWALLOW_FINDING_KIND
+    assert f.blocking is True
+    assert f.detail["rule_id"] == "se_grafter_pdf_bytes_to_text_subprocess"
+    assert f.detail["exception_type"] == "ValueError"
+    assert f.detail["jurisdiction"] == "se"
+
+
+def test_corpus_source_fingerprint_findings_out_sink_receives_finding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Migrated site: finland/amendment_index.py _corpus_source_fingerprint.
+
+    Drives a known-violating input through the FULL production path
+    (monkeypatch ``_path_from_pathlike`` to raise RuntimeError on the
+    path-probe axis) and passes ``findings_out=<sink>`` directly. Asserts
+    the typed Finding lands in the per-statute audit-trail sink (not via the
+    lazy log_emitter() fallback). The §3.2 evidence-ledger-reach witness for
+    the amendment_index management-file production-path boundary.
+    """
+    from typing import cast
+
+    from lawvm.corpus_store import CorpusStore
+    from lawvm.finland import amendment_index as ai
+
+    # Patch the path-probe helper to raise so the swallow fires.
+    def _boom(_v: object) -> Any:
+        raise RuntimeError("simulated path probe boom")
+
+    monkeypatch.setattr(ai, "_path_from_pathlike", _boom)
+    cs = cast(CorpusStore, object())
+    sink: list[Finding] = []
+    result = ai._corpus_source_fingerprint(cs, findings_out=sink)
+    # Default preserved.
+    assert result is None
+    # Typed Finding emitted via the plumbed findings_out sink — NOT via
+    # log_emitter fallback.
+    assert len(sink) == 1
+    f = sink[0]
+    assert f.kind == NAMED_SWALLOW_FINDING_KIND
+    assert f.blocking is True
+    assert f.detail["rule_id"] == "fi_amendment_index_corpus_source_fingerprint"
+    assert f.detail["exception_type"] == "RuntimeError"
+    assert f.detail["jurisdiction"] == "fi"
+    assert "cs_type=" in f.detail["clause_text"]
+
+
+def test_qwen_local_check_server_reachable_findings_out_sink_receives_finding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Migrated site: finland/llm_backends/qwen_local.py _check_server_reachable.
+
+    Drives a known-violating input through the FULL production path (monkeypatch
+    ``urllib.request.urlopen`` to raise RuntimeError on the probe axis) and
+    passes ``findings_out=<sink>`` directly. Asserts the typed Finding lands
+    in the per-statute audit-trail sink (not via the lazy log_emitter()
+    fallback) — the §3.2 evidence-ledger-reach witness for the qwen_local
+    management sample (representative of the IO-boundary migration pattern
+    where callers that DO have an audit sink can now plumb it).
+    """
+    import urllib.request
+
+    from lawvm.finland.llm_backends import qwen_local as ql
+
+    def _boom(_req: object, *args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("simulated urlopen probe boom")
+
+    monkeypatch.setattr(urllib.request, "urlopen", _boom)
+    sink: list[Finding] = []
+    result = ql._check_server_reachable(findings_out=sink)
+    # False default preserved.
+    assert result is False
+    # Typed Finding emitted via the plumbed findings_out sink — NOT via
+    # log_emitter fallback.
+    assert len(sink) == 1
+    f = sink[0]
+    assert f.kind == NAMED_SWALLOW_FINDING_KIND
+    assert f.blocking is True
+    assert f.detail["rule_id"] == "fi_qwen_local_check_server_reachable"
+    assert f.detail["exception_type"] == "RuntimeError"
+    assert f.detail["jurisdiction"] == "fi"
+    assert "probe endpoint=" in f.detail["clause_text"]
+
+
+# ---------------------------------------------------------------------------
+# iter4 Wave 2 (W2) — production-caller threading fire-drill (arch HIGH-1,
+# silent-failure HIGH-1, §3.2 evidence-path answerability).
+#
+# Iter3 W2 added the ``findings_out=<list>`` kwarg to the swallow sites, and
+# the per-site unit tests above prove the typed Finding lands in the plumbed
+# sink when called directly. The §3.2 gap that remained: production callers
+# still defaulted to ``findings_out=None`` → ``log_emitter()`` stderr fallback,
+# so a swallowed failure during real replay/PIT never reached the per-statute
+# audit-trail ledger. Iter4 W2 closes that gap by threading the accumulator at
+# production call sites where one is in scope OR — at IO/utility boundary
+# sites where no sink is in scope — recording the sanctioned-use carve-out so
+# the swallow stays VISIBLE via stderr WARNING (never silent).
+#
+# The SE site is the accessible migration: ``fetch_se_official_artifacts`` is
+# the production caller of ``se_pdf_bytes_to_text`` and gains a
+# ``findings_out`` parameter that the inner swallow at grafter.py:1097 inherits.
+# Sites 1, 2, 4, 5 (qwen_local / amendment_index / spec_ledger_adapter /
+# new_zealand dry_run) hit the 5+-signature-widening STOP-and-report
+# threshold documented inline (structural gap, sanctioned log_emitter fallback).
+# ---------------------------------------------------------------------------
+
+
+def test_fetch_se_official_artifacts_findings_out_threads_to_se_pdf_bytes_to_text_swallow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Production-caller threading fire-drill: ``fetch_se_official_artifacts``.
+
+    Drives a known-violating input through the FULL production path (monkeypatch
+    ``subprocess.run`` to raise ValueError — the non-FileNotFoundError, non-OSError,
+    non-subprocess.TimeoutExpired branch) and plumbs ``findings_out=<sink>`` through
+    ``fetch_se_official_artifacts`` so the typed Finding lands in the per-statute
+    evidence sink at the SE production caller boundary — NOT via the lazy
+    ``log_emitter`` fallback. The §3.2 evidence-ledger-reach witness for the SE
+    acquisition lane (arch HIGH-1 + silent-failure HIGH-1).
+    """
+    import lawvm.sweden.grafter as se_grafter
+    from lawvm.sweden.fetch import fetch_se_official_artifacts
+
+    # Force the PDF-text extraction boundary to fire its named-swallow path:
+    # ``subprocess.run`` raises a non-expected ValueError, which the
+    # ``except Exception`` branch in ``se_pdf_bytes_to_text`` (grafter.py:1132)
+    # routes through ``build_named_swallow_finding``. The plumbed
+    # ``findings_out`` sink receives the typed Finding here.
+    def _boom_run(*_a: Any, **_kw: Any) -> Any:
+        raise ValueError("simulated unexpected subprocess.run error from production caller")
+
+    monkeypatch.setattr(se_grafter.subprocess, "run", _boom_run)
+
+    # Fake archive with a real-looking PDF payload so the fetch lane reaches the
+    # ``se_pdf_bytes_to_text`` call site (sweden/fetch.py:1369 — the new
+    # ``findings_out=findings_out`` threading point).
+    class _FakeArchive:
+        fetched: dict[str, bytes]
+        stored: dict[str, bytes]
+        fetch_calls: list[tuple[str, str, float]]
+
+        def __init__(self) -> None:
+            self.fetched = {
+                "https://svenskforfattningssamling.se/doc/2026286.html": (
+                    b'<a href="/sites/default/files/sfs/2026-03/SFS2026-286.pdf">PDF</a>'
+                ),
+                "https://svenskforfattningssamling.se/sites/default/files/sfs/2026-03/SFS2026-286.pdf": (
+                    b"%PDF-1.7 fake production-caller fire-drill payload"
+                ),
+            }
+            self.stored = {}
+            self.fetch_calls = []
+
+        def fetch(
+            self,
+            url: str,
+            max_age_hours: float = 168.0,
+            headers: dict | None = None,
+            content_type: str = "auto",
+        ) -> bytes | None:
+            self.fetch_calls.append((url, content_type, max_age_hours))
+            return self.fetched.get(url)
+
+        def store(self, locator: str, data: bytes, *, storage_class: str | None = None) -> str:
+            self.stored[locator] = data
+            return "fakehash"
+
+        def get(self, locator: str) -> bytes | None:
+            return self.stored.get(locator)
+
+        def has(self, locator: str, *, max_age_hours: float = float("inf")) -> bool:
+            return locator in self.stored
+
+    archive = _FakeArchive()
+    sink: list[Finding] = []
+    # The PRODUCTION-CALLER threading: ``findings_out=sink`` flows through the
+    # new ``fetch_se_official_artifacts`` parameter and lands in the
+    # ``se_pdf_bytes_to_text`` swallow sink (sweden/fetch.py:1369). The
+    # default-None callers (CLI/cache-management) still fall through to
+    # ``log_emitter`` per the sanctioned IO/utility carve-out.
+    bundle = fetch_se_official_artifacts(
+        "2026:286",
+        archive,
+        force_reextract=True,
+        findings_out=sink,
+    )
+    # Bundle still returned (default-preserved semantics: extraction produced
+    # no payload → stored text is empty bytes), the swallow does NOT crash the
+    # fetch path — its evidence-ledger-reach contract.
+    assert bundle is not None
+    # The typed Finding from the ``se_pdf_bytes_to_text`` swallow LANDED in
+    # the plumbed production-caller sink — NOT via the log_emitter fallback.
+    assert len(sink) == 1, (
+        f"Expected exactly one Finding in the plumbed sink; got {len(sink)}. "
+        f"The swallow at se_pdf_bytes_to_text (grafter.py:1132) should have "
+        f"appended a UNEXPECTED_PHASE_FAILURE Finding to findings_out."
+    )
+    f = sink[0]
+    assert f.kind == NAMED_SWALLOW_FINDING_KIND
+    assert f.blocking is True
+    assert f.detail["rule_id"] == "se_grafter_pdf_bytes_to_text_subprocess"
+    assert f.detail["exception_type"] == "ValueError"
+    assert f.detail["jurisdiction"] == "se"
+    assert "production-caller fire-drill" in f.detail["clause_text"]

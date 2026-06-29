@@ -348,3 +348,191 @@ def test_replay_ee_to_pit_routes_apply_through_conserved_wrapper(monkeypatch) ->
     input_ids = {op.op_id for op in synthesized_ops}
     assert accepted_ids | rejected_ids == input_ids
     assert accepted_ids & rejected_ids == set()  # disjoint
+
+
+def test_replay_ee_to_pit_propagates_partial_adjudications_on_apply_raise(monkeypatch) -> None:
+    """§2.9 + §1.0/§1.8/§1.10 fire-drill (silent-failure review HIGH #1):
+
+    When ``apply_ee_ops_conserved`` raises mid-apply (e.g. any §1.10 fail-loud
+    path under a future EE strict mode, or any other bare-apply exception),
+    the production lane ``replay_ee_to_pit`` MUST:
+
+    * preserve the partial adjudication witnesses emitted BEFORE the raise on
+      ``EEPitResult.adjudications`` (the §1.0 "evidence is not silently
+      destroyed" + §1.8 "no unsupported lane disappears" contracts);
+    * append a typed ``ee_replay_apply_raise`` orchestration adjudication per
+      §1.10 embed-exception-as-clause-text rule, so a downstream consumer can
+      diagnose the apply raise without re-running extraction.
+
+    Mirrors ``test_replay_no_to_pit_strict_action_family_rejects_recovery`` in
+    end-to-end assertion shape (the NO precedent pins the same §1.0
+    evidence-not-destroyed contract through ``replay_no_to_pit`` with
+    ``strict_action_family=True``). Pre-fix state: the EE production caller
+    built a LOCAL ``adjudications`` list and early-returned on raise BEFORE the
+    ``result.adjudications = [..., *adjudications]`` assignment — bare-apply's
+    partial witnesses were silently discarded (the §1.0/§1.8 partial-loss
+    failure, silent-failure review HIGH #1). Iter2 W2 closed the
+    conserved-wrapper propagate-on-raise contract; iter3 W3 (this test) pins
+    the production caller's half of the contract — the wrapper's propagation
+    is unreachable from production unless the caller threads
+    ``result.adjudications`` directly through ``apply_ee_ops_conserved``.
+    """
+    from types import SimpleNamespace
+
+    from lawvm.estonia import replay as ee_replay
+    from lawvm.estonia.replay import replay_ee_to_pit
+    from lawvm.replay_adjudication import CompileAdjudication
+
+    base = IRStatute(
+        statute_id="ee/base",
+        title="Test statute",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(IRNode(kind=IRNodeKind.SECTION, label="5", text="Original."),),
+        ),
+    )
+    synthesized_ops = [
+        _replace_op(op_id="ee-replace-ok", sequence=1, label="5", text="Ny lydelse."),
+        _replace_op(op_id="ee-replace-then-raise", sequence=2, label="99", text="Nytt."),
+    ]
+
+    amendment_ref = AmendmentRef(
+        aktViide="118122025003",
+        passed="2025-12-03",
+        joustumine="2026-01-01",
+    )
+    pair_plan = SimpleNamespace(
+        grupi_id="g1",
+        oracle_id=None,
+        source_basis=SimpleNamespace(value="pairwise_terviktekst_delta"),
+        comparison_class="commensurable_delta",
+        source_adjudication=None,
+        oracle_is_base=True,
+        oracle_refs=[],
+        amendments_to_apply=[amendment_ref],
+        base_is_consolidated=True,
+        base_refs=[amendment_ref],
+    )
+
+    raise_message = "synthesized mid-apply raise (e.g. strict_action_family=True)"
+
+    # Spy: replace ``apply_ee_ops_conserved`` in the replay module with a
+    # wrapper that (a) appends a known pre-raise adjudication to
+    # ``adjudications_out`` (mirroring what bare apply does when it processes
+    # the synthesized skip op BEFORE the §1.10 fail-loud raise), then (b)
+    # raises ValueError. Mirrors the NO precedent at
+    # ``test_apply_no_ops_conserved_propagates_recovery_adjudication_on_raise``
+    # which drives a synthesized INSERT op into an occupied target under
+    # ``strict_action_family=True`` — bare apply first emits the recovery
+    # adjudication then raises. Here the synthesised skip + raise is wired
+    # through the spy so the EE production caller's on-raise handling is
+    # reached through the FULL ``replay_ee_to_pit`` path (the §2.9
+    # guard-liveness discipline).
+    def spy_apply_ee_ops_conserved(statute, ops, **kwargs):
+        adjudications_out = kwargs.get("adjudications_out")
+        if adjudications_out is not None:
+            adjudications_out.append(
+                CompileAdjudication(
+                    kind="ee_replay_target_not_found",
+                    message=(
+                        "Synthesized pre-raise skip adjudication — op target "
+                        "not in base body (mirrors bare-apply's per-op skip "
+                        "emission BEFORE the §1.10 fail-loud raise)."
+                    ),
+                    source_statute="ee/amend",
+                    blocking=False,
+                    phase="replay",
+                    op_id="ee-replace-then-raise",
+                    detail={
+                        "rule_id": "ee_replay_target_not_found",
+                        "phase": "replay",
+                        "blocking": False,
+                    },
+                )
+            )
+        raise ValueError(raise_message)
+
+    # Upstream-phase mocks mirror ``_patch_replay_for_crash_drill`` (same as
+    # ``test_replay_ee_to_pit_routes_apply_through_conserved_wrapper``) so the
+    # synthesized ops reach the apply fold.
+    monkeypatch.setattr(ee_replay, "parse_ee_statute", lambda xml, statute_id: base)
+    monkeypatch.setattr(ee_replay, "fetch_rt_xml", lambda akt_viide, archive: b"<base-xml/>")
+    monkeypatch.setattr(
+        ee_replay,
+        "plan_ee_oracle_pair",
+        lambda **kw: SimpleNamespace(plan=pair_plan, oracle_xml=b"<oracle-xml/>"),
+    )
+    monkeypatch.setattr(ee_replay, "_ee_filter_cancelled_pending_refs", lambda refs, **kw: refs)
+    monkeypatch.setattr(
+        ee_replay,
+        "_ee_precompose_pending_source_act_commencements",
+        lambda refs, **kw: (tuple(refs), ()),
+    )
+    monkeypatch.setattr(ee_replay, "parse_ee_amendment_ops", lambda *a, **kw: synthesized_ops)
+    monkeypatch.setattr(
+        ee_replay,
+        "_ee_precompose_pending_amendment_text_patches",
+        lambda ops, *, refs, amendment_xml_by_ref: (ops, ()),
+    )
+    monkeypatch.setattr(ee_replay, "apply_ee_ops_conserved", spy_apply_ee_ops_conserved)
+    monkeypatch.setattr(ee_replay, "compile_timelines", lambda base_ir, lo_ops_out, temporal_events=(): {})
+    monkeypatch.setattr(ee_replay, "materialize_pit", lambda timelines, as_of, base: base)
+    monkeypatch.setattr(ee_replay, "ingest_consolidated", lambda oracle, as_of: oracle)
+    monkeypatch.setattr(ee_replay, "verify_consistency", lambda *a, **kw: [])
+
+    result = replay_ee_to_pit("base", "2025-01-01", archive=object())
+
+    # The apply raise is surfaced on ``result.error`` (mirrors the pre-fix
+    # EE/NO production-caller contract — the partial-loss hole is closed on
+    # the adjudications lane, the error-string lane is unchanged).
+    assert result.error is not None, (
+        "result.error is None despite apply_ee_ops_conserved raising — the "
+        "production caller's on-raise handling regressed (§2.9 worst-class "
+        "silent failure: a guard that exists but cannot fire)."
+    )
+    assert "Failed to apply ops" in result.error
+    assert raise_message in result.error
+
+    # §1.0 / §1.8 partial-witness preservation: the pre-raise skip adjudication
+    # emitted by the spy (mirroring bare-apply's per-op skip emission BEFORE
+    # the raise) IS on ``result.adjudications``. Pre-fix the list was empty
+    # (the early-return skipped the ``result.adjudications = [...,
+    # *adjudications]`` assignment at production-line ~1877).
+    pre_raise = [
+        a for a in result.adjudications if a.kind == "ee_replay_target_not_found"
+    ]
+    assert pre_raise, (
+        "result.adjudications does not carry the pre-raise ee_replay_target_"
+        "not_found witness — the §1.0/§1.8 partial-loss failure (silent-"
+        "failure review HIGH #1: pre-fix the early-return discarded "
+        "bare-apply's partial witnesses; this assertion fires if the caller "
+        "regresses to a local-list-and-early-return shape)."
+    )
+    assert pre_raise[0].op_id == "ee-replace-then-raise"
+
+    # §1.10 typed orchestration adjudication: ``ee_replay_apply_raise`` IS on
+    # the result with ``exception_type`` / ``exception`` / ``clause_text``
+    # fields embedded in its ``detail`` (per §1.10 the snippet is the offending
+    # context truncated to ~400 chars — here the exception string itself).
+    orchestration = next(
+        (a for a in result.adjudications if a.kind == "ee_replay_apply_raise"),
+        None,
+    )
+    assert orchestration is not None, (
+        "result.adjudications does not carry the typed ee_replay_apply_raise "
+        "orchestration adjudication — the §1.10 embed-snippet contract is "
+        "unmet (silent-failure review HIGH #1)."
+    )
+    assert orchestration.detail["exception_type"] == "ValueError"
+    assert orchestration.detail["exception"] == raise_message
+    assert orchestration.detail["clause_text"] == raise_message  # ≤400 chars
+    # The orchestration adjudication is non-blocking — it is a WITNESS, not the
+    # gate (mirrors the EE conserved-wrapper's ``RejectedItem.blocking=False``
+    # pattern). The blocking gate lives on ``result.error`` (the EE/NO
+    # convention for apply-fold failure: it short-circuits ``replay_ee_to_pit``
+    # and ``classify_ee_replayability`` maps it to ``REPLAY_ERROR_OTHER``).
+    assert orchestration.blocking is False
+    assert orchestration.phase == "replay"
+    assert orchestration.source_statute == "ee/base"
+    assert orchestration.detail["rule_id"] == "ee_replay_apply_raise"
+    assert orchestration.detail["family"] == "orchestration_failure"

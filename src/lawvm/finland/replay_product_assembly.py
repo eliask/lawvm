@@ -225,6 +225,7 @@ def _normalize_product_trees(products: ReplayProducts) -> ReplayProducts:
         dropped_cited_version_snapshots=products.dropped_cited_version_snapshots,
         materialization_spec=products.materialization_spec,
         source_adjudication=products.source_adjudication,
+        tombstones=products.tombstones,
     )
 
 

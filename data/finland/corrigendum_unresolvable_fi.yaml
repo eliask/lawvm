@@ -1,12 +1,12 @@
-# Auto-managed by scripts/tribunal_adjudicate.py — verdicts appended by triage orchestration. Do not edit by hand without preserving the typed schema; see corrigendum_unresolvable_fi.yaml top-of-file doctrine header.
+# Auto-managed by scripts/tribunal_adjudicate.py + migrations
 
 - stable_id: akn/fi/act/statute-consolidated/1991/1512/media/corrigenda/sk19911512_1.pdf#4
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 1991/1512
   source_pdf_witness: akn/fi/act/statute-consolidated/1991/1512/media/corrigenda/sk19911512_1.pdf
   correction_type: prose
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: Wrong_text 'yksittäitäpauksissa' (typo with extra 'ä') byte-exact absent in source XML. correct_text 'yksittäistapauksissa' IS present in source XML inside
       <span class="corrigendum"> wrapper with authorialNote marker 'Merkitty kohta oikaistu (v. 1991), alkuperäinen sanamuoto'. LawVM acquired post-corrigendum-consolidated
       XML; the corrigendum's effect (typo fix) was already applied editorially at acquisition. already_applied_in_source — no retry-overlay needed.
@@ -128,12 +128,12 @@
   manual_review_required: false
   verified_at: '2026-06-28'
 - stable_id: akn/fi/act/statute-consolidated/1996/379/media/corrigenda/sk19960379_1.pdf#0
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 1996/379
   source_pdf_witness: akn/fi/act/statute-consolidated/1996/379/media/corrigenda/sk19960379_1.pdf
   correction_type: prose
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: Wrong_text absent but correct_text is already in source XML. LawVM acquired post-corrigendum-consolidated source XML. Corrigendum effect applied editorially
       at acquisition. Verdict already_applied_in_source.
     alternative_pit_filter: false
@@ -704,12 +704,12 @@
   manual_review_required: false
   verified_at: '2026-06-28'
 - stable_id: akn/fi/act/statute-consolidated/1992/1257/media/corrigenda/sk19970670_1.pdf#1
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 1997/670
   source_pdf_witness: akn/fi/act/statute-consolidated/1992/1257/media/corrigenda/sk19970670_1.pdf
   correction_type: prose
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: 'Wrong_text ''M1- ja N2-luokka'' LLM-extracted form absent. Source XML already contains corrected form ''(M<sub>1</sub>- ja N<sub>1</sub>-luokka)'' inside
       <span class="corrigendum"> wrapper, with authorialNote ''Merkitty kohta oikaistu (v. 1997), alkuperäinen sanamuoto: (M<sub>1</sub>- ja N<sub>2</sub>-luokka)''.
       Corrigendum''s effect (N2->N1) already applied editorially at acquisition. already_applied_in_source — no retry-overlay needed.'
@@ -717,24 +717,24 @@
   manual_review_required: false
   verified_at: '2026-06-28'
 - stable_id: akn/fi/act/statute-consolidated/1992/1257/media/corrigenda/sk19970670_1.pdf#2
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 1997/670
   source_pdf_witness: akn/fi/act/statute-consolidated/1992/1257/media/corrigenda/sk19970670_1.pdf
   correction_type: prose
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: 'Same correction as stable_id #1, normalized differently (Unicode subscripts M1/N1 vs M1/N1). Wrong_text ''M Subscript-1- ja N Subscript-2-luokka'' Unicode-subscript
       variant absent; correct_text already in source XML (rendered via <sub>1</sub> markup). already_applied_in_source — no retry-overlay needed.'
     alternative_pit_filter: false
   manual_review_required: false
   verified_at: '2026-06-28'
 - stable_id: akn/fi/act/statute-consolidated/1992/1256/media/corrigenda/sk19970671_1.pdf#1
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 1997/671
   source_pdf_witness: akn/fi/act/statute-consolidated/1992/1256/media/corrigenda/sk19970671_1.pdf
   correction_type: johtolause
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: Wrong_text absent but correct_text is already in source XML. LawVM acquired post-corrigendum-consolidated source XML. Corrigendum effect applied editorially
       at acquisition. Verdict already_applied_in_source.
     alternative_pit_filter: false
@@ -779,12 +779,12 @@
   manual_review_required: false
   verified_at: '2026-06-28'
 - stable_id: akn/fi/act/statute-consolidated/1999/1059/media/corrigenda/sk19991059_1.pdf#0
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 1999/1059
   source_pdf_witness: akn/fi/act/statute-consolidated/1999/1059/media/corrigenda/sk19991059_1.pdf
   correction_type: prose
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: 'wrong_text has no byte-exact occurrence in source XML even after careful inspection (ws-normalized and visible-text search). Location: Sivulla 2952,
       varoitusmerkin F+ ruotsinkielinen nimi. XML has different content (likely post-corrigendum editorial form or different body).'
     alternative_pit_filter: false
@@ -946,12 +946,12 @@
   manual_review_required: false
   verified_at: '2026-06-28'
 - stable_id: akn/fi/act/statute-consolidated/1992/1256/media/corrigenda/sk20001063_1.pdf#0
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2000/1063
   source_pdf_witness: akn/fi/act/statute-consolidated/1992/1256/media/corrigenda/sk20001063_1.pdf
   correction_type: prose
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: Wrong_text byte-absent from source XML but correct_text IS present in source XML — LawVM acquired post-corrigendum-consolidated source; corrigendum's
       effect already applied editorially at acquisition. Source XML has post-corrigendum 'turvallisuussääntöjen sekä' form (with double-s + 'sekä'), wrapped in <span
       class='corrigendum'> + <authorialNote marker='1'> showing prior 'turvallisuusääntöjen tai' wording. Confirmed at amendment XML offset 10039.
@@ -1062,24 +1062,24 @@
   manual_review_required: false
   verified_at: '2026-06-28'
 - stable_id: akn/fi/act/statute-consolidated/1992/1256/media/corrigenda/sk20000790_1.pdf#0
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2000/790
   source_pdf_witness: akn/fi/act/statute-consolidated/1992/1256/media/corrigenda/sk20000790_1.pdf
   correction_type: prose
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: 'wrong_text has no byte-exact occurrence in source XML even after careful inspection (ws-normalized and visible-text search). Location: Sivulla 2061,
       141 §:ssä ajoneuvoluokka. XML has different content (likely post-corrigendum editorial form or different body).'
     alternative_pit_filter: false
   manual_review_required: false
   verified_at: '2026-06-28'
 - stable_id: akn/fi/act/statute-consolidated/2000/886/media/corrigenda/sk20000886_1.pdf#0
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2000/886
   source_pdf_witness: akn/fi/act/statute-consolidated/2000/886/media/corrigenda/sk20000886_1.pdf
   correction_type: johtolause
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: Wrong_text absent but correct_text is already in source XML. LawVM acquired post-corrigendum-consolidated source XML. Corrigendum effect applied editorially
       at acquisition. Verdict already_applied_in_source.
     alternative_pit_filter: false
@@ -1110,12 +1110,12 @@
   manual_review_required: false
   verified_at: '2026-06-28'
 - stable_id: akn/fi/act/statute-consolidated/1992/1634/media/corrigenda/sk20010703_1.pdf#0
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2001/703
   source_pdf_witness: akn/fi/act/statute-consolidated/1992/1634/media/corrigenda/sk20010703_1.pdf
   correction_type: prose
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: Wrong_text 'voidaan tällöin kuitenkin myös asunnon määräosa' (LLM-extracted form) absent in source XML. Source XML already contains corrected form '<span
       class="corrigendum">hankkia myös asunnon määräosa</span>' at pos=4951, with authorialNote marker preserving original wrong form 'myös asunnon määräosa'. Corrigendum
       intent (insert word 'hankkia') already applied editorially at acquisition. already_applied_in_source — no retry-overlay needed.
@@ -1205,12 +1205,12 @@
   manual_review_required: false
   verified_at: '2026-06-28'
 - stable_id: akn/fi/act/statute-consolidated/2002/1289/media/corrigenda/sk20021289_1.pdf#0
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2002/1289
   source_pdf_witness: akn/fi/act/statute-consolidated/2002/1289/media/corrigenda/sk20021289_1.pdf
   correction_type: metadata
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: Official wt 'Annettu Helsingissä 30 päivänä joulukuuta 2003' byte-absent - source XML already has 'joulukuuta 2002' (the corrected year). Corrigendum
       already applied at source XML level.
     alternative_pit_filter: false
@@ -1997,12 +1997,12 @@
   manual_review_required: false
   verified_at: '2026-06-28'
 - stable_id: akn/fi/act/statute-consolidated/1994/1072/media/corrigenda/sk20030128_1.pdf#1
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2003/128
   source_pdf_witness: akn/fi/act/statute-consolidated/1994/1072/media/corrigenda/sk20030128_1.pdf
   correction_type: johtolause
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: 'Wrong_text byte-absent from source XML but correct_text IS present in source XML — LawVM acquired post-corrigendum-consolidated source; corrigendum''s
       effect already applied editorially at acquisition. Same physical correction as stable_id #0 (johtolause ''57 § osaksi viimeksi'' → ''57 § viimeksi''). #0''s
       existing retry-overlay already patches ''57 § osaksi viimeksi mainitussa laissa'' → ''57 § viimeksi mainitussa laissa'' (single byte-exact anchor with correct
@@ -2157,24 +2157,24 @@
   manual_review_required: false
   verified_at: '2026-06-28'
 - stable_id: akn/fi/act/statute-consolidated/2003/794/media/corrigenda/sk20030794_1.pdf#0
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2003/794
   source_pdf_witness: akn/fi/act/statute-consolidated/2003/794/media/corrigenda/sk20030794_1.pdf
   correction_type: prose
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: 'wrong_text has no byte-exact occurrence in source XML even after careful inspection (ws-normalized and visible-text search). Location: Sivulla 3054,
       rivillä 1. XML has different content (likely post-corrigendum editorial form or different body).'
     alternative_pit_filter: false
   manual_review_required: false
   verified_at: '2026-06-28'
 - stable_id: akn/fi/act/statute-consolidated/2003/794/media/corrigenda/sk20030794_1.pdf#1
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2003/794
   source_pdf_witness: akn/fi/act/statute-consolidated/2003/794/media/corrigenda/sk20030794_1.pdf
   correction_type: prose
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: 'wrong_text has no byte-exact occurrence in source XML even after careful inspection (ws-normalized and visible-text search). Location: Sivun 3059 lopussa.
       XML has different content (likely post-corrigendum editorial form or different body).'
     alternative_pit_filter: false
@@ -2217,36 +2217,36 @@
   manual_review_required: true
   verified_at: '2026-06-28'
 - stable_id: akn/fi/act/statute-consolidated/2004/584/media/corrigenda/sk20040584_1.pdf#0
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2004/584
   source_pdf_witness: akn/fi/act/statute-consolidated/2004/584/media/corrigenda/sk20040584_1.pdf
   correction_type: prose
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: 'Wrong_text ''valtioneuvon päätöksen'' (typo: missing ''sto'') absent in source XML. Correct_text ''valtioneuvoston päätöksen'' IS present in source (count=1)
       — corrigendum''s effect (typo fix) already applied editorially at acquisition. already_applied_in_source — no retry-overlay needed.'
     alternative_pit_filter: false
   manual_review_required: false
   verified_at: '2026-06-28'
 - stable_id: akn/fi/act/statute-consolidated/2004/584/media/corrigenda/sk20040584_1.pdf#1
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2004/584
   source_pdf_witness: akn/fi/act/statute-consolidated/2004/584/media/corrigenda/sk20040584_1.pdf
   correction_type: prose
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: Wrong_text 'jätelain 18 g:ssä tarkoitettua' (missing § symbol after g) absent in source XML. Correct_text 'jätelain 18 g §:ssä tarkoitettua' IS present
       in source (count=1) — corrigendum's effect (insert § after 'g') already applied editorially at acquisition. already_applied_in_source — no retry-overlay needed.
     alternative_pit_filter: false
   manual_review_required: false
   verified_at: '2026-06-28'
 - stable_id: akn/fi/act/statute-consolidated/1998/629/media/corrigenda/sk20040766_1.pdf#0
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2004/766
   source_pdf_witness: akn/fi/act/statute-consolidated/1998/629/media/corrigenda/sk20040766_1.pdf
   correction_type: footnote
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: Wrong_text byte-absent from source XML but correct_text IS present in source XML — LawVM acquired post-corrigendum-consolidated source; corrigendum's
       effect already applied editorially at acquisition. Source XML's <hcontainer finlex:outline='Esityöt' name='preliminaryWork'> already contains 'HE 47/2004 /
       SiVM 7/2004 / EV 68/2004' (correct form) — corrigendum's wrong_text 'HE 18/2004 / SiVM 9/2004 / EV 90/2004' is byte-absent.
@@ -2475,12 +2475,12 @@
   verified_at: '2026-06-28'
   effective_date: '2020-08-06'
 - stable_id: akn/fi/act/statute-consolidated/1889/39-001/media/corrigenda/sk20061431_1.pdf#0
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2006/1431
   source_pdf_witness: akn/fi/act/statute-consolidated/1889/39-001/media/corrigenda/sk20061431_1.pdf
   correction_type: typeset
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: 'wrong_text has no byte-exact occurrence in source XML even after careful inspection (ws-normalized and visible-text search). Location: Sivulla 4354,
       14 §:n 3 kohta. XML has different content (likely post-corrigendum editorial form or different body).'
     alternative_pit_filter: false
@@ -2546,12 +2546,12 @@
   manual_review_required: false
   verified_at: '2026-06-28'
 - stable_id: akn/fi/act/statute-consolidated/2002/277/media/corrigenda/sk20070594_1.pdf#5
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2007/594
   source_pdf_witness: akn/fi/act/statute-consolidated/2002/277/media/corrigenda/sk20070594_1.pdf
   correction_type: prose
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: 'wrong_text has no byte-exact occurrence in source XML even after careful inspection (ws-normalized and visible-text search). Location: Sivulla 2408,
       kohdan 5.4.1.2.2 (a) neljäs rivi. XML has different content (likely post-corrigendum editorial form or different body).'
     alternative_pit_filter: false
@@ -2648,12 +2648,12 @@
   manual_review_required: true
   verified_at: '2026-06-28'
 - stable_id: akn/fi/act/statute-consolidated/1995/1774/media/corrigenda/sk20090174_1.pdf#0
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2009/174
   source_pdf_witness: akn/fi/act/statute-consolidated/1995/1774/media/corrigenda/sk20090174_1.pdf
   correction_type: prose
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: 'wrong_text has no byte-exact occurrence in source XML even after careful inspection (ws-normalized and visible-text search). Location: Sivulla 5730,
       144 §. XML has different content (likely post-corrigendum editorial form or different body).'
     alternative_pit_filter: false
@@ -2748,36 +2748,36 @@
   manual_review_required: false
   verified_at: '2026-06-28'
 - stable_id: akn/fi/act/statute-consolidated/2011/707/media/corrigenda/sk20110707_1.pdf#0
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2011/707
   source_pdf_witness: akn/fi/act/statute-consolidated/2011/707/media/corrigenda/sk20110707_1.pdf
   correction_type: prose
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: 'wrong_text has no byte-exact occurrence in source XML even after careful inspection (ws-normalized and visible-text search). Location: Sivulla 12, oikea
       sarake 10 luku. XML has different content (likely post-corrigendum editorial form or different body).'
     alternative_pit_filter: false
   manual_review_required: false
   verified_at: '2026-06-28'
 - stable_id: akn/fi/act/statute-consolidated/2002/672/media/corrigenda/sk20110816_1.pdf#0
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2011/816
   source_pdf_witness: akn/fi/act/statute-consolidated/2002/672/media/corrigenda/sk20110816_1.pdf
   correction_type: footnote
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: Wrong_text 'RP 222/2010 LaUB 44/2010 RSv 374/2010' absent but correct_text (HE 222/2010 LaVM 44/2010 EV 374/2010) IS in source XML — LawVM acquired post-corrigendum-consolidated
       XML; corrigendum's effect already applied editorially at acquisition.
     alternative_pit_filter: false
   manual_review_required: false
   verified_at: '2026-06-28'
 - stable_id: akn/fi/act/statute-consolidated/2012/1019/media/corrigenda/sk20121019_1.pdf#1
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2012/1019
   source_pdf_witness: akn/fi/act/statute-consolidated/2012/1019/media/corrigenda/sk20121019_1.pdf
   correction_type: prose
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: Wrong_text 'taı́ osakemerkinnässä' (with combining diacritic U+0131 'ı' on the 'i' of 'tai' — an LLM/Vision OCR-or-Latin-substitution artifact) absent
       in source XML. Correct_text plain 'tai osakemerkinnässä' IS present in source (count=1 at pos=66970) — corrigendum's effect (replace combining-diacritic 'ı'
       with plain 'i') already applied editorially at acquisition. already_applied_in_source — no retry-overlay needed.
@@ -2900,12 +2900,12 @@
   manual_review_required: false
   verified_at: '2026-06-28'
 - stable_id: akn/fi/act/statute-consolidated/1999/467/media/corrigenda/sk20131047_1.pdf#0
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2013/1047
   source_pdf_witness: akn/fi/act/statute-consolidated/1999/467/media/corrigenda/sk20131047_1.pdf
   correction_type: footnote
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: 'wrong_text has no byte-exact occurrence in source XML even after careful inspection (ws-normalized and visible-text search). Location: Sivulla 1, esityöviittaukset.
       XML has different content (likely post-corrigendum editorial form or different body).'
     alternative_pit_filter: false
@@ -3209,12 +3209,12 @@
   manual_review_required: false
   verified_at: '2026-06-28'
 - stable_id: akn/fi/act/statute-consolidated/2013/707/media/corrigenda/sk20130707_1.pdf#1
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2013/707
   source_pdf_witness: akn/fi/act/statute-consolidated/2013/707/media/corrigenda/sk20130707_1.pdf
   correction_type: johtolause
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: 'Wrong_text byte-absent from source XML but correct_text IS present in source XML — LawVM acquired post-corrigendum-consolidated source; corrigendum''s
       effect already applied editorially at acquisition. Same physical correction (list-item renumber 7,7,8,9 → 7,8,9,10 in section 5 subsection 3) as stable_id #0;
       #0''s multi-patch retry-overlay handles the per-paragraph <num> changes.'
@@ -3265,12 +3265,12 @@
   verified_at: '2026-06-28'
   effective_date: '2015-01-09'
 - stable_id: akn/fi/act/statute-consolidated/1889/39-001/media/corrigenda/sk20141177_1.pdf#0
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2014/1177
   source_pdf_witness: akn/fi/act/statute-consolidated/1889/39-001/media/corrigenda/sk20141177_1.pdf
   correction_type: typeset
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: Wrong_text absent (PDF-extracted line-wrapping differs from XML form) but correct_text (visible content 'poistamiseksi, on tuomittava ihmiskaupasta vankeuteen')
       IS rendered from XML's <paragraph>+<wrapUp> structure — corrigendum's effect (collapsing paragraph break) is already achieved by the AkomaNtoso wrapUp element;
       LawVM acquired post-corrigendum-consolidated XML.
@@ -3278,12 +3278,12 @@
   manual_review_required: false
   verified_at: '2026-06-28'
 - stable_id: akn/fi/act/statute-consolidated/2014/1129/media/corrigenda/sk20141438_1.pdf#1
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2014/1438
   source_pdf_witness: akn/fi/act/statute-consolidated/2014/1129/media/corrigenda/sk20141438_1.pdf
   correction_type: prose
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: 'wrong_text has no byte-exact occurrence in source XML even after careful inspection (ws-normalized and visible-text search). Location: Sivulla 1, johtolauseessa.
       XML has different content (likely post-corrigendum editorial form or different body).'
     alternative_pit_filter: false
@@ -3304,12 +3304,12 @@
   verified_at: '2026-06-28'
   effective_date: '2014-08-18'
 - stable_id: akn/fi/act/statute-consolidated/1992/1257/media/corrigenda/sk20151612_1.pdf#0
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2015/1612
   source_pdf_witness: akn/fi/act/statute-consolidated/1992/1257/media/corrigenda/sk20151612_1.pdf
   correction_type: johtolause
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: 'wrong_text has no byte-exact occurrence in source XML even after careful inspection (ws-normalized and visible-text search). Location: Sivulla 1, johtolause.
       XML has different content (likely post-corrigendum editorial form or different body).'
     alternative_pit_filter: false
@@ -3343,12 +3343,12 @@
   verified_at: '2026-06-28'
   effective_date: '2015-03-06'
 - stable_id: akn/fi/act/statute-consolidated/1889/39-001/media/corrigenda/sk20150368_1.pdf#1
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2015/368
   source_pdf_witness: akn/fi/act/statute-consolidated/1889/39-001/media/corrigenda/sk20150368_1.pdf
   correction_type: prose
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: 'Wrong_text byte-absent from source XML but correct_text IS present in source XML — LawVM acquired post-corrigendum-consolidated source; corrigendum''s
       effect already applied editorially at acquisition. Same physical correction as stable_id #2 (section number 9 b § → 9 a § with heading Identiteettivarkaus).
       #2''s retry-overlay patches the XML <num>9 b §</num><heading>Identiteettivarkaus</heading>. #1''s wrong_text ''9b§'' (no space, joined) is the printed-publication
@@ -3435,12 +3435,12 @@
   verified_at: '2026-06-28'
   effective_date: '2016-01-29'
 - stable_id: akn/fi/act/statute-consolidated/2015/589/media/corrigenda/sk20150589_4.pdf#1
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2015/589
   source_pdf_witness: akn/fi/act/statute-consolidated/2015/589/media/corrigenda/sk20150589_4.pdf
   correction_type: prose
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: 'wrong_text has no byte-exact occurrence in source XML even after careful inspection (ws-normalized and visible-text search). Location: Sivulla 24, liitteessä
       2, Oksikodoni. XML has different content (likely post-corrigendum editorial form or different body).'
     alternative_pit_filter: false
@@ -3557,12 +3557,12 @@
   verified_at: '2026-06-28'
   effective_date: '2018-02-15'
 - stable_id: akn/fi/act/statute-consolidated/2014/610/media/corrigenda/sk20171073_1.pdf#0
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2017/1073
   source_pdf_witness: akn/fi/act/statute-consolidated/2014/610/media/corrigenda/sk20171073_1.pdf
   correction_type: prose
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: 'wrong_text has no byte-exact occurrence in source XML even after careful inspection (ws-normalized and visible-text search). Location: Sivulla 4, 12
       luvun 12 §:n 1 momentti. XML has different content (likely post-corrigendum editorial form or different body).'
     alternative_pit_filter: false
@@ -3570,12 +3570,12 @@
   verified_at: '2026-06-28'
   effective_date: '2018-02-15'
 - stable_id: akn/fi/act/statute-consolidated/2009/1704/media/corrigenda/sk20171126_1.pdf#0
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2017/1126
   source_pdf_witness: akn/fi/act/statute-consolidated/2009/1704/media/corrigenda/sk20171126_1.pdf
   correction_type: johtolause
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: Wrong_text absent but correct_text (johtolause 'muutetaan kunnan peruspalvelujen valtionosuudesta annetun lain (1704/2009) 35 ja 36 § sekä 55 §:n 1 momentti,
       sellaisina kuin ne ovat laissa 1485/2016, sekä lisätään 2 §:n 1 momenttiin ... uusi 10 a kohta ja 59 §:n 2 momenttiin ... uusi 7 a kohta seuraavasti:') is in
       source XML — LawVM acquired post-corrigendum-consolidated XML; corrigendum's effect already applied editorially at acquisition.
@@ -3583,48 +3583,48 @@
   manual_review_required: false
   verified_at: '2026-06-28'
 - stable_id: akn/fi/act/statute-consolidated/2009/1704/media/corrigenda/sk20171126_1.pdf#1
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2017/1126
   source_pdf_witness: akn/fi/act/statute-consolidated/2009/1704/media/corrigenda/sk20171126_1.pdf
   correction_type: prose
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: Wrong_text absent but correct_text (35 § Vuoden 2018 verotuksessa / 23,93 euroa content) IS in source XML — LawVM acquired post-corrigendum-consolidated
       XML; corrigendum's effect already applied editorially at acquisition.
     alternative_pit_filter: false
   manual_review_required: false
   verified_at: '2026-06-28'
 - stable_id: akn/fi/act/statute-consolidated/2009/1704/media/corrigenda/sk20171126_1.pdf#2
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2017/1126
   source_pdf_witness: akn/fi/act/statute-consolidated/2009/1704/media/corrigenda/sk20171126_1.pdf
   correction_type: prose
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: Wrong_text absent but correct_text (36 § Vuosina 2016—2019 indeksikorotus / 7,72 euroa content) IS in source XML — LawVM acquired post-corrigendum-consolidated
       XML; corrigendum's effect already applied editorially at acquisition.
     alternative_pit_filter: false
   manual_review_required: false
   verified_at: '2026-06-28'
 - stable_id: akn/fi/act/statute-consolidated/2009/1704/media/corrigenda/sk20171126_1.pdf#3
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2017/1126
   source_pdf_witness: akn/fi/act/statute-consolidated/2009/1704/media/corrigenda/sk20171126_1.pdf
   correction_type: prose
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: Wrong_text absent but correct_text (55 § 25,34 prosenttia / 74,66 prosenttia content) IS in source XML — LawVM acquired post-corrigendum-consolidated
       XML; corrigendum's effect already applied editorially at acquisition.
     alternative_pit_filter: false
   manual_review_required: false
   verified_at: '2026-06-28'
 - stable_id: akn/fi/act/statute-consolidated/2017/176/media/corrigenda/sk20170176_1.pdf#0
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2017/176
   source_pdf_witness: akn/fi/act/statute-consolidated/2017/176/media/corrigenda/sk20170176_1.pdf
   correction_type: prose
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: Wrong_text '(523/1999.' (period-for-paren typo) absent in source XML. Correct_text '(523/1999).' (closing paren before period) IS present in source (count=1)
       — corrigendum's effect (move period after closing paren) already applied editorially at acquisition. already_applied_in_source — no retry-overlay needed.
     alternative_pit_filter: false
@@ -3673,12 +3673,12 @@
   verified_at: '2026-06-28'
   effective_date: '2018-11-09'
 - stable_id: akn/fi/act/statute-consolidated/2019/254/media/corrigenda/sk20190254_1.pdf#1
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2019/254
   source_pdf_witness: akn/fi/act/statute-consolidated/2019/254/media/corrigenda/sk20190254_1.pdf
   correction_type: typeset
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: Wrong_text byte-absent from source XML but correct_text IS present in source XML — LawVM acquired post-corrigendum-consolidated source; corrigendum's
       effect already applied editorially at acquisition. Typeset line-break corrigendum asking 'Bogota Hanoi' → 'Bogota\nHanoi'. Source XML already structures these
       as separate <p>Bogota</p> ... <p>Hanoi</p> table cells (3 occurrences each) — corrigendum intent already applied via more elaborate XML restructuring at acquisition.
@@ -3727,12 +3727,12 @@
   verified_at: '2026-06-28'
   effective_date: '2019-08-22'
 - stable_id: akn/fi/act/statute-consolidated/2019/969/media/corrigenda/sk20190969_1.pdf#0
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2019/969
   source_pdf_witness: akn/fi/act/statute-consolidated/2019/969/media/corrigenda/sk20190969_1.pdf
   correction_type: prose
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: 'wrong_text has no byte-exact occurrence in source XML even after careful inspection (ws-normalized and visible-text search). Location: Sivulla 40, Liitteessä.
       XML has different content (likely post-corrigendum editorial form or different body).'
     alternative_pit_filter: false
@@ -3740,24 +3740,24 @@
   verified_at: '2026-06-28'
   effective_date: '2019-09-24'
 - stable_id: akn/fi/act/statute-consolidated/2014/63/media/corrigenda/sk20190995_1.pdf#0
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2019/995
   source_pdf_witness: akn/fi/act/statute-consolidated/2014/63/media/corrigenda/sk20190995_1.pdf
   correction_type: prose
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: Wrong_text absent but correct_text is already in source XML. LawVM acquired post-corrigendum-consolidated source XML. Corrigendum effect applied editorially
       at acquisition. Verdict already_applied_in_source.
     alternative_pit_filter: false
   manual_review_required: false
   verified_at: '2026-06-28'
 - stable_id: akn/fi/act/statute-consolidated/2019/998/media/corrigenda/sk20190998_1.pdf#0
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2019/998
   source_pdf_witness: akn/fi/act/statute-consolidated/2019/998/media/corrigenda/sk20190998_1.pdf
   correction_type: prose
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: Wrong_text byte-absent from source XML but correct_text IS present in source XML — LawVM acquired post-corrigendum-consolidated source; corrigendum's
       effect already applied editorially at acquisition. Source XML has 'Kenttähaalarin' (genitive, post-corrigendum form); wrong_text 'Kenttähaalarissa' (inessive)
       byte-absent. Corrigendum's effect already applied at source XML.
@@ -3817,12 +3817,12 @@
   verified_at: '2026-06-28'
   effective_date: '2020-06-09'
 - stable_id: akn/fi/act/statute-consolidated/2020/398/media/corrigenda/sk20200398_1.pdf#0
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2020/398
   source_pdf_witness: akn/fi/act/statute-consolidated/2020/398/media/corrigenda/sk20200398_1.pdf
   correction_type: prose
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: Wrong_text '(XXX/2020)' (placeholder form, pre-publication draft) absent in source XML. Correct_text '(399/2020)' (actual printed citation number) IS
       present in source (count=1) — corrigendum's effect (replace placeholder XXX with actual number 399) already applied editorially at acquisition. already_applied_in_source
       — no retry-overlay needed.
@@ -3830,12 +3830,12 @@
   manual_review_required: false
   verified_at: '2026-06-28'
 - stable_id: akn/fi/act/statute-consolidated/2014/706/media/corrigenda/sk20200649_1.pdf#0
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2020/649
   source_pdf_witness: akn/fi/act/statute-consolidated/2014/706/media/corrigenda/sk20200649_1.pdf
   correction_type: metadata
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: Wrong_text byte-absent from source XML but correct_text IS present in source XML — LawVM acquired post-corrigendum-consolidated source; corrigendum's
       effect already applied editorially at acquisition. Source XML already contains 'Kehitysyhteistyö- ja ulkomaakauppaministeri Ville Skinnari' (correct form);
       wrong_text 'Perhe- ja peruspalveluministeri Krista Kiuru' byte-absent. Corrigendum's signature correction already applied.
@@ -3898,12 +3898,12 @@
   verified_at: '2026-06-28'
   effective_date: '2021-03-12'
 - stable_id: akn/fi/act/statute-consolidated/2007/1024/media/corrigenda/sk20220525_1.pdf#1
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2022/525
   source_pdf_witness: akn/fi/act/statute-consolidated/2007/1024/media/corrigenda/sk20220525_1.pdf
   correction_type: prose
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: 'Wrong_text byte-absent from source XML but correct_text IS present in source XML — LawVM acquired post-corrigendum-consolidated source; corrigendum''s
       effect already applied editorially at acquisition. Same physical correction (delete list items 1-5, keep ''6) Työkanava Oy.'') captured by stable_id #0''s existing
       retry-overlay which patches the XML-paragraph block. Record #1 has PDF-extraction variant (no em-dash separator); #0''s XML-aware retry-overlay handles the
@@ -3912,12 +3912,12 @@
   manual_review_required: false
   verified_at: '2026-06-28'
 - stable_id: akn/fi/act/statute-consolidated/2007/1024/media/corrigenda/sk20220525_1.pdf#2
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2022/525
   source_pdf_witness: akn/fi/act/statute-consolidated/2007/1024/media/corrigenda/sk20220525_1.pdf
   correction_type: prose
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: 'Wrong_text byte-absent from source XML but correct_text IS present in source XML — LawVM acquired post-corrigendum-consolidated source; corrigendum''s
       effect already applied editorially at acquisition. Same physical correction (delete list items 1-5, keep ''6) Työkanava Oy.'') captured by stable_id #0''s existing
       retry-overlay. Record #2 has PDF-extraction em-dash separator that doesn''t byte-match XML markup; #0''s XML-aware retry-overlay handles the actual byte patch.'
@@ -3962,12 +3962,12 @@
   verified_at: '2026-06-28'
   effective_date: '2023-12-17'
 - stable_id: akn/fi/act/statute-consolidated/2022/1114/media/corrigenda/sk20231120_1.pdf#1
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2023/1120
   source_pdf_witness: akn/fi/act/statute-consolidated/2022/1114/media/corrigenda/sk20231120_1.pdf
   correction_type: prose
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: 'wrong_text has no byte-exact occurrence in source XML even after careful inspection (ws-normalized and visible-text search). Location: Sivulla 4, rivit
       1-13. XML has different content (likely post-corrigendum editorial form or different body).'
     alternative_pit_filter: false
@@ -3988,12 +3988,12 @@
   verified_at: '2026-06-28'
   effective_date: '2023-08-09'
 - stable_id: akn/fi/act/statute-consolidated/1995/554/media/corrigenda/sk20230761_1.pdf#2
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2023/761
   source_pdf_witness: akn/fi/act/statute-consolidated/1995/554/media/corrigenda/sk20230761_1.pdf
   correction_type: prose
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: Wrong_text byte-absent from source XML but correct_text IS present in source XML — LawVM acquired post-corrigendum-consolidated source; corrigendum's
       effect already applied editorially at acquisition. Source XML already contains the corrigendum's 'pitää olla' (correct) text — the em-dash-separated PDF artifact
       in wrong_text is absent; corrigendum effect already applied to Finlex XML.
@@ -4001,12 +4001,12 @@
   manual_review_required: false
   verified_at: '2026-06-28'
 - stable_id: akn/fi/act/statute-consolidated/2023/83/media/corrigenda/sk20230083_1.pdf#1
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2023/83
   source_pdf_witness: akn/fi/act/statute-consolidated/2023/83/media/corrigenda/sk20230083_1.pdf
   correction_type: prose
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: 'Wrong_text ''17 § yksiköiltä'' (with extra erroneous word ''yksiköiltä'' between § and heading) absent in source XML. Source XML already has corrected
       form: <num>17 §</num> + separate <heading>Tuotannosta irrotetun tuen määrä ja ennakko</heading> (no ''yksiköiltä'' word). Corrigendum''s effect (remove spurious
       ''yksiköiltä'' word) already applied editorially at acquisition. already_applied_in_source — no retry-overlay needed.'
@@ -4014,24 +4014,24 @@
   manual_review_required: false
   verified_at: '2026-06-28'
 - stable_id: akn/fi/act/statute-consolidated/2010/1048/media/corrigenda/sk20240140_1.pdf#15
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2024/140
   source_pdf_witness: akn/fi/act/statute-consolidated/2010/1048/media/corrigenda/sk20240140_1.pdf
   correction_type: prose
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: Wrong_text absent but correct_text is already in source XML. LawVM acquired post-corrigendum-consolidated source XML. Corrigendum effect applied editorially
       at acquisition. Verdict already_applied_in_source.
     alternative_pit_filter: false
   manual_review_required: false
   verified_at: '2026-06-28'
 - stable_id: akn/fi/act/statute-consolidated/2024/385/media/corrigenda/sk20240385_1.pdf#0
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2024/385
   source_pdf_witness: akn/fi/act/statute-consolidated/2024/385/media/corrigenda/sk20240385_1.pdf
   correction_type: prose
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: Wrong_text byte-absent from source XML but correct_text IS present in source XML — LawVM acquired post-corrigendum-consolidated source; corrigendum's
       effect already applied editorially at acquisition. Source XML has '(<i>sopimusvaltio</i>), jos' (no extra space before comma) — the corrigendum's punctuation
       fix (removing the space between ')' and ',') is already applied at source XML.
@@ -4052,12 +4052,12 @@
   verified_at: '2026-06-28'
   effective_date: '2024-02-15'
 - stable_id: akn/fi/act/statute-consolidated/2019/906/media/corrigenda/sk20250125_1.pdf#0
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2025/125
   source_pdf_witness: akn/fi/act/statute-consolidated/2019/906/media/corrigenda/sk20250125_1.pdf
   correction_type: prose
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: 'Wrong_text (single inline form): ''17) viestintäverkolla ja tietojärjestelmällä18) viestintäverkon...'' (17) and 18) joined without break on same paragraph-intro).
       Source XML ALREADY has corrected restructured form: <paragraph><num>17)</num><intro>...</intro><subparagraph><num>a)</num>...</subparagraph><subparagraph><num>b)</num>...</subparagraph><subparagraph><num>c)</num>...</subparagraph></paragraph>
       (17 is split into a/b/c sub-items, then 18) as separate paragraph). Corrigendum''s restructuring intent (split 17) into a/b/c sub-items, separate from 18) paragraph)
@@ -4092,12 +4092,12 @@
   verified_at: '2026-06-28'
   effective_date: '2025-05-15'
 - stable_id: akn/fi/act/statute-consolidated/2025/4/media/corrigenda/sk20250004_1.pdf#1
-  rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+  rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
   amendment_id: 2025/4
   source_pdf_witness: akn/fi/act/statute-consolidated/2025/4/media/corrigenda/sk20250004_1.pdf
   correction_type: metadata
   evidence:
-    kind: byte_anchor_absent
+    kind: already_applied_in_source
     detail: Wrong_text absent but correct_text is already in source XML. LawVM acquired post-corrigendum-consolidated source XML. Corrigendum effect applied editorially
       at acquisition. Verdict already_applied_in_source.
     alternative_pit_filter: false

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace as dc_replace
 from functools import lru_cache
 from typing import Callable, Mapping, Protocol
 
@@ -1146,6 +1146,7 @@ def rekey_timelines_with_migration_events(
             (version.effective, version.enacted, version.expires, version.content_hash)
             for version in bucket.versions
         }
+        merged_versions: list[ProvisionVersion] = list(bucket.versions)
         for version in migrated_versions:
             if version.content is None and any(
                 existing_version.content is not None
@@ -1157,12 +1158,16 @@ def rekey_timelines_with_migration_events(
             version_key = (version.effective, version.enacted, version.expires, version.content_hash)
             if version_key in existing_version_keys:
                 continue
-            bucket.versions.append(version)
+            merged_versions.append(version)
             existing_version_keys.add(version_key)
         if merge_bucket_cleanup_fn is not None:
-            bucket.versions = merge_bucket_cleanup_fn(list(bucket.versions))
-    for timeline in rekeyed.values():
-        timeline.versions.sort(key=lambda v: (v.effective, v.enacted))
+            merged_versions = merge_bucket_cleanup_fn(merged_versions)
+        rekeyed[migrated_address] = dc_replace(bucket, versions=tuple(merged_versions))
+    for timeline_address, timeline in list(rekeyed.items()):
+        rekeyed[timeline_address] = dc_replace(
+            timeline,
+            versions=tuple(sorted(timeline.versions, key=lambda v: (v.effective, v.enacted))),
+        )
     return rekeyed
 
 

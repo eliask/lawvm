@@ -155,7 +155,7 @@ _B_BENCH_NOT_SOURCE_TRUTH = _binding(
     scope=(
         "The Finland benchmark mean structural/Levenshtein agreement score over "
         "the corpus, as emitted by the bench evidence surface "
-        "(lawvm.finland.bench_bundle_proof_projector)."
+        "(fi.frontend.bench_evidence_surface)."
     ),
     effect="outside_claim",
     expires_when=(
@@ -197,7 +197,7 @@ _B_MAT_RELATIVE_ABSENCES = _binding(
     scope=(
         "Whether a CLEAN materialization-totality verdict is unconditional, vs "
         "relative to the completeness of the caller-supplied typed-absence set "
-        "(lawvm.finland.materialization_totality)."
+        "(fi.frontend.materialization_totality)."
     ),
     effect="qualifies",
     expires_when=(
@@ -240,7 +240,7 @@ _B_REF_SURFACE_NOT_AUTHORITY = _binding(
     scope=(
         "Whether a reference classification (resolved / statute_only / ...) carries "
         "any legal-state or replay authority over the cited provision "
-        "(lawvm.finland.references.surface_totality)."
+        "(fi.frontend.reference_surface_totality)."
     ),
     effect="outside_claim",
     expires_when=(
@@ -260,7 +260,7 @@ _B_REF_RECALL_BOUNDED = _binding(
     scope=(
         "Reference-resolution recall: an OPEN or UNSUPPORTED mention is an honest "
         "non-resolution, not a defect; recall is bounded by the resolver's coverage "
-        "(lawvm.finland.references.surface_totality)."
+        "(fi.frontend.reference_surface_totality)."
     ),
     effect="qualifies",
     expires_when=(
@@ -340,7 +340,7 @@ _B_TRANS_NOT_CONFORMANCE = _binding(
     scope=(
         "Whether a typed transposition edge asserts substantive conformance of the "
         "Finnish act to the EU directive, vs only the DECLARED relation + timing "
-        "(lawvm.finland.references.eu_transposition_edges)."
+        "(fi.frontend.eu_transposition_edges)."
     ),
     effect="outside_claim",
     expires_when=(
@@ -361,7 +361,7 @@ _B_TRANS_DEADLINE_SEED = _binding(
     scope=(
         "The directive-transposition-deadline seed registry is not exhaustive; a "
         "directive absent from the seed yields a typed UNKNOWN timeliness verdict "
-        "(lawvm.finland.references.eu_transposition_edges)."
+        "(fi.frontend.eu_transposition_edges)."
     ),
     effect="qualifies",
     expires_when=(
@@ -381,7 +381,7 @@ _B_TRANS_FI_ENACTMENT_CALLER = _binding(
     scope=(
         "The Finnish act's enactment date used in the timeliness comparison is "
         "caller-supplied, not independently derived "
-        "(lawvm.finland.references.eu_transposition_edges)."
+        "(fi.frontend.eu_transposition_edges)."
     ),
     effect="qualifies",
     expires_when=(
@@ -401,7 +401,7 @@ _B_DER_TEXTUAL_NOT_LINEAGE = _binding(
     kind="doctrine_unresolved",
     scope=(
         "Whether a textual-derivation edge (shared bytes between two texts) implies "
-        "lineage, conformance, or citation (lawvm.finland.references.derivation_edges)."
+        "lineage, conformance, or citation (fi.frontend.derivation_edges)."
     ),
     effect="outside_claim",
     expires_when=(
@@ -421,7 +421,7 @@ _B_DER_MODEL_CODE_UNKNOWN = _binding(
     scope=(
         "Model-code kinship (shared model-law ancestry) between two texts: typed "
         "UNKNOWN, never guessed — no byte-level discriminator decides it "
-        "(lawvm.finland.references.derivation_edges)."
+        "(fi.frontend.derivation_edges)."
     ),
     effect="qualifies",
     expires_when=(
@@ -439,7 +439,7 @@ _B_DER_CONFORMANCE_CLAIMED = _binding(
     kind="doctrine_unresolved",
     scope=(
         "An EU-conformance derivation edge records a CLAIMED conformance relation, "
-        "not an assessed one (lawvm.finland.references.derivation_edges)."
+        "not an assessed one (fi.frontend.derivation_edges)."
     ),
     effect="outside_claim",
     expires_when=(
@@ -692,7 +692,7 @@ _B_FIXED_TERM_AMBIGUOUS_STRICT = _binding(
         "A whole-law fixed-term clause whose validity date cannot be parsed, "
         "whose two bounds conflict on the same effective date, or whose "
         "anaphoric year ('sanotun vuoden loppuun') has multiple plausible "
-        "same-sentence antecedents (lawvm.finland.fixed_term_expiry)."
+        "same-sentence antecedents (fi.frontend.fixed_term_expiry)."
     ),
     effect="blocks_clean",
     expires_when=(
@@ -794,7 +794,7 @@ _B_LSG_REFERENCE_FAMILY_ONLY = _binding(
         "uses_term), EU transposition (transposes), and dangling-reference status "
         "(the three-way existence verdict on each provision-target node). The "
         "DERIVATION edge family alone is NOT merged in "
-        "(lawvm.finland.legal_surface.corpus_graph)."
+        "(fi.frontend.legal_surface_corpus_graph)."
     ),
     effect="qualifies",
     expires_when=(
@@ -821,7 +821,7 @@ _B_LSG_RESOLUTION_RECALL_BOUNDED = _binding(
     scope=(
         "The recall of cross-statute reference resolution in the corpus graph: an "
         "open / statute_only mention is left as-is (no promoted target), never an "
-        "invented edge (lawvm.finland.legal_surface.corpus_graph)."
+        "invented edge (fi.frontend.legal_surface_corpus_graph)."
     ),
     effect="qualifies",
     expires_when=(

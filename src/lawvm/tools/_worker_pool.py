@@ -56,6 +56,15 @@ def managed_executor(
         # shutdown exception. The default is None (no return value used);
         # emit-via-log keeps the swallow visible without aborting atexit-driven
         # teardown during interpreter shutdown.
+        #
+        # log_emitter sanctioned (iter3 W2 §3.2 evidence-path audit):
+        # this swallow fires inside atexit + signal-handler-driven teardown
+        # paths (no caller-stack scope at all). There is no findings_out
+        # accumulator to plumb here — the teardown runs at process exit/signal,
+        # not within a per-statute compile fold. Per ``core/named_swallow.py``
+        # docstring's IO/utility-boundary sanctioned use, the swallow stays on
+        # the inline ``emit=lambda`` (stderr WARNING via ``_logger.warning``);
+        # per-statute evidence-ledger reach is structurally not applicable.
         with named_swallow(
             rule_id="tools_worker_pool_terminate_shutdown",
             default=None,
@@ -111,6 +120,16 @@ def managed_executor(
         # witnessed (WARNING) rather than silently swallowed — AND let the
         # ``finally`` block continue to unregister atexit/signal handlers so
         # the process does not leak state.
+        #
+        # log_emitter sanctioned (iter3 W2 §3.2 evidence-path audit):
+        # this swallow fires in the ``finally`` of the managed-executor
+        # contextmanager teardown (signal/atexit-adjacent). There is no
+        # findings_out accumulator in scope here — the teardown runs at
+        # context-exit, not within any per-statute compile fold. Per
+        # ``core/named_swallow.py`` docstring's IO/utility-boundary sanctioned
+        # use, the swallow stays on the inline ``emit=lambda`` (stderr WARNING
+        # via ``_logger.warning``); per-statute evidence-ledger reach is
+        # structurally not applicable.
         with named_swallow(
             rule_id="tools_worker_pool_cleanup_shutdown",
             default=None,

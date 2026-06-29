@@ -3,7 +3,7 @@
 from __future__ import annotations
 from typing_extensions import override
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace as dc_replace
 from typing import Callable, Optional
 
 from lawvm.core.ir import IRNode, IRStatute, LegalAddress, ProvisionTimeline, ProvisionVersion
@@ -31,16 +31,13 @@ def ingest_uk_snapshots(
 
     earliest_date = sorted_dates[0]
     for address, node in _iter_statute_nodes_with_address(snapshots[earliest_date]):
-        tl = ProvisionTimeline(address=address)
-        tl.versions.append(
-            ProvisionVersion(
-                effective=earliest_date,
-                enacted=earliest_date,
-                content=node,
-                content_hash=irnode_content_hash(node),
-            )
+        initial_version = ProvisionVersion(
+            effective=earliest_date,
+            enacted=earliest_date,
+            content=node,
+            content_hash=irnode_content_hash(node),
         )
-        timelines[address] = tl
+        timelines[address] = ProvisionTimeline(address=address, versions=(initial_version,))
 
     for i in range(1, len(sorted_dates)):
         date = sorted_dates[i]
@@ -52,31 +49,48 @@ def ingest_uk_snapshots(
         for address, node in current_nodes.items():
             prev = prev_nodes.get(address)
             if prev is None or node_text_differs(prev, node):
-                if address not in timelines:
-                    timelines[address] = ProvisionTimeline(address=address)
-                timelines[address].versions.append(
-                    ProvisionVersion(
-                        effective=date,
-                        enacted=date,
-                        content=node,
-                        content_hash=irnode_content_hash(node),
-                    )
+                tl_existing = timelines.get(address)
+                appended_version = ProvisionVersion(
+                    effective=date,
+                    enacted=date,
+                    content=node,
+                    content_hash=irnode_content_hash(node),
                 )
+                if tl_existing is None:
+                    timelines[address] = ProvisionTimeline(
+                        address=address,
+                        versions=(appended_version,),
+                    )
+                else:
+                    timelines[address] = dc_replace(
+                        tl_existing,
+                        versions=(*tl_existing.versions, appended_version),
+                    )
 
         for address in prev_nodes:
             if address not in current_nodes:
-                if address not in timelines:
-                    timelines[address] = ProvisionTimeline(address=address)
-                timelines[address].versions.append(
-                    ProvisionVersion(
-                        effective=date,
-                        enacted=date,
-                        content=None,
-                    )
+                tl_existing = timelines.get(address)
+                appended_version = ProvisionVersion(
+                    effective=date,
+                    enacted=date,
+                    content=None,
                 )
+                if tl_existing is None:
+                    timelines[address] = ProvisionTimeline(
+                        address=address,
+                        versions=(appended_version,),
+                    )
+                else:
+                    timelines[address] = dc_replace(
+                        tl_existing,
+                        versions=(*tl_existing.versions, appended_version),
+                    )
 
-    for tl in timelines.values():
-        tl.versions.sort(key=lambda v: (v.effective, v.enacted))
+    for tl_address, tl in list(timelines.items()):
+        timelines[tl_address] = dc_replace(
+            tl,
+            versions=tuple(sorted(tl.versions, key=lambda v: (v.effective, v.enacted))),
+        )
 
     return timelines
 
@@ -88,16 +102,13 @@ def ingest_consolidated(
     """Build timelines from a single authoritative consolidated text."""
     timelines: Timelines = {}
     for address, node in _iter_statute_nodes_with_address(statute):
-        tl = ProvisionTimeline(address=address)
-        tl.versions.append(
-            ProvisionVersion(
-                effective=as_of,
-                enacted=as_of,
-                content=node,
-                content_hash=irnode_content_hash(node),
-            )
+        initial_version = ProvisionVersion(
+            effective=as_of,
+            enacted=as_of,
+            content=node,
+            content_hash=irnode_content_hash(node),
         )
-        timelines[address] = tl
+        timelines[address] = ProvisionTimeline(address=address, versions=(initial_version,))
     return timelines
 
 

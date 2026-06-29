@@ -200,7 +200,7 @@ def test_real_corpus_regression_fi_refs_parquet_compile_metadata_roundtrip(
             "source_witness_type": "finlex_akn",
             "claim_id": None,
             "validator_status": "span_verified",
-            "review_status": "human_reviewed",
+            "review_status": "verified_manual",
             "replay_authorized": True,
             "deterministic_extraction": True,
             "emit_profile": "deterministic_only",

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Callable, Literal, Optional, Sequence
 
@@ -22,6 +23,7 @@ from lawvm.core.timeline_addresses import (
     _sort_label_key,
 )
 from lawvm.core.timeline_lineage import current_address_from_migration_events
+from lawvm.core.timeline_results import TombstoneRecord
 
 
 SPARSE_PRESERVED_TAIL_ATTR = "lawvm_sparse_preserved_tail"
@@ -1232,3 +1234,50 @@ def project_materialization_selection_states(
         if address not in active_versions:
             active[address] = None
     return active, active_versions, tuple(ambiguous_addresses)
+
+
+def collect_tombstones(
+    active: "Mapping[LegalAddress, Optional[IRNode]]",
+    active_versions: "Mapping[LegalAddress, ProvisionVersion]",
+) -> tuple[TombstoneRecord, ...]:
+    """Return a typed tombstone per sourced-repeal address selected at materialization.
+
+    A tombstone is an address whose selected version at PIT ``as_of`` carries
+    ``content=None`` (the silent repeal placeholder) AND a sourced repeal
+    (``version.source`` is set, so the absence traces to a statute — not a
+    base-state artifact or a pre-source intrinsic absence). Materialization
+    drops such an address from the IR tree silently; this carrier surfaces
+    each one so a projection can render it inline at its target position
+    (AGENTS.md §0 — over-repeal visibility).
+
+    Distinguished from inactive/ambiguous addresses: those have no selected
+    version in ``active_versions`` and therefore no underlying repeal op to
+    surface (``active[addr] is None`` because no version was selected, not
+    because a repeal was selected). A tombstone always traces to a
+    sourced ProvisionVersion whose ``content`` is ``None``.
+    """
+    tombstones: list[TombstoneRecord] = []
+    for address, version in active_versions.items():
+        if active.get(address) is not None:
+            continue  # not a tombstone — selected version carries content
+        if version.content is not None:
+            continue  # selected version has content despite active being None
+        source = version.source
+        if source is None or not source.statute_id:
+            continue  # unsourced absence — base-state intrinsic, not a repeal
+        if not address.path:
+            continue
+        kind, label = address.path[-1]
+        tombstones.append(
+            TombstoneRecord(
+                address=address,
+                kind=kind,
+                label=label,
+                source_statute=source.statute_id,
+                effective=source.effective or version.effective,
+                enacted=source.enacted or version.enacted,
+                variant_kind=version.variant_kind,
+                op_id="",  # op identity rides LegalOperation, not ProvisionVersion
+            )
+        )
+    return tuple(sorted(tombstones, key=lambda tomb: tomb.address.path))

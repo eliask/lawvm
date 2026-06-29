@@ -21,7 +21,7 @@ import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Tuple, Set, cast
+from typing import Any, Dict, List, Optional, Tuple, Set, cast
 
 import lxml.etree as etree
 from functools import lru_cache
@@ -30,6 +30,7 @@ from lawvm.corpus_store import (
     CorpusStore,
     get_corpus_store,
 )
+from lawvm.core.phase_result import Finding
 from lawvm.core.xml_parse import parse_corpus_xml
 from lawvm.finland.citation_routing import johtolause_cited_target_ids
 from lawvm.finland.fi_dates import parse_fi_day_month_year
@@ -110,6 +111,34 @@ def _append_amendment_index_diagnostic(
             **detail,
         }
     )
+
+
+# §1.10: ``clause_text`` slot truncates the offending source xml_data to
+# ~400 chars (mirrors ``core.named_swallow._truncate_clause_text``) so triaging
+# a residual does not require re-running extraction against a stale
+# amendment-id. UTF-8 decoded with ``errors="replace"`` because the diagnostic
+# is for an ``extract_voimaantulo_repeals`` failure: the source data may
+# already be malformed at byte boundaries, and we prefer to surface a
+# printable (if lossy) witness over an opaque ``bytes`` repr that itself
+# obscures the offending fragment.
+_XML_CLAUSE_TEXT_MAX_CHARS = 400
+
+
+def _truncate_xml_clause_text(xml_data: bytes) -> str:
+    """Truncate ``xml_data`` to a printable ~400-char ``clause_text`` witness.
+
+    Mirrors ``core.named_swallow._truncate_clause_text`` for the two
+    ``_append_amendment_index_diagnostic`` sites that emit on
+    ``extract_voimaantulo_repeals`` failure: the verbatim source bytes are the
+    evidence footing the diagnostic must carry so triage does not re-run
+    extraction (AGENTS.md §1.10). UTF-8 ``errors="replace"`` because the
+    diagnostic path is precisely the branch where the source may be
+    byte-malformed; the truncation marker is the §1.10 ceiling.
+    """
+    text = xml_data.decode("utf-8", errors="replace")
+    if len(text) <= _XML_CLAUSE_TEXT_MAX_CHARS:
+        return text
+    return text[:_XML_CLAUSE_TEXT_MAX_CHARS] + "…[truncated]"
 
 
 def _make_statute_id(year: str, num_raw: str) -> str:
@@ -220,6 +249,12 @@ def _extract_explicit_cross_statute_vts_parents(
             if extract_voimaantulo_repeals(xml_data, parent_id):
                 candidates.add(parent_id)
         except Exception as exc:
+            # §1.10: ``clause_text`` is the truncated UTF-8-decoded (errors=
+            # "replace") source xml_data so triaging the residual does not
+            # require re-running extraction against a stale amendment-id. The
+            # parent_id / amendment_id / exception fields above are the
+            # weakly-typed reduction; ``clause_text`` is the verbatim source
+            # witness (mirrors ``core.named_swallow._truncate_clause_text``).
             _append_amendment_index_diagnostic(
                 diagnostics_out,
                 rule_id="fi_amendment_index_source_vts_parent_extraction_failed",
@@ -232,6 +267,7 @@ def _extract_explicit_cross_statute_vts_parents(
                     "edge_kind": "source_vts_explicit",
                     "exception_type": type(exc).__name__,
                     "error": str(exc),
+                    "clause_text": _truncate_xml_clause_text(xml_data),
                 },
             )
             continue
@@ -245,6 +281,10 @@ def _extract_explicit_cross_statute_vts_parents(
                 ):
                     candidates.add(parent_id)
             except Exception as exc:
+                # §1.10 ``clause_text`` witness — see the matching
+                # ``except`` above; kept duplicated rather than threaded
+                # through a helper because the truncation is the only
+                # shared text (the per-site distinct fields stay inline).
                 _append_amendment_index_diagnostic(
                     diagnostics_out,
                     rule_id="fi_amendment_index_source_vts_parent_extraction_failed",
@@ -257,6 +297,7 @@ def _extract_explicit_cross_statute_vts_parents(
                         "edge_kind": "source_vts_explicit",
                         "exception_type": type(exc).__name__,
                         "error": str(exc),
+                        "clause_text": _truncate_xml_clause_text(xml_data),
                     },
                 )
                 continue
@@ -571,8 +612,21 @@ def _fingerprint_int(value: object) -> int:
     raise TypeError(f"Expected integer-like fingerprint field, got {type(value).__name__}")
 
 
-def _corpus_source_fingerprint(cs: CorpusStore | None) -> dict[str, object] | None:
-    """Return the backing farchive DB fingerprint, or None for unknown stores."""
+def _corpus_source_fingerprint(
+    cs: CorpusStore | None,
+    *,
+    findings_out: Optional[List[Finding]] = None,
+) -> dict[str, object] | None:
+    """Return the backing farchive DB fingerprint, or None for unknown stores.
+
+    The fingerprint probe may fail across path/format/IO axes. Previously
+    ``return None`` silently swallowed (AGENTS.md §1.10 silent-fallback). Now
+    the swallow is witnessed via a typed ``Finding(kind=UNEXPECTED_PHASE_FAILURE)``
+    carrying ``rule_id`` / ``clause_text`` (the corpus-store type for triage) /
+    ``jurisdiction``. When the caller plumbs ``findings_out`` the Finding is
+    appended there (per-statute audit-trail sink, threaded from the caller);
+    otherwise ``log_emitter`` keeps stderr WARNING visibility — never silent.
+    """
     try:
         archive = getattr(cs, "_archive", None) if cs is not None else None
         candidates: list[object] = []
@@ -601,7 +655,27 @@ def _corpus_source_fingerprint(cs: CorpusStore | None) -> dict[str, object] | No
             "size": int(stat.st_size),
             "mtime_ns": int(stat.st_mtime_ns),
         }
-    except Exception:
+    except Exception as exc:
+        # Unexpected fingerprint failure: previously ``return None`` silently
+        # swallowed; now route through ``named_swallow`` so a typed Finding is
+        # constructed with the corpus-store type as ``clause_text`` (AGENTS.md
+        # §1.10 — never silent). Sink dispatch mirrors corpus.py:122 precedent:
+        # when ``findings_out`` is plumbed, the Finding lands in that audit-trail
+        # list; when not, ``log_emitter`` keeps stderr WARNING visibility.
+        from lawvm.core.named_swallow import build_named_swallow_finding, log_emitter
+
+        finding = build_named_swallow_finding(
+            rule_id="fi_amendment_index_corpus_source_fingerprint",
+            exception=exc,
+            op_id=None,
+            clause_text=f"cs_type={type(cs).__name__ if cs is not None else 'None'}",
+            jurisdiction="fi",
+            source_artifact=None,
+        )
+        if findings_out is not None:
+            findings_out.append(finding)
+        else:
+            log_emitter()(finding)
         return None
 
 
@@ -771,6 +845,13 @@ def ensure_amendment_index(
         should_close_cs = True
 
     try:
+        # findings_out=None sanctioned: ``ensure_amendment_index`` is a
+        # cache-management utility boundary — no per-statute audit-trail
+        # ``list[Finding]`` is in scope here (the §3.2 ledger lives at the
+        # replay/PIT compile caller, not at this sidecar-rebuild lane). The
+        # swallow at ``_corpus_source_fingerprint`` falls through to
+        # ``log_emitter`` stderr WARNING (IO/utility carve-out per
+        # ``core/named_swallow.py`` docstring) — never silent.
         source_fingerprint = _corpus_source_fingerprint(cs)
         if _amendment_index_cache_is_current(csv_path, source_fingerprint):
             return
@@ -795,6 +876,12 @@ def _default_source_cache_key() -> _AmendmentIndexSourceKey | None:
     except (OSError, RuntimeError):
         return None
     try:
+        # findings_out=None sanctioned: ``_default_source_cache_key`` is a pure
+        # lru_cache-key-probe utility — no per-statute audit-trail
+        # ``list[Finding]`` is in scope at this IO-boundary swallow site
+        # (the §3.2 evidence ledger lives at the replay caller, not here).
+        # The swallow falls through to ``log_emitter`` stderr WARNING
+        # (core/named_swallow.py docstring's IO/utility carve-out) — never silent.
         fingerprint = _corpus_source_fingerprint(cs)
         if fingerprint is None:
             return None

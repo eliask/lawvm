@@ -570,12 +570,23 @@ _KNOWN_UNFIXED: dict[str, str] = {
     "src/lawvm/us_federal/amendatory.py": (
         "USC amendatory-instruction target recognizers (_PROSE_TARGET_RE, "
         "_HREF_TARGET_RE, _RELATIVE_PROSE_TARGET_RE, _LEADING_SUBUNIT_ANCHOR_RE, "
-        "_NEW_SECTION_PAYLOAD_HEAD_RE, _RELATIVE_HEAD_SECTION_RE) are the "
-        "section-reference recognizer family: bounded \\d+[A-Za-z]* tokens plus "
-        "(?:\\s*\\(label\\))* bracketed sub-paths delimited by literal parentheses, "
-        "and literal unit-kind alternations. Verified linear on adversarial inputs "
-        "(<10 ms at 12k chars). The static lint flags the outer-*/inner-+ nesting; "
-        "these are false positives of that family."
+        "_ANY_SUBUNIT_ANCHOR_RE, _NEW_SECTION_PAYLOAD_HEAD_RE, _SECTION_CATCHLINE_PREFIX_RE, "
+        "_MULTI_SECTION_HEAD_RE, _RELATIVE_HEAD_SECTION_RE and the related _EFFECTIVE_*/"
+        "_SUNSET_*/_PLAW_TITLE_SCOPE/_SIBLING_SCOPE_RANGE/_CONTAINER_*/_STRIKE_UNIT_*/"
+        "_END_PUNCT_*/_PUNCT_WORD/_REDESIGNATE_*/_INSERT_NODE_AFTER/_STRIKE_UNIT_LIST_*/"
+        "_SENTENCE/_HEADING/_DESIGNATION_STRIKE family) are the bounded-amendatory "
+        "recognizer family: bounded \\d+[A-Za-z]* tokens plus (?:\\s*\\(label\\))* "
+        "bracketed sub-paths delimited by literal parentheses, and literal unit-kind "
+        "alternations. The static lint flags the outer-*/inner-+ nesting; these are "
+        "false positives of that family. Standing perf coverage for the 6 originally-"
+        "verified patterns plus 8 Wave-5-migrated classifiers is in "
+        "TestAdversarialTimingUSAmendatoryFamily / TestAdversarialTimingUSFederalSiblingAndWordBoundary "
+        "(2026-06-27). The CLEAN class prose-classifier shapes "
+        "(_SECTION_EFFECTIVE_SCOPE_RE, _MATTER_FOLLOWING_ANCHOR_RE, "
+        "_INSERT_WORD_ANCHOR_DIRECTION_RE, _FUTURE_EFFECTIVE_RE, _TAIL_STRIKE_RE, "
+        "_THROUGH_TAIL_STRIKE_RE, _TITLE_ONLY_PROSE_RE, _REDESIGNATE_DESTINATION_RE) "
+        "have been migrated through compile_classifier_regex and are no longer seen "
+        "by the AST lint scan."
     ),
     "src/lawvm/us_federal/nonpositive.py": (
         "_PAREN_CITE_RE / _HREF_RE are USC parenthetical/href citation "
@@ -1121,4 +1132,384 @@ class TestAdversarialTimingFIBound:
             f"FI bounded sellaisena-kuin predicate adversarial: "
             f"{elapsed_ms:.1f} ms (ceiling {_CEILING_MS} ms); .{{0,400}}? bound "
             f"may have regressed"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Group B (extension) — US Federal amendatory Wave 5 migration + allowlist
+# patterns
+#
+# Drives every US Federal amendatory classifier with a worst-case 5K-char body
+# that contains the literal anchor of the classifier but NONE of its terminal
+# closures.  When the classifier's inner quantifiers (whether bounded
+# (?:\\s*\\(label\\))* or unbounded (?:/[^/]+)*) are well-behaved, the engine
+# walks forward once and bails out quickly; when a bound is removed or an
+# unbounded quantifier is added, the wall time blows past the 100 ms ceiling.
+#
+# Two test classes are added (regex review M4 / iter2 W6 M10):
+#
+# - TestAdversarialTimingUSAmendatoryFamily — 7 allowlisted patterns + 8 Wave-5
+#   migrated via compile_classifier_regex (the migration is in
+#   src/lawvm/us_federal/amendatory.py).
+# - TestAdversarialTimingUSFederalSiblingAndWordBoundary — _SIBLING_SCOPE_RANGE_RE
+#   (allowlisted sibling-range recognizer) + _IS_REPEALED_PROSE_RE (already
+#   migrated via compile_classifier_regex in 2026-06) + dry_run._word_boundary_pattern
+#   (the per-token LRU-cache factory referenced as the mirror shape for any new
+#   per-op @lru_cache factory per AGENTS.md §2.7).
+#
+# These replace the prose "<10 ms at 12k chars" verdicts in the _KNOWN_UNFIXED
+# allowlist entries (one-time review verifications are NOT standing tests per
+# AGENTS.md §2.9 guard-liveness).
+# ---------------------------------------------------------------------------
+
+
+class TestAdversarialTimingUSAmendatoryFamily:
+    """Drives each US amendatory classifier with a worst-case 5K-char body
+    containing the classifier's literal anchor but no terminal closure.
+
+    Covers:
+
+    Allowlisted false-positive patterns (per _KNOWN_UNFIXED amendment):
+      _PROSE_TARGET_RE, _HREF_TARGET_RE, _RELATIVE_PROSE_TARGET_RE,
+      _LEADING_SUBUNIT_ANCHOR_RE, _ANY_SUBUNIT_ANCHOR_RE,
+      _NEW_SECTION_PAYLOAD_HEAD_RE, _RELATIVE_HEAD_SECTION_RE.
+
+    Wave 5 migration patterns (compile_classifier_regex):
+      _SECTION_EFFECTIVE_SCOPE_RE, _MATTER_FOLLOWING_ANCHOR_RE,
+      _INSERT_WORD_ANCHOR_DIRECTION_RE, _FUTURE_EFFECTIVE_RE,
+      _TAIL_STRIKE_RE, _THROUGH_TAIL_STRIKE_RE, _TITLE_ONLY_PROSE_RE,
+      _REDESIGNATE_DESTINATION_RE.
+    """
+
+    # --- allowlisted false-positive patterns -----------------------------------
+
+    def test_prose_target_re_adversarial_is_fast(self) -> None:
+        from lawvm.us_federal.amendatory import _PROSE_TARGET_RE
+
+        # Worst case: "Section <num>(x)" prefix honoured, no "of title N" terminal
+        # anchor.  The outer (?P<segments>(?:\s*\([0-9A-Za-z]+\))*) can match an
+        # arbitrary chain of parenthesised labels, so a 5K-char chain of "(aa)"
+        # labels is the maximally adversarial body.
+        text = "Section 1" + ("(a)" * 2500)
+        assert "of title" not in text
+        t0 = time.perf_counter()
+        matches = list(_PROSE_TARGET_RE.finditer(text))
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        assert matches == []
+        assert elapsed_ms < _CEILING_MS, (
+            f"US _PROSE_TARGET_RE adversarial: {elapsed_ms:.1f} ms "
+            f"(ceiling {_CEILING_MS} ms); bounded sub-path may have regressed"
+        )
+
+    def test_href_target_re_adversarial_is_fast(self) -> None:
+        from lawvm.us_federal.amendatory import _HREF_TARGET_RE
+
+        # Worst case: ``/us/usc/t<title>/s<section>`` followed by 5K ``/abc``
+        # segments.  The static lint flags the ``(?P<rest>(?:/[^/]+)*)``
+        # outer-*/inner-+ nesting as adjacent variable backtracking repeats; a
+        # regression that loosens the segment bound into ``.*`` would make the
+        # engine walk exponentially over the 5K-segment body.
+        text = "/us/usc/t11/s101" + ("/abc" * 2500)
+        t0 = time.perf_counter()
+        m = _HREF_TARGET_RE.match(text)
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        # ``^`` and ``$`` anchored; the body is a valid URL shape → match succeeds
+        # linearly.  The wall budget is the invariant; not the match outcome.
+        assert m is not None
+        assert elapsed_ms < _CEILING_MS, (
+            f"US _HREF_TARGET_RE adversarial: {elapsed_ms:.1f} ms "
+            f"(ceiling {_CEILING_MS} ms); outer-*/inner-+ nesting may have "
+            f"regressed into catastrophic backtracking"
+        )
+
+    def test_relative_prose_target_re_adversarial_is_fast(self) -> None:
+        from lawvm.us_federal.amendatory import _RELATIVE_PROSE_TARGET_RE
+
+        # Worst case: "Section <num>(x)" prefix followed by a long body with no
+        # ``of such title`` / ``is amended`` / ``,`` / dash terminator.
+        text = "Section 1" + ("(a)" * 2500)
+        assert "of such title" not in text and "is amended" not in text
+        t0 = time.perf_counter()
+        matches = list(_RELATIVE_PROSE_TARGET_RE.finditer(text))
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        # No terminator present → no match.
+        assert matches == []
+        assert elapsed_ms < _CEILING_MS, (
+            f"US _RELATIVE_PROSE_TARGET_RE adversarial: {elapsed_ms:.1f} ms "
+            f"(ceiling {_CEILING_MS} ms); segments chain may have regressed"
+        )
+
+    def test_leading_subunit_anchor_re_adversarial_is_fast(self) -> None:
+        from lawvm.us_federal.amendatory import _LEADING_SUBUNIT_ANCHOR_RE
+
+        # Worst case: leading optional label + "in subsystem (x) chain" with no
+        # comma or dash terminator.  ``(?P<more>(?:\s*\([0-9A-Za-z]+\))*)`` walks
+        # every "(a)" suffix before looking for the terminator.
+        text = "(1) in subsection (a)" + ("(b)" * 2500)
+        t0 = time.perf_counter()
+        m = _LEADING_SUBUNIT_ANCHOR_RE.match(text)
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        # No terminator → no match (anchored ^).
+        assert m is None
+        assert elapsed_ms < _CEILING_MS, (
+            f"US _LEADING_SUBUNIT_ANCHOR_RE adversarial: {elapsed_ms:.1f} ms "
+            f"(ceiling {_CEILING_MS} ms); segments chain may have regressed"
+        )
+
+    def test_any_subunit_anchor_re_adversarial_is_fast(self) -> None:
+        from lawvm.us_federal.amendatory import _ANY_SUBUNIT_ANCHOR_RE
+
+        # Worst case: "in subsystem (x) chain" with no terminator.  Pattern is
+        # unanchored (.search walks every position) so a 5K "(a)"-packed body
+        # maximally exercises the ``(?:\s*\([0-9A-Za-z]+\))*`` tail.
+        text = "in subsection (a)" + ("(b)" * 2500)
+        t0 = time.perf_counter()
+        matches = list(_ANY_SUBUNIT_ANCHOR_RE.finditer(text))
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        assert matches == []
+        assert elapsed_ms < _CEILING_MS, (
+            f"US _ANY_SUBUNIT_ANCHOR_RE adversarial: {elapsed_ms:.1f} ms "
+            f"(ceiling {_CEILING_MS} ms); segments chain may have regressed"
+        )
+
+    def test_new_section_payload_head_re_adversarial_is_fast(self) -> None:
+        from lawvm.us_federal.amendatory import _NEW_SECTION_PAYLOAD_HEAD_RE
+
+        # Worst case: malformed ``§`` head (no following digit) followed by 5K
+        # chars of non-anchor text.  Anchored ^, so ``.match`` walks at most once.
+        text = "§ " + "x" * 5000
+        t0 = time.perf_counter()
+        m = _NEW_SECTION_PAYLOAD_HEAD_RE.match(text)
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        assert m is None
+        assert elapsed_ms < _CEILING_MS, (
+            f"US _NEW_SECTION_PAYLOAD_HEAD_RE adversarial: {elapsed_ms:.1f} ms "
+            f"(ceiling {_CEILING_MS} ms); head alternation may have regressed"
+        )
+
+    def test_relative_head_section_re_adversarial_is_fast(self) -> None:
+        from lawvm.us_federal.amendatory import _RELATIVE_HEAD_SECTION_RE
+
+        # Worst case: ``Section <num>(x) chain`` body with no ``is amended`` or
+        # dash terminator; the inner ``(?:\s*\([0-9A-Za-z]+\))*`` walks every
+        # segment before bailing on the missing terminator.
+        text = "Section 1" + ("(a)" * 2500)
+        assert "is amended" not in text
+        t0 = time.perf_counter()
+        matches = list(_RELATIVE_HEAD_SECTION_RE.finditer(text))
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        assert matches == []
+        assert elapsed_ms < _CEILING_MS, (
+            f"US _RELATIVE_HEAD_SECTION_RE adversarial: {elapsed_ms:.1f} ms "
+            f"(ceiling {_CEILING_MS} ms); segments chain may have regressed"
+        )
+
+    # --- Wave 5 migration patterns (compile_classifier_regex) -------------------
+
+    def test_section_effective_scope_re_adversarial_is_fast(self) -> None:
+        from lawvm.us_federal.amendatory import _SECTION_EFFECTIVE_SCOPE_RE
+
+        # Worst case: a 5K body of "section" near-misses; the prefilter (literal
+        # ``this``) skips most candidate positions before the regex engine runs.
+        text = "thi " + "x" * 5000
+        t0 = time.perf_counter()
+        matches = list(_SECTION_EFFECTIVE_SCOPE_RE.finditer(text))
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        assert matches == []
+        assert elapsed_ms < _CEILING_MS, (
+            f"US _SECTION_EFFECTIVE_SCOPE_RE adversarial: {elapsed_ms:.1f} ms "
+            f"(ceiling {_CEILING_MS} ms); prefilter may have regressed"
+        )
+
+    def test_matter_following_anchor_re_adversarial_is_fast(self) -> None:
+        from lawvm.us_federal.amendatory import _MATTER_FOLLOWING_ANCHOR_RE
+
+        # Worst case: literal "in the matter following subsection (a)" prefix
+        # followed by 5K chars with no comma/dash terminator.  The prefilter skips
+        # positions where ``the matter following`` literal is absent.
+        text = "in the matter following subsection (a)" + "x" * 5000
+        t0 = time.perf_counter()
+        matches = list(_MATTER_FOLLOWING_ANCHOR_RE.finditer(text))
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        assert matches == []
+        assert elapsed_ms < _CEILING_MS, (
+            f"US _MATTER_FOLLOWING_ANCHOR_RE adversarial: {elapsed_ms:.1f} ms "
+            f"(ceiling {_CEILING_MS} ms); prefilter may have regressed"
+        )
+
+    def test_insert_word_anchor_direction_re_adversarial_is_fast(self) -> None:
+        from lawvm.us_federal.amendatory import _INSERT_WORD_ANCHOR_DIRECTION_RE
+
+        # Worst case: ``inserting "<5K chars of x>"`` with no closing quote /
+        # ``before``/``after`` token.  The inner ``[^\"]{0,400}`` bound caps the
+        # per-anchor walk at 400 chars.
+        text = 'inserting "' + "x" * 5000
+        t0 = time.perf_counter()
+        matches = list(_INSERT_WORD_ANCHOR_DIRECTION_RE.finditer(text))
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        assert matches == []
+        assert elapsed_ms < _CEILING_MS, (
+            f"US _INSERT_WORD_ANCHOR_DIRECTION_RE adversarial: "
+            f"{elapsed_ms:.1f} ms (ceiling {_CEILING_MS} ms); the [^\\\"]{{0,400}} "
+            f"bound may have regressed back to .*?"
+        )
+
+    def test_future_effective_re_adversarial_is_fast(self) -> None:
+        from lawvm.us_federal.amendatory import _FUTURE_EFFECTIVE_RE
+
+        # Worst case: literal ``effective`` prefix followed by 5K chars with no
+        # ``on the date`` / ``<Month> N`` / ``N, YYYY`` alternation.  The prefilter
+        # skips positions where ``effective`` (or the alternative literal anchors)
+        # is absent, so most of the 5K body never reaches the regex engine.
+        text = "effective " + "x" * 5000
+        t0 = time.perf_counter()
+        matches = list(_FUTURE_EFFECTIVE_RE.finditer(text))
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        assert matches == []
+        assert elapsed_ms < _CEILING_MS, (
+            f"US _FUTURE_EFFECTIVE_RE adversarial: {elapsed_ms:.1f} ms "
+            f"(ceiling {_CEILING_MS} ms); prefilter may have regressed"
+        )
+
+    def test_tail_strike_re_adversarial_is_fast(self) -> None:
+        from lawvm.us_federal.amendatory import _TAIL_STRIKE_RE
+
+        # Worst case: ``striking "<5K chars of x>"`` with no closing quote / no
+        # ``and all that follows`` literal anchor.  The inner [^quote]{0,500}
+        # bound caps the per-anchor walk.
+        text = 'striking "' + "x" * 5000
+        t0 = time.perf_counter()
+        matches = list(_TAIL_STRIKE_RE.finditer(text))
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        assert matches == []
+        assert elapsed_ms < _CEILING_MS, (
+            f"US _TAIL_STRIKE_RE adversarial: {elapsed_ms:.1f} ms "
+            f"(ceiling {_CEILING_MS} ms); [^quote]{{0,500}} bound may have "
+            f"regressed back to .*?"
+        )
+
+    def test_through_tail_strike_re_adversarial_is_fast(self) -> None:
+        from lawvm.us_federal.amendatory import _THROUGH_TAIL_STRIKE_RE
+
+        # Same shape as _TAIL_STRIKE_RE plus a literal ``through`` connector;
+        # closure requires a closing quote + ``and all that follows through`` +
+        # second quoted anchor.  None present in this body.
+        text = 'striking "' + "x" * 5000
+        t0 = time.perf_counter()
+        matches = list(_THROUGH_TAIL_STRIKE_RE.finditer(text))
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        assert matches == []
+        assert elapsed_ms < _CEILING_MS, (
+            f"US _THROUGH_TAIL_STRIKE_RE adversarial: {elapsed_ms:.1f} ms "
+            f"(ceiling {_CEILING_MS} ms); [^quote]{{0,500}} bound may have "
+            f"regressed back to .*?"
+        )
+
+    def test_title_only_prose_re_adversarial_is_fast(self) -> None:
+        from lawvm.us_federal.amendatory import _TITLE_ONLY_PROSE_RE
+
+        # Worst case: ``title 1`` prefix followed by 5K chars with no
+        # ``,? United States Code`` literal anchor.  The prefilter dispatches on
+        # ``title`` then ``United States Code`` literals before the regex runs.
+        text = "title 1 " + "x" * 5000
+        assert "United States Code" not in text
+        t0 = time.perf_counter()
+        matches = list(_TITLE_ONLY_PROSE_RE.finditer(text))
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        assert matches == []
+        assert elapsed_ms < _CEILING_MS, (
+            f"US _TITLE_ONLY_PROSE_RE adversarial: {elapsed_ms:.1f} ms "
+            f"(ceiling {_CEILING_MS} ms); prefilter may have regressed"
+        )
+
+    def test_redesignate_destination_re_adversarial_is_fast(self) -> None:
+        from lawvm.us_federal.amendatory import _REDESIGNATE_DESTINATION_RE
+
+        # Worst case: ``redesignating subsection (a)`` prefix followed by 5K chars
+        # with no ``as`` clause.  The bare literal ``redesignating`` and
+        # parenthesised label are matched; the missing ``as`` anchor makes the
+        # full pattern fail.
+        text = "redesignating subsection (a)" + "x" * 5000
+        assert " as " not in text
+        t0 = time.perf_counter()
+        matches = list(_REDESIGNATE_DESTINATION_RE.finditer(text))
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        assert matches == []
+        assert elapsed_ms < _CEILING_MS, (
+            f"US _REDESIGNATE_DESTINATION_RE adversarial: {elapsed_ms:.1f} ms "
+            f"(ceiling {_CEILING_MS} ms); prefilter may have regressed"
+        )
+
+
+class TestAdversarialTimingUSFederalSiblingAndWordBoundary:
+    """Covers the three functional-recognizer sites named in the Wave 5 task:
+
+    - ``_SIBLING_SCOPE_RANGE_RE`` (in amendatory.py:498): the section-scope
+      sibling-range classifier, exercised on a 5K-char body with no ``through``
+      completion anchor.
+    - ``_IS_REPEALED_PROSE_RE`` (already migrated via compile_classifier_regex
+      at amendatory.py:1787): a bare ``is`` literal prefilter against a 5K-char
+      body with no ``repealed`` anchor.
+    - ``_word_boundary_pattern`` (in dry_run.py:1260): the @lru_cache factory
+      that compiles ``(?<!\\w){escaped}(?!\\w)`` per token.  The adversarial
+      body stress-tests the worst-case search for a token that is NOT present
+      in a long alphabetic body.
+    """
+
+    def test_sibling_scope_range_re_adversarial_is_fast(self) -> None:
+        from lawvm.us_federal.amendatory import _SIBLING_SCOPE_RANGE_RE
+
+        # Worst case: ``subsections (a)`` prefix followed by 5K chars of
+        # non-``through`` body.  The optional ``(?:\s+through\s+\(...\))?``
+        # anchor is absent; the pattern is unanchored so .search tries at every
+        # possible start position.
+        text = "subsections (a)" + "x" * 5000
+        t0 = time.perf_counter()
+        matches = list(_SIBLING_SCOPE_RANGE_RE.finditer(text))
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        # One match: the single ``subsections (a)`` opening.
+        assert len(matches) == 1
+        assert elapsed_ms < _CEILING_MS, (
+            f"US _SIBLING_SCOPE_RANGE_RE adversarial: {elapsed_ms:.1f} ms "
+            f"(ceiling {_CEILING_MS} ms); optional through-anchor may have "
+            f"regressed into catastrophic backtracking"
+        )
+
+    def test_is_repealed_prose_re_adversarial_is_fast(self) -> None:
+        from lawvm.us_federal.amendatory import _IS_REPEALED_PROSE_RE
+
+        # Worst case: ``is`` literal prefix followed by 5K chars of non-``repealed``
+        # body.  The prefilter (``is``) matches at every start position; the
+        # regex engine must walk forward to confirm there is no ``repealed``
+        # continuation.
+        text = "is " + "x" * 5000
+        assert "repealed" not in text
+        t0 = time.perf_counter()
+        matches = list(_IS_REPEALED_PROSE_RE.finditer(text))
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        assert matches == []
+        assert elapsed_ms < _CEILING_MS, (
+            f"US _IS_REPEALED_PROSE_RE adversarial: {elapsed_ms:.1f} ms "
+            f"(ceiling {_CEILING_MS} ms); prefilter may have regressed"
+        )
+
+    def test_word_boundary_pattern_adversarial_is_fast(self) -> None:
+        from lawvm.us_federal.dry_run import _word_boundary_pattern
+
+        # Worst case: alphabetic token that is NOT present in a 5K-char alphabetic
+        # body.  ``_word_boundary_pattern`` compiles ``(?<!\w)t(.*?)oken(?!\w)``
+        # via @lru_cache; ``re.compile`` of the literal token is amortized across
+        # calls.  The adversarial budget guards against regression to a fresh
+        # ``re.compile`` per call (a hot-path leading cause of slowness per
+        # AGENTS.md §2.7).
+        token = "nonexistent_token_alpha"
+        text = "x" * 5000  # No alphabetic word boundary present here
+        t0 = time.perf_counter()
+        for _ in range(100):
+            assert _word_boundary_pattern(token).search(text) is None
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        assert elapsed_ms < _CEILING_MS, (
+            f"US _word_boundary_pattern adversarial: {elapsed_ms:.1f} ms "
+            f"(ceiling {_CEILING_MS} ms); @lru_cache factory may have regressed "
+            f"into a fresh re.compile per call"
         )

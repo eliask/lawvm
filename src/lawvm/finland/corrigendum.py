@@ -3070,6 +3070,7 @@ MISAPPLY_REASONS: frozenset[str] = frozenset(
         "FINLAND.CORRIGENDUM_RETRY_OVERLAY_MISSING_STABLE_ID",
         "FINLAND.CORRIGENDUM_RETRY_OVERLAY_EMPTY_PATCHES",
         "FINLAND.CORRIGENDUM_RETRY_OVERLAY_DUPLICATE_TARGET",
+        "FINLAND.CORRIGENDUM_EFFECTIVE_DATE_NOT_YET_REACHED",
         # Closed-set self-enforcement: emitting these means a caller
         # passed an unrecognised reason/surface; the record still lands.
         "FINLAND.MISAPPLY_REASON_NOT_IN_CLOSED_SET",

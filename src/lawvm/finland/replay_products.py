@@ -43,6 +43,7 @@ from lawvm.core.timeline_results import (
     MaterializationLineagePlan,
     TimelineIssue,
     Timelines,
+    TombstoneRecord,
 )
 from lawvm.core.timeline_addresses import _retarget_version_content
 from lawvm.core.tree_ops import (
@@ -175,6 +176,14 @@ class ReplayProducts:
     cited_version_parse_residuals: tuple["CitedVersionParseResidual", ...] = ()
     materialization_issues: tuple[TimelineIssue, ...] = ()
     materialization_coverage: Optional[MaterializationCoverage] = None
+    # Sourced-repeal tombstones dropped from the materialized IR tree
+    # (AGENTS.md §0 — over-repeal visibility). Each entry is an address whose
+    # selected version at PIT ``as_of`` was silent (``content=None``) with a
+    # sourced repeal; materialization drops it from the IR tree and this
+    # carrier surfaces it so projection paths (``lawvm show`` / ``lawvm dump``)
+    # can render the tombstone inline at its target position. Additive
+    # evidence only — never re-mints the address in the IR tree.
+    tombstones: tuple[TombstoneRecord, ...] = ()
     # StageResult-endgame: the full typed materialization account (coverage +
     # residuals + findings), carried so the certificate dossier routes it into a
     # per-stage account subroot instead of discarding it. ``None`` only on the
@@ -624,6 +633,58 @@ def _ensure_body_hcontainer(ir: IRNode) -> tuple[IRNode, tuple[tuple[str, str], 
     )
 
 
+def _ensure_body_provisions_hcontainer(
+    ir: IRNode,
+) -> tuple[IRNode, tuple[tuple[str, str], ...]]:
+    """Return body IR with a ``statuteProvisionsWrapper`` hcontainer child + path.
+
+    Like :func:`_ensure_body_hcontainer` but NEVER picks an unrelated body
+    hcontainer (``attachments`` / ``conclusions``) — operative sections
+    misplaced at body root must be re-homed into a provisions wrapper, not
+    railed into attachment lists. If a wrapper already exists, use it.
+    Otherwise insert a new ``statuteProvisionsWrapper`` hcontainer BEFORE
+    the first attachments/conclusions hcontainer (so the wrapper sits in
+    the editorial canonical position — chapters first, then provisions
+    wrapper if no chapters are co-located, then attachments/conclusions).
+
+    AGENTS.md §1.0 mutation boundary + §1.6 unstated migration: a
+    section being re-homed at the body root because it was misplaced by
+    a snapshot-relative apply path must carry an explicit ``name``
+    witness — the provisions wrapper is the FI editorial canonical
+    container for §N-level top-level provisions, never an attachment
+    wrapper.
+    """
+    for child in ir.children:
+        if (
+            child.kind is IRNodeKind.HCONTAINER
+            and child.attrs.get("name") == _FI_PROVISIONS_WRAPPER_NAME
+        ):
+            return ir, (("hcontainer", child.label or ""),)
+    new_wrapper = IRNode(
+        kind=IRNodeKind.HCONTAINER,
+        attrs={"name": _FI_PROVISIONS_WRAPPER_NAME},
+        children=(),
+    )
+    insert_index = len(ir.children)
+    for index, child in enumerate(ir.children):
+        if (
+            child.kind is IRNodeKind.HCONTAINER
+            and child.attrs.get("name") in ("attachments", "conclusions")
+        ):
+            insert_index = index
+            break
+    return (
+        IRNode(
+            kind=ir.kind,
+            label=ir.label,
+            text=ir.text,
+            attrs=dict(ir.attrs),
+            children=ir.children[:insert_index] + (new_wrapper,) + ir.children[insert_index:],
+        ),
+        (("hcontainer", ""),),
+    )
+
+
 def _iter_sections(node: IRNode) -> tuple[IRNode, ...]:
     sections: list[IRNode] = []
 
@@ -1061,7 +1122,26 @@ def _reconcile_materialized_fold_hcontainer_sections(
         if hcontainer_paths:
             continue
 
-        result, hcontainer_path = _ensure_body_hcontainer(result)
+        # Section was misplaced at body root. Re-home:
+        # * When the fold provisions wrapper carries hierarchical roots
+        #   (a Part/Chapter child alongside the operative section) — the
+        #   body-root misplacement is editorial-Loss territory. Use the
+        #   provisions-wrapper helper so the section is preserved as a
+        #   direct child of ``statuteProvisionsWrapper`` (e.g. 2002/1248
+        #   §39 "Voimaantulo- ..." alongside chapters 1–5). AGENTS.md §1.0
+        #   mutation boundary + §1.6 unstated migration.
+        # * When the fold wrapper has NO hierarchical roots (the operative
+        #   section is the wrapper's only direct child) — leave the body
+        #   root hcontainer unchanged so the assembly-time split step
+        #   fires its ``MATERIALIZED_ATTACHMENTS_WRAPPER_SPLIT`` finding.
+        #   2009/1182 §1-§4 (no chapters) ride this path: assembly-split
+        #   moves them out of ``attachments`` into a fresh wrapper + mints
+        #   the split-finding witness the test pins. Not gating here
+        #   would suppress the assembly split entirely.
+        if fold_has_hierarchical_roots:
+            result, hcontainer_path = _ensure_body_provisions_hcontainer(result)
+        else:
+            result, hcontainer_path = _ensure_body_hcontainer(result)
         result = _insert_sorted(result, hcontainer_path, canonical_node)
 
     return result
@@ -2063,21 +2143,24 @@ def _with_fold_backfill_versions(
             target,
             effective,
         )
-        timeline.versions.append(
-            ProvisionVersion(
-                effective=effective,
-                enacted=op.source.enacted,
-                expires=expires,
-                variant_kind="temporary" if expires else "permanent",
-                content=op.payload,
-                source=op.source,
-                applicability=list(op.applicability),
-                content_hash=irnode_content_hash(op.payload),
-            )
+        appended_version = ProvisionVersion(
+            effective=effective,
+            enacted=op.source.enacted,
+            expires=expires,
+            variant_kind="temporary" if expires else "permanent",
+            content=op.payload,
+            source=op.source,
+            applicability=list(op.applicability),
+            content_hash=irnode_content_hash(op.payload),
         )
+        timelines[target] = dc_replace(timeline, versions=(*timeline.versions, appended_version))
 
     for address in copied:
-        timelines[address].versions.sort(key=lambda version: (version.effective, version.enacted))
+        tl = timelines[address]
+        timelines[address] = dc_replace(
+            tl,
+            versions=tuple(sorted(tl.versions, key=lambda version: (version.effective, version.enacted))),
+        )
     return timelines
 
 
@@ -2424,6 +2507,7 @@ def build_replay_products(
         cited_version_parse_residuals=cited_version_parse_residuals,
         materialization_issues=materialization_result.issues,
         materialization_coverage=materialization_result.certificate,
+        tombstones=materialization_result.tombstones,
         materialization_stage=materialization_stage,
         materialization_spec=MaterializationSpec(
             as_of=as_of,

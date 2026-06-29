@@ -70,7 +70,7 @@ def _validate_transition(old_status: Optional[str], new_status: str) -> None:
 
 _EVENT_KIND_TO_REVIEW_STATUS: dict[str, Optional[ReviewStatus]] = {
     "proposed": ReviewStatus.PROPOSED,
-    "accepted": ReviewStatus.HUMAN_REVIEWED,
+    "accepted": ReviewStatus.VERIFIED_MANUAL,
     "rejected": None,
     "retracted": None,
     "superseded": None,

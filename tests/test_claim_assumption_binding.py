@@ -21,6 +21,8 @@ expanding the claim surface regenerates the binding set.
 
 from __future__ import annotations
 
+import re
+
 from lawvm.core.assumption_register import (
     ASSUMPTION_EFFECTS,
     ASSUMPTION_KINDS,
@@ -34,6 +36,16 @@ from lawvm.core.claim_assumption_binding import (
     resolve_non_guarantee,
 )
 from lawvm.core.claim_surface_manifest import V0_CLAIMS
+
+# Implementation-level Finland module path literal — the W7 M13 lift
+# (iter2 arch review MEDIUM-2) replaces these inside the v0 binding set's
+# scope/public_message text with the concept-id form `fi.frontend.<concept>`
+# so that renaming a frontend module no longer silently drifts assumption
+# bindings. A future re-paste of a `lawvm.finland.X.Y` literal into a binding's
+# scope re-opens the §2.3 leak — this regex pins the lift-invariant at the
+# binding-set level (the file-level firewall lives in
+# tests/test_core_firewall_no_finland_module_paths.py).
+_FINLAND_MODPATH_RE = re.compile(r"lawvm\.finland\.[A-Za-z_][A-Za-z_0-9.]*")
 
 
 def _declared_handles() -> set[str]:
@@ -179,6 +191,77 @@ def test_binding_root_is_deterministic_and_membership_sensitive():
         (edited, *V0_CLAIM_ASSUMPTION_BINDINGS[1:])
     )
     assert edited_root != r1  # editing a bound assumption moves the root
+
+
+# --------------------------------------------------------------------------- #
+# W7 M13 lift-invariant — the v0 binding set carries no `lawvm.finland.<X>`   #
+# implementation-level module paths in its scope/public_message text.        #
+#                                                                             #
+# The 13 `lawvm.finland.X.Y` strings that lived in the v0 binding set were    #
+# lifted to concept-id form `fi.frontend.<concept>` (iter2 W7 M13 arch review #
+# MEDIUM-2). The lift preserves the v0 claim-relative completeness contract    #
+# (every V0_CLAIMS handle still resolves to one registered AssumptionRegister) #
+# while decoupling the v→vN module rename surface: renaming a frontend module  #
+# no longer silently drifts assumption bindings. A future regression (re-     #
+# pasting a `lawvm.finland.X.Y` literal into a binding's scope text) re-opens  #
+# the §2.3 leak. The companion file-level firewall lives in                   #
+# tests/test_core_firewall_no_finland_module_paths.py.                         #
+# --------------------------------------------------------------------------- #
+
+
+def test_v0_binding_set_carries_no_finland_module_path_literals() -> None:
+    """Lift-invariant: no `lawvm.finland.<module>` substring remains in any
+    binding's scope/public_message text after the W7 M13 lift to concept-id
+    form `fi.frontend.<concept>`.
+
+    Pins the lift invariant at the binding-set level (the file-level AST
+    firewall lives in tests/test_core_firewall_no_finland_module_paths.py).
+    Mirrors the precedent of test_claim_assumption_binding's other
+    structural-invariant tests — the v0 binding set's contract is the union
+    of (1) handle-coverage, (2) assumption-well-formedness, and now (3)
+    concept-id-binding (no implementation-level module paths in the bound
+    text). Violations point to the offending handle + field.
+    """
+    offenders: list[str] = []
+    for binding in V0_CLAIM_ASSUMPTION_BINDINGS:
+        assumption = binding.assumption
+        for field_name in ("scope", "public_message"):
+            field_value = getattr(assumption, field_name)
+            match = _FINLAND_MODPATH_RE.search(field_value)
+            if match:
+                offenders.append(
+                    f"{binding.handle!r} assumption.{field_name} carries "
+                    f"{match.group(0)!r}"
+                )
+    assert not offenders, (
+        "v0 binding set carries `lawvm.finland.<module>` implementation-level "
+        "module paths in its scope/public_message text (M13 lift regression, "
+        "AGENTS.md §2.3). The W7 M13 arch-review-MEDIUM-2 fix lifted the 13 "
+        "originals to concept-id form `fi.frontend.<concept>`; a re-introduced "
+        "literal silently drifts assumption bindings on a frontend module "
+        "rename. Offenders: " + "; ".join(offenders)
+    )
+
+
+def test_v0_binding_set_lift_preserves_claim_relative_completeness() -> None:
+    """The W7 M13 lift swaps implementation-level module paths for concept-id
+    strings; it must NOT drop a binding or shift the bound-handle set. The
+    pre-existing per-handle coverage gate (`test_binding_set_exactly_covers_
+    the_declared_surface`) is the load-bearing claim-relative-completeness
+    assertion; this test restates the invariant directly against the LIFT
+    boundary so a regression of the lift itself surfaces here even before the
+    broader coverage test fails.
+
+    Mirrors the precedent's `test_binding_set_exactly_covers_the_declared_surface`
+    — the lift-invariant is a contract link: it strengthens the binding set
+    from (handle resolves) to (handle resolves AND bound text is concept-id
+    form), not a weakening.
+    """
+    # The bound handle set is exactly the declared V0_CLAIMS handle set.
+    declared = {h for claim in V0_CLAIMS for h in claim.allowed_non_guarantees}
+    assert bound_handles() == declared
+    # No bindings were dropped or added by the lift.
+    assert len(V0_CLAIM_ASSUMPTION_BINDINGS) == len(declared)
 
 
 def test_empty_binding_set_has_a_valid_root():

@@ -11,7 +11,7 @@ This gate pins that every row produced by the deterministic projector
 carries surface-truthful authority values:
 
   * ``replay_authorized`` is falsy (NOT True),
-  * ``review_status`` is NOT ``human_reviewed`` (machine-produced → ``proposed``),
+  * ``review_status`` is NOT ``verified_manual`` (machine-produced → ``proposed``),
   * ``validator_status`` is NOT ``span_verified``/``entailment_verified``
     (no human validation → ``unvalidated``),
   * the positive surface fact ``deterministic_extraction`` is recorded.
@@ -65,8 +65,8 @@ def _assert_no_authority(row: Dict[str, Any]) -> None:
         "deterministic export row claims replay_authorized="
         f"{row.get('replay_authorized')!r}; a surface projection carries no replay authority"
     )
-    assert row.get("review_status") != ReviewStatus.HUMAN_REVIEWED.value, (
-        "deterministic export row claims review_status=human_reviewed; "
+    assert row.get("review_status") != ReviewStatus.VERIFIED_MANUAL.value, (
+        "deterministic export row claims review_status=verified_manual; "
         "no human reviewed a machine-produced extraction row"
     )
     assert row.get("validator_status") not in (
@@ -83,7 +83,7 @@ def test_deterministic_row_extras_carry_no_replay_or_review_authority() -> None:
     assert _DETERMINISTIC_ROW_EXTRAS.get("replay_authorized") is False
     assert (
         _DETERMINISTIC_ROW_EXTRAS.get("review_status")
-        != ReviewStatus.HUMAN_REVIEWED.value
+        != ReviewStatus.VERIFIED_MANUAL.value
     )
     assert (
         _DETERMINISTIC_ROW_EXTRAS.get("validator_status")

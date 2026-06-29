@@ -445,7 +445,7 @@ def test_fetch_se_official_artifacts_fetches_doc_and_pdf_and_stores_text(monkeyp
         }
     )
     diagnostics: list[dict[str, object]] = []
-    monkeypatch.setattr("lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes: "Recovered PDF text")
+    monkeypatch.setattr("lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes, findings_out=None: "Recovered PDF text")
 
     bundle = fetch_se_official_artifacts("2026:286", archive, diagnostics_out=diagnostics)
 
@@ -489,7 +489,7 @@ def test_fetch_se_official_artifacts_retries_transient_doc_failures(monkeypatch)
         return None
 
     monkeypatch.setattr(archive, "fetch", flaky_fetch)
-    monkeypatch.setattr("lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes: "Recovered PDF text")
+    monkeypatch.setattr("lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes, findings_out=None: "Recovered PDF text")
     monkeypatch.setattr("lawvm.sweden.fetch.time.sleep", lambda seconds: None)
 
     bundle = fetch_se_official_artifacts("2026:286", archive)
@@ -536,7 +536,7 @@ def test_fetch_official_does_not_mirror_blocked_doc_html_when_using_override(mon
             pdf_url: b"%PDF-1.7 fake",
         }
     )
-    monkeypatch.setattr("lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes: "Recovered PDF text")
+    monkeypatch.setattr("lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes, findings_out=None: "Recovered PDF text")
 
     bundle = fetch_se_official_artifacts("2026:286", archive, pdf_url_override=pdf_url)
 
@@ -556,7 +556,7 @@ def test_fetch_official_falls_back_to_month_probe_when_doc_blocked_and_rk_issue_
             pdf_url: b"%PDF-1.7 fake",
         }
     )
-    monkeypatch.setattr("lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes: "Recovered PDF text")
+    monkeypatch.setattr("lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes, findings_out=None: "Recovered PDF text")
 
     bundle = fetch_se_official_artifacts("2026:63", archive)
 
@@ -674,7 +674,7 @@ def test_fetch_se_official_artifacts_records_pdf_text_extraction_failure(monkeyp
         }
     )
     diagnostics: list[dict[str, object]] = []
-    monkeypatch.setattr("lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes: None)
+    monkeypatch.setattr("lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes, findings_out=None: None)
 
     bundle = fetch_se_official_artifacts("2026:286", archive, diagnostics_out=diagnostics)
 
@@ -713,7 +713,7 @@ def test_fetch_se_official_artifacts_records_base_ir_build_failure(monkeypatch) 
     class _ParsedAct:
         is_amending_act = False
 
-    monkeypatch.setattr("lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes: "Recovered PDF text")
+    monkeypatch.setattr("lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes, findings_out=None: "Recovered PDF text")
     monkeypatch.setattr(
         "lawvm.sweden.fetch.parse_se_official_act_text",
         lambda text, *, sfs_id: _ParsedAct(),
@@ -788,7 +788,7 @@ def test_fetch_official_falls_back_to_legacy_sfspdf_direct_url(monkeypatch) -> N
     )
     diagnostics: list[dict[str, object]] = []
     monkeypatch.setattr("lawvm.sweden.fetch.time.sleep", lambda s: None)
-    monkeypatch.setattr("lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes: "Recovered legacy PDF text")
+    monkeypatch.setattr("lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes, findings_out=None: "Recovered legacy PDF text")
     monkeypatch.setattr("lawvm.sweden.fetch.search_se_legacy_pdf_url", lambda sfs_id: None)
 
     bundle = fetch_se_official_artifacts("2015:284", archive, diagnostics_out=diagnostics)
@@ -1996,7 +1996,7 @@ def test_fetch_official_archives_parsed_official_act_json(monkeypatch) -> None:
     )
     monkeypatch.setattr(
         "lawvm.sweden.fetch.se_pdf_bytes_to_text",
-        lambda pdf_bytes: (
+        lambda pdf_bytes, findings_out=None: (
             "Svensk författningssamling\nFörordning\nom riktålder för pension för år 2031\n\n"
             "Publicerad\nden 27 maj 2025\n\nUtfärdad den 22 maj 2025\n"
             "Regeringen föreskriver följande.\n"
@@ -6624,8 +6624,17 @@ def test_plan_se_older_base_rebuild_surfaces_fetch_missing_failure_as_typed_diag
         and failure.get("sfs_id") == "2015:284"
         and failure.get("error_type") == "ConnectionError"
         and "simulated cloudflare block" in failure.get("error_message", "")
+        # §1.10 honesty: this is a fetch-time IO/utility boundary (network
+        # acquisition of an archived SFS act), so there is no source clause
+        # text in scope to embed — ``clause_text`` is the empty string rather
+        # than a fabricated source-text witness. The residual is named/
+        # witnessed by ``rule_id`` + ``sfs_id`` + ``error_type`` +
+        # ``error_message``; the explicit empty ``clause_text`` documents the
+        # §1.10 fact rather than faking content (mirrors ``named_swallow``
+        # module docstring's IO/utility-boundary exception).
+        and failure.get("clause_text", "MISSING") == ""
         for failure in failures
-    ), f"acquisition failure diagnostic missing required fields: {failures}"
+    ), f"acquisition failure diagnostic missing required fields (incl. clause_text): {failures}"
     # And the surface lane still records the unavailability honestly.
     assert result["base_seed"]["official_act_available"] is False
 
@@ -7056,7 +7065,7 @@ def test_fetch_official_falls_back_to_rk_issue_date_guess(monkeypatch) -> None:
             "https://svenskforfattningssamling.se/sites/default/files/sfs/2025-05/SFS2025-399.pdf": b"%PDF-1.7",
         },
     )
-    monkeypatch.setattr("lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes: "Recovered PDF text")
+    monkeypatch.setattr("lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes, findings_out=None: "Recovered PDF text")
 
     bundle = fetch_se_official_artifacts("2025:399", archive)
 
@@ -7175,7 +7184,7 @@ def test_hydrate_se_bundle_live_archives_bundle_and_official_artifacts(monkeypat
         "lawvm.sweden.fetch._curl_json_post",
         lambda url, headers, payload: json.dumps(response).encode("utf-8"),
     )
-    monkeypatch.setattr("lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes: "Recovered PDF text")
+    monkeypatch.setattr("lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes, findings_out=None: "Recovered PDF text")
 
     bundle = hydrate_se_bundle_live("2025:399", archive)
 
@@ -7244,7 +7253,7 @@ def test_fetch_se_official_artifacts_force_reextract_fires_overwrite_events(monk
         },
     )
     monkeypatch.setattr(
-        "lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes: "New extracted PDF text"
+        "lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes, findings_out=None: "New extracted PDF text"
     )
 
     overwrite_events: list[SEOverwriteEvent] = []
@@ -7300,7 +7309,7 @@ def test_fetch_se_official_artifacts_force_reextract_blank_prior_on_first_write(
         }
     )
     monkeypatch.setattr(
-        "lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes: "First extracted text"
+        "lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes, findings_out=None: "First extracted text"
     )
 
     overwrite_events: list[SEOverwriteEvent] = []
@@ -7318,3 +7327,197 @@ def test_fetch_se_official_artifacts_force_reextract_blank_prior_on_first_write(
         "force_reextract on a fresh locator emitted a non-empty prior_bytes_sha256 — "
         "the wrapper's read-before-write discipline is broken."
     )
+
+
+def test_check_se_official_replay_propagates_partial_adjudications_on_apply_raise(
+    monkeypatch,
+) -> None:
+    """§2.9 + §1.0/§1.8/§1.10 fire-drill (silent-failure review HIGH #3):
+
+    When ``apply_se_ops_conserved`` raises mid-apply, the production lane
+    ``check_se_official_replay`` MUST:
+
+    * preserve the partial adjudication witnesses emitted BEFORE the raise on
+      the returned ``adjudications`` list (the §1.0 "evidence is not silently
+      destroyed" + §1.8 "no unsupported lane disappears" contracts). Pre-fix
+      state: the SE production caller had NO try/except at the apply call site
+      — bare-apply raised raw, the local ``replay_adjudications`` list was
+      discarded entirely by the propagating exception.
+    * append a typed ``se_replay_apply_raise`` orchestration adjudication per
+      §1.10 embed-exception-as-clause-text rule (so a downstream consumer can
+      diagnose the apply raise without re-running extraction);
+    * return a structured ``outcome='apply_raise'`` /
+      ``reason_code='se_replay_apply_raise'`` dict mirroring the existing
+      ``_se_replay_unresolved_outcome`` shape so the scan-lane
+      ``typed_outcome != SE_REPLAY_OUTCOME_REPLAY_FEASIBLE`` dispatcher
+      (line ~3880) buckets it correctly downstream.
+
+    Mirrors ``test_replay_ee_to_pit_propagates_partial_adjudications_on_apply_raise``
+    (the EE production-caller fire-drill), the NO precedent
+    ``test_replay_no_to_pit_strict_action_family_rejects_recovery`` (end-to-end
+    assertion shape), and the upstream-phase fixture pattern of
+    ``test_check_se_official_replay_collects_skipped_replay_ops_as_adjudications``
+    (the SE production-routing happy-path test). Iter2 W2 closed the
+    conserved-wrapper propagate-on-raise contract; iter3 W3 (this test) pins
+    the production caller's half of the contract — the wrapper's propagation
+    is unreachable from production unless the caller's on-raise wrap surfaces
+    the partial list on the returned dict.
+    """
+    base_payload = {
+        "beteckning": "2026:777",
+        "rubrik": "Förordning (2026:777) om test",
+        "ikraftDateTime": "2026-01-01T00:00:00",
+        "ikraftOvergangsbestammelse": False,
+        "organisation": {"namn": "Socialdepartementet", "namnOchEnhet": "Socialdepartementet"},
+        "forfattningstypNamn": "Förordning",
+        "register": {"forarbeten": None},
+        "fulltext": (
+            "2 § /Upphör att gälla U:2026-04-15/\n"
+            "Gammal lydelse.\n\n"
+            "2 § /Träder i kraft I:2026-04-15/\n"
+            "Ny lydelse. Förordning (2026:286).\n"
+        ),
+        "publiceradDateTime": "2026-01-01T00:00:00",
+        "andringsforfattningar": [],
+    }
+    official_act = {
+        "sfs_id": "2026:286",
+        "title": "Förordning om ändring i förordningen (2026:777) om test",
+        "act_type": "förordning",
+        "amended_act_sfs_id": "2026:777",
+        "is_amending_act": True,
+        "published_date": "2026-04-20",
+        "issued_date": "2026-04-18",
+        "enacting_clause": "Regeringen föreskriver att 2 § förordningen (2026:777) om test ska ha följande lydelse.",
+        "effective_clause": "Denna förordning träder i kraft den 15 april 2026.",
+        "affected_section_labels": ["2"],
+        "provisions": [{"label": "2", "text": "Ny lydelse."}],
+        "signatories": [],
+        "footnotes": [],
+    }
+    valid_op = LegalOperation(
+        op_id="se_official_replace_2",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "2"),)),
+        payload=IRNode(kind=IRNodeKind.SECTION, label="2", text="Ny lydelse."),
+        source=OperationSource(statute_id="2026:286", effective="2026-04-15"),
+    )
+    archive = _FakeArchive(
+        stored={
+            "se://sfs/2026:777/rk.current.json": json.dumps(base_payload, ensure_ascii=False).encode("utf-8"),
+            "se://sfs/2026:286/official.act.json": json.dumps(official_act, ensure_ascii=False).encode("utf-8"),
+            "se://sfs/2026:286/official.ops.json": json.dumps(
+                [se_legal_operation_to_dict(op) for op in [valid_op]],
+                ensure_ascii=False,
+            ).encode("utf-8"),
+        }
+    )
+
+    raise_message = "synthesized mid-apply raise (e.g. se strict_action_family=True)"
+
+    # Spy: replace ``apply_se_ops_conserved`` in the fetch module with a
+    # wrapper that (a) appends a known pre-raise adjudication to
+    # ``adjudications_out`` (mirroring what bare apply does when it processes
+    # the synthesized skip op BEFORE the §1.10 fail-loud raise), then (b)
+    # raises ValueError. Mirrors the NO precedent at
+    # ``test_apply_no_ops_conserved_propagates_recovery_adjudication_on_raise``
+    # and the EE/EU fire-drill tests — bare apply first emits the skip then
+    # raises; here the skip + raise is wired through the spy so the SE
+    # production caller's on-raise handling is reached through the FULL
+    # ``check_se_official_replay`` path (the §2.9 guard-liveness discipline).
+    def spy_apply_se_ops_conserved(statute, ops, **kwargs):
+        adjudications_out = kwargs.get("adjudications_out")
+        if adjudications_out is not None:
+            adjudications_out.append(
+                CompileAdjudication(
+                    kind="se_replay_target_not_found",
+                    message=(
+                        "Synthesized pre-raise skip adjudication — op target "
+                        "not in the baseline body (mirrors bare-apply's per-op "
+                        "skip emission BEFORE the §1.10 fail-loud raise)."
+                    ),
+                    source_statute="2026:286",
+                    blocking=False,
+                    phase="replay",
+                    op_id="se_official_replace_2",
+                    detail={
+                        "rule_id": "se_replay_target_not_found",
+                        "phase": "replay",
+                        "blocking": False,
+                    },
+                )
+            )
+        raise ValueError(raise_message)
+
+    monkeypatch.setattr(
+        "lawvm.sweden.fetch.apply_se_ops_conserved",
+        spy_apply_se_ops_conserved,
+    )
+
+    result = check_se_official_replay(archive, "2026:286")
+
+    # The apply raise is surfaced as a structured ``outcome='apply_raise'`` /
+    # ``reason_code='se_replay_apply_raise'`` dict (mirrors the existing
+    # ``_se_replay_unresolved_outcome`` shape from the precondition-issues /
+    # older-base-required branches). Pre-fix the raw exception propagated to
+    # the caller and there was no structured return at all.
+    assert result["outcome"] == "apply_raise", (
+        f"result['outcome'] is {result['outcome']!r}, expected 'apply_raise' — "
+        "the production caller's on-raise handling regressed (§2.9 worst-class "
+        "silent failure: a guard that exists but cannot fire)."
+    )
+    assert result["reason_code"] == "se_replay_apply_raise"
+    assert raise_message in result["message"]
+    assert result["target_count"] == 0  # apply lane did not run
+    assert result["match_count"] == 0
+    assert result["rows"] == []
+
+    # §1.0 / §1.8 partial-witness preservation: the pre-raise skip adjudication
+    # emitted by the spy IS on ``result['adjudications']``. Pre-fix the local
+    # list was discarded by the propagating exception (silent-failure review
+    # HIGH #3).
+    pre_raise = [
+        a for a in result["adjudications"] if a.get("kind") == "se_replay_target_not_found"
+    ]
+    assert pre_raise, (
+        "result['adjudications'] does not carry the pre-raise "
+        "se_replay_target_not_found witness — the §1.0/§1.8 partial-loss "
+        "failure (silent-failure review HIGH #3: pre-fix the raw exception "
+        "discarded replay_adjudications before the success-path dict "
+        "construction projected it onto 'adjudications')."
+    )
+    assert pre_raise[0]["op_id"] == "se_official_replace_2"
+
+    # §1.10 typed orchestration adjudication: ``se_replay_apply_raise`` IS on
+    # the returned dict's ``adjudications`` list with ``exception_type`` /
+    # ``exception`` / ``clause_text`` embedded in its ``detail`` dict.
+    orchestration = next(
+        (a for a in result["adjudications"] if a.get("kind") == "se_replay_apply_raise"),
+        None,
+    )
+    assert orchestration is not None, (
+        "result['adjudications'] does not carry the typed "
+        "se_replay_apply_raise orchestration adjudication — the §1.10 "
+        "embed-snippet contract is unmet (silent-failure review HIGH #3)."
+    )
+    assert orchestration["detail"]["exception_type"] == "ValueError"
+    assert orchestration["detail"]["exception"] == raise_message
+    assert orchestration["detail"]["clause_text"] == raise_message  # ≤400 chars
+    # The orchestration adjudication is non-blocking — it is a WITNESS, not
+    # the gate (mirrors the EE conserved-wrapper's
+    # ``RejectedItem.blocking=False`` pattern). The blocking gate lives on
+    # the structured ``outcome='apply_raise'`` signal — the SE convention for
+    # apply-fold failure that the scan-lane typed-outcome dispatcher keys on.
+    assert orchestration["blocking"] is False
+    assert orchestration["phase"] == "replay"
+    assert orchestration["source_statute"] == "2026:777"  # resolved base sfs
+    assert orchestration["detail"]["rule_id"] == "se_replay_apply_raise"
+    assert orchestration["detail"]["family"] == "orchestration_failure"
+
+    # The structured exception fields are also projected onto
+    # ``outcome_detail`` so downstream dispatch (e.g. scan_se_official_replay_act)
+    # can route on them without re-parsing the typed adjudication ledger.
+    assert result["outcome_detail"]["exception_type"] == "ValueError"
+    assert result["outcome_detail"]["exception"] == raise_message
+    assert result["outcome_detail"]["clause_text"] == raise_message

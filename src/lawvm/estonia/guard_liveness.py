@@ -87,11 +87,15 @@ EE_BLOCKING_RULE_IDS: Final[FrozenSet[str]] = frozenset(
         "ee_flat_part_repeal_span",
         # --- division / jagu recovery -----------------------------------------
         "ee_implicit_division_sequence_relabel_after_high_jagu_insert",
-        # --- §1.7 same-moment cross-act conflict (pre-pass in ordering.py) -----
-        # Blocking finding emitted by ``detect_ee_same_moment_cross_act_conflicts``
-        # before the apply fold when two distinct affecting acts change the same
-        # target at the same effective date with incompatible whole-target
-        # payloads. Cross-act (carries an empty op_id), so it surfaces as an
+        # --- §1.7 same-moment cross-act conflict (pre-pass in grafter.py) ------
+        # Blocking finding emitted by the shared
+        # ``lawvm.core.cross_act_same_moment.detect_cross_act_same_moment_conflicts``
+        # (called by ``apply_ee_ops`` with ``finder_kind_prefix="ee"``) before the
+        # apply fold when two distinct affecting acts change the same target at
+        # the same effective date with incompatible whole-target payloads. The
+        # EE-specific compatibility predicate ``ee_same_moment_payloads_incompatible``
+        # is passed so finding output is byte-identical to the pre-B1 standalone
+        # detector. Cross-act (carries an empty op_id), so it surfaces as an
         # evidence row without partition impact in the conserved wrapper.
         "ee_same_moment_cross_act_incompatible_payload_ambiguous",
         # --- generic replay-time guard adjudications --------------------------

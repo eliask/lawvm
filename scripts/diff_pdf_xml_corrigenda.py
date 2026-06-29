@@ -79,22 +79,57 @@ def _normalize(text: str) -> str:
 
 def _pdf_bytes_to_text(pdf_bytes: bytes) -> Optional[str]:
     """Run pdftotext on in-memory bytes, return plain text or None."""
+    # ``tempfile.TemporaryDirectory`` context manager cleans up the intermediate
+    # PDF on every exit path (normal return, exception, early-return). The prior
+    # ``NamedTemporaryFile(suffix=".pdf", delete=False)`` + in-line
+    # ``Path(tmp_path).unlink(missing_ok=True)`` shape leaked the tempfile when
+    # ``subprocess.run`` raised (TimeoutExpired / unexpected error) — the unlink
+    # was placed AFTER the subprocess call so any exception skipped the cleanup
+    # line. Mirrors the corrigendum.py ``_pdf_page_count`` migration at iter2 W6
+    # LOW-1 (tests/test_corrigendum_fail_loud.py).
     try:
-        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
-            f.write(pdf_bytes)
-            tmp_path = f.name
-        result = subprocess.run(
-            ["pdftotext", tmp_path, "-"],
-            capture_output=True,
-            timeout=30,
-        )
-        Path(tmp_path).unlink(missing_ok=True)
-        if result.returncode == 0:
-            return result.stdout.decode("utf-8", errors="replace")
-        return None
+        with tempfile.TemporaryDirectory(prefix="diff_pdf_xml_corrigenda_") as tmpdir:
+            pdf_path = Path(tmpdir) / "input.pdf"
+            pdf_path.write_bytes(pdf_bytes)
+            result = subprocess.run(
+                ["pdftotext", str(pdf_path), "-"],
+                capture_output=True,
+                timeout=30,
+            )
+            if result.returncode == 0:
+                return result.stdout.decode("utf-8", errors="replace")
+            return None
     except FileNotFoundError:
+        # pdftotext binary is not installed.
         return None
-    except Exception:
+    except (NameError, TypeError, AttributeError):
+        raise  # programming bugs — fail loud
+    except Exception as exc:
+        # §1.10: route the unexpected subprocess swallow through ``named_swallow``
+        # so the failure is no longer silent (the prior shape was
+        # ``except Exception: return None``). Sink dispatch mirrors the
+        # sweden/grafter.py ``se_pdf_bytes_to_text`` precedent — ``log_emitter``
+        # keeps stderr WARNING visibility so triage does not require re-running
+        # extraction. Generating a ``Finding`` here would require a sink the
+        # script does not thread (this is a CLI utility, not a per-statute
+        # replay path); ``log_emitter`` is the sanctioned IO/utility carve-out
+        # per ``core/named_swallow.py`` docstring.
+        from lawvm.core.named_swallow import build_named_swallow_finding, log_emitter
+
+        log_emitter()(
+            build_named_swallow_finding(
+                rule_id="diff_pdf_xml_corrigenda_pdf_bytes_to_text_subprocess",
+                exception=exc,
+                op_id=None,
+                clause_text=(
+                    pdf_bytes[:400].decode("utf-8", errors="replace")
+                    if pdf_bytes
+                    else ""
+                ),
+                jurisdiction="fi",
+                source_artifact="pdftotext",
+            )
+        )
         return None
 
 

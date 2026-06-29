@@ -245,13 +245,55 @@ def compute_cheap_signal_coverage(
             continue
         try:
             body = decode_body_text(xb)
-        except Exception:
+        except Exception as exc:
+            # Unexpected body-decode failure: previously ``continue`` silently
+            # swallowed; now route through ``named_swallow`` so a typed Finding
+            # is logged at WARNING with the statute id as ``clause_text``
+            # (AGENTS.md §1.10 — never silent).
+            #
+            # log_emitter sanctioned (iter3 W2 §3.2): dev-tooling census run
+            # (modal census analysis loop) — no per-statute findings_out
+            # accumulator in scope at this loop phase; per ``core/named_swallow.py``
+            # docstring's IO/utility-boundary sanctioned use, the swallow stays on
+            # log_emitter (stderr WARNING).
+            from lawvm.core.named_swallow import build_named_swallow_finding, log_emitter
+
+            log_emitter()(
+                build_named_swallow_finding(
+                    rule_id="fi_modal_census_decode_body_text",
+                    exception=exc,
+                    op_id=None,
+                    clause_text=f"sid={sid}",
+                    jurisdiction="fi",
+                    source_artifact=sid,
+                )
+            )
             continue
         if not body:
             continue
         try:
             index = build_clause_index(sid, body)
-        except Exception:
+        except Exception as exc:
+            # Unexpected clause-segmentation failure: previously ``continue``
+            # silently swallowed; now route through ``named_swallow`` so a
+            # typed Finding is logged at WARNING with the statute id + body
+            # length as ``clause_text`` (AGENTS.md §1.10 — never silent).
+            #
+            # log_emitter sanctioned (iter3 W2 §3.2): same dev-tooling census
+            # boundary as the body-decode swallow above — no per-statute
+            # findings_out accumulator in scope; see the prior sanctioned-use note.
+            from lawvm.core.named_swallow import build_named_swallow_finding, log_emitter
+
+            log_emitter()(
+                build_named_swallow_finding(
+                    rule_id="fi_modal_census_build_clause_index",
+                    exception=exc,
+                    op_id=None,
+                    clause_text=f"sid={sid} body_len={len(body)}",
+                    jurisdiction="fi",
+                    source_artifact=sid,
+                )
+            )
             continue
         for sent in index.sentences:
             seg_text = body[sent.char_start : sent.char_end]

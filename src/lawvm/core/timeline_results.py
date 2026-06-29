@@ -364,6 +364,50 @@ def timeline_issues_to_findings(issues: tuple[TimelineIssue, ...]) -> tuple[Find
     return tuple(timeline_issue_to_finding(issue) for issue in issues)
 
 
+@dataclass(frozen=True, slots=True)
+class TombstoneRecord:
+    """Typed tombstone for an address whose selected PIT version is a sourced repeal.
+
+    A tombstone is a materialization-time absence with an underlying repeal op:
+    the address's selected version at the PIT ``as_of`` carries ``content=None``
+    (the silent placeholder) AND a sourced repeal (``version.source`` is set, so
+    the absence traces to a statute — never a base-state artifact). The IR tree
+    produced by :func:`materialize_pit` drops such an address silently; this
+    carrier surfaces each dropped address with metadata so a projection surface
+    (``lawvm show`` / ``lawvm dump``) can render the tombstone inline at its
+    target position rather than letting over-repeal stay invisible
+    (AGENTS.md §0 — over-repeal visibility).
+
+    The carrier is *evidence*, not legal state: surfacing a tombstone here never
+    re-mints the address in the IR tree. ``op_id`` defaults to empty because the
+    op identity rides the :class:`LegalOperation` stream above the timeline
+    waist; the timeline owner sees ``ProvisionVersion.source``.
+    """
+
+    address: LegalAddress
+    kind: str
+    label: str
+    source_statute: str
+    effective: str = ""
+    enacted: str = ""
+    variant_kind: Literal["permanent", "temporary"] = "permanent"
+    op_id: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.address.path:
+            raise ValueError("TombstoneRecord.address must have a non-empty path")
+        if not self.kind:
+            raise ValueError("TombstoneRecord.kind must be non-empty")
+        if not self.label:
+            raise ValueError("TombstoneRecord.label must be non-empty")
+        if not self.source_statute:
+            raise ValueError("TombstoneRecord.source_statute must be non-empty")
+        if self.variant_kind not in {"permanent", "temporary"}:
+            raise ValueError(
+                "TombstoneRecord.variant_kind must be 'permanent' or 'temporary'"
+            )
+
+
 @dataclass(frozen=True)
 class MaterializationResult:
     """Explicit PIT materialization result with degradation metadata."""
@@ -374,6 +418,13 @@ class MaterializationResult:
     ambiguous_addresses: tuple[LegalAddress, ...] = ()
     issues: tuple[TimelineIssue, ...] = ()
     certificate: Optional[MaterializationCoverage] = None
+    # Sourced-repeal tombstones dropped from the materialized IR tree. Each
+    # record is an address whose selected version at PIT ``as_of`` carries
+    # ``content=None`` and a sourced repeal (AGENTS.md §0 — over-repeal
+    # visibility). Surfaced as additive evidence so projections can render the
+    # tombstone inline at the target address's position; never re-mints the
+    # address in the IR tree.
+    tombstones: tuple["TombstoneRecord", ...] = ()
 
     def __post_init__(self) -> None:
         if self.materialization_status not in _MATERIALIZATION_STATUSES:
@@ -393,6 +444,9 @@ class MaterializationResult:
             self.certificate, MaterializationCoverage
         ):
             raise TypeError("MaterializationResult.certificate must be MaterializationCoverage or None")
+        object.__setattr__(self, "tombstones", tuple(self.tombstones))
+        if any(not isinstance(tomb, TombstoneRecord) for tomb in self.tombstones):
+            raise TypeError("MaterializationResult.tombstones must contain TombstoneRecord")
 
         blocking_issues = tuple(issue for issue in self.issues if issue.blocking)
         if self.materialization_status == "materialized" and blocking_issues:

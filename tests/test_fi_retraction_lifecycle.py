@@ -137,7 +137,7 @@ def _make_and_accept_claim(
     store.write_state(ClaimState(
         claim_id=claim_id,
         claim_state_status=ClaimStatus.ACCEPTED,
-        review_status=ReviewStatus.HUMAN_REVIEWED,
+        review_status=ReviewStatus.VERIFIED_MANUAL,
         validator_status=ValidatorStatus.SPAN_VERIFIED,
         confidence=ClaimConfidence.HIGH,
         last_updated=now,
@@ -215,7 +215,7 @@ def test_strict_rebuild_refuses_retracted_claim(tmp_path: Path):
     store.write_state(ClaimState(
         claim_id=claim_id,
         claim_state_status=ClaimStatus.RETRACTED,
-        review_status=ReviewStatus.HUMAN_REVIEWED,
+        review_status=ReviewStatus.VERIFIED_MANUAL,
         validator_status=ValidatorStatus.SPAN_VERIFIED,
         confidence=ClaimConfidence.HIGH,
         last_updated=now,

@@ -8,7 +8,7 @@ callbacks so this module stays cycle-free.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace as dc_replace
 from typing import Any, Callable
 
 from lawvm.core.ir import LegalAddress, LegalOperation, ProvisionTimeline, ProvisionVersion
@@ -221,18 +221,30 @@ def scope_target_addresses_for_event(
 def _cap_substantive_versions_at(
     timeline: ProvisionTimeline,
     event_date: str,
-) -> int:
-    """End a scoped legal unit without allowing older background text to revive."""
+) -> tuple[ProvisionTimeline, int]:
+    """End a scoped legal unit without allowing older background text to revive.
+
+    Returns the (possibly new) timeline with the matching versions capped via
+    ``dataclasses.replace`` along with the count of capped versions. When no
+    version needed capping, the input timeline is returned unchanged so the
+    caller may bind ``timelines[address]`` unconditionally.
+    """
     capped = 0
+    new_versions: list[ProvisionVersion] = []
     for version in timeline.versions:
         if version.content is None or version.effective > event_date:
+            new_versions.append(version)
             continue
         if version.expires and version.expires <= event_date:
+            new_versions.append(version)
             continue
-        version.expires = event_date
-        version.variant_kind = "temporary"
+        new_versions.append(
+            dc_replace(version, expires=event_date, variant_kind="temporary")
+        )
         capped += 1
-    return capped
+    if capped == 0:
+        return timeline, 0
+    return dc_replace(timeline, versions=tuple(new_versions)), capped
 
 
 def apply_standalone_temporal_event(
@@ -323,17 +335,19 @@ def apply_standalone_temporal_event(
                     source_statute=event.source.statute_id if event.source else "",
                     emit_warnings=emit_warnings,
                 )
-            timeline.versions.append(
-                ProvisionVersion(
-                    effective=event_date,
-                    enacted=active.enacted,
-                    expires=active.expires,
-                    variant_kind=active.variant_kind,
-                    content=active.content,
-                    source=event.source,
-                    applicability=list(supported_preds),
-                    content_hash=irnode_content_hash(active.content),
-                )
+            appended_version = ProvisionVersion(
+                effective=event_date,
+                enacted=active.enacted,
+                expires=active.expires,
+                variant_kind=active.variant_kind,
+                content=active.content,
+                source=event.source,
+                applicability=list(supported_preds),
+                content_hash=irnode_content_hash(active.content),
+            )
+            timelines[address] = dc_replace(
+                timeline,
+                versions=(*timeline.versions, appended_version),
             )
         return
     if not event_date:
@@ -377,7 +391,7 @@ def apply_standalone_temporal_event(
                     source_statute=event.source.statute_id if event.source else "",
                     emit_warnings=emit_warnings,
                 )
-            _cap_substantive_versions_at(timeline, event_date)
+            timelines[address], _capped = _cap_substantive_versions_at(timeline, event_date)
             continue
         if event.kind in {"commence", "revive"}:
             active = latest_eligible_version_without_scope(timeline, event_date)
@@ -416,13 +430,15 @@ def apply_standalone_temporal_event(
                     emit_warnings=emit_warnings,
                 )
                 continue
-            timeline.versions.append(
-                ProvisionVersion(
-                    effective=event_date,
-                    enacted=event.source.enacted if event.source and event.source.enacted else source_version.enacted,
-                    content=source_version.content,
-                    source=event.source,
-                    applicability=list(source_version.applicability),
-                    content_hash=irnode_content_hash(source_version.content),
-                )
+            appended_version = ProvisionVersion(
+                effective=event_date,
+                enacted=event.source.enacted if event.source and event.source.enacted else source_version.enacted,
+                content=source_version.content,
+                source=event.source,
+                applicability=list(source_version.applicability),
+                content_hash=irnode_content_hash(source_version.content),
+            )
+            timelines[address] = dc_replace(
+                timeline,
+                versions=(*timeline.versions, appended_version),
             )

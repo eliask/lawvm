@@ -54,9 +54,19 @@ class SourceWitnessType(Enum):
 
 
 class ReviewStatus(Enum):
+    """Provenance grounding of a claim's review status.
+
+    ``VERIFIED_MANUAL`` means the claim has been verified via the manual
+    review provenance channel — provenance, NOT a promotion gate. Authority
+    comes from role, evidence, validation, and admissibility policy: a
+    human is not authority by being human; an LLM is not disqualified by
+    being an LLM. The status records *how the claim was grounded*, not
+    *who must be trusted*.
+    """
+
     PROPOSED = "proposed"
     SECOND_PASS_CORRELATED = "second_pass_correlated"
-    HUMAN_REVIEWED = "human_reviewed"
+    VERIFIED_MANUAL = "verified_manual"
 
 
 class ValidatorStatus(Enum):
@@ -219,7 +229,7 @@ class ClaimState:
     One CURRENT row per claim_id in states/current/.
     The event log (ClaimStateEvent) is the source of truth; this is a projection.
 
-    Changing review_status from proposed to human_reviewed updates ClaimState
+    Changing review_status from proposed to verified_manual updates ClaimState
     but does NOT change ManualCompilationClaim or its claim_id.
     """
 

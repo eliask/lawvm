@@ -419,7 +419,7 @@ def test_semantic_xml_manual_frontier_claim_validates_but_composer_blocks_replay
     state = ClaimState(
         claim_id=claim.claim_id,
         claim_state_status=ClaimStatus.ACCEPTED,
-        review_status=ReviewStatus.HUMAN_REVIEWED,
+        review_status=ReviewStatus.VERIFIED_MANUAL,
         validator_status=ValidatorStatus.ENTAILMENT_VERIFIED,
         confidence=ClaimConfidence.HIGH,
         last_updated=datetime(2026, 6, 7, 12, 0, tzinfo=timezone.utc),
@@ -456,7 +456,7 @@ def test_semantic_xml_manual_frontier_claim_requires_matching_phase_gate() -> No
     state = ClaimState(
         claim_id=claim.claim_id,
         claim_state_status=ClaimStatus.ACCEPTED,
-        review_status=ReviewStatus.HUMAN_REVIEWED,
+        review_status=ReviewStatus.VERIFIED_MANUAL,
         validator_status=ValidatorStatus.ENTAILMENT_VERIFIED,
         confidence=ClaimConfidence.HIGH,
         last_updated=datetime(2026, 6, 7, 12, 0, tzinfo=timezone.utc),
@@ -521,7 +521,7 @@ def test_semantic_xml_manual_frontier_claim_rejects_mismatched_phase_gate() -> N
     state = ClaimState(
         claim_id=claim.claim_id,
         claim_state_status=ClaimStatus.ACCEPTED,
-        review_status=ReviewStatus.HUMAN_REVIEWED,
+        review_status=ReviewStatus.VERIFIED_MANUAL,
         validator_status=ValidatorStatus.ENTAILMENT_VERIFIED,
         confidence=ClaimConfidence.HIGH,
         last_updated=datetime(2026, 6, 7, 12, 0, tzinfo=timezone.utc),

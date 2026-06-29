@@ -51,12 +51,13 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
-from typing import Any, Optional, cast
+from typing import Any, List, Optional, cast
 from urllib.parse import quote, urljoin
 
 from lawvm.core import tree_ops
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.filter_result import FilterResult, RejectedItem
+from lawvm.core.phase_result import Finding
 from lawvm.core.ir import (
     IRNode,
     IRStatute,
@@ -1093,21 +1094,48 @@ def se_pdf_bytes_to_text(
     *,
     pdftotext_bin: str = "pdftotext",
     timeout: int = 30,
+    findings_out: Optional[List[Finding]] = None,
 ) -> Optional[str]:
-    """Extract plain text from PDF bytes using `pdftotext` subprocess."""
+    """Extract plain text from PDF bytes using `pdftotext` subprocess.
+
+    Unexpected failures (any exception other than ``FileNotFoundError`` /
+    ``OSError`` / ``subprocess.TimeoutExpired``) are witnessed via a typed
+    ``Finding(kind=UNEXPECTED_PHASE_FAILURE)`` carrying ``rule_id`` /
+    ``clause_text`` (the offending pdf_bytes head, truncated 400 chars) /
+    ``source_artifact`` (the pdftotext binary name). When the caller plumbs
+    ``findings_out`` the Finding is appended there (per-statute audit-trail
+    sink, threaded from the caller); otherwise ``log_emitter`` keeps stderr
+    WARNING visibility so the swallow is still observed — never silent
+    (AGENTS.md §1.10). The ``cleanup_unlink`` swallow inside ``finally``
+    shares the same sink-dispatch (it inherits ``findings_out``).
+    """
     tmp_path: Optional[str] = None
     try:
-        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as handle:
-            handle.write(pdf_bytes)
-            tmp_path = handle.name
-        result = subprocess.run(
-            [pdftotext_bin, tmp_path, "-"],
-            capture_output=True,
-            timeout=timeout,
-        )
-        if result.returncode != 0:
-            return None
-        return result.stdout.decode("utf-8", errors="replace")
+        # ``tempfile.TemporaryDirectory`` context manager cleans up the
+        # intermediate PDF on every exit path (normal return, exception,
+        # early-return). The prior ``NamedTemporaryFile(delete=False)`` shape
+        # placed the cleanup ``Path(tmp_path).unlink(missing_ok=True)`` in the
+        # ``finally`` block below — necessary because the file was created
+        # outside a context manager and had to be manually unlinked; with the
+        # directory-scoped tempdir the context manager already handles cleanup
+        # by the time the ``finally`` block runs, so the ``Path.unlink`` there
+        # is now defense-in-depth (a no-op for the current tempdir-scoped
+        # pdf_path, retained so the ``cleanup_unlink`` named_swallow witness
+        # path below stays reachable for any future codepath that escapes the
+        # tempdir). Mirrors the corrigendum.py ``_pdf_page_count`` migration
+        # at iter2 W6 LOW-1 (tests/test_corrigendum_fail_loud.py).
+        with tempfile.TemporaryDirectory(prefix="se_grafter_pdf_") as tmpdir:
+            pdf_path = Path(tmpdir) / "input.pdf"
+            pdf_path.write_bytes(pdf_bytes)
+            tmp_path = str(pdf_path)
+            result = subprocess.run(
+                [pdftotext_bin, tmp_path, "-"],
+                capture_output=True,
+                timeout=timeout,
+            )
+            if result.returncode != 0:
+                return None
+            return result.stdout.decode("utf-8", errors="replace")
     except FileNotFoundError:
         # pdftotext binary is not installed.
         return None
@@ -1118,24 +1146,28 @@ def se_pdf_bytes_to_text(
     except Exception as exc:
         # Unexpected exception: route through named_swallow so a typed Finding
         # witnesses the swallow (AGENTS.md §1.10). Previously this branch was
-        # ``except Exception: return None`` silently; now log_emitter emits
-        # a WARNING carrying the offending pdf_bytes head as clause_text.
+        # ``except Exception: return None`` silently. Sink dispatch mirrors
+        # the corpus.py:122 named_swallow precedent: when the caller plumbed
+        # ``findings_out``, the Finding lands in that per-statute audit-trail
+        # list; otherwise ``log_emitter`` keeps stderr WARNING visibility.
         from lawvm.core.named_swallow import build_named_swallow_finding, log_emitter
 
-        log_emitter()(
-            build_named_swallow_finding(
-                rule_id="se_grafter_pdf_bytes_to_text_subprocess",
-                exception=exc,
-                op_id=None,
-                clause_text=(
-                    pdf_bytes[:400].decode("utf-8", errors="replace")
-                    if pdf_bytes
-                    else ""
-                ),
-                jurisdiction="se",
-                source_artifact=pdftotext_bin,
-            )
+        finding = build_named_swallow_finding(
+            rule_id="se_grafter_pdf_bytes_to_text_subprocess",
+            exception=exc,
+            op_id=None,
+            clause_text=(
+                pdf_bytes[:400].decode("utf-8", errors="replace")
+                if pdf_bytes
+                else ""
+            ),
+            jurisdiction="se",
+            source_artifact=pdftotext_bin,
         )
+        if findings_out is not None:
+            findings_out.append(finding)
+        else:
+            log_emitter()(finding)
         return None
     finally:
         if tmp_path:
@@ -1146,18 +1178,23 @@ def se_pdf_bytes_to_text(
                 pass
             except Exception as exc:
                 # Cleanup-path unexpected: witnessed via named_swallow (§1.10).
+                # Shared sink dispatch with the main-body swallow above — the
+                # cleanup path inherits ``findings_out`` so a plumbed caller
+                # sees both swallows in the same per-statute audit-trail list.
                 from lawvm.core.named_swallow import build_named_swallow_finding, log_emitter
 
-                log_emitter()(
-                    build_named_swallow_finding(
-                        rule_id="se_grafter_pdf_bytes_to_text_cleanup_unlink",
-                        exception=exc,
-                        op_id=None,
-                        clause_text=f"tmp_path={tmp_path}",
-                        jurisdiction="se",
-                        source_artifact=pdftotext_bin,
-                    )
+                finding = build_named_swallow_finding(
+                    rule_id="se_grafter_pdf_bytes_to_text_cleanup_unlink",
+                    exception=exc,
+                    op_id=None,
+                    clause_text=f"tmp_path={tmp_path}",
+                    jurisdiction="se",
+                    source_artifact=pdftotext_bin,
                 )
+                if findings_out is not None:
+                    findings_out.append(finding)
+                else:
+                    log_emitter()(finding)
 
 
 def _parse_parliamentary_links(sfs_id: str, raw_text: str) -> tuple[SEParliamentaryPackageLink, ...]:
@@ -3783,7 +3820,12 @@ class SEApplyResult:
     The ``filter_result`` field is the canonical ``FilterResult`` projection
     of the same accepted/rejected partition, so callers that already consume
     the shared core type can reuse it without unpacking ``applied_ops`` /
-    ``skipped_items`` separately.
+    ``skipped_items`` separately. The partition keys on ``op_id`` and on the
+    per-op skip-kind set :data:`_SE_SKIP_ADJUDICATION_KINDS` — an op is
+    rejected iff its ``op_id`` appears on a per-op SKIP adjudication of one
+    of those kinds. Recovery / cross-act evidence adjudications (none today,
+    but reserved for future SE recovery rules mirroring EE/NO/EU) would NOT
+    mark an op as rejected; the kind filter keeps them out of the partition.
 
     The optional ``write_receipts`` field carries per-op landed-write receipts
     (AGENTS.md §2.3 + notes/APPLY_RESOLUTION_AND_RECEIPT_CONTRACT.md §4) when
@@ -3808,6 +3850,29 @@ class SEApplyResult:
         return self.filter_result.rejected_items
 
 
+# Per-op skip adjudication kinds emitted by :func:`apply_se_ops`. Each is
+# emitted ONLY at a per-op skip path that emits an adjudication and then
+# ``continue``s (the op is NOT applied, or its apply produced no body change).
+# Mirrors the EE/NO/EU ``_<X>_SKIP_ADJUDICATION_KINDS`` frozensets: the kind
+# filter keeps any future SE recovery / cross-act-evidence adjudication
+# (which would carry an ``op_id`` but record a transformation that WAS applied,
+# not a skip) out of the conserved-wrapper partition. Today every per-op
+# adjudication SE emits is a genuine skip, so the partition is unchanged by
+# the filter; the frozenset is the forward-proofing that the kind filter is
+# the canonical gate (not the absence of any non-skip kind today).
+_SE_SKIP_ADJUDICATION_KINDS = frozenset(
+    {
+        "se_replay_payload_missing",
+        "se_replay_unsupported_action",
+        "se_replay_destination_missing",
+        "se_replay_target_not_found",
+        "se_replay_renumber_collision",
+        "se_replay_text_replace_no_match",
+        "se_replay_unsupported_target_kind",
+    }
+)
+
+
 def apply_se_ops_conserved(
     statute: IRStatute,
     ops: list[LegalOperation] | tuple["LegalOperation", ...],
@@ -3825,6 +3890,13 @@ def apply_se_ops_conserved(
     (its replay skipped, with a witness adjudication carrying the reason).
     The contract is monotone: every input op ends up either accepted or
     rejected, never silently dropped.
+
+    The partition keys on ``op_id`` AND on the per-op skip-kind set
+    :data:`_SE_SKIP_ADJUDICATION_KINDS` (mirrors the EE/NO/EU wrappers). Today
+    every per-op adjudication SE emits is a genuine skip, so the kind filter
+    is a no-op for current partition behaviour; the frozenset is the
+    forward-proofing gate so a future SE recovery adjudication carrying an
+    ``op_id`` cannot silently mark its op as rejected.
 
     When ``emit_receipts=True`` is passed, per-op landed-write receipts
     (§2.3 + notes/APPLY_RESOLUTION_AND_RECEIPT_CONTRACT.md §4) are also
@@ -3876,12 +3948,24 @@ def apply_se_ops_conserved(
         adjudications_out if adjudications_out is not None else []
     )
     applied = apply_se_ops(statute, ops_list, adjudications_out=adjudications)
-    skipped_op_ids = {a.op_id for a in adjudications if a.op_id}
+    # Partition: an op is REJECTED iff its op_id appears on a per-op SKIP
+    # adjudication of a kind in ``_SE_SKIP_ADJUDICATION_KINDS``. Today the kind
+    # filter is a no-op (every per-op adjudication SE emits IS a genuine skip,
+    # so partition is unchanged), but mirroring the EE/NO/EU wrappers keeps the
+    # gate forward-proof: a future SE recovery adjudication carrying an op_id
+    # (recorded when an op WAS applied via a named recovery transformation)
+    # would NOT mark that op as rejected. See ``_SE_SKIP_ADJUDICATION_KINDS``
+    # above.
+    skipped_op_ids = {
+        a.op_id
+        for a in adjudications
+        if a.op_id and a.kind in _SE_SKIP_ADJUDICATION_KINDS
+    }
     accepted: list[LegalOperation] = []
     rejected: list[RejectedItem[LegalOperation]] = []
     for op in ops_list:
         if op.op_id in skipped_op_ids:
-            matching = [a for a in adjudications if a.op_id == op.op_id]
+            matching = [a for a in adjudications if a.op_id == op.op_id and a.kind in _SE_SKIP_ADJUDICATION_KINDS]
             reason = matching[0].message if matching else "Sweden replay op skipped without a typed reason."
             reason_code = matching[0].kind if matching else "se_replay_skipped_unspecified"
             rejected.append(

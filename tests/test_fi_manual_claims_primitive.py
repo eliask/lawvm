@@ -167,7 +167,7 @@ def test_review_status_mutation_preserves_claim_id():
     claim = _make_claim()
     original_claim_id = claim.claim_id
 
-    # Simulate the lifecycle: proposed → human_reviewed
+    # Simulate the lifecycle: proposed → verified_manual
     state_proposed = ClaimState(
         claim_id=claim.claim_id,
         claim_state_status=ClaimStatus.PROPOSED,
@@ -180,7 +180,7 @@ def test_review_status_mutation_preserves_claim_id():
     state_reviewed = ClaimState(
         claim_id=claim.claim_id,
         claim_state_status=ClaimStatus.ACCEPTED,
-        review_status=ReviewStatus.HUMAN_REVIEWED,
+        review_status=ReviewStatus.VERIFIED_MANUAL,
         validator_status=ValidatorStatus.UNVALIDATED,
         confidence=ClaimConfidence.MEDIUM,
         last_updated=datetime(2026, 6, 4, 13, 0, 0, tzinfo=timezone.utc),
@@ -198,7 +198,7 @@ def test_review_status_mutation_preserves_claim_id():
 
     # ClaimState.review_status changed, but claim.claim_id did not
     assert state_proposed.review_status == ReviewStatus.PROPOSED
-    assert state_reviewed.review_status == ReviewStatus.HUMAN_REVIEWED
+    assert state_reviewed.review_status == ReviewStatus.VERIFIED_MANUAL
     assert claim.claim_id == original_claim_id
 
 
@@ -277,7 +277,7 @@ def test_event_log_is_append_only(tmp_path: Path):
     state = project_state(claim.claim_id, events)
     assert state is not None
     assert state.claim_state_status == ClaimStatus.ACCEPTED
-    assert state.review_status == ReviewStatus.HUMAN_REVIEWED
+    assert state.review_status == ReviewStatus.VERIFIED_MANUAL
 
     # Append a third event — existing lines must be unchanged
     raw_before = store._events_path.read_text()
@@ -296,10 +296,10 @@ def test_event_log_is_append_only(tmp_path: Path):
 
 
 def test_self_authorization_impossible():
-    """A claim file asserting review_status=human_reviewed cannot self-promote.
+    """A claim file asserting review_status=verified_manual cannot self-promote.
 
     ClaimState is separate from ManualCompilationClaim. The CLI is the only
-    path to state transitions. A claim proposing itself as 'human_reviewed'
+    path to state transitions. A claim proposing itself as 'verified_manual'
     would still land in PROPOSED status when filed via `lawvm claim propose`.
 
     In this test: even if we craft a claim with requested_profiles that include

@@ -1,4 +1,4 @@
-> **Status (2026-06-22):** Current-with-noted-drift. Normative/living roadmap (governs AGENTS.md regex/recognizer doctrine = §1.11/§1.12, §2.4/§2.5 — NOT '§1.13', which does not exist). All 'PEG3'/'peg3.py' = now johtolause/surface_parse.py (regex-free; peg3.py deleted); the doc's line-84 note acknowledges this but stale refs persist at lines 5/43/98/134/135/144/200.
+> **Status (2026-06-22):** Current-with-noted-drift. Normative/living roadmap (governs AGENTS.md regex/recognizer doctrine = §1.11/§1.12, §2.4/§2.5 — NOT '§1.13', which does not exist). All 'PEG3'/'peg3.py' = now johtolause/surface_parse.py (regex-free; peg3.py deleted); stale peg3.py references in this doc's ranked-targets / implementation-order sections have been retargeted to the canonical path.
 
 # Regex → Grammar Migration Roadmap
 
@@ -83,7 +83,7 @@ No new domain regex may enter core.
 ### Ranked Finland backlog (EV-ordered; targeted, shadow-mode, 0-delta gate)
 
 1. **`scope.py` scope-ownership** (MOVE, EV high) — answer from typed op target paths + witnesses; route address matching through `scan_legal_addresses`; extract the chapter-chunk verb-binding precedence as a policy. The canonical violation.
-2. **`normalize.py` fallback cluster → the canonical johtolause grammar** (MOVE, high) — fold the `*_FALLBACK_RE` discriminators into the token-native scan/surface parser; the grammar already exists, so this is low-risk-class, high-EV. (NB: older sections of this doc and some code comments still say "PEG3"/`peg3.py`; that parser has since been **decomposed/renamed into `johtolause/`** — read every "PEG3" reference as "the canonical surface parser".)
+2. **`normalize.py` fallback cluster → the canonical johtolause grammar** (MOVE, high) — fold the `*_FALLBACK_RE` discriminators into the token-native scan/surface parser; the grammar already exists, so this is low-risk-class, high-EV. (NB: the canonical surface parser is `johtolause/surface_parse.py`; the historical `peg3.py` predecessor was decomposed/renamed. The sanctioned §2.5 grammar-shadow retirement plan that will eventually delete `surface_parse.py` is documented in `notes/FI_JOHTOLAUSE_GRAMMAR_RETIREMENT_PLAN.md`.)
 3. **`johtolause_supplements` productions** (MOVE, high) — extract the `muutetaan`/`lisätään` verb-zone segmentation as a named policy; keep witnesses.
 4. **`citation_routing` amendment-title grammar** (MOVE, med) — one typed title recognizer vs 5+ variants; gates corpus routing.
 5. **`vts.py` repeal-ordering + cut-point + name-exclusion** (EXTRACT/MOVE, med) — named recognizer over typed clause spans.
@@ -133,10 +133,10 @@ The repo already has the right primitives: `core/regex_recognition_coverage.py` 
    `ee_instruction_waist.py` already defines the surface; route
    parser facts → EEParsedInstruction/EEInstructionWaist → LegalOperation.
    Decide later whether EEParsedInstruction converges with core ClauseSurface.
-8. **Finland `normalize.py` fallback cluster → fold into existing PEG3.** Code
-   docstrings literally say "FALLBACK: remove when PEG3 handles X"; the
-   canonical surface parser (`surface_parse.py`) existed and superseded
-   `peg3.py`. Lowest-risk recognizer win. (Census rank 1.)
+8. **Finland `normalize.py` fallback cluster → fold into existing `johtolause/surface_parse.py`.** Code
+   docstrings historically said "FALLBACK: remove when PEG3 handles X"; the
+   canonical surface parser (`johtolause/surface_parse.py`) superseded the
+   deleted `peg3.py`. Lowest-risk recognizer win. (Census rank 1.)
 9. **EU `ops_parser.py` → rebuild only when EU is prioritized.** Explicit
    placeholder; leave as compatibility parser.
 
@@ -200,8 +200,8 @@ keep in mind when touching either: FI `_expand_sec_range`/`_expand_sec_item`/
 ```
 
 Plus the low-risk early win available now: fold Finland `normalize.py` fallbacks
-into PEG3 (step 8-class work, but cleanest because the PEG exists and the code
-asks for it).
+into `johtolause/surface_parse.py` (ranked-target-8-class work, but cleanest
+because the canonical surface parser exists and the code asks for it).
 
 ## Parser-smell inventory as standing sensor (step 10)
 

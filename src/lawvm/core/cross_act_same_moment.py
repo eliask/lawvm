@@ -419,7 +419,7 @@ def _validate_finder_kind_prefix(prefix: str) -> None:
     cross-frontend collisions (e.g. ``"_same_moment_..."`` finding kinds shared
     across frontends defeats the per-frontend audit-trail invariant).
     """
-    # lawvm-regex: prefilter schema validation for frontend finding prefixes; mints no legal state
+    # lawvm-regex: owning_parser lexical docstring-shape validation; no op minted; no statute text read.
     if not prefix or not _PREFIX_RE.match(str(prefix)):
         raise ValueError(
             f"finder_kind_prefix must be a non-empty lowercase ASCII identifier "

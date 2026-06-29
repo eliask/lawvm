@@ -423,14 +423,60 @@ def run_annotation_independence_census(
             if cheap_signal:
                 try:
                     body_text = decode_body_text(xb)
-                except Exception:
+                except Exception as exc:
+                    # Unexpected body-decode failure: previously set
+                    # ``body_text = None`` silently swallowed; now route
+                    # through ``named_swallow`` so a typed Finding is logged
+                    # at WARNING with the statute id + source name as
+                    # ``clause_text`` (AGENTS.md §1.10 — never silent).
+                    #
+                    # log_emitter sanctioned (iter3 W2 §3.2): dev-tooling
+                    # census run (annotation-independence census loop) — no
+                    # per-statute findings_out accumulator in scope at this
+                    # analysis phase; per ``core/named_swallow.py`` docstring's
+                    # IO/utility-boundary sanctioned use, the swallow stays on
+                    # log_emitter (stderr WARNING).
+                    from lawvm.core.named_swallow import build_named_swallow_finding, log_emitter
+
+                    log_emitter()(
+                        build_named_swallow_finding(
+                            rule_id="fi_annotation_independence_census_decode_body_text",
+                            exception=exc,
+                            op_id=None,
+                            clause_text=f"sid={sid} src={src_name}",
+                            jurisdiction="fi",
+                            source_artifact=sid,
+                        )
+                    )
                     body_text = None
 
             try:
                 per_family = census_one_statute(
                     xb, sid, body_text=body_text
                 )
-            except Exception:
+            except Exception as exc:
+                # Unexpected census-one-statute failure: previously
+                # ``continue`` silently swallowed; now route through
+                # ``named_swallow`` so a typed Finding is logged at WARNING
+                # with the statute id + source name as ``clause_text``
+                # (AGENTS.md §1.10 — never silent).
+                #
+                # log_emitter sanctioned (iter3 W2 §3.2): same dev-tooling
+                # census boundary as the body-decode swallow above — no
+                # per-statute findings_out accumulator in scope; see the prior
+                # sanctioned-use note.
+                from lawvm.core.named_swallow import build_named_swallow_finding, log_emitter
+
+                log_emitter()(
+                    build_named_swallow_finding(
+                        rule_id="fi_annotation_independence_census_one_statute",
+                        exception=exc,
+                        op_id=None,
+                        clause_text=f"sid={sid} src={src_name}",
+                        jurisdiction="fi",
+                        source_artifact=sid,
+                    )
+                )
                 continue
 
             for fam, fd in per_family.items():

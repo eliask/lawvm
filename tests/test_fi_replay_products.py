@@ -4552,30 +4552,33 @@ def test_replay_xml_1951_83_ignores_self_relabel_bridge_from_1982_601() -> None:
 
 
 def test_replay_xml_recycle_rename_kumotaan_muutetaan_preserves_new_section_2010_128() -> None:
-    """Kumotaan section plus later muutetaan section must preserve new content.
+    """§44 amended-only (muutetaan) after Finlex corrigendum 2019/1330 #0.
 
-    The corrected 2019/1330 source repeals §43 and separately changes §44.
-    Since §44 is not in the kumotaan clause, preserving it must not depend on
-    the recycle guard firing.
+    Finlex corrigendum SK 2019/1330 #0 corrected the johtolause of amendment
+    2019/1330: §44 was NOT in the kumotaan list (corrected to "kumotaan 43 §,
+    sekä" from the mis-printed "kumotaan 43 ja 44 §"). After applying the
+    retry-overlay, §44 survives via muutetaan alone — no recycle guard fires.
 
     Regression for the bug where _rewrite_kumotaan_snapshot_replaces_to_repeal
     incorrectly converted the new §44 to a REPEAL, leaving it absent from
-    the materialized product.
+    the materialized product. The pure-repeal clause reconstruction for §43
+    must also fire as a typed finding (alt-repo assertion).
     """
     replay = pinned_replay("2010/128", mode="official_consolidation", quiet=True)
-
-    # §43 was genuinely repealed by 2019/1330 (not in muutetaan)
     assert replay.materialized_state.find_section("43") is None, "§43 should be repealed"
 
     # §44 was introduced via muutetaan and must not be converted to a repeal.
     sec44 = replay.materialized_state.find_section("44")
-    assert sec44 is not None, "§44 (new Ahvenanmaa content) must be present after recycle fix"
+    assert sec44 is not None, "§44 must be present (amended via muutetaan only)"
     recycle_findings = [
-        finding
-        for finding in replay.findings
-        if finding.kind == "PARSE.REPEAL_RECYCLE_GUARD" and finding.source_statute == "2019/1330"
+        finding for finding in replay.findings
+        if finding.kind == "PARSE.REPEAL_RECYCLE_GUARD"
+        and finding.source_statute == "2019/1330"
     ]
-    assert not recycle_findings
+    assert not recycle_findings, (
+        "REPEAL_RECYCLE_GUARD should not fire after corrigendum "
+        "removed §44 from the kumotaan list"
+    )
     pure_repeal_findings = [
         finding
         for finding in replay.findings

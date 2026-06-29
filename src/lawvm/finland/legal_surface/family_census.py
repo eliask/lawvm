@@ -224,7 +224,29 @@ def run_family_census(
             continue
         try:
             body = decode_body_text(xb)
-        except Exception:
+        except Exception as exc:
+            # Unexpected body-decode failure: previously ``continue`` silently
+            # swallowed; now route through ``named_swallow`` so a typed Finding
+            # is logged at WARNING with the statute id + family as ``clause_text``
+            # (AGENTS.md §1.10 — never silent).
+            #
+            # log_emitter sanctioned (iter3 W2 §3.2): dev-tooling census run
+            # (``run_family_census`` analysis loop) — no per-statute
+            # findings_out accumulator in scope at this loop phase; per
+            # ``core/named_swallow.py`` docstring's IO/utility-boundary
+            # sanctioned use, the swallow stays on log_emitter (stderr WARNING).
+            from lawvm.core.named_swallow import build_named_swallow_finding, log_emitter
+
+            log_emitter()(
+                build_named_swallow_finding(
+                    rule_id="fi_family_census_decode_body_text",
+                    exception=exc,
+                    op_id=None,
+                    clause_text=f"sid={sid} family={family}",
+                    jurisdiction="fi",
+                    source_artifact=sid,
+                )
+            )
             continue
         if not body:
             continue
@@ -232,7 +254,27 @@ def run_family_census(
 
         try:
             units = list(segment_selector(sid, body))
-        except Exception:
+        except Exception as exc:
+            # Unexpected segment-selector failure: previously ``continue``
+            # silently swallowed; now route through ``named_swallow`` so a
+            # typed Finding is logged at WARNING with the statute id + family
+            # + body length as ``clause_text`` (AGENTS.md §1.10 — never silent).
+            #
+            # log_emitter sanctioned (iter3 W2 §3.2): same dev-tooling census
+            # boundary as the body-decode swallow above — no per-statute
+            # findings_out accumulator in scope; see the prior sanctioned-use note.
+            from lawvm.core.named_swallow import build_named_swallow_finding, log_emitter
+
+            log_emitter()(
+                build_named_swallow_finding(
+                    rule_id="fi_family_census_segment_selector",
+                    exception=exc,
+                    op_id=None,
+                    clause_text=f"sid={sid} family={family} body_len={len(body)}",
+                    jurisdiction="fi",
+                    source_artifact=sid,
+                )
+            )
             continue
 
         # Per-statute oracle context: families whose oracle needs the WHOLE
@@ -241,7 +283,29 @@ def run_family_census(
         if oracle_prepare_fn is not None and units:
             try:
                 oracle_ctx = oracle_prepare_fn(sid, body)
-            except Exception:
+            except Exception as exc:
+                # Unexpected oracle-context failure: previously set
+                # ``oracle_ctx = None`` silently swallowed; now route through
+                # ``named_swallow`` so a typed Finding is logged at WARNING
+                # with the statute id + family as ``clause_text``
+                # (AGENTS.md §1.10 — never silent).
+                #
+                # log_emitter sanctioned (iter3 W2 §3.2): same dev-tooling
+                # census boundary as the body-decode swallow above — no per-
+                # statute findings_out accumulator in scope; see the prior
+                # sanctioned-use note.
+                from lawvm.core.named_swallow import build_named_swallow_finding, log_emitter
+
+                log_emitter()(
+                    build_named_swallow_finding(
+                        rule_id="fi_family_census_oracle_prepare_fn",
+                        exception=exc,
+                        op_id=None,
+                        clause_text=f"sid={sid} family={family}",
+                        jurisdiction="fi",
+                        source_artifact=sid,
+                    )
+                )
                 oracle_ctx = None
 
         for unit in units:

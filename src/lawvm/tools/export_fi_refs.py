@@ -13,12 +13,14 @@ Profile behavior (§6 of UNIFIED_MANUAL_CLAIMS_DESIGN.md v2.2):
 
   strict_with_attested_claims:
     - Deterministic rows + INLINE_STATUTE_RESOLUTION claims that are
-      human-reviewed + span/entailment validated.
+      verified_manual (provenance-attested manual review) + span/entailment
+      validated.
     - NULL target_statute_id_str slots filled from accepted claims.
     - AmbiguousClaimSet findings emitted; ambiguous rows NOT emitted.
 
   non_strict_with_claims:
-    - As strict but entailment-verified LLM proposals admissible without review.
+    - As strict but entailment-verified LLM proposals admissible without
+      manual verification.
 
 §14 adversary finding (LOAD-BEARING):
   - Output filename encodes profile: fi_refs__{profile}.parquet.
@@ -82,8 +84,8 @@ def _attach_profile_metadata(table: Any, profile: ProfileTag) -> Any:
 # do NOT claim a human verified the row or that replay is authorized:
 #   - replay_authorized = False   (no execution authority; the legal_surface_graph
 #                                  plane already enforces this and RAISES on a True)
-#   - review_status     = PROPOSED   (machine-produced, NOT human_reviewed)
-#   - validator_status  = UNVALIDATED (no span/entailment human validation)
+#   - review_status     = PROPOSED   (machine-produced, NOT verified_manual)
+#   - validator_status  = UNVALIDATED (no span/entailment manual validation)
 # The decision-driven NULL-slot-fill path (_apply_null_slot_fills) legitimately
 # overwrites these from the composer-derived ClaimCompositionDecision; only the
 # author-set deterministic default lived here, and it was an authority leak.
