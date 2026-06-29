@@ -530,6 +530,11 @@ def _extract_kumotaan_subsection_refs(johto: str) -> Dict[str, List[str]]:
 
     full_body = kumotaan_match.group(1)
     kumotaan_text = _strip_source_provenance_tail(full_body)
+    # Historical Finlex XML can preserve line-break hyphenation inside the unit
+    # word itself: ``mo- mentti``. Normalize only that provision-unit artifact
+    # before recognizing typed subsection targets.
+    # lawvm-regex: owning_parser source-hyphenation normalizer for the momentti unit token
+    kumotaan_text = re.sub(r'\bmo\s*-\s*mentti\b', 'momentti', kumotaan_text)
 
     # lawvm-regex: prefilter multi-statute GUARD; counts distinct statute ids, not a producer
     statute_refs = re.findall(r'\d+/\d{2,4}', kumotaan_text)

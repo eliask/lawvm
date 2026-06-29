@@ -35,6 +35,7 @@ from lawvm.finland.compile_amendment import compile_amendment_ops
 from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector
 from lawvm.finland.corpus import get_corpus
 from lawvm.finland.metadata import get_johtolause
+from lawvm.finland.kumotaan import _extract_kumotaan_subsection_refs
 from lawvm.finland.kumotaan_replay import (
     FI_RECOVERY_PURE_KUMOTAAN_ITEM_REPEAL_RULE_ID,
     FI_RECOVERY_PURE_KUMOTAAN_SUBSECTION_REPEAL_RULE_ID,
@@ -1382,6 +1383,55 @@ def test_pure_kumotaan_subsection_injection_overrides_stale_snapshot_carry() -> 
     assert injected.witness_rule_id == FI_RECOVERY_PURE_KUMOTAAN_SUBSECTION_REPEAL_RULE_ID
     assert injected.payload is not None
     assert injected.payload.attrs.get("lawvm_repeal_placeholder") == "1"
+
+
+def test_extract_kumotaan_subsection_refs_normalizes_split_momentti_unit() -> None:
+    johto = (
+        "kumotaan työttömyysturvalain (602/84) 16 §:n 6 mo- mentti, "
+        "26 §:n 3 momentti ja 48 §:n 4 momentti, muutetaan 12 §"
+    )
+
+    assert _extract_kumotaan_subsection_refs(johto) == {
+        "16": ["6"],
+        "26": ["3"],
+        "48": ["4"],
+    }
+
+
+def test_replay_xml_1984_602_pure_kumotaan_split_momentti_repeals_section_16_subsection_6() -> None:
+    """1996/666 writes ``16 §:n 6 mo- mentti``; the split unit still repeals §16(6)."""
+    lo_ops: list[LegalOperation] = []
+    replay = replay_xml_for_test(
+        "1984/602",
+        mode="official_consolidation",
+        quiet=True,
+        lo_ops_out=lo_ops,
+    )
+
+    pure_ops = [
+        op
+        for op in lo_ops
+        if op.source is not None
+        and op.source.statute_id == "1996/666"
+        and op.witness_rule_id == FI_RECOVERY_PURE_KUMOTAAN_SUBSECTION_REPEAL_RULE_ID
+    ]
+    assert {op.target for op in pure_ops} >= {
+        LegalAddress(path=(("chapter", "4"), ("section", "16"), ("subsection", "6"))),
+        LegalAddress(path=(("chapter", "6"), ("section", "26"), ("subsection", "3"))),
+    }
+
+    section = replay.products.materialized_state.find_section("16", "4")
+    assert section is not None
+    subsection = next(child for child in section.children if child.kind is IRNodeKind.SUBSECTION and child.label == "6")
+    assert subsection.attrs.get("lawvm_repeal_placeholder") == "1"
+    assert "Osa-aikaeläkettä saavan henkilön" not in " ".join(irnode_to_text(subsection).split())
+    assert any(
+        finding.kind == "PARSE.PURE_REPEAL_CLAUSE_RECONSTRUCTED"
+        and finding.source_statute == "1996/666"
+        and finding.detail.get("rule_id") == FI_RECOVERY_PURE_KUMOTAAN_SUBSECTION_REPEAL_RULE_ID
+        and finding.detail.get("target_norm") == "16:6"
+        for finding in replay.findings
+    )
 
 
 def test_replay_xml_2007_829_pure_kumotaan_subsection_repeals_section_36_subsection_2() -> None:
