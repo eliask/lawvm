@@ -88,7 +88,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 1,1993/1385,suspect,oracle_suspect,1999/76 eff 1999-02-03 > cutoff 1999-01-29,
 1,1993/1388,suspect,oracle_suspect,1999/112 eff 1999-02-10 > cutoff 1999-02-04,
 1,1993/1403,suspect,oracle_suspect,1995/814 eff 1995-06-01 > cutoff 1995-05-18,
-1,1993/1507,core,,,OK
+1,1993/1507,suspect,oracle_suspect,structural miss fixed; remaining current residual is section 3 virka-avusta/virka avusta editorial spacing only,OK
 1,1993/1643,suspect,oracle_suspect,1994/877 eff 1994-10-17 > cutoff 1994-10-07,
 1,1993/358,suspect,oracle_suspect,1996/379 eff 1996-06-10 > cutoff 1996-06-07,
 1,1993/452,suspect,oracle_suspect,1995/1102 eff 1995-09-06 > cutoff 1995-08-30,
@@ -2136,7 +2136,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 4,2015/327,core,,,OK
 4,2015/430,core,,,OK
 4,2015/523,core,,,OK
-4,2015/549,core,,,OK
+4,2015/549,suspect,oracle_suspect,2022/529 eff 2022-09-01 > cutoff 2022-06-30; current explain reports all sections at or above threshold,OK
 4,2015/80,suspect,oracle_suspect,2021/874 eff 2021-10-18 > cutoff 2021-10-14,
 4,2015/817,suspect,oracle_suspect,2024/740 eff 2025-01-01 > cutoff 2024-12-05,
 4,2016/1134,core,,,OK
@@ -3492,7 +3492,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 47,1998/532,suspect,oracle_suspect,2024/706 eff 2025-01-01 > cutoff 2024-12-05,
 48,2014/917,suspect,oracle_suspect,2025/1150 eff 2026-01-01 > cutoff 2025-12-05,
 49,1997/354,suspect,oracle_suspect,2025/213 eff 2026-01-01 > cutoff 2025-05-06,
-49,2012/916,core,,,OK
+49,2012/916,suspect,oracle_suspect,2024/443 eff 2024-09-01 > cutoff 2024-06-28; oracle-check classifies residuals as ORACLE_STALE/SOURCE_PATHOLOGY/EDITORIAL_CONVENTION,OK
 50,1979/1062,suspect,oracle_suspect,2007/870 eff 2007-10-15 > cutoff 2007-10-05,
 50,1992/1164,notruth,no_truth_from_run,,NO_TRUTH
 50,1994/1482,suspect,oracle_suspect,2019/1038 eff 2020-11-01 > cutoff 2020-10-22,
