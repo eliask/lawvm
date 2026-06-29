@@ -99,6 +99,7 @@ from lawvm.uk_legislation.table_sources import (
     address_to_citation,
 )
 from lawvm.core.quirks_disposition import QuirksDisposition
+from lawvm.uk_legislation.strict_profile import active_uk_strict_profile
 
 
 _UK_EFFECT_FEE_TARGET_REFINEMENT_FAILED_RULE_ID = "uk_effect_fee_target_refinement_failed"
@@ -176,6 +177,24 @@ def _savings_qualified_structural_mutation_blocks_lowering(
     references that point at sections, regulations, or other non-schedule
     provisions are treated as ordinary savings clauses and the repeal is left
     to proceed.
+
+    STRICT-PROFILE GATE (Tier C PR2):
+    When ``LAWVM_UK_STRICT_PROFILE`` env var is set (the active strict-profile
+    carrier is loaded) AND ``allows_uk_savings_qualified_repeal=True``, the
+    default-blocking shape is CONDITIONALLY LIFTED — the strict-profile
+    explicitly authorizes the repeal to proceed past the savings-qualification
+    gate.
+    The lift is AUDITED: a non-blocking ``uk_strict_profile_lifted_savings_
+    qualified_repeal`` observation is appended alongside any blocking-rejection
+    receipt that would have fired under the pre-strict gate. This preserves
+    the §0 evidence ledger — the audit-event records WHO authorized the lift
+    + why — the called-out carrier identity + the affected savings-reference
+    + the recovery-pattern tag — not ad-hoc silent folklore.
+
+    The combination gate (``profile is None or not allows_X: block``)
+    mirrors the inverse-of-FI pattern: UK's default IS block; strict
+    profile provides the explicit lift-gate for the verified-allowed
+    case. Strict-not-allowed preserves the block.
     """
     if action != "repeal":
         return False
@@ -184,6 +203,44 @@ def _savings_qualified_structural_mutation_blocks_lowering(
         for ref in effect.savings_references
     ):
         return False
+    # Tier C PR2 strict-profile gate: when the active strict-profile is loaded
+    # AND explicitly allows savings-qualified-repeal recovery, LIFT the default
+    # blocking shape. When strict-profile is None (default, no env var set)
+    # or the gate is False, the existing blocking path runs unchanged.
+    uk_strict_profile = active_uk_strict_profile()
+    if (
+        uk_strict_profile is not None
+        and uk_strict_profile.allows_uk_savings_qualified_repeal
+    ):
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id="uk_strict_profile_lifted_savings_qualified_repeal",
+            family="savings_qualification",
+            reason_code="strict_profile_authorized_savings_qualified_repeal",
+            reason=(
+                "Strict profile loaded with "
+                "allows_uk_savings_qualified_repeal=True; the savings-"
+                "qualified whole-target repeal lifting the default-"
+                "blocking shape is explicitly authorized by the strict "
+                "profile carrier — NOT silently bypassed. The audit-event "
+                "records the authorization path so the §0 evidence ledger "
+                "remains readable."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "strict_profile_name": uk_strict_profile.core_profile.name,
+                "savings_references": effect.savings_references,
+                "lowering_action": action,
+                "lifted_rejection_rule_id": (
+                    UK_EFFECT_SAVINGS_REFERENCES_QUALIFIED_REPEAL_BLOCKED_RULE_ID
+                ),
+                "strict_disposition": "proceed",
+                "quirks_disposition": QuirksDisposition.APPLY,
+            },
+        )
+        return False  # Lift the block — let the repeal proceed to lowering.
     _append_uk_effect_lowering_rejection(
         lowering_rejections_out,
         rule_id=UK_EFFECT_SAVINGS_REFERENCES_QUALIFIED_REPEAL_BLOCKED_RULE_ID,
