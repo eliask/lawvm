@@ -99,13 +99,13 @@ class TestIsParagraphLevelKumottuStub:
         )
         assert _is_paragraph_level_kumottu_stub(para) is False
 
-    def test_no_versioned_eid_no_match(self) -> None:
-        """A paragraph with a plain (non-versioned) eId is not flagged."""
+    def test_plain_paragraph_eid_match(self) -> None:
+        """A plain paragraph eId can carry an italic Finlex repeal stub."""
         para = _make_repeal_stub(
             eid="chp_1__sec_3__subsec_1__para_2",  # no vYYYYMMDD suffix
             text="2 kohta on kumottu A:lla 25.11.2021/1030.",
         )
-        assert _is_paragraph_level_kumottu_stub(para) is False
+        assert _is_paragraph_level_kumottu_stub(para) is True
 
     def test_no_italic_no_match(self) -> None:
         """The repeal text without <i> wrapper is not matched."""

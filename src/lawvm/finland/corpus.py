@@ -17,8 +17,10 @@ from typing import Dict, List, Optional, Protocol, Set, Tuple, cast
 
 import lxml.etree as etree
 
+from lawvm.core.ir import LegalOperation
 from lawvm.core.named_swallow import log_emitter, swallow_call
 from lawvm.core.phase_result import Finding
+from lawvm.core.semantic_types import StructuralAction
 from lawvm.core.xml_parse import parse_corpus_xml
 from lawvm.corpus_store import get_corpus_store, CorpusStore, oracle_url, statute_url
 from lawvm.finland.consolidated_artifacts import (
@@ -491,6 +493,10 @@ def get_consolidated_oracle_reflected_source_vts_children(
 
 _FINLEX_ORIGINAL_VERSION_ATTR = "{http://data.finlex.fi/schema/finlex}originalVersion"
 _FINLEX_VERSIONED_EID_SUFFIX_RE = re.compile(r"v(?P<version>\d{8})$")
+_FINLEX_CHAPTER_EID_RE = re.compile(r"(?:^|__)chp_(?P<label>[^_]+)")
+_FINLEX_SECTION_EID_RE = re.compile(r"(?:^|__)sec_(?P<label>[^_]+?)(?:v\d{8})?$")
+_FINLEX_CHAPTER_NUM_RE = re.compile(r"^\s*(?P<label>\d+[a-z]?)\s*luku\b", re.IGNORECASE)
+_FINLEX_SECTION_NUM_RE = re.compile(r"^\s*(?P<label>\d+[a-z]?)\s*§", re.IGNORECASE)
 
 
 def _oracle_text_mentions_future_commencement(text: str) -> bool:
@@ -508,6 +514,30 @@ def _oracle_text_has_full_section_repeal_notice(text: str) -> bool:
         if idx >= 1 and tokens[idx - 1].isdigit():
             return True
         if idx >= 2 and tokens[idx - 2].isdigit() and tokens[idx - 1].isalpha() and len(tokens[idx - 1]) == 1:
+            return True
+    return False
+
+
+def _oracle_text_has_full_chapter_repeal_notice(text: str) -> bool:
+    tokens = text.casefold().split()
+    for idx, token in enumerate(tokens):
+        if token != "luku" or idx + 2 >= len(tokens):
+            continue
+        if tokens[idx + 1] != "on" or tokens[idx + 2] != "kumottu":
+            continue
+        if idx >= 1 and tokens[idx - 1].isdigit():
+            return True
+    return False
+
+
+def _oracle_text_has_full_subsection_repeal_notice(text: str) -> bool:
+    tokens = text.casefold().split()
+    for idx, token in enumerate(tokens):
+        if token != "momentti" or idx + 2 >= len(tokens):
+            continue
+        if tokens[idx + 1] != "on" or tokens[idx + 2] != "kumottu":
+            continue
+        if idx >= 1 and tokens[idx - 1].isdigit():
             return True
     return False
 
@@ -539,6 +569,109 @@ def _finlex_eid_version_to_statute_id(el: etree._Element) -> str:
 def _finlex_el_has_versioned_eid(el: etree._Element) -> bool:
     eid = str(el.get("eId") or "").strip()
     return bool(eid and _FINLEX_VERSIONED_EID_SUFFIX_RE.search(eid))
+
+
+def _finlex_num_text(el: etree._Element) -> str:
+    for child in el:
+        if etree.QName(child).localname == "num":
+            return " ".join("".join(str(part) for part in child.itertext()).split())
+    return ""
+
+
+def _finlex_chapter_label(el: etree._Element) -> str:
+    num_match = _FINLEX_CHAPTER_NUM_RE.match(_finlex_num_text(el))
+    if num_match is not None:
+        return num_match.group("label")
+    eid_match = _FINLEX_CHAPTER_EID_RE.search(str(el.get("eId") or ""))
+    return eid_match.group("label") if eid_match is not None else ""
+
+
+def _finlex_section_label(el: etree._Element) -> str:
+    num_match = _FINLEX_SECTION_NUM_RE.match(_finlex_num_text(el))
+    if num_match is not None:
+        return num_match.group("label")
+    eid_match = _FINLEX_SECTION_EID_RE.search(str(el.get("eId") or ""))
+    return eid_match.group("label") if eid_match is not None else ""
+
+
+def _is_repeal_like_legal_operation(lo: LegalOperation) -> bool:
+    return lo.action is StructuralAction.REPEAL or (
+        lo.action is StructuralAction.REPLACE
+        and lo.payload is not None
+        and lo.payload.attrs.get("lawvm_repeal_placeholder") == "1"
+    )
+
+
+def get_consolidated_oracle_absent_repeal_target_versions(
+    statute_id: str,
+    legal_operations: tuple[LegalOperation, ...],
+    corpus: Optional[CorpusStore] = None,
+    selector: ConsolidatedArtifactSelector | None = None,
+) -> set[str]:
+    """Return source ids whose replay repeal target is absent from the oracle body."""
+    if corpus is None:
+        corpus = _get_corpus_store()
+    oracle_bytes = get_ground_truth_bytes(statute_id, corpus=corpus, selector=selector)
+    if oracle_bytes is None:
+        return set()
+    try:
+        tree = parse_corpus_xml(oracle_bytes)
+    except etree.XMLSyntaxError:
+        return set()
+
+    present_chapters: set[str] = set()
+    chapter_repeal_shell_sources: set[tuple[str, str]] = set()
+    present_sections: set[tuple[str, str]] = set()
+    for chapter_el in tree.findall(".//{*}chapter"):
+        chapter_label = _finlex_chapter_label(chapter_el)
+        if chapter_label:
+            present_chapters.add(chapter_label)
+        chapter_text = " ".join("".join(str(part) for part in chapter_el.itertext()).split())
+        if (
+            chapter_label
+            and not chapter_el.findall(".//{*}section")
+            and _oracle_text_has_full_chapter_repeal_notice(chapter_text)
+        ):
+            source_id = _finlex_eid_version_to_statute_id(chapter_el)
+            if not source_id:
+                original_version = str(chapter_el.get(_FINLEX_ORIGINAL_VERSION_ATTR) or "")
+                source_id = _finlex_original_version_to_statute_id(original_version)
+            if source_id:
+                chapter_repeal_shell_sources.add((chapter_label, source_id))
+    for section_el in tree.findall(".//{*}section"):
+        section_label = _finlex_section_label(section_el)
+        if not section_label:
+            continue
+        chapter_label = ""
+        for ancestor in section_el.iterancestors():
+            if etree.QName(ancestor).localname != "chapter":
+                continue
+            chapter_label = _finlex_chapter_label(ancestor)
+            break
+        present_sections.add((chapter_label, section_label))
+
+    absent_versions: set[str] = set()
+    for lo in legal_operations:
+        if lo.source is None or not lo.source.statute_id or not _is_repeal_like_legal_operation(lo):
+            continue
+        if not lo.target.path:
+            continue
+        target_kind, target_label = lo.target.path[-1]
+        if target_kind == "chapter":
+            if target_label not in present_chapters or (
+                target_label,
+                lo.source.statute_id,
+            ) in chapter_repeal_shell_sources:
+                absent_versions.add(lo.source.statute_id)
+            continue
+        if target_kind == "section":
+            chapter_label = next((label for kind, label in lo.target.path if kind == "chapter"), "")
+            if chapter_label:
+                if (chapter_label, target_label) not in present_sections:
+                    absent_versions.add(lo.source.statute_id)
+            elif not any(label == target_label for _chapter, label in present_sections):
+                absent_versions.add(lo.source.statute_id)
+    return absent_versions
 
 
 def get_consolidated_oracle_reflected_section_original_versions(
@@ -590,11 +723,15 @@ def get_consolidated_oracle_reflected_section_original_versions(
             statute_id_from_version = _finlex_original_version_to_statute_id(original_version)
             if statute_id_from_version:
                 reflected.add(statute_id_from_version)
-        if _finlex_el_has_versioned_eid(section_el):
-            for provision_el in section_el.findall(".//{*}subsection"):
-                statute_id_from_eid = _finlex_eid_version_to_statute_id(provision_el)
-                if statute_id_from_eid:
-                    reflected.add(statute_id_from_eid)
+        for provision_el in section_el.findall(".//{*}subsection"):
+            statute_id_from_eid = _finlex_eid_version_to_statute_id(provision_el)
+            if not statute_id_from_eid:
+                continue
+            provision_text = " ".join("".join(str(part) for part in provision_el.itertext()).split())
+            if _finlex_el_has_versioned_eid(section_el) or _oracle_text_has_full_subsection_repeal_notice(
+                provision_text
+            ):
+                reflected.add(statute_id_from_eid)
     return reflected
 
 
