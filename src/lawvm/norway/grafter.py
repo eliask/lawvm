@@ -4535,15 +4535,80 @@ def no_replay_write_receipts(
     return current, tuple(receipts)
 
 
-def open_lovdata_archive(tar_bz2_path: str) -> Generator[Tuple[str, bytes], None, None]:
+def _no_record_archive_skip(
+    rejected_items: list[RejectedItem[str]] | None,
+    *,
+    exc: ArchiveMemberTooLarge,
+) -> None:
+    """Append a typed ``RejectedItem`` receipt for an oversized archive member.
+
+    Local twin of :func:`lawvm.norway.sources._no_record_archive_skip` (kept
+    local to avoid a circular top-level import between ``norway.sources`` and
+    ``norway.grafter``; mirrors the precedent at
+    ``us_federal/import_plaw.py:63`` and ``tools/import_zip.py:95`` whose
+    ``_record_import_skip`` helpers are local-per-module too). When
+    ``rejected_items`` is ``None`` the prior structured stderr receipt via
+    :func:`log_archive_member_too_large` is preserved so the skip stays
+    greppable (the §1.8 minimum for destructuring consumers of
+    ``open_lovdata_archive`` / ``open_lovdata_amendment_archive`` whose
+    ``(id, bytes)`` yield shape cannot carry a typed rejection without
+    breaking unpacking). When ``rejected_items`` is a list, a typed
+    ``RejectedItem(item=member_name, reason=..., reason_code=..., blocking=False)``
+    is appended instead — the §1.8 contract surface upstream tooling reads.
+
+    Per AGENTS.md §1.10 the reason embeds the offending archive_path /
+    member_name / declared_size / cap_bytes so triage does not have to
+    re-run extraction to identify the rejected member (the companion
+    ``ArchiveMemberTooLargeDiagnostic.render_reason`` in
+    ``core/archive_safety.py`` omits these — this helper layers them on at
+    the §1.8 receipt surface).
+    """
+    if rejected_items is None:
+        log_archive_member_too_large(exc)
+        return
+    rejected_items.append(
+        RejectedItem(
+            item=exc.member_name,
+            reason=(
+                f"archive member {exc.member_name} from "
+                f"{exc.archive_path or '<archive>'} declares "
+                f"{exc.declared_size} bytes (cap {exc.cap_bytes}); "
+                "refusing to materialise into memory. Raise "
+                "LAWVM_MAX_ARCHIVE_MEMBER_BYTES to admit it, or trim "
+                "the source archive."
+            ),
+            reason_code=NO_ARCHIVE_MEMBER_TOO_LARGE_REASON_CODE,
+            blocking=False,
+        )
+    )
+
+
+# §1.8 typed-receipt reason_code for archive members that declare more bytes
+# than ``$LAWVM_MAX_ARCHIVE_MEMBER_BYTES``. Twin of
+# :data:`lawvm.norway.sources.NO_ARCHIVE_MEMBER_TOO_LARGE_REASON_CODE` — kept
+# local here to avoid a circular top-level import (sources.py imports from
+# grafter at module load). Both must agree byte-for-byte.
+NO_ARCHIVE_MEMBER_TOO_LARGE_REASON_CODE = "no_archive_member_too_large"
+
+
+def open_lovdata_archive(
+    tar_bz2_path: str,
+    *,
+    rejected_items: list[RejectedItem[str]] | None = None,
+) -> Generator[Tuple[str, bytes], None, None]:
     """Yield ``(statute_id, bytes)`` pairs from a Lovdata public tarball.
 
-    Members declaring more bytes than ``$LAWVM_MAX_ARCHIVE_MEMBER_BYTES``
-    are skipped with a structured stderr receipt
-    (:func:`lawvm.core.archive_safety.log_archive_member_too_large`) — the
-    generator's ``(id, bytes)`` signature cannot append to a rejected-items
-    accumulator without breaking the consumer protocol, so the typed
-    diagnostic is logged rather than silently dropped (AGENTS.md §1.8).
+    Members declaring more bytes than ``$LAWVM_MAX_ARCHIVE_MEMBER_BYTES`` are
+    skipped. When ``rejected_items`` is threaded, a typed ``RejectedItem``
+    receipt (``reason_code=no_archive_member_too_large``, ``blocking=False``)
+    is appended so the §1.8 conservation lane inspects the skip in the
+    accumulator surface (mirrors ``us_federal/import_plaw.py:212``). When no
+    sink is threaded, the prior structured stderr receipt via
+    :func:`log_archive_member_too_large` is preserved so the skip stays
+    greppable — the destructuring consumer protocol
+    (``for sid, html_bytes in open_lovdata_archive(...)``) is preserved either
+    way (pattern B sink-threading: the union ``(id, bytes) | RejectedItem``
+    yield would break the unpacking at out-of-scope call sites).
     """
     with tarfile.open(tar_bz2_path, "r:bz2") as tf:
         for member in tf.getmembers():
@@ -4557,18 +4622,25 @@ def open_lovdata_archive(tar_bz2_path: str) -> Generator[Tuple[str, bytes], None
                     tf, member, archive_path=Path(tar_bz2_path).name
                 )
             except ArchiveMemberTooLarge as exc:
-                log_archive_member_too_large(exc)
+                # §1.8 typed receipt (AGENTS.md §1.8) — see
+                # :func:`_no_record_archive_skip`.
+                _no_record_archive_skip(rejected_items, exc=exc)
                 continue
             if payload is None:
                 continue
             yield statute_id, payload
 
 
-def open_lovdata_amendment_archive(tar_bz2_path: str) -> Generator[Tuple[str, bytes], None, None]:
+def open_lovdata_amendment_archive(
+    tar_bz2_path: str,
+    *,
+    rejected_items: list[RejectedItem[str]] | None = None,
+) -> Generator[Tuple[str, bytes], None, None]:
     """Yield ``(source_id, bytes)`` pairs from a Lovtidend tarball.
 
-    Oversized members are skipped with a structured stderr receipt
-    (AGENTS.md §1.8) — see :func:`open_lovdata_archive`.
+    Oversized members are skipped with a typed ``RejectedItem`` receipt when
+    ``rejected_items`` is threaded (AGENTS.md §1.8) — see
+    :func:`open_lovdata_archive`.
     """
     with tarfile.open(tar_bz2_path, "r:bz2") as tf:
         for member in tf.getmembers():
@@ -4582,7 +4654,9 @@ def open_lovdata_amendment_archive(tar_bz2_path: str) -> Generator[Tuple[str, by
                     tf, member, archive_path=Path(tar_bz2_path).name
                 )
             except ArchiveMemberTooLarge as exc:
-                log_archive_member_too_large(exc)
+                # §1.8 typed receipt (AGENTS.md §1.8) — see
+                # :func:`_no_record_archive_skip`.
+                _no_record_archive_skip(rejected_items, exc=exc)
                 continue
             if payload is None:
                 continue

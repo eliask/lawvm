@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, List, Optional, Tuple
 
 from lawvm.core.diagnostic_records import diagnostic_detail
-from lawvm.core.filter_result import FilterResult
+from lawvm.core.filter_result import FilterResult, RejectedItem
 from lawvm.core.ir import IRStatute, LegalOperation
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.temporal_resolution import (
@@ -138,6 +138,23 @@ class NOReplayResult:
     adjudications: List[CompileAdjudication] = field(default_factory=list)
     n_ops: int = 0
     error: Optional[str] = None
+    # §1.8 typed receipts for archive members that declared more bytes than
+    # ``$LAWVM_MAX_ARCHIVE_MEMBER_BYTES`` and were skipped by the underlying
+    # Lovdata tarball loaders (``load_no_amendment_artifact_bytes`` /
+    # ``_iter_current_artifacts_from_dir`` / etc.). Populated by
+    # :func:`replay_no_to_pit` threading a sink into
+    # ``load_no_amendment_artifact_bytes`` — the production-lane fire-drill
+    # (§2.9 guard-liveness). Without this field the typed-receipt upgrade at
+    # the loader level exists but is unreachable from production: a guard
+    # that exists but is unreachable from the production lane is the §2.9
+    # worst-class silent failure. Receipt shape: ``RejectedItem[str]``
+    # where ``item`` is the rejected ``member_name`` and ``reason_code`` is
+    # ``no_archive_member_too_large``; ``blocking=False`` (the cap is
+    # operator-tunable; over-retention per §0). The companion §1.8 receipt
+    # for missing-source amendments stays in
+    # ``amendments_skipped_missing_source`` + ``adjudications`` (the prior
+    # surface, preserved).
+    archive_rejected_items: List[RejectedItem[str]] = field(default_factory=list)
     # Typed apply-result conservation receipt (AGENTS.md §1.8 + §2.9
     # guard-liveness). Populated when the production apply lane routes
     # through ``apply_no_ops_conserved``: partitions every input op into
@@ -334,7 +351,25 @@ def replay_no_to_pit(
             )
             continue
 
-        html_bytes = load_no_amendment_artifact_bytes(source_id, entry.archive, entry.member_name, data_dir)
+        # Thread the §1.8 typed-receipt sink (AGENTS.md §1.8) — when
+        # ``load_no_amendment_artifact_bytes`` skips an oversized archive
+        # member, the typed ``RejectedItem`` witness lands in
+        # ``result.archive_rejected_items`` (visible in the accumulator plane
+        # downstream tooling reads, not a stderr line that disappears). The
+        # ``None``-return branch below continues to surface the prior
+        # missing-source adjudication — these are complementary §1.8 receipts:
+        # the typed receipt explains WHY the bytes were unavailable
+        # (oversize cap), the adjudication records the replay-side consequence
+        # (amendment skipped). This is the §2.9 guard-liveness fix so the
+        # typed-receipt upgrade at the loader level is reachable from the
+        # production replay lane, not just from unit tests of the loader.
+        html_bytes = load_no_amendment_artifact_bytes(
+            source_id,
+            entry.archive,
+            entry.member_name,
+            data_dir,
+            rejected_items=result.archive_rejected_items,
+        )
         if html_bytes is None:
             result.amendments_skipped_missing_source.append(source_id)
             result.adjudications.append(

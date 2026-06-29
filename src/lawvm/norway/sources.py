@@ -29,6 +29,7 @@ from lawvm.core.archive_safety import (
     safe_tar_read,
 )
 from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.filter_result import RejectedItem
 from lawvm.core.ir_helpers import kind_str
 from lawvm.core.source_lane import SourceLaneAttempt, SourceLaneSelectionEvidence
 from lawvm.core.xml_parse import parse_corpus_xml
@@ -43,6 +44,67 @@ ARCHIVE_SPAN_RE = re.compile(r"^lovtidend-avd1-(\d{4})(?:-(\d{4}))?\.tar\.bz2$")
 _NO_CURRENT_LOCATOR_RE = re.compile(r"^no://lov/(?P<date>\d{4}-\d{2}-\d{2}-\d+)/current\.xml$")
 _NO_ORIGINAL_LOCATOR_RE = re.compile(r"^no://lov/(?P<date>\d{4}-\d{2}-\d{2}-\d+)/original\.lti\.xml$")
 _NO_AMENDMENT_LOCATOR_RE = re.compile(r"^no://lovtid/(?P<date>\d{4}-\d{2}-\d{2}-\d+)/amendment\.xml$")
+
+
+# §1.8 typed-receipt reason_code for archive members that declare more bytes
+# than ``$LAWVM_MAX_ARCHIVE_MEMBER_BYTES``. The receipt carries the rejected
+# member's ``member_name`` as ``item``, the four-field diagnostic on ``reason``,
+# and is non-blocking (the cap is operator-tunable; over-retention per §0 —
+# the loader treats the oversized member as absent and lets the caller
+# adjudicate the missing source). Mirrors the precedent at
+# ``us_federal/import_plaw.py:212-234`` and ``finland/he_acquisition.py:858-884``
+# where the typed skip is the §1.8 contract surface; the stderr receipt via
+# ``log_archive_member_too_large`` was a workaround for generators whose
+# ``(id, bytes)`` yield shape could not extend a ``RejectedItem`` list without
+# breaking the destructuring consumer protocol — pattern (B) sink-threading
+# threads the accumulator as an optional kwarg so destructuring stays intact.
+NO_ARCHIVE_MEMBER_TOO_LARGE_REASON_CODE = "no_archive_member_too_large"
+
+
+def _no_record_archive_skip(
+    rejected_items: list[RejectedItem[str]] | None,
+    *,
+    exc: ArchiveMemberTooLarge,
+) -> None:
+    """Append a typed ``RejectedItem`` receipt for an oversized archive member.
+
+    When ``rejected_items`` is ``None`` (caller did not thread a sink), the
+    prior structured stderr receipt via
+    :func:`log_archive_member_too_large` is preserved so the skip stays
+    greppable (the §1.8 minimum for out-of-scope destructuring consumers
+    whose signature cannot be widened here without breaking ``(id, bytes)``
+    unpacking). When ``rejected_items`` is a list, a typed
+    ``RejectedItem(item=member_name, reason=..., reason_code=..., blocking=False)``
+    is appended instead — the §1.8 contract surface upstream tooling reads,
+    not a stderr line that disappears. Mirrors the precedent at
+    ``us_federal/import_plaw.py:212`` and ``tools/import_zip.py:322``.
+
+    Per AGENTS.md §1.10 the reason embeds the offending archive_path /
+    member_name / declared_size / cap_bytes so triage does not have to
+    re-run extraction to identify the rejected member. The companion
+    ``ArchiveMemberTooLargeDiagnostic.render_reason`` in
+    ``core/archive_safety.py`` omits these (it lives below the
+    frontend/core boundary and cannot reference frontend-local accumulators);
+    this helper layers them on at the §1.8 receipt surface.
+    """
+    if rejected_items is None:
+        log_archive_member_too_large(exc)
+        return
+    rejected_items.append(
+        RejectedItem(
+            item=exc.member_name,
+            reason=(
+                f"archive member {exc.member_name} from "
+                f"{exc.archive_path or '<archive>'} declares "
+                f"{exc.declared_size} bytes (cap {exc.cap_bytes}); "
+                "refusing to materialise into memory. Raise "
+                "LAWVM_MAX_ARCHIVE_MEMBER_BYTES to admit it, or trim "
+                "the source archive."
+            ),
+            reason_code=NO_ARCHIVE_MEMBER_TOO_LARGE_REASON_CODE,
+            blocking=False,
+        )
+    )
 
 
 @dataclass(frozen=True)
@@ -387,7 +449,11 @@ def iter_lovtidend_archives(data_dir: Path) -> list[Path]:
     return [path for _span, path in archives]
 
 
-def _iter_current_artifacts_from_dir(data_dir: Path) -> Iterator[NOLocatedArtifact]:
+def _iter_current_artifacts_from_dir(
+    data_dir: Path,
+    *,
+    rejected_items: list[RejectedItem[str]] | None = None,
+) -> Iterator[NOLocatedArtifact]:
     current_archive = data_dir / "gjeldende-lover.tar.bz2"
     if not current_archive.exists():
         return
@@ -403,11 +469,11 @@ def _iter_current_artifacts_from_dir(data_dir: Path) -> Iterator[NOLocatedArtifa
                     tf, member, archive_path=current_archive.name
                 )
             except ArchiveMemberTooLarge as exc:
-                # Conserved as a structured stderr receipt (AGENTS.md §1.8):
-                # the generators yield tuples / NOLocatedArtifact and have no
-                # rejected-items accumulator to extend, so the typed
-                # diagnostic is logged rather than dropped.
-                log_archive_member_too_large(exc)
+                # §1.8 typed receipt (AGENTS.md §1.8): the helper appends a
+                # ``RejectedItem`` to ``rejected_items`` when a sink is
+                # threaded; otherwise it falls back to the structured stderr
+                # receipt so the skip stays greppable. Never silently dropped.
+                _no_record_archive_skip(rejected_items, exc=exc)
                 continue
             if payload is None:
                 continue
@@ -422,6 +488,8 @@ def _iter_current_artifacts_from_dir(data_dir: Path) -> Iterator[NOLocatedArtifa
 
 def _iter_lovtidend_members_from_dir(
     data_dir: Path,
+    *,
+    rejected_items: list[RejectedItem[str]] | None = None,
 ) -> Iterator[tuple[str | None, str | None, str, str, bytes]]:
     for archive_path in iter_lovtidend_archives(data_dir):
         with tarfile.open(archive_path, "r:bz2") as tf:
@@ -433,10 +501,11 @@ def _iter_lovtidend_members_from_dir(
                         tf, member, archive_path=archive_path.name
                     )
                 except ArchiveMemberTooLarge as exc:
-                    # Generator without a rejected-items accumulator: log the
-                    # typed receipt to stderr (AGENTS.md §1.8 — the skip must
-                    # stay visible, never silent).
-                    log_archive_member_too_large(exc)
+                    # §1.8 typed receipt (AGENTS.md §1.8) — see
+                    # :func:`_no_record_archive_skip`. Falls back to the
+                    # structured stderr receipt when the caller did not
+                    # thread a sink.
+                    _no_record_archive_skip(rejected_items, exc=exc)
                     continue
                 if payload is None:
                     continue
@@ -492,7 +561,11 @@ def iter_no_unmapped_lovtidend_xml_members(source_path: Path | None = None) -> I
         )
 
 
-def iter_no_unmapped_current_xml_members(source_path: Path | None = None) -> Iterator[NOLocatedArtifact]:
+def iter_no_unmapped_current_xml_members(
+    source_path: Path | None = None,
+    *,
+    rejected_items: list[RejectedItem[str]] | None = None,
+) -> Iterator[NOLocatedArtifact]:
     """Yield current-law XML members whose filename cannot be mapped to a law id."""
     source_path = resolve_no_source_path(source_path)
     if is_no_farchive_path(source_path):
@@ -511,7 +584,9 @@ def iter_no_unmapped_current_xml_members(source_path: Path | None = None) -> Ite
                     tf, member, archive_path=current_archive.name
                 )
             except ArchiveMemberTooLarge as exc:
-                log_archive_member_too_large(exc)
+                # §1.8 typed receipt (AGENTS.md §1.8) — see
+                # :func:`_no_record_archive_skip`.
+                _no_record_archive_skip(rejected_items, exc=exc)
                 continue
             if payload is None:
                 continue
@@ -633,6 +708,8 @@ def load_no_amendment_artifact_bytes(
     archive_name: str,
     member_name: str,
     source_path: Path | None = None,
+    *,
+    rejected_items: list[RejectedItem[str]] | None = None,
 ) -> bytes | None:
     source_path = resolve_no_source_path(source_path)
     if not archive_name or not member_name:
@@ -656,13 +733,13 @@ def load_no_amendment_artifact_bytes(
                     tf, member, archive_path=archive_path.name
                 )
             except ArchiveMemberTooLarge as exc:
-                # Visible stderr receipt (AGENTS.md §1.8): the function returns
-                # ``bytes | None`` and has no rejected-items accumulator, so
-                # the typed diagnostic is logged rather than silently dropped.
-                # Returns None to the caller so the loader treats an oversized
-                # member like an absent one (the over-retention principle —
-                # never fabricate) while the receipt stays audible.
-                log_archive_member_too_large(exc)
+                # Visible §1.8 receipt (AGENTS.md §1.8) — the helper appends
+                # a ``RejectedItem`` to ``rejected_items`` when a sink is
+                # threaded, else falls back to the structured stderr receipt.
+                # Returns None so the loader treats an oversized member like
+                # an absent one (the over-retention principle — §0 never
+                # fabricate) while the receipt stays audible.
+                _no_record_archive_skip(rejected_items, exc=exc)
                 return None
             if payload is None:
                 return None
