@@ -930,7 +930,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 1,2023/1281,suspect,oracle_suspect,2025/398 eff 2025-08-01 > cutoff 2025-06-10,
 1,2023/1288,suspect,oracle_suspect,2024/753 eff 2025-01-01 > cutoff 2024-12-05,
 1,2023/1296,suspect,oracle_suspect,2026/54 eff 2026-05-01 > cutoff 2026-01-16,
-1,2023/1308,core,,,OK
+1,2023/1308,suspect,oracle_suspect,2026/187 eff 2026-03-31 > cutoff 2026-03-20; oracle-check classifies substantive divergences as ORACLE_STALE,OK
 1,2023/160,core,,,OK
 1,2023/166,core,,,OK
 1,2023/186,suspect,oracle_suspect,2026/32 eff 2026-11-20 > cutoff 2026-01-16,
@@ -2952,7 +2952,7 @@ amendments,statute_id,bucket,reason,detail,last_status
 11,2006/255,suspect,oracle_suspect,2019/630 eff 2019-06-01 > cutoff 2019-05-10,
 11,2006/308,notruth,no_truth_from_run,,NO_TRUTH
 11,2006/607,suspect,oracle_suspect,2023/437 eff 2024-01-01 > cutoff 2023-03-23,
-11,2006/693,core,,,OK
+11,2006/693,suspect,oracle_suspect,oracle-check classifies remaining substantive divergence as ORACLE_STALE against source 2013/262; other rows are EDITORIAL_CONVENTION,OK
 11,2007/1307,notruth,no_truth_from_run,,NO_TRUTH
 11,2007/334,notruth,no_truth_from_run,,NO_TRUTH
 11,2007/527,core,,,OK
