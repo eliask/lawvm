@@ -411,6 +411,7 @@ def _validate_finder_kind_prefix(prefix: str) -> None:
     cross-frontend collisions (e.g. ``"_same_moment_..."`` finding kinds shared
     across frontends defeats the per-frontend audit-trail invariant).
     """
+    # lawvm-regex: owning_parser lexical docstring-shape validation; no op minted; no statute text read.
     if not prefix or not _PREFIX_RE.match(str(prefix)):
         raise ValueError(
             f"finder_kind_prefix must be a non-empty lowercase ASCII identifier "
@@ -718,6 +719,7 @@ def _schema_error(claim: SameMomentPrecedenceClaim) -> str:
         return f"unsupported claim_kind {claim.claim_kind!r}; expected {SAME_MOMENT_PRECEDENCE_CLAIM_KIND!r}"
     if not claim.claim_id:
         return "missing claim_id"
+    # lawvm-regex: owning_parser lexical docstring-shape validation; no op minted; no statute text read.
     if not _ISO_DATE_RE.match(str(claim.effective_date)):
         return f"effective_date {claim.effective_date!r} is not an ISO date"
     if not claim.affected_target.strip():
