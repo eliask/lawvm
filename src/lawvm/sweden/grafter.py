@@ -3806,7 +3806,12 @@ class SEApplyResult:
     The ``filter_result`` field is the canonical ``FilterResult`` projection
     of the same accepted/rejected partition, so callers that already consume
     the shared core type can reuse it without unpacking ``applied_ops`` /
-    ``skipped_items`` separately.
+    ``skipped_items`` separately. The partition keys on ``op_id`` and on the
+    per-op skip-kind set :data:`_SE_SKIP_ADJUDICATION_KINDS` — an op is
+    rejected iff its ``op_id`` appears on a per-op SKIP adjudication of one
+    of those kinds. Recovery / cross-act evidence adjudications (none today,
+    but reserved for future SE recovery rules mirroring EE/NO/EU) would NOT
+    mark an op as rejected; the kind filter keeps them out of the partition.
 
     The optional ``write_receipts`` field carries per-op landed-write receipts
     (AGENTS.md §2.3 + notes/APPLY_RESOLUTION_AND_RECEIPT_CONTRACT.md §4) when
@@ -3831,6 +3836,29 @@ class SEApplyResult:
         return self.filter_result.rejected_items
 
 
+# Per-op skip adjudication kinds emitted by :func:`apply_se_ops`. Each is
+# emitted ONLY at a per-op skip path that emits an adjudication and then
+# ``continue``s (the op is NOT applied, or its apply produced no body change).
+# Mirrors the EE/NO/EU ``_<X>_SKIP_ADJUDICATION_KINDS`` frozensets: the kind
+# filter keeps any future SE recovery / cross-act-evidence adjudication
+# (which would carry an ``op_id`` but record a transformation that WAS applied,
+# not a skip) out of the conserved-wrapper partition. Today every per-op
+# adjudication SE emits is a genuine skip, so the partition is unchanged by
+# the filter; the frozenset is the forward-proofing that the kind filter is
+# the canonical gate (not the absence of any non-skip kind today).
+_SE_SKIP_ADJUDICATION_KINDS = frozenset(
+    {
+        "se_replay_payload_missing",
+        "se_replay_unsupported_action",
+        "se_replay_destination_missing",
+        "se_replay_target_not_found",
+        "se_replay_renumber_collision",
+        "se_replay_text_replace_no_match",
+        "se_replay_unsupported_target_kind",
+    }
+)
+
+
 def apply_se_ops_conserved(
     statute: IRStatute,
     ops: list[LegalOperation] | tuple["LegalOperation", ...],
@@ -3848,6 +3876,13 @@ def apply_se_ops_conserved(
     (its replay skipped, with a witness adjudication carrying the reason).
     The contract is monotone: every input op ends up either accepted or
     rejected, never silently dropped.
+
+    The partition keys on ``op_id`` AND on the per-op skip-kind set
+    :data:`_SE_SKIP_ADJUDICATION_KINDS` (mirrors the EE/NO/EU wrappers). Today
+    every per-op adjudication SE emits is a genuine skip, so the kind filter
+    is a no-op for current partition behaviour; the frozenset is the
+    forward-proofing gate so a future SE recovery adjudication carrying an
+    ``op_id`` cannot silently mark its op as rejected.
 
     When ``emit_receipts=True`` is passed, per-op landed-write receipts
     (§2.3 + notes/APPLY_RESOLUTION_AND_RECEIPT_CONTRACT.md §4) are also
@@ -3899,12 +3934,24 @@ def apply_se_ops_conserved(
         adjudications_out if adjudications_out is not None else []
     )
     applied = apply_se_ops(statute, ops_list, adjudications_out=adjudications)
-    skipped_op_ids = {a.op_id for a in adjudications if a.op_id}
+    # Partition: an op is REJECTED iff its op_id appears on a per-op SKIP
+    # adjudication of a kind in ``_SE_SKIP_ADJUDICATION_KINDS``. Today the kind
+    # filter is a no-op (every per-op adjudication SE emits IS a genuine skip,
+    # so partition is unchanged), but mirroring the EE/NO/EU wrappers keeps the
+    # gate forward-proof: a future SE recovery adjudication carrying an op_id
+    # (recorded when an op WAS applied via a named recovery transformation)
+    # would NOT mark that op as rejected. See ``_SE_SKIP_ADJUDICATION_KINDS``
+    # above.
+    skipped_op_ids = {
+        a.op_id
+        for a in adjudications
+        if a.op_id and a.kind in _SE_SKIP_ADJUDICATION_KINDS
+    }
     accepted: list[LegalOperation] = []
     rejected: list[RejectedItem[LegalOperation]] = []
     for op in ops_list:
         if op.op_id in skipped_op_ids:
-            matching = [a for a in adjudications if a.op_id == op.op_id]
+            matching = [a for a in adjudications if a.op_id == op.op_id and a.kind in _SE_SKIP_ADJUDICATION_KINDS]
             reason = matching[0].message if matching else "Sweden replay op skipped without a typed reason."
             reason_code = matching[0].kind if matching else "se_replay_skipped_unspecified"
             rejected.append(
