@@ -110,6 +110,16 @@ async def build_statute_graph_fi(sid: str) -> StatuteGraph:
         # — the typed Finding is logged at WARNING visibility so a stale/
         # malformed oracle is observable, while still returning [] so a graph
         # build for one broken corpus does not abort a batch run.
+        #
+        # log_emitter sanctioned (iter3 W2 §3.2 evidence-path audit): this
+        # async graph-build boundary has no findings_out accumulator in scope
+        # — threading one into ``build_statute_graph_fi`` would touch the
+        # ``StatuteGraph`` datacarrier (public-shape change in ``core/graph``)
+        # plus ``graph_build.py`` dispatch and ``tools/build.py`` orchestration
+        # (signature blast across 3 modules). The swallow is observable via
+        # stderr WARNING per ``core/named_swallow.py`` docstring's sanctioned
+        # IO/utility-boundary use; per-statute evidence-ledger reach for graph
+        # build is Wave-N+1 work (forward to ARCHITECTURE_LEAK_LEDGER).
         with named_swallow(
             rule_id="fi_graph_build_delegations_extract",
             default=delegations,
@@ -205,6 +215,13 @@ async def build_statute_graph_fi_lightweight(sid: str) -> StatuteGraph:
         # Mirror build_statute_graph_fi: swallow-and-witness via named_swallow
         # (AGENTS.md §1.10). Visible WARNING path keeps [] default so a single
         # broken oracle does not abort a bulk export.
+        #
+        # log_emitter sanctioned (iter3 W2 §3.2 evidence-path audit): same
+        # finding as build_statute_graph_fi above — no findings_out accumulator
+        # in scope at this async graph-build boundary; threading would touch
+        # the public ``StatuteGraph`` datacarrier shape and the dispatch/orchestration
+        # chain. Per ``core/named_swallow.py`` docstring's IO/utility-boundary
+        # sanctioned use, the swallow stays on log_emitter (stderr WARNING).
         with named_swallow(
             rule_id="fi_graph_lightweight_delegations_extract",
             default=delegations,

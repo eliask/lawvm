@@ -303,6 +303,17 @@ def extract_consolidated_xml_identity(
     except etree.ParseError:
         return ConsolidatedXmlIdentity()
     except Exception as exc:
+        # log_emitter sanctioned (iter3 W2 §3.2 STOP-and-report):
+        # ``extract_consolidated_xml_identity`` has 5+ production callers
+        # (``scripts/backfill_finlex_consolidated_versions.py:110``,
+        # ``finlex_api.py:248``, ``import_zip.py:433``, ``consolidated_artifacts.py:547/647``,
+        # plus tests). Threading ``findings_out`` would require non-trivial
+        # arg-passing through all 5+ call sites, and the production callers
+        # themselves have no per-statute findings accumulator in scope (they
+        # call from acquisition/import scripts, not the compile fold). Per
+        # ``core/named_swallow.py`` docstring's IO/utility-boundary sanctioned
+        # use, the swallow stays on log_emitter (stderr WARNING) — Wave-N+1
+        # work forwards to ARCHITECTURE_LEAK_LEDGER.
         log_emitter()(
             build_named_swallow_finding(
                 rule_id="fi_consolidated_artifacts_extract_identity_fromstring",

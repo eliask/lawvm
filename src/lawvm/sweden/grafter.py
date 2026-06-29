@@ -51,12 +51,13 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
-from typing import Any, Optional, cast
+from typing import Any, List, Optional, cast
 from urllib.parse import quote, urljoin
 
 from lawvm.core import tree_ops
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.filter_result import FilterResult, RejectedItem
+from lawvm.core.phase_result import Finding
 from lawvm.core.ir import (
     IRNode,
     IRStatute,
@@ -1093,8 +1094,21 @@ def se_pdf_bytes_to_text(
     *,
     pdftotext_bin: str = "pdftotext",
     timeout: int = 30,
+    findings_out: Optional[List[Finding]] = None,
 ) -> Optional[str]:
-    """Extract plain text from PDF bytes using `pdftotext` subprocess."""
+    """Extract plain text from PDF bytes using `pdftotext` subprocess.
+
+    Unexpected failures (any exception other than ``FileNotFoundError`` /
+    ``OSError`` / ``subprocess.TimeoutExpired``) are witnessed via a typed
+    ``Finding(kind=UNEXPECTED_PHASE_FAILURE)`` carrying ``rule_id`` /
+    ``clause_text`` (the offending pdf_bytes head, truncated 400 chars) /
+    ``source_artifact`` (the pdftotext binary name). When the caller plumbs
+    ``findings_out`` the Finding is appended there (per-statute audit-trail
+    sink, threaded from the caller); otherwise ``log_emitter`` keeps stderr
+    WARNING visibility so the swallow is still observed — never silent
+    (AGENTS.md §1.10). The ``cleanup_unlink`` swallow inside ``finally``
+    shares the same sink-dispatch (it inherits ``findings_out``).
+    """
     tmp_path: Optional[str] = None
     try:
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as handle:
@@ -1118,24 +1132,28 @@ def se_pdf_bytes_to_text(
     except Exception as exc:
         # Unexpected exception: route through named_swallow so a typed Finding
         # witnesses the swallow (AGENTS.md §1.10). Previously this branch was
-        # ``except Exception: return None`` silently; now log_emitter emits
-        # a WARNING carrying the offending pdf_bytes head as clause_text.
+        # ``except Exception: return None`` silently. Sink dispatch mirrors
+        # the corpus.py:122 named_swallow precedent: when the caller plumbed
+        # ``findings_out``, the Finding lands in that per-statute audit-trail
+        # list; otherwise ``log_emitter`` keeps stderr WARNING visibility.
         from lawvm.core.named_swallow import build_named_swallow_finding, log_emitter
 
-        log_emitter()(
-            build_named_swallow_finding(
-                rule_id="se_grafter_pdf_bytes_to_text_subprocess",
-                exception=exc,
-                op_id=None,
-                clause_text=(
-                    pdf_bytes[:400].decode("utf-8", errors="replace")
-                    if pdf_bytes
-                    else ""
-                ),
-                jurisdiction="se",
-                source_artifact=pdftotext_bin,
-            )
+        finding = build_named_swallow_finding(
+            rule_id="se_grafter_pdf_bytes_to_text_subprocess",
+            exception=exc,
+            op_id=None,
+            clause_text=(
+                pdf_bytes[:400].decode("utf-8", errors="replace")
+                if pdf_bytes
+                else ""
+            ),
+            jurisdiction="se",
+            source_artifact=pdftotext_bin,
         )
+        if findings_out is not None:
+            findings_out.append(finding)
+        else:
+            log_emitter()(finding)
         return None
     finally:
         if tmp_path:
@@ -1146,18 +1164,23 @@ def se_pdf_bytes_to_text(
                 pass
             except Exception as exc:
                 # Cleanup-path unexpected: witnessed via named_swallow (§1.10).
+                # Shared sink dispatch with the main-body swallow above — the
+                # cleanup path inherits ``findings_out`` so a plumbed caller
+                # sees both swallows in the same per-statute audit-trail list.
                 from lawvm.core.named_swallow import build_named_swallow_finding, log_emitter
 
-                log_emitter()(
-                    build_named_swallow_finding(
-                        rule_id="se_grafter_pdf_bytes_to_text_cleanup_unlink",
-                        exception=exc,
-                        op_id=None,
-                        clause_text=f"tmp_path={tmp_path}",
-                        jurisdiction="se",
-                        source_artifact=pdftotext_bin,
-                    )
+                finding = build_named_swallow_finding(
+                    rule_id="se_grafter_pdf_bytes_to_text_cleanup_unlink",
+                    exception=exc,
+                    op_id=None,
+                    clause_text=f"tmp_path={tmp_path}",
+                    jurisdiction="se",
+                    source_artifact=pdftotext_bin,
                 )
+                if findings_out is not None:
+                    findings_out.append(finding)
+                else:
+                    log_emitter()(finding)
 
 
 def _parse_parliamentary_links(sfs_id: str, raw_text: str) -> tuple[SEParliamentaryPackageLink, ...]:

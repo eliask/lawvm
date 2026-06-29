@@ -21,7 +21,7 @@ import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Tuple, Set, cast
+from typing import Any, Dict, List, Optional, Tuple, Set, cast
 
 import lxml.etree as etree
 from functools import lru_cache
@@ -30,6 +30,7 @@ from lawvm.corpus_store import (
     CorpusStore,
     get_corpus_store,
 )
+from lawvm.core.phase_result import Finding
 from lawvm.core.xml_parse import parse_corpus_xml
 from lawvm.finland.citation_routing import johtolause_cited_target_ids
 from lawvm.finland.fi_dates import parse_fi_day_month_year
@@ -571,8 +572,21 @@ def _fingerprint_int(value: object) -> int:
     raise TypeError(f"Expected integer-like fingerprint field, got {type(value).__name__}")
 
 
-def _corpus_source_fingerprint(cs: CorpusStore | None) -> dict[str, object] | None:
-    """Return the backing farchive DB fingerprint, or None for unknown stores."""
+def _corpus_source_fingerprint(
+    cs: CorpusStore | None,
+    *,
+    findings_out: Optional[List[Finding]] = None,
+) -> dict[str, object] | None:
+    """Return the backing farchive DB fingerprint, or None for unknown stores.
+
+    The fingerprint probe may fail across path/format/IO axes. Previously
+    ``return None`` silently swallowed (AGENTS.md §1.10 silent-fallback). Now
+    the swallow is witnessed via a typed ``Finding(kind=UNEXPECTED_PHASE_FAILURE)``
+    carrying ``rule_id`` / ``clause_text`` (the corpus-store type for triage) /
+    ``jurisdiction``. When the caller plumbs ``findings_out`` the Finding is
+    appended there (per-statute audit-trail sink, threaded from the caller);
+    otherwise ``log_emitter`` keeps stderr WARNING visibility — never silent.
+    """
     try:
         archive = getattr(cs, "_archive", None) if cs is not None else None
         candidates: list[object] = []
@@ -604,20 +618,24 @@ def _corpus_source_fingerprint(cs: CorpusStore | None) -> dict[str, object] | No
     except Exception as exc:
         # Unexpected fingerprint failure: previously ``return None`` silently
         # swallowed; now route through ``named_swallow`` so a typed Finding is
-        # logged at WARNING with the corpus-store type as ``clause_text``
-        # (AGENTS.md §1.10 — never silent).
+        # constructed with the corpus-store type as ``clause_text`` (AGENTS.md
+        # §1.10 — never silent). Sink dispatch mirrors corpus.py:122 precedent:
+        # when ``findings_out`` is plumbed, the Finding lands in that audit-trail
+        # list; when not, ``log_emitter`` keeps stderr WARNING visibility.
         from lawvm.core.named_swallow import build_named_swallow_finding, log_emitter
 
-        log_emitter()(
-            build_named_swallow_finding(
-                rule_id="fi_amendment_index_corpus_source_fingerprint",
-                exception=exc,
-                op_id=None,
-                clause_text=f"cs_type={type(cs).__name__ if cs is not None else 'None'}",
-                jurisdiction="fi",
-                source_artifact=None,
-            )
+        finding = build_named_swallow_finding(
+            rule_id="fi_amendment_index_corpus_source_fingerprint",
+            exception=exc,
+            op_id=None,
+            clause_text=f"cs_type={type(cs).__name__ if cs is not None else 'None'}",
+            jurisdiction="fi",
+            source_artifact=None,
         )
+        if findings_out is not None:
+            findings_out.append(finding)
+        else:
+            log_emitter()(finding)
         return None
 
 

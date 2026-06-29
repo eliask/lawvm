@@ -792,3 +792,129 @@ def test_qwen_local_check_server_reachable_finding_fires_on_swallow(
     assert f.detail["exception_type"] == "RuntimeError"
     assert f.detail["jurisdiction"] == "fi"
     assert "probe endpoint=" in f.detail["clause_text"]
+
+
+# ---------------------------------------------------------------------------
+# iter3 Wave 2 (W2) — findings_out-threaded fire-drills (arch HIGH H1, §3.2).
+#
+# These three representative fire-drills complement the precedent log_emitter-
+# patch drills above: they plumb ``findings_out=<list>`` directly into the
+# migrated sites and assert the typed Finding LANDS IN the per-statute audit-
+# trail list (not just stderr). They are the evidence-path-answerability
+# witnesses for the §3.2 migration from ``emit=log_emitter()`` to
+# ``findings_out=<accumulator>`` where a sink IS in scope at the swallow site.
+# The remaining 10 swallows in the W2 catalog stay on log_emitter with the
+# sanctioned-use comment per ``core/named_swallow.py`` docstring's IO/utility-
+# boundary carve-out (see per-site audit notes inline).
+# ---------------------------------------------------------------------------
+
+
+def test_se_pdf_bytes_to_text_findings_out_sink_receives_finding(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Migrated site: sweden/grafter.py se_pdf_bytes_to_text (Wave 4 representative).
+
+    Drives a known-violating input through the FULL production path (monkeypatch
+    ``subprocess.run`` to raise ValueError — the non-FileNotFoundError, non-OSError,
+    non-subprocess.TimeoutExpired branch) and passes ``findings_out=<sink>``
+    directly. Asserts the typed Finding lands in the sink (not via the lazy
+    log_emitter fallback) — the §3.2 evidence-ledger-reach assertion for a
+    Wave 4 production-path site.
+    """
+    import lawvm.sweden.grafter as se
+
+    # Force a non-expected exception so the named_swallow branch fires.
+    def _boom_run(*_a: Any, **_kw: Any) -> Any:
+        raise ValueError("simulated unexpected subprocess.run error")
+
+    monkeypatch.setattr(se.subprocess, "run", _boom_run)
+    sink: list[Finding] = []
+    result = se.se_pdf_bytes_to_text(
+        b"%PDF-1.4 fake pdf",
+        findings_out=sink,
+    )
+    # None returned (default preserved).
+    assert result is None
+    # The typed Finding was appended to the plumbed findings_out list (the
+    # per-statute audit-trail sink) — NOT via the lazy log_emitter() fallback.
+    assert len(sink) == 1
+    f = sink[0]
+    assert f.kind == NAMED_SWALLOW_FINDING_KIND
+    assert f.blocking is True
+    assert f.detail["rule_id"] == "se_grafter_pdf_bytes_to_text_subprocess"
+    assert f.detail["exception_type"] == "ValueError"
+    assert f.detail["jurisdiction"] == "se"
+
+
+def test_corpus_source_fingerprint_findings_out_sink_receives_finding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Migrated site: finland/amendment_index.py _corpus_source_fingerprint.
+
+    Drives a known-violating input through the FULL production path
+    (monkeypatch ``_path_from_pathlike`` to raise RuntimeError on the
+    path-probe axis) and passes ``findings_out=<sink>`` directly. Asserts
+    the typed Finding lands in the per-statute audit-trail sink (not via the
+    lazy log_emitter() fallback). The §3.2 evidence-ledger-reach witness for
+    the amendment_index management-file production-path boundary.
+    """
+    from typing import cast
+
+    from lawvm.corpus_store import CorpusStore
+    from lawvm.finland import amendment_index as ai
+
+    # Patch the path-probe helper to raise so the swallow fires.
+    def _boom(_v: object) -> Any:
+        raise RuntimeError("simulated path probe boom")
+
+    monkeypatch.setattr(ai, "_path_from_pathlike", _boom)
+    cs = cast(CorpusStore, object())
+    sink: list[Finding] = []
+    result = ai._corpus_source_fingerprint(cs, findings_out=sink)
+    # Default preserved.
+    assert result is None
+    # Typed Finding emitted via the plumbed findings_out sink — NOT via
+    # log_emitter fallback.
+    assert len(sink) == 1
+    f = sink[0]
+    assert f.kind == NAMED_SWALLOW_FINDING_KIND
+    assert f.blocking is True
+    assert f.detail["rule_id"] == "fi_amendment_index_corpus_source_fingerprint"
+    assert f.detail["exception_type"] == "RuntimeError"
+    assert f.detail["jurisdiction"] == "fi"
+    assert "cs_type=" in f.detail["clause_text"]
+
+
+def test_qwen_local_check_server_reachable_findings_out_sink_receives_finding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Migrated site: finland/llm_backends/qwen_local.py _check_server_reachable.
+
+    Drives a known-violating input through the FULL production path (monkeypatch
+    ``urllib.request.urlopen`` to raise RuntimeError on the probe axis) and
+    passes ``findings_out=<sink>`` directly. Asserts the typed Finding lands
+    in the per-statute audit-trail sink (not via the lazy log_emitter()
+    fallback) — the §3.2 evidence-ledger-reach witness for the qwen_local
+    management sample (representative of the IO-boundary migration pattern
+    where callers that DO have an audit sink can now plumb it).
+    """
+    import urllib.request
+
+    from lawvm.finland.llm_backends import qwen_local as ql
+
+    def _boom(_req: object, *args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("simulated urlopen probe boom")
+
+    monkeypatch.setattr(urllib.request, "urlopen", _boom)
+    sink: list[Finding] = []
+    result = ql._check_server_reachable(findings_out=sink)
+    # False default preserved.
+    assert result is False
+    # Typed Finding emitted via the plumbed findings_out sink — NOT via
+    # log_emitter fallback.
+    assert len(sink) == 1
+    f = sink[0]
+    assert f.kind == NAMED_SWALLOW_FINDING_KIND
+    assert f.blocking is True
+    assert f.detail["rule_id"] == "fi_qwen_local_check_server_reachable"
+    assert f.detail["exception_type"] == "RuntimeError"
+    assert f.detail["jurisdiction"] == "fi"
+    assert "probe endpoint=" in f.detail["clause_text"]

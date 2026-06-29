@@ -27,7 +27,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, List, Mapping, Optional
 
 from lawvm.core.agreement_residual import (
     AgreementResidual,
@@ -40,6 +40,7 @@ from lawvm.core.comparison_normalization import (
     normalized_inline_occurrence_count,
 )
 from lawvm.core.ir import LegalOperation
+from lawvm.core.phase_result import Finding
 from lawvm.core.semantic_types import StructuralAction
 from lawvm.new_zealand.acquisition import open_farchive
 from lawvm.new_zealand.nz_oracle_normalization import classify_oracle_divergence
@@ -4296,7 +4297,13 @@ def _classify_oracle_text_divergence(
     )
 
 
-def _amending_act_root(archive: Any, amending_work_id: str, cache: dict[str, Any]) -> Any:
+def _amending_act_root(
+    archive: Any,
+    amending_work_id: str,
+    cache: dict[str, Any],
+    *,
+    findings_out: Optional[List[Finding]] = None,
+) -> Any:
     if amending_work_id in cache:
         return cache[amending_work_id]
     from lxml import etree
@@ -4314,11 +4321,16 @@ def _amending_act_root(archive: Any, amending_work_id: str, cache: dict[str, Any
     # ``latest_xml_locator_for_work`` and ``etree.fromstring`` may raise across
     # archive/IO/parse paths. Previously ``except Exception: root = None``
     # silently swallowed to None (AGENTS.md §1.10 silent-fallback). Now routed
-    # through ``swallow_call`` so a typed Finding is emitted via log_emitter
-    # (WARNING-visibility) carrying the offending ``amending_work_id`` as
-    # ``source_artifact`` and ``clause_text`` (the work-id, truncated 400). On
-    # swallow returns None so the dry-run cache stays miss-shaped and the
-    # consumer detects the missing amending work via its existing None path.
+    # through ``swallow_call`` so a typed Finding is constructed carrying the
+    # offending ``amending_work_id`` as ``source_artifact`` and ``clause_text``
+    # (the work-id, truncated 400). Sink dispatch mirrors corpus.py:122
+    # named_swallow precedent: when ``findings_out`` is plumbed, the Finding
+    # lands in that per-statute audit-trail list; when not, ``log_emitter``
+    # keeps stderr WARNING visibility so the swallow is still observed at this
+    # archive-boundary probe. On swallow returns None so the dry-run cache
+    # stays miss-shaped and the consumer detects the missing amending work via
+    # its existing None path.
+    emit = None if findings_out is not None else log_emitter()
     root: Any = swallow_call(
         _resolve_amending_root,
         rule_id="nz_dry_run_amending_act_root",
@@ -4326,7 +4338,8 @@ def _amending_act_root(archive: Any, amending_work_id: str, cache: dict[str, Any
         jurisdiction="nz",
         source_artifact=amending_work_id,
         clause_text=f"amending_work_id={amending_work_id[:400]}",
-        emit=log_emitter(),
+        emit=emit,
+        findings_out=findings_out,
     )
     cache[amending_work_id] = root
     return root

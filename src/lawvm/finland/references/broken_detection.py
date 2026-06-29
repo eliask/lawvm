@@ -496,6 +496,13 @@ def default_tree_as_of(store: "CorpusStore") -> TreeAsOf:
             # ``named_swallow`` so a typed Finding is logged at WARNING with
             # the statute_id + as-of date as ``clause_text``
             # (AGENTS.md §1.10 — never silent).
+            #
+            # log_emitter sanctioned (iter3 W2 §3.2): dev-tooling analysis
+            # (``broken_detection`` materialization probe inside ``_tree_as_of``
+            # closure) — no per-statute findings_out accumulator in scope at
+            # this analysis boundary; per ``core/named_swallow.py`` docstring's
+            # IO/utility-boundary sanctioned use, the swallow stays on log_emitter
+            # (stderr WARNING).
             from lawvm.core.named_swallow import build_named_swallow_finding, log_emitter
 
             log_emitter()(

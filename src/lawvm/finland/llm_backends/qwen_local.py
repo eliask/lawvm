@@ -23,13 +23,14 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from lawvm.core.manual_claims.proposal_backend import (
     ClaimSchema,
     ProposedClaim,
     QuotedSource,
 )
+from lawvm.core.phase_result import Finding
 
 _BASE_URL = "http://localhost:11434"
 _CHAT_ENDPOINT = f"{_BASE_URL}/v1/chat/completions"
@@ -51,8 +52,17 @@ _SYSTEM_PROMPT = (
 _STATUTE_ID_RE = re.compile(r"^\d{1,4}/\d{4}$")
 
 
-def _check_server_reachable() -> bool:
-    """Return True if the local server responds to a probe request."""
+def _check_server_reachable(*, findings_out: Optional[List[Finding]] = None) -> bool:
+    """Return True if the local server responds to a probe request.
+
+    The probe may fail unexpectedly (DNS, connection refused, TLS, etc.).
+    Previously ``return False`` silently swallowed; now per AGENTS.md §1.10
+    the swallow is witnessed via a typed ``Finding(kind=UNEXPECTED_PHASE_FAILURE)``
+    carrying ``rule_id`` / ``clause_text`` / ``source_artifact``. When the caller
+    plumbs ``findings_out`` the Finding is appended there (per-statute audit-trail
+    sink, threaded from the caller); otherwise it is emitted via ``log_emitter``
+    so a WARNING is still visible — never silent (§1.10).
+    """
     import urllib.request
     import urllib.error
     try:
@@ -71,20 +81,27 @@ def _check_server_reachable() -> bool:
     except Exception as exc:
         # Unexpected probe failure (DNS, connection refused, TLS, etc.):
         # previously ``return False`` silently swallowed; now route through
-        # ``named_swallow`` so a typed Finding is logged at WARNING with the
+        # ``named_swallow`` so a typed Finding is constructed carrying the
         # probed endpoint as ``clause_text`` (AGENTS.md §1.10 — never silent).
+        # Sink dispatch: when the caller plumbed ``findings_out``, the Finding
+        # lands in that per-statute ledger (audit-trail path threaded from the
+        # caller); otherwise ``log_emitter`` keeps stderr WARNING visibility so
+        # the swallow is observed even when no sink is in scope at this probe
+        # boundary (the corpus.py:122 named_swallow precedent pattern).
         from lawvm.core.named_swallow import build_named_swallow_finding, log_emitter
 
-        log_emitter()(
-            build_named_swallow_finding(
-                rule_id="fi_qwen_local_check_server_reachable",
-                exception=exc,
-                op_id=None,
-                clause_text=f"probe endpoint={_CHAT_ENDPOINT}",
-                jurisdiction="fi",
-                source_artifact=_CHAT_ENDPOINT,
-            )
+        finding = build_named_swallow_finding(
+            rule_id="fi_qwen_local_check_server_reachable",
+            exception=exc,
+            op_id=None,
+            clause_text=f"probe endpoint={_CHAT_ENDPOINT}",
+            jurisdiction="fi",
+            source_artifact=_CHAT_ENDPOINT,
         )
+        if findings_out is not None:
+            findings_out.append(finding)
+        else:
+            log_emitter()(finding)
         return False
 
 

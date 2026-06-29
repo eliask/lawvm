@@ -30,7 +30,20 @@ def fi_amendment_url(_canonical_id: str, engine_id: str) -> str:
 
 
 def extract_fi_source_reference(corpus: object, engine_source_id: str) -> str:
-    """Return the first Finnish HE reference attached to an amendment source."""
+    """Return the first Finnish HE reference attached to an amendment source.
+
+    log_emitter sanctioned (iter3 W2 §3.2 STOP-and-report, applies to BOTH
+    swallows below): this function is wired as the ``source_reference`` callback
+    on ``TransitionGraphExportProfile`` (see line ~112 in this file). That
+    profile's callable type is ``SourceReferenceExtractor = Callable[[object, str], str]``
+    (public contract in ``tools/transition_graph_profile.py``). Adding a
+    ``findings_out`` parameter to this function would change the public callback
+    signature and ripple through the export-profile type and all its consumers
+    (signature blast across 2 modules + the viewer). Per ``core/named_swallow.py``
+    docstring's IO/utility-boundary sanctioned use, the swallows stay on
+    log_emitter (stderr WARNING); per-statute evidence-ledger reach for the
+    transition-graph export is Wave-N+1 work for the orchestrator.
+    """
     try:
         store = cast(CorpusStore, corpus)
         amendment_xml = store.read_amendment(engine_source_id)

@@ -286,6 +286,12 @@ def _iter_corpus_sentences(
             # swallowed; now route through ``named_swallow`` so a typed Finding
             # is logged at WARNING with the statute id as ``clause_text``
             # (AGENTS.md §1.10 — never silent).
+            #
+            # log_emitter sanctioned (iter3 W2 §3.2): dev-tooling census
+            # generator (``_iter_corpus_sentences``) — no per-statute
+            # findings_out accumulator in scope at this analysis loop; per
+            # ``core/named_swallow.py`` docstring's IO/utility-boundary
+            # sanctioned use, the swallow stays on log_emitter (stderr WARNING).
             from lawvm.core.named_swallow import build_named_swallow_finding, log_emitter
 
             log_emitter()(
@@ -308,6 +314,11 @@ def _iter_corpus_sentences(
             # silently swallowed; now route through ``named_swallow`` so a
             # typed Finding is logged at WARNING with the statute id + body
             # length as ``clause_text`` (AGENTS.md §1.10 — never silent).
+            #
+            # log_emitter sanctioned (iter3 W2 §3.2): same dev-tooling census
+            # generator boundary as the body-decode swallow above; no per-
+            # statute findings_out accumulator in scope — see the prior
+            # sanctioned-use note.
             from lawvm.core.named_swallow import build_named_swallow_finding, log_emitter
 
             log_emitter()(
