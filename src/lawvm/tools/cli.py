@@ -7713,7 +7713,12 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         description=(
             "Resumable, rate-limit-aware acquisition. Existing locators are "
             "skipped unless --refetch is passed. Search discovery is used when "
-            "no --work-id or --version-id is supplied."
+            "no --work-id or --version-id is supplied.\n\n"
+            "DEPRECATED: use `closure --work-id X` for full acquisition (fetches "
+            "the work + its transitive amending acts). This `sync` command does "
+            "NOT follow dependency closure — it only fetches the works explicitly "
+            "named by --work-id or --version-id. Keep `sync` only for direct "
+            "single-version fetches via --version-id."
         ),
     )
     nz_sync_p.add_argument(
@@ -7850,12 +7855,19 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
     nz_deps_p.add_argument("--json", action="store_true", help="emit full dependency report JSON")
     nz_closure_p = nz_corpus_sub.add_parser(
         "closure",
-        help="resumable NZ frontier acquisition",
+        help="NZ acquisition: fetch works + transitive amending acts",
         description=(
-            "Acquire useful NZ source frontiers: target work versions/XML, "
-            "dependency reports from latest XML, and latest XML for discovered "
-            "amending works. With --sleep-on-rate-limit it can run under a "
-            "supervisor and continue after quota resets."
+            "THE primary NZ acquisition command. Two modes:\n\n"
+            "  closure --work-id X  Fetch work X's version graph + XML, then read "
+            "its history notes, discover cited amending acts, and acquire them "
+            "transitively up to --dependency-depth.\n\n"
+            "  closure --all-acts    Search-discover ALL public acts via the NZ "
+            "API, acquire their latest XML, then run the full transitive "
+            "dependency-closure loop on every archived work_id.\n\n"
+            "Use --sleep-on-rate-limit to run under a supervisor and continue "
+            "after quota resets. The legacy `sync` subcommand is a low-level "
+            "primitive (no dependency closure) — prefer `closure` for everything "
+            "except direct --version-id fetches."
         ),
     )
     nz_closure_p.add_argument(
@@ -7870,30 +7882,30 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         action="store_true",
         help="discover all Acts via search, acquire their latest XML, THEN run full transitive dependency closure on every archived work_id (default --dependency-depth still applies)",
     )
-    nz_closure_p.add_argument("--search-term", default="", metavar="TEXT", help="optional all-acts search term")
+    nz_closure_p.add_argument("--search-term", default="", metavar="TEXT", help="--all-acts only: search term for the initial search-discovery phase")
     nz_closure_p.add_argument(
         "--legislation-type",
         default="act",
         choices=["", "act", "amendment_paper", "bill", "secondary_legislation"],
-        help="all-acts legislation_type filter (default: act)",
+        help="--all-acts only: legislation_type filter for search-discovery (default: act)",
     )
     nz_closure_p.add_argument(
         "--publisher",
         default="",
         choices=["", "Agency", "Parliamentary Counsel Office"],
-        help="optional all-acts publisher filter",
+        help="--all-acts only: publisher filter for search-discovery",
     )
     nz_closure_p.add_argument(
         "--dependency-depth",
         type=int,
         default=1,
         metavar="N",
-        help="dependency expansion depth for seed work_ids (default: 1)",
+        help="transitive amending-act closure depth (default: 1; 0 = fetch seed only without closure)",
     )
     nz_closure_p.add_argument(
         "--seed-latest-only",
         action="store_true",
-        help="fetch only latest seed version instead of full seed version graph",
+        help="fetch only latest seed version instead of full version graph (seed works only; non-seed works always fetch latest)",
     )
     nz_closure_p.add_argument(
         "--max-versions-per-work",
