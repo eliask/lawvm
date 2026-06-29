@@ -464,8 +464,9 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         "--max-text",
         dest="max_text",
         type=int,
-        default=200,
-        help="maximum characters per body line before truncation (default: 200)",
+        default=None,
+        help="optional maximum characters per body line before clipping "
+        "(default: no truncation — full text renders per user directive)",
     )
     show_p.add_argument(
         "--json",

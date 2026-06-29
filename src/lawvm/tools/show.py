@@ -71,7 +71,7 @@ def _hyperlink_statute_tokens(text: str, *, enabled: bool) -> str:
     return _STATUTE_TOKEN_RE.sub(_wrap, text)
 
 
-def _render_text(body_ir, att_supps, *, max_text: int, include_attachments: bool) -> str:
+def _render_text(body_ir, att_supps, *, max_text: int | None, include_attachments: bool) -> str:
     if include_attachments:
         # SDOC-13 unified projection — attachments render as APPENDIX
         # siblings of BODY under one HCONTAINER root (one walk).
@@ -90,7 +90,8 @@ def main(args) -> None:
     sid = args.statute_id
     as_of = getattr(args, "as_of", "") or ""
     address = getattr(args, "address", "") or ""
-    max_text = int(getattr(args, "max_text", 200))
+    max_text_raw = getattr(args, "max_text", None)
+    max_text = int(max_text_raw) if max_text_raw is not None else None
     include_attachments = not getattr(args, "no_attachments", False)
     use_json = bool(getattr(args, "json", False))
 

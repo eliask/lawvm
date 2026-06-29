@@ -33,10 +33,29 @@ Two formats:
 """
 from __future__ import annotations
 
-from typing import Sequence
+from typing import Optional, Sequence
 
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind
+
+
+def _clip(text: str, max_text: Optional[int]) -> str:
+    """Truncate ``text`` to ``max_text`` chars, or pass through when None.
+
+    ``max_text=None`` (the default for the show/dump pretty-printers) means
+    no truncation — the full text renders per the user's "show must not
+    truncate ANY text" directive. ``max_text=N`` clips the visible text to
+    ``N`` chars WITHOUT appending an ellipsis (the pretty-printer never
+    truncates with a visible marker — full text or clipped, never partial
+    "(…)" in a dump).
+
+    Used by the pretty form. The technical form (``format_ir_tree``)
+    appends an explicit ``…`` at the truncation point so IR-construction
+    debug snippets remain greppable.
+    """
+    if max_text is None or len(text) <= max_text:
+        return text
+    return text[:max_text]
 
 
 # Human-readable labels for each IRNodeKind (Finnish legal convention).
@@ -62,8 +81,14 @@ _KIND_LABELS_FI: dict[str, str] = {
 }
 
 
-def format_ir_tree(root: IRNode, *, indent: int = 0, max_text: int = 120) -> str:
-    """Technical IR tree dump: KIND [label] text-snippet."""
+def format_ir_tree(root: IRNode, *, indent: int = 0, max_text: Optional[int] = None) -> str:
+    """Technical IR tree dump: KIND [label] text-snippet.
+
+    ``max_text=None`` (default) means no truncation — every IRNode's text
+    renders in full per the user's "no truncation" directive. Pass an int
+    to clip debug snippets to N chars (a ``…`` marker is appended at the
+    clip point so the snippet remains greppable in IR-debug output).
+    """
     lines: list[str] = []
     _format_node_technical(root, lines, indent, max_text)
     return "\n".join(lines)
@@ -73,7 +98,7 @@ def format_ir_pretty(
     root: IRNode,
     *,
     indent: int = 0,
-    max_text: int = 200,
+    max_text: Optional[int] = None,
     show_tables: bool = True,
     max_table_rows: int = 5,
 ) -> str:
@@ -100,7 +125,7 @@ def format_ir_pretty(
 
 
 def _format_node_technical(
-    node: IRNode, lines: list[str], indent: int, max_text: int
+    node: IRNode, lines: list[str], indent: int, max_text: Optional[int]
 ) -> None:
     prefix = "  " * indent
     parts: list[str] = []
@@ -109,9 +134,12 @@ def _format_node_technical(
         parts.append(f'"{node.label}"')
     text = (node.text or "").strip()
     if text:
-        snippet = text[:max_text]
-        if len(text) > max_text:
-            snippet += "…"
+        if max_text is None:
+            snippet = text
+        else:
+            snippet = text[:max_text]
+            if len(text) > max_text:
+                snippet += "…"
         snippet = snippet.replace("\n", " ")
         parts.append(f'"{snippet}"')
     lines.append(f"{prefix}{' '.join(parts)}")
@@ -123,7 +151,7 @@ def _format_node_pretty(
     node: IRNode,
     lines: list[str],
     indent: int,
-    max_text: int,
+    max_text: Optional[int],
     show_tables: bool,
     max_table_rows: int,
 ) -> None:
@@ -187,9 +215,9 @@ def _format_node_pretty(
     if kind_str == "PARAGRAPH":
         # "N. text..." (numeral dot for legal paragraphs)
         if label and text:
-            lines.append(f"{prefix}{label}. {text[:max_text]}")
+            lines.append(f"{prefix}{label}. {_clip(text, max_text)}")
         elif text:
-            lines.append(f"{prefix}{text[:max_text]}")
+            lines.append(f"{prefix}{_clip(text, max_text)}")
         # Walk children (items, etc.)
         for child in node.children:
             child_kind = str(child.kind.name if hasattr(child.kind, "name") else child.kind)
@@ -202,9 +230,9 @@ def _format_node_pretty(
 
     if kind_str == "ITEM":
         if label and text:
-            lines.append(f"{prefix}{label}) {text[:max_text]}")
+            lines.append(f"{prefix}{label}) {_clip(text, max_text)}")
         elif text:
-            lines.append(f"{prefix}{text[:max_text]}")
+            lines.append(f"{prefix}{_clip(text, max_text)}")
         for child in node.children:
             _format_node_pretty(
                 child, lines, indent + 1, max_text, show_tables, max_table_rows
@@ -213,12 +241,12 @@ def _format_node_pretty(
 
     if kind_str == "HEADING":
         if text:
-            lines.append(f"{prefix}{text[:max_text]}")
+            lines.append(f"{prefix}{_clip(text, max_text)}")
         return
 
     if kind_str in ("CONTENT", "P", "I"):
         if text:
-            lines.append(f"{prefix}{text[:max_text]}")
+            lines.append(f"{prefix}{_clip(text, max_text)}")
         for child in node.children:
             _format_node_pretty(
                 child, lines, indent + 1, max_text, show_tables, max_table_rows
@@ -227,7 +255,7 @@ def _format_node_pretty(
 
     if kind_str == "INTRO":
         if text:
-            lines.append(f"{prefix}{text[:max_text]}")
+            lines.append(f"{prefix}{_clip(text, max_text)}")
         return
 
     if kind_str == "APPENDIX":
@@ -247,7 +275,7 @@ def _format_node_pretty(
         return
 
     if kind_str == "SCHEDULE_ENTRY":
-        lines.append(f"{prefix}[{label}] {text[:max_text]}")
+        lines.append(f"{prefix}[{label}] {_clip(text, max_text)}")
         return
 
     if kind_str == "TABLE" and show_tables:
@@ -260,7 +288,7 @@ def _format_node_pretty(
 
     # Fallback: kind label + text + children
     if text:
-        lines.append(f"{prefix}{text[:max_text]}")
+        lines.append(f"{prefix}{_clip(text, max_text)}")
     for child in node.children:
         _format_node_pretty(
             child, lines, indent + 1, max_text, show_tables, max_table_rows
@@ -310,7 +338,7 @@ def format_statute_with_attachments(
     body_ir: IRNode,
     attachment_supplements: Sequence,
     *,
-    max_text: int = 200,
+    max_text: Optional[int] = None,
     max_table_rows: int = 5,
 ) -> str:
     """Full statute pretty-print: body + attachment supplements.
@@ -385,7 +413,7 @@ def format_unified_statute(
     body_ir: IRNode,
     attachment_supplements: Sequence,
     *,
-    max_text: int = 200,
+    max_text: Optional[int] = None,
     max_table_rows: int = 5,
 ) -> str:
     """Pretty-print the merged body + attachment tree in one walk.
