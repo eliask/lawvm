@@ -28,7 +28,7 @@ from lawvm.finland.metadata import _normalize_johtolause_verbs, get_johtolause
 from lawvm.finland.normalize import parse_ops_fallback_heuristic
 from lawvm.finland.ops import AmendmentOp
 from lawvm.finland.scope import assign_chapter_scope_from_johtolause as _assign_chapter_scope_from_johtolause
-from lawvm.finland.xml_statute import XMLStatute, serialize_text as _serialize_ir_text
+from lawvm.finland.xml_statute import XMLStatute
 from lawvm.finland.replay_entrypoint import replay_xml
 from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
 from lawvm.finland.citation_routing import OP_KEYWORDS
@@ -335,6 +335,8 @@ def _dump_apply(
     address: Optional[str],
     stop_before: str = "",
     as_of: str = "",
+    *,
+    ir_labels: bool = False,
 ) -> None:
     master = call_replay_xml(
         replay_xml,
@@ -345,7 +347,19 @@ def _dump_apply(
         print(f"Statute: {sid}")
         print("Stage  : APPLY (full replay)")
         print()
-        print(_serialize_ir_text(_comparison_ir(master)) if as_of else master.serialize_text())
+        from lawvm.finland.ir_tree_dump import (
+            format_ir_tree,
+            format_statute_with_attachments,
+        )
+        replay_ir = _comparison_ir(master) if as_of else master.ir
+        att_supps = getattr(getattr(master, "ctx", None), "attachment_supplements", ())
+        if ir_labels:
+            print(format_ir_tree(replay_ir, max_text=120))
+            for supp in att_supps:
+                print(f"\n[Attachment: {supp.pdf_name}]")
+                print(format_ir_tree(supp.ir, max_text=120))
+        else:
+            print(format_statute_with_attachments(replay_ir, att_supps, max_text=200, max_table_rows=5))
         return
 
     # Filter to address
@@ -397,8 +411,10 @@ def dump_apply(
     address: Optional[str] = None,
     stop_before: str = "",
     as_of: str = "",
+    *,
+    ir_labels: bool = False,
 ) -> None:
-    _dump_apply(sid, address, stop_before=stop_before, as_of=as_of)
+    _dump_apply(sid, address, stop_before=stop_before, as_of=as_of, ir_labels=ir_labels)
 
 
 # Open-ended materialization horizon used by replay; selecting the governing
@@ -552,4 +568,4 @@ def main(args) -> None:
             sys.exit(2)
         # Default ("apply" or no --after): full replay
         stop_before = getattr(args, "before", "") or ""
-        dump_apply(sid, address, stop_before=stop_before, as_of=as_of)
+        dump_apply(sid, address, stop_before=stop_before, as_of=as_of, ir_labels=getattr(args, "ir_labels", False))

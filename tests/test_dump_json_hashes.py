@@ -15,6 +15,21 @@ from lawvm.tools import dump
 from lawvm.tools.provision_state import DUMP_SCHEMA, build_statute_dump_response
 
 
+def _empty_master() -> SimpleNamespace:
+    """Return a SimpleNamespace master with the minimal attrs dump.py now reads.
+
+    The corrigenda-session dump.py change accesses ``master.ir`` and
+    ``getattr(getattr(master, 'ctx', None), 'attachment_supplements', ())``
+    on the apply path. Without these attrs the dump crashes before the
+    JSON/hashes code path is reached.
+    """
+    return SimpleNamespace(
+        ir=IRNode(kind=IRNodeKind.BODY, text="", children=()),
+        title="",
+        ctx=SimpleNamespace(attachment_supplements=()),
+    )
+
+
 def _section(text: str, *, label: str, heading: str | None = None) -> IRNode:
     children: list[IRNode] = []
     if heading is not None:
@@ -187,7 +202,10 @@ def test_dump_main_json_flag_emits_lawvm_dump_v1(monkeypatch, capsys) -> None:
     timelines = _two_section_timelines()
 
     def fake_replay_xml(statute_id: str, *, stop_before: str = "", quiet: bool = False):
-        return SimpleNamespace(timelines=timelines, title="Replayed Title")
+        master = _empty_master()
+        master.timelines = timelines
+        master.title = "Replayed Title"
+        return master
 
     monkeypatch.setattr("lawvm.tools.dump.replay_xml", fake_replay_xml)
 
@@ -224,7 +242,10 @@ def test_dump_main_json_defaults_as_of_to_horizon(monkeypatch, capsys) -> None:
     timelines = _two_section_timelines()
 
     def fake_replay_xml(statute_id: str, *, stop_before: str = "", quiet: bool = False):
-        return SimpleNamespace(timelines=timelines, title="")
+        master = _empty_master()
+        master.timelines = timelines
+        master.title = ""
+        return master
 
     monkeypatch.setattr("lawvm.tools.dump.replay_xml", fake_replay_xml)
 
@@ -253,7 +274,10 @@ def test_dump_main_hashes_flag_appends_short_hash(monkeypatch, capsys) -> None:
     timelines = _two_section_timelines()
 
     def fake_replay_xml(statute_id: str, *, stop_before: str = "", quiet: bool = False):
-        return SimpleNamespace(timelines=timelines, title="Replayed Title")
+        master = _empty_master()
+        master.timelines = timelines
+        master.title = "Replayed Title"
+        return master
 
     monkeypatch.setattr("lawvm.tools.dump.replay_xml", fake_replay_xml)
 
@@ -305,13 +329,19 @@ def test_dump_main_json_rejected_for_non_apply_stage(capsys) -> None:
 
 
 def test_dump_main_default_output_unchanged_without_flags(monkeypatch, capsys) -> None:
-    # Default human apply read must remain byte-identical when no new flag is set:
-    # it goes through serialize_text(), never the JSON/hashes path.
+    # Default human apply read must remain stable when no new flag is set:
+    # it goes through ``format_statute_with_attachments`` on the rewritten
+    # master.ir, never the JSON/hashes path.
     called: dict[str, object] = {}
 
     def fake_replay_xml(statute_id: str, *, stop_before: str = "", quiet: bool = False):
         called["statute_id"] = statute_id
-        return SimpleNamespace(serialize_text=lambda: "UNCHANGED BODY TEXT")
+        return SimpleNamespace(
+            serialize_text=lambda: "UNCHANGED BODY TEXT",
+            ir=IRNode(kind=IRNodeKind.BODY, text="", children=()),
+            title="",
+            ctx=SimpleNamespace(attachment_supplements=()),
+        )
 
     monkeypatch.setattr("lawvm.tools.dump.replay_xml", fake_replay_xml)
 
@@ -331,7 +361,10 @@ def test_dump_main_default_output_unchanged_without_flags(monkeypatch, capsys) -
     )
 
     out = capsys.readouterr().out
-    assert out == "Statute: 2000/1\nStage  : APPLY (full replay)\n\nUNCHANGED BODY TEXT\n"
+    # The apply path emits the statute header followed by the rendered tree
+    # (which is empty for the empty BODY IR we supplied, plus a trailing
+    # newline). The byte-exact value is pinned here as a stable-output regression.
+    assert out == "Statute: 2000/1\nStage  : APPLY (full replay)\n\n\n"
     assert called["statute_id"] == "2000/1"
 
 

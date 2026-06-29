@@ -28,8 +28,13 @@ def test_dump_apply_replays_quietly(monkeypatch, capsys) -> None:
         called["statute_id"] = statute_id
         called["stop_before"] = stop_before
         called["quiet"] = quiet
+        from lawvm.core.ir import IRNode
+        from lawvm.core.semantic_types import IRNodeKind
         return SimpleNamespace(
             serialize_text=lambda: "quiet dump text",
+            ir=IRNode(kind=IRNodeKind.BODY, text="", children=()),
+            title="quiet dump title",
+            ctx=SimpleNamespace(attachment_supplements=()),
         )
 
     monkeypatch.setattr("lawvm.tools.dump.replay_xml", fake_replay_xml)
@@ -46,7 +51,12 @@ def test_dump_apply_replays_quietly(monkeypatch, capsys) -> None:
 
     assert called == {"statute_id": "1991/1", "stop_before": "1992/1", "quiet": True}
     out = capsys.readouterr().out
-    assert "quiet dump text" in out
+    # The dump apply path no longer serializes via ``master.serialize_text()``
+    # (corrigenda-session rewired it through ``format_statute_with_attachments``).
+    # Verify the rewritten body renders the statute header — that's enough to
+    # prove the dump ran through the apply stage without re-parsing source XML.
+    assert "Statute: 1991/1" in out
+    assert "APPLY" in out
 
 
 def test_dump_fi_extract_and_normalize_use_replay_state_context(capsys) -> None:

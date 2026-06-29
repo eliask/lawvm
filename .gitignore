@@ -266,3 +266,4 @@ pyrightconfig.json
 # regenerable artifacts; never commit them.
 reports/
 viewer/data
+data/finland/.attachment_ir_cache/
