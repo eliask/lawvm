@@ -199,6 +199,9 @@ class _DivergentWitnessStore(CorpusStore):
     def read_corrigendum_media(self, sid: str, filename: str) -> bytes | None:
         return self._inner.read_corrigendum_media(sid, filename)
 
+    def read_attachment_media(self, sid: str, filename: str) -> bytes | None:
+        return self._inner.read_attachment_media(sid, filename)
+
     def list_statute_ids(self) -> list[str]:
         return self._inner.list_statute_ids()
 

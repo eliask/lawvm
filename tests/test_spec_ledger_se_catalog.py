@@ -62,6 +62,7 @@ _NON_RULE_LITERALS: frozenset[str] = frozenset(
         "se_legal_operation_from_dict",
         "se_legal_operation_to_dict",
         "se_pdf_bytes_to_text",
+        "se_grafter_pdf_",
         "se_source_record_to_dict",
         "se_source_bundle_to_dict",
         "se_sfs_id_from_doc_url",
@@ -188,4 +189,3 @@ def test_all_hypotheses_non_empty() -> None:
 def test_excluded_non_rule_literals_are_not_cataloged() -> None:
     leaked = sorted(_NON_RULE_LITERALS & set(_SE_RULE_SPECS))
     assert not leaked, f"non-rule literals cataloged as rules: {leaked}"
-

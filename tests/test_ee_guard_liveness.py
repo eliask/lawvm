@@ -401,10 +401,18 @@ def _scan_ee_blocking_emit_sites() -> set[str]:
             is_blocking_helper = name in _HARD_BLOCKING_HELPERS
             is_forwarding_helper = name in _FORWARDING_BLOCKING_HELPERS
             is_direct_ca = name == "CompileAdjudication"
-            if not (is_blocking_helper or is_forwarding_helper or is_direct_ca):
+            is_shared_same_moment_detector = name == "detect_cross_act_same_moment_conflicts"
+            if not (
+                is_blocking_helper
+                or is_forwarding_helper
+                or is_direct_ca
+                or is_shared_same_moment_detector
+            ):
                 continue
             kind_val: str | None = None
             blocking_val: bool | None = None
+            finder_kind_prefix: str | None = None
+            has_adjudications_out = False
             for kw in node.keywords:
                 if kw.arg == "kind":
                     kind_node = kw.value
@@ -416,6 +424,14 @@ def _scan_ee_blocking_emit_sites() -> set[str]:
                     kw.value.value, bool
                 ):
                     blocking_val = kw.value.value
+                if (
+                    kw.arg == "finder_kind_prefix"
+                    and isinstance(kw.value, ast.Constant)
+                    and isinstance(kw.value.value, str)
+                ):
+                    finder_kind_prefix = kw.value.value
+                if kw.arg == "adjudications_out":
+                    has_adjudications_out = True
             # Direct CompileAdjudication: only count when blocking is literally True.
             if is_direct_ca and blocking_val is True and kind_val:
                 discovered.add(kind_val)
@@ -430,6 +446,10 @@ def _scan_ee_blocking_emit_sites() -> set[str]:
             # pass ``blocking=True`` (the helper default is typically False).
             if is_forwarding_helper and blocking_val is True and kind_val:
                 discovered.add(kind_val)
+            if is_shared_same_moment_detector and finder_kind_prefix == "ee" and has_adjudications_out:
+                discovered.add(
+                    "ee_same_moment_cross_act_incompatible_payload_ambiguous"
+                )
         # Loop-body variant: ``rule_id = "ee_*"`` assigned inside a ``for``
         # body, then a sibling ``CompileAdjudication(kind=rule_id, ..., blocking=True)``
         # call consumes it (the

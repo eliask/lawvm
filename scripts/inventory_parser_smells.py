@@ -108,6 +108,8 @@ CATEGORY_MAP: dict[str, str] = {
     "src/lawvm/finland/transparent_store.py": "source_plane",
     "src/lawvm/finland/finlex_api.py": "source_plane",
     "src/lawvm/finland/xml_ir.py": "source_plane",
+    "src/lawvm/finland/archive_store.py": "source_plane",
+    "src/lawvm/finland/pdf_layout.py": "source_plane",
     # eId / locator / AKN-component / version-suffix parsers (no legal prose):
     "src/lawvm/finland/section_text_extractor.py": "source_plane",
     "src/lawvm/finland/section_resolver.py": "source_plane",
@@ -157,6 +159,8 @@ CATEGORY_MAP: dict[str, str] = {
     "src/lawvm/finland/references/by_name.py": "owning_parser",
     "src/lawvm/finland/references/sections.py": "owning_parser",
     "src/lawvm/finland/amendment_payload_lookup.py": "owning_parser",
+    "src/lawvm/finland/attachment_ir.py": "owning_parser",
+    "src/lawvm/finland/footnote_collation.py": "owning_parser",
     # references/ core owning recognizers (C5 triage: each OWNS a reference family
     # per notes/FI_REFERENCE_CATALOGUE.md §4; regex feeds the family parser over the
     # module's OWN prose / AKN-id surface — mirrors the by_name / sections preclear).

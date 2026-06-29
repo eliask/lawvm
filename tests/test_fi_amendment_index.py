@@ -60,6 +60,10 @@ class _FakeCorpus(CorpusStore):
         return None
 
     @override
+    def read_attachment_media(self, sid: str, filename: str) -> bytes | None:
+        return None
+
+    @override
     def read_locator(self, locator: str) -> bytes | None:
         if locator.startswith("oracle://"):
             return self.read_oracle(locator.removeprefix("oracle://"))

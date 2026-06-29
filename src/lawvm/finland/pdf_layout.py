@@ -95,11 +95,14 @@ def extract_pdf_layout(pdf_bytes: bytes, *, max_pages: int = 5000) -> Attachment
     """Extract structured layout from a Finlex attachment PDF."""
     import io
 
-    import pdfplumber
+    try:
+        import pdfplumber  # ty: ignore[unresolved-import]
+    except ModuleNotFoundError:
+        return None
 
     try:
         pdf = pdfplumber.open(io.BytesIO(pdf_bytes))
-    except Exception:
+    except Exception:  # lawvm-failloud: optional PDF layout extraction degrades to text fallback
         return None
 
     body_blocks: list[BodyBlock] = []
@@ -114,7 +117,7 @@ def extract_pdf_layout(pdf_bytes: bytes, *, max_pages: int = 5000) -> Attachment
         # --- Extract tables ---
         try:
             page_tables = page.extract_tables()
-        except Exception:
+        except Exception:  # lawvm-failloud: page table extraction may fail on malformed PDFs
             page_tables = []
 
         table_regions: list[tuple[float, float, float, float]] = []
@@ -122,7 +125,7 @@ def extract_pdf_layout(pdf_bytes: bytes, *, max_pages: int = 5000) -> Attachment
             tbl_bboxes = page.find_tables()
             for tb in tbl_bboxes:
                 table_regions.append(tb.bbox)
-        except Exception:
+        except Exception:  # lawvm-failloud: table-region hints are optional layout evidence
             pass
 
         for tbl_idx, tbl in enumerate(page_tables):
@@ -146,7 +149,7 @@ def extract_pdf_layout(pdf_bytes: bytes, *, max_pages: int = 5000) -> Attachment
         # --- Separate footnotes from body text ---
         try:
             chars = page.chars
-        except Exception:
+        except Exception:  # lawvm-failloud: character extraction failure leaves page unstructured
             chars = []
 
         if not chars:
@@ -351,15 +354,14 @@ def layout_to_ir_node(layout: AttachmentLayout, *, source_ref: str = "") -> IRNo
                     )
                     for c in cells
                 ]
-                rb = _Builder(IRNodeKind.ROW)
-                rb.children = cell_builders
+                rb = _Builder(IRNodeKind.ROW, children=cell_builders)
                 row_builders.append(rb)
             if row_builders:
                 tbl_builder = _Builder(
                     IRNodeKind.TABLE,
                     attrs={"page": str(tbl.page_num)} if tbl.page_num else {},
+                    children=row_builders,
                 )
-                tbl_builder.children = row_builders
                 stack[-1].children.append(tbl_builder)
 
         elif item.kind == "footnote":

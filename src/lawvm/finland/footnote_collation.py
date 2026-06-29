@@ -63,15 +63,9 @@ from lawvm.core.semantic_types import IRNodeKind
 # itself is the linkage key). Anchored no-leading-whitespace so we don't
 # pick up footnote-body-introducer patterns (the SCHEDULE_ENTRY body's
 # own label is its own kind — see _walk_bodies).
-_MARKER_TAIL_RE = compile_classifier_regex(
-    r"(\d+[a-z]?)[)\]]",
-    classifier_id="lawvm.finland.footnote_collation.marker_tail",
-)
-
-# ``[1]`` / ``[12]`` / ``[12a]`` bracketed markers.
-_MARKER_BRACKET_RE = compile_classifier_regex(
-    r"\[(\d+[a-z]?)\]",
-    classifier_id="lawvm.finland.footnote_collation.marker_bracket",
+_MARKER_RE = compile_classifier_regex(
+    r"(?P<tail>\d+[a-z]?)[)\]]|\[(?P<bracket>\d+[a-z]?)\]",
+    classifier_id="lawvm.finland.footnote_collation.marker",
 )
 
 
@@ -185,13 +179,8 @@ def _extract_markers(text: str) -> Iterator[str]:
     if not text:
         return
     seen: set[str] = set()
-    for m in _MARKER_TAIL_RE.finditer(text):
-        label = m.group(1)
-        if label not in seen:
-            seen.add(label)
-            yield label
-    for m in _MARKER_BRACKET_RE.finditer(text):
-        label = m.group(1)
+    for m in _MARKER_RE.finditer(text):
+        label = m.group("tail") or m.group("bracket")
         if label not in seen:
             seen.add(label)
             yield label

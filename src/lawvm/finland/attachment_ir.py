@@ -40,6 +40,7 @@ import lxml.etree as etree
 from lawvm.core.ir import IRNode
 from lawvm.core.regex_safety import compile_classifier_regex
 from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.xml_parse import parse_corpus_xml
 
 
 # ---------------------------------------------------------------------------
@@ -115,7 +116,7 @@ _CELL_SPLIT_RE = compile_classifier_regex(
 # ---------------------------------------------------------------------------
 
 
-@dataclass
+@dataclass(frozen=True)
 class _Builder:
     """Mutable builder for an :class:`IRNode` tree.
 
@@ -564,7 +565,7 @@ def extract_attachment_pdf_links(xml_bytes: bytes) -> "list[AttachmentPDFLink]":
     .jpg) are transparently excluded — links with non-.pdf hrefs are skipped.
     """
     try:
-        root = etree.fromstring(xml_bytes)
+        root = parse_corpus_xml(xml_bytes)
     except etree.XMLSyntaxError:
         return []
     links: list[AttachmentPDFLink] = []

@@ -17,6 +17,7 @@ import re
 from pathlib import Path
 
 from lawvm.corpus_store import ArchiveLike, CorpusStore
+from lawvm.core.regex_safety import compile_classifier_regex
 from lawvm.finland.consolidated_artifacts import (
     build_canonical_consolidated_locator,
     build_consolidated_corrigendum_locator,
@@ -61,19 +62,23 @@ def media_url(sid: str, filename: str, lang: str = "fin") -> str:
 # Finlex AKN regex recognizers
 # ---------------------------------------------------------------------------
 
-_AKN_STATUTE_RE = re.compile(
-    r'akn/fi/act/statute/(\d{4}/[^/]+)/([^/@]+)@([^/]*)/(.+)'
+_AKN_STATUTE_RE = compile_classifier_regex(
+    r'akn/fi/act/statute/(\d{4}/[^/]+)/([^/@]+)@([^/]*)/(.+)',
+    classifier_id="lawvm.finland.archive_store.akn_statute",
 )
-_AKN_CONSOL_RE = re.compile(
-    r'akn/fi/act/statute-consolidated/(\d{4}/[^/]+)/([^/@]+)@([^/]*)/(.+)'
+_AKN_CONSOL_RE = compile_classifier_regex(
+    r'akn/fi/act/statute-consolidated/(\d{4}/[^/]+)/([^/@]+)@([^/]*)/(.+)',
+    classifier_id="lawvm.finland.archive_store.akn_consolidated",
 )
 # Corrigenda in the consolidated ZIP live at the statute root without a
 # lang@version segment: akn/fi/act/statute-consolidated/{sid}/media/corrigenda/{file}
-_AKN_CONSOL_CORRIGENDUM_RE = re.compile(
-    r'akn/fi/act/statute-consolidated/(\d{4}/[^/]+)/media/corrigenda/([^/]+\.pdf)'
+_AKN_CONSOL_CORRIGENDUM_RE = compile_classifier_regex(
+    r'akn/fi/act/statute-consolidated/(\d{4}/[^/]+)/media/corrigenda/([^/]+\.pdf)',
+    classifier_id="lawvm.finland.archive_store.akn_consolidated_corrigendum",
 )
-_AKN_HE_RE = re.compile(
-    r'akn/fi/doc/government-proposal/(\d{4}/[^/]+)/([^/@]+)@([^/]*)/(.+)'
+_AKN_HE_RE = compile_classifier_regex(
+    r'akn/fi/doc/government-proposal/(\d{4}/[^/]+)/([^/@]+)@([^/]*)/(.+)',
+    classifier_id="lawvm.finland.archive_store.akn_he",
 )
 
 # Filename prefix → language code (sk = suomi/Finnish, fs = Swedish)

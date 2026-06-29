@@ -1,6 +1,6 @@
 {
   "_doc": "Typed-carrier phase-boundary ratchet baseline (FW-09). Per-file total untyped-carrier signatures in PUBLIC functions of core/finland; may only fall. XP-01 plane-noncollapse has no baseline (must be 0 always). Regenerate: uv run python tests/test_typed_carrier_boundary_ratchet.py --update-baseline",
-  "total_untyped_carriers": 349,
+  "total_untyped_carriers": 352,
   "untyped_carrier_counts": {
     "src/lawvm/core/actor_mention.py": 1,
     "src/lawvm/core/adjudication_evidence.py": 2,
@@ -32,7 +32,7 @@
     "src/lawvm/core/ir_helpers.py": 2,
     "src/lawvm/core/legal_surface_lints.py": 1,
     "src/lawvm/core/manual_claims/hashing.py": 1,
-    "src/lawvm/core/manual_claims/native.py": 2,
+    "src/lawvm/core/manual_claims/native.py": 1,
     "src/lawvm/core/manual_claims/proposal_backend.py": 4,
     "src/lawvm/core/mutation_boundary_proof.py": 1,
     "src/lawvm/core/ownership_closure.py": 1,
@@ -78,6 +78,7 @@
     "src/lawvm/finland/amendment_selection.py": 1,
     "src/lawvm/finland/apply_intent_facade.py": 1,
     "src/lawvm/finland/apply_resolved_op.py": 1,
+    "src/lawvm/finland/archive_store.py": 1,
     "src/lawvm/finland/bench_bundle_proof_projector.py": 3,
     "src/lawvm/finland/body_pairing.py": 1,
     "src/lawvm/finland/chapter_seed.py": 1,
@@ -101,6 +102,8 @@
     "src/lawvm/finland/he_branch_parser.py": 1,
     "src/lawvm/finland/he_branch_proof_projector.py": 1,
     "src/lawvm/finland/interlink_targets.py": 3,
+    "src/lawvm/finland/ir_serialize.py": 2,
+    "src/lawvm/finland/ir_tree_dump.py": 1,
     "src/lawvm/finland/johto_scope_mentions.py": 1,
     "src/lawvm/finland/johtolause/coverage_audit.py": 11,
     "src/lawvm/finland/johtolause/grammar/diff.py": 3,

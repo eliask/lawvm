@@ -30,6 +30,7 @@ _SRC_ROOT = Path(__file__).resolve().parents[1] / "src"
 _NON_RULE_LITERALS = frozenset(
     {
         "ee_riigiteataja.farchive",  # default archive filename (fetch.py)
+        "ee_fetch_curl_",            # tempfile prefix (fetch.py)
         "ee_snap_",                  # dynamic replay op_id prefix (grafter.py f-string)
         # __all__ function-name exports in replayability_frontier.py (not rule ids):
         "ee_replayability_frontier_for_corpus",

@@ -483,7 +483,6 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # monotonicity), PROMOTE-01 (retraction down-chain propagation).
         "test_promotion_chain_integrity.py",
         "test_frozen_slots_discipline.py",
-        "test_core_firewall_no_fi_fiscal_doctrine.py",
         "test_strict_profile_registry.py",
     ),
     "core_ir_contracts": (
@@ -507,7 +506,6 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_canonical_intent_kinds.py",
         "test_fi_canonical_op_stage.py",
         "test_fi_canonical_op_stage_carrier.py",
-        "test_core_cross_act_same_moment.py",
         "test_fi_op_coverage_totality.py",
         "test_fi_clause_ast.py",
         "test_fi_coordination_parser.py",
@@ -801,7 +799,6 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_replay_all_cli.py",
         "test_verify_facade_execution.py",
         "test_verify_observations.py",
-        "test_write_receipt_freeze.py",
     ),
     "tools_runtime_io": (
         "test_corpus_store_path_validation.py",

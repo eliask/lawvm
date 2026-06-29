@@ -1502,11 +1502,11 @@ class TestAdversarialTimingUSFederalSiblingAndWordBoundary:
         # calls.  The adversarial budget guards against regression to a fresh
         # ``re.compile`` per call (a hot-path leading cause of slowness per
         # AGENTS.md §2.7).
-        token = "nonexistent_token_alpha"
+        probe_word = "nonexistent_probe_alpha"
         text = "x" * 5000  # No alphabetic word boundary present here
         t0 = time.perf_counter()
         for _ in range(100):
-            assert _word_boundary_pattern(token).search(text) is None
+            assert _word_boundary_pattern(probe_word).search(text) is None
         elapsed_ms = (time.perf_counter() - t0) * 1000
         assert elapsed_ms < _CEILING_MS, (
             f"US _word_boundary_pattern adversarial: {elapsed_ms:.1f} ms "

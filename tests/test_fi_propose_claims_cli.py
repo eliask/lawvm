@@ -362,7 +362,7 @@ def test_duplicate_proposal_is_idempotent(tmp_path: Path):
 
 def test_gap_discovery_finds_missed_citations(tmp_path: Path):
     """HE body with plain-text statute citations; gap-discovery emits GapDiscoveryRow."""
-    import unittest.mock
+    import unittest.mock as mock
     import lawvm.tools.cmd_propose_claims as cpc
 
     he_xml = (
@@ -375,10 +375,10 @@ def test_gap_discovery_finds_missed_citations(tmp_path: Path):
         def read_oracle(self, statute_id):
             return he_xml
 
-    fake_corpus_module = unittest.mock.MagicMock()
+    fake_corpus_module = mock.MagicMock()
     fake_corpus_module.get_corpus_store.return_value = _FakeStore()
 
-    with unittest.mock.patch.dict("sys.modules", {"lawvm.finland.corpus": fake_corpus_module}):
+    with mock.patch.dict("sys.modules", {"lawvm.finland.corpus": fake_corpus_module}):
         gaps = cpc._discover_gaps_from_he(
             he_id="HE-123-2020",
             data_dir=str(tmp_path),
