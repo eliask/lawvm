@@ -29,6 +29,7 @@ from typing import Any
 
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.tree_ops import with_children
 
 
 def uk_ir_node_kind(kind: Any) -> IRNodeKind:
@@ -94,23 +95,6 @@ def uk_with_attr_pop(node: IRNode, *keys: str) -> IRNode:
     pop_set = set(keys)
     new_attrs = {k: v for k, v in node.attrs.items() if k not in pop_set}
     return dc_replace(node, attrs=new_attrs)
-
-
-def uk_replace_children_cow(
-    node: IRNode,
-    new_children: list[IRNode],
-) -> IRNode:
-    """PR3 (audit XJUR-02 / AGENTS.md §2.3): copy-on-write ``uk_replace_children``.
-    Returns a NEW ``IRNode`` with the supplied children, sharing every other
-    field, instead of mutating in place.
-
-    The mutation_boundary / replay invariants depend on every node upstream of
-    a modified subtree being rebuilt rather than mutated in place; this CoW
-    variant is the only ``uk_replace_children`` shipped today (the historical
-    in-place variant lived in the now-deleted ``mutable_ir.py`` shadow module
-    and was retired with it under mutable_ir Wave N3d Sub-PR F).
-    """
-    return dc_replace(node, children=list(new_children))
 
 
 def uk_insert_node_at_index_cow(
@@ -181,5 +165,5 @@ def uk_insert_child_sorted_cow(
     case as a no-op rather than building a shell parent.
     """
     new_children, inserted_idx = uk_insert_node_sorted_cow(list(parent.children), new_node)
-    new_parent = uk_replace_children_cow(parent, new_children)
+    new_parent = with_children(parent, new_children)
     return new_parent, inserted_idx

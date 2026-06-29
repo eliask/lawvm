@@ -34,17 +34,6 @@ def _to_mutable_node(node: Any) -> IRNode:
     )
 
 
-def _to_irnode(node: Any) -> IRNode:
-    """Return a frozen ``IRNode`` for the given payload (identity for IRNode)."""
-    if isinstance(node, IRNode):
-        return node
-    if isinstance(node, dict):
-        return _irnode_from_dict(node)
-    raise TypeError(
-        f"Unsupported payload type for frozen IR conversion: {type(node)!r}"
-    )
-
-
 def _irnode_from_dict(data: dict[str, Any]) -> IRNode:
     """Build a frozen ``IRNode`` tree from a dict payload (recursive)."""
     return IRNode(

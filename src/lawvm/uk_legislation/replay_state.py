@@ -11,13 +11,13 @@ from lawvm.core.ir import IRNode, IRStatute, LegalAddress, LegalOperation
 from lawvm.core.mutation_boundary import TreePath, TreePaths, tree_path_from_legal_address
 from lawvm.core.mutation_events import MutationEvent
 from lawvm.core.semantic_types import StructuralAction
+from lawvm.core.tree_ops import with_children
 from lawvm.uk_legislation.addressing import _action_name
 from lawvm.uk_legislation.canonicalize import UKCanonicalNodeMatch
 from lawvm.uk_legislation.apply_rebuild import (
     uk_insert_child_sorted_cow,
     uk_insert_node_at_index_cow,
     uk_insert_node_sorted_cow,
-    uk_replace_children_cow,
 )
 
 _UK_TOP_SCOPED_EID_PREFIXES = frozenset(
@@ -826,7 +826,7 @@ class UKReplayStateMixin:
         new_children, ok = uk_insert_node_at_index_cow(list(parent.children), idx, new_node)
         if not ok:
             return False
-        new_parent = uk_replace_children_cow(parent, new_children)
+        new_parent = with_children(parent, new_children)
         if not self._replace_ancestor_chain(parent, new_parent):
             return False
         self._record_child_inserted(new_parent, new_node)
@@ -845,11 +845,11 @@ class UKReplayStateMixin:
         that was inserted into ``new_children``.
 
         Builds a new parent whose children list is exactly ``new_children`` via
-        ``uk_replace_children_cow``, threads the new parent up to the statute
+        ``tree_ops.with_children``, threads the new parent up to the statute
         root, then records the structural mutation event with ``new_node`` as
         the inserted child for lineage bookkeeping.
         """
-        new_parent = uk_replace_children_cow(parent, new_children)
+        new_parent = with_children(parent, new_children)
         if not self._replace_ancestor_chain(parent, new_parent):
             return False
         self._record_child_inserted(new_parent, new_node)
@@ -1000,7 +1000,7 @@ class UKReplayStateMixin:
 
         ``new_node`` MUST be the rebuilt version of ``old_node``
         (``dc_replace(old_node, children=...)`` or
-        ``uk_replace_children_cow(old_node, children)``); the caller is
+        ``tree_ops.with_children(old_node, children)``); the caller is
         responsible for any subtree changes inside ``new_node``. The chain
         above ``old_node`` is rebuilt wholesale by this helper.
 
