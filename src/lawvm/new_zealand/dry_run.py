@@ -4330,6 +4330,15 @@ def _amending_act_root(
     # archive-boundary probe. On swallow returns None so the dry-run cache
     # stays miss-shaped and the consumer detects the missing amending work via
     # its existing None path.
+    #
+    # Structural gap (iter4 W2 STOP-and-report): no NZ production caller
+    # threads ``findings_out`` because the upstream call-chain
+    # (``_dry_run_one_X`` -> ``build_dry_run_X`` -> ``NZDryRunReport``,
+    # and ``_extract_X_payload`` -> ``_apply_X_op`` -> ``_apply_transition``
+    # -> ``build_chain_replay``) does not carry a ``list[Finding]`` ledger;
+    # widening signatures across that 5+ site chain is out-of-scope for W2.
+    # The swallow falls through to ``log_emitter`` stderr WARNING
+    # (sanctioned IO/utility carve-out per ``core/named_swallow.py``) — never silent.
     emit = None if findings_out is not None else log_emitter()
     root: Any = swallow_call(
         _resolve_amending_root,

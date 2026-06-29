@@ -445,7 +445,7 @@ def test_fetch_se_official_artifacts_fetches_doc_and_pdf_and_stores_text(monkeyp
         }
     )
     diagnostics: list[dict[str, object]] = []
-    monkeypatch.setattr("lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes: "Recovered PDF text")
+    monkeypatch.setattr("lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes, findings_out=None: "Recovered PDF text")
 
     bundle = fetch_se_official_artifacts("2026:286", archive, diagnostics_out=diagnostics)
 
@@ -489,7 +489,7 @@ def test_fetch_se_official_artifacts_retries_transient_doc_failures(monkeypatch)
         return None
 
     monkeypatch.setattr(archive, "fetch", flaky_fetch)
-    monkeypatch.setattr("lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes: "Recovered PDF text")
+    monkeypatch.setattr("lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes, findings_out=None: "Recovered PDF text")
     monkeypatch.setattr("lawvm.sweden.fetch.time.sleep", lambda seconds: None)
 
     bundle = fetch_se_official_artifacts("2026:286", archive)
@@ -536,7 +536,7 @@ def test_fetch_official_does_not_mirror_blocked_doc_html_when_using_override(mon
             pdf_url: b"%PDF-1.7 fake",
         }
     )
-    monkeypatch.setattr("lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes: "Recovered PDF text")
+    monkeypatch.setattr("lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes, findings_out=None: "Recovered PDF text")
 
     bundle = fetch_se_official_artifacts("2026:286", archive, pdf_url_override=pdf_url)
 
@@ -556,7 +556,7 @@ def test_fetch_official_falls_back_to_month_probe_when_doc_blocked_and_rk_issue_
             pdf_url: b"%PDF-1.7 fake",
         }
     )
-    monkeypatch.setattr("lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes: "Recovered PDF text")
+    monkeypatch.setattr("lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes, findings_out=None: "Recovered PDF text")
 
     bundle = fetch_se_official_artifacts("2026:63", archive)
 
@@ -674,7 +674,7 @@ def test_fetch_se_official_artifacts_records_pdf_text_extraction_failure(monkeyp
         }
     )
     diagnostics: list[dict[str, object]] = []
-    monkeypatch.setattr("lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes: None)
+    monkeypatch.setattr("lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes, findings_out=None: None)
 
     bundle = fetch_se_official_artifacts("2026:286", archive, diagnostics_out=diagnostics)
 
@@ -713,7 +713,7 @@ def test_fetch_se_official_artifacts_records_base_ir_build_failure(monkeypatch) 
     class _ParsedAct:
         is_amending_act = False
 
-    monkeypatch.setattr("lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes: "Recovered PDF text")
+    monkeypatch.setattr("lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes, findings_out=None: "Recovered PDF text")
     monkeypatch.setattr(
         "lawvm.sweden.fetch.parse_se_official_act_text",
         lambda text, *, sfs_id: _ParsedAct(),
@@ -788,7 +788,7 @@ def test_fetch_official_falls_back_to_legacy_sfspdf_direct_url(monkeypatch) -> N
     )
     diagnostics: list[dict[str, object]] = []
     monkeypatch.setattr("lawvm.sweden.fetch.time.sleep", lambda s: None)
-    monkeypatch.setattr("lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes: "Recovered legacy PDF text")
+    monkeypatch.setattr("lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes, findings_out=None: "Recovered legacy PDF text")
     monkeypatch.setattr("lawvm.sweden.fetch.search_se_legacy_pdf_url", lambda sfs_id: None)
 
     bundle = fetch_se_official_artifacts("2015:284", archive, diagnostics_out=diagnostics)
@@ -1996,7 +1996,7 @@ def test_fetch_official_archives_parsed_official_act_json(monkeypatch) -> None:
     )
     monkeypatch.setattr(
         "lawvm.sweden.fetch.se_pdf_bytes_to_text",
-        lambda pdf_bytes: (
+        lambda pdf_bytes, findings_out=None: (
             "Svensk författningssamling\nFörordning\nom riktålder för pension för år 2031\n\n"
             "Publicerad\nden 27 maj 2025\n\nUtfärdad den 22 maj 2025\n"
             "Regeringen föreskriver följande.\n"
@@ -7056,7 +7056,7 @@ def test_fetch_official_falls_back_to_rk_issue_date_guess(monkeypatch) -> None:
             "https://svenskforfattningssamling.se/sites/default/files/sfs/2025-05/SFS2025-399.pdf": b"%PDF-1.7",
         },
     )
-    monkeypatch.setattr("lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes: "Recovered PDF text")
+    monkeypatch.setattr("lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes, findings_out=None: "Recovered PDF text")
 
     bundle = fetch_se_official_artifacts("2025:399", archive)
 
@@ -7175,7 +7175,7 @@ def test_hydrate_se_bundle_live_archives_bundle_and_official_artifacts(monkeypat
         "lawvm.sweden.fetch._curl_json_post",
         lambda url, headers, payload: json.dumps(response).encode("utf-8"),
     )
-    monkeypatch.setattr("lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes: "Recovered PDF text")
+    monkeypatch.setattr("lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes, findings_out=None: "Recovered PDF text")
 
     bundle = hydrate_se_bundle_live("2025:399", archive)
 
@@ -7244,7 +7244,7 @@ def test_fetch_se_official_artifacts_force_reextract_fires_overwrite_events(monk
         },
     )
     monkeypatch.setattr(
-        "lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes: "New extracted PDF text"
+        "lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes, findings_out=None: "New extracted PDF text"
     )
 
     overwrite_events: list[SEOverwriteEvent] = []
@@ -7300,7 +7300,7 @@ def test_fetch_se_official_artifacts_force_reextract_blank_prior_on_first_write(
         }
     )
     monkeypatch.setattr(
-        "lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes: "First extracted text"
+        "lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes, findings_out=None: "First extracted text"
     )
 
     overwrite_events: list[SEOverwriteEvent] = []

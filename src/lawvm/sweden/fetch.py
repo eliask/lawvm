@@ -16,13 +16,14 @@ import re
 import time
 from pathlib import Path
 import subprocess
-from typing import Any, Callable, Literal, Protocol, Optional, assert_never, cast
+from typing import Any, Callable, List, Literal, Protocol, Optional, assert_never, cast
 from urllib.parse import urlencode, urljoin
 
 from lawvm.core.comparison_normalization import ComparisonNormalizationRule, normalize_comparison_text
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.ir import IRNode, IRStatute, LegalOperation
 from lawvm.core.ir_helpers import ir_statute_from_dict
+from lawvm.core.phase_result import Finding
 from lawvm.core.regex_safety import compile_classifier_regex
 from lawvm.core.semantic_types import FacetKind, IRNodeKind, StructuralAction
 from lawvm.core.source_lane import SourceLaneSelectionEvidence, source_lane_attempt_from_mapping
@@ -1210,6 +1211,7 @@ def fetch_se_official_artifacts(
     pdf_url_override: str | None = None,
     diagnostics_out: list[dict[str, Any]] | None = None,
     overwrite_events_out: list[SEOverwriteEvent] | None = None,
+    findings_out: Optional[List[Finding]] = None,
 ) -> Optional[SEOfficialArtifacts]:
     """Fetch Sweden official doc page + PDF and archive extracted text.
 
@@ -1223,6 +1225,17 @@ def fetch_se_official_artifacts(
     - extracted raw text is archived at `se://.../official.pdf.txt`
     - deterministic cleaned text is archived at `se://.../official.cleaned.txt`
     - structured parsed act text is archived at `se://.../official.act.json`
+
+    ``findings_out`` threads a per-statute audit-trail sink for the named-swallow
+    sites inside this fetch lane (currently ``se_pdf_bytes_to_text``'s subprocess-
+    failure swallow at the PDF-text extraction boundary). When the caller plumbs
+    a ``list[Finding]`` (e.g. from a replay/PIT compilation ledger) the typed
+    Finding lands in that audit-trail list — closing the §3.2 evidence-path
+    answerability gap; when not plumbed (default for the CLI/cache-management
+    callers — IO/utility boundary carve-out per ``core/named_swallow.py``'s
+    ``log_emitter`` helper), the swallow falls back to stderr WARNING so it
+    remains visible. Type-distinct from ``overwrite_events_out``
+    (``list[SEOverwriteEvent]``) — plane-distinct per §2.10, never collapsed.
     """
     doc_url = se_official_doc_url(sfs_id)
     pdf_source_attempts: list[dict[str, str]] = []
@@ -1366,7 +1379,12 @@ def fetch_se_official_artifacts(
             storage_class="text",
         )
     elif existing_text is None or force_reextract or existing_cleaned is None:
-        pdf_text = se_pdf_bytes_to_text(pdf_bytes)
+        # Thread ``findings_out`` into ``se_pdf_bytes_to_text``'s named-swallow
+        # sink so the typed Finding lands in the per-statute audit-trail list when
+        # the caller plumbed one (e.g. a replay/PIT compile ledger) — closing the
+        # §3.2 evidence-path answerability gap. Default-None falls through to
+        # ``log_emitter`` (sanctioned IO/utility carve-out per ``named_swallow``).
+        pdf_text = se_pdf_bytes_to_text(pdf_bytes, findings_out=findings_out)
         if pdf_text:
             # KNOW-01 monotonicity wrap: the force_reextract path overwrites
             # prior text/cleaned bytes (the cached source-footing mutates).

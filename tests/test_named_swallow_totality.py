@@ -918,3 +918,125 @@ def test_qwen_local_check_server_reachable_findings_out_sink_receives_finding(
     assert f.detail["exception_type"] == "RuntimeError"
     assert f.detail["jurisdiction"] == "fi"
     assert "probe endpoint=" in f.detail["clause_text"]
+
+
+# ---------------------------------------------------------------------------
+# iter4 Wave 2 (W2) — production-caller threading fire-drill (arch HIGH-1,
+# silent-failure HIGH-1, §3.2 evidence-path answerability).
+#
+# Iter3 W2 added the ``findings_out=<list>`` kwarg to the swallow sites, and
+# the per-site unit tests above prove the typed Finding lands in the plumbed
+# sink when called directly. The §3.2 gap that remained: production callers
+# still defaulted to ``findings_out=None`` → ``log_emitter()`` stderr fallback,
+# so a swallowed failure during real replay/PIT never reached the per-statute
+# audit-trail ledger. Iter4 W2 closes that gap by threading the accumulator at
+# production call sites where one is in scope OR — at IO/utility boundary
+# sites where no sink is in scope — recording the sanctioned-use carve-out so
+# the swallow stays VISIBLE via stderr WARNING (never silent).
+#
+# The SE site is the accessible migration: ``fetch_se_official_artifacts`` is
+# the production caller of ``se_pdf_bytes_to_text`` and gains a
+# ``findings_out`` parameter that the inner swallow at grafter.py:1097 inherits.
+# Sites 1, 2, 4, 5 (qwen_local / amendment_index / spec_ledger_adapter /
+# new_zealand dry_run) hit the 5+-signature-widening STOP-and-report
+# threshold documented inline (structural gap, sanctioned log_emitter fallback).
+# ---------------------------------------------------------------------------
+
+
+def test_fetch_se_official_artifacts_findings_out_threads_to_se_pdf_bytes_to_text_swallow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Production-caller threading fire-drill: ``fetch_se_official_artifacts``.
+
+    Drives a known-violating input through the FULL production path (monkeypatch
+    ``subprocess.run`` to raise ValueError — the non-FileNotFoundError, non-OSError,
+    non-subprocess.TimeoutExpired branch) and plumbs ``findings_out=<sink>`` through
+    ``fetch_se_official_artifacts`` so the typed Finding lands in the per-statute
+    evidence sink at the SE production caller boundary — NOT via the lazy
+    ``log_emitter`` fallback. The §3.2 evidence-ledger-reach witness for the SE
+    acquisition lane (arch HIGH-1 + silent-failure HIGH-1).
+    """
+    import lawvm.sweden.grafter as se_grafter
+    from lawvm.sweden.fetch import fetch_se_official_artifacts
+
+    # Force the PDF-text extraction boundary to fire its named-swallow path:
+    # ``subprocess.run`` raises a non-expected ValueError, which the
+    # ``except Exception`` branch in ``se_pdf_bytes_to_text`` (grafter.py:1132)
+    # routes through ``build_named_swallow_finding``. The plumbed
+    # ``findings_out`` sink receives the typed Finding here.
+    def _boom_run(*_a: Any, **_kw: Any) -> Any:
+        raise ValueError("simulated unexpected subprocess.run error from production caller")
+
+    monkeypatch.setattr(se_grafter.subprocess, "run", _boom_run)
+
+    # Fake archive with a real-looking PDF payload so the fetch lane reaches the
+    # ``se_pdf_bytes_to_text`` call site (sweden/fetch.py:1369 — the new
+    # ``findings_out=findings_out`` threading point).
+    class _FakeArchive:
+        fetched: dict[str, bytes]
+        stored: dict[str, bytes]
+        fetch_calls: list[tuple[str, str, float]]
+
+        def __init__(self) -> None:
+            self.fetched = {
+                "https://svenskforfattningssamling.se/doc/2026286.html": (
+                    b'<a href="/sites/default/files/sfs/2026-03/SFS2026-286.pdf">PDF</a>'
+                ),
+                "https://svenskforfattningssamling.se/sites/default/files/sfs/2026-03/SFS2026-286.pdf": (
+                    b"%PDF-1.7 fake production-caller fire-drill payload"
+                ),
+            }
+            self.stored = {}
+            self.fetch_calls = []
+
+        def fetch(
+            self,
+            url: str,
+            max_age_hours: float = 168.0,
+            headers: dict | None = None,
+            content_type: str = "auto",
+        ) -> bytes | None:
+            self.fetch_calls.append((url, content_type, max_age_hours))
+            return self.fetched.get(url)
+
+        def store(self, locator: str, data: bytes, *, storage_class: str | None = None) -> str:
+            self.stored[locator] = data
+            return "fakehash"
+
+        def get(self, locator: str) -> bytes | None:
+            return self.stored.get(locator)
+
+        def has(self, locator: str, *, max_age_hours: float = float("inf")) -> bool:
+            return locator in self.stored
+
+    archive = _FakeArchive()
+    sink: list[Finding] = []
+    # The PRODUCTION-CALLER threading: ``findings_out=sink`` flows through the
+    # new ``fetch_se_official_artifacts`` parameter and lands in the
+    # ``se_pdf_bytes_to_text`` swallow sink (sweden/fetch.py:1369). The
+    # default-None callers (CLI/cache-management) still fall through to
+    # ``log_emitter`` per the sanctioned IO/utility carve-out.
+    bundle = fetch_se_official_artifacts(
+        "2026:286",
+        archive,
+        force_reextract=True,
+        findings_out=sink,
+    )
+    # Bundle still returned (default-preserved semantics: extraction produced
+    # no payload → stored text is empty bytes), the swallow does NOT crash the
+    # fetch path — its evidence-ledger-reach contract.
+    assert bundle is not None
+    # The typed Finding from the ``se_pdf_bytes_to_text`` swallow LANDED in
+    # the plumbed production-caller sink — NOT via the log_emitter fallback.
+    assert len(sink) == 1, (
+        f"Expected exactly one Finding in the plumbed sink; got {len(sink)}. "
+        f"The swallow at se_pdf_bytes_to_text (grafter.py:1132) should have "
+        f"appended a UNEXPECTED_PHASE_FAILURE Finding to findings_out."
+    )
+    f = sink[0]
+    assert f.kind == NAMED_SWALLOW_FINDING_KIND
+    assert f.blocking is True
+    assert f.detail["rule_id"] == "se_grafter_pdf_bytes_to_text_subprocess"
+    assert f.detail["exception_type"] == "ValueError"
+    assert f.detail["jurisdiction"] == "se"
+    assert "production-caller fire-drill" in f.detail["clause_text"]

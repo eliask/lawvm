@@ -805,6 +805,13 @@ def ensure_amendment_index(
         should_close_cs = True
 
     try:
+        # findings_out=None sanctioned: ``ensure_amendment_index`` is a
+        # cache-management utility boundary — no per-statute audit-trail
+        # ``list[Finding]`` is in scope here (the §3.2 ledger lives at the
+        # replay/PIT compile caller, not at this sidecar-rebuild lane). The
+        # swallow at ``_corpus_source_fingerprint`` falls through to
+        # ``log_emitter`` stderr WARNING (IO/utility carve-out per
+        # ``core/named_swallow.py`` docstring) — never silent.
         source_fingerprint = _corpus_source_fingerprint(cs)
         if _amendment_index_cache_is_current(csv_path, source_fingerprint):
             return
@@ -829,6 +836,12 @@ def _default_source_cache_key() -> _AmendmentIndexSourceKey | None:
     except (OSError, RuntimeError):
         return None
     try:
+        # findings_out=None sanctioned: ``_default_source_cache_key`` is a pure
+        # lru_cache-key-probe utility — no per-statute audit-trail
+        # ``list[Finding]`` is in scope at this IO-boundary swallow site
+        # (the §3.2 evidence ledger lives at the replay caller, not here).
+        # The swallow falls through to ``log_emitter`` stderr WARNING
+        # (core/named_swallow.py docstring's IO/utility carve-out) — never silent.
         fingerprint = _corpus_source_fingerprint(cs)
         if fingerprint is None:
             return None

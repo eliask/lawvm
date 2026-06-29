@@ -156,6 +156,14 @@ def ee_ledger_inputs(sids: List[str], mode: Mode) -> Iterator[StatuteLedgerInput
         base_id, _, oracle_id = sid.partition("/")
         if not base_id or not oracle_id:
             continue
+        # findings_out=None sanctioned: ``ee_ledger_inputs`` is a registered
+        # ``LedgerInputsFn = Callable[[List[str], Mode], Iterable[...]]`` — its
+        # signature is fixed by ``lawvm.tools.spec_ledger.LedgerAdapter`` and
+        # widening to accept a ``list[Finding]`` would cascade 5+ sites
+        # (LedgerInputsFn type + LedgerAdapter + run_ledger + the fi/ee/uk
+        # adapter functions + their tests). That is the documented structural
+        # gap for iter4 W2 — the swallow falls through to ``log_emitter``
+        # (core/named_swallow.py docstring's IO/utility carve-out) — never silent.
         as_of = _ee_resolve_as_of(oracle_id, archive)
         if not as_of:
             continue
