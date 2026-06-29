@@ -93,10 +93,16 @@ def _extract_footnote_marker(text: str) -> str:
 
 def extract_pdf_layout(pdf_bytes: bytes, *, max_pages: int = 5000) -> AttachmentLayout | None:
     """Extract structured layout from a Finlex attachment PDF."""
+    import importlib
     import io
 
     try:
-        import pdfplumber  # ty: ignore[unresolved-import]
+        # pdfplumber is an OPTIONAL runtime dependency (not declared in
+        # pyproject). Import dynamically so the static type checker neither
+        # resolves it (envs with pdfplumber installed) nor flags an unused
+        # suppression — the env-independent form for an optional import under
+        # ``unused-ignore-comment = "error"``.
+        pdfplumber = importlib.import_module("pdfplumber")
     except ModuleNotFoundError:
         return None
 
