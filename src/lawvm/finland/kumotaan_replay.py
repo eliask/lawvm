@@ -402,8 +402,57 @@ def _inject_pure_kumotaan_repeal_ops(
         for chap in target_chapters:
             # Chapter-aware coverage check: skip only if there's already an op
             # from this amendment targeting THIS (chapter, section) address.
+            # Original behaviour: no witness append — the cover-check at this
+            # site has always short-circuited silently (the existing test
+            # ``test_pure_kumotaan_repeal_injection_negative_when_already_covered``
+            # asserts ``injected == ()`` here).
             chap_key = chap.lower() if chap is not None else None
             if (chap_key, label_lower) in covered_chap_secs:
+                continue
+            # §0 over-repeal guard (stop-the-bleed). When this iteration
+            # has no chapter context (chap_key is None) — i.e. the
+            # kumotaan clause has no ``N luku`` chapter markers and so
+            # ``chap_map_sets`` resolves to ``None`` — the cover-check
+            # looking for ``(None, "34")`` MISSES the resolved-tuple
+            # ``("5", "34")`` that an earlier pipeline step
+            # (``_rewrite_kumotaan_snapshot_replaces_to_repeal``) already
+            # placed in ``covered_chap_secs``. Without this flat-section
+            # check the cover-loop mints a DUPLICATE REPEAL op at the
+            # exact same target, producing the bisect-observed duplicate
+            # permanent-content=None tombstone entries on the timeline
+            # (AGENTS.md §1.12 no-semantic-reach-back + §0
+            # total-accounting). Witness: 2002/1248 §34–38 + 1990/845
+            # ch8 §39–47. Sections ARE legitimately repealed by source
+            # law — only the duplicate op is suppressed, not the
+            # legitimate tombstone path.
+            if chap_key is None and any(
+                existing_label == label_lower
+                for _existing_chap, existing_label in covered_chap_secs
+            ):
+                # Suppress the duplicate legal-state op. But still surface
+                # the evidence witness — ``process_temporal_postprocessing:
+                # _emit_pure_kumotaan_injection_findings`` mints a
+                # ``PARSE.PURE_REPEAL_CLAUSE_RECONSTRUCTED`` finding per
+                # ``PureKumotaanInjectedRepeal`` in ``injected``, so the
+                # finding still fires. The legal-state REPEAL stays exactly
+                # once on ``lo_ops_out`` via the earlier
+                # snapshot-rewrite-path op that produced ``covered_chap_secs``
+                # — only the duplicate op dies. Evidence stays complete
+                # (§2.10: the evidence plane is monotone; the finding is
+                # never dropped, only the duplicate op).
+                injected.append(
+                    PureKumotaanInjectedRepeal(
+                        rule_id=FI_RECOVERY_PURE_KUMOTAAN_REPEAL_RULE_ID,
+                        op_id=(
+                            f"pure_repeal_ch{chap}_{label}_{amendment_id}_suppressed_duplicate"
+                            if chap is not None
+                            else f"pure_repeal_{label}_{amendment_id}_suppressed_duplicate"
+                        ),
+                        target_unit_kind="section",
+                        target_norm=label_lower,
+                        target_chapter=(chap.lower() if chap is not None else ""),
+                    )
+                )
                 continue
 
             # Constraint: section must exist in the parent state.
