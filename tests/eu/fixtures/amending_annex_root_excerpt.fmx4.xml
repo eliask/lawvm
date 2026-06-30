@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A real-SHAPED FMX4 excerpt of the degree-57 stress base's real amending act
+  32016R0466 (Council Implementing Regulation amending Reg. (EU) 2016/44 on
+  restrictive measures re Libya). The acquired manifestation is the ANNEX-root
+  new-annex form: the Office ships the REPLACEMENT annex body under an <ANNEX>
+  root, the new content delimited by QUOT.START/END, titled with the BASE act's
+  annex number (ANNEX III). The amendment instruction is "Annex III is replaced
+  by the following: <this body>".
+
+  This is a STRUCTURAL excerpt (the real act's CONTENTS carries a long sanctions
+  listing of named persons; that personal data is elided here — only the shape is
+  pinned). Increment 1 lowers this to EU_FMX4.ANNEX_ROOT_REPLACE → annex:III.
+-->
+<ANNEX>
+  <BIB.INSTANCE>
+    <DOCUMENT.REF><COLL>L</COLL><NO.OJ>085</NO.OJ><YEAR>2016</YEAR></DOCUMENT.REF>
+    <DATE ISO="20160331">20160331</DATE>
+    <LG.DOC>EN</LG.DOC>
+  </BIB.INSTANCE>
+  <TITLE><TI><P><QUOT.START CODE="2018" ID="QS0001" REF.END="QE0001"/>ANNEX III</P></TI></TITLE>
+  <CONTENTS>
+    <GR.SEQ>
+      <TITLE><TI><P>List of natural and legal persons referred to in Article 6(2)</P></TI></TITLE>
+      <GR.SEQ>
+        <TITLE><TI><P>A. PERSONS</P></TI></TITLE>
+        <TBL>
+          <CORPUS>
+            <ROW><CELL>Name</CELL><CELL>Reasons</CELL></ROW>
+            <ROW><CELL>16.</CELL><CELL><P>A listed person (identifying detail elided).</P></CELL></ROW>
+          </CORPUS>
+        </TBL>
+      </GR.SEQ>
+    </GR.SEQ>
+  </CONTENTS>
+  <QUOT.END ID="QE0001" REF.START="QS0001"/>
+</ANNEX>

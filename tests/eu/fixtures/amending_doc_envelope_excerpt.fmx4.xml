@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A real-SHAPED FMX4 excerpt of the degree-57 stress base's real amending act
+  32016R0690 as ACQUIRED: a DOC-root PUBLICATION ENVELOPE manifestation carrying
+  only bibliographic/publication metadata (BIB.DOC, PUBLICATION.REF, FMX wrappers,
+  PAPER/PDF item refs) — NO ACT, NO ANNEX, NO ENACTING.TERMS. This is the genuine
+  DOC-root variance (design §1.4): the manifestation is metadata-only, so there is
+  nothing to lower. Increment 1 records this honestly as a typed residual
+  (eu_fmx4_grammar_envelope_no_enacting_terms), never a crash, never a silent zero.
+-->
+<DOC>
+  <BIB.DOC>
+    <PROD.ID>20160503062</PROD.ID>
+    <FIN.ID>69098</FIN.ID>
+    <NO.DOC><NO.CURRENT>690</NO.CURRENT><YEAR>2016</YEAR><COM>EU</COM></NO.DOC>
+    <AUTHOR>CS</AUTHOR>
+  </BIB.DOC>
+  <PUBLICATION.REF>
+    <COLL>L</COLL><NO.OJ>120</NO.OJ><DATE ISO="20160505">20160505</DATE><LG.OJ>EN</LG.OJ>
+  </PUBLICATION.REF>
+  <FMX>
+    <DOC.MAIN.PUB>
+      <LG.DOC>EN</LG.DOC><LEGAL.VALUE>REG_IMPL</LEGAL.VALUE>
+      <DATE ISO="20160504">20160504</DATE>
+    </DOC.MAIN.PUB>
+  </FMX>
+  <PAPER><VOLUME.PAPER><ITEM.VOLUME><ITEM.REF>1</ITEM.REF></ITEM.VOLUME></VOLUME.PAPER></PAPER>
+  <PDF><ITEM.VOLUME><ITEM.REF>1</ITEM.REF></ITEM.VOLUME></PDF>
+</DOC>
