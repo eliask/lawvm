@@ -11,21 +11,46 @@ typed :class:`LegalOperation`s with the captured payload as an :class:`IRNode`
 and full :class:`OperationSource` provenance (statute_id + raw_text). It mirrors
 how FI/UK lower from structured source rather than scraping flattened text.
 
-Scope (Increment 0, honestly partial)
---------------------------------------
-The pilot grammar covers the WHOLE-ARTICLE instruction families that dominate EU
+Scope (Increment 0 + Increment 1)
+---------------------------------
+The grammar covers the WHOLE-ARTICLE instruction families that dominate EU
 amending acts, with quoted-block payload capture:
 
 1. REPLACE — *"Article N is replaced by the following: '<block>'"* → REPLACE op
    on ``(article, N)`` with the quoted block as payload IR.
 2. INSERT — *"the following Article Na is inserted: '<block>'"* → INSERT op.
 3. REPEAL — *"Article N is deleted"* / *"is repealed"* → REPEAL op (no payload).
-4. Sub-article REPLACE — *"in Article N, paragraph M is replaced by the
+4. Sub-article paragraph REPLACE — *"in Article N, paragraph M is replaced by the
    following: '<block>'"* → REPLACE on ``(article, N)/(paragraph, M)``.
 
-Every other instruction shape (point/subparagraph edits, ``for:…read:…``
-corrigenda formulas, list/annex edits, renumber) is OUT of scope for Increment 0
-and is surfaced as a typed :class:`AmendmentGrammarDiagnostic`
+Increment 1 ADDS (each a new ``witness_rule_id`` + typed diagnostic on the gap):
+
+5. Sub-article POINT REPLACE — *"in Article N, point (b) is replaced by the
+   following: '<block>'"* / *"… is replaced by '<inline>'"* → REPLACE on
+   ``(article, N)/(point, b)`` (``EU_FMX4.SUBART_POINT_REPLACE``).
+6. Sub-article POINT REPEAL — *"in Article N, point (b) is deleted"* → REPEAL on
+   ``(article, N)/(point, b)`` (``EU_FMX4.SUBART_POINT_REPEAL``).
+7. Corrigendum ``for:…read:…`` — *"on page P, … for: '<for>' read: '<read>'"* →
+   a TEXT_REPLACE-shaped REPLACE carrying the read-payload, classified as a
+   corrigendum (``EU_FMX4.CORRIGENDUM_FOR_READ``). Corrigenda apply on the
+   corrected act's own timeline (design §3.5), not a fresh date.
+8. ANNEX REPLACE — *"Annex N is replaced by the following: '<block>'"* and the
+   ANNEX-root manifestation form (the real degree-57 amending acts —
+   ``32016R0466`` etc. — are acquired as an ``ANNEX``-rooted new-annex body whose
+   QUOT-START/END payload is the replacement annex) → REPLACE on
+   ``(annex, N)`` (``EU_FMX4.WHOLE_ANNEX_REPLACE`` /
+   ``EU_FMX4.ANNEX_ROOT_REPLACE``).
+
+Root hardening (design §1.4, goal 4): the amending manifestation may be rooted at
+``ACT`` (article-instruction form), ``DOC`` (a publication envelope — often the
+metadata-only manifestation, no enacting terms), or ``ANNEX`` (the
+new-annex-replacement form). ``lower_amending_act`` resolves all three: it digs
+out an embedded ``ACT`` if present, lowers the ANNEX-root form structurally, and
+emits a typed ``eu_fmx4_grammar_envelope_no_enacting_terms`` residual for a
+genuinely instruction-free envelope — never a crash, never a silent zero.
+
+Every still-unhandled instruction shape (subparagraph edits, list edits inside an
+article, renumber/move) remains a typed :class:`AmendmentGrammarDiagnostic`
 (``eu_fmx4_grammar_uncovered_instruction``) — counted, never silently dropped.
 ``lower_amending_act`` returns a :class:`LoweringResult` carrying ops, diagnostics,
 and the coverage denominator so coverage % is measured, not asserted.
@@ -41,9 +66,19 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from typing import Optional
 
-from lawvm.core.ir import IRNode, LegalAddress, LegalOperation
+from lawvm.core.ir import (
+    IRNode,
+    LegalAddress,
+    LegalOperation,
+    TextPatchSpec,
+    TextSelector,
+)
 from lawvm.core.provenance import OperationSource
-from lawvm.core.semantic_types import IRNodeKind, StructuralAction
+from lawvm.core.semantic_types import (
+    IRNodeKind,
+    StructuralAction,
+    TextPatchKindEnum,
+)
 
 # ---------------------------------------------------------------------------
 # Typed diagnostic + result carriers
@@ -111,6 +146,36 @@ _RE_ARTICLE_INSERT = re.compile(
 # "Article 5 is deleted" / "is repealed"
 _RE_ARTICLE_REPEAL = re.compile(
     r"\bArticle\s+(?P<num>\d+[a-z]?)\b.*?\bis\s+(?:deleted|repealed)\b",
+    re.I | re.S,
+)
+# "in Article 12, point (b) is replaced by the following" / "... is replaced by '...'"
+_RE_SUBART_POINT_REPLACE = re.compile(
+    r"\bin\s+Article\s+(?P<art>\d+[a-z]?)\b.*?\bpoint\s+\((?P<point>[a-z0-9]+)\)"
+    r".*?\bis\s+replaced\s+by\b",
+    re.I | re.S,
+)
+# "in Article 12, point (b) is deleted"
+_RE_SUBART_POINT_REPEAL = re.compile(
+    r"\bin\s+Article\s+(?P<art>\d+[a-z]?)\b.*?\bpoint\s+\((?P<point>[a-z0-9]+)\)"
+    r".*?\bis\s+(?:deleted|repealed)\b",
+    re.I | re.S,
+)
+# Corrigendum formula: "... for: '<for>' read: '<read>'" (the classic OJ
+# corrigendum shape). The replacement (read) value is the operative payload.
+_RE_CORRIGENDUM_FOR_READ = re.compile(
+    r"\bfor\s*:\s*['‘’“”\"]?(?P<for>.+?)['‘’“”\"]?\s*"
+    r"\bread\s*:\s*['‘’“”\"]?(?P<read>.+?)['‘’“”\"]?\s*$",
+    re.I | re.S,
+)
+# "the controller" style inline single-quoted replacement payload (no QUOT block)
+_RE_INLINE_QUOTED = re.compile(
+    r"\bis\s+replaced\s+by\s+['‘’“”](?P<inline>[^'‘’“”]+)"
+    r"['‘’“”]",
+    re.I | re.S,
+)
+# "Annex II is replaced by the following" / "Annex III is replaced by the text ..."
+_RE_ANNEX_REPLACE = re.compile(
+    r"\bAnnex\s+(?P<num>[IVXLCDM]+|\d+[a-z]?)\b.*?\bis\s+replaced\b",
     re.I | re.S,
 )
 
@@ -249,16 +314,42 @@ def lower_amending_act(
         )
         return result
 
-    if _local(root.tag) != "ACT":
+    root_tag = _local(root.tag)
+    if root_tag != "ACT":
         act = root.find(".//ACT")
         if act is not None:
             root = act
+            root_tag = "ACT"
+        elif root_tag == "ANNEX" or root.find(".//ANNEX") is not None:
+            # Root hardening (goal 4): the real degree-57 amending acts are
+            # acquired as an ANNEX-rooted new-annex body (the replacement annex
+            # content, QUOT-delimited). Lower it as a WHOLE-ANNEX REPLACE rather
+            # than rejecting it as "no ACT root".
+            annex_el = root if root_tag == "ANNEX" else root.find(".//ANNEX")
+            assert annex_el is not None  # guarded by the elif condition above
+            _lower_annex_root(
+                annex_el,
+                amending_celex=amending_celex,
+                base_celex=base_celex,
+                effective=effective,
+                enacted=enacted,
+                result=result,
+            )
+            return result
         else:
+            # DOC / other envelope with no ACT and no ANNEX: a metadata-only
+            # publication manifestation (the real 32016R0690 shape). This is an
+            # instruction-FREE envelope — a typed residual, not a crash and not a
+            # silent zero.
             result.diagnostics.append(
                 AmendmentGrammarDiagnostic(
-                    rule_id="eu_fmx4_grammar_no_act_root",
-                    reason=f"expected ACT root or descendant, got {_local(root.tag)!r}",
-                    source_excerpt=_local(root.tag),
+                    rule_id="eu_fmx4_grammar_envelope_no_enacting_terms",
+                    reason=(
+                        f"manifestation root {root_tag!r} carries no ACT, no "
+                        "ANNEX and no enacting terms (publication envelope / "
+                        "metadata-only manifestation); no instructions to lower"
+                    ),
+                    source_excerpt=root_tag,
                     family="source_pathology",
                 )
             )
@@ -308,6 +399,69 @@ def _source(
     )
 
 
+def _annex_number_from_title(annex_el: ET.Element) -> Optional[str]:
+    """Extract the annex roman/arabic number from an ANNEX-root manifestation.
+
+    The real new-annex form titles itself ``ANNEX III`` (the annex of the BASE
+    act it replaces) in the leading ``TI``/``P``. Return the bare number (``III``)
+    so the op targets ``(annex, III)`` in the base coordinate system.
+    """
+    for node in annex_el.iter():
+        if _local(node.tag).upper() in ("TI", "P"):
+            txt = _all_text(node)
+            m = re.match(r"\s*ANNEX\s+([IVXLCDM]+|\d+[a-z]?)\b", txt, re.I)
+            if m:
+                return m.group(1).upper()
+    return None
+
+
+def _lower_annex_root(
+    annex_el: ET.Element,
+    *,
+    amending_celex: str,
+    base_celex: str,
+    effective: str,
+    enacted: str,
+    result: LoweringResult,
+) -> None:
+    """Lower an ANNEX-rooted amending manifestation as a WHOLE-ANNEX REPLACE.
+
+    The acquired bytes ARE the replacement annex body (the Office ships the new
+    annex content, QUOT-delimited, under an ``ANNEX`` root). One instruction: the
+    base act's annex N is replaced by this content.
+    """
+    result.instruction_count += 1
+    annex_num = _annex_number_from_title(annex_el)
+    block = _quoted_block_text(annex_el) or _all_text(annex_el)
+    raw = " ".join(_all_text(annex_el).split())[:400]
+    if annex_num is None:
+        result.diagnostics.append(
+            AmendmentGrammarDiagnostic(
+                rule_id="eu_fmx4_grammar_annex_root_no_number",
+                reason=(
+                    "ANNEX-root manifestation exposed no 'ANNEX <N>' title to "
+                    "resolve the target annex number"
+                ),
+                source_excerpt=raw or "(empty annex body)",
+                family="extraction_gap",
+            )
+        )
+        return
+    src = _source(amending_celex, base_celex, effective, enacted, raw)
+    result.ops.append(
+        LegalOperation(
+            op_id=f"{amending_celex}-annex-{annex_num}",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("annex", annex_num),)),
+            payload=_payload_node(IRNodeKind.SCHEDULE, annex_num, block),
+            source=src,
+            witness_rule_id="EU_FMX4.ANNEX_ROOT_REPLACE",
+            provenance_tags=("ir_apply_class=whole_annex_replace",),
+        )
+    )
+
+
 def _lower_one_instruction(
     instr: str,
     article: ET.Element,
@@ -321,6 +475,76 @@ def _lower_one_instruction(
 ) -> Optional[LegalOperation]:
     raw = " ".join(instr.split())[:400]
     src = _source(amending_celex, base_celex, effective, enacted, raw)
+
+    # Order matters (most specific first). Point-level edits are checked before
+    # paragraph- and whole-article rules so "in Article N, point (b) ..." is not
+    # captured by the broader patterns.
+    m = _RE_SUBART_POINT_REPEAL.search(instr)
+    if m:
+        path = (("article", m.group("art")), ("point", m.group("point")))
+        return LegalOperation(
+            op_id=f"{amending_celex}-{seq}",
+            sequence=seq,
+            action=StructuralAction.REPEAL,
+            target=LegalAddress(path=path),
+            source=src,
+            witness_rule_id="EU_FMX4.SUBART_POINT_REPEAL",
+            provenance_tags=("ir_apply_class=point_repeal",),
+        )
+
+    m = _RE_SUBART_POINT_REPLACE.search(instr)
+    if m:
+        # Point edits carry their payload EITHER as a QUOT block (the "replaced by
+        # the following: '<block>'" form) OR inline ("replaced by '<text>'").
+        block = _quoted_block_text(article)
+        if block is None:
+            mi = _RE_INLINE_QUOTED.search(instr)
+            block = mi.group("inline").strip() if mi else None
+        if block is None:
+            diagnostics.append(
+                AmendmentGrammarDiagnostic(
+                    rule_id="eu_fmx4_grammar_point_replace_missing_payload",
+                    reason="point replace had neither a QUOT block nor inline quoted text",
+                    source_excerpt=raw,
+                )
+            )
+            return None
+        path = (("article", m.group("art")), ("point", m.group("point")))
+        return LegalOperation(
+            op_id=f"{amending_celex}-{seq}",
+            sequence=seq,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=path),
+            payload=_payload_node(IRNodeKind.ITEM, m.group("point"), block),
+            source=src,
+            witness_rule_id="EU_FMX4.SUBART_POINT_REPLACE",
+            provenance_tags=("ir_apply_class=point_replace",),
+        )
+
+    # Annex replace ("Annex II is replaced by the following: '<block>'").
+    m = _RE_ANNEX_REPLACE.search(instr)
+    if m:
+        block = _quoted_block_text(article)
+        if block is None:
+            diagnostics.append(
+                AmendmentGrammarDiagnostic(
+                    rule_id="eu_fmx4_grammar_annex_replace_missing_quoted_block",
+                    reason="annex replace had no QUOT block payload",
+                    source_excerpt=raw,
+                )
+            )
+            return None
+        path = (("annex", m.group("num").upper()),)
+        return LegalOperation(
+            op_id=f"{amending_celex}-{seq}",
+            sequence=seq,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=path),
+            payload=_payload_node(IRNodeKind.SCHEDULE, m.group("num").upper(), block),
+            source=src,
+            witness_rule_id="EU_FMX4.WHOLE_ANNEX_REPLACE",
+            provenance_tags=("ir_apply_class=whole_annex_replace",),
+        )
 
     # Order matters: sub-article replace before whole-article replace (the
     # whole-article pattern would otherwise also match "in Article N ...").
@@ -409,12 +633,61 @@ def _lower_one_instruction(
             provenance_tags=("ir_apply_class=whole_section_repeal",),
         )
 
+    # Corrigendum "for: '<for>' read: '<read>'": a TEXT_REPLACE of the erroneous
+    # substring with the corrected one. Corrigenda apply on the corrected act's
+    # OWN timeline (design §3.5). The target is the Article named in the same
+    # instruction if present, else the act-wide context (no structural address).
+    m = _RE_CORRIGENDUM_FOR_READ.search(instr)
+    if m:
+        for_text = " ".join(m.group("for").split()).strip(" '‘’\"“”")
+        read_text = " ".join(m.group("read").split()).strip(" '‘’\"“”")
+        if not for_text or not read_text:
+            diagnostics.append(
+                AmendmentGrammarDiagnostic(
+                    rule_id="eu_fmx4_grammar_corrigendum_empty_for_read",
+                    reason="corrigendum for/read formula resolved to empty text",
+                    source_excerpt=raw,
+                    family="corrigendum",
+                )
+            )
+            return None
+        art_m = re.search(r"\bArticle\s+(\d+[a-z]?)\b", instr, re.I)
+        if art_m is None:
+            diagnostics.append(
+                AmendmentGrammarDiagnostic(
+                    rule_id="eu_fmx4_grammar_corrigendum_no_structural_target",
+                    reason=(
+                        "corrigendum for/read formula names no Article target; "
+                        "an act-wide text patch is not addressable in the IR "
+                        "coordinate system — recorded as a typed residual"
+                    ),
+                    source_excerpt=raw,
+                    family="corrigendum",
+                )
+            )
+            return None
+        return LegalOperation(
+            op_id=f"{amending_celex}-{seq}",
+            sequence=seq,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("article", art_m.group(1)),)),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text=for_text),
+                replacement=read_text,
+            ),
+            source=src,
+            witness_rule_id="EU_FMX4.CORRIGENDUM_FOR_READ",
+            provenance_tags=("ir_apply_class=corrigendum_text_replace",),
+        )
+
     diagnostics.append(
         AmendmentGrammarDiagnostic(
             rule_id="eu_fmx4_grammar_uncovered_instruction",
             reason=(
-                "Increment-0 grammar covers whole/sub-article replace, article "
-                "insert, article repeal; this instruction matched none"
+                "grammar covers whole/sub-article replace (paragraph/point), "
+                "article insert/repeal, point repeal, annex replace, and "
+                "for/read corrigenda; this instruction matched none"
             ),
             source_excerpt=raw or "(empty instruction text)",
         )

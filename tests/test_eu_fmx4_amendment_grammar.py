@@ -59,9 +59,15 @@ def test_target_is_base_article_not_amending_article_number() -> None:
     """The amending act's own Article 1..6 numbering must NOT leak as targets."""
     r = lower_amending_act(_load(), AMENDING_CELEX, effective="2017-03-23")
     targets = {str(op.target) for op in r.ops}
-    # The 4 covered ops target base articles 5, 7, 5a, 9/2 — never the amending
-    # act's own 1/2/3/4 scaffolding numbers.
-    assert targets == {"article:5", "article:7", "article:5a", "article:9/paragraph:2"}
+    # The 5 covered ops target base articles 5, 7, 5a, 9/2, 12/point(b) — never
+    # the amending act's own 1..6 scaffolding numbers.
+    assert targets == {
+        "article:5",
+        "article:7",
+        "article:5a",
+        "article:9/paragraph:2",
+        "article:12/point:b",
+    }
 
 
 def test_provenance_footing_statute_id_and_raw_text() -> None:
@@ -76,13 +82,28 @@ def test_provenance_footing_statute_id_and_raw_text() -> None:
 
 def test_coverage_measured_honestly() -> None:
     r = lower_amending_act(_load(), AMENDING_CELEX, effective="2017-03-23")
-    # 6 instructions: 4 lowered; the point (b) edit + the entry-into-force
-    # boilerplate are OUT OF SCOPE and diagnosed.
+    # 6 instructions: 5 lowered (Increment 1 added the point-(b) edit via
+    # EU_FMX4.SUBART_POINT_REPLACE); only the entry-into-force boilerplate is
+    # OUT OF SCOPE and diagnosed.
     assert r.instruction_count == 6
-    assert r.covered_count == 4
-    assert abs(r.coverage_fraction - (4 / 6)) < 1e-9
+    assert r.covered_count == 5
+    assert abs(r.coverage_fraction - (5 / 6)) < 1e-9
     uncovered = [d.rule_id for d in r.diagnostics]
-    assert uncovered.count("eu_fmx4_grammar_uncovered_instruction") == 2
+    assert uncovered.count("eu_fmx4_grammar_uncovered_instruction") == 1
+
+
+def test_point_b_edit_lowered_increment1() -> None:
+    """Increment 1: the sub-article point-(b) edit is now a typed REPLACE op."""
+    r = lower_amending_act(
+        _load(), AMENDING_CELEX, base_celex="32016R0679", effective="2017-03-23"
+    )
+    by_target = {str(op.target): op for op in r.ops}
+    pt = by_target["article:12/point:b"]
+    assert pt.action == StructuralAction.REPLACE
+    assert pt.witness_rule_id == "EU_FMX4.SUBART_POINT_REPLACE"
+    assert pt.payload is not None
+    # The inline single-quoted replacement payload ("the controller") is captured.
+    assert "the controller" in pt.payload.text
 
 
 def test_replace_without_quoted_block_diagnosed_not_dropped() -> None:
@@ -105,7 +126,75 @@ def test_non_xml_diagnosed() -> None:
     assert r.diagnostics[0].rule_id == "eu_fmx4_grammar_not_xml"
 
 
-def test_doc_root_variance_diagnosed() -> None:
+def test_doc_root_envelope_diagnosed_not_crashed() -> None:
+    """Increment 1 goal 4: a DOC-root publication envelope with no ACT/ANNEX and
+    no enacting terms (the real 32016R0690 shape) is a typed residual, not a
+    crash and not a silent zero."""
     doc_root = b"""<?xml version="1.0"?><DOC><BODY/></DOC>"""
     r = lower_amending_act(doc_root, AMENDING_CELEX)
-    assert r.diagnostics[0].rule_id == "eu_fmx4_grammar_no_act_root"
+    assert r.ops == []
+    assert r.diagnostics[0].rule_id == "eu_fmx4_grammar_envelope_no_enacting_terms"
+
+
+def test_doc_root_with_embedded_act_is_lowered() -> None:
+    """A DOC envelope that WRAPS an ACT is dug out and lowered (root hardening)."""
+    doc_with_act = b"""<?xml version="1.0"?>
+<DOC><FMX><ACT><ENACTING.TERMS>
+  <ARTICLE><TI.ART>Article 1</TI.ART>
+    <PARAG><P>Article 5 is deleted.</P></PARAG></ARTICLE>
+</ENACTING.TERMS></ACT></FMX></DOC>"""
+    r = lower_amending_act(doc_with_act, AMENDING_CELEX, base_celex="32016R0044")
+    assert r.covered_count == 1
+    assert r.ops[0].witness_rule_id == "EU_FMX4.WHOLE_ARTICLE_REPEAL"
+    assert str(r.ops[0].target) == "article:5"
+
+
+def test_annex_root_lowered_as_whole_annex_replace() -> None:
+    """Increment 1 goal 4: the ANNEX-rooted new-annex manifestation (the real
+    degree-57 amending-act shape — 32016R0466 etc.) lowers to a WHOLE-ANNEX
+    REPLACE targeting the base act's annex, with the new annex body as payload."""
+    annex_root = b"""<?xml version="1.0"?>
+<ANNEX>
+  <TITLE><TI><P>ANNEX III</P></TI></TITLE>
+  <CONTENTS><GR.SEQ>
+    <P><QUOT.START/>New listing: Person A; Person B.<QUOT.END/></P>
+  </GR.SEQ></CONTENTS>
+</ANNEX>"""
+    r = lower_amending_act(
+        annex_root, "32016R0466", base_celex="32016R0044", effective="2016-04-01"
+    )
+    assert r.covered_count == 1
+    op = r.ops[0]
+    assert op.action == StructuralAction.REPLACE
+    assert op.witness_rule_id == "EU_FMX4.ANNEX_ROOT_REPLACE"
+    assert str(op.target) == "annex:III"
+    assert op.payload is not None
+    assert "New listing" in op.payload.text
+    assert op.source is not None and op.source.effective == "2016-04-01"
+
+
+def test_annex_root_without_number_diagnosed() -> None:
+    annex_root = b"""<?xml version="1.0"?>
+<ANNEX><CONTENTS><P>some body without an ANNEX N title</P></CONTENTS></ANNEX>"""
+    r = lower_amending_act(annex_root, "32016R0466", base_celex="32016R0044")
+    assert r.covered_count == 0
+    assert r.diagnostics[0].rule_id == "eu_fmx4_grammar_annex_root_no_number"
+
+
+def test_corrigendum_for_read_lowered() -> None:
+    """Increment 1: the corrigendum 'for: X read: Y' formula lowers to a typed
+    TEXT_REPLACE on the named Article."""
+    fmx = b"""<?xml version="1.0"?>
+<ACT><ENACTING.TERMS>
+  <ARTICLE><TI.ART>Article 1</TI.ART>
+    <PARAG><P>In Article 6, for: 'the Council' read: 'the Commission'</P></PARAG>
+  </ARTICLE>
+</ENACTING.TERMS></ACT>"""
+    r = lower_amending_act(fmx, "32016R0044R(01)", base_celex="32016R0044")
+    assert r.covered_count == 1
+    op = r.ops[0]
+    assert op.witness_rule_id == "EU_FMX4.CORRIGENDUM_FOR_READ"
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "the Council"
+    assert op.text_patch.replacement == "the Commission"
+    assert str(op.target) == "article:6"
