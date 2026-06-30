@@ -60,6 +60,12 @@ from lawvm.core.coverage import CoverageClaim
 from lawvm.core.execution_authorization import ExecutionAuthorization
 from lawvm.core.ir import IRNode, LegalOperation, OperationSource
 from lawvm.core.ir_helpers import structural_subtree_hash
+from lawvm.core.occupancy import (
+    InvalidOccupancyTransition,
+    OccupancyAction,
+    OccupancyClass,
+    validate_transition,
+)
 from lawvm.core.phase_result import Finding
 from lawvm.core.mutation_boundary import (
     TreePath,
@@ -86,6 +92,10 @@ __all__ = [
     "AuthorizationResolver",
     "REPLAY_AUTHORIZATION_PROOF_OBSERVED_FINDING_CODE",
     "no_op_execution_authorization",
+    "OccupancyResolver",
+    "OCCUPANCY_TRANSITION_OBSERVED_FINDING_CODE",
+    "no_op_occupancy",
+    "STRUCTURAL_ACTION_TO_OCCUPANCY_ACTION",
     "ApplyProfile",
     "AppliedOp",
     "apply_op",
@@ -135,6 +145,75 @@ def no_op_execution_authorization(
     Returning ``None`` for every op makes that hole VISIBLE and MEASURABLE
     (≈100% of mutating ops, the real gap size) without fabricating a proof. A
     frontend that mints proofs replaces this on its profile.
+    """
+    return None
+
+
+# ── LS-03 universal occupancy-transition OBSERVE gate ─────────────────────────
+#
+# The occupancy TYPE + the raising ``validate_transition`` exist in
+# ``core/occupancy`` (the (action, from)->to ``VALID_TRANSITIONS`` table), but
+# the audit-registry flags LS-03 as a GUARD-LIVENESS hole: "the type+raise exist
+# but no frontend currently BLOCKS; the gate is telemetry." FI's
+# ``finland/apply_resolved_op._gate_occupancy_transition_at_op`` is the only
+# producer and it is FI-only + strict-only. This seam gate hoists the CHECK to
+# the universal kernel, OBSERVE-first (design §5): when a profile supplies an
+# ``occupancy_resolver`` (FI is the reference for the (action, from)->to table
+# semantics; the kernel does NOT import ``finland/``), a mutating op whose
+# (action, from-occupancy) pair is not in ``VALID_TRANSITIONS`` emits a
+# non-blocking ``APPLY.OCCUPANCY_TRANSITION_OBSERVED`` observation to the SEPARATE
+# :attr:`AppliedOp.observations` lane — never to :attr:`AppliedOp.findings`. The
+# kernel-default resolver models no occupancy (``None``), so all 6 production
+# profiles are 0-delta by construction (no occupancy model → no-op, exactly like
+# ``no_op_execution_authorization``). EV-04: observation is not authority.
+
+#: The non-blocking observation code the seam emits for a mutating op whose
+#: (action, from-occupancy) pair is an invalid occupancy transition. Its
+#: strict-blocking twin (FI-only today) is ``APPLY.OCCUPANCY_TRANSITION_BLOCKED``;
+#: promoting this observe gate to that block per-profile is staged work (see
+#: notes/B_ENFORCEMENT_STATUS.md).
+OCCUPANCY_TRANSITION_OBSERVED_FINDING_CODE = "APPLY.OCCUPANCY_TRANSITION_OBSERVED"
+
+#: The jurisdiction-neutral map from a structural ``op.action.value`` to the
+#: occupancy-modelled :class:`~lawvm.core.occupancy.OccupancyAction`. Only the
+#: occupancy-relevant actions are mapped (REPLACE/INSERT/REPEAL — the same three
+#: FI's ``finland/apply_policy._OP_TYPE_TO_ACTION`` maps; FI is the reference for
+#: this table). A structural action with no occupancy meaning (RENUMBER, META,
+#: TEXT_*, HEADING_REPLACE — these do not change whole-slot occupancy) is absent,
+#: so the gate is a no-op for it, mirroring FI's ``action_value is None`` skip.
+STRUCTURAL_ACTION_TO_OCCUPANCY_ACTION: dict[str, OccupancyAction] = {
+    "replace": OccupancyAction.REPLACE,
+    "insert": OccupancyAction.INSERT,
+    "repeal": OccupancyAction.REPEAL,
+}
+
+# An occupancy resolver answers: what is the CURRENT (before-state) occupancy of
+# the slot THIS op targets? ``(op, before_state, after_state) -> OccupancyClass |
+# None``. ``None`` means the profile does not model occupancy for this op (the
+# slot is not whole-unit-addressable, the action carries no occupancy meaning, or
+# the frontend has no occupancy model at all) — the gate is then a no-op,
+# matching FI's per-op skip conditions (``action_value is None`` / not a
+# whole-section target). The default kernel resolver models no occupancy at all.
+OccupancyResolver = Callable[
+    [LegalOperation, object, object], Optional[OccupancyClass]
+]
+
+
+def no_op_occupancy(
+    _op: LegalOperation,
+    _before: object,
+    _after: object,
+) -> Optional[OccupancyClass]:
+    """The honest default resolver: the kernel models NO slot occupancy.
+
+    No core IR type carries a typed occupancy class today, and Norway/Sweden do
+    not model slot occupancy at all (per ``core/occupancy`` module docs), so the
+    universal kernel resolves none — exactly the LS-03 guard-liveness hole the
+    audit registry names ("the type+raise exist but no frontend BLOCKS; the gate
+    is telemetry"). Returning ``None`` for every op makes that hole VISIBLE and
+    keeps all 6 production profiles 0-delta (no occupancy model → the gate is a
+    no-op). A frontend that models occupancy (FI is the reference) supplies a
+    resolver returning the targeted slot's before-occupancy.
     """
     return None
 
@@ -389,6 +468,22 @@ class ApplyProfile(Generic[State]):
     #: :func:`no_op_execution_authorization` (no op carries a proof today — the
     #: honest ~100% firewall-hole default). Universal: all 6 profiles inherit it.
     authorization_resolver: AuthorizationResolver = no_op_execution_authorization
+    #: LS-03 occupancy-transition OBSERVE gate resolver. Answers ``(op,
+    #: before_state, after_state) -> OccupancyClass | None``: the CURRENT
+    #: (before) occupancy of the slot the op targets, or ``None`` when the
+    #: profile does not model occupancy for this op. When the resolver yields a
+    #: non-``None`` occupancy AND ``op.action`` maps to an occupancy-modelled
+    #: action (REPLACE/INSERT/REPEAL via
+    #: :data:`STRUCTURAL_ACTION_TO_OCCUPANCY_ACTION`), the seam validates the
+    #: (action, from-occupancy) transition against the core
+    #: :data:`~lawvm.core.occupancy.VALID_TRANSITIONS` table; an invalid
+    #: transition emits the non-blocking ``APPLY.OCCUPANCY_TRANSITION_OBSERVED``
+    #: observation to the seam's separate :attr:`AppliedOp.observations` lane.
+    #: Defaults to :func:`no_op_occupancy` (the kernel models no occupancy — the
+    #: LS-03 guard-liveness hole; all 6 current profiles inherit it and are
+    #: 0-delta). FI is the reference for the table semantics; the kernel does
+    #: NOT import ``finland/``.
+    occupancy_resolver: OccupancyResolver = no_op_occupancy
 
 
 @dataclass(frozen=True, slots=True)
@@ -421,21 +516,27 @@ class AppliedOp(Generic[State]):
     coverage_delta: CoverageDelta
     applied: bool
     declared_recovery_prefixes: tuple[TreePath, ...] = ()
-    #: The SEPARATE observe lane (B-enforcement increments 1+2). Carries the
+    #: The SEPARATE observe lane (B-enforcement increments 1+2+3). Carries the
     #: universal apply-seam OBSERVE-mode findings: (1) the
     #: ``EVID.REPLAY_AUTHORIZATION_PROOF_OBSERVED`` firewall-hole witness emitted
-    #: per mutating op lacking an ExecutionAuthorization proof (inc 1); and (2)
+    #: per mutating op lacking an ExecutionAuthorization proof (inc 1); (2)
     #: the always-on ``APPLY.MUTATION_BOUNDARY_FINDING_AT_OP`` per-op
     #: mutation-boundary witness (LS-01, inc 2) the seam now emits for EVERY
     #: landed write under a ``boundary_mode="off"`` tree profile — the single
     #: always-on boundary producer that replaces the per-frontend in-fold
-    #: env-probes. These are ADDITIVE evidence (role=observation, non-blocking)
-    #: and are routed here, NEVER into :attr:`findings`, so the production
-    #: findings/adjudication multiset the byte-identity gates assert on is
-    #: UNCHANGED (EV-04: an observation explains, it never becomes authority).
-    #: Empty when the op landed no write (or, for the authorization witness,
-    #: carried a resolvable authorization; for the boundary witness, stayed
-    #: within its declared mutation boundary).
+    #: env-probes; and (3) the ``APPLY.OCCUPANCY_TRANSITION_OBSERVED`` LS-03
+    #: guard-liveness witness (inc 3) emitted per mutating op whose (action,
+    #: from-occupancy) pair is an invalid occupancy transition, when the profile
+    #: supplies an ``occupancy_resolver`` (the kernel-default resolver models no
+    #: occupancy → 0-delta for all 6 current profiles). These are ADDITIVE
+    #: evidence (role=observation, non-blocking) and are routed here, NEVER into
+    #: :attr:`findings`, so the production findings/adjudication multiset the
+    #: byte-identity gates assert on is UNCHANGED (EV-04: an observation explains,
+    #: it never becomes authority). Empty when the op landed no write (or, for
+    #: the authorization witness, carried a resolvable authorization; for the
+    #: boundary witness, stayed within its declared mutation boundary; for the
+    #: occupancy witness, made a valid transition or the profile models no
+    #: occupancy).
     observations: tuple[Finding, ...] = ()
 
 
@@ -502,6 +603,27 @@ def apply_op(
         # identity gates assert on is unchanged. Non-blocking, additive evidence.
         observations = _execution_authorization_observe(
             typed_op, profile=profile, source_statute=source_statute
+        )
+
+        # ── LS-03 occupancy-transition OBSERVE gate (universal). ────────────
+        # A landed write is a slot occupancy transition; the occupancy table
+        # (``core/occupancy.VALID_TRANSITIONS``) names which (action,
+        # from-occupancy) pairs are valid. The apply path never enforced this
+        # outside FI (the audit-registry LS-03 guard-liveness hole). When a
+        # profile supplies an ``occupancy_resolver`` (FI is the reference), the
+        # seam validates the transition and emits a non-blocking observation to
+        # the SEPARATE ``observations`` lane on an invalid one — never to
+        # ``findings``. Default-resolver profiles (all 6 today) model no
+        # occupancy → no-op → 0-delta. Non-blocking, additive evidence.
+        observations = (
+            *observations,
+            *_occupancy_transition_observe(
+                typed_op,
+                base_state,
+                new_state,
+                profile=profile,
+                source_statute=source_statute,
+            ),
         )
 
     if landed:
@@ -652,6 +774,89 @@ def _execution_authorization_observe(
             },
         ),
     )
+
+
+# ── LS-03 occupancy-transition OBSERVE gate ───────────────────────────────────
+
+
+def _occupancy_transition_observe(
+    op: LegalOperation,
+    before_state: State,
+    after_state: State,
+    *,
+    profile: ApplyProfile[State],
+    source_statute: str,
+) -> tuple[Finding, ...]:
+    """Observe whether a landed op made a VALID occupancy transition (LS-03).
+
+    The universal occupancy-transition closure hoisted to the kernel from FI's
+    per-frontend ``_gate_occupancy_transition_at_op``. The gate runs only when
+    the profile supplies an ``occupancy_resolver`` that yields a non-``None``
+    before-occupancy for the op's targeted slot AND ``op.action`` maps to an
+    occupancy-modelled action (REPLACE/INSERT/REPEAL — the same three FI's
+    ``_OP_TYPE_TO_ACTION`` maps). For every other op — no occupancy model (the
+    default ``no_op_occupancy`` → ``None``, the 0-delta production case), or an
+    action with no occupancy meaning (RENUMBER/META/TEXT_*/HEADING_REPLACE) — the
+    gate is a no-op, mirroring FI's per-op skip conditions.
+
+    When it runs, the seam validates the (action, from-occupancy) transition
+    against the core ``VALID_TRANSITIONS`` table via the SAME
+    ``validate_transition`` helper FI calls — so the kernel and FI's occupancy
+    gate cannot drift, and the kernel does not import ``finland/``. A VALID
+    transition emits nothing (observe-first: only the invalid case is the
+    witness, matching FI's strict-block-on-invalid). An INVALID transition emits
+    one non-blocking ``APPLY.OCCUPANCY_TRANSITION_OBSERVED`` observation.
+
+    The returned findings are role=observation, ``blocking=False``, and are
+    routed to the SEPARATE :attr:`AppliedOp.observations` lane by the caller —
+    NEVER to :attr:`AppliedOp.findings`. Byte-identity mechanism: the production
+    findings/adjudication multiset is untouched while the LS-03 guard-liveness
+    hole becomes universally observable (design §5 observe-first; EV-04
+    observation-is-not-authority).
+    """
+    occupancy_action = (
+        STRUCTURAL_ACTION_TO_OCCUPANCY_ACTION.get(op.action.value)
+        if op.action is not None
+        else None
+    )
+    if occupancy_action is None:
+        # The op's action carries no whole-slot occupancy meaning (RENUMBER /
+        # META / TEXT_* / HEADING_REPLACE); FI's gate skips it the same way.
+        return ()
+    current = profile.occupancy_resolver(op, before_state, after_state)
+    if current is None:
+        # The profile models no occupancy for this op (the default kernel
+        # resolver, or a frontend whose slot is not whole-unit-addressable): the
+        # gate is a no-op — exactly FI's per-op skip. 0-delta for all 6 profiles.
+        return ()
+    try:
+        validate_transition(occupancy_action, current)
+    except InvalidOccupancyTransition as exc:
+        return (
+            Finding(
+                kind=OCCUPANCY_TRANSITION_OBSERVED_FINDING_CODE,
+                role="observation",
+                stage="apply",
+                blocking=False,
+                source_statute=source_statute,
+                detail={
+                    "message": (
+                        "A state-mutating op landed through the universal apply "
+                        "seam on an invalid (action, occupancy) transition (LS-03). "
+                        "Surfaced as a non-blocking guard-liveness witness; not "
+                        "promoted to authority."
+                    ),
+                    "op_id": op.op_id or "",
+                    "jurisdiction": profile.jurisdiction,
+                    "action": occupancy_action.value,
+                    "current_occupancy": current.value,
+                    "transition_error": str(exc),
+                    "owner": "apply_seam_occupancy_transition_observe",
+                },
+            ),
+        )
+    # Valid transition: closure met, nothing observed.
+    return ()
 
 
 # ── Receipt synthesis (generalizes NO's ``_no_emit_one_op_receipt``, which

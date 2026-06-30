@@ -1127,6 +1127,30 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "strict-mode occupancy gate: a state-mutating op attempted an invalid "
                 "(action, from->to) occupancy transition",
                 ("safety_invariant",), role="violation"),
+    # LS-03 (occupancy gate-liveness) universal apply-seam OBSERVE lane
+    # (B-enforcement increment 3). The blocking
+    # ``APPLY.OCCUPANCY_TRANSITION_BLOCKED`` above is FI's strict-mode block
+    # (FI-only today). This is its non-blocking, observation-role twin emitted
+    # by ``core/apply_seam.apply_op`` when a profile supplies an
+    # ``occupancy_resolver``: a state-mutating op whose (action, from-occupancy)
+    # pair is NOT in the VALID_TRANSITIONS table emits this non-blocking witness
+    # to the separate ``AppliedOp.observations`` lane, never to
+    # ``AppliedOp.findings``. It closes the audit-registry's LS-03 guard-liveness
+    # hole ("the type+raise exist but no frontend currently blocks; the gate is
+    # telemetry") by making the seam the universal occupancy OBSERVER. The
+    # kernel-default resolver models no occupancy (returns ``None``), so all 6
+    # production profiles are 0-delta by construction; a profile that supplies a
+    # resolver lights the gate up. Observe-first per design §5; the staged
+    # promotion to ``...TRANSITION_BLOCKED`` block is the next increment (see
+    # ``notes/B_ENFORCEMENT_STATUS.md``).
+    FindingSpec("APPLY.OCCUPANCY_TRANSITION_OBSERVED", "apply",
+                "audit", "warn", "apply_seam",
+                "a state-mutating op attempted an invalid (action, from-occupancy) "
+                "occupancy transition (the same condition as "
+                "APPLY.OCCUPANCY_TRANSITION_BLOCKED, observed not blocked); surfaced "
+                "as a non-blocking observation in the universal apply-seam observe "
+                "lane (the LS-03 guard-liveness witness), never promoted to authority",
+                ("safety_invariant",), role="observation"),
     FindingSpec("EVID.REPLAY_AUTHORIZATION_PROOF_REQUIRED", "apply",
                 "violation", "hard_fail", "apply_resolved_op",
                 "a state-mutating op landed without resolving an ExecutionAuthorization "
