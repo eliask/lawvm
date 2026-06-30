@@ -4180,6 +4180,42 @@ NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
     # directly; the drill needs to drive through the apply-pipeline PhaseResult
     # surface so the blocking obligation reaches a strict-mode consumer.
     "UNEXPECTED_PHASE_FAILURE": ("named_swallow primitive; needs pipeline-lane fixture", "2026-06-27"),
+    # --- A–G core audits (this session) -----------------------------------
+    # The §0 core audit modules landed with typed blocking finding kinds but
+    # their fire-drills (driving the deciding guard through the production
+    # replay/apply PhaseResult lane this harness drills) are follow-up work.
+    # Each entry below records the live emit site + why a drill is not yet
+    # wired so the debt is conscious, not silent.
+    #
+    # D ``COVERAGE.UNIT_UNCLASSIFIED`` — emitted by
+    # ``core/coverage_totality.assert_coverage_totality`` per source unit that
+    # falls out of the coverage partition with no owner. Consumed in the US
+    # apply profile / EE coverage_audit / coverage report lane, not yet driven
+    # through this harness's FI replay PhaseResult lane. Drill when a stable
+    # unclassified-unit fixture reaches the strict-mode consumer here.
+    "COVERAGE.UNIT_UNCLASSIFIED": ("coverage-totality audit; emit live in core/coverage_totality, needs FI replay-lane fixture", "2026-06-30"),
+    # G ``PROVENANCE.SOURCE_ANCHOR_MISSING`` — emitted by
+    # ``core/provenance_totality_audit`` for a provenance-orphaned op (no source
+    # anchor / textual footing). Wired into ``tools/provenance_totality_report``
+    # (report lane, owned elsewhere); no pipeline drill through this harness yet.
+    "PROVENANCE.SOURCE_ANCHOR_MISSING": ("provenance-totality audit; emit live in core/provenance_totality_audit, report-lane only, needs pipeline drill", "2026-06-30"),
+    # E ``PROJECTION.REDERIVATION_DRIFT`` — emitted by
+    # ``core/projection_rederivation_audit`` when a committed projection row's
+    # hash does not recompute from its committed payload. Audit module landed;
+    # not yet wired into a strict-mode pipeline consumer, so no drillable
+    # production path exists yet. Drill once the re-derivation audit is wired.
+    "PROJECTION.REDERIVATION_DRIFT": ("projection-rederivation audit; emit live in core/projection_rederivation_audit, not yet wired to a pipeline consumer", "2026-06-30"),
+    # F ``REPLAY.NONDETERMINISM`` — emitted by
+    # ``core/replay_determinism_audit`` when materializing the same
+    # (base_state, ops, pit) twice diverges. Audit module landed; not yet wired
+    # into a strict-mode pipeline consumer, so no drillable production path yet.
+    "REPLAY.NONDETERMINISM": ("replay-determinism audit; emit live in core/replay_determinism_audit, not yet wired to a pipeline consumer", "2026-06-30"),
+    # ``APPLY.US_CHAR_SPAN_BOUNDARY_VIOLATION`` — per-op US char-span
+    # mutation-boundary REJECT (US §3.4), emitted from
+    # ``us_federal/apply_profile.py``. US apply lane (owned elsewhere); not
+    # drilled through this FI harness. Also in ``_KNOWN_NO_PRODUCTION_EMIT``
+    # because its emit site is outside the {core,finland} scan roots.
+    "APPLY.US_CHAR_SPAN_BOUNDARY_VIOLATION": ("US apply char-span REJECT; emit live in us_federal/apply_profile, US-lane, needs US fixture", "2026-06-30"),
 }
 
 # Committed monotone-decreasing debt ceiling for NO_FIRE_DRILL_YET. The allowlist
@@ -4544,26 +4580,24 @@ _KNOWN_NO_PRODUCTION_EMIT: Dict[str, str] = {
     "TIME.UNRESOLVED_COMMENCEMENT_TRIGGER": (
         "timeline barrier with no emit site; reconcile separately"
     ),
-    # D10 COMPARE.DETERMINISTIC_GAP_VS_MANUAL_FRONTIER_PARITY (audit_impl_D10):
-    # the audit helper ``assert_classification_exclusive`` + the
-    # ``AdjudicationRow``/``EidClassificationConflict`` carriers + the per-
-    # statute ``compare_adjudication_rows`` projection (at score_one end) +
-    # the wire into ``summarize_results`` ARE LANDED at
-    # ``scripts/uk_broad_baseline.py`` (the production broad-baseline driver —
-    # per spec §1 the audit lives next to its emitter, not under src/lawvm/...).
-    # The fire-drill
-    # ``drill_compare_eid_double_classified_apply_lane`` is registered in
-    # ``FIRE_DRILLS`` and drives the wire via ``summarize_results(...)``.
-    # HOWEVER: the production-emit-site scan roots are limited to
-    # ``src/lawvm/{core, finland}`` (extended to ``src/lawvm`` for ``uk_``/
-    # ``TIME.`` prefixes via ``_NON_FI_CORE_EMIT_PREFIXES``). The audit
-    # emission surface IS live in ``scripts/uk_broad_baseline.py`` (verified
-    # via the production fire-drill + the wire's ``summarize_results`` smoke);
+    # COMPARE.EID_DOUBLE_CLASSIFIED removed: the audit now has an in-tree
+    # production emit site at ``src/lawvm/core/compare_eid_parity_audit.py``
+    # (plus ``core/oracle_divergence.py``), so it is no longer emit-less under
+    # the ``src/lawvm/{core,finland}`` scan roots. It stays accounted via its
+    # FIRE_DRILLS entry (``drill_compare_eid_double_classified_apply_lane``).
+    # APPLY.US_CHAR_SPAN_BOUNDARY_VIOLATION: the per-op US char-span
+    # mutation-boundary REJECT (US §3.4) is emitted only from
+    # ``src/lawvm/us_federal/apply_profile.py`` — outside the
+    # ``src/lawvm/{core,finland}`` scan roots, and the code does not carry a
+    # ``uk_``/``TIME.`` prefix that would widen the scan to ``src/lawvm``. The
+    # emit site is genuinely live in the US apply profile (verified by grep);
     # the scan-root-contract limitation keeps this entry honest rather than
-    # artificially green. Move the audit (or extend the scan roots) if the
-    # src-vs-scripts split moves.
-    "COMPARE.EID_DOUBLE_CLASSIFIED": (
-        "wire live in scripts/uk_broad_baseline.py::summarize_results; emit site is in scripts/ outside src/lawvm/ scan roots"
+    # artificially green. us_federal/ is owned elsewhere and intentionally not
+    # added to the scan roots here. Drop this entry if the US emitter moves
+    # under core/finland or the scan roots are widened.
+    "APPLY.US_CHAR_SPAN_BOUNDARY_VIOLATION": (
+        "emit site is src/lawvm/us_federal/apply_profile.py, outside the "
+        "src/lawvm/{core,finland} scan roots"
     ),
 }
 

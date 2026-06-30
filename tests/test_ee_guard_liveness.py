@@ -403,11 +403,24 @@ def _scan_ee_blocking_emit_sites() -> set[str]:
             is_forwarding_helper = name in _FORWARDING_BLOCKING_HELPERS
             is_direct_ca = name == "CompileAdjudication"
             is_shared_same_moment_detector = name == "detect_cross_act_same_moment_conflicts"
+            # §2.5-retirement / B-enforcement: the EE same-moment cross-act
+            # detector is no longer called directly in EE source. It is now
+            # kernel-subsumed: ``apply_ee_ops`` runs
+            # ``order_ops(ops, ee_ordering_profile())`` (estonia/grafter.py), and
+            # ``order_ops`` (core/op_ordering.py) unconditionally invokes
+            # ``detect_cross_act_same_moment_conflicts(finder_kind_prefix=profile.
+            # finder_kind_prefix, adjudications_out=...)``. So the discoverable EE
+            # emit anchor is now the construction of an ``OrderingProfile`` (or the
+            # ``ee_ordering_profile()`` factory it returns) carrying
+            # ``finder_kind_prefix="ee"``. The blocking emit is byte-identical to
+            # the pre-retirement direct call (see ee_ordering_profile() docstring).
+            is_ee_ordering_profile = name in ("OrderingProfile", "ee_ordering_profile")
             if not (
                 is_blocking_helper
                 or is_forwarding_helper
                 or is_direct_ca
                 or is_shared_same_moment_detector
+                or is_ee_ordering_profile
             ):
                 continue
             kind_val: str | None = None
@@ -448,6 +461,19 @@ def _scan_ee_blocking_emit_sites() -> set[str]:
             if is_forwarding_helper and blocking_val is True and kind_val:
                 discovered.add(kind_val)
             if is_shared_same_moment_detector and finder_kind_prefix == "ee" and has_adjudications_out:
+                discovered.add(
+                    "ee_same_moment_cross_act_incompatible_payload_ambiguous"
+                )
+            # Kernel-subsumed EE same-moment emit anchor (post §2.5-retirement):
+            # an ``OrderingProfile(finder_kind_prefix="ee", ...)`` construction, or
+            # the ``ee_ordering_profile()`` factory that builds it. Both feed
+            # ``order_ops`` which runs the shared same-moment detector for the
+            # "ee" prefix and collects its blocking findings.
+            if name == "OrderingProfile" and finder_kind_prefix == "ee":
+                discovered.add(
+                    "ee_same_moment_cross_act_incompatible_payload_ambiguous"
+                )
+            if name == "ee_ordering_profile":
                 discovered.add(
                     "ee_same_moment_cross_act_incompatible_payload_ambiguous"
                 )
