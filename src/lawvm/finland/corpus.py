@@ -505,6 +505,26 @@ def _oracle_text_mentions_future_commencement(text: str) -> bool:
     return any(left == "tulee" and right == "voimaan" for left, right in zip(tokens, tokens[1:], strict=False))
 
 
+def _oracle_text_is_historical_temporary_validity_notice(text: str) -> bool:
+    """Return True for a past-tense ``oli väliaikaisesti voimassa`` tombstone.
+
+    Finlex keeps an editorial shell for a provision that WAS temporarily in force
+    over a now-closed window, e.g. ``43 b § oli väliaikaisesti voimassa
+    1.1.2013-31.12.2016 L:lla 991/2012.``  Such a section carries a versioned eId /
+    ``finlex:originalVersion`` (the temporary amendment) but is NOT a live
+    reflection of that version — the provision has lapsed and must materialize as
+    absent.  This is the past-tense analogue of
+    ``_oracle_text_mentions_future_commencement`` and must be excluded from the
+    per-section reflection map so the historical shell does not pin an expired
+    temporary version alive.
+    """
+    tokens = text.casefold().split()
+    return any(
+        left == "oli" and mid == "väliaikaisesti" and right == "voimassa"
+        for left, mid, right in zip(tokens, tokens[1:], tokens[2:], strict=False)
+    )
+
+
 def _oracle_text_has_full_section_repeal_notice(text: str) -> bool:
     tokens = text.casefold().replace("§", " § ").split()
     for idx, token in enumerate(tokens):
@@ -746,6 +766,81 @@ def get_consolidated_oracle_reflected_section_original_versions(
                 provision_text
             ):
                 reflected.add(statute_id_from_eid)
+    return reflected
+
+
+def get_consolidated_oracle_reflected_section_versions(
+    statute_id: str,
+    corpus: Optional[CorpusStore] = None,
+    selector: ConsolidatedArtifactSelector | None = None,
+) -> dict[tuple[str, str], set[str]]:
+    """Return a per-section map of the source ids the oracle reflects each section to.
+
+    Companion to :func:`get_consolidated_oracle_reflected_section_original_versions`
+    but keyed by ``(chapter_label, section_label)`` instead of flattened into a
+    statute-wide set.  The flat set answers "does the selected body reflect this
+    source anywhere?"; the per-section map answers "which source version does the
+    selected body reflect THIS section to?".
+
+    The distinction is load-bearing for temporary-version expiry reconciliation:
+    several temporary versions of different sections can share an identical sunset
+    date, yet the oracle keeps only the ones whose section it reflects to that
+    version (Finlex ``sec_<n>v<YYYYMMDD>`` eId / ``finlex:originalVersion``).
+    A statute-wide set cannot tell those apart; this map can. Witness: 2002/1126,
+    where §2 is reflected to ``2004/466`` (kept) while §14/§17a-c temporaries share
+    the same 2006-01-01 sunset but are NOT section-reflected (correctly dropped).
+    """
+    if corpus is None:
+        corpus = _get_corpus_store()
+    oracle_bytes = get_ground_truth_bytes(statute_id, corpus=corpus, selector=selector)
+    if oracle_bytes is None:
+        return {}
+    try:
+        tree = parse_corpus_xml(oracle_bytes)
+    except etree.XMLSyntaxError:
+        return {}
+
+    sections = tuple(tree.findall(".//{*}section"))
+    current_section_eid_bases = {
+        base
+        for section_el in sections
+        if not str(section_el.get(_FINLEX_ORIGINAL_VERSION_ATTR) or "")
+        for base in (_finlex_section_eid_base(section_el),)
+        if base
+    }
+
+    reflected: dict[tuple[str, str], set[str]] = {}
+    for section_el in sections:
+        section_label = _finlex_section_label(section_el)
+        if not section_label:
+            continue
+        chapter_label = ""
+        for ancestor in section_el.iterancestors():
+            if etree.QName(ancestor).localname != "chapter":
+                continue
+            chapter_label = _finlex_chapter_label(ancestor)
+            break
+        section_text = " ".join("".join(str(part) for part in section_el.itertext()).split())
+        if _oracle_text_mentions_future_commencement(section_text):
+            continue
+        if _oracle_text_is_historical_temporary_validity_notice(section_text):
+            # A past-tense "oli väliaikaisesti voimassa" shell is a tombstone for a
+            # lapsed temporary provision, not a live reflection; it must NOT keep
+            # the expired temporary version alive. Witness: 1996/931 §43b/§43c.
+            continue
+        original_version = str(section_el.get(_FINLEX_ORIGINAL_VERSION_ATTR) or "")
+        section_eid_base = _finlex_section_eid_base(section_el)
+        if original_version and not (
+            section_eid_base and section_eid_base in current_section_eid_bases
+        ):
+            statute_id_from_version = _finlex_original_version_to_statute_id(original_version)
+            if statute_id_from_version:
+                reflected.setdefault((chapter_label, section_label), set()).add(
+                    statute_id_from_version
+                )
+        statute_id_from_eid = _finlex_eid_version_to_statute_id(section_el)
+        if statute_id_from_eid:
+            reflected.setdefault((chapter_label, section_label), set()).add(statute_id_from_eid)
     return reflected
 
 

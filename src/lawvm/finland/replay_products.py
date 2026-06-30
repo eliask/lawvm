@@ -1569,6 +1569,87 @@ def _mark_detached_horizon_future_repeals(
     return marked
 
 
+def _retain_oracle_reflected_section_temporary_versions(
+    timelines: dict[LegalAddress, ProvisionTimeline],
+    *,
+    oracle_reflected_section_versions: dict[tuple[str, str], frozenset[str]],
+) -> dict[LegalAddress, ProvisionTimeline]:
+    """Keep oracle-reflected temporary section versions alive past their sunset.
+
+    Official-consolidation expiry uses a single ``expires_as_of`` horizon for the
+    whole statute. That single scalar cannot separate two temporary versions that
+    share an identical sunset date but are treated differently by the oracle body:
+    one whose section the selected Finlex artifact reflects to that exact source
+    version (``sec_<n>v<YYYYMMDD>`` eId / ``finlex:originalVersion``) and one it
+    does not reflect at all.
+
+    The oracle body IS the authority on which version each section materializes to
+    at the consolidation surface. When it reflects a section to a specific source
+    version, that version must survive the consolidation expiry horizon even if its
+    temporary sunset has formally passed — otherwise the materializer reverts the
+    section to its base text and diverges from the published consolidation.
+
+    We clear the temporary ``expires`` only on versions that (a) live under an
+    oracle-reflected section address, AND (b) carry that section's reflected source
+    id, AND (c) are genuine temporary content (not repeal placeholders — a repealed
+    provision stays repealed regardless of any sunset).  Sections the oracle does
+    not section-reflect are untouched and continue to expire normally.
+
+    This is the per-section reconciliation companion to the statute-wide
+    ``oracle_reflected_section_original_versions`` horizon signal; it confines the
+    additional oracle dependence to the already oracle-anchored official
+    consolidation path.  Witness: 2002/1126 — §2 (reflected to 2004/466) is kept
+    while §14/§17a-c temporaries sharing the same 2006-01-01 sunset are dropped.
+    """
+    if not oracle_reflected_section_versions:
+        return timelines
+    rewritten: dict[LegalAddress, ProvisionTimeline] = {}
+    for address, timeline in timelines.items():
+        chapter_label = next(
+            (label for kind, label in address.path if kind == "chapter"), ""
+        )
+        section_label = next(
+            (label for kind, label in address.path if kind == "section"), ""
+        )
+        if not section_label:
+            rewritten[address] = timeline
+            continue
+        reflected_sources = oracle_reflected_section_versions.get(
+            (chapter_label, section_label)
+        )
+        if reflected_sources is None and chapter_label:
+            # The replay address may carry a chapter prefix the flat oracle eId
+            # surface does not; fall back to the chapterless key.
+            reflected_sources = oracle_reflected_section_versions.get(("", section_label))
+        if not reflected_sources:
+            rewritten[address] = timeline
+            continue
+        new_versions: list[ProvisionVersion] = []
+        changed = False
+        for version in timeline.versions:
+            source_id = version.source.statute_id if version.source else ""
+            is_repeal_placeholder = bool(
+                version.content is not None
+                and version.content.attrs.get("lawvm_repeal_placeholder") == "1"
+            )
+            if (
+                version.expires
+                and source_id in reflected_sources
+                and not is_repeal_placeholder
+            ):
+                new_versions.append(
+                    dc_replace(version, expires="", variant_kind="permanent")
+                )
+                changed = True
+            else:
+                new_versions.append(version)
+        if changed:
+            rewritten[address] = dc_replace(timeline, versions=tuple(new_versions))
+        else:
+            rewritten[address] = timeline
+    return rewritten
+
+
 # The item-scoped cited-version clause grammar (target window + item-word cue +
 # ``sellaisena kuin`` cited-version cue + ``laissa/asetuksessa N/YYYY`` statute
 # id) is owned by the references lane (``references.cited_version``). The replay
@@ -2183,6 +2264,7 @@ def build_replay_products(
     effect_relations: tuple[EffectRelation, ...] = (),
     effect_lifecycle_events: tuple[EffectLifecycleEvent, ...] = (),
     expires_as_of: str = "",
+    oracle_reflected_section_versions: dict[tuple[str, str], frozenset[str]] | None = None,
     fold_backfill_preview_raw_timelines: dict["LegalAddress", ProvisionTimeline] | None = None,
     fold_backfill_preview_cache: dict[object, object] | None = None,
 ) -> ReplayProducts:
@@ -2429,8 +2511,14 @@ def build_replay_products(
         as_of=as_of,
         bridge_classification=bridge_classification,
     )
+    materialize_timelines = lineage_decision.timelines
+    if oracle_reflected_section_versions:
+        materialize_timelines = _retain_oracle_reflected_section_temporary_versions(
+            materialize_timelines,
+            oracle_reflected_section_versions=oracle_reflected_section_versions,
+        )
     materialization_result = materialize_pit_ex(
-        lineage_decision.timelines,
+        materialize_timelines,
         as_of=as_of,
         base=base_ir,
         query_type=query_type,

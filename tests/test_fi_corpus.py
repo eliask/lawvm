@@ -569,6 +569,71 @@ def test_oracle_reflected_section_original_versions_reads_versioned_subsections(
     assert "2024/118" in got
 
 
+def test_oracle_reflected_section_versions_maps_live_reflection_per_section() -> None:
+    sid = "2002/1126"
+    oracle_path = "akn/fi/act/statute-consolidated/2002/1126/fin@20050886/main.xml"
+    oracle_xml = f"""
+    <akn xmlns="{_AKN_NS}" xmlns:finlex="{_FINLEX_NS}">
+      <body>
+        <chapter eId="chp_6">
+          <num>6 luku</num>
+          <section eId="chp_6__sec_2v20040466" finlex:originalVersion="@20040466">
+            <num>2 §</num>
+            <subsection><content><p>Live temporary fee list reflected to 2004/466.</p></content></subsection>
+          </section>
+          <section eId="chp_6__sec_14">
+            <num>14 §</num>
+            <subsection><content><p>Base registration fee text.</p></content></subsection>
+          </section>
+          <section eId="chp_6__sec_19v20050886">
+            <num>19 §</num>
+            <content><p>19 § on kumottu L:lla 11.11.2005/886.</p></content>
+          </section>
+        </chapter>
+      </body>
+    </akn>
+    """.encode("utf-8")
+    fake = _FakeCorpus({sid: oracle_path}, {oracle_path: oracle_xml})
+
+    got = corpus.get_consolidated_oracle_reflected_section_versions(sid, cast(Any, fake))
+
+    # §2 is reflected to its 2004/466 source; §14 (base, no version) is not mapped.
+    assert got.get(("6", "2")) == {"2004/466"}
+    assert ("6", "14") not in got
+    # §19's kumottu shell still carries a versioned eId reflection.
+    assert got.get(("6", "19")) == {"2005/886"}
+
+
+def test_oracle_reflected_section_versions_excludes_historical_validity_notice() -> None:
+    """A past-tense ``oli väliaikaisesti voimassa`` shell must not reflect a version."""
+    sid = "1996/931"
+    oracle_path = "akn/fi/act/statute-consolidated/1996/931/fin@20231191/main.xml"
+    oracle_xml = f"""
+    <akn xmlns="{_AKN_NS}" xmlns:finlex="{_FINLEX_NS}">
+      <body>
+        <chapter eId="chp_6">
+          <num>6 luku</num>
+          <section eId="chp_6__sec_43av20231191" finlex:originalVersion="@20231191">
+            <num>43 a §</num>
+            <subsection><content><p>Live reflected provision.</p></content></subsection>
+          </section>
+          <section eId="chp_6__sec_43bv20120991" finlex:originalVersion="@20120991">
+            <num>43 b §</num>
+            <content><p>43 b § oli väliaikaisesti voimassa 1.1.2013-31.12.2016 L:lla 991/2012.</p></content>
+          </section>
+        </chapter>
+      </body>
+    </akn>
+    """.encode("utf-8")
+    fake = _FakeCorpus({sid: oracle_path}, {oracle_path: oracle_xml})
+
+    got = corpus.get_consolidated_oracle_reflected_section_versions(sid, cast(Any, fake))
+
+    assert got.get(("6", "43a")) == {"2023/1191"}
+    # The lapsed temporary shell must NOT pin 2012/991 alive.
+    assert ("6", "43b") not in got
+
+
 def test_oracle_reflected_section_original_versions_reads_child_repeal_notice() -> None:
     sid = "2020/389"
     oracle_path = "akn/fi/act/statute-consolidated/2020/389/fin@20220512/main.xml"

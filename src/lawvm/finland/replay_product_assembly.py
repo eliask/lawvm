@@ -11,6 +11,7 @@ from lawvm.finland.ops import AmendmentOp, _apply_law_level_text_patches
 from lawvm.finland.corpus import (
     get_consolidated_oracle_absent_repeal_target_versions,
     get_consolidated_oracle_reflected_section_original_versions,
+    get_consolidated_oracle_reflected_section_versions,
     get_consolidated_oracle_single_future_repeal_overlay_versions,
 )
 from lawvm.finland.replay_capture import ReplayCaptureSinks
@@ -112,6 +113,21 @@ def assemble_replay_products(request: ReplayProductAssemblyRequest) -> ReplayPro
         )
     )
 
+    # Per-section oracle reflection map: keep an oracle-reflected temporary section
+    # version alive past its shared sunset when the published consolidation reflects
+    # that section to that exact source version. Confined to the official
+    # consolidation path, which is already oracle-anchored by design.
+    oracle_reflected_section_versions: dict[tuple[str, str], frozenset[str]] = {}
+    if request.mode == "official_consolidation":
+        oracle_reflected_section_versions = {
+            key: frozenset(sources)
+            for key, sources in get_consolidated_oracle_reflected_section_versions(
+                request.parent_id,
+                corpus=request.corpus,
+                selector=request.oracle_selector,
+            ).items()
+        }
+
     base_chapter_expiries = _base_chapter_expiries_from_base(
         plan.ctx.base_xml_bytes,
         request.replay_print,
@@ -139,6 +155,7 @@ def assemble_replay_products(request: ReplayProductAssemblyRequest) -> ReplayPro
         effect_relations=tuple(request.signals.effect_relations),
         effect_lifecycle_events=tuple(request.signals.effect_lifecycle_events),
         expires_as_of=horizon.expires_as_of,
+        oracle_reflected_section_versions=oracle_reflected_section_versions,
     )
     products = _normalize_product_trees(products)
     products = _apply_law_level_patches_if_needed(products, request)

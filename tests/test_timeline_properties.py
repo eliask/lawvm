@@ -4685,7 +4685,15 @@ def test_generic_preamble_sec1_repeal_uses_oracle_cutoff_without_detached_horizo
 
 
 def test_single_future_section_repeal_does_not_expire_unrelated_fee_versions() -> None:
-    """2005/886 only repeals 2002/1126 §19; it must not horizon-shift §§14-18."""
+    """2005/886 only repeals 2002/1126 §19; it must not horizon-shift §§14-18.
+
+    This also pins the per-section oracle reconciliation simultaneity: with the
+    materialization horizon at the 2006-01-01 §19 repeal date, §2's oracle-reflected
+    2004/466 temporary replacement (sharing the same 2006-01-01 sunset) is KEPT
+    because the oracle reflects §2 to that version, while §14/§17a-c temporaries on
+    the same sunset are correctly dropped, and §19 stays a kumottu shell. All four
+    dispositions hold under one horizon.
+    """
     master = pinned_replay("2002/1126", mode="official_consolidation")
     secs = _extract_sections_ir(master.ir)
 
@@ -4694,6 +4702,12 @@ def test_single_future_section_repeal_does_not_expire_unrelated_fee_versions() -
     assert "17b" not in secs
     assert "17c" not in secs
     assert "18" in secs
+    # §2 KEEPS its oracle-reflected 2004/466 temporary replacement (not base).
+    section_2_text = irnode_to_text(secs["2"])
+    assert "6, 10-13 ja 16-17 b §:ssä määrätyt" in section_2_text
+    assert "6 ja 9-19 §:ssä määrätyt" not in section_2_text
+    # §19 stays a repeal shell, not live base text.
+    assert "Postitoiminnan valvontamaksut" not in irnode_to_text(secs["19"])
     assert "Teleurakoinnin rekisteröintimaksut" in irnode_to_text(secs["14"])
     assert "Teleurakoinnin valvontamaksut" in irnode_to_text(secs["15"])
     assert "Televerkon numerointimaksut" in irnode_to_text(secs["16"])
