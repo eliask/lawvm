@@ -297,15 +297,23 @@ def _gates_from_literals(frontend: FrontendId, lits: _ProfileLiterals) -> Dict[s
     # LS-01 — boundary_mode read verbatim (default "observe" if omitted).
     boundary: GateMode = _as_mode(lits.boundary_mode, "observe")
 
-    # EV-05 — the authorization gate ALWAYS runs (the kernel default resolver is
-    # wired on every profile), but the default resolver yields no proof, so the
-    # gate is structurally OBSERVE-only. A frontend that supplies a real
-    # authorization_resolver minting non-empty proofs moves toward closing the
-    # gate; until any frontend does, the honest mode is "observe" (the ~100%
-    # firewall-hole the seam surfaces universally). No frontend supplies a real
-    # resolver today, so this stays "observe"; the flag is the signal that would
-    # flip the reading the moment one is wired.
-    authorization: GateMode = "block" if lits.has_authorization_resolver else "observe"
+    # EV-05 — the authorization gate is structurally OBSERVE-only for every
+    # ApplyProfile frontend: the seam emits the non-blocking
+    # ``EVID.REPLAY_AUTHORIZATION_PROOF_OBSERVED`` witness on an op with no proof,
+    # and there is NO per-profile authorization-block disposition (the strict twin
+    # ``EVID.REPLAY_AUTHORIZATION_PROOF_REQUIRED`` is FI-only, via FI's separate
+    # battery — read in ``_fi_reference_gates``, not here). So wiring a real
+    # ``authorization_resolver`` does NOT flip the mode to block; it only changes
+    # WHICH ops emit the observation (an op carrying a real proof goes quiet),
+    # i.e. it shrinks the measured firewall-hole residue without changing the
+    # disposition. EE is the first to wire a real resolver (the proof carrier on
+    # ``core/ir.LegalOperation``): it measures a near-zero residue while its
+    # siblings (default no-op resolver) sit at the ~100% hole — a difference the
+    # coarse {block,observe,off} vocab cannot express, recorded in
+    # ``notes/PROOF_CARRIER_FINDINGS.md``. The honest mode for all six is
+    # "observe". ``has_authorization_resolver`` stays scanned as the "real
+    # resolver wired" signal but no longer drives the mode.
+    authorization: GateMode = "observe"
 
     # LS-03 — the occupancy gate is a no-op unless a real occupancy_resolver is
     # supplied. With a resolver, occupancy_mode drives block/observe/off; without
@@ -555,16 +563,30 @@ _RATIONALES: Dict[Tuple[str, str], str] = {
         "The path to parity is per-frontend measure-then-promote, not a uniform flip."
     ),
     ("EV-05", "observe-here"): (
-        "NOT-yet-a-fix: the EV-05 firewall hole (no op carries an "
-        "ExecutionAuthorization proof) is ~100% across every sibling; the seam "
-        "OBSERVES it universally. FI is the only frontend that BLOCKS (strict). "
-        "Closing it requires a proof carrier on core/ir.LegalOperation — a "
-        "framework change, not a per-frontend gap."
+        "PARTLY-CLOSED: the proof carrier on core/ir.LegalOperation now EXISTS "
+        "(the framework change this row used to name as the prerequisite). EE "
+        "wires a real authorization_resolver and mints proofs from each op's "
+        "amending-act identity, so EE's measured firewall-hole residue is ~0% "
+        "(notes/PROOF_CARRIER_FINDINGS.md); the other siblings still inherit the "
+        "no-op resolver and sit at the ~100% hole. All six OBSERVE (no per-profile "
+        "EV-05 block disposition; FI alone BLOCKS via its strict battery). Parity "
+        "is now per-frontend: mint proofs, measure the residue, then promote."
     ),
     ("AM-01", "absent-here"): (
         "NOT-yet-a-fix: provenance-acceptance is FI-only today (typed OpProvenance "
         "is FI-owned); the seam hook exists but no sibling mints typed provenance, "
         "so the gate is a no-op there. Parity needs a per-frontend provenance rider."
+    ),
+    ("AM-01", "enforced-here"): (
+        "JUSTIFIED first-mover (OBSERVE, not block): EE is the first non-FI "
+        "frontend to wire a real provenance_resolver — it computes the "
+        "core-neutral OpAcceptance from its OWN scope_confidence rung (inferred/"
+        "fallback => Recovered/not-admitted; explicit/none => Parsed/admitted), "
+        "without importing finland/. It OBSERVES (routes to AppliedOp.observations) "
+        "and measured a real Recovered-op residue over its corpus "
+        "(notes/PROOF_CARRIER_FINDINGS.md); the siblings stay off (no provenance "
+        "rider). EE is not flipped to block — observe-first measure-then-promote, "
+        "the same discipline as its LS-03/LS-01 flips."
     ),
     ("LS-01", "enforced-here"): (
         "JUSTIFIED jurisdiction difference: EE closed its boundary declaration "
