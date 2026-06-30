@@ -30,6 +30,9 @@ from lawvm.core.archive_safety import (
     log_archive_member_too_large,
     safe_tar_read,
 )
+from lawvm.core.cross_act_same_moment import (
+    detect_cross_act_same_moment_conflicts,
+)
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.filter_result import FilterResult, RejectedItem
 from lawvm.core.invariant_profiles import CORE_REPLAY_DELTA_MINIMAL_FAMILIES
@@ -3227,6 +3230,30 @@ def apply_no_ops(
     debt that should move upward into elaboration. Replay should converge on an
     execution-only contract over fully resolved canonical operations.
     """
+    # §1.7 same-moment cross-act conflict pre-pass (AGENTS.md §1.7).
+    #
+    # Runs BEFORE the apply fold to emit a blocking finding for incompatible
+    # whole-target payloads from distinct affecting acts at the same
+    # (effective_date, target) moment. The finding is ADDITIVE: apply order is
+    # unchanged so non-ambiguous cases are byte-identical to the pre-detection
+    # path; the finding surfaces the silent group-order pick so strict mode can
+    # reject. The cross-act finding carries an empty op_id so the
+    # conserved-wrapper partition (which keys per-op skips by op_id) is
+    # unaffected.
+    #
+    # Routed through the shared module exactly as EE/UK do (B1: NO/SE wiring of
+    # the §1.7 silent-last-wins risk). NO uses the shared module's *default*
+    # conservative compatibility predicate (no jurisdiction-specific
+    # re-implementation): NO ops carry StructuralAction enum actions, which the
+    # default predicate classifies directly. NO has no validated precedence-rule
+    # registry yet, so every detected conflict emits
+    # ``resolution: "sequence_order_unproven"``.
+    detect_cross_act_same_moment_conflicts(
+        ops,
+        finder_kind_prefix="no",
+        adjudications_out=adjudications_out,
+    )
+
     body = statute.body
 
     def _group_sort_key(op: LegalOperation) -> tuple[str, str, str, int]:

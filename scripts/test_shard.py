@@ -137,6 +137,9 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_se_scan_lane_apply_raise_bucketing.py",
         # SE conserved apply wrapper fire-drill tests (AGENTS.md §1.8, §2.9).
         "test_se_apply_conserved.py",
+        # §1.7 same-moment cross-act ambiguity pre-pass wired into apply_se_ops
+        # (B1: routes SE through lawvm.core.cross_act_same_moment).
+        "test_se_same_moment_ambiguity.py",
     ),
     "uk": (
         "test_uk_*.py",
