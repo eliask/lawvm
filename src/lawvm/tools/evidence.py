@@ -15,6 +15,7 @@ import os
 import re
 import sys
 from collections import Counter, defaultdict
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Literal, Optional, cast
 
@@ -1089,43 +1090,95 @@ def _bundle_matches_filters(
     return True
 
 
+@dataclass(frozen=True)
+class ReviewConfig:
+    """Filter / selection / output knobs for :func:`_review_bundles`.
+
+    Groups the 33 keyword parameters that previously formed a parameter-wall on
+    ``_review_bundles``. All fields default to "no filter applied", so an empty
+    ``ReviewConfig()`` reproduces the prior all-defaults call. The fields are
+    behaviour-identical to the former keyword arguments (same names, same
+    defaults); this is a parameter-packing container, not a logic change.
+    """
+
+    # --- bundle-level filters (forwarded to _bundle_matches_filters) ---
+    primary_tier: str = ""
+    tier: str = ""
+    kind: str = ""
+    section_kind: str = ""
+    section_rule: str = ""
+    trigger_source: str = ""
+    trigger_field: str = ""
+    strict_fail_reason: str = ""
+    elaboration_observation_kind: str = ""
+    sparse_leftovers_only: bool = False
+    sparse_blocker_source: str = ""
+    sparse_blocker_section: str = ""
+    payload_completeness_kind: str = ""
+    payload_tail_policy: str = ""
+    provenance_projection_kind: str = ""
+    provenance_tag: str = ""
+    provenance_source_statute: str = ""
+    source_proof_kind: str = ""
+    source_pathology_code: str = ""
+    source_pathology_source: str = ""
+    source_pathology_target_label: str = ""
+    source_pathology_diagnostic_reason: str = ""
+    alternative_replay_section: str = ""
+    html_noncommensurable_reason: str = ""
+    evidence_context_degraded_only: bool = False
+    evidence_context_rail: str = ""
+    # --- post-classification row selectors ---
+    actionable_unresolved_only: bool = False
+    nontrivial_unresolved_only: bool = False
+    mixed_replay_risk_only: bool = False
+    ready_oracle_artifacts_only: bool = False
+    oracle_artifact_family: str = ""
+    oracle_artifact_gap: str = ""
+    # --- output shaping ---
+    limit: int = 20
+
+
 def _review_bundles(
     bundles: Iterable[Dict],
-    *,
-    primary_tier: str = "",
-    tier: str = "",
-    kind: str = "",
-    section_kind: str = "",
-    section_rule: str = "",
-    trigger_source: str = "",
-    trigger_field: str = "",
-    strict_fail_reason: str = "",
-    elaboration_observation_kind: str = "",
-    sparse_leftovers_only: bool = False,
-    sparse_blocker_source: str = "",
-    sparse_blocker_section: str = "",
-    payload_completeness_kind: str = "",
-    payload_tail_policy: str = "",
-    provenance_projection_kind: str = "",
-    provenance_tag: str = "",
-    provenance_source_statute: str = "",
-    source_proof_kind: str = "",
-    source_pathology_code: str = "",
-    source_pathology_source: str = "",
-    source_pathology_target_label: str = "",
-    source_pathology_diagnostic_reason: str = "",
-    alternative_replay_section: str = "",
-    html_noncommensurable_reason: str = "",
-    evidence_context_degraded_only: bool = False,
-    evidence_context_rail: str = "",
-    actionable_unresolved_only: bool = False,
-    nontrivial_unresolved_only: bool = False,
-    mixed_replay_risk_only: bool = False,
-    ready_oracle_artifacts_only: bool = False,
-    oracle_artifact_family: str = "",
-    oracle_artifact_gap: str = "",
-    limit: int = 20,
+    config: ReviewConfig | None = None,
 ) -> Dict:
+    config = config if config is not None else ReviewConfig()
+    # Unpack into the locals the body already references, so the computation
+    # below is byte-for-byte identical to the pre-refactor parameter wall.
+    primary_tier = config.primary_tier
+    tier = config.tier
+    kind = config.kind
+    section_kind = config.section_kind
+    section_rule = config.section_rule
+    trigger_source = config.trigger_source
+    trigger_field = config.trigger_field
+    strict_fail_reason = config.strict_fail_reason
+    elaboration_observation_kind = config.elaboration_observation_kind
+    sparse_leftovers_only = config.sparse_leftovers_only
+    sparse_blocker_source = config.sparse_blocker_source
+    sparse_blocker_section = config.sparse_blocker_section
+    payload_completeness_kind = config.payload_completeness_kind
+    payload_tail_policy = config.payload_tail_policy
+    provenance_projection_kind = config.provenance_projection_kind
+    provenance_tag = config.provenance_tag
+    provenance_source_statute = config.provenance_source_statute
+    source_proof_kind = config.source_proof_kind
+    source_pathology_code = config.source_pathology_code
+    source_pathology_source = config.source_pathology_source
+    source_pathology_target_label = config.source_pathology_target_label
+    source_pathology_diagnostic_reason = config.source_pathology_diagnostic_reason
+    alternative_replay_section = config.alternative_replay_section
+    html_noncommensurable_reason = config.html_noncommensurable_reason
+    evidence_context_degraded_only = config.evidence_context_degraded_only
+    evidence_context_rail = config.evidence_context_rail
+    actionable_unresolved_only = config.actionable_unresolved_only
+    nontrivial_unresolved_only = config.nontrivial_unresolved_only
+    mixed_replay_risk_only = config.mixed_replay_risk_only
+    ready_oracle_artifacts_only = config.ready_oracle_artifacts_only
+    oracle_artifact_family = config.oracle_artifact_family
+    oracle_artifact_gap = config.oracle_artifact_gap
+    limit = config.limit
     bundle_list = [dict(bundle or {}) for bundle in bundles]
     error_rows = sorted(
         [
@@ -2967,7 +3020,7 @@ def review_live_oracle_corpus(
 
     # Fluid single-executor model: submit ALL cache-miss statutes at once so
     # workers stay busy across the full corpus rather than stalling per chunk.
-    _review_kwargs: Dict[str, Any] = dict(
+    _review_config = ReviewConfig(
         primary_tier=primary_tier,
         tier=tier,
         kind=kind,
@@ -3005,7 +3058,7 @@ def review_live_oracle_corpus(
 
     def _process_one_bundle(bundle: Dict) -> None:
         """Merge a single completed bundle into acc and write progress/checkpoints."""
-        single_review = _review_bundles([bundle], **_review_kwargs)
+        single_review = _review_bundles([bundle], _review_config)
         _merge_review_summary(acc, single_review)
         acc["processed"] += 1
         processed = acc["processed"]
@@ -3196,39 +3249,41 @@ def review_bundle_artifacts(
             )
             for bundle in _load_bundle_artifacts(path_list)
         ),
-        primary_tier=primary_tier,
-        tier=tier,
-        kind=kind,
-        section_kind=section_kind,
-        section_rule=section_rule,
-        trigger_source=trigger_source,
-        trigger_field=trigger_field,
-        strict_fail_reason=strict_fail_reason,
-        elaboration_observation_kind=elaboration_observation_kind,
-        sparse_leftovers_only=sparse_leftovers_only,
-        sparse_blocker_source=sparse_blocker_source,
-        sparse_blocker_section=sparse_blocker_section,
-        payload_completeness_kind=payload_completeness_kind,
-        payload_tail_policy=payload_tail_policy,
-        provenance_projection_kind=provenance_projection_kind,
-        provenance_tag=provenance_tag,
-        provenance_source_statute=provenance_source_statute,
-        source_proof_kind=source_proof_kind,
-        source_pathology_code=source_pathology_code,
-        source_pathology_source=source_pathology_source,
-        source_pathology_target_label=source_pathology_target_label,
-        source_pathology_diagnostic_reason=source_pathology_diagnostic_reason,
-        alternative_replay_section=alternative_replay_section,
-        html_noncommensurable_reason=html_noncommensurable_reason,
-        evidence_context_degraded_only=evidence_context_degraded_only,
-        evidence_context_rail=evidence_context_rail,
-        actionable_unresolved_only=actionable_unresolved_only,
-        nontrivial_unresolved_only=nontrivial_unresolved_only,
-        mixed_replay_risk_only=mixed_replay_risk_only,
-        ready_oracle_artifacts_only=ready_oracle_artifacts_only,
-        oracle_artifact_family=oracle_artifact_family,
-        oracle_artifact_gap=oracle_artifact_gap,
-        limit=limit,
+        ReviewConfig(
+            primary_tier=primary_tier,
+            tier=tier,
+            kind=kind,
+            section_kind=section_kind,
+            section_rule=section_rule,
+            trigger_source=trigger_source,
+            trigger_field=trigger_field,
+            strict_fail_reason=strict_fail_reason,
+            elaboration_observation_kind=elaboration_observation_kind,
+            sparse_leftovers_only=sparse_leftovers_only,
+            sparse_blocker_source=sparse_blocker_source,
+            sparse_blocker_section=sparse_blocker_section,
+            payload_completeness_kind=payload_completeness_kind,
+            payload_tail_policy=payload_tail_policy,
+            provenance_projection_kind=provenance_projection_kind,
+            provenance_tag=provenance_tag,
+            provenance_source_statute=provenance_source_statute,
+            source_proof_kind=source_proof_kind,
+            source_pathology_code=source_pathology_code,
+            source_pathology_source=source_pathology_source,
+            source_pathology_target_label=source_pathology_target_label,
+            source_pathology_diagnostic_reason=source_pathology_diagnostic_reason,
+            alternative_replay_section=alternative_replay_section,
+            html_noncommensurable_reason=html_noncommensurable_reason,
+            evidence_context_degraded_only=evidence_context_degraded_only,
+            evidence_context_rail=evidence_context_rail,
+            actionable_unresolved_only=actionable_unresolved_only,
+            nontrivial_unresolved_only=nontrivial_unresolved_only,
+            mixed_replay_risk_only=mixed_replay_risk_only,
+            ready_oracle_artifacts_only=ready_oracle_artifacts_only,
+            oracle_artifact_family=oracle_artifact_family,
+            oracle_artifact_gap=oracle_artifact_gap,
+            limit=limit,
+        ),
     )
     review["artifact_count"] = len(path_list)
     return review
@@ -5416,39 +5471,41 @@ def main(args) -> None:
                 )
                 review = _review_bundles(
                     bundles,
-                    primary_tier=primary_tier,
-                    tier=tier,
-                    kind=kind,
-                    section_kind=section_kind,
-                    section_rule=section_rule,
-                    trigger_source=trigger_source,
-                    trigger_field=trigger_field,
-                    strict_fail_reason=strict_fail_reason,
-                    elaboration_observation_kind=elaboration_observation_kind,
-                    sparse_leftovers_only=sparse_leftovers_only,
-                    sparse_blocker_source=sparse_blocker_source,
-                    sparse_blocker_section=sparse_blocker_section,
-                    payload_completeness_kind=payload_completeness_kind,
-                    payload_tail_policy=payload_tail_policy,
-                    provenance_projection_kind=provenance_projection_kind,
-                    provenance_tag=provenance_tag,
-                    provenance_source_statute=provenance_source_statute,
-                    source_proof_kind=source_proof_kind,
-                    source_pathology_code=source_pathology_code,
-                    source_pathology_source=source_pathology_source,
-                    source_pathology_target_label=source_pathology_target_label,
-                    source_pathology_diagnostic_reason=source_pathology_diagnostic_reason,
-                    alternative_replay_section=alternative_replay_section,
-                    html_noncommensurable_reason=html_noncommensurable_reason,
-                    evidence_context_degraded_only=evidence_context_degraded_only,
-                    evidence_context_rail=evidence_context_rail,
-                    actionable_unresolved_only=actionable_unresolved_only,
-                    nontrivial_unresolved_only=nontrivial_unresolved_only,
-                    mixed_replay_risk_only=mixed_replay_risk_only,
-                    ready_oracle_artifacts_only=ready_oracle_artifacts_only,
-                    oracle_artifact_family=oracle_artifact_family,
-                    oracle_artifact_gap=oracle_artifact_gap,
-                    limit=limit,
+                    ReviewConfig(
+                        primary_tier=primary_tier,
+                        tier=tier,
+                        kind=kind,
+                        section_kind=section_kind,
+                        section_rule=section_rule,
+                        trigger_source=trigger_source,
+                        trigger_field=trigger_field,
+                        strict_fail_reason=strict_fail_reason,
+                        elaboration_observation_kind=elaboration_observation_kind,
+                        sparse_leftovers_only=sparse_leftovers_only,
+                        sparse_blocker_source=sparse_blocker_source,
+                        sparse_blocker_section=sparse_blocker_section,
+                        payload_completeness_kind=payload_completeness_kind,
+                        payload_tail_policy=payload_tail_policy,
+                        provenance_projection_kind=provenance_projection_kind,
+                        provenance_tag=provenance_tag,
+                        provenance_source_statute=provenance_source_statute,
+                        source_proof_kind=source_proof_kind,
+                        source_pathology_code=source_pathology_code,
+                        source_pathology_source=source_pathology_source,
+                        source_pathology_target_label=source_pathology_target_label,
+                        source_pathology_diagnostic_reason=source_pathology_diagnostic_reason,
+                        alternative_replay_section=alternative_replay_section,
+                        html_noncommensurable_reason=html_noncommensurable_reason,
+                        evidence_context_degraded_only=evidence_context_degraded_only,
+                        evidence_context_rail=evidence_context_rail,
+                        actionable_unresolved_only=actionable_unresolved_only,
+                        nontrivial_unresolved_only=nontrivial_unresolved_only,
+                        mixed_replay_risk_only=mixed_replay_risk_only,
+                        ready_oracle_artifacts_only=ready_oracle_artifacts_only,
+                        oracle_artifact_family=oracle_artifact_family,
+                        oracle_artifact_gap=oracle_artifact_gap,
+                        limit=limit,
+                    ),
                 )
                 review["statute_count"] = len(statute_ids)
                 review["jurisdiction"] = jurisdiction

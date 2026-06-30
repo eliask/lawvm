@@ -36,6 +36,7 @@ from lawvm.tools.evidence import (
     build_evidence_bundle,
     build_oracle_proof_bundle,
     main,
+    ReviewConfig,
     _review_bundles,
     _uk_oracle_corpus_statute_ids,
 )
@@ -3414,8 +3415,10 @@ def test_evidence_review_filters_context_degradation() -> None:
 
     review = _review_bundles(
         bundles,
-        evidence_context_degraded_only=True,
-        evidence_context_rail="chain_completeness",
+        ReviewConfig(
+            evidence_context_degraded_only=True,
+            evidence_context_rail="chain_completeness",
+        ),
     )
 
     assert review["selected_count"] == 1

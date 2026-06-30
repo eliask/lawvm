@@ -1060,7 +1060,7 @@ def test_uk_evidence_review_counts_uk_source_and_comparison_surfaces() -> None:
                 },
             },
         ],
-        limit=10,
+        evidence.ReviewConfig(limit=10),
     )
 
     assert review["by_enacted_source_status"] == {"available": 2}
@@ -1158,8 +1158,10 @@ def test_evidence_review_oracle_artifact_gap_filter_is_not_shadowed() -> None:
                 },
             }
         ],
-        oracle_artifact_gap="needs_manual_check",
-        limit=10,
+        evidence.ReviewConfig(
+            oracle_artifact_gap="needs_manual_check",
+            limit=10,
+        ),
     )
 
     assert review["by_oracle_artifact_gap"] == {"needs_manual_check": 1}
@@ -1168,7 +1170,7 @@ def test_evidence_review_oracle_artifact_gap_filter_is_not_shadowed() -> None:
 
 
 def test_evidence_review_count_outputs_are_merge_registered() -> None:
-    review = evidence._review_bundles([], limit=0)
+    review = evidence._review_bundles([], evidence.ReviewConfig(limit=0))
     count_fields = {
         key
         for key, value in review.items()
