@@ -1678,6 +1678,26 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "commencement TemporalEvent and without a pending/unresolved/"
                 "manual-frontier classification.",
                 ("temporal_selection", "strictness"), role="observation"),
+    # D9 / §B5 PROJECTION.REDERIVABLE_FROM_DOSSIER (roadmap §B5): every committed
+    # projection row (seam/dump/viewer row, parquet/SQLite export, review packet)
+    # must be re-derivable from the committed dossier — its committed
+    # projection_hash must recompute from its OWN committed projection_payload
+    # under the dossier's pinned §3.4 hash-view rule. A row whose committed hash
+    # does not re-derive has opaque lineage (hand-inserted, externally edited, or
+    # a stale cache) and violates the projection plane's invariant. Owner module:
+    # core.projection_rederivation_audit, which reuses
+    # tools.certificate_bundle.projection_payload_hash VERBATIM (the same recompute
+    # verify_bundle's §5.5 seam check performs inline) so the standalone audit and
+    # the writer self-check agree byte-for-byte. The audit emits Observation
+    # carriers only (role=observation; never raises on drift, never mutates legal
+    # state); a strict-profile consumer may flip it to a barrier via this
+    # default_enforcement. Mirrors the D7 commencement-totality precedent above.
+    FindingSpec("PROJECTION.REDERIVATION_DRIFT", "projection-rederivation",
+                "projection_drift", "strict_fail", "projection_rederivation_audit",
+                "A committed projection row's projection_hash does not recompute "
+                "from its own committed projection_payload under the dossier's "
+                "pinned hash-view rule (opaque/hand-edited/stale-cache lineage).",
+                ("provenance", "strictness"), role="observation"),
     # §1.10 (no broad exception swallowing) + §2.6 (rule of three): the
     # ``except (NameError, TypeError, AttributeError): raise; except Exception:
     # <swallow>`` pattern was re-invented 6+ times across the codebase. The
