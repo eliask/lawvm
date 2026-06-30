@@ -307,6 +307,16 @@ class ApplyProfile(Generic[State]):
       RENUMBER's bound→landed divergence (NO's ``no_section_renumber_relabel``);
       stamped onto the receipt so ``WriteReceipt.divergence_explained`` holds
       for the relabel.
+    * ``receipt_helper_prefix`` — the helper-string prefix stamped onto the
+      synthesized :class:`~lawvm.core.write_receipt.WriteReceipt` (the
+      ``helper`` field is ``f"{prefix}::{action}::{leaf_kind}"``). Defaults to
+      ``None``, which yields the kernel-canonical ``f"{jurisdiction}::apply_op"``
+      prefix. A frontend whose pre-existing receipt emitter used a different
+      helper prefix (SE's ``apply_se_ops``, NO's ``apply_no_ops``) sets this so
+      the seam-synthesized receipt is byte-identical to that emitter — the
+      strangler byte-identity contract (the receipt helper is the only
+      jurisdiction-named string in the receipt; everything else is computed from
+      the IR diff + the op).
     """
 
     jurisdiction: str
@@ -317,6 +327,7 @@ class ApplyProfile(Generic[State]):
     emit_receipts: bool = True
     emit_coverage: bool = True
     renumber_migration_rule_ids: tuple[str, ...] = ()
+    receipt_helper_prefix: Optional[str] = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -525,7 +536,12 @@ def _synthesize_receipt(
 
     action_value = op.action.value if op.action else "unknown"
     leaf_kind = op.target.leaf_kind() or "unknown"
-    helper = f"{profile.jurisdiction}::apply_op::{action_value}::{leaf_kind}"
+    helper_prefix = (
+        profile.receipt_helper_prefix
+        if profile.receipt_helper_prefix is not None
+        else f"{profile.jurisdiction}::apply_op"
+    )
+    helper = f"{helper_prefix}::{action_value}::{leaf_kind}"
     bound_target_path = _legal_path_to_tree_path(op.target)
 
     landed_primary_path: TreePath | None

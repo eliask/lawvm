@@ -55,6 +55,12 @@ from typing import Any, List, Optional, cast
 from urllib.parse import quote, urljoin
 
 from lawvm.core import tree_ops
+from lawvm.core.apply_seam import (
+    ApplyProfile,
+    AppliedOp,
+    MaterializeResult,
+    apply_op,
+)
 from lawvm.core.op_ordering import OrderingProfile, order_ops
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.filter_result import FilterResult, RejectedItem
@@ -3542,13 +3548,47 @@ def apply_se_ops(
     applied_op_count = 0
     # §2.9 per-op mutation-boundary probe gate read once per apply (cached env
     # read) so the per-op snapshot is taken only when opted in; default-off.
+    # Wave 2 (design §3.1/§3.5): the probe is retained here on every per-op path
+    # (the materializer's ``finally``) so SE stays the single producer of its
+    # projected ``se_replay_mutation_boundary_per_op_violation_observed``
+    # adjudication and the env-flag-ON output is byte-identical to the
+    # pre-cutover fold; the seam profile's ``boundary_mode`` is therefore
+    # ``"off"``. Promoting SE onto the seam's boundary disposition (and dropping
+    # this probe) is the same deferred follow-up NO carries.
     _se_boundary_probe_on = _se_boundary_probe_enabled()
-    for op in ops:
+
+    # ── SE materializer (Wave 2, design §3.1/§3.5). ──────────────────────────
+    # The per-op tree dispatch — SE's section heading / RENUMBER / REPEAL /
+    # TEXT_REPLACE / REPLACE / INSERT apply plus the appendix (``supplements``)
+    # lane — IS the SE :class:`Materializer`. The dispatch body below is the
+    # verbatim prior inline fold body (no semantic change): every prior
+    # ``continue`` is now a bare ``return`` and the env-gated probe moved into a
+    # ``finally``. The closures it captures (``adjudications_out``, the
+    # ``supplements`` list, ``applied_op_count``) are unchanged.
+    #
+    # SE-SPECIFIC vs SEAM-OWNED. The ``supplements`` (appendix) lane mutates a
+    # list that is NOT the ``IRNode`` body the seam threads, so the seam's
+    # identity-based ``applied`` derivation (``new_state is not base_state``)
+    # cannot see an appendix mutation. The materializer therefore signals
+    # ``applied`` EXPLICITLY via the ``_se_op_applied`` flag (set at exactly the
+    # sites the prior fold did ``applied_op_count += 1``), and that same flag
+    # increments ``applied_op_count`` — preserving SE's metadata accounting
+    # byte-for-byte. The seam owns the receipt/coverage outputs (disabled on the
+    # bare fold) and the boundary gate (``off`` here; SE keeps its own probe).
+    _se_op_applied = False
+
+    def _se_materialize_one(
+        before_body: IRNode, op: LegalOperation
+    ) -> MaterializeResult[IRNode]:
+        nonlocal body, supplements, applied_op_count, _se_op_applied
+        body = before_body
+        _se_op_applied = False
+
         # §2.9 per-op mutation-boundary probe (LS-01 / §1.0): env-gated
         # (LAWVM_SE_MUTATION_BOUNDARY_PER_OP=1), default-off. Snapshot the
         # immutable IRNode body BEFORE this op mutates it; the after-snapshot
         # is the (possibly reassigned) ``body`` read in the ``finally`` so the
-        # probe runs on every per-op path (including the ``continue`` skips).
+        # probe runs on every per-op path (including the ``return`` skips).
         # Observes the ``body`` tree only; appendix-only ops mutate the
         # separate ``supplements`` lane and read clean here (conservative v0
         # scope). ``_se_boundary_probe_on`` is a cached env read so the
@@ -3556,7 +3596,22 @@ def apply_se_ops(
         # byte-stable bench output; frozen-``IRNode`` direct reference, no
         # deep-copy; AGENTS.md §2.7).
         _se_boundary_before = body if _se_boundary_probe_on else None
-        try:
+
+        def _dispatch() -> None:
+            """Run one op's tree dispatch (mutating the closure ``body`` /
+            ``supplements``). Verbatim lift of the prior inline per-op fold body;
+            each prior ``continue`` is now a bare ``return`` and each prior
+            ``applied_op_count += 1`` is mirrored by ``_mark_applied()`` (which
+            both increments the count and sets the per-op landed flag the
+            materializer returns). The ``continue`` → ``return`` rewrite is
+            purely control-flow; the mutation semantics are byte-identical."""
+            nonlocal body, supplements, applied_op_count, _se_op_applied
+
+            def _mark_applied() -> None:
+                nonlocal applied_op_count, _se_op_applied
+                applied_op_count += 1
+                _se_op_applied = True
+
             leaf_kind = op.target.leaf_kind()
             if leaf_kind == "section":
                 if op.target.special is FacetKind.HEADING:
@@ -3570,14 +3625,14 @@ def apply_se_ops(
                                 op=op,
                                 detail={"action": op.action, "target": op.target.leaf_label()},
                             )
-                            continue
+                            return
                         body = _insert_se_heading_before_section(body, op.target.leaf_label(), heading)
-                        applied_op_count += 1
-                        continue
+                        _mark_applied()
+                        return
                     if op.action is StructuralAction.REPEAL:
                         body = _remove_se_heading_before_section(body, op.target.leaf_label())
-                        applied_op_count += 1
-                        continue
+                        _mark_applied()
+                        return
                     _append_se_replay_adjudication(
                         adjudications_out,
                         kind="se_replay_unsupported_action",
@@ -3585,7 +3640,7 @@ def apply_se_ops(
                         op=op,
                         detail={"action": op.action, "target": op.target.leaf_label()},
                     )
-                    continue
+                    return
                 if op.action is StructuralAction.RENUMBER:
                     section_label = op.target.leaf_label()
                     destination_label = _label_norm(op.destination.leaf_label() if op.destination is not None else "")
@@ -3597,7 +3652,7 @@ def apply_se_ops(
                             op=op,
                             detail={"action": op.action, "target": section_label},
                         )
-                        continue
+                        return
                     section_path = tree_ops.find(body, "section", section_label)
                     if section_path is None:
                         _append_se_replay_adjudication(
@@ -3607,7 +3662,7 @@ def apply_se_ops(
                             op=op,
                             detail={"action": op.action, "target": section_label},
                         )
-                        continue
+                        return
                     if tree_ops.find(body, "section", destination_label) is not None:
                         _append_se_replay_adjudication(
                             adjudications_out,
@@ -3616,7 +3671,7 @@ def apply_se_ops(
                             op=op,
                             detail={"action": op.action, "target": section_label, "destination": destination_label},
                         )
-                        continue
+                        return
                     existing = tree_ops.resolve(body, section_path)
                     if existing is None:
                         _append_se_replay_adjudication(
@@ -3626,13 +3681,13 @@ def apply_se_ops(
                             op=op,
                             detail={"action": op.action, "target": section_label},
                         )
-                        continue
+                        return
                     moved = _clone_se_node_with_label(existing, destination_label)
                     body = tree_ops.remove_at(body, section_path)
                     parent_path = _find_se_section_parent_path(body, destination_label)
                     body = tree_ops.insert_sorted(body, list(parent_path), moved, sort_key_fn=_se_label_sort_key)
-                    applied_op_count += 1
-                    continue
+                    _mark_applied()
+                    return
                 if op.action is StructuralAction.REPEAL:
                     section_label = op.target.leaf_label()
                     section_path = tree_ops.find(body, "section", section_label)
@@ -3644,10 +3699,10 @@ def apply_se_ops(
                             op=op,
                             detail={"action": op.action, "target": section_label},
                         )
-                        continue
+                        return
                     body = tree_ops.remove_at(body, section_path)
-                    applied_op_count += 1
-                    continue
+                    _mark_applied()
+                    return
                 if op.action is StructuralAction.TEXT_REPLACE:
                     section_label = op.target.leaf_label()
                     section_path = tree_ops.find(body, "section", section_label)
@@ -3659,7 +3714,7 @@ def apply_se_ops(
                             op=op,
                             detail={"action": op.action, "target": section_label},
                         )
-                        continue
+                        return
                     patch = op.text_patch
                     if patch is None:
                         _append_se_replay_adjudication(
@@ -3669,7 +3724,7 @@ def apply_se_ops(
                             op=op,
                             detail={"action": op.action, "target": section_label},
                         )
-                        continue
+                        return
                     old_text = _normalize_space(patch.selector.match_text)
                     new_text = _normalize_space(patch.replacement or "")
                     if not old_text and op.payload is not None:
@@ -3684,7 +3739,7 @@ def apply_se_ops(
                             op=op,
                             detail={"action": op.action, "target": section_label},
                         )
-                        continue
+                        return
                     section_node = tree_ops.resolve(body, section_path)
                     if section_node is None:
                         _append_se_replay_adjudication(
@@ -3694,7 +3749,7 @@ def apply_se_ops(
                             op=op,
                             detail={"action": op.action, "target": section_label},
                         )
-                        continue
+                        return
                     replaced_section, changed = _replace_se_text_in_node(section_node, old_text, new_text)
                     if not changed:
                         _append_se_replay_adjudication(
@@ -3709,10 +3764,10 @@ def apply_se_ops(
                                 "new_text": new_text,
                             },
                         )
-                        continue
+                        return
                     body = tree_ops.replace_at(body, section_path, replaced_section)
-                    applied_op_count += 1
-                    continue
+                    _mark_applied()
+                    return
                 if op.payload is None or op.payload.kind is not IRNodeKind.SECTION:
                     _append_se_replay_adjudication(
                         adjudications_out,
@@ -3721,7 +3776,7 @@ def apply_se_ops(
                         op=op,
                         detail={"action": op.action, "target": op.target.leaf_label()},
                     )
-                    continue
+                    return
                 section_label = op.target.leaf_label()
                 section_path = tree_ops.find(body, "section", section_label)
                 if op.action is StructuralAction.REPLACE:
@@ -3733,10 +3788,10 @@ def apply_se_ops(
                             op=op,
                             detail={"action": op.action, "target": section_label},
                         )
-                        continue
+                        return
                     body = tree_ops.replace_at(body, section_path, op.payload)
-                    applied_op_count += 1
-                    continue
+                    _mark_applied()
+                    return
                 if op.action is StructuralAction.INSERT:
                     if section_path is not None:
                         _append_se_replay_adjudication(
@@ -3746,11 +3801,11 @@ def apply_se_ops(
                             op=op,
                             detail={"action": op.action, "target": section_label},
                         )
-                        continue
+                        return
                     parent_path = _find_se_section_parent_path(body, section_label)
                     body = tree_ops.insert_sorted(body, list(parent_path), op.payload, sort_key_fn=_se_label_sort_key)
-                    applied_op_count += 1
-                    continue
+                    _mark_applied()
+                    return
                 _append_se_replay_adjudication(
                     adjudications_out,
                     kind="se_replay_unsupported_action",
@@ -3758,7 +3813,7 @@ def apply_se_ops(
                     op=op,
                     detail={"action": op.action, "target": section_label},
                 )
-                continue
+                return
             if leaf_kind == "appendix":
                 appendix_label = _label_norm(op.target.leaf_label())
                 existing_index = next(
@@ -3778,10 +3833,10 @@ def apply_se_ops(
                             op=op,
                             detail={"action": op.action, "target": appendix_label},
                         )
-                        continue
+                        return
                     supplements.pop(existing_index)
-                    applied_op_count += 1
-                    continue
+                    _mark_applied()
+                    return
                 if op.payload is None or op.payload.kind is not IRNodeKind.APPENDIX:
                     _append_se_replay_adjudication(
                         adjudications_out,
@@ -3790,7 +3845,7 @@ def apply_se_ops(
                         op=op,
                         detail={"action": op.action, "target": appendix_label},
                     )
-                    continue
+                    return
                 if op.action is StructuralAction.REPLACE:
                     if existing_index is None:
                         _append_se_replay_adjudication(
@@ -3800,10 +3855,10 @@ def apply_se_ops(
                             op=op,
                             detail={"action": op.action, "target": appendix_label},
                         )
-                        continue
+                        return
                     supplements[existing_index] = op.payload
-                    applied_op_count += 1
-                    continue
+                    _mark_applied()
+                    return
                 if op.action is StructuralAction.INSERT:
                     if existing_index is not None:
                         _append_se_replay_adjudication(
@@ -3813,10 +3868,10 @@ def apply_se_ops(
                             op=op,
                             detail={"action": op.action, "target": appendix_label},
                         )
-                        continue
+                        return
                     supplements = _insert_se_appendix_sorted(supplements, op.payload)
-                    applied_op_count += 1
-                    continue
+                    _mark_applied()
+                    return
                 _append_se_replay_adjudication(
                     adjudications_out,
                     kind="se_replay_unsupported_action",
@@ -3824,7 +3879,7 @@ def apply_se_ops(
                     op=op,
                     detail={"action": op.action, "target": appendix_label},
                 )
-                continue
+                return
             _append_se_replay_adjudication(
                 adjudications_out,
                 kind="se_replay_unsupported_target_kind",
@@ -3832,6 +3887,9 @@ def apply_se_ops(
                 op=op,
                 detail={"target_kind": leaf_kind, "target": op.target.leaf_label(), "action": op.action},
             )
+
+        try:
+            _dispatch()
         finally:
             if _se_boundary_probe_on:
                 _se_probe_op_mutation_boundary(
@@ -3842,6 +3900,53 @@ def apply_se_ops(
                     adjudications_out=adjudications_out,
                     source_statute=statute.statute_id,
                 )
+        # ``applied`` is the explicit per-op landed flag (see the docstring): a
+        # body op lands iff ``body is not before_body`` AND a no-change skip
+        # (TEXT_REPLACE no-match, REPLACE/INSERT guards) returns ``applied=False``;
+        # an appendix op lands without changing ``body`` so the explicit flag is
+        # the only faithful signal. Returning the flag keeps SE's
+        # ``applied_op_count`` and the seam's ``AppliedOp.applied`` in lockstep.
+        return MaterializeResult(new_state=body, applied=_se_op_applied)
+
+    # ── SE apply profile (Wave 2, design §3.1). ──────────────────────────────
+    # ``boundary_mode="off"``: SE retains its own per-op probe (in the
+    # materializer ``finally``) as the single producer of the projected
+    # ``se_replay_mutation_boundary_per_op_violation_observed`` adjudication, so
+    # the env-flag-ON output is byte-identical to the pre-cutover fold.
+    # ``emit_receipts``/``emit_coverage`` are False on the bare fold: the
+    # additive per-op receipt + coverage lanes are produced by the dedicated
+    # ``se_replay_write_receipts`` / ``apply_se_ops_conserved(emit_receipts=True)``
+    # callers, so the bare ``apply_se_ops`` result stays byte-identical (no new
+    # artifacts). ``receipt_helper_prefix="apply_se_ops"`` +
+    # ``renumber_migration_rule_ids=("se_renumber_relabel",)`` make the
+    # seam-synthesized receipt byte-identical to SE's existing
+    # ``_se_emit_one_op_receipt`` when receipts ARE requested (the Wave-2 gate;
+    # proven in ``tests/test_se_apply_seam_parallel_run.py``).
+    se_apply_profile: ApplyProfile[IRNode] = ApplyProfile(
+        jurisdiction="se",
+        materializer=_se_materialize_one,
+        boundary_mode="off",
+        emit_receipts=False,
+        emit_coverage=False,
+        renumber_migration_rule_ids=("se_renumber_relabel",),
+        receipt_helper_prefix="apply_se_ops",
+    )
+
+    # ── Seam loop (design §3.1): order_ops already ran; apply each op through
+    # the unified per-op kernel. The SE materializer carries the substantive
+    # dispatch (and the appendix lane + applied_op_count via closures); the seam
+    # owns the (here-disabled) receipt/coverage outputs and the boundary gate.
+    # ────────────────────────────────────────────────────────────────────────
+    for op in ops:
+        applied_result: AppliedOp[IRNode] = apply_op(
+            body,
+            op,
+            provenance=op.source,
+            profile=se_apply_profile,
+            source_statute=statute.statute_id,
+        )
+        body = applied_result.new_state
+
     metadata = dict(statute.metadata)
     metadata["applied_op_count"] = metadata.get("applied_op_count", 0) + applied_op_count
     replayed_for_invariants = IRStatute(

@@ -154,6 +154,11 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # (observation-only, env-gated, default-off; consumes the core
         # lawvm.core.mutation_boundary_proof.audit_op_mutation_boundary).
         "test_se_mutation_boundary_per_op_probe.py",
+        # Wave 2 apply-seam cutover parallel-run equality gate: seam-based
+        # apply_se_ops == pre-cutover materialized statute + adjudications, AND
+        # the seam-synthesized WriteReceipts are byte-identical to SE's existing
+        # se_replay_write_receipts production emitter (the Wave-2 deliverable).
+        "test_se_apply_seam_parallel_run.py",
     ),
     "uk": (
         "test_uk_*.py",
