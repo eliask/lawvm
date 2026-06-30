@@ -1914,11 +1914,19 @@ def _resolve_target(
     # already-resolved address). A non-positive unit whose only codified channel is
     # a note cross-ref resolves to ``unresolved`` here (a typed holdout finding
     # downstream), never a guessed codified section.
+    # The Table III join key for this non-positive target: the amending statute's
+    # act key + its enacted PL section. Table III is the all-time superset of the
+    # OLRC classification tables; it classifies every act's sections (including the
+    # amending PL's), so the same (act-key, act-section) join the classification
+    # table fallback uses (step 5) feeds the non-positive Table III branch here.
+    t3_act_section = _extract_pl_section_from_instruction_id(instruction_id, statute_id)
     direct_title = _direct_target_title(target_phrase, target_href)
     if direct_title and not nonpositive.is_positive_law_title(int(direct_title)):
         witness = nonpositive.resolve_nonpositive_target(
             target_phrase=target_phrase,
             target_href=target_href,
+            act_key=statute_id,
+            act_section=t3_act_section,
         )
         if witness.address is not None:
             return witness.address, f"nonpositive_{witness.resolve_status}"
@@ -1984,6 +1992,8 @@ def _resolve_target(
                 witness = nonpositive.resolve_nonpositive_target(
                     target_phrase=raw_prefix,
                     target_href="",
+                    act_key=statute_id,
+                    act_section=t3_act_section,
                 )
                 if witness.address is not None:
                     return witness.address, f"nonpositive_{witness.resolve_status}"

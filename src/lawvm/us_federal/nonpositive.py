@@ -44,7 +44,7 @@ from __future__ import annotations
 import re
 import xml.etree.ElementTree as ET
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import Any, Iterable
 
@@ -85,6 +85,9 @@ class NonPositiveResolveStatus(StrEnum):
     NOTE_ONLY = "note_only"
     """Only a ``note`` editorial cross-ref to an UNCODIFIED provision — unmapped."""
 
+    TABLE3 = "table3"
+    """Resolved from the OLRC Table III classification superset (act-section -> USC)."""
+
     UNMAPPED = "unmapped"
     """No reachable channel yielded a codified section (residual OLRC-table gap)."""
 
@@ -93,6 +96,9 @@ RULE_PAREN = "us_nonpositive_target_via_paren"
 RULE_HREF = "us_nonpositive_target_via_href"
 RULE_PAREN_HREF_AGREE = "us_nonpositive_target_paren_href_agree"
 RULE_PAREN_HREF_DISAGREE = "us_nonpositive_target_paren_href_disagree"
+RULE_TABLE3 = "us_nonpositive_target_via_table3"
+RULE_TABLE3_HREF_AGREE = "us_nonpositive_target_table3_href_agree"
+RULE_TABLE3_HREF_DISAGREE = "us_nonpositive_target_table3_href_disagree"
 UNMAPPED_FINDING_RULE_ID = "us_nonpositive_target_unmapped"
 NOTE_ONLY_FINDING_RULE_ID = "us_nonpositive_target_note_only"
 
@@ -195,6 +201,8 @@ class NonPositiveTargetWitness:
     href_title: int | None = None
     note_href: str = ""
     target_phrase: str = ""
+    table3_usckey: str = ""
+    table3_status: str = ""
 
     @property
     def resolved(self) -> bool:
@@ -218,6 +226,8 @@ class NonPositiveTargetWitness:
             "href_title": self.href_title,
             "note_href": self.note_href,
             "target_phrase": self.target_phrase,
+            "table3_usckey": self.table3_usckey,
+            "table3_status": self.table3_status,
         }
 
 
@@ -285,21 +295,93 @@ def _href_title(href: str) -> int | None:
     return int(match.group("title"))
 
 
+def _resolve_table3(table3: Any, act_key: str, act_section: str) -> Any:
+    """Run the Table III resolver, returning a CLASSIFIED resolution or ``None``.
+
+    Returns the :class:`~lawvm.us_federal.table3.Table3Resolution` only when it
+    yields a *codified* USC address (``status == CLASSIFIED``). An UNCODIFIED
+    ``nt`` row, an AMBIGUOUS set (§1.7 refusal), or no match all return ``None``
+    so the holdout/refusal is preserved — Table III never guesses a section.
+    """
+    if not act_key or not act_section:
+        return None
+    if table3 is None:
+        # No explicit resolver supplied: consult the lazily-loaded default built
+        # from the farchive-resident Table III bulk XML (None when the table is
+        # absent/disabled, so the baseline inherit-or-refuse behaviour stands).
+        from lawvm.us_federal.table3 import load_default_table3_resolver
+
+        table3 = load_default_table3_resolver()
+        if table3 is None:
+            return None
+    resolution = table3.resolve(act_key, act_section)
+    if resolution.address is not None:
+        return resolution
+    return None
+
+
+def _annotate_with_table3(
+    witness: NonPositiveTargetWitness,
+    *,
+    t3_addr: LegalAddress | None,
+    t3_usckey: str,
+    t3_status: str,
+) -> NonPositiveTargetWitness:
+    """Adjudicate an existing-channel witness against a Table III resolution (§1.7).
+
+    The existing govinfo witness (``href``/``paren``) is the chosen address — it is
+    NEVER overwritten by Table III. When Table III also resolved, the two are
+    compared and the witness is re-stamped with a table3 rule id recording the
+    verdict (agree/disagree) plus the Table III audit fields; when Table III is
+    absent the original witness is returned byte-for-byte (backward compatible).
+    """
+    if t3_addr is None or witness.address is None:
+        return witness
+    agree = witness.address.path == t3_addr.path
+    return replace(
+        witness,
+        rule_id=RULE_TABLE3_HREF_AGREE if agree else RULE_TABLE3_HREF_DISAGREE,
+        table3_usckey=t3_usckey,
+        table3_status=t3_status,
+    )
+
+
 def resolve_nonpositive_target(
     *,
     target_phrase: str = "",
     target_href: str = "",
     raw_text: str = "",
+    table3: Any = None,
+    act_key: str = "",
+    act_section: str = "",
 ) -> NonPositiveTargetWitness:
-    """Resolve an act-section amendment target to a USC address from govinfo data.
+    """Resolve an act-section amendment target to a USC address.
 
     Inputs are the same the amendatory lowering already extracts: the target
     ``target_phrase`` ("Section 5 of the Securities Act of 1933 (15 U.S.C. 77e)"),
     the USLM ``target_href`` of the target ref, and the unit ``raw_text`` (used
-    only as a fallback parenthetical source). Returns a
-    :class:`NonPositiveTargetWitness` whose ``address`` is the resolved USC
-    address, or ``None`` with a typed finding rule id when no reachable channel
-    yields a codified section (the residual classification-table gap).
+    only as a fallback parenthetical source).
+
+    Resolution order (Prime Directive: no guessed mappings):
+
+    1. GPO pre-applied structural href / inline ``(N U.S.C. M)`` parenthetical
+       (the existing inherit-or-refuse channels);
+    2. **Table III** (NEW): when a ``table3`` :class:`~lawvm.us_federal.table3.Table3Resolver`
+       and an ``act_key`` + ``act_section`` are supplied, the deterministic OLRC
+       Statutes-at-Large -> USC classification. A repealed/eliminated row is still
+       a real mapping (its status is surfaced); a ``nt`` uncodified row is held
+       OUT, never guessed onto a section;
+    3. ``us_nonpositive_target_unmapped`` refusal only when BOTH fail.
+
+    **Agreement adjudication (§1.7):** when Table III AND an existing
+    href/parenthetical both resolve, the two are compared. Agreement -> covered
+    (rule id ``RULE_TABLE3_HREF_AGREE``); disagreement -> the existing witness is
+    kept as the chosen address and the divergence is flagged in the witness
+    (``RULE_TABLE3_HREF_DISAGREE``); neither is silently overwritten.
+
+    Returns a :class:`NonPositiveTargetWitness` whose ``address`` is the resolved
+    USC address, or ``None`` with a typed finding rule id when no reachable channel
+    yields a codified section.
     """
     paren_addr = parse_usc_paren_cite(target_phrase) or parse_usc_paren_cite(raw_text)
     paren_cite = ""
@@ -316,52 +398,84 @@ def resolve_nonpositive_target(
 
     paren_t = int(paren_addr.path[0][1]) if paren_addr is not None and paren_addr.path else None
 
-    # Both channels resolved structurally.
+    # Step 2 (NEW): the deterministic Table III classification. Computed once;
+    # ``None`` unless a resolver + act key + act-section were supplied AND the
+    # lookup yields a *codified* address (uncodified ``nt`` rows stay held out).
+    t3 = _resolve_table3(table3, act_key, act_section)
+    t3_addr = t3.address if t3 is not None else None
+    t3_usckey = t3.usckey if t3 is not None else ""
+    t3_status = t3.usc_status if t3 is not None else ""
+
+    # Both existing channels resolved structurally.
     if paren_addr is not None and href_addr is not None:
-        if paren_addr.path == href_addr.path:
-            return NonPositiveTargetWitness(
-                resolve_status=NonPositiveResolveStatus.PAREN_HREF_AGREE,
-                rule_id=RULE_PAREN_HREF_AGREE,
-                address=href_addr,
+        base_status, base_rule, base_addr = (
+            (NonPositiveResolveStatus.PAREN_HREF_AGREE, RULE_PAREN_HREF_AGREE, href_addr)
+            if paren_addr.path == href_addr.path
+            # Disagree: the USLM ref is the converter's editorial landing and is
+            # canonical for *where* the amendment lands; the parenthetical is the
+            # drafter's cite (can be coarser, e.g. section-only). Take the href but
+            # flag the disagreement in the witness so review sees it.
+            else (NonPositiveResolveStatus.HREF, RULE_PAREN_HREF_DISAGREE, href_addr)
+        )
+        return _annotate_with_table3(
+            NonPositiveTargetWitness(
+                resolve_status=base_status,
+                rule_id=base_rule,
+                address=base_addr,
                 paren_cite=paren_cite,
                 href=target_href,
                 paren_title=paren_t,
                 href_title=href_t,
                 target_phrase=target_phrase,
-            )
-        # Disagree: the USLM ref is the converter's editorial landing and is
-        # canonical for *where* the amendment lands; the parenthetical is the
-        # drafter's cite (can be coarser, e.g. section-only). Take the href but
-        # flag the disagreement in the witness so review sees it.
-        return NonPositiveTargetWitness(
-            resolve_status=NonPositiveResolveStatus.HREF,
-            rule_id=RULE_PAREN_HREF_DISAGREE,
-            address=href_addr,
-            paren_cite=paren_cite,
-            href=target_href,
-            paren_title=paren_t,
-            href_title=href_t,
-            target_phrase=target_phrase,
+            ),
+            t3_addr=t3_addr,
+            t3_usckey=t3_usckey,
+            t3_status=t3_status,
         )
 
     if href_addr is not None:
-        return NonPositiveTargetWitness(
-            resolve_status=NonPositiveResolveStatus.HREF,
-            rule_id=RULE_HREF,
-            address=href_addr,
-            href=target_href,
-            href_title=href_t,
-            target_phrase=target_phrase,
+        return _annotate_with_table3(
+            NonPositiveTargetWitness(
+                resolve_status=NonPositiveResolveStatus.HREF,
+                rule_id=RULE_HREF,
+                address=href_addr,
+                href=target_href,
+                href_title=href_t,
+                target_phrase=target_phrase,
+            ),
+            t3_addr=t3_addr,
+            t3_usckey=t3_usckey,
+            t3_status=t3_status,
         )
 
     if paren_addr is not None:
+        return _annotate_with_table3(
+            NonPositiveTargetWitness(
+                resolve_status=NonPositiveResolveStatus.PAREN,
+                rule_id=RULE_PAREN,
+                address=paren_addr,
+                paren_cite=paren_cite,
+                paren_title=paren_t,
+                target_phrase=target_phrase,
+            ),
+            t3_addr=t3_addr,
+            t3_usckey=t3_usckey,
+            t3_status=t3_status,
+        )
+
+    # No existing govinfo channel resolved. Table III is the deterministic
+    # classification source — the residual ``us_nonpositive_target_unmapped`` gap
+    # this capability dissolves. A repealed/eliminated classification is still a
+    # real mapping (status surfaced); a ``nt`` row was already held out above.
+    if t3_addr is not None:
         return NonPositiveTargetWitness(
-            resolve_status=NonPositiveResolveStatus.PAREN,
-            rule_id=RULE_PAREN,
-            address=paren_addr,
-            paren_cite=paren_cite,
-            paren_title=paren_t,
+            resolve_status=NonPositiveResolveStatus.TABLE3,
+            rule_id=RULE_TABLE3,
+            address=t3_addr,
+            href_title=int(t3_addr.path[0][1]) if t3_addr.path else None,
             target_phrase=target_phrase,
+            table3_usckey=t3_usckey,
+            table3_status=t3_status,
         )
 
     # Nothing structural. A ``note``-only href is the common shape of an
