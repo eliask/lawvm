@@ -45,6 +45,11 @@ _UK_REPLAY_REPLACE_MATERIALIZED_AS_INSERT_FOR_MISSING_LEAF_RULE_ID = (
 class _ReplaceReplaySelf(Protocol):
     statute: IRStatute
     adjudications_out: list[CompileAdjudication]
+    # §2.9 per-op carrier (reset in ``apply_op``): authorized recovery-retarget
+    # write-parent tree paths surfaced to the per-op mutation-boundary audit.
+    _uk_declared_recovery_paths: list[tuple[tuple[str, str], ...]]
+
+    def _cached_node_tree_path(self, node: IRNode) -> tuple[tuple[str, str], ...] | None: ...
 
     def _find_node_by_target(
         self,
@@ -452,9 +457,23 @@ class UKReplayReplaceApplyMixin:
                 parent_target = LegalAddress(path=target.path[:-1], special=None)
                 parent_node, _, _ = self._find_node_by_target(parent_target)
                 inserted = False
+                # Capture the recovery write-parent tree path BEFORE the insert
+                # mutates (CoW-rebuilds) the tree and invalidates the node index.
+                # The REPLACE op's nominal storage boundary is its missing target
+                # leaf, but the recovery INSERT lands under this resolved parent
+                # (the body root for a top-level section), so the parent path must
+                # be DECLARED as an authorized recovery boundary or the per-op
+                # mutation-boundary audit reads the write as an escape (§2.9).
+                recovery_parent_path = (
+                    self._cached_node_tree_path(parent_node)
+                    if parent_node is not None
+                    else None
+                )
                 if parent_node is not None and leaf_kind not in {"subparagraph", "item", "point"}:
                     inserted = self._insert_node_v2(op.target, new_node, op)
                 if inserted:
+                    if recovery_parent_path is not None:
+                        self._uk_declared_recovery_paths.append(recovery_parent_path)
                     _append_uk_replay_adjudication(
                         self.adjudications_out,
                         kind=_UK_REPLAY_REPLACE_MATERIALIZED_AS_INSERT_FOR_MISSING_LEAF_RULE_ID,

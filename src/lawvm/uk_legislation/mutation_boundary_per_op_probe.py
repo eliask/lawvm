@@ -55,16 +55,22 @@ WHAT IT DOES NOT PROMISE (honesty boundary, mirror of the totality probe):
   subset (``operation_storage_boundary_prefixes``). Other §1.0 dimensions
   (declare-vs-actual target identity, migration path ownership) are carried
   by separate audit lanes.
-* It does NOT carry declared_migration / declared_recovery / declared_editorial
-  prefixes at v0 — UK does not yet surface those per-op from a typed
-  carrier. Pre-fixing an empty tuple preserves the conservative scope: any
-  observed change outside the op's storage target boundary is reported.
+* It carries declared_RECOVERY prefixes (task #108-UK): the executor's
+  recovery apply branches surface the authorized recovery-retarget write
+  parents per op, threaded here so an authorized retarget reads in-boundary —
+  the SAME prefixes the always-on seam observer reads from
+  ``MaterializeResult.declared_recovery_prefixes``. It does NOT yet carry
+  declared_migration / declared_editorial prefixes — UK does not surface those
+  per-op from a typed carrier; an empty tuple there preserves the conservative
+  scope: any observed change outside the op's storage target / declared
+  recovery boundary is reported.
 """
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Sequence
 
 from lawvm.core.ir import IRNode, IRStatute, LegalOperation
+from lawvm.core.mutation_boundary import TreePath
 from lawvm.core.mutation_boundary_proof import (
     PerOpMutationBoundaryVerdict,
     audit_op_mutation_boundary,
@@ -104,6 +110,7 @@ def probe_op_mutation_boundary(
     op_id: str,
     adjudications_out: Optional[list[CompileAdjudication]] = None,
     source_statute: str = "",
+    declared_recovery_prefixes: Sequence[TreePath] = (),
 ) -> Optional[PerOpMutationBoundaryVerdict]:
     """Run the per-op mutation-boundary probe, appending each
     ``out_of_boundary`` short fall as a non-blocking ``CompileAdjudication``.
@@ -111,13 +118,21 @@ def probe_op_mutation_boundary(
     Delegates the verify+emit to the core-owned
     :func:`~lawvm.core.mutation_boundary_proof.audit_op_mutation_boundary`
     (observation mode — ``is_strict=False``), which computes the op's storage
-    mutation boundary (no declared migration / recovery / editorial-projection
-    prefixes at v0) and, on an escape, emits the typed
+    mutation boundary and, on an escape, emits the typed
     ``APPLY.MUTATION_BOUNDARY_FINDING_AT_OP`` core finding. The probe PROJECTS
     that core finding into the UK ``CompileAdjudication`` interop surface — it
     no longer re-runs the verifier or re-derives the diagnostic shape, so the
     UK record cannot drift from the core producer (or from Finland's apply
     lane, which consumes the same producer family).
+
+    ``declared_recovery_prefixes`` carries the concrete recovery-retargeted
+    write-parent paths the executor's recovery apply branches surfaced for this
+    op (e.g. the missing-leaf REPLACE→INSERT body-root write). They extend the
+    op's declared mutation boundary so an authorized recovery retarget reads as
+    within-boundary rather than an undeclared escape — the SAME prefixes the
+    always-on seam observer reads from ``MaterializeResult.declared_recovery_prefixes``,
+    keeping the in-fold probe and the seam observer in exact agreement. Default
+    empty preserves the conservative scope when no recovery retarget fired.
 
     Returns the typed verdict on an out-of-boundary escape (also projected to
     ``adjudications_out`` when supplied); returns ``None`` on a clean apply or a
@@ -133,6 +148,7 @@ def probe_op_mutation_boundary(
         op_id=str(op_id or ""),
         source_statute=str(source_statute or ""),
         is_strict=False,  # UK lane has no strict_profile signal yet (§2.9).
+        declared_recovery_prefixes=tuple(declared_recovery_prefixes),
         # UK IRStatute.body is the top-level tree (no hcontainer wrapper);
         # ``strip_root_prefix`` defaults to ``()`` — no normalization needed,
         # unlike the FI replay fold which wraps under ("hcontainer", "").

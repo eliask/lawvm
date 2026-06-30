@@ -16,6 +16,7 @@ from lawvm.core.apply_seam import (
     apply_op as core_apply_op,
 )
 from lawvm.core.ir import IRNode, IRStatute, LegalOperation
+from lawvm.core.mutation_boundary import TreePath
 from lawvm.core.mutation_events import MutationEvent
 from lawvm.core.phase_result import Finding
 from lawvm.core.write_receipt import WriteReceipt
@@ -106,6 +107,17 @@ class UKReplayExecutor(
         # debug stream shape, mirroring ``mutation_events_out`` / ``lo_ops_out``).
         self.write_receipts_out = write_receipts_out
         self._current_mutation_op: Optional[LegalOperation] = None
+        # §2.9 per-op carrier: when a recovery lane INTENTIONALLY retargets the
+        # write to a node outside the op's nominal storage boundary (e.g. a
+        # missing-leaf REPLACE recovered as an INSERT under the resolved parent /
+        # body root), the recovered write-parent tree path is appended here so the
+        # per-op mutation-boundary audit (the seam observer AND the in-fold probe)
+        # can declare it as an authorized ``declared_recovery`` boundary
+        # extension rather than reading the retargeted write as an undeclared
+        # escape. Reset per op in ``_uk_materialize_one`` / ``apply_op``; stays
+        # empty (and is ignored) when no recovery retarget fired. This records the
+        # SPECIFIC authorized recovery parent — never a blanket boundary widening.
+        self._uk_declared_recovery_paths: list[TreePath] = []
         self.adjudications_out = adjudications_out if adjudications_out is not None else []
         self._seen_invariant_violations = self._collect_invariant_violations()
         self._repealed_target_prefixes: set[str] = set()
@@ -148,6 +160,11 @@ class UKReplayExecutor(
     def apply_op(self, op: LegalOperation):
         previous_mutation_op = self._current_mutation_op
         self._current_mutation_op = op
+        # Reset the per-op declared-recovery carrier so a recovery retarget from a
+        # prior op never leaks into this op's boundary. The recovery apply branches
+        # (e.g. the missing-leaf REPLACE→INSERT lane) append the resolved write
+        # parent path here during the dispatch below.
+        self._uk_declared_recovery_paths = []
         # §2.9 per-op mutation-boundary probe (LS-01 / §1.0): env-gated
         # (LAWVM_UK_MUTATION_BOUNDARY_PER_OP=1), default-off. Capture an
         # immutable IRNode snapshot of the live mutable body BEFORE the apply
@@ -182,6 +199,7 @@ class UKReplayExecutor(
                     op_id=op.op_id,
                     adjudications_out=self.adjudications_out,
                     source_statute=self.statute.statute_id,
+                    declared_recovery_prefixes=tuple(self._uk_declared_recovery_paths),
                 )
             if self.write_receipts_out is not None and before_snapshot is not None:
                 receipt = emit_uk_op_receipt(before_snapshot, after_snapshot, op)
@@ -219,8 +237,19 @@ class UKReplayExecutor(
         # executor holds the identical reference on ``self.statute.body``. The
         # verbatim dispatch (warm-EID CoW + MutationEvent + probe + receipt sink)
         # runs exactly as the pre-cutover ``executor.apply_op(op)`` call did.
+        # ``apply_op`` resets ``_uk_declared_recovery_paths`` at entry and the
+        # recovery apply branches append to it during the dispatch, so after it
+        # returns the carrier holds exactly this op's authorized recovery-retarget
+        # parent paths. They are surfaced on the :class:`MaterializeResult` so the
+        # seam's always-on LS-01 observer declares the retargeted write as
+        # in-boundary (mirrors NO/EE) instead of reading it as an undeclared
+        # escape. Production materialization output is unchanged — this only
+        # DECLARES the already-happening authorized recovery write.
         self.apply_op(op)
-        return MaterializeResult(new_state=self.statute.body)
+        return MaterializeResult(
+            new_state=self.statute.body,
+            declared_recovery_prefixes=tuple(self._uk_declared_recovery_paths),
+        )
 
     def _uk_seam_apply_profile(self) -> ApplyProfile[IRNode]:
         # ``boundary_mode="off"``: UK retains its own per-op probe (inside

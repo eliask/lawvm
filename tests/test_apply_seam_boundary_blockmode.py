@@ -36,21 +36,25 @@ replayable corpus (measured out-of-band with the archive present — recorded in
   **136 escapes per 30 statutes** (the seam observer and EE's in-fold probe agree
   exactly — these are genuine deep sub-section/item-level LS-01 escapes that are
   observe-only today). KEEP OBSERVE (a real latent boundary-escape finding).
-* **UK** — representative op set: **1 escape** (a REPLACE on a missing leaf
-  RECOVERED as an INSERT at the body root; UK's materializer does NOT thread its
-  recovery retarget into ``declared_recovery_prefixes``, so the seam reads the
-  body-root write as an undeclared escape). KEEP OBSERVE (a real latent
-  boundary-escape finding).
+* **UK** — representative op set: **0 escapes** after task #108-UK. A REPLACE on
+  a missing leaf RECOVERED as an INSERT at the body root WAS read as an escape
+  because UK's materializer did not thread its recovery retarget into
+  ``declared_recovery_prefixes``; that instrumentation gap is now closed (UK's
+  missing-leaf REPLACE→INSERT lane records the resolved write-parent path on the
+  per-op carrier, surfaced on the ``MaterializeResult``, exactly like NO/EE). The
+  declaration changes NO write — the recovered section is still inserted; replay
+  is byte-identical. UK still KEEPS OBSERVE: no real UK corpus replay lane exists
+  in this environment, so op-set-cleanliness is not a flip authorization (§8.2:
+  op-set-clean ≠ corpus-clean).
 
-So NO frontend flips to block: the two frontends with replayable/real corpora
-(EE, UK) have demonstrable latent escapes; the two whose tiny op sets are clean
-(NO, SE) cannot have their real corpora verified here, so flipping them would be
-unsafe speculation. This is the honest outcome of the safety-first discipline —
-the representative op sets dramatically UNDER-report escapes (EE: 0 vs 136), so
-only a proven-clean corpus authorizes the flip, and none qualifies today. The
-``boundary_mode`` block path is wired and ready; the flip is one profile field
-per frontend once its corpus is proven clean (the escapes' declared-recovery
-threading is closed).
+So NO frontend flips to block: EE's real corpus has demonstrable latent escapes;
+UK's op set is now clean but has no verifiable real corpus here; the two
+op-set-clean frontends (NO, SE) cannot have their real corpora verified here, so
+flipping any would be unsafe speculation. This is the honest outcome of the
+safety-first discipline — the representative op sets dramatically UNDER-report
+escapes (EE: 0 vs 136), so only a proven-clean corpus authorizes the flip, and
+none qualifies today. The ``boundary_mode`` block path is wired and ready; the
+flip is one profile field per frontend once its corpus is proven clean.
 """
 from __future__ import annotations
 
@@ -175,25 +179,29 @@ def test_ee_representative_op_set_is_boundary_clean_but_real_corpus_is_not() -> 
     assert _measure_ee() == 0  # op set is clean — but the real corpus is NOT.
 
 
-def test_uk_representative_op_set_surfaces_a_real_boundary_escape() -> None:
-    """UK's representative op set surfaces exactly one real LS-01 boundary escape.
+def test_uk_representative_op_set_is_boundary_clean_after_recovery_declaration() -> None:
+    """UK's representative op set is boundary-clean once the recovery retarget is
+    declared (task #108-UK closed the instrumentation gap).
 
     A REPLACE on a missing leaf (section "999") is RECOVERED as an INSERT at the
-    body root, but UK's ``_uk_materialize_one`` does NOT thread its recovery
-    retarget into ``declared_recovery_prefixes`` (unlike NO/EE), so the seam reads
-    the body-root write as an UNDECLARED escape. This is a real latent
-    boundary-escape finding — UK stays OBSERVE (count > 0 ⇒ no flip), surfaced
-    here as the typed report rather than papered over.
+    body root. Previously UK's ``_uk_materialize_one`` did NOT thread that
+    recovery retarget into ``MaterializeResult.declared_recovery_prefixes`` (unlike
+    NO/EE), so the seam observer read the authorized body-root write as an
+    UNDECLARED escape (count == 1). The missing-leaf REPLACE→INSERT recovery lane
+    now records the resolved write-parent path (the body root) on the per-op
+    carrier, surfaced on the ``MaterializeResult``, so the seam's always-on LS-01
+    audit treats the retargeted write as in-boundary. The op set therefore now
+    reports ZERO escapes — a benign instrumentation gap closed, NOT a write change
+    (the recovered section is still inserted; production replay is byte-identical).
+
+    Op-set-cleanliness still does NOT authorize a ``boundary_mode`` flip to block:
+    no real UK corpus replay lane exists in this environment, so per §8.2's
+    safety discipline (op-set-clean ≠ corpus-clean) UK stays OBSERVE. The flip is
+    a staged step (see ``test_all_tree_frontends_keep_boundary_mode_off``).
     """
     count, escapes = _measure_uk()
-    assert count == 1
-    escape = escapes[0]
-    assert escape.kind == MUTATION_BOUNDARY_FINDING_AT_OP_CODE
-    assert escape.role == "observation"
-    assert escape.blocking is False
-    # The escape is the body-root write of the recovered REPLACE→INSERT.
-    assert escape.detail["op_id"] == "miss"
-    assert escape.detail["boundary_status"] == "out_of_boundary"
+    assert count == 0
+    assert escapes == []
 
 
 # ── 2. NO frontend was flipped to block (the safety-first outcome) ────────────

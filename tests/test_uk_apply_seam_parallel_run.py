@@ -372,6 +372,69 @@ def test_uk_apply_seam_conserved_emit_receipts_surfaces_explained_receipts() -> 
         )
 
 
+def test_uk_missing_leaf_replace_recovery_declared_to_boundary() -> None:
+    """task #108-UK: the missing-leaf REPLACE→INSERT recovery retarget is now
+    DECLARED on the per-op carrier and the ``MaterializeResult``, so the seam's
+    always-on LS-01 mutation-boundary observer no longer reads the authorized
+    body-root write as an escape — while the recovered section still lands
+    (production materialization byte-identical).
+
+    Three facts, proven on the exact ``replace_missing_leaf_recovered_as_insert``
+    op the boundary measurement drives:
+
+    1. ``MaterializeResult.declared_recovery_prefixes`` carries the resolved
+       write-parent path (the body root ``()``) for the recovered REPLACE→INSERT.
+    2. The seam emits NO ``APPLY.MUTATION_BOUNDARY_FINDING_AT_OP`` observation for
+       that op (the declared recovery covers the body-root change).
+    3. The recovered section 999 is still inserted — the declaration changes no
+       write.
+    """
+    from lawvm.core.mutation_boundary_proof import MUTATION_BOUNDARY_FINDING_AT_OP_CODE
+    from lawvm.uk_legislation.replay_executor import UKReplayExecutor
+
+    op = _replace("miss", 1, "999")
+
+    # (1) the materializer surfaces the recovery retarget on the MaterializeResult.
+    ex = UKReplayExecutor(_statute())
+    result = ex._uk_materialize_one(ex.statute.body, op)
+    assert result.declared_recovery_prefixes == ((),), (
+        "missing-leaf REPLACE→INSERT recovery did not declare the body-root "
+        "write parent on the MaterializeResult"
+    )
+
+    # (2) the seam emits no boundary-escape observation for that op.
+    seam_ex = UKReplayExecutor(_statute())
+    applied = seam_ex.seam_apply_op(op)
+    boundary_obs = [
+        f for f in applied.observations if f.kind == MUTATION_BOUNDARY_FINDING_AT_OP_CODE
+    ]
+    assert boundary_obs == [], (
+        "seam still surfaced a mutation-boundary escape for the recovered "
+        "REPLACE→INSERT after the recovery retarget was declared"
+    )
+    assert applied.applied, "recovered REPLACE→INSERT did not land a write"
+
+    # (3) the recovered section is still inserted (write unchanged).
+    replayed = replay_uk_ops(_statute(), [op])
+    labels = [c.label for c in replayed.body.children]
+    assert "999" in labels, "recovered section 999 missing after the declared recovery"
+
+
+def test_uk_recovery_declaration_does_not_leak_across_ops() -> None:
+    """The per-op recovery carrier is reset each op: a recovery retarget from one
+    op must not widen a later op's declared boundary. After the recovering "miss"
+    op, a plain in-boundary REPLACE declares NO recovery prefix."""
+    from lawvm.uk_legislation.replay_executor import UKReplayExecutor
+
+    ex = UKReplayExecutor(_statute())
+    # Recovering op populates the carrier.
+    rec = ex._uk_materialize_one(ex.statute.body, _replace("miss", 1, "999"))
+    assert rec.declared_recovery_prefixes == ((),)
+    # A subsequent ordinary REPLACE on an existing leaf declares nothing.
+    plain = ex._uk_materialize_one(ex.statute.body, _replace("r5", 2, "5"))
+    assert plain.declared_recovery_prefixes == ()
+
+
 def test_uk_apply_seam_preserves_warm_eid_relabel() -> None:
     """GATE (d): a REPLACE that preserves a section's ``eId`` survives the
     warm-EID CoW through the seam — the replacement node carries the preserved
