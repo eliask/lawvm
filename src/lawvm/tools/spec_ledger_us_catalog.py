@@ -747,6 +747,18 @@ _US_RULE_SPECS: Dict[str, str] = {
         "credits no new public law) — a typed skip, never mistaken for 'ran and found "
         "nothing'."
     ),
+    # --- Apply receipt contract (§2.3 / §4 WriteReceipt divergence-naming) -------------
+    "us_section_redesignate_relabel": (
+        "A US RENUMBER (redesignation) op's per-op WriteReceipt bound_target_path "
+        "(source label) vs landed_primary_path (destination label) divergence is the "
+        "typed named migration for a section/unit redesignation — stamped on the "
+        "section-text-granularity receipt's migration_rule_ids by "
+        "us_federal.us_write_receipts.emit_us_op_receipt so the §1.6 unstated-migration "
+        "invariant's identity migration has a named owner (mirrors SE's "
+        "se_renumber_relabel and NO's no_section_renumber_relabel). Heuristic: US is "
+        "the algorithmic frontier and redesignation-as-relabel is a believed editorial "
+        "convention the OLRC could render differently."
+    ),
 }
 
 # rule_id -> confidence tier. Amendatory lowering + dry-run text-mismatch are
@@ -815,6 +827,7 @@ _US_RULE_CONFIDENCE: Dict[str, str] = {
     "us_nonpositive_target_via_paren": US_CONFIDENCE_HEURISTIC,
     "us_nonpositive_target_via_href": US_CONFIDENCE_HEURISTIC,
     "us_sunset_temporary_provision_reverted_to_prior_permanent": US_CONFIDENCE_HEURISTIC,
+    "us_section_redesignate_relabel": US_CONFIDENCE_HEURISTIC,
 }
 
 

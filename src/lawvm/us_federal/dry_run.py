@@ -91,6 +91,8 @@ from lawvm.us_federal.sunset import (
     SunsetFinding,
     classify_sunset_reversion,
 )
+from lawvm.core.write_receipt import WriteReceipt
+from lawvm.us_federal.us_write_receipts import emit_us_op_receipt
 
 # Structural-marker scanner used when indexing a synthetic node payload: it finds
 # markers anywhere in the text, unlike source_tree._MARKER_RE which is anchored to
@@ -2580,6 +2582,7 @@ def build_us_dry_run(
     enacted: str = "",
     prior_edition_htms: Mapping[str, bytes] | None = None,
     classification_index: Any = None,
+    write_receipts_out: list[WriteReceipt] | None = None,
 ) -> USDryRunReport:
     """Build the section-level dry-run report for one (before, after, PL) window.
 
@@ -2595,6 +2598,13 @@ def build_us_dry_run(
     when the after-text matches an earlier edition and/or a sunset note dates the
     expiry inside the window. No prior editions => channel (a) is unavailable, but
     the note-based channel (b) still fires.
+
+    ``write_receipts_out`` (optional) collects one section-text-granularity
+    :class:`WriteReceipt` per MATERIALIZED op (AGENTS.md §2.3 receipt contract;
+    see :mod:`lawvm.us_federal.us_write_receipts` for the algorithmic-frontier
+    granularity limitation US records). Additive evidence: passing the sink does
+    NOT change the report (the §2.7 grounding-neutral invariant). ``None`` (the
+    default) skips emission entirely.
     """
     after_cutoff: date | None = None
     if after_year.isdigit():
@@ -2813,6 +2823,19 @@ def build_us_dry_run(
             patch = operation.text_patch
             match_texts.append(patch.selector.match_text if patch else "")
             replacements.append((patch.replacement or "") if patch else "")
+            if write_receipts_out is not None and not signal_rule_id:
+                # §2.3 per-op WriteReceipt at the US section-text apply seam.
+                # Only for a truly materialized op (no residual signal); a
+                # match-not-found signal means the op did not land. Additive
+                # evidence — never feeds the dry-run gate (§2.7 grounding-neutral;
+                # the sink is opt-in and the report is byte-identical without it).
+                write_receipts_out.append(
+                    emit_us_op_receipt(
+                        operation,
+                        before_text=running,
+                        after_text=_normalize_text(materialized),
+                    )
+                )
             if signal_rule_id:
                 # match_text-not-found against the running text: a residual for the
                 # whole section (we refuse to fuzzy-match and cannot faithfully
