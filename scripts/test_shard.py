@@ -433,6 +433,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_stateful_properties.py",
         "test_fi_tree_ops_properties.py",
         "test_z3_proofs.py",
+        "test_tla_invariant_mirror.py",
     ),
     "core_discipline_gates": (
         "test_archive_safety.py",
