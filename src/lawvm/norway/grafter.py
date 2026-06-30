@@ -70,8 +70,7 @@ from lawvm.core.semantic_types import (
 from lawvm.core.quirks_disposition import QuirksDisposition
 from lawvm.core.write_receipt import WriteReceipt, receipt_address_string
 from lawvm.norway.mutation_boundary_per_op_probe import (
-    boundary_probe_enabled as _no_boundary_probe_enabled,
-    probe_op_mutation_boundary as _no_probe_op_mutation_boundary,
+    drain_seam_boundary_observations as _no_drain_seam_boundary_observations,
 )
 from lawvm.norway.scope_confidence import NOScopeConfidence
 
@@ -3658,13 +3657,13 @@ def apply_no_ops(
             f"{op.target.path!r} from {source_id or '<unknown>'}"
         )
 
-    # §2.9 per-op mutation-boundary probe gate read once per apply (cached env
-    # read) so the per-op snapshot is taken only when opted in; default-off.
-    # Wave 1 (design §3.1/§3.5): the probe is realized as the seam profile's
-    # ``boundary_mode`` — ``"observe"`` when the env flag is on (the NO probe's
-    # non-blocking accounting disposition), ``"off"`` otherwise. Default-off
-    # preserves byte-stable bench output.
-    _no_boundary_probe_on = _no_boundary_probe_enabled()
+    # §2.9 per-op mutation-boundary observation: the seam (``core/apply_seam
+    # .apply_op``) is the UNIVERSAL always-on LS-01 observer — it runs the core
+    # ``audit_op_mutation_boundary`` on every landed write and routes the witness
+    # to ``AppliedOp.observations`` (``boundary_mode="off"``). The retired in-fold
+    # probe is gone; ``apply_no_ops`` now DRAINS that observation into the same
+    # env-gated ``no_replay_mutation_boundary_per_op_violation_observed``
+    # adjudication in the seam loop below (default-off → byte-stable bench output).
     # Per-op ``renumber_sources`` carrier the materializer reads. The seam loop
     # sets it before each ``apply_op`` call (the seam materializer signature is
     # ``(state, op)``; ``renumber_sources`` travels via this closure slot rather
@@ -4290,35 +4289,15 @@ def apply_no_ops(
             # Natural fall-through: a REPLACE/REPEAL/INSERT/RENUMBER landed.
             return
 
-        # §2.9 per-op mutation-boundary probe: the prior inline fold ran the
-        # env-gated probe in a ``finally`` so it fired on EVERY per-op path
-        # (clean, skip, and the strict-``_assert_no_invariant_violations``-raise
-        # path). The probe PROJECTS the core ``audit_op_mutation_boundary``
-        # finding into NO's ``CompileAdjudication`` interop surface (the
-        # ``no_replay_mutation_boundary_per_op_violation_observed`` kind). To keep
-        # the env-flag-ON output byte-identical, NO retains its own probe here on
-        # every path; the seam profile's ``boundary_mode`` is therefore ``"off"``
-        # (the seam boundary gate is exercised, but NO is the single producer of
-        # its projected adjudication so there is no double-emission). The seam's
-        # boundary MECHANISM remains available (and is exercised by the kernel's
-        # own tests) — promoting NO onto the seam's boundary disposition (and
-        # dropping this probe) is a deliberate follow-up once the projected
-        # adjudication shape is reconciled with the core ``Finding`` surface
-        # (design §5 "stage as observe first; promote per profile").
-        body_before_dispatch = before_body
-        try:
-            _dispatch()
-        finally:
-            if _no_boundary_probe_on:
-                _no_probe_op_mutation_boundary(
-                    before=body_before_dispatch,
-                    after=body,
-                    op=op,
-                    op_id=op.op_id,
-                    adjudications_out=adjudications_out,
-                    source_statute=statute.statute_id,
-                    declared_recovery_prefixes=tuple(_no_declared_recovery_paths),
-                )
+        # §2.9 per-op mutation-boundary observation: the in-fold env-probe is
+        # RETIRED. The seam's always-on observer (``core/apply_seam.apply_op``)
+        # runs the IDENTICAL core ``audit_op_mutation_boundary`` on the landed
+        # write and routes the witness to ``AppliedOp.observations``; the seam
+        # loop below drains that observation into the same env-gated
+        # ``no_replay_mutation_boundary_per_op_violation_observed`` adjudication
+        # (carrying these ``declared_recovery_prefixes`` via the
+        # ``MaterializeResult`` below, so the recovery-aware verdict is identical).
+        _dispatch()
         applied = body is not before_body
         return MaterializeResult(
             new_state=body,
@@ -4327,8 +4306,9 @@ def apply_no_ops(
         )
 
     # ── NO apply profile (Wave 1, design §3.1). ──────────────────────────────
-    # ``boundary_mode="off"``: NO retains its own per-op probe (above) as the
-    # single producer of the projected ``no_replay_mutation_boundary_per_op_*``
+    # ``boundary_mode="off"``: the seam's always-on observer is the SINGLE LS-01
+    # producer; the in-fold probe is retired and the seam loop below drains the
+    # observation into the env-gated ``no_replay_mutation_boundary_per_op_*``
     # adjudication, so the env-flag-ON output is byte-identical to the
     # pre-cutover fold. ``emit_receipts``/``emit_coverage`` are False in the bare
     # fold: the additive per-op receipt + coverage lanes are produced by the
@@ -4376,6 +4356,23 @@ def apply_no_ops(
         # never allocates or reads the lane, so byte-identity is unconditional.
         if seam_observations_out is not None and applied_result.observations:
             seam_observations_out.extend(applied_result.observations)
+
+        # ── B-enforcement (LS-01 cleanup): drain the seam's boundary observation
+        # into the env-gated NO adjudication (the retired in-fold probe's surface).
+        # When ``LAWVM_NO_MUTATION_BOUNDARY_PER_OP=1`` and ``adjudications_out`` is
+        # supplied, project the seam's ``APPLY.MUTATION_BOUNDARY_FINDING_AT_OP``
+        # observation — produced by the IDENTICAL core ``audit_op_mutation_boundary``
+        # the probe consumed, carrying the same ``declared_recovery_prefixes`` from
+        # the ``MaterializeResult`` — into the ``no_replay_mutation_boundary_per_op_
+        # violation_observed`` ``CompileAdjudication`` the in-fold probe used to emit.
+        # Default (env-off or ``adjudications_out is None``) is a pure no-op →
+        # byte-identical production.
+        _no_drain_seam_boundary_observations(
+            applied_result.observations,
+            adjudications_out=adjudications_out,
+            source_statute=statute.statute_id,
+            op_id=op.op_id,
+        )
 
     return IRStatute(
         statute_id=statute.statute_id,
