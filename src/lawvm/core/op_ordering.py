@@ -130,8 +130,25 @@ class OrderingProfile:
     # None today = every op passes (no gating). Implemented in the UK wave.
     prospective_gate: Optional[Callable[[LegalOperation, str], bool]] = None
     # NO topological renumber vacate-ordering / UK text-patch chain ordering.
-    # False today = no structural reordering. Implemented in NO/UK waves.
+    # False today = no structural reordering. ``True`` enables the §3.2 step 5
+    # structural-vacate stage (REPEAL-first, then topological RENUMBER so a
+    # destination is vacated before it is occupied). NO opts in (Wave 0); SE/EE
+    # leave it off (byte-unaffected). UK reuses it in a later wave.
     renumber_vacate: bool = False
+    # The structural-vacate stage operates *within groups*: ops are partitioned
+    # by ``renumber_group_key(op)`` (preserving the temporal order between
+    # groups — the group key is the temporal key minus its sequence tail), then
+    # each group is REPEAL-first / topological-RENUMBER / rest-by-sequence
+    # ordered. ``None`` => one group (all ops). NO supplies
+    # ``(effective, enacted, source_id)``. Only consulted when
+    # ``renumber_vacate`` is set.
+    renumber_group_key: Optional[Callable[[LegalOperation], Any]] = None
+    # Initial (tiebreak) sort key for *independent* RENUMBER ops inside the
+    # topological vacate sort — it only orders renumbers with no vacate
+    # dependency between them; the topological DFS enforces vacate-before-occupy
+    # regardless. ``None`` => ``op.sequence``. NO supplies its label-aware key.
+    # Only consulted when ``renumber_vacate`` is set.
+    renumber_tiebreak_key: Optional[Callable[[LegalOperation], Any]] = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -197,9 +214,17 @@ def order_ops(
     # op; it emits findings. So apply order stays the deterministic temporal +
     # sequence order ("sequence_order_unproven" for an unresolved collision),
     # preserving today's byte output while surfacing the ambiguity.
+    #
+    # The detector runs on the *input* op order (``ops_list``), not the
+    # temporally sorted ``ordered``: the SE/NO frontends ran the detector as a
+    # pre-pass over their raw ``ops`` before any ordering, and the finding *list*
+    # order follows the detector's input order (its conflict-group dict is keyed
+    # in first-seen order). Passing ``ops_list`` reproduces that byte-for-byte.
+    # For SE (identity temporal key) ``ops_list == ordered``, so this is
+    # SE-neutral; for NO (which reorders) it matches the old direct pre-pass.
     adjudications_out: list[CompileAdjudication] = []
     detect_cross_act_same_moment_conflicts(
-        ordered,
+        ops_list,
         finder_kind_prefix=profile.finder_kind_prefix,
         precedence_claims=profile.precedence_claims,
         incompatible_payload_predicate=profile.incompatible_payload_predicate,
@@ -224,14 +249,18 @@ def order_ops(
             ),
         )
 
-    # ── Stage 5: structural vacate ordering (optional hook; no-op now). ──────
+    # ── Stage 5: structural vacate ordering (optional hook). ─────────────────
     # NO topological renumber vacate / UK text-patch chain ordering. False =>
-    # no reordering. Implemented in the NO/UK waves. The flag is read here so
-    # the kernel shape is stable; SE never sets it.
-    if profile.renumber_vacate:  # pragma: no cover — exercised in NO/UK waves
-        raise NotImplementedError(
-            "renumber_vacate structural ordering is a later-wave hook "
-            "(NO/UK); not implemented in the Wave 0 SE kernel"
+    # no reordering (SE/EE byte-unaffected). When set, partition into groups by
+    # ``renumber_group_key`` (preserving inter-group temporal order) and within
+    # each group emit REPEAL-first, then topological RENUMBER (a destination is
+    # vacated before it is occupied), then the rest by sequence — the shared
+    # lift of NO's ``_ordered_renumber_group`` group fold (design §3.2 step 5).
+    if profile.renumber_vacate:
+        ordered = _structural_vacate_order(
+            ordered,
+            group_key=profile.renumber_group_key,
+            tiebreak_key=profile.renumber_tiebreak_key,
         )
 
     # ── Stage 6: stable sequence final tiebreak — already an invariant of the
@@ -262,3 +291,114 @@ def _affecting_act_id(op: LegalOperation) -> str:
     if op.source is None:
         return ""
     return str(getattr(op.source, "statute_id", "") or "")
+
+
+# ── Stage 5 helpers: structural vacate ordering (shared lift of NO's group
+# fold; reusable by UK). ─────────────────────────────────────────────────────
+
+
+def _ordered_renumber_group(
+    group: Sequence[LegalOperation],
+    tiebreak_key: Callable[[LegalOperation], Any],
+) -> list[LegalOperation]:
+    """Order renumber chains so occupied destinations are vacated first.
+
+    Verbatim lift of NO's ``_ordered_renumber_group``: a topological sort over
+    the RENUMBER ops in ``group`` where an op depends on the op (if any) whose
+    target is this op's destination — so the destination is vacated before it
+    is occupied. ``tiebreak_key`` is the initial (``reverse=True``) sort that
+    orders genuinely independent renumbers; the DFS preserves the vacate
+    dependency regardless of it. General, not NO-specific (the only NO input is
+    the supplied ``tiebreak_key``); kept here so UK can reuse it.
+    """
+    renumbers = [
+        op
+        for op in group
+        if op.action is StructuralAction.RENUMBER and op.destination is not None
+    ]
+    by_target = {op.target.path: op for op in renumbers}
+    ordered: list[LegalOperation] = []
+    visiting: set[tuple[tuple[str, str], ...]] = set()
+    visited: set[tuple[tuple[str, str], ...]] = set()
+
+    def _visit(op: LegalOperation) -> None:
+        key = op.target.path
+        if key in visited:
+            return
+        if key in visiting:
+            return
+        visiting.add(key)
+        dep = by_target.get(op.destination.path if op.destination is not None else ())
+        if dep is not None:
+            _visit(dep)
+        visiting.remove(key)
+        visited.add(key)
+        ordered.append(op)
+
+    for op in sorted(renumbers, key=tiebreak_key, reverse=True):
+        _visit(op)
+    return ordered
+
+
+def _structural_vacate_order(
+    ops: Sequence[LegalOperation],
+    group_key: Optional[Callable[[LegalOperation], Any]],
+    tiebreak_key: Optional[Callable[[LegalOperation], Any]],
+) -> list[LegalOperation]:
+    """Group-wise REPEAL-first / topological-RENUMBER / rest-by-sequence order.
+
+    Shared lift of NO's ``apply_no_ops`` group fold (design §3.2 step 5). ``ops``
+    arrive already temporally sorted (stage 1), so partitioning by ``group_key``
+    yields contiguous groups in their temporal order (the group key is the
+    temporal key minus its ``sequence`` tail). Within each group the order is:
+
+      1. REPEAL ops, by ``op.sequence``;
+      2. RENUMBER ops, topologically (destinations vacated before occupied) via
+         :func:`_ordered_renumber_group`;
+      3. every other op, by ``op.sequence``.
+
+    ``group_key=None`` => a single group (all ops). ``tiebreak_key=None`` =>
+    ``op.sequence`` for the independent-renumber tiebreak.
+    """
+    effective_tiebreak: Callable[[LegalOperation], Any] = (
+        tiebreak_key if tiebreak_key is not None else (lambda op: op.sequence)
+    )
+    # Partition into contiguous groups preserving the (already temporal) input
+    # order between groups. ``itertools.groupby`` would require a pre-sort that
+    # could perturb inter-group order, so accumulate run-length groups by hand
+    # keyed on the *first-seen* group key value.
+    if group_key is None:
+        groups: list[list[LegalOperation]] = [list(ops)] if ops else []
+    else:
+        groups = []
+        order_of_key: dict[Any, int] = {}
+        for op in ops:
+            k = group_key(op)
+            idx = order_of_key.get(k)
+            if idx is None:
+                order_of_key[k] = len(groups)
+                groups.append([op])
+            else:
+                groups[idx].append(op)
+
+    out: list[LegalOperation] = []
+    for group in groups:
+        out.extend(
+            sorted(
+                (op for op in group if op.action is StructuralAction.REPEAL),
+                key=lambda op: op.sequence,
+            )
+        )
+        out.extend(_ordered_renumber_group(group, effective_tiebreak))
+        out.extend(
+            sorted(
+                (
+                    op
+                    for op in group
+                    if op.action
+                    not in {StructuralAction.REPEAL, StructuralAction.RENUMBER}
+                ),
+                key=lambda op: op.sequence,
+            )
+        )
+    return out

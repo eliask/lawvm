@@ -334,3 +334,78 @@ def test_lex_posterior_on_breaks_ties_by_affecting_act() -> None:
     result = order_ops(ops, profile)
     # aaa-act < zzz-act -> a-second moves ahead of z-first.
     assert [op.op_id for op in result.ops] == ["a-second", "z-first"]
+
+
+# ── structural vacate ordering (renumber_vacate=True; NO/UK-shared stage) ─────
+
+
+def _renumber_op(
+    *, op_id: str, sequence: int, frm: str, to: str, source_id: str, effective: str
+) -> LegalOperation:
+    return LegalOperation(
+        op_id=op_id,
+        sequence=sequence,
+        action=StructuralAction.RENUMBER,
+        target=LegalAddress(path=(("section", frm),)),
+        destination=LegalAddress(path=(("section", to),)),
+        source=OperationSource(statute_id=source_id, effective=effective),
+    )
+
+
+def test_renumber_vacate_orders_destination_vacated_before_occupied() -> None:
+    """``renumber_vacate=True`` reorders a renumber chain so a destination is
+    vacated before it is occupied: 5->6 needs §6 free, so 6->7 must come first.
+
+    This proves the structural-vacate stage is a SHARED, frontend-neutral kernel
+    capability (no NO import) — UK can reuse it by setting the same flag.
+    """
+    ops = [
+        _renumber_op(op_id="r1", sequence=1, frm="5", to="6", source_id="act-a", effective="2026-01-01"),
+        _renumber_op(op_id="r2", sequence=2, frm="6", to="7", source_id="act-a", effective="2026-01-01"),
+    ]
+    profile = _se_profile(renumber_vacate=True)
+    result = order_ops(ops, profile)
+    assert [op.op_id for op in result.ops] == ["r2", "r1"]
+
+
+def test_renumber_vacate_repeal_first_then_renumber_then_rest() -> None:
+    """The within-group order is REPEAL-first, then topological RENUMBER, then
+    the rest by sequence — independent of input order."""
+    ops = [
+        _replace_op(op_id="rep", sequence=4, section_label="9", source_id="act-a", effective="2026-01-01"),
+        _renumber_op(op_id="rn1", sequence=2, frm="5", to="6", source_id="act-a", effective="2026-01-01"),
+        _repeal_op(op_id="rpl", sequence=1, section_label="1", source_id="act-a", effective="2026-01-01"),
+        _renumber_op(op_id="rn2", sequence=3, frm="6", to="7", source_id="act-a", effective="2026-01-01"),
+    ]
+    profile = _se_profile(renumber_vacate=True)
+    result = order_ops(ops, profile)
+    # REPEAL (rpl), then topological renumbers (rn2 vacates §6 before rn1 takes
+    # it), then the replace.
+    assert [op.op_id for op in result.ops] == ["rpl", "rn2", "rn1", "rep"]
+
+
+def test_renumber_vacate_groups_by_renumber_group_key() -> None:
+    """With a group key, the structural-vacate stage operates per group while
+    preserving the temporal order between groups."""
+    ops = [
+        _renumber_op(op_id="a1", sequence=1, frm="5", to="6", source_id="act-a", effective="2026-01-01"),
+        _renumber_op(op_id="a2", sequence=2, frm="6", to="7", source_id="act-a", effective="2026-01-01"),
+        _renumber_op(op_id="b1", sequence=3, frm="2", to="3", source_id="act-b", effective="2027-01-01"),
+        _renumber_op(op_id="b2", sequence=4, frm="3", to="4", source_id="act-b", effective="2027-01-01"),
+    ]
+    profile = _se_profile(
+        temporal_key=lambda op: (
+            op.source.effective if op.source else "",
+            op.source.statute_id if op.source else "",
+            op.sequence,
+        ),
+        renumber_vacate=True,
+        renumber_group_key=lambda op: (
+            op.source.effective if op.source else "",
+            op.source.statute_id if op.source else "",
+        ),
+    )
+    result = order_ops(ops, profile)
+    # Each act-group is independently topologically ordered (vacate-first), and
+    # the 2026 group precedes the 2027 group.
+    assert [op.op_id for op in result.ops] == ["a2", "a1", "b2", "b1"]

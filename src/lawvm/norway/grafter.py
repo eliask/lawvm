@@ -14,7 +14,6 @@ to normalize Lovdata structure into IR trees and LegalOperation objects.
 from __future__ import annotations
 
 import copy
-import itertools
 import re
 import tarfile
 from collections import Counter
@@ -30,13 +29,11 @@ from lawvm.core.archive_safety import (
     log_archive_member_too_large,
     safe_tar_read,
 )
-from lawvm.core.cross_act_same_moment import (
-    detect_cross_act_same_moment_conflicts,
-)
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.filter_result import FilterResult, RejectedItem
 from lawvm.core.invariant_profiles import CORE_REPLAY_DELTA_MINIMAL_FAMILIES
 from lawvm.core.ir_helpers import structural_subtree_hash
+from lawvm.core.op_ordering import OrderingProfile, order_ops
 from lawvm.core.mutation_boundary import (
     TreePath,
     TreePaths,
@@ -3219,6 +3216,83 @@ def _no_replay_payload_detail(payload: Optional[IRNode]) -> dict[str, str]:
     }
 
 
+def _no_temporal_key(op: LegalOperation) -> tuple[str, str, str, int]:
+    """NO's temporal/group sort key: ``(effective, enacted, source_id, sequence)``.
+
+    The verbatim lift of ``apply_no_ops``'s old ``_group_sort_key``. The shared
+    kernel's stage-1 temporal sort uses this; its first three components also
+    serve as the structural-vacate group identity (see :func:`_no_group_key`).
+    """
+    effective = op.source.effective if op.source and op.source.effective else ""
+    enacted = op.source.enacted if op.source and op.source.enacted else ""
+    source_id = op.source.statute_id if op.source and op.source.statute_id else ""
+    return (effective, enacted, source_id, op.sequence)
+
+
+def _no_group_key(op: LegalOperation) -> tuple[str, str, str]:
+    """NO's structural-vacate group identity: ``(effective, enacted, source_id)``.
+
+    The verbatim lift of ``apply_no_ops``'s old ``_group_identity`` — the
+    temporal key minus its ``sequence`` tail. The kernel partitions the
+    temporally sorted ops by this so REPEAL-first / topological-RENUMBER /
+    rest-by-sequence is applied per affecting-act moment.
+    """
+    effective = op.source.effective if op.source and op.source.effective else ""
+    enacted = op.source.enacted if op.source and op.source.enacted else ""
+    source_id = op.source.statute_id if op.source and op.source.statute_id else ""
+    return (effective, enacted, source_id)
+
+
+def _no_renumber_tiebreak_key(
+    op: LegalOperation,
+) -> tuple[int, tuple[tuple[int, str, int], ...], int]:
+    """NO's independent-renumber tiebreak: the verbatim old ``_renumber_sort_key``.
+
+    Orders genuinely independent RENUMBER ops (no vacate dependency between
+    them) inside the topological sort by ``(path-depth, label-sort-keys,
+    sequence)``; the kernel's DFS enforces vacate-before-occupy regardless.
+    """
+    return (
+        len(op.target.path),
+        tuple(_no_sort_key(label) for _kind, label in op.target.path),
+        op.sequence,
+    )
+
+
+def no_ordering_profile() -> OrderingProfile:
+    """The NO jurisdiction ordering profile fed to the unified kernel.
+
+    Wave 0 (``notes/CORE_PIPELINE_UNIFICATION_DESIGN.md`` §3.2 / §4): NO's
+    ordering is the temporal group sort ``(effective, enacted, source_id,
+    sequence)`` followed by the within-group structural-vacate order
+    (REPEAL-first, then topological RENUMBER vacating destinations before
+    occupying them, then the rest by sequence), with same-moment cross-act
+    detection delegated to the shared ``cross_act_same_moment`` detector. The
+    profile encodes exactly that prior contract so ``order_ops`` reproduces the
+    old group-sort + ``_ordered_renumber_group`` + direct-detector path
+    byte-for-byte:
+
+    - ``finder_kind_prefix="no"`` — the prefix the direct detector call used.
+    - ``incompatible_payload_predicate=None`` — the detector's *default*
+      conservative predicate (NO carries no jurisdiction-specific predicate).
+    - ``temporal_key=_no_temporal_key`` — ``(effective, enacted, source_id,
+      sequence)``, the old ``_group_sort_key``.
+    - ``lex_posterior=False`` (implicit) — NO had no affecting-act lexical
+      tiebreak; the within-group order is the structural-vacate stage.
+    - no ``precedence_claims`` — NO has no validated precedence-rule registry.
+    - ``renumber_vacate=True`` with ``renumber_group_key=_no_group_key`` and
+      ``renumber_tiebreak_key=_no_renumber_tiebreak_key`` — the shared lift of
+      NO's ``_ordered_renumber_group`` group fold (kernel §3.2 step 5).
+    """
+    return OrderingProfile(
+        finder_kind_prefix="no",
+        temporal_key=_no_temporal_key,
+        renumber_vacate=True,
+        renumber_group_key=_no_group_key,
+        renumber_tiebreak_key=_no_renumber_tiebreak_key,
+    )
+
+
 def apply_no_ops(
     statute: IRStatute,
     ops: List[LegalOperation],
@@ -3252,77 +3326,38 @@ def apply_no_ops(
     # default predicate classifies directly. NO has no validated precedence-rule
     # registry yet, so every detected conflict emits
     # ``resolution: "sequence_order_unproven"``.
-    detect_cross_act_same_moment_conflicts(
-        ops,
-        finder_kind_prefix="no",
-        adjudications_out=adjudications_out,
-    )
+    # Unified ordering kernel (Wave 0). ``order_ops`` composes the temporal
+    # group sort ``(effective, enacted, source_id, sequence)``, the same-moment
+    # cross-act conflict pre-pass (DELEGATED verbatim to the shared
+    # ``detect_cross_act_same_moment_conflicts`` — the §1.7 finding, ADDITIVE and
+    # carrying an empty op_id so the conserved-wrapper partition is unaffected),
+    # and the structural-vacate stage (REPEAL-first, then topological RENUMBER
+    # vacating destinations before they are occupied, then the rest by
+    # sequence). The ordered op list and the findings are byte-identical to the
+    # old group-sort + ``_ordered_renumber_group`` + direct-detector path —
+    # proven by ``tests/test_no_order_ops_parallel_run.py``.
+    ordered_result = order_ops(ops, no_ordering_profile())
+    if adjudications_out is not None:
+        adjudications_out.extend(ordered_result.findings)
 
     body = statute.body
 
-    def _group_sort_key(op: LegalOperation) -> tuple[str, str, str, int]:
-        effective = op.source.effective if op.source and op.source.effective else ""
-        enacted = op.source.enacted if op.source and op.source.enacted else ""
-        source_id = op.source.statute_id if op.source and op.source.statute_id else ""
-        return (effective, enacted, source_id, op.sequence)
-
-    def _group_identity(op: LegalOperation) -> tuple[str, str, str]:
-        effective = op.source.effective if op.source and op.source.effective else ""
-        enacted = op.source.enacted if op.source and op.source.enacted else ""
-        source_id = op.source.statute_id if op.source and op.source.statute_id else ""
-        return (effective, enacted, source_id)
-
-    def _renumber_sort_key(op: LegalOperation) -> tuple[int, tuple[tuple[int, str, int], ...], int]:
-        return (
-            len(op.target.path),
-            tuple(_no_sort_key(label) for _kind, label in op.target.path),
-            op.sequence,
-        )
-
-    def _ordered_renumber_group(group: list[LegalOperation]) -> list[LegalOperation]:
-        """Order renumber chains so occupied destinations are vacated first."""
-        renumbers = [op for op in group if op.action is StructuralAction.RENUMBER and op.destination is not None]
-        by_target = {op.target.path: op for op in renumbers}
-        ordered: list[LegalOperation] = []
-        visiting: set[tuple[tuple[str, str], ...]] = set()
-        visited: set[tuple[tuple[str, str], ...]] = set()
-
-        def _visit(op: LegalOperation) -> None:
-            key = op.target.path
-            if key in visited:
-                return
-            if key in visiting:
-                return
-            visiting.add(key)
-            dep = by_target.get(op.destination.path if op.destination is not None else ())
-            if dep is not None:
-                _visit(dep)
-            visiting.remove(key)
-            visited.add(key)
-            ordered.append(op)
-
-        for op in sorted(renumbers, key=_renumber_sort_key, reverse=True):
-            _visit(op)
-        return ordered
-
-    ordered_ops: list[tuple[LegalOperation, set[tuple[tuple[str, str], ...]]]] = []
-    for _group_key, group_iter in itertools.groupby(sorted(ops, key=_group_sort_key), key=_group_identity):
-        group = list(group_iter)
-        renumber_sources = {
-            op.target.path for op in group if op.action is StructuralAction.RENUMBER and op.destination is not None
-        }
-        ordered_ops.extend(
-            (op, renumber_sources)
-            for op in sorted((op for op in group if op.action is StructuralAction.REPEAL), key=lambda op: op.sequence)
-        )
-        ordered_ops.extend((op, renumber_sources) for op in _ordered_renumber_group(group))
-        ordered_ops.extend(
-            (op, renumber_sources)
-            for op in sorted(
-                (op for op in group if op.action not in {StructuralAction.REPEAL, StructuralAction.RENUMBER}),
-                key=lambda op: op.sequence,
+    # Reconstruct the per-op ``renumber_sources`` carrier the apply fold below
+    # consumes: the set of RENUMBER source paths within the op's affecting-act
+    # group ``(effective, enacted, source_id)``. The kernel returns a flat
+    # ordered op list, so derive each group's renumber-source set once and pair
+    # it with every op of that group (the old fold paired the per-group set with
+    # each op of the group identically).
+    _no_renumber_sources_by_group: dict[tuple[str, str, str], set[tuple[tuple[str, str], ...]]] = {}
+    for op in ordered_result.ops:
+        if op.action is StructuralAction.RENUMBER and op.destination is not None:
+            _no_renumber_sources_by_group.setdefault(_no_group_key(op), set()).add(
+                op.target.path
             )
-        )
+    ordered_ops: list[tuple[LegalOperation, set[tuple[tuple[str, str], ...]]]] = [
+        (op, _no_renumber_sources_by_group.get(_no_group_key(op), set()))
+        for op in ordered_result.ops
+    ]
 
     no_replay_tree_invariant_families = CORE_REPLAY_DELTA_MINIMAL_FAMILIES
 
