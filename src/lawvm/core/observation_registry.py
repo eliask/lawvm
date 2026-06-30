@@ -1700,6 +1700,29 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "raw_text / source statute_id all empty): a provenance-orphaned op "
                 "that traces back to no source instruction.",
                 ("provenance", "strictness"), role="observation"),
+    # Stream D COVERAGE.UNIT_UNCLASSIFIED (coverage totality): every source unit
+    # the frontend extracted must be owned-or-classified — claimed by an op
+    # (covered), classified as a typed gap by the injected disposition
+    # (supplemental_candidate / ignore_nonoperative / covered_by_broad_scope /
+    # an obligation disposition), or recorded as a rejected claim. A unit that is
+    # neither covered nor classified fell out of the coverage partition with no
+    # owner (a silent drop). Owner module: core.coverage_totality_audit (the
+    # assertion in core.coverage_totality), which reuses the core/coverage.py
+    # carriers VERBATIM (no parallel coverage model). The audit emits Observation
+    # carriers only (role=observation; never raises on shape-valid input, never
+    # mutates carriers, never fabricates a claim or disposition) — a strict-
+    # profile consumer may flip it to a barrier via this default_enforcement.
+    # Mirrors the D7/C observation-role precedents above; NET-NEW core-only, not
+    # wired into any apply lane (deferred to the unified seam). The existing
+    # COVERAGE.* registry codes cover other coverage facts (uncovered-body ratio,
+    # ignored units, rejected claims, payload realization); none names the
+    # "neither covered nor classified" residue, so this is a new kind.
+    FindingSpec("COVERAGE.UNIT_UNCLASSIFIED", "coverage-totality",
+                "audit", "strict_fail", "coverage_totality_audit",
+                "A source unit was neither claimed by an op (covered) nor "
+                "classified as a typed gap by the coverage disposition: it fell "
+                "out of the coverage partition with no owner (a silent drop).",
+                ("preservation", "strictness"), role="observation"),
     # D9 / §B5 PROJECTION.REDERIVABLE_FROM_DOSSIER (roadmap §B5): every committed
     # projection row (seam/dump/viewer row, parquet/SQLite export, review packet)
     # must be re-derivable from the committed dossier — its committed
