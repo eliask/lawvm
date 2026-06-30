@@ -68,6 +68,7 @@ from lawvm.uk_legislation.whole_act_text_patch import (
 )
 from lawvm.uk_legislation.xml_helpers import _tag
 from lawvm.core.quirks_disposition import QuirksDisposition
+from lawvm.uk_legislation.strict_profile import active_uk_strict_profile
 
 
 _UK_ENACTED_SCHEDULE_TABLE_ROW_PART_TARGET_RULE_ID = (
@@ -313,6 +314,7 @@ def reject_unsupported_target_facet(
     source_root: Optional[ET._Element],
     lowering_rejections_out: Optional[list[dict[str, Any]]],
 ) -> bool:
+    _uk_strict_profile = active_uk_strict_profile()
     if action == "insert" and _is_crossheading_only_ref(t_str):
         # The effect target names a cross-heading facet (e.g. "s. 221
         # cross-heading", "insert the heading before that section"). The only
@@ -327,6 +329,34 @@ def reject_unsupported_target_facet(
         # at a mis-resolved body location, which corrupts the tree.
         if structured_crossheading_op_built:
             return True
+        if (
+            _uk_strict_profile is not None
+            and _uk_strict_profile.allows_uk_crossheading_insert
+        ):
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id="uk_strict_profile_lifted_crossheading_insert",
+                family="unsupported_target_facet",
+                reason_code="strict_profile_authorized_crossheading_insert",
+                reason=(
+                    "Strict profile loaded with allows_uk_crossheading_insert="
+                    "True; the cross-heading insert without a standalone Pblock "
+                    "payload is explicitly authorized — the instruction-text "
+                    "paragraph WILL be coerced at a potentially mis-resolved body "
+                    "location. Tree-corruption risk accepted."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "strict_profile_name": _uk_strict_profile.core_profile.name,
+                    "target_ref": t_str,
+                    "lifted_rejection_rule_id": "uk_effect_crossheading_insert_rejected",
+                    "strict_disposition": "proceed",
+                    "quirks_disposition": QuirksDisposition.APPLY,
+                },
+            )
+            return False
         _append_uk_effect_lowering_rejection(
             lowering_rejections_out,
             rule_id="uk_effect_crossheading_insert_rejected",
@@ -358,6 +388,33 @@ def reject_unsupported_target_facet(
         }
         if modeled_target is not None:
             detail["modeled_target"] = str(modeled_target)
+        if (
+            _uk_strict_profile is not None
+            and _uk_strict_profile.allows_uk_schedule_note_target
+        ):
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id="uk_strict_profile_lifted_schedule_note_target",
+                family="unsupported_target_facet",
+                reason_code="strict_profile_authorized_schedule_note_target",
+                reason=(
+                    "Strict profile loaded with allows_uk_schedule_note_target="
+                    "True; the schedule-note target is explicitly allowed to "
+                    "proceed — lowering will attempt to coerce the note into "
+                    "paragraph/subparagraph structure."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "strict_profile_name": _uk_strict_profile.core_profile.name,
+                    **detail,
+                    "lifted_rejection_rule_id": "uk_effect_schedule_note_target_rejected",
+                    "strict_disposition": "proceed",
+                    "quirks_disposition": QuirksDisposition.APPLY,
+                },
+            )
+            return False
         _append_uk_effect_lowering_rejection(
             lowering_rejections_out,
             rule_id="uk_effect_schedule_note_target_rejected",
@@ -380,6 +437,33 @@ def reject_unsupported_target_facet(
         extracted_el=extracted_el,
         source_root=source_root,
     ):
+        if (
+            _uk_strict_profile is not None
+            and _uk_strict_profile.allows_uk_heading_only_facet
+        ):
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id="uk_strict_profile_lifted_heading_only_facet",
+                family="unsupported_target_facet",
+                reason_code="strict_profile_authorized_heading_only_facet",
+                reason=(
+                    "Strict profile loaded with allows_uk_heading_only_facet="
+                    "True; the heading-only facet is explicitly allowed to "
+                    "proceed — lowering will attempt to mutate the host "
+                    "provision body unsafely."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "strict_profile_name": _uk_strict_profile.core_profile.name,
+                    "target_ref": t_str,
+                    "lifted_rejection_rule_id": "uk_effect_heading_only_ref_rejected",
+                    "strict_disposition": "proceed",
+                    "quirks_disposition": QuirksDisposition.APPLY,
+                },
+            )
+            return False
         _append_uk_effect_lowering_rejection(
             lowering_rejections_out,
             rule_id="uk_effect_heading_only_ref_rejected",
@@ -447,6 +531,39 @@ def reject_structural_pseudo_definition_target(
     if action not in {"insert", "replace"}:
         return False
     if not any(str(label).strip().lower() in {"defn", "defns"} for _kind, label in target.path):
+        return False
+    _uk_sp = active_uk_strict_profile()
+    if (
+        _uk_sp is not None
+        and _uk_sp.allows_uk_definition_pseudo_target
+    ):
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id="uk_strict_profile_lifted_definition_pseudo_target",
+            family="definition_entry_elaboration",
+            reason_code="strict_profile_authorized_definition_pseudo_target",
+            reason=(
+                "Strict profile loaded with "
+                "allows_uk_definition_pseudo_target=True; the pseudo-"
+                "definition target is explicitly allowed to proceed — the "
+                "metadata-path definition entry will be replayed without "
+                "a definition-entry compiler."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "strict_profile_name": _uk_sp.core_profile.name,
+                "target_ref": t_str,
+                "target": str(target),
+                "action": action,
+                "lifted_rejection_rule_id": (
+                    "uk_effect_structural_pseudo_definition_target_rejected"
+                ),
+                "strict_disposition": "proceed",
+                "quirks_disposition": QuirksDisposition.APPLY,
+            },
+        )
         return False
     _append_uk_effect_lowering_rejection(
         lowering_rejections_out,
@@ -518,6 +635,56 @@ def reject_external_or_partial_whole_act_scope(
         # retains (over-application, §2.1). Any genuinely complete repeal is
         # carried by a separate UK-wide effect row, so blocking this devolved row
         # never loses a truly-spent Act.
+        #
+        # STRICT-PROFILE GATE (Tier C PR2, site 2):
+        # When the active strict-profile explicitly allows
+        # ``allows_uk_devolved_extent_repeal=True``, the default-blocking
+        # shape is CONDITIONALLY LIFTED — the strict-profile explicitly
+        # authorizes the devolved whole-Act repeal to proceed as a UK-wide
+        # deletion. This is the MOST DANGEROUS strict-profile lift in the
+        # suite because it directly risks §0-forbidden over-repeal
+        # (destroying surviving England-and-Wales text). The lift IS
+        # AUDITED: a non-blocking observation records the authorization so
+        # the §0 evidence ledger remains readable.
+        uk_strict_profile = active_uk_strict_profile()
+        if (
+            uk_strict_profile is not None
+            and uk_strict_profile.allows_uk_devolved_extent_repeal
+        ):
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id="uk_strict_profile_lifted_devolved_extent_repeal",
+                family="unsupported_target_scope",
+                reason_code="strict_profile_authorized_devolved_whole_act_repeal",
+                reason=(
+                    "§0 WARNING: Strict profile loaded with "
+                    "allows_uk_devolved_extent_repeal=True; the devolved "
+                    "whole-Act repeal is explicitly authorized to proceed as "
+                    "a UK-wide deletion — this RISKS OVER-REPEAL (destroying "
+                    "surviving England-and-Wales text). The authorization is "
+                    "audited so the §0 evidence ledger records WHO authorized "
+                    "the destructive deletion + why."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "strict_profile_name": uk_strict_profile.core_profile.name,
+                    "target_ref": t_str,
+                    "target": str(target),
+                    "effect_type": effect_type,
+                    "action": action,
+                    "affecting_act_id": effect.affecting_act_id,
+                    "affecting_class": effect.affecting_class,
+                    "affected_class": effect.affected_class,
+                    "lifted_rejection_rule_id": (
+                        "uk_effect_devolved_whole_act_repeal_extent_limited_rejected"
+                    ),
+                    "strict_disposition": "proceed",
+                    "quirks_disposition": QuirksDisposition.APPLY,
+                },
+            )
+            return False  # Lift the block — let the repeal proceed.
         _append_uk_effect_lowering_rejection(
             lowering_rejections_out,
             rule_id="uk_effect_devolved_whole_act_repeal_extent_limited_rejected",
@@ -602,6 +769,38 @@ def reject_external_or_partial_whole_act_scope(
             )
         )
         if not explicit_whole_act_repeal:
+            _uk_sp = active_uk_strict_profile()
+            if (
+                _uk_sp is not None
+                and _uk_sp.allows_uk_empty_effect_type_whole_act
+            ):
+                _append_uk_effect_lowering_observation(
+                    lowering_rejections_out,
+                    rule_id="uk_strict_profile_lifted_empty_effect_type_whole_act",
+                    family="unsupported_target_scope",
+                    reason_code="strict_profile_authorized_empty_type_whole_act",
+                    reason=(
+                        "Strict profile loaded with "
+                        "allows_uk_empty_effect_type_whole_act=True; the "
+                        "empty-type whole-Act action is explicitly authorized "
+                        "to proceed — risking an inferred destructive op from "
+                        "incidental source text."
+                    ),
+                    effect=effect,
+                    extracted_el=extracted_el,
+                    extracted_text=extracted_text,
+                    detail={
+                        "strict_profile_name": _uk_sp.core_profile.name,
+                        "target_ref": t_str,
+                        "target": str(target),
+                        "lifted_rejection_rule_id": (
+                            "uk_effect_empty_type_whole_act_action_rejected"
+                        ),
+                        "strict_disposition": "proceed",
+                        "quirks_disposition": QuirksDisposition.APPLY,
+                    },
+                )
+                return False
             _append_uk_effect_lowering_rejection(
                 lowering_rejections_out,
                 rule_id="uk_effect_empty_type_whole_act_action_rejected",
@@ -629,6 +828,38 @@ def reject_external_or_partial_whole_act_scope(
         else ""
     )
     if not whole_act_partial_repeal_exceptions:
+        return False
+    _uk_sp = active_uk_strict_profile()
+    if (
+        _uk_sp is not None
+        and _uk_sp.allows_uk_partial_whole_act_repeal
+    ):
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id="uk_strict_profile_lifted_partial_whole_act_repeal",
+            family="unsupported_target_scope",
+            reason_code="strict_profile_authorized_partial_whole_act_repeal",
+            reason=(
+                "Strict profile loaded with "
+                "allows_uk_partial_whole_act_repeal=True; the partial "
+                "whole-Act repeal with broad negative scope is explicitly "
+                "authorized to proceed — the exception provisions will be "
+                "carried in the audit payload."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "strict_profile_name": _uk_sp.core_profile.name,
+                "target_ref": t_str,
+                "exception_provisions": whole_act_partial_repeal_exceptions,
+                "lifted_rejection_rule_id": (
+                    "uk_effect_partial_whole_act_repeal_rejected"
+                ),
+                "strict_disposition": "proceed",
+                "quirks_disposition": QuirksDisposition.APPLY,
+            },
+        )
         return False
     _append_uk_effect_lowering_rejection(
         lowering_rejections_out,

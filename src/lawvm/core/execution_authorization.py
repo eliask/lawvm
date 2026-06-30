@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 from typing import Any, Mapping, cast
 
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.frozen_values import freeze_mapping
+from lawvm.core.observation_registry import get_finding_spec
+from lawvm.core.phase_result import Finding, VIOLATION_ROLE
 from lawvm.core.quirks_disposition import QuirksDisposition
 
 if TYPE_CHECKING:
@@ -447,3 +450,148 @@ def _plain_jsonable(value: Any) -> Any:
     if isinstance(value, set | frozenset):
         return sorted((_plain_jsonable(inner) for inner in value), key=repr)
     return value
+
+
+# --------------------------------------------------------------------------- #
+# D11 — EVID.AUTHORITY_SOURCE_EXCLUDES_OBSERVATION_KINDS audit                 #
+# --------------------------------------------------------------------------- #
+# Per audit_impl_D11.md and AGENTS.md §2.10: the evidence plane may explain
+# authority but never BECOME it. An observation-role finding kind must never
+# appear in the apply-path authority source set used to justify replay mutation.
+# This audit consumes a caller-supplied set of finding kinds and the registry;
+# it returns typed ObservationPromotedToAuthority records for any observation-
+# role kind that has been promoted to authority. The apply path itself remains
+# responsible for collecting the set of kinds it treats as dispositive; this
+# module only validates the set.
+
+EVID_AUTHORITY_SOURCE_EXCLUDES_OBSERVATION_KINDS_RULE_ID = (
+    "evid_authority_source_excludes_observation_kinds"
+)
+EVID_OBSERVATION_PROMOTED_TO_AUTHORITY_FINDING_CODE = (
+    "EVID.OBSERVATION_PROMOTED_TO_AUTHORITY"
+)
+_EVID_AUTHORITY_AUDIT_STAGE = "apply_authority_audit"
+_EVID_AUTHORITY_AUDIT_OWNER = "execution_authorization"
+
+
+@dataclass(frozen=True, slots=True)
+class ObservationPromotedToAuthority:
+    """One observation-role finding kind that was cited as an authority source.
+
+    A typed carrier (§1.9) distinguishing "this kind was in the authority
+    source set AND its registry role is ``observation``" so a triager can
+    answer which promoted kind breached the §2.10 firewall without re-running
+    extraction.
+
+    Fields:
+    * ``promoted_kind``: the finding kind code (e.g. ``ELAB.SOURCE_PATHOLOGY``)
+      found in the authority source set whose registry role is ``observation``.
+    * ``op_id``: the op whose authority was being justified (AGENTS.md §3.2
+      evidence-path requirement).
+    * ``owner_phase``: the phase that owns the authority decision (default
+      ``"apply"``).
+    """
+
+    promoted_kind: str
+    op_id: str
+    owner_phase: str = "apply"
+
+
+def authority_source_set_observation_audit(
+    authority_source_kinds: Iterable[str],
+    *,
+    op_id: str,
+    owner_phase: str = "apply",
+) -> tuple[ObservationPromotedToAuthority, ...]:
+    """Return one ObservationPromotedToAuthority per observation-role kind in the set.
+
+    Per AGENTS.md §2.10 ``evidence explains authority; it does not become authority
+    by existing``: any observation-role finding kind appearing in the apply-path
+    authority source set breaches the evidence→authority firewall. This audit
+    surfaces each such kind as a typed
+    :class:`ObservationPromotedToAuthority` carrier; the success witness is an
+    empty tuple.
+
+    Unregistered authority-source kinds (kinds not in
+    :data:`~lawvm.core.observation_registry.FINDING_REGISTRY`) are NOT silently
+    classified as non-observation: the audit returns no finding for them but
+    the wire consumer's existing unregistered-code guard handles that case
+    (audit_impl_D11 §9 risk: explicit handling lives downstream). This audit
+    does NOT raise on unregistered kinds (fail-loud pathway is the
+    unregistered-code guard's territory, not this audit's).
+    """
+    promotions: list[ObservationPromotedToAuthority] = []
+    for kind in authority_source_kinds:
+        spec = get_finding_spec(kind)
+        if spec is None:
+            # Unregistered authority-source kind — handled by the downstream
+            # unregistered-code guard; not classified as observation-promoted
+            # here (silent zero would be §1.10; here we return no promotion
+            # because the kind's registry role is unknown).
+            continue
+        if spec.role == "observation":
+            promotions.append(
+                ObservationPromotedToAuthority(
+                    promoted_kind=kind,
+                    op_id=op_id,
+                    owner_phase=owner_phase,
+                )
+            )
+    return tuple(promotions)
+
+
+def observation_promoted_findings(
+    promotions: Sequence[ObservationPromotedToAuthority],
+) -> tuple[Finding, ...]:
+    """Project promotion records to ``EVID.OBSERVATION_PROMOTED_TO_AUTHORITY``.
+    findings.
+
+    Each promotion yields one ``Finding`` with role=``"violation"`` and
+    ``blocking=True`` per the spec §5 (a breached firewall voids the
+    :class:`ExecutionAuthorization`; the apply path should hard-fail in
+    strict mode, emit non-blocking in quirks). Per AGENTS.md §1.10 the
+    detail carries the offending ``promoted_kind`` and the full
+    ``authority_source_kinds`` tuple so a triager does not need to re-run
+    extraction.
+    """
+    findings: list[Finding] = []
+    for promotion in promotions:
+        spec = get_finding_spec(EVID_OBSERVATION_PROMOTED_TO_AUTHORITY_FINDING_CODE)
+        # The FindingSpec was registered at module-load; this guarded check
+        # is defensive against a missing registry row rather than a
+        # production-mode path (validate_finding_projection would reject
+        # any non-registered finding kind on construction).
+        if spec is None:  # pragma: no cover - defensive: registry-row present
+            continue
+        detail: dict[str, Any] = {
+            "promoted_kind": promotion.promoted_kind,
+            "op_id": promotion.op_id,
+            "owner_phase": promotion.owner_phase,
+            "rule_id": EVID_AUTHORITY_SOURCE_EXCLUDES_OBSERVATION_KINDS_RULE_ID,
+            "roles_excluded": ("observation",),
+            "reason": (
+                "apply-path authority source set contained a finding whose "
+                "registry role is 'observation', breaching the §2.10 "
+                "evidence->authority firewall"
+            ),
+        }
+        findings.append(
+            Finding(
+                kind=EVID_OBSERVATION_PROMOTED_TO_AUTHORITY_FINDING_CODE,
+                role=VIOLATION_ROLE,
+                stage=_EVID_AUTHORITY_AUDIT_STAGE,
+                detail=detail,
+                source_statute=promotion.op_id,
+                blocking=True,
+            )
+        )
+    return tuple(findings)
+
+
+__all__ = [
+    "EVID_AUTHORITY_SOURCE_EXCLUDES_OBSERVATION_KINDS_RULE_ID",
+    "EVID_OBSERVATION_PROMOTED_TO_AUTHORITY_FINDING_CODE",
+    "ObservationPromotedToAuthority",
+    "authority_source_set_observation_audit",
+    "observation_promoted_findings",
+]

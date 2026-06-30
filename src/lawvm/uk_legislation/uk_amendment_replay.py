@@ -63,6 +63,27 @@ from lawvm.uk_legislation.compiled_effect_facts import uk_compiled_effect_facts
 from lawvm.uk_legislation.materialization_totality_probe import (
     probe_uk_materialization_totality,
 )
+from lawvm.uk_legislation.identity_intrinsic_probe import (
+    probe_uk_identity_intrinsic,
+)
+from lawvm.uk_legislation.lineage_acyclic_probe import (
+    probe_uk_lineage_acyclic,
+)
+from lawvm.uk_legislation.commencement_effect_totality_probe import (
+    probe_uk_commencement_effect_totality,
+)
+from lawvm.uk_legislation.overlay_authorization_probe import (
+    probe_uk_overlay_authorization,
+)
+from lawvm.uk_legislation.observation_promoted_to_authority_probe import (
+    probe_uk_observation_promoted_to_authority,
+)
+from lawvm.uk_legislation.unknown_attestation_policy_probe import (
+    probe_uk_unknown_attestation_policy,
+)
+from lawvm.uk_legislation.timeline_invariants_probe import (
+    probe_uk_timeline_invariants,
+)
 from lawvm.uk_legislation.effect_compiler import compile_effect_to_ir_ops
 from lawvm.uk_legislation.effect_source_selection import (
     EffectSourceSelection as _EffectSourceSelection,
@@ -1105,6 +1126,40 @@ class UKReplayPipeline:
         probe_uk_materialization_totality(
             base=base_ir,
             replayed=replayed,
+            adjudications_out=adjudications_out,
+            source_statute=base_ir.statute_id,
+        )
+        probe_uk_identity_intrinsic(
+            replayed,
+            adjudications_out=adjudications_out,
+            source_statute=base_ir.statute_id,
+        )
+        probe_uk_lineage_acyclic(
+            mutation_events_out,
+            adjudications_out=adjudications_out,
+            source_statute=base_ir.statute_id,
+        )
+        probe_uk_commencement_effect_totality(
+            prepared_ops.accepted_ops,
+            adjudications_out=adjudications_out,
+            source_statute=base_ir.statute_id,
+        )
+        probe_uk_overlay_authorization(
+            replayed,
+            adjudications_out=adjudications_out,
+            source_statute=base_ir.statute_id,
+        )
+        probe_uk_observation_promoted_to_authority(
+            adjudications_out=adjudications_out,
+            source_statute=base_ir.statute_id,
+        )
+        probe_uk_unknown_attestation_policy(
+            adjudications_out=adjudications_out,
+            source_statute=base_ir.statute_id,
+        )
+        probe_uk_timeline_invariants(
+            base_ir,
+            prepared_ops.accepted_ops,
             adjudications_out=adjudications_out,
             source_statute=base_ir.statute_id,
         )

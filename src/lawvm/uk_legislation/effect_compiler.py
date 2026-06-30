@@ -99,6 +99,7 @@ from lawvm.uk_legislation.table_sources import (
     address_to_citation,
 )
 from lawvm.core.quirks_disposition import QuirksDisposition
+from lawvm.uk_legislation.strict_profile import active_uk_strict_profile
 
 
 _UK_EFFECT_FEE_TARGET_REFINEMENT_FAILED_RULE_ID = "uk_effect_fee_target_refinement_failed"
@@ -176,6 +177,24 @@ def _savings_qualified_structural_mutation_blocks_lowering(
     references that point at sections, regulations, or other non-schedule
     provisions are treated as ordinary savings clauses and the repeal is left
     to proceed.
+
+    STRICT-PROFILE GATE (Tier C PR2):
+    When ``LAWVM_UK_STRICT_PROFILE`` env var is set (the active strict-profile
+    carrier is loaded) AND ``allows_uk_savings_qualified_repeal=True``, the
+    default-blocking shape is CONDITIONALLY LIFTED — the strict-profile
+    explicitly authorizes the repeal to proceed past the savings-qualification
+    gate.
+    The lift is AUDITED: a non-blocking ``uk_strict_profile_lifted_savings_
+    qualified_repeal`` observation is appended alongside any blocking-rejection
+    receipt that would have fired under the pre-strict gate. This preserves
+    the §0 evidence ledger — the audit-event records WHO authorized the lift
+    + why — the called-out carrier identity + the affected savings-reference
+    + the recovery-pattern tag — not ad-hoc silent folklore.
+
+    The combination gate (``profile is None or not allows_X: block``)
+    mirrors the inverse-of-FI pattern: UK's default IS block; strict
+    profile provides the explicit lift-gate for the verified-allowed
+    case. Strict-not-allowed preserves the block.
     """
     if action != "repeal":
         return False
@@ -184,6 +203,44 @@ def _savings_qualified_structural_mutation_blocks_lowering(
         for ref in effect.savings_references
     ):
         return False
+    # Tier C PR2 strict-profile gate: when the active strict-profile is loaded
+    # AND explicitly allows savings-qualified-repeal recovery, LIFT the default
+    # blocking shape. When strict-profile is None (default, no env var set)
+    # or the gate is False, the existing blocking path runs unchanged.
+    uk_strict_profile = active_uk_strict_profile()
+    if (
+        uk_strict_profile is not None
+        and uk_strict_profile.allows_uk_savings_qualified_repeal
+    ):
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id="uk_strict_profile_lifted_savings_qualified_repeal",
+            family="savings_qualification",
+            reason_code="strict_profile_authorized_savings_qualified_repeal",
+            reason=(
+                "Strict profile loaded with "
+                "allows_uk_savings_qualified_repeal=True; the savings-"
+                "qualified whole-target repeal lifting the default-"
+                "blocking shape is explicitly authorized by the strict "
+                "profile carrier — NOT silently bypassed. The audit-event "
+                "records the authorization path so the §0 evidence ledger "
+                "remains readable."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "strict_profile_name": uk_strict_profile.core_profile.name,
+                "savings_references": effect.savings_references,
+                "lowering_action": action,
+                "lifted_rejection_rule_id": (
+                    UK_EFFECT_SAVINGS_REFERENCES_QUALIFIED_REPEAL_BLOCKED_RULE_ID
+                ),
+                "strict_disposition": "proceed",
+                "quirks_disposition": QuirksDisposition.APPLY,
+            },
+        )
+        return False  # Lift the block — let the repeal proceed to lowering.
     _append_uk_effect_lowering_rejection(
         lowering_rejections_out,
         rule_id=UK_EFFECT_SAVINGS_REFERENCES_QUALIFIED_REPEAL_BLOCKED_RULE_ID,
@@ -502,6 +559,52 @@ def _compile_effect_to_ir_ops_impl(
         )
 
     if effect_type in _COMMENCEMENT_EFFECT_TYPES:
+        # §1.8 (replay conservation): every filtered/rejected/skipped op MUST
+        # be visible with a receipt. ``_COMMENCEMENT_EFFECT_TYPES`` carries the
+        # explicit commencement effect-feed type tags (``appointed day(s)``,
+        # ``coming into force``, ``commencement order``); structural replay
+        # cannot synthesise a mutation from commencement language — replay
+        # returns zero ops. That alone is the §0 over-retention-safe skip.
+        # WITHOUT this receipt the downstream manual-frontier classifier at
+        # ``source_adjudication.py:2303`` (``uk_manual_frontier_
+        # commencement_effect_out_of_scope`` routing on
+        # ``uk_effect_commencement_source_rejected``) WOULD see ``lowering_
+        # rules`` as empty for this lane — the Path-2 emit at
+        # ``source_action_inference.py:241`` handles the empty-type-text-
+        # commencement case but NOT this explicit-type path. This emission
+        # closes the §1.8 silent-drop (per audit agent EV-1 in
+        # notes_internal: ``return []`` without receipt flagged as a true
+        # silent-drop) and routs the row downstream to its manual-frontier
+        # classification cleanly.
+        _append_uk_effect_lowering_rejection(
+            lowering_rejections_out,
+            rule_id="uk_effect_commencement_source_rejected",
+            family="applicability_scope",
+            reason_code="commencement_effect_type_out_of_scope",
+            reason=(
+                "UK effect carries an explicit commencement-feed effect type; "
+                "structural replay cannot synthesise a mutation from in-force / "
+                "commencement language. The effect is routed downstream as a "
+                "manual-frontier commencement-effect-out-of-scope row (not a "
+                "replay mutation) so the row is owned rather than silently "
+                "dropped."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "effect_type_normalized": effect_type,
+                "affected_provisions": effect.affected_provisions,
+                "lowering_action": None,
+                "strict_disposition": "block",
+                "quirks_disposition": "skip",
+                # AGENTS.md §0 promotion-chain: the lowering receipt records
+                # the boundary; the manual-frontier classification downstream
+                # is NOT a replay authority — the row remains out-of-scope
+                # until a future temporal/applicability model owns it.
+                "manual_frontier_axis": "commencement_effect_type",
+            },
+        )
         _mark_lower_phase("compile_lower_prepare")
         return []
 
@@ -635,23 +738,55 @@ def _compile_effect_to_ir_ops_impl(
     )
     if action == "insert" and definition_child_structural_insert is not None:
         if definition_child_structural_insert.get("blocking"):
-            _append_uk_effect_lowering_rejection(
-                lowering_rejections_out,
-                rule_id=str(definition_child_structural_insert["rule_id"]),
-                family=str(definition_child_structural_insert["family"]),
-                reason_code=str(definition_child_structural_insert["reason_code"]),
-                reason=str(definition_child_structural_insert["reason"]),
-                effect=effect,
-                extracted_el=extracted_el,
-                extracted_text=extracted_text,
-                detail={
-                    key: value
-                    for key, value in definition_child_structural_insert.items()
-                    if key not in {"rule_id", "family", "reason_code", "reason"}
-                },
-            )
-            _mark_lower_phase("compile_lower_special")
-            return []
+            _uk_sp = active_uk_strict_profile()
+            if (
+                _uk_sp is not None
+                and _uk_sp.allows_uk_definition_child_structural_insert
+            ):
+                _append_uk_effect_lowering_observation(
+                    lowering_rejections_out,
+                    rule_id="uk_strict_profile_lifted_definition_child_structural_insert",
+                    family="definition_entry_elaboration",
+                    reason_code="strict_profile_authorized_definition_child_structural_insert",
+                    reason=(
+                        "Strict profile loaded with "
+                        "allows_uk_definition_child_structural_insert=True; "
+                        "the blocking definition-child structural insert is "
+                        "explicitly authorized to proceed past the blocking "
+                        "flag — lowering will attempt the child insert."
+                    ),
+                    effect=effect,
+                    extracted_el=extracted_el,
+                    extracted_text=extracted_text,
+                    detail={
+                        "strict_profile_name": _uk_sp.core_profile.name,
+                        "lifted_blocking_rule_id": str(
+                            definition_child_structural_insert.get("rule_id", "")
+                        ),
+                        "strict_disposition": "proceed",
+                        "quirks_disposition": QuirksDisposition.APPLY,
+                    },
+                )
+                # Fall through to the lower_uk_definition_child_structural_
+                # sibling_insert call below — don't return [].
+            else:
+                _append_uk_effect_lowering_rejection(
+                    lowering_rejections_out,
+                    rule_id=str(definition_child_structural_insert["rule_id"]),
+                    family=str(definition_child_structural_insert["family"]),
+                    reason_code=str(definition_child_structural_insert["reason_code"]),
+                    reason=str(definition_child_structural_insert["reason"]),
+                    effect=effect,
+                    extracted_el=extracted_el,
+                    extracted_text=extracted_text,
+                    detail={
+                        key: value
+                        for key, value in definition_child_structural_insert.items()
+                        if key not in {"rule_id", "family", "reason_code", "reason"}
+                    },
+                )
+                _mark_lower_phase("compile_lower_special")
+                return []
         ops = lower_uk_definition_child_structural_sibling_insert(
             effect=effect,
             extracted_el=extracted_el,

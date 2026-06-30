@@ -2148,6 +2148,16 @@ def _build_ir_from_root(
             "is_eur": is_eur,
             "version_label": vlabel,
             "source_parse_observations": parse_observations,
+            # Thread the CLI-supplied ``--pit-date`` so downstream probes
+            # (timeline_invariants, materialization_totality, etc) can read
+            # the source-side point-in-time without re-parsing. Resolves the
+            # ``pit_date_unavailable`` probe-skip diagnostic emitted by
+            # ``probe_uk_timeline_invariants`` when metadata lacks
+            # effective_date/enacted_date. Per AGENTS.md §0 evidence-ledger-
+            # monotone: don't synthesize — pass through what the caller
+            # supplied; ``pit_date`` may be None when the CLI wasn't given
+            # ``--pit-date`` (latest-date replay).
+            "pit_date": pit_date or "",
         },
     )
 

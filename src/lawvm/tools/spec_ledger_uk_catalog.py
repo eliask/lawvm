@@ -973,4 +973,8 @@ _UK_RULE_SPECS: Dict[str, str] = {
         "An incorporation-of-enactments uptake article (not a direct text/tree mutation of the affected statute) is treated as out of replay scope rather than lowered as a structural amendment.",
     "uk_manual_frontier_savings_references_qualified_repeal_candidate":
         "A whole-target repeal qualified by an explicit savings-schedule reference is held at the manual frontier until a claim or future compiler owns the savings scope and affected-target boundary instead of applying an unconditional structural repeal.",
+
+    # -- Overlay-authorization audit (D8, Tier B PR4) --------------------------
+    "overlay_default_replay_authorized_false":
+        "The D8 §2.10 deterministic firewall rule id for overlay-tagged IRNode carrying replay_authorized=True without a matching ExecutionAuthorization promotion event.",
 }

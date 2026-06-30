@@ -315,3 +315,119 @@ def test_savings_qualified_repeal_carries_strict_block_quirks_skip_disposition()
     # Reaffirms the action carrier: this is a whole-target REPEAL qualified
     # by savings, not a partial substitution lowering.
     assert record.get("lowering_action") == "repeal"
+
+
+# ---- §2.9 strict-profile gate 3-disposition tests ----
+
+
+def _schedule_savings_repeal_effect() -> UKEffectRecord:
+    """A savings-qualified whole-target repeal effect (same shape as the
+    blocking-fixture used by ``test_schedule_savings_qualified_repeal_is_blocked``)."""
+    return _effect(
+        effect_type="repealed",
+        savings_references=[
+            {
+                "ref": "schedule-32",
+                "uri": "http://www.legislation.gov.uk/id/uksi/2012/1916/schedule/32",
+                "text": "Sch. 32",
+            }
+        ],
+    )
+
+
+def test_strict_profile_loaded_but_not_allowed_still_blocks(monkeypatch) -> None:
+    """§2.9 disposition 2 of 3: ``LAWVM_UK_STRICT_PROFILE=uk_ingestion_v1``
+    IS set BUT the default preset has
+    ``allows_uk_savings_qualified_repeal=False``. The default-block is
+    PRESERVED (not lifted) — strict-profile loaded without explicit consent
+    does NOT unblock a recovery.
+
+    This is the canonical pin against §0-forbidden silent-lift: the strict
+    profile must carry explicit ``allows_uk_X=True`` to allow the
+    recovery; merely HAVING a strict profile loaded is not a passkey.
+    """
+    monkeypatch.setenv("LAWVM_UK_STRICT_PROFILE", "uk_ingestion_v1")
+    observations: list[dict[str, Any]] = []
+    ops = compile_effect_to_ir_ops(
+        _schedule_savings_repeal_effect(),
+        None,
+        sequence=0,
+        lowering_rejections_out=observations,
+    )
+    assert ops == [], "strict-not-allowed must still produce zero replay ops"
+    assert (
+        UK_EFFECT_SAVINGS_REFERENCES_QUALIFIED_REPEAL_BLOCKED_RULE_ID
+        in _rule_ids(observations)
+    ), "block-rejection receipt MUST be emitted when strict-not-allowed"
+    lift_observations = [
+        o for o in observations
+        if o.get("rule_id") == "uk_strict_profile_lifted_savings_qualified_repeal"
+    ]
+    assert lift_observations == [], (
+        "strict-profile-lift observation must NOT be emitted when "
+        "allows_uk_savings_qualified_repeal=False"
+    )
+
+
+def test_strict_profile_loaded_and_allowed_lifts_block_with_audit(monkeypatch) -> None:
+    """§2.9 disposition 3 of 3: strict-profile loaded AND
+    ``allows_uk_savings_qualified_repeal=True``. The default-block is LIFTED
+    — the repeal proceeds to lowering (ops != []).
+
+    The lift IS Audited: a non-blocking ``uk_strict_profile_lifted_savings_
+    qualified_repeal`` observation is emitted alongside, naming the carrier
+    and the recovery-pattern tag. §0 evidence ledger is preserved — the
+    event records WHO authorized the lift + why.
+
+    This patches ``active_uk_strict_profile`` directly (bypassing the env-var)
+    to return a profile with ``allows_uk_savings_qualified_repeal=True`` —
+    the default ``uk_ingestion_v1`` preset doesn't carry ``True`` for any UK
+    gate so the env-var path (tested separately above) exercises the
+    not-allowed path.
+    """
+    from lawvm.uk_legislation.strict_profile import UK_INGESTION_V1, UkStrictProfile
+    allowed_profile = UkStrictProfile(
+        core_profile=UK_INGESTION_V1,
+        allows_uk_savings_qualified_repeal=True,
+    )
+    import lawvm.uk_legislation.effect_compiler as effect_compiler_mod
+    monkeypatch.setattr(
+        effect_compiler_mod,
+        "active_uk_strict_profile",
+        lambda: allowed_profile,
+    )
+
+    observations: list[dict[str, Any]] = []
+    ops = compile_effect_to_ir_ops(
+        _schedule_savings_repeal_effect(),
+        None,
+        sequence=0,
+        lowering_rejections_out=observations,
+    )
+    # The block was LIFTED — lowering proceeds.
+    # ops may now contain actual LegalOperation objects (the repeal is
+    # lowered past the savings-qualification gate). The exact shapes depend
+    # on whether target resolution succeeds elsewhere in the lowering chain;
+    # the test focus is the AUDIT of the lift + the ABSENCE of the block.
+    lift_observations = [
+        o for o in observations
+        if o.get("rule_id") == "uk_strict_profile_lifted_savings_qualified_repeal"
+    ]
+    assert lift_observations, (
+        "strict-profile-lift observation MUST be emitted when the block is "
+        "lifted — the §0 evidence ledger records WHO authorized + why"
+    )
+    lift = lift_observations[0]
+    assert lift["family"] == "savings_qualification"
+    assert lift["reason_code"] == (
+        "strict_profile_authorized_savings_qualified_repeal"
+    )
+    assert lift["strict_disposition"] == "proceed"
+    assert lift["quirks_disposition"] == "apply"
+    assert (
+        UK_EFFECT_SAVINGS_REFERENCES_QUALIFIED_REPEAL_BLOCKED_RULE_ID
+        not in _rule_ids(observations)
+    ), (
+        "the block-rejection receipt must NOT be emitted when the strict "
+        "profile explicitly lifts the gate — only the lift-observation is"
+    )

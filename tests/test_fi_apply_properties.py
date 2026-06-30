@@ -169,6 +169,78 @@ def test_sparse_item_replacement_preserves_untouched_items(case: tuple[IRNode, I
             assert _node_signature(result_map[label]) == _node_signature(master_child)
 
 
+def test_sparse_item_replacement_contiguous_prefix_with_extra_master_subparagraph() -> None:
+    """§3.3 repro pin for the hypothesis failure at
+    ``test_sparse_item_replacement_preserves_untouched_items`` (pre-existing at
+    HEAD ``3367dd69``; Hypothesis explicit-example patch at
+    ``.hypothesis/patches/2026-06-27--23cfa801.patch``).
+
+    The shape mirrors the strategy's ``sparse_alakohta_case`` (lines 82-98):
+    master ``PARAGRAPH(1)`` with subparagraphs ``[a, b, c]``; amend
+    ``SUBSECTION(1)`` whose children are ``(PARAGRAPH(1) anchor with
+    INTRO+SP(a)+SP(b), OMISSION sibling)``. The OMISSION sibling (typical of
+    Finnish ``h alakohta`` drafting where the amend body cites only the
+    touched subparagraphs and a tail-omission marker) signals amend-subsection
+    silence on the remaining master subparagraphs — preserve them (sparse
+    merge), don't drop them wholesale (§0 over-retention-safe direction).
+
+    ``touched=('a', 'b')`` — the amend merges the anchor's intro + the
+    ``[a, b]``-subparagraph updates; the master's ``c`` subparagraph is
+    OUTSIDE the touched set and MUST be preserved intact.
+
+    Bug (pre-fix): ``_merge_sparse_alakohta_replace_ir`` at
+    ``src/lawvm/finland/merge.py:2281-2282`` returned ``None`` for this shape
+    because the guard inferred "contiguous prefix labels + no INTRA-anchor
+    OMISSION = wholesale replace" without checking whether ``amend_sub``
+    carries an OMISSION SIBLING after the anchor paragraph. A sparse merge
+    with extra master subparagraphs was over-rejected; the caller then fell
+    through to a wholesale-replace path that dropped the master's ``c``
+    subparagraph — over-repeal direction per AGENTS.md §0.
+
+    The distinguishing signal between this sparse-merge case and the wholesale
+    case (``test_replace_full_item_payload_retires_stale_nested_subparagraph_
+    tail`` at ``tests/test_fi_apply.py:12562``) is the amend_sub-level
+    OMISSION sibling: present → sparse merge (preserve extras); absent →
+    wholesale replace (drop stale extras per the prior version's deprecation).
+    """
+    master = _para(
+        "1",
+        _num("1"),
+        _intro("master intro:"),
+        _sp("a", "master a"),
+        _sp("b", "master b"),
+        _sp("c", "master c"),
+    )
+    amend_anchor = _para(
+        "1",
+        _intro("amend intro:"),
+        _sp("a", "amend a"),
+        _sp("b", "amend b"),
+    )
+    amend = _sub("1", amend_anchor, _omission())
+    touched = ("a", "b")
+
+    result = _merge_sparse_alakohta_replace_ir(master, amend, "1")
+
+    assert result is not None, (
+        "the sparse merge MUST succeed when amend_sub carries an OMISSION "
+        "sibling after the anchor paragraph; the master's non-prefix "
+        "subparagraphs must be preserved (§0 over-retention-safe direction). "
+        "Returning None forces a wholesale-replace fallback that drops the "
+        "master's c subparagraph — over-repeal direction."
+    )
+    result_map = _subparagraph_by_label(result)
+    master_map = _subparagraph_by_label(master)
+    assert list(result_map) == list(master_map), (
+        "the merge MUST NOT drop the master's c subparagraph"
+    )
+    # The untouched c subparagraph is preserved bit-for-bit.
+    assert _node_signature(result_map["c"]) == _node_signature(master_map["c"])
+    # The touched a and b subparagraphs receive the amend's content.
+    assert _node_signature(result_map["a"]) != _node_signature(master_map["a"])
+    assert _node_signature(result_map["b"]) != _node_signature(master_map["b"])
+
+
 @given(omission_subsection_case())
 @settings(max_examples=100, deadline=None)
 def test_omission_markers_do_not_authorize_undeclared_deletion(

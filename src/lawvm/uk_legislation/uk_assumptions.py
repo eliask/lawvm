@@ -36,7 +36,7 @@ The root is not yet wired into the pack manifest / compile dossier, and the UK
 ``must`` only — per ``notes_internal/uk_totality_must_trace_verification.md`` —
 so adding them yields zero matches; deliberate deferral).
 
-The four entries below encode the four load-bearing UK non-guarantees:
+The six entries below encode the six load-bearing UK non-guarantees:
 
 1. **Effects-assisted + oracle-alignment lane is not source-first.** The
    ``--source-first-candidate`` preset marks the cleanest currently-expressible
@@ -67,6 +67,31 @@ The four entries below encode the four load-bearing UK non-guarantees:
    ``uk_replay_*_observed`` adjudications. A future strict-profile lane could
    flip them to blocking; v0 is discipline-disclosing-first-step posture, not
    enforcement.
+
+5. **No fixed-term-expiry temporal model.** A statute subject to a sunset /
+   fixed-term-expiry clause has a temporal validity bound that expires the
+   whole Act at a future date unless extended. Finland has
+   :mod:`lawvm.finland.fixed_term_expiry` (which emits the
+   ``TEMPORAL.EXPIRY_CANDIDATE_SUPPRESSED_NON_COMMENCEMENT_CONTEXT`` finding at
+   ``core/observation_registry.py:959``); UK has no analogue — a UK sunset-
+   clause instrument has no compile-time-recognised expiry bound, so replay
+   will materialise it as perpetually in force past its expiry date.
+
+6. **No lineage-migration emission for repeal/reinsert cycles.** AGENTS.md §2.8
+   requires frontends to emit ``MigrationEvent`` records for moves, renumbers,
+   same-label rebirths, native-vs-migrated collisions, and repeal/reinsert
+   cycles so core can carry provision identity through PIT windows. UK records
+   ``MutationEvent`` (a richer-but-different structural-mutation ledger at
+   ``lawvm.core.mutation_events``) populated per-apply from
+   ``replay_state.py:_record_*_mutation_event``, but emits ZERO
+   :class:`lawvm.core.provenance.MigrationEvent` objects. The
+   ``uk_effect_repeal_no_double_entry_duplicate_rejected`` witness guards a
+   second repeal of the same eid (the no-double-entry half), but the no-revive
+   half — the inference that a successor repeal of repealing-Act Y does not
+   revive repealed-Act X — is not modelled. ``core/timeline_lineage.py`` has
+   ``check_lineage_acyclic`` / ``assert_acyclic`` (LS-11) but it consumes
+   ``MigrationEvent`` tuples; UK has no producer, so the cycle check is dead
+   code against UK replay.
 """
 
 from __future__ import annotations
@@ -207,9 +232,21 @@ def build_uk_assumption_register() -> tuple[AssumptionRegister, ...]:
             kind="parser_incomplete",
             scope=(
                 "UK `strict_profile` absence: UK has no strict_profile lane "
-                "(unlike Finland's hardened strict profile). The dormant-checker "
-                "probes wired in this frontend (`mutation_boundary_per_op_probe.py`, "
-                "`materialization_totality_probe.py`) emit NON-BLOCKING "
+                "(unlike Finland's hardened strict profile — the FI StrictProfile "
+                "is a per-recovery-pattern typed carrier at "
+                "`core/compile_result.StrictProfile` with `allows_X` bool "
+                "fields consumed inside apply sites' recovery branches, NOT a "
+                "bool that promotes probe emissions from non-blocking to "
+                "blocking — verified against the codebase 2026-06-28). The 8 "
+                "dormant-checker probes wired at the UK `apply_ops` fold-exit "
+                "(`mutation_boundary_per_op_probe` at per-apply, "
+                "`materialization_totality_probe`, `identity_intrinsic_probe` "
+                "(LS-12/LS-13), `lineage_acyclic_probe` (LS-11), "
+                "`commencement_effect_totality_probe` (LS-23), "
+                "`overlay_authorization_probe` (D8), "
+                "`observation_promoted_to_authority_probe` (D11, "
+                "forward-compat no-op), `unknown_attestation_policy_probe` "
+                "(D12, forward-compat no-op)) emit NON-BLOCKING "
                 "`uk_replay_*_observed` adjudications — observation-only by "
                 "default, not strict failures. A violation that the probe "
                 "could block in FI stays as a recorded observation in UK: the "
@@ -218,29 +255,146 @@ def build_uk_assumption_register() -> tuple[AssumptionRegister, ...]:
             ),
             effect="qualifies",
             expires_when=(
-                "a UK strict-profile lane is added that flips "
-                "`uk_replay_mutation_boundary_per_op_violation_observed` and "
-                "`uk_replay_materialization_totality_silent_drop_observed` from "
-                "non-blocking adjudications to blocking findings, AND corpus "
-                "triage confirms the flipped gate does not regress the bench "
-                "beyond the §0 over-retention tolerance."
+                "a UK strict-profile lane is added that inventories UK's "
+                "apply-path recovery branches, builds an `UK_INGESTION_V1` "
+                "preset mirroring FI's `default_finland_strict_profile()` "
+                "shape with bespoke `allows_X` fields per UK recovery pattern, "
+                "and wires user-facing CLI to inject. (Per session-3 reality "
+                "check: this is multi-session design-heavy — NOT the single-"
+                "session probe-flip the prior framing expected. The 8 env-"
+                "gated probes are ready to be UPGRADED when a strict_profile "
+                "lands but the upgrade requires the per-recovery-pattern "
+                "carrier + the recovery-branch consume sites, not a bool flip.)"
             ),
             public_message=(
-                "LawVM does NOT guarantee that UK enforces the materialization-"
-                "totality or per-op mutation-boundary invariants to block. The "
-                "probes are wired observation-only (`uk_replay_*_observed`); v0 "
-                "is discipline-disclosing-first-step posture, not strict-mode "
-                "enforcement. A silent-drop or per-op boundary violation is "
-                "RECORDED as an audit event, not a hard compile failure — UK "
-                "would benefit from a strict-profile lane before this assumption "
-                "expires."
+                "LawVM does NOT guarantee that UK enforces the 9 D-item "
+                "invariants to block. The 8 env-gated probes are wired "
+                "observation-only (`uk_replay_*_observed`); v0 is discipline-"
+                "disclosing-first-step posture, not strict-mode enforcement. "
+                "A materialization-totality silent-drop, per-op mutation-"
+                "boundary escape, identity-intrinsic leak, lineage cycle, "
+                "commencement-effect totality shortfall, overlay-authorization "
+                "breach, observation-promoted-to-authority breach, or unknown-"
+                "attestation-policy cite is RECORDED as an audit event, not a "
+                "hard compile failure — UK would benefit from a strict-profile "
+                "lane before this assumption expires."
             ),
             witness_rule_id="uk_replay_materialization_totality_silent_drop_observed",
             finding_refs=(
                 "src/lawvm/uk_legislation/mutation_boundary_per_op_probe.py::module docstring",
                 "src/lawvm/uk_legislation/materialization_totality_probe.py::module docstring",
+                "src/lawvm/uk_legislation/identity_intrinsic_probe.py::module docstring",
+                "src/lawvm/uk_legislation/lineage_acyclic_probe.py::module docstring",
+                "src/lawvm/uk_legislation/commencement_effect_totality_probe.py::module docstring",
+                "src/lawvm/uk_legislation/overlay_authorization_probe.py::module docstring",
+                "src/lawvm/uk_legislation/observation_promoted_to_authority_probe.py::module docstring",
+                "src/lawvm/uk_legislation/unknown_attestation_policy_probe.py::module docstring",
                 "tests/test_uk_mutation_boundary_per_op_probe.py::test_probe_disabled_by_default",
                 "tests/test_uk_materialization_totality_probe.py::test_probe_disabled_by_default",
+                "tests/test_uk_identity_intrinsic_probe.py::test_probe_disabled_by_default",
+                "tests/test_uk_lineage_acyclic_probe.py::test_probe_disabled_by_default",
+                "tests/test_uk_commencement_effect_totality_probe.py::test_probe_disabled_by_default",
+                "tests/test_uk_overlay_authorization_probe.py::test_probe_disabled_by_default",
+                "tests/test_uk_observation_promoted_to_authority_probe.py::test_probe_disabled_by_default",
+                "tests/test_uk_unknown_attestation_policy_probe.py::test_probe_disabled_by_default",
+                "notes_internal/uk_dormant_probe_playbook_2026_06_28.md",
+            ),
+        ),
+        AssumptionRegister(
+            kind="parser_incomplete",
+            scope=(
+                "UK fixed-term-expiry (sunset-clause) temporal model is absent. "
+                "Finland has `lawvm.finland.fixed_term_expiry` which extracts "
+                "StatuteValidityBound from Finnish `voimaantulosäännös` clauses "
+                "and emits the registered "
+                "`TEMPORAL.EXPIRY_CANDIDATE_SUPPRESSED_NON_COMMENCEMENT_CONTEXT` "
+                "finding (core/observation_registry.py:959). UK has NO analogue: "
+                "no `fix_term_expiry`/`statute_validity_bound` builder, no "
+                "core/observation_registry row keyed on a UK sunset rule. A UK "
+                "instrument subject to a sunset clause expires silently past its "
+                "expiry date because the temporally-aware expiry filter has no "
+                "input row to act on — replay materialises it in force at "
+                "post-expiry PIT dates."
+            ),
+            effect="qualifies",
+            expires_when=(
+                "a UK analogue of fixed_term_expiry lands — extracting a "
+                "StatuteValidityBound from the UK instrument's sunset-clause "
+                "provisions (per the FI pattern at "
+                "fixed_term_expiry.py:65) and emitting the cross-jurisdiction "
+                "`TEMPORAL.EXPIRY_CANDIDATE_SUPPRESSED_NON_COMMENCEMENT_CONTEXT` "
+                "finding_kind from UK replay."
+            ),
+            public_message=(
+                "LawVM does NOT guarantee fixed-term-expiry-aware temporal "
+                "filtering for UK legislation. A UK statute subject to a sunset "
+                "clause has no compile-time-recognised expiry bound; replay will "
+                "materialise it as perpetually in force past its sunset date. "
+                "The fixed_term_expiry temporal machinery is FI-only today."
+            ),
+            witness_rule_id=(
+                "TEMPORAL.EXPIRY_CANDIDATE_SUPPRESSED_NON_COMMENCEMENT_CONTEXT"
+            ),
+            finding_refs=(
+                "src/lawvm/core/observation_registry.py:959",
+                "src/lawvm/finland/fixed_term_expiry.py:65",
+                "AGENTS.md::§2.7 Timeline, lineage, identity",
+            ),
+        ),
+        AssumptionRegister(
+            kind="doctrine_unresolved",
+            scope=(
+                "UK repeal/reinsert cycle lineage-migration emission is absent. "
+                "AGENTS.md §2.8 requires frontends to emit MigrationEvent records "
+                "for moves, renumbers, same-label rebirths, native-vs-migrated "
+                "collisions, and repeal/reinsert cycles. UK records ONLY "
+                "MutationEvent (a richer-but-different structural-mutation "
+                "ledger at lawvm.core.mutation_events) populated per-apply from "
+                "replay_state.py `_record_*_mutation_event` (replace_node / "
+                "remove_node / insert_node / renumber_node / children_splice / "
+                "descendant_renumber). It emits ZERO of "
+                "`lawvm.core.provenance.MigrationEvent` (the timeline_lineage "
+                "input type that carries `event_id` + `kind renumber|move|split|"
+                "merge` + `from_address`/`to_address` as LegalAddress). The "
+                "`uk_effect_repeal_no_double_entry_duplicate_rejected` guard at "
+                "repeal_no_double_entry.py:164 covers the no-double-entry half "
+                "(a second repeal of the same eid is blocked); the no-revive "
+                "half — that a successor repeal of repealing-Act Y does NOT "
+                "revive the prior-repealed Act X — is not modelled as a typed "
+                "migration event. `core/timeline_lineage.py:check_lineage_"
+                "acyclic` (LS-11) consumes MigrationEvent; UK has no producer, "
+                "so the cycle check is dead code against UK replay."
+            ),
+            effect="qualifies",
+            expires_when=(
+                "a UK frontend-level MigrationEvent emitter is built that maps "
+                "each per-op MutationEvent (with its renumbered_paths / removed_"
+                "paths / created_paths / replaced_paths / descendant_renumber "
+                "TreePath pairs) to a typed MigrationEvent (with kind and "
+                "from_address/to_address as LegalAddress), so core "
+                "timeline_lineage.consume / check_lineage_acyclic / "
+                "current_address_from_migration_events operate over UK replay."
+            ),
+            public_message=(
+                "LawVM does NOT guarantee identity preservation across UK "
+                "repeal/reinsert cycles. The UK replay fold records structural "
+                "MutationEvents but emits NO MigrationEvents (the AGENTS.md §2.8 "
+                "lineage carrier), so a repealed-then-reinserted provision is "
+                "tracked only at the structural-mutation accounting plane — not "
+                "at the migration/lineage plane. The no-double-entry guard at "
+                "repeal_no_double_entry.py:164 is structural; the no-revive "
+                "inference (repeal of repealing-Act does not revive prior-repealed "
+                "Act) is not modelled."
+            ),
+            witness_rule_id="uk_effect_repeal_no_double_entry_duplicate_rejected",
+            finding_refs=(
+                "AGENTS.md::§2.8 Timeline, lineage, identity",
+                "src/lawvm/uk_legislation/repeal_no_double_entry.py:164",
+                "src/lawvm/uk_legislation/replay_state.py::_record_"
+                "*_mutation_event",
+                "src/lawvm/core/mutation_events.py:32 MutationEvent",
+                "src/lawvm/core/timeline_lineage.py:228 check_lineage_acyclic",
+                "src/lawvm/core/provenance.py:166 MigrationEvent",
             ),
         ),
     )

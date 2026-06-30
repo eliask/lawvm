@@ -39837,6 +39837,93 @@ def test_compile_empty_effect_type_blocks_commencement_source() -> None:
     assert "shall come into force" in rejection["extracted_text_preview"]
 
 
+def test_compile_explicit_commencement_effect_type_emits_rejection() -> None:
+    """§2.9 production-lane liveness pin: an explicit commencement-feed effect
+    type (``appointed day(s)`` / ``coming into force`` / ``commencement
+    order``) MUST emit a
+    ``uk_effect_commencement_source_rejected`` lowering receipt with the
+    ``commencement_effect_type_out_of_scope`` reason code BEFORE the lowering's
+    ``return []``.
+
+    This closes the §1.8 silent-drop flagged by the audit
+    agent EV-1 (effect_compiler.py Path-1 early-return was previously
+    receipt-less). Without the receipt, the downstream
+    ``uk_manual_frontier_commencement_effect_out_of_scope`` classifier at
+    source_adjudication.py:2303 (keyed on
+    ``uk_effect_commencement_source_rejected`` in ``lowering_rules``) would
+    see an empty rule set for this lane and silently swallow the row instead
+    of routing it to the manual-frontier family. The paired Path-2 receipt
+    (``commencement_source_out_of_scope`` reason code; empty effect_type +
+    commencement-shaped text) at ``test_compile_empty_effect_type_blocks_
+    commencement_source`` above covers the empty-type-text branch.
+
+    Drives a known-commencement-effect input through the production lowering
+    lane at ``compile_effect_to_ir_ops`` and asserts the receipt fires with
+    the Path-1 discriminator ("commencement_effect_type_out_of_scope" reason
+    code) — not the Path-2 discriminator ("commencement_source_out_of_scope").
+    """
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="article-3">
+          <Pnumber>3</Pnumber>
+          <P1para>
+            <Text>Section 12 of the Act comes into force on 1st June 2026.</Text>
+          </P1para>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_commencement_type_rejection",
+        effect_type="appointed day(s)",
+        applied=True,
+        requires_applied=False,
+        modified="2026-06-01",
+        affected_uri="/id/ukpga/2018/40",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2018",
+        affected_number="40",
+        affected_provisions="section:12",
+        affecting_uri="/id/uksi/2026/123",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2026",
+        affecting_number="123",
+        affecting_provisions="art. 2",
+        affecting_title="Test Appointed Day Order",
+        in_force_dates=[],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    assert (
+        compile_effect_to_ir_ops(
+            effect,
+            extracted_el,
+            sequence=0,
+            lowering_rejections_out=lowering_rejections,
+        )
+        == []
+    )
+    assert len(lowering_rejections) == 1, (
+        "an explicit commencement-feed effect type MUST emit exactly one "
+        f"lowering receipt; got {len(lowering_rejections)} (§1.8 silent-drop "
+        "guard — no receipt means the manual-frontier classifier downstream "
+        "swallows the row)"
+    )
+    rejection = lowering_rejections[0]
+    assert rejection["rule_id"] == "uk_effect_commencement_source_rejected"
+    assert rejection["family"] == "applicability_scope"
+    # The Path-1 discriminator: explicit-type →
+    # ``commencement_effect_type_out_of_scope``, NOT the Path-2
+    # ``commencement_source_out_of_scope`` (empty-type-text path).
+    assert (
+        rejection["reason_code"] == "commencement_effect_type_out_of_scope"
+    )
+    assert rejection["blocking"] is True
+    assert rejection["strict_disposition"] == "block"
+    assert rejection["quirks_disposition"] == "skip"
+    assert rejection["effect_type_normalized"] == "appointed day(s)"
+    assert rejection["manual_frontier_axis"] == "commencement_effect_type"
+
+
 def test_compile_empty_effect_type_blocks_application_modification_payload() -> None:
     source_root = ET.fromstring(
         f"""

@@ -1607,6 +1607,59 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "source-monotonicity, never INVALID (absent bytes => cannot "
                 "check, not a violation)",
                 ("provenance", "negative"), role="observation"),
+    # D8 OVERLAY.DEFAULT_REPLAY_AUTHORIZED_FALSE (audit_impl_D8): AGENTS.md §2.10
+    # declares a surface/overlay node defaults to replay_authorized=False; a node
+    # tagged as originating from the overlay plane may mutate legal state ONLY
+    # through a typed ExecutionAuthorization promotion event. An overlay-tagged
+    # node carrying replay_authorized=True WITHOUT a matching promotion breaches
+    # the deterministic firewall; this audit surfaces it as a blocking
+    # obligation. The audit module is landed; wire into compile_timelines is
+    # staged as follow-up (parallel to D7's wire-then-promote discipline).
+    FindingSpec("OVERLAY.UNAUTHORIZED_PROMOTION", "compile-timelines",
+                "violation", "strict_fail", "overlay_default_replay_authorized_false_audit",
+                "an overlay-tagged IRNode carries replay_authorized=True but has no typed "
+                "ExecutionAuthorization promotion event with rule_id and witness (AGENTS.md §2.10)",
+                ("safety_invariant", "provenance"), role="obligation"),
+    # D11 EVID.AUTHORITY_SOURCE_EXCLUDES_OBSERVATION_KINDS (audit_impl_D11): the
+    # evidence plane may explain authority but never become it (AGENTS.md §2.10).
+    # An observation-role finding kind appearing in the apply-path authority
+    # source set voids the ExecutionAuthorization — a breach of the evidence->
+    # authority firewall, not a soft mismatch. hard_fail: strict mode aborts the
+    # apply pass; quirks emits the finding non-blocking and proceeds (over-
+    # retention-safe direction per §0).
+    FindingSpec("EVID.OBSERVATION_PROMOTED_TO_AUTHORITY", "apply_authority_audit",
+                "violation", "hard_fail", "execution_authorization",
+                "apply-path authority source set contained a finding whose registry role is "
+                "'observation', breaching the §2.10 evidence->authority firewall",
+                ("safety_invariant", "strictness"), role="violation"),
+    # D12 NOTE: ``EVID.UNKNOWN_ATTESTATION_POLICY`` is ALREADY registered above
+    # by the EV-06 apply-authority closure wave (phase=apply, owner=
+    # apply_op_closure_sweeps, family=violation, hard_fail, role=violation) at
+    # line 1128. The D12 spec wanted a sibling bundle-emission audit in
+    # ``evidence_policy.audit_attestation_policy_gap`` that EMITS THE SAME
+    # code from a different evidence-plane surface (certificate-bundle
+    # emission at tools/certificate_bundle.py:~2404). To avoid silently
+    # overriding the existing emitter's FindingSpec metadata (which would
+    # invalidate EV-06's existing fire-drill metadata: phase=apply,
+    # owner=apply_op_closure_sweeps), the new helper emits the SAME code and
+    # relies on the EXISTING registry row for FindingSpec metadata. There is
+    # no second FindingSpec row here for D12 — the single canonical registry
+    # row is the EV-06 apply-path emitter's, shared by the bundle-emission
+    # sweep.
+    # D10 COMPARE.DETERMINISTIC_GAP_VS_MANUAL_FRONTIER_PARITY (audit_impl_D10):
+    # one EID classified into >=2 of {deterministic_gap, manual_compilation_
+    # frontier, oracle_suspect} for the same statute is a §0 contract break
+    # — the three classes are exhaustive AND disjoint per-EID. The audit module
+    # emits Observation carriers (role=observation per validate_finding_projection's
+    # Observation carrier contract — mirrors D7's precedent); the wire consumer
+    # in scripts/uk_broad_baseline.py::summarize_results translates the count
+    # into a hard-gate exit-code flip via fail_on_compare_eid_double_classified
+    # when the strict block is enabled (audit_impl_D10 §5).
+    FindingSpec("COMPARE.EID_DOUBLE_CLASSIFIED", "compare_oracle_classification",
+                "violation", "strict_fail", "compare_oracle_classification",
+                "one EID classified into >=2 of {deterministic_gap, "
+                "manual_compilation_frontier, oracle_suspect} for the same statute",
+                ("comparative",), role="observation"),
     # D7 / LS-23 COMMENCEMENT.EFFECT_TOTALITY (audit_impl_D7): every LegalOperation
     # reaching compile-timelines is temporally authorized — a commence/revive
     # TemporalEvent matches via group_id + scope, OR the op carries an explicit

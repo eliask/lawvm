@@ -2262,6 +2262,177 @@ def drill_commencement_op_without_temporal_authorization_apply_lane() -> None:
     )
 
 
+def drill_overlay_unauthorized_promotion_apply_lane() -> None:
+    """OVERLAY.UNAUTHORIZED_PROMOTION fires from the production compile-timelines
+    lane (D8).
+
+    Production lane: ``compile_timelines_ex`` is the public compile-timelines
+    entrypoint that surfaces the D8 audit's TimelineIssues via
+    ``iter_overlay_default_replay_authorized_false_violations`` (vendored from
+    ``core.overlay_default_replay_authorized_false_audit``). The wire in
+    ``compile_timelines`` routes each Observation to a TimelineIssue on the
+    ``issue_sink`` with ``kind="overlay_unauthorized_promotion"``. The drill
+    drives a known-violating input (an overlay-tagged IRNode carrying
+    ``replay_authorized=True`` WITHOUT a matching ExecutionAuthorization
+    promotion) through the production lane; without the audit the overlay
+    plane would silently mutate legal state — the §2.10 deterministic-firewall
+    breach surface (a §0 silent-state mutation by an unowned overlay lane).
+    """
+    from lawvm.core.execution_authorization import ExecutionAuthorization
+    from lawvm.core.ir import IRNode, IRNodeKind, IRStatute
+    from lawvm.core.overlay_default_replay_authorized_false_audit import (
+        OVERLAY_UNAUTHORIZED_PROMOTION_FINDING_CODE,
+    )
+    from lawvm.core.timeline import compile_timelines_ex
+
+    overlay_node = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="d8-drill-target",
+        attrs={
+            "overlay_kind": "test_overlay",
+            "replay_authorized": True,
+            "source_unit": "d8-drill-overlay",
+        },
+    )
+    base = IRStatute(
+        statute_id="ukpga/2020/1-d8-drill",
+        title="d8 overlay-default fire-drill",
+        body=overlay_node,
+    )
+    # An overlay-tagged node claiming replay authority, with an empty
+    # authorizations tuple — the known-violating input that must surface as a
+    # TimelineIssue (the §2.10 deterministic firewall breach).
+    result = compile_timelines_ex(base, [], authorizations=())
+    d8_issues = [
+        issue
+        for issue in result.issues
+        if issue.kind == "overlay_unauthorized_promotion"
+    ]
+    assert len(d8_issues) == 1, (
+        "D8 audit must fire through the production compile_timelines lane for "
+        "an overlay-tagged node carrying replay_authorized=True without a "
+        f"matching ExecutionAuthorization promotion; got {len(d8_issues)} "
+        f"matching issues out of {len(result.issues)}"
+    )
+    issue = d8_issues[0]
+    assert "d8-drill-target" in issue.message
+    assert "replay_authorized=True" in issue.message
+    assert issue.source_statute == "ukpga/2020/1-d8-drill"
+    # The overlay-suppressed branch: attaching a matching ExecutionAuthorization
+    # promotion suppresses the issue so legitimate promotion traffic stays quiet
+    # (the §2.10 promotion ladder pays for replay authority). Subject-id mirrors
+    # `_overlay_subject_id`: statute_id|source_unit|overlay_kind|node_kind|node_label.
+    promoted_subject = (
+        "ukpga/2020/1-d8-drill|d8-drill-overlay|test_overlay|section|d8-drill-target"
+    )
+    promotion = ExecutionAuthorization(
+        executable=True,
+        replay_authorized=True,
+        authorization_status="promoted",
+        authorization_rule_id=promoted_subject,
+        owner_phase="d8_fire_drill",
+        strict_disposition="block",
+        safe_default="skip_replay_until_promotion_explicit",
+        detail={"subject_id": promoted_subject},
+    )
+    quiet_result = compile_timelines_ex(
+        base, [], authorizations=(promotion,)
+    )
+    quiet_d8 = [
+        issue
+        for issue in quiet_result.issues
+        if issue.kind == "overlay_unauthorized_promotion"
+    ]
+    assert not quiet_d8, (
+        "D8 audit MUST NOT fire when a matching ExecutionAuthorization "
+        f"promotion is attached; got: {quiet_d8}"
+    )
+    # Sanity: the registered FindingSpec code matches the audit module constant.
+    assert OVERLAY_UNAUTHORIZED_PROMOTION_FINDING_CODE == (
+        "OVERLAY.UNAUTHORIZED_PROMOTION"
+    )
+
+
+def drill_compare_eid_double_classified_apply_lane() -> None:
+    """COMPARE.EID_DOUBLE_CLASSIFIED fires from the production broad-baseline
+    summarize_results lane (D10).
+
+    Production lane: ``summarize_results`` aggregates per-statute
+    ``compare_adjudication_rows`` (surfaced on each scored result row at
+    ``score_one`` after the per-EID triple-classification sets
+    ``manual_frontier_records`` + ``oracle_only_eids`` + ``replay_only_eids``
+    are built). The audit ``assert_classification_exclusive`` runs over the
+    aggregated set; a known-violating input where one EID appears in >=2 of
+    {deterministic_gap, manual_compilation_frontier, oracle_suspect} for the
+    same statute MUST surface on the summary dict
+    (``compare_eid_double_classified_count`` +
+    ``compare_eid_double_classified_observations``). Without the wire a
+    double-classified EID would silently count twice in
+    ``agreement_residual_family_counts`` — the §0 disjoint-partition contract
+    break would be invisible.
+    """
+    import scripts.uk_broad_baseline as uk_broad_baseline
+
+    statute_id = "ukpga/2020/1-d10-drill"
+    # A known-violating cross-statute EID: ``section-5`` lands in BOTH
+    # ``deterministic_gap`` (replay_extra_eid) and
+    # ``manual_compilation_frontier`` (manual_frontier rule_id).
+    double_class_rows = (
+        uk_broad_baseline.AdjudicationRow(
+            statute_id=statute_id,
+            eid="section-5",
+            classification="deterministic_gap",
+            source_rule_id="uk_compare_deterministic_gap_replay_extra_eid",
+            witness="EID produced by replay but absent from oracle comparison set",
+        ),
+        uk_broad_baseline.AdjudicationRow(
+            statute_id=statute_id,
+            eid="section-5",
+            classification="manual_compilation_frontier",
+            source_rule_id="uk_manual_frontier_missing_payload_source_insufficient",
+            witness="manual-frontier rule id cited",
+        ),
+        # Plus a single-class EID that MUST NOT fire (the negative witness).
+        uk_broad_baseline.AdjudicationRow(
+            statute_id=statute_id,
+            eid="section-6",
+            classification="oracle_suspect",
+            source_rule_id="uk_compare_oracle_suspect_extra_eid",
+            witness="EID present in oracle alone",
+        ),
+    )
+    summary = uk_broad_baseline.summarize_results(
+        [
+            {
+                "statute_id": statute_id,
+                "score_status": "scored",
+                "compare_adjudication_rows": double_class_rows,
+                "effect_diagnostics": (),
+                "deterministic_frontend_candidates": (),
+            }
+        ]
+    )
+    assert summary["compare_eid_double_classified_count"] == 1, (
+        "the D10 audit MUST fire through summarize_results for an EID in >=2 "
+        "of the three disjoint-partition classes; got "
+        f"{summary['compare_eid_double_classified_count']} conflicts"
+    )
+    observations = summary["compare_eid_double_classified_observations"]
+    assert len(observations) == 1
+    obs = observations[0]
+    assert obs["statute_id"] == statute_id
+    assert obs["eid"] == "section-5"
+    assert set(obs["classes"]) == {
+        "deterministic_gap",
+        "manual_compilation_frontier",
+    }
+    assert set(obs["sources"]) == {
+        "uk_compare_deterministic_gap_replay_extra_eid",
+        "uk_manual_frontier_missing_payload_source_insufficient",
+    }
+    assert "§0 disjoint-partition contract break" in obs["reason"]
+
+
 def drill_definition_duplicate_definition_surface_totality() -> None:
     """Drive the production SURF-04 sweep into a DUPLICATE_DEFINITION firing.
 
@@ -3787,6 +3958,24 @@ FIRE_DRILLS: Dict[str, Callable[[], None]] = {
     "COMMENCEMENT.OP_WITHOUT_TEMPORAL_AUTHORIZATION": (
         drill_commencement_op_without_temporal_authorization_apply_lane
     ),
+    # D8 OVERLAY.DEFAULT_REPLAY_AUTHORIZED_FALSE — drives the production
+    # compile_timelines lane to surface OVERLAY.UNAUTHORIZED_PROMOTION for
+    # an overlay-tagged IRNode carrying replay_authorized=True without a
+    # matching ExecutionAuthorization promotion. Audit-vendored in
+    # core/overlay_default_replay_authorized_false_audit.py; wired in
+    # compile_timelines alongside the D7 commencement audit.
+    "OVERLAY.UNAUTHORIZED_PROMOTION": (
+        drill_overlay_unauthorized_promotion_apply_lane
+    ),
+    # D10 COMPARE.DETERMINISTIC_GAP_VS_MANUAL_FRONTIER_PARITY — drives the
+    # production broad-baseline summarize_results lane to surface
+    # COMPARE.EID_DOUBLE_CLASSIFIED for a statute whose EID appears in >=2 of
+    # {deterministic_gap, manual_compilation_frontier, oracle_suspect}. Audit
+    # vendored in scripts/uk_broad_baseline.py::assert_classification_exclusive;
+    # wired at summarize_results.
+    "COMPARE.EID_DOUBLE_CLASSIFIED": (
+        drill_compare_eid_double_classified_apply_lane
+    ),
 }
 
 # A second, distinct surface for an already-covered code. Tracked separately so
@@ -3978,6 +4167,11 @@ NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
     "TIME.TRIGGER_COVERAGE_INCOMPLETE": ("timeline barrier; needs fixture", "2026-06-20"),
     "TIME.UNRESOLVED_COMMENCEMENT_TRIGGER": ("timeline barrier; needs fixture", "2026-06-20"),
     "uk_replay_text_patch_preimage_drift": ("UK replay text-patch drift; needs UK fixture", "2026-06-20"),
+    "EVID.OBSERVATION_PROMOTED_TO_AUTHORITY": (
+        "audit module landed; wire into aggregate_replay_authority/uk amendment "
+        "replay authority_mode staged as follow-up; drill through production once wired",
+        "2026-06-27",
+    ),
     # Theme C (§1.10 no-silent-default + §2.6 rule-of-three): the named_swallow
     # primitive's typed Finding kind. Drill when a fixture exercises an
     # actual swallow through the production lane (corpus / consolidated_artifacts
@@ -4224,6 +4418,13 @@ _PRODUCTION_BUILDER_CALLS = (
     # D7 audit's TimelineIssues; the wire lives in ``compile_timelines``
     # itself, which ``compile_timelines_ex`` invokes with an issue_sink.
     "compile_timelines_ex(",
+    # D10 COMPARE.DETERMINISTIC_GAP_VS_MANUAL_FRONTIER_PARITY:
+    # ``summarize_results`` is the broad-baseline summary lane that aggregates
+    # per-statute ``compare_adjudication_rows`` and invokes the D10 audit
+    # ``assert_classification_exclusive`` over them; the wire emits one
+    # ``COMPARE.EID_DOUBLE_CLASSIFIED`` Observation per statute whose EID
+    # lands in >=2 of the three disjoint-partition classes.
+    "summarize_results(",
     # Wave-2 apply-authority closure: the EV-06 gate is the production
     # attestation-policy validator called from _gate_execution_authorization_at_op.
     "gate_unknown_attestation_policy",
@@ -4342,6 +4543,27 @@ _KNOWN_NO_PRODUCTION_EMIT: Dict[str, str] = {
     ),
     "TIME.UNRESOLVED_COMMENCEMENT_TRIGGER": (
         "timeline barrier with no emit site; reconcile separately"
+    ),
+    # D10 COMPARE.DETERMINISTIC_GAP_VS_MANUAL_FRONTIER_PARITY (audit_impl_D10):
+    # the audit helper ``assert_classification_exclusive`` + the
+    # ``AdjudicationRow``/``EidClassificationConflict`` carriers + the per-
+    # statute ``compare_adjudication_rows`` projection (at score_one end) +
+    # the wire into ``summarize_results`` ARE LANDED at
+    # ``scripts/uk_broad_baseline.py`` (the production broad-baseline driver —
+    # per spec §1 the audit lives next to its emitter, not under src/lawvm/...).
+    # The fire-drill
+    # ``drill_compare_eid_double_classified_apply_lane`` is registered in
+    # ``FIRE_DRILLS`` and drives the wire via ``summarize_results(...)``.
+    # HOWEVER: the production-emit-site scan roots are limited to
+    # ``src/lawvm/{core, finland}`` (extended to ``src/lawvm`` for ``uk_``/
+    # ``TIME.`` prefixes via ``_NON_FI_CORE_EMIT_PREFIXES``). The audit
+    # emission surface IS live in ``scripts/uk_broad_baseline.py`` (verified
+    # via the production fire-drill + the wire's ``summarize_results`` smoke);
+    # the scan-root-contract limitation keeps this entry honest rather than
+    # artificially green. Move the audit (or extend the scan roots) if the
+    # src-vs-scripts split moves.
+    "COMPARE.EID_DOUBLE_CLASSIFIED": (
+        "wire live in scripts/uk_broad_baseline.py::summarize_results; emit site is in scripts/ outside src/lawvm/ scan roots"
     ),
 }
 

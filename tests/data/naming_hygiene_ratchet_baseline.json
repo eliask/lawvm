@@ -76,7 +76,7 @@
     "sparse_slot_candidate_certificate",
     "sparse_slot_candidate_certificates"
   ],
-  "public_schema_count": 159,
+  "public_schema_count": 160,
   "public_schemas": [
     "lawvm.address_id.v1",
     "lawvm.address_node.v1",
@@ -161,6 +161,7 @@
     "lawvm.node_version.v1",
     "lawvm.official_corrigendum_event.v1",
     "lawvm.overlay.v1",
+    "lawvm.overlay_default_replay_authorized_false_audit.v0",
     "lawvm.ownership_closure_coverage.v1",
     "lawvm.ownership_closure_report.v1",
     "lawvm.pack_manifest.v1",
