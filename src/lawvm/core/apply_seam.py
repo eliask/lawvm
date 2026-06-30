@@ -421,15 +421,21 @@ class AppliedOp(Generic[State]):
     coverage_delta: CoverageDelta
     applied: bool
     declared_recovery_prefixes: tuple[TreePath, ...] = ()
-    #: The SEPARATE observe lane (B-enforcement increment 1). Carries the
-    #: universal apply-seam OBSERVE-mode findings — currently the
+    #: The SEPARATE observe lane (B-enforcement increments 1+2). Carries the
+    #: universal apply-seam OBSERVE-mode findings: (1) the
     #: ``EVID.REPLAY_AUTHORIZATION_PROOF_OBSERVED`` firewall-hole witness emitted
-    #: per mutating op lacking an ExecutionAuthorization proof. These are
-    #: ADDITIVE evidence (role=observation, non-blocking) and are routed here,
-    #: NEVER into :attr:`findings`, so the production findings/adjudication
-    #: multiset the byte-identity gates assert on is UNCHANGED (EV-04: an
-    #: observation explains, it never becomes authority). Empty when the op
-    #: landed no write or carried a resolvable authorization.
+    #: per mutating op lacking an ExecutionAuthorization proof (inc 1); and (2)
+    #: the always-on ``APPLY.MUTATION_BOUNDARY_FINDING_AT_OP`` per-op
+    #: mutation-boundary witness (LS-01, inc 2) the seam now emits for EVERY
+    #: landed write under a ``boundary_mode="off"`` tree profile — the single
+    #: always-on boundary producer that replaces the per-frontend in-fold
+    #: env-probes. These are ADDITIVE evidence (role=observation, non-blocking)
+    #: and are routed here, NEVER into :attr:`findings`, so the production
+    #: findings/adjudication multiset the byte-identity gates assert on is
+    #: UNCHANGED (EV-04: an observation explains, it never becomes authority).
+    #: Empty when the op landed no write (or, for the authorization witness,
+    #: carried a resolvable authorization; for the boundary witness, stayed
+    #: within its declared mutation boundary).
     observations: tuple[Finding, ...] = ()
 
 
@@ -511,19 +517,20 @@ def apply_op(
 
         # ── Per-op mutation-boundary gate (design §3.1 step 4; §3.4). ────────
         # The block FI's ``_enforce_per_op_apply_authority`` runs at the apply
-        # site, hoisted to the kernel. ``off`` skips it (byte-identical to a
-        # frontend that never ran the env-gated probe); ``observe`` emits a
-        # non-blocking accounting finding; ``block`` emits a blocking violation.
-        # The ``isinstance`` guard narrows ``State`` to ``IRNode`` (the tree
-        # metric's state) so the core audit's ``IRNode`` contract is satisfied
-        # without an unchecked cast; under any other metric the gate is skipped
-        # (a char-span lane carries its own §3.4 boundary instantiation).
-        if (
-            profile.boundary_mode != "off"
-            and _is_tree_metric(profile.region_metric)
+        # site, hoisted to the kernel. ``observe`` emits a non-blocking
+        # accounting finding into the PRODUCTION ``findings`` lane; ``block``
+        # emits a blocking violation there. The ``isinstance`` guard narrows
+        # ``State`` to ``IRNode`` (the tree metric's state) so the core audit's
+        # ``IRNode`` contract is satisfied without an unchecked cast; under any
+        # other metric the gate is skipped (a char-span lane carries its own
+        # §3.4 boundary instantiation — US audits char-span in
+        # ``us_federal/apply_profile``).
+        on_tree_metric = (
+            _is_tree_metric(profile.region_metric)
             and isinstance(base_state, IRNode)
             and isinstance(new_state, IRNode)
-        ):
+        )
+        if profile.boundary_mode != "off" and on_tree_metric:
             audit = audit_op_mutation_boundary(
                 base_state,
                 new_state,
@@ -534,6 +541,34 @@ def apply_op(
                 declared_recovery_prefixes=result.declared_recovery_prefixes,
             )
             findings.extend(audit.findings)
+        elif profile.boundary_mode == "off" and on_tree_metric:
+            # ── B-enforcement increment 2 (LS-01): the UNIVERSAL always-on
+            # mutation-boundary observer. ``boundary_mode="off"`` means the
+            # profile does NOT want the boundary in its PRODUCTION ``findings``
+            # (byte-identity), but the seam still runs the SAME core audit
+            # (``is_strict=False``) on every landed write and routes the
+            # resulting ``APPLY.MUTATION_BOUNDARY_FINDING_AT_OP`` observation to
+            # the SEPARATE ``observations`` lane — NEVER to ``findings``. This
+            # makes the seam the single always-on LS-01 producer for all tree
+            # frontends — the universal observer the per-frontend in-fold
+            # env-probes (NO/SE/EE/UK) duplicate as an env-gated adjudication
+            # surface — while the production findings/adjudication multiset the
+            # byte-identity gates assert on stays UNCHANGED (EV-04: observation
+            # is not authority; design §5 observe-first). The probes and this
+            # observer call the IDENTICAL core producer, so there is no drift
+            # (proven in tests/test_apply_seam_boundary_unification.py).
+            # ``declared_recovery_prefixes`` are threaded so an authorized
+            # recovery retarget reads as within-boundary, exactly as the probes do.
+            boundary_audit = audit_op_mutation_boundary(
+                base_state,
+                new_state,
+                typed_op,
+                op_id=typed_op.op_id or "",
+                source_statute=source_statute,
+                is_strict=False,
+                declared_recovery_prefixes=result.declared_recovery_prefixes,
+            )
+            observations = (*observations, *boundary_audit.findings)
 
     return AppliedOp(
         new_state=new_state,
