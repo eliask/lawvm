@@ -206,6 +206,9 @@ from lawvm.uk_legislation.provision_extractor import (
     extract_provision_element_from_bytes as extract_provision_element_from_bytes,
     _parse_ref as _parse_ref,
 )
+from lawvm.uk_legislation.mutation_boundary_per_op_probe import (
+    drain_seam_boundary_observations as _uk_drain_seam_boundary_observations,
+)
 from lawvm.uk_legislation.replay_executor import replay_uk_ops as replay_uk_ops
 from lawvm.uk_legislation.source_context import (
     _build_affecting_source_context as _build_affecting_source_context,
@@ -1352,7 +1355,21 @@ class UKReplayPipeline:
             adjudications_out=adjudications_out,
         )
         for op in prepared_ops.accepted_ops:
-            executor.apply_op(op)
+            # Route through the unified seam (verbatim ``apply_op`` dispatch behind
+            # the core ``Materializer``) so the seam's always-on LS-01 observer
+            # runs; then drain its ``APPLY.MUTATION_BOUNDARY_FINDING_AT_OP`` witness
+            # into the env-gated ``uk_replay_mutation_boundary_per_op_violation_
+            # observed`` adjudication (the retired in-fold probe's surface). The
+            # mutation is byte-identical to the prior ``executor.apply_op(op)`` call
+            # (``_uk_materialize_one`` calls it verbatim); the drain is default-off
+            # / no-op when ``adjudications_out is None``, so production is unchanged.
+            applied = executor.seam_apply_op(op)
+            _uk_drain_seam_boundary_observations(
+                applied.observations,
+                adjudications_out=adjudications_out,
+                source_statute=base_ir.statute_id,
+                op_id=op.op_id,
+            )
         if allow_oracle_alignment and eid_map:
             executor.ground_ids()
         if oracle_alignment_events_out is not None:

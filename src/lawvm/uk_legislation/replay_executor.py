@@ -27,8 +27,7 @@ from lawvm.uk_legislation.uk_write_receipts import (
     emit_uk_op_receipt,
 )
 from lawvm.uk_legislation.mutation_boundary_per_op_probe import (
-    boundary_probe_enabled,
-    probe_op_mutation_boundary,
+    drain_seam_boundary_observations as _uk_drain_seam_boundary_observations,
 )
 from lawvm.uk_legislation.replay_grounding import UKReplayGroundingMixin
 from lawvm.uk_legislation.replay_heading_apply import UKReplayHeadingApplyMixin
@@ -165,46 +164,29 @@ class UKReplayExecutor(
         # (e.g. the missing-leaf REPLACE→INSERT lane) append the resolved write
         # parent path here during the dispatch below.
         self._uk_declared_recovery_paths = []
-        # §2.9 per-op mutation-boundary probe (LS-01 / §1.0): env-gated
-        # (LAWVM_UK_MUTATION_BOUNDARY_PER_OP=1), default-off. Capture an
-        # immutable IRNode snapshot of the live mutable body BEFORE the apply
-        # mutates it; the after-snapshot is captured below once the apply
-        # returns. The probe must run OUTSIDE the try/finally that resets
-        # ``self._current_mutation_op`` so the snapshot is consistent with the
-        # op that produced it. ``boundary_probe_enabled`` is a cached env
-        # read — checked once per apply (cheap) so the snapshot is only
-        # taken when opted in (default-off preserves byte-stable bench output;
-        # the fold is now frozen-``IRStatute`` so the ``before_snapshot``/``after_snapshot``
-        # pair is a direct reference with no deep-copy; AGENTS.md §2.7).
-        boundary_probe_on = boundary_probe_enabled()
-        # §2.3 receipt collection shares the boundary probe's before-snapshot:
-        # both want the immutable body reference captured BEFORE the apply
-        # mutates it. ``IRStatute`` is frozen so this is a cheap reference, not a
-        # deep copy (§2.7). The snapshot is only taken when at least one consumer
-        # opted in; with both off ``apply_op`` does no extra work (byte-stable).
+        # §2.9 per-op mutation-boundary observation: the in-fold env-probe is
+        # RETIRED. The seam's always-on observer (``core/apply_seam.apply_op``,
+        # reached via ``seam_apply_op``→``_uk_materialize_one``) runs the IDENTICAL
+        # core ``audit_op_mutation_boundary`` — reading the SAME
+        # ``_uk_declared_recovery_paths`` via the ``MaterializeResult`` — and routes
+        # the witness to ``AppliedOp.observations``; ``replay_uk_ops`` drains that
+        # observation into the env-gated adjudication. No per-op snapshot is taken
+        # here for the boundary; the §2.3 receipt sink keeps its own before-snapshot.
+        # §2.3 receipt collection captures the immutable body reference BEFORE the
+        # apply mutates it. ``IRStatute`` is frozen so this is a cheap reference,
+        # not a deep copy (§2.7). The snapshot is only taken when the receipt sink
+        # is opted in; with it off ``apply_op`` does no extra work (byte-stable).
         receipts_on = self.write_receipts_out is not None
-        capture_before = boundary_probe_on or receipts_on
-        before_snapshot = self.statute.body if capture_before else None
+        before_snapshot = self.statute.body if receipts_on else None
         try:
             self._apply_op_with_context(op)
         finally:
             self._current_mutation_op = previous_mutation_op
-        if capture_before:
+        if self.write_receipts_out is not None and before_snapshot is not None:
             after_snapshot = self.statute.body
-            if boundary_probe_on:
-                probe_op_mutation_boundary(
-                    before=before_snapshot,
-                    after=after_snapshot,
-                    op=op,
-                    op_id=op.op_id,
-                    adjudications_out=self.adjudications_out,
-                    source_statute=self.statute.statute_id,
-                    declared_recovery_prefixes=tuple(self._uk_declared_recovery_paths),
-                )
-            if self.write_receipts_out is not None and before_snapshot is not None:
-                receipt = emit_uk_op_receipt(before_snapshot, after_snapshot, op)
-                if receipt is not None:
-                    self.write_receipts_out.append(receipt)
+            receipt = emit_uk_op_receipt(before_snapshot, after_snapshot, op)
+            if receipt is not None:
+                self.write_receipts_out.append(receipt)
 
     # ── UK materializer (Wave 5, design §3.1/§3.5). ──────────────────────────
     # The per-op tree dispatch — UK's executor ``apply_op`` (the whole
@@ -252,11 +234,12 @@ class UKReplayExecutor(
         )
 
     def _uk_seam_apply_profile(self) -> ApplyProfile[IRNode]:
-        # ``boundary_mode="off"``: UK retains its own per-op probe (inside
-        # ``apply_op``, gated on ``LAWVM_UK_MUTATION_BOUNDARY_PER_OP``) as the
-        # single producer of the projected mutation-boundary observation, so the
-        # env-flag-ON output is byte-identical to the pre-cutover fold (mirrors
-        # NO/SE/EE). ``emit_receipts``/``emit_coverage`` are False on the bare
+        # ``boundary_mode="off"``: the seam's always-on observer is the SINGLE
+        # LS-01 producer; the in-fold probe is retired and ``replay_uk_ops`` drains
+        # the seam observation into the env-gated
+        # ``uk_replay_mutation_boundary_per_op_violation_observed`` adjudication, so
+        # the env-flag-ON output is byte-identical to the pre-cutover fold (mirrors
+        # NO/SE). ``emit_receipts``/``emit_coverage`` are False on the bare
         # lane: UK's bare ``replay_uk_ops`` result (the materialized
         # ``IRStatute`` + the ``write_receipts_out`` / ``lo_ops_out`` /
         # ``mutation_events_out`` side channels produced INSIDE ``apply_op``)
@@ -549,10 +532,11 @@ def replay_uk_ops(
     # executor dispatch behind the core seam's :class:`Materializer`; the seam
     # owns the ``applied`` derivation and (here-disabled) receipt/coverage
     # outputs, while UK's warm-EID CoW, MutationEvent stream, ``lo_ops_out``
-    # snapshots, per-op boundary probe, and ``write_receipts_out`` sink stay the
-    # single producers inside ``apply_op`` (byte-identical to the pre-cutover
-    # loop). Op input order is preserved exactly (UK ordering is settled upstream
-    # in ``prepared_ops.accepted_ops``; the seam loop does not re-order). ─────
+    # snapshots, and ``write_receipts_out`` sink stay the single producers inside
+    # ``apply_op`` (byte-identical to the pre-cutover loop). The per-op boundary
+    # adjudication is now the seam-observation DRAIN below (the in-fold probe is
+    # retired). Op input order is preserved exactly (UK ordering is settled
+    # upstream in ``prepared_ops.accepted_ops``; the seam loop does not re-order).
     if replay_phase_timings_out is None:
         for op in prepared_ops.accepted_ops:
             applied = executor.seam_apply_op(op)
@@ -568,6 +552,17 @@ def replay_uk_ops(
             # Default ``None`` is a pure no-op (byte-identical).
             if seam_observations_out is not None and applied.observations:
                 seam_observations_out.extend(applied.observations)
+            # ── LS-01 cleanup: drain the boundary observation into the env-gated
+            # UK adjudication (the retired in-fold probe's surface). The seam ran
+            # the IDENTICAL core audit with the SAME ``declared_recovery_prefixes``
+            # the probe used; default (env-off or ``adjudications_out is None``) is
+            # a pure no-op → byte-identical production.
+            _uk_drain_seam_boundary_observations(
+                applied.observations,
+                adjudications_out=adjudications_out,
+                source_statute=base.statute_id,
+                op_id=op.op_id,
+            )
     else:
         for op in prepared_ops.accepted_ops:
             op_t0 = time.perf_counter()
@@ -576,6 +571,12 @@ def replay_uk_ops(
                 applied_op_ids_out.add(op.op_id)
             if seam_observations_out is not None and applied.observations:
                 seam_observations_out.extend(applied.observations)
+            _uk_drain_seam_boundary_observations(
+                applied.observations,
+                adjudications_out=adjudications_out,
+                source_statute=base.statute_id,
+                op_id=op.op_id,
+            )
             action_name = _action_name(op.action)
             key = f"replay_apply_{action_name}"
             replay_phase_timings_out[key] = replay_phase_timings_out.get(key, 0.0) + (
