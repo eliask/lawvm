@@ -448,9 +448,135 @@ def reserved_usc_release_point_locator(
 ) -> str:
     """Reserved logical locator for an OLRC USC release-point title XML.
 
-    NOT YET ACQUIRABLE. ``uscode.house.gov`` (OLRC) is geo-blocked from here.
+    NOT YET ACQUIRABLE via the per-PL Wayback lane for an arbitrary PL; the
+    *full* release-point set (every title at one PL pin) is acquirable from a
+    locally-staged OLRC ``xml_uscAll@{congress}-{num}.zip`` and lands at the
+    :func:`usc_uslm_release_locator` namespace below (the appendix-aware sibling
+    of this per-PL-integer-title locator).
     """
     return (
         f"us://usc/release/pl{int(congress)}-{int(public_law_number)}/"
         f"title{int(title)}.xml"
     )
+
+
+# ---------------------------------------------------------------------------
+# OLRC full-release-point USLM-USC namespace (IMPLEMENTED, locally-staged)
+# ---------------------------------------------------------------------------
+#
+# The OLRC ``xml_uscAll@{congress}-{num}.zip`` release point bundles ONE USLM
+# 1.0 XML per USC title (member name ``usc{NN}[suffix].xml`` — e.g. ``usc01.xml``,
+# ``usc05A.xml`` for an appendix title). This is the authoritative consolidated
+# USC as it stood at one Public Law pin (release point ``{congress}-{num}``),
+# parsed by :func:`lawvm.us_federal.source_tree.parse_uslm_title_document`.
+#
+# Locator: ``us://usc-uslm/{congress}-{num}/title{titlecode}.xml`` where
+# ``titlecode`` is the title number with any appendix suffix preserved verbatim
+# in lowercase (``1``, ``5a``, ``11a``, ``18a``, ``28a``, ``50a``).
+
+# Zip member: usc01.xml, usc05A.xml, usc11a.xml, usc50A.xml (appendix titles
+# carry a trailing letter, upper- or lower-case in OLRC bundles).
+_USC_USLM_MEMBER_RE = re.compile(
+    r"^(?:.*/)?usc(?P<title>\d{1,2})(?P<suffix>[A-Za-z]?)\.xml$"
+)
+# Canonical full-release-point locator: us://usc-uslm/119-99/title5a.xml
+_USC_USLM_LOCATOR_RE = re.compile(
+    r"^us://usc-uslm/(?P<congress>\d+)-(?P<num>\d+)/"
+    r"title(?P<title>\d+)(?P<suffix>[a-z]?)\.xml$"
+)
+
+
+@dataclass(frozen=True, slots=True)
+class UscUslmReleaseIdentity:
+    """Identity of one OLRC full-release-point USLM-USC title document.
+
+    ``release_point`` is the ``{congress}-{num}`` pin (e.g. ``"119-99"``).
+    ``title`` is the integer USC title; ``suffix`` is the appendix letter
+    (``""`` for a base title, ``"a"`` / ``"A"`` for an appendix like Title 5A),
+    preserved lower-cased in the canonical locator and verbatim from the member.
+    """
+
+    release_point: str
+    title: int
+    suffix: str = ""
+
+    @property
+    def title_code(self) -> str:
+        return f"{self.title}{self.suffix.lower()}"
+
+    @property
+    def locator(self) -> str:
+        return f"us://usc-uslm/{self.release_point}/title{self.title_code}.xml"
+
+    @property
+    def member_name(self) -> str:
+        return f"usc{self.title:02d}{self.suffix}.xml"
+
+
+def usc_uslm_release_locator(release_point: str, title: int, suffix: str = "") -> str:
+    """Canonical locator for one full-release-point USLM-USC title document."""
+    return UscUslmReleaseIdentity(
+        release_point=release_point, title=int(title), suffix=suffix
+    ).locator
+
+
+def parse_usc_uslm_member_name(name: str) -> tuple[int, str] | None:
+    """Parse a release-point zip member ``usc{NN}[suffix].xml`` into (title, suffix)."""
+    match = _USC_USLM_MEMBER_RE.match(name.strip())
+    if match is None:
+        return None
+    return int(match.group("title")), match.group("suffix")
+
+
+def parse_usc_uslm_release_locator(locator: str) -> UscUslmReleaseIdentity | None:
+    """Parse a canonical ``us://usc-uslm/{c}-{n}/title{code}.xml`` locator."""
+    match = _USC_USLM_LOCATOR_RE.match(locator.strip())
+    if match is None:
+        return None
+    return UscUslmReleaseIdentity(
+        release_point=f"{match.group('congress')}-{match.group('num')}",
+        title=int(match.group("title")),
+        suffix=match.group("suffix"),
+    )
+
+
+def usc_uslm_release_locator_glob(release_point: str | None = None) -> str:
+    """SQL-LIKE pattern over full-release-point USLM-USC locators."""
+    rp = "%" if release_point is None else release_point
+    return f"us://usc-uslm/{rp}/title%.xml"
+
+
+# ---------------------------------------------------------------------------
+# OLRC classification / cross-reference table namespace (IMPLEMENTED, staged)
+# ---------------------------------------------------------------------------
+#
+# Table III (Statutes-at-Large -> USC classification) ships as one bulk XML
+# (``table3_xml_bulk.xml``); Tables I/II/IV/V/VI ship as OLRC ``.htm`` cross-
+# reference tables (``usctableN.htm``). Both are pinned to a release point.
+#
+# Locator: ``us://classification/{table}/{release_point}.{ext}`` where ``table``
+# is ``table1``..``table6`` and ``ext`` is ``xml`` (Table III bulk) or ``htm``.
+
+
+def usc_classification_table_locator(
+    table: str, release_point: str, *, ext: str
+) -> str:
+    """Canonical locator for one OLRC classification/cross-reference table.
+
+    ``table`` is ``table1``..``table6``; ``release_point`` is the ``{c}-{n}``
+    pin the table was acquired at; ``ext`` is ``xml`` (Table III bulk) or ``htm``
+    (the cross-reference tables). One immutable document per (table, pin).
+    """
+    table_key = table.strip().lower()
+    if not re.fullmatch(r"table[1-6]", table_key):
+        raise ValueError(f"unknown classification table key: {table!r}")
+    ext_key = ext.strip().lower().lstrip(".")
+    if ext_key not in ("xml", "htm"):
+        raise ValueError(f"unsupported classification table ext: {ext!r}")
+    return f"us://classification/{table_key}/{release_point}.{ext_key}"
+
+
+def usc_classification_table_locator_glob(table: str | None = None) -> str:
+    """SQL-LIKE pattern over classification-table locators."""
+    table_part = "%" if table is None else table.strip().lower()
+    return f"us://classification/{table_part}/%"
