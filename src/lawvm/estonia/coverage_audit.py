@@ -52,6 +52,8 @@ import xml.etree.ElementTree as ET
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from lawvm.core.coverage import CoverageClaim, CoverageUnit
+from lawvm.core.ir import LegalAddress
 from lawvm.core.regex_safety import compile_classifier_regex
 from lawvm.estonia.peg import (
     _EE_SUPERSCRIPT_DIGIT_CLASS,
@@ -366,3 +368,91 @@ def audit_amendment_xml(xml_bytes: bytes, *, sid: str = "") -> EeAmendmentCovera
     ops = parse_ee_amendment_ops(xml_bytes, source_id=f"ee/{sid}" if sid else "")
     items = extract_op_item_texts(xml_bytes)
     return audit_amendment_labels(items, list(ops), sid=sid)
+
+
+# ---------------------------------------------------------------------------
+# Core coverage-totality bridge (Wave 3 — first real frontend ingestion of
+# ``core/coverage_totality.assert_coverage_totality``).
+#
+# EE has a genuine op-level coverage surface (the label-drop audit above). This
+# bridge converts an amendment's MENTIONED amendment-target labels into core
+# :class:`~lawvm.core.coverage.CoverageUnit` source units and its PRODUCED op
+# labels into core :class:`~lawvm.core.coverage.CoverageClaim`s, so the EE
+# extractor feeds the jurisdiction-neutral
+# ``core/coverage_totality.assert_coverage_totality`` directly — proving the
+# coverage half of the unified seam ingests a REAL frontend extractor (not just
+# FI). This is ADDITIVE / observe-only: it reads the already-computed EE
+# extractor output and produces core carriers; it does not touch ``apply_ee_ops``
+# or any apply output. The unit id ``<level>_<label>`` matches the chapter-free
+# ``<kind>_<label>`` key ``coverage_totality._unit_is_covered`` uses, so a
+# mentioned label with a matching produced op reads as covered and an EE
+# label-drop (mentioned but not produced) reads as uncovered — exactly the
+# drop the EE audit already names, now surfaced through the core totality
+# partition.
+# ---------------------------------------------------------------------------
+
+
+def coverage_units_from_mentioned(
+    op_item_texts: Sequence[str],
+) -> tuple[CoverageUnit, ...]:
+    """Build core ``CoverageUnit`` source units from EE's mentioned labels.
+
+    One unit per ``(level, label)`` an amendment instruction NAMES as a target
+    (deduplicated, order-preserving across items). The unit id is the chapter-free
+    ``<level>_<label>`` so it keys against the produced-claim covered set the same
+    way ``coverage_totality._unit_is_covered`` does. Verb-bearing items are scanned
+    via :func:`mentioned_labels` (the same preamble-only slice the drop audit uses),
+    so the source-unit set is exactly the labels the EE audit considers
+    amendment targets.
+    """
+    units: list[CoverageUnit] = []
+    seen: set[str] = set()
+    for text in op_item_texts:
+        if _classify_verb(text) == "unknown":
+            continue
+        mentioned = mentioned_labels(text)
+        for level in (_SECTION, _SUBSECTION, _ITEM):
+            for label in mentioned.get(level, ()):
+                unit_id = f"{level}_{label}"
+                if unit_id in seen:
+                    continue
+                seen.add(unit_id)
+                units.append(
+                    CoverageUnit(
+                        unit_id=unit_id,
+                        kind=level,
+                        observed_label=label,
+                        parent_label=None,
+                        payload_ref=None,
+                        tags=frozenset({"ee_mentioned"}),
+                    )
+                )
+    return tuple(units)
+
+
+def coverage_claims_from_produced(
+    ops: Sequence[object],
+) -> tuple[CoverageClaim, ...]:
+    """Build core ``CoverageClaim``s from the labels EE's produced ops target.
+
+    One ``explicit`` claim per ``(level, label)`` any produced op targets (via
+    :func:`produced_labels`, covering both ``target`` and ``destination`` paths).
+    The claim's ``covered_unit_ids`` is the chapter-free ``<level>_<label>`` so it
+    covers the matching mentioned source unit. This is the accumulated-ledger
+    surface ``assert_coverage_totality`` reads — the EE analog of the seam's
+    per-op ``coverage_delta`` accumulation.
+    """
+    produced = produced_labels(ops)
+    claims: list[CoverageClaim] = []
+    for level in (_SECTION, _SUBSECTION, _ITEM):
+        for label in sorted(produced.get(level, set())):
+            unit_id = f"{level}_{label}"
+            claims.append(
+                CoverageClaim(
+                    claim_kind="explicit",
+                    target=LegalAddress(path=((level, label),)),
+                    covered_unit_ids=frozenset({unit_id}),
+                    evidence=(f"ee_produced_label={unit_id}",),
+                )
+            )
+    return tuple(claims)

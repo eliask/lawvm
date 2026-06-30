@@ -343,6 +343,15 @@ class AppliedOp(Generic[State]):
     * ``coverage_delta`` — the units this op claimed (additive; empty for a
       skip).
     * ``applied`` — whether the op landed a write.
+    * ``declared_recovery_prefixes`` — the concrete parent paths the
+      materializer's recovery lane INTENTIONALLY retargeted the write to (passed
+      through verbatim from :attr:`MaterializeResult.declared_recovery_prefixes`).
+      A frontend that runs its OWN per-op mutation-boundary probe in the fold
+      (``boundary_mode="off"``, the single-producer pattern NO/SE/EE use) reads
+      this to declare the authorized recovery retarget to that probe, so the
+      seam does not have to be the boundary-audit producer for the prefixes to
+      survive the materialize→audit handoff. ``()`` when the materializer
+      declared none (the common case).
     """
 
     new_state: State
@@ -350,6 +359,7 @@ class AppliedOp(Generic[State]):
     findings: tuple[object, ...]
     coverage_delta: CoverageDelta
     applied: bool
+    declared_recovery_prefixes: tuple[TreePath, ...] = ()
 
 
 def apply_op(
@@ -446,6 +456,11 @@ def apply_op(
         findings=tuple(findings),
         coverage_delta=coverage_delta,
         applied=landed,
+        # Pass the materializer's recovery-retarget prefixes through verbatim so
+        # a frontend running its own fold-side boundary probe (``boundary_mode=
+        # "off"``) can declare the authorized retarget without the seam being the
+        # audit producer. Empty when the materializer declared none.
+        declared_recovery_prefixes=result.declared_recovery_prefixes,
     )
 
 

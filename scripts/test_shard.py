@@ -76,6 +76,10 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_ee_same_moment_ambiguity.py",
         # Wave 0 ordering-kernel cutover parallel-run equality gate (EE).
         "test_ee_order_ops_parallel_run.py",
+        # Wave 3 apply-seam cutover parallel-run equality gate (EE) + the first
+        # real frontend ingestion of core ``assert_coverage_totality``.
+        "test_ee_apply_seam_parallel_run.py",
+        "test_ee_coverage_totality_ingestion.py",
     ),
     "estonia_replay_logic": (
         "test_ee_replay_logic.py",

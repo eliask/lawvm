@@ -63,6 +63,12 @@ from lawvm.core.semantic_types import IRNodeKind, structural_action_from_str
 from lawvm.core.statute_facets import is_statute_title_address, replace_statute_title
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.core import tree_ops
+from lawvm.core.apply_seam import (
+    AppliedOp,
+    ApplyProfile,
+    MaterializeResult,
+    apply_op,
+)
 from lawvm.estonia.act_identity_registry import lookup_ee_act_identity
 from lawvm.core.op_ordering import order_ops
 from lawvm.estonia.ordering import ee_ordering_profile
@@ -10707,6 +10713,72 @@ def apply_ee_ops(
     ]
     if persistent_postpass_ops:
         reordered_ops.extend(persistent_postpass_ops)
+
+    # ── EE materializer (Wave 3, design §3.1/§3.5). ──────────────────────────
+    # The per-op tree dispatch — EE's ``_ee_apply_op`` CoW (section / subsection
+    # / item REPLACE / REPEAL / INSERT / RENUMBER / TEXT_REPLACE plus the
+    # recovery transforms) IS the EE :class:`Materializer`. It is a thin closure
+    # over the verbatim ``_ee_apply_op`` call: no semantic rewrite, the body
+    # mutation is the same CoW the prior inline fold ran. The per-op
+    # ``declared_recovery_paths`` carrier (populated by ``_ee_apply_op`` when a
+    # recovery lane intentionally retargets the write) is surfaced on the
+    # :class:`MaterializeResult` so the EE-owned per-op boundary probe (kept in
+    # the fold, see below) can declare it as an authorized boundary extension.
+    #
+    # EE-SPECIFIC vs SEAM-OWNED. The post-dispatch per-op accounting
+    # (``target_resolved`` → ``ee_replay_target_not_found``; the ``ee_replay_noop``
+    # finding; ``blame_map``; the ``lo_ops_out`` section-version snapshot channel)
+    # reads ``pre_op_body`` / ``changed`` / ``op`` and stays in the fold (it is the
+    # EE side-channel logic, not the universal apply step) — keeping its output,
+    # and ``lo_ops_out`` in particular, byte-identical. The seam owns the
+    # ``applied`` derivation (``new_body is not body`` — EE's body-identity signal,
+    # like NO), the (here-disabled) receipt/coverage outputs, and the boundary
+    # gate (``off``; EE keeps its own probe so it stays the single producer of
+    # ``ee_replay_mutation_boundary_per_op_violation_observed``).
+    def _ee_materialize_one(
+        before_body: IRNode, op: LegalOperation
+    ) -> MaterializeResult[IRNode]:
+        # When the per-op mutation-boundary probe is ON, collect the concrete
+        # full paths of any recovery lane that INTENTIONALLY retargets the write
+        # to a deeper/different node than the op's nominal target. These are
+        # declared to the probe (read in the fold below) as authorized
+        # ``declared_recovery`` boundary extensions. The carrier stays ``None``
+        # (no allocation, no behaviour change) when the probe is off, preserving
+        # byte-identical production replay.
+        probe_on = _ee_mutation_boundary_probe_enabled()
+        declared_recovery_paths: Optional[list[tree_ops.Path]] = (
+            [] if probe_on else None
+        )
+        new_body = _ee_apply_op(
+            before_body,
+            op,
+            adjudications_out=adjudications_out,
+            declared_recovery_paths_out=declared_recovery_paths,
+        )
+        return MaterializeResult(
+            new_state=new_body,
+            declared_recovery_prefixes=tuple(declared_recovery_paths or ()),
+        )
+
+    # ── EE apply profile (Wave 3, design §3.1). ──────────────────────────────
+    # ``boundary_mode="off"``: EE retains its own per-op probe (in the fold,
+    # gated on ``LAWVM_EE_MUTATION_BOUNDARY_PER_OP``) as the single producer of
+    # the projected ``ee_replay_mutation_boundary_per_op_violation_observed``
+    # adjudication, so the env-flag-ON output is byte-identical to the
+    # pre-cutover fold. ``emit_receipts``/``emit_coverage`` are False: EE's bare
+    # ``apply_ee_ops`` result (the materialized ``IRStatute`` + the
+    # ``lo_ops_out`` snapshot channel) stays byte-identical (no new artifacts);
+    # the additive receipt lane is proven via the seam in
+    # ``tests/test_ee_apply_seam_parallel_run.py``.
+    ee_apply_profile: ApplyProfile[IRNode] = ApplyProfile(
+        jurisdiction="ee",
+        materializer=_ee_materialize_one,
+        boundary_mode="off",
+        emit_receipts=False,
+        emit_coverage=False,
+        receipt_helper_prefix="apply_ee_ops",
+    )
+
     for op in reordered_ops:
         action = op.action.value if hasattr(op.action, "value") else op.action
         if action == "meta":
@@ -10770,24 +10842,23 @@ def apply_ee_ops(
             continue
 
         pre_op_body = body
-        # When the per-op mutation-boundary probe is ON, collect the concrete
-        # full paths of any recovery lane that INTENTIONALLY retargets the write
-        # to a deeper/different node than the op's nominal target (e.g. a
-        # section-level ``item`` text_replace resolved to the unique descendant
-        # ``subsection/item``). These are declared to the probe as authorized
-        # ``declared_recovery`` boundary extensions so the audit reads the landed
-        # write as within-boundary rather than an unexplained escape. The carrier
-        # stays ``None`` (no allocation, no behaviour change) when the probe is
-        # off, preserving byte-identical production replay.
-        probe_on = _ee_mutation_boundary_probe_enabled()
-        declared_recovery_paths: Optional[list[tree_ops.Path]] = [] if probe_on else None
-        new_body = _ee_apply_op(
+        # ── Seam call (design §3.1): apply this body op through the unified
+        # per-op kernel. The EE materializer carries the ``_ee_apply_op`` CoW
+        # dispatch (and surfaces the recovery-retarget prefixes); the seam owns
+        # the ``applied`` derivation (``new_state is not base_state`` — EE's
+        # body-identity ``changed`` signal) and the (here-disabled)
+        # receipt/coverage outputs. The boundary gate is ``off`` here: EE keeps
+        # its own per-op probe below so it stays the single producer of the
+        # projected mutation-boundary observation (byte-identical env-ON output).
+        applied_result: AppliedOp[IRNode] = apply_op(
             body,
             op,
-            adjudications_out=adjudications_out,
-            declared_recovery_paths_out=declared_recovery_paths,
+            provenance=op.source,
+            profile=ee_apply_profile,
+            source_statute=op.source.statute_id if op.source is not None else "",
         )
-        changed = new_body is not body
+        new_body = applied_result.new_state
+        changed = applied_result.applied
         body = new_body
 
         # §2.9 guard-liveness: EE is the first non-UK/non-FI consumer of the
@@ -10796,8 +10867,10 @@ def apply_ee_ops(
         # only when ``LAWVM_EE_MUTATION_BOUNDARY_PER_OP=1``; projects any
         # out-of-boundary changed path into the EE adjudication sink without
         # mutating the body or blocking the op. With the flag unset the call is
-        # skipped entirely so production replay stays byte-identical.
-        if changed and probe_on:
+        # skipped entirely so production replay stays byte-identical. The
+        # recovery-retarget prefixes the materializer surfaced are threaded here
+        # (the seam carries them on ``AppliedOp.declared_recovery_prefixes``).
+        if changed and _ee_mutation_boundary_probe_enabled():
             _ee_probe_op_mutation_boundary(
                 before=pre_op_body,
                 after=new_body,
@@ -10805,7 +10878,7 @@ def apply_ee_ops(
                 op_id=op.op_id,
                 adjudications_out=adjudications_out,
                 source_statute=op.source.statute_id if op.source is not None else "",
-                declared_recovery_prefixes=tuple(declared_recovery_paths or ()),
+                declared_recovery_prefixes=applied_result.declared_recovery_prefixes,
             )
 
         target_resolved: bool = True
