@@ -659,6 +659,11 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_apply_seam_occupancy_gate.py",
         "test_apply_seam_provenance_gate.py",
         "test_ee_occupancy_enforcement.py",
+        # LS-01 boundary block-mode promotion gate (measure-then-flip): the
+        # per-frontend boundary-escape measurement over the production apply lanes
+        # + the safety-first kept-observe decision (no frontend flipped; EE/UK
+        # have real latent escapes, NO/SE op-set-clean but corpus-unverified here).
+        "test_apply_seam_boundary_blockmode.py",
     ),
     "core_compile_projection": (
         "test_compile_metadata_default_fail_loud.py",
