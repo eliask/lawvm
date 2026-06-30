@@ -672,6 +672,12 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # + the safety-first kept-observe decision (no frontend flipped; EE/UK
         # have real latent escapes, NO/SE op-set-clean but corpus-unverified here).
         "test_apply_seam_boundary_blockmode.py",
+        # XP-06 cross-jurisdiction invariant-parity audit: the read-mostly
+        # analysis that builds the invariant x frontend parity matrix from the
+        # real ApplyProfile registrations (AST-scanned) + the FI reference upper
+        # bound, and emits typed INVARIANT_COVERAGE_DIVERGENCE rows (e.g. EE's
+        # LS-03 occupancy=block vs the other tree frontends' no-op default).
+        "test_cross_jurisdiction_parity.py",
     ),
     "core_compile_projection": (
         "test_compile_metadata_default_fail_loud.py",

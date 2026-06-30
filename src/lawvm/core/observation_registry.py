@@ -1204,6 +1204,26 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "non-blocking observation in the seam observe lane (the AM-01 "
                 "provenance-acceptance witness), never promoted to authority",
                 ("safety_invariant", "provenance"), role="observation"),
+    # XP-06 cross-jurisdiction invariant-parity audit (registry's self-flagged
+    # thinnest axis). The READ-MOSTLY analysis in
+    # ``core/cross_jurisdiction_parity.py`` builds the invariant x frontend
+    # parity matrix from REAL ApplyProfile registrations (AST-scanned) + the FI
+    # reference upper bound, then emits one finding per cross-frontend gap where
+    # a per-unit invariant is enforced (block) in one frontend but only observed
+    # / off / absent in a sibling (e.g. EE's LS-03 occupancy=block vs the other
+    # tree frontends' no-op default). It is a VIEW + a typed divergence
+    # population — never a production gate, never promoted to authority — so it is
+    # role=observation / non-blocking (the "make the silent divergence a
+    # first-class object" doctrine applied to coverage itself).
+    FindingSpec("AUDIT.INVARIANT_COVERAGE_DIVERGENCE", "audit",
+                "audit", "warn", "cross_jurisdiction_parity",
+                "a per-unit apply-seam invariant (LS-01/EV-05/LS-03/AM-01) or a "
+                "carrier (conserved wrapper / WriteReceipt / same-moment detector) "
+                "is enforced or present in one frontend but only observed / off / "
+                "absent in a sibling, read from real ApplyProfile registrations; "
+                "surfaced as the typed XP-06 cross-jurisdiction coverage divergence, "
+                "never promoted to authority",
+                ("comparative", "safety_invariant"), role="observation"),
     # --- Wave-2 apply-authority closure: per-op + whole-tree sweeps ---
     # LS-07 (strict-blocking): a descendant-granularity op whose resolved address
     # carries no descendant slot would overwrite its host whole-unit.
