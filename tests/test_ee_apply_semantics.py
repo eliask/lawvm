@@ -37,6 +37,26 @@ from lawvm.estonia.grafter import (
 )
 from lawvm.replay_adjudication import CompileAdjudication
 
+# Observation-only, default-off §2.9 per-op audit probe kinds (EE D1/D7). These
+# are additive diagnostics gated behind LAWVM_EE_* flags; production CI runs with
+# the flags OFF so they never appear. The exact-adjudication-kind assertions
+# below filter them so a developer running with a probe flag ON (which DOES
+# surface real retargeting/range-removal findings — the writes land at deeper
+# paths than the nominal op target) does not see a spurious list-mismatch.
+_EE_PER_OP_AUDIT_PROBE_KINDS = frozenset(
+    {
+        "ee_replay_mutation_boundary_per_op_violation_observed",
+        "ee_replay_commencement_effect_totality_observed",
+        "ee_replay_commencement_effect_totality_probe_skipped",
+    }
+)
+
+
+def _adjudication_kinds_without_per_op_probes(
+    adjudications: list[CompileAdjudication],
+) -> list[str]:
+    return [a.kind for a in adjudications if a.kind not in _EE_PER_OP_AUDIT_PROBE_KINDS]
+
 
 def _child_subsection(section: IRNode, label: str) -> IRNode:
     for child in section.children:
@@ -977,8 +997,15 @@ def test_plural_item_replace_range_removes_omitted_inserted_item_labels() -> Non
         ("13", "old thirteen;"),
         ("15", "old fifteen."),
     ]
-    assert [item.kind for item in adjudications] == ["ee_plural_item_replace_range_omits_inserted_labels"]
-    assert adjudications[0].detail["omitted_inserted_item_labels"] == "12_1,13_1"
+    assert _adjudication_kinds_without_per_op_probes(adjudications) == [
+        "ee_plural_item_replace_range_omits_inserted_labels"
+    ]
+    range_adj = next(
+        a
+        for a in adjudications
+        if a.kind == "ee_plural_item_replace_range_omits_inserted_labels"
+    )
+    assert range_adj.detail["omitted_inserted_item_labels"] == "12_1,13_1"
 
 
 def test_plural_item_replace_range_keeps_omitted_inserted_item_without_typed_rule() -> None:
@@ -9114,8 +9141,15 @@ def test_apply_ee_ops_retargets_section_item_text_replace_to_unique_descendant_o
     assert subsection_1.children[0].text == "tutvuda dokumentidega;"
     assert subsection_1.children[1].text == "keelduda väljamaksmisest;"
     assert subsection_2.children[0].text == "vana rakendusasutuse korraldusel antud toiminguid."
-    assert [adj.kind for adj in adjudications] == ["ee_text_replace_unique_descendant_item_by_old_text"]
-    assert adjudications[0].detail["resolved_path"].endswith("section:23/subsection:2/item:6")
+    assert _adjudication_kinds_without_per_op_probes(adjudications) == [
+        "ee_text_replace_unique_descendant_item_by_old_text"
+    ]
+    retarget_adj = next(
+        a
+        for a in adjudications
+        if a.kind == "ee_text_replace_unique_descendant_item_by_old_text"
+    )
+    assert retarget_adj.detail["resolved_path"].endswith("section:23/subsection:2/item:6")
 
 
 def test_apply_ee_ops_retargets_section_item_text_replace_to_same_number_subsection_old_text() -> None:
@@ -9166,10 +9200,15 @@ def test_apply_ee_ops_retargets_section_item_text_replace_to_same_number_subsect
     subsection = result.body.children[0].children[0].children[1]
 
     assert subsection.text == "Võlaväärtpaber on laenuvõtja võlakohustust tõendav väärtpaber."
-    assert [adj.kind for adj in adjudications] == [
+    assert _adjudication_kinds_without_per_op_probes(adjudications) == [
         "ee_text_replace_numbered_subsection_for_item_target_by_old_text"
     ]
-    assert adjudications[0].detail["resolved_path"].endswith("section:8/subsection:2")
+    numbered_adj = next(
+        a
+        for a in adjudications
+        if a.kind == "ee_text_replace_numbered_subsection_for_item_target_by_old_text"
+    )
+    assert numbered_adj.detail["resolved_path"].endswith("section:8/subsection:2")
 
 
 def test_section_item_text_replace_does_not_retarget_same_number_subsection_without_old_text() -> None:

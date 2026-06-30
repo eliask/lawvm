@@ -62,6 +62,9 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_ee_apply_conserved.py",
         "test_ee_apply_semantics.py",
         "test_ee_apply_filter_result.py",
+        # §2.9 guard-liveness: EE as first non-UK/non-FI consumer of the core
+        # per-op mutation-boundary (D1) + commencement-effect totality (D7) audits.
+        "test_ee_per_op_audit_probe.py",
         # §2.5 retirement parity gate for the EE same-moment cross-act detector.
         "test_ee_cross_act_same_moment_parity.py",
         # D7 deepcopy migration tests for estonia/target_resolution.py.

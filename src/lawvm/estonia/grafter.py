@@ -10349,6 +10349,47 @@ def _ee_apply_op(
     return body
 
 
+def _ee_mutation_boundary_probe_enabled() -> bool:
+    """Default-off env gate for the EE per-op mutation-boundary probe (D1).
+
+    Thin lazy indirection over
+    ``estonia.per_op_audit_probe.mutation_boundary_probe_enabled`` so the apply
+    fold reads the gate as one fact without a top-level import; default-off
+    keeps production replay byte-identical with the probe disabled.
+    """
+    from lawvm.estonia.per_op_audit_probe import mutation_boundary_probe_enabled
+
+    return mutation_boundary_probe_enabled()
+
+
+def _ee_probe_op_mutation_boundary(
+    *,
+    before: IRNode,
+    after: IRNode,
+    op: LegalOperation,
+    op_id: str,
+    adjudications_out: Optional[list[CompileAdjudication]],
+    source_statute: str,
+) -> None:
+    """Project the core per-op mutation-boundary audit (D1) into the EE sink.
+
+    Observation-only: delegates verify+emit to the core-owned
+    ``audit_op_mutation_boundary`` (reused verbatim) via the EE probe module,
+    which appends a non-blocking ``CompileAdjudication`` on an out-of-boundary
+    escape. Never mutates the body or blocks the op.
+    """
+    from lawvm.estonia.per_op_audit_probe import probe_ee_op_mutation_boundary
+
+    probe_ee_op_mutation_boundary(
+        before=before,
+        after=after,
+        op=op,
+        op_id=op_id,
+        adjudications_out=adjudications_out,
+        source_statute=source_statute,
+    )
+
+
 def _append_ee_replay_adjudication(
     adjudications_out: Optional[list[CompileAdjudication]],
     *,
@@ -10691,6 +10732,23 @@ def apply_ee_ops(
         new_body = _ee_apply_op(body, op, adjudications_out=adjudications_out)
         changed = new_body is not body
         body = new_body
+
+        # §2.9 guard-liveness: EE is the first non-UK/non-FI consumer of the
+        # core per-op mutation-boundary audit (LS-01 / D1). Default-OFF
+        # observation-only probe — runs only on a landed write (``changed``) and
+        # only when ``LAWVM_EE_MUTATION_BOUNDARY_PER_OP=1``; projects any
+        # out-of-boundary changed path into the EE adjudication sink without
+        # mutating the body or blocking the op. With the flag unset the call is
+        # skipped entirely so production replay stays byte-identical.
+        if changed and _ee_mutation_boundary_probe_enabled():
+            _ee_probe_op_mutation_boundary(
+                before=pre_op_body,
+                after=new_body,
+                op=op,
+                op_id=op.op_id,
+                adjudications_out=adjudications_out,
+                source_statute=op.source.statute_id if op.source is not None else "",
+            )
 
         target_resolved: bool = True
         if op.target.path:

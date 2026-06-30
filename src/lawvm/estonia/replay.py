@@ -555,6 +555,43 @@ def _ee_orchestration_adjudication(
     )
 
 
+def _ee_commencement_totality_probe_enabled() -> bool:
+    """Default-off env gate for the EE commencement-effect totality probe (D7).
+
+    Thin lazy indirection over
+    ``estonia.per_op_audit_probe.commencement_totality_probe_enabled`` so the
+    fold-exit reads the gate as one fact; default-off keeps production replay
+    byte-identical with the probe disabled.
+    """
+    from lawvm.estonia.per_op_audit_probe import commencement_totality_probe_enabled
+
+    return commencement_totality_probe_enabled()
+
+
+def _ee_probe_commencement_effect_totality(
+    *,
+    ops: list[LegalOperation],
+    temporal_events: tuple[TemporalEvent, ...],
+    adjudications_out: list[CompileAdjudication],
+    source_statute: str,
+) -> None:
+    """Project the core commencement-effect totality audit (D7) into the EE sink.
+
+    Observation-only: delegates to the core-owned ``assert_effect_totality``
+    (reused verbatim) via the EE probe module, which appends a non-blocking
+    ``CompileAdjudication`` per op that reached compile-timelines without
+    temporal authority or an owned pending classification. Never mutates state.
+    """
+    from lawvm.estonia.per_op_audit_probe import probe_ee_commencement_effect_totality
+
+    probe_ee_commencement_effect_totality(
+        ops,
+        temporal_events,
+        adjudications_out=adjudications_out,
+        source_statute=source_statute,
+    )
+
+
 def _ee_emit_prefilter_parse_failed_adjudication(
     *,
     rule_id: str,
@@ -2044,6 +2081,22 @@ def replay_ee_to_pit(
         )
         result.timelines = timelines
         _log("Timeline-primary PIT materialized")
+
+        # §2.9 guard-liveness: EE is the first non-UK/non-FI consumer of the
+        # core commencement-effect totality audit (LS-23 / D7). Default-OFF
+        # observation-only probe — runs only when
+        # ``LAWVM_EE_COMMENCEMENT_EFFECT_TOTALITY_PROBE=1``; reports any executed
+        # op (the ``lo_ops_out`` snapshot stream that reached compile_timelines)
+        # that is neither commenced by a typed temporal event nor classified
+        # pending/unresolved, appending a non-blocking adjudication. With the
+        # flag unset the call is skipped so production replay stays byte-identical.
+        if _ee_commencement_totality_probe_enabled():
+            _ee_probe_commencement_effect_totality(
+                ops=lo_ops_out,
+                temporal_events=result.temporal_events,
+                adjudications_out=result.adjudications,
+                source_statute=base.statute_id,
+            )
 
     # ── Step 6: Consistency check ─────────────────────────────────────────────
     if result.oracle is not None and result.replayed is not None:
