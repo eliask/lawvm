@@ -679,6 +679,14 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_apply_seam_occupancy_gate.py",
         "test_apply_seam_provenance_gate.py",
         "test_ee_occupancy_enforcement.py",
+        # EV-05 PROOF CARRIER on core/ir.LegalOperation + the generic seam
+        # resolver (the framework change CROSS_JURISDICTION_PARITY names), and EE
+        # as the first MINTING frontend: a real ExecutionAuthorization minted from
+        # each op's amending-act identity (EV-05 quiet for known authority, fires
+        # on the unauthorized residue) + a real Parsed-vs-Recovered AM-01 verdict
+        # from EE's scope_confidence rung. Both observe-only (observations lane).
+        "test_op_execution_authorization_carrier.py",
+        "test_ee_proof_carrier.py",
         # LS-01 boundary block-mode promotion gate (measure-then-flip): the
         # per-frontend boundary-escape measurement over the production apply lanes
         # + the safety-first kept-observe decision (no frontend flipped; EE/UK

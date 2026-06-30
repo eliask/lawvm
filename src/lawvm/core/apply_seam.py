@@ -97,6 +97,7 @@ __all__ = [
     "AuthorizationResolver",
     "REPLAY_AUTHORIZATION_PROOF_OBSERVED_FINDING_CODE",
     "no_op_execution_authorization",
+    "read_op_execution_authorization",
     "OccupancyResolver",
     "OccupancyMode",
     "OCCUPANCY_TRANSITION_OBSERVED_FINDING_CODE",
@@ -151,14 +152,37 @@ def no_op_execution_authorization(
 ) -> Optional[ExecutionAuthorization]:
     """The honest default resolver: NO op carries an ExecutionAuthorization.
 
-    ``core/ir.LegalOperation`` carries no authorization field today, so the apply
-    path can resolve none — this is exactly the EV-05/FW-01 firewall hole the
-    audit registry names ("apply has ZERO references to ExecutionAuthorization").
-    Returning ``None`` for every op makes that hole VISIBLE and MEASURABLE
-    (≈100% of mutating ops, the real gap size) without fabricating a proof. A
-    frontend that mints proofs replaces this on its profile.
+    Returning ``None`` for every op makes the EV-05/FW-01 firewall hole VISIBLE
+    and MEASURABLE (≈100% of mutating ops, the real gap size) without fabricating
+    a proof. This stays the kernel default — a frontend that mints proofs onto
+    ``LegalOperation.execution_authorization`` (the proof carrier added to
+    ``core/ir``) replaces this on its profile with
+    :func:`read_op_execution_authorization`.
     """
     return None
+
+
+def read_op_execution_authorization(
+    op: LegalOperation,
+) -> Optional[ExecutionAuthorization]:
+    """The generic carrier-reading resolver: return ``op.execution_authorization``.
+
+    The framework-level counterpart to :func:`no_op_execution_authorization`,
+    enabled by the EV-05 proof carrier on ``core/ir.LegalOperation`` (the
+    additive ``execution_authorization`` rider). It is jurisdiction-neutral — it
+    simply hands the seam whatever typed :class:`ExecutionAuthorization` proof the
+    op carries (``None`` when the op carries none). A frontend that MINTS proofs
+    onto its ops wires this onto its ``ApplyProfile.authorization_resolver``; the
+    EV-05 observe gate then goes QUIET for every op carrying a proof with a
+    non-empty ``authorization_rule_id`` and fires only on the genuinely
+    unauthorized residue. This is the carrier-read seam the audit registry's #2
+    item and ``notes/CROSS_JURISDICTION_PARITY.md`` name as the EV-05 closure
+    prerequisite ("a proof carrier on core/ir.LegalOperation — a framework
+    change"). The kernel reads the carrier; it never fabricates a proof (§2.10
+    evidence-is-not-authority — the carrier is minted by the authority-knowing
+    frontend, not invented at the seam).
+    """
+    return op.execution_authorization
 
 
 # ── LS-03 universal occupancy-transition OBSERVE gate ─────────────────────────

@@ -6,10 +6,21 @@ from typing_extensions import override
 from dataclasses import dataclass, field
 from typing import Any, Dict, FrozenSet, List, Literal, Mapping, Optional, Sequence, Tuple
 
+from typing import TYPE_CHECKING
+
 from lawvm.core.frozen_values import FrozenDict, _freeze_value, _jsonable_value
 from lawvm.core.provenance import OperationSource
 from lawvm.core.scope_confidence import ScopeConfidence, coerce_scope_confidence
 from lawvm.core.semantic_types import FacetKind, IRNodeKind, StructuralAction, TextPatchKindEnum
+
+if TYPE_CHECKING:
+    # ``execution_authorization`` transitively imports ``core.ir`` (via
+    # ``phase_result`` → ``effect_lifecycle``), so importing it at module scope
+    # is a circular import. The ``ExecutionAuthorization`` rider on
+    # ``LegalOperation`` is therefore a TYPE_CHECKING-only annotation; the
+    # runtime typed-carrier validation in ``__post_init__`` lazy-imports the
+    # class (the ``provenance.MigrationEvent`` precedent for the same cycle).
+    from lawvm.core.execution_authorization import ExecutionAuthorization
 
 
 @dataclass(frozen=True, slots=True)
@@ -186,6 +197,23 @@ class LegalOperation:
     # per-op anchor witness; replay consumes only the typed
     # ``OperationSource.source_anchor`` (§1.11, §1.12).
     raw_text: str = ""
+    # EV-05/FW-01/OV-01 execution-authorization PROOF CARRIER (the firewall
+    # waist). Optional, ``None`` default, so EVERY existing construction across
+    # all frontends stays valid and byte-identical (no producer sets it today).
+    # When a frontend MINTS a proof, the universal apply seam's
+    # ``read_op_execution_authorization`` resolver reads it
+    # (``core/apply_seam``): a landed op carrying a proof with a non-empty
+    # ``authorization_rule_id`` goes QUIET on the EV-05 observe gate; one with no
+    # proof emits the non-blocking ``EVID.REPLAY_AUTHORIZATION_PROOF_OBSERVED``
+    # firewall-hole witness. This is the missing carrier the audit registry names
+    # ("apply has ZERO references to ExecutionAuthorization") and that
+    # ``notes/CROSS_JURISDICTION_PARITY.md`` flags EV-05 needs ("a proof carrier
+    # on core/ir.LegalOperation — a framework change"). It is read-as-witness:
+    # the firewall two-flag promotion lives on ``ExecutionAuthorization`` itself
+    # (``executable``/``replay_authorized`` + ``forbidden_shortcuts``); core
+    # never branches on this rider's contents beyond resolving its presence +
+    # ``authorization_rule_id`` at the apply seam (§2.10 evidence-is-not-authority).
+    execution_authorization: Optional["ExecutionAuthorization"] = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.action, StructuralAction):
@@ -220,6 +248,24 @@ class LegalOperation:
             "scope_confidence",
             coerce_scope_confidence(self.scope_confidence),
         )
+        # Typed-carrier validation for the EV-05 proof rider (§1.9 typed carriers
+        # over dynamic shape; §1.10 fail loud). A non-``None`` value MUST be a real
+        # ``ExecutionAuthorization`` instance — a bare dict / status string here
+        # would smuggle an unvalidated "proof" past the firewall waist. ``None``
+        # (the no-proof sentinel — the honest ~100% firewall-hole default) passes
+        # through unchanged. The class is lazy-imported to break the module cycle
+        # (see the TYPE_CHECKING import above), mirroring ``provenance``.
+        if self.execution_authorization is not None:
+            from lawvm.core.execution_authorization import ExecutionAuthorization
+
+            if not isinstance(self.execution_authorization, ExecutionAuthorization):
+                raise TypeError(
+                    "LegalOperation.execution_authorization must be an "
+                    "ExecutionAuthorization instance (the EV-05 typed proof "
+                    f"carrier), got {type(self.execution_authorization).__name__}; "
+                    "mint a real ExecutionAuthorization (or leave None for the "
+                    "no-proof firewall-hole witness)"
+                )
 
 @dataclass(frozen=True, slots=True)
 class ProvisionVersion:

@@ -67,8 +67,10 @@ from lawvm.core.apply_seam import (
     AppliedOp,
     ApplyProfile,
     MaterializeResult,
+    OpAcceptance,
     apply_op,
 )
+from lawvm.core.execution_authorization import ExecutionAuthorization
 from lawvm.core.occupancy import OccupancyClass
 from lawvm.core.phase_result import Finding
 from lawvm.core.write_receipt import WriteReceipt
@@ -10813,6 +10815,166 @@ def _ee_section_occupancy(
     return OccupancyClass.SUBSTANTIVE
 
 
+# ── EV-05 execution-authorization: EE proof minting + resolver ────────────────
+#
+# The genuine authority for an EE state-mutating op is its AMENDING ACT — the
+# act whose johtolause directed the change (``op.source.statute_id``) — together
+# with the drafting rule that recognized it (``op.witness_rule_id`` / the
+# scope_confidence rung). EE already carries this on every op it lowered from a
+# real amendment source. ``_mint_ee_execution_authorization`` projects that known
+# authority into a typed :class:`ExecutionAuthorization` proof; the EE resolver
+# (:func:`_ee_execution_authorization`) prefers a proof already minted onto the
+# op's carrier and otherwise mints one HERE from the op's source identity, so EE
+# need not re-stamp every upstream op-construction site (byte-identity-safe). An
+# op with NO amending-act identity (``op.source`` is ``None`` / blank
+# ``statute_id``) has UNKNOWN authority — no proof is fabricated, so the EV-05
+# observe gate fires honestly on it (the real unauthorized residue).
+
+#: The EE execution-authorization rule family stamped into a minted proof's
+#: ``authorization_rule_id``. The actual rule_id appends the amending act id, so
+#: the proof points at the concrete authorizing act (``ee_amending_act:<statute>``).
+_EE_EXECUTION_AUTHORIZATION_RULE = "ee_amending_act_authorizes_apply"
+
+
+def _mint_ee_execution_authorization(
+    op: LegalOperation,
+) -> Optional[ExecutionAuthorization]:
+    """Mint a typed ``ExecutionAuthorization`` from an EE op's amending-act identity.
+
+    The authority an EE op carries is its source amending act: the act that
+    enacted the johtolause directing this change is what authorizes the apply.
+    When the op carries a real ``op.source.statute_id`` (the amending act id),
+    that is a GENUINELY KNOWN authority, so we mint a replay-authorized proof
+    whose ``authorization_rule_id`` names the concrete act
+    (``ee_amending_act:<statute_id>``) and whose ``detail`` records the witness
+    rule + scope-confidence rung (read-as-witness only — §2.10). When the op
+    carries no amending-act identity (no ``source`` / blank ``statute_id``), the
+    authority is UNKNOWN: we return ``None`` and never fabricate a proof, so the
+    EV-05 gate honestly witnesses that op as unauthorized.
+
+    The proof is replay-authorized (``executable``/``replay_authorized`` both
+    ``True``) because the amending act IS the apply authority for EE's replay
+    lane — EE's apply is the act executing its own directed changes. This is the
+    honest EE footing, not a blanket pass: the gate still fires on every op whose
+    authorizing act is not identified.
+    """
+    source = op.source
+    statute_id = (source.statute_id if source is not None else "") or ""
+    if not statute_id:
+        return None
+    rung = ""
+    for tag in op.provenance_tags:
+        if isinstance(tag, str) and tag.startswith("scope_confidence:"):
+            rung = tag.split(":", 1)[1]
+            break
+    return ExecutionAuthorization(
+        executable=True,
+        replay_authorized=True,
+        authorization_status="replay_authorized",
+        authorization_rule_id=f"ee_amending_act:{statute_id}",
+        owner_phase="apply",
+        strict_disposition="record",
+        quirks_disposition=QuirksDisposition.RECORD,
+        safe_default="execute_only_after_amending_act_identity_is_known",
+        required_proofs=(),
+        forbidden_shortcuts=(
+            "treat_op_existence_as_replay_authority_without_amending_act",
+        ),
+        detail={
+            "rule_family": _EE_EXECUTION_AUTHORIZATION_RULE,
+            "amending_act": statute_id,
+            "witness_rule_id": op.witness_rule_id or "",
+            "scope_confidence_rung": rung,
+            "owner": "estonia/grafter:_mint_ee_execution_authorization",
+        },
+    )
+
+
+def _ee_execution_authorization(
+    op: LegalOperation,
+) -> Optional[ExecutionAuthorization]:
+    """EE ``authorization_resolver``: read a minted proof, else mint from source.
+
+    Prefers an ``ExecutionAuthorization`` already minted onto the op's
+    ``execution_authorization`` carrier (the generic
+    ``core/apply_seam.read_op_execution_authorization`` path); if the op carries
+    none, mints one from its amending-act identity via
+    :func:`_mint_ee_execution_authorization`. Returns ``None`` only when the op's
+    authority is genuinely unknown (no amending act) — the honest EV-05 residue.
+    """
+    if op.execution_authorization is not None:
+        return op.execution_authorization
+    return _mint_ee_execution_authorization(op)
+
+
+# ── AM-01 provenance-acceptance: EE Parsed-vs-Recovered verdict ───────────────
+#
+# EE marks a RECOVERED (recognizer/fallback-guessed) op by stamping a
+# ``scope_confidence:<rung>`` tag into ``op.provenance_tags`` whose rung is an
+# inferred/fallback ladder value (AGENTS.md §2.2). A grammar-recognized
+# (``Parsed``) op carries an explicit rung or no scope_confidence tag at all. The
+# FI reference (``finland/op_provenance.admits``) admits only ``Parsed`` under
+# strict; a ``Recovered`` op is refused. EE mirrors that here WITHOUT importing
+# ``finland/``: it computes the core-neutral ``OpAcceptance`` verdict the seam
+# records.
+
+#: Scope-confidence rungs that mark a RECOVERED (guessed/inferred) op — the
+#: AGENTS.md §2.2 inferred/fallback ladder values. A Parsed op carries an
+#: explicit rung (``explicit_source`` / ``explicit_source_with_context``) or no
+#: scope_confidence tag at all.
+_EE_RECOVERED_SCOPE_CONFIDENCE_RUNGS: frozenset[str] = frozenset(
+    {
+        "inferred_from_group",
+        "inferred_from_payload",
+        "inferred_from_live_unique",
+        "inferred_singleton_path",
+        "fallback",
+    }
+)
+
+
+def _ee_op_provenance_acceptance(op: LegalOperation) -> Optional[OpAcceptance]:
+    """EE ``provenance_resolver``: the core-neutral AM-01 acceptance verdict.
+
+    Reads EE's OWN derivation signal — the ``scope_confidence:<rung>`` tag in
+    ``op.provenance_tags`` — to classify the op as ``Parsed`` (admitted) or
+    ``Recovered`` (refused under strict), mirroring the FI reference
+    (``admits``/``mode_for``: STRICT admits only ``Parsed``) without importing
+    ``finland/``. A recovered op (an inferred/fallback rung) yields a
+    NOT-admitted verdict under EE's ``strict`` acceptance mode → the AM-01 observe
+    gate witnesses it. A parsed op (explicit rung / no scope_confidence tag)
+    yields an admitted verdict → silent. The seam merely records this decision;
+    EE does not block on it (observe-first — the AM-01 block promotion is a future
+    measure-then-flip step).
+    """
+    rung = ""
+    for tag in op.provenance_tags:
+        if isinstance(tag, str) and tag.startswith("scope_confidence:"):
+            rung = tag.split(":", 1)[1]
+            break
+    recovered = rung in _EE_RECOVERED_SCOPE_CONFIDENCE_RUNGS
+    if recovered:
+        return OpAcceptance(
+            admitted=False,
+            acceptance_mode="strict",
+            provenance_kind="recovered",
+            detail={
+                "scope_confidence_rung": rung,
+                "witness_rule_id": op.witness_rule_id or "",
+                "owner": "estonia/grafter:_ee_op_provenance_acceptance",
+            },
+        )
+    return OpAcceptance(
+        admitted=True,
+        acceptance_mode="strict",
+        provenance_kind="parsed",
+        detail={
+            "scope_confidence_rung": rung,
+            "owner": "estonia/grafter:_ee_op_provenance_acceptance",
+        },
+    )
+
+
 def apply_ee_ops(
     statute: IRStatute,
     ops: List[LegalOperation],
@@ -11036,6 +11198,18 @@ def apply_ee_ops(
     # ``APPLY.OCCUPANCY_TRANSITION_BLOCKED`` violation on NO corpus op → byte-
     # identical to the pre-resolver EE output — yet any FUTURE op that violates the
     # occupancy table now fails loud in EE's production ``findings``.
+    # ── EE EV-05 authorization resolver + AM-01 provenance resolver (this task).
+    # ``authorization_resolver`` mints/reads a real ``ExecutionAuthorization``
+    # proof from each op's amending-act identity (``_ee_execution_authorization``)
+    # so the EV-05 observe gate goes QUIET for every op whose authorizing act is
+    # known and fires only on the genuinely unauthorized residue (the firewall
+    # hole drops from ~100% to the real unauthorized fraction). ``provenance_
+    # resolver`` hands the seam EE's core-neutral Parsed-vs-Recovered acceptance
+    # verdict (``_ee_op_provenance_acceptance``) so the AM-01 gate measures EE's
+    # Recovered-vs-Parsed op population. BOTH are OBSERVE-only: their witnesses
+    # route to ``AppliedOp.observations`` (never production ``findings``), so EE's
+    # materialized statute + partition stay byte-identical. EE is NOT flipped to
+    # block on either gate — that is a future measure-then-promote step.
     ee_apply_profile: ApplyProfile[IRNode] = ApplyProfile(
         jurisdiction="ee",
         materializer=_ee_materialize_one,
@@ -11045,6 +11219,8 @@ def apply_ee_ops(
         receipt_helper_prefix="apply_ee_ops",
         occupancy_resolver=_ee_section_occupancy,
         occupancy_mode="block",
+        authorization_resolver=_ee_execution_authorization,
+        provenance_resolver=_ee_op_provenance_acceptance,
     )
 
     for op in reordered_ops:
