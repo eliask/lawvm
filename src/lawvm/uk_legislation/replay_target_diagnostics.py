@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass, field
 from dataclasses import replace as dc_replace
 from typing import TYPE_CHECKING, Optional, cast
 
@@ -82,6 +83,194 @@ def _part_numeric_value(raw: str) -> int | None:
     if text.isdigit():
         return int(text)
     return _shared_roman_to_arabic(text)
+
+
+# --- _missing_sibling_range_gap numeral-mode model ---------------------------
+#
+# The sibling-range gap check classifies the target leaf label into one numeral
+# "mode" (numeric / alpha / roman / suffix variants), then collects same-kind
+# sibling labels into mode-specific buckets and asks whether ``want`` falls in
+# (or extends) the observed range. The classification and the per-sibling
+# routing are the only numeral-aware parts; both live here so the gap function
+# reads as a flat per-mode decision table.
+
+
+def _int_range_gap(want: int, values: list[int]) -> bool:
+    """True when ``want`` sits in the gap structure of ``values``.
+
+    Mirrors the thrice-repeated ``lower``/``upper`` range probe: True when
+    ``values`` is non-empty and ``want`` falls strictly between two of them,
+    below all of them, or above all of them (i.e. ``want`` is absent but the
+    siblings bracket or flank it).
+    """
+    if not values:
+        return False
+    ordered = sorted(set(values))
+    lower = max((n for n in ordered if n < want), default=None)
+    upper = min((n for n in ordered if n > want), default=None)
+    if lower is not None and upper is not None and lower < want < upper:
+        return True
+    if lower is None and want < ordered[0]:
+        return True
+    if upper is None and want > ordered[-1]:
+        return True
+    return False
+
+
+@dataclass(frozen=True)
+class _NumeralWant:
+    """Parsed target leaf label: which numeral mode and the comparison keys."""
+
+    mode: str
+    want: int
+    want_pair: tuple[int, int] | None = None
+    want_multi_pair: tuple[int, str] | None = None
+    want_alpha_num_pair: tuple[str, int] | None = None
+
+
+def _classify_numeral_label(text: str) -> _NumeralWant | None:
+    """Map a normalized (lowercased, stripped) leaf label to its numeral mode.
+
+    Returns ``None`` when the label is not a recognized numeral shape, or when a
+    shape parses by regex but fails its stricter key parser (e.g. non-canonical
+    roman like ``"iiii"``).
+    """
+    if text.isdigit():
+        return _NumeralWant("numeric", int(text))
+    if re.fullmatch(r"[a-z]", text):
+        return _NumeralWant("alpha", ord(text) - ord("a") + 1)
+    if re.fullmatch(r"[a-z]{2,}", text):
+        return _NumeralWant("alpha_suffix", ord(text[0]) - ord("a") + 1)
+    if re.fullmatch(r"[ivxlcdm]+", text):
+        roman = _shared_roman_to_arabic(text)
+        if roman is None:
+            return None
+        return _NumeralWant("roman", roman)
+    if re.fullmatch(r"\d+[a-z]", text):
+        pair = _local_alnum_suffix_key(text)
+        if pair is None:
+            return None
+        return _NumeralWant("alnum_suffix", pair[0], want_pair=pair)
+    if re.fullmatch(r"\d+[a-z]{2,}", text):
+        multi = _alnum_multi_suffix_key(text)
+        if multi is None:
+            return None
+        return _NumeralWant("alnum_multi_suffix", multi[0], want_multi_pair=multi)
+    if re.fullmatch(r"[a-z]+\d+", text):
+        alpha_num = _alpha_num_suffix_key(text)
+        if alpha_num is None:
+            return None
+        return _NumeralWant("alpha_num_suffix", alpha_num[1], want_alpha_num_pair=alpha_num)
+    return None
+
+
+@dataclass
+class _SiblingBuckets:
+    """Mode-keyed accumulators for same-kind sibling labels."""
+
+    labels: list[int] = field(default_factory=list)
+    pairs: list[tuple[int, int]] = field(default_factory=list)
+    multi_pairs: list[tuple[int, str]] = field(default_factory=list)
+    alpha_num_pairs: list[tuple[str, int]] = field(default_factory=list)
+    alpha_raw_labels: list[str] = field(default_factory=list)
+    numeric_suffix_labels: list[int] = field(default_factory=list)
+    alpha_suffix_labels: list[str] = field(default_factory=list)
+    blank_same_kind_present: bool = False
+
+    def ingest(self, label_raw: str, mode: str) -> None:
+        """Route one same-kind sibling label into the bucket(s) for ``mode``.
+
+        This is the per-sibling classifier shared by the direct-child and the
+        transparent-wrapper-grandchild passes — they differ only in where the
+        sibling nodes come from, never in how a label is classified.
+        """
+        label_text = str(label_raw or "").strip()
+        if not label_text:
+            self.blank_same_kind_present = True
+        lowered = label_text.lower()
+        if mode == "numeric":
+            if label_text.isdigit():
+                self.labels.append(int(label_text))
+            elif (pair := _local_alnum_suffix_key(label_text)) is not None:
+                self.numeric_suffix_labels.append(int(pair[0]))
+        elif mode == "alpha":
+            if re.fullmatch(r"[a-z]", lowered):
+                self.labels.append(ord(lowered) - ord("a") + 1)
+            else:
+                self.alpha_raw_labels.append(lowered)
+        elif mode == "alpha_suffix":
+            if re.fullmatch(r"[a-z]", lowered):
+                self.labels.append(ord(lowered) - ord("a") + 1)
+            else:
+                self.alpha_suffix_labels.append(lowered)
+        elif mode == "roman":
+            if re.fullmatch(r"[ivxlcdm]+", lowered):
+                roman = _shared_roman_to_arabic(label_text)
+                if roman is not None:
+                    self.labels.append(roman)
+        elif mode == "alnum_suffix":
+            pair = _local_alnum_suffix_key(label_text)
+            if pair is not None:
+                self.pairs.append(pair)
+            elif label_text.isdigit():
+                self.numeric_suffix_labels.append(int(label_text))
+        elif mode == "alnum_multi_suffix":
+            multi = _alnum_multi_suffix_key(label_text)
+            if multi is not None:
+                self.multi_pairs.append(multi)
+            elif (single := _local_alnum_suffix_key(label_text)) is not None:
+                self.multi_pairs.append((single[0], chr(ord("a") + single[1] - 1)))
+            elif label_text.isdigit():
+                self.numeric_suffix_labels.append(int(label_text))
+        elif mode == "alpha_num_suffix":
+            alpha_num = _alpha_num_suffix_key(label_text)
+            if alpha_num is not None:
+                self.alpha_num_pairs.append(alpha_num)
+            elif re.fullmatch(r"[a-z]+", lowered):
+                self.alpha_raw_labels.append(lowered)
+
+
+def _node_kind_lower(node: object) -> str:
+    """Lowercased kind string of an IR node (mirrors the repeated inline form)."""
+    return str(getattr(node, "kind", "") or "").lower()
+
+
+def _norm_label(node: object) -> str:
+    """Alphanumeric-only, lowercased label of a node (the repeated normalization)."""
+    return re.sub(r"[^0-9a-z]+", "", str(getattr(node, "label", "") or "").lower())
+
+
+def _child_kinds_of(node: object) -> set[str]:
+    """Set of lowercased child kinds under ``node``."""
+    return {_node_kind_lower(child) for child in getattr(node, "children", []) or []}
+
+
+def _child_labels_of(node: object, *, kinds: set[str]) -> list[str]:
+    """Normalized labels of ``node``'s direct children whose kind is in ``kinds``."""
+    return [
+        _norm_label(child)
+        for child in getattr(node, "children", []) or []
+        if _node_kind_lower(child) in kinds
+    ]
+
+
+@dataclass(frozen=True)
+class _MalformedLeafContext:
+    """Shared derived values for the malformed-target leaf-gap predicates.
+
+    Built once per ``_malformed_target_gap`` call under ``len(path) >= 2`` and
+    passed to each ``_mtg_*`` predicate so the parent lookup, normalized leaf
+    text, and numeral-shape flags are computed exactly once.
+    """
+
+    target: LegalAddress
+    path: tuple
+    parent_node: IRNode | None
+    leaf_kind: str
+    parent_kind: str
+    textual_leaf: str
+    is_roman: bool
+    is_alpha: bool
 
 
 def _collect_sectionlike_descendant_labels(node: IRNode | None) -> list[str]:
@@ -204,6 +393,31 @@ class UKReplayTargetDiagnosticsMixin:
             }
         )
 
+    # Ordered malformed-target leaf-gap predicates evaluated under
+    # ``len(path) >= 2``. Each takes the shared ``_MalformedLeafContext`` and
+    # returns True when its specific stale/shape family matches. They are a flat
+    # OR (first True wins) — the original deeply-nested ladder, detangled.
+    _MALFORMED_LEAF_PREDICATES: tuple[str, ...] = (
+        "_mtg_subsection_alpha_parent_roman_paragraph",
+        "_mtg_paragraph_roman_under_subsection_grandchild",
+        "_mtg_subparagraph_alpha_under_paragraph",
+        "_mtg_subparagraph_digit_under_paragraph_items",
+        "_mtg_item_digit_roman_siblings",
+        "_mtg_item_alpha_single_alpha_siblings",
+        "_mtg_item_alpha_under_paragraph_subparagraphs",
+        "_mtg_paragraph_digit_under_subsection_alpha_siblings",
+        "_mtg_paragraph_alpha_under_subsection",
+        "_mtg_subsection_digit_blank_or_extension_siblings",
+        "_mtg_schedule_paragraph_part_or_lettered",
+        "_mtg_schedule_unlabeled_paragraph",
+        "_mtg_schedule_partition_crossheading",
+        "_mtg_schedule_paragraph_under_partition_crossheading",
+        "_mtg_subsection_digit_paragraph_only_siblings",
+        "_mtg_subsection_alpha_paragraph_or_numeric_siblings",
+        "_mtg_subsection_alnum_multi_siblings",
+        "_mtg_schedule_sectionlike_partition_siblings",
+    )
+
     def _malformed_target_gap(self, target: LegalAddress) -> bool:
         path = tuple(getattr(target, "path", ()) or ())
         if not path:
@@ -232,290 +446,276 @@ class UKReplayTargetDiagnosticsMixin:
             parent_node, _, _ = self._find_node_by_target(parent_target)
             leaf_kind, leaf_label = path[-1]
             textual_leaf = re.sub(r"[^0-9a-z]+", "", str(leaf_label or "").lower())
-            is_roman = bool(re.fullmatch(r"[ivxlcdm]+", textual_leaf))
-            is_alpha = bool(re.fullmatch(r"[a-z]+", textual_leaf))
-            if (
-                len(path) >= 2
-                and str(path[-2][0] or "").lower() == "subsection"
-                and re.fullmatch(r"[a-z]+", str(path[-2][1] or "").strip().lower())
-                and str(path[-1][0] or "").lower() == "paragraph"
-                and is_roman
-            ):
+            ctx = _MalformedLeafContext(
+                target=target,
+                path=path,
+                parent_node=parent_node,
+                leaf_kind=str(leaf_kind or "").lower(),
+                parent_kind=_node_kind_lower(parent_node),
+                textual_leaf=textual_leaf,
+                is_roman=bool(re.fullmatch(r"[ivxlcdm]+", textual_leaf)),
+                is_alpha=bool(re.fullmatch(r"[a-z]+", textual_leaf)),
+            )
+            if any(getattr(self, name)(ctx) for name in self._MALFORMED_LEAF_PREDICATES):
                 return True
-            if (
-                parent_node is not None
-                and str(leaf_kind or "").lower() == "paragraph"
-                and is_roman
-                and str(getattr(parent_node, "kind", "") or "").lower() == "subsection"
-            ):
-                for child in getattr(parent_node, "children", []) or []:
-                    if str(getattr(child, "kind", "") or "").lower() != "paragraph":
-                        continue
-                    for grandchild in getattr(child, "children", []) or []:
-                        if str(getattr(grandchild, "kind", "") or "").lower() not in {"subparagraph", "item", "point"}:
-                            continue
-                        grandchild_label = re.sub(
-                            r"[^0-9a-z]+",
-                            "",
-                            str(getattr(grandchild, "label", "") or "").lower(),
-                        )
-                        if grandchild_label == textual_leaf:
-                            return True
-            if (
-                parent_node is not None
-                and str(leaf_kind or "").lower() == "subparagraph"
-                and is_alpha
-                and str(getattr(parent_node, "kind", "") or "").lower() == "paragraph"
-            ):
-                child_labels = [
-                    re.sub(r"[^0-9a-z]+", "", str(getattr(child, "label", "") or "").lower())
-                    for child in getattr(parent_node, "children", []) or []
-                    if str(getattr(child, "kind", "") or "").lower() in {"subparagraph", "item", "point"}
-                ]
-                if child_labels and all(re.fullmatch(r"[ivxlcdm]+", label) for label in child_labels if label):
-                    return True
-                if child_labels and all(re.fullmatch(r"\d+", label) for label in child_labels if label):
-                    return True
-            if (
-                parent_node is not None
-                and str(leaf_kind or "").lower() == "subparagraph"
-                and textual_leaf.isdigit()
-                and str(getattr(parent_node, "kind", "") or "").lower() == "paragraph"
-            ):
-                child_kinds = {
-                    str(getattr(child, "kind", "") or "").lower()
-                    for child in getattr(parent_node, "children", []) or []
-                }
-                if child_kinds and child_kinds <= {"item", "point"}:
-                    return True
-            if (
-                parent_node is not None
-                and str(leaf_kind or "").lower() in {"item", "point"}
-                and str(getattr(parent_node, "kind", "") or "").lower() in {"item", "point", "subparagraph"}
-                and textual_leaf.isdigit()
-            ):
-                child_labels = [
-                    re.sub(r"[^0-9a-z]+", "", str(getattr(child, "label", "") or "").lower())
-                    for child in getattr(parent_node, "children", []) or []
-                    if str(getattr(child, "kind", "") or "").lower() in {"item", "point"}
-                ]
-                if child_labels and all(re.fullmatch(r"[ivxlcdm]+", label) for label in child_labels if label):
-                    return True
-            if (
-                parent_node is not None
-                and str(leaf_kind or "").lower() in {"item", "point"}
-                and str(getattr(parent_node, "kind", "") or "").lower() in {"item", "point", "subparagraph"}
-                and is_alpha
-                and len(textual_leaf) > 1
-            ):
-                child_labels = [
-                    re.sub(r"[^0-9a-z]+", "", str(getattr(child, "label", "") or "").lower())
-                    for child in getattr(parent_node, "children", []) or []
-                    if str(getattr(child, "kind", "") or "").lower() in {"item", "point"}
-                ]
-                if child_labels and all(re.fullmatch(r"[a-z]", label) for label in child_labels if label):
-                    return True
-                if textual_leaf[:1] in child_labels:
-                    return True
-            if (
-                parent_node is not None
-                and str(leaf_kind or "").lower() in {"item", "point"}
-                and str(getattr(parent_node, "kind", "") or "").lower() == "paragraph"
-                and is_alpha
-            ):
-                child_kinds = {
-                    str(getattr(child, "kind", "") or "").lower()
-                    for child in getattr(parent_node, "children", []) or []
-                }
-                child_labels = [
-                    re.sub(r"[^0-9a-z]+", "", str(getattr(child, "label", "") or "").lower())
-                    for child in getattr(parent_node, "children", []) or []
-                    if str(getattr(child, "kind", "") or "").lower() == "subparagraph"
-                ]
-                if (
-                    child_kinds
-                    and child_kinds <= {"subparagraph"}
-                    and child_labels
-                    and all(re.fullmatch(r"\d+[a-z]?", label) for label in child_labels if label)
-                ):
-                    return True
-            if (
-                parent_node is not None
-                and str(leaf_kind or "").lower() == "paragraph"
-                and textual_leaf.isdigit()
-                and str(getattr(parent_node, "kind", "") or "").lower() == "subsection"
-            ):
-                child_labels = [
-                    re.sub(r"[^0-9a-z]+", "", str(getattr(child, "label", "") or "").lower())
-                    for child in getattr(parent_node, "children", []) or []
-                    if str(getattr(child, "kind", "") or "").lower() == "paragraph"
-                ]
-                if child_labels and all(re.fullmatch(r"[a-z]+", label) for label in child_labels if label):
-                    return True
-            if (
-                parent_node is not None
-                and str(leaf_kind or "").lower() == "paragraph"
-                and is_alpha
-                and len(textual_leaf) > 1
-                and str(getattr(parent_node, "kind", "") or "").lower() == "subsection"
-            ):
-                child_labels = [
-                    re.sub(r"[^0-9a-z]+", "", str(getattr(child, "label", "") or "").lower())
-                    for child in getattr(parent_node, "children", []) or []
-                    if str(getattr(child, "kind", "") or "").lower() == "paragraph"
-                ]
-                if child_labels and all(re.fullmatch(r"[a-z]", label) for label in child_labels if label):
-                    return True
-                first = textual_leaf[:1]
-                rest = textual_leaf[1:]
-                if rest and first in child_labels:
-                    return True
-                for child in getattr(parent_node, "children", []) or []:
-                    if str(getattr(child, "kind", "") or "").lower() != "paragraph":
-                        continue
-                    child_label = re.sub(r"[^0-9a-z]+", "", str(getattr(child, "label", "") or "").lower())
-                    if child_label != first:
-                        continue
-                    descendant_labels = [
-                        re.sub(r"[^0-9a-z]+", "", str(getattr(grandchild, "label", "") or "").lower())
-                        for grandchild in getattr(child, "children", []) or []
-                        if str(getattr(grandchild, "kind", "") or "").lower() in {"subparagraph", "item", "point"}
-                    ]
-                    if rest and rest in descendant_labels:
-                        return True
-                last = textual_leaf[-1:]
-                prefix = textual_leaf[:-1]
-                for child in getattr(parent_node, "children", []) or []:
-                    if str(getattr(child, "kind", "") or "").lower() != "paragraph":
-                        continue
-                    child_label = re.sub(r"[^0-9a-z]+", "", str(getattr(child, "label", "") or "").lower())
-                    if child_label != last:
-                        continue
-                    descendant_labels = [
-                        re.sub(r"[^0-9a-z]+", "", str(getattr(grandchild, "label", "") or "").lower())
-                        for grandchild in getattr(child, "children", []) or []
-                        if str(getattr(grandchild, "kind", "") or "").lower() in {"subparagraph", "item", "point"}
-                    ]
-                    if prefix and prefix in descendant_labels:
-                        return True
-            if (
-                parent_node is not None
-                and str(leaf_kind or "").lower() == "subsection"
-                and textual_leaf.isdigit()
-                and str(getattr(parent_node, "kind", "") or "").lower() in {"section", "article", "rule", "regulation"}
-            ):
-                child_labels = [
-                    re.sub(r"[^0-9a-z]+", "", str(getattr(child, "label", "") or "").lower())
-                    for child in getattr(parent_node, "children", []) or []
-                    if str(getattr(child, "kind", "") or "").lower() == "subsection"
-                ]
-                if child_labels and any(label == "" for label in child_labels):
-                    return True
-                if any(re.fullmatch(rf"{re.escape(textual_leaf)}[a-z]+", label) for label in child_labels if label):
-                    return True
-            if (
-                parent_node is not None
-                and _addr_container(target) == "schedule"
-                and len(path) == 2
-                and str(leaf_kind or "").lower() == "paragraph"
-                and str(getattr(parent_node, "kind", "") or "").lower() == "schedule"
-            ):
-                child_kinds = {
-                    str(getattr(child, "kind", "") or "").lower()
-                    for child in getattr(parent_node, "children", []) or []
-                }
-                if "part" in child_kinds:
-                    return True
-                if re.fullmatch(r"[a-z]+\d+", textual_leaf):
-                    paragraph_labels = [
-                        label for label in _descendant_labels_by_kind(parent_node, kinds={"paragraph"}) if label
-                    ]
-                    if paragraph_labels and all(re.fullmatch(r"\d+[a-z]?", label) for label in paragraph_labels):
-                        return True
-            if self._schedule_unlabeled_paragraph_target_gap(target):
-                return True
-            if (
-                parent_node is not None
-                and _addr_container(target) == "schedule"
-                and len(path) == 2
-                and str(leaf_kind or "").lower() in {"part", "chapter", "division"}
-                and str(getattr(parent_node, "kind", "") or "").lower() == "schedule"
-            ):
-                child_kinds = {
-                    str(getattr(child, "kind", "") or "").lower()
-                    for child in getattr(parent_node, "children", []) or []
-                }
-                if child_kinds and child_kinds <= {"crossheading", "pblock"}:
-                    return True
-            if (
-                parent_node is not None
-                and _addr_container(target) == "schedule"
-                and str(leaf_kind or "").lower() == "paragraph"
-                and str(getattr(parent_node, "kind", "") or "").lower() in {"part", "chapter", "division"}
-            ):
-                child_kinds = {
-                    str(getattr(child, "kind", "") or "").lower()
-                    for child in getattr(parent_node, "children", []) or []
-                }
-                if child_kinds and child_kinds <= {"crossheading", "pblock"}:
-                    return True
-            if (
-                parent_node is not None
-                and str(leaf_kind or "").lower() == "subsection"
-                and textual_leaf.isdigit()
-                and str(getattr(parent_node, "kind", "") or "").lower() in {"section", "article", "rule", "regulation"}
-            ):
-                child_kinds = [
-                    str(getattr(child, "kind", "") or "").lower()
-                    for child in getattr(parent_node, "children", []) or []
-                ]
-                if child_kinds and "subsection" not in child_kinds and "paragraph" in child_kinds:
-                    return True
-            if (
-                parent_node is not None
-                and str(leaf_kind or "").lower() == "subsection"
-                and is_alpha
-                and str(getattr(parent_node, "kind", "") or "").lower() in {"section", "article", "rule", "regulation"}
-            ):
-                child_kinds = [
-                    str(getattr(child, "kind", "") or "").lower()
-                    for child in getattr(parent_node, "children", []) or []
-                ]
-                if child_kinds and "subsection" not in child_kinds and "paragraph" in child_kinds:
-                    return True
-                child_labels = [
-                    re.sub(r"[^0-9a-z]+", "", str(getattr(child, "label", "") or "").lower())
-                    for child in getattr(parent_node, "children", []) or []
-                    if str(getattr(child, "kind", "") or "").lower() == "subsection"
-                ]
-                if child_labels and all(re.fullmatch(r"\d+[a-z]?", label) for label in child_labels if label):
-                    return True
-            if (
-                parent_node is not None
-                and str(leaf_kind or "").lower() == "subsection"
-                and re.fullmatch(r"\d+[a-z]{2,}", textual_leaf)
-                and str(getattr(parent_node, "kind", "") or "").lower() in {"section", "article", "rule", "regulation"}
-            ):
-                child_labels = [
-                    re.sub(r"[^0-9a-z]+", "", str(getattr(child, "label", "") or "").lower())
-                    for child in getattr(parent_node, "children", []) or []
-                    if str(getattr(child, "kind", "") or "").lower() == "subsection"
-                ]
-                if child_labels and all(re.fullmatch(r"\d+[a-z]?", label) for label in child_labels if label):
-                    return True
-            if (
-                parent_node is not None
-                and len(path) == 2
-                and _addr_container(target) == "schedule"
-                and str(leaf_kind or "").lower() in {"section", "article", "rule", "regulation"}
-            ):
-                child_kinds = {
-                    str(getattr(child, "kind", "") or "").lower()
-                    for child in getattr(parent_node, "children", []) or []
-                }
-                if child_kinds and child_kinds <= {"part", "chapter", "division", "crossheading", "pblock"}:
-                    return True
         return any(_clean_num(label or "") == "and" for _, label in path)
+
+    def _mtg_subsection_alpha_parent_roman_paragraph(self, ctx: _MalformedLeafContext) -> bool:
+        path = ctx.path
+        return (
+            len(path) >= 2
+            and str(path[-2][0] or "").lower() == "subsection"
+            and bool(re.fullmatch(r"[a-z]+", str(path[-2][1] or "").strip().lower()))
+            and str(path[-1][0] or "").lower() == "paragraph"
+            and ctx.is_roman
+        )
+
+    def _mtg_paragraph_roman_under_subsection_grandchild(self, ctx: _MalformedLeafContext) -> bool:
+        if not (
+            ctx.parent_node is not None
+            and ctx.leaf_kind == "paragraph"
+            and ctx.is_roman
+            and ctx.parent_kind == "subsection"
+        ):
+            return False
+        for child in getattr(ctx.parent_node, "children", []) or []:
+            if _node_kind_lower(child) != "paragraph":
+                continue
+            for grandchild in getattr(child, "children", []) or []:
+                if _node_kind_lower(grandchild) not in {"subparagraph", "item", "point"}:
+                    continue
+                if _norm_label(grandchild) == ctx.textual_leaf:
+                    return True
+        return False
+
+    def _mtg_subparagraph_alpha_under_paragraph(self, ctx: _MalformedLeafContext) -> bool:
+        if not (
+            ctx.parent_node is not None
+            and ctx.leaf_kind == "subparagraph"
+            and ctx.is_alpha
+            and ctx.parent_kind == "paragraph"
+        ):
+            return False
+        child_labels = _child_labels_of(ctx.parent_node, kinds={"subparagraph", "item", "point"})
+        if child_labels and all(re.fullmatch(r"[ivxlcdm]+", label) for label in child_labels if label):
+            return True
+        if child_labels and all(re.fullmatch(r"\d+", label) for label in child_labels if label):
+            return True
+        return False
+
+    def _mtg_subparagraph_digit_under_paragraph_items(self, ctx: _MalformedLeafContext) -> bool:
+        if not (
+            ctx.parent_node is not None
+            and ctx.leaf_kind == "subparagraph"
+            and ctx.textual_leaf.isdigit()
+            and ctx.parent_kind == "paragraph"
+        ):
+            return False
+        child_kinds = _child_kinds_of(ctx.parent_node)
+        return bool(child_kinds and child_kinds <= {"item", "point"})
+
+    def _mtg_item_digit_roman_siblings(self, ctx: _MalformedLeafContext) -> bool:
+        if not (
+            ctx.parent_node is not None
+            and ctx.leaf_kind in {"item", "point"}
+            and ctx.parent_kind in {"item", "point", "subparagraph"}
+            and ctx.textual_leaf.isdigit()
+        ):
+            return False
+        child_labels = _child_labels_of(ctx.parent_node, kinds={"item", "point"})
+        return bool(child_labels and all(re.fullmatch(r"[ivxlcdm]+", label) for label in child_labels if label))
+
+    def _mtg_item_alpha_single_alpha_siblings(self, ctx: _MalformedLeafContext) -> bool:
+        if not (
+            ctx.parent_node is not None
+            and ctx.leaf_kind in {"item", "point"}
+            and ctx.parent_kind in {"item", "point", "subparagraph"}
+            and ctx.is_alpha
+            and len(ctx.textual_leaf) > 1
+        ):
+            return False
+        child_labels = _child_labels_of(ctx.parent_node, kinds={"item", "point"})
+        if child_labels and all(re.fullmatch(r"[a-z]", label) for label in child_labels if label):
+            return True
+        if ctx.textual_leaf[:1] in child_labels:
+            return True
+        return False
+
+    def _mtg_item_alpha_under_paragraph_subparagraphs(self, ctx: _MalformedLeafContext) -> bool:
+        if not (
+            ctx.parent_node is not None
+            and ctx.leaf_kind in {"item", "point"}
+            and ctx.parent_kind == "paragraph"
+            and ctx.is_alpha
+        ):
+            return False
+        child_kinds = _child_kinds_of(ctx.parent_node)
+        child_labels = _child_labels_of(ctx.parent_node, kinds={"subparagraph"})
+        return bool(
+            child_kinds
+            and child_kinds <= {"subparagraph"}
+            and child_labels
+            and all(re.fullmatch(r"\d+[a-z]?", label) for label in child_labels if label)
+        )
+
+    def _mtg_paragraph_digit_under_subsection_alpha_siblings(self, ctx: _MalformedLeafContext) -> bool:
+        if not (
+            ctx.parent_node is not None
+            and ctx.leaf_kind == "paragraph"
+            and ctx.textual_leaf.isdigit()
+            and ctx.parent_kind == "subsection"
+        ):
+            return False
+        child_labels = _child_labels_of(ctx.parent_node, kinds={"paragraph"})
+        return bool(child_labels and all(re.fullmatch(r"[a-z]+", label) for label in child_labels if label))
+
+    def _mtg_paragraph_alpha_under_subsection(self, ctx: _MalformedLeafContext) -> bool:
+        if not (
+            ctx.parent_node is not None
+            and ctx.leaf_kind == "paragraph"
+            and ctx.is_alpha
+            and len(ctx.textual_leaf) > 1
+            and ctx.parent_kind == "subsection"
+        ):
+            return False
+        textual_leaf = ctx.textual_leaf
+        child_labels = _child_labels_of(ctx.parent_node, kinds={"paragraph"})
+        if child_labels and all(re.fullmatch(r"[a-z]", label) for label in child_labels if label):
+            return True
+        first = textual_leaf[:1]
+        rest = textual_leaf[1:]
+        if rest and first in child_labels:
+            return True
+        for child in getattr(ctx.parent_node, "children", []) or []:
+            if _node_kind_lower(child) != "paragraph" or _norm_label(child) != first:
+                continue
+            descendant_labels = [
+                _norm_label(grandchild)
+                for grandchild in getattr(child, "children", []) or []
+                if _node_kind_lower(grandchild) in {"subparagraph", "item", "point"}
+            ]
+            if rest and rest in descendant_labels:
+                return True
+        last = textual_leaf[-1:]
+        prefix = textual_leaf[:-1]
+        for child in getattr(ctx.parent_node, "children", []) or []:
+            if _node_kind_lower(child) != "paragraph" or _norm_label(child) != last:
+                continue
+            descendant_labels = [
+                _norm_label(grandchild)
+                for grandchild in getattr(child, "children", []) or []
+                if _node_kind_lower(grandchild) in {"subparagraph", "item", "point"}
+            ]
+            if prefix and prefix in descendant_labels:
+                return True
+        return False
+
+    def _mtg_subsection_digit_blank_or_extension_siblings(self, ctx: _MalformedLeafContext) -> bool:
+        if not (
+            ctx.parent_node is not None
+            and ctx.leaf_kind == "subsection"
+            and ctx.textual_leaf.isdigit()
+            and ctx.parent_kind in {"section", "article", "rule", "regulation"}
+        ):
+            return False
+        child_labels = _child_labels_of(ctx.parent_node, kinds={"subsection"})
+        if child_labels and any(label == "" for label in child_labels):
+            return True
+        if any(re.fullmatch(rf"{re.escape(ctx.textual_leaf)}[a-z]+", label) for label in child_labels if label):
+            return True
+        return False
+
+    def _mtg_schedule_paragraph_part_or_lettered(self, ctx: _MalformedLeafContext) -> bool:
+        if not (
+            ctx.parent_node is not None
+            and _addr_container(ctx.target) == "schedule"
+            and len(ctx.path) == 2
+            and ctx.leaf_kind == "paragraph"
+            and ctx.parent_kind == "schedule"
+        ):
+            return False
+        if "part" in _child_kinds_of(ctx.parent_node):
+            return True
+        if re.fullmatch(r"[a-z]+\d+", ctx.textual_leaf):
+            paragraph_labels = [
+                label for label in _descendant_labels_by_kind(ctx.parent_node, kinds={"paragraph"}) if label
+            ]
+            if paragraph_labels and all(re.fullmatch(r"\d+[a-z]?", label) for label in paragraph_labels):
+                return True
+        return False
+
+    def _mtg_schedule_unlabeled_paragraph(self, ctx: _MalformedLeafContext) -> bool:
+        return self._schedule_unlabeled_paragraph_target_gap(ctx.target)
+
+    def _mtg_schedule_partition_crossheading(self, ctx: _MalformedLeafContext) -> bool:
+        if not (
+            ctx.parent_node is not None
+            and _addr_container(ctx.target) == "schedule"
+            and len(ctx.path) == 2
+            and ctx.leaf_kind in {"part", "chapter", "division"}
+            and ctx.parent_kind == "schedule"
+        ):
+            return False
+        child_kinds = _child_kinds_of(ctx.parent_node)
+        return bool(child_kinds and child_kinds <= {"crossheading", "pblock"})
+
+    def _mtg_schedule_paragraph_under_partition_crossheading(self, ctx: _MalformedLeafContext) -> bool:
+        if not (
+            ctx.parent_node is not None
+            and _addr_container(ctx.target) == "schedule"
+            and ctx.leaf_kind == "paragraph"
+            and ctx.parent_kind in {"part", "chapter", "division"}
+        ):
+            return False
+        child_kinds = _child_kinds_of(ctx.parent_node)
+        return bool(child_kinds and child_kinds <= {"crossheading", "pblock"})
+
+    def _mtg_subsection_digit_paragraph_only_siblings(self, ctx: _MalformedLeafContext) -> bool:
+        if not (
+            ctx.parent_node is not None
+            and ctx.leaf_kind == "subsection"
+            and ctx.textual_leaf.isdigit()
+            and ctx.parent_kind in {"section", "article", "rule", "regulation"}
+        ):
+            return False
+        child_kinds = [_node_kind_lower(child) for child in getattr(ctx.parent_node, "children", []) or []]
+        return bool(child_kinds and "subsection" not in child_kinds and "paragraph" in child_kinds)
+
+    def _mtg_subsection_alpha_paragraph_or_numeric_siblings(self, ctx: _MalformedLeafContext) -> bool:
+        if not (
+            ctx.parent_node is not None
+            and ctx.leaf_kind == "subsection"
+            and ctx.is_alpha
+            and ctx.parent_kind in {"section", "article", "rule", "regulation"}
+        ):
+            return False
+        child_kinds = [_node_kind_lower(child) for child in getattr(ctx.parent_node, "children", []) or []]
+        if child_kinds and "subsection" not in child_kinds and "paragraph" in child_kinds:
+            return True
+        child_labels = _child_labels_of(ctx.parent_node, kinds={"subsection"})
+        return bool(child_labels and all(re.fullmatch(r"\d+[a-z]?", label) for label in child_labels if label))
+
+    def _mtg_subsection_alnum_multi_siblings(self, ctx: _MalformedLeafContext) -> bool:
+        if not (
+            ctx.parent_node is not None
+            and ctx.leaf_kind == "subsection"
+            and bool(re.fullmatch(r"\d+[a-z]{2,}", ctx.textual_leaf))
+            and ctx.parent_kind in {"section", "article", "rule", "regulation"}
+        ):
+            return False
+        child_labels = _child_labels_of(ctx.parent_node, kinds={"subsection"})
+        return bool(child_labels and all(re.fullmatch(r"\d+[a-z]?", label) for label in child_labels if label))
+
+    def _mtg_schedule_sectionlike_partition_siblings(self, ctx: _MalformedLeafContext) -> bool:
+        if not (
+            ctx.parent_node is not None
+            and len(ctx.path) == 2
+            and _addr_container(ctx.target) == "schedule"
+            and ctx.leaf_kind in {"section", "article", "rule", "regulation"}
+        ):
+            return False
+        child_kinds = _child_kinds_of(ctx.parent_node)
+        return bool(child_kinds and child_kinds <= {"part", "chapter", "division", "crossheading", "pblock"})
 
     def _schedule_partition_target_gap(self, target: LegalAddress) -> bool:
         return bool(self._schedule_partition_target_gap_kind(target))
@@ -1159,60 +1359,26 @@ class UKReplayTargetDiagnosticsMixin:
         return None
 
     def _missing_sibling_range_gap(self, target: LegalAddress) -> bool:
-        # Roman numeral parser: shared implementation in lawvm.roman
-        # rejects non-canonical spellings like "IIII" via round-trip
-        # canonicalization.  The previous nested implementation had a
-        # latent bug where ``prev`` only updated in the additive branch.
-        _roman_to_int = _shared_roman_to_arabic
-
+        # The numeral-mode logic lives in the module-level helpers
+        # ``_classify_numeral_label`` (target leaf -> mode + comparison keys) and
+        # ``_SiblingBuckets.ingest`` (per-sibling routing). The roman parser is
+        # the shared ``lawvm.roman`` implementation, which rejects non-canonical
+        # spellings like "IIII" via round-trip canonicalization; the historical
+        # hand-rolled parser had a latent bug where ``prev`` only updated in the
+        # additive branch, which is why this delegates instead.
         path = tuple(getattr(target, "path", ()) or ())
         if len(path) < 2:
             return False
         leaf_kind, leaf_label = path[-1]
         text = str(leaf_label or "").strip().lower()
-        mode: str | None = None
-        want: int
-        want_pair: tuple[int, int] | None = None
-        want_multi_pair: tuple[int, str] | None = None
-        want_alpha_num_pair: tuple[str, int] | None = None
-        if text.isdigit():
-            mode = "numeric"
-            want = int(text)
-        elif re.fullmatch(r"[a-z]", text):
-            mode = "alpha"
-            want = ord(text) - ord("a") + 1
-        elif re.fullmatch(r"[a-z]{2,}", text):
-            mode = "alpha_suffix"
-            want = ord(text[0]) - ord("a") + 1
-        elif re.fullmatch(r"[ivxlcdm]+", text):
-            roman = _roman_to_int(text)
-            if roman is None:
-                return False
-            mode = "roman"
-            want = roman
-        elif re.fullmatch(r"\d+[a-z]", text):
-            pair = _local_alnum_suffix_key(text)
-            if pair is None:
-                return False
-            mode = "alnum_suffix"
-            want = pair[0]
-            want_pair = pair
-        elif re.fullmatch(r"\d+[a-z]{2,}", text):
-            pair = _alnum_multi_suffix_key(text)
-            if pair is None:
-                return False
-            mode = "alnum_multi_suffix"
-            want = pair[0]
-            want_multi_pair = pair
-        elif re.fullmatch(r"[a-z]+\d+", text):
-            pair = _alpha_num_suffix_key(text)
-            if pair is None:
-                return False
-            mode = "alpha_num_suffix"
-            want = pair[1]
-            want_alpha_num_pair = pair
-        else:
+        parsed = _classify_numeral_label(text)
+        if parsed is None:
             return False
+        mode = parsed.mode
+        want = parsed.want
+        want_pair = parsed.want_pair
+        want_multi_pair = parsed.want_multi_pair
+        want_alpha_num_pair = parsed.want_alpha_num_pair
         if len(path) == 1:
             parent_node = self.statute.body
         else:
@@ -1220,285 +1386,194 @@ class UKReplayTargetDiagnosticsMixin:
             parent_node, _, _ = self._find_node_by_target(parent_target)
             if parent_node is None:
                 return False
-        if str(leaf_kind or "").lower() == "part" and text.isdigit():
-            part_nums: list[int] = []
-            for child in getattr(parent_node, "children", []) or []:
-                if str(getattr(child, "kind", "") or "").lower() != "part":
-                    continue
-                num = _part_numeric_value(str(getattr(child, "label", "") or ""))
-                if num is not None:
-                    part_nums.append(num)
-            if part_nums:
-                part_nums = sorted(set(part_nums))
-                want_num = int(text)
-                lower = max((n for n in part_nums if n < want_num), default=None)
-                upper = min((n for n in part_nums if n > want_num), default=None)
-                if lower is not None and upper is not None and lower < want_num < upper:
-                    return True
-                if lower is None and part_nums and want_num < part_nums[0]:
-                    return True
-                if upper is None and part_nums and want_num > part_nums[-1]:
-                    return True
-        if str(leaf_kind or "").lower() == "part" and re.fullmatch(r"\d+[a-z]+", text):
-            base_match = re.fullmatch(r"(\d+)[a-z]+", text)
-            if base_match is not None:
-                want_num = int(base_match.group(1))
-                part_nums: list[int] = []
-                for child in getattr(parent_node, "children", []) or []:
-                    if str(getattr(child, "kind", "") or "").lower() != "part":
-                        continue
-                    raw = str(getattr(child, "label", "") or "").strip()
-                    base_num = _part_numeric_value(raw)
-                    if base_num is not None:
-                        part_nums.append(base_num)
-                        continue
-                    m = re.fullmatch(r"part\s+(\d+)[a-z]+", raw, re.I)
-                    if m is not None:
-                        part_nums.append(int(m.group(1)))
-                if part_nums:
-                    part_nums = sorted(set(part_nums))
-                    lower = max((n for n in part_nums if n < want_num), default=None)
-                    upper = min((n for n in part_nums if n > want_num), default=None)
-                    if lower is not None and upper is not None and lower < want_num < upper:
-                        return True
-                    if any(n == want_num for n in part_nums):
-                        return True
-        sibling_labels: list[int] = []
-        sibling_pairs: list[tuple[int, int]] = []
-        sibling_multi_pairs: list[tuple[int, str]] = []
-        sibling_alpha_num_pairs: list[tuple[str, int]] = []
-        alpha_raw_labels: list[str] = []
-        numeric_suffix_labels: list[int] = []
-        alpha_suffix_labels: list[str] = []
-        blank_same_kind_present = False
+        leaf_kind_lower = str(leaf_kind or "").lower()
+        if leaf_kind_lower == "part" and text.isdigit():
+            if self._sibling_part_numeric_gap(parent_node, want):
+                return True
+        if leaf_kind_lower == "part" and re.fullmatch(r"\d+[a-z]+", text):
+            if self._sibling_part_alnum_gap(parent_node, text):
+                return True
+        buckets = _SiblingBuckets()
         for child in getattr(parent_node, "children", []) or []:
             child_kind = str(getattr(child, "kind", "") or "").lower()
-            if child_kind == str(leaf_kind or "").lower():
-                label_text = str(getattr(child, "label", "") or "").strip()
-                if not label_text:
-                    blank_same_kind_present = True
-                if mode == "numeric" and label_text.isdigit():
-                    sibling_labels.append(int(label_text))
-                elif mode == "numeric" and (pair := _local_alnum_suffix_key(label_text)) is not None:
-                    numeric_suffix_labels.append(int(pair[0]))
-                elif mode == "alpha" and re.fullmatch(r"[a-z]", label_text.lower()):
-                    sibling_labels.append(ord(label_text.lower()) - ord("a") + 1)
-                elif mode == "alpha":
-                    alpha_raw_labels.append(label_text.lower())
-                elif mode == "alpha_suffix":
-                    lowered = label_text.lower()
-                    if re.fullmatch(r"[a-z]", lowered):
-                        sibling_labels.append(ord(lowered) - ord("a") + 1)
-                    else:
-                        alpha_suffix_labels.append(lowered)
-                elif mode == "roman" and re.fullmatch(r"[ivxlcdm]+", label_text.lower()):
-                    roman = _roman_to_int(label_text)
-                    if roman is not None:
-                        sibling_labels.append(roman)
-                elif mode == "alnum_suffix":
-                    pair = _local_alnum_suffix_key(label_text)
-                    if pair is not None:
-                        sibling_pairs.append(pair)
-                    elif label_text.isdigit():
-                        numeric_suffix_labels.append(int(label_text))
-                elif mode == "alnum_multi_suffix":
-                    pair = _alnum_multi_suffix_key(label_text)
-                    if pair is not None:
-                        sibling_multi_pairs.append(pair)
-                    elif (pair1 := _local_alnum_suffix_key(label_text)) is not None:
-                        sibling_multi_pairs.append((pair1[0], chr(ord("a") + pair1[1] - 1)))
-                    elif label_text.isdigit():
-                        numeric_suffix_labels.append(int(label_text))
-                elif mode == "alpha_num_suffix":
-                    pair = _alpha_num_suffix_key(label_text)
-                    if pair is not None:
-                        sibling_alpha_num_pairs.append(pair)
-                    elif re.fullmatch(r"[a-z]+", label_text.lower()):
-                        alpha_raw_labels.append(label_text.lower())
+            if child_kind == leaf_kind_lower:
+                buckets.ingest(str(getattr(child, "label", "") or ""), mode)
                 continue
             if uk_is_transparent_wrapper_kind(child_kind):
                 for grandchild in getattr(child, "children", []) or []:
-                    if str(getattr(grandchild, "kind", "") or "").lower() != str(leaf_kind or "").lower():
+                    if str(getattr(grandchild, "kind", "") or "").lower() != leaf_kind_lower:
                         continue
-                    label_text = str(getattr(grandchild, "label", "") or "").strip()
-                    if not label_text:
-                        blank_same_kind_present = True
-                    if mode == "numeric" and label_text.isdigit():
-                        sibling_labels.append(int(label_text))
-                    elif mode == "numeric" and (pair := _local_alnum_suffix_key(label_text)) is not None:
-                        numeric_suffix_labels.append(int(pair[0]))
-                    elif mode == "alpha" and re.fullmatch(r"[a-z]", label_text.lower()):
-                        sibling_labels.append(ord(label_text.lower()) - ord("a") + 1)
-                    elif mode == "alpha":
-                        alpha_raw_labels.append(label_text.lower())
-                    elif mode == "alpha_suffix":
-                        lowered = label_text.lower()
-                        if re.fullmatch(r"[a-z]", lowered):
-                            sibling_labels.append(ord(lowered) - ord("a") + 1)
-                        else:
-                            alpha_suffix_labels.append(lowered)
-                    elif mode == "roman" and re.fullmatch(r"[ivxlcdm]+", label_text.lower()):
-                        roman = _roman_to_int(label_text)
-                        if roman is not None:
-                            sibling_labels.append(roman)
-                    elif mode == "alnum_suffix":
-                        pair = _local_alnum_suffix_key(label_text)
-                        if pair is not None:
-                            sibling_pairs.append(pair)
-                        elif label_text.isdigit():
-                            numeric_suffix_labels.append(int(label_text))
-                    elif mode == "alnum_multi_suffix":
-                        pair = _alnum_multi_suffix_key(label_text)
-                        if pair is not None:
-                            sibling_multi_pairs.append(pair)
-                        elif (pair1 := _local_alnum_suffix_key(label_text)) is not None:
-                            sibling_multi_pairs.append((pair1[0], chr(ord("a") + pair1[1] - 1)))
-                        elif label_text.isdigit():
-                            numeric_suffix_labels.append(int(label_text))
-                    elif mode == "alpha_num_suffix":
-                        pair = _alpha_num_suffix_key(label_text)
-                        if pair is not None:
-                            sibling_alpha_num_pairs.append(pair)
-                        elif re.fullmatch(r"[a-z]+", label_text.lower()):
-                            alpha_raw_labels.append(label_text.lower())
+                    buckets.ingest(str(getattr(grandchild, "label", "") or ""), mode)
         if mode == "alnum_multi_suffix":
-            if want_multi_pair is None:
-                return False
-            if sibling_multi_pairs:
-                sibling_multi_pairs = sorted(set(sibling_multi_pairs))
-                lower = max((pair for pair in sibling_multi_pairs if pair < want_multi_pair), default=None)
-                upper = min((pair for pair in sibling_multi_pairs if pair > want_multi_pair), default=None)
-                if lower is not None or upper is not None:
-                    return True
-                if any(pair[0] == want_multi_pair[0] for pair in sibling_multi_pairs):
-                    return True
-            numeric_base_present = any(
-                str(getattr(child, "kind", "") or "").lower() == str(leaf_kind or "").lower()
-                and str(getattr(child, "label", "") or "").strip().lower() == str(want_multi_pair[0])
-                for child in getattr(parent_node, "children", []) or []
-            )
-            if numeric_base_present:
-                return True
-            if numeric_suffix_labels and want_multi_pair[0] in set(numeric_suffix_labels):
-                return True
-            return False
+            return self._sibling_gap_alnum_multi(parent_node, leaf_kind_lower, buckets, want_multi_pair)
         if mode == "alpha_num_suffix":
-            if want_alpha_num_pair is None:
-                return False
-            if sibling_alpha_num_pairs:
-                sibling_alpha_num_pairs = sorted(set(sibling_alpha_num_pairs))
-                same_prefix = [pair for pair in sibling_alpha_num_pairs if pair[0] == want_alpha_num_pair[0]]
-                if same_prefix:
-                    lower = max((pair for pair in same_prefix if pair[1] < want_alpha_num_pair[1]), default=None)
-                    upper = min((pair for pair in same_prefix if pair[1] > want_alpha_num_pair[1]), default=None)
-                    if lower is not None or upper is not None:
-                        return True
-            if any(label == want_alpha_num_pair[0] for label in alpha_raw_labels):
-                return True
-            return False
+            return self._sibling_gap_alpha_num(buckets, want_alpha_num_pair)
         if mode == "alnum_suffix":
-            if not sibling_pairs or want_pair is None:
-                # If the section still has the numeric base subsection (e.g. "6")
-                # but the alpha extension (e.g. "6A") is absent, treat this as the
-                # same stale/shape family as other missing sibling gaps.
-                want_pair_base = want_pair[0] if want_pair is not None else None
-                want_num = str(want_pair_base) if want_pair_base is not None else ""
-                numeric_base_present = any(
-                    str(getattr(child, "kind", "") or "").lower() == str(leaf_kind or "").lower()
-                    and str(getattr(child, "label", "") or "").strip().lower() == want_num
-                    for child in getattr(parent_node, "children", []) or []
-                )
-                if numeric_suffix_labels and want_pair_base is not None:
-                    nums = sorted(set(numeric_suffix_labels))
-                    lower_num = max((n for n in nums if n < want_pair_base), default=None)
-                    upper_num = min((n for n in nums if n > want_pair_base), default=None)
-                    if lower_num is not None and upper_num is not None and lower_num < want_pair_base < upper_num:
-                        return True
-                    if lower_num is None and nums and want_pair_base < nums[0]:
-                        return True
-                    if upper_num is None and nums and want_pair_base > nums[-1]:
-                        return True
-                return numeric_base_present
-            sibling_pairs = sorted(set(sibling_pairs))
-            lower = max((pair for pair in sibling_pairs if pair < want_pair), default=None)
-            upper = min((pair for pair in sibling_pairs if pair > want_pair), default=None)
-            if lower is not None and upper is not None and lower < want_pair < upper:
-                return True
-            if lower is None and sibling_pairs and want_pair < sibling_pairs[0]:
-                return True
-            if upper is None and sibling_pairs and want_pair > sibling_pairs[-1]:
-                return True
-            same_num = [pair for pair in sibling_pairs if pair[0] == want_pair[0]]
-            if same_num:
-                lower_same = max((pair for pair in same_num if pair[1] < want_pair[1]), default=None)
-                upper_same = min((pair for pair in same_num if pair[1] > want_pair[1]), default=None)
-                if lower_same is not None or upper_same is not None:
-                    return True
-            numeric_base_present = any(
-                str(getattr(child, "kind", "") or "").lower() == str(leaf_kind or "").lower()
-                and str(getattr(child, "label", "") or "").strip().lower() == str(want_pair[0])
-                for child in getattr(parent_node, "children", []) or []
-            )
-            if numeric_base_present:
-                return True
-            if numeric_suffix_labels:
-                nums = sorted(set(numeric_suffix_labels))
-                lower_num = max((n for n in nums if n < want_pair[0]), default=None)
-                upper_num = min((n for n in nums if n > want_pair[0]), default=None)
-                if lower_num is not None and upper_num is not None and lower_num < want_pair[0] < upper_num:
-                    return True
-                if lower_num is None and nums and want_pair[0] < nums[0]:
-                    return True
-                if upper_num is None and nums and want_pair[0] > nums[-1]:
-                    return True
-            return False
+            return self._sibling_gap_alnum(parent_node, leaf_kind_lower, buckets, want_pair)
         if mode == "alpha_suffix":
-            if any(label.startswith(text) and len(label) > len(text) for label in alpha_suffix_labels):
-                return True
-            first = text[:1]
-            if any(label == first for label in alpha_raw_labels):
-                return True
-            lower = max((n for n in sibling_labels if n < want), default=None)
-            upper = min((n for n in sibling_labels if n > want), default=None)
-            if lower is not None and upper is not None and lower < want < upper:
-                return True
-            if any(label.startswith(first) and len(label) > 1 for label in alpha_suffix_labels):
-                return True
+            return self._sibling_gap_alpha_suffix(buckets, text, want)
+        return self._sibling_gap_plain(buckets, mode, text, want)
+
+    def _sibling_part_numeric_gap(self, parent_node: IRNode | None, want: int) -> bool:
+        part_nums = [
+            num
+            for child in getattr(parent_node, "children", []) or []
+            if _node_kind_lower(child) == "part"
+            and (num := _part_numeric_value(str(getattr(child, "label", "") or ""))) is not None
+        ]
+        return _int_range_gap(want, part_nums)
+
+    def _sibling_part_alnum_gap(self, parent_node: IRNode | None, text: str) -> bool:
+        base_match = re.fullmatch(r"(\d+)[a-z]+", text)
+        if base_match is None:
             return False
-        if not sibling_labels:
-            if mode == "numeric" and numeric_suffix_labels:
-                nums = sorted(set(numeric_suffix_labels))
-                lower_num = max((n for n in nums if n < want), default=None)
-                upper_num = min((n for n in nums if n > want), default=None)
-                if lower_num is not None and upper_num is not None and lower_num < want < upper_num:
-                    return True
-                if lower_num is None and nums and want < nums[0]:
-                    return True
-                if upper_num is None and nums and want > nums[-1]:
-                    return True
-            if mode == "alpha" and any(label.startswith(text) and len(label) > 1 for label in alpha_raw_labels):
-                return True
-            if mode == "alpha":
-                repeated = sorted(label for label in alpha_raw_labels if re.fullmatch(r"([a-z])\1+", label))
-                if repeated and any(rep < text for rep in repeated) and any(rep > text for rep in repeated):
-                    return True
+        want_num = int(base_match.group(1))
+        part_nums: list[int] = []
+        for child in getattr(parent_node, "children", []) or []:
+            if _node_kind_lower(child) != "part":
+                continue
+            raw = str(getattr(child, "label", "") or "").strip()
+            base_num = _part_numeric_value(raw)
+            if base_num is not None:
+                part_nums.append(base_num)
+                continue
+            m = re.fullmatch(r"part\s+(\d+)[a-z]+", raw, re.I)
+            if m is not None:
+                part_nums.append(int(m.group(1)))
+        if not part_nums:
             return False
-        if mode == "alpha":
-            repeated = sorted(label for label in alpha_raw_labels if re.fullmatch(r"([a-z])\1+", label))
-            if repeated and any(rep < text for rep in repeated) and any(rep > text for rep in repeated):
+        ordered = sorted(set(part_nums))
+        # NB: unlike the plain-numeric part gap, the alnum-part case only treats
+        # a strictly-bracketed ``want_num`` (or an exact base match) as a gap; it
+        # deliberately does NOT fire when ``want_num`` is merely below-all or
+        # above-all. Do not collapse this into ``_int_range_gap``.
+        lower = max((n for n in ordered if n < want_num), default=None)
+        upper = min((n for n in ordered if n > want_num), default=None)
+        if lower is not None and upper is not None and lower < want_num < upper:
+            return True
+        return any(n == want_num for n in ordered)
+
+    def _sibling_numeric_base_present(
+        self, parent_node: IRNode | None, leaf_kind_lower: str, base: object
+    ) -> bool:
+        target_label = str(base)
+        return any(
+            _node_kind_lower(child) == leaf_kind_lower
+            and str(getattr(child, "label", "") or "").strip().lower() == target_label
+            for child in getattr(parent_node, "children", []) or []
+        )
+
+    def _sibling_gap_alnum_multi(
+        self,
+        parent_node: IRNode | None,
+        leaf_kind_lower: str,
+        buckets: _SiblingBuckets,
+        want_multi_pair: tuple[int, str] | None,
+    ) -> bool:
+        if want_multi_pair is None:
+            return False
+        multi_pairs = sorted(set(buckets.multi_pairs))
+        if multi_pairs:
+            lower = max((pair for pair in multi_pairs if pair < want_multi_pair), default=None)
+            upper = min((pair for pair in multi_pairs if pair > want_multi_pair), default=None)
+            if lower is not None or upper is not None:
                 return True
-        sibling_labels = sorted(set(sibling_labels))
-        if mode == "numeric" and blank_same_kind_present and sibling_labels and want < sibling_labels[0]:
+            if any(pair[0] == want_multi_pair[0] for pair in multi_pairs):
+                return True
+        if self._sibling_numeric_base_present(parent_node, leaf_kind_lower, want_multi_pair[0]):
             return True
-        lower = max((label for label in sibling_labels if label < want), default=None)
-        upper = min((label for label in sibling_labels if label > want), default=None)
-        if lower is not None and upper is not None and lower < want < upper:
-            return True
-        if lower is None and sibling_labels and want < sibling_labels[0]:
-            return True
-        if upper is None and sibling_labels and want > sibling_labels[-1]:
+        if buckets.numeric_suffix_labels and want_multi_pair[0] in set(buckets.numeric_suffix_labels):
             return True
         return False
+
+    def _sibling_gap_alpha_num(
+        self, buckets: _SiblingBuckets, want_alpha_num_pair: tuple[str, int] | None
+    ) -> bool:
+        if want_alpha_num_pair is None:
+            return False
+        alpha_num_pairs = sorted(set(buckets.alpha_num_pairs))
+        if alpha_num_pairs:
+            same_prefix = [pair for pair in alpha_num_pairs if pair[0] == want_alpha_num_pair[0]]
+            if same_prefix:
+                lower = max((pair for pair in same_prefix if pair[1] < want_alpha_num_pair[1]), default=None)
+                upper = min((pair for pair in same_prefix if pair[1] > want_alpha_num_pair[1]), default=None)
+                if lower is not None or upper is not None:
+                    return True
+        return any(label == want_alpha_num_pair[0] for label in buckets.alpha_raw_labels)
+
+    def _sibling_gap_alnum(
+        self,
+        parent_node: IRNode | None,
+        leaf_kind_lower: str,
+        buckets: _SiblingBuckets,
+        want_pair: tuple[int, int] | None,
+    ) -> bool:
+        if not buckets.pairs or want_pair is None:
+            # The numeric base subsection (e.g. "6") may still be present while the
+            # alpha extension (e.g. "6A") is absent: same stale/shape family.
+            want_pair_base = want_pair[0] if want_pair is not None else None
+            base_label = str(want_pair_base) if want_pair_base is not None else ""
+            numeric_base_present = self._sibling_numeric_base_present(
+                parent_node, leaf_kind_lower, base_label
+            )
+            if want_pair_base is not None and _int_range_gap(want_pair_base, buckets.numeric_suffix_labels):
+                return True
+            return numeric_base_present
+        sibling_pairs = sorted(set(buckets.pairs))
+        lower = max((pair for pair in sibling_pairs if pair < want_pair), default=None)
+        upper = min((pair for pair in sibling_pairs if pair > want_pair), default=None)
+        if lower is not None and upper is not None and lower < want_pair < upper:
+            return True
+        if lower is None and want_pair < sibling_pairs[0]:
+            return True
+        if upper is None and want_pair > sibling_pairs[-1]:
+            return True
+        same_num = [pair for pair in sibling_pairs if pair[0] == want_pair[0]]
+        if same_num:
+            lower_same = max((pair for pair in same_num if pair[1] < want_pair[1]), default=None)
+            upper_same = min((pair for pair in same_num if pair[1] > want_pair[1]), default=None)
+            if lower_same is not None or upper_same is not None:
+                return True
+        if self._sibling_numeric_base_present(parent_node, leaf_kind_lower, want_pair[0]):
+            return True
+        return _int_range_gap(want_pair[0], buckets.numeric_suffix_labels)
+
+    def _sibling_gap_alpha_suffix(self, buckets: _SiblingBuckets, text: str, want: int) -> bool:
+        if any(label.startswith(text) and len(label) > len(text) for label in buckets.alpha_suffix_labels):
+            return True
+        first = text[:1]
+        if any(label == first for label in buckets.alpha_raw_labels):
+            return True
+        lower = max((n for n in buckets.labels if n < want), default=None)
+        upper = min((n for n in buckets.labels if n > want), default=None)
+        if lower is not None and upper is not None and lower < want < upper:
+            return True
+        if any(label.startswith(first) and len(label) > 1 for label in buckets.alpha_suffix_labels):
+            return True
+        return False
+
+    @staticmethod
+    def _alpha_repeated_brackets(labels: list[str], text: str) -> bool:
+        repeated = sorted(label for label in labels if re.fullmatch(r"([a-z])\1+", label))
+        return bool(repeated and any(rep < text for rep in repeated) and any(rep > text for rep in repeated))
+
+    def _sibling_gap_plain(self, buckets: _SiblingBuckets, mode: str, text: str, want: int) -> bool:
+        if not buckets.labels:
+            if mode == "numeric" and _int_range_gap(want, buckets.numeric_suffix_labels):
+                return True
+            if mode == "alpha" and any(
+                label.startswith(text) and len(label) > 1 for label in buckets.alpha_raw_labels
+            ):
+                return True
+            if mode == "alpha" and self._alpha_repeated_brackets(buckets.alpha_raw_labels, text):
+                return True
+            return False
+        if mode == "alpha" and self._alpha_repeated_brackets(buckets.alpha_raw_labels, text):
+            return True
+        sibling_labels = sorted(set(buckets.labels))
+        if mode == "numeric" and buckets.blank_same_kind_present and want < sibling_labels[0]:
+            return True
+        return _int_range_gap(want, sibling_labels)
 
     def _container_text_target_gap(self, op: LegalOperation) -> bool:
         target = getattr(op, "target", None)
