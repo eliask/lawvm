@@ -233,6 +233,11 @@ BgIdx(a, d, mode) ==
                /\ Eligible(timelines[a][i], d, mode) }
   IN LatestIdx(timelines[a], S)
 
+(* NOTE: this is the simple two-rail abstraction (temp wins when eligible).  The *)
+(* real selector additionally applies the RegimeHandoff carve-out (see          *)
+(* Inv_TwoRailSelection below) on a temporary's last in-force day; that is NOT   *)
+(* modelled here (intentional abstraction boundary — the executable mirror       *)
+(* tests/test_tla_invariant_mirror.py covers the real rule).                    *)
 SelectedIdx(a, d, mode) ==
   IF TempIdx(a, d, mode) # 0
   THEN TempIdx(a, d, mode)
@@ -376,11 +381,39 @@ Inv_ExpiryChainMonotone ==
           /\ StrictlyIncreasing(v.expiryChain)
           /\ (Len(v.expiryChain) = 0 \/ v.origExpires < v.expiryChain[1])
 
+(* RegimeHandoff models the post-v0.1 lex-posterior carve-out in the REAL       *)
+(* selector (select_active_version_ex_prevalidated, timeline_selection.py:      *)
+(* 470-489; witness 2016/258 s.8 — 1199/2021 commences the same day 1458/2019's *)
+(* temporary text last governs, and the consolidation shows 1199's text).  On a *)
+(* temporary overlay's LAST in-force day a later-effective permanent that       *)
+(* commences on/after that day supersedes the expiring temporary.  The overlay's*)
+(* last in-force day is ResolvedExpiry(overlay) - 1 (it is in force on          *)
+(* [effective, ResolvedExpiry)).  When this holds the real selector drops the   *)
+(* overlay and the background wins, so temp is NOT always selected.             *)
+RegimeHandoff(a, d, mode) ==
+  /\ TempIdx(a, d, mode) # 0
+  /\ \E j \in DOMAIN timelines[a] :
+       /\ timelines[a][j].variant = "permanent"
+       /\ Eligible(timelines[a][j], d, mode)
+       /\ timelines[a][j].effective > timelines[a][TempIdx(a, d, mode)].effective
+       /\ timelines[a][j].effective >= ResolvedExpiry(timelines[a][TempIdx(a, d, mode)]) - 1
+
+(* DRIFT NOTE (2026-06-30): the real selector is NOT temp-always — it applies   *)
+(* RegimeHandoff above.  The literal v0.1 invariant (temp ALWAYS wins when       *)
+(* eligible) is therefore now too strong: the code deliberately violates it on   *)
+(* the handoff day, and the code is correct (lex posterior).  This invariant is  *)
+(* weakened to exclude the handoff so the model no longer over-claims a property *)
+(* the code does not hold.  The model's SelectedIdx still abstracts to           *)
+(* temp-always (it does not thread the handoff into PIT — an intentional         *)
+(* abstraction boundary); the in-CI conformance lane for the real rule is        *)
+(* tests/test_tla_invariant_mirror.py::test_inv_two_rail_selection_against_real_ *)
+(* selector.  See notes/TLA_SPEC_DRIFT_AUDIT_2026-06-30.md s.3c.                 *)
 Inv_TwoRailSelection ==
   \A a \in Addresses :
     \A d \in Dates :
       \A mode \in Modes :
-        /\ (TempIdx(a, d, mode) # 0 => SelectedIdx(a, d, mode) = TempIdx(a, d, mode))
+        /\ (TempIdx(a, d, mode) # 0 /\ ~RegimeHandoff(a, d, mode)
+              => SelectedIdx(a, d, mode) = TempIdx(a, d, mode))
         /\ (TempIdx(a, d, mode) = 0 => SelectedIdx(a, d, mode) = BgIdx(a, d, mode))
 
 Inv_InForceOnlyUsesEnacted ==

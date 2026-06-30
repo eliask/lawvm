@@ -22,7 +22,8 @@ bug class it catches. Addresses Pro adversarial review attack #23
 | Temporal selector correctness | Z3 (4 proofs) | proofs/z3_temporal_selector.py | Manual | No | Expired version returned, wrong rail |
 | Occupancy state machine | Z3 (6 proofs) | proofs/z3_occupancy.py | Manual | No | Invalid state transitions, tombstone escape |
 | Evidence claim precedence | Z3 (4 proofs) | proofs/z3_claim_precedence.py | Manual | No | Antisymmetry/transitivity violation |
-| Temporal overlay semantics | TLA+ TLC (12 invariants) | proofs/tla/LawVMTemporalOverlay.tla | Manual | No | Overlapping permanents, expiry chain, ancestor masking |
+| Temporal overlay semantics (model) | TLA+ (12 invariants; model frozen at v0.1 2026-04, no TLC harness) | proofs/tla/LawVMTemporalOverlay.tla | Manual (not run; checks model vs itself, not vs code) | No | Overlapping permanents, expiry chain, ancestor masking — but model is structurally stale: lacks `expires_as_of` & `temporary_expiry` tombstones, and `Inv_TwoRailSelection` was relaxed 2026-06-30 for the regime-handoff carve-out (see TLA_SPEC_DRIFT_AUDIT_2026-06-30.md) |
+| Temporal selection invariants (real code) | pytest Hypothesis mirror (`Inv_TwoRailSelection` w/ handoff, `Inv_InForceOnlyUsesEnacted`, absent-direction, Eligible/Z3 P1-P2) over the REAL `select_active_version_ex` | tests/test_tla_invariant_mirror.py | CI | Yes | Selector drift from the modelled invariants — this is the in-CI conformance lane that auto-tracks code, unlike the frozen .tla |
 | Tree ops persistent structure | icontract @ensure | tree_ops.replace_at | Runtime | Yes (crash) | Mutation of shared tree |
 | Version effective bound | icontract @ensure | timeline.select_active_version | Runtime | Yes (crash) | Future version returned |
 | Node kind non-empty | __post_init__ | IRNode, LegalAddress | Construction | Yes (ValueError) | Empty-kind nodes in tree |

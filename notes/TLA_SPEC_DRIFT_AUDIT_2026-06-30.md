@@ -176,27 +176,29 @@ update (targeted) > TLC-in-CI (skip).**
    `check_temporary_overlay_consistency` / `check_expiry_chain_preserved` real
    compiled timelines instead of fixtures.
 
-2. **Targeted `.tla` update (secondary).** Update ONLY where intended semantics
-   genuinely changed:
-   - **`Inv_TwoRailSelection`**: relax to admit the regime-handoff exception
-     (an eligible later-effective permanent on the overlay's last in-force day
-     may win), OR add a `RegimeHandoff(a,d)` predicate and weaken the invariant
-     to `TempIdx != 0 /\ ~RegimeHandoff => SelectedIdx = TempIdx`. The current
-     invariant is the thing that is wrong, not the code.
-   - Optionally model `expires_as_of` as a second horizon and a
-     `temporary_expiry`-style absence carrier — but these are expressiveness
-     additions, not safety-invariant changes, and add real model complexity for
-     little checking value. Lower priority.
-   Do NOT chase the op-vocabulary / lineage-migration gap; it is an intentional
+2. **Targeted `.tla` update (secondary). APPLIED 2026-06-30.** Done where
+   intended semantics genuinely changed:
+   - **`Inv_TwoRailSelection`**: a `RegimeHandoff(a, d, mode)` predicate was
+     added and the invariant weakened to
+     `TempIdx != 0 /\ ~RegimeHandoff => SelectedIdx = TempIdx`. A note at
+     `SelectedIdx` records that the model's selection still abstracts the
+     handoff (not threaded into PIT). The invariant — the stale party — no
+     longer over-claims a property the code deliberately violates.
+   - NOT done (deliberately, per the analysis below): modelling `expires_as_of`
+     as a second horizon and a `temporary_expiry`-style absence carrier — these
+     are expressiveness additions, not safety-invariant changes, and add real
+     model complexity for little checking value.
+   Did NOT chase the op-vocabulary / lineage-migration gap; it is an intentional
    abstraction boundary the model header already declares.
 
 3. **TLC-in-CI: skip.** Weak (model-internal only); see §5.
 
-4. **Bridge doc:** add a note to `notes/VERIFICATION_PROPERTY_MAP.md` that the
-   TLA+ model is frozen at v0.1 and that the executable mirror
-   (`tests/test_tla_invariant_mirror.py`) is the in-CI conformance lane for the
-   selection invariants. (Not applied by this audit to avoid touching the map's
-   normative rows; left as a one-line follow-up.)
+4. **Bridge doc. APPLIED 2026-06-30.** `notes/VERIFICATION_PROPERTY_MAP.md`'s
+   temporal-overlay row now records that the TLA+ model is frozen at v0.1 with
+   no TLC harness (checks model-vs-itself, not vs code) and is structurally
+   stale, and a new row registers the executable mirror
+   (`tests/test_tla_invariant_mirror.py`) as the in-CI conformance lane for the
+   selection invariants.
 
 ## 7. Guardrail compliance
 
