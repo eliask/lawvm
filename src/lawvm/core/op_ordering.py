@@ -125,6 +125,15 @@ class OrderingProfile:
     lex_posterior: bool = False
     unproven_resolution_label: str = DEFAULT_UNPROVEN_RESOLUTION_LABEL
     fragment_action_allowlist: Optional[frozenset[StructuralAction]] = None
+    # Same-moment bucketing accessor override fed to the shared detector. ``None``
+    # (SE/EE/NO/EU/UK) keeps the canonical ``OperationSource.effective`` key, so
+    # those frontends are byte-identical. A frontend whose APPLY-time "same
+    # moment" is a different source-side date supplies its own accessor (US:
+    # ``effective or enacted`` — most US amendments are undated-effective and
+    # apply AT ENACTMENT, the date the US dry-run's ``(enacted_date, statute_id)``
+    # application order already buckets by). Only consulted by stage 3; it never
+    # affects the temporal sort (stage 1 uses ``temporal_key``).
+    same_moment_effective_date_of: Optional[Callable[[LegalOperation], str]] = None
     # ── Later-wave hooks (no-ops today; design §3.2 steps 2 and 5). ──────────
     # UK PIT-in-force commencement gate: ``(op, jurisdiction_or_date) -> bool``.
     # None today = every op passes (no gating). Implemented in the UK wave.
@@ -231,6 +240,7 @@ def order_ops(
         fragment_action_allowlist=profile.fragment_action_allowlist,
         unproven_resolution_label=profile.unproven_resolution_label,
         adjudications_out=adjudications_out,
+        effective_date_of=profile.same_moment_effective_date_of,
     )
 
     # ── Stage 4: lex-posterior tiebreak (only when the profile opts in). ─────

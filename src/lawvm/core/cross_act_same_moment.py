@@ -519,6 +519,7 @@ def _detect_same_moment_conflict_groups(
     ops: AbcSequence[LegalOperation],
     *,
     incompatible_payload_predicate: Callable[[LegalOperation, LegalOperation], bool],
+    effective_date_of: Optional[Callable[[LegalOperation], str]] = None,
 ) -> dict[_SameMomentTargetKey, list[tuple[LegalOperation, LegalOperation]]]:
     """Detect same-moment cross-act conflict groups (op shape).
 
@@ -527,10 +528,21 @@ def _detect_same_moment_conflict_groups(
     accessors (``OperationSource.effective`` / ``.statute_id`` /
     ``LegalAddress.path``). SE/EE/NO consume this; the algorithm body is the
     shared generic one (no op-specific detection logic remains here).
+
+    ``effective_date_of`` overrides the same-EFFECTIVE-DATE bucketing accessor.
+    ``None`` (the default for SE/EE/NO/EU/UK) keeps the canonical
+    ``_op_effective_date`` (``OperationSource.effective``), so those frontends'
+    detection is byte-identical. A frontend whose APPLY-time "same moment" is a
+    different source-side date supplies its own accessor (US: ``effective or
+    enacted`` — most US amendments are undated-effective and apply AT ENACTMENT,
+    so the enactment date is the same-moment key the dry-run's ``(enacted_date,
+    statute_id)`` application order already buckets by).
     """
     return detect_same_moment_conflict_groups_generic(
         ops,
-        effective_date_of=_op_effective_date,
+        effective_date_of=(
+            effective_date_of if effective_date_of is not None else _op_effective_date
+        ),
         affecting_act_id_of=_op_affecting_act_id,
         affected_target_of=_op_affected_target,
         incompatible_payload_predicate=incompatible_payload_predicate,
@@ -852,6 +864,7 @@ def detect_cross_act_same_moment_conflicts(
     unproven_resolution_label: str = DEFAULT_UNPROVEN_RESOLUTION_LABEL,
     adjudications_out: Optional[list[CompileAdjudication]] = None,
     lowering_observations_out: Optional[list[dict[str, Any]]] = None,
+    effective_date_of: Optional[Callable[[LegalOperation], str]] = None,
 ) -> list[dict[str, Any]]:
     """Emit blocking §1.7 ambiguity findings for same-moment cross-act conflicts.
 
@@ -885,6 +898,12 @@ def detect_cross_act_same_moment_conflicts(
     ``"sequence_order_unproven"``). When a validated claim binds the conflict,
     the finding is ``blocking=False`` and records
     ``resolution: "resolved_by_claim"``.
+
+    ``effective_date_of`` overrides the same-EFFECTIVE-DATE bucketing accessor
+    (default ``None`` => the canonical ``OperationSource.effective``). A frontend
+    whose APPLY-time same-moment key is a different source-side date (US: the
+    enactment date for undated-effective amendments) supplies its own accessor;
+    every existing caller passes ``None`` and is byte-identical.
     """
     _validate_finder_kind_prefix(finder_kind_prefix)
 
@@ -915,7 +934,9 @@ def detect_cross_act_same_moment_conflicts(
     )
 
     conflict_groups = _detect_same_moment_conflict_groups(
-        ops_list, incompatible_payload_predicate=_predicate
+        ops_list,
+        incompatible_payload_predicate=_predicate,
+        effective_date_of=effective_date_of,
     )
 
     findings: list[dict[str, Any]] = []

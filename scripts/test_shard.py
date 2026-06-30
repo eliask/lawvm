@@ -200,6 +200,9 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_us_uslm_parser.py",
         "test_us_write_receipts.py",
         "test_us_apply_seam_boundary.py",
+        # task #105: US same-moment cross-act conflict detection + ordering parity
+        # (``us_federal/us_ordering.py`` routed through the shared ``order_ops``).
+        "test_us_same_moment.py",
     ),
     "finland_sources": (
         "test_fi_amendment_index.py",

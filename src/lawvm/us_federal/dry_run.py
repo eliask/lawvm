@@ -60,12 +60,14 @@ from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.core.mutation_boundary import TreePath, tree_path_from_legal_address
 from lawvm.core.mutation_boundary_proof import MutationBoundaryProof
 from lawvm.core.semantic_types import StructuralAction, TextPatchKindEnum
+from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.us_federal.amendatory import (
     RULE_STRIKE_INSERT_TAIL,
     RULE_STRIKE_INSERT_THROUGH_TAIL,
     USAmendatoryReport,
     lower_plaw_amendatory,
 )
+from lawvm.us_federal.us_ordering import order_us_ops
 from lawvm.us_federal.sources import (
     UsArchiveReader,
     read_plaw_locator,
@@ -769,6 +771,16 @@ class USDryRunReport:
     # segments). Non-blocking and non-authoritative (the dry-run surface stays
     # ``replay_authorized=False``); surfaced for audit only.
     target_recoveries: tuple[USDryRunTargetRecovery, ...] = ()
+    # task #105: same-moment cross-act conflict findings from the unified ordering
+    # kernel. A blocking ``CompileAdjudication`` (kind
+    # ``us_same_moment_cross_act_incompatible_payload_ambiguous``) is emitted
+    # whenever two affecting acts change the SAME section at the SAME applied
+    # moment (``effective or enacted``) with incompatible whole-target payloads —
+    # a collision the prior ``(enacted_date, statute_id)`` application order
+    # silently resolved by iteration with zero finding. ADDITIVE: empty for a
+    # collision-free window (the common case), and the kernel never reorders/drops
+    # an op, so apply order — and thus the rows/refusals — stays byte-identical.
+    same_moment_findings: tuple[CompileAdjudication, ...] = ()
     replay_authorized: bool = False
 
     def sunset_reversion_section_keys(self) -> frozenset[str]:
@@ -1039,6 +1051,7 @@ class USDryRunReport:
                 f"{self.title}:{c.section}" for c in self.sunset_reversions
             ],
             "sunset_finding_count": len(self.sunset_findings),
+            "same_moment_finding_count": len(self.same_moment_findings),
             "target_recovery_count": len(self.target_recoveries),
             "north_star": self.north_star(),
             "boundary_status": self.boundary_proof.boundary_proof_status,
@@ -1068,6 +1081,17 @@ class USDryRunReport:
         payload["sunset_reversions"] = [c.to_jsonable() for c in self.sunset_reversions]
         payload["sunset_findings"] = [f.to_jsonable() for f in self.sunset_findings]
         payload["target_recoveries"] = [r.to_jsonable() for r in self.target_recoveries]
+        payload["same_moment_findings"] = [
+            {
+                "kind": f.kind,
+                "message": f.message,
+                "blocking": f.blocking,
+                "phase": f.phase,
+                "op_id": f.op_id,
+                "detail": dict(f.detail),
+            }
+            for f in self.same_moment_findings
+        ]
         return payload
 
 
@@ -2673,47 +2697,68 @@ def build_us_dry_run(
         report_enacted = report.enacted or statute_id
         lowered_reports.append((report_enacted, statute_id, blob, report))
     lowered_reports.sort(key=lambda x: (x[0] or x[1], x[1]))
-    for _enacted, statute_id, _blob, report in lowered_reports:
-        for operation in report.operations():
-            # Temporal guard: skip instructions that are not yet in force, or that
-            # have already expired, relative to the after-edition snapshot. Both
-            # source-side effective and expiry dates travel in OperationSource so the
-            # dry-run window can refuse future/conditional provisions without silently
-            # corrupting the comparison.
-            temporal_reason = _op_not_yet_in_force(operation)
-            if temporal_reason is not None:
-                refusals.append(
-                    USDryRunRefusal(
-                        op_id=operation.op_id,
-                        rule_id=US_DRY_RUN_REFUSED_DEFERRED_OP_NOT_YET_EFFECTIVE_RULE_ID,
-                        message=f"{temporal_reason}; not applied in this dry-run window",
-                        target_address=str(operation.target),
-                        detail={
-                            "effective": operation.source.effective if operation.source else "",
-                            "expires": operation.source.expires if operation.source else "",
-                            "after_cutoff": after_cutoff.isoformat() if after_cutoff else "",
-                            "statute_id": operation.source.statute_id if operation.source else "",
-                        },
-                    )
-                )
-                continue
 
-            key = _section_key_from_address(operation.target)
-            if key is None or int(key[0]) != int(title):
-                refusals.append(
-                    USDryRunRefusal(
-                        op_id=operation.op_id,
-                        rule_id=US_DRY_RUN_REFUSED_TARGET_NOT_TITLE_RULE_ID,
-                        message=(
-                            f"op target {str(operation.target)!r} does not resolve under "
-                            f"title {title}; out of proof scope"
-                        ),
-                        target_address=str(operation.target),
-                    )
+    # Unified ordering kernel (task #105). Build the flat lowered op stream in the
+    # prior enactment-sorted report × ``operations()`` order, then route it through
+    # the shared :func:`order_ops` (``us_ordering_profile``). The kernel's temporal
+    # key — ``(enacted_or_statute_id, statute_id, sequence)`` — IS the old
+    # ``lowered_reports.sort`` key followed by the within-report instruction
+    # sequence, and the sort is STABLE, so ops sharing a sequence (an instruction's
+    # primary op + its ``extra_operations``) keep their ``operations()`` input
+    # order. The ordered op stream is therefore byte-identical to the old sorted
+    # report × ``operations()`` iteration — the per-section routing below preserves
+    # the exact application order. The kernel ADDITIVELY emits a ``us``-prefixed
+    # same-moment cross-act finding (bucketed by ``effective or enacted`` — US
+    # amendments apply at enactment) for a genuine same-moment incompatible-payload
+    # collision the old order-dependent path silently resolved. Apply order is
+    # unchanged (the detector never reorders/drops ops), so non-colliding corpora
+    # stay byte-identical; only a real collision adds a finding.
+    flat_ops: list[LegalOperation] = []
+    for _enacted, _statute_id, _blob, report in lowered_reports:
+        flat_ops.extend(report.operations())
+    ordered_result = order_us_ops(flat_ops)
+    same_moment_findings = tuple(ordered_result.findings)
+
+    for operation in ordered_result.ops:
+        # Temporal guard: skip instructions that are not yet in force, or that
+        # have already expired, relative to the after-edition snapshot. Both
+        # source-side effective and expiry dates travel in OperationSource so the
+        # dry-run window can refuse future/conditional provisions without silently
+        # corrupting the comparison.
+        temporal_reason = _op_not_yet_in_force(operation)
+        if temporal_reason is not None:
+            refusals.append(
+                USDryRunRefusal(
+                    op_id=operation.op_id,
+                    rule_id=US_DRY_RUN_REFUSED_DEFERRED_OP_NOT_YET_EFFECTIVE_RULE_ID,
+                    message=f"{temporal_reason}; not applied in this dry-run window",
+                    target_address=str(operation.target),
+                    detail={
+                        "effective": operation.source.effective if operation.source else "",
+                        "expires": operation.source.expires if operation.source else "",
+                        "after_cutoff": after_cutoff.isoformat() if after_cutoff else "",
+                        "statute_id": operation.source.statute_id if operation.source else "",
+                    },
                 )
-                continue
-            _op_title, section = key
-            section_ops.setdefault(section, []).append(operation)
+            )
+            continue
+
+        key = _section_key_from_address(operation.target)
+        if key is None or int(key[0]) != int(title):
+            refusals.append(
+                USDryRunRefusal(
+                    op_id=operation.op_id,
+                    rule_id=US_DRY_RUN_REFUSED_TARGET_NOT_TITLE_RULE_ID,
+                    message=(
+                        f"op target {str(operation.target)!r} does not resolve under "
+                        f"title {title}; out of proof scope"
+                    ),
+                    target_address=str(operation.target),
+                )
+            )
+            continue
+        _op_title, section = key
+        section_ops.setdefault(section, []).append(operation)
 
     # Phase 1a: Seed synthetic before-sections for sections created by window-level
     # INSERT ops. A new section has no before-edition paragraph structure, so later
@@ -3022,6 +3067,7 @@ def build_us_dry_run(
         sunset_reversions=sunset_reversions,
         sunset_findings=sunset_findings,
         target_recoveries=tuple(target_recoveries),
+        same_moment_findings=same_moment_findings,
     )
 
 
