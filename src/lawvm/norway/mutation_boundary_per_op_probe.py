@@ -50,19 +50,24 @@ WHAT IT DOES NOT PROMISE (honesty boundary, mirror of the UK probe):
   probe runs. A future NO strict_profile lane can flip ``blocking=True``.
 * It does NOT prove full §1.0 totality — only the storage mutation boundary
   subset (``operation_storage_boundary_prefixes``).
-* It does NOT carry declared_migration / declared_recovery / declared_editorial
-  prefixes at v0 — NO does not yet surface those per-op from a typed carrier.
-  Pre-fixing an empty tuple preserves the conservative scope: any observed
-  change outside the op's storage target boundary is reported.
+* It carries declared_recovery prefixes ONLY for lanes that intentionally
+  retarget the write (a missing-target REPLACE recovered by INSERT at a resolved
+  parent / body root), surfaced per op from ``apply_no_ops`` via the
+  ``declared_recovery_prefixes`` argument; those record the SPECIFIC authorized
+  recovery target, never a blanket widening. declared_migration /
+  declared_editorial prefixes are still empty at v0 — NO does not yet surface
+  those per-op. Any other observed change outside the op's storage target
+  boundary is still reported.
 * It observes the statute ``body`` tree only; NO ``apply_no_ops`` mutates no
   other surface in the per-op loop (no supplements lane), so the body diff is
   the complete per-op footprint.
 """
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Sequence
 
 from lawvm.core.ir import IRNode, LegalOperation
+from lawvm.core.mutation_boundary import TreePath
 from lawvm.core.mutation_boundary_proof import (
     PerOpMutationBoundaryVerdict,
     audit_op_mutation_boundary,
@@ -102,6 +107,7 @@ def probe_op_mutation_boundary(
     op_id: str,
     adjudications_out: Optional[list[CompileAdjudication]] = None,
     source_statute: str = "",
+    declared_recovery_prefixes: Sequence[TreePath] = (),
 ) -> Optional[PerOpMutationBoundaryVerdict]:
     """Run the per-op mutation-boundary probe, appending each ``out_of_boundary``
     escape as a non-blocking ``CompileAdjudication``.
@@ -109,13 +115,20 @@ def probe_op_mutation_boundary(
     Delegates verify+emit to the core-owned
     :func:`~lawvm.core.mutation_boundary_proof.audit_op_mutation_boundary`
     (observation mode — ``is_strict=False``), which computes the op's storage
-    mutation boundary (no declared migration / recovery / editorial-projection
-    prefixes at v0) and, on an escape, emits the typed
+    mutation boundary and, on an escape, emits the typed
     ``APPLY.MUTATION_BOUNDARY_FINDING_AT_OP`` core finding. The probe PROJECTS
     that core finding into the NO ``CompileAdjudication`` interop surface — it
     does not re-run the verifier or re-derive the diagnostic shape, so the NO
     record cannot drift from the core producer (or from Finland's apply lane /
     the UK probe, which consume the same producer family).
+
+    ``declared_recovery_prefixes`` carries the concrete parent paths that a
+    recovery lane INTENTIONALLY retargeted the write to (surfaced by the NO apply
+    fold) — e.g. a missing-target REPLACE recovered by INSERT at a resolved
+    parent / the body root. They are forwarded verbatim into the core audit's
+    ``declared_recovery_prefixes`` so the landed write reads as an authorized
+    within-boundary recovery, not an unexplained escape. This records the SPECIFIC
+    recovered target — it is not a blanket boundary widening.
 
     Returns the typed verdict on an out-of-boundary escape (also projected to
     ``adjudications_out`` when supplied); returns ``None`` on a clean apply or a
@@ -130,6 +143,7 @@ def probe_op_mutation_boundary(
         op_id=str(op_id or ""),
         source_statute=str(source_statute or ""),
         is_strict=False,  # NO fold has no strict_profile signal yet (§2.9).
+        declared_recovery_prefixes=tuple(declared_recovery_prefixes),
         # NO IRStatute.body is the top-level tree (no hcontainer wrapper);
         # ``strip_root_prefix`` defaults to ``()`` — no normalization needed,
         # unlike the FI replay fold which wraps under ("hcontainer", "").

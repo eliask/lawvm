@@ -215,3 +215,85 @@ def test_apply_no_ops_gate_on_clean_op_no_escape(monkeypatch) -> None:
     assert result.body.children[0].text == "ny tekst"
     assert result.body.children[1].text == "keep"
     assert not any(a.kind == _FINDING_KIND for a in adjudications)
+
+
+def test_apply_no_ops_replace_recovered_by_insert_declares_recovery_no_escape(monkeypatch) -> None:
+    """A missing-target REPLACE recovered by INSERT at the body root is a
+    LEGITIMATE recovery retarget: the new section lands outside the op's nominal
+    ``section:5`` storage boundary, but the recovery DECLARES that landing as an
+    authorized ``declared_recovery`` boundary extension. The per-op probe must
+    therefore read it as within-boundary and emit NO mutation-boundary finding —
+    while the recovery's own ``no_replay_replace_recovered_by_insert`` audit
+    receipt still fires (the recovery itself remains visible)."""
+    monkeypatch.setenv(_PROBE_ENV_FLAG, "1")
+    statute = _statute(_body(_section("1", text="one")))
+    op = LegalOperation(
+        op_id="no/replace-missing-5",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "5"),)),
+        payload=IRNode(kind=IRNodeKind.SECTION, label="5", text="five"),
+        source=OperationSource(statute_id="no/lovtid/2025-02-02-5"),
+    )
+    adjudications: list[CompileAdjudication] = []
+    result = apply_no_ops(statute, [op], adjudications_out=adjudications)
+    # The recovery landed the new section into the body.
+    assert any(c.label == "5" for c in result.body.children)
+    # The recovery's own audit receipt still fires (the recovery stays visible).
+    assert any(
+        a.kind == "no_replay_replace_recovered_by_insert" for a in adjudications
+    )
+    # ...but the per-op mutation-boundary probe reads the declared recovery as
+    # within-boundary, so NO escape finding is emitted.
+    assert not any(a.kind == _FINDING_KIND for a in adjudications)
+
+
+def test_apply_no_ops_true_escape_still_fires_despite_recovery_declaration(monkeypatch) -> None:
+    """Guard against a blanket disable: declaring a recovery's specific retarget
+    must NOT suppress a GENUINELY out-of-boundary change. An op carrying a
+    declared recovery path for some OTHER node must still fire the probe when its
+    apply also touches a sibling outside both the target boundary AND the
+    declared recovery — i.e. the declaration is the *specific* recovered path,
+    never a wildcard.
+
+    Driven directly against the probe (the same core ``audit_op_mutation_boundary``
+    wired into ``apply_no_ops``) so the escape is isolated: section ``1`` is the
+    declared target, section ``3`` is the declared recovery, and the apply ALSO
+    tampered sibling section ``2`` — which is covered by neither and must escape.
+    """
+    monkeypatch.setenv(_PROBE_ENV_FLAG, "1")
+    before = _body(
+        _section("1", text="original-1"),
+        _section("2", text="original-2"),
+        _section("3", text="original-3"),
+    )
+    after = _body(
+        _section("1", text="replaced-1"),
+        _section("2", text="tampered-sibling"),
+        _section("3", text="recovered-3"),
+    )
+    op = _text_replace_op_targeting_section_1()
+    adjudications: list[CompileAdjudication] = []
+    verdict = probe_op_mutation_boundary(
+        before=before,
+        after=after,
+        op=op,
+        op_id=op.op_id,
+        adjudications_out=adjudications,
+        source_statute="no/boundary/escape",
+        # Declare ONLY the section-3 recovery — section 2 is covered by neither
+        # the target (section 1) nor this declared recovery.
+        declared_recovery_prefixes=((("section", "3"),),),
+    )
+    assert verdict is not None
+    assert not verdict.within_boundary
+    violations = [a for a in adjudications if a.kind == _FINDING_KIND]
+    assert violations, (
+        "a genuine out-of-boundary change (sibling section 2) must STILL fire "
+        "even when a specific recovery path (section 3) is declared — the "
+        "declaration is not a blanket disable"
+    )
+    escaped = violations[0].detail["out_of_boundary_paths"]
+    assert any("section:2" in p for p in escaped), escaped
+    # The declared section-3 recovery is NOT reported as an escape.
+    assert not any("section:3" in p for p in escaped), escaped

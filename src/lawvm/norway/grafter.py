@@ -3435,12 +3435,21 @@ def apply_no_ops(
             f"from {source_id or '<unknown>'}: {joined}"
         )
 
+    # §2.9 per-op carrier: when a recovery lane INTENTIONALLY retargets the write
+    # to a node outside the op's nominal storage boundary (e.g. a missing-target
+    # REPLACE recovered by INSERT at a resolved parent / body root), the recovered
+    # write parent path is appended here so the per-op mutation-boundary probe can
+    # declare it as an authorized ``declared_recovery`` boundary extension. Reset
+    # per op below; stays empty (and is ignored) when the probe is off.
+    _no_declared_recovery_paths: list[tree_ops.Path] = []
+
     def _record_action_family_recovery(
         *,
         kind: str,
         message: str,
         op: LegalOperation,
         detail: dict[str, str],
+        recovered_path: Optional[tree_ops.Path] = None,
     ) -> None:
         _append_no_replay_adjudication(
             adjudications_out,
@@ -3449,6 +3458,8 @@ def apply_no_ops(
             op=op,
             detail=detail,
         )
+        if recovered_path is not None:
+            _no_declared_recovery_paths.append(tuple(recovered_path))
         if not strict_action_family:
             return
         source_id = op.source.statute_id if op.source else ""
@@ -3515,6 +3526,9 @@ def apply_no_ops(
         # the fold is frozen-``IRNode`` so the snapshot is a direct reference
         # with no deep-copy; AGENTS.md §2.7).
         _no_boundary_before = body if _no_boundary_probe_on else None
+        # Reset the per-op declared-recovery carrier so a recovery retarget from a
+        # prior op never leaks into this op's boundary.
+        _no_declared_recovery_paths.clear()
         try:
             if _no_action_value(op.action) == "text_replace":
                 patch = op.text_patch
@@ -3707,6 +3721,7 @@ def apply_no_ops(
                                     "insert_parent_path": _no_path_label(resolved_parent),
                                     **_no_replay_payload_detail(payload),
                                 },
+                                recovered_path=resolved_parent,
                             )
                             body = tree_ops.insert_sorted(
                                 body,
@@ -3776,6 +3791,7 @@ def apply_no_ops(
                                     "insert_parent_path": _no_path_label(shallow_host_path),
                                     **_no_replay_payload_detail(payload),
                                 },
+                                recovered_path=shallow_host_path,
                             )
                             body = tree_ops.insert_sorted(
                                 body,
@@ -3816,6 +3832,7 @@ def apply_no_ops(
                                         "insert_parent_path": _no_path_label(resolved_parent),
                                         **_no_replay_payload_detail(append_payload),
                                     },
+                                    recovered_path=resolved_parent,
                                 )
                                 body = tree_ops.insert_sorted(
                                     body,
@@ -3872,6 +3889,7 @@ def apply_no_ops(
                                 "insert_parent_path": _no_path_label(parent_path),
                                 **_no_replay_payload_detail(payload),
                             },
+                            recovered_path=parent_path,
                         )
                         body = tree_ops.insert_sorted(
                             body,
@@ -4100,6 +4118,7 @@ def apply_no_ops(
                     op_id=op.op_id,
                     adjudications_out=adjudications_out,
                     source_statute=statute.statute_id,
+                    declared_recovery_prefixes=tuple(_no_declared_recovery_paths),
                 )
 
     return IRStatute(
