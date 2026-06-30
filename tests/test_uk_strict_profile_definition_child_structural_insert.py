@@ -9,32 +9,27 @@ insert`` returns a dict with ``blocking=True``) is rejected by default
 (``uk_effect_definition_child_structural_insert_rejected``). When the active
 strict-profile carries ``allows_uk_definition_child_structural_insert=True``
 the code emits an audited
-``uk_strict_profile_lifted_definition_child_structural_insert`` observation
-and is *intended* to fall through to
-``lower_uk_definition_child_structural_sibling_insert``.
+``uk_strict_profile_lifted_definition_child_structural_insert`` observation.
 
-WIRING GAP (documented, not forced green)
-=========================================
-The lift observation DOES fire — but the fall-through immediately raises
-``KeyError: 'payloads'``. The blocking-dict path in
-``source_definition_child_structural_sibling_insert``
-(``source_definition_structural_insert.py``, the
-``uk_effect_definition_child_structural_insert_rejected`` branch) returns a
-dict WITHOUT the ``payloads`` / ``anchor_target`` keys that
+NON-MATERIALIZABLE LIFT (resolved owned-repair)
+===============================================
+A blocking definition-child structural insert is rejected *precisely because*
+the source omitted the lowerable payload structure (the child + tail-connector
+claim): ``source_definition_child_structural_sibling_insert``
+(``source_definition_structural_insert.py``) only returns a ``blocking`` dict
+on the ``if not payloads`` path, so the blocking shape NEVER carries the
+``payloads`` / ``anchor_target`` keys that
 ``lower_uk_definition_child_structural_sibling_insert``
-(``effect_special_lowering.py``) requires. So the lift path is non-functional:
-enabling the gate trades a clean block for an uncaught ``KeyError`` mid-
-lowering.
+(``effect_special_lowering.py``) requires. Falling through to lowering
+therefore always raised ``KeyError: 'payloads'`` (the original wiring gap).
 
-Per the task discipline (do NOT change replay/lowering semantics; report a
-real wiring gap rather than force a passing test), this test PINS the current
-behavior honestly:
-  - the lift OBSERVATION fires (the gate *is* wired at the consume site), AND
-  - the downstream fall-through raises ``KeyError('payloads')`` (the gap).
-The negative (default profile preserves the block) is also pinned. If the gap
-is later closed (the blocking dict made carry ``payloads`` for the lift lane,
-or the lift path made not fall through), this test's ``KeyError`` expectation
-should be replaced with an ops/no-block assertion.
+Fabricating the missing structure is exactly the "lowering must not append the
+payload to the broad section text" hazard the rejection guards, so the lift
+*cannot* materialize an op. The consume site (``effect_compiler.py``) now
+degrades the strict-profile "proceed" for this site to a **clean no-op block**:
+it records the lift authorization as an audit observation
+(``strict_disposition="proceed_non_materializable"``, ``materialized=False``)
+and emits zero ops, preserving the provision unchanged. No ``KeyError``.
 
 Trigger: SYNTHETIC. ``source_definition_child_structural_sibling_insert``'s
 ``blocking`` branch is reproduced with a minimal ``P2para`` element whose
@@ -47,7 +42,6 @@ from __future__ import annotations
 from typing import Any
 
 from lxml import etree as ET
-import pytest
 
 import lawvm.uk_legislation.effect_compiler as effect_compiler
 from lawvm.uk_legislation.effects import UKEffectRecord
@@ -130,17 +124,18 @@ def test_strict_profile_loaded_but_not_allowed_still_blocks(monkeypatch) -> None
     assert _LIFT_RULE_ID not in rule_ids
 
 
-def test_strict_profile_allowed_emits_lift_then_hits_wiring_gap(monkeypatch) -> None:
-    """§2.9 disposition 3 (WIRING GAP — pinned, not forced green).
+def test_strict_profile_allowed_lift_degrades_to_clean_noop_block(monkeypatch) -> None:
+    """§2.9 disposition 3 — non-materializable lift degrades to a clean no-op.
 
     Strict-profile loaded AND
-    ``allows_uk_definition_child_structural_insert=True``. The consume site
-    IS wired: the ``uk_strict_profile_lifted_definition_child_structural_
-    insert`` observation is appended. BUT the lift's fall-through into
-    ``lower_uk_definition_child_structural_sibling_insert`` immediately raises
-    ``KeyError: 'payloads'`` because the blocking-dict path returns no
-    ``payloads`` key. This pins the gap so a future fix (or regression) is
-    forced through this test rather than passing silently.
+    ``allows_uk_definition_child_structural_insert=True``. The consume site is
+    wired: the ``uk_strict_profile_lifted_definition_child_structural_insert``
+    observation is appended. Because the blocking shape carries no lowerable
+    ``payloads`` structure (the source omitted the child-tail claim, which the
+    rejection exists to guard), the lift cannot materialize an op — so the
+    consume site emits ZERO ops (preserving the provision) and records the
+    lift authorization as an audit observation marked non-materializable. No
+    ``KeyError`` is raised.
     """
     allowed_profile = UkStrictProfile(
         core_profile=UK_INGESTION_V1,
@@ -151,32 +146,29 @@ def test_strict_profile_allowed_emits_lift_then_hits_wiring_gap(monkeypatch) -> 
     )
     el, source_root = _blocking_definition_child_insert_source()
     observations: list[dict[str, Any]] = []
-    with pytest.raises(KeyError) as excinfo:
-        effect_compiler.compile_effect_to_ir_ops(
-            _definition_child_insert_effect(),
-            el,
-            sequence=0,
-            lowering_rejections_out=observations,
-            source_root=source_root,
-        )
-    # The wiring gap is specifically the missing ``payloads`` key on the
-    # lifted blocking dict.
-    assert "payloads" in str(excinfo.value), (
-        "the documented wiring gap is KeyError('payloads') from the lift "
-        f"fall-through; got {excinfo.value!r}"
+    ops = effect_compiler.compile_effect_to_ir_ops(
+        _definition_child_insert_effect(),
+        el,
+        sequence=0,
+        lowering_rejections_out=observations,
+        source_root=source_root,
     )
-    # The consume site IS wired — the lift observation was appended before the
-    # crash (proving the gate fires; only the downstream lowering lane is
-    # broken).
+    assert ops == [], (
+        "a non-materializable lift must preserve the provision (zero ops), "
+        f"not fabricate or crash; got {ops!r}"
+    )
+    # The consume site is wired — the lift observation is appended, marked
+    # non-materializable (and the original Key('payloads') crash is gone).
     lifts = [o for o in observations if o.get("rule_id") == _LIFT_RULE_ID]
     assert lifts, (
         "the strict-profile lift observation MUST be emitted at the consume "
-        "site (the gate IS wired) even though the fall-through then crashes"
+        "site (the gate IS wired)"
     )
     lift = lifts[0]
     assert lift["family"] == "definition_entry_elaboration"
     assert lift["reason_code"] == (
         "strict_profile_authorized_definition_child_structural_insert"
     )
-    assert lift["strict_disposition"] == "proceed"
+    assert lift["strict_disposition"] == "proceed_non_materializable"
+    assert lift["materialized"] is False
     assert lift["strict_profile_name"] == UK_INGESTION_V1.name

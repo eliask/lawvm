@@ -743,6 +743,15 @@ def _compile_effect_to_ir_ops_impl(
                 _uk_sp is not None
                 and _uk_sp.allows_uk_definition_child_structural_insert
             ):
+                # A blocking definition-child structural insert is rejected
+                # precisely because the source omitted the lowerable payload
+                # structure (the child + tail-connector claim); the blocking
+                # shape therefore never carries ``payloads``/``anchor_target``.
+                # Lifting the block cannot fabricate that structure (doing so is
+                # exactly the "must not append the payload to the broad section
+                # text" hazard the rejection guards), so the strict-profile
+                # "proceed" here degrades to a clean no-op block: we record the
+                # lift authorization as an audit observation and emit no op.
                 _append_uk_effect_lowering_observation(
                     lowering_rejections_out,
                     rule_id="uk_strict_profile_lifted_definition_child_structural_insert",
@@ -750,10 +759,13 @@ def _compile_effect_to_ir_ops_impl(
                     reason_code="strict_profile_authorized_definition_child_structural_insert",
                     reason=(
                         "Strict profile loaded with "
-                        "allows_uk_definition_child_structural_insert=True; "
-                        "the blocking definition-child structural insert is "
-                        "explicitly authorized to proceed past the blocking "
-                        "flag — lowering will attempt the child insert."
+                        "allows_uk_definition_child_structural_insert=True; the "
+                        "blocking definition-child structural insert is "
+                        "authorized past the blocking flag, but the blocking "
+                        "shape carries no lowerable payload structure (the "
+                        "source omitted the child-tail connector claim), so no "
+                        "operation is materialized and the provision is "
+                        "preserved unchanged."
                     ),
                     effect=effect,
                     extracted_el=extracted_el,
@@ -763,12 +775,13 @@ def _compile_effect_to_ir_ops_impl(
                         "lifted_blocking_rule_id": str(
                             definition_child_structural_insert.get("rule_id", "")
                         ),
-                        "strict_disposition": "proceed",
+                        "strict_disposition": "proceed_non_materializable",
                         "quirks_disposition": QuirksDisposition.APPLY,
+                        "materialized": False,
                     },
                 )
-                # Fall through to the lower_uk_definition_child_structural_
-                # sibling_insert call below — don't return [].
+                _mark_lower_phase("compile_lower_special")
+                return []
             else:
                 _append_uk_effect_lowering_rejection(
                     lowering_rejections_out,
