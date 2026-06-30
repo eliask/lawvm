@@ -977,4 +977,16 @@ _UK_RULE_SPECS: Dict[str, str] = {
     # -- Overlay-authorization audit (D8, Tier B PR4) --------------------------
     "overlay_default_replay_authorized_false":
         "The D8 §2.10 deterministic firewall rule id for overlay-tagged IRNode carrying replay_authorized=True without a matching ExecutionAuthorization promotion event.",
+
+    # -- Apply receipt contract (§2.3 / §4 WriteReceipt divergence-naming) -----
+    "uk_section_renumber_relabel":
+        "A UK RENUMBER op's bound_target_path (source label) vs landed_primary_path "
+        "(destination label) divergence is the typed named migration for a "
+        "provision relabel/renumber — stamped on the per-op WriteReceipt's "
+        "migration_rule_ids by uk_legislation.uk_write_receipts.emit_uk_op_receipt "
+        "so the §1.6 unstated-migration invariant's identity migration has a named "
+        "owner. The receipt then audits as `qualified` (named-rule-explained "
+        "divergence), not a `violation`, in core.observed_write_audit; mirrors "
+        "SE's single `se_renumber_relabel` and NO's `no_section_renumber_relabel` "
+        "(one id per family, the broad RENUMBER owner).",
 }

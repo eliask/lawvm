@@ -9,8 +9,10 @@ from typing import Any, List, Optional
 
 from lawvm.core.ir import IRNode, IRStatute, LegalOperation
 from lawvm.core.mutation_events import MutationEvent
+from lawvm.core.write_receipt import WriteReceipt
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.addressing import _action_name
+from lawvm.uk_legislation.uk_write_receipts import emit_uk_op_receipt
 from lawvm.uk_legislation.mutation_boundary_per_op_probe import (
     boundary_probe_enabled,
     probe_op_mutation_boundary,
@@ -69,6 +71,7 @@ class UKReplayExecutor(
         lo_ops_out: Optional[List[LegalOperation]] = None,
         adjudications_out: Optional[List[CompileAdjudication]] = None,
         mutation_events_out: Optional[list[MutationEvent]] = None,
+        write_receipts_out: Optional[list[WriteReceipt]] = None,
     ):
         # Sub-PR C (mutable_ir Wave N3d): store the input ``IRStatute`` directly.
         # All downstream mutation now goes through
@@ -84,6 +87,12 @@ class UKReplayExecutor(
         self.verbose = bool(verbose)
         self.lo_ops_out = lo_ops_out  # None = don't collect snapshots
         self.mutation_events_out = mutation_events_out
+        # §2.3 per-op WriteReceipt collection sink. None (the default) = don't
+        # collect — ``apply_op`` is then byte-identical to its
+        # pre-instrumentation behaviour (no body snapshot, no diff). A list opts
+        # the caller into additive per-op receipts (the §2.7 grounding-neutral
+        # debug stream shape, mirroring ``mutation_events_out`` / ``lo_ops_out``).
+        self.write_receipts_out = write_receipts_out
         self._current_mutation_op: Optional[LegalOperation] = None
         self.adjudications_out = adjudications_out if adjudications_out is not None else []
         self._seen_invariant_violations = self._collect_invariant_violations()
@@ -139,23 +148,33 @@ class UKReplayExecutor(
         # the fold is now frozen-``IRStatute`` so the ``before_snapshot``/``after_snapshot``
         # pair is a direct reference with no deep-copy; AGENTS.md §2.7).
         boundary_probe_on = boundary_probe_enabled()
-        before_snapshot = (
-            self.statute.body if boundary_probe_on else None
-        )
+        # §2.3 receipt collection shares the boundary probe's before-snapshot:
+        # both want the immutable body reference captured BEFORE the apply
+        # mutates it. ``IRStatute`` is frozen so this is a cheap reference, not a
+        # deep copy (§2.7). The snapshot is only taken when at least one consumer
+        # opted in; with both off ``apply_op`` does no extra work (byte-stable).
+        receipts_on = self.write_receipts_out is not None
+        capture_before = boundary_probe_on or receipts_on
+        before_snapshot = self.statute.body if capture_before else None
         try:
             self._apply_op_with_context(op)
         finally:
             self._current_mutation_op = previous_mutation_op
-        if boundary_probe_on:
+        if capture_before:
             after_snapshot = self.statute.body
-            probe_op_mutation_boundary(
-                before=before_snapshot,
-                after=after_snapshot,
-                op=op,
-                op_id=op.op_id,
-                adjudications_out=self.adjudications_out,
-                source_statute=self.statute.statute_id,
-            )
+            if boundary_probe_on:
+                probe_op_mutation_boundary(
+                    before=before_snapshot,
+                    after=after_snapshot,
+                    op=op,
+                    op_id=op.op_id,
+                    adjudications_out=self.adjudications_out,
+                    source_statute=self.statute.statute_id,
+                )
+            if self.write_receipts_out is not None and before_snapshot is not None:
+                receipt = emit_uk_op_receipt(before_snapshot, after_snapshot, op)
+                if receipt is not None:
+                    self.write_receipts_out.append(receipt)
 
     def _apply_op_with_context(self, op: LegalOperation) -> None:
         target = op.target
@@ -310,6 +329,7 @@ def replay_uk_ops(
     lo_ops_out: Optional[List[LegalOperation]] = None,
     adjudications_out: Optional[List[CompileAdjudication]] = None,
     mutation_events_out: Optional[list[MutationEvent]] = None,
+    write_receipts_out: Optional[list[WriteReceipt]] = None,
     replay_phase_timings_out: Optional[dict[str, float]] = None,
 ) -> IRStatute:
     """Apply compiled UK legal operations to enacted base, return amended statute.
@@ -339,6 +359,12 @@ def replay_uk_ops(
                     Optional list to collect core mutation events at UK replay
                     mutation sites. This is a debug/evidence stream, not a replay
                     control path.
+        write_receipts_out:
+                    Optional list to collect per-op ``WriteReceipt`` records
+                    (AGENTS.md §2.3 receipt contract). One receipt per APPLIED
+                    op (skipped ops emit none — the adjudication carries the
+                    witness). Additive evidence: passing the sink does NOT change
+                    the replayed statute (the §2.7 grounding-neutral invariant).
         replay_phase_timings_out:
                     Optional accumulator for replay preparation, per-action
                     apply, and replay finalization timing diagnostics.
@@ -381,6 +407,7 @@ def replay_uk_ops(
         lo_ops_out=lo_ops_out,
         adjudications_out=adjudications_out,
         mutation_events_out=mutation_events_out,
+        write_receipts_out=write_receipts_out,
     )
     _mark_replay_phase("replay_executor_init")
     if replay_phase_timings_out is None:
