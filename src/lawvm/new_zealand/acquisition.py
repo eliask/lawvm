@@ -673,7 +673,9 @@ def _fetch_xml_formats(
         # The API lists ``xml`` optimistically for nearly every act, so a
         # genuinely absent XML format is rare — record it, then fall through to
         # the HTML fallback (scan-only acts expose HTML even when XML is gone).
-        stats.diagnostics.append(
+        _emit_diagnostic(
+            stats,
+            options,
             NZAcquisitionDiagnostic(
                 rule_id="nz_acquire_xml_format_missing",
                 phase="acquisition",
@@ -683,7 +685,7 @@ def _fetch_xml_formats(
                 url="",
                 blocking=False,
                 metadata={"version_id": version_id},
-            )
+            ),
         )
         progress.event("xml_missing", stats, detail=f"version_id={version_id}")
     else:
@@ -799,7 +801,9 @@ def _fetch_html_fallback(
         )
 
     if html_landed:
-        stats.diagnostics.append(
+        _emit_diagnostic(
+            stats,
+            options,
             NZAcquisitionDiagnostic(
                 rule_id="nz_html_fallback_acquired",
                 phase="acquisition",
@@ -809,7 +813,7 @@ def _fetch_html_fallback(
                 url=html_urls[0],
                 blocking=False,
                 metadata={"version_id": version_id},
-            )
+            ),
         )
     elif stats.stopped_reason:
         # HTML did not land because the run hit its budget/reserve mid-fallback,

@@ -264,7 +264,18 @@ class CorpusDivergenceAccount:
                 self.class_counts["oracle_suspect"] += 1
                 suspect_here.add(d.article_label)
                 continue
-            cls = _KIND_TO_CLASS.get(d.kind, "manual_frontier")
+            try:
+                cls = _KIND_TO_CLASS[d.kind]
+            except KeyError:
+                # §1.10 fail-loud: a DivergenceKind with no class mapping must
+                # NOT be silently bucketed (a mislabeled gap is the exact
+                # pathology the total-accounting discipline forbids). A new kind
+                # added to the Literal must be mapped here deliberately.
+                raise ValueError(
+                    f"unmapped DivergenceKind {d.kind!r} in corpus divergence "
+                    "accounting; add it to _KIND_TO_CLASS rather than defaulting "
+                    "it to manual_frontier"
+                ) from None
             self.class_counts[cls] += 1
         if suspect_here:
             self.suspect_labels[f"{comparison.base_celex}@{comparison.as_of}"] = (

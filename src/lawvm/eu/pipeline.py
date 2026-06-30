@@ -446,13 +446,28 @@ def apply_eu_ops(
             _mark_applied()
 
         elif action in ("text_replace", "text_repeal", "renumber"):
-            # Not yet supported for EU pipeline
+            # Not yet supported for EU pipeline. For a RENUMBER, the lowered op
+            # carries its destination as a ``renumber_to=`` provenance tag
+            # (fmx4_amendment_grammar); echo it into the skip witness so a triager
+            # can see WHERE it was renumbered to, not just that it was skipped
+            # (the destination would otherwise survive only on the op object).
+            skip_detail: dict[str, str] = {"action": action, "target": str(target)}
+            renumber_to = next(
+                (
+                    t.split("=", 1)[1]
+                    for t in (op.provenance_tags or ())
+                    if t.startswith("renumber_to=")
+                ),
+                None,
+            )
+            if renumber_to:
+                skip_detail["renumber_to"] = renumber_to
             _append_eu_replay_adjudication(
                 adjudications_out,
                 kind="eu_replay_unsupported_action",
                 message="EU replay skipped unsupported action.",
                 op=op,
-                detail={"action": action, "target": str(target)},
+                detail=skip_detail,
             )
             skipped += 1
             return MaterializeResult(new_state=body, applied=False)
