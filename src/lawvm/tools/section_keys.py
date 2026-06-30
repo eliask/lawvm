@@ -151,18 +151,6 @@ def section_key_from_compile_failure(failure: Any) -> str:
     return "/".join(parts)
 
 
-def section_key_from_target_ref(target: Any) -> str:
-    if target is None:
-        return ""
-    path = getattr(target, "path", None)
-    if path:
-        return section_key_from_path(path)
-    target_str = str(target)
-    if "section:" not in target_str:
-        return ""
-    return normalize_address_filter(target_str)
-
-
 def extract_ir_sections(root: Any) -> Dict[str, Any]:
     body = root.body if hasattr(root, "body") else root
     sections: Dict[str, Any] = {}

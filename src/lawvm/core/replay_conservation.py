@@ -38,7 +38,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Iterable, Mapping, Sequence
+from typing import Mapping, Sequence
 
 
 class EffectDisposition(str, Enum):
@@ -249,14 +249,6 @@ def check_effect_conservation(ledger: EffectLedger) -> None:
             f"effect conservation violated for unit {ledger.unit_id!r}:\n  "
             + "\n  ".join(violations)
         )
-
-
-def check_all_effect_conservation(ledgers: Iterable[EffectLedger]) -> list[str]:
-    """Return all conservation-violation messages across *ledgers* (empty == clean)."""
-    all_violations: list[str] = []
-    for ledger in ledgers:
-        all_violations.extend(conservation_violations(ledger))
-    return all_violations
 
 
 # ---------------------------------------------------------------------------

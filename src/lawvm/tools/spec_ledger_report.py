@@ -66,11 +66,6 @@ GroundingRow = Tuple[str, str]  # (authority_tier, status)
 _VALID_STATUS = ("HAVE", "GAP", "SPEC")
 
 
-def _repo_root() -> Path:
-    # src/lawvm/tools/spec_ledger_report.py -> parents[3] == repo root.
-    return Path(__file__).resolve().parents[3]
-
-
 # ---------------------------------------------------------------------------
 # Grounding normalization
 # ---------------------------------------------------------------------------
@@ -398,12 +393,6 @@ def persist_ledger(ledger: SpecLedger, out_dir: Path) -> Path:
     md_path.write_text(md_text + "\n", encoding="utf-8")
 
     return json_path
-
-
-def persist_ledger_for_jurisdiction(ledger: SpecLedger) -> Path:
-    """Persist under the repo's canonical ``data/<jurisdiction>/`` directory."""
-    out_dir = _repo_root() / "data" / ledger.jurisdiction
-    return persist_ledger(ledger, out_dir)
 
 
 # ---------------------------------------------------------------------------

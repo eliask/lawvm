@@ -27,7 +27,7 @@ import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional
 
 from lawvm.tools.tier2_state import read_state
 
@@ -358,20 +358,3 @@ def sweep_freshness(
             schema_version=schema_version,
         )
     return out
-
-
-def stale_projection_names(
-    data_dir: str = "data/fi/v1",
-    *,
-    jurisdiction: str = "fi",
-    schema_version: str = "v1",
-) -> Tuple[str, ...]:
-    """Return the names of projections that are stale or missing state."""
-    verdicts = sweep_freshness(
-        data_dir, jurisdiction=jurisdiction, schema_version=schema_version
-    )
-    return tuple(
-        name
-        for name, v in verdicts.items()
-        if v.freshness_status in ("stale", "no_state")
-    )

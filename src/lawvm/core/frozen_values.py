@@ -83,12 +83,6 @@ def _freeze_value(value: Any) -> Any:
     return value
 
 
-def freeze_value(value: Any) -> Any:
-    """Recursively freeze mutable containers for public core contract surfaces."""
-
-    return _freeze_value(value)
-
-
 def freeze_mapping(values: Mapping[str, Any]) -> FrozenDict:
     """Freeze a string-keyed mapping and all nested container values."""
 

@@ -5,7 +5,7 @@
     "src/lawvm/core/identity_intrinsic_audit.py": 7,
     "src/lawvm/core/locator.py": 2,
     "src/lawvm/core/payload_realization.py": 2,
-    "src/lawvm/core/regex_safety.py": 8,
+    "src/lawvm/core/regex_safety.py": 7,
     "src/lawvm/core/selector.py": 4,
     "src/lawvm/core/source_version_window.py": 1,
     "src/lawvm/core/timeline_selection.py": 1,
@@ -92,7 +92,6 @@
     "src/lawvm/substrate/model_code_derivation.py": 3,
     "src/lawvm/sweden/fetch.py": 27,
     "src/lawvm/sweden/grafter.py": 24,
-    "src/lawvm/tools/_cli_filter_helpers.py": 1,
     "src/lawvm/tools/audit.py": 2,
     "src/lawvm/tools/audit_channels.py": 6,
     "src/lawvm/tools/bench.py": 3,
@@ -188,5 +187,5 @@
     "src/lawvm/us_federal/sunset.py": 3,
     "src/lawvm/us_federal/usc_witness.py": 4
   },
-  "total_raw_re_compile": 1151
+  "total_raw_re_compile": 1149
 }

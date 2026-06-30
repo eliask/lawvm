@@ -16,22 +16,6 @@ from lawvm.contracts import ProcessingStatus
 from lawvm.core.graph import BuildMeta, CorpusGraph, StatuteGraph
 
 
-async def build_statute_graph(statute_id: str, jurisdiction: str = "fi") -> StatuteGraph:
-    """Build a StatuteGraph for a single statute."""
-    if jurisdiction == "fi":
-        from lawvm.finland.graph import build_statute_graph_fi
-
-        return await build_statute_graph_fi(statute_id)
-    raise NotImplementedError(
-        f"build_statute_graph: jurisdiction {jurisdiction!r} not yet supported"
-    )
-
-
-def build_statute_graph_sync(statute_id: str, jurisdiction: str = "fi") -> StatuteGraph:
-    """Synchronous wrapper for build_statute_graph()."""
-    return asyncio.run(build_statute_graph(statute_id, jurisdiction=jurisdiction))
-
-
 async def build_corpus_graph(
     statute_ids: List[str],
     jurisdiction: str = "fi",

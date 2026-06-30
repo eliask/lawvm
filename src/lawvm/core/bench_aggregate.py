@@ -21,7 +21,6 @@ from lawvm.core.bench_contract import (
     BenchStatus,
     BenchUnitResult,
     NON_SCORED_STATUSES,
-    check_residue_reconciliation,
 )
 
 
@@ -144,13 +143,6 @@ def check_all_reconcile(results: Iterable[BenchUnitResult]) -> list[str]:
         if msg is not None:
             violations.append(msg)
     return violations
-
-
-def assert_all_reconcile(results: Iterable[BenchUnitResult]) -> None:
-    """Raise if any scored unit fails residue reconciliation."""
-    results = list(results)
-    for r in results:
-        check_residue_reconciliation(r)
 
 
 # ---------------------------------------------------------------------------

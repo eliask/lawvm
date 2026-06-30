@@ -1244,34 +1244,3 @@ def lawvm_regex_risks(pattern: str, flags: int = 0) -> list[str]:
     risks.extend(regex_risks(pattern, flags))
     risks.extend(adjacent_repeat_risks(pattern, flags))
     return sorted(set(risks))
-
-
-def safe_compile_classifier(
-    pattern: str, flags: int = 0, *, classifier_id: str = "<unknown>"
-) -> re.Pattern[str]:
-    """Compile a regex pattern, raising ``ValueError`` if it has known risks.
-
-    Intended for use in module-scope classifier definitions during development
-    to catch unsafe patterns at import time.  In production, the CI gate
-    (``tests/test_regex_perf_gate.py``) provides the same check via AST scan
-    without requiring code changes.
-
-    Args:
-        pattern: The regex pattern string.
-        flags: Optional ``re`` flags.
-        classifier_id: Human-readable name for error messages.
-
-    Raises:
-        ValueError: If ``lawvm_regex_risks()`` returns any risks.
-
-    Returns:
-        A compiled ``re.Pattern``.
-    """
-    risks = lawvm_regex_risks(pattern, flags)
-    if risks:
-        joined = "\n  - ".join(risks)
-        raise ValueError(
-            f"unsafe classifier regex {classifier_id}: {pattern!r}\n"
-            f"  - {joined}"
-        )
-    return re.compile(pattern, flags)

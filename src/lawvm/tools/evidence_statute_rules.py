@@ -448,12 +448,6 @@ class BucketMatch:
 
 
 @dataclass(frozen=True)
-class PartitionOutcome:
-    matched: tuple[BucketMatch, ...]
-    remaining: tuple[SectionRollupSeed, ...]
-
-
-@dataclass(frozen=True)
 class StatuteRollupPartition:
     initial_pool: tuple[SectionRollupSeed, ...]
     stale_sections: tuple[BucketMatch, ...]

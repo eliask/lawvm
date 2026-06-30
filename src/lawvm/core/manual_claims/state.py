@@ -155,13 +155,3 @@ def project_state(
         confidence=current_confidence,
         last_updated=last_updated,
     )
-
-
-def rebuild_state_from_event_log(
-    claim_id: str,
-    all_events: Sequence[ClaimStateEvent],
-    initial_confidence: ClaimConfidence = ClaimConfidence.MEDIUM,
-) -> Optional[ClaimState]:
-    """Filter all_events to claim_id, then project state."""
-    filtered = [e for e in all_events if e.claim_id == claim_id]
-    return project_state(claim_id, filtered, initial_confidence)

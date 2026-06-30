@@ -221,14 +221,6 @@ class SpoolStatuteChange:
     causes: tuple[AmendmentCause, ...]
 
 
-def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[3]
-
-
-def default_manifest_path() -> Path:
-    return _repo_root() / "viewer" / "statute-timeline-manifest.json"
-
-
 def statute_ids_from_manifest(path: Path, *, jurisdiction: str) -> tuple[str, ...]:
     data = json.loads(path.read_text(encoding="utf-8"))
     ids: list[str] = []

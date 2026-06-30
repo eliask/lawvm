@@ -66,19 +66,6 @@ def matches_scope_addresses(
     return True
 
 
-def scope_matches_exactly(
-    scope: TemporalScope,
-    addresses: tuple[LegalAddress, ...],
-) -> bool:
-    """Return True iff the scope matches via a direct exact_addresses hit (not descendant).
-
-    Used to prefer a more-specific expire event over a broader ancestor-derived one.
-    """
-    if not scope.exact_addresses:
-        return False
-    return any(address in addresses for address in scope.exact_addresses)
-
-
 def matches_temporal_scope(
     scope: TemporalScope,
     *,
