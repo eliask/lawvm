@@ -652,6 +652,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_replay_small_model.py",
         "test_fi_timeline.py",
         "test_commencement_totality_audit.py",
+        "test_citation_graph_totality_audit.py",
         "test_overlay_default_replay_authorized_false.py",
         "test_audit_observation_promoted_to_authority.py",
         "test_audit_attestation_policy_gap.py",

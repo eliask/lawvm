@@ -84,6 +84,9 @@ from lawvm.uk_legislation.unknown_attestation_policy_probe import (
 from lawvm.uk_legislation.timeline_invariants_probe import (
     probe_uk_timeline_invariants,
 )
+from lawvm.uk_legislation.citation_graph_totality_probe import (
+    probe_uk_citation_graph_totality,
+)
 from lawvm.uk_legislation.effect_compiler import compile_effect_to_ir_ops
 from lawvm.uk_legislation.effect_source_selection import (
     EffectSourceSelection as _EffectSourceSelection,
@@ -1160,6 +1163,11 @@ class UKReplayPipeline:
         probe_uk_timeline_invariants(
             base_ir,
             prepared_ops.accepted_ops,
+            adjudications_out=adjudications_out,
+            source_statute=base_ir.statute_id,
+        )
+        probe_uk_citation_graph_totality(
+            replayed,
             adjudications_out=adjudications_out,
             source_statute=base_ir.statute_id,
         )

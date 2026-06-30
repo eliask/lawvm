@@ -73,6 +73,35 @@ def _uk_temporal_events_from_ops(
     return tuple(events)
 
 
+def _uk_reference_mentions_from_statute(
+    statute: object,
+) -> tuple[object, ...]:
+    """Project the UK replayed statute's emitted reference surface into core
+    ``ReferenceMention`` carriers for the D6 citation-graph totality audit.
+
+    The UK frontend does not (yet) extract inline cross-statute citations into
+    typed ``ReferenceMention`` carriers — the replayed ``IRStatute`` body holds
+    citation text only as plain provision ``text``, with no structured
+    ``ReferenceExpression``/``ReferenceMention`` lane. This builder is therefore
+    the deliberate **seam** the D6 probe consumes: today it surfaces the UK
+    reference set as it currently exists (empty), and when UK gains a citation
+    extractor this is the single point that lifts that surface into the core
+    carriers the jurisdiction-neutral audit asserts totality over.
+
+    Returning an empty tuple is the honest first-consumer state, NOT a silent
+    drop: the UK frontend emits no ``ReferenceMention`` carriers at fold-exit, so
+    the citation graph is trivially total over zero mentions (tag-don't-guess —
+    we do not fabricate mentions the extractor never produced). The probe is
+    wired regardless so the totality guard is live the moment the surface is
+    non-empty.
+
+    Returns ``tuple[ReferenceMention, ...]`` (typed as ``object`` here to keep
+    the witness module free of a hard core-reference import until the surface is
+    real; the probe re-narrows the type).
+    """
+    return ()
+
+
 def _uk_applicability_witness(effect: UKEffectRecord) -> UKApplicabilityWitness:
     return UKApplicabilityWitness(
         effective_date=effect.effective_date,
