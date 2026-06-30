@@ -1,5 +1,6 @@
 from __future__ import annotations
 from lawvm.core.ir import IRStatute
+from lawvm.core.filter_result import filter_result_from_parts
 
 from collections.abc import Iterator
 from dataclasses import replace
@@ -175,7 +176,7 @@ def test_filter_cancelled_pending_refs_drops_future_effect_source_repealed_befor
         adjudications_out=adjudications,
     )
 
-    assert [ref.aktViide for ref in filtered] == ["118122025003"]
+    assert [ref.aktViide for ref in filtered.accepted_items] == ["118122025003"]
     assert [adjudication.kind for adjudication in adjudications] == [
         "ee_cancelled_pending_amendment_ref_filtered"
     ]
@@ -245,7 +246,7 @@ def test_filter_cancelled_pending_refs_drops_future_effect_source_rewritten_befo
         adjudications_out=adjudications,
     )
 
-    assert [ref.aktViide for ref in filtered] == ["101072025001"]
+    assert [ref.aktViide for ref in filtered.accepted_items] == ["101072025001"]
     assert [adjudication.kind for adjudication in adjudications] == [
         "ee_cancelled_pending_amendment_ref_filtered"
     ]
@@ -289,7 +290,7 @@ def test_filter_cancelled_pending_refs_records_source_fetch_failure_and_retains_
         adjudications_out=adjudications,
     )
 
-    assert filtered == refs
+    assert list(filtered.accepted_items) == refs
     assert [adjudication.kind for adjudication in adjudications] == [
         "ee_cancelled_pending_ref_source_fetch_failed"
     ]
@@ -350,7 +351,7 @@ def test_filter_cancelled_pending_refs_records_metadata_parse_failure_and_retain
         adjudications_out=adjudications,
     )
 
-    assert filtered == refs
+    assert list(filtered.accepted_items) == refs
     assert [adjudication.kind for adjudication in adjudications] == [
         "ee_cancelled_pending_ref_metadata_parse_failed"
     ]
@@ -398,7 +399,7 @@ def test_filter_ops_for_ref_slice_prefers_clause_local_effective_ops_for_later_s
         adjudications_out=adjudications,
     )
 
-    assert [op.op_id for op in filtered] == ["later-slice-op"]
+    assert [op.op_id for op in filtered.accepted_items] == ["later-slice-op"]
     assert [adjudication.kind for adjudication in adjudications] == [
         "ee_ref_slice_operation_filtered"
     ]
@@ -446,7 +447,7 @@ def test_filter_ops_for_ref_slice_keeps_unsliced_and_current_local_ops_on_earlie
         adjudications_out=adjudications,
     )
 
-    assert [op.op_id for op in filtered] == ["unsliced-op", "earliest-local-op"]
+    assert [op.op_id for op in filtered.accepted_items] == ["unsliced-op", "earliest-local-op"]
     assert [adjudication.op_id for adjudication in adjudications] == ["later-local-op"]
     assert adjudications[0].detail["reason"] == "op_effective_belongs_to_later_same_act_slice"
 
@@ -474,7 +475,7 @@ def test_filter_ops_for_ref_slice_records_future_effective_rejection() -> None:
         adjudications_out=adjudications,
     )
 
-    assert filtered == []
+    assert list(filtered.accepted_items) == []
     assert [adjudication.kind for adjudication in adjudications] == [
         "ee_ref_slice_operation_filtered"
     ]
@@ -571,7 +572,7 @@ def test_filter_ops_for_ref_slice_keeps_retroactive_local_ops_on_earliest_slice(
         as_of="2021-04-01",
     )
 
-    assert [op.op_id for op in filtered] == ["retroactive-local-op"]
+    assert [op.op_id for op in filtered.accepted_items] == ["retroactive-local-op"]
 
 
 def test_filter_ops_for_ref_slice_keeps_later_local_ops_when_no_later_ref_slice_exists() -> None:
@@ -613,7 +614,7 @@ def test_filter_ops_for_ref_slice_keeps_later_local_ops_when_no_later_ref_slice_
         as_of="2019-01-01",
     )
 
-    assert [op.op_id for op in filtered] == [
+    assert [op.op_id for op in filtered.accepted_items] == [
         "earliest-local-op",
         "later-local-op",
         "latest-local-op",
@@ -3654,14 +3655,18 @@ def test_precompose_pending_source_act_commencement_defers_future_effective_act(
         lambda akt_viide, archive: xml_by_id[akt_viide],
     )
 
-    refs, adjudications = _ee_precompose_pending_source_act_commencements(
+    _adjs: list = []
+    _pcompose = _ee_precompose_pending_source_act_commencements(
         (
             _ref("later", "2011-12-08", "2011-12-23"),
             _ref("earlier", "2011-02-17", "2012-01-01"),
         ),
         as_of="2012-02-01",
         archive=None,
+        adjudications_out=_adjs,
     )
+    adjudications = _adjs
+    refs = _pcompose.accepted_items
 
     assert [ref.aktViide for ref in refs] == ["later"]
     assert len(adjudications) == 1
@@ -3690,14 +3695,18 @@ def test_precompose_pending_source_act_commencement_records_fetch_failure(monkey
 
     monkeypatch.setattr("lawvm.estonia.replay.fetch_rt_xml", fake_fetch)
 
-    refs, adjudications = _ee_precompose_pending_source_act_commencements(
+    _adjs: list = []
+    _pcompose = _ee_precompose_pending_source_act_commencements(
         (
             _ref("missing", "2011-02-17", "2012-01-01"),
             _ref("later", "2011-12-08", "2011-12-23"),
         ),
         as_of="2012-02-01",
         archive=None,
+        adjudications_out=_adjs,
     )
+    adjudications = _adjs
+    refs = _pcompose.accepted_items
 
     assert [ref.aktViide for ref in refs] == ["later", "missing"]
     assert len(adjudications) == 1
@@ -3748,14 +3757,18 @@ def test_precompose_pending_source_act_commencement_keeps_now_effective_override
         lambda akt_viide, archive: {"earlier": earlier_xml, "later": later_xml}[akt_viide],
     )
 
-    refs, adjudications = _ee_precompose_pending_source_act_commencements(
+    _adjs: list = []
+    _pcompose = _ee_precompose_pending_source_act_commencements(
         (
             _ref("later", "2011-12-08", "2011-12-23"),
             _ref("earlier", "2011-02-17", "2012-01-01"),
         ),
         as_of="2012-08-01",
         archive=None,
+        adjudications_out=_adjs,
     )
+    adjudications = _adjs
+    refs = _pcompose.accepted_items
 
     assert [(ref.aktViide, ref.joustumine) for ref in refs] == [
         ("later", "2011-12-23"),
@@ -3807,7 +3820,11 @@ def test_replay_ee_to_pit_threads_temporal_events_into_compile_timelines(
             oracle_xml=None,
         ),
     )
-    monkeypatch.setattr(ee_replay, "_ee_filter_cancelled_pending_refs", lambda refs, **kwargs: refs)
+    monkeypatch.setattr(
+        ee_replay,
+        "_ee_filter_cancelled_pending_refs",
+        lambda refs, **kwargs: filter_result_from_parts(accepted_items=tuple(refs)),
+    )
     monkeypatch.setattr(ee_replay, "parse_ee_amendment_ops", lambda xml, statute_id, target_title=None: [])
     monkeypatch.setattr(ee_replay, "apply_ee_ops", lambda statute, ops, **kwargs: statute)
 
@@ -3845,11 +3862,15 @@ def _patch_minimal_ee_replay_pipeline(monkeypatch, ee_replay, *, pair_plan, fetc
         "plan_ee_oracle_pair",
         lambda **kwargs: SimpleNamespace(plan=pair_plan, oracle_xml=None),
     )
-    monkeypatch.setattr(ee_replay, "_ee_filter_cancelled_pending_refs", lambda refs, **kwargs: refs)
+    monkeypatch.setattr(
+        ee_replay,
+        "_ee_filter_cancelled_pending_refs",
+        lambda refs, **kwargs: filter_result_from_parts(accepted_items=tuple(refs)),
+    )
     monkeypatch.setattr(
         ee_replay,
         "_ee_precompose_pending_source_act_commencements",
-        lambda refs, **kwargs: (tuple(refs), ()),
+        lambda refs, **kwargs: filter_result_from_parts(accepted_items=tuple(refs)),
     )
     monkeypatch.setattr(ee_replay, "parse_ee_amendment_ops", parse_amendment_ops)
     monkeypatch.setattr(ee_replay, "apply_ee_ops", lambda statute, ops, **kwargs: statute)

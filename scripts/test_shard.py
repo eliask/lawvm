@@ -42,11 +42,14 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_ee_fetch.py",
         "test_ee_frontier.py",
         "test_ee_guard_liveness.py",
+        "test_ee_inline_directive_shape_a.py",
         "test_ee_invariant_bisect.py",
         "test_ee_structural_invariants.py",
+        "test_ee_unrecognized_source_shape.py",
         "test_ee_inspect_source.py",
         "test_ee_new_tools.py",
         "test_ee_pair_planning.py",
+        "test_ee_replay_summary.py",
         "test_ee_replayability_frontier.py",
         "test_ee_reporting_tools.py",
         "test_ee_residual_inventory.py",
@@ -57,6 +60,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     "estonia_replay_semantics": (
         "test_ee_apply_conserved.py",
         "test_ee_apply_semantics.py",
+        "test_ee_apply_filter_result.py",
         # §2.5 retirement parity gate for the EE same-moment cross-act detector.
         "test_ee_cross_act_same_moment_parity.py",
         # D7 deepcopy migration tests for estonia/target_resolution.py.

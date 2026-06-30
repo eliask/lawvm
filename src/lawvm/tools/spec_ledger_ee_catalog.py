@@ -61,6 +61,7 @@ _EE_RULE_SPECS: Dict[str, str] = {
 
     # --- Flat / sectionless singleton regulation scope --------------------------------
     "ee_flat_sectionless_singleton_item_insert": "A 'täiendatakse punktiga N' clause with no named section inserts the item under the sole section's first subsection (living spec §55).",
+    "ee_inline_directive_punkt_supplement": "An amendment whose directive(s) live in <sisuTekst> (no <paragrahv> wrapper) and whose preambul target-fragment extraction failed is recovered via a synthetic <paragrahv> wrapper delegated to the muutmiseadus parser (living spec §55 family closure 2026-06-27).",
     "ee_flat_sectionless_singleton_item_repeal": "A sectionless item repeal in a singleton regulation removes the item under the only section's first subsection.",
     "ee_flat_sectionless_singleton_subsection_scope": "A sectionless subsection/item clause in a one-section regulation recovers the omitted singleton section/subsection path (living spec §55).",
     "ee_singleton_empty_section_label_to_1": "A regulation's sole top-level paragrahv with an empty label is the same unit later consolidated as § 1 (living spec §54).",
@@ -296,6 +297,8 @@ _EE_RULE_SPECS: Dict[str, str] = {
     # --- Other parse rejections / meta --------------------------------------------------
     "ee_parse_new_format_op_text_rejected": "A new-format op whose text fails parse preconditions is rejected with a recorded reason.",
     "ee_parse_old_format_unparsed_meta_rejected": "An old-format clause that stays unparsed is rejected as meta with a recorded reason.",
+    "ee_parse_amendment_unrecognized_source_shape": "An amendment act whose source XML has non-empty <sisu> content but produces zero LegalOperation is recorded as a visible non-blocking residual (carrying the XML head + presence-of-paragrahv/sisuTekst/lisa/veaparandus markers) so the silent drop is no longer §1.8-invisible.",
+    "ee_compose_global_text_replace_empty_old_surface": "When the composite-selector normalization in _compose_global_text_replaces_into_later_payloads collapses an op's rewrite.old_surface to empty, the text_patch emission is skipped (avoiding TextSelector(match_text='') ValueError) and a non-blocking adjudication carrying the op_id + original old_surface + composed new_surface is recorded per AGENTS §1.10.",
 
     # --- Algtekst probe (source boundary diagnostics) ---------------------------------
     "ee_algtekst_probe_not_requested": "An algtekst (original-text) probe is skipped when not requested, recorded so the absence is explicit.",

@@ -26,11 +26,12 @@ from pathlib import Path
 from typing import Any, List, Optional
 
 from lawvm.core.diagnostic_records import diagnostic_detail
-from lawvm.core.filter_result import FilterResult
+from lawvm.core.filter_result import FilterResult, RejectedItem, filter_result_from_parts
 from lawvm.core.source_lane import SourceLaneAttempt, SourceLaneSelectionEvidence
 from lawvm.core.temporal import TemporalEvent, TemporalScope
 from lawvm.replay_adjudication import CompileAdjudication, SourceAdjudication
 from lawvm.core.ir import IRStatute, LegalAddress, LegalOperation, OperationSource, ProvisionTimeline, StructuralAction
+from lawvm.core.replay_contracts import ReplaySummary
 from lawvm.core.timeline import compile_timelines, materialize_pit
 from lawvm.core.timeline_consistency import ingest_consolidated, verify_consistency
 from lawvm.estonia.grafter import (
@@ -40,7 +41,7 @@ from lawvm.estonia.grafter import (
     _old_format_commencement_date,
     _strict_title_match_para,
     _title_matches_para,
-    # Re-exported for the EE guard-liveness test helper
+# Re-exported for the EE guard-liveness test helper
     # ``_patch_replay_for_crash_drill`` in ``tests/test_ee_guard_liveness.py``,
     # which monkeypatches this module-level reference to short-circuit the
     # apply step in upstream-crash drills. The production lane now routes
@@ -609,9 +610,9 @@ def _ee_filter_cancelled_pending_refs(
     archive: Any,
     adjudications_out: list[CompileAdjudication] | None = None,
     successful_xml_cache: dict[str, bytes] | None = None,
-) -> list[AmendmentRef]:
+) -> FilterResult[AmendmentRef]:
     if len(refs) < 2 or not target_title:
-        return refs
+        return filter_result_from_parts(accepted_items=tuple(refs))
 
     ref_xml: dict[str, bytes] = {}
     ref_titles: dict[str, str] = {}
@@ -770,7 +771,21 @@ def _ee_filter_cancelled_pending_refs(
                     )
                 break
 
-    return [ref for ref in refs if ref.aktViide not in cancelled]
+    accepted = [ref for ref in refs if ref.aktViide not in cancelled]
+    rejected = [
+        RejectedItem(
+            item=ref,
+            reason=f"cancelled_pending_amendment: {ref.aktViide} is cancelled by a later same-commencement source act",
+            reason_code="cancelled_pending_amendment",
+            blocking=False,
+        )
+        for ref in refs
+        if ref.aktViide in cancelled
+    ]
+    return FilterResult(
+        accepted_items=tuple(accepted),
+        rejected_items=tuple(rejected),
+    )
 
 
 def _ee_filter_ops_for_ref_slice(
@@ -781,7 +796,7 @@ def _ee_filter_ops_for_ref_slice(
     all_refs: tuple[AmendmentRef, ...] = (),
     as_of: str = "",
     adjudications_out: list[CompileAdjudication] | None = None,
-) -> list[LegalOperation]:
+) -> FilterResult[LegalOperation]:
     """Filter one act's ops to the executable slice owned by ``ref``.
 
     Earliest known slices may carry unsliced ops plus clause-local ops for the
@@ -827,30 +842,46 @@ def _ee_filter_ops_for_ref_slice(
 
     if any_local_slice_ops:
         filtered_ops: list[LegalOperation] = []
+        rejected_ops: list[RejectedItem[LegalOperation]] = []
+
+        def _record_and_reject(op: LegalOperation, reason: str, *, effective: str = "") -> None:
+            _record_filtered_op(op, reason, effective=effective)
+            rejected_ops.append(
+                RejectedItem(
+                    item=op,
+                    reason=f"{reason}: op effective {effective!r} outside ref slice {ref.joustumine!r}",
+                    reason_code=reason,
+                    blocking=False,
+                )
+            )
+
         for op in ops:
             effective = op.source.effective if op.source is not None else ""
             if not effective:
                 if not has_earlier_slice:
                     filtered_ops.append(op)
                 else:
-                    _record_filtered_op(op, "unsliced_op_after_earlier_same_act_slice", effective=effective)
+                    _record_and_reject(op, "unsliced_op_after_earlier_same_act_slice", effective=effective)
                 continue
             effective_window_date = effective
             if effective < ref.joustumine:
                 if has_earlier_slice:
-                    _record_filtered_op(op, "op_effective_before_ref_after_earlier_same_act_slice", effective=effective)
+                    _record_and_reject(op, "op_effective_before_ref_after_earlier_same_act_slice", effective=effective)
                     continue
                 effective_window_date = ref.joustumine
             if next_later_ref_date and effective_window_date >= next_later_ref_date:
-                _record_filtered_op(op, "op_effective_belongs_to_later_same_act_slice", effective=effective)
+                _record_and_reject(op, "op_effective_belongs_to_later_same_act_slice", effective=effective)
                 continue
             if as_of and effective > as_of:
-                _record_filtered_op(op, "op_effective_after_requested_pit", effective=effective)
+                _record_and_reject(op, "op_effective_after_requested_pit", effective=effective)
                 continue
             filtered_ops.append(op)
-        return filtered_ops
+        return FilterResult(
+            accepted_items=tuple(filtered_ops),
+            rejected_items=tuple(rejected_ops),
+        )
 
-    return ops
+    return filter_result_from_parts(accepted_items=ops)
 
 
 _EE_PENDING_AMENDMENT_PRECOMPOSE_RULE = "ee_pending_amendment_text_precompose"
@@ -921,15 +952,16 @@ def _ee_precompose_pending_source_act_commencements(
     *,
     as_of: str,
     archive: Any,
+    adjudications_out: list[CompileAdjudication] | None = None,
     successful_xml_cache: dict[str, bytes] | None = None,
-) -> tuple[tuple[AmendmentRef, ...], tuple[CompileAdjudication, ...]]:
+) -> FilterResult[AmendmentRef]:
     """Apply source-backed commencement amendments to pending source-act refs."""
     if len(refs) < 2:
-        return refs, ()
+        return filter_result_from_parts(accepted_items=refs)
 
     xml_by_ref: dict[str, bytes] = {}
     title_by_ref: dict[str, str] = {}
-    adjudications: list[CompileAdjudication] = []
+    adjudications = adjudications_out if adjudications_out is not None else []
     for ref in refs:
         try:
             xml_bytes = _ee_fetch_rt_xml_cached(ref.aktViide, archive, successful_xml_cache)
@@ -1033,7 +1065,7 @@ def _ee_precompose_pending_source_act_commencements(
                     joustumine=replacement_date,
                 )
             )
-    return tuple(sorted(updated_refs, key=_ee_ref_sort_key)), tuple(adjudications)
+    return FilterResult(accepted_items=tuple(sorted(updated_refs, key=_ee_ref_sort_key)))
 
 
 def _ee_precompose_pending_amendment_text_patches(
@@ -1434,6 +1466,47 @@ class EEPitResult:
     # but is unreachable from the production lane).
     apply_filter_result: Optional[FilterResult[LegalOperation]] = None
 
+    def to_replay_summary(self) -> ReplaySummary:
+        """Project this EE-specific result onto the shared ``ReplaySummary``
+        contract from ``core/replay_contracts.py``, giving downstream
+        tooling (bench / frontier / cross-jurisdiction commands) a
+        jurisdiction-agnostic output shape.
+
+        Maps EE-specific fields (``grupi_id``, ``source_basis``,
+        ``comparison_class``, etc.) into ``detail``; the core
+        ``ReplaySummary`` fields (amendment_count, applied_count,
+        divergence_count, consistent, etc.) are populated directly from
+        the EE-parallel fields."""
+        has_oracle = self.oracle is not None and self.error is None
+        return ReplaySummary(
+            jurisdiction="ee",
+            base_id=self.base_id,
+            as_of=self.as_of,
+            title=self.base_title,
+            replay_status="error" if self.error else "ok",
+            error=self.error,
+            oracle_id=self.oracle_id or "",
+            source_id="",
+            amendment_count=len(self.amendments_total),
+            applied_count=len(self.amendments_applied),
+            skipped_count=len(self.amendments_skipped),
+            failed_count=len(self.amendments_failed),
+            op_count=self.n_ops,
+            consistent=(not bool(self.divergences)) if has_oracle else None,
+            divergence_count=len(self.divergences) if has_oracle else None,
+            steps=(),
+            text_view=None,
+            detail={
+                "source_basis": self.source_basis,
+                "comparison_class": self.comparison_class,
+                "grupi_id": self.grupi_id or "",
+                "n_mismatch": self.n_mismatch,
+                "n_ops_missing": self.n_ops_missing,
+                "n_con_missing": self.n_con_missing,
+                "adjudication_count": len(self.adjudications),
+            },
+        )
+
 
 # ---------------------------------------------------------------------------
 # Main pipeline
@@ -1589,19 +1662,23 @@ def replay_ee_to_pit(
     ]
     cancellation_filter_adjudications: list[CompileAdjudication] = []
     successful_amendment_xml_cache: dict[str, bytes] = {}
-    to_apply = _ee_filter_cancelled_pending_refs(
+    cancelled_pending_result = _ee_filter_cancelled_pending_refs(
         sorted(pair_plan.amendments_to_apply, key=_ee_ref_sort_key),
         target_title=base.title,
         archive=_archive,
         adjudications_out=cancellation_filter_adjudications,
         successful_xml_cache=successful_amendment_xml_cache,
     )
-    to_apply, commencement_precomposition_adjudications = _ee_precompose_pending_source_act_commencements(
+    to_apply = list(cancelled_pending_result.accepted_items)
+    commencement_precomposition_adjudications: list[CompileAdjudication] = []
+    commencement_precomposition_result = _ee_precompose_pending_source_act_commencements(
         tuple(to_apply),
         as_of=as_of,
         archive=_archive,
+        adjudications_out=commencement_precomposition_adjudications,
         successful_xml_cache=successful_amendment_xml_cache,
     )
+    to_apply = list(commencement_precomposition_result.accepted_items)
     to_skip = [
         ref for ref in pair_plan.base_refs if ref.aktViide not in {x.aktViide for x in to_apply}
     ]
@@ -1709,14 +1786,14 @@ def replay_ee_to_pit(
                 )
             )
             continue
-        ops = _ee_filter_ops_for_ref_slice(
+        ops = list(_ee_filter_ops_for_ref_slice(
             ops,
             ref=ref,
             base_refs=pair_plan.base_refs,
             all_refs=pair_plan.amendments_to_apply,
             as_of=as_of,
             adjudications_out=slice_filter_adjudications,
-        )
+        ).accepted_items)
 
         # Stamp each op with provenance dates; renumber to global sequence
         ops = [
@@ -1730,6 +1807,7 @@ def replay_ee_to_pit(
                     raw_text=op.source.raw_text if op.source else "",
                 ),
                 sequence=global_seq + i,
+                op_id=f"{op.op_id}-{global_seq + i}",
             )
             for i, op in enumerate(ops)
         ]

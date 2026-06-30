@@ -1214,7 +1214,7 @@ def _section_renumber_ops(
             },
         )
         ops.append(LegalOperation(
-            op_id=f"ee-renumber-section-{old_label}-{new_label}-{source.statute_id}",
+            op_id=f"ee-renumber-section-{old_label}-{new_label}-{seq_start}-{source.statute_id}",
             sequence=seq_start + offset,
             action=_to_structural_action("renumber"),
             target=LegalAddress(path=(("section", old_label),)),
@@ -1269,7 +1269,7 @@ def _subsection_renumber_then_insert_ops(
     )
     return (
         LegalOperation(
-            op_id=f"ee-renumber-subsection-{section_label}-{old_label}-{new_label}-{source.statute_id}",
+            op_id=f"ee-renumber-subsection-{section_label}-{old_label}-{new_label}-{seq_start}-{source.statute_id}",
             sequence=seq_start,
             action=_to_structural_action("renumber"),
             target=LegalAddress(path=(("section", section_label), ("subsection", old_label))),
@@ -1280,7 +1280,7 @@ def _subsection_renumber_then_insert_ops(
             witness_rule_id=_EE_SUBSECTION_SEQUENCE_RENUMBER_RULE,
         ),
         LegalOperation(
-            op_id=f"ee-insert-renumbered-subsection-{section_label}-{insert_label}-{source.statute_id}",
+            op_id=f"ee-insert-renumbered-subsection-{section_label}-{insert_label}-{seq_start}-{source.statute_id}",
             sequence=seq_start + 1,
             action=_to_structural_action("insert"),
             target=LegalAddress(path=(("section", section_label), ("subsection", insert_label))),
@@ -1322,7 +1322,7 @@ def _senine_text_subsection_renumber_then_insert_ops(
     if new_label == old_label:
         return (
             LegalOperation(
-                op_id=f"ee-insert-senine-native-subsection-{section_label}-{insert_label}-{source.statute_id}",
+                op_id=f"ee-insert-senine-native-subsection-{section_label}-{insert_label}-{seq_start}-{source.statute_id}",
                 sequence=seq_start,
                 action=_to_structural_action("insert"),
                 target=LegalAddress(path=(("section", section_label), ("subsection", insert_label))),
@@ -1344,7 +1344,7 @@ def _senine_text_subsection_renumber_then_insert_ops(
     )
     return (
         LegalOperation(
-            op_id=f"ee-renumber-senine-subsection-{section_label}-{old_label}-{new_label}-{source.statute_id}",
+            op_id=f"ee-renumber-senine-subsection-{section_label}-{old_label}-{new_label}-{seq_start}-{source.statute_id}",
             sequence=seq_start,
             action=_to_structural_action("renumber"),
             target=LegalAddress(path=(("section", section_label), ("subsection", old_label))),
@@ -1355,7 +1355,7 @@ def _senine_text_subsection_renumber_then_insert_ops(
             witness_rule_id=_EE_SENINE_TEXT_SUBSECTION_RENUMBER_RULE,
         ),
         LegalOperation(
-            op_id=f"ee-insert-senine-renumbered-subsection-{section_label}-{insert_label}-{source.statute_id}",
+            op_id=f"ee-insert-senine-renumbered-subsection-{section_label}-{insert_label}-{seq_start}-{source.statute_id}",
             sequence=seq_start + 1,
             action=_to_structural_action("insert"),
             target=LegalAddress(path=(("section", section_label), ("subsection", insert_label))),
@@ -1796,6 +1796,7 @@ def _extract_flat_sectionless_singleton_subsection_ops(
     scoped_body = re.sub(r"^\s*(?:määruse|seaduse)\s+", "", clean, count=1, flags=re.IGNORECASE)
     scoped_clean = f"paragrahvi 1 {scoped_body}"
     scoped_ops = extract_ee_ops(scoped_clean, source, seq_start=seq)
+    seq += len(scoped_ops)
     if not scoped_ops:
         return []
     recovered: list[LegalOperation] = []
@@ -4071,7 +4072,7 @@ def _handle_ee_chapter_heading_insert_after_section(
     return [
         _mint_ee_op(
             "insert",
-            op_id=f"ee-insert-chapter-heading-after-section-{chapter_label}-{source.statute_id}",
+            op_id=f"ee-insert-chapter-heading-after-section-{chapter_label}-{seq}-{source.statute_id}",
             sequence=seq,
             target=LegalAddress(path=(("chapter", chapter_label),)),
             payload=payload,
@@ -4105,7 +4106,7 @@ def _handle_ee_chapter_level_replace(
     ch_label = _normalize_num(m_ch_replace.group(1).strip())
     ops.append(_mint_ee_op(
         "replace",
-        op_id=f"ee-replace-chapter-{ch_label}-{source.statute_id}",
+        op_id=f"ee-replace-chapter-{ch_label}-{seq}-{source.statute_id}",
         sequence=seq,
         target=LegalAddress(path=(("chapter", ch_label),)),
         payload=IRNode(kind=IRNodeKind.CONTENT, text=content),
@@ -4142,7 +4143,7 @@ def _handle_ee_division_level_replace(
         div_label = _normalize_num(m_div_replace.group(2).strip())
         ops.append(_mint_ee_op(
             "replace",
-            op_id=f"ee-replace-division-{ch_label}-{div_label}-{source.statute_id}",
+            op_id=f"ee-replace-division-{ch_label}-{div_label}-{seq}-{source.statute_id}",
             sequence=seq,
             target=LegalAddress(path=(("chapter", ch_label), ("division", div_label))),
             payload=IRNode(kind=IRNodeKind.CONTENT, text=content),
@@ -4173,7 +4174,7 @@ def _handle_ee_lahter_text_replace(
     field_label = _normalize_num(m_lahter_text.group(2))
     ops.append(_mint_ee_op(
         "replace",
-        op_id=f"ee-lahter-text-replace-{section_label}-{field_label}-{source.statute_id}",
+        op_id=f"ee-lahter-text-replace-{section_label}-{field_label}-{seq}-{source.statute_id}",
         sequence=seq,
         target=LegalAddress(path=(("section", section_label),)),
         payload=IRNode(
@@ -4306,7 +4307,7 @@ def _handle_ee_textosa_heading_relabel(
     return [
         _mint_ee_op(
             "renumber",
-            op_id=f"ee-structural-textosa-heading-relabel-{old_label}-{new_label}-{source.statute_id}",
+            op_id=f"ee-structural-textosa-heading-relabel-{old_label}-{new_label}-{seq}-{source.statute_id}",
             sequence=seq,
             target=LegalAddress(path=(("chapter", old_label),)),
             destination=LegalAddress(path=(("chapter", new_label),)),
@@ -4634,7 +4635,7 @@ def extract_ee_ops(
             div_label = _normalize_num(m_subdivision_repeal.group(2).strip())
             sub_label = _normalize_num(m_subdivision_repeal.group(3).strip())
             ops.append(LegalOperation(
-                op_id=f"ee-repeal-subdivision-{ch_label}-{div_label}-{sub_label}-{source.statute_id}",
+                op_id=f"ee-repeal-subdivision-{ch_label}-{div_label}-{sub_label}-{seq}-{source.statute_id}",
                 sequence=seq,
                 action=_to_structural_action("repeal"),
                 target=LegalAddress(
@@ -4648,7 +4649,7 @@ def extract_ee_ops(
         division_repeals = _extract_division_repeals(clean)
         for ch_label, div_label in division_repeals:
             ops.append(LegalOperation(
-                op_id=f"ee-repeal-division-{ch_label}-{div_label}-{source.statute_id}",
+                op_id=f"ee-repeal-division-{ch_label}-{div_label}-{seq}-{source.statute_id}",
                 sequence=seq,
                 action=_to_structural_action("repeal"),
                 target=LegalAddress(path=(("chapter", ch_label), ("division", div_label))),
@@ -4714,7 +4715,7 @@ def extract_ee_ops(
         if _ch_repeal_labels:
             for sect_label in _extract_section_repeals_before_chapter_repeal(clean):
                 ops.append(LegalOperation(
-                    op_id=f"ee-repeal-sect-{sect_label}-{source.statute_id}",
+                    op_id=f"ee-repeal-sect-{sect_label}-{seq}-{source.statute_id}",
                     sequence=seq,
                     action=_to_structural_action("repeal"),
                     target=LegalAddress(path=(("section", sect_label),)),
@@ -4725,7 +4726,7 @@ def extract_ee_ops(
                 seq += 1
             for ch_label in _ch_repeal_labels:
                 ops.append(LegalOperation(
-                    op_id=f"ee-repeal-chapter-{ch_label}-{source.statute_id}",
+                    op_id=f"ee-repeal-chapter-{ch_label}-{seq}-{source.statute_id}",
                     sequence=seq,
                     action=_to_structural_action("repeal"),
                     target=LegalAddress(path=(("chapter", ch_label),)),
@@ -4758,7 +4759,7 @@ def extract_ee_ops(
             from lawvm.estonia.text_morphology import sentence_indexes_from_notes
 
             ops.append(LegalOperation(
-                op_id=f"ee-replace-section-sentence-{sect_label}-{source.statute_id}",
+                op_id=f"ee-replace-section-sentence-{sect_label}-{seq}-{source.statute_id}",
                 sequence=seq,
                 action=_to_structural_action("replace"),
                 target=LegalAddress(path=(("section", sect_label),)),
@@ -4794,7 +4795,7 @@ def extract_ee_ops(
         if m_single_sect_repeal:
             num = _normalize_num(m_single_sect_repeal.group(1))
             ops.append(LegalOperation(
-                op_id=f"ee-repeal-sect-{num}-{source.statute_id}",
+                op_id=f"ee-repeal-sect-{num}-{seq}-{source.statute_id}",
                 sequence=seq,
                 action=_to_structural_action("repeal"),
                 target=LegalAddress(path=(("section", num),)),
@@ -4886,7 +4887,7 @@ def extract_ee_ops(
                 payload = None
                 _selection_meta_note = encode_ee_selection_meta_note(section_selection_meta)
             ops.append(LegalOperation(
-                op_id=f"ee-{action}-sect-{addr.path[-1][1]}-{source.statute_id}",
+                op_id=f"ee-{action}-sect-{addr.path[-1][1]}-{seq}-{source.statute_id}",
                 sequence=seq,
                 action=_to_structural_action(action),
                 target=addr,
@@ -4927,7 +4928,7 @@ def extract_ee_ops(
                     if sub_path in seen_sub_paths:
                         continue
                     ops.append(LegalOperation(
-                        op_id=f"ee-repeal-sub-{sect_label}-{sub_label}-{source.statute_id}",
+                        op_id=f"ee-repeal-sub-{sect_label}-{sub_label}-{seq}-{source.statute_id}",
                         sequence=seq,
                         action=_to_structural_action("repeal"),
                         target=LegalAddress(path=sub_path),
@@ -4943,7 +4944,7 @@ def extract_ee_ops(
                 if sect_path in seen_sections:
                     continue
                 ops.append(LegalOperation(
-                    op_id=f"ee-repeal-sect-{_num}-{source.statute_id}",
+                    op_id=f"ee-repeal-sect-{_num}-{seq}-{source.statute_id}",
                     sequence=seq,
                     action=_to_structural_action("repeal"),
                     target=LegalAddress(path=sect_path),
@@ -4970,7 +4971,7 @@ def extract_ee_ops(
         content = _extract_quoted_content(clean)
         if content:
             ops.append(LegalOperation(
-                op_id=f"ee-insert-div-reclass-{div_label}-in-ch-{ch_label}-{source.statute_id}",
+                op_id=f"ee-insert-div-reclass-{div_label}-in-ch-{ch_label}-{seq}-{seq}-{source.statute_id}",
                 sequence=seq,
                 action=_to_structural_action("insert"),
                 target=LegalAddress(path=(("chapter", ch_label), ("division", div_label))),
@@ -5136,7 +5137,7 @@ def extract_ee_ops(
                         path=(("chapter", ch_label), ("division", div_label), ("section", sec_num))
                     )
                     ops.append(LegalOperation(
-                        op_id=f"ee-insert-sect-{sec_num}-in-jaotis-{div_label}-{source.statute_id}",
+                        op_id=f"ee-insert-sect-{sec_num}-in-jaotis-{div_label}-{seq}-{source.statute_id}",
                         sequence=seq,
                         action=_to_structural_action("insert"),
                         target=sec_addr,
@@ -5177,7 +5178,7 @@ def extract_ee_ops(
                     # 1. Emit part insert (title-only, no payload → grafter creates childless node)
                     part_payload = IRNode(kind=IRNodeKind.CONTENT, text=part_title)
                     ops.append(LegalOperation(
-                        op_id=f"ee-insert-part-{part_label}-{source.statute_id}",
+                        op_id=f"ee-insert-part-{part_label}-{seq}-{seq}-{source.statute_id}",
                         sequence=seq,
                         action=_to_structural_action("insert"),
                         target=LegalAddress(path=(("part", part_label),)),
@@ -5197,7 +5198,7 @@ def extract_ee_ops(
                         sec_content = m_sec.group(0).strip()
                         sec_addr = LegalAddress(path=(("section", sec_num),))
                         ops.append(LegalOperation(
-                            op_id=f"ee-insert-sect-{sec_num}-in-part-{part_label}-{source.statute_id}",
+                            op_id=f"ee-insert-sect-{sec_num}-in-part-{part_label}-{seq}-{source.statute_id}",
                             sequence=seq,
                             action=_to_structural_action("insert"),
                             target=sec_addr,
@@ -5290,7 +5291,7 @@ def extract_ee_ops(
                     if quoted_act_chapter_insert:
                         provenance_tags = (*provenance_tags, _EE_QUOTED_ACT_CHAPTER_INSERT_RULE)
                     ops.append(LegalOperation(
-                        op_id=f"ee-insert-chapter-{ch_label}-{source.statute_id}",
+                        op_id=f"ee-insert-chapter-{ch_label}-{seq}-{seq}-{source.statute_id}",
                         sequence=seq,
                         action=_to_structural_action("insert"),
                         target=addr,
@@ -5325,7 +5326,7 @@ def extract_ee_ops(
                 # Preserve superscript division identity (e.g. 1^1 -> 1_1) so inserted split divisions do not collapse onto division 1.
                 addr = LegalAddress(path=(("chapter", ch_label), ("division", div_label)))
                 ops.append(LegalOperation(
-                    op_id=f"ee-insert-div-{div_label}-in-ch-{ch_label}-{source.statute_id}",
+                    op_id=f"ee-insert-div-{div_label}-in-ch-{ch_label}-{seq}-{seq}-{source.statute_id}",
                     sequence=seq,
                     action=_to_structural_action("insert"),
                     target=addr,
@@ -5365,7 +5366,7 @@ def extract_ee_ops(
                     else ()
                 )
                 ops.append(LegalOperation(
-                    op_id=f"ee-insert-sect-{num}-{source.statute_id}",
+                    op_id=f"ee-insert-sect-{num}-{seq}-{source.statute_id}",
                     sequence=seq,
                     action=_to_structural_action("insert"),
                     target=addr,
@@ -5457,7 +5458,7 @@ def extract_ee_ops(
                     # R4: repeal carries no payload; subsection selection meta
                     # rides as a serialized provenance note.
                     ops.append(LegalOperation(
-                        op_id=f"ee-repeal-sub-{section_label}-{subsection_label}-{source.statute_id}",
+                        op_id=f"ee-repeal-sub-{section_label}-{subsection_label}-{seq}-{seq}-{source.statute_id}",
                         sequence=seq,
                         action=_to_structural_action("repeal"),
                         target=target,
@@ -5518,7 +5519,7 @@ def extract_ee_ops(
         sentence_indexes = sentence_indexes_from_notes(f"{sentence_word} lause tunnistatakse kehtetuks")
         for num in expanded:
             ops.append(LegalOperation(
-                op_id=f"ee-replace-sub-sentence-{sect_label}-{num}-{source.statute_id}",
+                op_id=f"ee-replace-sub-sentence-{sect_label}-{num}-{seq}-{seq}-{source.statute_id}",
                 sequence=seq,
                 action=_to_structural_action("replace"),
                 target=LegalAddress(path=(("section", sect_label), ("subsection", num))),
@@ -5553,7 +5554,7 @@ def extract_ee_ops(
         from lawvm.estonia.text_morphology import sentence_indexes_from_notes
 
         ops.append(LegalOperation(
-            op_id=f"ee-replace-sub-sentence-{sect_label}-{sub_label}-{source.statute_id}",
+            op_id=f"ee-replace-sub-sentence-{sect_label}-{sub_label}-{seq}-{seq}-{source.statute_id}",
             sequence=seq,
             action=_to_structural_action("replace"),
             target=LegalAddress(path=(("section", sect_label), ("subsection", sub_label))),
@@ -5696,7 +5697,7 @@ def extract_ee_ops(
             heading_payload = IRNode(kind=IRNodeKind.CONTENT, text=new_t)
             heading_payload, _heading_witness = _set_text_replace_payload_attrs(heading_payload, clean, old_t, new_t)
             ops.append(LegalOperation(
-                op_id=f"ee-text_replace-title-{sect_label}-{source.statute_id}",
+                op_id=f"ee-text_replace-title-{sect_label}-{seq}-{source.statute_id}",
                 sequence=seq,
                 action=_to_structural_action("text_replace"),
                 target=LegalAddress(path=(("section", sect_label),), special=FacetKind.HEADING),
@@ -5726,7 +5727,7 @@ def extract_ee_ops(
                 for _num in _extra:
                     addr2 = LegalAddress(path=(("section", _num),))
                     ops.append(LegalOperation(
-                        op_id=f"ee-repeal-sect-{_num}-{source.statute_id}",
+                        op_id=f"ee-repeal-sect-{_num}-{seq}-{seq}-{source.statute_id}",
                         sequence=seq,
                         action=_to_structural_action("repeal"),
                         target=addr2,
@@ -5766,7 +5767,7 @@ def extract_ee_ops(
                         if sub_path in seen_sub_paths:
                             continue
                         ops.append(LegalOperation(
-                            op_id=f"ee-repeal-sub-{extra_sect}-{extra_sub}-{source.statute_id}",
+                            op_id=f"ee-repeal-sub-{extra_sect}-{extra_sub}-{seq}-{seq}-{source.statute_id}",
                             sequence=seq,
                             action=_to_structural_action("repeal"),
                             target=LegalAddress(path=sub_path),
@@ -5781,7 +5782,7 @@ def extract_ee_ops(
                     if sub_path in seen_sub_paths:
                         continue
                     ops.append(LegalOperation(
-                        op_id=f"ee-repeal-sub-{extra_sect}-{extra_sub}-{source.statute_id}",
+                        op_id=f"ee-repeal-sub-{extra_sect}-{extra_sub}-{seq}-{seq}-{source.statute_id}",
                         sequence=seq,
                         action=_to_structural_action("repeal"),
                         target=LegalAddress(path=sub_path),
@@ -5804,7 +5805,7 @@ def extract_ee_ops(
                     if item_path in seen_item_paths:
                         continue
                     ops.append(LegalOperation(
-                        op_id=f"ee-repeal-item-{extra_sect}-{extra_sub}-{extra_item}-{source.statute_id}",
+                        op_id=f"ee-repeal-item-{extra_sect}-{extra_sub}-{extra_item}-{seq}-{source.statute_id}",
                         sequence=seq,
                         action=_to_structural_action("repeal"),
                         target=LegalAddress(path=item_path),
@@ -5837,7 +5838,7 @@ def extract_ee_ops(
             (second_sub_label, second_item_label),
         ):
             ops.append(LegalOperation(
-                op_id=f"ee-repeal-item-{sect_label}-{sub_label}-{item_label}-{source.statute_id}",
+                op_id=f"ee-repeal-item-{sect_label}-{sub_label}-{item_label}-{seq}-{source.statute_id}",
                 sequence=seq,
                 action=_to_structural_action("repeal"),
                 target=LegalAddress(path=(("section", sect_label), ("subsection", sub_label), ("item", item_label))),
@@ -5894,7 +5895,7 @@ def extract_ee_ops(
             LegalAddress(path=(("section", second_sect), ("subsection", second_sub))),
         ):
             ops.append(LegalOperation(
-                op_id=f"ee-repeal-compound-item-subsection-{target}-{source.statute_id}",
+                op_id=f"ee-repeal-compound-item-subsection-{target}-{seq}-{seq}-{source.statute_id}",
                 sequence=seq,
                 action=_to_structural_action("repeal"),
                 target=target,
@@ -5922,7 +5923,7 @@ def extract_ee_ops(
         from lawvm.estonia.text_morphology import sentence_indexes_from_notes
 
         ops.append(LegalOperation(
-            op_id=f"ee-replace-item-sentence-{sect_label}-{sub_label}-{item_label}-{source.statute_id}",
+            op_id=f"ee-replace-item-sentence-{sect_label}-{sub_label}-{item_label}-{seq}-{seq}-{source.statute_id}",
             sequence=seq,
             action=_to_structural_action("replace"),
             target=LegalAddress(path=(("section", sect_label), ("subsection", sub_label), ("item", item_label))),
@@ -6107,7 +6108,6 @@ def extract_ee_ops(
                 action=_to_structural_action(op_action),
                 target=addr,
                 payload=payload,
-                text_patch=_typed_text_replace_patch(old_t, new_t) if op_action == "text_replace" else None,
                 source=source,
                 provenance_tags=(
                     *op_provenance_tags,
@@ -6170,7 +6170,7 @@ def extract_ee_ops(
                     # R7: repeal carries no payload; subsection selection meta
                     # rides as a serialized provenance note.
                     ops.append(LegalOperation(
-                        op_id=f"ee-repeal-sub-{extra_sect}-{extra_sub}-{source.statute_id}",
+                        op_id=f"ee-repeal-sub-{extra_sect}-{extra_sub}-{seq}-{seq}-{source.statute_id}",
                         sequence=seq,
                         action=_to_structural_action("repeal"),
                         target=LegalAddress(path=(("section", extra_sect), ("subsection", extra_sub))),
@@ -6195,7 +6195,7 @@ def extract_ee_ops(
                     from lawvm.estonia.text_morphology import sentence_indexes_from_notes
 
                     ops.append(LegalOperation(
-                        op_id=f"ee-replace-sub-sentence-{extra_sect}-{extra_sub}-{source.statute_id}",
+                        op_id=f"ee-replace-sub-sentence-{extra_sect}-{extra_sub}-{seq}-{seq}-{source.statute_id}",
                         sequence=seq,
                         action=_to_structural_action("replace"),
                         target=LegalAddress(path=(("section", extra_sect), ("subsection", extra_sub))),
@@ -6228,7 +6228,7 @@ def extract_ee_ops(
                     # R8: repeal carries no payload; subsection selection meta
                     # rides as a serialized provenance note.
                     ops.append(LegalOperation(
-                        op_id=f"ee-repeal-sub-{extra_sect}-{extra_sub}-{source.statute_id}",
+                        op_id=f"ee-repeal-sub-{extra_sect}-{extra_sub}-{seq}-{seq}-{source.statute_id}",
                         sequence=seq,
                         action=_to_structural_action("repeal"),
                         target=LegalAddress(path=(("section", extra_sect), ("subsection", extra_sub))),
@@ -6250,7 +6250,7 @@ def extract_ee_ops(
                     # R9: repeal carries no payload; subsection selection meta
                     # rides as a serialized provenance note.
                     ops.append(LegalOperation(
-                        op_id=f"ee-repeal-sub-{extra_sect}-{extra_sub}-{source.statute_id}",
+                        op_id=f"ee-repeal-sub-{extra_sect}-{extra_sub}-{seq}-{seq}-{source.statute_id}",
                         sequence=seq,
                         action=_to_structural_action("repeal"),
                         target=LegalAddress(path=(("section", extra_sect), ("subsection", extra_sub))),
@@ -6273,7 +6273,7 @@ def extract_ee_ops(
                     if target_path in existing_repeal_targets:
                         continue
                     ops.append(LegalOperation(
-                        op_id=f"ee-repeal-sect-{_num}-{source.statute_id}",
+                        op_id=f"ee-repeal-sect-{_num}-{seq}-{seq}-{source.statute_id}",
                         sequence=seq,
                         action=_to_structural_action("repeal"),
                         target=LegalAddress(path=target_path),
@@ -6432,10 +6432,12 @@ def extract_ee_ops(
     # Emit the renumber first, but do not return: the later insert/replace path
     # still needs to compile from the same instruction.
     subsection_renumber_ops = _subsection_renumber_then_insert_ops(clean, source, seq_start=seq)
+    seq += len(subsection_renumber_ops)
     if subsection_renumber_ops:
         return list(subsection_renumber_ops)
 
     senine_subsection_renumber_ops = _senine_text_subsection_renumber_then_insert_ops(clean, source, seq_start=seq)
+    seq += len(senine_subsection_renumber_ops)
     if senine_subsection_renumber_ops:
         return list(senine_subsection_renumber_ops)
 
@@ -6457,7 +6459,7 @@ def extract_ee_ops(
             ch_label = _normalize_num(m_direct_jagu_insert.group(1).strip())
             div_label = _normalize_num(m_direct_jagu_insert.group(2).strip())
             ops.append(LegalOperation(
-                op_id=f"ee-insert-div-{div_label}-in-ch-{ch_label}-{source.statute_id}",
+                op_id=f"ee-insert-div-{div_label}-in-ch-{ch_label}-{seq}-{seq}-{source.statute_id}",
                 sequence=seq,
                 action=_to_structural_action("insert"),
                 target=LegalAddress(path=(("chapter", ch_label), ("division", div_label))),
@@ -7444,7 +7446,7 @@ def extract_ee_ops(
                     provenance_tags = (*provenance_tags, _EE_PLURAL_SUBSECTION_INSERT_PAYLOAD_SPLIT_RULE)
                     witness_rule_id = _EE_PLURAL_SUBSECTION_INSERT_PAYLOAD_SPLIT_RULE
                 ops.append(LegalOperation(
-                    op_id=f"ee-insert-sub-{sect_label}-{num}-{source.statute_id}",
+                    op_id=f"ee-insert-sub-{sect_label}-{num}-{seq}-{seq}-{source.statute_id}",
                     sequence=seq,
                     action=_to_structural_action("insert"),
                     target=sub_addr,
@@ -7516,11 +7518,6 @@ def extract_ee_ops(
         action=_to_structural_action(action),
         target=target,
         payload=payload,
-        text_patch=standard_text_patch,
-        source=source,
-        provenance_tags=(clean[:200],)
-        + ((target_label_space_rule,) if target_label_space_rule else ())
-        + ((str(payload.attrs["source_family"]),) if payload is not None and payload.attrs.get("source_family") else ()),
         witness_rule_id=target_label_space_rule
         or (str(payload.attrs["source_family"]) if payload is not None and payload.attrs.get("source_family") else None),
     ))
@@ -7535,7 +7532,7 @@ def extract_ee_ops(
     ):
         rule_id = "ee_section_heading_and_text_replace_split"
         ops.append(LegalOperation(
-            op_id=f"ee-text_replace-heading-and-text-{str(target.path[0][1])}-{source.statute_id}",
+            op_id=f"ee-text_replace-heading-and-text-{str(target.path[0][1])}-{seq}-{source.statute_id}",
             sequence=seq,
             action=_to_structural_action("text_replace"),
             target=LegalAddress(path=target.path),
@@ -7562,7 +7559,7 @@ def extract_ee_ops(
             and target.path[0][0] == "section"):
         sect_path = target.path[:1]  # just the section, no subsection
         ops.append(LegalOperation(
-            op_id=f"ee-text_replace-title-{str(target.path[0][1])}-{source.statute_id}",
+            op_id=f"ee-text_replace-title-{str(target.path[0][1])}-{seq}-{source.statute_id}",
             sequence=seq,
             action=_to_structural_action("text_replace"),
             target=LegalAddress(path=sect_path, special=FacetKind.HEADING),
@@ -7603,7 +7600,7 @@ def extract_ee_ops(
                 if item_path in seen_item_paths:
                     continue
                 ops.append(LegalOperation(
-                    op_id=f"ee-repeal-item-{extra_sect}-{extra_sub}-{extra_item}-{source.statute_id}",
+                    op_id=f"ee-repeal-item-{extra_sect}-{extra_sub}-{extra_item}-{seq}-{source.statute_id}",
                     sequence=seq,
                     action=_to_structural_action("repeal"),
                     target=LegalAddress(path=item_path),
@@ -7617,7 +7614,7 @@ def extract_ee_ops(
                 sect_label,
             ):
                 ops.append(LegalOperation(
-                    op_id=f"ee-repeal-sub-{extra_sect}-{extra_sub}-{source.statute_id}",
+                    op_id=f"ee-repeal-sub-{extra_sect}-{extra_sub}-{seq}-{seq}-{source.statute_id}",
                     sequence=seq,
                     action=_to_structural_action("repeal"),
                     target=LegalAddress(path=(("section", extra_sect), ("subsection", extra_sub))),
@@ -7628,7 +7625,7 @@ def extract_ee_ops(
         _extra = _extract_sd_section_nums(clean)
         for _num in _extra:
             ops.append(LegalOperation(
-                op_id=f"ee-repeal-sect-{_num}-{source.statute_id}",
+                op_id=f"ee-repeal-sect-{_num}-{seq}-{seq}-{source.statute_id}",
                 sequence=seq,
                 action=_to_structural_action("repeal"),
                 target=LegalAddress(path=(("section", _num),)),
@@ -7655,7 +7652,7 @@ def extract_ee_ops(
             if sub_path in seen_sub_paths:
                 continue
             ops.append(LegalOperation(
-                op_id=f"ee-repeal-sub-{extra_sect}-{extra_sub}-{source.statute_id}",
+                op_id=f"ee-repeal-sub-{extra_sect}-{extra_sub}-{seq}-{seq}-{source.statute_id}",
                 sequence=seq,
                 action=_to_structural_action("repeal"),
                 target=LegalAddress(path=sub_path),
@@ -7676,7 +7673,7 @@ def extract_ee_ops(
             # R10: repeal carries no payload; subsection selection meta rides as
             # a serialized provenance note.
             ops.append(LegalOperation(
-                op_id=f"ee-repeal-sub-{extra_sect}-{extra_sub}-{source.statute_id}",
+                op_id=f"ee-repeal-sub-{extra_sect}-{extra_sub}-{seq}-{seq}-{source.statute_id}",
                 sequence=seq,
                 action=_to_structural_action("repeal"),
                 target=LegalAddress(path=sub_path),
@@ -7707,7 +7704,7 @@ def extract_ee_ops(
             if item_path in seen_item_paths:
                 continue
             ops.append(LegalOperation(
-                op_id=f"ee-repeal-item-{extra_sect}-{extra_sub}-{extra_item}-{source.statute_id}",
+                op_id=f"ee-repeal-item-{extra_sect}-{extra_sub}-{extra_item}-{seq}-{source.statute_id}",
                 sequence=seq,
                 action=_to_structural_action("repeal"),
                 target=LegalAddress(path=item_path),

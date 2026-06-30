@@ -26,6 +26,7 @@ from typing import Dict
 import pytest
 
 from lawvm.core.ir import IRStatute, IRNode, LegalAddress, LegalOperation, OperationSource
+from lawvm.core.filter_result import filter_result_from_parts
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.estonia.guard_liveness import (
     EE_BLOCKING_RULE_IDS,
@@ -948,11 +949,15 @@ def _patch_replay_for_crash_drill(
         "plan_ee_oracle_pair",
         lambda **kw: SimpleNamespace(plan=pair_plan, oracle_xml=oracle_xml),
     )
-    monkeypatch.setattr(ee_replay, "_ee_filter_cancelled_pending_refs", lambda refs, **kw: refs)
+    monkeypatch.setattr(
+        ee_replay,
+        "_ee_filter_cancelled_pending_refs",
+        lambda refs, **kw: filter_result_from_parts(accepted_items=tuple(refs)),
+    )
     monkeypatch.setattr(
         ee_replay,
         "_ee_precompose_pending_source_act_commencements",
-        lambda refs, **kw: (tuple(refs), ()),
+        lambda refs, **kw: filter_result_from_parts(accepted_items=tuple(refs)),
     )
     monkeypatch.setattr(ee_replay, "parse_ee_amendment_ops", lambda *a, **kw: [])
     monkeypatch.setattr(ee_replay, "apply_ee_ops", lambda statute, ops, **kw: statute)

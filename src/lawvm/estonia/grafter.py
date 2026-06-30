@@ -56,7 +56,7 @@ from lawvm.core.ir import (
     TextPatchSpec,
     TextSelector,
 )
-from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.diagnostic_records import diagnostic_detail, QuirksDisposition
 from lawvm.core.filter_result import FilterResult, RejectedItem
 from lawvm.core.mutation_boundary import TreePath
 from lawvm.core.semantic_types import IRNodeKind, structural_action_from_str
@@ -2313,24 +2313,52 @@ def parse_ee_amendment_ops(
                                 "source_new_text": payload.attrs.get("source_new_text") or rewrite.new_surface,
                             },
                         )
-                        updated_op = replace(
-                            op,
-                            payload=updated_payload,
-                            text_patch=_typed_text_replace_patch(old_surface, new_surface),
-                            provenance_tags=(
-                                *op.provenance_tags,
-                                *(
-                                    ("ee_source_local_global_text_replace_selector_composition",)
-                                    if old_surface != rewrite.old_surface or new_surface != rewrite.new_surface
-                                    else ()
+                        # Fail-loud (AGENTS §1.10): if the composed
+                        # old_surface collapsed to empty (an upstream
+                        # rewrite-spec carried an empty old_surface but
+                        # non-empty new_surface), emitting a typed
+                        # ``TextSelector`` would raise ``ValueError:
+                        # match_text must be non-empty`` and bury the
+                        # triage detail in an exception. Emit a typed
+                        # non-blocking adjudication with the source
+                        # snippet so the gap is visible on the bench /
+                        # residual inventory; skip the text_patch
+                        # emission so the rest of the op proceeds with
+                        # the payload rewrite intact.
+                        if not old_surface:
+                            _emit_compose_global_text_replace_empty_old_surface_adjudication(
+                                adjudications_out,
+                                op=op,
+                                rewrite_old_surface=rewrite.old_surface,
+                                new_surface=new_surface,
+                            )
+                            updated_op = replace(
+                                op,
+                                payload=updated_payload,
+                                provenance_tags=(
+                                    *op.provenance_tags,
+                                    (_EE_COMPOSE_GLOBAL_TEXT_REPLACE_EMPTY_OLD_SURFACE_RULE,),
                                 ),
-                                *(
-                                    ("ee_source_local_global_text_replace_selector_composition_skipped_for_excluded_target",)
-                                    if selector_composition_skipped
-                                    else ()
+                            )
+                        else:
+                            updated_op = replace(
+                                op,
+                                payload=updated_payload,
+                                text_patch=_typed_text_replace_patch(old_surface, new_surface),
+                                provenance_tags=(
+                                    *op.provenance_tags,
+                                    *(
+                                        ("ee_source_local_global_text_replace_selector_composition",)
+                                        if old_surface != rewrite.old_surface or new_surface != rewrite.new_surface
+                                        else ()
+                                    ),
+                                    *(
+                                        ("ee_source_local_global_text_replace_selector_composition_skipped_for_excluded_target",)
+                                        if selector_composition_skipped
+                                        else ()
+                                    ),
                                 ),
-                            ),
-                        )
+                            )
                         payload = updated_payload
             if payload is not None and action in {"replace", "insert"}:
                 updated_payload = payload
@@ -2665,6 +2693,22 @@ def parse_ee_amendment_ops(
         )
         if plain_paragraph_ops and any(op.action is not StructuralAction.META for op in plain_paragraph_ops):
             parsed_ops = plain_paragraph_ops
+    if (
+        not has_paragrahv
+        and target_title
+        and (not parsed_ops or all(op.action is StructuralAction.META for op in parsed_ops))
+    ):
+        inline_directive_ops = _parse_ee_inline_directive_via_synthetic_paragrahv(
+            root,
+            source_id,
+            root_ns,
+            target_title,
+            adjudications_out=adjudications_out,
+        )
+        if inline_directive_ops and any(
+            op.action is not StructuralAction.META for op in inline_directive_ops
+        ):
+            parsed_ops = inline_directive_ops
     if not parsed_ops and has_paragrahv and target_title:
         html_blocks: list[str] = []
         for el in root.iter():
@@ -2724,8 +2768,17 @@ def parse_ee_amendment_ops(
         parsed_ops = _merge_frontloaded_ops(parsed_ops, cross_act_transitional_ops)
     leading_ops = [*generic_minister_ops, *generic_ministry_ops]
     if leading_ops:
-        return _merge_frontloaded_ops(leading_ops, parsed_ops)
-    return parsed_ops
+        final_ops = _merge_frontloaded_ops(leading_ops, parsed_ops)
+    else:
+        final_ops = parsed_ops
+    _emit_unrecognized_source_shape_if_zero_ops(
+        adjudications_out,
+        parsed_ops=final_ops,
+        xml_bytes=xml_bytes,
+        root=root,
+        source_id=source_id,
+    )
+    return final_ops
 
 
 def _space_flexible_literal(text: str) -> str:
@@ -2822,6 +2875,89 @@ def _parse_constitutional_review_ops(
         extract_ops=extract_ee_ops,
         adjudications_out=adjudications_out,
     )
+
+
+_EE_INLINE_DIRECTIVE_PUNKT_SUPPLEMENT_RULE = "ee_inline_directive_punkt_supplement"
+
+
+def _parse_ee_inline_directive_via_synthetic_paragrahv(
+    root: XmlElement,
+    source_id: str,
+    ns_str: str,
+    target_title: str,
+    *,
+    adjudications_out: Optional[list[CompileAdjudication]] = None,
+) -> List[LegalOperation]:
+    """Last-resort fallback for amendment acts whose directive text lives in
+    ``<sisuTekst>`` blocks directly under ``<sisu>`` without a ``<paragrahv>``
+    structural wrapper.
+
+    The existing handler chain (``_parse_old_format_amendment_ops`` +
+    ``_parse_preambul_single_target_ops`` + flat HTML) covers amendments
+    whose directives are recognizable by prose-based target-fragment
+    extraction (``extract_intro_statute_fragment``). When that extraction
+    fails (nested quotes, unrecognized directive verbs, or ``täiendatakse
+    punktiga N järgmises sõnastuses:`` patterns), the preambul handler's
+    target-validation gate returns ``[]`` — preventing the ``<sisuTekst>``
+    content from reaching the muutmisseadus parser.
+
+    This handler builds a synthetic ``<paragrahv>`` wrapping the
+    ``<sisuTekst>`` blocks (same pattern as the tail of
+    ``_tr_parse_preambul_single_target_ops`` at target_resolution.py:3529)
+    and delegates to ``_parse_muutmisseadus_ops``, which correctly lowers
+    ``täiendatakse punktiga N`` directives into ``INSERT item N`` ops.
+
+    Called ONLY when all existing handlers returned empty — see
+    ``parse_ee_amendment_ops`` call site. Per AGENTS §2.3: the handler is
+    a frontend-local drafting idiom (inline-directive supplement), not a
+    core change.
+
+    Family: ``ee_inline_directive_punkt_supplement`` (per the 2026-06-27
+    un-lowered-ops sweep journal). Source witnesses:
+    ``101092011002`` (curriculum) + ~30-60 silent-drop amendments.
+    """
+    if not target_title or not ns_str:
+        return []
+    sisu = root.find(_ns(ns_str, "sisu"))
+    if sisu is None:
+        return []
+    direct_sisu_blocks = [
+        child for child in list(sisu)
+        if child.tag == _ns(ns_str, "sisuTekst")
+    ]
+    if not direct_sisu_blocks:
+        return []
+    synthetic_root = ET.Element(root.tag)
+    if root.tag.startswith("{"):
+        synthetic_root.set("xmlns", root.tag.split("}")[0].lstrip("{"))
+    synthetic_sisu = ET.SubElement(synthetic_root, _ns(ns_str, "sisu"))
+    synthetic_para = ET.SubElement(synthetic_sisu, _ns(ns_str, "paragrahv"))
+    para_title = ET.SubElement(synthetic_para, _ns(ns_str, "paragrahvPealkiri"))
+    para_title.text = f"{target_title} muutmine"
+    for child in direct_sisu_blocks:
+        cloned_child = ET.fromstring(ET.tostring(child, encoding="utf-8"))
+        for text_el in cloned_child.iter(_ns(ns_str, "tavatekst")):
+            extracted_text = _element_text_with_bold_section_boundaries(text_el)
+            text_el.clear()
+            text_el.text = extracted_text
+        synthetic_para.append(cloned_child)
+    ops = _parse_muutmisseadus_ops(
+        synthetic_root,
+        source_id,
+        ns_str,
+        target_title=target_title,
+        adjudications_out=adjudications_out,
+    )
+    if ops and any(op.action is not StructuralAction.META for op in ops):
+        return [
+            replace(
+                op,
+                provenance_tags=(*op.provenance_tags, _EE_INLINE_DIRECTIVE_PUNKT_SUPPLEMENT_RULE),
+                witness_rule_id=op.witness_rule_id or _EE_INLINE_DIRECTIVE_PUNKT_SUPPLEMENT_RULE,
+            )
+            for op in ops
+        ]
+    return []
 
 
 def _parse_preambul_single_target_ops(
@@ -3111,7 +3247,7 @@ def _parse_generic_minister_rename_ops(
     )
     ops.append(
         LegalOperation(
-            op_id=f"ee-generic-minister-rename-plural-{source_id}",
+            op_id=f"ee-generic-minister-rename-plural-{source_id}-{len(ops)}",
             sequence=1,
             action=_to_structural_action("text_replace"),
             target=LegalAddress(path=()),
@@ -3561,7 +3697,7 @@ def _parse_old_format_direct_title_unnumbered_text_replace_ops(
         if case_inflected:
             payload_attrs["case_inflected"] = True
         return LegalOperation(
-            op_id=f"ee-old-format-direct-title-text-replace-{source_id}",
+            op_id=f"ee-old-format-direct-title-text-replace-{source_id}-{len(body_text)}",
             sequence=1,
             action=StructuralAction.TEXT_REPLACE,
             target=LegalAddress(path=()),
@@ -5275,6 +5411,172 @@ _EE_PARENTHESIZED_TARGET_HTML_BLOCK_RULE = "ee_parenthesized_target_html_block_s
 _EE_OUT_OF_BODY_APPENDIX_OR_NOTE_RULE = "ee_out_of_body_appendix_or_note_clause"
 _EE_UNPARSED_OPERATION_CLAUSE_RULE = "ee_unparsed_operation_clause"
 _EE_INSERT_AFTER_TERMINAL_PUNCTUATION_RULE = "ee_insert_after_terminal_punctuation_boundary"
+_EE_PARSE_AMENDMENT_UNRECOGNIZED_SOURCE_SHAPE_RULE = (
+    "ee_parse_amendment_unrecognized_source_shape"
+)
+_EE_COMPOSE_GLOBAL_TEXT_REPLACE_EMPTY_OLD_SURFACE_RULE = (
+    "ee_compose_global_text_replace_empty_old_surface"
+)
+
+
+def _emit_compose_global_text_replace_empty_old_surface_adjudication(
+    adjudications_out: Optional[list[CompileAdjudication]],
+    *,
+    op: LegalOperation,
+    rewrite_old_surface: str,
+    new_surface: str,
+) -> None:
+    """Fail-loud (AGENTS §1.10): the composite-selector normalization in
+    ``_compose_global_text_replaces_into_later_payloads`` collapsed an op's
+    ``rewrite.old_surface`` to an empty string. Emitting an empty
+    ``TextSelector.match_text`` would raise an opaque ``ValueError`` in
+    ``TextSelector.__post_init__`` and bury the triage detail; instead,
+    emit a typed non-blocking adjudication with the source op_id + the
+    original old_surface + the composed new_surface so the gap is
+    diagnosable on the bench / residual inventory surface. Skip the
+    composite ``text_patch`` emission (the rest of the op's payload
+    rewrite is preserved intact).
+    """
+    if adjudications_out is None:
+        return
+    adjudications_out.append(
+        CompileAdjudication(
+            kind=_EE_COMPOSE_GLOBAL_TEXT_REPLACE_EMPTY_OLD_SURFACE_RULE,
+            message=(
+                "EE composer: rewrite.old_surface collapsed to empty during "
+                "composite selector normalization; text_patch skipped to avoid "
+                "TextSelector(match_text='') ValueError."
+            ),
+            source_statute=op.source.statute_id if op.source else "",
+            op_id=op.op_id,
+            blocking=False,
+            phase="parse",
+            detail=diagnostic_detail(
+                rule_id=_EE_COMPOSE_GLOBAL_TEXT_REPLACE_EMPTY_OLD_SURFACE_RULE,
+                phase="parse",
+                family="source_pathology",
+                blocking=False,
+                strict_disposition="record",
+                quirks_disposition=QuirksDisposition.RECORD,
+                reason="composite_selector_normalization_collapsed_old_surface_to_empty",
+                op_id=op.op_id,
+                original_old_surface=rewrite_old_surface[:400],
+                composed_new_surface=new_surface[:400],
+            ),
+        )
+    )
+
+
+def _emit_unrecognized_source_shape_if_zero_ops(
+    adjudications_out: Optional[list[CompileAdjudication]],
+    *,
+    parsed_ops: List[LegalOperation],
+    xml_bytes: bytes,
+    root: Any,
+    source_id: str,
+) -> None:
+    """Lawvm-failloud (AGENTS §1.8 / §1.10): emit a typed adjudication when
+    ``parse_ee_amendment_ops`` produces zero ops despite the source XML
+    carrying non-empty ``<sisu>`` operative content.
+
+    A silent drop returning ``[]`` would otherwise hide an unrecognized
+    amendment-act shape from every downstream bench / residual-inventory
+    surface — a violation of §1.8 (``No unsupported lane disappears``:
+    every filtered/rejected/skipped op MUST stay visible with a receipt).
+
+    The adjudication carries:
+    - ``source_id``: the amendment's canonical ID;
+    - ``xml_head``: the first ~400 chars of the XML, so triaging the
+      residual doesn't require re-fetching the source (per §1.10: a
+      diagnostic about source text MUST embed the offending snippet);
+    - ``shape_markers``: presence booleans for ``<paragrahv>``,
+      ``<sisuTekst>``, ``<lisa>``, ``<veaparandus>`` elements, so the
+      residual is clusterable by raw-XML shape without re-parsing.
+
+    Strict disposition: ``record`` — the parser cannot lower the shape
+    but does NOT block the replay (over-retention is the safe wrong per
+    AGENTS §0). The residual is purely informational: it surfaces the gap
+    so a future ``ee_inline_directive_*`` parser family can be promoted
+    to lower these amendments into real ops.
+    """
+    if adjudications_out is None:
+        return
+    if parsed_ops:
+        return
+    # Suppression: if another parse-phase adjudication already explained
+    # why this amendment produced 0 ops (e.g. ``ee_ref_slice_operation_filtered``
+    # when the ref-slice filter dropped the op at parse time, or
+    # ``ee_parse_constitutional_review_rejected`` when an upstream clause
+    # rejected the source shape), the silent-drop smell of §1.8 is already
+    # closed by that receipt — do not emit a competing generic one. The
+    # receipt here fires ONLY when the parser returned [] silently, with no
+    # other parse-phase explanation for this source.
+    if any(
+        adj.phase == "parse"
+        and adj.source_statute == source_id
+        and adj.kind != _EE_PARSE_AMENDMENT_UNRECOGNIZED_SOURCE_SHAPE_RULE
+        for adj in adjudications_out
+    ):
+        return
+    # Resolve the XML namespace once. The empty-overlay case (redaction
+    # marker XML that has no <sisu>) must not fire this receipt.
+    ns = ""
+    if "}" in root.tag:
+        ns = root.tag.split("}")[0].lstrip("{")
+    elif root.get("xmlns"):
+        ns = root.get("xmlns", "")
+    if not ns:
+        return  # Cannot probe reliably without a namespace.
+    sisu = root.find(f".//{_ns(ns, 'sisu')}")
+    if sisu is None:
+        return
+    # Operative content footprint: any child element OR any non-whitespace
+    # direct text. An empty placeholder wrapper doesn't qualify.
+    has_element = len(list(sisu)) > 0
+    has_text = bool((sisu.text or "").strip()) or any(
+        bool((child.tail or "").strip()) for child in sisu
+    )
+    if not (has_element or has_text):
+        return
+
+    has_paragrahv = root.find(f".//{_ns(ns, 'paragrahv')}") is not None
+    has_sisu_tekst = root.find(f".//{_ns(ns, 'sisuTekst')}") is not None
+    has_lisa = root.find(f".//{_ns(ns, 'lisa')}") is not None
+    has_veaparandus = root.find(f".//{_ns(ns, 'veaparandus')}") is not None
+
+    xml_head = xml_bytes[:400].decode("utf-8", errors="replace")
+
+    adjudications_out.append(
+        CompileAdjudication(
+            kind=_EE_PARSE_AMENDMENT_UNRECOGNIZED_SOURCE_SHAPE_RULE,
+            message=(
+                "Estonia parser produced zero LegalOperation for an amendment "
+                "act with non-empty <sisu> content — unrecognized source shape. "
+                "The amendment is preserved without lowering; emit a typed "
+                "residual for future family promotion review."
+            ),
+            source_statute=source_id,
+            blocking=False,
+            phase="parse",
+            detail=diagnostic_detail(
+                rule_id=_EE_PARSE_AMENDMENT_UNRECOGNIZED_SOURCE_SHAPE_RULE,
+                phase="parse",
+                family="source_pathology",
+                blocking=False,
+                strict_disposition="record",
+                quirks_disposition=QuirksDisposition.RECORD,
+                reason="unrecognized_amendment_source_shape_no_paragrahv_or_unlowered_directive",
+                source_id=source_id,
+                xml_head=xml_head,
+                shape_markers={
+                    "has_paragrahv": has_paragrahv,
+                    "has_sisu_tekst": has_sisu_tekst,
+                    "has_lisa": has_lisa,
+                    "has_veaparandus": has_veaparandus,
+                },
+            ),
+        )
+    )
 
 
 def _ee_remove_omitted_inserted_item_labels_from_replace_range(
@@ -10534,7 +10836,7 @@ def apply_ee_ops(
                         if pre_node is None or pre_node is not sec_node:
                             lo_ops_out.append(
                                 LegalOperation(
-                                    op_id=f"ee_snap_{op.sequence}_{sec_node.label}",
+                                    op_id=f"ee_snap_{op.sequence}_{sec_node.label}_{len(lo_ops_out)}",
                                     sequence=op.sequence,
                                     action=_to_structural_action("replace"),
                                     target=LegalAddress(path=tuple(sec_path_tuple)),
