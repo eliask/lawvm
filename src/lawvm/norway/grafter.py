@@ -34,6 +34,12 @@ from lawvm.core.filter_result import FilterResult, RejectedItem
 from lawvm.core.invariant_profiles import CORE_REPLAY_DELTA_MINIMAL_FAMILIES
 from lawvm.core.ir_helpers import structural_subtree_hash
 from lawvm.core.op_ordering import OrderingProfile, order_ops
+from lawvm.core.apply_seam import (
+    ApplyProfile,
+    AppliedOp,
+    MaterializeResult,
+    apply_op,
+)
 from lawvm.core.mutation_boundary import (
     TreePath,
     TreePaths,
@@ -3549,22 +3555,54 @@ def apply_no_ops(
 
     # §2.9 per-op mutation-boundary probe gate read once per apply (cached env
     # read) so the per-op snapshot is taken only when opted in; default-off.
+    # Wave 1 (design §3.1/§3.5): the probe is realized as the seam profile's
+    # ``boundary_mode`` — ``"observe"`` when the env flag is on (the NO probe's
+    # non-blocking accounting disposition), ``"off"`` otherwise. Default-off
+    # preserves byte-stable bench output.
     _no_boundary_probe_on = _no_boundary_probe_enabled()
-    for op, renumber_sources in ordered_ops:
-        # §2.9 per-op mutation-boundary probe (LS-01 / §1.0): env-gated
-        # (LAWVM_NO_MUTATION_BOUNDARY_PER_OP=1), default-off. Snapshot the
-        # immutable IRNode body BEFORE this op mutates it; the after-snapshot
-        # is the (possibly reassigned) ``body`` read in the ``finally`` so the
-        # probe runs on every per-op path (including the ``continue`` skips).
-        # ``boundary_probe_on`` is a cached env read so the snapshot is only
-        # taken when opted in (default-off preserves byte-stable bench output;
-        # the fold is frozen-``IRNode`` so the snapshot is a direct reference
-        # with no deep-copy; AGENTS.md §2.7).
-        _no_boundary_before = body if _no_boundary_probe_on else None
+    # Per-op ``renumber_sources`` carrier the materializer reads. The seam loop
+    # sets it before each ``apply_op`` call (the seam materializer signature is
+    # ``(state, op)``; ``renumber_sources`` travels via this closure slot rather
+    # than a second argument so the universal seam interface stays op-only).
+    _no_active_renumber_sources: set[tuple[tuple[str, str], ...]] = set()
+
+    # ── NO materializer (Wave 1, design §3.1/§3.5). ──────────────────────────
+    # The per-op tree dispatch — NO's REPLACE/INSERT/REPEAL/RENUMBER/text_replace
+    # apply with its inline sentence-materialization, container-chain and
+    # occupied-target recovery transforms — IS the NO :class:`Materializer`. The
+    # dispatch body below is the verbatim prior inline fold body (no re-indent):
+    # it mutates the closure ``body`` seeded from the seam-supplied
+    # ``before_body``, and every prior ``continue`` is now a bare ``return``
+    # (control-flow only; the landed/skipped signal is derived by the caller
+    # from ``body is not before_body``). The closures it captures (the recovery
+    # recorders,
+    # ``_assert_no_invariant_violations``, ``adjudications_out``) are unchanged,
+    # so NO's three strict flags still raise IN PLACE exactly as before — the
+    # "strictness = profile policy" mapping (design §2.1 #3) is realized by those
+    # raises propagating through ``apply_op`` to the caller.
+    def _no_materialize_one(
+        before_body: IRNode, op: LegalOperation
+    ) -> MaterializeResult[IRNode]:
+        nonlocal body
+        body = before_body
+        renumber_sources = _no_active_renumber_sources
         # Reset the per-op declared-recovery carrier so a recovery retarget from a
         # prior op never leaks into this op's boundary.
         _no_declared_recovery_paths.clear()
-        try:
+
+        def _dispatch() -> None:
+            """Run one op's tree dispatch (mutating the closure ``body``).
+
+            Verbatim lift of the prior inline per-op fold body. Each prior
+            ``continue`` (a skip / early-applied path) is now a bare ``return``,
+            and the natural fall-through end (a REPLACE/REPEAL/INSERT/RENUMBER
+            landed) also ``return``s. Whether the op landed a write is derived by
+            the caller from ``body is not before_body`` (the persistent-CoW
+            identity test) — so the dispatch itself needs no return value; the
+            ``continue`` → ``return`` rewrite is purely control-flow, leaving the
+            mutation semantics byte-identical.
+            """
+            nonlocal body
             if _no_action_value(op.action) == "text_replace":
                 patch = op.text_patch
                 if patch is None:
@@ -3576,7 +3614,7 @@ def apply_no_ops(
                         detail={"action": _no_action_value(op.action), "target": str(op.target)},
                     )
                     _assert_no_invariant_violations(op)
-                    continue
+                    return
                 text_match = patch.selector.match_text
                 text_replacement = patch.replacement if patch.replacement is not None else ""
                 if not text_match or text_replacement is None:
@@ -3588,11 +3626,11 @@ def apply_no_ops(
                         detail={"action": _no_action_value(op.action), "target": str(op.target)},
                     )
                     _assert_no_invariant_violations(op)
-                    continue
+                    return
                 if not op.target.path:
                     body = _apply_no_text_replace(body, text_match, text_replacement)
                     _assert_no_invariant_violations(op)
-                    continue
+                    return
                 resolved_path = _resolve_no_path(body, op.target)
                 if resolved_path is None:
                     _append_no_replay_adjudication(
@@ -3603,7 +3641,7 @@ def apply_no_ops(
                         detail={"action": _no_action_value(op.action), "target": str(op.target)},
                     )
                     _assert_no_invariant_violations(op)
-                    continue
+                    return
                 node = tree_ops.resolve(body, resolved_path)
                 if node is None:
                     _append_no_replay_adjudication(
@@ -3614,14 +3652,14 @@ def apply_no_ops(
                         detail={"action": _no_action_value(op.action), "target": str(op.target)},
                     )
                     _assert_no_invariant_violations(op)
-                    continue
+                    return
                 body = tree_ops.replace_at(
                     body,
                     resolved_path,
                     _apply_no_text_replace(node, text_match, text_replacement),
                 )
                 _assert_no_invariant_violations(op)
-                continue
+                return
             if not op.target.path:
                 _append_no_replay_adjudication(
                     adjudications_out,
@@ -3631,7 +3669,7 @@ def apply_no_ops(
                     detail={"action": _no_action_value(op.action)},
                 )
                 _assert_no_invariant_violations(op)
-                continue
+                return
             if op.action not in {
                 StructuralAction.REPLACE,
                 StructuralAction.REPEAL,
@@ -3646,7 +3684,7 @@ def apply_no_ops(
                     detail={"action": _no_action_value(op.action), "target": str(op.target)},
                 )
                 _assert_no_invariant_violations(op)
-                continue
+                return
             if op.target.leaf_kind() == "sentence" and op.target.parent() is not None:
                 parent_path = _resolve_no_path(body, cast(LegalAddress, op.target.parent()))
                 if parent_path is not None:
@@ -3765,7 +3803,7 @@ def apply_no_ops(
                                 sort_key_fn=_no_sort_key,
                             )
                             _assert_no_invariant_violations(op)
-                            continue
+                            return
                     if op.target.leaf_kind() == "sentence" and _no_kind_value(payload.kind) == "sentence":
                         body, shallow_host_path, materialized_count = _resolve_shallow_no_sentence_host_path(body, op.target)
                         if shallow_host_path is not None and materialized_count:
@@ -3835,7 +3873,7 @@ def apply_no_ops(
                                 sort_key_fn=_no_sort_key,
                             )
                             _assert_no_invariant_violations(op)
-                            continue
+                            return
                     if (
                         op.target.leaf_kind() == "item"
                         and _no_kind_value(payload.kind) == "item"
@@ -3876,7 +3914,7 @@ def apply_no_ops(
                                     sort_key_fn=_no_sort_key,
                                 )
                                 _assert_no_invariant_violations(op)
-                                continue
+                                return
                     if _no_kind_value(payload.kind) == "section" and op.target.leaf_kind() == "section":
                         parent_path: tree_ops.Path = ()
                         if op.target.parent() is not None:
@@ -3899,7 +3937,7 @@ def apply_no_ops(
                                         },
                                     )
                                     _assert_no_invariant_violations(op)
-                                    continue
+                                    return
                                 body, parent_path = _ensure_no_container_chain(
                                     body,
                                     prefix_path or (),
@@ -3933,7 +3971,7 @@ def apply_no_ops(
                             sort_key_fn=_no_sort_key,
                         )
                         _assert_no_invariant_violations(op)
-                        continue
+                        return
                     _append_no_replay_adjudication(
                         adjudications_out,
                         kind="replay_unresolved_target",
@@ -3942,7 +3980,7 @@ def apply_no_ops(
                         detail={"action": _no_action_value(op.action), "target": str(op.target)},
                     )
                     _assert_no_invariant_violations(op)
-                    continue
+                    return
 
                 existing = tree_ops.resolve(body, resolved_path)
                 if (
@@ -3967,7 +4005,7 @@ def apply_no_ops(
                         ),
                     )
                     _assert_no_invariant_violations(op)
-                    continue
+                    return
                 body = tree_ops.replace_at(body, resolved_path, payload)
 
             elif op.action is StructuralAction.REPEAL:
@@ -3980,7 +4018,7 @@ def apply_no_ops(
                         detail={"action": _no_action_value(op.action), "target": str(op.target)},
                     )
                     _assert_no_invariant_violations(op)
-                    continue
+                    return
                 body = tree_ops.remove_at(body, resolved_path)
 
             elif op.action is StructuralAction.INSERT and op.payload is not None:
@@ -4001,7 +4039,7 @@ def apply_no_ops(
                     )
                     body = tree_ops.replace_at(body, resolved_path, payload)
                     _assert_no_invariant_violations(op)
-                    continue
+                    return
                 parent_path: tree_ops.Path = ()
                 if op.target.parent() is not None:
                     target_parent = cast(LegalAddress, op.target.parent())
@@ -4023,7 +4061,7 @@ def apply_no_ops(
                                 },
                             )
                             _assert_no_invariant_violations(op)
-                            continue
+                            return
                         body, parent_path = _ensure_no_container_chain(
                             body,
                             prefix_path or (),
@@ -4067,7 +4105,7 @@ def apply_no_ops(
                         payload,
                     )
                     _assert_no_invariant_violations(op)
-                    continue
+                    return
                 body = tree_ops.insert_sorted(
                     body,
                     parent_path,
@@ -4085,7 +4123,7 @@ def apply_no_ops(
                         detail={"action": _no_action_value(op.action), "target": str(op.target)},
                     )
                     _assert_no_invariant_violations(op)
-                    continue
+                    return
                 node = tree_ops.resolve(body, resolved_path)
                 if node is None:
                     _append_no_replay_adjudication(
@@ -4096,7 +4134,7 @@ def apply_no_ops(
                         detail={"action": _no_action_value(op.action), "target": str(op.target)},
                     )
                     _assert_no_invariant_violations(op)
-                    continue
+                    return
                 moved = node
                 if op.destination.leaf_label():
                     moved = _with_no_node_label(moved, op.destination.leaf_label())
@@ -4144,10 +4182,31 @@ def apply_no_ops(
                     sort_key_fn=_no_sort_key,
                 )
             _assert_no_invariant_violations(op)
+            # Natural fall-through: a REPLACE/REPEAL/INSERT/RENUMBER landed.
+            return
+
+        # §2.9 per-op mutation-boundary probe: the prior inline fold ran the
+        # env-gated probe in a ``finally`` so it fired on EVERY per-op path
+        # (clean, skip, and the strict-``_assert_no_invariant_violations``-raise
+        # path). The probe PROJECTS the core ``audit_op_mutation_boundary``
+        # finding into NO's ``CompileAdjudication`` interop surface (the
+        # ``no_replay_mutation_boundary_per_op_violation_observed`` kind). To keep
+        # the env-flag-ON output byte-identical, NO retains its own probe here on
+        # every path; the seam profile's ``boundary_mode`` is therefore ``"off"``
+        # (the seam boundary gate is exercised, but NO is the single producer of
+        # its projected adjudication so there is no double-emission). The seam's
+        # boundary MECHANISM remains available (and is exercised by the kernel's
+        # own tests) — promoting NO onto the seam's boundary disposition (and
+        # dropping this probe) is a deliberate follow-up once the projected
+        # adjudication shape is reconciled with the core ``Finding`` surface
+        # (design §5 "stage as observe first; promote per profile").
+        body_before_dispatch = before_body
+        try:
+            _dispatch()
         finally:
             if _no_boundary_probe_on:
                 _no_probe_op_mutation_boundary(
-                    before=_no_boundary_before,
+                    before=body_before_dispatch,
                     after=body,
                     op=op,
                     op_id=op.op_id,
@@ -4155,6 +4214,50 @@ def apply_no_ops(
                     source_statute=statute.statute_id,
                     declared_recovery_prefixes=tuple(_no_declared_recovery_paths),
                 )
+        applied = body is not before_body
+        return MaterializeResult(
+            new_state=body,
+            applied=applied,
+            declared_recovery_prefixes=tuple(_no_declared_recovery_paths),
+        )
+
+    # ── NO apply profile (Wave 1, design §3.1). ──────────────────────────────
+    # ``boundary_mode="off"``: NO retains its own per-op probe (above) as the
+    # single producer of the projected ``no_replay_mutation_boundary_per_op_*``
+    # adjudication, so the env-flag-ON output is byte-identical to the
+    # pre-cutover fold. ``emit_receipts``/``emit_coverage`` are False in the bare
+    # fold: the additive per-op receipt + coverage lanes are produced by the
+    # dedicated ``no_replay_write_receipts`` / ``apply_no_ops_conserved`` callers,
+    # so the bare ``apply_no_ops`` result stays byte-identical (no new artifacts)
+    # — the equality gate is confined to the materialized IRStatute +
+    # adjudications. ``renumber_migration_rule_ids`` names the migration that
+    # explains a RENUMBER's bound→landed relabel divergence when receipts ARE
+    # requested (the additive lane).
+    no_apply_profile: ApplyProfile[IRNode] = ApplyProfile(
+        jurisdiction="no",
+        materializer=_no_materialize_one,
+        boundary_mode="off",
+        emit_receipts=False,
+        emit_coverage=False,
+        renumber_migration_rule_ids=("no_section_renumber_relabel",),
+    )
+
+    # ── Seam loop (design §3.1): order_ops already ran; apply each op through
+    # the unified per-op kernel. The NO materializer carries the substantive
+    # dispatch; the seam owns the (here-disabled) receipt/coverage outputs and
+    # the boundary gate. ``_no_active_renumber_sources`` is set per op so the
+    # materializer reads the right renumber-source set (the seam interface is
+    # op-only). ──────────────────────────────────────────────────────────────
+    for op, renumber_sources in ordered_ops:
+        _no_active_renumber_sources = renumber_sources
+        applied_result: AppliedOp[IRNode] = apply_op(
+            body,
+            op,
+            provenance=op.source,
+            profile=no_apply_profile,
+            source_statute=statute.statute_id,
+        )
+        body = applied_result.new_state
 
     return IRStatute(
         statute_id=statute.statute_id,
