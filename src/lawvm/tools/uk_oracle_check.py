@@ -24,6 +24,10 @@ from pathlib import Path
 from typing import Any
 
 from lawvm.core.compare_eid_parity_audit import assert_compare_eid_parity
+from lawvm.core.oracle_divergence import (
+    DivergenceClassifierInputs,
+    classify_divergences,
+)
 from lawvm.core.mutation_accounting import build_mutation_invariant_reports
 from lawvm.core.mutation_boundary import tree_path_to_diagnostic_string
 from lawvm.core.mutation_boundary_proof import MutationBoundaryProof
@@ -129,6 +133,66 @@ def _collect_replay_eids(replayed_ir: Any) -> set[str]:
     return eids
 
 
+def _uk_divergence_classifier_inputs(
+    *,
+    lowering_rejections: list[dict[str, Any]],
+    effect_diagnostics: list[dict[str, Any]],
+    effect_feed_parse_rejections: list[dict[str, Any]],
+    authority_rejections: list[dict[str, Any]],
+) -> DivergenceClassifierInputs:
+    """Build the kernel's per-EID evidence predicates from UK compile rows.
+
+    This is the UK-specific half of the compare-plane seam (the part that "what
+    makes a given EID ``oracle_suspect`` vs ``manual_frontier`` is partly frontend
+    evidence"): it folds UK lowering-rejections / effect-diagnostics into the three
+    pure ``(eid) -> bool`` predicates ``core.oracle_divergence`` consults. The
+    *covering* relation is the exact loose substring match the legacy classifier
+    used (``ap in eid`` or ``eid in ap``, case-insensitive), so the kernel-backed
+    partition is byte-identical to the legacy one.
+    """
+    manual_frontier_eids: set[str] = set()
+    deterministic_gap_eids: set[str] = set()
+
+    all_rejections = (
+        lowering_rejections + effect_feed_parse_rejections + authority_rejections
+    )
+    for rejection in all_rejections:
+        rule_id = str(rejection.get("rule_id") or "")
+        ap = str(rejection.get("affected_provisions") or "")
+        if _is_manual_frontier_rule(rule_id):
+            if ap:
+                manual_frontier_eids.add(ap)
+        elif rule_id and rule_id != _REPEAL_NOT_WARRANTED_RULE_ID:
+            if ap:
+                deterministic_gap_eids.add(ap)
+
+    repeal_not_warranted_affected: set[str] = set()
+    for diag in effect_diagnostics:
+        rule_id = str(diag.get("rule_id") or "")
+        if rule_id == _REPEAL_NOT_WARRANTED_RULE_ID:
+            ap = str(diag.get("affected_provisions") or "")
+            if ap:
+                repeal_not_warranted_affected.add(ap)
+
+    def _covered(eid: str, aps: set[str]) -> bool:
+        eid_lower = eid.lower()
+        return any(
+            ap and (ap.lower() in eid_lower or eid_lower in ap.lower()) for ap in aps
+        )
+
+    return DivergenceClassifierInputs(
+        only_oracle_covered_by_manual_frontier=lambda eid: _covered(
+            eid, manual_frontier_eids
+        ),
+        only_oracle_covered_by_deterministic=lambda eid: _covered(
+            eid, deterministic_gap_eids
+        ),
+        only_replay_oracle_dropped_without_warrant=lambda eid: _covered(
+            eid, repeal_not_warranted_affected
+        ),
+    )
+
+
 def _classify_divergences(
     *,
     only_replay: set[str],
@@ -139,108 +203,42 @@ def _classify_divergences(
     effect_feed_parse_rejections: list[dict[str, Any]],
     authority_rejections: list[dict[str, Any]],
 ) -> dict[str, list[str]]:
-    """Assign each divergent EID to one of the three AGENTS.md §2.1 buckets.
+    """Assign each divergent EID to one of the four AGENTS.md §2.1 buckets.
 
-    Returns dict with keys:
+    Thin UK adapter over the jurisdiction-neutral
+    :func:`lawvm.core.oracle_divergence.classify_divergences` kernel (Stream G):
+    UK supplies the three membership sets plus its frontend-specific
+    classifier-input predicates (built from compile rejections / effect
+    diagnostics); the kernel owns the typing algebra, the ``oracle_suspect``-
+    first-class rule, the deterministic ordering, and the D10 parity discipline.
+
+    Returns the legacy ``dict[str, list[str]]`` wire shape with keys:
       "deterministic_gap"  — replay should have produced this node
       "manual_frontier"    — needs owned claim; source is ambiguous/out-of-scope
       "oracle_suspect"     — replay coherent; oracle is stale/editorial/wrong
-      "text_diff"          — both sides have the EID but text differs (unclassified further)
+      "text_diff"          — both sides have the EID but text differs
 
-    Classification logic:
-      only_oracle  → deterministic_gap by default (oracle has it, replay missed it);
-                     promoted to manual_frontier if the rule_ids explaining the
-                     miss are all manual-frontier or out-of-scope;
-                     promoted to oracle_suspect if there are NO compile rejections
-                     at all covering the bucket (oracle-extra with no source ops)
-      only_replay  → oracle_suspect by default (replay produced something oracle lacks;
-                     the not-source-warranted repeal rule is a strong signal here)
-      text_diff    → reported as text_diff (requires deeper per-text analysis)
+    Classification logic (now hoisted into the kernel):
+      only_oracle  → deterministic_gap by default; promoted to manual_frontier when
+                     a manual-frontier rejection covers it and no deterministic
+                     rejection does (a deterministic rejection dominates).
+      only_replay  → oracle_suspect (first-class; the not-source-warranted repeal
+                     diagnostic is the strong witness, recorded but never a flip).
+      text_diff    → reported as text_diff.
     """
-    # Build a set of affected EIDs implied by manual-frontier rejections
-    manual_frontier_eids: set[str] = set()
-    deterministic_gap_eids: set[str] = set()
-
-    all_rejections = (
-        lowering_rejections
-        + effect_feed_parse_rejections
-        + authority_rejections
+    classifier_inputs = _uk_divergence_classifier_inputs(
+        lowering_rejections=lowering_rejections,
+        effect_diagnostics=effect_diagnostics,
+        effect_feed_parse_rejections=effect_feed_parse_rejections,
+        authority_rejections=authority_rejections,
     )
-    for rejection in all_rejections:
-        rule_id = str(rejection.get("rule_id") or "")
-        # affected_provisions is a comma/space-separated list or a single EID fragment
-        ap = str(rejection.get("affected_provisions") or "")
-        if _is_manual_frontier_rule(rule_id):
-            # Manual-frontier rejections: their affected provisions are MF
-            if ap:
-                manual_frontier_eids.add(ap)
-        elif rule_id and rule_id != _REPEAL_NOT_WARRANTED_RULE_ID:
-            # Any other blocking rejection that is NOT a warranted repeal
-            # is a deterministic gap signal
-            if ap:
-                deterministic_gap_eids.add(ap)
-
-    # Diagnostics from effect_diagnostics_out carry repeal-not-warranted
-    # observations which make only_replay EIDs oracle_suspect (replay correctly
-    # retained an EID that the source tried to repeal without warrant)
-    repeal_not_warranted_affected: set[str] = set()
-    for diag in effect_diagnostics:
-        rule_id = str(diag.get("rule_id") or "")
-        if rule_id == _REPEAL_NOT_WARRANTED_RULE_ID:
-            ap = str(diag.get("affected_provisions") or "")
-            if ap:
-                repeal_not_warranted_affected.add(ap)
-
-    result: dict[str, list[str]] = {
-        "deterministic_gap": [],
-        "manual_frontier": [],
-        "oracle_suspect": [],
-        "text_diff": [],
-    }
-
-    # Classify only_oracle EIDs
-    for eid in sorted(only_oracle):
-        # If any manual-frontier rejection covers a provision that looks like
-        # this EID, treat it as manual-frontier
-        eid_lower = eid.lower()
-        covered_by_mf = any(
-            mf_ap and (mf_ap.lower() in eid_lower or eid_lower in mf_ap.lower())
-            for mf_ap in manual_frontier_eids
-        )
-        covered_by_det = any(
-            det_ap and (det_ap.lower() in eid_lower or eid_lower in det_ap.lower())
-            for det_ap in deterministic_gap_eids
-        )
-        if covered_by_mf and not covered_by_det:
-            result["manual_frontier"].append(eid)
-        elif covered_by_det:
-            result["deterministic_gap"].append(eid)
-        else:
-            # Default: oracle has it, replay does not, no clear rejection reason
-            # → deterministic gap (the most actionable classification)
-            result["deterministic_gap"].append(eid)
-
-    # Classify only_replay EIDs
-    for eid in sorted(only_replay):
-        eid_lower = eid.lower()
-        # If covered by repeal-not-warranted, the replay held the EID correctly
-        # while oracle removed it without source warrant → oracle_suspect
-        covered_by_rnw = any(
-            ap and (ap.lower() in eid_lower or eid_lower in ap.lower())
-            for ap in repeal_not_warranted_affected
-        )
-        if covered_by_rnw:
-            result["oracle_suspect"].append(eid)
-        else:
-            # Replay produced an EID the oracle lacks: likely oracle_suspect
-            # (oracle not yet updated) but could be a replay overshoot
-            result["oracle_suspect"].append(eid)
-
-    # Text-diff EIDs: report as separate bucket for further investigation
-    for eid in sorted(text_diff):
-        result["text_diff"].append(eid)
-
-    return result
+    report = classify_divergences(
+        only_oracle=only_oracle,
+        only_replay=only_replay,
+        text_diff=text_diff,
+        classifier_inputs=classifier_inputs,
+    )
+    return report.as_wire_dict()
 
 
 @dataclass(frozen=True)

@@ -670,6 +670,8 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_commencement_totality_audit.py",
         "test_citation_graph_totality_audit.py",
         "test_compare_eid_parity_audit.py",
+        "test_oracle_divergence_kernel.py",
+        "test_uk_oracle_divergence_parallel_run.py",
         "test_replay_determinism_audit.py",
         "test_provenance_totality_audit.py",
         "test_overlay_default_replay_authorized_false.py",
