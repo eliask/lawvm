@@ -79,7 +79,10 @@ from lawvm.estonia.peg import (
     _instruction_preamble,
     _normalize_num,
     extract_ee_ops,
+    mint_ee_source_anchors,
     parse_html_op_items,
+    reset_ee_raw_source_context,
+    set_ee_raw_source_context,
 )
 from lawvm.estonia.ee_instruction_waist import make_text_rewrite_witness
 from lawvm.estonia.ee_instruction_waist import read_item_selection_meta
@@ -1978,6 +1981,46 @@ def parse_ee_amendment_ops(
         if not source_id:
             source_id = "ee/unknown"
 
+    # Publish the raw amendment artifact so the final anchor pass
+    # (estonia/peg.py::mint_ee_source_anchors, applied to the assembled op
+    # stream below) can mint a TRUE byte-span SourceAnchor for every op whose
+    # recorded clause text survives text-flattening as a verbatim, unique byte
+    # run of these bytes (task #89). The token is reset in the finally below so
+    # the context never leaks across amendments or to other frontends. Setting
+    # it here (not threaded through the ~10 extract_ee_ops call sites /
+    # extract_ops= callback) keeps the change confined to estonia/ and
+    # additive-metadata-only.
+    _raw_source_token = set_ee_raw_source_context(source_id, xml_bytes)
+    try:
+        ops = _parse_ee_amendment_ops_body(
+            xml_bytes=xml_bytes,
+            root=root,
+            root_ns=root_ns,
+            source_id=source_id,
+            target_title=target_title,
+            ref_effective=ref_effective,
+            has_earlier_same_act_slice=has_earlier_same_act_slice,
+            adjudications_out=adjudications_out,
+        )
+        # Final uniform byte-span anchor pass over the WHOLE op stream (every
+        # mint path), while the raw artifact is still published in context.
+        return mint_ee_source_anchors(ops)
+    finally:
+        reset_ee_raw_source_context(_raw_source_token)
+
+
+def _parse_ee_amendment_ops_body(
+    *,
+    xml_bytes: bytes,
+    root: XmlElement,
+    root_ns: str,
+    source_id: str,
+    target_title: str,
+    ref_effective: str,
+    has_earlier_same_act_slice: bool,
+    adjudications_out: Optional[list[CompileAdjudication]],
+) -> List[LegalOperation]:
+    """Body of :func:`parse_ee_amendment_ops` (raw-source context already set)."""
     generic_minister_ops = _parse_generic_minister_rename_ops(
         xml_bytes,
         source_id=source_id,

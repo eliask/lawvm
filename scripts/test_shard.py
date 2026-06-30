@@ -56,6 +56,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_ee_residual_inventory.py",
         "test_ee_self_consistency.py",
         "test_ee_source_adjudication.py",
+        "test_ee_source_anchor.py",
         "test_ee_tool_promotions.py",
         "test_ee_op_provenance_totality.py",
     ),

@@ -43,6 +43,7 @@ Actionables
 """
 from __future__ import annotations
 
+import contextvars
 import html
 import re
 import sys
@@ -51,6 +52,7 @@ from dataclasses import replace
 from functools import lru_cache
 from typing import List, Optional, Tuple
 
+from lawvm.core.provenance import compute_source_anchor
 from lawvm.core.ir import (
     TextPatchKindEnum,
     IRNodeKind,
@@ -4412,6 +4414,46 @@ def _ee_per_op_clause_text(op_text: str) -> str:
     return re.sub(r"^\(?\d+\)\s*", "", normalized.strip()).strip()
 
 
+# Raw-amendment-source context for the byte-span SourceAnchor pilot (task #89).
+#
+# ``extract_ee_ops`` is the single public lowering seam, but the per-op clause
+# text that reaches it has already been text-flattened (itertext() join,
+# html.unescape, \xa0->space, ``re.sub(r"\s+", " ")`` collapse) by the
+# new/old-format op-text collectors in target_resolution.py — that is the exact
+# point where the byte/char offset into the raw amendment XML is LOST. The raw
+# bytes, however, ARE still in scope at the top entry ``parse_ee_amendment_ops``
+# (it does ``ET.fromstring(xml_bytes)``). Rather than thread ``xml_bytes``
+# through ~10 ``extract_ee_ops`` call sites and the ``extract_ops=`` callback
+# contract in target_resolution, the top entry publishes the raw artifact in
+# this ContextVar for the duration of one amendment's parse; the uniform
+# provenance post-pass reads it and mints a TRUE SourceAnchor for every op whose
+# recorded clause text survives flattening as a single verbatim, unique byte run
+# of the raw artifact. When it does not (clause reconstructed across tag
+# boundaries or whitespace-collapsed), ``compute_source_anchor`` returns None and
+# the anchor is honestly left absent — never fabricated.
+_EE_RAW_SOURCE_CTX: "contextvars.ContextVar[tuple[str, bytes] | None]" = contextvars.ContextVar(
+    "ee_raw_source_ctx", default=None
+)
+
+
+def set_ee_raw_source_context(
+    source_artifact_id: str, raw_bytes: bytes
+) -> "contextvars.Token[tuple[str, bytes] | None]":
+    """Publish the raw amendment artifact for SourceAnchor minting in this parse.
+
+    Returns a token the caller MUST pass to :func:`reset_ee_raw_source_context`
+    in a ``finally`` so the context never leaks across amendments.
+    """
+    return _EE_RAW_SOURCE_CTX.set((source_artifact_id, raw_bytes))
+
+
+def reset_ee_raw_source_context(
+    token: "contextvars.Token[tuple[str, bytes] | None]",
+) -> None:
+    """Clear the raw-source context published by :func:`set_ee_raw_source_context`."""
+    _EE_RAW_SOURCE_CTX.reset(token)
+
+
 def _fill_ee_op_provenance(
     ops: List[LegalOperation],
     *,
@@ -4424,6 +4466,12 @@ def _fill_ee_op_provenance(
     it; an op that already carries per-op ``raw_text`` keeps it. Only genuinely
     empty footings are filled — never fabricated. No replay-authoritative field
     (target/payload/action/text_patch) is touched, so the apply path is unchanged.
+
+    The strong byte-span ``source_anchor`` is NOT minted here: this per-call
+    lowerer post-pass only sees ops from the ``extract_ee_ops`` path, whereas the
+    anchor pass must cover EVERY mint path. Anchoring is done once over the whole
+    assembled op stream by :func:`mint_ee_source_anchors`, called from
+    ``parse_ee_amendment_ops`` after this fill.
     """
     if not ops:
         return ops
@@ -4442,6 +4490,56 @@ def _fill_ee_op_provenance(
             changes["raw_text"] = clause
         filled.append(replace(op, **changes) if changes else op)
     return filled
+
+
+def mint_ee_source_anchors(ops: List[LegalOperation]) -> List[LegalOperation]:
+    """Stamp a TRUE byte-span :class:`SourceAnchor` on every anchorable op.
+
+    Final, uniform post-pass over the WHOLE emitted op stream (every mint path,
+    not only the ``extract_ee_ops`` lowerer), run by ``parse_ee_amendment_ops``
+    once the raw amendment artifact has been published in the parse context (see
+    :func:`set_ee_raw_source_context`).
+
+    For each op that already carries an ``OperationSource`` but no anchor, the
+    op's recorded clause text (``source.raw_text`` — falling back to the op's
+    ``raw_text``) is located in the raw artifact bytes via
+    :func:`lawvm.core.provenance.compute_source_anchor`. The anchor is built on
+    that EXACT recorded clause string, so a verifier re-slicing the raw bytes at
+    the anchor span gets back precisely ``source.raw_text``. When the clause is
+    not a single verbatim, unique byte run of the artifact (flattened across XML
+    tags, whitespace-collapsed, or repeated/ambiguous), ``compute_source_anchor``
+    returns ``None`` and the anchor is honestly left absent — never fabricated.
+
+    Additive metadata only: it touches solely ``source.source_anchor`` and never
+    an apply-authoritative field, so EE replay output is byte-identical
+    (AGENTS.md §0 grounding-neutral). Idempotent: an op that already carries an
+    anchor is left untouched. A no-op when no raw artifact is in context.
+    """
+    raw_ctx = _EE_RAW_SOURCE_CTX.get()
+    if raw_ctx is None or not ops:
+        return ops
+    artifact_id, raw_bytes = raw_ctx
+    anchored: List[LegalOperation] = []
+    for op in ops:
+        src = op.source
+        if src is None or src.source_anchor is not None:
+            anchored.append(op)
+            continue
+        clause = src.raw_text or op.raw_text or ""
+        anchor = (
+            compute_source_anchor(
+                source_artifact_id=artifact_id,
+                raw_bytes=raw_bytes,
+                clause_text=clause,
+            )
+            if clause
+            else None
+        )
+        if anchor is None:
+            anchored.append(op)
+            continue
+        anchored.append(replace(op, source=replace(src, source_anchor=anchor)))
+    return anchored
 
 
 def _extract_ee_ops_inner(
