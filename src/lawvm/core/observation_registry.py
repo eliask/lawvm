@@ -1698,6 +1698,28 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "from its own committed projection_payload under the dossier's "
                 "pinned hash-view rule (opaque/hand-edited/stale-cache lineage).",
                 ("provenance", "strictness"), role="observation"),
+    # F REPLAY.NONDETERMINISM (replay determinism harness): replay must be a PURE
+    # function of (base_state, ops, pit). Materializing the same inputs twice (or
+    # N times) via an injected materialize callable must yield a byte-identical
+    # output and an identical content/certificate hash; a divergence means the
+    # replay path leaks hidden state (a wall-clock stamp, unordered set iteration,
+    # un-seeded random, or a pre-insertion-order dict assumption bleeding into the
+    # result). Owner module: core.replay_determinism_audit, which reuses
+    # tools.certificate_bundle.leaf_hash / _sha256_rendered VERBATIM for the
+    # run-output content hash (no parallel hash scheme; §0/§2.6) and is generic
+    # over the materialize callable exactly as D10's compare_eid_parity is generic
+    # over its canonicalize callable. The audit emits Observation carriers only
+    # (role=observation; never mutates legal state, never re-orders inputs, never
+    # "repairs" a nondeterministic result — the divergence is genuine surfaced
+    # evidence per §0); a strict-profile consumer may flip it to a barrier via
+    # this default_enforcement. Mirrors the D7/D9/D10 audit-carrier precedent.
+    FindingSpec("REPLAY.NONDETERMINISM", "replay-determinism",
+                "violation", "strict_fail", "replay_determinism_audit",
+                "Replay is not a pure function of its inputs: materializing the "
+                "same (base_state, ops, pit) twice produced a divergent output / "
+                "content hash, indicating hidden-state leakage into the replay "
+                "result.",
+                ("safety_invariant", "provenance"), role="observation"),
     # §1.10 (no broad exception swallowing) + §2.6 (rule of three): the
     # ``except (NameError, TypeError, AttributeError): raise; except Exception:
     # <swallow>`` pattern was re-invented 6+ times across the codebase. The
