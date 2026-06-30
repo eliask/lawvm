@@ -81,6 +81,11 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # real frontend ingestion of core ``assert_coverage_totality``.
         "test_ee_apply_seam_parallel_run.py",
         "test_ee_coverage_totality_ingestion.py",
+        # XP-06 (#107): EE per-op WriteReceipt emission — closes the carrier gap
+        # (EE was the only frontend with zero WriteReceipt construction sites)
+        # via estonia/ee_write_receipts.emit_ee_op_receipt threaded into
+        # apply_ee_ops through the additive write_receipts_out opt-in sink.
+        "test_ee_write_receipt.py",
     ),
     "estonia_replay_logic": (
         "test_ee_replay_logic.py",

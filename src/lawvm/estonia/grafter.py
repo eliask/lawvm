@@ -71,6 +71,8 @@ from lawvm.core.apply_seam import (
 )
 from lawvm.core.occupancy import OccupancyClass
 from lawvm.core.phase_result import Finding
+from lawvm.core.write_receipt import WriteReceipt
+from lawvm.estonia.ee_write_receipts import emit_ee_op_receipt
 from lawvm.estonia.act_identity_registry import lookup_ee_act_identity
 from lawvm.core.op_ordering import order_ops
 from lawvm.estonia.ordering import ee_ordering_profile
@@ -10711,6 +10713,7 @@ def apply_ee_ops(
     lo_ops_out: Optional[list[LegalOperation]] = None,
     adjudications_out: Optional[list[CompileAdjudication]] = None,
     seam_observations_out: Optional[list[Finding]] = None,
+    write_receipts_out: Optional[list[WriteReceipt]] = None,
 ) -> IRStatute:
     """Apply LegalOperations to an Estonian IRStatute, returning an updated copy.
 
@@ -10990,6 +10993,26 @@ def apply_ee_ops(
         # unconditional.
         if seam_observations_out is not None and applied_result.observations:
             seam_observations_out.extend(applied_result.observations)
+
+        # ── XP-06 per-op WriteReceipt emission (§2.3 receipt contract). ───────
+        # EE was the only frontend with ZERO ``WriteReceipt`` construction sites
+        # (cross-jurisdiction parity audit). Close the carrier gap with an EE-owned
+        # emitter (``estonia/ee_write_receipts.emit_ee_op_receipt``) mirroring UK's
+        # ``uk_write_receipts.emit_uk_op_receipt``. Emit exactly one receipt for
+        # every landed EE write (``changed`` is the seam's body-identity signal),
+        # synthesizing the §2.3 fields from the per-op before/after diff
+        # (``pre_op_body`` → ``new_body`` bracket exactly one applied op).
+        #
+        # Additive + byte-stable: the receipt is produced ONLY when the caller
+        # opts in via ``write_receipts_out`` (default ``None`` is a pure no-op —
+        # no snapshot diff is taken, production replay output is byte-identical).
+        # An op that landed no change (``changed`` False) emits no receipt — the
+        # ``ee_replay_noop`` adjudication carries that witness, mirroring the
+        # sibling emitters' empty-diff skip.
+        if write_receipts_out is not None and changed:
+            receipt = emit_ee_op_receipt(pre_op_body, new_body, op)
+            if receipt is not None:
+                write_receipts_out.append(receipt)
 
         # §2.9 guard-liveness: EE is the first non-UK/non-FI consumer of the
         # core per-op mutation-boundary audit (LS-01 / D1). Default-OFF
@@ -11296,6 +11319,7 @@ def apply_ee_ops_conserved(
     lo_ops_out: Optional[list[LegalOperation]] = None,
     adjudications_out: Optional[list[CompileAdjudication]] = None,
     seam_observations_out: Optional[list[Finding]] = None,
+    write_receipts_out: Optional[list[WriteReceipt]] = None,
 ) -> EEApplyResult:
     """Apply an Estonia op set with a typed conservation receipt (§1.8).
 
@@ -11368,6 +11392,7 @@ def apply_ee_ops_conserved(
         lo_ops_out=lo_ops_out,
         adjudications_out=adjudications,
         seam_observations_out=seam_observations_out,
+        write_receipts_out=write_receipts_out,
     )
     # Partition: an op is REJECTED iff its op_id appears on a per-op SKIP
     # adjudication. Cross-act findings (empty op_id) and recovery-rule
