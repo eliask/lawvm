@@ -9,6 +9,12 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from lawvm.core.apply_seam import (
+    AppliedOp,
+    ApplyProfile,
+    MaterializeResult,
+    apply_op,
+)
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.filter_result import FilterResult, RejectedItem
 from lawvm.core.invariant_profiles import CORE_REPLAY_DELTA_MINIMAL_FAMILIES
@@ -214,6 +220,17 @@ def apply_eu_ops(
     body = base.body
     applied = 0
     skipped = 0
+    # Per-op landed flag set by the materializer's dispatch (the seam reads the
+    # body-identity ``new_state is not base_state`` signal, but EU also needs an
+    # explicit flag because the post-apply side-channel audits below run only on
+    # a landed write — mirrors SE/EE's ``_*_op_applied`` carrier).
+    _eu_op_applied = False
+    # The mapped target/action of the op currently being dispatched, surfaced
+    # from the materializer so the fold's post-apply audits (which read
+    # ``action``/``target`` in their detail payloads, verbatim from the prior
+    # inline fold) see the same values the dispatch did.
+    target: LegalAddress = LegalAddress(path=())
+    action: object = ""
     seen_invariant_violations: set[str] = set()
     seen_duplication_warnings: set[tuple[tuple[str, object], ...]] = set()
     replay_tree_invariant_families = CORE_REPLAY_DELTA_MINIMAL_FAMILIES
@@ -276,10 +293,42 @@ def apply_eu_ops(
             )
             seen_duplication_warnings.add(warning_key)
 
-    for op in ops:
+    # ── EU materializer (Wave 4, design §3.1/§3.5). ──────────────────────────
+    # The per-op tree dispatch — EU's inline REPLACE/REPEAL/INSERT tree_ops CoW
+    # (and the verbatim text_replace/text_repeal/renumber/unknown skip lanes)
+    # IS the EU :class:`Materializer`. It is a thin closure over the prior
+    # inline fold body: each prior ``continue`` is now a bare ``return`` and
+    # the prior ``applied += 1`` is mirrored by ``_mark_applied()`` (which both
+    # increments EU's ``applied`` counter and sets the per-op landed flag the
+    # materializer returns). The ``continue`` → ``return`` rewrite is purely
+    # control-flow; the mutation semantics — and therefore the materialized
+    # body, the ``applied``/``skipped`` counters, and every skip adjudication —
+    # are byte-identical. text_replace/text_repeal/renumber REMAIN skipped
+    # exactly as today (the ``eu_replay_unsupported_action`` lane), and ops
+    # apply in the input (Cellar-discovery) order with NO reordering.
+    #
+    # EU-SPECIFIC vs SEAM-OWNED. The post-apply per-op side-channel audits
+    # (``_record_invariant_violations`` / ``_record_new_duplication_warnings``)
+    # are WHOLE-STATUTE audits run per-op, not the universal per-op apply step;
+    # they stay in the fold below (run only on a landed write, reading the
+    # ``pre_op_body`` snapshot), keeping their adjudication output byte-identical.
+    # The seam owns the (here-disabled) receipt/coverage outputs and the
+    # boundary gate (``off``; EU runs no per-op mutation-boundary probe today,
+    # so the gate is genuinely absent — byte-identical to the prior fold).
+    def _eu_materialize_one(
+        before_body: IRNode, op: LegalOperation
+    ) -> MaterializeResult[IRNode]:
+        nonlocal body, applied, skipped, target, action, _eu_op_applied
+        body = before_body
+        _eu_op_applied = False
         target = _map_address(op.target)
         path_steps = list(target.path)
         action = op.action.value if hasattr(op.action, "value") else op.action
+
+        def _mark_applied() -> None:
+            nonlocal applied, _eu_op_applied
+            applied += 1
+            _eu_op_applied = True
 
         if action == StructuralAction.REPLACE.value:
             if op.payload is None:
@@ -291,7 +340,7 @@ def apply_eu_ops(
                     detail={"action": "replace", "target": str(target)},
                 )
                 skipped += 1
-                continue
+                return MaterializeResult(new_state=body, applied=False)
             # Find the target node
             found = tree_ops.find(
                 body,
@@ -309,12 +358,9 @@ def apply_eu_ops(
                     detail={"action": "replace", "target": str(target)},
                 )
                 skipped += 1
-                continue
-            before_body = body
+                return MaterializeResult(new_state=body, applied=False)
             body = tree_ops.replace_at(body, found, op.payload)
-            applied += 1
-            _record_invariant_violations(op, target)
-            _record_new_duplication_warnings(before_body, op, target)
+            _mark_applied()
 
         elif action == StructuralAction.REPEAL.value:
             found = tree_ops.find(
@@ -333,12 +379,9 @@ def apply_eu_ops(
                     detail={"action": "repeal", "target": str(target)},
                 )
                 skipped += 1
-                continue
-            before_body = body
+                return MaterializeResult(new_state=body, applied=False)
             body = tree_ops.remove_at(body, found)
-            applied += 1
-            _record_invariant_violations(op, target)
-            _record_new_duplication_warnings(before_body, op, target)
+            _mark_applied()
 
         elif action == StructuralAction.INSERT.value:
             if op.payload is None:
@@ -350,7 +393,7 @@ def apply_eu_ops(
                     detail={"action": "insert", "target": str(target)},
                 )
                 skipped += 1
-                continue
+                return MaterializeResult(new_state=body, applied=False)
             # For insert, the target address specifies where to insert.
             # The parent is target minus the last path element.
             if len(path_steps) > 1:
@@ -381,7 +424,7 @@ def apply_eu_ops(
                             },
                         )
                         skipped += 1
-                        continue
+                        return MaterializeResult(new_state=body, applied=False)
                     _append_eu_replay_adjudication(
                         adjudications_out,
                         kind="eu_replay_parent_not_found",
@@ -396,14 +439,11 @@ def apply_eu_ops(
                         },
                     )
                     skipped += 1
-                    continue
+                    return MaterializeResult(new_state=body, applied=False)
             else:
                 parent_path = []  # insert at body level
-            before_body = body
             body = tree_ops.insert_sorted(body, parent_path, op.payload)
-            applied += 1
-            _record_invariant_violations(op, target)
-            _record_new_duplication_warnings(before_body, op, target)
+            _mark_applied()
 
         elif action in ("text_replace", "text_repeal", "renumber"):
             # Not yet supported for EU pipeline
@@ -415,7 +455,7 @@ def apply_eu_ops(
                 detail={"action": action, "target": str(target)},
             )
             skipped += 1
-            continue
+            return MaterializeResult(new_state=body, applied=False)
 
         elif action == "unknown":
             _append_eu_replay_adjudication(
@@ -426,7 +466,7 @@ def apply_eu_ops(
                 detail={"target": str(target)},
             )
             skipped += 1
-            continue
+            return MaterializeResult(new_state=body, applied=False)
 
         else:
             _append_eu_replay_adjudication(
@@ -437,6 +477,58 @@ def apply_eu_ops(
                 detail={"action": str(action), "target": str(target)},
             )
             skipped += 1
+            return MaterializeResult(new_state=body, applied=False)
+
+        return MaterializeResult(new_state=body, applied=_eu_op_applied)
+
+    # ── EU apply profile (Wave 4, design §3.1). ──────────────────────────────
+    # ``boundary_mode="off"``: EU runs no per-op mutation-boundary probe today,
+    # so the gate is genuinely absent — byte-identical to the prior fold.
+    # ``emit_receipts``/``emit_coverage`` are False on the bare fold: the
+    # additive per-op receipt lane is produced by the dedicated
+    # ``eu_replay_write_receipts`` / ``apply_eu_ops_conserved(emit_receipts=True)``
+    # callers, so the bare ``apply_eu_ops`` result (the materialized IRStatute +
+    # the ``eu_replay_*_op_count`` metadata) stays byte-identical (no new
+    # artifacts). ``receipt_helper_prefix="apply_eu_ops"`` +
+    # ``renumber_migration_rule_ids=("eu_renumber_relabel",)`` make the
+    # seam-synthesized receipt byte-identical to EU's existing
+    # ``_eu_emit_one_op_receipt`` if a future caller routes receipts through the
+    # seam (proven additive in ``tests/test_eu_apply_seam_parallel_run.py``).
+    eu_apply_profile: ApplyProfile[IRNode] = ApplyProfile(
+        jurisdiction="eu",
+        materializer=_eu_materialize_one,
+        boundary_mode="off",
+        emit_receipts=False,
+        emit_coverage=False,
+        renumber_migration_rule_ids=("eu_renumber_relabel",),
+        receipt_helper_prefix="apply_eu_ops",
+    )
+
+    # ── Seam loop (design §3.1): apply each op through the unified per-op
+    # kernel. The EU materializer carries the substantive REPLACE/REPEAL/INSERT
+    # dispatch (and the skip lanes + ``applied``/``skipped`` counters via
+    # closures); the seam owns the ``applied`` derivation and the (here-disabled)
+    # receipt/coverage outputs. There is NO ordering: ops feed in Cellar-discovery
+    # order (the input order), so the seam loop preserves it byte-for-byte. The
+    # post-apply per-op side-channel audits stay in the fold (run only on a
+    # landed write, reading the ``pre_op_body`` snapshot).
+    # ────────────────────────────────────────────────────────────────────────
+    for op in ops:
+        pre_op_body = body
+        applied_result: AppliedOp[IRNode] = apply_op(
+            body,
+            op,
+            provenance=op.source,
+            profile=eu_apply_profile,
+            source_statute=op.source.statute_id if op.source is not None else "",
+        )
+        body = applied_result.new_state
+        if applied_result.applied:
+            # ``target``/``action`` were set by the materializer's dispatch for
+            # this op; the audits read them (and ``pre_op_body``) exactly as the
+            # prior inline fold did inside each applied branch.
+            _record_invariant_violations(op, target)
+            _record_new_duplication_warnings(pre_op_body, op, target)
 
     metadata = dict(base.metadata)
     metadata["eu_replay_applied_op_count"] = applied
