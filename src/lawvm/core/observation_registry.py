@@ -1678,6 +1678,28 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "commencement TemporalEvent and without a pending/unresolved/"
                 "manual-frontier classification.",
                 ("temporal_selection", "strictness"), role="observation"),
+    # Stream C PROVENANCE.SOURCE_ANCHOR_MISSING (provenance totality): every
+    # emitted LegalOperation should trace back to a source instruction — it
+    # should carry a typed source anchor (OperationSource.source_anchor byte
+    # span) or at least textual provenance footing (op.raw_text / source.raw_text
+    # / source.statute_id). The byte-span anchor's population is documented as
+    # "owned by the frontend compile" (core/ir.py ~159, ~177-196), i.e. OPTIONAL
+    # today; this audit surfaces the ops that reach the timeline with NO footing
+    # at all (provenance-orphaned). Owner module: core.provenance_totality_audit.
+    # The audit emits Observation carriers only (role=observation; never raises
+    # on shape-valid input, never mutates ops, never fabricates an anchor) — a
+    # strict-profile consumer may flip it to a barrier via this
+    # default_enforcement. Mirrors the D7/D10 observation-role precedents above;
+    # NET-NEW core-only, not wired into any apply lane (deferred to the unified
+    # seam). proof_category=provenance ("source/evidence lineage for why a phase
+    # fact exists").
+    FindingSpec("PROVENANCE.SOURCE_ANCHOR_MISSING", "provenance-totality",
+                "audit", "strict_fail", "provenance_totality_audit",
+                "An emitted LegalOperation carries no typed source anchor and no "
+                "textual provenance footing (source_anchor / op raw_text / source "
+                "raw_text / source statute_id all empty): a provenance-orphaned op "
+                "that traces back to no source instruction.",
+                ("provenance", "strictness"), role="observation"),
     # D9 / §B5 PROJECTION.REDERIVABLE_FROM_DOSSIER (roadmap §B5): every committed
     # projection row (seam/dump/viewer row, parquet/SQLite export, review packet)
     # must be re-derivable from the committed dossier — its committed
