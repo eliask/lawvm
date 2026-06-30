@@ -1204,6 +1204,39 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "non-blocking observation in the seam observe lane (the AM-01 "
                 "provenance-acceptance witness), never promoted to authority",
                 ("safety_invariant", "provenance"), role="observation"),
+    # receipt-totality (strict-blocking): the landed-writes <-> receipts bijection
+    # broken (a landed write with no receipt, or a receipt with no landed write).
+    # The strict twin of APPLY.RECEIPT_TOTALITY_OBSERVED below; registered so the
+    # per-profile block-promotion path has a destination, but NO profile routes to
+    # it yet (observe-first; design §5).
+    FindingSpec("APPLY.RECEIPT_TOTALITY_REQUIRED", "apply",
+                "violation", "hard_fail", "apply_resolved_op",
+                "strict receipt-totality contract: the landed-writes <-> receipts "
+                "bijection is broken (a landed write with no WriteReceipt, or a "
+                "WriteReceipt with no landed write)",
+                ("safety_invariant", "provenance"), role="violation"),
+    # receipt-totality universal apply-seam OBSERVE lane (B-enforcement increment
+    # 5). The receipt analogue of coverage-totality: the seam already SYNTHESIZES
+    # the per-op WriteReceipt (emit_receipts), and this is the TOTALITY contract
+    # over the accumulated receipt ledger — every landed write ⇒ exactly one
+    # receipt, no receipt without a landed write (a bijection). When the bijection
+    # is broken, ``core/receipt_totality.check_receipt_totality`` emits this
+    # non-blocking observation (one per broken arm) to the separate
+    # ``AppliedOp.observations`` lane, never to ``AppliedOp.findings``. The
+    # receipt-emitting tree profiles synthesize exactly one receipt per landed
+    # write (the same ``landed`` seam branch), and the non-emitting profiles set
+    # ``receipts_expected=False``, so all 6 production profiles are 0-delta by
+    # construction. Observe-first per design §5; the staged promotion to
+    # ``...RECEIPT_TOTALITY_REQUIRED`` block is per-profile work once a frontend's
+    # apply run is MEASURED receipt-total (see ``notes/B_ENFORCEMENT_STATUS.md``).
+    FindingSpec("APPLY.RECEIPT_TOTALITY_OBSERVED", "apply",
+                "audit", "warn", "apply_seam",
+                "the landed-writes <-> receipts bijection is broken (a landed write "
+                "with no WriteReceipt while the profile emits receipts, or a "
+                "WriteReceipt with no landed write); surfaced as a non-blocking "
+                "observation in the universal apply-seam observe lane (the receipt-"
+                "totality witness), never promoted to authority",
+                ("safety_invariant", "provenance"), role="observation"),
     # XP-06 cross-jurisdiction invariant-parity audit (registry's self-flagged
     # thinnest axis). The READ-MOSTLY analysis in
     # ``core/cross_jurisdiction_parity.py`` builds the invariant x frontend

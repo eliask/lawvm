@@ -73,6 +73,11 @@ from lawvm.core.mutation_boundary import (
     diff_ir_paths_identity_pruned,
 )
 from lawvm.core.mutation_boundary_proof import audit_op_mutation_boundary
+from lawvm.core.receipt_totality import (
+    RECEIPT_TOTALITY_OBSERVED_FINDING_CODE,
+    ReceiptLedgerEntry,
+    check_receipt_totality,
+)
 from lawvm.core.write_receipt import WriteReceipt, receipt_address_string
 
 __all__ = [
@@ -102,6 +107,7 @@ __all__ = [
     "ProvenanceResolver",
     "RECOVERED_OP_OBSERVED_FINDING_CODE",
     "no_op_provenance",
+    "RECEIPT_TOTALITY_OBSERVED_FINDING_CODE",
     "ApplyProfile",
     "AppliedOp",
     "apply_op",
@@ -852,6 +858,39 @@ def apply_op(
                 declared_recovery_prefixes=result.declared_recovery_prefixes,
             )
             observations = (*observations, *boundary_audit.findings)
+
+    # ── B-enforcement increment 5: the receipt-totality CONTRACT (observe). ──
+    # The seam already SYNTHESIZES the per-op WriteReceipt above (gated on
+    # ``profile.emit_receipts``). This runs the receipt-totality contract — the
+    # receipt analogue of coverage-totality — over the per-op slice of the
+    # accumulated ledger: a one-entry ledger of THIS op's (landed, receipt)
+    # outcome. The bijection it asserts is "every landed write ⇒ exactly one
+    # receipt; no receipt without a landed write". ``receipts_expected`` is the
+    # profile's ``emit_receipts``: a profile that emits no receipts INTENTIONALLY
+    # lands writes with none (a declared no-receipt fold, not a broken bijection),
+    # so the missing-RHS arm only bites when receipts are expected; the spurious-
+    # RHS arm (a receipt with no landed write) bites under any setting (a receipt
+    # is the record of a LANDED write — write_receipt §4). A broken arm emits ONE
+    # non-blocking ``APPLY.RECEIPT_TOTALITY_OBSERVED`` observation to the SEPARATE
+    # ``observations`` lane — NEVER to ``findings``. The receipt-emitting tree
+    # profiles synthesize exactly one receipt on the same ``landed`` branch above,
+    # so the contract is silent for them (0-delta); the non-emitting profiles
+    # carry ``emit_receipts=False`` → ``receipts_expected=False`` → also silent.
+    # Pure + dependency-light: ``check_receipt_totality`` never reaches into a
+    # frontend (design §5 observe-first; EV-04 observation-is-not-authority).
+    receipt_report = check_receipt_totality(
+        (
+            ReceiptLedgerEntry(
+                op_id=typed_op.op_id or "",
+                landed=landed,
+                receipt=write_receipt,
+            ),
+        ),
+        receipts_expected=profile.emit_receipts,
+        source_statute=source_statute,
+        jurisdiction=profile.jurisdiction,
+    )
+    observations = (*observations, *receipt_report.findings)
 
     return AppliedOp(
         new_state=new_state,

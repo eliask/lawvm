@@ -675,6 +675,13 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # + the safety-first kept-observe decision (no frontend flipped; EE/UK
         # have real latent escapes, NO/SE op-set-clean but corpus-unverified here).
         "test_apply_seam_boundary_blockmode.py",
+        # B-enforcement increment 5: the receipt-totality CONTRACT (observe). The
+        # receipt analogue of coverage-totality over the accumulated per-op
+        # receipt ledger (landed-writes <-> receipts is a bijection), surfaced as
+        # a non-blocking APPLY.RECEIPT_TOTALITY_OBSERVED on the separate
+        # observations lane (its STAGED strict twin APPLY.RECEIPT_TOTALITY_REQUIRED
+        # registered but unrouted). Synthetic-profile mechanism coverage.
+        "test_receipt_totality.py",
         # XP-06 cross-jurisdiction invariant-parity audit: the read-mostly
         # analysis that builds the invariant x frontend parity matrix from the
         # real ApplyProfile registrations (AST-scanned) + the FI reference upper
