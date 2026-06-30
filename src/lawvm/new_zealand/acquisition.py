@@ -415,6 +415,11 @@ def sync_nz_corpus(
         interval=options.progress_interval,
     )
     progress.event("start", stats, detail="sync=begin", force=True)
+    if options.diagnostics_jsonl is not None:
+        # Truncate so the incremental per-diagnostic appends (see _emit_diagnostic)
+        # reflect only THIS run; the file is populated live, not only at sync end.
+        options.diagnostics_jsonl.parent.mkdir(parents=True, exist_ok=True)
+        options.diagnostics_jsonl.write_text("", encoding="utf-8")
     seen_work_ids: set[str] = set()
     version_ids: list[str] = list(dict.fromkeys(options.version_ids))
 
@@ -662,7 +667,7 @@ def _get_or_fetch_json(
         return None
     metadata = _response_metadata(rule_id, url, response, rate_headers)
     if response.status_code != 200:
-        stats.diagnostics.append(_http_diagnostic(rule_id, locator, url, response, metadata))
+        _emit_diagnostic(stats, options, _http_diagnostic(rule_id, locator, url, response, metadata))
         return None
     archive.store(
         locator,
@@ -710,7 +715,7 @@ def _get_or_fetch_bytes(
     if extra_metadata:
         metadata.update(extra_metadata)
     if response.status_code != 200:
-        stats.diagnostics.append(_http_diagnostic(rule_id, locator, url, response, metadata))
+        _emit_diagnostic(stats, options, _http_diagnostic(rule_id, locator, url, response, metadata))
         return None
     archive.store(
         locator,
@@ -895,21 +900,36 @@ def _http_diagnostic(
 ) -> NZAcquisitionDiagnostic:
     blocking = response.status_code in {401, 403, 429} or response.status_code == 0
     diagnostic_rule_id = f"{rule_id}_http_error"
+    # status_code == 0 means the transport (urllib) raised before any HTTP
+    # response was received — DNS/TLS/proxy/IPv6/connection failure; the
+    # exception text is carried as the response body (see UrllibNZTransport).
+    # Surface it: a bare "HTTP status 0" hides the real cause (the request never
+    # reached the server, so the server-side rate limit is never consumed).
+    if response.status_code == 0:
+        transport_error = response.body.decode("utf-8", "replace").strip()
+        reason_text = f"transport/connection error (no HTTP response): {transport_error[:300]}"
+    else:
+        reason_text = f"HTTP status {response.status_code}"
+    enriched_metadata = dict(metadata)
+    if response.status_code == 0 and response.body:
+        enriched_metadata["transport_error"] = (
+            response.body.decode("utf-8", "replace").strip()[:500]
+        )
     return NZAcquisitionDiagnostic(
         rule_id=diagnostic_rule_id,
         phase="acquisition",
         family="source_pathology",
-        reason=f"HTTP status {response.status_code}",
+        reason=reason_text,
         locator=locator,
         url=url,
         status_code=response.status_code,
         blocking=blocking,
         strict_disposition="block" if blocking else "record",
-        metadata=metadata,
+        metadata=enriched_metadata,
         source_lane_selection=SourceLaneSelectionEvidence(
             rule_id=diagnostic_rule_id,
             phase="acquisition",
-            reason=f"HTTP status {response.status_code}",
+            reason=reason_text,
             selected_lane="no_source_lane_selected_http_error",
             selected_locator="",
             attempts=(
@@ -954,6 +974,35 @@ def _write_diagnostics(path: Path | None, diagnostics: list[NZAcquisitionDiagnos
     with path.open("w", encoding="utf-8") as handle:
         for diagnostic in diagnostics:
             handle.write(json.dumps(diagnostic.to_jsonable(), ensure_ascii=False) + "\n")
+
+
+def _emit_diagnostic(
+    stats: NZSyncStats,
+    options: NZSyncOptions,
+    diagnostic: NZAcquisitionDiagnostic,
+) -> None:
+    """Record one diagnostic AND surface it live.
+
+    Beyond appending to the in-memory ledger this (1) appends the row to the
+    ``--diagnostics-jsonl`` file INCREMENTALLY so the file is populated during
+    the run rather than only at sync end, and (2) prints abnormal HTTP outcomes
+    — any 4xx/5xx and the connection-level ``status_code == 0`` (urllib raised
+    before reaching the server, so server-side rate limit is never consumed) —
+    to stderr immediately, so a wall of failures is visible mid-run instead of a
+    silent ``diagnostics++`` counter.
+    """
+    stats.diagnostics.append(diagnostic)
+    if options.diagnostics_jsonl is not None:
+        with options.diagnostics_jsonl.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(diagnostic.to_jsonable(), ensure_ascii=False) + "\n")
+    status = diagnostic.status_code
+    if status is not None and (status == 0 or status >= 400):
+        print(
+            f"nz-error status={status} phase={diagnostic.phase} "
+            f"rule={diagnostic.rule_id} url={diagnostic.url} reason={diagnostic.reason}",
+            file=sys.stderr,
+            flush=True,
+        )
 
 
 def _api_url(path: str, params: Mapping[str, Any]) -> str:
