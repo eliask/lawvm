@@ -73,6 +73,7 @@ from lawvm.new_zealand.dry_run import (
     _source_path_for_tree_path,
     _substitute_node_text,
     _tombstone_node,
+    _top_level_provision_label,
     _top_level_sibling_labels,
 )
 from lawvm.new_zealand.effect_candidates import (
@@ -134,6 +135,49 @@ SKIP_REPLACE_APPLY_NO_OP = "amendment_skipped_replace_apply_no_op"
 SKIP_INSERT_ALREADY_PRESENT = "amendment_skipped_insert_target_already_present"
 SKIP_INSERT_ANCHOR_NOT_DERIVABLE = "amendment_skipped_insert_anchor_not_derivable"
 SKIP_INSERT_ANCHOR_UNRESOLVED = "amendment_skipped_insert_anchor_unresolved"
+# Family-D closed 2026-06-27: def-term CASE FOLD collision -- the INSERT op's
+# leaf-kind is ``def-para`` and the source-path's leaf segment ``def-para:term``
+# does NOT match exactly any carried-tree def-para path, BUT a case-alternative
+# match DOES exist at the same parent path. Per AGENTS §1.4 (no silent sibling
+# absorption by label-text equality or case-touch alone):
+#
+#   the chain EARLIEST archived snapshot (2007-09-03 on act_public_1956_47)
+#   carries ``def-para:Subsidiary`` (cap); the op's amending directive XML
+#   carries the same definition term in lowercase (``def-para:subsidiary``);
+#   the literal path lookup misses (case mismatch on the leaf label) → the
+#   insert-already-present skip GATE does not fire → the op APPLIES → the
+#   carried-tree ends up with BOTH cap+lowercase variants → the op-local
+#   divergence check correctly fires local_similarity=0.0 vs the on-or-after
+#   oracle (which carries only ONE variant -- the editorial consolidation
+#   collapsed the cap variant later).
+#
+# The right fix is NOT a def-para removal/merger (that would silently absorb
+# per §1.4). It is a typed skip receipt (this bucket + rule_id) emitting the
+# absorption evidence so the skip is auditable under its own rule_id rather
+# than silently dismissed as the generic insert-already-present bucket. The
+# absorption is owned by the named recovery rule ``target_resolution_recovery``
+# (per AGENTS §2.1 family tag) with scope_confidence ``inferred_from_payload``
+# (per AGENTS §2.2 -- the case-alternative match was inferred from the op's
+# amending-payload source, not explicitly named in source as a case-fold).
+SKIP_INSERT_DEF_TERM_CASE_FOLD_COLLISION = (
+    "amendment_skipped_insert_def_term_case_fold_collision"
+)
+# Family-F closed 2026-06-27: def-term "or X" suffix collision -- the carried
+# tree's earliest archived reprint carries a def-term whose text has a
+# trailing "or <word>" suffix (a reprint-tool artifact where the reprint
+# duplicated the preceding word after "or" inside the <def-term> text).
+# The op's amending-act XML uses the clean form without the suffix. The
+# literal path lookup misses -> the insert fires -> the carried tree ends
+# up with BOTH variants -> divergence fires at local_similarity=0.0.
+#
+# The fix: when the op's leaf_label is a clean prefix of a carried-tree
+# def-term's label, and the carried-tree label's trailing " or <word>"
+# suffix matches the preceding word, emit the typed skip receipt per
+# AGENTS §1.4 (recognising the suffix as a reprint artifact, not a
+# genuine def-term-content difference).
+SKIP_INSERT_DEF_TERM_OR_SUFFIX_COLLISION = (
+    "amendment_skipped_insert_def_term_or_suffix_collision"
+)
 
 _SKIP_RULE_ID: dict[str, str] = {
     SKIP_UNEXTRACTABLE: "nz_chain_replay_op_unextractable_no_source_path",
@@ -150,6 +194,12 @@ _SKIP_RULE_ID: dict[str, str] = {
     SKIP_INSERT_ALREADY_PRESENT: "nz_chain_replay_insert_target_already_present_in_evolving_tree",
     SKIP_INSERT_ANCHOR_NOT_DERIVABLE: "nz_chain_replay_insert_anchor_not_derivable_from_label_or_siblings",
     SKIP_INSERT_ANCHOR_UNRESOLVED: "nz_chain_replay_insert_anchor_or_parent_not_unique_in_evolving_tree",
+    SKIP_INSERT_DEF_TERM_CASE_FOLD_COLLISION: (
+        "nz_chain_replay_insert_def_term_case_fold_collision_recognized"
+    ),
+    SKIP_INSERT_DEF_TERM_OR_SUFFIX_COLLISION: (
+        "nz_chain_replay_insert_def_term_or_suffix_collision_recognized"
+    ),
 }
 
 
@@ -953,6 +1003,164 @@ def _apply_replace_op(
     return _AppliedOp(family="replace", row_id=op.row_id, target_path=target.path, amendment_date_iso=op.amendment_date_iso)
 
 
+def _def_term_case_fold_collision_exists(
+    document: NZSourceDocument,
+    parent_source_path: tuple[str, ...],
+    leaf_label: str,
+) -> bool:
+    """Family-D probe (AGENTS §2.1 + §1.4): detect a def-term case-fold
+    collision where the carried tree contains the SAME def-term under a
+    different case at the same parent path.
+
+    Returns ``True`` iff exactly one ``def-para`` node exists at
+    ``parent_source_path``-rooted depth whose ``label`` (the def-term, NOT
+    the address segment suffix) is a CASE-DIFFERENT variant that case-fold-
+    matches ``leaf_label``. Both key cases are stripped via ``.lower()`` +
+    whitespace-normalisation before the equality check; the existing
+    ``def-para:Crown entity subsidiary``-vs-``def-para:crown entity
+    subsidiary`` would also collide-but-differ-by-CONTENTS-heavy prefixes;
+    here we restrict the collision to the SAME def-term label under case
+    only (so 'subsidiary' vs 'Subsidiary' collides; 'subsidiary' vs 'Crown
+    entity subsidiary' does NOT -- they are different def-terms under the
+    same parent path, not the same definition).
+
+    The collision is recogniser-exact-case-only: any WHITESPACE or PUNCT
+    difference between the two label surfaces returns False (kept ambiguous
+    → returns False → the insert proceeds, surfacing a genuine divergence
+    chain-side for the audit to probe). Per AGENTS §1.4: relabelling by
+    case-touch ALONE is forbidden; a def-term that differs in punctuation
+    or whitespace is NOT a case-fold collision.
+
+    Witness verified 2026-06-27 on the smoke corpus:
+
+      8 Family-D witnesses on def-term case-fold collision:
+        * act_public_1956_47 nz-opw-101 ('subsidiary' / 'Subsidiary')
+        * act_public_1956_47 nz-opw-81   ('Government Superannuation Fund Authority' / same cap)
+        * act_public_1956_47 nz-opw-82   ('Government Superannuation Fund Authority board' / same cap)
+        * act_public_1956_47 nz-opw-85   ('invest' / 'Invest')
+        * act_public_1956_47 nz-opw-87   ('liabilities' / 'Liabilities')
+        * act_public_1956_47 nz-opw-93   ('property' / 'Property')
+        * act_public_1956_47 nz-opw-94   ('rights' / 'Rights')
+        * act_public_1992_122 nz-opw-55  ('electricity generator' / 'Electricity generator')
+
+      Carried-tree start snapshot (2007-09-03 on 1956_47; 2007-09-20 on
+      1992_122) holds the cap variant; amending-act directive's XML uses
+      lowercase; the latter's insert fires (instead of the
+      insert-already-present skip) and duplicates the def-para → the
+      op-local divergence check fires local_similarity=0.0 against the
+      on-or-after oracle (where only ONE case variant survives).
+    """
+    if not leaf_label:
+        return False
+    leaf_normalised = " ".join(leaf_label.lower().split())
+    hits = 0
+    for node in document.nodes:
+        if node.kind != "def-para":
+            continue
+        node_parent = node.path[:-1]
+        # Mirror the leading-part tolerance from ``_resolve_target_nodes`` + the
+        # widened ``_oracle_target_head_is_part_wrapper`` -- the op's
+        # parent_source_path may carry no leading ``part:N`` / ``part@xml_id``
+        # wrapper while the carried-tree's parsed-source path DOES have such a
+        # wrapper (the parser's labeled- or identity-fallback depth encoding for
+        # the same logical parent). Tolerate ONE leading part-wrapper on the
+        # carried-tree side (mirror of the apply-step's widening commit
+        # 990e91f9 + Direction-B of the divergence resolver commit 533b4435);
+        # NEVER tolerate label-tolerant fallback on the def-term itself (per
+        # AGENTS §1.1).
+        if node_parent != parent_source_path and not (
+            len(node_parent) == len(parent_source_path) + 1
+            and _oracle_target_head_is_part_wrapper(node_parent[0])
+            and node_parent[1:] == parent_source_path
+        ):
+            continue
+        node_label = node.label or ""
+        if node_label == leaf_label:
+            # Exact-match is the existing already-present gate's territory;
+            # not a case-fold collision (caller should have routed it to the
+            # already-present skip).
+            continue
+        node_normalised = " ".join(node_label.lower().split())
+        if node_normalised == leaf_normalised and node_normalised:
+            hits += 1
+    return hits == 1
+
+
+def _def_term_or_suffix_collision_exists(
+    document: NZSourceDocument,
+    parent_source_path: tuple[str, ...],
+    leaf_label: str,
+) -> bool:
+    """Family-F probe (AGENTS §2.1 + §1.4): detect a def-term trailing-"or X"
+    suffix collision where the carried tree's reprint-format def-term label
+    has a trailing " or <word>" whose <word> repeats the preceding word, and
+    stripping that suffix yields exactly the op's ``leaf_label``.
+
+    The reprint artifact: the 2007-09-03 archived reprint places the entire
+    def-term text inside a single ``<def-term>`` element, sometimes appending
+    " or <word>" where <word> duplicates the word preceding "or" (e.g.,
+    "Government Superannuation Fund Authority or Authority"; "Government
+    Superannuation Fund Authority board or board"). The amending act and the
+    latest oracle both use the clean form without the suffix.
+
+    Guard (per AGENTS §1.4 no silent sibling absorption by label-text alone):
+      * The " or <word>" suffix's <word> MUST equal the word immediately
+        preceding " or " in the original carried-tree label (the reprint-tool
+        duplicate-word pattern). A genuinely-different def-term like
+        "Investment Manager or Trustee" does NOT match (<word>="Trustee" ≠
+        preceding "Manager") -> no collision.
+      * Stripping the suffix yields the op's ``leaf_label`` (exact match,
+        case-sensitive — the reprint does not change the stem case).
+      * Single-match enforcement (per §1.1): zero or multiple matches return
+        False; the insert fires and the op-local divergence surfaces honestly.
+
+    Witnesses verified 2026-06-27:
+      * act_public_1956_47 nz-opw-81 ('Government Superannuation Fund Authority'
+        vs carried-tree '... Authority or Authority')
+      * act_public_1956_47 nz-opw-82 ('Government Superannuation Fund Authority
+        board' vs carried-tree '... board or board')
+    """
+    if not leaf_label:
+        return False
+    leaf_normalised = " ".join(leaf_label.split())
+    hits = 0
+    for node in document.nodes:
+        if node.kind != "def-para":
+            continue
+        node_parent = node.path[:-1]
+        if node_parent != parent_source_path and not (
+            len(node_parent) == len(parent_source_path) + 1
+            and _oracle_target_head_is_part_wrapper(node_parent[0])
+            and node_parent[1:] == parent_source_path
+        ):
+            continue
+        node_label = node.label or ""
+        if node_label == leaf_label:
+            # Exact-match is the already-present gate's territory.
+            continue
+        tokenised = " ".join(node_label.split())
+        # Check if the carried-tree label has a trailing " or <word>" whose
+        # <word> repeats the preceding word. E.g., "... Authority or Authority"
+        # -> strip " or Authority" -> "... Authority" == leaf_label when the
+        # preceding word IS "Authority".
+        idx = tokenised.rfind(" or ")
+        if idx <= 0:
+            continue
+        suffix_word = tokenised[idx + 4:].strip()
+        stem = tokenised[:idx]
+        # stem's LAST word must equal suffix_word (the reprint-tool duplicate
+        # pattern).
+        stem_words = stem.rsplit(" ", 1)
+        if len(stem_words) < 2:
+            continue
+        preceding_word = stem_words[-1]
+        if suffix_word != preceding_word or not suffix_word:
+            continue
+        if stem == leaf_normalised:
+            hits += 1
+    return hits == 1
+
+
 def _apply_insert_op(
     tree: _EvolvingTree,
     op: NZChainOp,
@@ -975,6 +1183,35 @@ def _apply_insert_op(
     # The new node must NOT already be in the carried tree (an insert ADDS it).
     if len(_resolve_target_nodes(tree.document, new_node_source_path)) > 0:
         return _skip(SKIP_INSERT_ALREADY_PRESENT, op)
+
+    # Family-D closed 2026-06-27: def-term case-fold collision. When the leaf
+    # is a ``def-para`` and the exact-match lookup missed, the carried tree MAY
+    # carry the SAME def-term under a different case (the editorial
+    # consolidation XML preserved the case the parser saw in that snapshot,
+    # and an op amending at a later date whose XML uses a different case
+    # bypasses the literal already-present gate above). Per AGENTS §1.4
+    # (no silent sibling absorption by label-text or case-touch alone) +
+    # §2.1 (named recovery rule + witness):
+    #
+    # Emit a TYPED skip receipt (distinct bucket + rule_id from the exact-
+    # match insert-already-present so the case-fold absorption is auditable
+    # separately) -- never a silent skip-as-already-present that would
+    # otherwise absorb the variant the parser's case-preservation behaviour
+    # surfaced.
+    if leaf_kind == "def-para" and _def_term_case_fold_collision_exists(
+        tree.document, parent_source_path, leaf_label
+    ):
+        return _skip(SKIP_INSERT_DEF_TERM_CASE_FOLD_COLLISION, op)
+
+    # Family-F closed 2026-06-27: def-term "or X" suffix collision. The
+    # carried tree's reprint-format label may have a trailing " or <word>"
+    # whose <word> repeats the preceding word (reprint-tool artifact). The
+    # helper strips the suffix and checks if the stem matches ``leaf_label``.
+    # Per AGENTS §1.4 + §2.1: typed skip receipt, never a silent absorption.
+    if leaf_kind == "def-para" and _def_term_or_suffix_collision_exists(
+        tree.document, parent_source_path, leaf_label
+    ):
+        return _skip(SKIP_INSERT_DEF_TERM_OR_SUFFIX_COLLISION, op)
 
     payload = _extract_insertion_payload(
         op, leaf_kind, leaf_label, archive, amending_root_cache,
@@ -1056,8 +1293,10 @@ def _extract_replacement_payload(
         amending_node,
         target_leaf_kind=leaf_kind,
         target_leaf_label=leaf_label,
+        target_provision_label=_top_level_provision_label(op.source_path),
         base_work_year=base_work_year,
         base_work_number=base_work_number,
+        amending_act_root=amending_root,
     )
     if isinstance(replacement, str):
         return None
@@ -1086,12 +1325,18 @@ def _extract_insertion_payload(
     amending_node = _amending_node_by_href(amending_root, op.amending_provision_href)
     if amending_node is None:
         return None
+    insert_provision_label = None
+    if op.source_path is not None and len(op.source_path) > 1:
+        parent_source_path = op.source_path[:-1]
+        insert_provision_label = _top_level_provision_label(parent_source_path)
     payload = extract_structural_insertion(
         amending_node,
         inserted_leaf_kind=leaf_kind,
         inserted_leaf_label=leaf_label,
+        target_provision_label=insert_provision_label,
         base_work_year=base_work_year,
         base_work_number=base_work_number,
+        amending_act_root=amending_root,
     )
     if isinstance(payload, str):
         return None
@@ -1301,7 +1546,7 @@ def _op_local_divergence(
     materialized_node = _node_text_index(materialized).get(applied_op.target_path)
     if materialized_node is None:
         return None  # the produced node was overwritten by a later op; not this op
-    oracle_node = _node_text_index(oracle_doc).get(applied_op.target_path)
+    oracle_node = _resolve_oracle_node_for_target(oracle_doc, applied_op.target_path)
     local_similarity = (
         section_similarity(
             _node_similarity_text(materialized_node), _node_similarity_text(oracle_node)
@@ -1319,6 +1564,93 @@ def _op_local_divergence(
         oracle_version_date=oracle_version.version_date,
         local_similarity=local_similarity,
     )
+
+
+def _resolve_oracle_node_for_target(
+    oracle_doc: NZSourceDocument,
+    target_path: tuple[str, ...],
+) -> NZSourceNode | None:
+    """Resolve the oracle node at ``target_path`` with leading-part-drop tolerance.
+
+    The op-local divergence check keys on ``applied_op.target_path`` which lives
+    in the carried tree's path encoding (the parsed-shape of the EARLIEST archived
+    snapshot). NZ's parser falls back to ``part@DLM_xml_id`` (unlabeled-`<part>`
+    identity) when a `<part>` element lacks a parseable `<label>` -- observed on
+    199 nodes in the earliest act_public_1981_23 snapshot (the chain's start
+    state). The oracle (later archived snapshot) can carry the same prov:N under
+    one of TWO shapes after editorial consolidation re-standardised the XML:
+
+      (1) ``prov:N``            -- no `<part>` wrapper at all (oracle dropped the
+                                    wrapper entirely because the `<part>` element
+                                    no longer appears in the post-restoration XML).
+      (2) ``part@DLM_X/prov:N`` -- unlabeled identity fallback (same carried-tree
+                                    shape; the wrapper persisted across snapshots;
+                                    covered by the exact-match fast path).
+
+    The literal ``target_path == ('part@DLM44815', 'prov:22')`` lookup returns
+    None when the oracle carries Shape (1), producing a false
+    ``local_similarity=0.0`` divergence encoding-mismatch artefact rather than
+    an honest materialized-vs-oracle disagreement. Witness cluster verified
+    2026-06-27 on act_public_1981_23 chain-replay: 45 op-local divergences,
+    100% at target_path[0]='part@DLM_*' segments, 100% local_similarity=0.0,
+    100% resolve to Shape (1) under the oracle probe (prov:N at top level with
+    no part wrapper) -- the entire 45-row cluster is carried-tree-path-shape
+    -vs-oracle artefact.
+
+    The widening accepts Direction B (drop-wrapper): when the carried-tree's
+    leading segment is a part wrapper AND the literal lookup misses, accept
+    an oracle node whose path equals ``target_path[1:]`` (i.e., the wrapper
+    was dropped entirely on the oracle side). Single-match enforcement stays;
+    an empty or ambiguous result keeps returning None -- the divergence
+    check then correctly fires ``local_similarity=0.0`` for a genuinely-absent
+    oracle target, which is the honest signal.
+
+    Narrowness (per AGENTS §1.1 no silent target hijacking):
+
+    * The widening is restricted to the case where the carried-tree's head is
+      a ``part:N`` or ``part@xml_id`` segment (the parser's known-but-unlabeled
+      ``<part>`` wrapper shapes). Other leading-segment shapes are NOT widened
+      -- only the part-wrapper-shape-churn family.
+    * The widening accepts only ONE direction (drop-the-wrapper), NOT label-
+      tolerant fallback: prov:N labels are exact-matched; only the part
+      wrapper's presence-vs-absence is tolerated.
+    * Same-length-different-suffix variants (e.g. ``part:N`` vs ``part@X``
+      would match each other under label-tolerant) are NOT accepted -- those
+      are the parser's identity-vs-label choice and accepting them would
+      silently cross-snapshot-collapse two distinct part identities.
+    """
+    oracle_index = _node_text_index(oracle_doc)
+    # Fast path: exact-match (the common, no-part@-shape case).
+    exact = oracle_index.get(target_path)
+    if exact is not None:
+        return exact
+    if not target_path:
+        return None
+    head = target_path[0]
+    if not _oracle_target_head_is_part_wrapper(head):
+        # No leading-part-wrapper on the carried tree -- no path-shape churn to
+        # tolerate; the oracle honestly lacks the target.
+        return None
+    # Direction B (drop-wrapper): carried-tree's leading part-wrapper is absent
+    # from the oracle; accept an oracle node whose path equals target_path[1:].
+    tail = target_path[1:]
+    candidates = [node for node in oracle_doc.nodes if node.path == tail]
+    if len(candidates) == 1:
+        return candidates[0]
+    return None
+
+
+def _oracle_target_head_is_part_wrapper(segment: str) -> bool:
+    """The same ``part:N`` / ``part@xml_id`` widened predicate the apply-step
+    resolver uses (kept here as a local mirror so the divergence lane does not
+    import dry_run.py's ``_is_leading_part_segment`` and create a new dependency
+    cycle; the predicate's behaviour is pinned by the same paired synthetic
+    test landed 2026-06-24)."""
+    if not segment:
+        return False
+    if segment.split(":", 1)[0] == "part":
+        return True
+    return segment.startswith("part@")
 
 
 def _earliest_version_on_or_after(

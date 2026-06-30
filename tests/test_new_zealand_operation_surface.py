@@ -19,6 +19,24 @@ def test_classify_operation_family_normalizes_known_and_unclassified_values() ->
     assert classify_operation_family("full sentence that is not an operation") == "__unclassified__"
 
 
+def test_classify_operation_family_admits_revoked_synonym_for_repealed() -> None:
+    """NZ editorial '<amending-operation>revoked</amending-operation>' is a synonym
+    for 'repealed' (both surface in history-note narratives). Downstream consumers
+    (effect_readiness, dry_run, instruction_workqueue) dispatch on
+    operation_family == 'repealed'; the synonym MUST alias to 'repealed' so the
+    real amend verb is not lost to __unclassified__ (AGENTS §1.10 -- distinct
+    named diagnostic; a witness verb must never fall to a generic 'unclassified'
+    bucket when its surface form is recoverable).
+
+    Witness verified 2026-06-27 on act_public_1955_37 @ 2024-06-05 nz-opw-106:
+    'Clause 3(c) : revoked , on 5 June 2024 , by section 209(2) of the
+    Whakatōhea Claims Settlement Act 2024 (2024 No 15).'
+    """
+    assert classify_operation_family("revoked") == "repealed"
+    assert classify_operation_family("Revoked") == "repealed"
+    assert classify_operation_family("  revoked  ") == "repealed"
+
+
 def test_parse_target_hint_extracts_bounded_structural_hints() -> None:
     assert parse_target_hint("Section 12(3)").to_jsonable() == {
         "target_hint_status": "parsed",
@@ -150,6 +168,47 @@ def test_build_operation_surface_extracts_history_witness_rows() -> None:
     assert report.rows[1].target_hint.label == "1"
     assert report.rows[1].target_address_candidate.address == "section:1"
     assert report.rows[1].target_address_candidate.target_address_status == "candidate"
+
+    # Per-row derived effect_blocking_rule_id + effect_status (AGENTS §1.10).
+    # The legacy constant default was `nz_operation_surface_effect_lowering_
+    # not_implemented` for EVERY row -- the per-row derivation now emits a
+    # distinct rule_id per readiness bucket so a benchmark reading only
+    # effect_blocking_rule_id can attribute WHY lowering blocked without
+    # re-reading lowering_readiness_status.
+    # row 0: blocked_non_structural_facet (the Title is a document-level
+    # facet, NOT a substantive section).
+    assert report.rows[0].effect_status == "blocked_non_structural_facet"
+    assert report.rows[0].effect_blocking_rule_id == (
+        "nz_operation_surface_effect_lowering_non_structural_facet"
+    )
+    # row 1: ready_for_amending_act_payload_extraction (Section 1 amended --
+    # the witness IS ready; the downstream canonical-effect lowering LANE
+    # is the unimplemented bit).
+    assert report.rows[1].effect_status == "ready_for_lowering"
+    assert report.rows[1].effect_blocking_rule_id == (
+        "nz_operation_surface_effect_lowering_lane_unimplemented"
+    )
+    # Work-summary emits per-row distributions so a benchmark can count by
+    # rule_id (and by effect_status), not just the legacy dominant-rule_id.
+    assert report.summary()["effect_status_counts"] == {
+        "blocked_non_structural_facet": 1,
+        "ready_for_lowering": 1,
+    }
+    assert report.summary()["effect_blocking_rule_id_counts"] == {
+        "nz_operation_surface_effect_lowering_non_structural_facet": 1,
+        "nz_operation_surface_effect_lowering_lane_unimplemented": 1,
+    }
+    # The legacy `effect_blocking_rule_id` work-summary field kept for back-
+    # compat surfaces the DOMINANT rule_id across the work's rows -- on a
+    # 2-row fixture with two distinct rule_ids tied at count 1, the
+    # dominant pick is stable per-iteration because Counter.most_common
+    # breaks ties by insertion order (not by Rule-ID), so this assertion
+    # just verifies the dominant-rule_id is one of the two known values
+    # rather than the legacy constant default.
+    assert report.summary()["effect_blocking_rule_id"] in {
+        "nz_operation_surface_effect_lowering_non_structural_facet",
+        "nz_operation_surface_effect_lowering_lane_unimplemented",
+    }
     assert report.rows[1].amending_provision_hrefs == ("amend-3",)
     assert report.rows[1].lowering_readiness_status == "ready_for_amending_act_payload_extraction"
 
@@ -569,3 +628,156 @@ def test_nz_operation_surface_cli_parse_defaults() -> None:
     assert args.target_hint_status == ""
     assert args.evidence_rows is False
     assert args.evidence_jsonl is None
+
+
+def test_legacy_history_note_verb_recovery_two_amended_provision_shape_emits_finding() -> None:
+    """When the editorial-consolidation XML reuses ``<amended-provision>`` for
+    the OPERATION VERB (Shape A: a SECOND ``<amended-provision>`` element),
+    the recognise-and-classify path MUST recover the verb and emit a non-
+    blocking evidence finding so downstream consumers can attribute why the
+    op_family was classified from a non-canonical XML element (AGENTS §2.1
+    heuristics-that-affect-op-filtering discipline + AGENTS §1.10 distinct
+    named diagnostic).
+
+    Witness verified 2026-06-27 on act_public_1956_47 nz-opw-244:
+
+        <history-note id="DLM446393">
+          <amended-provision>Section 19I(1)</amended-provision>:
+          <amended-provision>amended</amended-provision>, on
+          <amendment-date>2 October 2001</amendment-date>, by
+          <amending-provision href="...">section 21</amending-provision> of the
+          <amending-leg>Government Superannuation Fund Amendment Act 2001</amending-leg>
+          (2001 No 47).
+        </history-note>
+
+    Before the fix the row fell to op_family=__missing__ with
+    operation_text='' and lowering_readiness_status=blocked_operation_missing
+    (effect_blocking_rule_id=
+    nz_operation_surface_effect_lowering_operation_missing on the per-row
+    derivation landed 2026-06-27).
+    """
+    from lawvm.new_zealand.operation_surface import build_operation_surface
+    from lawvm.new_zealand.source_tree import parse_nz_source_document
+
+    xml = b"""\
+<act>
+  <cover><title>Example Act 2001</title></cover>
+  <body>
+    <prov id="S19I"><label>19I</label><heading>Heading</heading>
+      <notes><history>
+        <history-note id="DLM446393"><amended-provision>Section 19I(1)</amended-provision>: <amended-provision>amended</amended-provision>, on <amendment-date>2 October 2001</amendment-date>, by <amending-provision href="amend-21">section 21</amending-provision> of the <amending-leg>Example Amendment Act 2001</amending-leg> (2001 No 47).</history-note>
+      </history></notes>
+    </prov>
+  </body>
+</act>
+"""
+    report = build_operation_surface(
+        parse_nz_source_document(xml, xml_locator="xml", version_id="version"),
+        work_id="act_public_2001_47",
+        archived_dependency_work_ids=frozenset({"act_public_2001_47"}),
+    )
+    assert report.summary()["rows"] == 1
+    assert report.summary()["operation_family_counts"] == {"amended": 1}
+    assert report.rows[0].operation_family == "amended"
+    assert report.rows[0].lowering_readiness_status == (
+        "ready_for_amending_act_payload_extraction"
+    )
+    # The recovery is observable on effect_blocking_rule_id (lane_unimplemented
+    # rather than operation_missing):
+    assert report.rows[0].effect_blocking_rule_id == (
+        "nz_operation_surface_effect_lowering_lane_unimplemented"
+    )
+    # And via the non-blocking evidence finding (AGENTS §2.1 spec-ledger parity):
+    finding_rule_ids = {f["rule_id"] for f in report.findings}
+    assert (
+        "nz_source_history_note_legacy_amended_provision_verb_recovery"
+        in finding_rule_ids
+    ), f"expected legacy recovery finding, got {finding_rule_ids}"
+
+
+def test_legacy_history_note_verb_recovery_amending_instruction_shape_emits_finding() -> None:
+    """When the editorial-consolidation XML carries the operation verb in a
+    non-standard ``<amending-instruction>`` element (Shape B, 1 row on
+    act_public_1871_24 @ 1980-04-01):
+
+        <history-note id="DLM128960">
+          The words <quote.in>High Court</quote.in> were
+          <amending-instruction>substituted</amending-instruction>, as from
+          <amendment-date>1 April 1980</amendment-date>, ...
+        </history-note>
+
+    Same recovery discipline as Shape A: op_family classified from the
+    recovered verb + non-blocking evidence finding emitted.
+    """
+    from lawvm.new_zealand.operation_surface import build_operation_surface
+    from lawvm.new_zealand.source_tree import parse_nz_source_document
+
+    xml = b"""\
+<act>
+  <cover><title>Example Act 1879</title></cover>
+  <body>
+    <prov id="S1"><label>1</label><heading>Heading</heading>
+      <prov.body><para><text>Body.</text></para></prov.body>
+      <notes><history>
+        <history-note id="DLM128960">The words <quote.in>High Court</quote.in> were <amending-instruction>substituted</amending-instruction>, as from <amendment-date>1 April 1980</amendment-date>, by <amending-provision href="amend-12">section 12</amending-provision> of the <amending-leg>Judicature Amendment Act 1979</amending-leg> (1979 No 124).</history-note>
+      </history></notes>
+    </prov>
+  </body>
+</act>
+"""
+    report = build_operation_surface(
+        parse_nz_source_document(xml, xml_locator="xml", version_id="version"),
+        work_id="act_public_1979_124",
+        archived_dependency_work_ids=frozenset({"act_public_1979_124"}),
+    )
+    assert report.summary()["operation_family_counts"] == {"substituted": 1}
+    assert report.rows[0].operation_family == "substituted"
+    finding_rule_ids = {f["rule_id"] for f in report.findings}
+    assert (
+        "nz_source_history_note_legacy_amending_instruction_verb_recovery"
+        in finding_rule_ids
+    ), f"expected legacy recovery finding, got {finding_rule_ids}"
+
+
+def test_canonical_amending_operation_does_not_emit_legacy_recovery_finding() -> None:
+    """Negative test: the canonical ``<amending-operation>`` element path
+    MUST NOT trigger the legacy-verb-recovery finding (AGENTS §2.9 negative
+    test -- the rule fires only when the canonical element is absent).
+
+    Synthetic XML mirrors the modern (post-XML-standardisation) shape with
+    explicit ``<amending-operation>`` element. The recovery path is silent
+    and the op_family classification comes from the canonical element.
+    """
+    from lawvm.new_zealand.operation_surface import build_operation_surface
+    from lawvm.new_zealand.source_tree import parse_nz_source_document
+
+    xml = b"""\
+<act>
+  <cover><title>Example Act 2020</title></cover>
+  <body>
+    <prov id="S1"><label>1</label><heading>Heading</heading>
+      <notes><history>
+        <history-note id="HN-canonical"><amended-provision>Section 1</amended-provision>: <amending-operation>amended</amending-operation>, on <amendment-date>1 January 2025</amendment-date>, by <amending-provision href="amend-3">section 3</amending-provision> of the <amending-leg>Example Amendment Act 2025</amending-leg> (2025 No 4).</history-note>
+      </history></notes>
+    </prov>
+  </body>
+</act>
+"""
+    report = build_operation_surface(
+        parse_nz_source_document(xml, xml_locator="xml", version_id="version"),
+        work_id="act_public_2025_4",
+        archived_dependency_work_ids=frozenset({"act_public_2025_4"}),
+    )
+    assert report.summary()["operation_family_counts"] == {"amended": 1}
+    finding_rule_ids = {f["rule_id"] for f in report.findings}
+    assert (
+        "nz_source_history_note_legacy_amended_provision_verb_recovery"
+        not in finding_rule_ids
+    ), (
+        f"the canonical <amending-operation> element path MUST NOT emit a "
+        f"legacy-recovery finding; got {finding_rule_ids}"
+    )
+    assert (
+        "nz_source_history_note_legacy_amending_instruction_verb_recovery"
+        not in finding_rule_ids
+    )

@@ -938,3 +938,394 @@ def test_divergence_flagged_when_op_produces_wrong_content(monkeypatch: pytest.M
     assert div.row_id == "rpl"
     assert div.target_path == ("prov:3",)
     assert div.local_similarity < 0.5
+
+
+def test_resolve_oracle_node_for_target_admits_part_wrapper_shape_churn() -> None:
+    """Op-local divergence oracle lookup tolerates part-wrapper-shape churn
+    between the carried tree's path encoding and the oracle's.
+
+    Witness verified 2026-06-27 on act_public_1981_23 chain-replay: the
+    carried tree (parsed from the EARLIEST archived snapshot 2007-09-03)
+    carries prov:22 at ``('part@DLM44815', 'prov:22')`` (parser's
+    unlabeled-`<part>` fallback shape); the oracle (later archived snapshot
+    2008-12-25) carries prov:22 at ONE of THREE shapes after editorial
+    consolidation re-standardised the XML:
+
+      (1) ``part:N/prov:N``     -- labeled `<part>` wrapper (oracle added labels).
+      (2) ``prov:N``            -- no `<part>` wrapper at all (oracle dropped it).
+      (3) ``part@DLM_X/prov:N`` -- unlabeled identity fallback (wrapper persisted).
+
+    The literal `target_path == ('part@DLM44815', 'prov:22')` lookup returns
+    None against shapes (1) and (2), producing a false
+    ``local_similarity=0.0`` divergence encoding-mismatch artefact. The fix
+    widens the lookup to accept EITHER direction of part-wrapper shape churn
+    (apply-step mirror direction A accepting oracle-with-extra-part-wrapper;
+    new direction B accepting oracle-with-fewer-leading-part-wrapper when
+    oracle dropped the wrapper entirely), with single-match enforcement
+    (an ambiguous result stays None per AGENTS §1.1 no silent target
+    hijacking).
+
+    Pre-fix witness: 45/45 act_public_1981_23 op-local divergences were
+    on target_path[0]='part@DLM_*' segments with local_similarity=0.0 --
+    the entire cluster was carrying-tree-path-shape-vs-oracle artefact.
+    Post-fix count: 2 (the genuine prov:15 duplicate-label ambiguity cases
+    that the single-match enforcement correctly preserves as divergence
+    signal per AGENTS §1.0/§2.8).
+    """
+    from lawvm.new_zealand.chain_replay import _resolve_oracle_node_for_target
+    from lawvm.new_zealand.source_tree import NZSourceDocument, NZSourceNode
+
+    # Helper: build a placeholder prov node at the given path (text content
+    # is irrelevant; only the path + label matter for the lookup contract).
+    def _node(path: tuple[str, ...], label: str) -> NZSourceNode:
+        return NZSourceNode(
+            kind="prov",
+            path=path,
+            xml_id=f"placeholder-{label}-{path}",
+            xml_path="",
+            source_zone="primary_body",
+            label=label,
+            heading="",
+            deletion_status="",
+            text=f"placeholder text {label}",
+            history=(),
+        )
+
+    target_path = ("part@DLM44815", "prov:22")
+
+    # Shape 1: oracle carries prov:22 with NO part wrapper at all (the wrapper
+    # was dropped entirely after editorial consolidation re-standardised the XML).
+    # This is the actual observed shape on the carried chain-replay's evolved
+    # carried tree state vs the latest archived snapshot for act_public_1981_23:
+    #   carried tree: ('part@DLM44815', 'prov:22')   (parser's unlabeled-`<part>` fallback)
+    #   oracle:      ('prov:22',)                     (no wrapper)
+    # Direct probe verified 2026-06-27 on every witness work that fired a divergence.
+    oracle_no_wrapper = NZSourceDocument(
+        xml_locator="oracle_no_wrapper",
+        version_id="oracle_no_wrapper",
+        metadata={},
+        nodes=(_node(("prov:22",), "22"),),
+        document_history=(),
+    )
+    no_wrapper = _resolve_oracle_node_for_target(oracle_no_wrapper, target_path)
+    assert no_wrapper is not None
+    assert no_wrapper.label == "22"
+
+    # Shape 2: oracle carries prov:22 with the SAME unlabeled-`<part>` shape
+    # (covered by the exact-match fast path).
+    oracle_same_shape = NZSourceDocument(
+        xml_locator="oracle_same_shape",
+        version_id="oracle_same_shape",
+        metadata={},
+        nodes=(_node(("part@DLM44815", "prov:22"), "22"),),
+        document_history=(),
+    )
+    same_shape = _resolve_oracle_node_for_target(oracle_same_shape, target_path)
+    assert same_shape is not None
+    assert same_shape.label == "22"
+
+    # Oracle with NO prov:22 anywhere returns None (the honest signal that
+    # the targeted prov genuinely lacks an oracle counterpart -- the divergence
+    # check correctly fires local_similarity=0.0).
+    oracle_empty = NZSourceDocument(
+        xml_locator="oracle_empty",
+        version_id="oracle_empty",
+        metadata={},
+        nodes=(_node(("part:6", "prov:99"), "99"),),
+        document_history=(),
+    )
+    assert _resolve_oracle_node_for_target(oracle_empty, target_path) is None
+
+    # Ambiguous oracle (two prov:22 candidates after part-wrapper drop collapses
+    # distinguishing context) returns None per AGENTS §1.1 no-silent-target-
+    # hijacking; ambiguity stays a finding/divergence, never a guess.
+    oracle_ambiguous = NZSourceDocument(
+        xml_locator="oracle_ambiguous",
+        version_id="oracle_ambiguous",
+        metadata={},
+        nodes=(
+            _node(("prov:22",), "22"),
+            _node(("prov:22",), "22"),
+        ),
+        document_history=(),
+    )
+    assert _resolve_oracle_node_for_target(oracle_ambiguous, target_path) is None
+
+    # Narrowness: when the carried tree's path is NOT a part-wrapper (e.g.
+    # ('prov:22',)), the lookup uses the exact-match fast path and does NOT
+    # widen to drop a different-segment (per AGENTS §1.1 -- only the part-
+    # wrapper-shape-churn family is tolerated, never arbitrary-segment-stripping).
+    no_wrapper_no_part_target = _resolve_oracle_node_for_target(
+        oracle_no_wrapper, ("prov:22",)
+    )
+    assert no_wrapper_no_part_target is not None
+    assert no_wrapper_no_part_target.label == "22"
+
+    # Narrowness: when the carried tree DOES carry a part-wrapper but the
+    # oracle carries prov:22 at the SAME path length under a different
+    # part-wrapper-suffix (``part:N`` vs ``part@X`` are NOT treated as the
+    # same logical wrapper -- those are the parser's identity-vs-label choice
+    # and accepting them would silently cross-snapshot-collapse two distinct
+    # part identities per AGENTS §1.1/§2.8). Returns None -> the divergence
+    # check fires as honest signal.
+    oracle_other_wrapper = NZSourceDocument(
+        xml_locator="oracle_other_wrapper",
+        version_id="oracle_other_wrapper",
+        metadata={},
+        nodes=(_node(("part:6", "prov:22"), "22"),),
+        document_history=(),
+    )
+    assert _resolve_oracle_node_for_target(oracle_other_wrapper, target_path) is None
+
+
+def test_def_term_case_fold_collision_recognised_and_inhibits_duplicate_insert() -> None:
+    """Family-D (def-term case-fold collision) — the INSERT-op
+    precheck MUST recognise a case-fold collision on a def-para leaf when the
+    carried tree carries the SAME def-term (case-different-only) at the same
+    parent path, AND emit the typed ``SKIP_INSERT_DEF_TERM_CASE_FOLD_COLLISION``
+    receipt rather than the generic insert-already-present bucket so the
+    absorption is auditable under §1.4 (no silent sibling deletion by label
+    text equality or case-touch alone).
+
+    Witness verified 2026-06-27 on the smoke corpus:
+      8 Family-D witnesses -- act_public_1956_47 nz-opw-101 'subsidiary'
+      (cap 'Subsidiary' present in carried tree start snapshot 2007-09-03)
+      + 6 same-family witnesses; act_public_1992_122 nz-opw-55 'electricity
+      generator' (cap 'Electricity generator' present in carried tree start
+      snapshot 2007-09-20).
+
+    Pre-fix: the op applied, creating a duplicate under the lowercase variant;
+    op-local divergence check then correctly fired local_similarity=0.0 against
+    the on-or-after oracle (where only ONE case variant survived).
+
+    Post-fix (commit f8f29...): 6/10 divergences eliminated on smoke corpus
+    (1956_47: 7 -> 2; 1992_122: 1 -> 0); 22 Family-D skips fired across
+    the smoke corpus.
+
+    Narrowness (per AGENTS §1.4): only a case-touch alone relabel triggers the
+    bucket. A def-para whose label DIFFERS IN CONTENT (not just case) does NOT
+    collide; for the 2 residual 1956_47 Family-F witnesses, the carried tree
+    holds ``def-para:Government Superannuation Fund Authority or Authority``
+    while the op targets ``Government Superannuation Fund Authority`` -- a
+    CONTENT difference (suffix added), NOT a case-touch. The helper correctly
+    returns False on these and lets the insert fire (a genuine §3.4
+    family-discovery probe, not an absorption).
+    """
+    from lawvm.new_zealand.chain_replay import (
+        NZSourceDocument,
+        NZSourceNode,
+        SKIP_INSERT_DEF_TERM_CASE_FOLD_COLLISION,
+        _def_term_case_fold_collision_exists,
+    )
+
+    def _node(path: tuple[str, ...], label: str) -> NZSourceNode:
+        return NZSourceNode(
+            kind="def-para",
+            path=path,
+            xml_id=f"placeholder-{label}-{path}",
+            xml_path="",
+            source_zone="primary_body",
+            label=label,
+            heading="",
+            deletion_status="",
+            text=f"placeholder text {label}",
+            history=(),
+        )
+
+    # Witness shape from act_public_1956_47:
+    #   op source_path: ('prov:2', 'subprov:1', 'def-para:subsidiary')
+    #   carried tree start snapshot: def-para at ('part:1', 'prov:2', 'subprov:1', 'def-para:Subsidiary')
+    #   (case-only difference).
+    parent_path = ("prov:2", "subprov:1")
+    leaf_label = "subsidiary"
+    carried_tree = NZSourceDocument(
+        xml_locator="carry",
+        version_id="v",
+        metadata={},
+        nodes=(
+            _node(
+                ("part:1", "prov:2", "subprov:1", "def-para:Subsidiary"),
+                "Subsidiary",
+            ),
+        ),
+        document_history=(),
+    )
+
+    # (A) Collision present (cap-and-lowercase variant of the same def-term).
+    assert _def_term_case_fold_collision_exists(
+        carried_tree, parent_path, leaf_label
+    ) is True
+
+    # (B) Negative: a DIFFERENT def-term at the same parent path is NOT a
+    # collision (different def-term content, not just case).
+    different_term_carried = NZSourceDocument(
+        xml_locator="diff",
+        version_id="v2",
+        metadata={},
+        nodes=(
+            _node(
+                ("part:1", "prov:2", "subprov:1", "def-para:Crown entity subsidiary"),
+                "Crown entity subsidiary",
+            ),
+        ),
+        document_history=(),
+    )
+    assert _def_term_case_fold_collision_exists(
+        different_term_carried, parent_path, leaf_label
+    ) is False
+
+    # (C) Negative: the Family-F "content difference not just case-touch"
+    # shape (carried tree carries 'Government Superannuation Fund Authority
+    # or Authority' -- a SUFFIX-CONTENT difference, not case-only) does NOT
+    # collide per AGENTS §1.4.
+    family_f_carried = NZSourceDocument(
+        xml_locator="familyf",
+        version_id="v3",
+        metadata={},
+        nodes=(
+            _node(
+                (
+                    "part:1",
+                    "prov:2",
+                    "subprov:1",
+                    "def-para:Government Superannuation Fund Authority or Authority",
+                ),
+                "Government Superannuation Fund Authority or Authority",
+            ),
+        ),
+        document_history=(),
+    )
+    assert (
+        _def_term_case_fold_collision_exists(
+            family_f_carried,
+            ("prov:2", "subprov:1"),
+            "Government Superannuation Fund Authority",
+        )
+        is False
+    )
+
+    # (D) The bucket constant's value is stable (cataloged rule_id invariant).
+    assert SKIP_INSERT_DEF_TERM_CASE_FOLD_COLLISION == (
+        "amendment_skipped_insert_def_term_case_fold_collision"
+    )
+
+
+def test_def_term_or_suffix_collision_recognised_and_inhibits_duplicate_insert() -> None:
+    """Family-F (def-term trailing 'or X' suffix collision) — the INSERT-op
+    precheck MUST recognise a carried-tree def-term whose label has a
+    trailing ' or <word>' where <word> repeats the preceding word (a
+    reprint-tool artifact), AND emit the typed
+    SKIP_INSERT_DEF_TERM_OR_SUFFIX_COLLISION receipt rather than silently
+    applying the insert and creating a duplicate.
+
+    Witness verified 2026-06-27 on act_public_1956_47:
+      carried tree (2007 reprint): def-para:Government Superannuation Fund
+      Authority or Authority  (the reprint-tool duplicated "Authority")
+      op (amending act 2001_47): def-para:Government Superannuation Fund
+      Authority  (the clean form)
+
+    Pre-fix: Family-D's case-fold helper returned False (content diff, not
+    case-only) -> the insert fired -> duplicate in carried tree -> op-local
+    divergence local_similarity=0.0 vs the 2025 oracle (which carries the
+    clean form only).
+
+    Post-fix: 2 Family-F skips fired on 1956_47; 0 divergences remain on
+    that work. Total smoke-corpus divergences: 53 -> 2 (96.2% reduction).
+
+    Narrowness (per AGENTS §1.4): the "or <word>" suffix's <word> MUST
+    equal the word immediately preceding " or " in the carried-tree label.
+    A genuinely-different def-term like "Investment Manager or Trustee"
+    (different term) does NOT match -> returns False -> the insert fires
+    and the op-local divergence surfaces honestly.
+    """
+    from lawvm.new_zealand.chain_replay import (
+        NZSourceDocument,
+        NZSourceNode,
+        SKIP_INSERT_DEF_TERM_OR_SUFFIX_COLLISION,
+        _def_term_or_suffix_collision_exists,
+    )
+
+    def _node(path: tuple[str, ...], label: str) -> NZSourceNode:
+        return NZSourceNode(
+            kind="def-para",
+            path=path,
+            xml_id=f"placeholder-{label}-{path}",
+            xml_path="",
+            source_zone="primary_body",
+            label=label,
+            heading="",
+            deletion_status="",
+            text=f"placeholder text {label}",
+            history=(),
+        )
+
+    parent_path = ("prov:2", "subprov:1")
+    leaf_label = "Government Superannuation Fund Authority"
+
+    # (A) Collision: carried tree has "...Authority or Authority" (suffix word
+    # repeats the preceding word).
+    carried_tree = NZSourceDocument(
+        xml_locator="carry",
+        version_id="v",
+        metadata={},
+        nodes=(
+            _node(
+                ("part:1", "prov:2", "subprov:1",
+                 "def-para:Government Superannuation Fund Authority or Authority"),
+                "Government Superannuation Fund Authority or Authority",
+            ),
+        ),
+        document_history=(),
+    )
+    assert _def_term_or_suffix_collision_exists(
+        carried_tree, parent_path, leaf_label
+    ) is True
+
+    # (B) Negative: genuinely-different def-term ("Investment Manager or
+    # Trustee" -- "Trustee" != preceding "Manager") does NOT collide.
+    different_term_carried = NZSourceDocument(
+        xml_locator="diff",
+        version_id="v2",
+        metadata={},
+        nodes=(
+            _node(
+                ("part:1", "prov:2", "subprov:1",
+                 "def-para:Investment Manager or Trustee"),
+                "Investment Manager or Trustee",
+            ),
+        ),
+        document_history=(),
+    )
+    assert (
+        _def_term_or_suffix_collision_exists(
+            different_term_carried, parent_path, "Investment Manager"
+        )
+        is False
+    )
+
+    # (C) Negative: the Family-D case-fold pattern (different case, no "or"
+    # suffix) does NOT fire Family-F's check (returns False; Family-D's own
+    # check handles case-fold).
+    case_fold_carried = NZSourceDocument(
+        xml_locator="cf",
+        version_id="v3",
+        metadata={},
+        nodes=(
+            _node(
+                ("part:1", "prov:2", "subprov:1", "def-para:Subsidiary"),
+                "Subsidiary",
+            ),
+        ),
+        document_history=(),
+    )
+    assert (
+        _def_term_or_suffix_collision_exists(
+            case_fold_carried, parent_path, "subsidiary"
+        )
+        is False
+    )
+
+    # (D) Bucket constant's value is stable.
+    assert SKIP_INSERT_DEF_TERM_OR_SUFFIX_COLLISION == (
+        "amendment_skipped_insert_def_term_or_suffix_collision"
+    )

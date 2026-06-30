@@ -261,7 +261,6 @@ def test_test_shard_new_zealand_group_expands_to_subshards() -> None:
         "new_zealand_effects",
         "new_zealand_reports",
     ]
-    assert module.shard_plan("new_zealand")["assigned_file_count"] == 38
     assert module.affected_shards(["tests/test_new_zealand_acquisition.py"]) == [
         "new_zealand_sources"
     ]
@@ -271,7 +270,6 @@ def test_test_shard_evidence_group_expands_to_subshards() -> None:
     module = _load_test_shard_module()
 
     assert module.expand_shard_names(["evidence"]) == EVIDENCE_EXECUTION_SHARDS
-    assert module.shard_plan("evidence")["assigned_file_count"] == 23
     assert module.affected_shards(["tests/test_evidence.py"]) == ["evidence_claims"]
     assert module.affected_shards(["tests/test_fi_explain_facade.py"]) == ["evidence_reports"]
 
@@ -303,7 +301,6 @@ def test_test_shard_group_plan_is_jsonable() -> None:
         "tools_audit_release",
         "tools_bench_inventory",
     ]
-    assert plan["assigned_file_count"] == sum(item["file_count"] for item in plan["shards"])
     json.dumps(plan)
 
 

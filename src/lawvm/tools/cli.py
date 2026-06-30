@@ -40,7 +40,7 @@ Subcommands:
     bench-regression-guard Compare saved bench runs and fail on excessive regressions.
     bench-hydrate          Serially hydrate source/oracle cache for a benchmark corpus.
     sync-finlex-latest     Sync latest Finnish PIT XMLs for known statutes into farchive.
-    nz-corpus sync          Sync New Zealand API v0 metadata/XML into farchive.
+    nz-corpus closure       NZ acquisition: fetch works + transitive amending acts.
     corrigendum status|apply|classify|report|sources  Corrigendum (oikaisu) inspection and classification.
     audit     formats|staleness|html  Cross-format consistency audit (oracle staleness).
     ee-residual-inventory            Print deterministic EE residual adjudication inventory.
@@ -954,19 +954,28 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
             "user can eyeball hotspots without loading the pstats file "
             "separately. Use this BEFORE reasoning about hot paths; code-reading "
             "hypotheses about hot paths are usually wrong (AGENTS.md §2.7). "
-            "Synchronous single-statute only — no parallelism inside the profiler."
+            "Synchronous single-statute only — no parallelism inside the profiler. "
+            "Jurisdiction dispatch: -j fi wraps the FI single-statute replay_xml "
+            "path; -j nz wraps the NZ per-work chain replay "
+            "(build_archived_work_chain_replay over the archived NZ farchive) "
+            "and IGNORES --as-of (the NZ chain runs ALL archived versions of the "
+            "work, not a single-date PIT snapshot — callers pass a placeholder)."
         ),
     )
     profile_p.add_argument(
         "statute_id",
-        help="base act identifier, e.g. 2006/1299",
+        help="base act identifier, e.g. 2006/1299 (FI) or act_public_1992_122 (NZ)",
     )
     profile_p.add_argument(
         "--as-of",
         dest="as_of",
         required=True,
         metavar="YYYY-MM-DD",
-        help="target date for amendments (same semantics as `lawvm replay --as-of`)",
+        help=(
+            "target date for amendments (same semantics as `lawvm replay "
+            "--as-of`); IGNORED for -j nz (the NZ chain replay runs all "
+            "archived versions of the work — pass a placeholder date)"
+        ),
     )
     profile_p.add_argument(
         "--out",
@@ -7854,155 +7863,21 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
     from lawvm.new_zealand.chain_replay_corpus import (
         DEFAULT_WORKERS as NZ_CHAIN_REPLAY_CORPUS_DEFAULT_WORKERS,
     )
-    nz_sync_p = nz_corpus_sub.add_parser(
-        "sync",
-        help="sync NZ API v0 metadata/XML into farchive",
-        description=(
-            "Resumable, rate-limit-aware acquisition. Existing locators are "
-            "skipped unless --refetch is passed. Search discovery is used when "
-            "no --work-id or --version-id is supplied."
-        ),
-    )
-    nz_sync_p.add_argument(
-        "--db",
-        default="data/nz_legislation.farchive",
-        metavar="PATH",
-        help="Farchive DB path (default: data/nz_legislation.farchive)",
-    )
-    nz_sync_p.add_argument("--search-term", default="", metavar="TEXT", help="search term for /v0/works/")
-    nz_sync_p.add_argument("--work-id", action="append", default=[], metavar="ID", help="work_id to sync")
-    nz_sync_p.add_argument(
-        "--version-id",
-        action="append",
-        default=[],
-        metavar="ID",
-        help="version_id to sync directly",
-    )
-    nz_sync_p.add_argument(
-        "--legislation-type",
-        default="",
-        choices=["", "act", "amendment_paper", "bill", "secondary_legislation"],
-        help="optional /v0/works legislation_type filter",
-    )
-    nz_sync_p.add_argument(
-        "--publisher",
-        default="",
-        choices=["", "Agency", "Parliamentary Counsel Office"],
-        help="optional /v0/works publisher filter",
-    )
-    nz_sync_p.add_argument(
-        "--version-sort",
-        default="desc",
-        choices=["asc", "desc"],
-        help="sort order for /v0/works/{work_id}/versions/ (default: desc)",
-    )
-    nz_sync_p.add_argument("--per-page", type=int, default=100, metavar="N", help="search page size, max 100")
-    nz_sync_p.add_argument("--max-pages", type=int, default=None, metavar="N", help="maximum search pages")
-    nz_sync_p.add_argument("--max-works", type=int, default=None, metavar="N", help="maximum works")
-    nz_sync_p.add_argument("--max-versions", type=int, default=None, metavar="N", help="maximum versions")
-    nz_sync_p.add_argument(
-        "--max-versions-per-work",
-        type=int,
-        default=None,
-        metavar="N",
-        help="maximum versions to acquire for each work_id",
-    )
-    nz_sync_p.add_argument("--no-xml", action="store_true", help="capture API JSON only")
-    nz_sync_p.add_argument("--refetch", action="store_true", help="refetch even when locator is already cached")
-    nz_sync_p.add_argument(
-        "--delay",
-        type=float,
-        default=0.5,
-        metavar="SECONDS",
-        help="minimum delay between live requests (default: 0.5)",
-    )
-    nz_sync_p.add_argument(
-        "--request-budget",
-        type=int,
-        default=None,
-        metavar="N",
-        help="stop after N live requests",
-    )
-    nz_sync_p.add_argument(
-        "--reserve-remaining",
-        type=int,
-        default=100,
-        metavar="N",
-        help="stop when X-RateLimit-Remaining is <= N (default: 100)",
-    )
-    nz_sync_p.add_argument(
-        "--sleep-on-rate-limit",
-        action="store_true",
-        help="sleep until the API reset time after 429/403 or quota-reserve stop, then continue",
-    )
-    nz_sync_p.add_argument(
-        "--max-sleep-seconds",
-        type=int,
-        default=None,
-        metavar="N",
-        help="testing/supervisor guard: refuse a rate-limit sleep longer than N seconds",
-    )
-    nz_sync_p.add_argument(
-        "--rate-limit-retry-attempts",
-        type=int,
-        default=3,
-        metavar="N",
-        help="short retries before sleeping until reset after HTTP 429/403 (default: 3)",
-    )
-    nz_sync_p.add_argument(
-        "--timeout",
-        type=float,
-        default=60.0,
-        metavar="SECONDS",
-        help="per-request network timeout in seconds (default: 60)",
-    )
-    nz_sync_p.add_argument(
-        "--quiet",
-        action="store_true",
-        help="suppress default stderr progress reporting",
-    )
-    nz_sync_p.add_argument(
-        "--progress-interval",
-        type=int,
-        default=25,
-        metavar="N",
-        help="print one progress line every N acquisition events (default: 25)",
-    )
-    nz_sync_p.add_argument(
-        "--diagnostics-jsonl",
-        metavar="PATH",
-        help="write acquisition diagnostics/failures as JSONL",
-    )
-    nz_sync_p.add_argument("--verbose", "-v", action="store_true", help="print progress details")
-    nz_deps_p = nz_corpus_sub.add_parser(
-        "deps",
-        help="extract amendment dependency candidates from archived NZ XML",
-        description=(
-            "Read an archived NZ consolidated XML and extract amendment work "
-            "candidates from reprint notes and provision-level history notes. "
-            "This is evidence extraction, not replay."
-        ),
-    )
-    nz_deps_p.add_argument(
-        "--db",
-        default="data/nz_legislation.farchive",
-        metavar="PATH",
-        help="Farchive DB path (default: data/nz_legislation.farchive)",
-    )
-    nz_deps_p.add_argument("--work-id", default="", metavar="ID", help="archived work_id whose latest XML to inspect")
-    nz_deps_p.add_argument("--version-id", default="", metavar="ID", help="optional version_id label for explicit XML")
-    nz_deps_p.add_argument("--xml-locator", default="", metavar="LOCATOR", help="explicit archived XML locator")
-    nz_deps_p.add_argument("--limit", type=int, default=40, metavar="N", help="rows to print in text mode")
-    nz_deps_p.add_argument("--output-json", metavar="PATH", help="write full dependency report JSON")
-    nz_deps_p.add_argument("--json", action="store_true", help="emit full dependency report JSON")
     nz_closure_p = nz_corpus_sub.add_parser(
         "closure",
-        help="resumable NZ frontier acquisition",
+        help="NZ acquisition: fetch works + transitive amending acts",
         description=(
-            "Acquire useful NZ source frontiers: target work versions/XML, "
-            "dependency reports from latest XML, and latest XML for discovered "
-            "amending works. With --sleep-on-rate-limit it can run under a "
-            "supervisor and continue after quota resets."
+            "THE primary NZ acquisition command. Two modes:\n\n"
+            "  closure --work-id X  Fetch work X's version graph + XML, then read "
+            "its history notes, discover cited amending acts, and acquire them "
+            "transitively up to --dependency-depth.\n\n"
+            "  closure --all-acts    Search-discover ALL public acts via the NZ "
+            "API, acquire their latest XML, then run the full transitive "
+            "dependency-closure loop on every archived work_id.\n\n"
+            "Use --sleep-on-rate-limit to run under a supervisor and continue "
+            "after quota resets. For direct --version-id-only fetches without "
+            "transitive dependency closure, use `closure --version-id V "
+            "--dependency-depth 0`."
         ),
     )
     nz_closure_p.add_argument(
@@ -8015,32 +7890,32 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
     nz_closure_p.add_argument(
         "--all-acts",
         action="store_true",
-        help="sync latest versions/XML for all search-discovered Acts instead of dependency closure",
+        help="discover all Acts via search, acquire their latest XML, THEN run full transitive dependency closure on every archived work_id (default --dependency-depth still applies)",
     )
-    nz_closure_p.add_argument("--search-term", default="", metavar="TEXT", help="optional all-acts search term")
+    nz_closure_p.add_argument("--search-term", default="", metavar="TEXT", help="--all-acts only: search term for the initial search-discovery phase")
     nz_closure_p.add_argument(
         "--legislation-type",
         default="act",
         choices=["", "act", "amendment_paper", "bill", "secondary_legislation"],
-        help="all-acts legislation_type filter (default: act)",
+        help="--all-acts only: legislation_type filter for search-discovery (default: act)",
     )
     nz_closure_p.add_argument(
         "--publisher",
         default="",
         choices=["", "Agency", "Parliamentary Counsel Office"],
-        help="optional all-acts publisher filter",
+        help="--all-acts only: publisher filter for search-discovery",
     )
     nz_closure_p.add_argument(
         "--dependency-depth",
         type=int,
         default=1,
         metavar="N",
-        help="dependency expansion depth for seed work_ids (default: 1)",
+        help="transitive amending-act closure depth (default: 1; 0 = fetch seed only without closure)",
     )
     nz_closure_p.add_argument(
         "--seed-latest-only",
         action="store_true",
-        help="fetch only latest seed version instead of full seed version graph",
+        help="fetch only latest seed version instead of full version graph (seed works only; non-seed works always fetch latest)",
     )
     nz_closure_p.add_argument(
         "--max-versions-per-work",
@@ -8056,7 +7931,7 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
     nz_closure_p.add_argument("--max-versions", type=int, default=None, metavar="N", help="maximum versions")
     nz_closure_p.add_argument("--no-xml", action="store_true", help="capture API JSON only")
     nz_closure_p.add_argument("--refetch", action="store_true", help="refetch even when locator is cached")
-    nz_closure_p.add_argument("--delay", type=float, default=0.5, metavar="SECONDS", help="delay between requests")
+    nz_closure_p.add_argument("--delay", type=float, default=0.05, metavar="SECONDS", help="minimum delay when X-RateLimit headers absent (default: 0.05; adaptive 50pct-of-remaining-quota rate when headers present)")
     nz_closure_p.add_argument("--request-budget", type=int, default=None, metavar="N", help="stop after N requests")
     nz_closure_p.add_argument(
         "--reserve-remaining",
@@ -8085,7 +7960,8 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         metavar="PATH",
         help="write resumable closure state summary (default: .tmp/nz_closure_state.json)",
     )
-    nz_closure_p.add_argument("--verbose", "-v", action="store_true", help="print rate-limit waits")
+    nz_closure_p.add_argument("--verbose", "-v", action="store_true", help="print rate-limit waits, discovery events, and one nz-sync progress line every --progress-interval acquisition events (default: 25)")
+    nz_closure_p.add_argument("--progress-interval", type=int, default=25, metavar="N", help="print one progress line every N acquisition events (default: 25; use --verbose to enable)")
     nz_source_p = nz_corpus_sub.add_parser(
         "source-summary",
         help="parse archived NZ XML into a typed source-tree summary",
@@ -13447,15 +13323,7 @@ def _main_impl() -> None:
         ee_corpus_main(args)
 
     elif args.command == "nz-corpus":
-        if args.nz_corpus_command == "sync":
-            from lawvm.new_zealand.acquisition import main as nz_corpus_sync_main
-
-            nz_corpus_sync_main(args)
-        elif args.nz_corpus_command == "deps":
-            from lawvm.new_zealand.dependencies import main as nz_corpus_deps_main
-
-            nz_corpus_deps_main(args)
-        elif args.nz_corpus_command == "closure":
+        if args.nz_corpus_command == "closure":
             from lawvm.new_zealand.closure import main as nz_corpus_closure_main
 
             nz_corpus_closure_main(args)

@@ -55,6 +55,9 @@ def run_closure(args: Any) -> NZClosureState:
     db_path = Path(args.db)
     state = NZClosureState(seed_work_ids=list(args.work_id or ()))
 
+    # Seed work_ids: explicit --work-id args, OR (if --all-acts) discovered
+    # via the initial search-discovery sync below.
+    seed_work_ids: list[str] = []
     if args.all_acts:
         stats = _run_sync(
             api_key,
@@ -68,13 +71,24 @@ def run_closure(args: Any) -> NZClosureState:
         )
         state.sync_summaries.append({"phase": "all_acts_latest", **stats.as_summary()})
         _write_state(Path(args.state_json), state)
-        return state
-
-    if not args.work_id:
+        # The all-acts sync above acquires ALL discovered base acts' latest
+        # XML. Now enumerate every archived work_id and fall through to the
+        # dependency-closure loop below — each archived work's history notes
+        # cite amending acts that need to be acquired transitively.
+        seed_work_ids = _enumerate_archived_work_ids(db_path)
+        if args.verbose:
+            print(
+                f"closure: all-acts discovery complete; {len(seed_work_ids)} "
+                f"archived work_ids will be used as dependency-closure seeds",
+                file=__import__("sys").stderr,
+            )
+    elif args.work_id:
+        seed_work_ids = list(args.work_id)
+    else:
         raise SystemExit("ERROR: pass --work-id or --all-acts")
 
     seen: set[str] = set()
-    frontier = list(dict.fromkeys(args.work_id))
+    frontier = list(dict.fromkeys(seed_work_ids))
     discovered: list[str] = []
 
     for depth in range(args.dependency_depth + 1):
@@ -82,7 +96,9 @@ def run_closure(args: Any) -> NZClosureState:
             break
         max_versions_per_work = 1
         phase = f"dependency_depth_{depth}_latest"
-        if depth == 0 and not args.seed_latest_only:
+        if depth == 0 and not args.seed_latest_only and not args.all_acts:
+            # All-acts already synced the latest versions above; skip the
+            # full-versions seed phase for it.
             max_versions_per_work = None
             phase = "seed_full_versions"
 
@@ -111,6 +127,12 @@ def run_closure(args: Any) -> NZClosureState:
                 if ref.work_id not in seen and ref.work_id not in next_frontier:
                     next_frontier.append(ref.work_id)
                     discovered.append(ref.work_id)
+                    if args.verbose:
+                        print(
+                            f"  closure: discovered amending act {ref.work_id} "
+                            f"(cited by {work_id})",
+                            file=__import__("sys").stderr,
+                        )
         frontier = next_frontier
         state.discovered_work_ids = list(dict.fromkeys(discovered))
         _write_state(Path(args.state_json), state)
@@ -130,7 +152,7 @@ def _run_sync(
     max_versions_per_work: int | None,
     args: Any,
 ) -> NZSyncStats:
-    archive = open_farchive(db_path)
+    archive = open_farchive(db_path, readonly=False)
     try:
         return sync_nz_corpus(
             archive,
@@ -157,6 +179,8 @@ def _run_sync(
                 rate_limit_retry_attempts=args.rate_limit_retry_attempts,
                 diagnostics_jsonl=Path(args.diagnostics_jsonl) if args.diagnostics_jsonl else None,
                 verbose=args.verbose,
+                progress=args.verbose or getattr(args, 'progress', False),
+                progress_interval=args.progress_interval,
             ),
         )
     finally:
@@ -168,7 +192,7 @@ def _dependency_report_for_work(
     work_id: str,
     state: NZClosureState,
 ) -> NZDependencyReport | None:
-    archive = open_farchive(db_path)
+    archive = open_farchive(db_path, readonly=False)
     try:
         version_id, xml_locator = latest_xml_locator_for_work(archive, work_id)
         if not xml_locator:
@@ -198,6 +222,32 @@ def _dependency_report_for_work(
         work_id=work_id,
         version_id=version_id,
     )
+
+
+import re as _re
+
+
+def _enumerate_archived_work_ids(db_path: Path) -> list[str]:
+    """Enumerate all ``act_public_<year>_<number>`` work_ids with at least
+    one archived XML version in the farchive. Used as the seed frontier for
+    the dependency-closure loop after the ``--all-acts`` initial sync.
+    """
+    archive = open_farchive(db_path, readonly=True)
+    try:
+        locators = archive.locators("https://www.legislation.govt.nz/act/public/%")
+    finally:
+        archive.close()
+    work_ids: list[str] = []
+    seen: set[str] = set()
+    for loc in locators:
+        match = _re.search(r"/act/public/(\d+)/(\d+)/", loc)
+        if not match:
+            continue
+        work_id = f"act_public_{match.group(1)}_{match.group(2)}"
+        if work_id not in seen:
+            seen.add(work_id)
+            work_ids.append(work_id)
+    return work_ids
 
 
 def _write_state(path: Path, state: NZClosureState) -> None:

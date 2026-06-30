@@ -2196,6 +2196,7 @@ def _dry_run_one_replace(
         target_provision_label=provision_label,
         base_work_year=base_year,
         base_work_number=base_number,
+        amending_act_root=amending_root,
     )
     if isinstance(replacement, str):
         return NZDryRunRefusal(
@@ -2987,6 +2988,7 @@ def _dry_run_one_insert(
         target_provision_label=insert_provision_label,
         base_work_year=base_year,
         base_work_number=base_number,
+        amending_act_root=amending_root,
     )
     if isinstance(payload, str):
         return NZDryRunRefusal(
@@ -3470,6 +3472,7 @@ def _reextract_structural_replacement_for_proof(
         target_provision_label=provision_label,
         base_work_year=base_year,
         base_work_number=base_number,
+        amending_act_root=amending_root,
     )
     if isinstance(replacement, str):
         raise NZStructuralMaterializationError(
@@ -3509,6 +3512,7 @@ def _reextract_structural_insertion_for_proof(
         target_provision_label=provision_label,
         base_work_year=base_year,
         base_work_number=base_number,
+        amending_act_root=amending_root,
     )
     if isinstance(payload, str):
         raise NZStructuralMaterializationError(

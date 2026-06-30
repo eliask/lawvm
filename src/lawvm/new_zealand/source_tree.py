@@ -125,6 +125,14 @@ class NZHistoryWitness:
     # ``amended-provision`` reference and the operation. Empty for ordinary
     # (non-definition) targets.
     defined_term: str = ""
+    # Stable rule_id of any legacy history-note recovery that sourced this
+    # witness's operation verb (empty when the verb came from the canonical
+    # ``<amending-operation>`` element). Emitted downstream as an ag(
+    # non-blocking evidence finding per AGENTS §2.1 (a heuristic that
+    # affects op-family classification needs: stable rule_id, family tag,
+    # source witness, finding emission, strict-mode behavior, synthetic
+    # test, real-corpus regression).
+    recovery_rule_id: str = ""
 
     def to_jsonable(self) -> dict[str, Any]:
         return {
@@ -140,6 +148,7 @@ class NZHistoryWitness:
             "amending_legislation": self.amending_legislation,
             "amending_work_id": self.amending_work_id,
             "defined_term": self.defined_term,
+            "recovery_rule_id": self.recovery_rule_id,
         }
 
 
@@ -304,7 +313,13 @@ def _walk_source_nodes(
 ) -> None:
     if not isinstance(node.tag, str):
         return
-    kind = _localname(node)
+    # ``_localname`` is the #1 chain-replay hotspot (~25M calls); here and at
+    # the other call sites below we inline ``_localname_of_tag(node.tag)``
+    # because ``isinstance(node.tag, str)`` is already verified. This saves
+    # the ``_localname`` Python frame, the ``hasattr`` precheck, and the
+    # ``isinstance(value, str)`` branch on ~2M calls, keeping the lru_cached
+    # tag-split (which dominates for ~30 unique NZ tag names).
+    kind = _localname_of_tag(node.tag)
     if kind in _STRUCTURAL_TAGS:
         if kind == "def-para":
             label = _first_def_term(node)
@@ -418,12 +433,51 @@ def _history_witness(node: etree._Element) -> NZHistoryWitness:
         _title, year, number = parsed
         work_id = f"act_public_{year}_{number}"
     amendment_date = _first_descendant_text(node, "amendment-date")
+    amended_provision = _first_descendant_text(node, "amended-provision")
+    operation = _first_descendant_text(node, "amending-operation")
+    recovery_rule_id = ""
+    # Legacy recovery: when the canonical ``<amending-operation>`` element is
+    # absent (early-format history notes pre-XML-standardisation), the verb
+    # can appear in one of two structured alternatives (AGENTS §2.4 single-
+    # predicate family; AGENTS §1.10 -- a real amend verb must not fall to
+    # __missing__ when its surface form is recoverable):
+    #
+    # Shape A (5 rows on act_public_1956_47 @ 2001-10-02):
+    #   <amended-provision>Section 19I(1)</amended-provision>:
+    #   <amended-provision>amended</amended-provision>, on ...
+    # A SECOND <amended-provision> element whose text classifies as a known
+    # operation family. The legacy editorial-consolidation XML reuses the
+    # <amended-provision> tag for the verb phrase.
+    #
+    # Shape D (1 row on act_public_1876_79):
+    #   Subsection <amended-provision>(5)</amended-provision> was
+    #   <amended-provision>repealed</amended-provision>, as from ...
+    # Same double-<amended-provision> shape -- covers the broader polarity.
+    #
+    # Shape B (1 row on act_public_1871_24):
+    #   The words <quote.in>X</quote.in> were
+    #   <amending-instruction>substituted</amending-instruction>, as from ...
+    # The verb is in a non-standard <amending-instruction> element.
+    if not operation:
+        recovered = _recover_legacy_operation_from_amended_provision_node(node)
+        if recovered:
+            operation = recovered
+            recovery_rule_id = (
+                NZ_SOURCE_HISTORY_NOTE_LEGACY_AMENDED_PROVISION_VERB_RECOVERY_RULE_ID
+            )
+    if not operation:
+        amending_instruction_text = _first_descendant_text(node, "amending-instruction")
+        if amending_instruction_text.strip().lower() in _LEGACY_AMENDED_PROVISION_VERB_SYNONYMS:
+            operation = amending_instruction_text.strip()
+            recovery_rule_id = (
+                NZ_SOURCE_HISTORY_NOTE_LEGACY_AMENDING_INSTRUCTION_VERB_RECOVERY_RULE_ID
+            )
     return NZHistoryWitness(
         xml_id=_attr(node, "id"),
         xml_path=_element_source_key(node),
         text=text,
-        amended_provision=_first_descendant_text(node, "amended-provision"),
-        operation=_first_descendant_text(node, "amending-operation"),
+        amended_provision=amended_provision,
+        operation=operation,
         amendment_date=amendment_date,
         amendment_date_iso=nz_date_text_to_iso(amendment_date),
         amending_provisions=tuple(_descendant_texts(node, "amending-provision")),
@@ -431,18 +485,98 @@ def _history_witness(node: etree._Element) -> NZHistoryWitness:
         amending_legislation=_first_descendant_text(node, "amending-leg"),
         amending_work_id=work_id,
         defined_term=_history_note_defined_term(node),
+        recovery_rule_id=recovery_rule_id,
     )
+
+
+# Stable rule_ids for the two legacy-verb-recovery shapes emitted when the
+# canonical ``<amending-operation>`` element was absent and the verb was
+# recovered from a structured alternative (AGENTS §2.1 needs a stable
+# rule_id + family tag + source witness + finding emission + strict-mode
+# behavior + synthetic test + corpus regression when corpus-confirmed).
+NZ_SOURCE_HISTORY_NOTE_LEGACY_AMENDED_PROVISION_VERB_RECOVERY_RULE_ID = (
+    "nz_source_history_note_legacy_amended_provision_verb_recovery"
+)
+NZ_SOURCE_HISTORY_NOTE_LEGACY_AMENDING_INSTRUCTION_VERB_RECOVERY_RULE_ID = (
+    "nz_source_history_note_legacy_amending_instruction_verb_recovery"
+)
+
+
+def _recover_legacy_operation_from_amended_provision_node(
+    node: etree._Element,
+) -> str:
+    """Legacy history-note verb recovery for the double-``<amended-provision>``
+    shape (Shapes A and D in the recovery notebook, 2026-06-27).
+
+    Early-format NZ consolidated XML mislabels the operation verb as a
+    SECOND ``<amended-provision>`` element rather than the canonical
+    ``<amending-operation>`` element. Two confirmed shapes:
+
+    * Shape A (5 rows on act_public_1956_47 @ 2001-10-02):
+
+        <history-note>
+          <amended-provision>Section 19I(1)</amended-provision>:
+          <amended-provision>amended</amended-provision>, on
+          <amendment-date>2 October 2001</amendment-date>, by
+          <amending-provision ...>section 21</amending-provision> of the
+          <amending-leg>...</amending-leg>.
+        </history-note>
+
+    * Shape D (1 row on act_public_1876_79):
+
+        <history-note>
+          Subsection <amended-provision>(5)</amended-provision> was
+          <amended-provision>repealed</amended-provision>, as from
+          <amendment-date>1 July 2003</amendment-date>, ...
+        </history-note>
+
+    Recovery: enumerate ALL ``<amended-provision>`` descendants; skip the
+    FIRST (that is the canonical section label -- the amended_provision
+    field); any SUBSEQUENT ``<amended-provision>`` whose text matches a
+    known operation-family verb (incl. the 'revoked' synonym) is the
+    recovered verb.
+
+    Witnesses verified (2026-06-27 audit on the smoke corpus):
+
+    * act_public_1956_47 nz-opw-244/245/246/255/257/305 (6 rows: Shape A)
+    * act_public_1876_79 nz-opw-5 (Shape D)
+
+    AGENTS §1.10 (distinct named diagnostic; a real amend verb must not
+    fall to __missing__ when its surface form is recoverable) + §2.4
+    single-predicate recovery family (one recogniser for the recurring
+    shape, NOT a per-prose-sentence recognizer).
+    """
+    provisions = list(_descendant_texts(node, "amended-provision"))
+    if len(provisions) < 2:
+        return ""
+    for candidate in provisions[1:]:
+        if candidate.strip().lower() in _LEGACY_AMENDED_PROVISION_VERB_SYNONYMS:
+            return candidate.strip()
+    return ""
+
+
+# Known NZ operation-family verbs (lowercased) plus the 'revoked'-as-repealed
+# synonym. Used only for the legacy double-`<amended-provision>` recovery
+# (a strict-superset check the canonical classify_operation_family would
+# also pass once the verb is wired onto the witness). Kept locally in
+# source_tree (NOT imported from operation_surface) to avoid a circular
+# import: operation_surface imports source_tree via parse_nz_source_document.
+_LEGACY_AMENDED_PROVISION_VERB_SYNONYMS = frozenset({
+    "added",
+    "amended",
+    "brought into force",
+    "editorial change",
+    "expired",
+    "inserted",
+    "repealed",
+    "revoked",
+    "replaced",
+    "substituted",
+})
 
 
 def _history_note_defined_term(node: etree._Element) -> str:
     """Extract the defined term a definition-level history note targets.
-
-    NZ writes definition notes as ``<amended-provision>Section 2(1)</amended-
-    provision> <emphasis style="bold">term</emphasis>: <amending-operation>
-    repealed</amending-operation>, ...``. The defined term is the bold
-    ``emphasis`` that is a direct child of the note. We require the emphasis to
-    sit between the ``amended-provision`` and the ``amending-operation`` so an
-    incidental emphasis elsewhere in the note text is not mistaken for a term.
     Terms carrying the path separators ``/`` or ``:`` are dropped (cannot be a
     clean addressable label).
     """
@@ -657,7 +791,7 @@ def _collect_legal_text(node: etree._Element, texts: list[str], *, is_root: bool
 
     if not isinstance(node.tag, str):
         return
-    if _localname(node) in _TEXT_EXCLUDE_TAGS:
+    if _localname_of_tag(node.tag) in _TEXT_EXCLUDE_TAGS:
         return
     # The structural root contributes only its descendant flow text, not its own
     # leading ``text`` (which for a structural element is empty/whitespace); this
@@ -669,7 +803,7 @@ def _collect_legal_text(node: etree._Element, texts: list[str], *, is_root: bool
             # Comment/PI nodes contribute nothing (text or tail), matching the
             # historical extractor's ``isinstance(tag, str)`` skip.
             continue
-        if _localname(child) in _TEXT_EXCLUDE_TAGS:
+        if _localname_of_tag(child.tag) in _TEXT_EXCLUDE_TAGS:
             # Excluded subtree: skip its text and the tail that trails it, to
             # keep the historical "notes/history contribute nothing" behaviour.
             continue
@@ -764,6 +898,20 @@ def _amend_subtree_section_label(amend_element: etree._Element) -> str | None:
 NZ_STRUCTURAL_REPLACE_BLOCKED_NO_AMEND_SUBTREE = "structural_replace_no_amend_subtree_in_amending_node"
 NZ_STRUCTURAL_REPLACE_BLOCKED_NO_MATCHING_CHILD = "structural_replace_no_amend_child_matches_target_leaf"
 NZ_STRUCTURAL_REPLACE_BLOCKED_AMBIGUOUS_MATCH = "structural_replace_multiple_amend_children_match_target_leaf"
+# Single-match-wrong-section typed receipt (§2.5 audit state; forward-looking).
+# When exactly ONE <amend> child matches the target leaf's kind+label BUT that
+# amend subtree's enclosing instruction citation names a DIFFERENT section than
+# the op's target_provision_label, the single match is semantically wrong -- it
+# belongs to a different section's amend. Emitting the typed blocker prevents
+# silently accepting the wrong-section payload (AGENTS §1.1 no silent target
+# hijacking). When the amend subtree's section label is unparseable (None),
+# we still accept (no disambiguating evidence to block on).
+NZ_STRUCTURAL_REPLACE_BLOCKED_SINGLE_MATCH_WRONG_SECTION = (
+    "structural_replace_single_match_wrong_section"
+)
+NZ_STRUCTURAL_INSERT_BLOCKED_SINGLE_MATCH_WRONG_SECTION = (
+    "structural_insert_single_match_wrong_section"
+)
 NZ_STRUCTURAL_REPLACE_BLOCKED_EMPTY_REPLACEMENT = "structural_replace_extracted_replacement_is_empty"
 NZ_STRUCTURAL_REPLACE_BLOCKED_TARGET_LEAF_UNUSABLE = "structural_replace_target_leaf_kind_or_label_unusable"
 
@@ -796,6 +944,7 @@ def extract_structural_replacement(
     target_provision_label: str | None = None,
     base_work_year: str = "",
     base_work_number: str = "",
+    amending_act_root: etree._Element | None = None,
 ) -> "NZStructuralReplacement | str":
     """Extract a clean one-to-one structural replacement from an amending node.
 
@@ -816,6 +965,14 @@ def extract_structural_replacement(
     a typed blocker reason string (never a guess, never a flatten). More than one
     child matching the SAME leaf, even after section disambiguation, is genuine
     ambiguity and stays blocked.
+
+    ``amending_act_root`` enables the amending-act-own-schedule delegation
+    path (AGENTS §2.5 extension of the canonical structural-leaf recognizer
+    family): when the inline ``<amend>``-subtree path produces a no-payload
+    blocker AND the amending provision delegates its payload by prose to
+    "Schedule K of this Act", the payload is fetched from the amending act's
+    own top-level ``<schedule>`` K carrier. When ``None`` (legacy callers)
+    the inline blockers stand unchanged.
     """
 
     if not target_leaf_kind or not target_leaf_label:
@@ -844,6 +1001,21 @@ def extract_structural_replacement(
         if isinstance(element.tag, str) and _localname(element) == "amend"
     ]
     if not amend_subtrees:
+        # AGENTS §2.5: try the amending-act-own-schedule delegation form
+        # (canonical typed parser/recognizer family extension). When the
+        # amending provision delegates by prose to "Schedule K of this
+        # Act" and the amending act root is available, follow the directive
+        # into the carrier schedule. Otherwise the no-amend-subtree blocker
+        # stands.
+        delegated = _try_amending_act_own_schedule_delegation(
+            amending_node,
+            amending_act_root,
+            target_leaf_kind=target_leaf_kind,
+            normalized_label=normalized_label,
+            insertion=False,
+        )
+        if delegated is not None:
+            return delegated
         return NZ_STRUCTURAL_REPLACE_BLOCKED_NO_AMEND_SUBTREE
 
     # Select the single ``<amend>`` structural child whose kind+label match the
@@ -876,9 +1048,32 @@ def extract_structural_replacement(
                 matches = scoped_matches
 
     if not matches:
+        # AGENTS §2.5: schedule-as-direct-payload delegation retry (see the
+        # no-amend-subtree branch above for the same shape).
+        delegated = _try_amending_act_own_schedule_delegation(
+            amending_node,
+            amending_act_root,
+            target_leaf_kind=target_leaf_kind,
+            normalized_label=normalized_label,
+            insertion=False,
+        )
+        if delegated is not None:
+            return delegated
         return NZ_STRUCTURAL_REPLACE_BLOCKED_NO_MATCHING_CHILD
     if len(matches) > 1:
         return NZ_STRUCTURAL_REPLACE_BLOCKED_AMBIGUOUS_MATCH
+
+    # §2.5 audit-state: when target_provision_label was provided AND the single
+    # match's enclosing instruction citation names a different section, the match
+    # is semantically wrong -- the single amend child belongs to a different
+    # section's amend subtree. Block with a distinct typed receipt rather than
+    # silently accepting the wrong-section payload (AGENTS §1.1). When the
+    # single match's section label is None (unparseable), accept (no
+    # disambiguating evidence to block on -- the current default).
+    if normalized_provision:
+        match_section = _amend_subtree_section_label(matches[0])
+        if match_section is not None and match_section != normalized_provision:
+            return NZ_STRUCTURAL_REPLACE_BLOCKED_SINGLE_MATCH_WRONG_SECTION
 
     replacement_element = matches[0]
     nodes = _walk_payload_root_nodes(replacement_element)
@@ -1123,6 +1318,72 @@ NZ_STRUCTURAL_BLOCKED_SCHEDULE_UNRESOLVED_PLACEHOLDER = "structural_schedule_ind
 # the flattened payload text ("... is [standard text].").
 _SCHEDULE_PAYLOAD_PLACEHOLDER = re.compile(r"\[\s*standard text\s*\]", re.IGNORECASE)
 
+# Amending-act-own-schedule delegation typed blockers.
+#
+# A second delegation form exists (distinct from the omnibus
+# ``schedule.amendments.group2`` path above): the amending act's operative
+# provision says "Replace Schedule N with the Schedule N set out in Schedule K
+# of this Act" / "After Schedule M, insert the Schedule M' set out in
+# Schedule K of this Act" — i.e. the payload is NOT inside ``<amend>`` at
+# all, but lives in the AMENDING ACT'S OWN top-level ``<schedule>`` element
+# K. The carrier schedule K wraps the new structural leaf (a nested
+# ``<schedule>`` carrying the target leaf label, sometimes directly, sometimes
+# inside an ``<amend>`` payload wrapper). The extractors below follow that
+# delegation when the inline ``<amend>``-subtree path fails with the no-payload
+# blockers and the directive prose witnesses it.
+NZ_STRUCTURAL_BLOCKED_AMENDING_ACT_SCHEDULE_NOT_FOUND = (
+    "structural_amending_act_named_schedule_not_found"
+)
+NZ_STRUCTURAL_BLOCKED_AMENDING_ACT_SCHEDULE_NO_MATCH = (
+    "structural_amending_act_named_schedule_no_amend_child_matches_target_leaf"
+)
+NZ_STRUCTURAL_BLOCKED_AMENDING_ACT_SCHEDULE_AMBIGUOUS_MATCH = (
+    "structural_amending_act_named_schedule_multiple_amend_children_match_target_leaf"
+)
+
+# Directive predicate: "Schedule K of this Act" references the AMENDING ACT's
+# own top-level schedule K as the payload carrier. Compile-once at module
+# scope (AGENTS §2.4 backtracking discipline); the matched index is the
+# carrier schedule's ``<label>`` value.
+_AMENDING_ACT_OWN_SCHEDULE_DIRECTIVE = re.compile(
+    r"\bSchedule\s+([0-9]+[A-Za-z]*)\s+of\s+this\s+Act\b",
+    re.IGNORECASE,
+)
+
+# Stronger directive form that ALSO names the carrier's structural-leaf kind:
+# "the Part set out in Schedule K of this Act" / "the Schedule 2A set out in
+# Schedule K of this Act". The kind word tells us the SHAPE of the payload the
+# amending act delegates to its own schedule — used by the caller to scope the
+# directive so it does NOT fire for sibling INLINE ``<amend>`` instructions
+# sourced from the same amending provision (an amending prov that mixes one
+# delegation instruction with many inline amendments would otherwise have the
+# delegation trigger for every op, producing false-positive
+# ``structural_amending_act_named_schedule_no_amend_child_matches_target_leaf``
+# blockers where the carrier's payload kind does not match the inline op's
+# target leaf). Group 1 = kind word; group 2 = carrier schedule label. The
+# kind word's own label is OPTIONAL: the prose may name the kind generically
+# ("the Part set out in Schedule K of this Act" — a NEW Part whose label is
+# implied) OR specifically ("the Schedule 2A set out in Schedule K of this
+# Act" — replaces a specific named schedule).
+_AMENDING_ACT_OWN_SCHEDULE_DIRECTIVE_WITH_KIND = re.compile(
+    r"\b(Part|Subpart|Schedule|Section|clause)(?:\s+[0-9]+[A-Za-z]*)?\s+set out in\s+"
+    r"Schedule\s+([0-9]+[A-Za-z]*)\s+of\s+this\s+Act\b",
+    re.IGNORECASE,
+)
+
+# NZ drafting kind-word -> the canonical IRNode kind used in target_leaf_kind.
+# Bounded to the kind words the directive-with-kind regex actually captures;
+# "Section"/"clause" both map to ``prov`` (NZ's statutory-section kind) because
+# schedules use "clause" interchangeably with "section" for the same prov-level
+# leaf (the source's own structural-kind alias, not a label coincidence).
+_AMENDING_ACT_SCHEDULE_KIND_WORD_TO_IR_KIND: dict[str, str] = {
+    "part": "part",
+    "subpart": "subpart",
+    "schedule": "schedule",
+    "section": "prov",
+    "clause": "prov",
+}
+
 # Schedule-indirection amending provisions ("Amend the Acts set out in the
 # tables in Schedules 1 to 32 of this Act, in each case,—" / "Amend the
 # enactments specified in Schedule N ... as set out in that schedule") deliver
@@ -1322,6 +1583,283 @@ def _resolve_schedule_indirection(
     )
 
 
+# Amending-act-own-schedule delegation. --------------------------------------
+#
+# Distinct from the ``schedule.amendments.group2`` omnibus indirection above
+# (where the payload lives in BASE-act-keyed schedule amendment groups), the
+# amending act's operative provision may delegate to its OWN top-level
+# schedule: "Replace Schedule 2 with the Schedule 2 set out in Schedule 1 of
+# this Act" -- the amending act's Schedule 1 carries the new Schedule 2
+# content as a NESTED ``<schedule>`` structural child. The carrier takes two
+# forms in the corpus:
+#   1. ``<schedule><label>1</label><heading>New Schedule 2 of...</heading>``
+#      ``<schedule><label>2</label>...</schedule></schedule>`` (direct nest).
+#   2. ``<schedule><label>2</label><heading>Schedule 5 replaced</heading>``
+#      ``<amend><schedule><label>5</label>...</schedule></amend></schedule>``
+#      (the inner schedule is wrapped in an ``<amend>``).
+#
+# Followed through, the new structural leaf is the nested ``<schedule>``
+# (sometimes ``<prov>`` for a sub-schedule insertion) whose kind+label match
+# the witness's target leaf. The carrier wrapper itself is NOT the leaf;
+# descendants past it are payload. AGENTS §2.4/§2.5: this is the canonical
+# structural-leaf recognizer family EXTENDED to recognize the amending-act-
+# own-schedule delegation form (one parser per family), never a parallel
+# fallback. AGENTS §1.12: the payload is read from the AMENDING ACT's source
+# XML (source faith), never the oracle.
+
+# Kinds that mark "we are inside the amending-act-schedule payload carrier" --
+# descending through any of these flips the inside-container flag for the
+# leaf-match check. Extends the inline ``_AMEND_CONTAINER_KINDS`` set with
+# ``schedule`` (the carrier wrapper itself) and ``amend`` (an intermediate
+# payload wrapper inside the carrier). Both act as container gates here
+# because the amending-act's schedule-N wrapper IS by directive the payload
+# boundary; once we are inside it, every structural child is a candidate
+# payload leaf.
+_AMENDING_ACT_SCHEDULE_PAYLOAD_CONTAINERS = _AMEND_CONTAINER_KINDS | frozenset(
+    {"schedule", "amend"}
+)
+
+
+def _amending_node_directs_to_amending_act_schedule(
+    amending_node: etree._Element,
+) -> tuple[str, str | None] | None:
+    """Return the amending act's carrier-schedule label referenced by the
+    directive ("Schedule K of this Act"), or ``None`` when no such directive
+    is present.
+
+    The directive form references the AMENDING ACT'S OWN top-level schedule
+    (e.g. "the Schedule 2 set out in Schedule 1 of this Act" -- amending act's
+    Schedule 1 is the carrier). The matched index is the carrier's ``<label>``
+    value. The bare phrase "Schedule K of this Act" is a strong, witnessed
+    signal (the prose explicitly delegates to the amending act's own
+    schedule); it is NOT a guess about target scope -- it is a directive
+    from the source itself. Returns ``None`` for amending provisions that do
+    not delegate by this form (the inline ``<amend>``-subtree path stays in
+    force).
+
+    The STRONGER form ("the Part set out in Schedule K of this Act" /
+    "the Schedule 2A set out in Schedule K of this Act") also names the
+    carrier's structural-leaf kind; the returned tuple carries that kind as
+    the second element (or ``None`` for the bare "Schedule K of this Act"
+    form). The caller uses the kind hint to scope the directive to the
+    specific instruction whose delegated payload shape matches the caller's
+    ``target_leaf_kind`` -- without this, an amending provision that mixes
+    one delegation instruction with many INLINE ``<amend>`` instructions
+    would have the delegation trigger fire for every inline op, producing
+    false-positive ``..._no_amend_child_matches_target_leaf`` blockers
+    where the carrier's payload kind does not match the inline op's target
+    leaf. AGENTS §1.0/§1.1: the kind hint is evidence-scoping of a directive
+    the source already states, never a target-scope broadening.
+    """
+
+    for text_node in amending_node.iter():
+        if not isinstance(text_node.tag, str) or _localname(text_node) != "text":
+            continue
+        flat_text = _node_text(text_node)
+        kind_match = _AMENDING_ACT_OWN_SCHEDULE_DIRECTIVE_WITH_KIND.search(flat_text)
+        if kind_match:
+            kind_word = _normalize_text(kind_match.group(1)).lower()
+            schedule_label = _normalize_text(kind_match.group(2))
+            kind_hint = _AMENDING_ACT_SCHEDULE_KIND_WORD_TO_IR_KIND.get(kind_word)
+            return (schedule_label, kind_hint)
+        bare_match = _AMENDING_ACT_OWN_SCHEDULE_DIRECTIVE.search(flat_text)
+        if bare_match:
+            return (_normalize_text(bare_match.group(1)), None)
+    return None
+
+
+def _amending_act_top_level_schedule_by_label(
+    amending_act_root: etree._Element,
+    schedule_label: str,
+) -> etree._Element | None:
+    """Locate the amending act's top-level ``<schedule>`` whose ``<label>``
+    equals ``schedule_label``.
+
+    Top-level schedules appear either as direct children of the act root or
+    inside a ``<schedule.group>`` wrapper. Only OUTER schedules are
+    considered -- nested schedules inside a carrier are the payload, NOT
+    carriers themselves, and an inner schedule's label can collide with an
+    outer carrier's (the corpus has e.g. two ``<schedule><label>2</label>``
+    elements where one is a carrier and one is its nested payload). Returns
+    the FIRST outer match in document order; the directive prose witnesses
+    the carrier label.
+    """
+
+    def _candidates() -> Iterable[etree._Element]:
+        for child in amending_act_root:
+            if not isinstance(child.tag, str):
+                continue
+            child_kind = _localname(child)
+            if child_kind == "schedule":
+                yield child
+            elif child_kind == "schedule.group":
+                for inner in child:
+                    if isinstance(inner.tag, str) and _localname(inner) == "schedule":
+                        yield inner
+
+    normalized = _normalize_text(schedule_label)
+    for schedule in _candidates():
+        if _normalize_text(_direct_child_text(schedule, "label")) == normalized:
+            return schedule
+    return None
+
+
+def _amending_act_schedule_descendant_matches(
+    carrier: etree._Element,
+    leaf_kind: str,
+    normalized_label: str,
+) -> list[etree._Element]:
+    """Structural-leaf matches nested inside the amending-act carrier schedule.
+
+    Recurses ONLY through the structural/payload-container kinds a delegated
+    leaf can sit under (``schedule`` carrier itself / intermediate ``<amend>``
+    wrappers / ``part`` / ``subpart`` / ``prov``) and returns every structural
+    descendant whose kind+label match the target leaf (using the standard
+    ``_amend_child_matches_leaf`` predicate so kind aliasing and label
+    normalization are byte-identical to the inline path). The carrier wrapper
+    enters the descent with ``inside_container=True`` (we are already inside
+    the payload boundary by directive), so a DIRECT nested carrier child of
+    the right kind+label is matched the same way a deeper one is. A matched
+    leaf is not recursed into -- its sub-nodes are payload, never separate
+    matches for this leaf. The caller treats >1 match as ambiguous and
+    refuses (never a guess).
+    """
+
+    matches: list[etree._Element] = []
+
+    def _recurse(element: etree._Element, *, inside_container: bool) -> None:
+        for child in element:
+            if not isinstance(child.tag, str):
+                continue
+            child_kind = _localname(child)
+            structural = child_kind in _STRUCTURAL_TAGS
+            container = child_kind in _AMENDING_ACT_SCHEDULE_PAYLOAD_CONTAINERS
+            if not structural and not container:
+                # Non-structural wrapper (``<para>``, ``<text>`` etc.): keep
+                # descending so a container/payload nested under prose markup
+                # is reached, without treating the wrapper itself as a
+                # container.
+                _recurse(child, inside_container=inside_container)
+                continue
+            if inside_container and _amend_child_matches_leaf(child, leaf_kind, normalized_label):
+                matches.append(child)
+                # Do not recurse into the matched leaf — its own sub-nodes
+                # are part of the payload, never a separate match for this
+                # leaf.
+                continue
+            _recurse(child, inside_container=container or inside_container)
+
+    _recurse(carrier, inside_container=True)
+    return matches
+
+
+def _extract_from_amending_act_named_schedule(
+    amending_act_root: etree._Element,
+    schedule_label: str,
+    target_leaf_kind: str,
+    normalized_label: str,
+    *,
+    insertion: bool,
+) -> "NZStructuralReplacement | str":
+    """Extract the new structural leaf from the amending act's named carrier
+    schedule, or emit a typed blocker.
+
+    Resolves the carrier schedule by ``<label>`` equality with the directive
+    reference (the prose "Schedule K of this Act" witnesses the carrier
+    label), then runs the amending-act-schedule descendant matcher over it
+    to find the nested structural child whose kind+label match the target
+    leaf. Exactly one match produces an :class:`NZStructuralReplacement`
+    (reusing the inline path's node model so materialization is byte-
+    comparable); zero, multiple, or empty produces a typed blocker -- never
+    a guess.
+    """
+
+    carrier = _amending_act_top_level_schedule_by_label(
+        amending_act_root, schedule_label
+    )
+    if carrier is None:
+        return NZ_STRUCTURAL_BLOCKED_AMENDING_ACT_SCHEDULE_NOT_FOUND
+    matches = _amending_act_schedule_descendant_matches(
+        carrier, target_leaf_kind, normalized_label
+    )
+    if not matches:
+        return NZ_STRUCTURAL_BLOCKED_AMENDING_ACT_SCHEDULE_NO_MATCH
+    if len(matches) > 1:
+        return NZ_STRUCTURAL_BLOCKED_AMENDING_ACT_SCHEDULE_AMBIGUOUS_MATCH
+    nodes = _walk_payload_root_nodes(matches[0])
+    if not nodes or not nodes[0].text.strip():
+        return (
+            NZ_STRUCTURAL_INSERT_BLOCKED_EMPTY_PAYLOAD
+            if insertion
+            else NZ_STRUCTURAL_REPLACE_BLOCKED_EMPTY_REPLACEMENT
+        )
+    return NZStructuralReplacement(root=nodes[0], descendants=tuple(nodes[1:]))
+
+
+def _try_amending_act_own_schedule_delegation(
+    amending_node: etree._Element,
+    amending_act_root: etree._Element | None,
+    *,
+    target_leaf_kind: str,
+    normalized_label: str,
+    insertion: bool,
+) -> "NZStructuralReplacement | str | None":
+    """Try the amending-act-own-schedule delegation form; return the result of
+    the resolver when the directive matches, or ``None`` when it does not
+    (so the caller falls through to its existing inline blocker).
+
+    The delegation form requires BOTH the directive's prose (the amending
+    provision's text contains "Schedule K of this Act") AND the amending act
+    root element (so the carrier schedule can be located). When either is
+    missing, this helper returns ``None`` and the caller's existing
+    no-amend-subtree / no-matching-child blocker stands unchanged -- no silent
+    state mutation, no parallel fallback (AGENTS §2.5). When the directive
+    matches AND the amending act root is provided, the resolver's typed
+    blocker or successful :class:`NZStructuralReplacement` is returned -- the
+    caller MUST surface it to the dry-run refusal/refusal path so the typed
+    blocker is visible in receipts.
+
+    When the directive's prose names the carrier's payload kind ("the Part set
+    out in Schedule K of this Act"), the kind hint is matched against
+    ``target_leaf_kind`` via the canonical ``_kind_matches_target_leaf``
+    predicate (reusing the ``subprov``/``label-para`` alias set). A mismatch
+    returns ``None`` so the directive does NOT fire for sibling INLINE
+    ``<amend>`` instructions sourced from the same amending prov -- the
+    inline path runs unchanged, the existing blocker stands. This scoping
+    is the owned fix for the false-positive
+    ``structural_amending_act_named_schedule_no_amend_child_matches_target_leaf``
+    blockers on amending provs that mix one schedule-delegation instruction
+    with many inline amendments whose target-leaf kind differs from the
+    carrier's payload kind (a directive that delegates "the Part set out in
+    Schedule K of this Act" must NOT fire for an inline op whose target leaf
+    is a ``prov``). AGENTS §1.0/§1.1: the kind hint narrows a directive the
+    source already states; it never broadens target scope, never guesses.
+    """
+
+    if amending_act_root is None:
+        return None
+    directive = _amending_node_directs_to_amending_act_schedule(amending_node)
+    if directive is None:
+        return None
+    schedule_label, carrier_target_kind_hint = directive
+    if carrier_target_kind_hint is not None and not _kind_matches_target_leaf(
+        carrier_target_kind_hint, target_leaf_kind
+    ):
+        # The directive's carrier payload kind (e.g. "Part") does not match
+        # the caller's target-leaf kind (e.g. "prov"); the directive is for a
+        # DIFFERENT instruction sourced from this amending prov. Do not fire
+        # the schedule-delegation resolver; the inline ``<amend>``-subtree
+        # path runs unchanged and its existing blocker stands.
+        return None
+    return _extract_from_amending_act_named_schedule(
+        amending_act_root,
+        schedule_label,
+        target_leaf_kind,
+        normalized_label,
+        insertion=insertion,
+    )
+
+
 def extract_structural_insertion(
     amending_node: etree._Element,
     *,
@@ -1330,6 +1868,7 @@ def extract_structural_insertion(
     target_provision_label: str | None = None,
     base_work_year: str = "",
     base_work_number: str = "",
+    amending_act_root: etree._Element | None = None,
 ) -> "NZStructuralReplacement | str":
     """Extract the new provision node a whole-provision INSERT adds.
 
@@ -1350,6 +1889,9 @@ def extract_structural_insertion(
     typed blocker reason string. A multi-child ``<amend>`` subtree is allowed: the
     per-witness label selects the single inserted node, so this is a clean
     one-node extraction, never a flatten.
+
+    ``amending_act_root`` enables the amending-act-own-schedule delegation
+    path (see :func:`extract_structural_replacement`).
     """
 
     if not inserted_leaf_kind or not inserted_leaf_label:
@@ -1379,6 +1921,16 @@ def extract_structural_insertion(
         if isinstance(element.tag, str) and _localname(element) == "amend"
     ]
     if not amend_subtrees:
+        # AGENTS §2.5: try the amending-act-own-schedule delegation form.
+        delegated = _try_amending_act_own_schedule_delegation(
+            amending_node,
+            amending_act_root,
+            target_leaf_kind=inserted_leaf_kind,
+            normalized_label=normalized_label,
+            insertion=True,
+        )
+        if delegated is not None:
+            return delegated
         return NZ_STRUCTURAL_INSERT_BLOCKED_NO_AMEND_SUBTREE
 
     matches = _insertion_leaf_matches(amend_subtrees, inserted_leaf_kind, normalized_label)
@@ -1399,9 +1951,27 @@ def extract_structural_insertion(
                 matches = scoped_matches
 
     if not matches:
+        # AGENTS §2.5: schedule-as-direct-payload delegation retry (see the
+        # no-amend-subtree branch above for the same shape).
+        delegated = _try_amending_act_own_schedule_delegation(
+            amending_node,
+            amending_act_root,
+            target_leaf_kind=inserted_leaf_kind,
+            normalized_label=normalized_label,
+            insertion=True,
+        )
+        if delegated is not None:
+            return delegated
         return NZ_STRUCTURAL_INSERT_BLOCKED_NO_MATCHING_CHILD
     if len(matches) > 1:
         return NZ_STRUCTURAL_INSERT_BLOCKED_AMBIGUOUS_MATCH
+
+    # §2.5 audit-state: mirror the replacement path's single-match-wrong-section
+    # guard (same AGENTS §1.1 no-silent-target-hijacking discipline).
+    if normalized_provision:
+        match_section = _amend_subtree_section_label(matches[0])
+        if match_section is not None and match_section != normalized_provision:
+            return NZ_STRUCTURAL_INSERT_BLOCKED_SINGLE_MATCH_WRONG_SECTION
 
     inserted_element = matches[0]
     nodes = _walk_payload_root_nodes(inserted_element)
@@ -1427,9 +1997,9 @@ def _amend_instructions(node: etree._Element) -> tuple[NZAmendInstruction, ...]:
     """
     instructions: list[NZAmendInstruction] = []
     for text_node in node.iter():
-        if not isinstance(text_node.tag, str) or _localname(text_node) != "text":
+        if not isinstance(text_node.tag, str) or _localname_of_tag(text_node.tag) != "text":
             continue
-        amend_ins = [child for child in text_node.iter() if isinstance(child.tag, str) and _localname(child) == "amend.in"]
+        amend_ins = [child for child in text_node.iter() if isinstance(child.tag, str) and _localname_of_tag(child.tag) == "amend.in"]
         if not amend_ins:
             continue
         flat = _node_text(text_node)
@@ -1488,7 +2058,7 @@ def _insert_after_anchor_payload(
     quote_ins = [
         child
         for child in text_node.iter()
-        if isinstance(child.tag, str) and _localname(child) == "quote.in"
+        if isinstance(child.tag, str) and _localname_of_tag(child.tag) == "quote.in"
     ]
     if len(quote_ins) != 1 or len(amend_ins) != 1:
         return "", "", ""
@@ -1626,11 +2196,19 @@ def _localname_of_tag(tag: str) -> str:
 
 
 def _localname(value: Any) -> str:
-    if hasattr(value, "tag"):
-        value = value.tag
-    if isinstance(value, str):
-        return _localname_of_tag(value)
-    return _localname_of_tag(str(value))
+    # EAFP fast path: avoids the ``hasattr`` precheck (a separate C call) and
+    # the redundant ``isinstance`` branch on the common lxml-Element path.
+    # ``_localname`` is the #1 NZ chain-replay hotspot (~25M calls / 32-version
+    # chain); the prior ``hasattr`` / ``isinstance`` cascade cost ~2s of pure
+    # call overhead that disappears here. ``.tag`` may be a function (Comment /
+    # ProcessingInstruction); fall back to ``str(...)`` in that case to preserve
+    # the historical "<cyfunction Comment>" localname behaviour for non-string
+    # tags.
+    try:
+        tag = value.tag
+    except AttributeError:
+        tag = value
+    return _localname_of_tag(tag if isinstance(tag, str) else str(tag))
 
 
 def main(args: Any) -> None:
