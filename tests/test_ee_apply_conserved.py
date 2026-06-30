@@ -285,11 +285,15 @@ def test_replay_ee_to_pit_routes_apply_through_conserved_wrapper(monkeypatch) ->
         "plan_ee_oracle_pair",
         lambda **kw: SimpleNamespace(plan=pair_plan, oracle_xml=b"<oracle-xml/>"),
     )
-    monkeypatch.setattr(ee_replay, "_ee_filter_cancelled_pending_refs", lambda refs, **kw: refs)
+    monkeypatch.setattr(
+        ee_replay,
+        "_ee_filter_cancelled_pending_refs",
+        lambda refs, **kw: FilterResult(accepted_items=tuple(refs)),
+    )
     monkeypatch.setattr(
         ee_replay,
         "_ee_precompose_pending_source_act_commencements",
-        lambda refs, **kw: (tuple(refs), ()),
+        lambda refs, **kw: FilterResult(accepted_items=tuple(refs)),
     )
     monkeypatch.setattr(ee_replay, "parse_ee_amendment_ops", lambda *a, **kw: synthesized_ops)
     # ``_ee_precompose_pending_amendment_text_patches`` parses real amendment
@@ -337,7 +341,10 @@ def test_replay_ee_to_pit_routes_apply_through_conserved_wrapper(monkeypatch) ->
     ]
     rejected = rejected_items[0]
     assert isinstance(rejected, RejectedItem)
-    assert rejected.item.op_id == "ee-replace-missing"
+    # Full ``replay_ee_to_pit`` pipeline stamps each op with its global sequence
+    # (replay.py "renumber to global sequence"), so the rejected op carries the
+    # ``-2`` global-sequence suffix here (unlike the direct-``apply_ee_ops`` tests).
+    assert rejected.item.op_id == "ee-replace-missing-2"
     assert rejected.reason_code == "ee_replay_target_not_found"
     assert rejected.reason  # message forwarded from the bare variant's adjudication
     assert rejected.blocking is False  # EE conserved skips are recorded, not blocking
@@ -345,7 +352,10 @@ def test_replay_ee_to_pit_routes_apply_through_conserved_wrapper(monkeypatch) ->
     # Accepted lane carries the §5 op; conservation partition is total.
     accepted_ids = {op.op_id for op in result.apply_filter_result.accepted_items}
     rejected_ids = {item.item.op_id for item in result.apply_filter_result.rejected_items}
-    input_ids = {op.op_id for op in synthesized_ops}
+    # The pipeline stamps each op with its global sequence (see above), so the
+    # conserved partition is over the renumbered ids; assert conservation against
+    # the input ids carried through that same stamp.
+    input_ids = {f"{op.op_id}-{op.sequence}" for op in synthesized_ops}
     assert accepted_ids | rejected_ids == input_ids
     assert accepted_ids & rejected_ids == set()  # disjoint
 
@@ -462,11 +472,15 @@ def test_replay_ee_to_pit_propagates_partial_adjudications_on_apply_raise(monkey
         "plan_ee_oracle_pair",
         lambda **kw: SimpleNamespace(plan=pair_plan, oracle_xml=b"<oracle-xml/>"),
     )
-    monkeypatch.setattr(ee_replay, "_ee_filter_cancelled_pending_refs", lambda refs, **kw: refs)
+    monkeypatch.setattr(
+        ee_replay,
+        "_ee_filter_cancelled_pending_refs",
+        lambda refs, **kw: FilterResult(accepted_items=tuple(refs)),
+    )
     monkeypatch.setattr(
         ee_replay,
         "_ee_precompose_pending_source_act_commencements",
-        lambda refs, **kw: (tuple(refs), ()),
+        lambda refs, **kw: FilterResult(accepted_items=tuple(refs)),
     )
     monkeypatch.setattr(ee_replay, "parse_ee_amendment_ops", lambda *a, **kw: synthesized_ops)
     monkeypatch.setattr(
