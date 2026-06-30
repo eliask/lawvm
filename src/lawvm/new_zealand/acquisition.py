@@ -178,6 +178,11 @@ class NZSyncOptions:
     delay: float = 0.5
     request_budget: int | None = None
     reserve_remaining: int = 100
+    # Content tier (www host: .xml / HTML manifestations). Separate, looser
+    # budget — see NZApiClient. content_delay=None inherits the metadata floor
+    # delay; set it lower to drive the (separately budgeted) content host faster.
+    content_delay: float | None = None
+    content_request_budget: int | None = None
     sleep_on_rate_limit: bool = False
     max_sleep_seconds: int | None = None
     rate_limit_retry_attempts: int = 3
@@ -191,9 +196,12 @@ class NZSyncOptions:
 @dataclass
 class NZSyncStats:
     requests: int = 0
+    metadata_requests: int = 0
+    content_requests: int = 0
     cached: int = 0
     stored_json: int = 0
     stored_xml: int = 0
+    stored_html: int = 0
     skipped: int = 0
     works_seen: int = 0
     versions_seen: int = 0
@@ -203,9 +211,12 @@ class NZSyncStats:
     def as_summary(self) -> dict[str, Any]:
         return {
             "requests": self.requests,
+            "metadata_requests": self.metadata_requests,
+            "content_requests": self.content_requests,
             "cached": self.cached,
             "stored_json": self.stored_json,
             "stored_xml": self.stored_xml,
+            "stored_html": self.stored_html,
             "skipped": self.skipped,
             "works_seen": self.works_seen,
             "versions_seen": self.versions_seen,
@@ -242,6 +253,7 @@ class NZProgressReporter:
             f"cached={stats.cached}",
             f"json={stats.stored_json}",
             f"xml={stats.stored_xml}",
+            f"html={stats.stored_html}",
             f"works={stats.works_seen}",
             f"versions={stats.versions_seen}",
             f"diagnostics={len(stats.diagnostics)}",
@@ -333,13 +345,47 @@ class NZRateLimitGate:
         return max(int(reset_epoch - time.time()) + buffer_seconds, 0)
 
 
+def waf_challenge_marker(response: NZHttpResponse) -> str:
+    """Return the AWS-WAF challenge marker on a content-tier response, else "".
+
+    The www content host sits behind AWS WAF. An UNauthenticated request gets an
+    ``x-amzn-waf-action: challenge`` header and an empty ``202`` body. A valid
+    ``X-Api-Key`` is supposed to clear the WAF — so if we ever see the challenge
+    marker WITH the key set, the key is being rejected at the edge (or we are
+    being rate-throttled by the WAF). Either way it is NOT a real ``200`` body
+    and must not be stored as content; surface it so the empirical content-tier
+    limit is observable rather than silently captured as a challenge page.
+    """
+    action = _header_get(response.headers, "x-amzn-waf-action")
+    if action:
+        return action
+    if response.status_code == 202 and not response.body.strip():
+        return "empty_202_challenge"
+    return ""
+
+
 class NZApiClient:
+    """Two-tier client: a metered metadata tier and a content tier.
+
+    The documented quota (10k/day + 2k/5min) is published on the v0 metadata
+    host (``api.legislation.govt.nz``) and enforced via ``X-RateLimit-*``
+    headers. The www content host (``www.legislation.govt.nz`` — the ``.xml`` /
+    HTML manifestations) is a different origin that only needs the key to clear
+    the WAF; it does NOT send ``X-RateLimit-*`` and appears to be on a separate,
+    much looser budget. So the two are gated independently: the metadata gate
+    honors the documented reserve/budget; the content gate is floor-delayed only
+    and backs off solely on observed 429 / WAF challenge. ``request_budget``
+    governs the METADATA tier (the published quota); content fetches are not
+    blocked by metadata-quota exhaustion, only by their own observed limits.
+    """
+
     def __init__(
         self,
         *,
         api_key: str,
         transport: NZTransport | None = None,
         rate_gate: NZRateLimitGate,
+        content_gate: NZRateLimitGate | None = None,
         timeout_s: float = 60.0,
     ) -> None:
         if not api_key:
@@ -347,6 +393,7 @@ class NZApiClient:
         self._api_key = api_key
         self._transport = transport or UrllibNZTransport()
         self._rate_gate = rate_gate
+        self._content_gate = content_gate or rate_gate
         self._timeout_s = max(float(timeout_s), 0.001)
 
     def get_json(self, url: str) -> tuple[NZHttpResponse | None, dict[str, Any], str]:
@@ -364,17 +411,17 @@ class NZApiClient:
         return response, rate_headers, ""
 
     def get_bytes(self, url: str) -> tuple[NZHttpResponse | None, dict[str, Any], str]:
-        ok, reason = self._rate_gate.can_request()
+        ok, reason = self._content_gate.can_request()
         if not ok:
             return None, {}, reason
-        self._rate_gate.before_request()
+        self._content_gate.before_request()
         response = self._transport.get(
             url,
             api_key=self._api_key,
-            accept="application/xml, text/xml, */*",
+            accept="application/xml, text/xml, text/html, */*",
             timeout_s=self._timeout_s,
         )
-        rate_headers = self._rate_gate.observe(response.headers)
+        rate_headers = self._content_gate.observe(response.headers)
         return response, rate_headers, ""
 
     def seconds_until_reset(self) -> int:
@@ -382,7 +429,17 @@ class NZApiClient:
 
     @property
     def requests(self) -> int:
+        if self._content_gate is self._rate_gate:
+            return self._rate_gate.requests
+        return self._rate_gate.requests + self._content_gate.requests
+
+    @property
+    def metadata_requests(self) -> int:
         return self._rate_gate.requests
+
+    @property
+    def content_requests(self) -> int:
+        return self._content_gate.requests
 
 
 def nz_api_key_from_env() -> str:
@@ -404,10 +461,22 @@ def sync_nz_corpus(
         request_budget=options.request_budget,
         reserve_remaining=options.reserve_remaining,
     )
+    # Separate budget for the www content tier. It does not emit X-RateLimit-*
+    # headers and is on a looser, separate budget, so it is gated only by its
+    # own floor delay and observed 429 / WAF backoff — NOT by the metadata
+    # quota's reserve (reserve_remaining=0 → never trips on an absent header).
+    # request_budget is left unbounded here so an exhausted METADATA quota does
+    # not strand already-discovered content fetches on a different host.
+    content_gate = NZRateLimitGate(
+        delay=options.content_delay if options.content_delay is not None else options.delay,
+        request_budget=options.content_request_budget,
+        reserve_remaining=0,
+    )
     client = NZApiClient(
         api_key=api_key,
         transport=transport,
         rate_gate=gate,
+        content_gate=content_gate,
         timeout_s=options.request_timeout_seconds,
     )
     progress = NZProgressReporter(
@@ -469,7 +538,9 @@ def sync_nz_corpus(
         if options.include_xml:
             _fetch_xml_formats(archive, client, detail, options, stats, progress)
 
-    stats.requests = gate.requests
+    stats.requests = client.requests
+    stats.metadata_requests = client.metadata_requests
+    stats.content_requests = client.content_requests
     _write_diagnostics(options.diagnostics_jsonl, stats.diagnostics)
     progress.event("done", stats, detail="sync=end", force=True)
     return stats
@@ -595,8 +666,13 @@ def _fetch_xml_formats(
 ) -> None:
     version_id = _string_field(version_detail, "version_id")
     formats = _list_field(version_detail, "formats")
-    xml_urls = [_format_url(row) for row in formats if _is_xml_format(row)]
+    xml_urls = [url for row in formats if _is_xml_format(row) if (url := _format_url(row))]
+
+    xml_landed = False
     if not xml_urls:
+        # The API lists ``xml`` optimistically for nearly every act, so a
+        # genuinely absent XML format is rare — record it, then fall through to
+        # the HTML fallback (scan-only acts expose HTML even when XML is gone).
         stats.diagnostics.append(
             NZAcquisitionDiagnostic(
                 rule_id="nz_acquire_xml_format_missing",
@@ -610,30 +686,149 @@ def _fetch_xml_formats(
             )
         )
         progress.event("xml_missing", stats, detail=f"version_id={version_id}")
+    else:
+        for url in xml_urls:
+            canonical_url = _canonicalize_version_format_url(url, version_id)
+            data = _get_or_fetch_bytes(
+                archive,
+                client,
+                canonical_url,
+                canonical_url,
+                "xml",
+                "nz_api_v0_version_xml",
+                options,
+                stats,
+                series_key=f"nzleg://version/{version_id}/format/xml",
+                extra_metadata={
+                    "version_id": version_id,
+                    "api_format_url": url,
+                },
+            )
+            if data is not None:
+                xml_landed = True
+            progress.event(
+                "xml",
+                stats,
+                detail=f"version_id={version_id} fetched={data is not None}",
+            )
+
+    if xml_landed:
+        # XML is the richer source for modern PCO-drafted acts; once any XML
+        # manifestation lands there is no need to also fetch the HTML rendition.
         return
-    for url in xml_urls:
-        if not url:
-            continue
-        canonical_url = _canonicalize_version_format_url(url, version_id)
+
+    if stats.stopped_reason:
+        # The XML attempt did not land because the run hit its request budget /
+        # rate-limit reserve, NOT because the content is absent. The stop already
+        # recorded a blocking ``nz_acquire_rate_limit_stop``; do not misclassify
+        # this as a content gap and do not burn the (exhausted) budget on HTML.
+        return
+
+    _fetch_html_fallback(
+        archive,
+        client,
+        version_id,
+        formats,
+        options,
+        stats,
+        progress,
+    )
+
+
+def _fetch_html_fallback(
+    archive: ArchiveWriter,
+    client: NZApiClient,
+    version_id: str,
+    formats: list[Any],
+    options: NZSyncOptions,
+    stats: NZSyncStats,
+    progress: NZProgressReporter,
+) -> None:
+    """Acquire the HTML manifestation when no XML manifestation landed.
+
+    Modern PCO acts always have act-content XML; scan-only acts (old
+    local/imperial/private acts) have NO XML — the API lists ``xml``
+    optimistically but it 404s — yet they DO expose a usable HTML rendition
+    (the ``html`` format URL, e.g. ``.../latest/``). The valid API key passes
+    the WAF, so this HTML fetch returns the real ``<div id="legislation">``
+    content for scan-only acts. When both XML and HTML are absent the gap is
+    honest: ``nz_content_absent``.
+    """
+    html_urls = [url for row in formats if _is_html_format(row) if (url := _format_url(row))]
+    if not html_urls:
+        _emit_diagnostic(
+            stats,
+            options,
+            NZAcquisitionDiagnostic(
+                rule_id="nz_content_absent",
+                phase="acquisition",
+                family="source_pathology",
+                reason="no XML landed and version detail exposed no HTML format URL",
+                locator=f"nzleg://version/{version_id}/format/html",
+                url="",
+                blocking=False,
+                metadata={"version_id": version_id},
+            ),
+        )
+        progress.event("html_missing", stats, detail=f"version_id={version_id}")
+        return
+
+    html_landed = False
+    for url in html_urls:
         data = _get_or_fetch_bytes(
             archive,
             client,
-            canonical_url,
-            canonical_url,
-            "xml",
-            "nz_api_v0_version_xml",
+            url,
+            url,
+            "html",
+            "nz_api_v0_version_html",
             options,
             stats,
-            series_key=f"nzleg://version/{version_id}/format/xml",
+            series_key=f"nzleg://version/{version_id}/format/html",
             extra_metadata={
                 "version_id": version_id,
                 "api_format_url": url,
             },
         )
+        if data is not None:
+            html_landed = True
         progress.event(
-            "xml",
+            "html",
             stats,
             detail=f"version_id={version_id} fetched={data is not None}",
+        )
+
+    if html_landed:
+        stats.diagnostics.append(
+            NZAcquisitionDiagnostic(
+                rule_id="nz_html_fallback_acquired",
+                phase="acquisition",
+                family="source_recovery",
+                reason="no XML manifestation landed; acquired HTML rendition instead",
+                locator=f"nzleg://version/{version_id}/format/html",
+                url=html_urls[0],
+                blocking=False,
+                metadata={"version_id": version_id},
+            )
+        )
+    elif stats.stopped_reason:
+        # HTML did not land because the run hit its budget/reserve mid-fallback,
+        # not because content is absent — the rate-limit stop is already recorded.
+        return
+    else:
+        _emit_diagnostic(
+            stats,
+            options,
+            NZAcquisitionDiagnostic(
+                rule_id="nz_content_absent",
+                phase="acquisition",
+                family="source_pathology",
+                reason="neither XML nor HTML manifestation could be acquired",
+                locator=f"nzleg://version/{version_id}/format/html",
+                url=html_urls[0],
+                blocking=False,
+                metadata={"version_id": version_id},
+            ),
         )
 
 
@@ -714,6 +909,32 @@ def _get_or_fetch_bytes(
     metadata = _response_metadata(rule_id, url, response, rate_headers)
     if extra_metadata:
         metadata.update(extra_metadata)
+    waf_marker = waf_challenge_marker(response)
+    if waf_marker:
+        # An AWS-WAF challenge (challenge header, or the empty 202 challenge
+        # body): the key was rejected/throttled at the edge. This is NOT real
+        # content — never store a challenge page as the act body. Checked BEFORE
+        # the generic non-200 branch so an empty 202 is classified as a WAF
+        # event, not a bare HTTP error. Record it so the content tier's effective
+        # limit is observable, and report it as not-landed.
+        metadata["waf_challenge_action"] = waf_marker
+        _emit_diagnostic(
+            stats,
+            options,
+            NZAcquisitionDiagnostic(
+                rule_id="nz_content_waf_challenge",
+                phase="acquisition",
+                family="source_pathology",
+                reason=f"AWS-WAF challenge on content fetch (action={waf_marker})",
+                locator=locator,
+                url=url,
+                status_code=response.status_code,
+                blocking=True,
+                strict_disposition="block",
+                metadata=metadata,
+            ),
+        )
+        return None
     if response.status_code != 200:
         _emit_diagnostic(stats, options, _http_diagnostic(rule_id, locator, url, response, metadata))
         return None
@@ -727,6 +948,8 @@ def _get_or_fetch_bytes(
     )
     if storage_class == "xml":
         stats.stored_xml += 1
+    elif storage_class == "html":
+        stats.stored_html += 1
     return response.body
 
 
@@ -1058,6 +1281,23 @@ def _is_xml_format(row: object) -> bool:
     url = _format_url(row).lower()
     format_value = str(row_map.get("format") or row_map.get("type") or row_map.get("name") or "").lower()
     return url.endswith(".xml") or format_value == "xml" or "xml" in format_value
+
+
+def _is_html_format(row: object) -> bool:
+    """Identify the HTML rendition format row (``type``/``format``/``name`` == html).
+
+    Distinct from the scan PDF (``pdf_original_scan``): scan-only acts expose an
+    HTML rendition that carries the real ``<div id="legislation">`` content even
+    though their XML 404s. Match on the declared format kind, never on a substring
+    of the URL (every format URL lives under the same HTML site path).
+    """
+    if not isinstance(row, Mapping):
+        return False
+    row_map = cast(Mapping[str, Any], row)
+    format_value = str(
+        row_map.get("format") or row_map.get("type") or row_map.get("name") or ""
+    ).lower()
+    return format_value == "html"
 
 
 def _canonicalize_version_format_url(url: str, version_id: str) -> str:

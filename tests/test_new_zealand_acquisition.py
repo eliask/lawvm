@@ -227,6 +227,156 @@ def test_nz_corpus_sync_fetches_version_detail_and_xml_without_query_key(tmp_pat
     assert all(call[3] == 60.0 for call in transport.calls)
 
 
+def test_nz_corpus_sync_xml_present_does_not_fetch_html(tmp_path: Path) -> None:
+    version_id = "act_public_1990_109_en_2022-08-30"
+    version_url = f"https://api.legislation.govt.nz/v0/versions/{version_id}/"
+    xml_url = "https://www.legislation.govt.nz/act/public/1990/109/en/2022-08-30.xml"
+    html_url = "https://www.legislation.govt.nz/act/public/1990/109/en/2022-08-30/"
+    archive = _FakeArchive()
+    transport = _FakeTransport(
+        {
+            version_url: _json_response(
+                {
+                    "version_id": version_id,
+                    "work_id": "act_public_1990_109",
+                    "formats": [
+                        {"type": "xml", "url": xml_url},
+                        {"type": "html", "url": html_url},
+                    ],
+                }
+            ),
+            xml_url: NZHttpResponse(
+                status_code=200,
+                body=b"<act><title>Example</title></act>",
+                headers={"X-RateLimit-Remaining": "9998"},
+                content_type="application/xml",
+            ),
+            # html_url intentionally NOT registered: a fetch would raise.
+        }
+    )
+    options = NZSyncOptions(
+        db_path=tmp_path / "nz.farchive",
+        version_ids=(version_id,),
+        delay=0.0,
+    )
+
+    stats = sync_nz_corpus(archive, api_key="test", options=options, transport=transport)
+
+    assert stats.stored_xml == 1
+    assert stats.stored_html == 0
+    assert xml_url in archive.rows
+    assert html_url not in archive.rows
+    assert all(call[0] != html_url for call in transport.calls)
+    assert not any(
+        diag.rule_id in {"nz_html_fallback_acquired", "nz_content_absent"}
+        for diag in stats.diagnostics
+    )
+
+
+def test_nz_corpus_sync_falls_back_to_html_when_xml_404s(tmp_path: Path) -> None:
+    version_id = "act_local_1878_10_en_1878-08-29"
+    version_url = f"https://api.legislation.govt.nz/v0/versions/{version_id}/"
+    xml_url = "https://www.legislation.govt.nz/act/local/1878/10/en/1878-08-29.xml"
+    html_url = "https://www.legislation.govt.nz/act/local/1878/10/en/latest/"
+    html_body = b"<html><body><div id=\"legislation\">scan content</div></body></html>"
+    archive = _FakeArchive()
+    transport = _FakeTransport(
+        {
+            version_url: _json_response(
+                {
+                    "version_id": version_id,
+                    "work_id": "act_local_1878_10",
+                    "formats": [
+                        {"type": "xml", "url": xml_url},
+                        {"type": "html", "url": html_url},
+                        {"type": "pdf_original_scan", "url": "https://x/scan.pdf"},
+                    ],
+                }
+            ),
+            xml_url: NZHttpResponse(
+                status_code=404,
+                body=b"not found",
+                headers={"X-RateLimit-Remaining": "9998"},
+                content_type="text/plain",
+            ),
+            html_url: NZHttpResponse(
+                status_code=200,
+                body=html_body,
+                headers={"X-RateLimit-Remaining": "9997"},
+                content_type="text/html",
+            ),
+        }
+    )
+    options = NZSyncOptions(
+        db_path=tmp_path / "nz.farchive",
+        version_ids=(version_id,),
+        delay=0.0,
+    )
+
+    stats = sync_nz_corpus(archive, api_key="test", options=options, transport=transport)
+
+    assert stats.stored_xml == 0
+    assert stats.stored_html == 1
+    assert xml_url not in archive.rows
+    assert html_url in archive.rows
+    assert archive.rows[html_url].storage_class == "html"
+    assert archive.rows[html_url].series_key == f"nzleg://version/{version_id}/format/html"
+    assert archive.rows[html_url].data == html_body
+    rule_ids = [diag.rule_id for diag in stats.diagnostics]
+    assert "nz_html_fallback_acquired" in rule_ids
+    assert "nz_content_absent" not in rule_ids
+
+
+def test_nz_corpus_sync_records_content_absent_when_xml_and_html_404(tmp_path: Path) -> None:
+    version_id = "act_local_1841_1_en_1841-12-22"
+    version_url = f"https://api.legislation.govt.nz/v0/versions/{version_id}/"
+    xml_url = "https://www.legislation.govt.nz/act/local/1841/1/en/1841-12-22.xml"
+    html_url = "https://www.legislation.govt.nz/act/local/1841/1/en/latest/"
+    archive = _FakeArchive()
+    transport = _FakeTransport(
+        {
+            version_url: _json_response(
+                {
+                    "version_id": version_id,
+                    "work_id": "act_local_1841_1",
+                    "formats": [
+                        {"type": "xml", "url": xml_url},
+                        {"type": "html", "url": html_url},
+                    ],
+                }
+            ),
+            xml_url: NZHttpResponse(
+                status_code=404,
+                body=b"not found",
+                headers={"X-RateLimit-Remaining": "9998"},
+                content_type="text/plain",
+            ),
+            html_url: NZHttpResponse(
+                status_code=404,
+                body=b"not found",
+                headers={"X-RateLimit-Remaining": "9997"},
+                content_type="text/plain",
+            ),
+        }
+    )
+    options = NZSyncOptions(
+        db_path=tmp_path / "nz.farchive",
+        version_ids=(version_id,),
+        delay=0.0,
+    )
+
+    stats = sync_nz_corpus(archive, api_key="test", options=options, transport=transport)
+
+    assert stats.stored_xml == 0
+    assert stats.stored_html == 0
+    rule_ids = [diag.rule_id for diag in stats.diagnostics]
+    assert "nz_content_absent" in rule_ids
+    assert "nz_html_fallback_acquired" not in rule_ids
+    # The honest content gap is non-blocking (an absent old scan, not a fault).
+    absent = next(d for d in stats.diagnostics if d.rule_id == "nz_content_absent")
+    assert absent.blocking is False
+
+
 def test_nz_corpus_sync_canonicalizes_latest_xml_alias(tmp_path: Path) -> None:
     version_id = "act_public_1957_87_en_2026-04-05B"
     version_url = f"https://api.legislation.govt.nz/v0/versions/{version_id}/"
@@ -308,7 +458,12 @@ def test_nz_corpus_sync_searches_work_versions_and_records_missing_xml(tmp_path:
     assert stats.requests == 3
     assert stats.works_seen == 1
     assert stats.versions_seen == 1
-    assert [diag.rule_id for diag in stats.diagnostics] == ["nz_acquire_xml_format_missing"]
+    # No XML format URL AND no HTML format URL → honest content-absent gap after
+    # the optimistic-xml-missing record.
+    assert [diag.rule_id for diag in stats.diagnostics] == [
+        "nz_acquire_xml_format_missing",
+        "nz_content_absent",
+    ]
 
 
 def test_nz_corpus_sync_limits_versions_per_work(tmp_path: Path) -> None:
@@ -349,7 +504,63 @@ def test_nz_corpus_sync_limits_versions_per_work(tmp_path: Path) -> None:
     assert f"https://api.legislation.govt.nz/v0/versions/{first_older}/" not in archive.rows
 
 
-def test_nz_corpus_sync_stops_at_rate_limit_reserve(tmp_path: Path) -> None:
+def test_nz_corpus_sync_stops_metadata_tier_at_rate_limit_reserve(tmp_path: Path) -> None:
+    # The metadata reserve governs the v0 API host. When the FIRST version
+    # detail returns remaining<=reserve, the SECOND version detail (another
+    # metadata request) is blocked and the run records a metadata-tier stop.
+    # The content (www) tier is on a SEPARATE budget and is unaffected: the
+    # first version's XML still lands on its own gate.
+    first_id = "act_public_1990_109_en_2022-08-30"
+    second_id = "act_public_1991_5_en_2020-01-01"
+    first_url = f"https://api.legislation.govt.nz/v0/versions/{first_id}/"
+    second_url = f"https://api.legislation.govt.nz/v0/versions/{second_id}/"
+    first_xml = "https://www.legislation.govt.nz/act/public/1990/109/en/2022-08-30.xml"
+    archive = _FakeArchive()
+    transport = _FakeTransport(
+        {
+            first_url: _json_response(
+                {
+                    "version_id": first_id,
+                    "formats": [{"format": "XML", "url": first_xml}],
+                },
+                remaining=100,
+            ),
+            first_xml: NZHttpResponse(
+                status_code=200,
+                body=b"<act><title>One</title></act>",
+                headers={},  # www content host sends no X-RateLimit-* headers
+                content_type="application/xml",
+            ),
+            # second_url intentionally absent: it must never be requested.
+        }
+    )
+    options = NZSyncOptions(
+        db_path=tmp_path / "nz.farchive",
+        version_ids=(first_id, second_id),
+        delay=0.0,
+        reserve_remaining=100,
+    )
+
+    stats = sync_nz_corpus(archive, api_key="test", options=options, transport=transport)
+
+    # Metadata tier stopped at reserve before the second detail; content tier
+    # was NOT throttled by that reserve, so the first version's XML landed.
+    assert stats.metadata_requests == 1
+    assert stats.content_requests == 1
+    assert stats.stored_xml == 1
+    assert first_xml in archive.rows
+    assert second_url not in [call[0] for call in transport.calls]
+    assert stats.stopped_reason == "rate_limit_reserve_reached"
+    rule_ids = [diag.rule_id for diag in stats.diagnostics]
+    assert "nz_acquire_rate_limit_stop" in rule_ids
+    stop = next(d for d in stats.diagnostics if d.rule_id == "nz_acquire_rate_limit_stop")
+    assert stop.blocking is True
+
+
+def test_nz_corpus_sync_content_tier_independent_of_metadata_budget(tmp_path: Path) -> None:
+    # request_budget caps the METADATA tier (the documented quota). With a
+    # budget of exactly 1, the single version-detail consumes it; the content
+    # XML fetch still proceeds because it is on the separate content budget.
     version_id = "act_public_1990_109_en_2022-08-30"
     version_url = f"https://api.legislation.govt.nz/v0/versions/{version_id}/"
     xml_url = "https://www.legislation.govt.nz/act/public/1990/109/en/2022-08-30.xml"
@@ -357,11 +568,13 @@ def test_nz_corpus_sync_stops_at_rate_limit_reserve(tmp_path: Path) -> None:
     transport = _FakeTransport(
         {
             version_url: _json_response(
-                {
-                    "version_id": version_id,
-                    "formats": [{"format": "XML", "url": xml_url}],
-                },
-                remaining=100,
+                {"version_id": version_id, "formats": [{"type": "xml", "url": xml_url}]}
+            ),
+            xml_url: NZHttpResponse(
+                status_code=200,
+                body=b"<act />",
+                headers={},
+                content_type="application/xml",
             ),
         }
     )
@@ -369,16 +582,66 @@ def test_nz_corpus_sync_stops_at_rate_limit_reserve(tmp_path: Path) -> None:
         db_path=tmp_path / "nz.farchive",
         version_ids=(version_id,),
         delay=0.0,
-        reserve_remaining=100,
+        request_budget=1,
     )
 
     stats = sync_nz_corpus(archive, api_key="test", options=options, transport=transport)
 
-    assert stats.requests == 1
-    assert stats.stopped_reason == "rate_limit_reserve_reached"
-    assert [diag.rule_id for diag in stats.diagnostics] == ["nz_acquire_rate_limit_stop"]
-    assert stats.diagnostics[0].blocking is True
-    assert xml_url not in archive.rows
+    assert stats.metadata_requests == 1
+    assert stats.content_requests == 1
+    assert stats.stored_xml == 1
+    assert xml_url in archive.rows
+
+
+def test_nz_corpus_sync_rejects_waf_challenge_content_response(tmp_path: Path) -> None:
+    # A WAF challenge that slips through with a 2xx must NOT be stored as the act
+    # body. It is recorded as nz_content_waf_challenge and treated as not-landed;
+    # with no other manifestation that surfaces as a content gap.
+    version_id = "act_local_1878_10_en_1878-08-29"
+    version_url = f"https://api.legislation.govt.nz/v0/versions/{version_id}/"
+    xml_url = "https://www.legislation.govt.nz/act/local/1878/10/en/1878-08-29.xml"
+    html_url = "https://www.legislation.govt.nz/act/local/1878/10/en/latest/"
+    archive = _FakeArchive()
+    transport = _FakeTransport(
+        {
+            version_url: _json_response(
+                {
+                    "version_id": version_id,
+                    "formats": [
+                        {"type": "xml", "url": xml_url},
+                        {"type": "html", "url": html_url},
+                    ],
+                }
+            ),
+            xml_url: NZHttpResponse(
+                status_code=404,
+                body=b"not found",
+                headers={},
+                content_type="text/plain",
+            ),
+            html_url: NZHttpResponse(
+                status_code=202,
+                body=b"",
+                headers={"x-amzn-waf-action": "challenge"},
+                content_type="text/html",
+            ),
+        }
+    )
+    options = NZSyncOptions(
+        db_path=tmp_path / "nz.farchive",
+        version_ids=(version_id,),
+        delay=0.0,
+    )
+
+    stats = sync_nz_corpus(archive, api_key="test", options=options, transport=transport)
+
+    assert stats.stored_html == 0
+    assert html_url not in archive.rows
+    rule_ids = [diag.rule_id for diag in stats.diagnostics]
+    assert "nz_content_waf_challenge" in rule_ids
+    assert "nz_html_fallback_acquired" not in rule_ids
+    waf = next(d for d in stats.diagnostics if d.rule_id == "nz_content_waf_challenge")
+    assert waf.blocking is True
 
 
 def test_nz_corpus_sync_retries_429_before_recording_failure(
