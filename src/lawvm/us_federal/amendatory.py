@@ -27,13 +27,15 @@ and unparsable payloads are preserved as typed findings, not guessed away.
 from __future__ import annotations
 
 import calendar
+import contextvars
 import re
 import xml.etree.ElementTree as ET
 from collections import Counter
 from dataclasses import dataclass
+from dataclasses import replace as _dc_replace
 from datetime import date, datetime, timedelta
 from enum import StrEnum
-from typing import Any, Iterable, Mapping, assert_never
+from typing import Any, Iterable, List, Mapping, assert_never
 
 from lawvm.core.ir import (
     IRNode,
@@ -44,7 +46,7 @@ from lawvm.core.ir import (
 )
 from lawvm.core.parse_witness import ParseWitness
 from lawvm.core.branch_authority import COMMENCED_STATUS, PENDING_CONDITION_STATUS
-from lawvm.core.provenance import OperationSource
+from lawvm.core.provenance import OperationSource, compute_source_anchor
 from lawvm.core.regex_safety import compile_classifier_regex
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction, TextPatchKindEnum
 
@@ -5558,6 +5560,148 @@ def _iter_instruction_units(
     )
 
 
+# ── Byte-span SourceAnchor program (task #92, US Federal arm) ───────────────
+#
+# Mirrors the Estonia pilot (estonia/peg.py), the Norway arm (norway/grafter.py),
+# the Sweden arm (sweden/grafter.py), and the UK arm
+# (uk_legislation/uk_amendment_replay.py). The shape is identical: publish the raw
+# amendment artifact for the duration of one ``lower_plaw_amendatory`` compile,
+# then run a uniform post-pass over the WHOLE assembled op stream that stamps a
+# TRUE byte-span SourceAnchor on every op whose recorded clause text
+# (``source.raw_text``) is a single verbatim, unique byte run of the raw artifact.
+# When it is not, ``compute_source_anchor`` returns ``None`` and the anchor is
+# honestly left absent — never fabricated.
+#
+# US FRONTEND: one ``lower_plaw_amendatory(data, statute_id=…)`` call has a SINGLE
+# raw artifact (the Public Law's USLM ``data`` bytes), keyed by ``statute_id`` (==
+# ``OperationSource.statute_id`` for every op this lowerer emits). So — unlike the
+# UK arm's ``{affecting_act_id -> bytes}`` mapping — the published context is the
+# EE/NO single-artifact pair ``(source_artifact_id, raw_bytes)``.
+#
+# FEASIBILITY VERDICT: BLOCKED on the canonical artifact (a rigorous negative
+# result, valid per-frontend like SE/UK), for the SAME STRUCTURAL cause as the UK
+# arm: STRUCTURED-SOURCE TAG-BOUNDARY RECONSTRUCTION. Each US op records
+# ``source.raw_text = _text_of(unit)`` (amendatory.py:1473) — the amendatory unit's
+# descendant text, itertext-collected across child nodes (sidenotes pruned) and
+# whitespace-collapsed (``re.sub(r"\s+", " ", …).strip()``), exactly the EE/NO
+# flattening shape. But govinfo PLAW USLM is DENSELY structured: a single
+# amendatory clause's number lives in ``<num>``, its caption in
+# ``<heading><inline>``, its lead-in prose in ``<chapeau>`` (with the USC target in
+# a nested ``<ref>``), and its payload in ``<quotedText>``/``<quotedContent>`` — so
+# the flattened clause (e.g. ``"(b) Reserve.—Section 8908 of title 40 … the
+# following:“(c) …”."``) is reconstructed ACROSS MANY element boundaries and is
+# NEVER a contiguous verbatim byte run of the raw XML. Measured on the canonical
+# sample: 0/43 ops anchor (NOT one is even a full verbatim substring; the longest
+# contiguous verbatim run is a ~30% median fraction of the clause, the rest broken
+# at the first ``<num>``/``<ref>``/``<quotedText>`` boundary). This is the EE/NO
+# "reconstructed across tag boundaries" minority case made UNIVERSAL by USLM's
+# dense markup — the SAME friction kind as UK, NOT the SE encoding-escaping cause.
+# The recipe generalizes the moment a per-op clause survives as a verbatim run; the
+# infrastructure below mints that anchor honestly when it occurs and leaves it
+# absent otherwise. See tests/test_us_source_anchor.py.
+_US_RAW_SOURCE_CTX: "contextvars.ContextVar[tuple[str, bytes] | None]" = (
+    contextvars.ContextVar("us_raw_source_ctx", default=None)
+)
+
+
+def set_us_raw_source_context(
+    source_artifact_id: str, raw_bytes: bytes
+) -> "contextvars.Token[tuple[str, bytes] | None]":
+    """Publish the raw PL USLM artifact for SourceAnchor minting in this compile.
+
+    Returns a token the caller MUST pass to :func:`reset_us_raw_source_context` in a
+    ``finally`` so the context never leaks across Public Laws.
+    """
+    return _US_RAW_SOURCE_CTX.set((source_artifact_id, raw_bytes))
+
+
+def reset_us_raw_source_context(
+    token: "contextvars.Token[tuple[str, bytes] | None]",
+) -> None:
+    """Clear the raw-source context published by :func:`set_us_raw_source_context`."""
+    _US_RAW_SOURCE_CTX.reset(token)
+
+
+def _anchor_op(op: LegalOperation, artifact_id: str, raw_bytes: bytes) -> LegalOperation:
+    """Return ``op`` with a TRUE byte-span anchor stamped, or unchanged.
+
+    The op's recorded clause text (``source.raw_text`` — falling back to the op's
+    ``raw_text``) is located in ``raw_bytes`` via
+    :func:`lawvm.core.provenance.compute_source_anchor`. Built on the EXACT recorded
+    clause string, so a verifier re-slicing the raw bytes at the anchor span gets
+    back precisely the clause text. When the clause is not a single verbatim, unique
+    byte run of the artifact (the UNIVERSAL US case — clause reconstructed across
+    USLM ``<num>``/``<ref>``/``<quotedText>`` element boundaries — see the module
+    note above), ``compute_source_anchor`` returns ``None`` and the anchor is
+    honestly left absent — never fabricated. Idempotent: an op that already carries
+    an anchor is left untouched.
+    """
+    src = op.source
+    if src is None or src.source_anchor is not None:
+        return op
+    clause = src.raw_text or op.raw_text or ""
+    if not clause:
+        return op
+    anchor = compute_source_anchor(
+        source_artifact_id=artifact_id,
+        raw_bytes=raw_bytes,
+        clause_text=clause,
+    )
+    if anchor is None:
+        return op
+    return _dc_replace(op, source=_dc_replace(src, source_anchor=anchor))
+
+
+def mint_us_source_anchors(ops: List[LegalOperation]) -> List[LegalOperation]:
+    """Stamp a TRUE byte-span :class:`SourceAnchor` on every anchorable op.
+
+    Final, uniform post-pass over an emitted op stream, run by
+    :func:`lower_plaw_amendatory` once the raw PL USLM artifact has been published
+    in the parse context (see :func:`set_us_raw_source_context`).
+
+    Additive metadata only: it touches solely ``source.source_anchor`` and never an
+    apply-authoritative field, so US dry-run/materialization output is byte-identical
+    (AGENTS.md §0 grounding-neutral). A no-op when no raw artifact is in context.
+    """
+    raw_ctx = _US_RAW_SOURCE_CTX.get()
+    if raw_ctx is None or not ops:
+        return ops
+    artifact_id, raw_bytes = raw_ctx
+    return [_anchor_op(op, artifact_id, raw_bytes) for op in ops]
+
+
+def _anchor_instructions(
+    instructions: list[USAmendmentInstruction],
+) -> list[USAmendmentInstruction]:
+    """Rewrite each instruction's ops with byte-span anchors (uniform post-pass).
+
+    Runs :func:`mint_us_source_anchors` over the WHOLE assembled op stream of one
+    Public Law (every instruction's primary ``operation`` and its
+    ``extra_operations``), so the anchored ops are exactly what
+    :meth:`USAmendatoryReport.operations` returns. A no-op (returns the instructions
+    unchanged) when no raw artifact is published in context.
+    """
+    raw_ctx = _US_RAW_SOURCE_CTX.get()
+    if raw_ctx is None:
+        return instructions
+    artifact_id, raw_bytes = raw_ctx
+    rewritten: list[USAmendmentInstruction] = []
+    for instr in instructions:
+        primary = (
+            _anchor_op(instr.operation, artifact_id, raw_bytes)
+            if instr.operation is not None
+            else None
+        )
+        extra = tuple(
+            _anchor_op(op, artifact_id, raw_bytes) for op in instr.extra_operations
+        )
+        if primary is instr.operation and extra == instr.extra_operations:
+            rewritten.append(instr)
+            continue
+        rewritten.append(_dc_replace(instr, operation=primary, extra_operations=extra))
+    return rewritten
+
+
 def lower_plaw_amendatory(
     data: bytes, *, statute_id: str = "", enacted: str = "", proof_title: str = "11",
     classification_index: Any = None,
@@ -5572,6 +5716,36 @@ def lower_plaw_amendatory(
     if not enacted:
         enacted = approved
 
+    # §source_anchor (task #92): publish the raw PL USLM artifact so the final
+    # byte-span anchor pass (:func:`_anchor_instructions`, applied to the assembled
+    # instruction op stream below) can mint a TRUE SourceAnchor for every op whose
+    # recorded clause text survives text-flattening as a verbatim, unique byte run
+    # of these bytes. ``statute_id`` is the artifact id (== every emitted op's
+    # ``OperationSource.statute_id``). The token is reset in the finally below so
+    # the context never leaks across Public Laws or to other frontends. Additive
+    # provenance metadata only — grounding-neutral (replay output byte-identical).
+    _raw_source_token = set_us_raw_source_context(statute_id, data)
+    try:
+        return _lower_plaw_amendatory_body(
+            root,
+            statute_id=statute_id,
+            enacted=enacted,
+            proof_title=proof_title,
+            classification_index=classification_index,
+        )
+    finally:
+        reset_us_raw_source_context(_raw_source_token)
+
+
+def _lower_plaw_amendatory_body(
+    root: ET.Element,
+    *,
+    statute_id: str,
+    enacted: str,
+    proof_title: str,
+    classification_index: Any,
+) -> USAmendatoryReport:
+    """Body of :func:`lower_plaw_amendatory`, run with the raw-source context set."""
     title_targets: set[str] = set()
     instructions: list[USAmendmentInstruction] = []
     findings: list[USAmendatoryFinding] = []
@@ -5726,6 +5900,12 @@ def lower_plaw_amendatory(
         if instr.target_address is not None and instr.target_address.path:
             title_targets.add(f"title {instr.target_address.path[0][1]}")
 
+    # §source_anchor (task #92): final uniform byte-span anchor pass over the WHOLE
+    # assembled op stream (every instruction's primary op + extra_operations), while
+    # the raw artifact is still published in context. Additive provenance metadata
+    # only (``source.source_anchor``); the materialized text and AGREE/RESIDUAL rows
+    # the US dry-run produces are byte-identical.
+    instructions = _anchor_instructions(instructions)
     return USAmendatoryReport(
         statute_id=statute_id,
         enacted=enacted,

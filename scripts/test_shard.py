@@ -192,6 +192,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_us_act_name_registry.py",
         "test_us_classification_tables.py",
         "test_us_release_points.py",
+        "test_us_source_anchor.py",
         "test_us_table3_import.py",
         "test_us_table3_resolver.py",
         "test_us_usc_release_import.py",
