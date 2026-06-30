@@ -45,6 +45,10 @@ from typing import Any, Dict, List, Tuple
 import pytest
 
 from lawvm.core.ir_helpers import irnode_to_text, structural_subtree_hash
+from lawvm.core.replay_determinism_audit import (
+    REPLAY_NONDETERMINISM,
+    assert_replay_deterministic,
+)
 from lawvm.tools.certificate_bundle import (
     build_stage_account_row,
     stage_accounts_root,
@@ -236,6 +240,43 @@ def test_replay_twice_is_byte_identical(statute_id: str) -> None:
     )
     # Whole fingerprint is byte-identical.
     assert first.as_json() == second.as_json()
+
+
+@pytest.mark.parametrize("statute_id", SAMPLE_STATUTES)
+def test_f_replay_determinism_audit_fires_clean_over_corpus(statute_id: str) -> None:
+    """F ``REPLAY.NONDETERMINISM`` audit DRIVES the LS-30 replay-twice gate.
+
+    This is the production-representative wire of
+    ``core.replay_determinism_audit.assert_replay_deterministic`` (F): the audit
+    is the universal "materialize the same (base, ops, pit) twice and prove
+    byte-identity" guard, and the LS-30 corpus gate is the natural call-site that
+    actually runs replay twice. We feed the REAL production replay fingerprint
+    (``compute_fingerprint``, which folds amendments through ``pinned_replay`` ->
+    ``replay_xml`` -> materialize over a frozen ``(base, ops, pit)`` triple) into
+    the audit as the ``materialize_fn`` thunk, so the audit — not a hand-built
+    comparison — is the deciding guard over a real corpus statute.
+
+    On the deterministic corpus the audit must emit NO finding (replay is a pure
+    function of its inputs). The fire-drill
+    (``tests/test_replay_determinism_firedrill.py``) drives the SAME audit into
+    its firing state by injecting a run-to-run-varying value onto the replay
+    spine and proves it EMITS ``REPLAY.NONDETERMINISM`` — so this clean-corpus
+    arm is not a vacuous pass.
+    """
+    findings = assert_replay_deterministic(
+        lambda: compute_fingerprint(statute_id).as_json(),
+        (statute_id,),
+        runs=2,
+        source_statute=statute_id,
+    )
+    assert findings == (), (
+        f"REPLAY.NONDETERMINISM: the F replay-determinism audit fired over the "
+        f"production replay of {statute_id} (replay is not a pure function of its "
+        f"inputs): {[f.detail for f in findings]}"
+    )
+    # Sanity: the audit's registered finding code matches the constant this gate
+    # drives, so the guard-liveness inventory and the audit agree on the kind.
+    assert REPLAY_NONDETERMINISM == "REPLAY.NONDETERMINISM"
 
 
 def test_certificate_root_discriminates_between_statutes() -> None:

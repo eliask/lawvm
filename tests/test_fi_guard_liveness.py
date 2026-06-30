@@ -2433,6 +2433,199 @@ def drill_compare_eid_double_classified_apply_lane() -> None:
     assert "§0 disjoint-partition contract break" in obs["reason"]
 
 
+def drill_replay_nondeterminism_replay_twice_gate() -> None:
+    """REPLAY.NONDETERMINISM fires from the production replay-twice corpus gate (F).
+
+    Production lane: the F audit ``core.replay_determinism_audit.
+    assert_replay_deterministic`` is the universal "materialize the same
+    ``(base, ops, pit)`` twice and prove byte-identity" guard; its natural
+    production call-site is the LS-30 replay-twice gate, which runs the REAL
+    Finland replay (``pinned_replay`` -> ``replay_xml`` -> materialize over a
+    frozen corpus triple) and projects it onto ``compute_fingerprint``. The drill
+    feeds that production fingerprint thunk into the audit as ``materialize_fn``
+    and drives the audit into its firing state by monkeypatching the replay
+    serialization spine to leak a run-to-run-varying value (a stand-in for a
+    clock / set-order / unseeded-random leak). The deciding guard — not a
+    hand-built Observation — must EMIT one ``REPLAY.NONDETERMINISM`` finding.
+
+    Without the wire a nondeterministic replay would silently produce a different
+    certificate root run-to-run — the §0/§2.10 determinism contract every
+    certificate root assumes, broken invisibly. (The clean-corpus arm lives in
+    ``tests/test_replay_determinism.py``; this drill proves the guard fires.)
+    """
+    from unittest import mock
+
+    from lawvm.core.replay_determinism_audit import (
+        REPLAY_NONDETERMINISM,
+        assert_replay_deterministic,
+    )
+    from lawvm.finland import statute as statute_module
+    from tests.test_replay_determinism import SAMPLE_STATUTES, compute_fingerprint
+
+    statute_id = SAMPLE_STATUTES[0]
+
+    # Baseline: the production replay (pinned_replay-backed compute_fingerprint)
+    # is deterministic, so the audit is silent — the finding below is the leak.
+    clean = assert_replay_deterministic(
+        lambda: compute_fingerprint(statute_id).as_json(),
+        (statute_id,),
+        source_statute=statute_id,
+    )
+    assert clean == (), (
+        "baseline production replay is not deterministic; cannot attribute the "
+        f"drill finding to the injected leak: {[f.detail for f in clean]}"
+    )
+
+    # Inject a run-to-run-varying value onto the real replay/serialization spine.
+    counter = {"n": 0}
+    original_serialize = statute_module.ReplayResult.serialize_text
+
+    def _nondeterministic_serialize(self: Any) -> str:
+        counter["n"] += 1
+        return original_serialize(self) + f"\n<<guard-liveness-perturb:{counter['n']}>>"
+
+    with mock.patch.object(
+        statute_module.ReplayResult, "serialize_text", _nondeterministic_serialize
+    ):
+        findings = assert_replay_deterministic(
+            lambda: compute_fingerprint(statute_id).as_json(),
+            (statute_id,),
+            source_statute=statute_id,
+        )
+
+    assert len(findings) == 1, (
+        "the F replay-determinism audit must emit exactly one finding when the "
+        f"production replay spine leaks a run-to-run-varying value; got {len(findings)}"
+    )
+    finding = findings[0]
+    assert finding.kind == REPLAY_NONDETERMINISM
+    assert finding.source_statute == statute_id
+    assert finding.detail["content_hash_diverged"] is True
+    assert finding.detail["content_hash_a"] != finding.detail["content_hash_b"]
+
+    # Determinism is restored after the patch context exits (perturbation scoped).
+    restored = assert_replay_deterministic(
+        lambda: compute_fingerprint(statute_id).as_json(),
+        (statute_id,),
+        source_statute=statute_id,
+    )
+    assert restored == (), "determinism not restored after the scoped perturbation"
+
+
+def drill_projection_rederivation_drift_seam_projection_producer() -> None:
+    """PROJECTION.REDERIVATION_DRIFT fires from the production seam-projection producer (D9).
+
+    Production lane: the D9 audit ``core.projection_rederivation_audit.
+    assert_projection_rows_rederivable`` asserts every committed projection row's
+    committed ``projection_hash`` recomputes from its own committed
+    ``projection_payload`` under the dossier's pinned §3.4 hash view. The seam
+    projection family is produced by ``tools.provision_state.
+    build_provision_state_response`` (the per-row payload producer the certificate
+    dossier writer ``build_certificate_bundle`` calls) hashed with
+    ``projection_payload_hash`` — the exact wrapper-row shape the audit consumes.
+
+    The drill drives that REAL producer: it compiles a small timeline, builds a
+    genuine seam ``projection_payload`` via ``build_provision_state_response``,
+    hashes it with the production ``projection_payload_hash``, and assembles the
+    committed wrapper row exactly as ``build_certificate_bundle`` does. A faithful
+    row re-derives (no finding); a hand-edited payload (committed hash left
+    intact) is the firing state — the deciding guard must EMIT one
+    ``PROJECTION.REDERIVATION_DRIFT`` finding. (The corpus-bundle arm lives in
+    ``tests/test_projection_rederivation_firedrill.py``.)
+    """
+    import copy
+
+    from lawvm.core.ir import IRNode, IRNodeKind, IRStatute
+    from lawvm.core.projection_rederivation_audit import (
+        PROJECTION_REDERIVATION_DRIFT,
+        assert_projection_rows_rederivable,
+    )
+    from lawvm.core.timeline import compile_timelines
+    from lawvm.tools.certificate_bundle import (
+        SEAM_HASH_EXCLUDED_MEMBERS,
+        SEAM_SCHEMA,
+        projection_payload_hash,
+    )
+    from lawvm.tools.provision_state import build_provision_state_response
+
+    statute_id = "482/2024"
+    # A small real base statute -> one provision timeline -> one seam payload.
+    base = IRStatute(
+        statute_id=statute_id,
+        title="D9 seam-projection fire-drill",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    children=(IRNode(kind=IRNodeKind.CONTENT, text="First section."),),
+                ),
+            ),
+        ),
+    )
+    timelines = compile_timelines(base, [], base_date="2024-01-01")
+    provision = "section:1"
+    payload = build_provision_state_response(
+        timelines=timelines,
+        statute_id=statute_id,
+        jurisdiction="fi",
+        provision=provision,
+        as_of="2024-01-01",
+        query_type="governing",
+        title=base.title,
+    )
+    # §3.4: only the payload's hash view is hashed (run-provenance excluded). This
+    # is the production projection_hash the dossier writer commits per row.
+    projection_hash = projection_payload_hash(payload, SEAM_HASH_EXCLUDED_MEMBERS)
+    # The committed wrapper row, exactly as build_certificate_bundle assembles it.
+    wrapper_row: dict[str, Any] = {
+        "projection_payload": payload,
+        "certification_status": "selected_only",
+        "universe": {"address": provision, "interval": ["2024-01-01", None]},
+        "certificate": {
+            "projection_kind": "lawvm.provision_state",
+            "projection_schema": SEAM_SCHEMA,
+            "projection_hash": projection_hash,
+        },
+    }
+
+    # A faithful committed row re-derives cleanly -> the audit is silent.
+    clean = assert_projection_rows_rederivable(
+        [wrapper_row],
+        hash_excluded_members=SEAM_HASH_EXCLUDED_MEMBERS,
+        source_statute=statute_id,
+    )
+    assert clean == (), (
+        "PROJECTION.REDERIVATION_DRIFT fired over a faithfully produced seam row: "
+        f"{[f.detail for f in clean]}"
+    )
+
+    # Hand-edit the committed payload but keep its committed hash — the row's
+    # lineage is now opaque (stale / externally-edited). The deciding guard fires.
+    tampered = copy.deepcopy(wrapper_row)
+    tampered_payload = tampered["projection_payload"]
+    assert isinstance(tampered_payload, dict)
+    tampered_payload["provision_status"] = "HAND-EDITED-AFTER-COMMIT"
+    findings = assert_projection_rows_rederivable(
+        [tampered],
+        hash_excluded_members=SEAM_HASH_EXCLUDED_MEMBERS,
+        source_statute=statute_id,
+    )
+    assert len(findings) == 1, (
+        "the D9 re-derivation audit must emit exactly one finding for a "
+        f"hand-edited committed row; got {len(findings)}"
+    )
+    finding = findings[0]
+    assert finding.kind == PROJECTION_REDERIVATION_DRIFT
+    assert finding.source_statute == statute_id
+    assert finding.detail["expected_hash"] != finding.detail["actual_hash"]
+    assert finding.detail["expected_hash"] == projection_hash
+    assert tuple(finding.detail["hash_excluded_members"]) == tuple(
+        SEAM_HASH_EXCLUDED_MEMBERS
+    )
+
+
 def drill_definition_duplicate_definition_surface_totality() -> None:
     """Drive the production SURF-04 sweep into a DUPLICATE_DEFINITION firing.
 
@@ -3976,6 +4169,28 @@ FIRE_DRILLS: Dict[str, Callable[[], None]] = {
     "COMPARE.EID_DOUBLE_CLASSIFIED": (
         drill_compare_eid_double_classified_apply_lane
     ),
+    # F REPLAY.NONDETERMINISM — drives the production replay-twice gate
+    # (pinned_replay-backed compute_fingerprint) through the F audit
+    # ``assert_replay_deterministic`` (vendored from
+    # core/replay_determinism_audit.py); the audit fires when the real replay
+    # spine leaks a run-to-run-varying value. Corpus-gate liveness: the audit's
+    # production-representative call-site is the LS-30 replay-twice gate, not a
+    # strict-pipeline barrier (replay determinism is a cross-frontend property of
+    # the materializer, checked over the corpus, not a per-op apply verdict).
+    "REPLAY.NONDETERMINISM": (
+        drill_replay_nondeterminism_replay_twice_gate
+    ),
+    # E/D9 PROJECTION.REDERIVATION_DRIFT — drives the production seam-projection
+    # producer (``build_provision_state_response`` + ``projection_payload_hash``,
+    # the per-row producers ``build_certificate_bundle`` calls) through the D9
+    # audit ``assert_projection_rows_rederivable`` (vendored from
+    # core/projection_rederivation_audit.py); the audit fires when a committed
+    # row's payload is hand-edited away from its committed hash. Corpus/producer
+    # gate liveness: the audit's call-site is the committed-dossier verify lane,
+    # not a per-op apply barrier.
+    "PROJECTION.REDERIVATION_DRIFT": (
+        drill_projection_rederivation_drift_seam_projection_producer
+    ),
 }
 
 # A second, distinct surface for an already-covered code. Tracked separately so
@@ -4199,17 +4414,21 @@ NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
     # anchor / textual footing). Wired into ``tools/provenance_totality_report``
     # (report lane, owned elsewhere); no pipeline drill through this harness yet.
     "PROVENANCE.SOURCE_ANCHOR_MISSING": ("provenance-totality audit; emit live in core/provenance_totality_audit, report-lane only, needs pipeline drill", "2026-06-30"),
-    # E ``PROJECTION.REDERIVATION_DRIFT`` — emitted by
-    # ``core/projection_rederivation_audit`` when a committed projection row's
-    # hash does not recompute from its committed payload. Audit module landed;
-    # not yet wired into a strict-mode pipeline consumer, so no drillable
-    # production path exists yet. Drill once the re-derivation audit is wired.
-    "PROJECTION.REDERIVATION_DRIFT": ("projection-rederivation audit; emit live in core/projection_rederivation_audit, not yet wired to a pipeline consumer", "2026-06-30"),
-    # F ``REPLAY.NONDETERMINISM`` — emitted by
-    # ``core/replay_determinism_audit`` when materializing the same
-    # (base_state, ops, pit) twice diverges. Audit module landed; not yet wired
-    # into a strict-mode pipeline consumer, so no drillable production path yet.
-    "REPLAY.NONDETERMINISM": ("replay-determinism audit; emit live in core/replay_determinism_audit, not yet wired to a pipeline consumer", "2026-06-30"),
+    # E ``PROJECTION.REDERIVATION_DRIFT`` and F ``REPLAY.NONDETERMINISM`` were
+    # drilled (task #104): both audits are now wired to a production-representative
+    # consumer and have FIRE_DRILLS entries —
+    #   * PROJECTION.REDERIVATION_DRIFT: drilled through the seam-projection
+    #     producer (``build_provision_state_response`` + ``projection_payload_hash``,
+    #     the per-row producers ``build_certificate_bundle`` commits) via the D9
+    #     audit ``assert_projection_rows_rederivable``
+    #     (``drill_projection_rederivation_drift_seam_projection_producer``);
+    #     the corpus-bundle arm lives in tests/test_projection_rederivation_firedrill.py.
+    #   * REPLAY.NONDETERMINISM: drilled through the LS-30 replay-twice gate
+    #     (pinned_replay-backed ``compute_fingerprint``) via the F audit
+    #     ``assert_replay_deterministic``
+    #     (``drill_replay_nondeterminism_replay_twice_gate``); the clean-corpus
+    #     arm lives in tests/test_replay_determinism.py and the perturbation
+    #     fire-drill in tests/test_replay_determinism_firedrill.py.
     # ``APPLY.US_CHAR_SPAN_BOUNDARY_VIOLATION`` — per-op US char-span
     # mutation-boundary REJECT (US §3.4), emitted from
     # ``us_federal/apply_profile.py``. US apply lane (owned elsewhere); not
@@ -4473,6 +4692,19 @@ _PRODUCTION_BUILDER_CALLS = (
     "gate_authorization_scope_match",
     "gate_promotion_chain_links",
     "gate_downchain_retraction",
+    # F REPLAY.NONDETERMINISM: ``compute_fingerprint`` is the production
+    # replay-twice fingerprint producer (pinned_replay -> replay_xml ->
+    # materialize over a frozen corpus triple) that the F audit
+    # ``assert_replay_deterministic`` drives as its materialize thunk; the LS-30
+    # gate is the audit's production-representative call-site.
+    "compute_fingerprint(",
+    # E/D9 PROJECTION.REDERIVATION_DRIFT: ``build_provision_state_response`` is the
+    # production seam projection-payload producer (the per-row producer
+    # ``build_certificate_bundle`` calls) the D9 audit
+    # ``assert_projection_rows_rederivable`` drives; ``compile_timelines`` is the
+    # timeline join point feeding it.
+    "build_provision_state_response(",
+    "compile_timelines(",
 )
 
 # Codes whose ONLY honest production surface is the strict verdict mapping (a

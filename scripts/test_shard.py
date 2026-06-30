@@ -505,10 +505,18 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_identity_intrinsic_audit.py",
         "test_synthetic_label_leak.py",
         "test_replay_determinism.py",
+        # F REPLAY.NONDETERMINISM guard-liveness fire-drill (task #104): drives the
+        # replay-determinism audit into its firing state over the production
+        # replay spine; sits next to its clean-corpus sibling above.
+        "test_replay_determinism_firedrill.py",
         # Audit-invariant registry program (PROJECTION plane): row PROJ-01
         # (projection re-derivability from committed matter) + row PROJ-02
         # (tree-wide no-author-set-replay_authorized-at-projection sweep).
         "test_projection_rederivability.py",
+        # D9 PROJECTION.REDERIVATION_DRIFT guard-liveness fire-drill (task #104):
+        # drives the projection-rederivation audit into its firing state over the
+        # production seam-projection producer (real committed bundle rows).
+        "test_projection_rederivation_firedrill.py",
         "test_projection_author_set_authority.py",
         "test_explicit_address_level.py",
         "test_guard_liveness_totality.py",
