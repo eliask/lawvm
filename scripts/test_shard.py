@@ -164,10 +164,11 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # the seam-synthesized WriteReceipts are byte-identical to SE's existing
         # se_replay_write_receipts production emitter (the Wave-2 deliverable).
         "test_se_apply_seam_parallel_run.py",
-        # Byte-span SourceAnchor arm for Sweden (task #92): records the rigorous
-        # PARTIAL/BLOCKED feasibility result (JSON ASCII-escaping hides the
-        # non-ASCII enacting clause from a verbatim byte search) and pins the
-        # post-pass as honest + grounding-neutral.
+        # Byte-span SourceAnchor arm for Sweden (task #93): REACHABLE via a
+        # separate UTF-8 anchor artifact (json.dumps(act, ensure_ascii=False)) +
+        # per-op clause raw_text. The canonical compile artifact is UNCHANGED;
+        # only the anchor source is re-encoded. Pins per-op granularity, byte-exact
+        # re-verification, honest None, and grounding-neutrality.
         "test_se_source_anchor.py",
     ),
     "uk": (

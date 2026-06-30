@@ -2625,6 +2625,29 @@ def _append_se_official_unclaimed_payload_adjudications(
         )
 
 
+def _se_op_source_with_clause(source: OperationSource, clause_text: str) -> OperationSource:
+    """Return a per-op ``OperationSource`` carrying this op's specific clause text.
+
+    The byte-span ``SourceAnchor`` program (task #93) anchors ``source.raw_text``
+    against the published UTF-8 anchor artifact. The act-level ``source`` (built
+    once in :func:`_lower_se_official_effects_plan`) carries the whole enacting
+    clause; replace/insert/heading/appendix/text-replace ops instead carry the
+    SPECIFIC operative text they derive from (the new section/heading/appendix
+    body, or the patch text), so anchors become per-op like EE/NO when that text
+    is a unique verbatim run of the artifact. Repeal/renumber ops have no per-op
+    body text — only a section label named in the act-level enacting clause — so
+    they keep the act-level ``raw_text`` and anchor at act granularity (honest).
+
+    Additive provenance only: ``raw_text`` is excluded from the apply-input
+    digest (AGENTS.md §0 grounding-neutral), so per-op clause text never changes
+    replay output.
+    """
+    clause = clause_text.strip()
+    if not clause or clause == source.raw_text:
+        return source
+    return replace(source, raw_text=clause)
+
+
 def _lower_se_official_effect_plan_item(
     plan: SEOfficialEffectsPlan,
     item: SEOfficialEffectPlanItem,
@@ -2700,7 +2723,7 @@ def _lower_se_official_effect_plan_item(
             action=action_kind,
             target=LegalAddress(path=(("section", label),)),
             payload=_parse_se_official_provision_payload(provision),
-            source=source,
+            source=_se_op_source_with_clause(source, provision.text or ""),
             provenance_tags=(
                 "sweden_official_act_v1",
                 f"base_sfs_id={surface.amended_act_sfs_id}",
@@ -2735,7 +2758,7 @@ def _lower_se_official_effect_plan_item(
             action=StructuralAction.INSERT,
             target=LegalAddress(path=(("section", label),), special=FacetKind.HEADING),
             payload=IRNode(kind=IRNodeKind.HEADING, text=_normalize_space(heading.text)),
-            source=source,
+            source=_se_op_source_with_clause(source, heading.text or ""),
             provenance_tags=(
                 "sweden_official_act_v1",
                 f"base_sfs_id={surface.amended_act_sfs_id}",
@@ -2777,7 +2800,7 @@ def _lower_se_official_effect_plan_item(
             action=StructuralAction.INSERT,
             target=LegalAddress(path=(("appendix", label),)),
             payload=_parse_se_official_appendix_payload(appendix),
-            source=source,
+            source=_se_op_source_with_clause(source, appendix.text or ""),
             provenance_tags=(
                 "sweden_official_act_v1",
                 f"base_sfs_id={surface.amended_act_sfs_id}",
@@ -2814,7 +2837,7 @@ def _lower_se_official_effect_plan_item(
             sequence=sequence,
             action=StructuralAction.TEXT_REPLACE,
             target=LegalAddress(path=(("section", item.target_label),)),
-            source=source,
+            source=_se_op_source_with_clause(source, new_text),
             text_patch=text_patch,
             provenance_tags=(
                 "sweden_official_act_v1",
@@ -3401,19 +3424,54 @@ def mint_se_source_anchors(ops: list[LegalOperation]) -> list[LegalOperation]:
     return anchored
 
 
+def se_utf8_anchor_artifact(json_bytes: bytes, source_id: str) -> tuple[str, bytes]:
+    """Derive the UTF-8 anchor artifact + its id from the canonical act JSON bytes.
+
+    The byte-span ``SourceAnchor`` program (task #93) anchors per-op clause text
+    against a UTF-8 serialization of the act, NOT the canonical compile artifact.
+    The canonical artifact is ``json.dumps(act).encode()`` with the default
+    ``ensure_ascii=True`` (the SE sampler/compile path both build it that way);
+    its Swedish non-ASCII (``ö``/``ä``/``å``/``§``) is ``\\uXXXX``-escaped, so a
+    clause is not a verbatim UTF-8 byte run and ``compute_source_anchor``
+    correctly returns ``None`` (the recorded BLOCKED verdict, task #92).
+
+    This helper re-parses those SAME canonical bytes and re-serializes them with
+    ``ensure_ascii=False`` to UTF-8 — a DISTINCT anchor artifact, logically equal
+    to the act, in which a verbatim Swedish clause IS a contiguous UTF-8 byte run.
+    The canonical ``json_bytes`` are NOT mutated and still feed
+    ``compile_se_official_act_ops`` unchanged (so hashes/determinism/cert roots
+    are byte-identical). The returned id tags the anchor as deriving from this
+    UTF-8 source (``…#utf8`` suffix), keeping it distinct from the canonical
+    artifact id.
+
+    Falls back to ``(source_id, json_bytes)`` if the bytes are not decodable JSON
+    (no SE act reaches here that way; the fallback simply never anchors non-ASCII).
+    """
+    try:
+        act = json.loads(json_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return source_id, json_bytes
+    utf8_bytes = json.dumps(act, ensure_ascii=False).encode("utf-8")
+    return f"{source_id}#utf8", utf8_bytes
+
+
 def parse_se_amendment_ops(json_bytes: bytes, source_id: str) -> list[LegalOperation]:
     """Compile first-pass Sweden ops from archived official act JSON."""
-    # Publish the raw act artifact so the final anchor pass
-    # (:func:`mint_se_source_anchors`, applied to the assembled op stream below)
-    # can mint a TRUE byte-span SourceAnchor for every op whose recorded clause
-    # text is a verbatim, unique byte run of these bytes (task #92). The token is
-    # reset in the finally below so the context never leaks across acts or to
-    # other frontends.
-    _raw_source_token = set_se_raw_source_context(source_id, json_bytes)
+    # Publish a UTF-8 anchor artifact (DISTINCT from the canonical compile bytes)
+    # so the final anchor pass (:func:`mint_se_source_anchors`, applied to the
+    # assembled op stream below) can mint a TRUE byte-span SourceAnchor for every
+    # op whose recorded clause text is a verbatim, unique byte run of the UTF-8
+    # act bytes (task #93). The canonical ``json_bytes`` are passed UNCHANGED to
+    # ``compile_se_official_act_ops`` — only the anchor source is re-serialized
+    # UTF-8, sidestepping the JSON-ASCII-escaping blocker without touching any
+    # canonical artifact byte / hash / cert root. The token is reset in the
+    # finally below so the context never leaks across acts or to other frontends.
+    anchor_artifact_id, anchor_bytes = se_utf8_anchor_artifact(json_bytes, source_id)
+    _raw_source_token = set_se_raw_source_context(anchor_artifact_id, anchor_bytes)
     try:
         ops = compile_se_official_act_ops(json_bytes, source_id=source_id)
         # Final uniform byte-span anchor pass over the WHOLE op stream (every
-        # mint path), while the raw artifact is still published in context.
+        # mint path), while the UTF-8 anchor artifact is still published.
         return mint_se_source_anchors(ops)
     finally:
         reset_se_raw_source_context(_raw_source_token)
