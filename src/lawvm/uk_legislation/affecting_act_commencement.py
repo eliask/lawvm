@@ -21,6 +21,7 @@ from typing import Any, Optional
 
 from lxml import etree as ET
 
+from lawvm.core.xml_parse import parse_corpus_xml
 from lawvm.roman import arabic_to_roman, roman_to_arabic
 
 _LEG_NS = "http://www.legislation.gov.uk/namespaces/legislation"
@@ -141,7 +142,7 @@ def _start_date_index(xml_bytes: bytes) -> dict[tuple[str, str], str]:
     """
     index: dict[tuple[str, str], str] = {}
     try:
-        root = ET.fromstring(xml_bytes)
+        root = parse_corpus_xml(xml_bytes)
     except ET.XMLSyntaxError:
         return index
     for el in root.iter():

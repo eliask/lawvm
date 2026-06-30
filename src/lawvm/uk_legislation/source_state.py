@@ -13,6 +13,7 @@ from lxml import etree as ET
 
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.source_lane import SourceLaneAttempt, SourceLaneSelectionEvidence
+from lawvm.core.xml_parse import parse_corpus_xml
 from lawvm.core.target_resolution import (
     SCOPE_CONFIDENCE_EXPLICIT_SOURCE_WITH_CONTEXT,
     TARGET_RECOVERED,
@@ -205,7 +206,7 @@ def classify_uk_statute_xml_content(blob: bytes | None) -> UKStatuteXmlContentSt
         )
     assert blob is not None
     try:
-        root = ET.fromstring(blob)
+        root = parse_corpus_xml(blob)
     except ET.ParseError as exc:
         return UKStatuteXmlContentState(
             xml_content_status=UKStatuteXmlContentStatus.PARSE_ERROR,

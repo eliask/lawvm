@@ -25,6 +25,7 @@ from typing import Any, Iterable, Optional, assert_never
 
 from lxml import etree as ET
 
+from lawvm.core.xml_parse import parse_corpus_xml
 from lawvm.uk_legislation.affecting_act_commencement import (
     affecting_provision_in_force,
     get_affecting_act_xml,
@@ -139,7 +140,7 @@ def _has_coming_into_force_element(xml_bytes: bytes) -> bool:
     if not xml_bytes:
         return False
     try:
-        root = ET.fromstring(xml_bytes)
+        root = parse_corpus_xml(xml_bytes)
     except ET.ParseError:
         return False
     for _elem in root.findall(f".//{{{_UKM_NS}}}ComingIntoForce"):

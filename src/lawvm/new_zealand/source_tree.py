@@ -18,6 +18,7 @@ from typing import Any, Iterable, Mapping
 
 from lxml import etree
 
+from lawvm.core.xml_parse import parse_corpus_xml
 from lawvm.new_zealand.acquisition import open_farchive
 from lawvm.new_zealand.dates import nz_date_text_to_iso
 from lawvm.new_zealand.dependencies import latest_xml_locator_for_work, parse_public_act_citation
@@ -263,7 +264,7 @@ def _parse_nz_source_document_uncached(
     xml_locator: str = "",
     version_id: str = "",
 ) -> NZSourceDocument:
-    root = etree.fromstring(xml_bytes)
+    root = parse_corpus_xml(xml_bytes)
     metadata = _document_metadata(root)
     nodes: list[NZSourceNode] = []
     document_history: list[NZHistoryWitness] = []

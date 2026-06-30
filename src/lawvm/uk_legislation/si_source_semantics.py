@@ -20,6 +20,7 @@ from lawvm.uk_legislation.phase_discipline import (
 
 from lxml import etree as ET
 
+from lawvm.core.xml_parse import parse_corpus_xml
 
 _SI_CLASSES = frozenset({"uksi", "ssi", "wsi", "nisr", "ukci", "ukmo"})
 _WS_RE = re.compile(r"\s+")
@@ -162,7 +163,7 @@ def scan_si_source_semantics_bytes(
 ) -> tuple[UKSISourceSemanticsRecord, ...]:
     """Return diagnostic records for one SI XML source blob."""
     try:
-        root = ET.fromstring(xml_bytes)
+        root = parse_corpus_xml(xml_bytes)
     except ET.ParseError as exc:
         return (
             UKSISourceSemanticsRecord(

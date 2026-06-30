@@ -36,6 +36,7 @@ from typing import Any
 from lxml import etree as ET
 
 from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.xml_parse import parse_corpus_xml
 from lawvm.uk_legislation.source_state import (
     UKStatuteXmlContentStatus,
     _is_uk_multiple_choices_blob,
@@ -246,7 +247,7 @@ def classify_uk_effect_feed_blob(blob: bytes | None) -> UKEffectFeedPageState:
             state=UKEffectFeedState.FEED_MULTIPLE_CHOICES, size=size
         )
     try:
-        root = ET.fromstring(blob)
+        root = parse_corpus_xml(blob)
     except ET.XMLSyntaxError as exc:
         return UKEffectFeedPageState(
             state=UKEffectFeedState.FEED_UNPARSEABLE,

@@ -4310,16 +4310,15 @@ def _amending_act_root(
 ) -> Any:
     if amending_work_id in cache:
         return cache[amending_work_id]
-    from lxml import etree
-
     from lawvm.core.named_swallow import log_emitter, swallow_call
+    from lawvm.core.xml_parse import parse_corpus_xml
     from lawvm.new_zealand.dependencies import latest_xml_locator_for_work
 
     def _resolve_amending_root() -> Any:
         _version_id, locator = latest_xml_locator_for_work(archive, amending_work_id)
         data = archive.get(locator) if locator else None
         if data is not None:
-            return etree.fromstring(data)
+            return parse_corpus_xml(data)
         return None
 
     # ``latest_xml_locator_for_work`` and ``etree.fromstring`` may raise across

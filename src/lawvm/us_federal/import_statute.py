@@ -47,6 +47,7 @@ from typing import Any, Iterator
 
 from lxml import etree
 
+from lawvm.core.xml_parse import parse_corpus_xml
 from lawvm.us_federal.sources import (
     GOVINFO_PLAW_MEMBER_URL,
     content_digest,
@@ -219,7 +220,7 @@ def iter_statute_plaws(volume_xml: bytes) -> Iterator[StatutePLaw]:
     parseable congress+number are still yielded with ``congress``/``number``
     of ``-1`` so the caller can record a typed skip (never silently dropped).
     """
-    root = etree.fromstring(volume_xml)
+    root = parse_corpus_xml(volume_xml)
     for pl in root.iter(_q("pLaw")):
         meta_congress = _parse_int(pl.findtext(f".//{_q('congress')}"))
         meta_number = _parse_int(pl.findtext(f".//{_q('docNumber')}"))
@@ -281,8 +282,15 @@ def _serialize_standalone(plaw: StatutePLaw) -> bytes:
     doc = _SLICE_OPEN + inner + _SLICE_CLOSE
     # Re-parse + re-serialize so the stored bytes are guaranteed well-formed and
     # namespace-normalized rather than a textual concatenation we never validate.
+    # ``doc`` is LawVM-authored bytes (wrapper + re-serialized <pLaw> element this
+    # function just built), parsed here only to prove well-formedness before
+    # storage; the original corpus volume already entered through
+    # parse_corpus_xml in iter_statute_plaws.
     return etree.tostring(
-        etree.fromstring(doc), xml_declaration=True, encoding="UTF-8"
+        # lawvm-xml: own_output_check — re-parse of LawVM-authored slice bytes.
+        etree.fromstring(doc),
+        xml_declaration=True,
+        encoding="UTF-8",
     )
 
 

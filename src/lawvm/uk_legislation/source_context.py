@@ -7,6 +7,7 @@ from lxml import etree as ET
 from dataclasses import dataclass, field
 from typing import Any, Callable, NamedTuple, Optional, Sequence
 
+from lawvm.core.xml_parse import parse_corpus_xml
 from lawvm.roman import (
     arabic_to_roman as _shared_arabic_to_roman,
     roman_to_arabic as _shared_roman_to_arabic,
@@ -479,7 +480,7 @@ def _build_affecting_source_context(
     parse_error = None
     if xml_bytes and source_status == "available":
         try:
-            root = ET.fromstring(xml_bytes)
+            root = parse_corpus_xml(xml_bytes)
         except ET.ParseError as exc:
             parse_error = exc
         else:

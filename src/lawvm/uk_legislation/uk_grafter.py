@@ -58,6 +58,7 @@ from typing import Optional, Dict, Any, Callable, cast
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.ir import IRNode, IRStatute
 from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.xml_parse import parse_corpus_xml
 from lawvm.roman import roman_to_arabic as _shared_roman_to_arabic
 from lawvm.uk_legislation.apply_rebuild import uk_ir_node_kind
 from lawvm.core.quirks_disposition import QuirksDisposition
@@ -2187,7 +2188,7 @@ def parse_uk_statute_ir_bytes(
     source_path: str = "<archive>",
 ) -> IRStatute:
     return _build_ir_from_root(
-        ET.fromstring(xml_bytes),
+        parse_corpus_xml(xml_bytes),
         statute_id=statute_id,
         version_label=version_label,
         pit_date=pit_date,
@@ -2529,5 +2530,5 @@ def extract_eid_map(xml_path: Path, pit_date: Optional[str] = None) -> Dict[str,
 
 
 def extract_eid_map_bytes(xml_bytes: bytes, pit_date: Optional[str] = None) -> Dict[str, Any]:
-    root = ET.fromstring(xml_bytes)
+    root = parse_corpus_xml(xml_bytes)
     return _extract_eid_map_from_root(root, pit_date=pit_date)

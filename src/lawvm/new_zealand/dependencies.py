@@ -18,6 +18,7 @@ from typing import Any, Iterable, Mapping, Protocol, cast
 from lxml import etree
 
 from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.xml_parse import parse_corpus_xml
 from lawvm.core.source_lane import SourceLaneAttempt, SourceLaneSelectionEvidence
 from lawvm.new_zealand.acquisition import open_farchive
 from lawvm.core.quirks_disposition import QuirksDisposition
@@ -103,7 +104,7 @@ def extract_dependency_report(
     work_id: str = "",
     version_id: str = "",
 ) -> NZDependencyReport:
-    root = etree.fromstring(xml_bytes)
+    root = parse_corpus_xml(xml_bytes)
     reprint_refs = list(_iter_reprint_amend_refs(root))
     history_refs = list(_iter_history_note_refs(root))
     diagnostics: list[dict[str, Any]] = []

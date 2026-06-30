@@ -12,6 +12,7 @@ from urllib.request import Request, urlopen
 
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.http_identity import LAWVM_USER_AGENT
+from lawvm.core.xml_parse import parse_corpus_xml
 from lawvm.uk_legislation.affecting_class import (
     _UK_AFFECTING_URI_SLUG_RE,
     affecting_class_slug,
@@ -512,7 +513,7 @@ def parse_effects_from_bytes(
     records = []
     for feed_index, raw in enumerate(feed_bytes_list):
         try:
-            root = ET.fromstring(raw)
+            root = parse_corpus_xml(raw)
         except ET.ParseError as exc:
             if parse_rejections_out is not None:
                 rejection = _uk_effect_feed_diagnostic(

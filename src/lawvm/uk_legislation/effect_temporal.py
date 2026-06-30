@@ -5,6 +5,7 @@ from lxml import etree as ET
 from enum import StrEnum
 from typing import Any, NamedTuple, Optional, Sequence
 
+from lawvm.core.xml_parse import parse_corpus_xml
 from lawvm.core.temporal_resolution import (
     TEMPORAL_RECOVERY_FAMILY,
     TEMPORAL_SOURCE_BACKED_OVERRIDE,
@@ -70,7 +71,7 @@ def _instrument_commencement_metadata(
             commencement_status=UKCommencementMetadataStatus.SOURCE_XML_UNAVAILABLE,
         )
     try:
-        root = ET.fromstring(xml_bytes)
+        root = parse_corpus_xml(xml_bytes)
     except ET.ParseError as exc:
         return UKCommencementMetadata(
             effective_date="",

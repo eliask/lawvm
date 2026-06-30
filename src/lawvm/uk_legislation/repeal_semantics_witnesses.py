@@ -14,6 +14,7 @@ from typing import Any, Iterable
 
 from lxml import etree as ET
 
+from lawvm.core.xml_parse import parse_corpus_xml
 from lawvm.uk_legislation.effect_source_selection import (
     extracted_tag_and_text,
     select_source_for_effect,
@@ -160,7 +161,7 @@ def scan_repeal_semantics_source_phrase_xml(
     if not xml_bytes:
         return ()
     try:
-        root = ET.fromstring(xml_bytes)
+        root = parse_corpus_xml(xml_bytes)
     except ET.XMLSyntaxError:
         return ()
     witnesses: list[UKRepealSemanticsWitness] = []

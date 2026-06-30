@@ -7,6 +7,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import NamedTuple, Optional
 
+from lawvm.core.xml_parse import parse_corpus_xml
 from lawvm.uk_legislation.xml_helpers import _RootScopedCache, _tag, _text_content
 
 
@@ -605,7 +606,7 @@ def extract_provision_element_from_bytes(
     """
     if root is None:
         try:
-            root = ET.fromstring(xml_bytes)
+            root = parse_corpus_xml(xml_bytes)
         except ET.ParseError as exc:
             print(f"  WARN: XML parse error in extract_provision_element_from_bytes: {exc}")
             return None
