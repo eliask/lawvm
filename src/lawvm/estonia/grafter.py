@@ -8112,6 +8112,113 @@ def _ee_resolve_parent_path(body: IRNode, path: tree_ops.Path) -> Optional[tree_
     return full
 
 
+def _ee_replace_payload_changes_target_key(op: LegalOperation) -> bool:
+    """True when a REPLACE payload's leaf key differs from the target's leaf key.
+
+    EE-local replica of ``core.mutation_boundary._replace_payload_changes_target_key``
+    (a private core helper; replicated here rather than imported across the
+    frontend/core boundary). When True, the REPLACE reshapes the PARENT child-list
+    (the new leaf key replaces the old key as a child), so the legitimate declared
+    boundary is the parent — matching core's own selection in
+    ``operation_storage_boundary_prefixes``.
+    """
+    if op.payload is None or not op.target.path:
+        return False
+    target_kind, target_label = op.target.path[-1]
+    payload_kind = op.payload.kind
+    payload_kind_str = payload_kind.value if hasattr(payload_kind, "value") else str(payload_kind)
+    payload_key = (payload_kind_str, op.payload.label or "")
+    return payload_key != (str(target_kind), str(target_label))
+
+
+def _ee_resolved_boundary_prefixes(
+    before_body: IRNode, op: LegalOperation
+) -> tuple[tree_ops.Path, ...]:
+    """Resolve an op's DECLARED mutation boundary to its full chapter-nested form.
+
+    EE's PEG emits FLAT op targets (e.g. ``section:3/subsection:1``) even when the
+    statute physically nests its sections under chapters
+    (``chapter:1/section:3/subsection:1``) — see :func:`_ee_resolve_full_path`.
+    The core boundary audit (``operation_storage_boundary_prefixes``) derives the
+    op's declared region from the FLAT op target, so a perfectly in-target write
+    that lands at the chapter-nested address reads as an out-of-boundary escape:
+    the flat ``(section:3, subsection:1)`` prefix does NOT cover the actual changed
+    path ``(chapter:1, section:3, subsection:1)`` (the leading ``chapter`` step is
+    not in the declared prefix). This is a too-narrow boundary DECLARATION, not a
+    bad write — the write is exactly where the op targets.
+
+    This helper resolves the op's declared region(s) to their concrete full paths
+    in ``before_body`` and returns them as authorized boundary-extension prefixes
+    (threaded onto :attr:`MaterializeResult.declared_recovery_prefixes`, the same
+    carrier NO/EE already use for an authorized retarget). The resolution mirrors
+    the action-shape logic of ``core.mutation_boundary.operation_storage_boundary_prefixes``:
+
+    * TEXT_REPLACE / REPLACE-in-place: the resolved full TARGET path (a section /
+      subsection / item node) — its descendants are covered by the prefix relation.
+    * INSERT / REPEAL: the resolved full PARENT path (the child-list whose shape
+      the structural edit changes).
+    * RENUMBER: the resolved full PARENT of both the source target and the
+      destination.
+
+    Pure + byte-identity-safe: it only resolves (read-only) against ``before_body``
+    and returns prefixes for the DECLARATION; it never mutates the tree or changes
+    any write. A target that already resolves flat (top-level sections) yields the
+    flat path unchanged (a no-op extension that the audit already covers).
+    Unresolvable targets contribute nothing (the existing escape/skip accounting
+    is unchanged — we never widen a boundary for a write that did not land where
+    the op points).
+    """
+    action = op.action.value if hasattr(op.action, "value") else op.action
+    target_path = _address_to_path(op.target)
+    prefixes: list[tree_ops.Path] = []
+
+    def _add(path: Optional[tree_ops.Path]) -> None:
+        if path:
+            prefixes.append(tuple(path))
+
+    if action == "text_replace":
+        _add(_ee_resolve_full_path(before_body, target_path))
+    elif action == "replace":
+        # A REPLACE whose payload changes the target's leaf key changes the PARENT
+        # child-list shape, so the diff surfaces at the parent — core's
+        # ``operation_storage_boundary_prefixes`` declares the PARENT for exactly
+        # that case, the resolved TARGET otherwise. Mirror that selection so we
+        # resolve the SAME boundary level core declared (never wider): a
+        # key-preserving REPLACE declares only the resolved full target (sibling
+        # writes still escape, as they must); a key-changing REPLACE declares the
+        # resolved parent (the child-list it legitimately reshapes).
+        if _ee_replace_payload_changes_target_key(op):
+            _add(_ee_resolve_parent_path(before_body, target_path))
+        else:
+            _add(_ee_resolve_full_path(before_body, target_path))
+    elif action == "insert":
+        _add(_ee_resolve_parent_path(before_body, target_path))
+    elif action == "repeal":
+        # A REPEAL changes the parent child-list (the node is removed / tombstoned);
+        # resolve both the parent (child-list shape) and the full target (the
+        # tombstone node EE leaves in place still lives at the nested address).
+        _add(_ee_resolve_parent_path(before_body, target_path))
+        _add(_ee_resolve_full_path(before_body, target_path))
+    elif action == "renumber":
+        _add(_ee_resolve_parent_path(before_body, target_path))
+        if op.destination is not None:
+            dest_path = _address_to_path(op.destination)
+            _add(_ee_resolve_parent_path(before_body, dest_path))
+            _add(_ee_resolve_full_path(before_body, dest_path))
+    else:
+        _add(_ee_resolve_full_path(before_body, target_path))
+
+    # Dedupe while preserving order; drop any prefix that equals the flat declared
+    # form (it adds nothing) is unnecessary — the audit dedupes prefixes itself.
+    seen: set[tree_ops.Path] = set()
+    out: list[tree_ops.Path] = []
+    for p in prefixes:
+        if p not in seen:
+            seen.add(p)
+            out.append(p)
+    return tuple(out)
+
+
 def _ee_apply_op(
     body: IRNode,
     op: LegalOperation,
@@ -10846,31 +10953,72 @@ def apply_ee_ops(
         # ``declared_recovery`` boundary extensions. The carrier stays ``None``
         # (no allocation, no behaviour change) when the probe is off, preserving
         # byte-identical production replay.
-        probe_on = _ee_mutation_boundary_probe_enabled()
-        declared_recovery_paths: Optional[list[tree_ops.Path]] = (
-            [] if probe_on else None
-        )
+        # The intentional-retarget recovery paths AND the chapter-nesting
+        # boundary declaration (below) both feed the SAME
+        # ``declared_recovery_prefixes`` carrier, read by the always-on seam
+        # observer for EVERY landed write — so collect the retarget paths
+        # UNCONDITIONALLY (previously gated on the probe, which left the seam
+        # observer reading an under-declared boundary when the probe was off).
+        # The list is cheap; ``_ee_apply_op`` only appends on an actual retarget.
+        declared_recovery_paths: list[tree_ops.Path] = []
         new_body = _ee_apply_op(
             before_body,
             op,
             adjudications_out=adjudications_out,
             declared_recovery_paths_out=declared_recovery_paths,
         )
+        # ── LS-01 chapter-nesting boundary declaration (#108-EE). ────────────
+        # EE's PEG emits FLAT op targets (``section:3``) while the body nests
+        # sections under chapters (``chapter:1/section:3``), so the core boundary
+        # audit — which derives the declared region from the flat op target —
+        # reads a perfectly in-target write at the chapter-nested address as an
+        # out-of-boundary escape. Resolve the op's declared region to its concrete
+        # full chapter-nested path(s) in ``before_body`` and declare them as
+        # authorized boundary-extension prefixes. This corrects the boundary
+        # DECLARATION (too-narrow → resolved), NOT the write: it is read-only over
+        # ``before_body`` and threads onto the SAME ``declared_recovery_prefixes``
+        # carrier the seam observer / in-fold probe already read. Byte-identity
+        # holds: only the declared boundary changes, never the materialized body.
+        resolved_prefixes = _ee_resolved_boundary_prefixes(before_body, op)
+        seen_prefix: set[tree_ops.Path] = set(declared_recovery_paths)
+        for prefix in resolved_prefixes:
+            if prefix not in seen_prefix:
+                seen_prefix.add(prefix)
+                declared_recovery_paths.append(prefix)
         return MaterializeResult(
             new_state=new_body,
-            declared_recovery_prefixes=tuple(declared_recovery_paths or ()),
+            declared_recovery_prefixes=tuple(declared_recovery_paths),
         )
 
     # ── EE apply profile (Wave 3, design §3.1). ──────────────────────────────
-    # ``boundary_mode="off"``: EE retains its own per-op probe (in the fold,
-    # gated on ``LAWVM_EE_MUTATION_BOUNDARY_PER_OP``) as the single producer of
-    # the projected ``ee_replay_mutation_boundary_per_op_violation_observed``
-    # adjudication, so the env-flag-ON output is byte-identical to the
-    # pre-cutover fold. ``emit_receipts``/``emit_coverage`` are False: EE's bare
-    # ``apply_ee_ops`` result (the materialized ``IRStatute`` + the
+    # ``boundary_mode="block"`` (LS-01, #108-EE): EE's per-op mutation-boundary
+    # gate is the SECOND ENFORCING apply-seam gate (after LS-03 occupancy). It was
+    # promoted from OBSERVE only AFTER closing the real corpus boundary escapes:
+    # replaying EE's 30-statute replayable-corpus sample in observe mode surfaced
+    # 51 (and 474 at 120-scale) ``APPLY.MUTATION_BOUNDARY_FINDING_AT_OP`` escapes —
+    # ALL of them the chapter-nesting DECLARATION artifact (a flat op target
+    # ``section:3`` whose write legitimately landed at the chapter-nested
+    # ``chapter:1/section:3`` read as out-of-boundary because the declared region
+    # came from the flat target). ``_ee_resolved_boundary_prefixes`` (threaded onto
+    # the materializer's ``declared_recovery_prefixes``) corrects the DECLARATION
+    # to the resolved full chapter-nested path WITHOUT changing any write, driving
+    # the escape count to ZERO over the 30/120/300-statute samples (seam observer
+    # and the env-gated in-fold probe agree EXACTLY: 0 each — no drift). With zero
+    # corpus escapes, block mode emits the strict
+    # ``APPLY.MUTATION_BOUNDARY_VIOLATION_AT_OP`` on NO corpus op → byte-identical
+    # production output — yet any FUTURE op that genuinely writes outside its
+    # (chapter-resolved) declared region now fails loud on EE's production
+    # ``findings``. See ``tests/test_ee_boundary_enforcement.py`` +
+    # ``notes/EE_BOUNDARY_ESCAPE_LEDGER.md``.
+    #
+    # EE also retains its own env-gated in-fold probe
+    # (``LAWVM_EE_MUTATION_BOUNDARY_PER_OP``) as the
+    # ``ee_replay_mutation_boundary_per_op_violation_observed`` adjudication
+    # producer; it reads the SAME ``declared_recovery_prefixes`` so it stays in
+    # lock-step with the seam gate. ``emit_receipts``/``emit_coverage`` are False:
+    # EE's bare ``apply_ee_ops`` result (the materialized ``IRStatute`` + the
     # ``lo_ops_out`` snapshot channel) stays byte-identical (no new artifacts);
-    # the additive receipt lane is proven via the seam in
-    # ``tests/test_ee_apply_seam_parallel_run.py``.
+    # the additive receipt lane is the opt-in ``write_receipts_out`` emitter (#107).
     # ── EE occupancy resolver + LS-03 BLOCK mode (B-enforcement increment 4). ─
     # EE is the FIRST non-FI frontend to wire a REAL occupancy resolver onto the
     # universal seam: ``_ee_section_occupancy`` reads the whole-section slot's
@@ -10891,7 +11039,7 @@ def apply_ee_ops(
     ee_apply_profile: ApplyProfile[IRNode] = ApplyProfile(
         jurisdiction="ee",
         materializer=_ee_materialize_one,
-        boundary_mode="off",
+        boundary_mode="block",
         emit_receipts=False,
         emit_coverage=False,
         receipt_helper_prefix="apply_ee_ops",
@@ -10993,6 +11141,39 @@ def apply_ee_ops(
         # unconditional.
         if seam_observations_out is not None and applied_result.observations:
             seam_observations_out.extend(applied_result.observations)
+
+        # ── LS-01 BLOCK-mode violation surfacing (#108-EE). ──────────────────
+        # With ``boundary_mode="block"`` the seam routes a genuine out-of-boundary
+        # write to the strict ``APPLY.MUTATION_BOUNDARY_VIOLATION_AT_OP`` on
+        # ``AppliedOp.findings`` (NOT ``observations``). EE's bare apply lane has
+        # no production ``findings`` channel, so surface any seam findings as a
+        # blocking EE adjudication rather than silently dropping them (the
+        # never-silently-dropped contract). On the proven-clean corpus this loop
+        # NEVER fires (0 corpus violations), so production output stays
+        # byte-identical; a FUTURE genuinely-escaping op fails loud here. The
+        # occupancy block gate's strict ``APPLY.OCCUPANCY_TRANSITION_BLOCKED``
+        # findings (LS-03, inc 4) surface through the same drain.
+        if applied_result.findings and adjudications_out is not None:
+            for finding in applied_result.findings:
+                f_kind = getattr(finding, "kind", "")
+                f_detail = getattr(finding, "detail", None) or {}
+                _append_ee_replay_adjudication(
+                    adjudications_out,
+                    kind="ee_replay_apply_seam_block_violation",
+                    message=(
+                        "EE apply-seam BLOCK gate emitted a strict violation: "
+                        f"{f_kind}."
+                    ),
+                    op=op,
+                    detail={
+                        "action": action,
+                        "target": str(op.target),
+                        "finding_kind": str(f_kind),
+                        "finding_detail": {
+                            str(k): str(v) for k, v in dict(f_detail).items()
+                        },
+                    },
+                )
 
         # ── XP-06 per-op WriteReceipt emission (§2.3 receipt contract). ───────
         # EE was the only frontend with ZERO ``WriteReceipt`` construction sites

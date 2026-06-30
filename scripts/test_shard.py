@@ -86,6 +86,10 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # via estonia/ee_write_receipts.emit_ee_op_receipt threaded into
         # apply_ee_ops through the additive write_receipts_out opt-in sink.
         "test_ee_write_receipt.py",
+        # #108-EE: LS-01 per-op mutation-boundary BLOCK mode. The chapter-nesting
+        # declaration fix (_ee_resolved_boundary_prefixes) drives the real-corpus
+        # boundary-escape count to 0, then flips boundary_mode "off" -> "block".
+        "test_ee_boundary_enforcement.py",
     ),
     "estonia_replay_logic": (
         "test_ee_replay_logic.py",
