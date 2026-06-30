@@ -5578,27 +5578,35 @@ def _iter_instruction_units(
 # UK arm's ``{affecting_act_id -> bytes}`` mapping — the published context is the
 # EE/NO single-artifact pair ``(source_artifact_id, raw_bytes)``.
 #
-# FEASIBILITY VERDICT: BLOCKED on the canonical artifact (a rigorous negative
-# result, valid per-frontend like SE/UK), for the SAME STRUCTURAL cause as the UK
-# arm: STRUCTURED-SOURCE TAG-BOUNDARY RECONSTRUCTION. Each US op records
-# ``source.raw_text = _text_of(unit)`` (amendatory.py:1473) — the amendatory unit's
-# descendant text, itertext-collected across child nodes (sidenotes pruned) and
-# whitespace-collapsed (``re.sub(r"\s+", " ", …).strip()``), exactly the EE/NO
-# flattening shape. But govinfo PLAW USLM is DENSELY structured: a single
-# amendatory clause's number lives in ``<num>``, its caption in
-# ``<heading><inline>``, its lead-in prose in ``<chapeau>`` (with the USC target in
-# a nested ``<ref>``), and its payload in ``<quotedText>``/``<quotedContent>`` — so
-# the flattened clause (e.g. ``"(b) Reserve.—Section 8908 of title 40 … the
-# following:“(c) …”."``) is reconstructed ACROSS MANY element boundaries and is
-# NEVER a contiguous verbatim byte run of the raw XML. Measured on the canonical
-# sample: 0/43 ops anchor (NOT one is even a full verbatim substring; the longest
-# contiguous verbatim run is a ~30% median fraction of the clause, the rest broken
-# at the first ``<num>``/``<ref>``/``<quotedText>`` boundary). This is the EE/NO
-# "reconstructed across tag boundaries" minority case made UNIVERSAL by USLM's
-# dense markup — the SAME friction kind as UK, NOT the SE encoding-escaping cause.
-# The recipe generalizes the moment a per-op clause survives as a verbatim run; the
-# infrastructure below mints that anchor honestly when it occurs and leaves it
-# absent otherwise. See tests/test_us_source_anchor.py.
+# FEASIBILITY VERDICT: REACHABLE (partial) via PER-ELEMENT anchoring (task #100;
+# the same fix the UK arm used in 570b1089). The op's recorded clause text
+# (``source.raw_text = _text_of(unit)`` — the amendatory unit's descendant text,
+# itertext-collected across child nodes (sidenotes pruned) and whitespace-collapsed
+# (``re.sub(r"\s+", " ", …).strip()``), exactly the EE/NO flattening shape) is
+# reconstructed across the DENSELY structured govinfo PLAW USLM: a single amendatory
+# clause's number lives in ``<num>``, its caption in ``<heading><inline>``, its
+# lead-in prose in ``<chapeau>`` (with the USC target in a nested ``<ref>``), and its
+# payload in ``<quotedText>``/``<quotedContent>``. So the FLATTENED WHOLE CLAUSE
+# (e.g. ``"(b) Reserve.—Section 8908 of title 40 … the following:“(c) …”."``) is
+# reconstructed ACROSS MANY element boundaries and is NEVER a contiguous verbatim
+# byte run of the raw XML (anchoring it directly mints 0/43 — the prior BLOCKED arm,
+# task #92). The fix (task #100) RE-SCOPES the anchored unit from the flattened whole
+# clause to the operative BODY ELEMENT it came from: the post-pass re-parses the
+# Public Law once, collects every descendant element whose ``_text_of`` IS a single
+# verbatim, UNIQUE byte run of the raw bytes (:func:`_unique_byte_run_bodies` — the
+# ``<quotedText>``/``<quotedContent>``/``<chapeau>``/``<ref>`` leaves with no
+# interleaved inline markup), and anchors the op against the LONGEST such body that
+# is a substring of the op's flattened clause (so the anchored span provably belongs
+# to THIS op's clause). ``compute_source_anchor`` re-verifies that body is byte-exact
+# and unique before minting. Measured on the canonical sample: 31/43 ops anchor
+# honestly (no_typed_anchor_rate 100% -> 27.9%). The remaining 12 are honest
+# ``None``: the operative text is reconstructed across INLINE ``<quotedText>`` markup
+# (the strike-"X"-insert-"Y" forms whose two short operands plus connecting prose
+# never coincide with one contiguous element body), so no descendant element's body
+# is a contiguous byte run — fail-loud, never fabricated. This is the EE/NO
+# "reconstructed across tag boundaries" minority case made UNIVERSAL by USLM's dense
+# markup, then CRACKED per-element exactly as UK was — NOT the SE encoding-escaping
+# cause. See tests/test_us_source_anchor.py.
 _US_RAW_SOURCE_CTX: "contextvars.ContextVar[tuple[str, bytes] | None]" = (
     contextvars.ContextVar("us_raw_source_ctx", default=None)
 )
@@ -5622,19 +5630,73 @@ def reset_us_raw_source_context(
     _US_RAW_SOURCE_CTX.reset(token)
 
 
-def _anchor_op(op: LegalOperation, artifact_id: str, raw_bytes: bytes) -> LegalOperation:
-    """Return ``op`` with a TRUE byte-span anchor stamped, or unchanged.
+def _unique_byte_run_bodies(raw_bytes: bytes) -> List[str]:
+    """Return every element body that is a UNIQUE verbatim byte run of ``raw_bytes``.
 
-    The op's recorded clause text (``source.raw_text`` — falling back to the op's
-    ``raw_text``) is located in ``raw_bytes`` via
-    :func:`lawvm.core.provenance.compute_source_anchor`. Built on the EXACT recorded
-    clause string, so a verifier re-slicing the raw bytes at the anchor span gets
-    back precisely the clause text. When the clause is not a single verbatim, unique
-    byte run of the artifact (the UNIVERSAL US case — clause reconstructed across
-    USLM ``<num>``/``<ref>``/``<quotedText>`` element boundaries — see the module
-    note above), ``compute_source_anchor`` returns ``None`` and the anchor is
-    honestly left absent — never fabricated. Idempotent: an op that already carries
-    an anchor is left untouched.
+    Parses the Public Law USLM once and walks every element, collecting the
+    whitespace-collapsed descendant text (the EXACT :func:`_text_of` flattening the
+    op's clause uses — :func:`_itertext_excluding_sidenotes` with editorial page /
+    sidenote marginalia pruned, then ``re.sub(r"\\s+", " ", …).strip()``) of each
+    element whose flattened text appears as a single, CONTIGUOUS, GLOBALLY UNIQUE
+    verbatim byte substring of the raw artifact. These are the addressable operative
+    bodies — the ``<quotedText>``/``<quotedContent>`` payloads and the ``<chapeau>``/
+    ``<ref>`` leaves whose prose carries NO interleaved inline markup, so their
+    flattened text is byte-identical to the raw bytes between their open/close tags.
+    Returned LONGEST-first so the per-op selector prefers the most specific (largest)
+    body of a clause.
+
+    Pure read of the bytes; no fabrication — :func:`compute_source_anchor` still
+    independently re-verifies byte-exactness and uniqueness before any anchor mints
+    (collapse can never forge a run: a body whose collapsed text differs from the raw
+    bytes simply fails the ``raw.find`` here and is dropped, never anchored).
+    """
+    bodies: List[str] = []
+    seen: set[str] = set()
+    try:
+        tree = ET.fromstring(raw_bytes)
+    except ET.ParseError:
+        return bodies
+    for node in tree.iter():
+        text = _text_of(node)
+        if not text or text in seen:
+            seen.add(text)
+            continue
+        seen.add(text)
+        needle = text.encode("utf-8")
+        first = raw_bytes.find(needle)
+        if first >= 0 and raw_bytes.find(needle, first + 1) < 0:
+            bodies.append(text)
+    bodies.sort(key=lambda s: -len(s))
+    return bodies
+
+
+def _anchor_op(
+    op: LegalOperation,
+    artifact_id: str,
+    raw_bytes: bytes,
+    bodies: List[str],
+) -> LegalOperation:
+    """Return ``op`` with a TRUE per-element byte-span anchor stamped, or unchanged.
+
+    PER-ELEMENT ANCHORING (task #100). The op's recorded clause text
+    (``source.raw_text`` — the flattened amendatory unit from :func:`_text_of`) is
+    reconstructed across the Public Law's USLM ``<num>``/``<chapeau>``/``<ref>``/
+    ``<quotedText>`` element boundaries, so it is almost NEVER a contiguous byte run
+    of the raw XML — anchoring it directly mints 0/43 (the prior BLOCKED arm, task
+    #92). Instead the anchored unit is RE-SCOPED to the operative BODY ELEMENT the
+    clause came from: among the Public Law's descendant elements whose flattened text
+    is a unique contiguous byte run (:func:`_unique_byte_run_bodies`, passed in as
+    ``bodies``), the LONGEST one that is a substring of THIS op's clause is selected
+    (so the span provably belongs to this op) and passed to
+    :func:`lawvm.core.provenance.compute_source_anchor`, which independently
+    re-verifies it is byte-exact and unique before minting. The anchored body is
+    PROVENANCE metadata — ``source.raw_text`` and every apply-authoritative field are
+    untouched. When no descendant body of the clause is a unique byte run (the
+    operative text is reconstructed across INLINE ``<quotedText>`` markup — the
+    strike-"X"-insert-"Y" forms whose two short operands and connecting prose never
+    coincide with one contiguous element body), the anchor is honestly left absent
+    (``None``) — never fabricated. Idempotent: an op that already carries an anchor
+    is left untouched.
     """
     src = op.source
     if src is None or src.source_anchor is not None:
@@ -5642,10 +5704,15 @@ def _anchor_op(op: LegalOperation, artifact_id: str, raw_bytes: bytes) -> LegalO
     clause = src.raw_text or op.raw_text or ""
     if not clause:
         return op
+    # Re-scope to the operative body: the longest unique-byte-run element body of the
+    # Public Law that is a substring of THIS op's clause.
+    body = next((b for b in bodies if b and b in clause), None)
+    if body is None:
+        return op
     anchor = compute_source_anchor(
         source_artifact_id=artifact_id,
         raw_bytes=raw_bytes,
-        clause_text=clause,
+        clause_text=body,
     )
     if anchor is None:
         return op
@@ -5653,11 +5720,13 @@ def _anchor_op(op: LegalOperation, artifact_id: str, raw_bytes: bytes) -> LegalO
 
 
 def mint_us_source_anchors(ops: List[LegalOperation]) -> List[LegalOperation]:
-    """Stamp a TRUE byte-span :class:`SourceAnchor` on every anchorable op.
+    """Stamp a TRUE per-element byte-span :class:`SourceAnchor` on every anchorable op.
 
     Final, uniform post-pass over an emitted op stream, run by
     :func:`lower_plaw_amendatory` once the raw PL USLM artifact has been published
-    in the parse context (see :func:`set_us_raw_source_context`).
+    in the parse context (see :func:`set_us_raw_source_context`). The unique
+    byte-run body index (:func:`_unique_byte_run_bodies`) is parsed once per Public
+    Law and shared across every op.
 
     Additive metadata only: it touches solely ``source.source_anchor`` and never an
     apply-authoritative field, so US dry-run/materialization output is byte-identical
@@ -5667,33 +5736,37 @@ def mint_us_source_anchors(ops: List[LegalOperation]) -> List[LegalOperation]:
     if raw_ctx is None or not ops:
         return ops
     artifact_id, raw_bytes = raw_ctx
-    return [_anchor_op(op, artifact_id, raw_bytes) for op in ops]
+    bodies = _unique_byte_run_bodies(raw_bytes)
+    return [_anchor_op(op, artifact_id, raw_bytes, bodies) for op in ops]
 
 
 def _anchor_instructions(
     instructions: list[USAmendmentInstruction],
 ) -> list[USAmendmentInstruction]:
-    """Rewrite each instruction's ops with byte-span anchors (uniform post-pass).
+    """Rewrite each instruction's ops with per-element byte-span anchors (post-pass).
 
-    Runs :func:`mint_us_source_anchors` over the WHOLE assembled op stream of one
-    Public Law (every instruction's primary ``operation`` and its
-    ``extra_operations``), so the anchored ops are exactly what
-    :meth:`USAmendatoryReport.operations` returns. A no-op (returns the instructions
+    Runs the per-element anchoring of :func:`mint_us_source_anchors` over the WHOLE
+    assembled op stream of one Public Law (every instruction's primary ``operation``
+    and its ``extra_operations``), so the anchored ops are exactly what
+    :meth:`USAmendatoryReport.operations` returns. The unique byte-run body index is
+    parsed once for the whole instruction stream. A no-op (returns the instructions
     unchanged) when no raw artifact is published in context.
     """
     raw_ctx = _US_RAW_SOURCE_CTX.get()
     if raw_ctx is None:
         return instructions
     artifact_id, raw_bytes = raw_ctx
+    bodies = _unique_byte_run_bodies(raw_bytes)
     rewritten: list[USAmendmentInstruction] = []
     for instr in instructions:
         primary = (
-            _anchor_op(instr.operation, artifact_id, raw_bytes)
+            _anchor_op(instr.operation, artifact_id, raw_bytes, bodies)
             if instr.operation is not None
             else None
         )
         extra = tuple(
-            _anchor_op(op, artifact_id, raw_bytes) for op in instr.extra_operations
+            _anchor_op(op, artifact_id, raw_bytes, bodies)
+            for op in instr.extra_operations
         )
         if primary is instr.operation and extra == instr.extra_operations:
             rewritten.append(instr)

@@ -1,58 +1,61 @@
-"""Byte-span ``SourceAnchor`` arm for the US Federal frontend (LawVM task #92).
+"""Byte-span ``SourceAnchor`` arm for the US Federal frontend (LawVM task #100).
 
 Mirrors the Estonia pilot (``tests/test_ee_source_anchor.py``), the Norway arm
 (``tests/test_no_source_anchor.py``), the Sweden arm (``tests/test_se_source_anchor.py``),
-and the UK arm (``tests/test_uk_source_anchor.py``) in SHAPE, but records a
-rigorous BLOCKED feasibility result for US Federal — a valid per-frontend outcome
-per the task brief.
+and the UK arm (``tests/test_uk_source_anchor.py``) in SHAPE, and now records a
+REACHABLE (partial) feasibility result for US Federal via PER-ELEMENT anchoring.
 
-FEASIBILITY VERDICT: BLOCKED on the canonical compile artifact, for the SAME
-STRUCTURAL reason as the UK arm (distinct from EE/NO, which are REACHABLE, and from
-SE, which is encoding-BLOCKED):
+FEASIBILITY VERDICT: REACHABLE (partial) via per-element anchoring. The prior
+task-#92 arm anchored the FLATTENED WHOLE CLAUSE string and minted 0/43, because
+govinfo PLAW USLM is DENSELY structured: a single amendatory clause's number lives
+in ``<num>``, its caption in ``<heading><inline>``, its lead-in prose in
+``<chapeau>`` (with the USC target in a nested ``<ref>``), and its payload in
+``<quotedText>``/``<quotedContent>``. So the flattened clause (e.g. ``"(b)
+Reserve.—Section 8908 of title 40 … the following:“(c) …”."``) is reconstructed
+ACROSS MANY element boundaries and is never a contiguous verbatim byte run of the
+raw XML.
 
-  STRUCTURED-SOURCE TAG-BOUNDARY RECONSTRUCTION. The recorded ``source.raw_text``
-  is ``_text_of(unit)`` (``us_federal/amendatory.py``) — the amendatory unit's
-  descendant text, ``itertext``-collected across its child nodes (USLM sidenotes
-  pruned) and whitespace-collapsed (``re.sub(r"\\s+", " ", …).strip()``), exactly
-  the EE/NO flattening shape. But govinfo PLAW USLM is DENSELY structured: a single
-  amendatory clause's number lives in ``<num>``, its caption in
-  ``<heading><inline>``, its lead-in prose in ``<chapeau>`` (with the USC target in
-  a nested ``<ref>``), and its payload in ``<quotedText>``/``<quotedContent>``. So
-  the flattened clause (e.g. ``"(b) Reserve.—Section 8908 of title 40 … the
-  following:“(c) …”."``) is reconstructed ACROSS MANY element boundaries and is
-  NEVER a contiguous verbatim byte run of the raw XML. ``compute_source_anchor``
-  correctly refuses (returns ``None``).
+  PER-ELEMENT FIX. The anchored unit is RE-SCOPED from the flattened whole clause
+  to the operative BODY ELEMENT it came from. ``mint_us_source_anchors`` re-parses
+  the Public Law, collects every descendant element whose ``_text_of`` flattening is
+  a single, contiguous, GLOBALLY UNIQUE verbatim byte run of the raw bytes (the
+  ``<quotedText>``/``<quotedContent>``/``<chapeau>``/``<ref>`` leaves with no
+  interleaved inline markup), and anchors the op against the LONGEST such body that
+  is a substring of the op's flattened clause — so the anchored span provably
+  belongs to THIS op. ``compute_source_anchor`` re-verifies byte-exactness and
+  uniqueness before minting.
 
 MEASURED on the canonical sample (3 Public Laws, 43 ops):
-``no_typed_anchor_rate`` stays 100% — 0/43 ops anchor. NOT ONE clause is even a
-full verbatim substring of the raw XML; the longest contiguous verbatim run is a
-~30% median fraction of the clause, the rest broken at the first
-``<num>``/``<ref>``/``<quotedText>`` boundary. Every absence is justified —
+``no_typed_anchor_rate`` drops from 100% (43/43, task #92) to ~28% — the MAJORITY
+(31/43) of ops now carry a TRUE, byte-re-verifiable per-element anchor. The
+remaining 12 are honest ``None``: the operative text is reconstructed across INLINE
+``<quotedText>`` markup (the strike-"X"-insert-"Y" forms whose two short operands
+plus connecting prose never coincide with one contiguous element body), so no
+descendant element body is a contiguous byte run. Every absence is justified —
 fail-loud, never a fabricated offset.
 
-This is the EE/NO "reconstructed across tag boundaries" MINORITY case made
-UNIVERSAL by USLM's dense structured markup — the SAME friction kind as UK. The
-``mint_us_source_anchors`` post-pass is nonetheless wired in faithfully (identical
-shape to EE/NO/SE/UK): it mints a TRUE, re-verifiable anchor the moment a per-op
-clause is a unique verbatim byte run of its artifact, and these tests prove (a) any
-anchor it DOES mint re-verifies byte-exactly, (b) the pass is grounding-neutral,
-(c) every absence is justified, and (d) the blockage is the structured-source
-property, not a defect: on an artifact where the SAME clause IS a contiguous run,
-the post-pass mints a TRUE anchor.
+These tests prove (a) every anchor the post-pass mints re-verifies byte-exactly
+(the span re-slices to its anchored body, which is a substring of the op's clause,
+``quote_hash`` matches, occurrence is unique), (b) the pass is grounding-neutral
+(the apply digest is invariant under stripping the anchor), (c) every absence is
+justified (no op left ``None`` had a unique-byte-run body inside its clause), (d)
+the reachable fraction is a real, non-trivial majority, and (e) on a synthetic
+artifact where a clause body IS a contiguous run the post-pass mints a TRUE anchor.
 """
 from __future__ import annotations
 
 import hashlib
 import json
 import os
-import re
 from pathlib import Path
 
 import pytest
 
 from lawvm.core.ir import LegalAddress, LegalOperation
-from lawvm.core.provenance import SourceAnchor, compute_source_anchor
+from lawvm.core.provenance import OperationSource, SourceAnchor, compute_source_anchor
+from lawvm.core.semantic_types import StructuralAction
 from lawvm.us_federal.amendatory import (
+    _unique_byte_run_bodies,
     lower_plaw_amendatory,
     mint_us_source_anchors,
     reset_us_raw_source_context,
@@ -91,7 +94,7 @@ def _compile_sample() -> list[tuple[str, bytes, list[LegalOperation]]]:
     """Compile the canonical US sample exactly as the provenance sampler does.
 
     Returns ``(statute_id, raw_uslm_bytes, ops)`` per Public Law — the raw bytes are
-    the artifact the byte-span anchor offsets into.
+    the canonical artifact a verifier reloads and the byte-span anchor offsets into.
     """
     out: list[tuple[str, bytes, list[LegalOperation]]] = []
     archive = open_us_federal_farchive(_ARCHIVE_PATH, readonly=True)
@@ -141,11 +144,14 @@ def _apply_digest(samples: list[tuple[str, bytes, list[LegalOperation]]]) -> str
 
 
 def test_us_minted_anchors_are_real_and_reverifiable() -> None:
-    """Any anchor the post-pass DOES mint re-verifies byte-exactly.
+    """Every anchor the post-pass mints re-verifies byte-exactly.
 
-    On the canonical structured artifact this mints zero anchors (see the blocked
-    verdict), but the property must hold unconditionally: a minted anchor is never a
-    fabricated offset — it always re-slices to exactly the clause it anchors.
+    PER-ELEMENT: the anchored span is the operative BODY ELEMENT (a substring of the
+    op's flattened clause), not the whole clause. The span must re-slice to exactly
+    that body, its ``quote_hash`` must be the sha256 of those bytes, its occurrence
+    must be unique, and the body must be a substring of the op's recorded clause (so
+    the span provably belongs to THIS op). A minted anchor is never a fabricated
+    offset.
     """
     samples = _compile_sample()
     total = anchored = 0
@@ -161,19 +167,24 @@ def test_us_minted_anchors_are_real_and_reverifiable() -> None:
             # Anchor points back at THIS Public Law's raw artifact.
             assert anchor.source_artifact_id == art_id
             assert anchor.source_artifact_id == op.source.statute_id
-            clause = (op.source.raw_text or op.raw_text or "").encode("utf-8")
+            clause = op.source.raw_text or op.raw_text or ""
             assert clause, "an anchored op must carry the clause it anchors"
             sliced = raw[anchor.byte_offset : anchor.byte_offset + anchor.byte_len]
-            assert sliced == clause, (
-                f"anchor span does not re-slice to the clause for op in {art_id}"
+            body = sliced.decode("utf-8")
+            # The anchored span is a per-element BODY that provably belongs to this
+            # op: a substring of the recorded clause.
+            assert body in clause, (
+                f"anchored body is not a substring of the op clause in {art_id}: "
+                f"{body[:80]!r}"
             )
-            assert anchor.byte_len == len(clause)
+            assert anchor.byte_len == len(sliced)
             assert anchor.quote_hash == "sha256:" + hashlib.sha256(sliced).hexdigest()
             first = raw.find(sliced)
             assert first == anchor.byte_offset
-            assert raw.find(sliced, first + 1) == -1, "anchored clause must be unique"
+            assert raw.find(sliced, first + 1) == -1, "anchored body must be unique"
 
     assert total > 0, "sampler produced no ops"
+    assert anchored > 0, "per-element anchoring should mint a non-trivial number of anchors"
 
 
 def test_us_source_anchor_is_grounding_neutral() -> None:
@@ -189,16 +200,19 @@ def test_us_source_anchor_is_grounding_neutral() -> None:
     digest_with = _apply_digest(samples)
 
     stripped: list[tuple[str, bytes, list[LegalOperation]]] = []
+    stripped_any = False
     for sid, raw, ops in samples:
         new_ops: list[LegalOperation] = []
         for op in ops:
             if op.source is not None and op.source.source_anchor is not None:
+                stripped_any = True
                 new_ops.append(replace(op, source=replace(op.source, source_anchor=None)))
             else:
                 new_ops.append(op)
         stripped.append((sid, raw, new_ops))
     digest_without = _apply_digest(stripped)
 
+    assert stripped_any, "expected at least one anchor to strip (the pass minted some)"
     assert digest_with == digest_without, (
         "stamping a SourceAnchor changed an apply-authoritative field — NOT "
         "grounding-neutral"
@@ -206,15 +220,19 @@ def test_us_source_anchor_is_grounding_neutral() -> None:
 
 
 def test_us_unanchorable_ops_are_honest_none_not_fabricated() -> None:
-    """Every absent anchor is JUSTIFIED: the clause is not a unique verbatim run.
+    """Every absent anchor is JUSTIFIED: no unique-byte-run body is inside the clause.
 
-    For each op left without an anchor, the recorded clause must genuinely NOT be a
-    unique contiguous verbatim byte substring of its Public Law's USLM XML — so the
-    refusal is correct, not a missed anchor.
+    For each op left without an anchor, NO descendant element body of its Public Law
+    that is a unique contiguous verbatim byte run is a substring of the op's clause —
+    so the refusal is correct, not a missed anchor. (The operative text is
+    reconstructed across INLINE ``<quotedText>`` markup, leaving no contiguous
+    element body inside the clause.)
     """
     samples = _compile_sample()
+    bodies_by_art: dict[str, list[str]] = {}
     total = none_count = 0
-    for _art_id, raw, ops in samples:
+    for art_id, raw, ops in samples:
+        bodies = bodies_by_art.setdefault(art_id, _unique_byte_run_bodies(raw))
         for op in ops:
             total += 1
             anchor = op.source.source_anchor if op.source is not None else None
@@ -225,113 +243,172 @@ def test_us_unanchorable_ops_are_honest_none_not_fabricated() -> None:
             if op.source is not None:
                 clause = op.source.raw_text or ""
             clause = clause or op.raw_text or ""
-            needle = clause.encode("utf-8")
-            if not needle:
+            if not clause:
                 continue  # no clause text at all → nothing to anchor, honest
-            first = raw.find(needle)
-            unique = first >= 0 and raw.find(needle, first + 1) < 0
-            assert not unique, (
-                "an op with a unique verbatim clause must have been anchored, not "
-                f"left None: {clause[:80]!r}"
+            # If ANY unique-byte-run body were a substring of this clause, the op
+            # would have been anchored. None being a substring is the honest cause.
+            assert not any(b and b in clause for b in bodies), (
+                "an op with a unique-byte-run body inside its clause must have been "
+                f"anchored, not left None: {clause[:80]!r}"
             )
 
     assert total > 0
-    # The canonical US verdict: every op is honestly unanchored (structured-source
-    # tag-boundary reconstruction). If this ever flips, the verdict has changed and
-    # the reachable-anchor test above carries the byte-exact proof.
-    assert none_count == total, (
-        "US canonical sample expected fully BLOCKED (0 anchors); some op anchored — "
-        "update the feasibility verdict if the source surface changed"
+    # REACHABLE-PARTIAL: a non-trivial MAJORITY of ops anchor; the honest-None
+    # residual (inline-markup reconstruction) is a real minority, not the whole.
+    assert none_count < total, "expected the per-element pass to anchor a majority of ops"
+
+
+def test_us_reachable_fraction_is_a_real_majority() -> None:
+    """The per-element pass anchors a real, non-trivial MAJORITY of the op stream.
+
+    Pins the reachable fraction the byte-span friction map reports: > half of the
+    canonical US op stream carries a TRUE per-element byte-span anchor — US is
+    CRACKED per-element exactly as UK was, and to a HIGHER fraction (USLM's
+    ``<quotedText>``/``<quotedContent>`` payloads are large contiguous bodies).
+    """
+    samples = _compile_sample()
+    total = anchored = 0
+    for _art_id, _raw, ops in samples:
+        for op in ops:
+            total += 1
+            if op.source is not None and op.source.source_anchor is not None:
+                anchored += 1
+
+    assert total > 0
+    # A genuine majority (the measured fraction is 31/43 ≈ 72%); guard against a
+    # silent regression to the BLOCKED state (0) or a trivial fraction.
+    assert anchored * 2 > total, (
+        f"per-element anchoring should reach a majority of ops; got {anchored}/{total}"
     )
 
 
-def test_us_blockage_is_tag_boundary_reconstruction_not_a_defect() -> None:
-    """Prove the blockage cause and that the post-pass works once the clause is a run.
+def test_us_per_element_body_re_scope_mints_a_true_anchor() -> None:
+    """Prove the per-element re-scope: a body inside a NON-run clause mints an anchor.
 
-    Two-part proof, pinning the exact feasibility reason:
+    Two-part proof, pinning the exact feasibility mechanism:
 
-    1. STRUCTURAL CAUSE. For a real op whose flattened clause is not a verbatim byte
-       run of its PL USLM XML, the clause's word-sequence DOES appear once the XML's
-       tags are stripped — proving the clause was reconstructed across element
-       boundaries (``<num>``/``<chapeau>``/``<ref>``/``<quotedText>``), not merely
-       whitespace-shifted.
+    1. The flattened WHOLE clause is NOT a contiguous byte run of its Public Law's
+       USLM XML (the structured-source signature) — yet a descendant element BODY of
+       that Public Law IS a unique byte run and IS a substring of the clause. That
+       body is what the per-element pass anchors.
 
-    2. POST-PASS IS NOT DEFECTIVE. On a SYNTHETIC artifact in which the SAME clause
-       IS a single contiguous verbatim byte run, the post-pass mints a TRUE anchor
-       that re-verifies byte-exactly. So the US arm is structured-source-BLOCKED,
-       not code-defective: the recipe generalizes the moment a per-op clause is a
-       verbatim run of its artifact.
+    2. POST-PASS IS NOT DEFECTIVE. Re-running ``mint_us_source_anchors`` over that
+       single op (with the same Public Law published in context) mints a TRUE anchor
+       whose span re-slices to that body and re-verifies byte-exactly via the shared
+       core helper — so the US arm is REACHABLE per-element, not code-defective.
     """
     samples = _compile_sample()
 
-    proved_structural = False
-    sample_op: LegalOperation | None = None
-    for _art_id, raw, ops in samples:
+    chosen: tuple[str, bytes, LegalOperation, str] | None = None
+    for art_id, raw, ops in samples:
+        bodies = _unique_byte_run_bodies(raw)
         for op in ops:
             if op.source is None:
                 continue
             clause = op.source.raw_text or op.raw_text or ""
             if not clause:
                 continue
-            needle = clause.encode("utf-8")
-            if needle in raw:
-                continue  # this one IS a byte run — not the case we want to prove
-            raw_text = raw.decode("utf-8", errors="ignore")
-            tag_stripped = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", raw_text))
-            if clause in tag_stripped:
-                proved_structural = True
-                if sample_op is None:
-                    sample_op = op
-                break
-        if proved_structural:
+            # The case we want: whole clause is NOT a byte run, but a body element IS.
+            if clause.encode("utf-8") in raw:
+                continue
+            body = next((b for b in bodies if b and b in clause), None)
+            if body is None:
+                continue
+            chosen = (art_id, raw, op, body)
+            break
+        if chosen is not None:
             break
 
-    assert proved_structural, (
-        "expected at least one US op whose flattened clause is recoverable only "
-        "after tag-stripping (the structured-source tag-boundary signature)"
+    assert chosen is not None, (
+        "expected at least one US op whose flattened clause is NOT a byte run but "
+        "whose operative body element IS — the per-element re-scope signature"
     )
-    assert sample_op is not None and sample_op.source is not None
+    art_id, raw, op, body = chosen
+    assert op.source is not None
 
-    # Part 2: build a SYNTHETIC UTF-8 artifact where the SAME clause is a single
-    # contiguous, unique verbatim run, then run the post-pass over a single-op
-    # stream. The anchor must mint and re-verify byte-exactly.
-    clause = sample_op.source.raw_text or sample_op.raw_text or ""
-    art_id = sample_op.source.statute_id
-    synthetic = (
-        b"<section><chapeau>" + clause.encode("utf-8") + b"</chapeau></section>"
-    )
-    needle = clause.encode("utf-8")
-    first = synthetic.find(needle)
-    assert first >= 0 and synthetic.find(needle, first + 1) < 0, (
-        "clause should be a unique verbatim run of the synthetic UTF-8 artifact"
-    )
+    # Part 1 cross-check: the body is a unique contiguous byte run of the raw bytes
+    # and a substring of the op's clause, while the whole clause is neither.
+    needle = body.encode("utf-8")
+    first = raw.find(needle)
+    assert first >= 0 and raw.find(needle, first + 1) < 0, "body must be a unique run"
+    clause = op.source.raw_text or op.raw_text or ""
+    assert body in clause
+    assert clause.encode("utf-8") not in raw
 
-    token = set_us_raw_source_context(art_id, synthetic)
+    # Part 2: re-run the post-pass over this single op with the SAME canonical Public
+    # Law published in context; the anchor must mint and re-verify byte-exactly.
+    from dataclasses import replace
+
+    op_no_anchor = replace(op, source=replace(op.source, source_anchor=None))
+    token = set_us_raw_source_context(art_id, raw)
     try:
-        anchored_ops = mint_us_source_anchors([sample_op])
+        anchored_ops = mint_us_source_anchors([op_no_anchor])
     finally:
         reset_us_raw_source_context(token)
 
     minted = [
-        op
-        for op in anchored_ops
-        if op.source is not None and op.source.source_anchor is not None
+        o
+        for o in anchored_ops
+        if o.source is not None and o.source.source_anchor is not None
     ]
-    assert len(minted) == 1, "post-pass should mint a TRUE anchor on the synthetic run"
-    minted_op = minted[0]
-    assert minted_op.source is not None
-    anchor = minted_op.source.source_anchor
+    assert len(minted) == 1, "post-pass should mint a TRUE per-element anchor"
+    minted_src = minted[0].source
+    assert minted_src is not None
+    anchor = minted_src.source_anchor
     assert anchor is not None
     assert anchor.source_artifact_id == art_id
-    sliced = synthetic[anchor.byte_offset : anchor.byte_offset + anchor.byte_len]
+    sliced = raw[anchor.byte_offset : anchor.byte_offset + anchor.byte_len]
     assert sliced == needle
     assert anchor.quote_hash == "sha256:" + hashlib.sha256(sliced).hexdigest()
 
     # And cross-check directly via the shared core helper, proving no fabrication.
     direct = compute_source_anchor(
-        source_artifact_id=art_id, raw_bytes=synthetic, clause_text=clause
+        source_artifact_id=art_id, raw_bytes=raw, clause_text=body
     )
     assert direct == anchor
+
+
+def test_us_synthetic_contiguous_run_mints_anchor() -> None:
+    """On a synthetic artifact where a body IS a contiguous run the pass mints it.
+
+    Guards the floor: build a synthetic UTF-8 Public Law where the operative body is
+    a single contiguous unique verbatim run inside a larger clause, and confirm the
+    per-element pass mints a TRUE, byte-re-verifiable anchor on the body.
+    """
+    # The chapeau body is a unique contiguous run; the flattened WHOLE clause is not
+    # (the <num> prefix "(1) " lives in a sibling element and breaks the run). The
+    # per-element pass anchors the chapeau body — a strict substring of the clause.
+    body = "Section 8901(2) of title 40 is amended by striking the following text."
+    clause = f"(1) {body}"
+    art_id = "PL synthetic-1"
+    synthetic = (
+        b"<section><num>(1) </num><chapeau>"
+        + body.encode("utf-8")
+        + b"</chapeau></section>"
+    )
+    assert _unique_byte_run_bodies(synthetic)  # at least one addressable body
+    assert body.encode("utf-8") in synthetic
+    assert clause.encode("utf-8") not in synthetic
+
+    op = LegalOperation(
+        op_id=f"{art_id}#op1",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=()),
+        raw_text=clause,
+        source=OperationSource(statute_id=art_id, raw_text=clause),
+    )
+    token = set_us_raw_source_context(art_id, synthetic)
+    try:
+        anchored = mint_us_source_anchors([op])
+    finally:
+        reset_us_raw_source_context(token)
+    assert anchored[0].source is not None
+    anchor = anchored[0].source.source_anchor
+    assert anchor is not None
+    sliced = synthetic[anchor.byte_offset : anchor.byte_offset + anchor.byte_len]
+    assert sliced == body.encode("utf-8")
+    assert anchor.quote_hash == "sha256:" + hashlib.sha256(sliced).hexdigest()
 
 
 if __name__ == "__main__":  # pragma: no cover - manual probe
