@@ -7,12 +7,23 @@ import time
 from dataclasses import replace as dc_replace
 from typing import Any, List, Optional
 
+from lawvm.core.apply_seam import (
+    AppliedOp,
+    ApplyProfile,
+    MaterializeResult,
+)
+from lawvm.core.apply_seam import (
+    apply_op as core_apply_op,
+)
 from lawvm.core.ir import IRNode, IRStatute, LegalOperation
 from lawvm.core.mutation_events import MutationEvent
 from lawvm.core.write_receipt import WriteReceipt
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.addressing import _action_name
-from lawvm.uk_legislation.uk_write_receipts import emit_uk_op_receipt
+from lawvm.uk_legislation.uk_write_receipts import (
+    UK_SECTION_RENUMBER_RELABEL_RULE_ID,
+    emit_uk_op_receipt,
+)
 from lawvm.uk_legislation.mutation_boundary_per_op_probe import (
     boundary_probe_enabled,
     probe_op_mutation_boundary,
@@ -176,6 +187,87 @@ class UKReplayExecutor(
                 if receipt is not None:
                     self.write_receipts_out.append(receipt)
 
+    # ── UK materializer (Wave 5, design §3.1/§3.5). ──────────────────────────
+    # The per-op tree dispatch — UK's executor ``apply_op`` (the whole
+    # ``_apply_op_with_context`` dispatch over the action mixins, the warm-EID
+    # CoW in ``replay_state``, the ``MutationEvent`` stream, the env-gated
+    # mutation-boundary probe, and the optional ``write_receipts_out`` sink) IS
+    # the UK :class:`~lawvm.core.apply_seam.Materializer`. It is a thin closure
+    # over the verbatim ``self.apply_op(op)`` call: NO semantic rewrite, the body
+    # mutation is the same warm-EID CoW the prior inline fold ran, and the
+    # side channels (``lo_ops_out`` section snapshots, ``mutation_events_out``,
+    # ``adjudications_out``, ``write_receipts_out``) stay UK-specific and remain
+    # the single producers of their output — exactly like EE's ``_ee_apply_op``
+    # closure (``estonia/grafter.py``).
+    #
+    # UK-SPECIFIC vs SEAM-OWNED. The executor mutates its OWN ``self.statute`` in
+    # place across calls (it is a stateful object, unlike NO/SE/EE/EU's pure
+    # ``(body, op) -> body`` folds), so the materializer ignores its
+    # ``before_body`` argument — the executor already holds the live body — and
+    # returns ``self.statute.body`` after the dispatch. The seam owns ONLY the
+    # ``applied`` derivation (``new_state is not base_state`` — UK's body-identity
+    # signal). The boundary gate is ``off`` and receipt/coverage emission is
+    # disabled on the bare lane (see ``_uk_seam_apply_profile``) so the
+    # seam-routed bare fold is byte-identical to the pre-cutover loop: UK keeps
+    # its own per-op probe + receipt sink inside ``apply_op`` as the single
+    # producers.
+    def _uk_materialize_one(
+        self, before_body: IRNode, op: LegalOperation
+    ) -> MaterializeResult[IRNode]:
+        # ``before_body`` is the seam's view of the body at loop entry; the
+        # executor holds the identical reference on ``self.statute.body``. The
+        # verbatim dispatch (warm-EID CoW + MutationEvent + probe + receipt sink)
+        # runs exactly as the pre-cutover ``executor.apply_op(op)`` call did.
+        self.apply_op(op)
+        return MaterializeResult(new_state=self.statute.body)
+
+    def _uk_seam_apply_profile(self) -> ApplyProfile[IRNode]:
+        # ``boundary_mode="off"``: UK retains its own per-op probe (inside
+        # ``apply_op``, gated on ``LAWVM_UK_MUTATION_BOUNDARY_PER_OP``) as the
+        # single producer of the projected mutation-boundary observation, so the
+        # env-flag-ON output is byte-identical to the pre-cutover fold (mirrors
+        # NO/SE/EE). ``emit_receipts``/``emit_coverage`` are False on the bare
+        # lane: UK's bare ``replay_uk_ops`` result (the materialized
+        # ``IRStatute`` + the ``write_receipts_out`` / ``lo_ops_out`` /
+        # ``mutation_events_out`` side channels produced INSIDE ``apply_op``)
+        # stays byte-identical (no new artifacts). The additive conserved +
+        # seam-synthesized-receipt lane is the dedicated
+        # ``replay_uk_ops_conserved`` / ``uk_replay_write_receipts`` callers.
+        # ``receipt_helper_prefix="UKReplayExecutor.apply_op"`` +
+        # ``renumber_migration_rule_ids=(uk_section_renumber_relabel,)`` make the
+        # seam-synthesized receipt byte-identical to UK's existing
+        # ``emit_uk_op_receipt`` if a caller routes receipts through the seam.
+        return ApplyProfile(
+            jurisdiction="uk",
+            materializer=self._uk_materialize_one,
+            boundary_mode="off",
+            emit_receipts=False,
+            emit_coverage=False,
+            renumber_migration_rule_ids=(UK_SECTION_RENUMBER_RELABEL_RULE_ID,),
+            receipt_helper_prefix="UKReplayExecutor.apply_op",
+        )
+
+    def seam_apply_op(self, op: LegalOperation) -> AppliedOp[IRNode]:
+        """Apply one op through the unified core apply seam (Wave 5).
+
+        Routes UK's per-op dispatch through ``core/apply_seam.apply_op`` instead
+        of calling ``self.apply_op`` directly. The materializer carries the
+        verbatim executor dispatch (warm-EID CoW + MutationEvent + probe +
+        receipt sink); the seam owns the ``applied`` derivation. Returns the
+        :class:`~lawvm.core.apply_seam.AppliedOp` so a conserved wrapper can read
+        ``applied`` for its accepted/rejected partition. The executor's
+        ``self.statute`` is mutated in place by the materializer (UK's stateful
+        contract), so the seam's returned ``new_state`` and ``self.statute.body``
+        are the same reference.
+        """
+        return core_apply_op(
+            self.statute.body,
+            op,
+            provenance=op.source,
+            profile=self._uk_seam_apply_profile(),
+            source_statute=self.statute.statute_id,
+        )
+
     def _apply_op_with_context(self, op: LegalOperation) -> None:
         target = op.target
         # Keep legacy warnings visible during replay runs while also recording
@@ -331,6 +423,7 @@ def replay_uk_ops(
     mutation_events_out: Optional[list[MutationEvent]] = None,
     write_receipts_out: Optional[list[WriteReceipt]] = None,
     replay_phase_timings_out: Optional[dict[str, float]] = None,
+    applied_op_ids_out: Optional[set[str]] = None,
 ) -> IRStatute:
     """Apply compiled UK legal operations to enacted base, return amended statute.
 
@@ -368,6 +461,16 @@ def replay_uk_ops(
         replay_phase_timings_out:
                     Optional accumulator for replay preparation, per-action
                     apply, and replay finalization timing diagnostics.
+        applied_op_ids_out:
+                    Optional set to collect the ``op_id`` of every PREPARED op
+                    whose seam apply LANDED a write (``AppliedOp.applied`` True).
+                    The §1.8 conserved wrapper (:func:`replay_uk_ops_conserved`)
+                    reads this to partition prepared ops into accepted (landed)
+                    vs apply-skipped (prepared but no body change) — a robust
+                    per-op signal sourced from the seam, not from enumerating UK's
+                    ~70 adjudication kinds. Additive: passing the sink does NOT
+                    change the replayed statute (the §2.7 grounding-neutral
+                    invariant); with it absent ``replay_uk_ops`` is byte-identical.
 
     Returns:
         A new IRStatute with all ops applied (deep copy — base is not mutated).
@@ -410,13 +513,26 @@ def replay_uk_ops(
         write_receipts_out=write_receipts_out,
     )
     _mark_replay_phase("replay_executor_init")
+    # ── Seam loop (design §3.1, Wave 5): apply each prepared op through the
+    # unified per-op kernel. ``executor.seam_apply_op`` wraps UK's verbatim
+    # executor dispatch behind the core seam's :class:`Materializer`; the seam
+    # owns the ``applied`` derivation and (here-disabled) receipt/coverage
+    # outputs, while UK's warm-EID CoW, MutationEvent stream, ``lo_ops_out``
+    # snapshots, per-op boundary probe, and ``write_receipts_out`` sink stay the
+    # single producers inside ``apply_op`` (byte-identical to the pre-cutover
+    # loop). Op input order is preserved exactly (UK ordering is settled upstream
+    # in ``prepared_ops.accepted_ops``; the seam loop does not re-order). ─────
     if replay_phase_timings_out is None:
         for op in prepared_ops.accepted_ops:
-            executor.apply_op(op)
+            applied = executor.seam_apply_op(op)
+            if applied_op_ids_out is not None and applied.applied:
+                applied_op_ids_out.add(op.op_id)
     else:
         for op in prepared_ops.accepted_ops:
             op_t0 = time.perf_counter()
-            executor.apply_op(op)
+            applied = executor.seam_apply_op(op)
+            if applied_op_ids_out is not None and applied.applied:
+                applied_op_ids_out.add(op.op_id)
             action_name = _action_name(op.action)
             key = f"replay_apply_{action_name}"
             replay_phase_timings_out[key] = replay_phase_timings_out.get(key, 0.0) + (
