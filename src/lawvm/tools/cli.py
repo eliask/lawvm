@@ -6560,6 +6560,100 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         help="single-statute mode: print per-section divergence list",
     )
 
+    # --- us-classification ---
+    # Inlined registration (the dispatcher in main() imports
+    # lawvm.tools.us_classification lazily so importing us_classification at
+    # parser-build time is avoided; this keeps the CLI parser build light).
+    us_class_p = sub.add_parser(
+        "us-classification",
+        help="OLRC classification table scraper/index/resolver (USC target resolution)",
+        description=(
+            "Fetch OLRC PL-section -> USC-section classification tables "
+            "from the Wayback Machine, parse them into a typed index, "
+            "serialize to JSON for reuse, and resolve PL sections through "
+            "the index. Integration into the amendatory lowerer is a "
+            "separate step; this command produces the standalone "
+            "evidence-side index."
+        ),
+    )
+    us_class_sub = us_class_p.add_subparsers(
+        dest="us_classification_command", metavar="<subcommand>", required=True
+    )
+
+    usc_fetch_p = us_class_sub.add_parser(
+        "fetch",
+        help="fetch tables from Wayback and build the JSON index",
+        description=(
+            "Fetch the OLRC classification tables for the given Congresses "
+            "via Wayback and serialize the parsed ClassificationIndex to "
+            "JSON. Network-bound; intended to run under "
+            "systemd-run --user --scope -p MemoryMax=16G."
+        ),
+    )
+    usc_fetch_p.add_argument(
+        "--output",
+        "-o",
+        default="data/us_classification_index.json",
+        metavar="PATH",
+        help="output JSON path (default: data/us_classification_index.json)",
+    )
+    usc_fetch_p.add_argument(
+        "--congresses",
+        nargs="*",
+        type=int,
+        metavar="N",
+        help="space-separated Congress numbers (default: 108 through 118)",
+    )
+    usc_fetch_p.add_argument(
+        "--sessions",
+        nargs="*",
+        type=int,
+        metavar="N",
+        help="space-separated session numbers (default: 1 2)",
+    )
+    usc_fetch_p.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        help="print per-table fetch diagnostics",
+    )
+
+    usc_lookup_p = us_class_sub.add_parser(
+        "lookup",
+        help="resolve STATUTE_ID:PL_SECTION pairs against a saved index",
+        description=(
+            "Load a saved JSON index and resolve sample PL-section queries "
+            "through ClassificationIndex.resolve. With no explicit queries, "
+            "runs the built-in sample set."
+        ),
+    )
+    usc_lookup_p.add_argument(
+        "--index",
+        "-i",
+        default="data/us_classification_index.json",
+        metavar="PATH",
+        help="index JSON path (default: data/us_classification_index.json)",
+    )
+    usc_lookup_p.add_argument(
+        "queries",
+        nargs="*",
+        metavar="STATUTE_ID:PL_SECTION",
+        help="one or more queries like 'PL 118-31:101(a)'",
+    )
+
+    usc_stats_p = us_class_sub.add_parser(
+        "show-stats",
+        help="print entry/PL/key counts from a saved index",
+        description="Print high-level entry/PL/key counts from a saved index JSON.",
+    )
+    usc_stats_p.add_argument(
+        "--index",
+        "-i",
+        default="data/us_classification_index.json",
+        metavar="PATH",
+        help="index JSON path (default: data/us_classification_index.json)",
+    )
+
     # --- audit-trail ---
     audit_p = sub.add_parser(
         "audit-trail",
@@ -12762,6 +12856,11 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         action="store_true",
         help="emit the machine-readable JSON report instead of the summary",
     )
+    us_dry_run_p.add_argument(
+        "--classification-index",
+        type=str, default="",
+        help="path to a serialized classification-table JSON index (PL§→USC§ resolver)",
+    )
 
     us_source_p = sub.add_parser(
         "us-source",
@@ -12903,6 +13002,50 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
     )
     us_evidence_pack_p.add_argument(
         "--json", action="store_true", help="emit the evidence-pack report JSON instead of a summary line"
+    )
+
+    us_import_release_p = sub.add_parser(
+        "us-import-release",
+        help="import U.S. Code USLM release-point XML (PL × title) from OLRC via Wayback",
+        description=(
+            "Fetch a USC release-point zip for one Public Law × USC title from "
+            "the OLRC release-point archive (mirrored on the Wayback Machine), "
+            "extract the USLM XML, and store it in the canonical U.S. farchive "
+            "at us://usc/release/pl{congress}-{num}/title{N}.xml. Thin shim over "
+            "lawvm.us_federal.import_release. 404s for unarchived PLs/titles are "
+            "typed skips, never silent drops."
+        ),
+    )
+    us_import_release_p.add_argument(
+        "--congress", type=int, required=True, help="Congress number (e.g. 113)"
+    )
+    us_import_release_p.add_argument(
+        "--pl", type=int, required=True, dest="pl_number",
+        help="Public Law number within that Congress (e.g. 100)",
+    )
+    us_import_release_p.add_argument(
+        "--title", type=int, default=None,
+        help="USC title number (e.g. 10). Required unless --all-titles is set.",
+    )
+    us_import_release_p.add_argument(
+        "--all-titles", action="store_true", dest="all_titles",
+        help="Fetch every USC title (1..54) for this PL; 404s are typed skips.",
+    )
+    us_import_release_p.add_argument(
+        "--timestamp", default="2025",
+        help="Wayback timestamp (YYYY[MMDDHHMMSS]); default '2025' = most recent capture.",
+    )
+    us_import_release_p.add_argument(
+        "--dest", metavar="PATH", default=None,
+        help="explicit farchive path (default: canonical data/us_federal.farchive)",
+    )
+    us_import_release_p.add_argument(
+        "--skip-existing", dest="skip_existing", action="store_true",
+        help="skip titles whose identical content is already stored",
+    )
+    us_import_release_p.add_argument(
+        "--dry-run", dest="dry_run", action="store_true",
+        help="report what would be imported without writing to the farchive",
     )
     # --- END us_federal jurisdiction tooling ---
 
@@ -13953,6 +14096,11 @@ def _main_impl() -> None:
 
         sa_main(args)
 
+    elif args.command == "us-classification":
+        from lawvm.tools.us_classification import main as us_classification_main
+
+        us_classification_main(args)
+
     elif args.command == "sweden":
         from lawvm.tools.sweden import main as sweden_main
 
@@ -14646,6 +14794,50 @@ def _main_impl() -> None:
         if report.total_errors:
             sys.exit(1)
 
+    elif args.command == "us-import-release":
+        from pathlib import Path as _Path
+
+        from lawvm.us_federal.import_release import (
+            import_release_point,
+            import_release_point_titles,
+        )
+
+        if not bool(getattr(args, "all_titles", False)) and getattr(args, "title", None) is None:
+            print(
+                "error: --title is required unless --all-titles is set",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+
+        _dest = _Path(args.dest) if getattr(args, "dest", None) else None
+        if getattr(args, "all_titles", False):
+            report = import_release_point_titles(
+                _dest,
+                int(args.congress),
+                int(args.pl_number),
+                titles=None,
+                timestamp=str(args.timestamp),
+                skip_existing=bool(getattr(args, "skip_existing", False)),
+                dry_run=bool(getattr(args, "dry_run", False)),
+            )
+        else:
+            report = import_release_point(
+                _dest,
+                int(args.congress),
+                int(args.pl_number),
+                int(args.title),
+                timestamp=str(args.timestamp),
+                skip_existing=bool(getattr(args, "skip_existing", False)),
+                dry_run=bool(getattr(args, "dry_run", False)),
+            )
+        print(
+            f"USC release-point import: scanned={report.total_scanned:,} "
+            f"imported={report.total_imported:,} "
+            f"skipped={report.total_skipped:,} errors={report.total_errors:,}"
+        )
+        if report.total_errors:
+            sys.exit(1)
+
     elif args.command == "us-inventory":
         import json
         from pathlib import Path as _Path
@@ -14731,12 +14923,28 @@ def _main_impl() -> None:
                     file=sys.stderr,
                 )
                 sys.exit(1)
+            _cls_index = None
+            _cls_path = getattr(args, "classification_index", "") or ""
+            if _cls_path:
+                import os
+                if os.path.exists(_cls_path):
+                    from lawvm.us_federal.classification_tables import (
+                        ClassificationEntry, ClassificationIndex,
+                    )
+                    with open(_cls_path) as _f:
+                        _cls_data = json.load(_f)
+                    _cls_entries = [ClassificationEntry(**e) for e in _cls_data["entries"]]
+                    _cls_index = ClassificationIndex(_cls_entries)
+                else:
+                    print(f"warning: classification index not found at {_cls_path}", file=sys.stderr)
+
             _report = build_us_dry_run_from_archive(
                 _archive,
                 title=args.title,
                 before_year=args.before_year,
                 after_year=args.after_year,
                 plaw_locators=_locators,
+                classification_index=_cls_index,
             )
         finally:
             _archive.close()

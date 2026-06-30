@@ -74,6 +74,7 @@ from lawvm.us_federal.amendatory import (
     DEFERRED_AMEND_TO_READ_FINDING_RULE_ID,
     END_PUNCT_INSERT_NO_QUOTED_CAPTURE_FINDING_RULE_ID,
     END_PUNCT_STRIKE_INSERT_REGEX_MISS_FINDING_RULE_ID,
+    FORMATTING_ONLY_FINDING_RULE_ID,
     INSERT_AFTER_MISSING_OPERANDS_FINDING_RULE_ID,
     NON_TITLE_TARGET_RULE_ID,
     PUNCT_WORD_UNRECOGNIZED_FINDING_RULE_ID,
@@ -123,10 +124,27 @@ _AMENDATORY_FINDING_SIGNAL: Dict[str, str] = {
     END_PUNCT_STRIKE_INSERT_REGEX_MISS_FINDING_RULE_ID: "unhandled_op",
     PUNCT_WORD_UNRECOGNIZED_FINDING_RULE_ID: "unhandled_op",
     TABLE_REDESIGNATE_AMBIGUOUS_TITLE_FINDING_RULE_ID: "unhandled_op",
+    FORMATTING_ONLY_FINDING_RULE_ID: "unhandled_op",
     DEFERRED_AMEND_TO_READ_FINDING_RULE_ID: "unhandled_op",
     TARGET_UNRESOLVED_FINDING_RULE_ID: "target_absent",
     NON_TITLE_TARGET_RULE_ID: "target_absent",
 }
+
+
+def _get_classification_index_for_self_consistency() -> Any:
+    """Lazily load the PL-section→USC-section classification index."""
+    import os
+    path = os.environ.get("LAWVM_US_CLASSIFICATION_INDEX")
+    if not path or not os.path.exists(path):
+        return None
+    import json
+    from lawvm.us_federal.classification_tables import (
+        ClassificationEntry, ClassificationIndex,
+    )
+    with open(path) as f:
+        data = json.load(f)
+    entries = [ClassificationEntry(**e) for e in data["entries"]]
+    return ClassificationIndex(entries)
 
 # Non-positive-law resolution statuses that denote an UNMAPPED holdout (no
 # govinfo-reachable channel yields a codified section). Only these two are
@@ -241,7 +259,8 @@ def project_us_self_consistency(
         return [], [{"statute_id": locator, "error": "plaw_source_absent"}]
 
     try:
-        report = lower_plaw_amendatory(data, statute_id=locator)
+        report = lower_plaw_amendatory(data, statute_id=locator,
+                                       classification_index=_get_classification_index_for_self_consistency())
     except Exception as exc:  # an unparseable law is itself a finding
         err = f"{type(exc).__name__}: {exc}"
         row = {

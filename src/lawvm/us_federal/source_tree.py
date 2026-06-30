@@ -37,10 +37,12 @@ than guessing.
 
 from __future__ import annotations
 
+import hashlib
 import re
+import xml.etree.ElementTree as ET
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import Any, Iterable
+from typing import Any, Iterable, Iterator
 
 import lxml.html as LH
 from lxml import etree
@@ -1142,3 +1144,547 @@ def summarize_indent_classes(document: UscSourceDocument) -> dict[str, int]:
         for para in section.paragraphs:
             counter[para.css_class] += 1
     return dict(sorted(counter.items()))
+
+
+# ---------------------------------------------------------------------------
+# USLM 1.0 release-point XML parser
+# ---------------------------------------------------------------------------
+#
+# The OLRC release-point XML (``xmlns="http://xml.house.gov/schemas/uslm/1.0"``,
+# NOT the PLAW 2.x ``http://schemas.gpo.gov/xml/uslm`` USLM GPO namespace used
+# in :mod:`lawvm.us_federal.import_release`) carries a USC title as a real
+# nested tree: ``<section>`` → ``<subsection>`` → ``<paragraph>`` →
+# ``<subparagraph>`` → ``<clause>`` → ``<subclause>``. That structural nesting
+# is authoritative, so the USLM parser does NOT run the indent-depth heuristic
+# :func:`split_statutory_subsections` (which recovers nesting from ``(a)`` /
+# ``(1)`` markers + CSS indent depth on the flat OLRC annual-edition htm). It
+# walks the XML element nesting directly via :func:`split_uslm_subsections`.
+#
+# Quoted-text pseudo-sections (sections of the Code as it once stood, embedded
+# in an amendment note as a former-text witness) appear inside ``<notes>`` /
+# ``<note>`` blocks with NO ``identifier`` attribute (or one that is not a USC
+# identifier). They are editorial evidence about former text, never live USC,
+# so the section iterator SKIPS the ``<notes>`` / ``<note>`` subtrees entirely
+# rather than relying on identifier-shape sniffing — a quoted-text ghost MAY
+# carry a USC-shaped identifier (``/us/usc/t10/s6`` from a former-text quote)
+# and would otherwise duplicate a live section's number.
+
+# USLM 1.0 namespace (OLRC release-point; see note above on namespace choice).
+USLM_1_0_NS = "http://xml.house.gov/schemas/uslm/1.0"
+_USLM_NS_PREFIX = f"{{{USLM_1_0_NS}}}"
+
+# Element local names that mark nesting levels INSIDE a <section>, paired with
+# the USC enumeration-ladder index (0 = subsection, 1 = paragraph, ...). Each
+# such element opens one deeper level of the structural split.
+_USLM_LEVEL_ELEMENTS: tuple[str, ...] = (
+    "subsection",
+    "paragraph",
+    "subparagraph",
+    "clause",
+    "subclause",
+    "item",
+    "sub-item",
+)
+_USLM_LEVEL_INDEX: dict[str, int] = {name: i for i, name in enumerate(_USLM_LEVEL_ELEMENTS)}
+
+# Direct children of <section> that are NOT statutory text body — they are
+# section metadata (the ``<num>`` §101 marker, the ``<heading>`` catchline),
+# editorial lineage (``<sourceCredit>``, ``<notes>``, ``<note>``), or
+# navigation (``<toc>``). Excluded from the section's statutory-text
+# concatenation and from the paragraph list. Subsection-level ``<heading>``
+# (e.g. ``In General.—``) is INCLUDED in statutory text — it is body text
+# that the OLRC annual-edition htm renders inline on the ``(a)`` line.
+_USLM_SECTION_SKIP_DIRECT_CHILDREN: frozenset[str] = frozenset(
+    {"num", "heading", "sourceCredit", "notes", "note", "toc"}
+)
+
+# ``status`` attribute values that mark a section as no-longer-in-force.
+# Reproduces the existing parser's ``Repealed|Omitted|Transferred|Renumbered
+# |Vacant`` head-text check, with the USLM ``status`` attribute as the native
+# first source and the head-text regex as a fallback (handles editions that
+# didn't set the status attribute but bracketed the head with ``[Repealed. ...]``).
+_USLM_REPEALED_STATUSES: frozenset[str] = frozenset(
+    {"repealed", "omitted", "transferred", "renumbered", "vacant"}
+)
+
+# Bounded LRU cache for parsed USLM trees. A USLM title is ~35 MB, so the cap
+# is intentionally small: 4 trees 140 MB maximum (per AGENTS.md §2.7
+# source-root cache lifecycle). The cache is keyed on the SHA-256 of the
+# bytes (data identity, not object identity) so multiple ``archive.get``
+# calls for the same locator reuse the same parsed root. Clearing on overflow
+# is crude but bounded — the realistic workload is one USLM title per run.
+_USLM_TREE_CACHE_MAX = 4
+_uslm_tree_cache: dict[str, ET.Element] = {}
+
+
+def _uslm_localname(tag: object) -> str:
+    """Local element name, stripping the ``{namespace}`` prefix from a USLM tag.
+
+    ``Element.tag`` is either a ``str`` (possibly namespaced as
+    ``"{ns}localname"``), a function (for comments/PIs, checked via
+    ``isinstance(tag, str)`` upstream), or another non-string value. Returns
+    the empty string for non-string tags.
+    """
+    if not isinstance(tag, str):
+        return ""
+    if "}" in tag:
+        return tag.rsplit("}", 1)[-1]
+    return tag
+
+
+def _uslm_subtree_text(el: ET.Element) -> str:
+    """Concatenated descendant text of a USLM element, in document order.
+
+    Equivalent to :func:`_element_text` for lxml but written against
+    :mod:`xml.etree.ElementTree` (stdlib, the parser the USLM release-point
+    path uses per the small well-formed XML assumption). Comments and processing
+    instructions contribute their TAIL (text after them in the parent) exactly
+    as ``itertext`` would — preserving the ``<!-- PDFPage:N -->`` carcasses that
+    appear mid-paragraph in some USLM exports.
+    """
+    parts: list[str] = []
+    if isinstance(el.text, str):
+        parts.append(el.text)
+    for child in el:
+        if not isinstance(child.tag, str):
+            if isinstance(child.tail, str):
+                parts.append(child.tail)
+            continue
+        parts.append(_uslm_subtree_text(child))
+        if isinstance(child.tail, str):
+            parts.append(child.tail)
+    return "".join(parts)
+
+
+def _iter_uslm_section_elements(root: ET.Element) -> Iterator[ET.Element]:
+    """Yield every live USC ``<section>`` element in USLM document order.
+
+    Short-circuits at ``<notes>`` and ``<note>`` subtrees — those contain
+    quoted-text pseudo-sections (former-text witnesses from amendment notes)
+    that carry no live USC authority and would otherwise produce
+    ``us_usc_duplicate_section_number`` findings for every repealed/replaced
+    section in the title. The identifier-shape sniff (``/us/usc/t``) is the
+    secondary filter, NOT the primary exclusion — some ghosts DO carry a
+    USC-shaped identifier (e.g. ``/us/usc/t10/s6`` quoted inside the title's
+    misc-notes block) and only the notes-skip excludes them.
+    """
+    q_section = f"{_USLM_NS_PREFIX}section"
+    q_notes = f"{_USLM_NS_PREFIX}notes"
+    q_note = f"{_USLM_NS_PREFIX}note"
+
+    def _walk(el: ET.Element) -> Iterator[ET.Element]:
+        for child in el:
+            if not isinstance(child.tag, str):
+                continue
+            if child.tag == q_notes or child.tag == q_note:
+                continue
+            if (
+                child.tag == q_section
+                and (child.get("identifier") or "").startswith("/us/usc/t")
+            ):
+                yield child
+            yield from _walk(child)
+
+    return _walk(root)
+
+
+def _parse_uslm_tree(uslm_bytes: bytes) -> ET.Element:
+    """Parse USLM XML bytes with a bounded cache keyed on SHA-256.
+
+    The cache lives at module scope and is bounded by
+    :data:`_USLM_TREE_CACHE_MAX`. ``archive.get`` returns a fresh bytes object
+    every call, so the cache key is the bytes content identity (SHA-256) —
+    object identity (``id``) would miss the reuse case.
+    """
+    digest = hashlib.sha256(uslm_bytes).hexdigest()
+    cached = _uslm_tree_cache.get(digest)
+    if cached is not None:
+        return cached
+    tree = ET.fromstring(uslm_bytes)
+    if len(_uslm_tree_cache) >= _USLM_TREE_CACHE_MAX:
+        _uslm_tree_cache.clear()
+    _uslm_tree_cache[digest] = tree
+    return tree
+
+
+def _uslm_section_number(section_el: ET.Element) -> str:
+    """Bare USC section number from a ``<section>`` element.
+
+    Prefers the ``<num value="...">`` attribute (e.g. ``101``, ``949p–1``)
+    and falls back to the trailing ``sNNN`` segment of the ``identifier``
+    URL (``/us/usc/t10/s949p–1`` → ``949p–1``). The returned token is
+    verbatim — en-dashes (U+2013), letter suffixes (``16131a``), and dotted
+    decimals are preserved, so the same token round-trips through the
+    amendatory target parsers and the :func:`usc_section_address` pinned
+    convention.
+    """
+    q_num = f"{_USLM_NS_PREFIX}num"
+    for child in section_el:
+        if child.tag == q_num:
+            value = child.get("value", "")
+            if value:
+                return value
+            break
+    ident = section_el.get("identifier", "")
+    m = re.search(r"/s([^/]+)$", ident)
+    if m is not None:
+        return m.group(1)
+    return ""
+
+
+def _uslm_section_heading(section_el: ET.Element) -> str:
+    """Normalized section heading text (the catchline, e.g. ``Definitions``)."""
+    q_heading = f"{_USLM_NS_PREFIX}heading"
+    for child in section_el:
+        if child.tag == q_heading:
+            return _normalize_text(_uslm_subtree_text(child))
+    return ""
+
+
+def _uslm_section_source_credit(section_el: ET.Element) -> str:
+    """Normalized raw source-credit text from ``<sourceCredit>`` if present."""
+    q_source_credit = f"{_USLM_NS_PREFIX}sourceCredit"
+    for child in section_el:
+        if child.tag == q_source_credit:
+            return _normalize_text(_uslm_subtree_text(child))
+    return ""
+
+
+def _uslm_section_status_repealed(section_el: ET.Element, heading: str) -> bool:
+    """True if the section is repealed/omitted/transferred/renumbered/vacant.
+
+    Source signals, in priority order: the ``status`` attribute on the
+    ``<section>`` element (USLM native — e.g. ``status="repealed"``), then the
+    head-text regex used by the annual-edition htm parser for editions that
+    bracket the head as ``[§304. Repealed. ...]``.
+    """
+    status = section_el.get("status", "")
+    if status and status.lower() in _USLM_REPEALED_STATUSES:
+        return True
+    return bool(re.search(r"\b(Repealed|Omitted|Transferred|Renumbered|Vacant)\b", heading))
+
+
+def _uslm_section_paragraphs(section_el: ET.Element) -> tuple[UscStatutoryParagraph, ...]:
+    """Build one :class:`UscStatutoryParagraph` per direct statutory child.
+
+    Mirrors the annual-edition parser's per-paragraph shape (one record per
+    structural unit) so downstream consumers that walk
+    :attr:`UscSection.paragraphs` keep working unchanged. Each paragraph holds
+    the full subtree text of its source element (including the ``(a)`` marker
+    from the embedded ``<num>``), so :func:`split_statutory_subsections` can
+    still be applied — but the USLM-canonical structural walk is
+    :func:`split_uslm_subsections`, which reads the XML nesting directly.
+
+    Direct children classified as non-statutory (``num``, ``heading``,
+    ``sourceCredit``, ``notes``, ``note``, ``toc``) are excluded. ``<content>``
+    (a section's direct body, for sections without structural nesting) is
+    emitted at indent depth 0. Unrecognized direct children are emitted at
+    indent depth 0 with a ``uslm-<localname>`` css_class so they surface in the
+    indent-class histogram rather than silently vanishing.
+    """
+    paragraphs: list[UscStatutoryParagraph] = []
+    for child in section_el:
+        if not isinstance(child.tag, str):
+            continue
+        local = _uslm_localname(child.tag)
+        if local in _USLM_SECTION_SKIP_DIRECT_CHILDREN:
+            continue
+        text = _normalize_text(_uslm_subtree_text(child))
+        if not text:
+            continue
+        if local in _USLM_LEVEL_INDEX:
+            depth = _USLM_LEVEL_INDEX[local]
+            css_class = f"uslm-{local}"
+        elif local == "content":
+            depth = 0
+            css_class = "uslm-content"
+        else:
+            depth = 0
+            css_class = f"uslm-{local}"
+        paragraphs.append(
+            UscStatutoryParagraph(indent_depth=depth, css_class=css_class, text=text)
+        )
+    return tuple(paragraphs)
+
+
+def parse_uslm_title_document(
+    uslm_bytes: bytes,
+    *,
+    title: int,
+    year: str = "",
+    locator: str = "",
+) -> UscSourceDocument:
+    """Parse a USLM 1.0 USC title document into a typed section tree.
+
+    The release-point USLM (``xmlns="http://xml.house.gov/schemas/uslm/1.0"``
+    — note this is the OLRC USLM 1.0 namespace, NOT the PLAW 2.x GPO USLM
+    namespace at ``http://schemas.gpo.gov/xml/uslm`` kept distinct in
+    :mod:`lawvm.us_federal.import_release`) produces the SAME
+    :class:`UscSourceDocument` shape :func:`parse_usc_title_document` returns
+    from the annual-edition htm, so downstream consumers (the dry-run kernel,
+    the sunset detector, the witness denominator parser) can swap between
+    sources without a separate type.
+
+    For each ``<section identifier="/us/usc/tN/sNNN">`` in the document
+    (excluding ``<notes>`` / ``<note>`` subtrees — see
+    :func:`_iter_uslm_section_elements`), the parser:
+
+      * derives the section number from ``<num value="...">`` (verbatim —
+        en-dashes and letter suffixes preserved);
+      * extracts the heading from ``<heading>``;
+      * extracts the source-credit from ``<sourceCredit>`` if present;
+      * builds :class:`UscStatutoryParagraph` records from the direct
+        statutory children (one per ``<subsection>`` / ``<paragraph>`` /
+        direct ``<content>``);
+      * flags ``repealed`` from the ``status="repealed"`` attribute or the
+        head-text ``Repealed|Omitted|Transferred|Renumbered|Vacant`` regex.
+
+    ``title`` is required — the USLM root does not carry the integer title
+    number in a single canonical attribute (``<docNumber>`` exists in ``<meta>``
+    but is metadata-layer, not structural).
+    """
+    root = _parse_uslm_tree(uslm_bytes)
+    sections: list[UscSection] = []
+    findings: list[dict[str, str]] = []
+    seen: dict[str, str] = {}
+
+    for section_el in _iter_uslm_section_elements(root):
+        section_number = _uslm_section_number(section_el)
+        heading = _uslm_section_heading(section_el)
+        repealed = _uslm_section_status_repealed(section_el, heading)
+        source_credit = _uslm_section_source_credit(section_el)
+        paragraphs = _uslm_section_paragraphs(section_el)
+
+        if not section_number:
+            findings.append(
+                {
+                    "rule_id": "us_uslm_section_without_number",
+                    "identifier": section_el.get("identifier", ""),
+                    "reason": (
+                        "<section> has no <num value='...'> and no "
+                        "identifier-suffix section number"
+                    ),
+                }
+            )
+            continue
+
+        # Statutory text = normalized concatenation of paragraph texts (each
+        # paragraph is itself a normalized subtree, so we re-join with " " and
+        # re-normalize to collapse the inter-paragraph whitespace uniformly).
+        statutory_text = _normalize_text(" ".join(p.text for p in paragraphs))
+
+        sections.append(
+            UscSection(
+                title=title,
+                section=section_number,
+                heading=heading,
+                address=usc_section_address(title, section_number),
+                statutory_text=statutory_text,
+                source_credit_raw=source_credit,
+                repealed=repealed,
+                paragraphs=paragraphs,
+                notes=(),
+                chapter="",
+                subchapter="",
+            )
+        )
+
+        if section_number in seen:
+            findings.append(
+                {
+                    "rule_id": "us_usc_duplicate_section_number",
+                    "section": section_number,
+                    "reason": "duplicate section number within title (USLM parse)",
+                }
+            )
+        seen[section_number] = heading
+
+    report = UscSourceShapeReport(
+        title=title,
+        year=year,
+        section_count=len(sections),
+        repealed_count=sum(1 for s in sections if s.repealed),
+    )
+    for s in sections:
+        if not s.source_credit_raw and not s.repealed:
+            report.sections_without_source_credit.append(s.section)
+        if not s.statutory_text and not s.repealed:
+            report.sections_without_statutory_text.append(s.section)
+    report.findings.extend(findings)
+
+    return UscSourceDocument(
+        title=title, year=year, locator=locator, sections=tuple(sections), report=report
+    )
+
+
+def split_uslm_subsections(
+    section: UscSection, uslm_bytes: bytes
+) -> tuple[tuple[UscSubsectionNode, ...], list[dict[str, str]]]:
+    """Walk the USLM XML element of one section to produce structural nodes.
+
+    Replaces :func:`split_statutory_subsections` (the indent-depth heuristic
+    that recovers nesting from ``(a)`` / ``(1)`` / ``(A)`` markers + CSS
+    indent on the flat OLRC annual-edition htm) for USLM sources: this walker
+    reads the XML's own ``<subsection>`` → ``<paragraph>`` → ``<subparagraph>``
+    nesting directly. The pinned USC address convention is identical
+    (:func:`usc_section_address` plus ladder-kind/label pairs).
+
+    For each ``<subsection>`` / ``<paragraph>`` / ``<subparagraph>`` /
+    ``<clause>`` / ``<subclause>`` / ``<item>`` / ``<sub-item>`` element under
+    the section, one :class:`UscSubsectionNode` is emitted with:
+
+      * ``address`` — :func:`usc_section_address` extended with the
+        ``(kind, label)`` path through the open-ancestor stack;
+      * ``label`` — the ``<num value="...">`` token (e.g. ``"a"``, ``"1"``,
+        ``"A"``); empty string when no ``<num>`` is present, with a typed
+        ``us_uslm_node_without_num`` finding rather than a fabricated label;
+      * ``kind`` — the element local name;
+      * ``indent_depth`` — the structural nesting level (subsection = 0,
+        paragraph = 1, ... — matches :data:`_USLM_LEVEL_ELEMENTS` order);
+      * ``text`` — the normalized direct text of the element (its ``<num>``,
+        ``<heading>``, ``<chapeau>``, ``<content>`` text — NOT descendant
+        subsections'/paragraphs' content, which get their own nodes).
+
+    Returns ``(nodes, findings)``. The section's own ``<section>`` element is
+    located in the blob by identifier match (``/us/usc/tN/sNNN``); if missing,
+    a typed ``us_uslm_section_not_located_in_blob`` finding is emitted and an
+    empty node list is returned — never a guessed blob section.
+    """
+    root = _parse_uslm_tree(uslm_bytes)
+    section_el = _find_uslm_section_element(root, section.title, section.section)
+    if section_el is None:
+        return (
+            (),
+            [
+                {
+                    "rule_id": "us_uslm_section_not_located_in_blob",
+                    "section": section.section,
+                    "title": str(section.title),
+                    "reason": (
+                        "no <section> in the USLM blob carries this section's identifier"
+                    ),
+                }
+            ],
+        )
+    return _walk_uslm_sub_section_tree(section_el, section.address)
+
+
+def _find_uslm_section_element(
+    root: ET.Element, title: int, section_number: str
+) -> ET.Element | None:
+    """Locate the ``<section>`` element for ``title`` / ``section_number``.
+
+    The USLM ``identifier`` is ``/us/usc/t{title}/s{section}`` with the
+    section number carried verbatim (en-dashes and letter suffixes preserved
+    on both sides), so a single string compare is authoritative. The walk
+    skips ``<notes>`` / ``<note>`` subtrees for the same reason
+    :func:`_iter_uslm_section_elements` does — quoted-text ghosts may carry
+    USC-shaped identifiers.
+    """
+    target = f"/us/usc/t{int(title)}/s{section_number}"
+    q_section = f"{_USLM_NS_PREFIX}section"
+    q_notes = f"{_USLM_NS_PREFIX}notes"
+    q_note = f"{_USLM_NS_PREFIX}note"
+
+    def _walk(el: ET.Element) -> ET.Element | None:
+        for child in el:
+            if not isinstance(child.tag, str):
+                continue
+            if child.tag == q_notes or child.tag == q_note:
+                continue
+            if child.tag == q_section and child.get("identifier") == target:
+                return child
+            found = _walk(child)
+            if found is not None:
+                return found
+        return None
+
+    return _walk(root)
+
+
+def _walk_uslm_sub_section_tree(
+    section_el: ET.Element, base_address: LegalAddress
+) -> tuple[tuple[UscSubsectionNode, ...], list[dict[str, str]]]:
+    """Depth-first walk over a ``<section>``'s structural descendants.
+
+    The walk is forward-only and visit-ordered by document position. Each
+    structural child emits a node BEFORE descending into its own structural
+    children, so the node list is in pre-order (parent-before-child), matching
+    :func:`split_statutory_subsections`'s open-ancestor stack discipline.
+    """
+    nodes: list[UscSubsectionNode] = []
+    findings: list[dict[str, str]] = []
+    q_num = f"{_USLM_NS_PREFIX}num"
+
+    def _text_of_node(el: ET.Element) -> str:
+        """Direct text of a USLM structural element EXCLUDING child structure.
+
+        Includes the node's own ``<num>``, ``<heading>``, ``<chapeau>``,
+        ``<content>`` text and any direct PIs/comments' tails, but skips the
+        subtrees of child ``<subsection>`` / ``<paragraph>`` / ... elements
+        (those get their own nodes). This mirrors what the indent-depth
+        heuristic stores per ``<p class='statutory-body'>`` line: the unit's
+        own opening text, never its descendants'.
+        """
+        parts: list[str] = []
+        if isinstance(el.text, str):
+            parts.append(el.text)
+        for child in el:
+            if not isinstance(child.tag, str):
+                if isinstance(child.tail, str):
+                    parts.append(child.tail)
+                continue
+            local = _uslm_localname(child.tag)
+            if local in _USLM_LEVEL_INDEX:
+                if isinstance(child.tail, str):
+                    parts.append(child.tail)
+                continue
+            parts.append(_uslm_subtree_text(child))
+            if isinstance(child.tail, str):
+                parts.append(child.tail)
+        return _normalize_text("".join(parts))
+
+    def _walk(el: ET.Element, parent_path: tuple[tuple[str, str], ...]) -> None:
+        for child in el:
+            if not isinstance(child.tag, str):
+                continue
+            local = _uslm_localname(child.tag)
+            if local not in _USLM_LEVEL_INDEX:
+                continue
+            kind = local
+            this_level = _USLM_LEVEL_INDEX[local]
+
+            label = ""
+            num_found = False
+            for gc in child:
+                if gc.tag == q_num:
+                    value = gc.get("value", "")
+                    if value:
+                        label = value
+                        num_found = True
+                    break
+            if not num_found:
+                findings.append(
+                    {
+                        "rule_id": "us_uslm_node_without_num",
+                        "kind": kind,
+                        "identifier": child.get("identifier", ""),
+                        "reason": f"<{kind}> has no <num value='...'>; label left empty",
+                        "text_preview": _text_of_node(child)[:80],
+                    }
+                )
+
+            path = parent_path + ((kind, label),)
+            nodes.append(
+                UscSubsectionNode(
+                    address=LegalAddress(path=base_address.path + path),
+                    label=label,
+                    kind=kind,
+                    indent_depth=this_level,
+                    text=_text_of_node(child),
+                )
+            )
+            _walk(child, path)
+
+    _walk(section_el, ())
+    return tuple(nodes), findings

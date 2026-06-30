@@ -48,11 +48,15 @@ from lawvm.us_federal.dry_run import (
     US_DRY_RUN_RESIDUAL_TARGET_LEVEL_ABSENT_IN_SOURCE_TREE_RULE_ID,
     US_DRY_RUN_RESIDUAL_TEXT_MISMATCH_RULE_ID,
     US_DRY_RUN_SECTION_AGREES_RULE_ID,
+    US_DRY_RUN_RECOVERED_BARE_LEAF_TARGET_VIA_UNIQUE_SUFFIX_RULE_ID,
     USDryRunRefusal,
     USDryRunReport,
+    USDryRunTargetRecovery,
     USDryRunWindowError,
     _has_source_truncated_clause_payload,
     _index_node_text,
+    _locate_subsection_text,
+    _locate_subsection_text_resolved,
     _materialize_one,
     _norm_editorial,
     _replace_token_tail_in_text,
@@ -117,6 +121,136 @@ def test_replace_token_in_text_last_occurrence_replaces_rightmost_match_once():
     assert _replace_token_in_text(
         single, match_text=".", replacement="X", count=-1, last_occurrence=True
     ) == _replace_token_in_text(single, match_text=".", replacement="X", count=-1)
+
+
+def test_s0_length_ratio_invariant_defends_against_silent_state_corruption() -> None:
+    """§0 guard-liveness test: through-tail must preserve the right-side
+    suffix AND end-punct-insert must target the W-rightmost period only.
+
+    AGENTS.md §2.9 guard-liveness: drive known-violating inputs through the
+    FULL production path (``build_us_dry_run``), not just a unit test of the
+    helper function. This test catches two §0 silent-state-corruption bug
+    classes discovered during the 2026-06 session:
+
+      1. ``_replace_token_through_in_text`` dropped ``text[end_pos:]``
+         (the bounded-deletion helper returned
+         ``text[:start_pos] + replacement`` without the suffix) — every
+         through-tail op silently converted to an open-ended tail cut.
+         Regression signature: ``len(materialized) << len(oracle)`` on a
+         section whose right-side text should survive.
+
+      2. ``TextSelector.occurrence == -1`` was overloaded between EACH_PLACE
+         (replace ALL occurrences) and LAST (replace rightmost once);
+         ``str.replace(count=-1)`` means ALL in Python — multi-sentence
+         sections with >1 terminal period got the insert applied to every
+         period, silently multiplying the op's effect.
+         Regression signature: ``len(materialized) >> len(oracle)`` on a
+         multi-sentence section where one terminal-punct edit ran.
+
+    The test drives both op families through ``build_us_dry_run`` end-to-end
+    and asserts per-section length ratios against a band that the regressions
+    would violate.
+    """
+    section_50_before = "Sentence one. Sentence two. Sentence three."
+    section_50_after = "Sentence one. Sentence two. Sentence three; and."
+    section_70_before = (
+        "Preamble. Definitions. End block. Surplus text that is long enough"
+        " to test truncation behavior at the end of the section."
+    )
+    section_70_after = (
+        "Preamble. Budget Activity Defined. Surplus text that is long enough"
+        " to test truncation behavior at the end of the section."
+    )
+
+    def _htm(s50: str, s70: str) -> bytes:
+        return (
+            '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"\n'
+            '"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">\n'
+            '<html xmlns="http://www.w3.org/1999/xhtml">\n'
+            " <head>\n  <title>U.S.C. Title 99 (s0 guard)</title>\n"
+            "<!-- AUTHORITIES-USC-TITLE-ENUM:99 -->\n"
+            " </head>\n <body>\n  <div>\n"
+            "<!-- expcite:TITLE 99-SYNTHETIC!@!CHAPTER 1-PROVISIONS!@!Sec. 50 -->\n"
+            "<!-- field-start:head -->\n"
+            '<h3 class="section-head">&sect;50. Multi-sentence</h3>\n'
+            "<!-- field-end:head -->\n"
+            "<!-- field-start:statute -->\n"
+            f'<p class="statutory-body">{s50}</p>\n'
+            "<!-- field-end:statute -->\n"
+            "<!-- field-start:sourcecredit -->\n"
+            '<p class="source-credit">(Pub. L. 99&ndash;1, Jan. 1, 2020, 100 Stat. 1.)</p>\n'
+            "<!-- field-end:sourcecredit -->\n"
+            "<!-- expcite:TITLE 99-SYNTHETIC!@!CHAPTER 1-PROVISIONS!@!Sec. 70 -->\n"
+            "<!-- field-start:head -->\n"
+            '<h3 class="section-head">&sect;70. Multi-block</h3>\n'
+            "<!-- field-end:head -->\n"
+            "<!-- field-start:statute -->\n"
+            f'<p class="statutory-body">{s70}</p>\n'
+            "<!-- field-end:statute -->\n"
+            "<!-- field-start:sourcecredit -->\n"
+            '<p class="source-credit">(Pub. L. 99&ndash;1, Jan. 1, 2020, 100 Stat. 1.)</p>\n'
+            "<!-- field-end:sourcecredit -->\n"
+            "  </div>\n </body>\n</html>\n"
+        ).encode("utf-8")
+
+    plaw = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<uslm xmlns="http://schemas.gpo.gov/xml/uslm"><meta>'
+        "<congress>99</congress><docNumber>3</docNumber>"
+        "<approvedDate>2024-01-01</approvedDate></meta><main>"
+        "<section><num>1</num><content>"
+        '<ref href="/us/usc/t99/s50">Section 50 of title 99, United States Code</ref>, '
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="insert">inserting</amendingAction> '
+        "\u201c<quotedText>; and</quotedText>\u201d before the period at the end."
+        "</content></section>"
+        "<section><num>2</num><content>"
+        '<ref href="/us/usc/t99/s70">Section 70 of title 99, United States Code</ref>, '
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="delete">striking</amendingAction> '
+        "\u201c<quotedText>Definitions</quotedText>\u201d and all that follows through "
+        "\u201c<quotedText>End block.</quotedText>\u201d and "
+        '<amendingAction type="insert">inserting</amendingAction> '
+        "\u201c<quotedText>Budget Activity Defined.</quotedText>\u201d."
+        "</content></section>"
+        "</main></uslm>"
+    ).encode("utf-8")
+
+    report = build_us_dry_run(
+        before_htm=_htm(section_50_before, section_70_before),
+        after_htm=_htm(section_50_after, section_70_after),
+        plaw_blobs={"PL 99-3": plaw},
+        title=99,
+        before_year="2023",
+        after_year="2024",
+    )
+    rows = {r.section_key: r for r in report.rows}
+    assert "99:50" in rows, list(rows)
+    assert "99:70" in rows, list(rows)
+
+    # Section 50 (insert_end_punct on a multi-sentence section).
+    # If OccMode bug regressed (every period got "; and" prepended), the
+    # materialized text would be ~30% longer than the oracle.
+    s50 = rows["99:50"]
+    oracle_50 = max(len(s50.oracle_text), 1)
+    ratio_50 = len(s50.materialized_text) / oracle_50
+    assert 0.9 <= ratio_50 <= 1.10, (
+        f"section 50 ratio {ratio_50:.2f} out of [0.9, 1.10] band; "
+        f"mat_len={len(s50.materialized_text)} orc_len={oracle_50}; "
+        f"mat={s50.materialized_text!r}"
+    )
+
+    # Section 70 (through-tail strike-insert whose right-side text must survive).
+    # If through-tail bug regressed (text[end_pos:] dropped), the materialized
+    # text would be ~60% shorter than the oracle.
+    s70 = rows["99:70"]
+    oracle_70 = max(len(s70.oracle_text), 1)
+    ratio_70 = len(s70.materialized_text) / oracle_70
+    assert 0.50 <= ratio_70 <= 1.50, (
+        f"section 70 ratio {ratio_70:.2f} out of [0.50, 1.50] band; "
+        f"mat_len={len(s70.materialized_text)} orc_len={oracle_70}; "
+        f"mat={s70.materialized_text!r}"
+    )
 
 
 def test_oracle_changed_section_set_is_a_fact_of_the_two_editions() -> None:
@@ -392,8 +526,355 @@ def test_source_tree_parse_ambiguous_not_fired_when_parse_is_clean_and_label_mis
 
 
 # ---------------------------------------------------------------------------
-# Gate + JSON contract
+# Suffix-match recovery for bare-leaf sub-section targets (§0 owned heuristic,
+# family ``target_resolution_recovery``).
+#
+# When the amendatory lowerer emits a target address with a sub-section segment
+# (paragraph/subparagraph/clause) but WITHOUT a parent subsection segment —
+# ``title:10/section:2432/paragraph:1`` instead of the full
+# ``title:10/section:2432/subsection:b/paragraph:1`` — the materializer's strict
+# equality matcher (``_locate_subsection_text``) used to refuse the op as
+# ``us_dry_run_residual_subsection_target_node_not_located_in_before_section``
+# even when the targeted node was unambiguously present in the source-tree split.
+# The suffix-match fallback in ``_locate_subsection_text_resolved`` recovers the
+# unambiguous parent the lowerer dropped when EXACTLY ONE source-tree node ends
+# with the target's segments; multiple matches still refuse (§1.1 no silent target
+# hijacking). The recovery is owned by
+# ``US_DRY_RUN_RECOVERED_BARE_LEAF_TARGET_VIA_UNIQUE_SUFFIX_RULE_ID`` and surfaces
+# as a typed ``USDryRunTargetRecovery`` witness on the report.
 # ---------------------------------------------------------------------------
+
+
+def _bare_leaf_unique_match_section() -> UscSection:
+    """Section whose only ``paragraph:1`` lives under ``subsection:b``.
+
+    Subsection (a) has no paragraphs; only (b) carries (1) and (2). So a bare-leaf
+    ``paragraph:1`` target (no parent subsection prefix) has a UNIQUE source-tree
+    match ending with ``paragraph:1`` — exactly the bare-leaf shape on the title 10
+    2018->2020 §2432 family of amendments.
+    """
+    return synthetic_usc_section(
+        title=10,
+        section="2432",
+        text=(
+            "(a) Subsection A has no paragraphs. "
+            "(b) Authority is granted. "
+            "(1) The first paragraph mentions a 15-year window. "
+            "(2) The second paragraph stands alone."
+        ),
+    )
+
+
+def test_locate_subsection_text_resolved_returns_none_when_strict_match_present() -> None:
+    # Sanity: when the address names the full path ``.../subsection:b/paragraph:1``,
+    # the strict-equality matcher resolves without firing the recovery. The resolved
+    # segments equal the target segments (the §0 recovery signal must stay silent).
+    section = _bare_leaf_unique_match_section()
+    full = LegalAddress(
+        path=(
+            ("title", "10"),
+            ("section", "2432"),
+            ("subsection", "b"),
+            ("paragraph", "1"),
+        )
+    )
+    resolved = _locate_subsection_text_resolved(section, full)
+    assert resolved is not None
+    assert resolved.text == "(1) The first paragraph mentions a 15-year window."
+    assert resolved.resolved_segments == _subsection_segments(full)
+
+
+def test_locate_subsection_text_resolved_recovers_unique_bare_leaf_via_suffix_match() -> None:
+    # The lowerer emitted a bare-leaf address (no parent ``subsection:b``
+    # prefix). The strict-equality matcher would refuse; the suffix-match
+    # fallback finds exactly one source-tree node ending with ``paragraph:1``
+    # (the one under subsection (b)) and recovers the parent. The resolved
+    # segments carry the recovered ancestor (the witness for §0 ownership).
+    section = _bare_leaf_unique_match_section()
+    bare_leaf = LegalAddress(
+        path=(("title", "10"), ("section", "2432"), ("paragraph", "1"))
+    )
+    resolved = _locate_subsection_text_resolved(section, bare_leaf)
+    assert resolved is not None
+    assert resolved.text == "(1) The first paragraph mentions a 15-year window."
+    # The recovered ancestor is the missing subsection:b prefix.
+    assert resolved.resolved_segments == (("subsection", "b"), ("paragraph", "1"))
+    assert resolved.resolved_segments != _subsection_segments(bare_leaf)
+
+
+def test_locate_subsection_text_resolved_refuses_when_suffix_match_is_ambiguous() -> None:
+    # §1.1 firewall: when MORE THAN ONE source-tree node ends with the target's
+    # segments (paragraph:1 under both subsection:a and subsection:b), the
+    # recovery MUST refuse rather than hijack one. The bare-leaf target stays
+    # unlocated and the existing typed residual path takes over at the caller.
+    section = synthetic_usc_section(
+        title=10,
+        section="2432-amb",
+        text=(
+            "(a) Subsection A. "
+            "(1) Paragraph A1. "
+            "(b) Subsection B. "
+            "(1) Paragraph B1. "
+            "(2) Paragraph B2."
+        ),
+    )
+    bare_leaf = LegalAddress(
+        path=(("title", "10"), ("section", "2432-amb"), ("paragraph", "1"))
+    )
+    resolved = _locate_subsection_text_resolved(section, bare_leaf)
+    assert resolved is None
+
+
+def test_locate_subsection_text_backwards_compatible_wrapper_still_returns_text() -> None:
+    # The deprecated single-string wrapper still returns the node text on both a
+    # strict match and a recovery; existing direct callers (no evidence path) keep
+    # working byte-for-byte. Tests that import ``_locate_subsection_text`` should
+    # not need to call ``_locate_subsection_text_resolved`` to keep existing
+    # assertions passing.
+    section = _bare_leaf_unique_match_section()
+    bare_leaf = LegalAddress(
+        path=(("title", "10"), ("section", "2432"), ("paragraph", "1"))
+    )
+    text = _locate_subsection_text(section, bare_leaf)
+    assert text == "(1) The first paragraph mentions a 15-year window."
+
+
+def test_text_replace_on_bare_leaf_target_materializes_via_suffix_match_recovery() -> None:
+    # End-to-end: a TEXT_REPLACE op with a bare-leaf ``paragraph:1`` target is
+    # applied to the UNIQUE source-tree node the recovery resolves to. Without
+    # the fix this op would emit
+    # ``us_dry_run_residual_subsection_target_node_not_located_in_before_section``
+    # (lawvm_wrong). With the fix the patch lands inside subsection (b)'s
+    # paragraph (1) text only — never widens onto the whole section, never
+    # hijacks a sibling — and the recovery observation is emitted with its
+    # witness (op_id, target_segments, resolved_node_segments).
+    section = _bare_leaf_unique_match_section()
+    op = LegalOperation(
+        op_id="strike-15y-in-para-1",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(
+            path=(("title", "10"), ("section", "2432"), ("paragraph", "1"))
+        ),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text="15-year", occurrence=1),
+            replacement="20-year",
+        ),
+    )
+    recoveries: list[USDryRunTargetRecovery] = []
+    outcome = _materialize_one(
+        op,
+        section.statutory_text,
+        before_section=section,
+        recoveries=recoveries,
+    )
+    assert not isinstance(outcome, USDryRunRefusal), outcome
+    materialized, rule_id, _disposition = outcome
+    assert rule_id == ""  # recovery is non-blocking: the patch landed.
+    # Only the targeted paragraph (1) under subsection (b) was rewritten.
+    assert "(1) The first paragraph mentions a 20-year window." in materialized
+    assert "15-year" not in materialized
+    # Subsection (a) prose and paragraph (2) survived untouched (no hijack).
+    assert "(a) Subsection A has no paragraphs." in materialized
+    assert "(2) The second paragraph stands alone." in materialized
+
+    # The §0 typed emission carries the witness.
+    assert len(recoveries) == 1
+    recovery = recoveries[0]
+    assert recovery.op_id == "strike-15y-in-para-1"
+    assert recovery.target_segments == (("paragraph", "1"),)
+    assert recovery.resolved_node_segments == (("subsection", "b"), ("paragraph", "1"))
+    assert recovery.family == "target_resolution_recovery"
+    assert recovery.to_jsonable()["rule_id"] == (
+        US_DRY_RUN_RECOVERED_BARE_LEAF_TARGET_VIA_UNIQUE_SUFFIX_RULE_ID
+    )
+
+
+def test_text_replace_on_bare_leaf_target_refuses_when_suffix_match_ambiguous() -> None:
+    # §1.1 firewall at the materializer: when the suffix match is ambiguous (two
+    # distinct ``paragraph:1`` source-tree nodes), the materializer MUST NOT
+    # hijack one. The recovery observation list stays empty and the existing
+    # typed residual fires (lawvm_wrong — the lowerer's bare-leaf address was
+    # genuinely under-specified for this section shape).
+    section = synthetic_usc_section(
+        title=10,
+        section="2432-amb",
+        text=(
+            "(a) Subsection A. "
+            "(1) Paragraph A1 has the 15-year anchor. "
+            "(b) Subsection B. "
+            "(1) Paragraph B1 has the 15-year anchor too. "
+            "(2) Paragraph B2."
+        ),
+    )
+    op = LegalOperation(
+        op_id="strike-15y-in-para-1-ambiguous",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(
+            path=(("title", "10"), ("section", "2432-amb"), ("paragraph", "1"))
+        ),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text="15-year", occurrence=1),
+            replacement="20-year",
+        ),
+    )
+    recoveries: list[USDryRunTargetRecovery] = []
+    outcome = _materialize_one(
+        op,
+        section.statutory_text,
+        before_section=section,
+        recoveries=recoveries,
+    )
+    assert not isinstance(outcome, USDryRunRefusal)
+    _materialized, rule_id, disposition = outcome
+    assert rule_id == US_DRY_RUN_RESIDUAL_SUBSECTION_NODE_NOT_LOCATED_RULE_ID
+    assert disposition == DISPOSITION_LAWVM_WRONG
+    assert recoveries == []
+
+
+def test_repeated_bare_leaf_patches_compose_via_resolved_node_overrides() -> None:
+    # When a prior op against the SAME resolved node wrote its new text under the
+    # resolved (full) segments key — e.g. an op with a fully qualified target
+    # ``subsection:b/paragraph:1`` followed by a bare-leaf ``paragraph:1`` op —
+    # the bare-leaf op must act on the RUNNING text the prior patch produced,
+    # not the now-stale pristine before-edition span. This is the multi-patch
+    # composition the recovery must keep intact.
+    section = _bare_leaf_unique_match_section()
+    full_target = LegalAddress(
+        path=(
+            ("title", "10"),
+            ("section", "2432"),
+            ("subsection", "b"),
+            ("paragraph", "1"),
+        )
+    )
+    bare_leaf = LegalAddress(
+        path=(("title", "10"), ("section", "2432"), ("paragraph", "1"))
+    )
+    op_full = LegalOperation(
+        op_id="patch-1-full",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=full_target,
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text="15-year", occurrence=1),
+            replacement="20-year",
+        ),
+    )
+    op_bare = LegalOperation(
+        op_id="patch-2-bare",
+        sequence=2,
+        action=StructuralAction.TEXT_REPLACE,
+        target=bare_leaf,
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text="20-year", occurrence=1),
+            replacement="25-year",
+        ),
+    )
+    recoveries: list[USDryRunTargetRecovery] = []
+    seeded_overrides: dict[tuple[tuple[str, str], ...], str] = {}
+    outcome1 = _materialize_one(
+        op_full,
+        section.statutory_text,
+        before_section=section,
+        node_overrides=seeded_overrides,
+        recoveries=recoveries,
+    )
+    assert not isinstance(outcome1, USDryRunRefusal), outcome1
+    materialized_1, rule_1, _ = outcome1
+    assert rule_1 == ""
+    assert "(1) The first paragraph mentions a 20-year window." in materialized_1
+    # The first op had a fully-specified address: no recovery.
+    assert recoveries == []
+
+    outcome2 = _materialize_one(
+        op_bare,
+        materialized_1,
+        before_section=section,
+        node_overrides=seeded_overrides,
+        recoveries=recoveries,
+    )
+    assert not isinstance(outcome2, USDryRunRefusal), outcome2
+    materialized_2, rule_2, _ = outcome2
+    assert rule_2 == ""
+    # The bare-leaf patch composed onto the prior op's text — not the stale
+    # pristine ``15-year`` text that is no longer in the running composition.
+    assert "(1) The first paragraph mentions a 25-year window." in materialized_2
+    assert "20-year" not in materialized_2
+    assert "15-year" not in materialized_2
+    # The §0 typed emission fired for the bare-leaf op (the witness is preserved).
+    assert len(recoveries) == 1
+    assert recoveries[0].op_id == "patch-2-bare"
+    assert recoveries[0].target_segments == (("paragraph", "1"),)
+    assert recoveries[0].resolved_node_segments == (
+        ("subsection", "b"),
+        ("paragraph", "1"),
+    )
+
+
+def test_build_us_dry_run_carries_target_recoveries_through_the_report() -> None:
+    # The §0 ownership surface: when the suffix-match recovery fires inside
+    # ``_materialize_one``, the typed ``USDryRunTargetRecovery`` observation MUST
+    # reach the public ``USDryRunReport`` and serialize via ``to_jsonable``/``summary``
+    # so the heuristic cannot go invisible (AGENTS.md §0 forbids invisible
+    # heuristics). We exercise the wiring directly: build a USDryRunReport with a
+    # pre-built recovery entry, then assert the serialization carries the witness.
+    recovery = USDryRunTargetRecovery(
+        op_id="test-op",
+        target_address="title:10/section:2432/paragraph:1",
+        target_segments=(("paragraph", "1"),),
+        resolved_node_segments=(("subsection", "b"), ("paragraph", "1")),
+    )
+    # ``boundary_proof`` defaults to the empty-proof (no oracle/claimed sets); the
+    # minimal report construction is sufficient to exercise serialization.
+    boundary = _build().boundary_proof
+    report = USDryRunReport(
+        title=10,
+        before_year="2023",
+        after_year="2024",
+        statute_ids=("PL 99-9",),
+        rows=(),
+        refusals=(),
+        oracle_changed_sections=(),
+        claimed_sections=(),
+        boundary_proof=boundary,
+        target_recoveries=(recovery,),
+    )
+    assert report.target_recoveries == (recovery,)
+    payload = report.to_jsonable()
+    assert payload["summary"]["target_recovery_count"] == 1
+    assert len(payload["target_recoveries"]) == 1
+    serialized = payload["target_recoveries"][0]
+    assert serialized["rule_id"] == (
+        US_DRY_RUN_RECOVERED_BARE_LEAF_TARGET_VIA_UNIQUE_SUFFIX_RULE_ID
+    )
+    assert serialized["family"] == "target_resolution_recovery"
+    assert serialized["op_id"] == "test-op"
+    assert serialized["target_address"] == "title:10/section:2432/paragraph:1"
+    # The witness segments serialize as JSON arrays of ``[kind, label]`` pairs.
+    assert serialized["target_segments"] == [["paragraph", "1"]]
+    assert serialized["resolved_node_segments"] == [
+        ["subsection", "b"],
+        ["paragraph", "1"],
+    ]
+    # ``replay_authorized`` stays False: the recovery cannot authorize replay.
+    assert report.replay_authorized is False
+    assert payload["replay_authorized"] is False
+
+
+def test_build_us_dry_run_default_report_has_no_target_recoveries() -> None:
+    # Regression guard: the existing synthetic Title 99 fixture lowers no bare-leaf
+    # sub-section targets, so its report carries zero target_recoveries — the
+    # shipping path must not silently emit observations no recovery fired.
+    report = _build()
+    assert report.target_recoveries == ()
+    assert report.to_jsonable()["summary"]["target_recovery_count"] == 0
+    assert report.to_jsonable()["target_recoveries"] == []
 
 
 def test_report_never_authorizes_replay() -> None:
@@ -1918,6 +2399,247 @@ def test_whole_section_replace_keeps_payload_when_catchline_not_delimitable() ->
     assert signal_rule_id == ""
     # Kept verbatim (no curly-quote body marker to delimit the catchline at).
     assert materialized == "§ 3084. Chief of Veterinary Corps"
+
+
+# ---------------------------------------------------------------------------
+# INSERT catchline-mismatch refusal (§1.1: no silent target hijacking)
+# ---------------------------------------------------------------------------
+
+# Real witness: PL 110-246 SEC. 416 ("ANNUAL REPORT.") creates USC 7:228d. The
+# amendatory lowerer dispatched the INSERT op with the Verbatim PL section
+# heading ``SEC. 416.`` as the leading catchline of the payload, but routed the
+# op target onto the *existing* USC 7:228d. The pre-existing dry-run appended
+# the new section's body to the existing section's body, producing a 5752-char
+# materialization against a 376-char oracle — a 15.3x over-insert ``lawvm_wrong``
+# row. The same audit class is present on PL 110-246 SEC. 209 -> 7:7511 (over-
+# insert 10.7x). 123 such mis-routed INSERT ops were identified across the
+# 14 high-activity windows in the post-classification-index bench.
+
+
+def _insert_catchline_mismatch_op(
+    *,
+    target_section: str = "228d",
+    payload_text: str = (
+        "SEC. 416. ANNUAL REPORT."
+        "“(a) In General.—Not later than March 1 of each year, the "
+        "Secretary shall submit to Congress and make publicly available "
+        "a report that—“(1) states, for the preceding year, separately for "
+        "livestock and poultry and separately by enforcement area category."
+    ),
+) -> LegalOperation:
+    return LegalOperation(
+        op_id="PL 110-246#instr640",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(
+            path=(("title", "7"), ("section", target_section))
+        ),
+        payload=IRNode(
+            kind=IRNodeKind.SECTION, label=target_section, text=payload_text
+        ),
+    )
+
+
+def test_insert_with_statutes_at_large_catchline_for_a_different_section_is_refused() -> None:
+    """§1.1 guard-liveness: a whole-section INSERT whose payload opens with a
+    different section's catchline (here Statutes-at-Large ``SEC. 416.`` for
+    an op targeting ``7:228d``) is REFUSED — never composed as a wrong
+    materialization that appends another section's body to this target.
+
+    Real witness: PL 110-246 SEC. 416 creates USC 7:228d (a NEW section); the
+    amendatory lowerer mis-routed the op to the existing target ``title:7/
+    section:228d``. Faithfully appending the body would produce a 15x over-
+    insert over the unchanged 376-char oracle (the section is unchanged
+    in the oracle: PL 110-246 SEC. 416 is a creation elsewhere).
+
+    AGENTS.md §0/§1.1: a mis-routed op is preserved as a typed refusal, never
+    silently composed. The refusal embeds the offending payload preview so
+    a reviewer can triage without re-running extraction (§1.10).
+    """
+    from lawvm.us_federal.dry_run import (
+        US_DRY_RUN_REFUSED_INSERT_CATCHLINE_MISMATCH_RULE_ID,
+    )
+
+    op = _insert_catchline_mismatch_op()
+    before_text = (
+        "Not later than March 1 of each year, the Secretary shall submit to "
+        "Congress and make publicly available a report that— (1) assesses the "
+        "general economic state of the cattle and hog industries."
+    )
+    outcome = _materialize_one(op, before_text)
+    assert isinstance(outcome, USDryRunRefusal)
+    assert outcome.rule_id == US_DRY_RUN_REFUSED_INSERT_CATCHLINE_MISMATCH_RULE_ID
+    assert outcome.target_address == "title:7/section:228d"
+    # The diagnostic embeds the offending payload preview (§1.10) — the
+    # leading catchline_carrier must be visible without re-running extraction.
+    assert "SEC. 416." in outcome.detail["payload_preview"]
+    assert outcome.detail["target_section"] == "228d"
+    assert outcome.detail["payload_catchline_section"] == "416"
+    # The message distinguishes the catchline-section mismatch from any other
+    # refusal class (no opaque "missing source" string; §1.10 says the
+    # diagnostic must name the concrete fix path).
+    assert "INSERT op targets section '228d'" in outcome.message
+    assert "catchline for '416'" in outcome.message
+
+
+def test_insert_with_uslm_catchline_for_a_different_section_is_refused() -> None:
+    """Negative-side coverage for the USLM positive-law form ``§ <num>.`` of the
+    same family. Real witness: PL 116-283 SEC. 1807 routed ``§ 3066.`` (USC
+    5:3066) onto target ``10:2311``. Both catchline forms (USLM ``§`` and
+    Statutes-at-Large ``SEC.``) route through the same detector.
+    """
+    from lawvm.us_federal.dry_run import (
+        US_DRY_RUN_REFUSED_INSERT_CATCHLINE_MISMATCH_RULE_ID,
+    )
+
+    op = _insert_catchline_mismatch_op(
+        target_section="2311",
+        payload_text=(
+            "§ 3066. Assignment and delegation of procurement functions and "
+            "responsibilities: procurements for or with other agencies"
+            "“(a) In General.—The head of an executive agency may delegate..."
+        ),
+    )
+    outcome = _materialize_one(op, "(a) old body for section 2311.")
+    assert isinstance(outcome, USDryRunRefusal)
+    assert outcome.rule_id == US_DRY_RUN_REFUSED_INSERT_CATCHLINE_MISMATCH_RULE_ID
+    assert outcome.detail["target_section"] == "2311"
+    assert outcome.detail["payload_catchline_section"] == "3066"
+    # The payload preview is the leading ~400 chars — covers the catchline and
+    # part of the heading.
+    assert "§ 3066." in outcome.detail["payload_preview"]
+
+
+def test_insert_with_catchline_matching_target_section_is_not_refused() -> None:
+    """Negative test: a legitimate whole-new-section insert whose payload
+    catchline NAMES the target section is NOT refused. The op composes
+    normally (catchline is projected off the body-only oracle surface).
+
+    Guards against an over-broad refusal that would convert whole-new-section
+    creation into a false-positive target-hijacking finding.
+    """
+    from lawvm.us_federal.dry_run import (
+        US_DRY_RUN_REFUSED_INSERT_CATCHLINE_MISMATCH_RULE_ID,
+    )
+
+    op = _insert_catchline_mismatch_op(
+        target_section="228d",
+        payload_text=(
+            "§ 228d. Annual report."
+            "“(a) In General.—Not later than March 1 of each year..."
+        ),
+    )
+    outcome = _materialize_one(op, "(a) old body.")
+    assert not isinstance(outcome, USDryRunRefusal)
+    materialized, signal_rule_id, _disp = outcome
+    assert signal_rule_id == ""
+    assert US_DRY_RUN_REFUSED_INSERT_CATCHLINE_MISMATCH_RULE_ID not in (
+        materialized  # the rule_id cannot ride into the materialized text
+    )
+    # The matching catchline is projected off; the body survives under its own
+    # subsection markers (per the existing strip_replacement_section_catchline
+    # contract — confirmed by test_whole_section_replace_projects_off_its_own_catchline).
+    assert "§ 228d." not in materialized
+    assert "(a) In General." in materialized
+
+
+def test_insert_body_only_payload_is_not_refused_by_catchline_check() -> None:
+    """A body-only insert payload (no leading ``§`` or ``SEC.`` catchline) is
+    NOT refused by the catchline-mismatch check. Body-only insert ops route
+    through the pre-existing append path (the most common sub-section insert).
+    """
+    from lawvm.us_federal.dry_run import US_DRY_RUN_REFUSED_INSERT_CATCHLINE_MISMATCH_RULE_ID
+
+    op = _insert_catchline_mismatch_op(
+        target_section="228d",
+        payload_text="“(a) A new subsection inserted at the end of section 228d.",
+    )
+    outcome = _materialize_one(op, "Existing body text.")
+    assert not isinstance(outcome, USDryRunRefusal)
+    materialized, signal_rule_id, _disp = outcome
+    assert signal_rule_id == ""
+    assert US_DRY_RUN_REFUSED_INSERT_CATCHLINE_MISMATCH_RULE_ID != signal_rule_id
+    # Leading USLM wrapper quote is stripped (existing behavior).
+    assert "Existing body text." in materialized
+    assert "“" not in materialized
+
+
+def _insert_catchline_mismatch_style_op_goes_through_full_dry_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Drives the refusal through the FULL composition path (guard-liveness
+    per AGENTS.md §2.9): the catchline-mismatch refusal fires when the op is
+    lowered by amendatory and routed through build_us_dry_run, not just when
+    _materialize_one is called directly.
+    """
+    from lawvm.us_federal.dry_run import US_DRY_RUN_REFUSED_INSERT_CATCHLINE_MISMATCH_RULE_ID
+
+    op = _insert_catchline_mismatch_op()
+    before = (
+        '<!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml"><head>'
+        "<title>T7</title><!-- AUTHORITIES-USC-TITLE-ENUM:7 --></head><body><div>"
+        "<!-- expcite:TITLE 7!@!CHAPTER 64!@!Sec. 228d -->"
+        '<!-- field-start:head --><h3 class="section-head">&sect;228d. Existing body</h3>'
+        "<!-- field-end:head --><!-- field-start:statute -->"
+        '<p class="statutory-body">This is the existing body of section 228d.</p>'
+        "<!-- field-end:statute --></div></body></html>"
+    ).encode("utf-8")
+    after = before  # oracle unchanged (the mis-routed insert never touched this section)
+
+    class _OneOpReport:
+        enacted = ""
+
+        def operations(self) -> list[LegalOperation]:
+            return [op]
+
+    # Monkeypatch lower_plaw_amendatory so build_us_dry_run sees ONLY the
+    # catchline-mismatch op. This drives the op through the full Phase 1 + Phase 2
+    # composition path (the path real amendatory ops take), not just a unit test
+    # of _materialize_one.
+    monkeypatch.setattr(
+        "lawvm.us_federal.dry_run.lower_plaw_amendatory",
+        lambda *a, **k: _OneOpReport(),
+    )
+    report = build_us_dry_run(
+        before_htm=before,
+        after_htm=after,
+        plaw_blobs={"PL 110-246": b"<uslm/>"},
+        title=7,
+        before_year="2006",
+        after_year="2008",
+    )
+
+    # The mismatched INSERT must surface as a typed refusal, not as a row with
+    # an inflated materialized_text (the §0/§1.1 contract).
+    matching_refusals = [
+        f for f in report.refusals
+        if f.rule_id == US_DRY_RUN_REFUSED_INSERT_CATCHLINE_MISMATCH_RULE_ID
+    ]
+    assert matching_refusals, (
+        "catchline-mismatch INSERT must surface as a typed refusal through "
+        "the full build_us_dry_run path, not just _materialize_one"
+    )
+    assert len(matching_refusals) == 1
+    refusal = matching_refusals[0]
+    assert refusal.target_address == "title:7/section:228d"
+    assert refusal.detail["target_section"] == "228d"
+    assert refusal.detail["payload_catchline_section"] == "416"
+    # No row is produced (the section's only op was refused; before-text
+    # matched oracle anyway — but the row is suppressed because op_ids is
+    # empty). This is the over-retention safe path: not a wrong materialization.
+    rows_for_section = [
+        r for r in report.rows if r.section_key == "7:228d"
+    ]
+    assert rows_for_section == []
+
+
+def test_insert_catchline_mismatch_drives_full_dry_run_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Wrapper that runs the full-path guard-liveness test as a real test
+    function (so the class-style helper doesn't get collected as a test).
+    """
+    _insert_catchline_mismatch_style_op_goes_through_full_dry_run(monkeypatch)
 
 
 # ---------------------------------------------------------------------------

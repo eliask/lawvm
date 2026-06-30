@@ -122,9 +122,9 @@ class TextSelector:
             raise ValueError("TextSelector.occurrence must be >= -1")
         if self.end_occurrence < 0:
             raise ValueError("TextSelector.end_occurrence must be >= 0")
-        if self.occurrence_mode not in ("Auto", "Last"):
+        if self.occurrence_mode not in ("Auto", "Last", "First"):
             raise ValueError(
-                f"TextSelector.occurrence_mode must be 'Auto' or 'Last', got {self.occurrence_mode!r}"
+                f"TextSelector.occurrence_mode must be 'Auto', 'Last', or 'First', got {self.occurrence_mode!r}"
             )
 
 

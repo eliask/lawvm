@@ -60,6 +60,35 @@ from lawvm.us_federal.usc_witness import extract_title_witnesses
 # Default committed corpus (relative to the repo root).
 DEFAULT_CORPUS_PATH = Path("us/bench/us_bench_corpus.csv")
 
+# Lazy-loaded classification index (PL§→USC§ mapping from OLRC tables via Wayback).
+# Set LAWVM_US_CLASSIFICATION_INDEX env var to the path of the serialized JSON index.
+_CLASSIFICATION_INDEX: Any = None
+_CLASSIFICATION_INDEX_LOADED = False
+
+
+def _get_classification_index() -> Any:
+    """Lazily load the PL§→USC§ classification index from JSON.
+
+    Each worker process loads its own copy (no pickling). The index is cached
+    as a module-level global after the first call. Set environment variable
+    ``LAWVM_US_CLASSIFICATION_INDEX`` to the JSON path.
+    """
+    global _CLASSIFICATION_INDEX, _CLASSIFICATION_INDEX_LOADED
+    if _CLASSIFICATION_INDEX_LOADED:
+        return _CLASSIFICATION_INDEX
+    _CLASSIFICATION_INDEX_LOADED = True
+    import os
+    path = os.environ.get("LAWVM_US_CLASSIFICATION_INDEX")
+    if not path or not os.path.exists(path):
+        return None
+    import json
+    from lawvm.us_federal.classification_tables import ClassificationEntry, ClassificationIndex
+    with open(path) as f:
+        data = json.load(f)
+    entries = [ClassificationEntry(**e) for e in data["entries"]]
+    _CLASSIFICATION_INDEX = ClassificationIndex(entries)
+    return _CLASSIFICATION_INDEX
+
 # A window the corpus marks ``include=true`` but whose source editions are not in
 # the archive: recorded as a typed skip rather than silently dropped.
 US_BENCH_WINDOW_EDITION_MISSING_RULE_ID = "us_bench_window_edition_not_in_archive"
@@ -495,6 +524,7 @@ def evaluate_window(archive: UsArchiveReader, window: BenchWindow) -> WindowResu
             after_year=window.after_year,
             plaw_locators=locators,
             prior_edition_years=window.prior_edition_years,
+            classification_index=_get_classification_index(),
         )
     except USDryRunWindowError as exc:
         # A required source (a window PL blob) was absent: refuse the partial

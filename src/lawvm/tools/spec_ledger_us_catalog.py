@@ -199,11 +199,86 @@ _US_RULE_SPECS: Dict[str, str] = {
         "instruction maps in source order and emits one RENUMBER per pair, relabelling "
         "only each node's leading enumerator."
     ),
+    "us_amend_redesignate_range_cross_kind": (
+        "A 'redesignating <digital-range> as <alpha-range>' instruction (e.g. "
+        "paragraphs (1)-(6) as subparagraphs (A)-(F)) enumerates the cross-kind "
+        "pairs by mapping each digit to its alphabet position and emits one "
+        "RENUMBER per pair with differing from/to kinds."
+    ),
+    "us_amend_redesignate_multi_kind_pairs": (
+        "A compound 'redesignating <kind-a> <labels> and <kind-b> <labels> as "
+        "<kind-c> <labels> and <kind-d> <labels>, respectively' instruction "
+        "(kinds cycle within a single instruction) zips the flattened (kind, "
+        "label) tuples in source order and emits one RENUMBER per pair."
+    ),
+    "us_amend_redesignate_ordinal_dropped": (
+        "A 'redesignating the second/third <kind> (X) as <kind> (Y)' instruction "
+        "drops the ordinal tiebreaker for matching (LegalAddress cannot encode "
+        "duplicate-label instance selection positionally), lowers the RENUMBER "
+        "on the labelled address, and emits a typed finding so the dropped "
+        "tiebreaker stays auditable; strict-mode rejectable."
+    ),
+    "us_amend_redesignate_compound_held_out": (
+        "A compound 'redesignating X AND <other-action> Y' instruction lowers "
+        "only the redesignate prefix; the secondary action clause (insert/"
+        "transferring/striking/amending) is held out as a typed residual so the "
+        "unsupported lane does not silently disappear (§1.8)."
+    ),
     "us_amend_redesignate_table": (
         "A 'redesignating the sections as described in the table' instruction emits "
         "one RENUMBER per (before, after) section-number row extracted from a sibling "
         "<xhtml:table> in the parent subsection; the enacted text names no labels in "
         "its prose."
+    ),
+    "us_amend_redesignate_range_roman": (
+        "A 'redesignating (i) through (iv) as (ii) through (v)' instruction with "
+        "roman-numeral endpoints emits one RENUMBER per member, enumerating the "
+        "roman-numeral sequence arithmetically."
+    ),
+    "us_amend_redesignate_section": (
+        "A 'redesignating section N as section M' instruction emits a section-level "
+        "RENUMBER (the source and destination are bare section numbers, not sub-units)."
+    ),
+    "us_amend_redesignate_chapter": (
+        "A 'redesignating chapter N as chapter M' instruction emits a chapter-level "
+        "RENUMBER."
+    ),
+    "us_amend_redesignate_such": (
+        "A 'redesignating such section as section N' instruction emits a RENUMBER "
+        "where the source is named by reference ('such') rather than explicit label."
+    ),
+    "us_amendatory_chapter_analysis_strike": (
+        "A 'striking the item relating to section N' in the chapter table of sections "
+        "targets the USC editorial apparatus (TOC), not the statutory text; held out "
+        "as a typed finding."
+    ),
+    "us_amendatory_section_number_strike": (
+        "A 'by striking section N' whole-section strike targets the section as a unit; "
+        "held out as a typed finding when the section is not in the before edition."
+    ),
+    "us_amend_insert_node_before_unit": (
+        "An 'inserting before <unit> the following' instruction splices a new node "
+        "positioned before the named anchor unit (mirrors RULE_INSERT_NODE_AFTER)."
+    ),
+    "us_amend_insert_punct_word_anchor": (
+        "An 'inserting a comma/semicolon/period after/before <quoted>' instruction "
+        "inserts a punctuation character at a quoted anchor without striking anything."
+    ),
+    "us_amendatory_designation_anchor_insert": (
+        "Classifier id for recognizing 'inserting after the designation of <unit>' "
+        "shapes that target the OLRC editorial designation apparatus."
+    ),
+    "us_amendatory_designation_anchor_insert_not_section_representable": (
+        "An 'inserting after the designation of <unit>' instruction targets the "
+        "OLRC structural designation; not representable as a section-text patch."
+    ),
+    "us_amendatory_sentence_anchor_insert_not_section_representable": (
+        "An 'inserting after the first/second/last sentence' instruction names a "
+        "sentence boundary the section-text surface cannot locate without guessing."
+    ),
+    "us_amendatory_strike_following": (
+        "Classifier id for recognizing 'striking <quoted> and all that follows' "
+        "open-ended tail shapes that cannot be represented at section granularity."
     ),
     "us_amend_strike_structural_unit": (
         "A 'strike subsection/paragraph (X)' instruction repeals the named structural "
@@ -214,6 +289,23 @@ _US_RULE_SPECS: Dict[str, str] = {
         "A 'strike subsections (a), (c), and (g)' instruction emits one REPEAL per named "
         "member node; each removes its own located span (order-independent), and a "
         "future-effective/sunset strike is refused (owned by the temporal layer)."
+    ),
+    "us_amend_strike_structural_unit_range": (
+        "A 'strike paragraphs (1) through (6)' instruction emits one REPEAL per member "
+        "of the contiguous range; numeric and single-letter alpha ranges are enumerable "
+        "from arithmetic, multi-char roman-numeral ranges are not and stay unlowered."
+    ),
+    "us_amend_strike_compound_held_out": (
+        "A compound 'strike <unit> AND <other-action> Y' instruction lowers only the "
+        "strike prefix; the secondary action clause (redesignate/insert/add/renumber/"
+        "designate/amend/substitute/transfer) is held out as a typed finding so the "
+        "held-out portion stays visible (§1.8)."
+    ),
+    "us_amendatory_strike_compound_other_action_held_out": (
+        "Strike compound other-action held-out finding, parallel to "
+        "us_amend_redesignate_compound_held_out but for the strike family: the leading "
+        "'striking <unit>' clause lowered to a REPEAL but the trailing secondary-action "
+        "clause could not lower on the same op, recorded as a typed residual (§1.8)."
     ),
     "us_amend_insert_node_after_unit": (
         "An 'insert after <anchor> the following: <block>' instruction splices the quoted "
@@ -241,6 +333,13 @@ _US_RULE_SPECS: Dict[str, str] = {
         "text_replace cannot represent; held out as a typed residual rather than "
         "lowered to a corrupt phrase swap."
     ),
+    "us_amendatory_chapter_analysis_insert": (
+        "An 'inserting after the item relating to section N' / 'inserting the "
+        "following after the item relating to section N' instruction targets the "
+        "chapter-analysis table of contents (a USC editorial apparatus LawVM does "
+        "not represent); recognized by a named compile_classifier_regex (AGENTS.md "
+        "§2.4) and held out as a typed finding rather than lowered."
+    ),
     "us_amendatory_new_section_insert": (
         "An 'add at the end the following: <block>' instruction whose block opens with "
         "a new section/chapter/part head ('§ 2328. …', 'CHAPTER 37—…') is a whole-new-"
@@ -259,6 +358,11 @@ _US_RULE_SPECS: Dict[str, str] = {
     "us_amendatory_tail_strike_not_section_representable": (
         "A 'strike <anchor> and all that follows' instruction is an open-ended tail "
         "deletion not representable as a bounded text patch."
+    ),
+    "us_amendatory_formatting_only_not_text_representable": (
+        "A 'moving X ems to the left/right' or 'aligning the margin' or 'indenting "
+        "appropriately' formatting directive changes the OLRC rendering, not the "
+        "statutory text; LawVM's text-level op set has no INDENT."
     ),
     "us_amendatory_through_tail_strike_not_section_representable": (
         "A 'strike <anchor> and all that follows through <end>' instruction deletes a "
@@ -370,6 +474,14 @@ _US_RULE_SPECS: Dict[str, str] = {
         "before-section split does not expose, or whose text an earlier op already "
         "mutated — surfaced as a typed residual rather than an unscoped string replace."
     ),
+    "us_dry_run_recovered_bare_leaf_target_via_unique_suffix_match": (
+        "A sub-section-scoped op whose target address has a bare-leaf path (paragraph/"
+        "subparagraph/clause without its parent subsection prefix) was recovered by "
+        "suffix-matching the leaf segments against all source-tree nodes: exactly one "
+        "node ended with the target's segments, so the bare leaf was unambiguously "
+        "resolved. When multiple nodes match the suffix, the existing §1.1 refusal "
+        "fires (no silent target hijacking)."
+    ),
     "us_dry_run_residual_target_level_absent_in_source_tree": (
         "Contradiction: the USC annual-edition source tree for the section does not "
         "expose the structural level the amendment names (e.g. only subparagraph markers "
@@ -429,6 +541,19 @@ _US_RULE_SPECS: Dict[str, str] = {
         "the before text, so it is refused (mirroring the REPEAL absent-node refusal) "
         "rather than composed as a section-tanking divergence that would corrupt a "
         "sibling op's correct materialization of the same section."
+    ),
+    # --- Dry-run typed refusals: target-hijacking guard (§1.1) -----------------------
+    "us_dry_run_refused_insert_payload_catchline_section_mismatch": (
+        "Refusal: a whole-section INSERT op's payload opens with a section-level "
+        "catchline (USLM ``§ <num>.`` or Statutes-at-Large ``SEC. <num>.``) whose "
+        "section number does NOT match the op's target section. The amendatory "
+        "lowerer mis-routed the op — most often a Public Law section that creates an "
+        "entirely separate USC section was routed onto an existing section's "
+        "address. Appending the body to the named target would silently materialize "
+        "another section's text under the wrong address (AGENTS.md §1.1: no silent "
+        "target hijacking). Refused (never composed) so the section's other ops "
+        "keep composing on the unchanged before text — the safe wrong "
+        "(over-retention, never over-repeal)."
     ),
     # --- Temporal refusal: source-side effective/expiry places the op outside the window.
     "us_dry_run_deferred_op_not_yet_effective": (
@@ -516,6 +641,37 @@ _US_RULE_SPECS: Dict[str, str] = {
         "A USC edition source blob could not be read/parsed at import time — refused "
         "loudly rather than imported partially."
     ),
+    # --- USC release-point import hygiene (Wayback/OLRC acquisition lane) -------------
+    # Acquisition-side typed skips for the release-point lane. None of these
+    # authorize replay: each is a receipt over a missing/unreadable/duplicate
+    # acquisition unit so the lane never disappears silently (AGENTS.md §1.8).
+    "us_release_point_member_not_found": (
+        "A release-point zip fetched from OLRC (via Wayback) contained no XML "
+        "matching the requested USC title — the available member names are embedded "
+        "so triage does not require re-fetching. The title is not silently imported "
+        "from a wrong sibling member."
+    ),
+    "us_release_point_zip_unreadable": (
+        "A release-point zip's bytes could not be parsed as a zip (truncated payload, "
+        "CRC mismatch, or a Wayback HTML error page served as 200) — refused as a "
+        "transport-cleanup skip rather than partially extracted."
+    ),
+    "us_release_point_existing_content_skipped": (
+        "A release-point title's content already exists byte-identically in the "
+        "archive — skipped as idempotent when --skip-existing is set; no replay "
+        "authority touched."
+    ),
+    "us_release_point_http_error": (
+        "The Wayback Machine fetch for a release-point zip returned an HTTP error "
+        "(typically 404 for a PL/title pair OLRC never published or Wayback never "
+        "archived). The HTTP status, reason, and URL are embedded; this is a "
+        "source-pathology receipt, never silently a successful empty import."
+    ),
+    "us_release_point_network_error": (
+        "The Wayback fetch failed at the network/DNS layer (URLError, timeout, "
+        "connection reset). The URL and exception class are embedded so the gap is "
+        "inspectable without re-running the fetch."
+    ),
     # --- USC source-tree parse hygiene ------------------------------------------------
     "us_usc_subsection_parse_ambiguous": (
         "A section's sub-structure (leading (a)/(1)/(A)/(i) markers plus indent depth) "
@@ -525,6 +681,18 @@ _US_RULE_SPECS: Dict[str, str] = {
     "us_usc_no_sections_found": (
         "A parsed USC title document yielded no sections — flagged (an empty parse is "
         "never silently a valid title)."
+    ),
+    "us_uslm_section_without_number": (
+        "A USLM <section> element had no parseable section number in its <num> "
+        "value attribute or text; skipped as a typed finding."
+    ),
+    "us_uslm_section_not_located_in_blob": (
+        "A USLM XML section could not be located in the raw blob for text extraction; "
+        "skipped rather than producing an empty-section parse."
+    ),
+    "us_uslm_node_without_num": (
+        "A USLM structural element (subsection/paragraph/etc.) had no <num> child; "
+        "its structural level was inferred from nesting depth but the label is unknown."
     ),
     "us_usc_duplicate_section_number": (
         "A parsed USC title carried two sections with the same number — flagged rather "
@@ -602,14 +770,34 @@ _US_RULE_CONFIDENCE: Dict[str, str] = {
     "us_amend_redesignate_range": US_CONFIDENCE_HEURISTIC,
     "us_amend_redesignate_pairs": US_CONFIDENCE_HEURISTIC,
     "us_amend_redesignate_table": US_CONFIDENCE_HEURISTIC,
+    "us_amend_redesignate_range_roman": US_CONFIDENCE_HEURISTIC,
+    "us_amend_redesignate_section": US_CONFIDENCE_HEURISTIC,
+    "us_amend_redesignate_chapter": US_CONFIDENCE_HEURISTIC,
+    "us_amend_redesignate_such": US_CONFIDENCE_HEURISTIC,
+    "us_amendatory_chapter_analysis_strike": US_CONFIDENCE_HEURISTIC,
+    "us_amendatory_section_number_strike": US_CONFIDENCE_HEURISTIC,
+    "us_amend_insert_node_before_unit": US_CONFIDENCE_HEURISTIC,
+    "us_amend_insert_punct_word_anchor": US_CONFIDENCE_HEURISTIC,
+    "us_amendatory_designation_anchor_insert": US_CONFIDENCE_HEURISTIC,
+    "us_amendatory_designation_anchor_insert_not_section_representable": US_CONFIDENCE_HEURISTIC,
+    "us_amendatory_sentence_anchor_insert_not_section_representable": US_CONFIDENCE_HEURISTIC,
+    "us_amendatory_strike_following": US_CONFIDENCE_HEURISTIC,
+    "us_amend_redesignate_range_cross_kind": US_CONFIDENCE_HEURISTIC,
+    "us_amend_redesignate_multi_kind_pairs": US_CONFIDENCE_HEURISTIC,
+    "us_amend_redesignate_ordinal_dropped": US_CONFIDENCE_HEURISTIC,
+    "us_amend_redesignate_compound_held_out": US_CONFIDENCE_HEURISTIC,
     "us_amend_strike_structural_unit": US_CONFIDENCE_HEURISTIC,
     "us_amend_strike_structural_unit_list": US_CONFIDENCE_HEURISTIC,
+    "us_amend_strike_structural_unit_range": US_CONFIDENCE_HEURISTIC,
+    "us_amend_strike_compound_held_out": US_CONFIDENCE_HEURISTIC,
+    "us_amendatory_strike_compound_other_action_held_out": US_CONFIDENCE_HEURISTIC,
     "us_amend_insert_node_after_unit": US_CONFIDENCE_HEURISTIC,
     "us_amend_insert_end_punctuation": US_CONFIDENCE_HEURISTIC,
     "us_amend_strike_insert_end_punctuation": US_CONFIDENCE_HEURISTIC,
     "us_amend_strike_insert_punctuation_word": US_CONFIDENCE_HEURISTIC,
     "us_dry_run_residual_materialized_text_mismatch_with_oracle": US_CONFIDENCE_HEURISTIC,
     "us_dry_run_residual_source_truncated_payload": US_CONFIDENCE_HEURISTIC,
+    "us_dry_run_recovered_bare_leaf_target_via_unique_suffix_match": US_CONFIDENCE_HEURISTIC,
     "us_amendatory_deferred_amend_to_read": US_CONFIDENCE_HEURISTIC,
     "us_amendatory_unrecognized_redesignate_shape": US_CONFIDENCE_HEURISTIC,
     "us_amendatory_unrecognized_form": US_CONFIDENCE_HEURISTIC,
@@ -620,6 +808,7 @@ _US_RULE_CONFIDENCE: Dict[str, str] = {
     "us_amendatory_amend_to_read_missing_payload": US_CONFIDENCE_HEURISTIC,
     "us_amendatory_tail_strike_insert_missing_operands": US_CONFIDENCE_HEURISTIC,
     "us_amendatory_end_punct_insert_no_quoted_capture": US_CONFIDENCE_HEURISTIC,
+    "us_amendatory_chapter_analysis_insert": US_CONFIDENCE_HEURISTIC,
     "us_amendatory_end_punct_strike_insert_regex_miss": US_CONFIDENCE_HEURISTIC,
     "us_amendatory_punct_word_unrecognized": US_CONFIDENCE_HEURISTIC,
     "us_amendatory_table_redesignate_ambiguous_title": US_CONFIDENCE_HEURISTIC,
