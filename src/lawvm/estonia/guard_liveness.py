@@ -115,6 +115,17 @@ EE_BLOCKING_RULE_IDS: Final[FrozenSet[str]] = frozenset(
         "ee_replay_statute_title_noop",
         "ee_replay_meta_non_body_skipped",
         "ee_replay_unparsed_operation_skipped",
+        # --- §1.7 apply-seam BLOCK-mode violation (LS-01 boundary + LS-03 ------
+        # occupancy, #108-EE / inc 4). With EE's profile at boundary_mode=
+        # "block" + occupancy_mode="block", the universal apply seam routes a
+        # genuine out-of-boundary write (APPLY.MUTATION_BOUNDARY_VIOLATION_AT_OP)
+        # or an invalid occupancy transition (APPLY.OCCUPANCY_TRANSITION_BLOCKED)
+        # to AppliedOp.findings; apply_ee_ops drains those into this blocking
+        # adjudication rather than dropping them (grafter.py:11160). NEVER fires
+        # on the proven-clean corpus (byte-identical); a future escaping op fails
+        # loud. Drilled by ``test_ee_fire_drill_apply_seam_block_violation_blocks``
+        # (REPLACE onto a kehtetu TOMBSTONE section — an invalid LS-03 transition).
+        "ee_replay_apply_seam_block_violation",
         # --- source-lane orchestration failures (via _ee_orchestration_*) ------
         # The fail-loud broad-except audits in commits 0d60710e (pair-planning)
         # + 00f778fc (replay) added explicit blocking adjudications for source
@@ -171,6 +182,12 @@ EE_FIRE_DRILL_COVERAGE: Final[FrozenSet[str]] = frozenset(
         # §1.7 same-moment finding fires. See
         # ``tests/test_ee_same_moment_ambiguity.py::test_two_distinct_acts_replace_same_target_same_effective_date_emits_ambiguity_finding``.
         "ee_same_moment_cross_act_incompatible_payload_ambiguous",
+        # ``ee_replay_apply_seam_block_violation`` — drives a REPLACE onto a
+        # kehtetu TOMBSTONE section through ``apply_ee_ops`` under EE's block-mode
+        # profile: an invalid LS-03 occupancy transition produces a strict seam
+        # finding the fold drains into this blocking adjudication. See
+        # ``test_ee_fire_drill_apply_seam_block_violation_blocks``.
+        "ee_replay_apply_seam_block_violation",
         # === Crash-path drills (via monkeypatched replay_ee_to_pit) ===
         # ``ee_oracle_parse_failed`` — monkeypatches parse_ee_statute to raise
         # on oracle XML; asserts the blocking adjudication fires.

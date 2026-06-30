@@ -624,6 +624,7 @@ def _fire_drills_target_registered_codes() -> Dict[str, str]:
         "ee_replay_unsupported_statute_title_action": "test_ee_fire_drill_replay_unsupported_statute_title_action_blocks",
         "ee_oracle_parse_failed": "test_ee_fire_drill_oracle_parse_failed_blocks",
         "ee_consistency_check_failed": "test_ee_fire_drill_consistency_check_failed_blocks",
+        "ee_replay_apply_seam_block_violation": "test_ee_fire_drill_apply_seam_block_violation_blocks",
         # === Existing production-path drills in tests/test_ee_same_moment_ambiguity.py ===
         # §1.7 same-moment cross-act incompatible-payload finding — drives two
         # REPLACE ops on the same target at the same effective date from
@@ -907,6 +908,87 @@ def test_ee_fire_drill_replay_unsupported_statute_title_action_blocks() -> None:
     assert emit.phase == "replay", (
         f"ee_replay_unsupported_statute_title_action must declare phase='replay'; "
         f"got phase={emit.phase!r}"
+    )
+    assert emit.op_id == op.op_id
+
+
+def _tombstone_statute() -> IRStatute:
+    """An IRStatute whose section:5 is a kehtetu (TOMBSTONE) slot — the slot a
+    valid INSERT/REPEAL may target, but a REPLACE may NOT (occupancy table)."""
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="5",
+                text="",
+                attrs={"kehtetu": True},
+            ),
+        ),
+    )
+    return IRStatute(statute_id="ee/fire_drill", title="Fire Drill Base", body=body)
+
+
+def _apply_seam_block_op(*, sequence: int = 1) -> LegalOperation:
+    """A REPLACE op onto a TOMBSTONE section — an invalid LS-03 occupancy
+    transition (``REPLACE`` is only valid onto a live SUBSTANTIVE slot). Under
+    EE's block-mode profile the universal apply seam emits a strict
+    ``APPLY.OCCUPANCY_TRANSITION_BLOCKED`` finding, which ``apply_ee_ops`` drains
+    into the blocking ``ee_replay_apply_seam_block_violation`` adjudication at
+    ``src/lawvm/estonia/grafter.py:11160``.
+    """
+    return LegalOperation(
+        op_id="ee_fire_drill_apply_seam_block",
+        sequence=sequence,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "5"),)),
+        source=OperationSource(
+            statute_id="ee/fire_drill_amendment",
+            title="Fire Drill Amendment",
+            enacted="2025-01-01",
+            effective="2025-01-01",
+            raw_text="",
+        ),
+        payload=IRNode(kind=IRNodeKind.SECTION, label="5", text="resurrected text"),
+    )
+
+
+def test_ee_fire_drill_apply_seam_block_violation_blocks() -> None:
+    """Fire-drill for ``ee_replay_apply_seam_block_violation`` (#108-EE).
+
+    EE flipped LS-01 boundary AND LS-03 occupancy to block-mode (the second
+    enforcing apply-seam gate). With ``boundary_mode="block"`` +
+    ``occupancy_mode="block"`` the universal seam routes a genuine out-of-boundary
+    write or an invalid occupancy transition to ``AppliedOp.findings``; EE's bare
+    apply lane has no production ``findings`` channel, so ``apply_ee_ops`` drains
+    those into a blocking ``ee_replay_apply_seam_block_violation`` adjudication
+    (grafter.py:11160) rather than dropping them (never-silently-dropped, §0).
+
+    This drill drives a REPLACE op onto a ``kehtetu`` TOMBSTONE section through
+    the full production ``apply_ee_ops`` dispatch — an invalid LS-03 transition
+    (REPLACE is valid only onto a live SUBSTANTIVE slot) — and asserts the
+    blocking adjudication fires. On the proven-clean corpus this NEVER fires
+    (0 corpus violations → byte-identical production); a future genuinely
+    escaping/invalid op fails loud here.
+    """
+    statute = _tombstone_statute()
+    op = _apply_seam_block_op()
+    adjudications: list[CompileAdjudication] = []
+    apply_ee_ops(statute, [op], adjudications_out=adjudications)
+    matches = [
+        adj
+        for adj in adjudications
+        if adj.kind == "ee_replay_apply_seam_block_violation"
+    ]
+    assert matches, (
+        "Expected a blocking adjudication with kind "
+        "'ee_replay_apply_seam_block_violation' to fire for the REPLACE-onto-"
+        f"TOMBSTONE op, got: {[(a.kind, a.blocking) for a in adjudications]}"
+    )
+    emit = matches[0]
+    assert emit.blocking is True, (
+        "ee_replay_apply_seam_block_violation must emit blocking=True; "
+        f"got blocking={emit.blocking!r}"
     )
     assert emit.op_id == op.op_id
 

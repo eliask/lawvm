@@ -35,6 +35,12 @@ _NON_RULE_LITERALS = frozenset(
         # __all__ function-name exports in replayability_frontier.py (not rule ids):
         "ee_replayability_frontier_for_corpus",
         "ee_replayability_states_to_report",
+        # Confirmed non-rule literals (a coverage tag, a ContextVar name, an
+        # f-string label fragment) — NOT witness rule_ids. Pre-existing in the
+        # source; added here when the parity-integration audit surfaced them.
+        "ee_mentioned",              # coverage tag in a frozenset (coverage_audit.py)
+        "ee_raw_source_ctx",         # ContextVar name (peg.py)
+        "ee_produced_label=",        # f-string evidence fragment (coverage_audit.py)
     }
 )
 

@@ -235,6 +235,11 @@ _EE_RULE_SPECS: Dict[str, str] = {
     # --- Replay-time skip / noop / unsupported markers (replay.py) ---------------------
     "ee_replay_meta_non_body_skipped": "A clause classified as non-body meta is skipped at replay with a meta-skip record, not failed as unsupported (living spec §78).",
     "ee_replay_unparsed_operation_skipped": "An unparsed operation clause is skipped at replay and surfaced as a coverage gap, distinct from a meta skip (living spec §79).",
+    "ee_replay_apply_seam_block_violation": "A landed write that escapes its op's declared mutation boundary, or an op whose occupancy transition is invalid, fails loud as a blocking adjudication under EE's block-mode apply-seam profile rather than being silently applied.",
+    "ee_replay_commencement_effect_totality_observed": "An EE replay whose per-op commencement effects do not sum to the fold-exit total surfaces the shortfall as a typed observation rather than letting an unaccounted commencement effect vanish.",
+    "ee_replay_commencement_effect_totality_probe_skipped": "When the EE commencement-effect-totality probe is not enabled it records an explicit skip rather than silently omitting the totality check.",
+    "ee_replay_mutation_boundary_per_op_violation_observed": "A per-op EE write whose changed paths escape the op's declared section region is recorded as a boundary-escape observation, the in-fold twin of the apply-seam boundary witness.",
+    "ee_section_renumber_relabel": "A whole-section renumber/relabel is recorded under a typed named migration (mirroring the Swedish renumber lane) so the label change is an explicit accounted operation, never an untracked rewrite.",
     "ee_replay_noop": "An operation whose live target already matches the payload is recorded as a no-op rather than a spurious mutation.",
     "ee_replay_statute_title_noop": "A statute-title op already satisfied by the live title is recorded as a no-op.",
     "ee_replay_target_not_found": "An operation whose target is absent from the live tree is recorded as target-not-found, never rerouted to a coincidental candidate.",

@@ -86,14 +86,17 @@ def test_matrix_reflects_real_ee_profile_source() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     ee_grafter = repo_root / "src" / "lawvm" / "estonia" / "grafter.py"
 
-    # The real registration says occupancy_mode="block" + boundary_mode="off".
+    # The real registration says occupancy_mode="block" + boundary_mode="block":
+    # EE flipped LS-01 to block after closing its boundary declaration artifact
+    # and measuring its corpus boundary-clean (the SECOND enforcing apply-seam
+    # gate, after LS-03 occupancy).
     assert _read_apply_profile_keywords(ee_grafter, "occupancy_mode") == "block"
-    assert _read_apply_profile_keywords(ee_grafter, "boundary_mode") == "off"
+    assert _read_apply_profile_keywords(ee_grafter, "boundary_mode") == "block"
 
     matrix = build_parity_matrix()
     # And the matrix agrees — proving it is derived from the source, not prose.
     assert matrix.rows["ee"].modes["LS-03"] == "block"
-    assert matrix.rows["ee"].modes["LS-01"] == "off"
+    assert matrix.rows["ee"].modes["LS-01"] == "block"
 
 
 def test_matrix_reflects_real_no_profile_source() -> None:
@@ -131,6 +134,26 @@ def test_ee_occupancy_block_vs_others_divergence_surfaced() -> None:
     assert d.finding_code == INVARIANT_COVERAGE_DIVERGENCE_CODE
 
 
+def test_ee_boundary_block_vs_others_divergence_surfaced() -> None:
+    """EE's LS-01 boundary block (the second enforcing gate) is a typed row."""
+    matrix = build_parity_matrix()
+    divergences = classify_divergences(matrix)
+
+    ls01 = [d for d in divergences if d.invariant == "LS-01"]
+    assert len(ls01) == 1, "exactly one LS-01 boundary divergence expected"
+    d = ls01[0]
+    assert isinstance(d, InvariantCoverageDivergence)
+    # EE is the enforcing outlier; the siblings stay off (seam observes).
+    assert d.kind == "enforced-here"
+    assert d.divergent_frontends == ("ee",)
+    assert d.mode_map["ee"] == "block"
+    assert d.mode_map["no"] == "off"
+    assert d.mode_map["uk"] == "off"
+    # Justified, measured flip — not a uniform-flip mandate.
+    assert "JUSTIFIED" in d.rationale
+    assert d.finding_code == INVARIANT_COVERAGE_DIVERGENCE_CODE
+
+
 def test_divergences_cover_all_per_unit_invariants_and_carrier_gaps() -> None:
     matrix = build_parity_matrix()
     divergences = classify_divergences(matrix)
@@ -141,10 +164,12 @@ def test_divergences_cover_all_per_unit_invariants_and_carrier_gaps() -> None:
     for inv in PER_UNIT_INVARIANTS:
         assert inv in invariants_seen, f"{inv} divergence missing"
 
-    # Real carrier gaps: EE has no WriteReceipt emitter; US has no IR conserved
-    # wrapper; US has no same-moment detector.
+    # EE closed its WriteReceipt gap (it now emits a per-op receipt via its own
+    # emitter), so EVERY frontend emits one and there is NO write_receipt
+    # divergence. US still has no IR conserved wrapper (it conserves via a
+    # different metric — the dry-run AGREE/RESIDUAL lane).
     write_receipt = [d for d in divergences if d.invariant == "write_receipt"]
-    assert write_receipt and write_receipt[0].divergent_frontends == ("ee",)
+    assert not write_receipt, "EE now emits per-op WriteReceipts; the gap is closed"
     conserved = [d for d in divergences if d.invariant == "conserved_wrapper"]
     assert conserved and conserved[0].divergent_frontends == ("us",)
 

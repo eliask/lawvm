@@ -30,12 +30,15 @@ production output. It builds a VIEW (the matrix) and a typed finding population
   defs, ``WriteReceipt`` emitters, and ``detect_cross_act_same_moment_conflicts``
   call sites).
 
-The single real divergence this surfaces today: **EE flips LS-03 occupancy to
-``block`` (the first enforcing apply-seam gate, after measuring its corpus
-occupancy-clean) while every other tree frontend leaves occupancy at the
-default no-op ``observe``** — an invariant enforced in one frontend and only
-observed/absent in its siblings. ``classify_divergences`` lifts that, and the
-others, into typed :class:`InvariantCoverageDivergence` rows.
+The real enforcement divergences this surfaces today: **EE flips BOTH LS-03
+occupancy AND LS-01 mutation-boundary to ``block`` — the first two enforcing
+apply-seam gates, each after measuring its corpus clean (occupancy-clean for
+LS-03; boundary-clean after closing a chapter-nesting declaration artifact for
+LS-01) — while every other tree frontend leaves them at the default no-op
+``off``.** An invariant enforced in one frontend and only observed/off in its
+siblings is exactly the silent-divergence object §0 makes first-class;
+``classify_divergences`` lifts those, and the others, into typed
+:class:`InvariantCoverageDivergence` rows.
 
 API tier
 --------
@@ -562,6 +565,16 @@ _RATIONALES: Dict[Tuple[str, str], str] = {
         "NOT-yet-a-fix: provenance-acceptance is FI-only today (typed OpProvenance "
         "is FI-owned); the seam hook exists but no sibling mints typed provenance, "
         "so the gate is a no-op there. Parity needs a per-frontend provenance rider."
+    ),
+    ("LS-01", "enforced-here"): (
+        "JUSTIFIED jurisdiction difference: EE closed its boundary declaration "
+        "artifact (the seam read chapter-nested writes of a flat-targeted "
+        "whole-section op as out-of-boundary), measured its corpus "
+        "boundary-clean, and flipped LS-01 to block — the SECOND enforcing "
+        "apply-seam gate, after LS-03 occupancy. NO/SE cannot verify a real "
+        "corpus in this environment and UK's recovery retarget is declared but "
+        "not yet corpus-proven; the path to parity is per-frontend "
+        "measure-then-promote, not a uniform flip."
     ),
     ("LS-01", "observe-here"): (
         "CONVERGED (observe-parity): every tree sibling runs boundary_mode='off' "
