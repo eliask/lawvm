@@ -44,6 +44,7 @@ Actionables
 from __future__ import annotations
 
 from collections import Counter
+import contextvars
 from dataclasses import asdict, dataclass, field, replace
 from enum import Enum
 import json
@@ -62,6 +63,7 @@ from lawvm.core.apply_seam import (
     apply_op,
 )
 from lawvm.core.op_ordering import OrderingProfile, order_ops
+from lawvm.core.provenance import compute_source_anchor
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.filter_result import FilterResult, RejectedItem
 from lawvm.core.phase_result import Finding
@@ -3312,9 +3314,109 @@ def se_heading_before_section_map(statute: IRStatute) -> dict[str, str]:
     return headings
 
 
+# Raw-amendment-source context for the byte-span SourceAnchor program (task
+# #92, mirroring the Estonia pilot at estonia/peg.py and the Norway arm at
+# norway/grafter.py). The raw official-act JSON bytes are in scope only at the
+# top entry ``parse_se_amendment_ops``. The top entry publishes the raw artifact
+# in this ContextVar for the duration of one act's compile; the uniform
+# provenance post-pass (:func:`mint_se_source_anchors`) reads it and mints a TRUE
+# SourceAnchor for every op whose recorded clause text (``source.raw_text``) is a
+# single verbatim, unique byte run of the raw artifact. When it is not (e.g. the
+# canonical compile artifact is ``json.dumps(act).encode()`` with the default
+# ``ensure_ascii=True``, so Swedish non-ASCII in the enacting clause — ``ö`` ->
+# ``ö``, ``§`` -> ``§`` — is escaped and the clause is therefore NOT a
+# verbatim UTF-8 byte substring), ``compute_source_anchor`` returns None and the
+# anchor is honestly left absent — never fabricated. See
+# tests/test_se_source_anchor.py for the measured reachability and the proof that
+# every absence is justified (the clause is genuinely not a unique verbatim run
+# of these bytes), so the post-pass is fail-loud, not defective.
+_SE_RAW_SOURCE_CTX: "contextvars.ContextVar[tuple[str, bytes] | None]" = contextvars.ContextVar(
+    "se_raw_source_ctx", default=None
+)
+
+
+def set_se_raw_source_context(
+    source_artifact_id: str, raw_bytes: bytes
+) -> "contextvars.Token[tuple[str, bytes] | None]":
+    """Publish the raw act artifact for SourceAnchor minting in this compile.
+
+    Returns a token the caller MUST pass to :func:`reset_se_raw_source_context`
+    in a ``finally`` so the context never leaks across acts.
+    """
+    return _SE_RAW_SOURCE_CTX.set((source_artifact_id, raw_bytes))
+
+
+def reset_se_raw_source_context(
+    token: "contextvars.Token[tuple[str, bytes] | None]",
+) -> None:
+    """Clear the raw-source context published by :func:`set_se_raw_source_context`."""
+    _SE_RAW_SOURCE_CTX.reset(token)
+
+
+def mint_se_source_anchors(ops: list[LegalOperation]) -> list[LegalOperation]:
+    """Stamp a TRUE byte-span :class:`SourceAnchor` on every anchorable op.
+
+    Final, uniform post-pass over the WHOLE emitted op stream (every mint path),
+    run by :func:`parse_se_amendment_ops` once the raw act artifact has been
+    published in the compile context (see :func:`set_se_raw_source_context`).
+
+    For each op that already carries an ``OperationSource`` but no anchor, the
+    op's recorded clause text (``source.raw_text`` — falling back to the op's
+    ``raw_text``) is located in the raw artifact bytes via
+    :func:`lawvm.core.provenance.compute_source_anchor`. The anchor is built on
+    that EXACT recorded clause string, so a verifier re-slicing the raw bytes at
+    the anchor span gets back precisely the clause text. When the clause is not a
+    single verbatim, unique byte run of the artifact, ``compute_source_anchor``
+    returns ``None`` and the anchor is honestly left absent — never fabricated.
+
+    Additive metadata only: it touches solely ``source.source_anchor`` and never
+    an apply-authoritative field, so SE replay output is byte-identical
+    (AGENTS.md §0 grounding-neutral). Idempotent: an op that already carries an
+    anchor is left untouched. A no-op when no raw artifact is in context.
+    """
+    raw_ctx = _SE_RAW_SOURCE_CTX.get()
+    if raw_ctx is None or not ops:
+        return ops
+    artifact_id, raw_bytes = raw_ctx
+    anchored: list[LegalOperation] = []
+    for op in ops:
+        src = op.source
+        if src is None or src.source_anchor is not None:
+            anchored.append(op)
+            continue
+        clause = src.raw_text or op.raw_text or ""
+        anchor = (
+            compute_source_anchor(
+                source_artifact_id=artifact_id,
+                raw_bytes=raw_bytes,
+                clause_text=clause,
+            )
+            if clause
+            else None
+        )
+        if anchor is None:
+            anchored.append(op)
+            continue
+        anchored.append(replace(op, source=replace(src, source_anchor=anchor)))
+    return anchored
+
+
 def parse_se_amendment_ops(json_bytes: bytes, source_id: str) -> list[LegalOperation]:
     """Compile first-pass Sweden ops from archived official act JSON."""
-    return compile_se_official_act_ops(json_bytes, source_id=source_id)
+    # Publish the raw act artifact so the final anchor pass
+    # (:func:`mint_se_source_anchors`, applied to the assembled op stream below)
+    # can mint a TRUE byte-span SourceAnchor for every op whose recorded clause
+    # text is a verbatim, unique byte run of these bytes (task #92). The token is
+    # reset in the finally below so the context never leaks across acts or to
+    # other frontends.
+    _raw_source_token = set_se_raw_source_context(source_id, json_bytes)
+    try:
+        ops = compile_se_official_act_ops(json_bytes, source_id=source_id)
+        # Final uniform byte-span anchor pass over the WHOLE op stream (every
+        # mint path), while the raw artifact is still published in context.
+        return mint_se_source_anchors(ops)
+    finally:
+        reset_se_raw_source_context(_raw_source_token)
 
 
 def _find_se_section_parent_path(body: IRNode, section_label: str) -> tuple[tuple[str, str], ...]:
