@@ -66798,9 +66798,13 @@ def test_pipeline_compile_ops_reuses_parsed_affecting_act_xml_per_act(monkeypatc
 
     original_fromstring = uk_replay_mod.ET.fromstring
 
-    def counted_fromstring(data):
+    def counted_fromstring(data, *args, **kwargs):
+        # ``ET`` here is the shared ``lxml.etree`` module, so this patch is
+        # global: the affecting-act parse now routes through
+        # ``parse_corpus_xml`` (``etree.fromstring(data, parser=...)``), so the
+        # fake must accept and forward the hardened-parser kwargs faithfully.
         parse_calls["count"] += 1
-        return original_fromstring(data)
+        return original_fromstring(data, *args, **kwargs)
 
     monkeypatch.setattr(
         uk_replay_mod,
