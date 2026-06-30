@@ -5,6 +5,10 @@ import re
 from collections.abc import Mapping
 from typing import Any, NamedTuple, Optional, Sequence
 
+from lawvm.core.cross_act_same_moment import (
+    _SameMomentTargetKey as _CoreSameMomentTargetKey,
+    detect_same_moment_conflict_groups_generic,
+)
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.ir import LegalOperation
 from lawvm.core.semantic_types import TextPatchKindEnum
@@ -121,11 +125,13 @@ class _EffectOrderingGroupKey(NamedTuple):
     affecting_act_id: str
 
 
-class _SameMomentTargetKey(NamedTuple):
-    """Group key for cross-act same-moment conflict detection (no act in key)."""
-
-    effective_date: str
-    affected_target: str
+# Wave 0b: the same-moment conflict key is the SHARED kernel key
+# (``core.cross_act_same_moment._SameMomentTargetKey``), reused here so UK's
+# detection delegates to ``detect_same_moment_conflict_groups_generic`` and the
+# precedence-winner index keys match the kernel's conflict-group keys exactly
+# (one definition, no fork). Aliased to the historic UK name for the call sites
+# that build a lookup key (``_precedence_rank`` / the winners index).
+_SameMomentTargetKey = _CoreSameMomentTargetKey
 
 
 def _label_sort_key(label: Optional[str]) -> tuple[Any, ...]:
@@ -299,6 +305,18 @@ def _order_uk_effects_for_replay(
     return ordered
 
 
+def _uk_effect_effective_date(effect: UKEffectRecord, effective_date_of: Any) -> str:
+    return effective_date_of(effect) or ""
+
+
+def _uk_effect_affected_target(effect: UKEffectRecord) -> str:
+    return str(effect.affected_provisions or "").strip()
+
+
+def _uk_effect_affecting_act_id(effect: UKEffectRecord) -> str:
+    return effect.affecting_act_id
+
+
 def _detect_same_moment_conflict_groups(
     original: Sequence[UKEffectRecord],
     *,
@@ -306,50 +324,36 @@ def _detect_same_moment_conflict_groups(
 ) -> dict[_SameMomentTargetKey, list[tuple[UKEffectRecord, UKEffectRecord]]]:
     """Return the same-moment cross-act incompatible-payload conflicts.
 
-    Maps each ``(effective_date, affected_target)`` with a genuine cross-act
-    incompatible-payload collision (see ``_uk_same_moment_payloads_incompatible``)
-    to its list of conflicting effect pairs. Undated and single-act groups are
-    excluded — see the inline notes. This is the single detection surface reused
-    by both the ambiguity finding and same-moment precedence-claim binding.
-    """
-    target_groups: dict[_SameMomentTargetKey, list[UKEffectRecord]] = {}
-    for effect in original:
-        target = str(effect.affected_provisions or "").strip()
-        if not target:
-            # No affected target to scope the conflict to; nothing to compare.
-            continue
-        effective_date = effective_date_of(effect) or ""
-        if not effective_date:
-            # Undated effects are not a same-EFFECTIVE-DATE conflict: bucketing
-            # them together would manufacture a false ambiguity from the absence
-            # of a date rather than a genuine same-moment collision. Their
-            # ordering is handled (and date-recovery flagged) by other lanes.
-            continue
-        key = _SameMomentTargetKey(
-            effective_date=effective_date,
-            affected_target=target,
-        )
-        target_groups.setdefault(key, []).append(effect)
+    Wave 0b (``notes/CORE_PIPELINE_UNIFICATION_DESIGN.md`` §2.1.1, divergence
+    #1): the detection ALGORITHM — group by ``(effective_date, affected_target)``,
+    require ≥2 distinct affecting acts, pair distinct-act effects whose payloads
+    collide — is the SHARED kernel
+    :func:`lawvm.core.cross_act_same_moment.detect_same_moment_conflict_groups_generic`,
+    NOT a UK fork. UK supplies only the jurisdiction-specific inputs (like EE's
+    predicate): the effect-level accessors (``affected_provisions`` string,
+    ``affecting_act_id``, override-aware effective date) and the effect-type
+    incompatibility predicate ``_uk_same_moment_payloads_incompatible``.
 
-    conflicts: dict[
-        _SameMomentTargetKey, list[tuple[UKEffectRecord, UKEffectRecord]]
-    ] = {}
-    for key, group_effects in target_groups.items():
-        distinct_acts = {effect.affecting_act_id for effect in group_effects}
-        if len(distinct_acts) < 2:
-            continue
-        conflicting_pairs: list[tuple[UKEffectRecord, UKEffectRecord]] = []
-        for left_idx in range(len(group_effects)):
-            for right_idx in range(left_idx + 1, len(group_effects)):
-                left = group_effects[left_idx]
-                right = group_effects[right_idx]
-                if left.affecting_act_id == right.affecting_act_id:
-                    continue
-                if _uk_same_moment_payloads_incompatible(left, right):
-                    conflicting_pairs.append((left, right))
-        if conflicting_pairs:
-            conflicts[key] = conflicting_pairs
-    return conflicts
+    UK runs same-moment detection at the EFFECT level (before lowering — ops
+    are not yet built at ``_order_uk_effects_for_replay`` time; see the §2.1
+    impedance note), so it binds ``R = UKEffectRecord`` rather than the op
+    accessors the SE/EE/NO frontends bind. The returned conflict groups feed
+    both the ambiguity finding and the precedence-claim binding, unchanged.
+
+    The shared algorithm buckets by affecting act before pairing; UK's old loop
+    paired by raw index. The finding is built from the de-duplicated, sorted
+    participant SET, which is identical between the two — proven byte-for-byte
+    by ``tests/test_uk_order_ops_parallel_run.py``.
+    """
+    return detect_same_moment_conflict_groups_generic(
+        list(original),
+        effective_date_of=lambda effect: _uk_effect_effective_date(
+            effect, effective_date_of
+        ),
+        affecting_act_id_of=_uk_effect_affecting_act_id,
+        affected_target_of=_uk_effect_affected_target,
+        incompatible_payload_predicate=_uk_same_moment_payloads_incompatible,
+    )
 
 
 def conflicts_from_effects(

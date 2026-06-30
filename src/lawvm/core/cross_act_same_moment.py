@@ -125,13 +125,19 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence as AbcSequence
 from dataclasses import dataclass, field
-from typing import Any, Callable, NamedTuple, Optional, Sequence
+from typing import Any, Callable, NamedTuple, Optional, Sequence, TypeVar
 
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.ir import LegalOperation
 from lawvm.core.regex_safety import compile_classifier_regex
 from lawvm.core.semantic_types import StructuralAction
 from lawvm.replay_adjudication import CompileAdjudication
+
+# Record-shape generic for the shared same-moment grouping algorithm. The op
+# path binds ``R = LegalOperation``; UK binds ``R = UKEffectRecord`` (effect
+# level, pre-lowering). The grouping algorithm never inspects ``R`` directly —
+# only through the caller-supplied accessors (Wave 0b, design §2.1.1).
+R = TypeVar("R")
 
 __all__ = [
     "SAME_MOMENT_PRECEDENCE_CLAIM_KIND",
@@ -145,6 +151,7 @@ __all__ = [
     "SameMomentPrecedenceClaim",
     "SameMomentPrecedenceClaimValidation",
     "DetectedSameMomentConflict",
+    "detect_same_moment_conflict_groups_generic",
     "detected_same_moment_conflicts_from_ops",
     "validate_same_moment_precedence_claim",
     "detect_cross_act_same_moment_conflicts",
@@ -427,6 +434,84 @@ def _validate_finder_kind_prefix(prefix: str) -> None:
         )
 
 
+#─ Generic record-shaped detection (kernel; UK consumes this)───────────────
+
+
+def detect_same_moment_conflict_groups_generic(
+    records: AbcSequence[R],
+    *,
+    effective_date_of: Callable[[R], str],
+    affecting_act_id_of: Callable[[R], str],
+    affected_target_of: Callable[[R], str],
+    incompatible_payload_predicate: Callable[[R, R], bool],
+) -> dict[_SameMomentTargetKey, list[tuple[R, R]]]:
+    """Group same-moment cross-act conflicts for ANY record shape (Wave 0b).
+
+    This is the single shared detection algorithm — divergence #1 of the
+    pipeline-unification matrix (``notes/CORE_PIPELINE_UNIFICATION_DESIGN.md``
+    §2.1.1). The op-based path (SE/EE/NO via
+    :func:`_detect_same_moment_conflict_groups`) and the UK *effect-level* path
+    (``uk_legislation/ordering``) both call this with their own accessors +
+    incompatibility predicate, so the legal rule (group by
+    ``(effective_date, affected_target)``, require ≥2 distinct affecting acts,
+    pair distinct-act records whose whole-target payloads collide) lives in ONE
+    place. The record TYPE, the accessors, the predicate, and the finding/claim
+    serialization stay frontend-supplied (UK records are ``UKEffectRecord``s,
+    ordered/detected before lowering; ops are not yet built — see the §2.1
+    impedance note and the design doc Wave 0b).
+
+    The grouping iteration order follows ``records`` input order (insertion-
+    ordered dict), so a caller's finding *list* order is the record input order.
+    Records with no ``affected_target`` or no ``effective_date`` are excluded
+    (an undated/global record is not a same-EFFECTIVE-DATE collision —
+    bucketing it would manufacture a false ambiguity). Records with an empty
+    ``affecting_act_id`` do not participate in the distinct-act count.
+
+    Pairing buckets by affecting act first (``affects_to_ops``) then pairs
+    across distinct-act buckets — the op-path shape. The de-duplicated
+    participating-record SET a finding is built from is independent of pair
+    order, so this is observably equivalent to UK's old index-pair loop on
+    findings (which de-dup + sort the participants); see
+    ``tests/test_uk_order_ops_parallel_run.py`` for the equality proof.
+    """
+    target_groups: dict[_SameMomentTargetKey, list[R]] = {}
+    for record in records:
+        target = affected_target_of(record)
+        if not target:
+            continue
+        effective_date = effective_date_of(record)
+        if not effective_date:
+            continue
+        key = _SameMomentTargetKey(
+            effective_date=effective_date,
+            affected_target=target,
+        )
+        target_groups.setdefault(key, []).append(record)
+
+    conflicts: dict[_SameMomentTargetKey, list[tuple[R, R]]] = {}
+    for key, group_records in target_groups.items():
+        affects_to_records: dict[str, list[R]] = {}
+        for record in group_records:
+            act_id = affecting_act_id_of(record)
+            if not act_id:
+                continue
+            affects_to_records.setdefault(act_id, []).append(record)
+        if len(affects_to_records) < 2:
+            continue
+
+        conflicting_pairs: list[tuple[R, R]] = []
+        acts_sorted = list(affects_to_records.keys())
+        for left_act_pos in range(len(acts_sorted)):
+            for right_act_pos in range(left_act_pos + 1, len(acts_sorted)):
+                for left in affects_to_records[acts_sorted[left_act_pos]]:
+                    for right in affects_to_records[acts_sorted[right_act_pos]]:
+                        if incompatible_payload_predicate(left, right):
+                            conflicting_pairs.append((left, right))
+        if conflicting_pairs:
+            conflicts[key] = conflicting_pairs
+    return conflicts
+
+
 #─ Detection-from-ops (binding surface for claims)─────────────────────────
 
 
@@ -435,49 +520,21 @@ def _detect_same_moment_conflict_groups(
     *,
     incompatible_payload_predicate: Callable[[LegalOperation, LegalOperation], bool],
 ) -> dict[_SameMomentTargetKey, list[tuple[LegalOperation, LegalOperation]]]:
-    """Detect same-moment cross-act conflict groups.
+    """Detect same-moment cross-act conflict groups (op shape).
 
-    Mirrors UK ``_detect_same_moment_conflict_groups`` / EE inline detection:
-    groups ops by ``(effective_date, affected_target)`` and within each
-    multi-act group, finds pairs from distinct affecting acts whose payloads are
-    incompatible per the supplied predicate.
+    Thin op-shaped binding of the shared
+    :func:`detect_same_moment_conflict_groups_generic`: supplies the op
+    accessors (``OperationSource.effective`` / ``.statute_id`` /
+    ``LegalAddress.path``). SE/EE/NO consume this; the algorithm body is the
+    shared generic one (no op-specific detection logic remains here).
     """
-    target_groups: dict[_SameMomentTargetKey, list[LegalOperation]] = {}
-    for op in ops:
-        target = _op_affected_target(op)
-        if not target:
-            continue
-        effective_date = _op_effective_date(op)
-        if not effective_date:
-            continue
-        key = _SameMomentTargetKey(
-            effective_date=effective_date,
-            affected_target=target,
-        )
-        target_groups.setdefault(key, []).append(op)
-
-    conflicts: dict[_SameMomentTargetKey, list[tuple[LegalOperation, LegalOperation]]] = {}
-    for key, group_ops in target_groups.items():
-        affects_to_ops: dict[str, list[LegalOperation]] = {}
-        for op in group_ops:
-            act_id = _op_affecting_act_id(op)
-            if not act_id:
-                continue
-            affects_to_ops.setdefault(act_id, []).append(op)
-        if len(affects_to_ops) < 2:
-            continue
-
-        conflicting_pairs: list[tuple[LegalOperation, LegalOperation]] = []
-        acts_sorted = list(affects_to_ops.keys())
-        for left_act_pos in range(len(acts_sorted)):
-            for right_act_pos in range(left_act_pos + 1, len(acts_sorted)):
-                for left in affects_to_ops[acts_sorted[left_act_pos]]:
-                    for right in affects_to_ops[acts_sorted[right_act_pos]]:
-                        if incompatible_payload_predicate(left, right):
-                            conflicting_pairs.append((left, right))
-        if conflicting_pairs:
-            conflicts[key] = conflicting_pairs
-    return conflicts
+    return detect_same_moment_conflict_groups_generic(
+        ops,
+        effective_date_of=_op_effective_date,
+        affecting_act_id_of=_op_affecting_act_id,
+        affected_target_of=_op_affected_target,
+        incompatible_payload_predicate=incompatible_payload_predicate,
+    )
 
 
 def detected_same_moment_conflicts_from_ops(
