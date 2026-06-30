@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Increment 2 pinned fixture: a REAL-shaped ACT-root article-instruction amending
+  act. Faithful structural excerpt of the bytes acquired from CELLAR for
+  32017R0488 (amends 32016R0044) — the first GENUINE article-instruction-form
+  amender of the degree-57 stress base (Increment 1's acquired sample happened to
+  be ANNEX/DOC manifestations, so the ENACTING.TERMS article grammar was only
+  fixture-tested; this stresses it on the REAL shape).
+
+  Two real-bytes structural facts the Increment-0/1 grammar did NOT handle and
+  Increment 2 fixes here:
+    1. The whole-article REPLACE quotes the new article body as a NESTED <ARTICLE>
+       inside a QUOT.S wrapper (QUOT.START/QUOT.END markers are NOT siblings).
+       enacting.iter("ARTICLE") double-counted that nested body as a bogus second
+       instruction; _quoted_block_text missed the payload. Fixed: prune QUOT
+       subtrees + treat QUOT.S as a wrapper.
+    2. Article 2 is the entry-into-force boilerplate — correctly an out-of-scope
+       typed residual (so coverage is measured, not asserted 100%).
+
+  Sanctions personal data elided; only the FMX4 SHAPE is pinned.
+-->
+<ACT>
+  <TITLE><TI>Council Implementing Regulation amending Regulation (EU) 2016/44</TI></TITLE>
+  <ENACTING.TERMS>
+    <ARTICLE IDENTIFIER="001">
+      <TI.ART>Article 1</TI.ART>
+      <ALINEA>
+        <P>Article 21 of Regulation (EU) 2016/44 is replaced by the following:</P>
+        <QUOT.S LEVEL="1">
+          <ARTICLE IDENTIFIER="021">
+            <TI.ART><QUOT.START CODE="2018" ID="QS0001" REF.END="QE0001"/>Article 21</TI.ART>
+            <PARAG IDENTIFIER="021.001">
+              <NO.PARAG>1.</NO.PARAG>
+              <ALINEA>Where the Security Council lists a person, the Council shall include that person in Annex II or VI.</ALINEA>
+            </PARAG>
+            <PARAG IDENTIFIER="021.002">
+              <NO.PARAG>2.</NO.PARAG>
+              <ALINEA>Where the Council decides to subject a person to the measures, it shall amend Annex III accordingly.<QUOT.END CODE="2019" ID="QE0001" REF.START="QS0001"/></ALINEA>
+            </PARAG>
+          </ARTICLE>
+        </QUOT.S>
+      </ALINEA>
+    </ARTICLE>
+    <ARTICLE IDENTIFIER="002">
+      <TI.ART>Article 2</TI.ART>
+      <ALINEA>This Regulation shall enter into force on the date following that of its publication in the <HT TYPE="ITALIC">Official Journal of the European Union</HT>.</ALINEA>
+    </ARTICLE>
+  </ENACTING.TERMS>
+</ACT>

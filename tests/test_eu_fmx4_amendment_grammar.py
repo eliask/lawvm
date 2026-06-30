@@ -181,6 +181,50 @@ def test_annex_root_without_number_diagnosed() -> None:
     assert r.diagnostics[0].rule_id == "eu_fmx4_grammar_annex_root_no_number"
 
 
+def test_indirect_annex_as_set_out_lowered_increment2() -> None:
+    """Increment 2 real long-tail: 'Annex N to Regulation X is replaced/amended as
+    set out in the Annex to this Regulation' → REPLACE on the named base annex,
+    payload from the amending act's own <ANNEX>."""
+    fmx = b"""<?xml version="1.0"?>
+<ACT><ENACTING.TERMS>
+  <ARTICLE><TI.ART>Article 1</TI.ART>
+    <ALINEA>Annex II to Regulation (EU) 2016/44 is amended as set out in the Annex to this Regulation.</ALINEA>
+  </ARTICLE>
+</ENACTING.TERMS>
+<ANNEX><TITLE><TI><P>ANNEX</P></TI></TITLE><CONTENTS><P>New list.</P></CONTENTS></ANNEX>
+</ACT>"""
+    r = lower_amending_act(fmx, "32017R0489", base_celex="32016R0044")
+    assert r.covered_count == 1
+    op = r.ops[0]
+    assert op.witness_rule_id == "EU_FMX4.ANNEX_AMENDED_AS_SET_OUT"
+    assert str(op.target) == "annex:II"
+    assert op.payload is not None and "New list" in op.payload.text
+    assert "annex_payload=inline" in op.provenance_tags
+
+
+def test_quot_s_wrapper_payload_captured_and_no_double_count_increment2() -> None:
+    """Increment 2 real-bytes fix: a whole-article REPLACE quotes the new body as a
+    nested <ARTICLE> in a QUOT.S wrapper. The payload is captured and the nested
+    ARTICLE is NOT counted as a second instruction."""
+    fmx = b"""<?xml version="1.0"?>
+<ACT><ENACTING.TERMS>
+  <ARTICLE IDENTIFIER="001"><TI.ART>Article 1</TI.ART>
+    <ALINEA><P>Article 21 of Regulation (EU) 2016/44 is replaced by the following:</P>
+      <QUOT.S><ARTICLE IDENTIFIER="021"><TI.ART><QUOT.START/>Article 21</TI.ART>
+        <PARAG><NO.PARAG>1.</NO.PARAG><ALINEA>The Council shall act.<QUOT.END/></ALINEA></PARAG>
+      </ARTICLE></QUOT.S>
+    </ALINEA>
+  </ARTICLE>
+</ENACTING.TERMS></ACT>"""
+    r = lower_amending_act(fmx, "32017R0488", base_celex="32016R0044")
+    assert r.instruction_count == 1  # NOT 2 (the nested replacement is pruned)
+    assert r.covered_count == 1
+    op = r.ops[0]
+    assert op.witness_rule_id == "EU_FMX4.WHOLE_ARTICLE_REPLACE"
+    assert str(op.target) == "article:21"
+    assert op.payload is not None and "Council shall act" in op.payload.text
+
+
 def test_corrigendum_for_read_lowered() -> None:
     """Increment 1: the corrigendum 'for: X read: Y' formula lowers to a typed
     TEXT_REPLACE on the named Article."""

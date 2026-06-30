@@ -178,12 +178,61 @@ _RE_ANNEX_REPLACE = re.compile(
     r"\bAnnex\s+(?P<num>[IVXLCDM]+|\d+[a-z]?)\b.*?\bis\s+replaced\b",
     re.I | re.S,
 )
+# Increment 2 (real-bytes long-tail): the dominant real EU sanctions-amender shape
+# is the INDIRECT annex amendment — *"Annex N to Regulation (EU) … is replaced by
+# the list set out in the Annex to this Regulation"* and the multi-annex plural
+# *"Annexes II and VI … are amended as set out in the Annex to this Regulation"*.
+# The replacement payload is NOT a QUOT block in the instruction prose; it lives in
+# the amending act's OWN ``<ANNEX>`` body (often a SEPARATE manifestation). The
+# first named annex number is the structural target in the BASE coordinate system.
+_RE_ANNEX_AS_SET_OUT = re.compile(
+    r"\b(?:(?:the\s+)?Annex(?:es)?\s+(?P<num>[IVXLCDM]+|\d+[a-z]?)\b"
+    r"|the\s+(?P<sole>Annex)\b)"
+    r".*?\b(?:is|are)\s+(?:replaced|amended)\b"
+    r".*?\bset\s+out\s+in\s+the\s+Annex\b",
+    re.I | re.S,
+)
 
 
 def _local(tag: object) -> str:
     if isinstance(tag, str):
         return tag.rsplit("}", 1)[-1] if "}" in tag else tag
     return str(tag)
+
+
+#: Quoted-block wrapper tags. An ``ARTICLE`` found INSIDE one of these is the
+#: QUOTED REPLACEMENT BODY of an instruction, NOT a separate amendment
+#: instruction — it must not be counted/iterated as its own instruction.
+_QUOT_WRAPPER_TAGS = frozenset({"QUOT", "QUOT.S", "QUOT.START"})
+
+
+def _top_level_amending_articles(enacting: ET.Element) -> list[ET.Element]:
+    """Return the amendment-instruction ARTICLEs, EXCLUDING quoted replacement bodies.
+
+    Increment 2 real-bytes fix: a whole-article REPLACE quotes the new article body
+    as a nested ``<ARTICLE>`` inside a ``QUOT.S``/``QUOT.START`` wrapper (the real
+    32017R0488 shape). ``enacting.iter("ARTICLE")`` walks that nested replacement
+    ARTICLE as a SECOND, bogus instruction (double-count). We instead descend the
+    ENACTING.TERMS tree but PRUNE any QUOT subtree, so only genuine amendment
+    instructions (the amending act's own ARTICLEs, possibly nested in CHAPTER /
+    DIVISION) are returned.
+    """
+    out: list[ET.Element] = []
+
+    def _walk(node: ET.Element) -> None:
+        for child in node:
+            local = _local(child.tag).upper()
+            if local in _QUOT_WRAPPER_TAGS:
+                continue  # the quoted replacement body — not an instruction
+            if local == "ARTICLE":
+                out.append(child)
+                # Do NOT recurse into an instruction ARTICLE: any ARTICLE nested
+                # below it is a quoted body (already pruned) or sub-structure.
+                continue
+            _walk(child)
+
+    _walk(enacting)
+    return out
 
 
 #: Elements whose text is the AMENDING act's own scaffolding (its own article
@@ -230,9 +279,16 @@ def _quoted_block_text(el: ET.Element) -> Optional[str]:
     text, else the text between a ``QUOT.START`` and the next ``QUOT.END`` among
     siblings.
     """
-    # Wrapper form: <QUOT>...</QUOT>
+    # Wrapper form: <QUOT>…</QUOT> OR <QUOT.S>…</QUOT.S>. Increment 2 (real
+    # bytes): the real whole-article replace (32017R0488) wraps the replacement
+    # ARTICLE in a ``QUOT.S`` element whose inner ``QUOT.START``/``QUOT.END``
+    # markers are NOT siblings (START sits in the nested ARTICLE's TI.ART, END
+    # deep in the last PARAG), so the marker-pair logic below misses it. Treating
+    # ``QUOT.S`` as a wrapper and taking its inner text captures the payload. The
+    # leading/trailing bare "Article N" heading of the quoted body is kept (it is
+    # part of the replacement text), matching the fixture's QUOT-wrapper form.
     for node in el.iter():
-        if _local(node.tag).upper() in ("QUOT",):
+        if _local(node.tag).upper() in ("QUOT", "QUOT.S"):
             txt = _all_text(node)
             if txt:
                 return txt
@@ -367,8 +423,12 @@ def lower_amending_act(
         )
         return result
 
+    # The amending act's OWN <ANNEX> bodies (if any) are the payload for the
+    # "amended/replaced as set out in the Annex to this Regulation" indirect form.
+    own_annexes = root.findall("ANNEX")
+
     seq = 0
-    for article in enacting.iter("ARTICLE"):
+    for article in _top_level_amending_articles(enacting):
         seq += 1
         result.instruction_count += 1
         instr = _instruction_text(article)
@@ -381,6 +441,7 @@ def lower_amending_act(
             effective=effective,
             enacted=enacted,
             diagnostics=result.diagnostics,
+            own_annexes=own_annexes,
         )
         if op is not None:
             result.ops.append(op)
@@ -472,6 +533,7 @@ def _lower_one_instruction(
     effective: str,
     enacted: str,
     diagnostics: list[AmendmentGrammarDiagnostic],
+    own_annexes: Optional[list[ET.Element]] = None,
 ) -> Optional[LegalOperation]:
     raw = " ".join(instr.split())[:400]
     src = _source(amending_celex, base_celex, effective, enacted, raw)
@@ -519,6 +581,54 @@ def _lower_one_instruction(
             source=src,
             witness_rule_id="EU_FMX4.SUBART_POINT_REPLACE",
             provenance_tags=("ir_apply_class=point_replace",),
+        )
+
+    # Indirect annex amendment ("Annex N to Regulation X is replaced/amended as set
+    # out in the Annex to this Regulation") — the DOMINANT real EU sanctions-amender
+    # shape (32017R0489, 32018R0870, and 31/33 instructions of 32019R1163). Checked
+    # BEFORE the direct _RE_ANNEX_REPLACE, which would otherwise partial-match the
+    # "is replaced" verb and look for a (non-existent) inline QUOT block. The payload
+    # is the amending act's OWN <ANNEX> body; when that annex ships as a SEPARATE
+    # manifestation (not in this main FMX4), the op is still lowered with a typed
+    # payload-gap note — the STRUCTURAL effect (which base annex is replaced) is
+    # recoverable; only the materialised replacement text is the recorded gap.
+    m = _RE_ANNEX_AS_SET_OUT.search(instr)
+    if m:
+        # Numbered ("Annex III …") or sole-annex ("The Annex … is replaced"). The
+        # sole form targets the base's single annex with an empty number label.
+        annex_num = (m.group("num") or "").upper()
+        annex_payload = (
+            " ".join(_all_text(a) for a in own_annexes) if own_annexes else ""
+        )
+        if not annex_payload:
+            diagnostics.append(
+                AmendmentGrammarDiagnostic(
+                    rule_id="eu_fmx4_grammar_annex_as_set_out_payload_separate",
+                    reason=(
+                        "indirect annex amendment ('as set out in the Annex to "
+                        "this Regulation') names the target annex but its "
+                        "replacement body ships as a separate ANNEX manifestation "
+                        "absent from this main FMX4 — structural target lowered, "
+                        "materialised payload is a recorded gap"
+                    ),
+                    source_excerpt=raw,
+                    family="annex_payload_gap",
+                )
+            )
+        path = (("annex", annex_num),)
+        return LegalOperation(
+            op_id=f"{amending_celex}-{seq}",
+            sequence=seq,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=path),
+            payload=_payload_node(IRNodeKind.SCHEDULE, annex_num, annex_payload),
+            source=src,
+            witness_rule_id="EU_FMX4.ANNEX_AMENDED_AS_SET_OUT",
+            provenance_tags=(
+                "ir_apply_class=whole_annex_replace",
+                "annex_payload="
+                + ("inline" if annex_payload else "separate_manifestation"),
+            ),
         )
 
     # Annex replace ("Annex II is replaced by the following: '<block>'").

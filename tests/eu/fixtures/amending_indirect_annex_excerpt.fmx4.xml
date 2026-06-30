@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Increment 2 pinned fixture: the DOMINANT real EU sanctions-amender long-tail
+  shape — the INDIRECT annex amendment. Faithful structural excerpt of the bytes
+  acquired from CELLAR for 32017R0489 / 32018R0870 / 32019R1163 (all amend
+  32016R0044 and kin). The instruction names the target annex of the BASE act and
+  defers the replacement body to "the Annex to this Regulation":
+
+    * "Annexes II and VI ... are amended as set out in the Annex to this Regulation"
+      (plural — the FIRST named annex is the structural target)
+    * "Annex II ... is replaced by the list set out in the Annex to this Regulation"
+    * "The Annex to Regulation X is replaced by the list set out in the Annex ..."
+      (sole-annex form — no number)
+    * the entry-into-force boilerplate (out-of-scope typed residual)
+
+  The replacement annex BODY frequently ships as a SEPARATE manifestation (absent
+  from this main FMX4): the grammar lowers the STRUCTURAL target and records a
+  typed payload-gap (eu_fmx4_grammar_annex_as_set_out_payload_separate) — never a
+  silent zero. Here we include an inline <ANNEX> for one instruction so BOTH the
+  inline-payload and separate-manifestation paths are exercised.
+-->
+<ACT>
+  <TITLE><TI>Council Regulation amending the Annexes of Regulation (EU) 2016/44</TI></TITLE>
+  <ENACTING.TERMS>
+    <ARTICLE IDENTIFIER="001">
+      <TI.ART>Article 1</TI.ART>
+      <ALINEA>Annexes II and VI to Regulation (EU) 2016/44 are amended as set out in the Annex to this Regulation.</ALINEA>
+    </ARTICLE>
+    <ARTICLE IDENTIFIER="002">
+      <TI.ART>Article 2</TI.ART>
+      <ALINEA>Annex III to Council Regulation (EU) No 267/2012 is replaced by the list set out in the Annex to this Regulation.</ALINEA>
+    </ARTICLE>
+    <ARTICLE IDENTIFIER="003">
+      <TI.ART>Article 3</TI.ART>
+      <ALINEA>The Annex to Council Regulation (EC) No 2580/2001 is replaced by the list set out in the Annex to this Regulation.</ALINEA>
+    </ARTICLE>
+    <ARTICLE IDENTIFIER="004">
+      <TI.ART>Article 4</TI.ART>
+      <ALINEA>This Regulation shall enter into force on the day of its publication in the <HT TYPE="ITALIC">Official Journal of the European Union</HT>.</ALINEA>
+    </ARTICLE>
+  </ENACTING.TERMS>
+  <ANNEX>
+    <TITLE><TI><P>ANNEX</P></TI></TITLE>
+    <CONTENTS><GR.SEQ><P>List replacing the named base annexes: Entry A; Entry B.</P></GR.SEQ></CONTENTS>
+  </ANNEX>
+</ACT>

@@ -102,6 +102,81 @@ def _fetch_pinned_consolidation(_celex: str) -> bytes:
     return (FIXTURES / "consolidated_excerpt.fmx4.xml").read_bytes()
 
 
+def _fetch_pinned_cons_act(_celex: str) -> bytes:
+    """The REAL consolidated manifestation SHAPE (CONS.ACT/CONS.DOC), fetched live
+    in Increment 2 once the CELLAR REST byte lane recovered, pinned offline."""
+    return (FIXTURES / "consolidated_cons_act_excerpt.fmx4.xml").read_bytes()
+
+
+def test_oracle_diffs_real_cons_act_manifestation_increment2() -> None:
+    """Increment 2 (REST recovered): the live consolidation byte lane returns a
+    CONS.ACT/CONS.DOC manifestation (NOT an ACT root). The grafter now parses
+    CONS.DOC as the ACT-equivalent root and its ALINEA/PARAG>ALINEA article text,
+    so the replay-vs-consolidation oracle diff runs end-to-end on the real shape —
+    classified, never repaired. (Increment 1 could not reach this: REST was 5xx.)"""
+    replayed = _replayed_pit()
+    before6 = _section_text(replayed, "6")
+
+    cmp = build_consolidation_oracle(
+        replayed,
+        base_celex=BASE_CELEX,
+        as_of=AS_OF,
+        fetch_consolidation=_fetch_pinned_cons_act,
+    )
+
+    # The CONS.DOC carries Articles 1 and 6; the comparator builds a per-article
+    # ledger (the consolidated Article 6 EDITORIAL text diverges from the native
+    # replay's Article 6).
+    assert cmp.article_count >= 2
+    labels = {d.article_label for d in cmp.divergences}
+    assert {"1", "6"} <= labels
+    kinds = cmp.divergences_by_kind()
+    assert kinds.get("text_divergence", 0) >= 1
+
+    # NEVER repaired: the native replay's Article 6 is byte-identical afterward,
+    # and the consolidated EDITORIAL text did not leak into it.
+    assert _section_text(replayed, "6") == before6
+    assert "native replay" in before6
+    assert "CONSOLIDATED EDITORIAL" not in before6
+
+
+def test_cons_act_article_text_recovered_from_alinea() -> None:
+    """The Increment-2 grafter ALINEA fix: consolidated article text lives in
+    <ALINEA> (Article 1, direct) and <PARAG><ALINEA> (Article 6). Both are
+    recovered — the Increment-1 grafter (P/LIST only) dropped them, which would
+    have made every consolidated article look text-empty in the oracle diff."""
+    import tempfile
+    from pathlib import Path as _P
+
+    from lawvm.eu.grafter import parse_eu_regulation_ir
+
+    raw = _fetch_pinned_cons_act("02016R0044-20160401")
+    with tempfile.NamedTemporaryFile(suffix=".xml", delete=True) as tf:
+        tf.write(raw)
+        tf.flush()
+        st = parse_eu_regulation_ir(_P(tf.name), celex="02016R0044-20160401")
+
+    def _node_text(node: IRNode) -> str:
+        parts = [node.text] if node.text else []
+        for c in node.children:
+            parts.append(_node_text(c))
+        return " ".join(p for p in parts if p)
+
+    arts = {
+        node.label: _node_text(node)
+        for node in _iter(st.body)
+        if str(node.kind) == "section" and node.label
+    }
+    assert "definitions apply" in arts["1"]  # ALINEA-direct
+    assert "freezing of funds" in arts["6"]  # PARAG>ALINEA
+
+
+def _iter(node: IRNode):
+    yield node
+    for c in node.children:
+        yield from _iter(c)
+
+
 def test_oracle_classifies_divergence_and_never_repairs() -> None:
     replayed = _replayed_pit()
     before = _section_text(replayed, "6")
@@ -190,9 +265,16 @@ def test_live_consolidation_acquire_smoke() -> None:
     cons_celex = consolidated_celex(BASE_CELEX, AS_OF)
 
     def _fetch_real(celex: str) -> bytes:
-        # Resolve the tree notice → EN FMX4 manifestation item, fetch its bytes.
+        # Resolve the tree notice → EN FMX4 manifestation item → fetch its bytes.
+        # Increment 2: the REST byte lane recovered. The consolidated FMX4 item
+        # negotiates ONLY under a permissive Accept (a strict
+        # ``application/xml;notice=branch`` 406s); ``Accept: */*`` returns the
+        # ``application/xml;type=fmx4`` CONS.ACT manifestation bytes.
         import tempfile
+        import urllib.request
         from pathlib import Path as _P
+
+        from lawvm.eu.cellar import USER_AGENT
 
         req = NoticeRequest(
             celex=celex, notice_format="xml", notice_type="tree", decode_language="eng"
@@ -205,12 +287,19 @@ def test_live_consolidation_acquire_smoke() -> None:
         items = option.get("items") or []
         if not items:
             raise OSError("consolidated notice exposed no FMX4 item")
-        item_uri = items[0] if isinstance(items[0], str) else items[0].get("uri", "")
-        item_req = NoticeRequest(
-            celex=item_uri, notice_format="xml", notice_type="object", decode_language="eng"
+        first = items[0]
+        item_uri = first if isinstance(first, str) else (
+            first.get("uri", {}).get("value", "")
+            if isinstance(first.get("uri"), dict)
+            else first.get("uri", "")
         )
-        data, _m = _request_notice(item_req, timeout_s=45)
-        return data
+        if not item_uri:
+            raise OSError("consolidated FMX4 item exposed no resolvable URI")
+        item_req = urllib.request.Request(
+            item_uri, headers={"User-Agent": USER_AGENT, "Accept": "*/*"}
+        )
+        with urllib.request.urlopen(item_req, timeout=45) as resp:
+            return resp.read()
 
     replayed = _replayed_pit()
     try:

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Increment 2 pinned fixture: a REAL-shaped sector-0 CONSOLIDATION manifestation.
+  Faithful structural excerpt of the bytes fetched LIVE from CELLAR for
+  02016R0044-20160401 (the consolidation of the degree-57 stress base at the PIT
+  of amender 32016R0466). The CELLAR REST byte lane was 5xx all of Increment 1, so
+  this manifestation SHAPE was never reachable; with REST recovered in Increment 2
+  the live fetch succeeded (104 KB, Accept: */*) and exposed the shape pinned here.
+
+  Two real facts this fixture pins:
+    1. The consolidated root is <CONS.ACT> with a <CONS.DOC> body (NOT an <ACT>
+       root) — the grafter now treats CONS.DOC as the ACT-equivalent root.
+    2. Article text lives in <ALINEA> (directly, Article 1) and in <PARAG><ALINEA>
+       (Article 2) — the real FMX4 paragraph-body wrapper the Increment-1 grafter
+       DROPPED (it only harvested <P>/<LIST>). The Increment-2 grafter harvests
+       ALINEA, so consolidated article text is recovered for the oracle diff.
+
+  Sanctions personal data elided; only the FMX4 SHAPE is pinned.
+-->
+<CONS.ACT>
+  <CONS.DOC>
+    <TITLE><TI>Consolidated text: Council Regulation (EU) 2016/44</TI></TITLE>
+    <ENACTING.TERMS>
+      <ARTICLE IDENTIFIER="001">
+        <TI.ART>Article 1</TI.ART>
+        <ALINEA>For the purposes of this Regulation, the following definitions apply.</ALINEA>
+      </ARTICLE>
+      <ARTICLE IDENTIFIER="006">
+        <TI.ART>Article 6</TI.ART>
+        <PARAG>
+          <NO.PARAG>1.</NO.PARAG>
+          <ALINEA>The freezing of funds shall apply to the persons listed in Annex III (CONSOLIDATED EDITORIAL TEXT).</ALINEA>
+        </PARAG>
+      </ARTICLE>
+    </ENACTING.TERMS>
+    <CONS.ANNEX>
+      <TITLE><TI><P>ANNEX III</P></TI></TITLE>
+      <CONTENTS><GR.SEQ><P>Consolidated Annex III listing.</P></GR.SEQ></CONTENTS>
+    </CONS.ANNEX>
+  </CONS.DOC>
+</CONS.ACT>

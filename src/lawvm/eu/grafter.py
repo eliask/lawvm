@@ -113,7 +113,22 @@ class EUIRGrafter:
             if act is not None:
                 root = act
             else:
-                raise ValueError(f"Expected ACT root or descendant, got {root.tag}")
+                # Consolidated (sector-0) manifestations are rooted at
+                # <CONS.ACT> with a <CONS.DOC> body that carries the SAME
+                # ENACTING.TERMS / ARTICLE / TITLE / ANNEX structure as an ACT
+                # (verified live against 02016R0044-20160401: CONS.ACT > CONS.DOC
+                # with 26 ENACTING.TERMS ARTICLEs). The consolidated byte lane was
+                # 5xx during Increment 1 so this shape was never reachable; with
+                # REST recovered, treating CONS.DOC as the ACT-equivalent root
+                # unblocks the live replay-vs-consolidation oracle diff. This is
+                # additive (a NEW root branch; the existing ACT path is unchanged).
+                cons_doc = root.find(".//CONS.DOC")
+                if cons_doc is not None:
+                    root = cons_doc
+                else:
+                    raise ValueError(
+                        f"Expected ACT/CONS.DOC root or descendant, got {root.tag}"
+                    )
 
         title_el = root.find("TITLE")
         title = _element_text(title_el)
@@ -211,8 +226,15 @@ class EUIRGrafter:
                 cnode = self._parse_structural_node(child, eid or parent_eid)
                 if cnode:
                     children.append(cnode)
-            elif child.tag in ("P", "LIST"):
-                # Mixed content container
+            elif child.tag in ("P", "LIST", "ALINEA"):
+                # Mixed content container. ALINEA is the real FMX4 paragraph-body
+                # wrapper: a <PARAG> holds <NO.PARAG> + <ALINEA>, and the ALINEA
+                # carries the operative text either DIRECTLY or via nested <P>/<LIST>
+                # (verified against real CELLAR bytes, 32016R0044 Articles 2/3).
+                # Without ALINEA here the grafter DROPPED all PARAG>ALINEA article
+                # text — the Increment-1 "text preserved on the nested child"
+                # residual held only for the PARAG>P fixture shape, NOT real bytes.
+                # _element_text recurses itertext, so both ALINEA shapes are covered.
                 text_parts.append(_element_text(child))
 
         text = " ".join(text_parts).strip()
