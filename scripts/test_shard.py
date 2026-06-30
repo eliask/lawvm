@@ -73,6 +73,8 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_ee_instruction_waist.py",
         "test_ee_parser_normalization.py",
         "test_ee_same_moment_ambiguity.py",
+        # Wave 0 ordering-kernel cutover parallel-run equality gate (EE).
+        "test_ee_order_ops_parallel_run.py",
     ),
     "estonia_replay_logic": (
         "test_ee_replay_logic.py",

@@ -50,6 +50,7 @@ precedence-claim family, the ``resolution`` field will follow the UK's
 from __future__ import annotations
 
 from lawvm.core.ir import LegalOperation
+from lawvm.core.op_ordering import OrderingProfile, default_temporal_key
 
 # Rule id for the §1.7 ambiguity finding the shared module stamps with
 # ``finder_kind_prefix="ee"``. Kept here as a stable import surface so existing
@@ -130,3 +131,50 @@ def ee_same_moment_payloads_incompatible(
     # Otherwise both are whole-target REPLACE: two distinct substitutions of
     # the same provision each overwrite it, so only one can win.
     return True
+
+
+def ee_ordering_profile() -> OrderingProfile:
+    """The EE jurisdiction ordering profile fed to the unified kernel.
+
+    Wave 0 (``notes/CORE_PIPELINE_UNIFICATION_DESIGN.md`` §3.2 / §4): EE's
+    same-moment cross-act detection is the kernel-subsumed step, and this profile
+    encodes EXACTLY the prior direct-detector contract so
+    ``order_ops(ops, ee_ordering_profile())`` reproduces the old
+    ``detect_cross_act_same_moment_conflicts`` call byte-for-byte:
+
+    - ``finder_kind_prefix="ee"`` — the prefix the direct call used (so the
+      finding ``kind`` ``ee_same_moment_cross_act_incompatible_payload_ambiguous``
+      and the claim validation/rejection ``rule_id``s stay EE-distinct).
+    - ``incompatible_payload_predicate=ee_same_moment_payloads_incompatible`` —
+      EE's carrier predicate, which diverges from the shared default on the
+      mixed fragment-vs-structural case (e.g. REPEAL+TEXT_REPLACE → incompatible
+      per EE). Supplying it explicitly keeps the finding output identical to the
+      pre-§2.5-retirement standalone behaviour.
+    - ``temporal_key=default_temporal_key`` (sequence-identity) — EE has no
+      commencement/effective dating lane in its APPLY-time ordering contract
+      (same-moment bucketing reads ``OperationSource.effective`` inside the
+      detector, not the kernel's temporal sort). The kernel's stable sort by
+      ``(sequence, sequence)`` is therefore input order for EE's production ops,
+      which are stamped with a monotonically ascending global sequence in
+      chronological order upstream (``estonia/replay.py``). So the detector sees
+      the same op order the old direct call did.
+    - ``lex_posterior=False`` (implicit) — EE's same-moment unproven tiebreak is
+      ``op.sequence`` (resolution label ``sequence_order_unproven``), NOT
+      affecting-act lexical order (that is UK's). So no lex tiebreak.
+    - no ``precedence_claims`` — EE has no validated precedence-rule registry yet
+      (every detected conflict emits ``resolution: "sequence_order_unproven"``).
+    - ``prospective_gate`` / ``renumber_vacate`` unset — later-wave hooks.
+
+    NOTE — EE's longest-old-text-first text_replace run sort
+    (``grafter._ee_text_replace_run_sort_key``) is a genuine EE drafting rule for
+    SAME-SOURCE ``TEXT_REPLACE`` runs and is NOT same-moment cross-act ordering.
+    It stays an EE frontend step in ``apply_ee_ops`` and is intentionally NOT
+    expressed by this profile (the kernel subsumes same-moment detection +
+    temporal/sequence ordering only).
+    """
+    return OrderingProfile(
+        finder_kind_prefix="ee",
+        incompatible_payload_predicate=ee_same_moment_payloads_incompatible,
+        temporal_key=default_temporal_key,
+        lex_posterior=False,
+    )

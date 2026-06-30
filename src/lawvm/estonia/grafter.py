@@ -64,8 +64,8 @@ from lawvm.core.statute_facets import is_statute_title_address, replace_statute_
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.core import tree_ops
 from lawvm.estonia.act_identity_registry import lookup_ee_act_identity
-from lawvm.core.cross_act_same_moment import detect_cross_act_same_moment_conflicts
-from lawvm.estonia.ordering import ee_same_moment_payloads_incompatible
+from lawvm.core.op_ordering import order_ops
+from lawvm.estonia.ordering import ee_ordering_profile
 from lawvm.estonia.peg import (
     _EE_DASH_CLASS,
     _EE_SUPERSCRIPT_DIGIT_CLASS,
@@ -10635,36 +10635,49 @@ def apply_ee_ops(
     Returns:
         New IRStatute with all ops applied. Original is not modified.
     """
-    # §1.7 same-moment cross-act conflict pre-pass (AGENTS.md §1.7).
+    # §1.7 same-moment cross-act conflict pre-pass (AGENTS.md §1.7), now routed
+    # through the unified ordering kernel (Wave 0,
+    # ``notes/CORE_PIPELINE_UNIFICATION_DESIGN.md`` §3.2 / §4).
     #
-    # Runs BEFORE the apply fold to emit a blocking finding for incompatible
-    # whole-target payloads from distinct affecting acts at the same
-    # (effective_date, target) moment. The finding is ADDITIVE: apply order is
-    # unchanged so non-ambiguous cases are byte-identical to the pre-detection
-    # path; the finding surfaces the silent sequence-order pick so strict mode
-    # can reject. The cross-act finding carries an empty op_id so the
-    # conserved-wrapper partition (which keys per-op skips by op_id) is
-    # unaffected.
+    # ``order_ops`` composes the temporal + same-moment + sequence algebra and
+    # returns the ordered ops plus the same-moment cross-act conflict findings.
+    # For EE's profile (sequence-identity temporal key, the EE-specific
+    # ``ee_same_moment_payloads_incompatible`` predicate, no precedence claims,
+    # no lex-posterior, hooks unset) the same-moment step DELEGATES verbatim to
+    # ``detect_cross_act_same_moment_conflicts`` with exactly the arguments the
+    # old direct call used, and the kernel's stable sort by (sequence, sequence)
+    # is input order for EE's production ops (stamped with a monotonically
+    # ascending global sequence upstream in ``estonia/replay.py``). So the
+    # detector sees the same op order and the emitted findings are byte-identical
+    # to the pre-cutover direct path — proven by the parallel-run equality gate
+    # in ``tests/test_ee_order_ops_parallel_run.py``.
     #
-    # Routed through the shared module (§2.5 retirement of the standalone EE
-    # detector): the EE-specific compatibility predicate
-    # ``ee_same_moment_payloads_incompatible`` is supplied so the finding
-    # output is byte-identical to the pre-migration standalone behaviour. The
-    # parity gate is pinned in
-    # ``tests/test_ee_cross_act_same_moment_parity.py``; the migration plan
-    # lives in ``notes/CROSS_ACT_SAME_MOMENT_MIGRATION_PLAN.md``.
-    detect_cross_act_same_moment_conflicts(
-        ops,
-        finder_kind_prefix="ee",
-        incompatible_payload_predicate=ee_same_moment_payloads_incompatible,
-        adjudications_out=adjudications_out,
-    )
+    # The finding is ADDITIVE: apply order is unchanged so non-ambiguous cases
+    # are byte-identical to the pre-detection path; the finding surfaces the
+    # silent sequence-order pick so strict mode can reject. The cross-act finding
+    # carries an empty op_id so the conserved-wrapper partition (which keys
+    # per-op skips by op_id) is unaffected. EE has no validated precedence-rule
+    # registry yet, so every detected conflict emits
+    # ``resolution: "sequence_order_unproven"``.
+    #
+    # NOTE: the EE-specific longest-old-text-first text_replace run sort
+    # (``_ee_text_replace_run_sort_key``, applied below to same-source
+    # TEXT_REPLACE runs) is a genuine EE drafting rule, NOT the same-moment
+    # cross-act rule the kernel subsumes; it stays an EE frontend step.
+    ordered = order_ops(ops, ee_ordering_profile())
+    if adjudications_out is not None:
+        adjudications_out.extend(ordered.findings)
 
     # The shared IR is frozen; replay can use the baseline body directly and
     # let tree_ops return new nodes for each change.
     replayed = statute
     body = statute.body
-    sorted_ops = sorted(ops, key=lambda o: o.sequence)
+    # ``order_ops`` already returns the ops in ascending-sequence order (its
+    # stable sort secondary is ``op.sequence``); the explicit re-sort is kept as
+    # the byte-stable, idempotent contract the EE text_replace run-grouping below
+    # depends on (and so this line stays a no-op even if the kernel's temporal
+    # key gains structure in a later wave).
+    sorted_ops = sorted(ordered.ops, key=lambda o: o.sequence)
     reordered_ops: list[LegalOperation] = []
     idx = 0
     while idx < len(sorted_ops):
