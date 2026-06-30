@@ -167,6 +167,134 @@ class TestEEMutationBoundaryProbe:
         assert verdict is None
         assert all(a.kind != _MB_KIND for a in adjudications)
 
+    def test_declared_recovery_retarget_reads_within_boundary(self) -> None:
+        """A recovery lane that INTENTIONALLY retargets a section-level ``item``
+        text_replace to a deeper ``subsection/item`` lands the write outside the
+        op's nominal ``section`` target boundary. When that recovered full path
+        is DECLARED (the plumbing the EE apply fold now feeds), the per-op probe
+        must read the landed write as authorized (within-boundary) and emit NO
+        finding — the escape is explained, not suppressed."""
+        before = _body(
+            _chapter(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="2",
+                            children=(
+                                IRNode(kind=IRNodeKind.ITEM, label="6", text="old"),
+                            ),
+                        ),
+                    ),
+                )
+            )
+        )
+        after = _body(
+            _chapter(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="2",
+                            children=(
+                                IRNode(kind=IRNodeKind.ITEM, label="6", text="new"),
+                            ),
+                        ),
+                    ),
+                )
+            )
+        )
+        # Op nominally targets section/item:6 — the recovery resolved it to the
+        # deeper chapter:1/section:1/subsection:2/item:6 the write actually hit.
+        op = LegalOperation(
+            op_id="ee/op/recovery/retarget",
+            sequence=0,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "1"), ("item", "6"))),
+            source=OperationSource(statute_id="ee/boundary/recovery"),
+        )
+        recovered = (
+            ("chapter", "1"),
+            ("section", "1"),
+            ("subsection", "2"),
+            ("item", "6"),
+        )
+
+        # Without the declaration the deeper landing escapes.
+        undeclared: list[CompileAdjudication] = []
+        undeclared_verdict = probe_ee_op_mutation_boundary(
+            before=before,
+            after=after,
+            op=op,
+            op_id=op.op_id,
+            adjudications_out=undeclared,
+            source_statute="ee/boundary/recovery",
+        )
+        assert undeclared_verdict is not None
+        assert not undeclared_verdict.within_boundary
+        assert any(a.kind == _MB_KIND for a in undeclared)
+
+        # With the recovered path DECLARED the same landing reads within-boundary.
+        declared: list[CompileAdjudication] = []
+        declared_verdict = probe_ee_op_mutation_boundary(
+            before=before,
+            after=after,
+            op=op,
+            op_id=op.op_id,
+            adjudications_out=declared,
+            source_statute="ee/boundary/recovery",
+            declared_recovery_prefixes=(recovered,),
+        )
+        assert declared_verdict is None
+        assert not any(a.kind == _MB_KIND for a in declared)
+
+    def test_true_escape_still_fires_despite_recovery_declaration(self) -> None:
+        """Guard against a blanket disable: declaring a recovery's specific
+        retarget must NOT suppress a GENUINELY out-of-boundary change. Here the
+        op targets section ``1``, the recovery declares section ``3``, but the
+        apply ALSO tampered sibling section ``2`` — covered by neither, so it
+        must STILL escape."""
+        before = _body(
+            _chapter(
+                _section("1", text="original-1"),
+                _section("2", text="original-2"),
+                _section("3", text="original-3"),
+            )
+        )
+        after = _body(
+            _chapter(
+                _section("1", text="original-1"),
+                _section("2", text="tampered-sibling"),
+                _section("3", text="recovered-3"),
+            )
+        )
+        op = _text_replace_op_targeting_section_1()
+        adjudications: list[CompileAdjudication] = []
+        verdict = probe_ee_op_mutation_boundary(
+            before=before,
+            after=after,
+            op=op,
+            op_id=op.op_id,
+            adjudications_out=adjudications,
+            source_statute="ee/boundary/escape",
+            # Declare ONLY the section-3 recovery; section 2 is covered by neither.
+            declared_recovery_prefixes=((("chapter", "1"), ("section", "3")),),
+        )
+        assert verdict is not None
+        assert not verdict.within_boundary
+        violations = [a for a in adjudications if a.kind == _MB_KIND]
+        assert violations, (
+            "a genuine out-of-boundary change (sibling section 2) must STILL "
+            "fire even when a specific recovery path (section 3) is declared"
+        )
+        escaped = violations[0].detail["out_of_boundary_paths"]
+        assert any("section:2" in p for p in escaped), escaped
+        assert not any("section:3" in p for p in escaped), escaped
+
     def test_probe_skips_when_snapshot_is_none(self) -> None:
         """A None snapshot must skip cleanly — no exception, no false finding."""
         op = _text_replace_op_targeting_section_1()

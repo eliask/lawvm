@@ -9211,6 +9211,74 @@ def test_apply_ee_ops_retargets_section_item_text_replace_to_same_number_subsect
     assert numbered_adj.detail["resolved_path"].endswith("section:8/subsection:2")
 
 
+def test_same_number_subsection_retarget_recovery_declares_boundary_no_escape(monkeypatch) -> None:
+    """§2.9 per-op probe ON: the same-number-subsection text_replace recovery
+    INTENTIONALLY retargets the write from the nominal ``section:8/item:2`` to
+    the deeper ``chapter:.../section:8/subsection:2`` it actually hits. The EE
+    apply fold now DECLARES that recovered full path to the per-op
+    mutation-boundary probe, so the recovery reads as authorized
+    (within-boundary) and emits NO ``ee_replay_mutation_boundary_per_op_violation_observed``
+    finding — the escape is explained by the declared recovery, not suppressed."""
+    monkeypatch.setenv("LAWVM_EE_MUTATION_BOUNDARY_PER_OP", "1")
+    statute = IRStatute(
+        statute_id="ee/test",
+        title="Test",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="2",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SECTION,
+                            label="8",
+                            text="Väärtpaberite kohta kasutatud mõisted",
+                            children=(
+                                IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Väärtpaberina käsitatakse väärtpaberit."),
+                                IRNode(
+                                    kind=IRNodeKind.SUBSECTION,
+                                    label="2",
+                                    text="Võlainstrument on laenuvõtja võlakohustust tõendav väärtpaber.",
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    source = OperationSource(statute_id="2015/1")
+    op = LegalOperation(
+        op_id="ee-replace-section-item-2-same-number-subsection",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "8"), ("item", "2"))),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="võlaväärtpaber",
+            attrs={"old_text": "võlainstrument", "new_text": "võlaväärtpaber"},
+        ),
+        source=source,
+    )
+    adjudications: list[CompileAdjudication] = []
+    apply_ee_ops(statute, [op], adjudications_out=adjudications)
+    # The recovery's own retarget adjudication still fires (recovery stays visible).
+    assert any(
+        a.kind == "ee_text_replace_numbered_subsection_for_item_target_by_old_text"
+        for a in adjudications
+    )
+    # ...but the per-op mutation-boundary probe reads the declared recovery as
+    # within-boundary, so NO escape finding is emitted for this op.
+    escapes = [
+        a
+        for a in adjudications
+        if a.kind == "ee_replay_mutation_boundary_per_op_violation_observed"
+        and a.op_id == op.op_id
+    ]
+    assert not escapes, escapes
+
+
 def test_section_item_text_replace_does_not_retarget_same_number_subsection_without_old_text() -> None:
     statute = IRStatute(
         statute_id="ee/test",

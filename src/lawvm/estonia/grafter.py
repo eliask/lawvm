@@ -7729,6 +7729,7 @@ def _ee_replace_inline_item_in_singleton_subsection(
     payload: IRNode,
     op: LegalOperation,
     adjudications_out: Optional[list[CompileAdjudication]],
+    declared_recovery_paths_out: Optional[list[tree_ops.Path]] = None,
 ) -> IRNode:
     """Apply an explicit item replacement to an inline item list under subsection 1."""
     recovered_path = _ee_resolve_inline_item_singleton_subsection_path(body, path)
@@ -7777,6 +7778,8 @@ def _ee_replace_inline_item_in_singleton_subsection(
         },
         children=tuple(subsection.children),
     )
+    if declared_recovery_paths_out is not None:
+        declared_recovery_paths_out.append(tuple(subsection_path))
     return tree_ops.replace_at(body, subsection_path, updated_subsection)
 
 
@@ -8060,6 +8063,7 @@ def _ee_apply_op(
     body: IRNode,
     op: LegalOperation,
     adjudications_out: Optional[list[CompileAdjudication]] = None,
+    declared_recovery_paths_out: Optional[list[tree_ops.Path]] = None,
 ) -> IRNode:
     """Apply one LegalOperation to the body IRNode, returning an updated tree.
 
@@ -8070,7 +8074,21 @@ def _ee_apply_op(
     Path resolution: Estonian PEG ops emit flat paths (e.g. section:29) even
     when the statute has chapters.  _ee_resolve_full_path() uses tree_ops.find()
     to locate nodes at any depth, making ops work on chapter-nested statutes.
+
+    ``declared_recovery_paths_out``: when a recovery lane INTENTIONALLY retargets
+    the write to a deeper/different tree path than the op's nominal target (e.g.
+    a section-level ``item`` text_replace resolved to the unique descendant
+    ``subsection/item``), the recovered full path is appended here so the §2.9
+    per-op mutation-boundary probe can declare it as an authorized
+    ``declared_recovery`` boundary extension. This records the SPECIFIC authorized
+    recovery target — it is not a blanket widening. ``None`` (the default) is a
+    no-op so production callers that do not run the probe pay nothing.
     """
+
+    def _note_recovery_path(recovered: Optional[tree_ops.Path]) -> None:
+        """Surface an intentional recovery retarget to the per-op boundary probe."""
+        if declared_recovery_paths_out is not None and recovered:
+            declared_recovery_paths_out.append(tuple(recovered))
     path = _address_to_path(op.target)
     action = op.action.value if isinstance(op.action, StructuralAction) else op.action
     payload = op.payload
@@ -8885,12 +8903,14 @@ def _ee_apply_op(
                     payload,
                     op,
                     adjudications_out,
+                    declared_recovery_paths_out=declared_recovery_paths_out,
                 )
                 if recovered_body is not body:
                     return recovered_body
                 recovered_path = _ee_resolve_section_item_unique_descendant_path(body, path)
                 if recovered_path is not None:
                     full_path = recovered_path
+                    _note_recovery_path(recovered_path)
                     _append_ee_replay_adjudication(
                         adjudications_out,
                         kind=_EE_SECTION_ITEM_REPLACE_UNIQUE_DESCENDANT_RULE,
@@ -10136,6 +10156,7 @@ def _ee_apply_op(
                             },
                         )
                 full_path = recovered_full_path
+                _note_recovery_path(recovered_full_path)
         if full_path is not None:
             node = tree_ops.resolve(body, full_path)
             if node is not None and payload is not None:
@@ -10370,6 +10391,7 @@ def _ee_probe_op_mutation_boundary(
     op_id: str,
     adjudications_out: Optional[list[CompileAdjudication]],
     source_statute: str,
+    declared_recovery_prefixes: Sequence[tree_ops.Path] = (),
 ) -> None:
     """Project the core per-op mutation-boundary audit (D1) into the EE sink.
 
@@ -10377,6 +10399,11 @@ def _ee_probe_op_mutation_boundary(
     ``audit_op_mutation_boundary`` (reused verbatim) via the EE probe module,
     which appends a non-blocking ``CompileAdjudication`` on an out-of-boundary
     escape. Never mutates the body or blocks the op.
+
+    ``declared_recovery_prefixes`` carries the concrete recovery-retargeted full
+    paths surfaced by ``_ee_apply_op``; they extend the op's declared mutation
+    boundary so a write the recovery lane intentionally landed at a deeper node
+    reads as authorized (within-boundary) rather than an unexplained escape.
     """
     from lawvm.estonia.per_op_audit_probe import probe_ee_op_mutation_boundary
 
@@ -10387,6 +10414,7 @@ def _ee_probe_op_mutation_boundary(
         op_id=op_id,
         adjudications_out=adjudications_out,
         source_statute=source_statute,
+        declared_recovery_prefixes=tuple(declared_recovery_prefixes),
     )
 
 
@@ -10729,7 +10757,23 @@ def apply_ee_ops(
             continue
 
         pre_op_body = body
-        new_body = _ee_apply_op(body, op, adjudications_out=adjudications_out)
+        # When the per-op mutation-boundary probe is ON, collect the concrete
+        # full paths of any recovery lane that INTENTIONALLY retargets the write
+        # to a deeper/different node than the op's nominal target (e.g. a
+        # section-level ``item`` text_replace resolved to the unique descendant
+        # ``subsection/item``). These are declared to the probe as authorized
+        # ``declared_recovery`` boundary extensions so the audit reads the landed
+        # write as within-boundary rather than an unexplained escape. The carrier
+        # stays ``None`` (no allocation, no behaviour change) when the probe is
+        # off, preserving byte-identical production replay.
+        probe_on = _ee_mutation_boundary_probe_enabled()
+        declared_recovery_paths: Optional[list[tree_ops.Path]] = [] if probe_on else None
+        new_body = _ee_apply_op(
+            body,
+            op,
+            adjudications_out=adjudications_out,
+            declared_recovery_paths_out=declared_recovery_paths,
+        )
         changed = new_body is not body
         body = new_body
 
@@ -10740,7 +10784,7 @@ def apply_ee_ops(
         # out-of-boundary changed path into the EE adjudication sink without
         # mutating the body or blocking the op. With the flag unset the call is
         # skipped entirely so production replay stays byte-identical.
-        if changed and _ee_mutation_boundary_probe_enabled():
+        if changed and probe_on:
             _ee_probe_op_mutation_boundary(
                 before=pre_op_body,
                 after=new_body,
@@ -10748,6 +10792,7 @@ def apply_ee_ops(
                 op_id=op.op_id,
                 adjudications_out=adjudications_out,
                 source_statute=op.source.statute_id if op.source is not None else "",
+                declared_recovery_prefixes=tuple(declared_recovery_paths or ()),
             )
 
         target_resolved: bool = True

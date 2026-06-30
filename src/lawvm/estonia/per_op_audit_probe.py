@@ -54,6 +54,7 @@ from lawvm.core.commencement_totality_audit import (
     assert_effect_totality,
 )
 from lawvm.core.ir import IRNode, LegalOperation
+from lawvm.core.mutation_boundary import TreePath
 from lawvm.core.mutation_boundary_proof import (
     PerOpMutationBoundaryVerdict,
     audit_op_mutation_boundary,
@@ -109,6 +110,7 @@ def probe_ee_op_mutation_boundary(
     op_id: str,
     adjudications_out: Optional[list[CompileAdjudication]] = None,
     source_statute: str = "",
+    declared_recovery_prefixes: Sequence[TreePath] = (),
 ) -> Optional[PerOpMutationBoundaryVerdict]:
     """Run the per-op mutation-boundary probe (D1), appending each
     ``out_of_boundary`` shortfall as a non-blocking ``CompileAdjudication``.
@@ -123,6 +125,14 @@ def probe_ee_op_mutation_boundary(
     record cannot drift from the core producer (or from UK / FI, which consume
     the same producer family).
 
+    ``declared_recovery_prefixes`` carries the concrete full paths that a recovery
+    lane INTENTIONALLY retargeted the write to (surfaced by the EE apply fold) —
+    e.g. a section-level ``item`` text_replace resolved to the unique descendant
+    ``subsection/item``. They are forwarded verbatim into the core audit's
+    ``declared_recovery_prefixes`` so the landed write reads as an authorized
+    within-boundary recovery, not an unexplained escape. This records the SPECIFIC
+    recovered target — it is not a blanket boundary widening.
+
     Returns the typed verdict on an out-of-boundary escape (also projected to
     ``adjudications_out`` when supplied); returns ``None`` on a clean apply or a
     ``None`` snapshot — emitting nothing (no diagnostic noise on a clean apply).
@@ -136,6 +146,7 @@ def probe_ee_op_mutation_boundary(
         op_id=str(op_id or ""),
         source_statute=str(source_statute or ""),
         is_strict=False,  # EE has no strict_profile lane yet (§2.9).
+        declared_recovery_prefixes=tuple(declared_recovery_prefixes),
         # EE op targets are rooted at the body's children and the EE body root is
         # an unwrapped IRNode(kind=BODY); the observed diff and declared op
         # surfaces already align, so ``strip_root_prefix`` stays () (unlike the
