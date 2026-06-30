@@ -79,6 +79,10 @@ from lawvm.core.mutation_boundary import (
 )
 from lawvm.core.semantic_types import FacetKind, IRNodeKind, StructuralAction, TextPatchKindEnum
 from lawvm.replay_adjudication import CompileAdjudication
+from lawvm.sweden.mutation_boundary_per_op_probe import (
+    boundary_probe_enabled as _se_boundary_probe_enabled,
+    probe_op_mutation_boundary as _se_probe_op_mutation_boundary,
+)
 from lawvm.core.write_receipt import WriteReceipt, receipt_address_string
 
 _SFS_ID_RE = re.compile(r"\b(\d{4}:\d+)\b")
@@ -3521,282 +3525,308 @@ def apply_se_ops(
     body = statute.body
     supplements = list(statute.supplements)
     applied_op_count = 0
+    # §2.9 per-op mutation-boundary probe gate read once per apply (cached env
+    # read) so the per-op snapshot is taken only when opted in; default-off.
+    _se_boundary_probe_on = _se_boundary_probe_enabled()
     for op in ops:
-        leaf_kind = op.target.leaf_kind()
-        if leaf_kind == "section":
-            if op.target.special is FacetKind.HEADING:
-                if op.action is StructuralAction.INSERT:
-                    heading = op.payload
-                    if heading is None or heading.kind is not IRNodeKind.HEADING:
+        # §2.9 per-op mutation-boundary probe (LS-01 / §1.0): env-gated
+        # (LAWVM_SE_MUTATION_BOUNDARY_PER_OP=1), default-off. Snapshot the
+        # immutable IRNode body BEFORE this op mutates it; the after-snapshot
+        # is the (possibly reassigned) ``body`` read in the ``finally`` so the
+        # probe runs on every per-op path (including the ``continue`` skips).
+        # Observes the ``body`` tree only; appendix-only ops mutate the
+        # separate ``supplements`` lane and read clean here (conservative v0
+        # scope). ``_se_boundary_probe_on`` is a cached env read so the
+        # snapshot is only taken when opted in (default-off preserves
+        # byte-stable bench output; frozen-``IRNode`` direct reference, no
+        # deep-copy; AGENTS.md §2.7).
+        _se_boundary_before = body if _se_boundary_probe_on else None
+        try:
+            leaf_kind = op.target.leaf_kind()
+            if leaf_kind == "section":
+                if op.target.special is FacetKind.HEADING:
+                    if op.action is StructuralAction.INSERT:
+                        heading = op.payload
+                        if heading is None or heading.kind is not IRNodeKind.HEADING:
+                            _append_se_replay_adjudication(
+                                adjudications_out,
+                                kind="se_replay_payload_missing",
+                                message="Sweden heading insert skipped: payload missing or wrong kind.",
+                                op=op,
+                                detail={"action": op.action, "target": op.target.leaf_label()},
+                            )
+                            continue
+                        body = _insert_se_heading_before_section(body, op.target.leaf_label(), heading)
+                        applied_op_count += 1
+                        continue
+                    if op.action is StructuralAction.REPEAL:
+                        body = _remove_se_heading_before_section(body, op.target.leaf_label())
+                        applied_op_count += 1
+                        continue
+                    _append_se_replay_adjudication(
+                        adjudications_out,
+                        kind="se_replay_unsupported_action",
+                        message="Sweden heading replay skipped: unsupported action.",
+                        op=op,
+                        detail={"action": op.action, "target": op.target.leaf_label()},
+                    )
+                    continue
+                if op.action is StructuralAction.RENUMBER:
+                    section_label = op.target.leaf_label()
+                    destination_label = _label_norm(op.destination.leaf_label() if op.destination is not None else "")
+                    if not destination_label:
                         _append_se_replay_adjudication(
                             adjudications_out,
-                            kind="se_replay_payload_missing",
-                            message="Sweden heading insert skipped: payload missing or wrong kind.",
+                            kind="se_replay_destination_missing",
+                            message="Sweden renumber replay skipped: destination not provided.",
                             op=op,
-                            detail={"action": op.action, "target": op.target.leaf_label()},
+                            detail={"action": op.action, "target": section_label},
                         )
                         continue
-                    body = _insert_se_heading_before_section(body, op.target.leaf_label(), heading)
+                    section_path = tree_ops.find(body, "section", section_label)
+                    if section_path is None:
+                        _append_se_replay_adjudication(
+                            adjudications_out,
+                            kind="se_replay_target_not_found",
+                            message="Sweden renumber replay skipped: source section not found.",
+                            op=op,
+                            detail={"action": op.action, "target": section_label},
+                        )
+                        continue
+                    if tree_ops.find(body, "section", destination_label) is not None:
+                        _append_se_replay_adjudication(
+                            adjudications_out,
+                            kind="se_replay_renumber_collision",
+                            message="Sweden renumber replay skipped: destination already exists.",
+                            op=op,
+                            detail={"action": op.action, "target": section_label, "destination": destination_label},
+                        )
+                        continue
+                    existing = tree_ops.resolve(body, section_path)
+                    if existing is None:
+                        _append_se_replay_adjudication(
+                            adjudications_out,
+                            kind="se_replay_target_not_found",
+                            message="Sweden renumber replay skipped: source section could not be resolved.",
+                            op=op,
+                            detail={"action": op.action, "target": section_label},
+                        )
+                        continue
+                    moved = _clone_se_node_with_label(existing, destination_label)
+                    body = tree_ops.remove_at(body, section_path)
+                    parent_path = _find_se_section_parent_path(body, destination_label)
+                    body = tree_ops.insert_sorted(body, list(parent_path), moved, sort_key_fn=_se_label_sort_key)
                     applied_op_count += 1
                     continue
                 if op.action is StructuralAction.REPEAL:
-                    body = _remove_se_heading_before_section(body, op.target.leaf_label())
+                    section_label = op.target.leaf_label()
+                    section_path = tree_ops.find(body, "section", section_label)
+                    if section_path is None:
+                        _append_se_replay_adjudication(
+                            adjudications_out,
+                            kind="se_replay_target_not_found",
+                            message="Sweden section repeal skipped: target not found.",
+                            op=op,
+                            detail={"action": op.action, "target": section_label},
+                        )
+                        continue
+                    body = tree_ops.remove_at(body, section_path)
+                    applied_op_count += 1
+                    continue
+                if op.action is StructuralAction.TEXT_REPLACE:
+                    section_label = op.target.leaf_label()
+                    section_path = tree_ops.find(body, "section", section_label)
+                    if section_path is None:
+                        _append_se_replay_adjudication(
+                            adjudications_out,
+                            kind="se_replay_target_not_found",
+                            message="Sweden section text replacement skipped: target not found.",
+                            op=op,
+                            detail={"action": op.action, "target": section_label},
+                        )
+                        continue
+                    patch = op.text_patch
+                    if patch is None:
+                        _append_se_replay_adjudication(
+                            adjudications_out,
+                            kind="se_replay_payload_missing",
+                            message="Sweden section text replacement skipped: structured text_patch missing.",
+                            op=op,
+                            detail={"action": op.action, "target": section_label},
+                        )
+                        continue
+                    old_text = _normalize_space(patch.selector.match_text)
+                    new_text = _normalize_space(patch.replacement or "")
+                    if not old_text and op.payload is not None:
+                        old_text = _normalize_space(str(op.payload.attrs.get("old_text") or ""))
+                    if not new_text and op.payload is not None:
+                        new_text = _normalize_space(op.payload.text or "")
+                    if not old_text or not new_text:
+                        _append_se_replay_adjudication(
+                            adjudications_out,
+                            kind="se_replay_payload_missing",
+                            message="Sweden section text replacement skipped: old or new text missing.",
+                            op=op,
+                            detail={"action": op.action, "target": section_label},
+                        )
+                        continue
+                    section_node = tree_ops.resolve(body, section_path)
+                    if section_node is None:
+                        _append_se_replay_adjudication(
+                            adjudications_out,
+                            kind="se_replay_target_not_found",
+                            message="Sweden section text replacement skipped: source section could not be resolved.",
+                            op=op,
+                            detail={"action": op.action, "target": section_label},
+                        )
+                        continue
+                    replaced_section, changed = _replace_se_text_in_node(section_node, old_text, new_text)
+                    if not changed:
+                        _append_se_replay_adjudication(
+                            adjudications_out,
+                            kind="se_replay_text_replace_no_match",
+                            message="Sweden section text replacement skipped: old text not found in target subtree.",
+                            op=op,
+                            detail={
+                                "action": op.action.value,
+                                "target": section_label,
+                                "old_text": old_text,
+                                "new_text": new_text,
+                            },
+                        )
+                        continue
+                    body = tree_ops.replace_at(body, section_path, replaced_section)
+                    applied_op_count += 1
+                    continue
+                if op.payload is None or op.payload.kind is not IRNodeKind.SECTION:
+                    _append_se_replay_adjudication(
+                        adjudications_out,
+                        kind="se_replay_payload_missing",
+                        message="Sweden section replay skipped: payload missing or wrong kind.",
+                        op=op,
+                        detail={"action": op.action, "target": op.target.leaf_label()},
+                    )
+                    continue
+                section_label = op.target.leaf_label()
+                section_path = tree_ops.find(body, "section", section_label)
+                if op.action is StructuralAction.REPLACE:
+                    if section_path is None:
+                        _append_se_replay_adjudication(
+                            adjudications_out,
+                            kind="se_replay_target_not_found",
+                            message="Sweden section replace skipped: target not found.",
+                            op=op,
+                            detail={"action": op.action, "target": section_label},
+                        )
+                        continue
+                    body = tree_ops.replace_at(body, section_path, op.payload)
+                    applied_op_count += 1
+                    continue
+                if op.action is StructuralAction.INSERT:
+                    if section_path is not None:
+                        _append_se_replay_adjudication(
+                            adjudications_out,
+                            kind="se_replay_unsupported_action",
+                            message="Sweden section insert replay skipped: section already exists.",
+                            op=op,
+                            detail={"action": op.action, "target": section_label},
+                        )
+                        continue
+                    parent_path = _find_se_section_parent_path(body, section_label)
+                    body = tree_ops.insert_sorted(body, list(parent_path), op.payload, sort_key_fn=_se_label_sort_key)
                     applied_op_count += 1
                     continue
                 _append_se_replay_adjudication(
                     adjudications_out,
                     kind="se_replay_unsupported_action",
-                    message="Sweden heading replay skipped: unsupported action.",
+                    message="Sweden section replay skipped: unsupported action.",
                     op=op,
-                    detail={"action": op.action, "target": op.target.leaf_label()},
+                    detail={"action": op.action, "target": section_label},
                 )
                 continue
-            if op.action is StructuralAction.RENUMBER:
-                section_label = op.target.leaf_label()
-                destination_label = _label_norm(op.destination.leaf_label() if op.destination is not None else "")
-                if not destination_label:
-                    _append_se_replay_adjudication(
-                        adjudications_out,
-                        kind="se_replay_destination_missing",
-                        message="Sweden renumber replay skipped: destination not provided.",
-                        op=op,
-                        detail={"action": op.action, "target": section_label},
-                    )
+            if leaf_kind == "appendix":
+                appendix_label = _label_norm(op.target.leaf_label())
+                existing_index = next(
+                    (
+                        idx
+                        for idx, supplement in enumerate(supplements)
+                        if supplement.kind is IRNodeKind.APPENDIX and _label_norm(supplement.label or "") == appendix_label
+                    ),
+                    None,
+                )
+                if op.action is StructuralAction.REPEAL:
+                    if existing_index is None:
+                        _append_se_replay_adjudication(
+                            adjudications_out,
+                            kind="se_replay_target_not_found",
+                            message="Sweden appendix repeal replay skipped: target not found.",
+                            op=op,
+                            detail={"action": op.action, "target": appendix_label},
+                        )
+                        continue
+                    supplements.pop(existing_index)
+                    applied_op_count += 1
                     continue
-                section_path = tree_ops.find(body, "section", section_label)
-                if section_path is None:
-                    _append_se_replay_adjudication(
-                        adjudications_out,
-                        kind="se_replay_target_not_found",
-                        message="Sweden renumber replay skipped: source section not found.",
-                        op=op,
-                        detail={"action": op.action, "target": section_label},
-                    )
-                    continue
-                if tree_ops.find(body, "section", destination_label) is not None:
-                    _append_se_replay_adjudication(
-                        adjudications_out,
-                        kind="se_replay_renumber_collision",
-                        message="Sweden renumber replay skipped: destination already exists.",
-                        op=op,
-                        detail={"action": op.action, "target": section_label, "destination": destination_label},
-                    )
-                    continue
-                existing = tree_ops.resolve(body, section_path)
-                if existing is None:
-                    _append_se_replay_adjudication(
-                        adjudications_out,
-                        kind="se_replay_target_not_found",
-                        message="Sweden renumber replay skipped: source section could not be resolved.",
-                        op=op,
-                        detail={"action": op.action, "target": section_label},
-                    )
-                    continue
-                moved = _clone_se_node_with_label(existing, destination_label)
-                body = tree_ops.remove_at(body, section_path)
-                parent_path = _find_se_section_parent_path(body, destination_label)
-                body = tree_ops.insert_sorted(body, list(parent_path), moved, sort_key_fn=_se_label_sort_key)
-                applied_op_count += 1
-                continue
-            if op.action is StructuralAction.REPEAL:
-                section_label = op.target.leaf_label()
-                section_path = tree_ops.find(body, "section", section_label)
-                if section_path is None:
-                    _append_se_replay_adjudication(
-                        adjudications_out,
-                        kind="se_replay_target_not_found",
-                        message="Sweden section repeal skipped: target not found.",
-                        op=op,
-                        detail={"action": op.action, "target": section_label},
-                    )
-                    continue
-                body = tree_ops.remove_at(body, section_path)
-                applied_op_count += 1
-                continue
-            if op.action is StructuralAction.TEXT_REPLACE:
-                section_label = op.target.leaf_label()
-                section_path = tree_ops.find(body, "section", section_label)
-                if section_path is None:
-                    _append_se_replay_adjudication(
-                        adjudications_out,
-                        kind="se_replay_target_not_found",
-                        message="Sweden section text replacement skipped: target not found.",
-                        op=op,
-                        detail={"action": op.action, "target": section_label},
-                    )
-                    continue
-                patch = op.text_patch
-                if patch is None:
+                if op.payload is None or op.payload.kind is not IRNodeKind.APPENDIX:
                     _append_se_replay_adjudication(
                         adjudications_out,
                         kind="se_replay_payload_missing",
-                        message="Sweden section text replacement skipped: structured text_patch missing.",
-                        op=op,
-                        detail={"action": op.action, "target": section_label},
-                    )
-                    continue
-                old_text = _normalize_space(patch.selector.match_text)
-                new_text = _normalize_space(patch.replacement or "")
-                if not old_text and op.payload is not None:
-                    old_text = _normalize_space(str(op.payload.attrs.get("old_text") or ""))
-                if not new_text and op.payload is not None:
-                    new_text = _normalize_space(op.payload.text or "")
-                if not old_text or not new_text:
-                    _append_se_replay_adjudication(
-                        adjudications_out,
-                        kind="se_replay_payload_missing",
-                        message="Sweden section text replacement skipped: old or new text missing.",
-                        op=op,
-                        detail={"action": op.action, "target": section_label},
-                    )
-                    continue
-                section_node = tree_ops.resolve(body, section_path)
-                if section_node is None:
-                    _append_se_replay_adjudication(
-                        adjudications_out,
-                        kind="se_replay_target_not_found",
-                        message="Sweden section text replacement skipped: source section could not be resolved.",
-                        op=op,
-                        detail={"action": op.action, "target": section_label},
-                    )
-                    continue
-                replaced_section, changed = _replace_se_text_in_node(section_node, old_text, new_text)
-                if not changed:
-                    _append_se_replay_adjudication(
-                        adjudications_out,
-                        kind="se_replay_text_replace_no_match",
-                        message="Sweden section text replacement skipped: old text not found in target subtree.",
-                        op=op,
-                        detail={
-                            "action": op.action.value,
-                            "target": section_label,
-                            "old_text": old_text,
-                            "new_text": new_text,
-                        },
-                    )
-                    continue
-                body = tree_ops.replace_at(body, section_path, replaced_section)
-                applied_op_count += 1
-                continue
-            if op.payload is None or op.payload.kind is not IRNodeKind.SECTION:
-                _append_se_replay_adjudication(
-                    adjudications_out,
-                    kind="se_replay_payload_missing",
-                    message="Sweden section replay skipped: payload missing or wrong kind.",
-                    op=op,
-                    detail={"action": op.action, "target": op.target.leaf_label()},
-                )
-                continue
-            section_label = op.target.leaf_label()
-            section_path = tree_ops.find(body, "section", section_label)
-            if op.action is StructuralAction.REPLACE:
-                if section_path is None:
-                    _append_se_replay_adjudication(
-                        adjudications_out,
-                        kind="se_replay_target_not_found",
-                        message="Sweden section replace skipped: target not found.",
-                        op=op,
-                        detail={"action": op.action, "target": section_label},
-                    )
-                    continue
-                body = tree_ops.replace_at(body, section_path, op.payload)
-                applied_op_count += 1
-                continue
-            if op.action is StructuralAction.INSERT:
-                if section_path is not None:
-                    _append_se_replay_adjudication(
-                        adjudications_out,
-                        kind="se_replay_unsupported_action",
-                        message="Sweden section insert replay skipped: section already exists.",
-                        op=op,
-                        detail={"action": op.action, "target": section_label},
-                    )
-                    continue
-                parent_path = _find_se_section_parent_path(body, section_label)
-                body = tree_ops.insert_sorted(body, list(parent_path), op.payload, sort_key_fn=_se_label_sort_key)
-                applied_op_count += 1
-                continue
-            _append_se_replay_adjudication(
-                adjudications_out,
-                kind="se_replay_unsupported_action",
-                message="Sweden section replay skipped: unsupported action.",
-                op=op,
-                detail={"action": op.action, "target": section_label},
-            )
-            continue
-        if leaf_kind == "appendix":
-            appendix_label = _label_norm(op.target.leaf_label())
-            existing_index = next(
-                (
-                    idx
-                    for idx, supplement in enumerate(supplements)
-                    if supplement.kind is IRNodeKind.APPENDIX and _label_norm(supplement.label or "") == appendix_label
-                ),
-                None,
-            )
-            if op.action is StructuralAction.REPEAL:
-                if existing_index is None:
-                    _append_se_replay_adjudication(
-                        adjudications_out,
-                        kind="se_replay_target_not_found",
-                        message="Sweden appendix repeal replay skipped: target not found.",
+                        message="Sweden appendix replay skipped: payload missing or wrong kind.",
                         op=op,
                         detail={"action": op.action, "target": appendix_label},
                     )
                     continue
-                supplements.pop(existing_index)
-                applied_op_count += 1
-                continue
-            if op.payload is None or op.payload.kind is not IRNodeKind.APPENDIX:
+                if op.action is StructuralAction.REPLACE:
+                    if existing_index is None:
+                        _append_se_replay_adjudication(
+                            adjudications_out,
+                            kind="se_replay_target_not_found",
+                            message="Sweden appendix replace replay skipped: target not found.",
+                            op=op,
+                            detail={"action": op.action, "target": appendix_label},
+                        )
+                        continue
+                    supplements[existing_index] = op.payload
+                    applied_op_count += 1
+                    continue
+                if op.action is StructuralAction.INSERT:
+                    if existing_index is not None:
+                        _append_se_replay_adjudication(
+                            adjudications_out,
+                            kind="se_replay_unsupported_action",
+                            message="Sweden appendix insert replay skipped: appendix already exists.",
+                            op=op,
+                            detail={"action": op.action, "target": appendix_label},
+                        )
+                        continue
+                    supplements = _insert_se_appendix_sorted(supplements, op.payload)
+                    applied_op_count += 1
+                    continue
                 _append_se_replay_adjudication(
                     adjudications_out,
-                    kind="se_replay_payload_missing",
-                    message="Sweden appendix replay skipped: payload missing or wrong kind.",
+                    kind="se_replay_unsupported_action",
+                    message="Sweden appendix replay skipped: unsupported action.",
                     op=op,
                     detail={"action": op.action, "target": appendix_label},
                 )
                 continue
-            if op.action is StructuralAction.REPLACE:
-                if existing_index is None:
-                    _append_se_replay_adjudication(
-                        adjudications_out,
-                        kind="se_replay_target_not_found",
-                        message="Sweden appendix replace replay skipped: target not found.",
-                        op=op,
-                        detail={"action": op.action, "target": appendix_label},
-                    )
-                    continue
-                supplements[existing_index] = op.payload
-                applied_op_count += 1
-                continue
-            if op.action is StructuralAction.INSERT:
-                if existing_index is not None:
-                    _append_se_replay_adjudication(
-                        adjudications_out,
-                        kind="se_replay_unsupported_action",
-                        message="Sweden appendix insert replay skipped: appendix already exists.",
-                        op=op,
-                        detail={"action": op.action, "target": appendix_label},
-                    )
-                    continue
-                supplements = _insert_se_appendix_sorted(supplements, op.payload)
-                applied_op_count += 1
-                continue
             _append_se_replay_adjudication(
                 adjudications_out,
-                kind="se_replay_unsupported_action",
-                message="Sweden appendix replay skipped: unsupported action.",
+                kind="se_replay_unsupported_target_kind",
+                message="Sweden replay skipped: unsupported target kind.",
                 op=op,
-                detail={"action": op.action, "target": appendix_label},
+                detail={"target_kind": leaf_kind, "target": op.target.leaf_label(), "action": op.action},
             )
-            continue
-        _append_se_replay_adjudication(
-            adjudications_out,
-            kind="se_replay_unsupported_target_kind",
-            message="Sweden replay skipped: unsupported target kind.",
-            op=op,
-            detail={"target_kind": leaf_kind, "target": op.target.leaf_label(), "action": op.action},
-        )
+        finally:
+            if _se_boundary_probe_on:
+                _se_probe_op_mutation_boundary(
+                    before=_se_boundary_before,
+                    after=body,
+                    op=op,
+                    op_id=op.op_id,
+                    adjudications_out=adjudications_out,
+                    source_statute=statute.statute_id,
+                )
     metadata = dict(statute.metadata)
     metadata["applied_op_count"] = metadata.get("applied_op_count", 0) + applied_op_count
     replayed_for_invariants = IRStatute(

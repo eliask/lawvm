@@ -63,6 +63,10 @@ from lawvm.core.semantic_types import (
 )
 from lawvm.core.quirks_disposition import QuirksDisposition
 from lawvm.core.write_receipt import WriteReceipt, receipt_address_string
+from lawvm.norway.mutation_boundary_per_op_probe import (
+    boundary_probe_enabled as _no_boundary_probe_enabled,
+    probe_op_mutation_boundary as _no_probe_op_mutation_boundary,
+)
 from lawvm.norway.scope_confidence import NOScopeConfidence
 
 NO_PARSE_REPLACE_PROMOTED_TO_INSERT_FOR_RENUMBER = "no_parse_replace_promoted_to_insert_for_same_target_renumber"
@@ -3497,582 +3501,606 @@ def apply_no_ops(
             f"{op.target.path!r} from {source_id or '<unknown>'}"
         )
 
+    # §2.9 per-op mutation-boundary probe gate read once per apply (cached env
+    # read) so the per-op snapshot is taken only when opted in; default-off.
+    _no_boundary_probe_on = _no_boundary_probe_enabled()
     for op, renumber_sources in ordered_ops:
-        if _no_action_value(op.action) == "text_replace":
-            patch = op.text_patch
-            if patch is None:
-                _append_no_replay_adjudication(
-                    adjudications_out,
-                    kind="replay_unsupported_action",
-                    message="Norway replay skipped text_replace without structured text_patch.",
-                    op=op,
-                    detail={"action": _no_action_value(op.action), "target": str(op.target)},
-                )
-                _assert_no_invariant_violations(op)
-                continue
-            text_match = patch.selector.match_text
-            text_replacement = patch.replacement if patch.replacement is not None else ""
-            if not text_match or text_replacement is None:
-                _append_no_replay_adjudication(
-                    adjudications_out,
-                    kind="replay_unsupported_action",
-                    message="Norway replay skipped text_replace without match/replacement.",
-                    op=op,
-                    detail={"action": _no_action_value(op.action), "target": str(op.target)},
+        # §2.9 per-op mutation-boundary probe (LS-01 / §1.0): env-gated
+        # (LAWVM_NO_MUTATION_BOUNDARY_PER_OP=1), default-off. Snapshot the
+        # immutable IRNode body BEFORE this op mutates it; the after-snapshot
+        # is the (possibly reassigned) ``body`` read in the ``finally`` so the
+        # probe runs on every per-op path (including the ``continue`` skips).
+        # ``boundary_probe_on`` is a cached env read so the snapshot is only
+        # taken when opted in (default-off preserves byte-stable bench output;
+        # the fold is frozen-``IRNode`` so the snapshot is a direct reference
+        # with no deep-copy; AGENTS.md §2.7).
+        _no_boundary_before = body if _no_boundary_probe_on else None
+        try:
+            if _no_action_value(op.action) == "text_replace":
+                patch = op.text_patch
+                if patch is None:
+                    _append_no_replay_adjudication(
+                        adjudications_out,
+                        kind="replay_unsupported_action",
+                        message="Norway replay skipped text_replace without structured text_patch.",
+                        op=op,
+                        detail={"action": _no_action_value(op.action), "target": str(op.target)},
+                    )
+                    _assert_no_invariant_violations(op)
+                    continue
+                text_match = patch.selector.match_text
+                text_replacement = patch.replacement if patch.replacement is not None else ""
+                if not text_match or text_replacement is None:
+                    _append_no_replay_adjudication(
+                        adjudications_out,
+                        kind="replay_unsupported_action",
+                        message="Norway replay skipped text_replace without match/replacement.",
+                        op=op,
+                        detail={"action": _no_action_value(op.action), "target": str(op.target)},
+                    )
+                    _assert_no_invariant_violations(op)
+                    continue
+                if not op.target.path:
+                    body = _apply_no_text_replace(body, text_match, text_replacement)
+                    _assert_no_invariant_violations(op)
+                    continue
+                resolved_path = _resolve_no_path(body, op.target)
+                if resolved_path is None:
+                    _append_no_replay_adjudication(
+                        adjudications_out,
+                        kind="replay_unresolved_target",
+                        message="Norway replay skipped text_replace: target not found.",
+                        op=op,
+                        detail={"action": _no_action_value(op.action), "target": str(op.target)},
+                    )
+                    _assert_no_invariant_violations(op)
+                    continue
+                node = tree_ops.resolve(body, resolved_path)
+                if node is None:
+                    _append_no_replay_adjudication(
+                        adjudications_out,
+                        kind="replay_unresolved_target",
+                        message="Norway replay skipped text_replace: target not found.",
+                        op=op,
+                        detail={"action": _no_action_value(op.action), "target": str(op.target)},
+                    )
+                    _assert_no_invariant_violations(op)
+                    continue
+                body = tree_ops.replace_at(
+                    body,
+                    resolved_path,
+                    _apply_no_text_replace(node, text_match, text_replacement),
                 )
                 _assert_no_invariant_violations(op)
                 continue
             if not op.target.path:
-                body = _apply_no_text_replace(body, text_match, text_replacement)
-                _assert_no_invariant_violations(op)
-                continue
-            resolved_path = _resolve_no_path(body, op.target)
-            if resolved_path is None:
                 _append_no_replay_adjudication(
                     adjudications_out,
-                    kind="replay_unresolved_target",
-                    message="Norway replay skipped text_replace: target not found.",
+                    kind="replay_noop",
+                    message="Norway replay skipped operation with missing target path.",
+                    op=op,
+                    detail={"action": _no_action_value(op.action)},
+                )
+                _assert_no_invariant_violations(op)
+                continue
+            if op.action not in {
+                StructuralAction.REPLACE,
+                StructuralAction.REPEAL,
+                StructuralAction.INSERT,
+                StructuralAction.RENUMBER,
+            }:
+                _append_no_replay_adjudication(
+                    adjudications_out,
+                    kind="replay_unsupported_action",
+                    message="Norway replay skipped unsupported action.",
                     op=op,
                     detail={"action": _no_action_value(op.action), "target": str(op.target)},
                 )
                 _assert_no_invariant_violations(op)
                 continue
-            node = tree_ops.resolve(body, resolved_path)
-            if node is None:
-                _append_no_replay_adjudication(
-                    adjudications_out,
-                    kind="replay_unresolved_target",
-                    message="Norway replay skipped text_replace: target not found.",
-                    op=op,
-                    detail={"action": _no_action_value(op.action), "target": str(op.target)},
-                )
-                _assert_no_invariant_violations(op)
-                continue
-            body = tree_ops.replace_at(
-                body,
-                resolved_path,
-                _apply_no_text_replace(node, text_match, text_replacement),
-            )
-            _assert_no_invariant_violations(op)
-            continue
-        if not op.target.path:
-            _append_no_replay_adjudication(
-                adjudications_out,
-                kind="replay_noop",
-                message="Norway replay skipped operation with missing target path.",
-                op=op,
-                detail={"action": _no_action_value(op.action)},
-            )
-            _assert_no_invariant_violations(op)
-            continue
-        if op.action not in {
-            StructuralAction.REPLACE,
-            StructuralAction.REPEAL,
-            StructuralAction.INSERT,
-            StructuralAction.RENUMBER,
-        }:
-            _append_no_replay_adjudication(
-                adjudications_out,
-                kind="replay_unsupported_action",
-                message="Norway replay skipped unsupported action.",
-                op=op,
-                detail={"action": _no_action_value(op.action), "target": str(op.target)},
-            )
-            _assert_no_invariant_violations(op)
-            continue
-        if op.target.leaf_kind() == "sentence" and op.target.parent() is not None:
-            parent_path = _resolve_no_path(body, cast(LegalAddress, op.target.parent()))
-            if parent_path is not None:
-                body, materialized_count = _materialize_no_sentence_children_with_count(body, parent_path)
-                if materialized_count:
-                    _record_structural_recovery(
-                        kind="no_replay_sentence_children_materialized",
-                        message=(
-                            "Norway replay materialized sentence children from parent text "
-                            "before applying a sentence-level operation."
-                        ),
-                        op=op,
-                        detail={
-                            "rule_id": "no_sentence_text_materialized_for_sentence_target",
-                            "family": "ontology_normalization",
-                            "target": str(op.target),
-                            "materialized_parent_path": _no_path_label(parent_path),
-                            "materialized_sentence_count": materialized_count,
-                        },
-                    )
-        resolved_path = _resolve_no_path(body, op.target)
-        if (
-            resolved_path is None
-            and op.target.leaf_kind() == "sentence"
-            and op.target.leaf_label() == "last"
-            and op.target.parent() is not None
-        ):
-            parent_path = _resolve_no_path(body, cast(LegalAddress, op.target.parent()))
-            if parent_path is not None:
-                resolved_path = _resolve_no_last_child_path(body, parent_path, "sentence")
-        if resolved_path is None and op.target.leaf_kind() == "sentence":
-            body, resolved_path, shallow_host_path, materialized_count = _resolve_shallow_no_sentence_path(
-                body,
-                op.target,
-            )
-            if shallow_host_path is not None and materialized_count:
-                _record_structural_recovery(
-                    kind="no_replay_sentence_children_materialized",
-                    message=(
-                        "Norway replay materialized sentence children from a unique shallow "
-                        "sentence host before applying a sentence-level operation."
-                    ),
-                    op=op,
-                    detail={
-                        "rule_id": "no_sentence_text_materialized_for_shallow_sentence_target",
-                        "family": "ontology_normalization",
-                        "target": str(op.target),
-                        "materialized_parent_path": _no_path_label(shallow_host_path),
-                        "materialized_sentence_count": materialized_count,
-                    },
-                )
-            if resolved_path is not None and shallow_host_path is not None:
-                _record_structural_recovery(
-                    kind="no_replay_shallow_sentence_target_rebound",
-                    message=(
-                        "Norway replay resolved a section-level sentence target through "
-                        "the section's unique direct sentence host."
-                    ),
-                    op=op,
-                    detail={
-                        "rule_id": "no_shallow_sentence_target_rebound_to_unique_host",
-                        "family": "target_resolution_recovery",
-                        "target": str(op.target),
-                        "resolved_path": _no_path_label(resolved_path),
-                        "host_path": _no_path_label(shallow_host_path),
-                    },
-                )
-
-        if op.action is StructuralAction.REPLACE and op.payload is not None:
-            payload = op.payload
-            if resolved_path is not None and _no_kind_value(payload.kind) == "sentence" and payload.label == "last":
-                resolved_node = tree_ops.resolve(body, resolved_path)
-                if resolved_node is not None and resolved_node.label:
-                    payload = _with_no_node_label(payload, resolved_node.label)
-            if resolved_path is None:
-                if (
-                    op.target.leaf_kind() == "sentence"
-                    and _no_kind_value(payload.kind) == "sentence"
-                    and op.target.parent() is not None
-                ):
-                    target_parent = cast(LegalAddress, op.target.parent())
-                    resolved_parent = _resolve_no_path(body, target_parent)
-                    if (
-                        resolved_parent is not None
-                        and _find_direct_child_path(
-                            body,
-                            resolved_parent,
-                            "sentence",
-                            op.payload.label,
-                        )
-                        is None
-                        and _appendable_no_sentence_target(
-                            body,
-                            resolved_parent,
-                            op.target.leaf_label(),
-                        )
-                    ):
-                        _record_action_family_recovery(
-                            kind="no_replay_replace_recovered_by_insert",
-                            message="Norway replay recovered missing-target replace by inserting a sentence.",
-                            op=op,
-                            detail={
-                                "rule_id": "no_replace_missing_sentence_append_to_resolved_parent",
-                                "original_action": "replace",
-                                "executed_action": "insert",
-                                "target": str(op.target),
-                                "insert_parent_path": _no_path_label(resolved_parent),
-                                **_no_replay_payload_detail(payload),
-                            },
-                        )
-                        body = tree_ops.insert_sorted(
-                            body,
-                            resolved_parent,
-                            payload,
-                            sort_key_fn=_no_sort_key,
-                        )
-                        _assert_no_invariant_violations(op)
-                        continue
-                if op.target.leaf_kind() == "sentence" and _no_kind_value(payload.kind) == "sentence":
-                    body, shallow_host_path, materialized_count = _resolve_shallow_no_sentence_host_path(body, op.target)
-                    if shallow_host_path is not None and materialized_count:
+            if op.target.leaf_kind() == "sentence" and op.target.parent() is not None:
+                parent_path = _resolve_no_path(body, cast(LegalAddress, op.target.parent()))
+                if parent_path is not None:
+                    body, materialized_count = _materialize_no_sentence_children_with_count(body, parent_path)
+                    if materialized_count:
                         _record_structural_recovery(
                             kind="no_replay_sentence_children_materialized",
                             message=(
-                                "Norway replay materialized sentence children from a unique shallow "
-                                "sentence host before recovering replace as insert."
+                                "Norway replay materialized sentence children from parent text "
+                                "before applying a sentence-level operation."
                             ),
                             op=op,
                             detail={
-                                "rule_id": "no_sentence_text_materialized_for_shallow_sentence_target",
+                                "rule_id": "no_sentence_text_materialized_for_sentence_target",
                                 "family": "ontology_normalization",
                                 "target": str(op.target),
-                                "materialized_parent_path": _no_path_label(shallow_host_path),
+                                "materialized_parent_path": _no_path_label(parent_path),
                                 "materialized_sentence_count": materialized_count,
                             },
                         )
-                    if shallow_host_path is not None:
-                        _record_structural_recovery(
-                            kind="no_replay_shallow_sentence_target_rebound",
-                            message=(
-                                "Norway replay resolved a section-level sentence target through "
-                                "the section's unique direct sentence host."
-                            ),
-                            op=op,
-                            detail={
-                                "rule_id": "no_shallow_sentence_target_rebound_to_unique_host",
-                                "family": "target_resolution_recovery",
-                                "target": str(op.target),
-                                "host_path": _no_path_label(shallow_host_path),
-                            },
-                        )
+            resolved_path = _resolve_no_path(body, op.target)
+            if (
+                resolved_path is None
+                and op.target.leaf_kind() == "sentence"
+                and op.target.leaf_label() == "last"
+                and op.target.parent() is not None
+            ):
+                parent_path = _resolve_no_path(body, cast(LegalAddress, op.target.parent()))
+                if parent_path is not None:
+                    resolved_path = _resolve_no_last_child_path(body, parent_path, "sentence")
+            if resolved_path is None and op.target.leaf_kind() == "sentence":
+                body, resolved_path, shallow_host_path, materialized_count = _resolve_shallow_no_sentence_path(
+                    body,
+                    op.target,
+                )
+                if shallow_host_path is not None and materialized_count:
+                    _record_structural_recovery(
+                        kind="no_replay_sentence_children_materialized",
+                        message=(
+                            "Norway replay materialized sentence children from a unique shallow "
+                            "sentence host before applying a sentence-level operation."
+                        ),
+                        op=op,
+                        detail={
+                            "rule_id": "no_sentence_text_materialized_for_shallow_sentence_target",
+                            "family": "ontology_normalization",
+                            "target": str(op.target),
+                            "materialized_parent_path": _no_path_label(shallow_host_path),
+                            "materialized_sentence_count": materialized_count,
+                        },
+                    )
+                if resolved_path is not None and shallow_host_path is not None:
+                    _record_structural_recovery(
+                        kind="no_replay_shallow_sentence_target_rebound",
+                        message=(
+                            "Norway replay resolved a section-level sentence target through "
+                            "the section's unique direct sentence host."
+                        ),
+                        op=op,
+                        detail={
+                            "rule_id": "no_shallow_sentence_target_rebound_to_unique_host",
+                            "family": "target_resolution_recovery",
+                            "target": str(op.target),
+                            "resolved_path": _no_path_label(resolved_path),
+                            "host_path": _no_path_label(shallow_host_path),
+                        },
+                    )
+
+            if op.action is StructuralAction.REPLACE and op.payload is not None:
+                payload = op.payload
+                if resolved_path is not None and _no_kind_value(payload.kind) == "sentence" and payload.label == "last":
+                    resolved_node = tree_ops.resolve(body, resolved_path)
+                    if resolved_node is not None and resolved_node.label:
+                        payload = _with_no_node_label(payload, resolved_node.label)
+                if resolved_path is None:
                     if (
-                        shallow_host_path is not None
-                        and _find_direct_child_path(
-                            body,
-                            shallow_host_path,
-                            "sentence",
-                            op.payload.label,
-                        )
-                        is None
-                        and _appendable_no_sentence_target(
-                            body,
-                            shallow_host_path,
-                            op.target.leaf_label(),
-                        )
+                        op.target.leaf_kind() == "sentence"
+                        and _no_kind_value(payload.kind) == "sentence"
+                        and op.target.parent() is not None
                     ):
-                        _record_action_family_recovery(
-                            kind="no_replay_replace_recovered_by_insert",
-                            message="Norway replay recovered missing-target replace by inserting a sentence.",
-                            op=op,
-                            detail={
-                                "rule_id": "no_replace_missing_sentence_append_to_shallow_host",
-                                "original_action": "replace",
-                                "executed_action": "insert",
-                                "target": str(op.target),
-                                "insert_parent_path": _no_path_label(shallow_host_path),
-                                **_no_replay_payload_detail(payload),
-                            },
-                        )
-                        body = tree_ops.insert_sorted(
-                            body,
-                            shallow_host_path,
-                            payload,
-                            sort_key_fn=_no_sort_key,
-                        )
-                        _assert_no_invariant_violations(op)
-                        continue
-                if (
-                    op.target.leaf_kind() == "item"
-                    and _no_kind_value(payload.kind) == "item"
-                    and payload.label == "last"
-                    and op.target.parent() is not None
-                ):
-                    target_parent = cast(LegalAddress, op.target.parent())
-                    resolved_parent = _resolve_no_path(body, target_parent)
-                    if resolved_parent is not None:
-                        append_payload = _appendable_no_item_payload(body, resolved_parent, payload)
+                        target_parent = cast(LegalAddress, op.target.parent())
+                        resolved_parent = _resolve_no_path(body, target_parent)
                         if (
-                            _find_direct_child_path(
+                            resolved_parent is not None
+                            and _find_direct_child_path(
                                 body,
                                 resolved_parent,
-                                "item",
-                                append_payload.label,
+                                "sentence",
+                                op.payload.label,
                             )
                             is None
+                            and _appendable_no_sentence_target(
+                                body,
+                                resolved_parent,
+                                op.target.leaf_label(),
+                            )
                         ):
                             _record_action_family_recovery(
                                 kind="no_replay_replace_recovered_by_insert",
-                                message="Norway replay recovered missing-target replace by inserting an item.",
+                                message="Norway replay recovered missing-target replace by inserting a sentence.",
                                 op=op,
                                 detail={
-                                    "rule_id": "no_replace_missing_last_item_append_to_parent",
+                                    "rule_id": "no_replace_missing_sentence_append_to_resolved_parent",
                                     "original_action": "replace",
                                     "executed_action": "insert",
                                     "target": str(op.target),
                                     "insert_parent_path": _no_path_label(resolved_parent),
-                                    **_no_replay_payload_detail(append_payload),
+                                    **_no_replay_payload_detail(payload),
                                 },
                             )
                             body = tree_ops.insert_sorted(
                                 body,
                                 resolved_parent,
-                                append_payload,
+                                payload,
                                 sort_key_fn=_no_sort_key,
                             )
                             _assert_no_invariant_violations(op)
                             continue
-                if _no_kind_value(payload.kind) == "section" and op.target.leaf_kind() == "section":
-                    parent_path: tree_ops.Path = ()
-                    if op.target.parent() is not None:
+                    if op.target.leaf_kind() == "sentence" and _no_kind_value(payload.kind) == "sentence":
+                        body, shallow_host_path, materialized_count = _resolve_shallow_no_sentence_host_path(body, op.target)
+                        if shallow_host_path is not None and materialized_count:
+                            _record_structural_recovery(
+                                kind="no_replay_sentence_children_materialized",
+                                message=(
+                                    "Norway replay materialized sentence children from a unique shallow "
+                                    "sentence host before recovering replace as insert."
+                                ),
+                                op=op,
+                                detail={
+                                    "rule_id": "no_sentence_text_materialized_for_shallow_sentence_target",
+                                    "family": "ontology_normalization",
+                                    "target": str(op.target),
+                                    "materialized_parent_path": _no_path_label(shallow_host_path),
+                                    "materialized_sentence_count": materialized_count,
+                                },
+                            )
+                        if shallow_host_path is not None:
+                            _record_structural_recovery(
+                                kind="no_replay_shallow_sentence_target_rebound",
+                                message=(
+                                    "Norway replay resolved a section-level sentence target through "
+                                    "the section's unique direct sentence host."
+                                ),
+                                op=op,
+                                detail={
+                                    "rule_id": "no_shallow_sentence_target_rebound_to_unique_host",
+                                    "family": "target_resolution_recovery",
+                                    "target": str(op.target),
+                                    "host_path": _no_path_label(shallow_host_path),
+                                },
+                            )
+                        if (
+                            shallow_host_path is not None
+                            and _find_direct_child_path(
+                                body,
+                                shallow_host_path,
+                                "sentence",
+                                op.payload.label,
+                            )
+                            is None
+                            and _appendable_no_sentence_target(
+                                body,
+                                shallow_host_path,
+                                op.target.leaf_label(),
+                            )
+                        ):
+                            _record_action_family_recovery(
+                                kind="no_replay_replace_recovered_by_insert",
+                                message="Norway replay recovered missing-target replace by inserting a sentence.",
+                                op=op,
+                                detail={
+                                    "rule_id": "no_replace_missing_sentence_append_to_shallow_host",
+                                    "original_action": "replace",
+                                    "executed_action": "insert",
+                                    "target": str(op.target),
+                                    "insert_parent_path": _no_path_label(shallow_host_path),
+                                    **_no_replay_payload_detail(payload),
+                                },
+                            )
+                            body = tree_ops.insert_sorted(
+                                body,
+                                shallow_host_path,
+                                payload,
+                                sort_key_fn=_no_sort_key,
+                            )
+                            _assert_no_invariant_violations(op)
+                            continue
+                    if (
+                        op.target.leaf_kind() == "item"
+                        and _no_kind_value(payload.kind) == "item"
+                        and payload.label == "last"
+                        and op.target.parent() is not None
+                    ):
                         target_parent = cast(LegalAddress, op.target.parent())
                         resolved_parent = _resolve_no_path(body, target_parent)
                         if resolved_parent is not None:
-                            parent_path = resolved_parent
-                        else:
-                            prefix_path, matched = _resolve_existing_prefix(body, target_parent)
-                            if prefix_path is None and matched == 0:
-                                _append_no_replay_adjudication(
-                                    adjudications_out,
-                                    kind="replay_unresolved_target",
-                                    message="Norway replay skipped operation: parent not found.",
+                            append_payload = _appendable_no_item_payload(body, resolved_parent, payload)
+                            if (
+                                _find_direct_child_path(
+                                    body,
+                                    resolved_parent,
+                                    "item",
+                                    append_payload.label,
+                                )
+                                is None
+                            ):
+                                _record_action_family_recovery(
+                                    kind="no_replay_replace_recovered_by_insert",
+                                    message="Norway replay recovered missing-target replace by inserting an item.",
                                     op=op,
                                     detail={
-                                        "action": _no_action_value(op.action),
+                                        "rule_id": "no_replace_missing_last_item_append_to_parent",
+                                        "original_action": "replace",
+                                        "executed_action": "insert",
                                         "target": str(op.target),
-                                        "target_parent": str(target_parent),
+                                        "insert_parent_path": _no_path_label(resolved_parent),
+                                        **_no_replay_payload_detail(append_payload),
                                     },
+                                )
+                                body = tree_ops.insert_sorted(
+                                    body,
+                                    resolved_parent,
+                                    append_payload,
+                                    sort_key_fn=_no_sort_key,
                                 )
                                 _assert_no_invariant_violations(op)
                                 continue
-                            body, parent_path = _ensure_no_container_chain(
+                    if _no_kind_value(payload.kind) == "section" and op.target.leaf_kind() == "section":
+                        parent_path: tree_ops.Path = ()
+                        if op.target.parent() is not None:
+                            target_parent = cast(LegalAddress, op.target.parent())
+                            resolved_parent = _resolve_no_path(body, target_parent)
+                            if resolved_parent is not None:
+                                parent_path = resolved_parent
+                            else:
+                                prefix_path, matched = _resolve_existing_prefix(body, target_parent)
+                                if prefix_path is None and matched == 0:
+                                    _append_no_replay_adjudication(
+                                        adjudications_out,
+                                        kind="replay_unresolved_target",
+                                        message="Norway replay skipped operation: parent not found.",
+                                        op=op,
+                                        detail={
+                                            "action": _no_action_value(op.action),
+                                            "target": str(op.target),
+                                            "target_parent": str(target_parent),
+                                        },
+                                    )
+                                    _assert_no_invariant_violations(op)
+                                    continue
+                                body, parent_path = _ensure_no_container_chain(
+                                    body,
+                                    prefix_path or (),
+                                    target_parent.path[matched:],
+                                )
+                        elif payload.label:
+                            inferred_section_parent = _infer_section_parent_path(
                                 body,
-                                prefix_path or (),
-                                target_parent.path[matched:],
+                                payload.label,
                             )
-                    elif payload.label:
-                        inferred_section_parent = _infer_section_parent_path(
-                            body,
-                            payload.label,
-                        )
-                        if inferred_section_parent is not None:
-                            parent_path = inferred_section_parent
-                    _record_action_family_recovery(
-                        kind="no_replay_replace_recovered_by_insert",
-                        message="Norway replay recovered missing-target replace by inserting a section.",
-                        op=op,
-                        detail={
-                            "rule_id": "no_replace_missing_section_insert",
-                            "original_action": "replace",
-                            "executed_action": "insert",
-                            "target": str(op.target),
-                            "insert_parent_path": _no_path_label(parent_path),
-                            **_no_replay_payload_detail(payload),
-                        },
-                    )
-                    body = tree_ops.insert_sorted(
-                        body,
-                        parent_path,
-                        payload,
-                        sort_key_fn=_no_sort_key,
-                    )
-                    _assert_no_invariant_violations(op)
-                    continue
-                _append_no_replay_adjudication(
-                    adjudications_out,
-                    kind="replay_unresolved_target",
-                    message="Norway replay skipped operation: target not found.",
-                    op=op,
-                    detail={"action": _no_action_value(op.action), "target": str(op.target)},
-                )
-                _assert_no_invariant_violations(op)
-                continue
-
-            existing = tree_ops.resolve(body, resolved_path)
-            if (
-                existing is not None
-                and _no_kind_value(existing.kind) == "section"
-                and _no_kind_value(op.payload.kind) == "section"
-                and not op.payload.text
-                and len(op.payload.children) == 1
-                and _no_kind_value(op.payload.children[0].kind) == "heading"
-            ):
-                merged_children = [op.payload.children[0]]
-                merged_children.extend(child for child in existing.children if _no_kind_value(child.kind) != "heading")
-                body = tree_ops.replace_at(
-                    body,
-                    resolved_path,
-                    IRNode(
-                        kind=existing.kind,
-                        label=existing.label,
-                        text=existing.text,
-                        attrs=dict(existing.attrs),
-                        children=tuple(merged_children),
-                    ),
-                )
-                _assert_no_invariant_violations(op)
-                continue
-            body = tree_ops.replace_at(body, resolved_path, payload)
-
-        elif op.action is StructuralAction.REPEAL:
-            if resolved_path is None:
-                _append_no_replay_adjudication(
-                    adjudications_out,
-                    kind="replay_unresolved_target",
-                    message="Norway replay skipped operation: target not found.",
-                    op=op,
-                    detail={"action": _no_action_value(op.action), "target": str(op.target)},
-                )
-                _assert_no_invariant_violations(op)
-                continue
-            body = tree_ops.remove_at(body, resolved_path)
-
-        elif op.action is StructuralAction.INSERT and op.payload is not None:
-            payload = op.payload
-            if resolved_path is not None:
-                _record_action_family_recovery(
-                    kind="no_replay_insert_occupied_target_replaced",
-                    message="Norway replay recovered insert into an occupied target by replacing that target.",
-                    op=op,
-                    detail={
-                        "rule_id": "no_insert_occupied_target_replace",
-                        "original_action": "insert",
-                        "executed_action": "replace",
-                        "target": str(op.target),
-                        "resolved_path": _no_path_label(resolved_path),
-                        **_no_replay_payload_detail(payload),
-                    },
-                )
-                body = tree_ops.replace_at(body, resolved_path, payload)
-                _assert_no_invariant_violations(op)
-                continue
-            parent_path: tree_ops.Path = ()
-            if op.target.parent() is not None:
-                target_parent = cast(LegalAddress, op.target.parent())
-                resolved_parent = _resolve_no_path(body, target_parent)
-                if resolved_parent is not None:
-                    parent_path = resolved_parent
-                else:
-                    prefix_path, matched = _resolve_existing_prefix(body, target_parent)
-                    if prefix_path is None and matched == 0:
-                        _append_no_replay_adjudication(
-                            adjudications_out,
-                            kind="replay_unresolved_target",
-                            message="Norway replay skipped operation: parent not found.",
+                            if inferred_section_parent is not None:
+                                parent_path = inferred_section_parent
+                        _record_action_family_recovery(
+                            kind="no_replay_replace_recovered_by_insert",
+                            message="Norway replay recovered missing-target replace by inserting a section.",
                             op=op,
                             detail={
-                                "action": _no_action_value(op.action),
+                                "rule_id": "no_replace_missing_section_insert",
+                                "original_action": "replace",
+                                "executed_action": "insert",
                                 "target": str(op.target),
-                                "target_parent": str(target_parent),
+                                "insert_parent_path": _no_path_label(parent_path),
+                                **_no_replay_payload_detail(payload),
                             },
+                        )
+                        body = tree_ops.insert_sorted(
+                            body,
+                            parent_path,
+                            payload,
+                            sort_key_fn=_no_sort_key,
                         )
                         _assert_no_invariant_violations(op)
                         continue
-                    body, parent_path = _ensure_no_container_chain(
-                        body,
-                        prefix_path or (),
-                        target_parent.path[matched:],
+                    _append_no_replay_adjudication(
+                        adjudications_out,
+                        kind="replay_unresolved_target",
+                        message="Norway replay skipped operation: target not found.",
+                        op=op,
+                        detail={"action": _no_action_value(op.action), "target": str(op.target)},
                     )
-            elif _no_kind_value(payload.kind) == "section" and payload.label:
-                inferred_section_parent = _infer_section_parent_path(body, payload.label)
-                if inferred_section_parent is not None:
-                    parent_path = inferred_section_parent
-            parent_node = tree_ops.resolve(body, parent_path) if parent_path else body
-            if parent_node is not None and _no_kind_value(payload.kind) == "item" and payload.label == "last":
-                payload = _with_no_node_label(payload, _next_no_child_label(parent_node, "item"))
-            if parent_node is not None:
-                inferred = _find_insert_parent(parent_node, str(payload.kind))
-                if inferred is not None:
-                    parent_path = parent_path + inferred
-            direct_existing_path = _find_direct_child_path(
-                body,
-                parent_path,
-                str(payload.kind),
-                payload.label,
-            )
-            if direct_existing_path is not None:
-                _record_action_family_recovery(
-                    kind="no_replay_insert_occupied_direct_child_replaced",
-                    message="Norway replay recovered insert into an occupied direct child by replacing that child.",
-                    op=op,
-                    detail={
-                        "rule_id": "no_insert_occupied_direct_child_replace",
-                        "original_action": "insert",
-                        "executed_action": "replace",
-                        "target": str(op.target),
-                        "parent_path": _no_path_label(parent_path),
-                        "occupied_child_path": _no_path_label(direct_existing_path),
-                        **_no_replay_payload_detail(payload),
-                    },
-                )
-                body = tree_ops.replace_at(
-                    body,
-                    direct_existing_path,
-                    payload,
-                )
-                _assert_no_invariant_violations(op)
-                continue
-            body = tree_ops.insert_sorted(
-                body,
-                parent_path,
-                payload,
-                sort_key_fn=_no_sort_key,
-            )
+                    _assert_no_invariant_violations(op)
+                    continue
 
-        elif op.action is StructuralAction.RENUMBER and op.destination is not None:
-            if resolved_path is None:
-                _append_no_replay_adjudication(
-                    adjudications_out,
-                    kind="replay_unresolved_target",
-                    message="Norway replay skipped operation: target not found.",
-                    op=op,
-                    detail={"action": _no_action_value(op.action), "target": str(op.target)},
+                existing = tree_ops.resolve(body, resolved_path)
+                if (
+                    existing is not None
+                    and _no_kind_value(existing.kind) == "section"
+                    and _no_kind_value(op.payload.kind) == "section"
+                    and not op.payload.text
+                    and len(op.payload.children) == 1
+                    and _no_kind_value(op.payload.children[0].kind) == "heading"
+                ):
+                    merged_children = [op.payload.children[0]]
+                    merged_children.extend(child for child in existing.children if _no_kind_value(child.kind) != "heading")
+                    body = tree_ops.replace_at(
+                        body,
+                        resolved_path,
+                        IRNode(
+                            kind=existing.kind,
+                            label=existing.label,
+                            text=existing.text,
+                            attrs=dict(existing.attrs),
+                            children=tuple(merged_children),
+                        ),
+                    )
+                    _assert_no_invariant_violations(op)
+                    continue
+                body = tree_ops.replace_at(body, resolved_path, payload)
+
+            elif op.action is StructuralAction.REPEAL:
+                if resolved_path is None:
+                    _append_no_replay_adjudication(
+                        adjudications_out,
+                        kind="replay_unresolved_target",
+                        message="Norway replay skipped operation: target not found.",
+                        op=op,
+                        detail={"action": _no_action_value(op.action), "target": str(op.target)},
+                    )
+                    _assert_no_invariant_violations(op)
+                    continue
+                body = tree_ops.remove_at(body, resolved_path)
+
+            elif op.action is StructuralAction.INSERT and op.payload is not None:
+                payload = op.payload
+                if resolved_path is not None:
+                    _record_action_family_recovery(
+                        kind="no_replay_insert_occupied_target_replaced",
+                        message="Norway replay recovered insert into an occupied target by replacing that target.",
+                        op=op,
+                        detail={
+                            "rule_id": "no_insert_occupied_target_replace",
+                            "original_action": "insert",
+                            "executed_action": "replace",
+                            "target": str(op.target),
+                            "resolved_path": _no_path_label(resolved_path),
+                            **_no_replay_payload_detail(payload),
+                        },
+                    )
+                    body = tree_ops.replace_at(body, resolved_path, payload)
+                    _assert_no_invariant_violations(op)
+                    continue
+                parent_path: tree_ops.Path = ()
+                if op.target.parent() is not None:
+                    target_parent = cast(LegalAddress, op.target.parent())
+                    resolved_parent = _resolve_no_path(body, target_parent)
+                    if resolved_parent is not None:
+                        parent_path = resolved_parent
+                    else:
+                        prefix_path, matched = _resolve_existing_prefix(body, target_parent)
+                        if prefix_path is None and matched == 0:
+                            _append_no_replay_adjudication(
+                                adjudications_out,
+                                kind="replay_unresolved_target",
+                                message="Norway replay skipped operation: parent not found.",
+                                op=op,
+                                detail={
+                                    "action": _no_action_value(op.action),
+                                    "target": str(op.target),
+                                    "target_parent": str(target_parent),
+                                },
+                            )
+                            _assert_no_invariant_violations(op)
+                            continue
+                        body, parent_path = _ensure_no_container_chain(
+                            body,
+                            prefix_path or (),
+                            target_parent.path[matched:],
+                        )
+                elif _no_kind_value(payload.kind) == "section" and payload.label:
+                    inferred_section_parent = _infer_section_parent_path(body, payload.label)
+                    if inferred_section_parent is not None:
+                        parent_path = inferred_section_parent
+                parent_node = tree_ops.resolve(body, parent_path) if parent_path else body
+                if parent_node is not None and _no_kind_value(payload.kind) == "item" and payload.label == "last":
+                    payload = _with_no_node_label(payload, _next_no_child_label(parent_node, "item"))
+                if parent_node is not None:
+                    inferred = _find_insert_parent(parent_node, str(payload.kind))
+                    if inferred is not None:
+                        parent_path = parent_path + inferred
+                direct_existing_path = _find_direct_child_path(
+                    body,
+                    parent_path,
+                    str(payload.kind),
+                    payload.label,
                 )
-                _assert_no_invariant_violations(op)
-                continue
-            node = tree_ops.resolve(body, resolved_path)
-            if node is None:
-                _append_no_replay_adjudication(
-                    adjudications_out,
-                    kind="replay_unresolved_target",
-                    message="Norway replay skipped operation: target not found.",
-                    op=op,
-                    detail={"action": _no_action_value(op.action), "target": str(op.target)},
+                if direct_existing_path is not None:
+                    _record_action_family_recovery(
+                        kind="no_replay_insert_occupied_direct_child_replaced",
+                        message="Norway replay recovered insert into an occupied direct child by replacing that child.",
+                        op=op,
+                        detail={
+                            "rule_id": "no_insert_occupied_direct_child_replace",
+                            "original_action": "insert",
+                            "executed_action": "replace",
+                            "target": str(op.target),
+                            "parent_path": _no_path_label(parent_path),
+                            "occupied_child_path": _no_path_label(direct_existing_path),
+                            **_no_replay_payload_detail(payload),
+                        },
+                    )
+                    body = tree_ops.replace_at(
+                        body,
+                        direct_existing_path,
+                        payload,
+                    )
+                    _assert_no_invariant_violations(op)
+                    continue
+                body = tree_ops.insert_sorted(
+                    body,
+                    parent_path,
+                    payload,
+                    sort_key_fn=_no_sort_key,
                 )
-                _assert_no_invariant_violations(op)
-                continue
-            moved = node
-            if op.destination.leaf_label():
-                moved = _with_no_node_label(moved, op.destination.leaf_label())
-            source_parent_path = resolved_path[:-1]
-            destination_path = _resolve_no_path(body, op.destination)
-            if (
-                destination_path is not None
-                and destination_path != resolved_path
-                and op.destination.path not in renumber_sources
-            ):
-                occupied_destination = tree_ops.resolve(body, destination_path)
-                _record_lineage_recovery(
-                    kind="no_replay_renumber_occupied_destination_removed",
-                    message=(
-                        "Norway replay cleared an occupied renumber destination "
-                        "that was not itself moved by the same renumber group."
-                    ),
-                    op=op,
-                    detail={
-                        "rule_id": "no_renumber_occupied_destination_removed",
-                        "family": "migration_or_lineage_recovery",
-                        "source_path": _no_path_label(resolved_path),
-                        "destination_path": _no_path_label(destination_path),
-                        "destination_target": _no_address_detail(op.destination),
-                        "removed_kind": _no_kind_value(occupied_destination.kind)
-                        if occupied_destination is not None
-                        else "",
-                        "removed_label": occupied_destination.label
-                        if occupied_destination is not None and occupied_destination.label is not None
-                        else "",
-                        "destination_was_renumber_source": False,
-                    },
+
+            elif op.action is StructuralAction.RENUMBER and op.destination is not None:
+                if resolved_path is None:
+                    _append_no_replay_adjudication(
+                        adjudications_out,
+                        kind="replay_unresolved_target",
+                        message="Norway replay skipped operation: target not found.",
+                        op=op,
+                        detail={"action": _no_action_value(op.action), "target": str(op.target)},
+                    )
+                    _assert_no_invariant_violations(op)
+                    continue
+                node = tree_ops.resolve(body, resolved_path)
+                if node is None:
+                    _append_no_replay_adjudication(
+                        adjudications_out,
+                        kind="replay_unresolved_target",
+                        message="Norway replay skipped operation: target not found.",
+                        op=op,
+                        detail={"action": _no_action_value(op.action), "target": str(op.target)},
+                    )
+                    _assert_no_invariant_violations(op)
+                    continue
+                moved = node
+                if op.destination.leaf_label():
+                    moved = _with_no_node_label(moved, op.destination.leaf_label())
+                source_parent_path = resolved_path[:-1]
+                destination_path = _resolve_no_path(body, op.destination)
+                if (
+                    destination_path is not None
+                    and destination_path != resolved_path
+                    and op.destination.path not in renumber_sources
+                ):
+                    occupied_destination = tree_ops.resolve(body, destination_path)
+                    _record_lineage_recovery(
+                        kind="no_replay_renumber_occupied_destination_removed",
+                        message=(
+                            "Norway replay cleared an occupied renumber destination "
+                            "that was not itself moved by the same renumber group."
+                        ),
+                        op=op,
+                        detail={
+                            "rule_id": "no_renumber_occupied_destination_removed",
+                            "family": "migration_or_lineage_recovery",
+                            "source_path": _no_path_label(resolved_path),
+                            "destination_path": _no_path_label(destination_path),
+                            "destination_target": _no_address_detail(op.destination),
+                            "removed_kind": _no_kind_value(occupied_destination.kind)
+                            if occupied_destination is not None
+                            else "",
+                            "removed_label": occupied_destination.label
+                            if occupied_destination is not None and occupied_destination.label is not None
+                            else "",
+                            "destination_was_renumber_source": False,
+                        },
+                    )
+                    body = tree_ops.remove_at(body, destination_path)
+                body = tree_ops.remove_at(body, resolved_path)
+                destination_parent = op.destination.parent()
+                if destination_parent is not None:
+                    parent_path = _resolve_no_path(body, destination_parent) or ()
+                else:
+                    parent_path = source_parent_path
+                body = tree_ops.insert_sorted(
+                    body,
+                    parent_path,
+                    moved,
+                    sort_key_fn=_no_sort_key,
                 )
-                body = tree_ops.remove_at(body, destination_path)
-            body = tree_ops.remove_at(body, resolved_path)
-            destination_parent = op.destination.parent()
-            if destination_parent is not None:
-                parent_path = _resolve_no_path(body, destination_parent) or ()
-            else:
-                parent_path = source_parent_path
-            body = tree_ops.insert_sorted(
-                body,
-                parent_path,
-                moved,
-                sort_key_fn=_no_sort_key,
-            )
-        _assert_no_invariant_violations(op)
+            _assert_no_invariant_violations(op)
+        finally:
+            if _no_boundary_probe_on:
+                _no_probe_op_mutation_boundary(
+                    before=_no_boundary_before,
+                    after=body,
+                    op=op,
+                    op_id=op.op_id,
+                    adjudications_out=adjudications_out,
+                    source_statute=statute.statute_id,
+                )
 
     return IRStatute(
         statute_id=statute.statute_id,

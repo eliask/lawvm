@@ -143,6 +143,10 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # §1.7 same-moment cross-act ambiguity pre-pass wired into apply_se_ops
         # (B1: routes SE through lawvm.core.cross_act_same_moment).
         "test_se_same_moment_ambiguity.py",
+        # §2.9 per-op mutation-boundary probe wired into apply_se_ops
+        # (observation-only, env-gated, default-off; consumes the core
+        # lawvm.core.mutation_boundary_proof.audit_op_mutation_boundary).
+        "test_se_mutation_boundary_per_op_probe.py",
     ),
     "uk": (
         "test_uk_*.py",
