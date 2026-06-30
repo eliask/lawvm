@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A small real-shaped FMX4 BASE-act excerpt (Formex V4) with the articles the
+  amending-act fixture touches (5, 7, 9, 12). The grafter maps ARTICLE -> IR
+  "section" with the bare number as label (it strips "Article" from TI.ART).
+-->
+<ACT>
+  <TITLE><TI>Base Regulation (excerpt)</TI></TITLE>
+  <ENACTING.TERMS>
+    <ARTICLE IDENTIFIER="art_5">
+      <TI.ART>Article 5</TI.ART>
+      <PARAG><P>Article 5 — Personal data shall be processed lawfully (ORIGINAL TEXT).</P></PARAG>
+    </ARTICLE>
+    <ARTICLE IDENTIFIER="art_7">
+      <TI.ART>Article 7</TI.ART>
+      <PARAG><P>Article 7 — Conditions for consent (ORIGINAL TEXT, to be deleted).</P></PARAG>
+    </ARTICLE>
+    <ARTICLE IDENTIFIER="art_9">
+      <TI.ART>Article 9</TI.ART>
+      <PARAG><P>2. Processing of special categories shall be prohibited (ORIGINAL TEXT).</P></PARAG>
+    </ARTICLE>
+    <ARTICLE IDENTIFIER="art_12">
+      <TI.ART>Article 12</TI.ART>
+      <PARAG><P>Article 12 — Transparent information (ORIGINAL TEXT).</P></PARAG>
+    </ARTICLE>
+  </ENACTING.TERMS>
+</ACT>

@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A real-shaped FMX4 amending-act excerpt (Formex V4). Each ENACTING.TERMS
+  ARTICLE is one amendment instruction against a BASE act. The amending act's
+  OWN number lives in TI.ART (must NOT be read as a target); the target is named
+  in the instruction prose; the replacement payload is the QUOT block.
+
+  Covers: whole-article replace, whole-article repeal, whole-article insert,
+  sub-article paragraph replace, and one OUT-OF-SCOPE point edit (so coverage is
+  measured, not asserted at 100%).
+-->
+<ACT>
+  <TITLE><TI>Regulation amending the base regulation</TI></TITLE>
+  <ENACTING.TERMS>
+    <ARTICLE IDENTIFIER="001">
+      <TI.ART>Article 1</TI.ART>
+      <PARAG>
+        <P>Article 5 is replaced by the following:</P>
+        <QUOT.START/>
+        <P>Article 5 — The processing of data shall be lawful only where consent is given for one or more specific purposes.</P>
+        <QUOT.END/>
+      </PARAG>
+    </ARTICLE>
+    <ARTICLE IDENTIFIER="002">
+      <TI.ART>Article 2</TI.ART>
+      <PARAG>
+        <P>Article 7 is deleted.</P>
+      </PARAG>
+    </ARTICLE>
+    <ARTICLE IDENTIFIER="003">
+      <TI.ART>Article 3</TI.ART>
+      <PARAG>
+        <P>the following Article 5a is inserted:</P>
+        <QUOT>
+          <P>Article 5a — Records of processing activities shall be maintained.</P>
+        </QUOT>
+      </PARAG>
+    </ARTICLE>
+    <ARTICLE IDENTIFIER="004">
+      <TI.ART>Article 4</TI.ART>
+      <PARAG>
+        <P>in Article 9, paragraph 2 is replaced by the following:</P>
+        <QUOT.START/>
+        <P>2. Processing of special categories of personal data shall be permitted where the data subject has given explicit consent.</P>
+        <QUOT.END/>
+      </PARAG>
+    </ARTICLE>
+    <ARTICLE IDENTIFIER="005">
+      <TI.ART>Article 5</TI.ART>
+      <PARAG>
+        <P>in Article 12, point (b) is replaced by 'the controller'.</P>
+      </PARAG>
+    </ARTICLE>
+    <ARTICLE IDENTIFIER="006">
+      <TI.ART>Article 6</TI.ART>
+      <PARAG>
+        <P>This Regulation shall enter into force on the twentieth day following that of its publication in the Official Journal of the European Union.</P>
+      </PARAG>
+    </ARTICLE>
+  </ENACTING.TERMS>
+</ACT>
