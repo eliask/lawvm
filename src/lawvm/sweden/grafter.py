@@ -86,8 +86,7 @@ from lawvm.core.mutation_boundary import (
 from lawvm.core.semantic_types import FacetKind, IRNodeKind, StructuralAction, TextPatchKindEnum
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.sweden.mutation_boundary_per_op_probe import (
-    boundary_probe_enabled as _se_boundary_probe_enabled,
-    probe_op_mutation_boundary as _se_probe_op_mutation_boundary,
+    drain_seam_boundary_observations as _se_drain_seam_boundary_observations,
 )
 from lawvm.core.write_receipt import WriteReceipt, receipt_address_string
 
@@ -3707,16 +3706,13 @@ def apply_se_ops(
     body = statute.body
     supplements = list(statute.supplements)
     applied_op_count = 0
-    # §2.9 per-op mutation-boundary probe gate read once per apply (cached env
-    # read) so the per-op snapshot is taken only when opted in; default-off.
-    # Wave 2 (design §3.1/§3.5): the probe is retained here on every per-op path
-    # (the materializer's ``finally``) so SE stays the single producer of its
-    # projected ``se_replay_mutation_boundary_per_op_violation_observed``
-    # adjudication and the env-flag-ON output is byte-identical to the
-    # pre-cutover fold; the seam profile's ``boundary_mode`` is therefore
-    # ``"off"``. Promoting SE onto the seam's boundary disposition (and dropping
-    # this probe) is the same deferred follow-up NO carries.
-    _se_boundary_probe_on = _se_boundary_probe_enabled()
+    # §2.9 per-op mutation-boundary observation: the seam (``core/apply_seam
+    # .apply_op``) is the UNIVERSAL always-on LS-01 observer — it runs the core
+    # ``audit_op_mutation_boundary`` on every landed write and routes the witness
+    # to ``AppliedOp.observations`` (``boundary_mode="off"``). The retired in-fold
+    # probe is gone; ``apply_se_ops`` now DRAINS that observation into the same
+    # env-gated ``se_replay_mutation_boundary_per_op_violation_observed``
+    # adjudication in the seam loop below (default-off → byte-stable bench output).
 
     # ── SE materializer (Wave 2, design §3.1/§3.5). ──────────────────────────
     # The per-op tree dispatch — SE's section heading / RENUMBER / REPEAL /
@@ -3745,18 +3741,11 @@ def apply_se_ops(
         body = before_body
         _se_op_applied = False
 
-        # §2.9 per-op mutation-boundary probe (LS-01 / §1.0): env-gated
-        # (LAWVM_SE_MUTATION_BOUNDARY_PER_OP=1), default-off. Snapshot the
-        # immutable IRNode body BEFORE this op mutates it; the after-snapshot
-        # is the (possibly reassigned) ``body`` read in the ``finally`` so the
-        # probe runs on every per-op path (including the ``return`` skips).
-        # Observes the ``body`` tree only; appendix-only ops mutate the
-        # separate ``supplements`` lane and read clean here (conservative v0
-        # scope). ``_se_boundary_probe_on`` is a cached env read so the
-        # snapshot is only taken when opted in (default-off preserves
-        # byte-stable bench output; frozen-``IRNode`` direct reference, no
-        # deep-copy; AGENTS.md §2.7).
-        _se_boundary_before = body if _se_boundary_probe_on else None
+        # §2.9 per-op mutation-boundary observation is RETIRED from the
+        # materializer: the seam observer runs the core audit on the landed write
+        # and the seam loop below drains the witness into the env-gated
+        # adjudication (no per-op snapshot needed here — the seam holds the
+        # before/after pair).
 
         def _dispatch() -> None:
             """Run one op's tree dispatch (mutating the closure ``body`` /
@@ -4049,18 +4038,7 @@ def apply_se_ops(
                 detail={"target_kind": leaf_kind, "target": op.target.leaf_label(), "action": op.action},
             )
 
-        try:
-            _dispatch()
-        finally:
-            if _se_boundary_probe_on:
-                _se_probe_op_mutation_boundary(
-                    before=_se_boundary_before,
-                    after=body,
-                    op=op,
-                    op_id=op.op_id,
-                    adjudications_out=adjudications_out,
-                    source_statute=statute.statute_id,
-                )
+        _dispatch()
         # ``applied`` is the explicit per-op landed flag (see the docstring): a
         # body op lands iff ``body is not before_body`` AND a no-change skip
         # (TEXT_REPLACE no-match, REPLACE/INSERT guards) returns ``applied=False``;
@@ -4070,8 +4048,9 @@ def apply_se_ops(
         return MaterializeResult(new_state=body, applied=_se_op_applied)
 
     # ── SE apply profile (Wave 2, design §3.1). ──────────────────────────────
-    # ``boundary_mode="off"``: SE retains its own per-op probe (in the
-    # materializer ``finally``) as the single producer of the projected
+    # ``boundary_mode="off"``: the seam's always-on observer is the SINGLE LS-01
+    # producer; the in-fold probe is retired and the seam loop below drains the
+    # observation into the env-gated
     # ``se_replay_mutation_boundary_per_op_violation_observed`` adjudication, so
     # the env-flag-ON output is byte-identical to the pre-cutover fold.
     # ``emit_receipts``/``emit_coverage`` are False on the bare fold: the
@@ -4119,6 +4098,22 @@ def apply_se_ops(
         # appended verbatim. Default ``None`` is a pure no-op (byte-identical).
         if seam_observations_out is not None and applied_result.observations:
             seam_observations_out.extend(applied_result.observations)
+
+        # ── B-enforcement (LS-01 cleanup): drain the seam's boundary observation
+        # into the env-gated SE adjudication (the retired in-fold probe's surface).
+        # When ``LAWVM_SE_MUTATION_BOUNDARY_PER_OP=1`` and ``adjudications_out`` is
+        # supplied, project the seam's ``APPLY.MUTATION_BOUNDARY_FINDING_AT_OP``
+        # observation — produced by the IDENTICAL core ``audit_op_mutation_boundary``
+        # the probe consumed — into the ``se_replay_mutation_boundary_per_op_
+        # violation_observed`` ``CompileAdjudication`` the in-fold probe used to emit.
+        # Default (env-off or ``adjudications_out is None``) is a pure no-op →
+        # byte-identical production.
+        _se_drain_seam_boundary_observations(
+            applied_result.observations,
+            adjudications_out=adjudications_out,
+            source_statute=statute.statute_id,
+            op_id=op.op_id,
+        )
 
     metadata = dict(statute.metadata)
     metadata["applied_op_count"] = metadata.get("applied_op_count", 0) + applied_op_count
