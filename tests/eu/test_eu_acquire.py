@@ -240,6 +240,53 @@ def test_idempotent_dedup(tmp_path: Path) -> None:
     archive.close()
 
 
+def test_two_languages_same_fetched_at_do_not_collide(tmp_path: Path) -> None:
+    """Two expression-languages of one CELEX, acquired under a SINGLE
+    second-granularity ``fetched_at`` (exactly how the corpus loop drives it),
+    must each store their own ingest-run snapshot rather than colliding.
+
+    Regression: ``_ingest_run_locator`` previously omitted the language, so the
+    second language's run snapshot hit the first's locator at the same timestamp
+    with a different digest and the farchive raised
+    ``ValueError: Same-timestamp digest change ...`` — caught upstream and logged
+    as a spurious ``GAP (ValueError)``, masking the honest per-language
+    accounting AND losing any real second-language manifestation.
+    """
+    from lawvm.eu.eu_acquire import _ingest_run_locator
+
+    archive = _archive(tmp_path)
+    # Same celex, same fetched_at, two languages — fin then eng (the loop reuses
+    # one fetched_at across languages, so this is the real collision shape).
+    run_fin = acquire_celex(
+        GDPR,
+        fetched_at=FETCHED_AT,
+        language="fin",
+        consolidation=CONSOLIDATION,
+        farchive=archive,
+        _fetch_notice=_fake_fetch_notice,
+        _fetch_item=_fake_fetch_item,
+    )
+    # The second language MUST NOT raise (pre-fix this raised ValueError).
+    run_eng = acquire_celex(
+        GDPR,
+        fetched_at=FETCHED_AT,
+        language="eng",
+        consolidation=CONSOLIDATION,
+        farchive=archive,
+        _fetch_notice=_fake_fetch_notice,
+        _fetch_item=_fake_fetch_item,
+    )
+    # Each language got its OWN, language-distinct ingest-run snapshot.
+    fin_loc = _ingest_run_locator(GDPR, "fin", FETCHED_AT)
+    eng_loc = _ingest_run_locator(GDPR, "eng", FETCHED_AT)
+    assert fin_loc != eng_loc
+    assert archive.get(fin_loc) is not None
+    assert archive.get(eng_loc) is not None
+    assert run_fin.expression_language.lower() == "fin"
+    assert run_eng.expression_language.lower() == "eng"
+    archive.close()
+
+
 # --------------------------------------------------------------------------- #
 # Verify-before-store rejects an HTML error page (typed failure, no store)     #
 # --------------------------------------------------------------------------- #

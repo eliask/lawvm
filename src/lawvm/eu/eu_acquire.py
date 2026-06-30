@@ -189,9 +189,17 @@ def celex_locator(celex: str, consolidation_date: str, language: str, fmt: str) 
     return f"{_LOCATOR_SCHEME}/{celex}/{consolidation_date}/{language}/{fmt}"
 
 
-def _ingest_run_locator(celex: str, fetched_at: datetime) -> str:
+def _ingest_run_locator(celex: str, language: str, fetched_at: datetime) -> str:
+    # The ingest run is per (celex, LANGUAGE): each expression-language fetch of
+    # a CELEX produces its own run record (own failures/counts/locators). The
+    # locator MUST include the language — otherwise the two languages of one
+    # CELEX, which the corpus loop fetches under a single second-granularity
+    # ``fetched_at``, map to the same snapshot key and the second language
+    # collides ("Same-timestamp digest change ...") and is lost as a spurious
+    # ACQUIRE_RAISED gap (masking the real NO_MANIFESTATION accounting).
     ts = fetched_at.strftime("%Y%m%dT%H%M%SZ")
-    return f"_ingest_runs/eu_cellar/{celex}/{ts}"
+    lang = str(language or "").lower() or "unknown"
+    return f"_ingest_runs/eu_cellar/{celex}/{lang}/{ts}"
 
 
 # ---------------------------------------------------------------------------
@@ -355,7 +363,7 @@ def _store_ingest_run(farchive: Any, run: CelexIngestRun) -> None:
         ],
     }
     farchive.store(
-        _ingest_run_locator(run.celex, run.fetched_at),
+        _ingest_run_locator(run.celex, run.expression_language, run.fetched_at),
         json.dumps(run_data, ensure_ascii=False).encode("utf-8"),
         storage_class="json",
         metadata={"source_surface": "ingest_run_provenance"},
