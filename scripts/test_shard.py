@@ -143,6 +143,10 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # §1.7 same-moment cross-act ambiguity pre-pass wired into apply_se_ops
         # (B1: routes SE through lawvm.core.cross_act_same_moment).
         "test_se_same_moment_ambiguity.py",
+        # Wave 0 ordering-kernel parallel-run equality gate: old direct-detector
+        # path == new order_ops(se_ordering_profile()) path on the SE corpus
+        # (ordered ops + findings), driving the real apply_se_ops fold.
+        "test_se_order_ops_parallel_run.py",
         # §2.9 per-op mutation-boundary probe wired into apply_se_ops
         # (observation-only, env-gated, default-off; consumes the core
         # lawvm.core.mutation_boundary_proof.audit_op_mutation_boundary).
@@ -615,6 +619,11 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # alongside ``test_named_swallow_totality.py`` / ``test_fi_recovery_kind_enum.py``
         # in ``core_tree_apply`` per the iter2 W6 shard-registration hint.
         "test_core_cross_act_same_moment.py",
+        # Wave 0 unified ordering kernel (lawvm.core.op_ordering.order_ops),
+        # which WRAPS the shared cross-act same-moment detector. Synthetic
+        # algebra coverage (temporal+sequence order, delegated same-moment
+        # detection, validated-claim resolution, lex-posterior tiebreak).
+        "test_core_op_ordering.py",
     ),
     "core_compile_projection": (
         "test_compile_metadata_default_fail_loud.py",

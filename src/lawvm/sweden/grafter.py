@@ -55,9 +55,7 @@ from typing import Any, List, Optional, cast
 from urllib.parse import quote, urljoin
 
 from lawvm.core import tree_ops
-from lawvm.core.cross_act_same_moment import (
-    detect_cross_act_same_moment_conflicts,
-)
+from lawvm.core.op_ordering import OrderingProfile, order_ops
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.filter_result import FilterResult, RejectedItem
 from lawvm.core.phase_result import Finding
@@ -3492,35 +3490,52 @@ def _append_se_replay_adjudication(
     )
 
 
+def se_ordering_profile() -> OrderingProfile:
+    """The SE jurisdiction ordering profile fed to the unified kernel.
+
+    Wave 0 (``notes/CORE_PIPELINE_UNIFICATION_DESIGN.md`` §3.2 / §4): SE's
+    ordering is sequence-only with same-moment cross-act detection delegated to
+    the shared ``cross_act_same_moment`` detector. The profile encodes exactly
+    that prior contract so ``order_ops`` reproduces the old direct-detector path
+    byte-for-byte:
+
+    - ``finder_kind_prefix="se"`` — the prefix the direct call used.
+    - ``incompatible_payload_predicate=None`` — the detector's *default*
+      conservative predicate (SE carries no jurisdiction-specific predicate).
+    - ``temporal_key=default_temporal_key`` (implicit) — sequence-identity, so
+      the temporal sort is input order (SE has no commencement dating lane).
+    - ``lex_posterior=False`` (implicit) — SE's tiebreak is ``op.sequence``.
+    - no ``precedence_claims`` — SE has no validated precedence-rule registry.
+    - ``prospective_gate`` / ``renumber_vacate`` unset — later-wave hooks.
+    """
+    return OrderingProfile(finder_kind_prefix="se")
+
+
 def apply_se_ops(
     statute: IRStatute,
     ops: list[LegalOperation],
     adjudications_out: list[CompileAdjudication] | None = None,
 ) -> IRStatute:
     """Apply the currently supported Sweden op subset to an IRStatute."""
-    # §1.7 same-moment cross-act conflict pre-pass (AGENTS.md §1.7).
+    # Unified ordering kernel (Wave 0). ``order_ops`` composes the temporal +
+    # same-moment + sequence algebra and returns the ordered ops plus the
+    # same-moment cross-act conflict findings. For SE's profile (sequence-only,
+    # default predicate, no claims, no lex-posterior, hooks unset) the ordered
+    # list is byte-identical to the input order and the findings are exactly the
+    # ``CompileAdjudication``s the prior direct
+    # ``detect_cross_act_same_moment_conflicts`` call produced — proven by the
+    # parallel-run equality gate in ``tests/test_se_order_ops_parallel_run.py``.
     #
-    # Runs BEFORE the apply fold to emit a blocking finding for incompatible
-    # whole-target payloads from distinct affecting acts at the same
-    # (effective_date, target) moment. The finding is ADDITIVE: apply order is
-    # unchanged so non-ambiguous cases are byte-identical to the pre-detection
-    # path; the finding surfaces the silent sequence-order pick so strict mode
-    # can reject. The cross-act finding carries an empty op_id so the
-    # conserved-wrapper partition (which keys per-op skips by op_id) is
-    # unaffected.
-    #
-    # Routed through the shared module exactly as EE/UK do (B1: NO/SE wiring of
-    # the §1.7 silent-last-wins risk). SE uses the shared module's *default*
-    # conservative compatibility predicate (no jurisdiction-specific
-    # re-implementation): SE ops carry StructuralAction enum actions, which the
-    # default predicate classifies directly. SE has no validated precedence-rule
+    # The §1.7 same-moment finding is ADDITIVE (apply order is unchanged; the
+    # finding surfaces the silent sequence-order pick so strict mode can reject)
+    # and carries an empty op_id so the conserved-wrapper partition (which keys
+    # per-op skips by op_id) is unaffected. SE has no validated precedence-rule
     # registry yet, so every detected conflict emits
     # ``resolution: "sequence_order_unproven"``.
-    detect_cross_act_same_moment_conflicts(
-        ops,
-        finder_kind_prefix="se",
-        adjudications_out=adjudications_out,
-    )
+    ordered = order_ops(ops, se_ordering_profile())
+    if adjudications_out is not None:
+        adjudications_out.extend(ordered.findings)
+    ops = list(ordered.ops)
 
     body = statute.body
     supplements = list(statute.supplements)
