@@ -197,6 +197,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_us_usc_release_import.py",
         "test_us_uslm_parser.py",
         "test_us_write_receipts.py",
+        "test_us_apply_seam_boundary.py",
     ),
     "finland_sources": (
         "test_fi_amendment_index.py",

@@ -1111,6 +1111,17 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "quirks-mode accounting for a per-op mutation-boundary escape "
                 "(same condition as APPLY.MUTATION_BOUNDARY_VIOLATION_AT_OP, recorded not blocked)",
                 ("safety_invariant",), role="observation"),
+    FindingSpec("APPLY.US_CHAR_SPAN_BOUNDARY_VIOLATION", "apply",
+                "violation", "hard_fail", "us_char_span_boundary_audit",
+                "per-op char-span mutation-boundary REJECT (US §3.4): a US op's edited char "
+                "span is not a subset of its located target span, or the target could not be "
+                "located in the section text",
+                ("safety_invariant",), role="violation"),
+    FindingSpec("APPLY.US_CHAR_SPAN_BOUNDARY_FINDING", "apply",
+                "violation", "warn", "us_char_span_boundary_audit",
+                "observe-mode accounting for a per-op char-span mutation-boundary escape "
+                "(same condition as APPLY.US_CHAR_SPAN_BOUNDARY_VIOLATION, recorded not blocked)",
+                ("safety_invariant",), role="observation"),
     FindingSpec("APPLY.OCCUPANCY_TRANSITION_BLOCKED", "apply",
                 "violation", "hard_fail", "apply_resolved_op",
                 "strict-mode occupancy gate: a state-mutating op attempted an invalid "
