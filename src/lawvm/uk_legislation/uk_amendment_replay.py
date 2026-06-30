@@ -227,6 +227,7 @@ from lawvm.uk_legislation.text_rewrite_fragments import (
 from lawvm.uk_legislation.xml_helpers import (
     _tag as _tag,
     _text_content as _text_content,
+    evict_xml_helper_caches as evict_xml_helper_caches,
 )
 
 _UK_AMENDMENT_REPLAY_COMPAT_EXPORTS = (
@@ -334,23 +335,30 @@ def _classify_compiled_effect_source_pathology(
 # ``§source_root_lifecycle`` eviction guards against), so this does not reintroduce
 # the parent_map/root reference-cycle memory cost.
 #
-# FEASIBILITY VERDICT: BLOCKED on the canonical artifact (a rigorous negative
-# result, valid per-frontend like SE). The recorded ``source.raw_text`` is
-# ``_text_content(extracted_el)`` (xml_helpers.py) — the affecting-act provision
-# element's text, itertext-collected across child nodes and whitespace-collapsed
-# (``" ".join(" ".join(parts).split())``), exactly the EE/NO flattening shape. But
-# UK affecting-act XML is STRUCTURED: a clause's number lives in ``<Pnumber>`` (with
-# interleaved ``<CommentaryRef/>`` children) and its body in a sibling
-# ``<P1para><Text>`` — so the flattened clause (``"10 In this Act, omit …"``) is
-# reconstructed ACROSS element boundaries and is NEVER a contiguous verbatim byte
-# run of the raw XML. Measured on the canonical sample: 0/709 ops anchor (the lone
-# verbatim hit, ``"s the Enterprise Act 2002"``, is ambiguous — multiple
-# occurrences — and is correctly refused). This is the EE/NO "reconstructed across
-# tag boundaries" minority case made UNIVERSAL by UK's structured source, NOT the
-# SE encoding-escaping cause. The recipe generalizes the moment a per-op clause
-# survives as a verbatim run (e.g. a single ``<Text>`` node whose body the op
-# quotes verbatim); the infrastructure below mints that anchor honestly when it
-# occurs and leaves it absent otherwise. See tests/test_uk_source_anchor.py.
+# FEASIBILITY VERDICT: REACHABLE (partial) via PER-ELEMENT anchoring. The op's
+# recorded ``source.raw_text`` is ``_text_content(extracted_el)`` (xml_helpers.py)
+# — the affecting-act provision element's text, itertext-collected across child
+# nodes and whitespace-collapsed (``" ".join(" ".join(parts).split())``), exactly
+# the EE/NO flattening shape. UK affecting-act XML is STRUCTURED: a clause's number
+# lives in ``<Pnumber>`` (with interleaved ``<CommentaryRef/>`` children) and its
+# body in a sibling ``<P1para><Text>`` — so the FLATTENED WHOLE-CLAUSE string
+# (``"10 In this Act, omit …"``) is reconstructed ACROSS element boundaries and is
+# NEVER a contiguous verbatim byte run of the raw XML (anchoring it directly mints
+# 0/709 — the prior BLOCKED arm, task #92). The fix (task #95) RE-SCOPES the
+# anchored unit from the flattened whole clause to the operative BODY ELEMENT it
+# came from: the post-pass re-parses the affecting act once, collects every
+# descendant element whose ``_text_content`` IS a single verbatim, UNIQUE byte run
+# of the raw bytes (the ``<Text>``/``<Pnumber>`` leaves with no interleaved inline
+# markup), and anchors the op against the LONGEST such body that is a substring of
+# the op's flattened clause (so the anchored span provably belongs to THIS op's
+# clause). ``compute_source_anchor`` re-verifies that body is byte-exact and unique
+# before minting. Measured on the canonical sample: 387/709 ops anchor honestly
+# (no_typed_anchor_rate 100% -> 45.4%). The remaining 322 are honest ``None``: the
+# operative text is reconstructed across INLINE markup (``<Quotation>``/``<Term>``/
+# ``<Addition>`` for substituted/defined terms), so no descendant element's body is
+# a contiguous byte run. The anchored body is PROVENANCE metadata only — the op's
+# apply-authoritative fields (and ``source.raw_text`` itself) are untouched, so UK
+# replay output is byte-identical. See tests/test_uk_source_anchor.py.
 _UK_RAW_SOURCE_CTX: "contextvars.ContextVar[Dict[str, bytes] | None]" = (
     contextvars.ContextVar("uk_raw_source_ctx", default=None)
 )
@@ -376,6 +384,48 @@ def reset_uk_raw_source_context(
     _UK_RAW_SOURCE_CTX.reset(token)
 
 
+def _unique_byte_run_bodies(raw_bytes: bytes) -> List[str]:
+    """Return every element ``_text_content`` that is a UNIQUE byte run of ``raw_bytes``.
+
+    Parses the affecting-act XML once and walks every element, collecting the
+    whitespace-collapsed text content (:func:`xml_helpers._text_content`, the same
+    flattening the op's clause uses) of each element whose text appears as a single,
+    CONTIGUOUS, GLOBALLY UNIQUE verbatim byte substring of the raw artifact. These
+    are the addressable operative bodies — the ``<Text>``/``<Pnumber>`` leaves whose
+    prose carries NO interleaved inline markup (``<Quotation>``/``<Term>``/
+    ``<Addition>``/``<CommentaryRef/>``), so their flattened text is byte-identical
+    to the raw bytes between their open/close tags. Returned LONGEST-first so the
+    per-op selector prefers the most specific (largest) body of a clause.
+
+    Pure read of the bytes; no fabrication — :func:`compute_source_anchor` still
+    independently re-verifies byte-exactness and uniqueness before any anchor mints.
+    """
+    bodies: List[str] = []
+    seen: set[str] = set()
+    try:
+        tree = ET.fromstring(raw_bytes)
+    except ET.XMLSyntaxError:
+        return bodies
+    try:
+        for node in tree.iter():
+            text = _text_content(node)
+            if not text or text in seen:
+                seen.add(text)
+                continue
+            seen.add(text)
+            needle = text.encode("utf-8")
+            first = raw_bytes.find(needle)
+            if first >= 0 and raw_bytes.find(needle, first + 1) < 0:
+                bodies.append(text)
+    finally:
+        # §source_root_lifecycle: this is a throwaway parse local to the anchor
+        # pass; evict its elements from the shared _text_content cache so they do
+        # not leak past this call (the cache cannot weak-ref lxml elements).
+        evict_xml_helper_caches(tree)
+    bodies.sort(key=lambda s: -len(s))
+    return bodies
+
+
 def mint_uk_source_anchors(
     ops: List[LegalOperation],
     raw_by_artifact: Optional[Dict[str, bytes]] = None,
@@ -388,17 +438,22 @@ def mint_uk_source_anchors(
     :func:`set_uk_raw_source_context`). ``raw_by_artifact`` may be passed directly
     (tests); when omitted the published context is read.
 
-    For each op that already carries an ``OperationSource`` but no anchor, the op's
-    recorded clause text (``source.raw_text`` — falling back to the op's
-    ``raw_text``) is located in the raw bytes of the affecting act it derives from
-    (``raw_by_artifact[src.statute_id]``) via
-    :func:`lawvm.core.provenance.compute_source_anchor`. The anchor is built on that
-    EXACT recorded clause string, so a verifier re-slicing the raw bytes at the
-    anchor span gets back precisely the clause text. When the clause is not a single
-    verbatim, unique byte run of that artifact (the UNIVERSAL UK case — clause
-    reconstructed across ``<Pnumber>``/``<Text>`` element boundaries — see the
-    module note above), ``compute_source_anchor`` returns ``None`` and the anchor is
-    honestly left absent — never fabricated.
+    PER-ELEMENT ANCHORING (task #95). The op's recorded clause text
+    (``source.raw_text`` — the flattened whole clause from
+    ``_text_content(extracted_el)``) is reconstructed across the affecting act's
+    ``<Pnumber>``/``<Text>`` element boundaries, so it is NEVER a contiguous byte run
+    of the raw XML — anchoring it directly mints 0 (the prior BLOCKED arm). Instead,
+    the anchored unit is RE-SCOPED to the operative BODY ELEMENT the clause came
+    from: among the affecting act's descendant elements whose text is a unique
+    contiguous byte run (:func:`_unique_byte_run_bodies`), the LONGEST one that is a
+    substring of this op's flattened clause is selected (so the span provably belongs
+    to THIS op) and passed to
+    :func:`lawvm.core.provenance.compute_source_anchor`, which re-verifies it is
+    byte-exact and unique before minting. The anchored body is PROVENANCE metadata
+    — ``source.raw_text`` and every apply-authoritative field are untouched. When no
+    descendant body of the clause is a unique byte run (the operative text is
+    reconstructed across INLINE markup — substituted/defined terms), the anchor is
+    honestly left absent (``None``) — never fabricated.
 
     Additive metadata only: it touches solely ``source.source_anchor`` and never an
     apply-authoritative field, so UK replay output is byte-identical (AGENTS.md §0
@@ -409,6 +464,17 @@ def mint_uk_source_anchors(
         raw_by_artifact = _UK_RAW_SOURCE_CTX.get()
     if not raw_by_artifact or not ops:
         return ops
+    # Per-artifact unique-byte-run body index, parsed at most once per affecting act
+    # touched by the op stream (the affecting acts are 9–56 per statute).
+    bodies_by_artifact: Dict[str, List[str]] = {}
+
+    def _bodies_for(artifact_id: str, raw_bytes: bytes) -> List[str]:
+        cached = bodies_by_artifact.get(artifact_id)
+        if cached is None:
+            cached = _unique_byte_run_bodies(raw_bytes)
+            bodies_by_artifact[artifact_id] = cached
+        return cached
+
     anchored: List[LegalOperation] = []
     for op in ops:
         src = op.source
@@ -417,15 +483,24 @@ def mint_uk_source_anchors(
             continue
         raw_bytes = raw_by_artifact.get(src.statute_id)
         clause = src.raw_text or op.raw_text or ""
-        anchor = (
-            compute_source_anchor(
-                source_artifact_id=src.statute_id,
-                raw_bytes=raw_bytes,
-                clause_text=clause,
+        anchor = None
+        if raw_bytes and clause:
+            # Re-scope to the operative body: the longest unique-byte-run element
+            # body of the affecting act that is a substring of this op's clause.
+            body = next(
+                (
+                    candidate
+                    for candidate in _bodies_for(src.statute_id, raw_bytes)
+                    if candidate and candidate in clause
+                ),
+                None,
             )
-            if (raw_bytes and clause)
-            else None
-        )
+            if body:
+                anchor = compute_source_anchor(
+                    source_artifact_id=src.statute_id,
+                    raw_bytes=raw_bytes,
+                    clause_text=body,
+                )
         if anchor is None:
             anchored.append(op)
             continue
@@ -1174,11 +1249,25 @@ class UKReplayPipeline:
                         continue
                 if should_replay_compiled:
                     ops.extend(compiled)
-                    # §source_anchor: retain this affecting act's raw XML bytes so
-                    # the byte-span post-pass can anchor the ops it produced before
-                    # the source context is evicted in the finally below.
-                    if xml_bytes is not None:
-                        raw_by_artifact.setdefault(e.affecting_act_id, xml_bytes)
+                    # §source_anchor: retain this affecting act's CANONICAL CURRENT-
+                    # lane raw XML bytes so the byte-span post-pass anchors against the
+                    # exact artifact any verifier independently loads
+                    # (``get_affecting_act_xml_from_archive(affecting_act_id)``). NB:
+                    # ``source_context.xml_bytes`` (the ``xml_bytes`` local) may be the
+                    # ENACTED-lane bytes when ``_select_enacted_source_for_current_shell``
+                    # swapped the lane for extraction — anchoring against those would
+                    # mint offsets that DON'T re-verify against the current-lane
+                    # artifact the totality report / certificate verifier reads. So we
+                    # key the anchor artifact to the current-lane bytes explicitly,
+                    # loaded once per act (the loader is archive-cached). When the
+                    # current-lane artifact is unavailable, the act simply contributes
+                    # no anchorable bytes (honest absence).
+                    if e.affecting_act_id not in raw_by_artifact:
+                        current_xml_bytes = get_affecting_act_xml_from_archive(
+                            e.affecting_act_id, archive
+                        )
+                        if current_xml_bytes is not None:
+                            raw_by_artifact[e.affecting_act_id] = current_xml_bytes
                 _mark_compile_phase("compile_filter_effect")
             finally:
                 # §source_root_lifecycle: evict affecting-act source context once

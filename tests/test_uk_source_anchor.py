@@ -1,43 +1,42 @@
-"""Byte-span ``SourceAnchor`` arm for the UK frontend (LawVM task #92).
+"""Byte-span ``SourceAnchor`` arm for the UK frontend (LawVM task #95).
 
 Mirrors the Estonia pilot (``tests/test_ee_source_anchor.py``), the Norway arm
 (``tests/test_no_source_anchor.py``), and the Sweden arm
-(``tests/test_se_source_anchor.py``) in SHAPE, but records a rigorous PARTIAL /
-BLOCKED feasibility result for the UK — a valid per-frontend outcome per the task
-brief.
+(``tests/test_se_source_anchor.py``) in SHAPE, and now records a REACHABLE
+(partial) feasibility result for the UK via PER-ELEMENT anchoring.
 
-FEASIBILITY VERDICT: BLOCKED on the canonical compile artifact, for a
-frontend-specific reason distinct from EE/NO (which are REACHABLE) and from SE
-(which is encoding-BLOCKED). The cause here is STRUCTURAL:
+FEASIBILITY VERDICT: REACHABLE (partial) via per-element anchoring. The prior
+task-#92 arm anchored the FLATTENED WHOLE-CLAUSE string and minted 0/709, because
+UK affecting-act XML is STRUCTURED: a clause's number lives in a ``<Pnumber>``
+element (often with interleaved ``<CommentaryRef/>`` children) and its body in a
+sibling ``<P1para><Text>``, so the flattened clause (e.g. ``"10 In this Act, omit
+paragraph 7(4) of Schedule 11."``) is reconstructed ACROSS element boundaries and
+is never a contiguous verbatim byte run of the raw XML.
 
-  STRUCTURED-SOURCE TAG-BOUNDARY RECONSTRUCTION. The recorded ``source.raw_text``
-  is ``_text_content(extracted_el)`` (``uk_legislation/xml_helpers.py``) — the
-  affecting-act provision element's text, ``itertext``-collected across its child
-  nodes and whitespace-collapsed (``" ".join(" ".join(parts).split())``), exactly
-  the EE/NO flattening shape. But UK affecting-act XML is STRUCTURED: a clause's
-  number lives in a ``<Pnumber>`` element (often with interleaved
-  ``<CommentaryRef/>`` children) and its body in a sibling ``<P1para><Text>``. So
-  the flattened clause (e.g. ``"10 In this Act, omit paragraph 7(4) of Schedule
-  11."``) is reconstructed ACROSS element boundaries and is NEVER a contiguous
-  verbatim byte run of the raw XML. ``compute_source_anchor`` correctly refuses
-  (returns ``None``).
+  PER-ELEMENT FIX. The anchored unit is RE-SCOPED from the flattened whole clause
+  to the operative BODY ELEMENT it came from. ``mint_uk_source_anchors`` re-parses
+  the affecting act, collects every descendant element whose ``_text_content`` is a
+  single, contiguous, GLOBALLY UNIQUE verbatim byte run of the raw bytes (the
+  ``<Text>``/``<Pnumber>`` leaves with no interleaved inline markup), and anchors
+  the op against the LONGEST such body that is a substring of the op's flattened
+  clause — so the anchored span provably belongs to THIS op. ``compute_source_anchor``
+  re-verifies byte-exactness and uniqueness before minting.
 
 MEASURED on the canonical sample (3 affected acts, 709 ops):
-``no_typed_anchor_rate`` stays 100% — 0/709 ops anchor. The lone op whose clause
-happens to be a verbatim byte run of its affecting XML
-(``"s the Enterprise Act 2002"``) occurs MORE THAN ONCE (ambiguous), so it is
-correctly refused too. Every absence is justified — fail-loud, never a fabricated
-offset.
+``no_typed_anchor_rate`` drops from 100% (709/709, task #92) to ~38% — the majority
+of ops now carry a TRUE, byte-re-verifiable per-element anchor. The remaining ops
+are honest ``None``: the operative text is reconstructed across INLINE markup
+(``<Quotation>``/``<Term>``/``<Addition>`` for substituted/defined terms), so no
+descendant element body is a contiguous byte run. Every absence is justified —
+fail-loud, never a fabricated offset.
 
-This is the EE/NO "reconstructed across tag boundaries" MINORITY case made
-UNIVERSAL by UK's structured affecting-act source. The ``mint_uk_source_anchors``
-post-pass is nonetheless wired in faithfully (identical shape to EE/NO/SE): it
-mints a TRUE, re-verifiable anchor the moment a per-op clause is a unique verbatim
-byte run of its artifact, and these tests prove (a) any anchor it DOES mint
-re-verifies byte-exactly, (b) the pass is grounding-neutral, (c) every absence is
-justified, and (d) the blockage is the structured-source property, not a defect:
-on an artifact where the SAME clause IS a contiguous run, the post-pass mints a
-TRUE anchor.
+These tests prove (a) every anchor the post-pass mints re-verifies byte-exactly
+(the span re-slices to its anchored body, ``quote_hash`` matches, occurrence is
+unique), (b) the pass is grounding-neutral (the apply digest is invariant under
+stripping the anchor), (c) every absence is justified (no op left ``None`` had a
+unique-byte-run body inside its clause), (d) the reachable fraction is a real,
+non-trivial majority, and (e) on a synthetic artifact where a clause IS a
+contiguous run the post-pass mints a TRUE anchor.
 """
 from __future__ import annotations
 
@@ -53,6 +52,7 @@ from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.core.provenance import SourceAnchor, compute_source_anchor
 from lawvm.uk_legislation.uk_amendment_replay import (
     UKReplayPipeline,
+    _unique_byte_run_bodies,
     mint_uk_source_anchors,
     reset_uk_raw_source_context,
     set_uk_raw_source_context,
@@ -152,11 +152,13 @@ def _apply_digest(samples: list[tuple[str, list[LegalOperation]]]) -> str:
 
 
 def test_uk_minted_anchors_are_real_and_reverifiable() -> None:
-    """Any anchor the post-pass DOES mint re-verifies byte-exactly.
+    """Every anchor the post-pass mints re-verifies byte-exactly.
 
-    On the canonical structured artifact this mints zero anchors (see the blocked
-    verdict), but the property must hold unconditionally: a minted anchor is never
-    a fabricated offset — it always re-slices to exactly the clause it anchors.
+    The anchor is now per-element: the span re-slices to the operative BODY element
+    the post-pass selected (a unique byte run of the affecting XML), that body is a
+    substring of the op's flattened clause (so it provably belongs to this op), the
+    ``quote_hash`` matches the sliced bytes, and the body occurs exactly once. A
+    minted anchor is never a fabricated offset.
     """
     samples = _compile_sample()
     artifact_ids = {
@@ -166,6 +168,9 @@ def test_uk_minted_anchors_are_real_and_reverifiable() -> None:
         if op.source is not None
     }
     raw_by_artifact = _raw_xml_by_artifact(artifact_ids)
+    bodies_by_artifact = {
+        aid: set(_unique_byte_run_bodies(raw)) for aid, raw in raw_by_artifact.items()
+    }
 
     total = anchored = 0
     for _sid, ops in samples:
@@ -180,19 +185,30 @@ def test_uk_minted_anchors_are_real_and_reverifiable() -> None:
             art_id = op.source.statute_id
             assert anchor.source_artifact_id == art_id
             raw = raw_by_artifact[art_id]
-            clause = (op.source.raw_text or op.raw_text or "").encode("utf-8")
-            assert clause, "an anchored op must carry the clause it anchors"
             sliced = raw[anchor.byte_offset : anchor.byte_offset + anchor.byte_len]
-            assert sliced == clause, (
-                f"anchor span does not re-slice to the clause for op in {art_id}"
+            # The anchored span re-slices to a unique-byte-run BODY element of the
+            # affecting act, and that body belongs to this op's flattened clause.
+            body = sliced.decode("utf-8")
+            assert body in bodies_by_artifact[art_id], (
+                f"anchored span is not a unique-byte-run body of {art_id}"
             )
-            assert anchor.byte_len == len(clause)
+            clause = op.source.raw_text or op.raw_text or ""
+            assert body in clause, (
+                "anchored body must be a substring of the op's flattened clause "
+                f"(provably belongs to this op): {body[:80]!r}"
+            )
+            assert anchor.byte_len == len(sliced)
             assert anchor.quote_hash == "sha256:" + hashlib.sha256(sliced).hexdigest()
             first = raw.find(sliced)
             assert first == anchor.byte_offset
-            assert raw.find(sliced, first + 1) == -1, "anchored clause must be unique"
+            assert raw.find(sliced, first + 1) == -1, "anchored body must be unique"
 
     assert total > 0, "sampler produced no ops"
+    # The per-element re-scope makes the byte-span program REACHABLE for the UK on a
+    # real, non-trivial majority of the canonical op stream (not the prior 0/709).
+    assert anchored > total // 2, (
+        f"expected a majority of ops to anchor per-element; got {anchored}/{total}"
+    )
 
 
 def test_uk_source_anchor_is_grounding_neutral() -> None:
@@ -226,11 +242,14 @@ def test_uk_source_anchor_is_grounding_neutral() -> None:
 
 
 def test_uk_unanchorable_ops_are_honest_none_not_fabricated() -> None:
-    """Every absent anchor is JUSTIFIED: the clause is not a unique verbatim run.
+    """Every absent anchor is JUSTIFIED: no unique-byte-run body inside the clause.
 
-    For each op left without an anchor, the recorded clause must genuinely NOT be a
-    unique contiguous verbatim byte substring of its affecting-act XML — so the
-    refusal is correct, not a missed anchor.
+    For each op left without an anchor, the affecting act must genuinely have NO
+    descendant-element body that is BOTH a unique contiguous verbatim byte run of the
+    raw XML AND a substring of the op's flattened clause — so the refusal is correct,
+    not a missed per-element anchor. (These are the operative-text-across-inline-markup
+    cases: substituted/defined terms whose ``<Quotation>``/``<Term>`` children break
+    every body into non-contiguous fragments.)
     """
     samples = _compile_sample()
     artifact_ids = {
@@ -240,13 +259,17 @@ def test_uk_unanchorable_ops_are_honest_none_not_fabricated() -> None:
         if op.source is not None
     }
     raw_by_artifact = _raw_xml_by_artifact(artifact_ids)
+    bodies_by_artifact = {
+        aid: _unique_byte_run_bodies(raw) for aid, raw in raw_by_artifact.items()
+    }
 
-    total = none_count = 0
+    total = none_count = anchored = 0
     for _sid, ops in samples:
         for op in ops:
             total += 1
             anchor = op.source.source_anchor if op.source is not None else None
             if anchor is not None:
+                anchored += 1
                 continue
             none_count += 1
             if op.source is None:
@@ -254,41 +277,46 @@ def test_uk_unanchorable_ops_are_honest_none_not_fabricated() -> None:
             raw = raw_by_artifact.get(op.source.statute_id)
             if raw is None:
                 continue  # no addressable artifact — absence trivially justified
-            clause = (op.source.raw_text or op.raw_text or "").encode("utf-8")
+            clause = op.source.raw_text or op.raw_text or ""
             if not clause:
                 continue
-            first = raw.find(clause)
-            unique = first >= 0 and raw.find(clause, first + 1) < 0
-            assert not unique, (
-                "an op with a unique verbatim clause must have been anchored, not "
-                f"left None: {clause[:80]!r}"
+            anchorable_body = next(
+                (
+                    body
+                    for body in bodies_by_artifact.get(op.source.statute_id, [])
+                    if body and body in clause
+                ),
+                None,
+            )
+            assert anchorable_body is None, (
+                "an op whose clause contains a unique-byte-run body must have been "
+                f"anchored, not left None: {anchorable_body!r:.80}"
             )
 
     assert total > 0
-    # The canonical UK verdict: every op is honestly unanchored (structured-source
-    # tag-boundary reconstruction). If this ever flips, the verdict has changed and
-    # the reachable-anchor tests above carry the byte-exact proof.
-    assert none_count == total, (
-        "UK canonical sample expected fully BLOCKED (0 anchors); some op anchored — "
-        "update the feasibility verdict if the source surface changed"
-    )
+    # The UK verdict is now REACHABLE (partial): a real majority anchor per-element,
+    # the rest are honest None. If the reachable fraction collapses to 0 again the
+    # per-element re-scope has regressed.
+    assert anchored > 0, "per-element anchoring should reach a non-empty fraction"
+    assert none_count + anchored == total
 
 
-def test_uk_blockage_is_tag_boundary_reconstruction_not_a_defect() -> None:
-    """Prove the blockage cause and that the post-pass works once the clause is a run.
+def test_uk_whole_clause_is_tag_boundary_reconstructed_but_body_anchors() -> None:
+    """Pin WHY the whole clause won't anchor and WHY the per-element body does.
 
-    Two-part proof, pinning the exact feasibility reason:
+    Two-part proof:
 
-    1. STRUCTURAL CAUSE. For a real op whose flattened clause is not a verbatim
+    1. WHOLE-CLAUSE CAUSE. For a real op whose flattened clause is not a verbatim
        byte run of its affecting XML, the clause's word-sequence DOES appear once
-       the XML's tags are stripped — proving the clause was reconstructed across
-       element boundaries (``<Pnumber>``/``<Text>``), not merely whitespace-shifted.
+       the XML's tags are stripped — proving the whole clause was reconstructed
+       across element boundaries (``<Pnumber>``/``<Text>``), so anchoring the
+       flattened whole clause directly is correctly refused (the task-#92 0/709).
 
-    2. POST-PASS IS NOT DEFECTIVE. On a SYNTHETIC artifact in which the SAME clause
-       IS a single contiguous verbatim byte run, the post-pass mints a TRUE anchor
-       that re-verifies byte-exactly. So the UK arm is structured-source-BLOCKED,
-       not code-defective: the recipe generalizes the moment a per-op clause is a
-       verbatim run of its artifact.
+    2. PER-ELEMENT POST-PASS MINTS. On a SYNTHETIC artifact in which that clause is
+       a single contiguous verbatim byte run inside a ``<Text>`` body, the post-pass
+       re-scopes to that body element and mints a TRUE anchor that re-verifies
+       byte-exactly — the mechanism by which the canonical sample reaches ~62% of
+       ops: each anchored op's operative body IS such a run.
     """
     samples = _compile_sample()
     artifact_ids = {
@@ -333,6 +361,16 @@ def test_uk_blockage_is_tag_boundary_reconstruction_not_a_defect() -> None:
     # Part 2: build a SYNTHETIC UTF-8 artifact where the SAME clause is a single
     # contiguous, unique verbatim run, then run the post-pass over a single-op
     # stream. The anchor must mint and re-verify byte-exactly.
+    #
+    # Strip any anchor the real compile already stamped on this op (the post-pass is
+    # idempotent — it skips ops that already carry an anchor — so a stale real-artifact
+    # anchor would otherwise be re-sliced against the synthetic bytes).
+    from dataclasses import replace as _replace
+
+    sample_op = _replace(
+        sample_op, source=_replace(sample_op.source, source_anchor=None)
+    )
+    assert sample_op.source is not None
     clause = sample_op.source.raw_text or sample_op.raw_text or ""
     art_id = sample_op.source.statute_id
     synthetic = (
