@@ -13,6 +13,7 @@ to normalize Lovdata structure into IR trees and LegalOperation objects.
 
 from __future__ import annotations
 
+import contextvars
 import copy
 import re
 import tarfile
@@ -34,6 +35,7 @@ from lawvm.core.filter_result import FilterResult, RejectedItem
 from lawvm.core.invariant_profiles import CORE_REPLAY_DELTA_MINIMAL_FAMILIES
 from lawvm.core.ir_helpers import structural_subtree_hash
 from lawvm.core.op_ordering import OrderingProfile, order_ops
+from lawvm.core.provenance import compute_source_anchor
 from lawvm.core.apply_seam import (
     ApplyProfile,
     AppliedOp,
@@ -1337,6 +1339,95 @@ def parse_no_heading_groups(html_bytes: bytes, base_id: str) -> list[NOHeadingGr
     return groups
 
 
+# Raw-amendment-source context for the byte-span SourceAnchor program (task
+# #92, mirroring the Estonia pilot at estonia/peg.py). The raw Lovdata HTML
+# bytes are in scope only at the top entry ``parse_no_amendment_ops`` (every
+# per-op clause below it has already been text-flattened via
+# ``_normalize_space(" ".join(el.itertext()))`` — exactly the EE flattening
+# shape — so the byte/char offset into the raw artifact is lost at the op
+# emission sites). Rather than thread ``html_bytes`` through the many
+# op-emission call sites and the ``iter_no_document_change_ops`` generator
+# contract, the top entry publishes the raw artifact in this ContextVar for the
+# duration of one amendment's parse; the uniform provenance post-pass
+# (:func:`mint_no_source_anchors`) reads it and mints a TRUE SourceAnchor for
+# every op whose recorded clause text survives flattening as a single verbatim,
+# unique byte run of the raw artifact. When it does not (clause reconstructed
+# across tag boundaries / whitespace-collapsed, or repeated/ambiguous),
+# ``compute_source_anchor`` returns None and the anchor is honestly left absent
+# — never fabricated.
+_NO_RAW_SOURCE_CTX: "contextvars.ContextVar[tuple[str, bytes] | None]" = contextvars.ContextVar(
+    "no_raw_source_ctx", default=None
+)
+
+
+def set_no_raw_source_context(
+    source_artifact_id: str, raw_bytes: bytes
+) -> "contextvars.Token[tuple[str, bytes] | None]":
+    """Publish the raw amendment artifact for SourceAnchor minting in this parse.
+
+    Returns a token the caller MUST pass to :func:`reset_no_raw_source_context`
+    in a ``finally`` so the context never leaks across amendments.
+    """
+    return _NO_RAW_SOURCE_CTX.set((source_artifact_id, raw_bytes))
+
+
+def reset_no_raw_source_context(
+    token: "contextvars.Token[tuple[str, bytes] | None]",
+) -> None:
+    """Clear the raw-source context published by :func:`set_no_raw_source_context`."""
+    _NO_RAW_SOURCE_CTX.reset(token)
+
+
+def mint_no_source_anchors(ops: List[LegalOperation]) -> List[LegalOperation]:
+    """Stamp a TRUE byte-span :class:`SourceAnchor` on every anchorable op.
+
+    Final, uniform post-pass over the WHOLE emitted op stream (every mint path),
+    run by :func:`parse_no_amendment_ops` once the raw amendment artifact has
+    been published in the parse context (see
+    :func:`set_no_raw_source_context`).
+
+    For each op that already carries an ``OperationSource`` but no anchor, the
+    op's recorded clause text (``source.raw_text`` — falling back to the op's
+    ``raw_text``) is located in the raw artifact bytes via
+    :func:`lawvm.core.provenance.compute_source_anchor`. The anchor is built on
+    that EXACT recorded clause string, so a verifier re-slicing the raw bytes at
+    the anchor span gets back precisely the clause text. When the clause is not
+    a single verbatim, unique byte run of the artifact (flattened across HTML
+    tags, whitespace-collapsed, or repeated/ambiguous), ``compute_source_anchor``
+    returns ``None`` and the anchor is honestly left absent — never fabricated.
+
+    Additive metadata only: it touches solely ``source.source_anchor`` and never
+    an apply-authoritative field, so NO replay output is byte-identical
+    (AGENTS.md §0 grounding-neutral). Idempotent: an op that already carries an
+    anchor is left untouched. A no-op when no raw artifact is in context.
+    """
+    raw_ctx = _NO_RAW_SOURCE_CTX.get()
+    if raw_ctx is None or not ops:
+        return ops
+    artifact_id, raw_bytes = raw_ctx
+    anchored: List[LegalOperation] = []
+    for op in ops:
+        src = op.source
+        if src is None or src.source_anchor is not None:
+            anchored.append(op)
+            continue
+        clause = src.raw_text or op.raw_text or ""
+        anchor = (
+            compute_source_anchor(
+                source_artifact_id=artifact_id,
+                raw_bytes=raw_bytes,
+                clause_text=clause,
+            )
+            if clause
+            else None
+        )
+        if anchor is None:
+            anchored.append(op)
+            continue
+        anchored.append(dc_replace(op, source=dc_replace(src, source_anchor=anchor)))
+    return anchored
+
+
 def parse_no_amendment_ops(
     html_bytes: bytes,
     source_id: str,
@@ -1344,14 +1435,26 @@ def parse_no_amendment_ops(
     adjudications_out: Optional[List[CompileAdjudication]] = None,
 ) -> List[LegalOperation]:
     """Parse Lovdata amendment blocks into LegalOperation objects."""
-    ops: list[LegalOperation] = []
-    for _base_id, doc_ops in iter_no_document_change_ops(
-        html_bytes,
-        source_id,
-        adjudications_out=adjudications_out,
-    ):
-        ops.extend(doc_ops)
-    return ops
+    # Publish the raw amendment artifact so the final anchor pass
+    # (:func:`mint_no_source_anchors`, applied to the assembled op stream below)
+    # can mint a TRUE byte-span SourceAnchor for every op whose recorded clause
+    # text survives text-flattening as a verbatim, unique byte run of these
+    # bytes (task #92). The token is reset in the finally below so the context
+    # never leaks across amendments or to other frontends.
+    _raw_source_token = set_no_raw_source_context(source_id, html_bytes)
+    try:
+        ops: list[LegalOperation] = []
+        for _base_id, doc_ops in iter_no_document_change_ops(
+            html_bytes,
+            source_id,
+            adjudications_out=adjudications_out,
+        ):
+            ops.extend(doc_ops)
+        # Final uniform byte-span anchor pass over the WHOLE op stream (every
+        # mint path), while the raw artifact is still published in context.
+        return mint_no_source_anchors(ops)
+    finally:
+        reset_no_raw_source_context(_raw_source_token)
 
 
 def _iter_unstructured_no_change_groups(
