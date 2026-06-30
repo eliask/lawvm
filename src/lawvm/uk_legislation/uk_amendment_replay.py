@@ -23,19 +23,22 @@ Current status:
 
 from __future__ import annotations
 
+import contextvars
+from dataclasses import replace as _dc_replace
 from enum import Enum
 import json as json
 import time
 from lxml import etree as ET
 from pathlib import Path
 from collections.abc import Sequence
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from lawvm.core.ir import (
     IRStatute,
     LegalOperation,
     OperationSource,
 )
+from lawvm.core.provenance import compute_source_anchor
 from lawvm.core.mutation_events import MutationEvent
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.uk_grafter import _LEG_NS as _LEG_NS
@@ -308,6 +311,126 @@ def _classify_compiled_effect_source_pathology(
         effect_type=effect.effect_type,
         is_structural=structural_for_replay,
     )
+
+
+# ── Byte-span SourceAnchor program (task #92, UK arm) ───────────────────────
+#
+# Mirrors the Estonia pilot (estonia/peg.py), the Norway arm (norway/grafter.py),
+# and the Sweden arm (sweden/grafter.py). The shape is identical: publish the raw
+# amendment artifact for the duration of one compile, then run a uniform post-pass
+# over the WHOLE assembled op stream that stamps a TRUE byte-span SourceAnchor on
+# every op whose recorded clause text (``source.raw_text``) is a single verbatim,
+# unique byte run of the raw artifact. When it is not, ``compute_source_anchor``
+# returns ``None`` and the anchor is honestly left absent — never fabricated.
+#
+# UK FRONTEND DIFFERENCE FROM EE/NO/SE. UK compiles MANY affecting acts in one
+# ``compile_ops_for_statute`` call (one per amending instrument), each with its
+# OWN affecting-act XML bytes — there is no single raw artifact for the whole op
+# stream. So the published context is a MAPPING ``{affecting_act_id -> xml_bytes}``
+# (every UK op already carries ``source.statute_id == effect.affecting_act_id``,
+# so the post-pass keys each op to the exact artifact it derives from). Only the
+# affecting acts that actually produced ops are retained (9–56 per statute in the
+# canonical sample), and only their raw ``bytes`` (not the parsed ET trees the
+# ``§source_root_lifecycle`` eviction guards against), so this does not reintroduce
+# the parent_map/root reference-cycle memory cost.
+#
+# FEASIBILITY VERDICT: BLOCKED on the canonical artifact (a rigorous negative
+# result, valid per-frontend like SE). The recorded ``source.raw_text`` is
+# ``_text_content(extracted_el)`` (xml_helpers.py) — the affecting-act provision
+# element's text, itertext-collected across child nodes and whitespace-collapsed
+# (``" ".join(" ".join(parts).split())``), exactly the EE/NO flattening shape. But
+# UK affecting-act XML is STRUCTURED: a clause's number lives in ``<Pnumber>`` (with
+# interleaved ``<CommentaryRef/>`` children) and its body in a sibling
+# ``<P1para><Text>`` — so the flattened clause (``"10 In this Act, omit …"``) is
+# reconstructed ACROSS element boundaries and is NEVER a contiguous verbatim byte
+# run of the raw XML. Measured on the canonical sample: 0/709 ops anchor (the lone
+# verbatim hit, ``"s the Enterprise Act 2002"``, is ambiguous — multiple
+# occurrences — and is correctly refused). This is the EE/NO "reconstructed across
+# tag boundaries" minority case made UNIVERSAL by UK's structured source, NOT the
+# SE encoding-escaping cause. The recipe generalizes the moment a per-op clause
+# survives as a verbatim run (e.g. a single ``<Text>`` node whose body the op
+# quotes verbatim); the infrastructure below mints that anchor honestly when it
+# occurs and leaves it absent otherwise. See tests/test_uk_source_anchor.py.
+_UK_RAW_SOURCE_CTX: "contextvars.ContextVar[Dict[str, bytes] | None]" = (
+    contextvars.ContextVar("uk_raw_source_ctx", default=None)
+)
+
+
+def set_uk_raw_source_context(
+    raw_by_artifact: Dict[str, bytes],
+) -> "contextvars.Token[Dict[str, bytes] | None]":
+    """Publish the per-affecting-act raw artifact map for SourceAnchor minting.
+
+    ``raw_by_artifact`` maps ``affecting_act_id`` (== ``OperationSource.statute_id``
+    for every UK op) to that affecting act's raw XML bytes. The caller MUST pass the
+    returned token to :func:`reset_uk_raw_source_context` in a ``finally`` so the
+    context never leaks across compiles.
+    """
+    return _UK_RAW_SOURCE_CTX.set(raw_by_artifact)
+
+
+def reset_uk_raw_source_context(
+    token: "contextvars.Token[Dict[str, bytes] | None]",
+) -> None:
+    """Clear the raw-source context published by :func:`set_uk_raw_source_context`."""
+    _UK_RAW_SOURCE_CTX.reset(token)
+
+
+def mint_uk_source_anchors(
+    ops: List[LegalOperation],
+    raw_by_artifact: Optional[Dict[str, bytes]] = None,
+) -> List[LegalOperation]:
+    """Stamp a TRUE byte-span :class:`SourceAnchor` on every anchorable op.
+
+    Final, uniform post-pass over the WHOLE emitted op stream (every mint path),
+    run by :meth:`UKReplayPipeline.compile_ops_for_statute` once the per-affecting-
+    act raw artifact map has been published (see
+    :func:`set_uk_raw_source_context`). ``raw_by_artifact`` may be passed directly
+    (tests); when omitted the published context is read.
+
+    For each op that already carries an ``OperationSource`` but no anchor, the op's
+    recorded clause text (``source.raw_text`` — falling back to the op's
+    ``raw_text``) is located in the raw bytes of the affecting act it derives from
+    (``raw_by_artifact[src.statute_id]``) via
+    :func:`lawvm.core.provenance.compute_source_anchor`. The anchor is built on that
+    EXACT recorded clause string, so a verifier re-slicing the raw bytes at the
+    anchor span gets back precisely the clause text. When the clause is not a single
+    verbatim, unique byte run of that artifact (the UNIVERSAL UK case — clause
+    reconstructed across ``<Pnumber>``/``<Text>`` element boundaries — see the
+    module note above), ``compute_source_anchor`` returns ``None`` and the anchor is
+    honestly left absent — never fabricated.
+
+    Additive metadata only: it touches solely ``source.source_anchor`` and never an
+    apply-authoritative field, so UK replay output is byte-identical (AGENTS.md §0
+    grounding-neutral). Idempotent: an op that already carries an anchor is left
+    untouched. A no-op when no raw artifact map is in context.
+    """
+    if raw_by_artifact is None:
+        raw_by_artifact = _UK_RAW_SOURCE_CTX.get()
+    if not raw_by_artifact or not ops:
+        return ops
+    anchored: List[LegalOperation] = []
+    for op in ops:
+        src = op.source
+        if src is None or src.source_anchor is not None:
+            anchored.append(op)
+            continue
+        raw_bytes = raw_by_artifact.get(src.statute_id)
+        clause = src.raw_text or op.raw_text or ""
+        anchor = (
+            compute_source_anchor(
+                source_artifact_id=src.statute_id,
+                raw_bytes=raw_bytes,
+                clause_text=clause,
+            )
+            if (raw_bytes and clause)
+            else None
+        )
+        if anchor is None:
+            anchored.append(op)
+            continue
+        anchored.append(_dc_replace(op, source=_dc_replace(src, source_anchor=anchor)))
+    return anchored
 
 
 class UKReplayPipeline:
@@ -745,6 +868,13 @@ class UKReplayPipeline:
             _last_effect_idx[_e_j.affecting_act_id] = _j
 
         ops = []
+        # §source_anchor (task #92): per-affecting-act raw XML bytes for the
+        # byte-span SourceAnchor post-pass. Captured only for affecting acts that
+        # actually produce ops (keyed by ``affecting_act_id == op.source.statute_id``),
+        # so the marginal retention is the small op-producing-act watermark (9–56 per
+        # statute) of raw ``bytes`` — NOT the parsed ET trees the source-root
+        # eviction guards against. Read by :func:`mint_uk_source_anchors` below.
+        raw_by_artifact: dict[str, bytes] = {}
         # NB: ``extraction_cache`` / ``enacted_extraction_cache`` are initialized
         # once above (before the claim-validation index build) and reused here, so
         # the affecting XML is loaded only once per affecting act across both passes.
@@ -1044,6 +1174,11 @@ class UKReplayPipeline:
                         continue
                 if should_replay_compiled:
                     ops.extend(compiled)
+                    # §source_anchor: retain this affecting act's raw XML bytes so
+                    # the byte-span post-pass can anchor the ops it produced before
+                    # the source context is evicted in the finally below.
+                    if xml_bytes is not None:
+                        raw_by_artifact.setdefault(e.affecting_act_id, xml_bytes)
                 _mark_compile_phase("compile_filter_effect")
             finally:
                 # §source_root_lifecycle: evict affecting-act source context once
@@ -1087,6 +1222,16 @@ class UKReplayPipeline:
             effect_diagnostics_out.extend(
                 collect_repeal_source_warrant_observations(ordered_ops)
             )
+        # §source_anchor (task #92): final uniform byte-span anchor post-pass over
+        # the WHOLE assembled, ordered op stream. Publishes the per-affecting-act
+        # raw artifact map for the duration of the pass and resets it in finally so
+        # the context never leaks across compiles. Additive metadata only
+        # (``source.source_anchor``); replay output is byte-identical.
+        _raw_source_token = set_uk_raw_source_context(raw_by_artifact)
+        try:
+            ordered_ops = mint_uk_source_anchors(ordered_ops, raw_by_artifact)
+        finally:
+            reset_uk_raw_source_context(_raw_source_token)
         return ordered_ops
 
     def apply_ops(
