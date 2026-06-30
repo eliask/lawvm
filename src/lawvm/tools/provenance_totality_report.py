@@ -109,10 +109,87 @@ def _sample_uk(data_root: Path, limit: int) -> list[tuple[str, Sequence[LegalOpe
     return out
 
 
+def _sample_norway(data_root: Path, limit: int) -> list[tuple[str, Sequence[LegalOperation]]]:
+    from lawvm.norway.grafter import parse_no_amendment_ops
+    from lawvm.norway.sources import load_no_amendment_bytes, resolve_no_source_path
+
+    source_path = resolve_no_source_path(data_root / "data" / "norway.farchive")
+    # Lovtid amendment acts with non-trivial change-group op streams (read-only;
+    # bytes pulled straight from the Norway farchive, no index/DB build).
+    sample_ids = ["no/lovtid/2001-01-19-6", "no/lovtid/2001-03-02-7", "no/lovtid/2001-04-06-12"][:limit]
+    out: list[tuple[str, Sequence[LegalOperation]]] = []
+    for source_id in sample_ids:
+        html_bytes = load_no_amendment_bytes(source_id, source_path)
+        if html_bytes is None:
+            continue
+        ops = parse_no_amendment_ops(html_bytes, source_id)
+        out.append((source_id, ops))
+    return out
+
+
+def _sample_sweden(data_root: Path, limit: int) -> list[tuple[str, Sequence[LegalOperation]]]:
+    import json
+
+    from lawvm.sweden.fetch import load_se_official_act_from_archive, open_se_archive
+    from lawvm.sweden.grafter import parse_se_amendment_ops
+
+    archive_path = data_root / "data" / "sweden.farchive"
+    # Official-act amending SFS records with varied op shapes (replace/insert/...).
+    sample_ids = ["1999:1001", "1999:1003", "1999:1004"][:limit]
+    out: list[tuple[str, Sequence[LegalOperation]]] = []
+    archive = open_se_archive(archive_path, readonly=True)
+    try:
+        for sfs_id in sample_ids:
+            act = load_se_official_act_from_archive(archive, sfs_id)
+            if act is None:
+                continue
+            ops = parse_se_amendment_ops(json.dumps(act).encode(), f"se/{sfs_id}")
+            out.append((f"se/{sfs_id}", ops))
+    finally:
+        archive.close()
+    return out
+
+
+def _sample_us_federal(data_root: Path, limit: int) -> list[tuple[str, Sequence[LegalOperation]]]:
+    from lawvm.us_federal.amendatory import lower_plaw_amendatory
+    from lawvm.us_federal.sources import (
+        open_us_federal_farchive,
+        parse_plaw_locator,
+        plaw_locator,
+        read_plaw_locator,
+    )
+
+    archive_path = data_root / "data" / "us_federal.farchive"
+    # Public Laws whose USLM amendatory text lowers to candidate op streams
+    # (on the default Title-11 proof surface). Read-only USLM bytes only.
+    sample_locators = [
+        plaw_locator(108, 126),
+        plaw_locator(108, 121),
+        plaw_locator(108, 128),
+    ][:limit]
+    out: list[tuple[str, Sequence[LegalOperation]]] = []
+    archive = open_us_federal_farchive(archive_path, readonly=True)
+    try:
+        for locator in sample_locators:
+            ident = parse_plaw_locator(locator)
+            data = read_plaw_locator(archive, locator)
+            if data is None or ident is None:
+                continue
+            statute_id = f"PL {ident.congress}-{ident.number}"
+            report = lower_plaw_amendatory(data, statute_id=statute_id)
+            out.append((statute_id, report.operations()))
+    finally:
+        archive.close()
+    return out
+
+
 _SAMPLERS: dict[str, Callable[[Path, int], list[tuple[str, Sequence[LegalOperation]]]]] = {
     "finland": _sample_finland,
     "estonia": _sample_estonia,
     "uk": _sample_uk,
+    "norway": _sample_norway,
+    "sweden": _sample_sweden,
+    "us_federal": _sample_us_federal,
 }
 
 
