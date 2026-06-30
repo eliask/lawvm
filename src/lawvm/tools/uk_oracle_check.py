@@ -23,9 +23,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from lawvm.core.compare_eid_parity_audit import assert_compare_eid_parity
 from lawvm.core.mutation_accounting import build_mutation_invariant_reports
 from lawvm.core.mutation_boundary import tree_path_to_diagnostic_string
 from lawvm.core.mutation_boundary_proof import MutationBoundaryProof
+from lawvm.core.phase_result import Observation
+from lawvm.uk_legislation.canonicalize import canonicalize_compare_eid
 from lawvm.uk_legislation.grounding_classification import (
     GROUNDING_CLASSIFICATIONS,
     grounding_classification_for_event,
@@ -286,6 +289,11 @@ class UKDivergenceState:
     authority_rejections: list[dict[str, Any]] = field(default_factory=list)
     effect_diagnostics: list[dict[str, Any]] = field(default_factory=list)
     n_ops: int = 0
+    # D10 additive audit: COMPARE.EID_DOUBLE_CLASSIFIED observations for any
+    # canonical eId landing in >1 comparison bucket. Read-only over ``buckets``;
+    # empty on a clean partition (the corpus-normal case), so it leaves the
+    # summary surface byte-identical unless a real collision is surfaced.
+    compare_eid_parity_findings: tuple[Observation, ...] = ()
 
 
 def _diagnostic_rows_for_state(state: UKDivergenceState) -> list[dict[str, Any]]:
@@ -534,6 +542,15 @@ def _compute_uk_divergence_state(
         authority_rejections=authority_rejections,
     )
 
+    # D10 additive audit: assert the comparison partition is a true partition —
+    # no canonical eId (Roman/Arabic-folded via canonicalize_compare_eid) lands
+    # in >1 bucket. Read-only over ``buckets``; empty on a clean partition.
+    compare_eid_parity_findings = assert_compare_eid_parity(
+        buckets,
+        canonicalize=canonicalize_compare_eid,
+        source_statute=statute_id,
+    )
+
     return UKDivergenceState(
         buckets=buckets,
         lowering_rejections=lowering_rejections,
@@ -541,6 +558,7 @@ def _compute_uk_divergence_state(
         authority_rejections=authority_rejections,
         effect_diagnostics=effect_diagnostics,
         n_ops=len(ops),
+        compare_eid_parity_findings=compare_eid_parity_findings,
     )
 
 
@@ -741,6 +759,15 @@ def oracle_check_uk_statute(
         authority_rejections=authority_rejections,
     )
 
+    # D10 additive audit (read-only over ``buckets``): no canonical eId may land
+    # in >1 comparison bucket. Empty on the corpus-normal clean partition, so the
+    # summary surface below stays byte-identical unless a real collision fires.
+    compare_eid_parity_findings = assert_compare_eid_parity(
+        buckets,
+        canonicalize=canonicalize_compare_eid,
+        source_statute=statute_id,
+    )
+
     compile_rejection_rows = lowering_rejections + effect_feed_parse_rejections + authority_rejections
     manual_frontier_rejection_rows = [
         r for r in lowering_rejections if _is_manual_frontier_rule(str(r.get("rule_id") or ""))
@@ -874,6 +901,21 @@ def oracle_check_uk_statute(
         f"  UNCLASSIFIED (contract violation): {len(grounding_unclassified_events)}",
         "",
     ]
+
+    # D10: a clean partition emits nothing here, keeping the summary surface
+    # byte-identical; a fired collision surfaces the contradicting buckets as
+    # genuine evidence (AGENTS.md §0 — report, do not hide).
+    if compare_eid_parity_findings:
+        lines.append(
+            f"COMPARE.EID_DOUBLE_CLASSIFIED ({len(compare_eid_parity_findings)} "
+            "canonical EIDs in >1 bucket):"
+        )
+        for finding in compare_eid_parity_findings:
+            canonical_eid = finding.detail["canonical_eid"]
+            colliding = ", ".join(finding.detail["colliding_buckets"])
+            raw = ", ".join(finding.detail["raw_eids"])
+            lines.append(f"  {canonical_eid} -> {{{colliding}}}  raw=[{raw}]")
+        lines.append("")
 
     if base_source.xml_content_status is UKStatuteXmlContentStatus.METADATA_ONLY:
         lines.extend(
