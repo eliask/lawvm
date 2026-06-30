@@ -27,6 +27,7 @@ from typing import Any, List, Optional
 
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.filter_result import FilterResult, RejectedItem, filter_result_from_parts
+from lawvm.core.phase_result import Finding
 from lawvm.core.source_lane import SourceLaneAttempt, SourceLaneSelectionEvidence
 from lawvm.core.temporal import TemporalEvent, TemporalScope
 from lawvm.replay_adjudication import CompileAdjudication, SourceAdjudication
@@ -1503,6 +1504,18 @@ class EEPitResult:
     # but is unreachable from the production lane).
     apply_filter_result: Optional[FilterResult[LegalOperation]] = None
 
+    # B-enforcement increment 4 (LS-03): the universal apply seam's OBSERVE-lane
+    # findings drained from the production apply fold (``AppliedOp.observations``).
+    # These are ADDITIVE, non-blocking observations (role=observation) — chiefly
+    # the ``APPLY.RECOVERED_OP_OBSERVED`` / ``APPLY.OCCUPANCY_TRANSITION_OBSERVED``
+    # witnesses — that NEVER entered the production ``adjudications`` /
+    # ``apply_filter_result``, so the replayed tree + the partition stay
+    # byte-identical regardless of this field. It is the corpus
+    # occupancy-cleanliness MEASUREMENT carrier: a non-empty
+    # ``OCCUPANCY_TRANSITION_OBSERVED`` count means EE's corpus contains invalid
+    # occupancy transitions, so the LS-03 gate must stay OBSERVE (not block).
+    seam_observations: list[Finding] = field(default_factory=list)
+
     def to_replay_summary(self) -> ReplaySummary:
         """Project this EE-specific result onto the shared ``ReplaySummary``
         contract from ``core/replay_contracts.py``, giving downstream
@@ -1999,6 +2012,7 @@ def replay_ee_to_pit(
             all_ops,
             lo_ops_out=lo_ops_out,
             adjudications_out=result.adjudications,
+            seam_observations_out=result.seam_observations,
         )
         result.replayed = apply_result.statute
         result.apply_filter_result = apply_result.filter_result

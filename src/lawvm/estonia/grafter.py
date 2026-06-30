@@ -69,6 +69,8 @@ from lawvm.core.apply_seam import (
     MaterializeResult,
     apply_op,
 )
+from lawvm.core.occupancy import OccupancyClass
+from lawvm.core.phase_result import Finding
 from lawvm.estonia.act_identity_registry import lookup_ee_act_identity
 from lawvm.core.op_ordering import order_ops
 from lawvm.estonia.ordering import ee_ordering_profile
@@ -10650,12 +10652,65 @@ def _ee_text_replace_run_sort_key(op: LegalOperation) -> tuple[int, int, int, in
     return (-len(old_text), scope_rank, generic_ministry_rank, op.sequence)
 
 
+def _ee_section_occupancy(
+    op: LegalOperation, before_state: object, _after_state: object
+) -> Optional[OccupancyClass]:
+    """Resolve the before-occupancy of the whole SECTION slot an EE op targets (LS-03).
+
+    The EE instantiation of the universal apply-seam ``occupancy_resolver`` hook
+    (``core/apply_seam``). It models whole-SECTION occupancy only — mirroring FI's
+    reference ``finland/apply_policy._section_occupancy`` (which gates only
+    ``target_unit_kind == "section"`` ops with no paragraph/item) so the kernel and
+    the two frontends share one (action, from)->to semantics:
+
+    * The op must target a whole section: the address leaf is a ``section`` and the
+      path carries no deeper (subsection / item) tail. A non-section op (or a
+      descendant-targeted op) carries no whole-slot occupancy meaning → ``None``
+      (the gate skips it, exactly FI's per-op skip).
+    * The section slot's occupancy is read from ``before_state`` (the pre-op body)
+      via EE's own ``_ee_resolve_full_path`` (which finds chapter-nested sections):
+      an unresolvable slot is ``ABSENT``; a section stub carrying EE's repeal
+      tombstone marker (``attrs["kehtetu"]`` truthy — EE's analogue of FI's
+      ``lawvm_repeal_placeholder``) is ``TOMBSTONE``; any other live section is
+      ``SUBSTANTIVE``.
+
+    Returning ``None`` for everything but a whole-section op keeps the gate scoped
+    to the slot semantics the occupancy table actually models. The seam then runs
+    the SAME core ``validate_transition`` and routes any invalid (action,
+    from-occupancy) transition to the non-blocking observe lane (or, once EE's
+    bench is proven occupancy-clean, blocks it).
+    """
+    if not isinstance(before_state, IRNode):
+        return None
+    target = op.target
+    if target.leaf_kind() != "section":
+        # Not a whole-section target (a subsection/item op, a statute-title op, or
+        # a non-addressed op): no whole-slot occupancy meaning. FI skips these too.
+        return None
+    # A path whose leaf is a section but which also carries a descendant facet is
+    # not a whole-section slot op; guard defensively (EE section addresses are a
+    # single ``section`` leaf, optionally chapter/division-qualified).
+    if any(kind in ("subsection", "item") for kind, _label in target.path):
+        return None
+    nominal_path = _address_to_path(target)
+    resolved = _ee_resolve_full_path(before_state, nominal_path)
+    if resolved is None:
+        return OccupancyClass.ABSENT
+    node = tree_ops.resolve(before_state, resolved)
+    if node is None:
+        return OccupancyClass.ABSENT
+    if node.attrs.get("kehtetu"):
+        return OccupancyClass.TOMBSTONE
+    return OccupancyClass.SUBSTANTIVE
+
+
 def apply_ee_ops(
     statute: IRStatute,
     ops: List[LegalOperation],
     blame_map: Optional[dict[str, LegalOperation]] = None,
     lo_ops_out: Optional[list[LegalOperation]] = None,
     adjudications_out: Optional[list[CompileAdjudication]] = None,
+    seam_observations_out: Optional[list[Finding]] = None,
 ) -> IRStatute:
     """Apply LegalOperations to an Estonian IRStatute, returning an updated copy.
 
@@ -10813,6 +10868,23 @@ def apply_ee_ops(
     # ``lo_ops_out`` snapshot channel) stays byte-identical (no new artifacts);
     # the additive receipt lane is proven via the seam in
     # ``tests/test_ee_apply_seam_parallel_run.py``.
+    # ── EE occupancy resolver + LS-03 BLOCK mode (B-enforcement increment 4). ─
+    # EE is the FIRST non-FI frontend to wire a REAL occupancy resolver onto the
+    # universal seam: ``_ee_section_occupancy`` reads the whole-section slot's
+    # before-occupancy (ABSENT / TOMBSTONE / SUBSTANTIVE, from EE's ``kehtetu``
+    # tombstone marker) so the seam runs the core ``validate_transition`` over
+    # every landed whole-section write.
+    #
+    # ``occupancy_mode="block"``: this is the FIRST ENFORCING seam gate. It was
+    # promoted from OBSERVE only AFTER measuring EE's replayable corpus with the
+    # resolver in observe mode and finding ZERO would-reject transitions (119/120
+    # statutes, 942 ops, 0 ``APPLY.OCCUPANCY_TRANSITION_OBSERVED`` — EE's corpus is
+    # occupancy-clean for whole-section ops; see
+    # ``tests/test_ee_occupancy_enforcement.py`` + ``notes/B_ENFORCEMENT_STATUS.md``).
+    # Because the corpus has no invalid transition, block mode emits the strict
+    # ``APPLY.OCCUPANCY_TRANSITION_BLOCKED`` violation on NO corpus op → byte-
+    # identical to the pre-resolver EE output — yet any FUTURE op that violates the
+    # occupancy table now fails loud in EE's production ``findings``.
     ee_apply_profile: ApplyProfile[IRNode] = ApplyProfile(
         jurisdiction="ee",
         materializer=_ee_materialize_one,
@@ -10820,6 +10892,8 @@ def apply_ee_ops(
         emit_receipts=False,
         emit_coverage=False,
         receipt_helper_prefix="apply_ee_ops",
+        occupancy_resolver=_ee_section_occupancy,
+        occupancy_mode="block",
     )
 
     for op in reordered_ops:
@@ -10903,6 +10977,19 @@ def apply_ee_ops(
         new_body = applied_result.new_state
         changed = applied_result.applied
         body = new_body
+
+        # ── B-enforcement increment 4 (LS-03): drain the seam's OBSERVE lane. ──
+        # The universal apply seam now runs EE's REAL ``_ee_section_occupancy``
+        # resolver and routes any invalid (action, from-occupancy) transition to
+        # ``AppliedOp.observations`` (NEVER to ``findings`` while ``boundary_mode=
+        # "off"`` — production output stays byte-identical). When the caller asks
+        # for the observations (``seam_observations_out`` provided — the corpus
+        # occupancy-cleanliness MEASUREMENT and the block-promotion decision read
+        # it), they are appended here verbatim. Default ``None`` is a pure no-op:
+        # production replay never allocates or reads the lane, so byte-identity is
+        # unconditional.
+        if seam_observations_out is not None and applied_result.observations:
+            seam_observations_out.extend(applied_result.observations)
 
         # §2.9 guard-liveness: EE is the first non-UK/non-FI consumer of the
         # core per-op mutation-boundary audit (LS-01 / D1). Default-OFF
@@ -11208,6 +11295,7 @@ def apply_ee_ops_conserved(
     blame_map: Optional[dict[str, LegalOperation]] = None,
     lo_ops_out: Optional[list[LegalOperation]] = None,
     adjudications_out: Optional[list[CompileAdjudication]] = None,
+    seam_observations_out: Optional[list[Finding]] = None,
 ) -> EEApplyResult:
     """Apply an Estonia op set with a typed conservation receipt (§1.8).
 
@@ -11279,6 +11367,7 @@ def apply_ee_ops_conserved(
         blame_map=blame_map,
         lo_ops_out=lo_ops_out,
         adjudications_out=adjudications,
+        seam_observations_out=seam_observations_out,
     )
     # Partition: an op is REJECTED iff its op_id appears on a per-op SKIP
     # adjudication. Cross-act findings (empty op_id) and recovery-rule

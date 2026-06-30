@@ -1182,6 +1182,28 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "op via mode_for/admits over its OpProvenance, so a certified/strict "
                 "claim rests only on grammar-recognized (Parsed) ops",
                 ("safety_invariant", "provenance"), role="violation"),
+    # AM-01 universal apply-seam OBSERVE lane (B-enforcement increment 4). The
+    # blocking ``APPLY.RECOVERED_OP_REJECTED_IN_STRICT`` above is FI's strict-mode
+    # provenance-acceptance block (``mode_for``/``admits`` over a typed
+    # ``OpProvenance``). This is its non-blocking, observation-role twin emitted
+    # by ``core/apply_seam.apply_op`` for every state-mutating op a profile's
+    # ``provenance_resolver`` reports as NOT admitted under its acceptance mode
+    # (the recovered/guessed op a strict consumer would refuse). It makes the
+    # provenance-acceptance hole VISIBLE without polluting the production
+    # ``findings``/adjudication multiset (it is routed to the separate
+    # ``AppliedOp.observations`` lane, never to ``AppliedOp.findings``). The
+    # kernel-default resolver models no provenance (returns ``None``), so all 6
+    # production profiles are 0-delta. Observe-first per design §5; the staged
+    # promotion to ``...REJECTED_IN_STRICT`` block is per-profile work once a
+    # frontend mints typed provenance (see ``notes/B_ENFORCEMENT_STATUS.md``).
+    FindingSpec("APPLY.RECOVERED_OP_OBSERVED", "apply",
+                "recovery", "warn", "apply_seam",
+                "a state-mutating op landed through the universal apply seam whose "
+                "typed provenance is NOT admitted under its profile's acceptance mode "
+                "(a recovered/guessed op a strict consumer would refuse); surfaced as a "
+                "non-blocking observation in the seam observe lane (the AM-01 "
+                "provenance-acceptance witness), never promoted to authority",
+                ("safety_invariant", "provenance"), role="observation"),
     # --- Wave-2 apply-authority closure: per-op + whole-tree sweeps ---
     # LS-07 (strict-blocking): a descendant-granularity op whose resolved address
     # carries no descendant slot would overwrite its host whole-unit.

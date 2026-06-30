@@ -52,8 +52,8 @@ materialized state or findings changing.
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
 from typing import Generic, Literal, Optional, Protocol, TypeVar
 
 from lawvm.core.coverage import CoverageClaim
@@ -93,9 +93,15 @@ __all__ = [
     "REPLAY_AUTHORIZATION_PROOF_OBSERVED_FINDING_CODE",
     "no_op_execution_authorization",
     "OccupancyResolver",
+    "OccupancyMode",
     "OCCUPANCY_TRANSITION_OBSERVED_FINDING_CODE",
+    "OCCUPANCY_TRANSITION_BLOCKED_FINDING_CODE",
     "no_op_occupancy",
     "STRUCTURAL_ACTION_TO_OCCUPANCY_ACTION",
+    "OpAcceptance",
+    "ProvenanceResolver",
+    "RECOVERED_OP_OBSERVED_FINDING_CODE",
+    "no_op_provenance",
     "ApplyProfile",
     "AppliedOp",
     "apply_op",
@@ -174,6 +180,25 @@ def no_op_execution_authorization(
 #: notes/B_ENFORCEMENT_STATUS.md).
 OCCUPANCY_TRANSITION_OBSERVED_FINDING_CODE = "APPLY.OCCUPANCY_TRANSITION_OBSERVED"
 
+#: The strict-blocking violation code the seam emits for an invalid occupancy
+#: transition when a profile sets ``occupancy_mode="block"`` (the FI-defined
+#: violation twin of the observe code above). EE is the first frontend to set
+#: block mode — only after its corpus is MEASURED occupancy-clean (zero would-
+#: reject transitions), so block mode is byte-identical on the corpus (it emits
+#: this violation only on an invalid transition, which the clean corpus has none
+#: of). Routed to production ``findings`` (role=violation, blocking).
+OCCUPANCY_TRANSITION_BLOCKED_FINDING_CODE = "APPLY.OCCUPANCY_TRANSITION_BLOCKED"
+
+#: Per-profile disposition for the LS-03 occupancy-transition gate. ``"observe"``
+#: (the default — all current profiles) routes an invalid transition to the
+#: non-blocking ``observations`` lane; ``"block"`` routes it to production
+#: ``findings`` as the strict blocking ``APPLY.OCCUPANCY_TRANSITION_BLOCKED``
+#: violation (the EV-04 promote-after-clean-bench landing). ``"off"`` disables the
+#: gate entirely (no resolver call). A profile with the default no-op
+#: ``occupancy_resolver`` is 0-delta under ANY mode (the resolver yields ``None``
+#: so nothing is validated); the mode only matters once a real resolver is wired.
+OccupancyMode = Literal["off", "observe", "block"]
+
 #: The jurisdiction-neutral map from a structural ``op.action.value`` to the
 #: occupancy-modelled :class:`~lawvm.core.occupancy.OccupancyAction`. Only the
 #: occupancy-relevant actions are mapped (REPLACE/INSERT/REPEAL — the same three
@@ -214,6 +239,87 @@ def no_op_occupancy(
     keeps all 6 production profiles 0-delta (no occupancy model → the gate is a
     no-op). A frontend that models occupancy (FI is the reference) supplies a
     resolver returning the targeted slot's before-occupancy.
+    """
+    return None
+
+
+# ── AM-01 universal provenance-acceptance OBSERVE gate ────────────────────────
+#
+# The typed-acceptance closure (AM-01) decides whether a strict consumer may
+# accept a state-mutating op given HOW the op was derived: a ``Recovered``
+# (recognizer-guessed) op is refused under a strict acceptance mode, while a
+# ``Parsed`` (grammar-recognized) op is always admitted. FI owns the typed
+# acceptance machinery (``finland/op_provenance`` — ``OpProvenance`` /
+# ``mode_for`` / ``admits``) and its strict-only gate
+# (``finland/apply_resolved_op._gate_provenance_acceptance_at_op``), so today the
+# gate fires NOWHERE for the universal kernel. This seam gate hoists the DECISION
+# to the kernel, OBSERVE-first (design §5), WITHOUT importing ``finland/``: the
+# acceptance verdict is a jurisdiction-owned computation, so — unlike the
+# execution-authorization (core ``ExecutionAuthorization``) and occupancy (core
+# ``OccupancyClass`` + ``validate_transition``) gates whose decision types live in
+# ``core`` — the provenance resolver returns the already-computed acceptance
+# VERDICT (the core-neutral :class:`OpAcceptance`), and the seam simply routes a
+# non-admitted verdict to an observation. The default kernel resolver models no
+# provenance (``None``), so all 6 production profiles are 0-delta by construction.
+
+#: The non-blocking observation code the seam emits for a mutating op whose typed
+#: provenance is NOT admitted under its profile's acceptance mode. Its
+#: strict-blocking twin (FI-only today) is
+#: ``APPLY.RECOVERED_OP_REJECTED_IN_STRICT``; promoting this observe gate to that
+#: block per-profile is staged work (see notes/B_ENFORCEMENT_STATUS.md).
+RECOVERED_OP_OBSERVED_FINDING_CODE = "APPLY.RECOVERED_OP_OBSERVED"
+
+
+@dataclass(frozen=True, slots=True)
+class OpAcceptance:
+    """A core-neutral provenance-acceptance verdict for one op (AM-01).
+
+    The seam cannot decide acceptance itself: the typed ``OpProvenance`` sum type
+    and the ``mode_for``/``admits`` closure that decides it are jurisdiction-owned
+    (FI's ``finland/op_provenance``), and the kernel must NOT import ``finland/``.
+    So a profile's ``provenance_resolver`` computes the acceptance with its own
+    typed machinery and hands the kernel only this small, dependency-free verdict:
+
+    * ``admitted`` — whether the op's provenance is accepted under the resolver's
+      acceptance mode. ``False`` is the witness case (a recovered/guessed op a
+      strict consumer would refuse); ``True`` met the closure (nothing observed).
+    * ``acceptance_mode`` — the mode the verdict was decided under (e.g.
+      ``"strict"`` / ``"quirks"``), for the observation detail. Free-form so the
+      kernel stays jurisdiction-neutral.
+    * ``provenance_kind`` — a short tag for the provenance shape (e.g.
+      ``"recovered"`` / ``"parsed"``), for the observation detail.
+    * ``detail`` — extra jurisdiction-specific diagnostics (recovery surface,
+      confidence tier, recognizer ids) folded verbatim into the observation.
+
+    This mirrors how FI's ``_gate_provenance_acceptance_at_op`` decides via
+    ``admits(mode_for(profile, prov), prov)`` — the kernel just records the
+    decision FI already makes, never re-deriving it.
+    """
+
+    admitted: bool
+    acceptance_mode: str = ""
+    provenance_kind: str = ""
+    detail: Mapping[str, object] = field(default_factory=dict)
+
+
+# A provenance resolver answers: under THIS profile's acceptance mode, is the op's
+# typed provenance admitted? ``(op) -> OpAcceptance | None``. ``None`` means the
+# profile models no provenance for this op (no typed provenance carrier, or the
+# default kernel resolver) — the gate is then a no-op. A non-``None`` verdict whose
+# ``admitted`` is ``False`` is the AM-01 witness.
+ProvenanceResolver = Callable[[LegalOperation], Optional[OpAcceptance]]
+
+
+def no_op_provenance(_op: LegalOperation) -> Optional[OpAcceptance]:
+    """The honest default resolver: the kernel models NO op provenance.
+
+    ``core/ir.LegalOperation`` carries no typed ``OpProvenance`` field today (it is
+    a cross-jurisdiction type), and the typed acceptance machinery is FI-owned, so
+    the universal kernel resolves none — exactly the AM-01 hole the FI battery
+    names (the provenance-acceptance gate fires FI-only + strict-only). Returning
+    ``None`` for every op keeps all 6 production profiles 0-delta (no provenance
+    model → the gate is a no-op). A frontend that mints typed provenance supplies
+    a resolver returning the op's acceptance verdict (FI is the reference).
     """
     return None
 
@@ -484,6 +590,31 @@ class ApplyProfile(Generic[State]):
     #: 0-delta). FI is the reference for the table semantics; the kernel does
     #: NOT import ``finland/``.
     occupancy_resolver: OccupancyResolver = no_op_occupancy
+    #: LS-03 occupancy-transition gate disposition (B-enforcement increment 4).
+    #: ``"observe"`` (default) routes an invalid (action, from-occupancy)
+    #: transition to the non-blocking :attr:`AppliedOp.observations` lane (the
+    #: inc-3 observe code); ``"block"`` routes it to production
+    #: :attr:`AppliedOp.findings` as the strict blocking
+    #: ``APPLY.OCCUPANCY_TRANSITION_BLOCKED`` violation; ``"off"`` disables the
+    #: gate. EE is the first frontend to set ``"block"`` — only after its corpus
+    #: is MEASURED occupancy-clean (zero would-reject transitions), so block mode
+    #: is byte-identical on the corpus. A profile carrying the default no-op
+    #: ``occupancy_resolver`` is 0-delta under any mode.
+    occupancy_mode: OccupancyMode = "observe"
+    #: AM-01 provenance-acceptance OBSERVE gate resolver. Answers ``(op) ->
+    #: OpAcceptance | None``: the profile's already-computed typed-acceptance
+    #: verdict for the op (the FI battery decides this via ``admits(mode_for(
+    #: profile, prov), prov)`` over a typed ``OpProvenance``), or ``None`` when the
+    #: profile models no provenance for this op. When the resolver yields a verdict
+    #: whose ``admitted`` is ``False`` (a recovered/guessed op a strict consumer
+    #: would refuse), the seam emits the non-blocking ``APPLY.RECOVERED_OP_OBSERVED``
+    #: observation to the seam's separate :attr:`AppliedOp.observations` lane.
+    #: Defaults to :func:`no_op_provenance` (the kernel models no provenance — the
+    #: AM-01 hole; all 6 current profiles inherit it and are 0-delta). The typed
+    #: acceptance machinery is FI-owned; the kernel does NOT import ``finland/`` —
+    #: the resolver hands the kernel only the core-neutral :class:`OpAcceptance`
+    #: verdict.
+    provenance_resolver: ProvenanceResolver = no_op_provenance
 
 
 @dataclass(frozen=True, slots=True)
@@ -516,7 +647,7 @@ class AppliedOp(Generic[State]):
     coverage_delta: CoverageDelta
     applied: bool
     declared_recovery_prefixes: tuple[TreePath, ...] = ()
-    #: The SEPARATE observe lane (B-enforcement increments 1+2+3). Carries the
+    #: The SEPARATE observe lane (B-enforcement increments 1+2+3+4). Carries the
     #: universal apply-seam OBSERVE-mode findings: (1) the
     #: ``EVID.REPLAY_AUTHORIZATION_PROOF_OBSERVED`` firewall-hole witness emitted
     #: per mutating op lacking an ExecutionAuthorization proof (inc 1); (2)
@@ -528,8 +659,13 @@ class AppliedOp(Generic[State]):
     #: guard-liveness witness (inc 3) emitted per mutating op whose (action,
     #: from-occupancy) pair is an invalid occupancy transition, when the profile
     #: supplies an ``occupancy_resolver`` (the kernel-default resolver models no
-    #: occupancy → 0-delta for all 6 current profiles). These are ADDITIVE
-    #: evidence (role=observation, non-blocking) and are routed here, NEVER into
+    #: occupancy → 0-delta for all 6 current profiles); and (4) the
+    #: ``APPLY.RECOVERED_OP_OBSERVED`` AM-01 provenance-acceptance witness (inc 4)
+    #: emitted per mutating op whose typed-provenance acceptance verdict is NOT
+    #: admitted, when the profile supplies a ``provenance_resolver`` (the
+    #: kernel-default resolver models no provenance → 0-delta for all 6 current
+    #: profiles). These are ADDITIVE evidence (role=observation, non-blocking) and
+    #: are routed here, NEVER into
     #: :attr:`findings`, so the production findings/adjudication multiset the
     #: byte-identity gates assert on is UNCHANGED (EV-04: an observation explains,
     #: it never becomes authority). Empty when the op landed no write (or, for
@@ -605,24 +741,49 @@ def apply_op(
             typed_op, profile=profile, source_statute=source_statute
         )
 
-        # ── LS-03 occupancy-transition OBSERVE gate (universal). ────────────
+        # ── LS-03 occupancy-transition gate (universal). ────────────────────
         # A landed write is a slot occupancy transition; the occupancy table
         # (``core/occupancy.VALID_TRANSITIONS``) names which (action,
         # from-occupancy) pairs are valid. The apply path never enforced this
         # outside FI (the audit-registry LS-03 guard-liveness hole). When a
         # profile supplies an ``occupancy_resolver`` (FI is the reference), the
-        # seam validates the transition and emits a non-blocking observation to
-        # the SEPARATE ``observations`` lane on an invalid one — never to
-        # ``findings``. Default-resolver profiles (all 6 today) model no
-        # occupancy → no-op → 0-delta. Non-blocking, additive evidence.
+        # seam validates the transition. Under ``occupancy_mode="observe"`` (the
+        # default) an invalid transition emits a non-blocking observation to the
+        # SEPARATE ``observations`` lane — never to ``findings``. Under
+        # ``occupancy_mode="block"`` (EE, after its corpus was MEASURED
+        # occupancy-clean) it emits the strict ``APPLY.OCCUPANCY_TRANSITION_BLOCKED``
+        # violation to production ``findings`` — the first ENFORCING seam gate.
+        # Default-resolver profiles (all but EE today) model no occupancy → no-op
+        # → 0-delta under any mode.
+        occupancy_findings = _occupancy_transition_check(
+            typed_op,
+            base_state,
+            new_state,
+            profile=profile,
+            source_statute=source_statute,
+        )
+        if profile.occupancy_mode == "block":
+            findings.extend(occupancy_findings)
+        elif profile.occupancy_mode == "observe":
+            observations = (*observations, *occupancy_findings)
+        # occupancy_mode == "off": gate disabled, nothing emitted.
+
+        # ── AM-01 provenance-acceptance OBSERVE gate (universal). ───────────
+        # A landed write is a state mutation; the typed-acceptance closure
+        # (``mode_for``/``admits`` over the op's ``OpProvenance``) decides whether
+        # a strict consumer may accept it given how it was derived. The apply path
+        # never enforced this outside FI (FI-only + strict-only). When a profile
+        # supplies a ``provenance_resolver`` (FI is the reference; the typed
+        # acceptance machinery is FI-owned and the kernel does NOT import
+        # ``finland/`` — the resolver hands the kernel only the core-neutral
+        # ``OpAcceptance`` verdict), the seam routes a NOT-admitted verdict to a
+        # non-blocking observation on the SEPARATE ``observations`` lane — never
+        # to ``findings``. Default-resolver profiles (all 6 today) model no
+        # provenance → no-op → 0-delta. Non-blocking, additive evidence.
         observations = (
             *observations,
-            *_occupancy_transition_observe(
-                typed_op,
-                base_state,
-                new_state,
-                profile=profile,
-                source_statute=source_statute,
+            *_provenance_acceptance_observe(
+                typed_op, profile=profile, source_statute=source_statute
             ),
         )
 
@@ -776,10 +937,10 @@ def _execution_authorization_observe(
     )
 
 
-# ── LS-03 occupancy-transition OBSERVE gate ───────────────────────────────────
+# ── LS-03 occupancy-transition gate (observe + block) ─────────────────────────
 
 
-def _occupancy_transition_observe(
+def _occupancy_transition_check(
     op: LegalOperation,
     before_state: State,
     after_state: State,
@@ -787,7 +948,7 @@ def _occupancy_transition_observe(
     profile: ApplyProfile[State],
     source_statute: str,
 ) -> tuple[Finding, ...]:
-    """Observe whether a landed op made a VALID occupancy transition (LS-03).
+    """Check whether a landed op made a VALID occupancy transition (LS-03).
 
     The universal occupancy-transition closure hoisted to the kernel from FI's
     per-frontend ``_gate_occupancy_transition_at_op``. The gate runs only when
@@ -803,16 +964,24 @@ def _occupancy_transition_observe(
     against the core ``VALID_TRANSITIONS`` table via the SAME
     ``validate_transition`` helper FI calls — so the kernel and FI's occupancy
     gate cannot drift, and the kernel does not import ``finland/``. A VALID
-    transition emits nothing (observe-first: only the invalid case is the
-    witness, matching FI's strict-block-on-invalid). An INVALID transition emits
-    one non-blocking ``APPLY.OCCUPANCY_TRANSITION_OBSERVED`` observation.
+    transition emits nothing (only the invalid case is the witness, matching FI's
+    strict-block-on-invalid).
 
-    The returned findings are role=observation, ``blocking=False``, and are
-    routed to the SEPARATE :attr:`AppliedOp.observations` lane by the caller —
-    NEVER to :attr:`AppliedOp.findings`. Byte-identity mechanism: the production
-    findings/adjudication multiset is untouched while the LS-03 guard-liveness
-    hole becomes universally observable (design §5 observe-first; EV-04
-    observation-is-not-authority).
+    An INVALID transition emits ONE finding whose CODE + role depend on the
+    caller's ``profile.occupancy_mode``:
+
+    * ``"observe"`` → the non-blocking ``APPLY.OCCUPANCY_TRANSITION_OBSERVED``
+      observation, routed by the caller to the SEPARATE
+      :attr:`AppliedOp.observations` lane (never ``findings``) — the byte-identity
+      observe path (design §5; EV-04 observation-is-not-authority);
+    * ``"block"`` → the strict blocking ``APPLY.OCCUPANCY_TRANSITION_BLOCKED``
+      violation (FI's twin), routed by the caller to production
+      :attr:`AppliedOp.findings`. EE sets block ONLY after its corpus is MEASURED
+      occupancy-clean, so this fires on no corpus op (byte-identical) yet fails
+      loud on any future invalid transition — the first ENFORCING seam gate.
+
+    The CODE-vs-mode mapping is decided here so the (action, occupancy) detail is
+    built once; the caller routes the finding to the right lane by mode.
     """
     occupancy_action = (
         STRUCTURAL_ACTION_TO_OCCUPANCY_ACTION.get(op.action.value)
@@ -827,36 +996,127 @@ def _occupancy_transition_observe(
     if current is None:
         # The profile models no occupancy for this op (the default kernel
         # resolver, or a frontend whose slot is not whole-unit-addressable): the
-        # gate is a no-op — exactly FI's per-op skip. 0-delta for all 6 profiles.
+        # gate is a no-op — exactly FI's per-op skip. 0-delta for all but EE.
         return ()
     try:
         validate_transition(occupancy_action, current)
     except InvalidOccupancyTransition as exc:
+        blocking = profile.occupancy_mode == "block"
+        kind = (
+            OCCUPANCY_TRANSITION_BLOCKED_FINDING_CODE
+            if blocking
+            else OCCUPANCY_TRANSITION_OBSERVED_FINDING_CODE
+        )
+        message = (
+            "A state-mutating op landed through the universal apply seam on an "
+            "invalid (action, occupancy) transition (LS-03). "
+            + (
+                "Blocked: the profile enforces the occupancy table after a clean-"
+                "corpus measurement."
+                if blocking
+                else "Surfaced as a non-blocking guard-liveness witness; not "
+                "promoted to authority."
+            )
+        )
         return (
             Finding(
-                kind=OCCUPANCY_TRANSITION_OBSERVED_FINDING_CODE,
-                role="observation",
+                kind=kind,
+                role="violation" if blocking else "observation",
                 stage="apply",
-                blocking=False,
+                blocking=blocking,
                 source_statute=source_statute,
                 detail={
-                    "message": (
-                        "A state-mutating op landed through the universal apply "
-                        "seam on an invalid (action, occupancy) transition (LS-03). "
-                        "Surfaced as a non-blocking guard-liveness witness; not "
-                        "promoted to authority."
-                    ),
+                    "message": message,
                     "op_id": op.op_id or "",
                     "jurisdiction": profile.jurisdiction,
                     "action": occupancy_action.value,
                     "current_occupancy": current.value,
                     "transition_error": str(exc),
-                    "owner": "apply_seam_occupancy_transition_observe",
+                    "owner": "apply_seam_occupancy_transition_check",
                 },
             ),
         )
-    # Valid transition: closure met, nothing observed.
+    # Valid transition: closure met, nothing emitted.
     return ()
+
+
+# ── AM-01 provenance-acceptance OBSERVE gate ──────────────────────────────────
+
+
+def _provenance_acceptance_observe(
+    op: LegalOperation,
+    *,
+    profile: ApplyProfile[State],
+    source_statute: str,
+) -> tuple[Finding, ...]:
+    """Observe whether a landed op's provenance is ADMITTED (AM-01).
+
+    The universal provenance-acceptance closure hoisted to the kernel from FI's
+    per-frontend ``_gate_provenance_acceptance_at_op``. The gate runs only when
+    the profile supplies a ``provenance_resolver`` that yields a non-``None``
+    :class:`OpAcceptance` verdict for the op. For every other op — no provenance
+    model (the default ``no_op_provenance`` → ``None``, the 0-delta production
+    case) — the gate is a no-op, mirroring FI's per-op skip (a ``Parsed`` / no-
+    recovery op is admitted under every mode, so FI's gate returns early).
+
+    When the resolver yields a verdict, the seam records the DECISION FI already
+    made: an ``admitted`` verdict met the closure and emits nothing (observe-
+    first: only the not-admitted case is the witness, matching FI's strict-block-
+    on-non-admit). A NOT-admitted verdict (a recovered/guessed op a strict
+    consumer would refuse) emits one non-blocking ``APPLY.RECOVERED_OP_OBSERVED``
+    observation. The kernel does NOT re-derive acceptance (the typed
+    ``OpProvenance`` + ``mode_for``/``admits`` machinery is FI-owned and the kernel
+    must not import ``finland/``); the resolver hands the kernel only the core-
+    neutral verdict.
+
+    The returned findings are role=observation, ``blocking=False``, and are routed
+    to the SEPARATE :attr:`AppliedOp.observations` lane by the caller — NEVER to
+    :attr:`AppliedOp.findings`. Byte-identity mechanism: the production
+    findings/adjudication multiset is untouched while the AM-01 provenance-
+    acceptance hole becomes universally observable (design §5 observe-first;
+    EV-04 observation-is-not-authority).
+    """
+    acceptance = profile.provenance_resolver(op)
+    if acceptance is None:
+        # The profile models no provenance for this op (the default kernel
+        # resolver, or a frontend with no typed provenance carrier): the gate is
+        # a no-op — exactly FI's per-op skip. 0-delta for all 6 profiles.
+        return ()
+    if acceptance.admitted:
+        # The op's provenance is admitted under the resolver's acceptance mode
+        # (a Parsed/grammar-recognized op, or a recovery surface the profile
+        # allows): closure met, nothing observed.
+        return ()
+    detail: dict[str, object] = {
+        "message": (
+            "A state-mutating op landed through the universal apply seam whose "
+            "typed provenance is not admitted under its profile's acceptance mode "
+            "(a recovered/guessed op a strict consumer would refuse) (AM-01). "
+            "Surfaced as a non-blocking provenance-acceptance witness; not "
+            "promoted to authority."
+        ),
+        "op_id": op.op_id or "",
+        "jurisdiction": profile.jurisdiction,
+        "action": op.action.value if op.action else "",
+        "acceptance_mode": acceptance.acceptance_mode,
+        "provenance_kind": acceptance.provenance_kind,
+        "owner": "apply_seam_provenance_acceptance_observe",
+    }
+    # Fold the resolver's jurisdiction-specific diagnostics in verbatim (recovery
+    # surface / confidence tier / recognizer ids), without overwriting the
+    # kernel-owned keys above.
+    for key, value in acceptance.detail.items():
+        detail.setdefault(str(key), value)
+    return (
+        Finding(
+            kind=RECOVERED_OP_OBSERVED_FINDING_CODE,
+            role="observation",
+            stage="apply",
+            blocking=False,
+            source_statute=source_statute,
+            detail=detail,
+        ),
+    )
 
 
 # ── Receipt synthesis (generalizes NO's ``_no_emit_one_op_receipt``, which

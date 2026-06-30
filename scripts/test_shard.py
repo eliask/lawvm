@@ -649,6 +649,16 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # algebra coverage (temporal+sequence order, delegated same-moment
         # detection, validated-claim resolution, lex-posterior tiebreak).
         "test_core_op_ordering.py",
+        # B-enforcement increments 1-4: the universal apply-seam gate battery
+        # (synthetic-profile coverage). EV-05 authorization OBSERVE (inc 1), LS-01
+        # boundary-unification observer (inc 2), LS-03 occupancy OBSERVE (inc 3),
+        # AM-01 provenance-acceptance OBSERVE (inc 4), and EE's first real LS-03
+        # occupancy gate flipped to BLOCK after a clean-corpus measurement (inc 4).
+        "test_apply_seam_authorization_gate.py",
+        "test_apply_seam_boundary_unification.py",
+        "test_apply_seam_occupancy_gate.py",
+        "test_apply_seam_provenance_gate.py",
+        "test_ee_occupancy_enforcement.py",
     ),
     "core_compile_projection": (
         "test_compile_metadata_default_fail_loud.py",
