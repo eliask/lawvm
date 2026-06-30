@@ -4377,6 +4377,82 @@ def extract_ee_ops(
     is applied at the END of the replay pipeline, AFTER the target-resolution
     and grafter post-passes have had their chance to assign a more specific
     parser-rule id, so it never shadows those.
+
+    PROVENANCE TOTALITY (stream C / ``PROVENANCE.SOURCE_ANCHOR_MISSING``). This
+    public entry point lowers ALL Estonia per-item instruction text, so it is the
+    single seam where every emitted op's provenance footing can be guaranteed.
+    The many internal mint sites are deliberately NOT each re-audited for the
+    ``source=`` keyword (one historically forgot it — the "standard
+    single-provision op" path — and that one omission orphaned ~80% of the EE op
+    stream). Instead a uniform, idempotent post-pass (:func:`_fill_ee_op_provenance`)
+    stamps the strongest footing that is genuinely available at THIS boundary —
+    the amending act ``OperationSource`` (so ``source.statute_id`` is always
+    present) and the per-op verbatim clause text (``op.raw_text`` /
+    ``source.raw_text``). It NEVER overwrites a footing an inner mint already set,
+    and it NEVER fabricates a byte-span ``source_anchor``: the raw amendment XML
+    bytes/offsets do not reach this text-only boundary, so the strong typed
+    SourceAnchor cannot be computed here without fabricating an offset (fail-loud
+    / leave absent per :func:`lawvm.core.provenance.compute_source_anchor`). The
+    fill is additive metadata only — target/payload/action are untouched — so EE
+    replay output is byte-identical (AGENTS.md §0 grounding-neutral).
+    """
+    per_op_clause_text = _ee_per_op_clause_text(op_text)
+    ops = _extract_ee_ops_inner(op_text, source, seq_start)
+    return _fill_ee_op_provenance(ops, source=source, clause_text=per_op_clause_text)
+
+
+def _ee_per_op_clause_text(op_text: str) -> str:
+    """The per-op verbatim instruction text used as provenance footing.
+
+    Mirrors the inner lowerer's leading normalization (``\\xa0`` → space, strip
+    the leading ``N) `` item marker) so the recorded ``raw_text`` is the literal
+    instruction clause that produced the op, not the raw item-numbered wrapper.
+    """
+    normalized = op_text.replace("\xa0", " ")
+    return re.sub(r"^\(?\d+\)\s*", "", normalized.strip()).strip()
+
+
+def _fill_ee_op_provenance(
+    ops: List[LegalOperation],
+    *,
+    source: OperationSource,
+    clause_text: str,
+) -> List[LegalOperation]:
+    """Additively stamp the available provenance footing on every emitted op.
+
+    Idempotent and non-overwriting: an op that already carries a ``source`` keeps
+    it; an op that already carries per-op ``raw_text`` keeps it. Only genuinely
+    empty footings are filled — never fabricated. No replay-authoritative field
+    (target/payload/action/text_patch) is touched, so the apply path is unchanged.
+    """
+    if not ops:
+        return ops
+    clause = clause_text[:200]
+    filled: List[LegalOperation] = []
+    for op in ops:
+        changes: dict[str, object] = {}
+        if op.source is None:
+            # Carry the amending act identity (statute_id) + per-op clause text.
+            changes["source"] = (
+                replace(source, raw_text=source.raw_text or clause)
+                if clause
+                else source
+            )
+        if not op.raw_text and clause:
+            changes["raw_text"] = clause
+        filled.append(replace(op, **changes) if changes else op)
+    return filled
+
+
+def _extract_ee_ops_inner(
+    op_text: str,
+    source: OperationSource,
+    seq_start: int = 1,
+) -> List[LegalOperation]:
+    """Inner lowerer for :func:`extract_ee_ops` (see that function's docstring).
+
+    Returns ops exactly as the per-instruction mint sites build them; the public
+    wrapper applies the uniform provenance-totality post-pass.
     """
     ops: List[LegalOperation] = []
     seq = seq_start
