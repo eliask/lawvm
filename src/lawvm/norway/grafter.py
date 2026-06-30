@@ -47,6 +47,7 @@ from lawvm.core.mutation_boundary import (
     TreePaths,
     diff_ir_paths_identity_pruned,
 )
+from lawvm.core.phase_result import Finding
 from lawvm.core.xml_parse import parse_corpus_xml
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.roman import roman_to_arabic as _shared_roman_to_int
@@ -3409,6 +3410,7 @@ def apply_no_ops(
     strict_invariants: bool = True,
     strict_action_family: bool = False,
     strict_recovery: bool = False,
+    seam_observations_out: Optional[list[Finding]] = None,
 ) -> IRStatute:
     """Apply a minimal structural Norway operation set to a statute tree.
 
@@ -4361,6 +4363,19 @@ def apply_no_ops(
             source_statute=statute.statute_id,
         )
         body = applied_result.new_state
+
+        # ── B-enforcement (LS-01): drain the seam's OBSERVE lane. ─────────────
+        # The universal apply seam runs the always-on per-op mutation-boundary
+        # audit on every landed write (``boundary_mode="off"`` routes the
+        # ``APPLY.MUTATION_BOUNDARY_FINDING_AT_OP`` escape witness to
+        # ``AppliedOp.observations``, NEVER to ``findings`` — production output
+        # stays byte-identical). When a caller asks for the observations
+        # (``seam_observations_out`` provided — the corpus boundary-cleanliness
+        # MEASUREMENT and the block-mode promotion decision read it), they are
+        # appended verbatim. Default ``None`` is a pure no-op: production replay
+        # never allocates or reads the lane, so byte-identity is unconditional.
+        if seam_observations_out is not None and applied_result.observations:
+            seam_observations_out.extend(applied_result.observations)
 
     return IRStatute(
         statute_id=statute.statute_id,

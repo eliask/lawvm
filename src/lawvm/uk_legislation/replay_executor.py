@@ -17,6 +17,7 @@ from lawvm.core.apply_seam import (
 )
 from lawvm.core.ir import IRNode, IRStatute, LegalOperation
 from lawvm.core.mutation_events import MutationEvent
+from lawvm.core.phase_result import Finding
 from lawvm.core.write_receipt import WriteReceipt
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.addressing import _action_name
@@ -424,6 +425,7 @@ def replay_uk_ops(
     write_receipts_out: Optional[list[WriteReceipt]] = None,
     replay_phase_timings_out: Optional[dict[str, float]] = None,
     applied_op_ids_out: Optional[set[str]] = None,
+    seam_observations_out: Optional[list[Finding]] = None,
 ) -> IRStatute:
     """Apply compiled UK legal operations to enacted base, return amended statute.
 
@@ -527,12 +529,24 @@ def replay_uk_ops(
             applied = executor.seam_apply_op(op)
             if applied_op_ids_out is not None and applied.applied:
                 applied_op_ids_out.add(op.op_id)
+            # ── B-enforcement (LS-01): drain the seam's OBSERVE lane. The seam's
+            # always-on per-op mutation-boundary audit routes any
+            # ``APPLY.MUTATION_BOUNDARY_FINDING_AT_OP`` escape witness to
+            # ``AppliedOp.observations`` (NEVER ``findings`` while
+            # ``boundary_mode="off"`` — production output is byte-identical). When
+            # ``seam_observations_out`` is provided (the corpus boundary-clean
+            # MEASUREMENT + block-promotion decision), they are appended verbatim.
+            # Default ``None`` is a pure no-op (byte-identical).
+            if seam_observations_out is not None and applied.observations:
+                seam_observations_out.extend(applied.observations)
     else:
         for op in prepared_ops.accepted_ops:
             op_t0 = time.perf_counter()
             applied = executor.seam_apply_op(op)
             if applied_op_ids_out is not None and applied.applied:
                 applied_op_ids_out.add(op.op_id)
+            if seam_observations_out is not None and applied.observations:
+                seam_observations_out.extend(applied.observations)
             action_name = _action_name(op.action)
             key = f"replay_apply_{action_name}"
             replay_phase_timings_out[key] = replay_phase_timings_out.get(key, 0.0) + (

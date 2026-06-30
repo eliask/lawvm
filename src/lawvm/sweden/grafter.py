@@ -3681,6 +3681,7 @@ def apply_se_ops(
     statute: IRStatute,
     ops: list[LegalOperation],
     adjudications_out: list[CompileAdjudication] | None = None,
+    seam_observations_out: Optional[list[Finding]] = None,
 ) -> IRStatute:
     """Apply the currently supported Sweden op subset to an IRStatute."""
     # Unified ordering kernel (Wave 0). ``order_ops`` composes the temporal +
@@ -4106,6 +4107,18 @@ def apply_se_ops(
             source_statute=statute.statute_id,
         )
         body = applied_result.new_state
+
+        # ── B-enforcement (LS-01): drain the seam's OBSERVE lane. ─────────────
+        # The universal apply seam runs the always-on per-op mutation-boundary
+        # audit on every landed write (``boundary_mode="off"`` routes the
+        # ``APPLY.MUTATION_BOUNDARY_FINDING_AT_OP`` escape witness to
+        # ``AppliedOp.observations``, NEVER to ``findings`` — production output
+        # stays byte-identical). When the caller asks for the observations
+        # (``seam_observations_out`` provided — the corpus boundary-cleanliness
+        # MEASUREMENT and the block-mode promotion decision read it), they are
+        # appended verbatim. Default ``None`` is a pure no-op (byte-identical).
+        if seam_observations_out is not None and applied_result.observations:
+            seam_observations_out.extend(applied_result.observations)
 
     metadata = dict(statute.metadata)
     metadata["applied_op_count"] = metadata.get("applied_op_count", 0) + applied_op_count
