@@ -50,6 +50,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "lawvm.finland.rulebook" = ["generated/*.json", "generated/*.md"]
+"lawvm.us_federal.generated" = ["*.json"]
 
 # =============================================================================
 # Quality tooling

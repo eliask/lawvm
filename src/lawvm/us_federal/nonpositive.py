@@ -88,6 +88,9 @@ class NonPositiveResolveStatus(StrEnum):
     TABLE3 = "table3"
     """Resolved from the OLRC Table III classification superset (act-section -> USC)."""
 
+    ACT_NAME_TABLE3 = "act_name_table3"
+    """Resolved by mapping a NAMED act citation -> originating act key -> Table III."""
+
     UNMAPPED = "unmapped"
     """No reachable channel yielded a codified section (residual OLRC-table gap)."""
 
@@ -99,6 +102,8 @@ RULE_PAREN_HREF_DISAGREE = "us_nonpositive_target_paren_href_disagree"
 RULE_TABLE3 = "us_nonpositive_target_via_table3"
 RULE_TABLE3_HREF_AGREE = "us_nonpositive_target_table3_href_agree"
 RULE_TABLE3_HREF_DISAGREE = "us_nonpositive_target_table3_href_disagree"
+RULE_ACT_NAME_TABLE3 = "us_nonpositive_target_via_act_name_table3"
+ACT_NAME_AMBIGUOUS_FINDING_RULE_ID = "us_nonpositive_target_act_name_ambiguous"
 UNMAPPED_FINDING_RULE_ID = "us_nonpositive_target_unmapped"
 NOTE_ONLY_FINDING_RULE_ID = "us_nonpositive_target_note_only"
 
@@ -203,6 +208,8 @@ class NonPositiveTargetWitness:
     target_phrase: str = ""
     table3_usckey: str = ""
     table3_status: str = ""
+    act_name: str = ""
+    act_name_key: str = ""
 
     @property
     def resolved(self) -> bool:
@@ -228,6 +235,8 @@ class NonPositiveTargetWitness:
             "target_phrase": self.target_phrase,
             "table3_usckey": self.table3_usckey,
             "table3_status": self.table3_status,
+            "act_name": self.act_name,
+            "act_name_key": self.act_name_key,
         }
 
 
@@ -295,6 +304,107 @@ def _href_title(href: str) -> int | None:
     return int(match.group("title"))
 
 
+# A NAMED-act citation in the amendment target prose: "Section 5 of the
+# Securities Act of 1933", "section 1902(a) of the Social Security Act". Captures
+# the cited act-section and the act's popular name (up to the closing "Act"/"Code",
+# optionally with a trailing "of YYYY"). The act name is what the
+# :class:`PopularNameRegistry` keys on; the section is the act-section Table III
+# expects (NOT the amending PL's section — that is the structural miss this lane
+# closes). A trailing "(N U.S.C. M)" / "[...]" parenthetical is excluded from the
+# name by stopping the name at the first "Act"/"Code" head plus optional year.
+_NAMED_ACT_CITE_RE = re.compile(
+    r"\b[Ss]ection\s+(?P<section>\d+[A-Za-z]*(?:\([0-9A-Za-z]+\))*)\s+of\s+the\s+"
+    r"(?P<name>[A-Z][A-Za-z0-9 ,.&'’-]*?(?:Act|Code)(?:\s+of\s+\d{4})?)"
+    r"(?=[\s,.;:)\[]|$)"
+)
+
+
+@dataclass(frozen=True, slots=True)
+class NamedActCitation:
+    """A parsed ``Section <sec> of the <Act Name>`` citation."""
+
+    act_name: str
+    act_section: str
+
+
+def parse_named_act_citation(text: str) -> NamedActCitation | None:
+    """Parse the first ``Section <sec> of the <Act Name>`` citation in ``text``.
+
+    Returns ``None`` when the text carries no such named-act citation. The act
+    name is the popular name a :class:`PopularNameRegistry` keys on; the section is
+    the ACT's own section (the join key Table III expects), distinct from the
+    amending Public Law's section.
+    """
+    m = _NAMED_ACT_CITE_RE.search(text or "")
+    if m is None:
+        return None
+    return NamedActCitation(
+        act_name=m.group("name").strip(),
+        act_section=m.group("section").strip(),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _ActNameLaneResult:
+    """Internal carrier for the named-act lane (address + audit + refusal reason)."""
+
+    address: LegalAddress | None
+    act_name: str = ""
+    act_key: str = ""
+    t3_usckey: str = ""
+    t3_status: str = ""
+    name_ambiguous: bool = False
+
+
+def _resolve_via_act_name(
+    *,
+    registry: Any,
+    table3: Any,
+    target_phrase: str,
+    raw_text: str,
+) -> _ActNameLaneResult:
+    """Resolve a NAMED-act citation to a USC address via registry -> Table III.
+
+    ``address`` is ``None`` unless the act name resolves to exactly one originating
+    act key AND Table III classifies that ``(act-key, act-section)`` to a codified
+    address. An AMBIGUOUS/UNMAPPED act name, or an ambiguous/unmapped Table III
+    section, all refuse (``address is None``) — never a guessed mapping (§1.7).
+    ``name_ambiguous`` distinguishes an act-name §1.7 refusal so the holdout is
+    surfaced as a distinct finding rather than a bare ``unmapped``.
+    """
+    cite = parse_named_act_citation(target_phrase) or parse_named_act_citation(raw_text)
+    if cite is None:
+        return _ActNameLaneResult(address=None)
+    if registry is None:
+        from lawvm.us_federal.act_name_registry import load_default_act_name_registry
+
+        registry = load_default_act_name_registry()
+        if registry is None:
+            return _ActNameLaneResult(address=None, act_name=cite.act_name)
+    name_res = registry.resolve(cite.act_name)
+    if not name_res.resolved:
+        # AMBIGUOUS / UNMAPPED act name — refused, never guessed onto one act.
+        from lawvm.us_federal.act_name_registry import ActNameStatus
+
+        return _ActNameLaneResult(
+            address=None,
+            act_name=cite.act_name,
+            name_ambiguous=name_res.status is ActNameStatus.AMBIGUOUS,
+        )
+    t3 = _resolve_table3(table3, name_res.act_key, cite.act_section)
+    if t3 is None:
+        return _ActNameLaneResult(
+            address=None, act_name=cite.act_name, act_key=name_res.act_key
+        )
+    return _ActNameLaneResult(
+        address=t3.address,
+        act_name=cite.act_name,
+        act_key=name_res.act_key,
+        t3_usckey=t3.usckey,
+        t3_status=t3.usc_status,
+    )
+
+
 def _resolve_table3(table3: Any, act_key: str, act_section: str) -> Any:
     """Run the Table III resolver, returning a CLASSIFIED resolution or ``None``.
 
@@ -354,6 +464,8 @@ def resolve_nonpositive_target(
     table3: Any = None,
     act_key: str = "",
     act_section: str = "",
+    act_name_registry: Any = None,
+    act_name_source: str = "",
 ) -> NonPositiveTargetWitness:
     """Resolve an act-section amendment target to a USC address.
 
@@ -371,7 +483,24 @@ def resolve_nonpositive_target(
        Statutes-at-Large -> USC classification. A repealed/eliminated row is still
        a real mapping (its status is surfaced); a ``nt`` uncodified row is held
        OUT, never guessed onto a section;
-    3. ``us_nonpositive_target_unmapped`` refusal only when BOTH fail.
+    3. **Act-name -> Table III** (NEW): when every channel above missed and the
+       target prose (``target_phrase`` / the dedicated ``act_name_source``) CITES a
+       named act ("section 1902(a) of the Social Security Act"), the
+       :class:`~lawvm.us_federal.act_name_registry.PopularNameRegistry` maps the
+       popular name -> originating act key (grounded in OLRC short-title
+       statements) and Table III runs on ``(originating act key, the ACT's own
+       section)`` — the join key the structural boundary never knew. This is the
+       half that makes the in-corpus Table III join fire (``RULE_ACT_NAME_TABLE3``).
+       An AMBIGUOUS name is refused distinctly
+       (``us_nonpositive_target_act_name_ambiguous``); an UNMAPPED name or an
+       ambiguous/uncodified Table III section falls through to the refusal below.
+    4. ``us_nonpositive_target_unmapped`` refusal only when ALL fail.
+
+    ``act_name_source`` is a SEPARATE source for the named-act citation only (the
+    instruction's raw body) — it is NOT consulted as a parenthetical/href fallback,
+    so a stray ``(N U.S.C. M)`` cross-citation in the body can never hijack the
+    target; the named-act parser only matches a ``Section <sec> of the <Act Name>``
+    shape.
 
     **Agreement adjudication (§1.7):** when Table III AND an existing
     href/parenthetical both resolve, the two are compared. Agreement -> covered
@@ -476,6 +605,48 @@ def resolve_nonpositive_target(
             target_phrase=target_phrase,
             table3_usckey=t3_usckey,
             table3_status=t3_status,
+        )
+
+    # NAMED-ACT lane (NEW): the existing href/parenthetical channels and the
+    # direct (amending-PL-keyed) Table III channel all missed. When the target
+    # prose CITES a named act ("section 1902(a) of the Social Security Act"), map
+    # the popular name -> originating act key (the :class:`PopularNameRegistry`,
+    # grounded in OLRC short-title statements) and run Table III on
+    # ``(originating act key, the ACT's own section)`` — the join key Table III
+    # expects, which the structural boundary never knew. This is the half that
+    # makes the in-corpus Table III join fire. The registry refuses an
+    # AMBIGUOUS/UNMAPPED name (never guesses one act); Table III refuses an
+    # ambiguous/uncodified section — so this lane only ever yields a codified
+    # address, never a guess (§1.7). It is purely ADDITIONAL: it fires only after
+    # every existing channel and refusal above has been exhausted.
+    an = _resolve_via_act_name(
+        registry=act_name_registry,
+        table3=table3,
+        target_phrase=target_phrase,
+        raw_text=act_name_source or raw_text,
+    )
+    if an.address is not None:
+        return NonPositiveTargetWitness(
+            resolve_status=NonPositiveResolveStatus.ACT_NAME_TABLE3,
+            rule_id=RULE_ACT_NAME_TABLE3,
+            address=an.address,
+            href_title=int(an.address.path[0][1]) if an.address.path else None,
+            target_phrase=target_phrase,
+            table3_usckey=an.t3_usckey,
+            table3_status=an.t3_status,
+            act_name=an.act_name,
+            act_name_key=an.act_key,
+        )
+    # A named-act citation whose popular name grounds to SEVERAL distinct acts is a
+    # §1.7 refusal — surfaced distinctly from the bare unmapped case (the name is
+    # auditable), but still NOT pointed at any guessed address.
+    if an.name_ambiguous:
+        return NonPositiveTargetWitness(
+            resolve_status=NonPositiveResolveStatus.UNMAPPED,
+            rule_id=ACT_NAME_AMBIGUOUS_FINDING_RULE_ID,
+            address=None,
+            target_phrase=target_phrase,
+            act_name=an.act_name,
         )
 
     # Nothing structural. A ``note``-only href is the common shape of an

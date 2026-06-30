@@ -1925,6 +1925,14 @@ def _resolve_target(
         witness = nonpositive.resolve_nonpositive_target(
             target_phrase=target_phrase,
             target_href=target_href,
+            # NOTE: ``raw_text`` is deliberately NOT passed as the paren/href
+            # fallback source — a stray ``(N U.S.C. M)`` cross-citation in the
+            # instruction body must never hijack the target (only the unit's OWN
+            # phrase/href are consulted). The named-act lane reads ``raw_text`` via
+            # the dedicated ``act_name_source`` arg instead, where it can only
+            # match a ``Section <sec> of the <Act Name>`` citation, not an
+            # arbitrary parenthetical.
+            act_name_source=raw_text,
             act_key=statute_id,
             act_section=t3_act_section,
         )

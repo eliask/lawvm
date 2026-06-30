@@ -179,6 +179,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     ),
     "us_federal": (
         "test_jurisdiction_starter_us_federal_*.py",
+        "test_us_act_name_registry.py",
         "test_us_classification_tables.py",
         "test_us_release_points.py",
         "test_us_table3_import.py",
