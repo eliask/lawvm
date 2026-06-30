@@ -60,7 +60,7 @@ from lawvm.core.mutation_boundary_proof import (
     mutation_boundary_audit_enabled,
 )
 from lawvm.core.phase_result import Finding
-from lawvm.core.quirks_disposition import QuirksDisposition
+from lawvm.core.probe_adjudication import ProbeSpec, make_probe_observed_adjudication
 from lawvm.replay_adjudication import CompileAdjudication
 
 # Opt-in env flag — default-off preserves byte-stable bench replay output.
@@ -74,6 +74,29 @@ _PROBE_ENV_FLAG = "LAWVM_NO_MUTATION_BOUNDARY_PER_OP"
 # escape from a tree-invariant violation or an action-family recovery.
 NO_MUTATION_BOUNDARY_PER_OP_VIOLATION_KIND = (
     "no_replay_mutation_boundary_per_op_violation_observed"
+)
+
+# The shared ``probe_adjudication`` harness spec (rule-of-three promotion).
+# This NO per-op projector is one of the three apply-site consumers of the
+# harness (UK/NO/SE): each differs from the 8 fold-exit probes only in
+# ``phase="replay"`` + a ``blocking`` pass-through (both via the
+# ``make_probe_observed_adjudication`` overrides). Sourcing the uniform envelope
+# (rule_id/family/probe_mode/dispositions/witness fields) from this spec rather
+# than a hand-written detail dict keeps the drained record byte-identical to the
+# sibling UK/SE projectors. ``core_registry_finding_kind`` stays empty: the
+# concrete emitted finding kind is dynamic and carried per-finding as
+# ``core_finding_kind`` in the extra detail.
+_PROBE_SPEC = ProbeSpec(
+    env_flag=_PROBE_ENV_FLAG,
+    kind=NO_MUTATION_BOUNDARY_PER_OP_VIOLATION_KIND,
+    skipped_kind=NO_MUTATION_BOUNDARY_PER_OP_VIOLATION_KIND.replace(
+        "_observed", "_probe_skipped"
+    ),
+    family="mutation_boundary",
+    audit_module_path="core.mutation_boundary_proof.audit_op_mutation_boundary",
+    # The canonical FI per-op violation witness (LS-01) is the SOTA analogue;
+    # documented in core/invariant_spec.py at the LS-01 row.
+    witness_prior_art="fi_apply_resolved_op_mutation_boundary_at_op_gate",
 )
 
 
@@ -102,12 +125,15 @@ def project_boundary_observation(
     ``audit_op_mutation_boundary`` finding — the SAME producer the retired
     in-fold probe consumed — to ``AppliedOp.observations``. This projection is
     the byte-identical successor of the deleted probe's adjudication build: it
-    sources every diagnostic field from the one core finding's detail, so the NO
-    record cannot drift from core / Finland / UK.
+    uses the SAME shared ``probe_adjudication`` harness spec the UK/SE sibling
+    projectors use + the two per-op overrides (``phase="replay"`` + the
+    ``blocking`` pass-through) and sources every diagnostic field from the one
+    core finding's detail, so the NO record cannot drift from core / Finland / UK.
     """
     core_detail = dict(finding.detail)
-    return CompileAdjudication(
-        kind=NO_MUTATION_BOUNDARY_PER_OP_VIOLATION_KIND,
+    return make_probe_observed_adjudication(
+        _PROBE_SPEC,
+        statute_id=str(source_statute or ""),
         message=(
             "Norway replay per-op mutation boundary escaped: the op's changed "
             "tree paths are not a subset of its declared storage target "
@@ -115,13 +141,10 @@ def project_boundary_observation(
             "multi-session pending a NO strict_profile lane (§2.9 liveness, "
             "observation-only at v0)."
         ),
-        source_statute=str(source_statute or ""),
         op_id=str(op_id or ""),
-        blocking=finding.blocking,
         phase="replay",
-        detail={
-            "rule_id": NO_MUTATION_BOUNDARY_PER_OP_VIOLATION_KIND,
-            "family": "mutation_boundary",
+        blocking=finding.blocking,
+        extra_detail={
             "reason_code": "per_op_mutation_boundary_escape_observed",
             "op_id": str(op_id or ""),
             # Sourced from the core finding's detail (single producer) so the
@@ -130,13 +153,6 @@ def project_boundary_observation(
             "out_of_boundary_paths": list(core_detail.get("out_of_boundary_paths", ())),
             "boundary_status": core_detail.get("boundary_status", "out_of_boundary"),
             "core_finding_kind": finding.kind,
-            "probe_mode": "observation_only",
-            "strict_disposition": "record",
-            "quirks_disposition": QuirksDisposition.RECORD,
-            "witness_class": "core.mutation_boundary_proof.audit_op_mutation_boundary",
-            # The canonical FI per-op violation witness (LS-01) is the SOTA
-            # analogue; documented in core/invariant_spec.py at the LS-01 row.
-            "witness_prior_art": "fi_apply_resolved_op_mutation_boundary_at_op_gate",
         },
     )
 
