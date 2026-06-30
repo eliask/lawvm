@@ -76,11 +76,21 @@ class OracleComparison:
 
 
 def _articles(statute: IRStatute) -> dict[str, str]:
-    """Map article label → normalized text for every SECTION in the body tree."""
+    """Map article label → normalized text for every SECTION in the body tree.
+
+    Compares the node kind by its STRING value, not enum identity: the native
+    replay path mints nodes with the ``IRNodeKind.SECTION`` enum, while the
+    grafter (parsing a real consolidated FMX4) sets ``kind`` to the bare string
+    ``"section"`` (``cast(IRNodeKind, "section")``). Both must be recognised, or
+    a grafter-parsed consolidation looks article-less and every replayed article
+    is mis-classified as ``present_in_replay_absent_in_oracle``.
+    """
+    section_value = IRNodeKind.SECTION.value  # "section"
     out: dict[str, str] = {}
 
     def _walk(node: IRNode) -> None:
-        if node.kind == IRNodeKind.SECTION and node.label:
+        kind_value = node.kind.value if hasattr(node.kind, "value") else str(node.kind)
+        if kind_value == section_value and node.label:
             out[str(node.label)] = _norm(_node_text(node))
         for child in node.children:
             _walk(child)

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A real-SHAPED FMX4 excerpt of the sector-0 CONSOLIDATION 02016R0044-20160401
+  (the Office's editorial rendering of base Reg. 2016/44 at the 2016-04-01
+  date-of-application — the PIT where amender 32016R0466 replaced Annex III).
+  Consolidated texts are an FMX4 ACT manifestation carrying the in-force body.
+
+  This excerpt is DELIBERATELY made to DIVERGE from the native replay on Article
+  6 (an editorial re-rendering — "no legal value" per EUR-Lex) so the oracle
+  comparator can demonstrate a CLASSIFIED, NON-REPAIRED divergence. The articles
+  the test base/replay carry are 6 and Annex III.
+-->
+<ACT>
+  <TITLE><TI>Consolidated text: Council Regulation (EU) 2016/44 (excerpt)</TI></TITLE>
+  <ENACTING.TERMS>
+    <ARTICLE IDENTIFIER="art_6">
+      <TI.ART>Article 6</TI.ART>
+      <PARAG><P>Article 6 (CONSOLIDATION EDITORIAL RE-RENDERING — differs from native replay).</P></PARAG>
+    </ARTICLE>
+  </ENACTING.TERMS>
+  <ANNEX IDENTIFIER="anx_III">
+    <TI.ART>Annex III</TI.ART>
+    <PARAG><P>ANNEX III List of natural and legal persons (consolidation rendering).</P></PARAG>
+  </ANNEX>
+</ACT>
