@@ -7,6 +7,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from lawvm.estonia.consolidation_error_candidates import (
+    CONSOLIDATION_SIDE_ERROR_BUCKETS,
+)
 from lawvm.estonia.fetch import extract_effective_date, fetch_rt_xml, open_rt_archive
 from lawvm.estonia.pair_planning import plan_ee_oracle_pair
 from lawvm.tools.ee_bench import _BENCH_DIR
@@ -65,11 +68,73 @@ def _resolve_run_path(label_or_path: str | None) -> Path:
     return matches[-1]
 
 
+@dataclass(frozen=True)
+class EEStrongCandidateRow:
+    """One frontier row that carries adjudicated consolidation-side error candidates.
+
+    `strong_count` is the number of consolidation-wrong-in-force candidates
+    (residual buckets in `CONSOLIDATION_SIDE_ERROR_BUCKETS`) adjudicated on this
+    pair, derived from the row's `adjudicated_bucket_counts`. This is the same
+    strong-tier definition the ee-consolidation-candidates surface uses, so the
+    frontier headline does not reinvent the tiering.
+    """
+
+    base_id: str
+    oracle_id: str
+    title: str
+    strong_count: int
+    strong_bucket_counts: dict[str, int]
+
+
 def _to_int(raw: str | None, default: int = 0) -> int:
     try:
         return int(raw or default)
     except ValueError:
         return default
+
+
+def _parse_bucket_counts(raw: str | None) -> dict[str, int]:
+    """Parse the row's ``bucket=count, bucket=count`` adjudication summary."""
+    counts: dict[str, int] = {}
+    if not raw:
+        return counts
+    for part in raw.split(","):
+        part = part.strip()
+        if not part or "=" not in part:
+            continue
+        name, _, value = part.partition("=")
+        counts[name.strip()] = _to_int(value.strip())
+    return counts
+
+
+def _strong_candidate_rows(rows: list[EEFrontierRow]) -> list[EEStrongCandidateRow]:
+    """Frontier rows carrying adjudicated consolidation-side error candidates.
+
+    Ranked by strong_count descending so the highest-yield consolidation errors
+    surface first; ties broken by (base_id, oracle_id) for a stable total order.
+    """
+    strong_rows: list[EEStrongCandidateRow] = []
+    for row in rows:
+        bucket_counts = _parse_bucket_counts(row.adjudicated_bucket_counts)
+        strong_counts = {
+            name: count
+            for name, count in bucket_counts.items()
+            if name in CONSOLIDATION_SIDE_ERROR_BUCKETS and count > 0
+        }
+        total = sum(strong_counts.values())
+        if total <= 0:
+            continue
+        strong_rows.append(
+            EEStrongCandidateRow(
+                base_id=row.base_id,
+                oracle_id=row.oracle_id,
+                title=row.title,
+                strong_count=total,
+                strong_bucket_counts=strong_counts,
+            )
+        )
+    strong_rows.sort(key=lambda r: (-r.strong_count, r.base_id, r.oracle_id))
+    return strong_rows
 
 
 def _to_float(raw: str | None, default: float = 0.0) -> float:
@@ -265,9 +330,33 @@ def build_frontier_payload(
         if include_adjudicated:
             selected.extend(adjudicated_rows[:top])
 
+        strong_candidate_rows = _strong_candidate_rows(rows)
+        strong_candidate_total = sum(r.strong_count for r in strong_candidate_rows)
+        strong_candidate_bucket_totals: dict[str, int] = {}
+        for strong_row in strong_candidate_rows:
+            for name, count in strong_row.strong_bucket_counts.items():
+                strong_candidate_bucket_totals[name] = (
+                    strong_candidate_bucket_totals.get(name, 0) + count
+                )
+
         return {
             "run_path": str(path),
             "total_rows": len(rows),
+            "consolidation_error_candidates": {
+                "strong_candidate_total": strong_candidate_total,
+                "strong_candidate_pair_count": len(strong_candidate_rows),
+                "strong_candidate_bucket_totals": strong_candidate_bucket_totals,
+                "top_pairs": [
+                    {
+                        "base_id": strong_row.base_id,
+                        "oracle_id": strong_row.oracle_id,
+                        "title": strong_row.title,
+                        "strong_count": strong_row.strong_count,
+                        "strong_bucket_counts": strong_row.strong_bucket_counts,
+                    }
+                    for strong_row in strong_candidate_rows[:top]
+                ],
+            },
             "comparison_policy": comparison_policy,
             "benchmark_reporting_strata_counts": reporting_counts,
             "benchmark_reporting_headline_row_count": headline_row_count,
@@ -374,6 +463,28 @@ def main(args: "argparse.Namespace") -> None:
         if counts:
             print(f"  reporting : {counts}")
 
+    consolidation = payload.get("consolidation_error_candidates", {}) or {}
+    strong_total = consolidation.get("strong_candidate_total", 0)
+    print(
+        "  consolidation-error candidates (strong) : "
+        f"{strong_total} across {consolidation.get('strong_candidate_pair_count', 0)} pairs"
+    )
+    bucket_totals = consolidation.get("strong_candidate_bucket_totals", {}) or {}
+    if bucket_totals:
+        bucket_str = ", ".join(
+            f"{name}={count}" for name, count in sorted(bucket_totals.items())
+        )
+        print(f"    buckets : {bucket_str}")
+    top_pairs = consolidation.get("top_pairs", []) or []
+    if top_pairs:
+        print("    top pairs (LawVM right / consolidation wrong):")
+        for pair in top_pairs[:10]:
+            print(
+                f"      {pair['base_id']} -> {pair['oracle_id']} "
+                f"{(pair.get('title') or '')[:30]:30s} strong={pair['strong_count']}"
+            )
+        print("    (run `lawvm ee-consolidation-candidates` for ranked evidence)")
+
     if payload["rows"]:
         print("\nActive frontier rows:")
         for row in payload["rows"]:
@@ -415,4 +526,9 @@ def main(args: "argparse.Namespace") -> None:
             )
 
 
-__all__ = ["EEFrontierRow", "build_frontier_payload", "main"]
+__all__ = [
+    "EEFrontierRow",
+    "EEStrongCandidateRow",
+    "build_frontier_payload",
+    "main",
+]

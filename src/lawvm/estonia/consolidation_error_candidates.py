@@ -383,6 +383,140 @@ def consolidation_error_candidates(
 
 
 # ---------------------------------------------------------------------------
+# Bench-run aggregation (the ranked candidate surface over a whole run)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class ConsolidationCandidatePairInput:
+    """One EE (base, oracle) pair to mine for consolidation-error candidates.
+
+    `as_of` is the consolidated-version effective date the replay targets; when
+    empty the caller's replay path resolves it from the oracle XML.
+    """
+
+    base_id: str
+    oracle_id: str
+    title: str = ""
+    as_of: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class ConsolidationCandidatePairError:
+    """A pair whose replay raised, recorded rather than silently swallowed."""
+
+    base_id: str
+    oracle_id: str
+    title: str
+    error: str
+
+
+@dataclass(frozen=True, slots=True)
+class ConsolidationCandidateRunReport:
+    """Ranked consolidation-error candidates aggregated over a whole bench run.
+
+    Per-pair reports are retained (each already strong-first); the flat
+    `ranked_candidates` view is the run-wide findings order: all strong-tier
+    candidates first (across pairs), then all triage-tier candidates, each
+    block ordered by the per-candidate sort key plus its (base, oracle) pair so
+    the surface is a stable total order across the whole run.
+    """
+
+    run_label: str
+    pair_count: int
+    scored_pair_count: int
+    strong_total: int
+    triage_total: int
+    pair_reports: tuple[ConsolidationErrorCandidateReport, ...] = ()
+    errors: tuple[ConsolidationCandidatePairError, ...] = ()
+
+    def ranked_candidates(self) -> tuple[ConsolidationErrorCandidate, ...]:
+        """All candidates run-wide, strong tier first then triage, stable order."""
+
+        def _key(item: tuple[ConsolidationErrorCandidate, str, str]) -> tuple[Any, ...]:
+            candidate, base_id, oracle_id = item
+            return _candidate_sort_key(candidate) + (base_id, oracle_id)
+
+        tagged: list[tuple[ConsolidationErrorCandidate, str, str]] = []
+        for report in self.pair_reports:
+            for candidate in report.ranked_candidates():
+                tagged.append((candidate, report.base_id, report.oracle_id))
+        tagged.sort(key=_key)
+        return tuple(candidate for candidate, _, _ in tagged)
+
+    def strong_candidates(self) -> tuple[ConsolidationErrorCandidate, ...]:
+        return tuple(c for c in self.ranked_candidates() if c.tier == "strong")
+
+    def triage_candidates(self) -> tuple[ConsolidationErrorCandidate, ...]:
+        return tuple(c for c in self.ranked_candidates() if c.tier == "triage")
+
+
+def build_consolidation_candidate_run_report(
+    pairs: tuple[ConsolidationCandidatePairInput, ...],
+    *,
+    run_label: str = "",
+    archive: Any = None,
+    replay: Any = None,
+) -> ConsolidationCandidateRunReport:
+    """Rank consolidation-error candidates across a whole set of EE pairs.
+
+    Reuses the per-pair `consolidation_error_candidates` entry point for every
+    pair (so the strong/triage tiering is never reinvented), then exposes a
+    stable run-wide ranking. Pairs whose replay raises are recorded as typed
+    `ConsolidationCandidatePairError` rows rather than silently dropped
+    (AGENTS.md §1.10): one bad pair must not hide the rest of the surface.
+
+    Args:
+        pairs: the (base, oracle, title, as_of) pairs to mine.
+        run_label: human label for the originating bench run, carried for report.
+        archive: optional Farchive threaded into the per-pair replay.
+        replay: optional injected per-pair callable with the signature of
+            `consolidation_error_candidates` (tests pass a fake; production
+            leaves it None to use the real entry point).
+    """
+    entry = replay if replay is not None else consolidation_error_candidates
+
+    pair_reports: list[ConsolidationErrorCandidateReport] = []
+    errors: list[ConsolidationCandidatePairError] = []
+
+    for pair in pairs:
+        try:
+            report = entry(
+                base_id=pair.base_id,
+                as_of=pair.as_of,
+                oracle_id=pair.oracle_id,
+                archive=archive,
+            )
+        except Exception as exc:  # noqa: BLE001 — recorded as a typed error row, not swallowed
+            errors.append(
+                ConsolidationCandidatePairError(
+                    base_id=pair.base_id,
+                    oracle_id=pair.oracle_id,
+                    title=pair.title,
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+            )
+            continue
+        pair_reports.append(report)
+
+    pair_reports.sort(key=lambda r: (r.base_id, r.oracle_id))
+    errors.sort(key=lambda e: (e.base_id, e.oracle_id))
+
+    strong_total = sum(r.strong_count for r in pair_reports)
+    triage_total = sum(r.triage_count for r in pair_reports)
+
+    return ConsolidationCandidateRunReport(
+        run_label=run_label,
+        pair_count=len(pairs),
+        scored_pair_count=len(pair_reports),
+        strong_total=strong_total,
+        triage_total=triage_total,
+        pair_reports=tuple(pair_reports),
+        errors=tuple(errors),
+    )
+
+
+# ---------------------------------------------------------------------------
 # JSON projection (deterministic)
 # ---------------------------------------------------------------------------
 
@@ -422,13 +556,40 @@ def report_to_jsonable(report: ConsolidationErrorCandidateReport) -> dict[str, A
     }
 
 
+def run_report_to_jsonable(report: ConsolidationCandidateRunReport) -> dict[str, Any]:
+    """Deterministic JSON projection of a whole-run ranked candidate report."""
+    return {
+        "run_label": report.run_label,
+        "pair_count": report.pair_count,
+        "scored_pair_count": report.scored_pair_count,
+        "strong_total": report.strong_total,
+        "triage_total": report.triage_total,
+        "ranked_candidates": [candidate_to_jsonable(c) for c in report.ranked_candidates()],
+        "pair_reports": [report_to_jsonable(r) for r in report.pair_reports],
+        "errors": [
+            {
+                "base_id": err.base_id,
+                "oracle_id": err.oracle_id,
+                "title": err.title,
+                "error": err.error,
+            }
+            for err in report.errors
+        ],
+    }
+
+
 __all__ = [
     "CONSOLIDATION_SIDE_ERROR_BUCKETS",
     "UNADJUDICATED_TRIAGE_BUCKET",
     "ConsolidationErrorEvidence",
     "ConsolidationErrorCandidate",
     "ConsolidationErrorCandidateReport",
+    "ConsolidationCandidatePairInput",
+    "ConsolidationCandidatePairError",
+    "ConsolidationCandidateRunReport",
     "consolidation_error_candidates",
+    "build_consolidation_candidate_run_report",
     "candidate_to_jsonable",
     "report_to_jsonable",
+    "run_report_to_jsonable",
 ]

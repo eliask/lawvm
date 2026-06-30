@@ -45,6 +45,7 @@ Subcommands:
     audit     formats|staleness|html  Cross-format consistency audit (oracle staleness).
     ee-residual-inventory            Print deterministic EE residual adjudication inventory.
     ee-frontier                      Rank EE bench rows by open vs adjudicated residuals.
+    ee-consolidation-candidates      Rank LawVM-right / consolidation-wrong candidates from an EE bench run.
     ee-chain-quality                Run consecutive-pair replay quality over an EE version chain.
     ee-pair-status                  Score one EE base/oracle pair with residual-bucket summary.
     ee-explain                      Single-statute deep-dive (divergences + residual buckets + source chain).
@@ -7546,6 +7547,43 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         help="emit JSON",
     )
 
+    # --- ee-consolidation-candidates ---
+    ee_consolidation_p = sub.add_parser(
+        "ee-consolidation-candidates",
+        help="rank LawVM-right / consolidation-wrong candidates from an EE bench run",
+        description=(
+            "Load a saved EE bench run, replay each divergent pair, and rank the "
+            "'LawVM replay is RIGHT / official in-force consolidation (terviktekst) "
+            "is WRONG' candidates. STRONG tier (adjudicated consolidation-side error) "
+            "ranks first; TRIAGE tier (unadjudicated, surfaced for review only) "
+            "second. This is EE's actionable feedback surface to Riigi Teataja."
+        ),
+        parents=_P,
+    )
+    ee_consolidation_p.add_argument(
+        "--label",
+        metavar="LABEL_OR_PATH",
+        help="EE bench run label or direct CSV path; default is latest saved EE run",
+    )
+    ee_consolidation_p.add_argument(
+        "--tier",
+        choices=["strong", "triage", "all"],
+        default="strong",
+        help="which tier to surface in the ranked output (default: strong)",
+    )
+    ee_consolidation_p.add_argument(
+        "--top",
+        type=int,
+        default=20,
+        metavar="N",
+        help="show top N ranked candidates (default: 20; 0 = all)",
+    )
+    ee_consolidation_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit JSON",
+    )
+
     # --- ee-chain-quality ---
     ee_chain_quality_p = sub.add_parser(
         "ee-chain-quality",
@@ -13281,6 +13319,13 @@ def _main_impl() -> None:
         from lawvm.tools.ee_frontier import main as ee_frontier_main
 
         ee_frontier_main(args)
+
+    elif args.command == "ee-consolidation-candidates":
+        from lawvm.tools.ee_consolidation_candidates import (
+            main as ee_consolidation_candidates_main,
+        )
+
+        ee_consolidation_candidates_main(args)
 
     elif args.command == "ee-chain-quality":
         from lawvm.tools.ee_chain_quality import main as ee_chain_quality_main

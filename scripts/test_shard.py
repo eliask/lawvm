@@ -37,6 +37,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_ee_bench.py",
         "test_ee_authority_grounding.py",
         "test_ee_compare_normalization.py",
+        "test_ee_consolidation_candidates_cli.py",
         "test_ee_consolidation_error_candidates.py",
         "test_ee_fetch_diagnostics.py",
         "test_ee_fetch.py",
