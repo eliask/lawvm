@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Increment 3 corpus fixture: the SECTOR-0 consolidation of (EU) 2099/1 at PIT-2.
+  The editorial rendering DIVERGES from the native replay, exercising every typed
+  divergence class:
+
+    * Article 1 — identical → `agreement`.
+    * Article 2 — the editorial wording differs from the replayed body (the
+      Office paraphrased "export or transfer" as "export, transfer or move") →
+      `text_diff` (a divergence to TYPE, never auto-repaired: consolidation has
+      "no legal value … no guarantee [of] the latest state").
+    * Article 3 — DROPPED from this editorial rendering while present in the
+      replay → `deterministic_gap` (replay surplus the consolidation omits).
+    * Article 4 — present ONLY in the editorial consolidation, never reconstructed
+      by the replay → `manual_frontier` (the manual-compilation frontier).
+-->
+<CONS.ACT>
+  <CONS.DOC>
+    <TITLE><TI>Consolidated text of Regulation (EU) 2099/1 (PIT-2)</TI></TITLE>
+    <ENACTING.TERMS>
+      <ARTICLE IDENTIFIER="001">
+        <TI.ART>Article 1</TI.ART>
+        <ALINEA>This Regulation lays down restrictive measures.</ALINEA>
+      </ARTICLE>
+      <ARTICLE IDENTIFIER="002">
+        <TI.ART>Article 2</TI.ART>
+        <ALINEA>Article 2 1. It shall be prohibited to export, transfer or move the listed goods.</ALINEA>
+      </ARTICLE>
+      <ARTICLE IDENTIFIER="004">
+        <TI.ART>Article 4</TI.ART>
+        <ALINEA>This consolidated note is an editorial addition with no enacting source.</ALINEA>
+      </ARTICLE>
+    </ENACTING.TERMS>
+  </CONS.DOC>
+</CONS.ACT>

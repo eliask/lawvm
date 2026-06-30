@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Increment 3 corpus fixture: the SECTOR-0 consolidation of (EU) 2099/1 at PIT-1
+  (after amender A). The editorial rendering AGREES with the native replay on
+  every article — three `agreement` rows in the corpus divergence account. Rooted
+  at CONS.ACT > CONS.DOC (the real consolidated shape the grafter handles since
+  Increment 2). Article 2's text is byte-equal (post-normalisation) to the
+  replayed body so the comparator classifies it `agreement`, never repaired.
+-->
+<CONS.ACT>
+  <CONS.DOC>
+    <TITLE><TI>Consolidated text of Regulation (EU) 2099/1 (PIT-1)</TI></TITLE>
+    <ENACTING.TERMS>
+      <ARTICLE IDENTIFIER="001">
+        <TI.ART>Article 1</TI.ART>
+        <ALINEA>This Regulation lays down restrictive measures.</ALINEA>
+      </ARTICLE>
+      <ARTICLE IDENTIFIER="002">
+        <TI.ART>Article 2</TI.ART>
+        <ALINEA>Article 2 1. It shall be prohibited to export or transfer the listed goods.</ALINEA>
+      </ARTICLE>
+      <ARTICLE IDENTIFIER="003">
+        <TI.ART>Article 3</TI.ART>
+        <ALINEA>The competent authorities may grant derogations.</ALINEA>
+      </ARTICLE>
+    </ENACTING.TERMS>
+  </CONS.DOC>
+</CONS.ACT>

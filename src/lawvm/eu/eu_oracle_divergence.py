@@ -170,3 +170,122 @@ def _label_sort_key(label: str) -> tuple[int, str]:
         return (int(head), suffix)
     except ValueError:
         return (1_000_000, label)
+
+
+# ---------------------------------------------------------------------------
+# Increment 3 (Goal 3) — corpus-scale divergence account
+# ---------------------------------------------------------------------------
+#
+# A single ``OracleComparison`` is one act at one PIT. The corpus-scale account
+# aggregates many of them and maps each per-article ``DivergenceKind`` to the
+# cross-jurisdiction divergence-class vocabulary already first-class in LawVM (the
+# ``authoritative oracle ≠ correct`` regime; cf. EE ``oracle_suspect``):
+#
+#   * ``agreement``                          → corroboration (replay == oracle)
+#   * ``text_divergence``                    → ``text_diff``       (both present,
+#                                              text differs — a divergence to TYPE,
+#                                              never auto-repaired)
+#   * ``present_in_replay_absent_in_oracle`` → ``deterministic_gap`` (replay knows
+#                                              an article the editorial
+#                                              consolidation does not render —
+#                                              a deterministic-replay surplus)
+#   * ``present_in_oracle_absent_in_replay`` → ``manual_frontier`` (the editorial
+#                                              consolidation carries an article the
+#                                              native replay has not reconstructed —
+#                                              the manual-compilation frontier)
+#
+# ``oracle_suspect`` is reserved for an article the corpus marks as a known
+# editorial artifact of the consolidation; the comparator does not synthesise it
+# (it never repairs), so its count is 0 unless a caller supplies suspect labels.
+
+#: Map from the per-article ``DivergenceKind`` to the corpus divergence class.
+_KIND_TO_CLASS: dict[str, str] = {
+    "agreement": "agreement",
+    "text_divergence": "text_diff",
+    "present_in_replay_absent_in_oracle": "deterministic_gap",
+    "present_in_oracle_absent_in_replay": "manual_frontier",
+}
+
+#: The corpus divergence classes, in a stable reporting order (denominator-first).
+CORPUS_DIVERGENCE_CLASSES: tuple[str, ...] = (
+    "agreement",
+    "text_diff",
+    "deterministic_gap",
+    "manual_frontier",
+    "oracle_suspect",
+)
+
+
+@dataclass
+class CorpusDivergenceAccount:
+    """Typed corpus-scale divergence account over many replay-vs-oracle PITs.
+
+    Total-accounting discipline: ``article_total`` (the denominator) equals the
+    sum of every per-class count — every compared article is owned by exactly one
+    class, never silently dropped. ``oracle_suspect`` carries labels a caller has
+    flagged as known editorial artifacts (the comparator never synthesises them).
+    """
+
+    comparisons: list[OracleComparison] = field(default_factory=list)
+    class_counts: dict[str, int] = field(
+        default_factory=lambda: {c: 0 for c in CORPUS_DIVERGENCE_CLASSES}
+    )
+    suspect_labels: dict[str, set[str]] = field(default_factory=dict)
+
+    @property
+    def act_count(self) -> int:
+        """Distinct (base_celex, as_of) PITs compared."""
+        return len({(c.base_celex, c.as_of) for c in self.comparisons})
+
+    @property
+    def article_total(self) -> int:
+        """The denominator: every per-article comparison across the corpus."""
+        return sum(self.class_counts[c] for c in CORPUS_DIVERGENCE_CLASSES)
+
+    def add(
+        self,
+        comparison: OracleComparison,
+        *,
+        oracle_suspect_labels: frozenset[str] = frozenset(),
+    ) -> None:
+        """Fold one act's comparison into the corpus account.
+
+        ``oracle_suspect_labels`` are article labels the caller KNOWS are editorial
+        artifacts of THIS consolidation (so their divergence is the
+        ``authoritative oracle ≠ correct`` case, not a replay defect). Such an
+        article is counted as ``oracle_suspect`` regardless of its raw kind — the
+        only place a label leaves its mechanical class, and only on explicit
+        caller assertion (the comparator itself never repairs/relabels).
+        """
+        self.comparisons.append(comparison)
+        suspect_here: set[str] = set()
+        for d in comparison.divergences:
+            if d.article_label in oracle_suspect_labels:
+                self.class_counts["oracle_suspect"] += 1
+                suspect_here.add(d.article_label)
+                continue
+            cls = _KIND_TO_CLASS.get(d.kind, "manual_frontier")
+            self.class_counts[cls] += 1
+        if suspect_here:
+            self.suspect_labels[f"{comparison.base_celex}@{comparison.as_of}"] = (
+                suspect_here
+            )
+
+    @property
+    def divergence_total(self) -> int:
+        """All non-agreement, non-suspect classes (the typed divergence frontier)."""
+        return (
+            self.class_counts["text_diff"]
+            + self.class_counts["deterministic_gap"]
+            + self.class_counts["manual_frontier"]
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "act_count": self.act_count,
+            "article_total": self.article_total,
+            "class_counts": dict(self.class_counts),
+            "divergence_total": self.divergence_total,
+            "conserved": self.article_total
+            == sum(self.class_counts.values()),
+        }

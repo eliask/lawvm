@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Increment 3 corpus-scale divergence fixture: a small BASE act with three
+  articles. Two amenders (see corpus_amender_*.fmx4.xml) replay against it; the
+  result is diffed against two pinned consolidation PITs (corpus_cons_*.fmx4.xml)
+  to produce a typed corpus-scale divergence account (Goal 3).
+-->
+<ACT>
+  <TITLE><TI>Council Regulation (EU) 2099/1 (corpus divergence base)</TI></TITLE>
+  <ENACTING.TERMS>
+    <ARTICLE IDENTIFIER="001">
+      <TI.ART>Article 1</TI.ART>
+      <ALINEA>This Regulation lays down restrictive measures.</ALINEA>
+    </ARTICLE>
+    <ARTICLE IDENTIFIER="002">
+      <TI.ART>Article 2</TI.ART>
+      <ALINEA>It shall be prohibited to export the listed goods.</ALINEA>
+    </ARTICLE>
+    <ARTICLE IDENTIFIER="003">
+      <TI.ART>Article 3</TI.ART>
+      <ALINEA>The competent authorities may grant derogations.</ALINEA>
+    </ARTICLE>
+  </ENACTING.TERMS>
+</ACT>

@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Increment 3 pinned fixture: the HARDER sub-article amendment shapes that
+  Increment 2 left as typed `uncovered_instruction` residuals (no real bytes had
+  yet been acquired carrying them). A faithful FMX4-shaped excerpt of the
+  sub-article edit families a Council amending regulation uses:
+
+    * Article 1 — SUBPARAGRAPH REPLACE: "in Article N, the second subparagraph of
+      paragraph M is replaced by the following: '<QUOT.S block>'" → REPLACE on
+      (article,N)/(paragraph,M)/(subparagraph,2).
+    * Article 2 — POINT INSERT: "in Article N, the following point (d) is
+      inserted: '<QUOT.S block>'" → INSERT on (article,N)/(point,d).
+    * Article 3 — INDENT REPEAL: "the second indent of Article N is deleted" →
+      REPEAL on (article,N)/(item,2).
+    * Article 4 — RENUMBER: "Article N is renumbered as Article Na" → a RENUMBER
+      op carrying the destination in a renumber_to= provenance tag (the EU apply
+      seam owns RENUMBER as a typed eu_replay_unsupported_action skip today).
+    * Article 5 — entry-into-force boilerplate (out-of-scope typed residual, so
+      coverage is measured, not asserted 100%).
+
+  Sanctions personal data elided; only the FMX4 SHAPE is pinned.
+-->
+<ACT>
+  <TITLE><TI>Council Regulation amending Regulation (EU) 2016/44</TI></TITLE>
+  <ENACTING.TERMS>
+    <ARTICLE IDENTIFIER="001">
+      <TI.ART>Article 1</TI.ART>
+      <ALINEA>
+        <P>In Article 8, the second subparagraph of paragraph 2 is replaced by the following:</P>
+        <QUOT.S LEVEL="1">
+          <P><QUOT.START CODE="2018" ID="QS0001" REF.END="QE0001"/>The competent authority shall notify the applicant of its decision within ten working days.<QUOT.END CODE="2019" ID="QE0001" REF.START="QS0001"/></P>
+        </QUOT.S>
+      </ALINEA>
+    </ARTICLE>
+    <ARTICLE IDENTIFIER="002">
+      <TI.ART>Article 2</TI.ART>
+      <ALINEA>
+        <P>In Article 11, the following point (d) is inserted:</P>
+        <QUOT.S LEVEL="1">
+          <P><QUOT.START CODE="2018" ID="QS0002" REF.END="QE0002"/>(d) the supply of technical assistance related to humanitarian goods.<QUOT.END CODE="2019" ID="QE0002" REF.START="QS0002"/></P>
+        </QUOT.S>
+      </ALINEA>
+    </ARTICLE>
+    <ARTICLE IDENTIFIER="003">
+      <TI.ART>Article 3</TI.ART>
+      <ALINEA>The second indent of Article 13 is deleted.</ALINEA>
+    </ARTICLE>
+    <ARTICLE IDENTIFIER="004">
+      <TI.ART>Article 4</TI.ART>
+      <ALINEA>Article 21 is renumbered as Article 21a.</ALINEA>
+    </ARTICLE>
+    <ARTICLE IDENTIFIER="005">
+      <TI.ART>Article 5</TI.ART>
+      <ALINEA>This Regulation shall enter into force on the day following that of its publication in the <HT TYPE="ITALIC">Official Journal of the European Union</HT>.</ALINEA>
+    </ARTICLE>
+  </ENACTING.TERMS>
+</ACT>

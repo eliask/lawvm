@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Increment 3 corpus fixture: amender A replaces Article 2 of the corpus base.
+  After replay, Article 2 carries the new body. The PIT-1 consolidation
+  (corpus_cons_pit1) renders the SAME body (agreement); PIT-2 (corpus_cons_pit2)
+  renders a slightly different editorial wording for Article 2 (text_diff) and
+  adds an editorial-only Article 4 (manual_frontier).
+-->
+<ACT>
+  <TITLE><TI>Council Regulation amending (EU) 2099/1 — A</TI></TITLE>
+  <ENACTING.TERMS>
+    <ARTICLE IDENTIFIER="001">
+      <TI.ART>Article 1</TI.ART>
+      <ALINEA>
+        <P>Article 2 of Regulation (EU) 2099/1 is replaced by the following:</P>
+        <QUOT.S LEVEL="1">
+          <ARTICLE IDENTIFIER="002">
+            <TI.ART><QUOT.START CODE="2018" ID="QS1" REF.END="QE1"/>Article 2</TI.ART>
+            <PARAG IDENTIFIER="002.001">
+              <NO.PARAG>1.</NO.PARAG>
+              <ALINEA>It shall be prohibited to export or transfer the listed goods.<QUOT.END CODE="2019" ID="QE1" REF.START="QS1"/></ALINEA>
+            </PARAG>
+          </ARTICLE>
+        </QUOT.S>
+      </ALINEA>
+    </ARTICLE>
+    <ARTICLE IDENTIFIER="002">
+      <TI.ART>Article 2</TI.ART>
+      <ALINEA>This Regulation shall enter into force on the day of its publication in the <HT TYPE="ITALIC">Official Journal of the European Union</HT>.</ALINEA>
+    </ARTICLE>
+  </ENACTING.TERMS>
+</ACT>

@@ -49,8 +49,33 @@ out an embedded ``ACT`` if present, lowers the ANNEX-root form structurally, and
 emits a typed ``eu_fmx4_grammar_envelope_no_enacting_terms`` residual for a
 genuinely instruction-free envelope — never a crash, never a silent zero.
 
-Every still-unhandled instruction shape (subparagraph edits, list edits inside an
-article, renumber/move) remains a typed :class:`AmendmentGrammarDiagnostic`
+Increment 3 ADDS the harder sub-article shapes Increment 2 left as typed
+residuals (each a new ``witness_rule_id``):
+
+9.  Sub-article POINT INSERT — *"in Article N, the following point (c) is
+    inserted: '<block>'"* → INSERT on ``(article,N)/(point,c)``
+    (``EU_FMX4.SUBART_POINT_INSERT``).
+10. SUBPARAGRAPH REPLACE/REPEAL — *"in Article N, the second subparagraph of
+    paragraph M is replaced by the following / is deleted"* → REPLACE/REPEAL on
+    ``(article,N)/(paragraph,M)/(subparagraph,K)``, the ordinal normalised to a
+    1-based index (``EU_FMX4.SUBART_SUBPARAGRAPH_REPLACE`` / ``…_REPEAL``).
+11. INDENT (list-dash item) REPLACE/REPEAL — *"the second indent of Article N is
+    replaced by the following / is deleted"* → REPLACE/REPEAL on
+    ``(article,N)/(item,K)`` (``EU_FMX4.INDENT_REPLACE`` / ``EU_FMX4.INDENT_REPEAL``).
+12. RENUMBER — *"Article N is renumbered as Article M"* → a RENUMBER op carrying
+    the destination in a ``renumber_to=`` provenance tag
+    (``EU_FMX4.ARTICLE_RENUMBER``). The EU apply seam OWNS renumber as a typed
+    ``eu_replay_unsupported_action`` skip today — the move is visible to
+    ordering/conflict detection and the destination is recorded, not dropped.
+
+Increment 3 also threads SEPARATE-annex payloads (Goal 2): the indirect-annex
+shape accepts an optional ``resolve_separate_annex`` resolver that materialises a
+replacement annex shipped as a distinct manifestation; when it returns text the
+payload is real (``annex_payload=separate_resolved``) rather than the
+Increment-2 recorded gap.
+
+Every still-unhandled instruction shape (move-without-renumber, mixed multi-edit
+prose) remains a typed :class:`AmendmentGrammarDiagnostic`
 (``eu_fmx4_grammar_uncovered_instruction``) — counted, never silently dropped.
 ``lower_amending_act`` returns a :class:`LoweringResult` carrying ops, diagnostics,
 and the coverage denominator so coverage % is measured, not asserted.
@@ -64,7 +89,7 @@ from __future__ import annotations
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Callable, Optional
 
 from lawvm.core.ir import (
     IRNode,
@@ -160,6 +185,85 @@ _RE_SUBART_POINT_REPEAL = re.compile(
     r".*?\bis\s+(?:deleted|repealed)\b",
     re.I | re.S,
 )
+# Increment 3 — harder sub-article shapes Increment 2 left as typed residuals.
+#
+# POINT INSERT — *"in Article N, the following point (c) is inserted/added"*. The
+# new point body is the QUOT block (or inline). INSERT (not REPLACE), so the
+# point is ADDED under the article, not overwritten.
+_RE_SUBART_POINT_INSERT = re.compile(
+    r"\bin\s+Article\s+(?P<art>\d+[a-z]?)\b.*?\bthe\s+following\s+point\s+"
+    r"\((?P<point>[a-z0-9]+)\).*?\bis\s+(?:inserted|added)\b",
+    re.I | re.S,
+)
+# SUBPARAGRAPH REPLACE — *"in Article N, the (first|second|…|Kth) subparagraph of
+# paragraph M is replaced by the following: '<block>'"*. The ordinal word is
+# normalised to a 1-based index label so the op targets
+# ``(article,N)/(paragraph,M)/(subparagraph,K)``.
+_RE_SUBART_SUBPARA_REPLACE = re.compile(
+    r"\bin\s+Article\s+(?P<art>\d+[a-z]?)\b.*?\bthe\s+(?P<ord>first|second|third|"
+    r"fourth|fifth|sixth|seventh|eighth|ninth|tenth|\d+(?:st|nd|rd|th)?)\s+"
+    r"subparagraph\b(?:\s+of\s+paragraph\s+(?P<par>\d+[a-z]?))?"
+    r".*?\bis\s+replaced\s+by\s+the\s+following\b",
+    re.I | re.S,
+)
+# SUBPARAGRAPH REPEAL — *"… the (second) subparagraph of paragraph M is deleted"*.
+_RE_SUBART_SUBPARA_REPEAL = re.compile(
+    r"\bin\s+Article\s+(?P<art>\d+[a-z]?)\b.*?\bthe\s+(?P<ord>first|second|third|"
+    r"fourth|fifth|sixth|seventh|eighth|ninth|tenth|\d+(?:st|nd|rd|th)?)\s+"
+    r"subparagraph\b(?:\s+of\s+paragraph\s+(?P<par>\d+[a-z]?))?"
+    r".*?\bis\s+(?:deleted|repealed)\b",
+    re.I | re.S,
+)
+# INDENT (list dash item) REPLACE/REPEAL — *"the (first|second|…) indent of
+# Article N(/paragraph M) is replaced by the following: '<block>'"* / *"… is
+# deleted"*. FMX4 lists below a point are dash-INDENTs; the ordinal indexes them.
+_RE_INDENT_REPLACE = re.compile(
+    r"\bthe\s+(?P<ord>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|"
+    r"tenth|\d+(?:st|nd|rd|th)?)\s+indent\b.*?\bof\s+Article\s+(?P<art>\d+[a-z]?)\b"
+    r".*?\bis\s+replaced\s+by\s+the\s+following\b",
+    re.I | re.S,
+)
+_RE_INDENT_REPEAL = re.compile(
+    r"\bthe\s+(?P<ord>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|"
+    r"tenth|\d+(?:st|nd|rd|th)?)\s+indent\b.*?\bof\s+Article\s+(?P<art>\d+[a-z]?)\b"
+    r".*?\bis\s+(?:deleted|repealed)\b",
+    re.I | re.S,
+)
+# RENUMBER — *"Article N is renumbered (as) Article M"* and the point/paragraph
+# renumber *"points (a) to (c) … are renumbered …"*. The structural intent
+# (move/relabel) is captured as a RENUMBER op; the EU apply seam currently owns
+# RENUMBER as a typed ``eu_replay_unsupported_action`` skip (never silently lost).
+_RE_ARTICLE_RENUMBER = re.compile(
+    r"\bArticle\s+(?P<from>\d+[a-z]?)\b\s+(?:is|shall\s+be)\s+renumbered\b"
+    r"(?:\s+(?:as|to)\s+Article\s+(?P<to>\d+[a-z]?))?",
+    re.I | re.S,
+)
+
+#: Ordinal word → 1-based index. Covers the spelled forms EU drafters use for
+#: subparagraph/indent ordinals; arabic ordinals ("2nd") are handled separately.
+_ORDINAL_WORDS = {
+    "first": "1",
+    "second": "2",
+    "third": "3",
+    "fourth": "4",
+    "fifth": "5",
+    "sixth": "6",
+    "seventh": "7",
+    "eighth": "8",
+    "ninth": "9",
+    "tenth": "10",
+}
+
+
+def _ordinal_to_index(token: str) -> str:
+    """Normalise a spelled or arabic ordinal ('second', '2nd', '2') to '2'."""
+    t = token.strip().lower()
+    if t in _ORDINAL_WORDS:
+        return _ORDINAL_WORDS[t]
+    m = re.match(r"(\d+)(?:st|nd|rd|th)?$", t)
+    if m:
+        return m.group(1)
+    return t
 # Corrigendum formula: "... for: '<for>' read: '<read>'" (the classic OJ
 # corrigendum shape). The replacement (read) value is the operative payload.
 _RE_CORRIGENDUM_FOR_READ = re.compile(
@@ -341,6 +445,7 @@ def lower_amending_act(
     base_celex: str = "",
     effective: str = "",
     enacted: str = "",
+    resolve_separate_annex: Optional[Callable[[str, str], Optional[str]]] = None,
 ) -> LoweringResult:
     """Lower one amending act's FMX4 enacting terms into typed LegalOperations.
 
@@ -355,6 +460,15 @@ def lower_amending_act(
         Date-of-application / entry-into-force of the amending act, threaded onto
         ``OperationSource`` so ``order_ops``' temporal key sorts these ops in
         legal-chronological order.
+    resolve_separate_annex:
+        Increment 3 (Goal 2 — separate-annex payloads). Optional resolver
+        ``resolve_separate_annex(amending_celex, annex_label) -> annex_text``
+        invoked for the indirect-annex shape when the replacement annex ships as a
+        SEPARATE manifestation (absent from this main FMX4). When it returns text,
+        that materialised payload is threaded into the op (provenance
+        ``annex_payload=separate_resolved``) instead of leaving a recorded gap.
+        Returning ``None`` (resolver can't materialise it either) preserves the
+        Increment-2 typed gap. NEVER fetches on its own — the caller owns the lane.
     """
     result = LoweringResult(amending_celex=amending_celex)
     try:
@@ -442,6 +556,7 @@ def lower_amending_act(
             enacted=enacted,
             diagnostics=result.diagnostics,
             own_annexes=own_annexes,
+            resolve_separate_annex=resolve_separate_annex,
         )
         if op is not None:
             result.ops.append(op)
@@ -534,6 +649,7 @@ def _lower_one_instruction(
     enacted: str,
     diagnostics: list[AmendmentGrammarDiagnostic],
     own_annexes: Optional[list[ET.Element]] = None,
+    resolve_separate_annex: Optional[Callable[[str, str], Optional[str]]] = None,
 ) -> Optional[LegalOperation]:
     raw = " ".join(instr.split())[:400]
     src = _source(amending_celex, base_celex, effective, enacted, raw)
@@ -583,6 +699,154 @@ def _lower_one_instruction(
             provenance_tags=("ir_apply_class=point_replace",),
         )
 
+    # ---- Increment 3 harder sub-article shapes (most specific first) ----------
+    #
+    # POINT INSERT ("in Article N, the following point (c) is inserted: '<block>'").
+    # Checked before point REPLACE so the "inserted" verb is not mis-read; the new
+    # point is ADDED under the article (INSERT), not overwriting an existing one.
+    m = _RE_SUBART_POINT_INSERT.search(instr)
+    if m:
+        block = _quoted_block_text(article)
+        if block is None:
+            mi = _RE_INLINE_QUOTED.search(instr)
+            block = mi.group("inline").strip() if mi else None
+        if block is None:
+            diagnostics.append(
+                AmendmentGrammarDiagnostic(
+                    rule_id="eu_fmx4_grammar_point_insert_missing_payload",
+                    reason="point insert had neither a QUOT block nor inline quoted text",
+                    source_excerpt=raw,
+                )
+            )
+            return None
+        path = (("article", m.group("art")), ("point", m.group("point")))
+        return LegalOperation(
+            op_id=f"{amending_celex}-{seq}",
+            sequence=seq,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=path),
+            payload=_payload_node(IRNodeKind.ITEM, m.group("point"), block),
+            source=src,
+            witness_rule_id="EU_FMX4.SUBART_POINT_INSERT",
+            provenance_tags=("ir_apply_class=subsection_insert",),
+        )
+
+    # SUBPARAGRAPH REPEAL / REPLACE ("the second subparagraph of paragraph M …").
+    # The ordinal is normalised to a 1-based index label. Repeal is checked first
+    # (it has no payload, so a payload miss can't shadow it).
+    m = _RE_SUBART_SUBPARA_REPEAL.search(instr)
+    if m:
+        idx = _ordinal_to_index(m.group("ord"))
+        path = (("article", m.group("art")),)
+        if m.group("par"):
+            path += (("paragraph", m.group("par")),)
+        path += (("subparagraph", idx),)
+        return LegalOperation(
+            op_id=f"{amending_celex}-{seq}",
+            sequence=seq,
+            action=StructuralAction.REPEAL,
+            target=LegalAddress(path=path),
+            source=src,
+            witness_rule_id="EU_FMX4.SUBART_SUBPARAGRAPH_REPEAL",
+            provenance_tags=("ir_apply_class=subsection_repeal",),
+        )
+
+    m = _RE_SUBART_SUBPARA_REPLACE.search(instr)
+    if m:
+        block = _quoted_block_text(article)
+        if block is None:
+            diagnostics.append(
+                AmendmentGrammarDiagnostic(
+                    rule_id="eu_fmx4_grammar_subparagraph_replace_missing_quoted_block",
+                    reason="subparagraph replace had no QUOT block payload",
+                    source_excerpt=raw,
+                )
+            )
+            return None
+        idx = _ordinal_to_index(m.group("ord"))
+        path = (("article", m.group("art")),)
+        if m.group("par"):
+            path += (("paragraph", m.group("par")),)
+        path += (("subparagraph", idx),)
+        return LegalOperation(
+            op_id=f"{amending_celex}-{seq}",
+            sequence=seq,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=path),
+            payload=_payload_node(IRNodeKind.SUBPARAGRAPH, idx, block),
+            source=src,
+            witness_rule_id="EU_FMX4.SUBART_SUBPARAGRAPH_REPLACE",
+            provenance_tags=("ir_apply_class=subsection_replace",),
+        )
+
+    # INDENT (list-dash item) REPEAL / REPLACE ("the second indent of Article N …").
+    m = _RE_INDENT_REPEAL.search(instr)
+    if m:
+        idx = _ordinal_to_index(m.group("ord"))
+        path = (("article", m.group("art")), ("item", idx))
+        return LegalOperation(
+            op_id=f"{amending_celex}-{seq}",
+            sequence=seq,
+            action=StructuralAction.REPEAL,
+            target=LegalAddress(path=path),
+            source=src,
+            witness_rule_id="EU_FMX4.INDENT_REPEAL",
+            provenance_tags=("ir_apply_class=subsection_repeal",),
+        )
+
+    m = _RE_INDENT_REPLACE.search(instr)
+    if m:
+        block = _quoted_block_text(article)
+        if block is None:
+            mi = _RE_INLINE_QUOTED.search(instr)
+            block = mi.group("inline").strip() if mi else None
+        if block is None:
+            diagnostics.append(
+                AmendmentGrammarDiagnostic(
+                    rule_id="eu_fmx4_grammar_indent_replace_missing_payload",
+                    reason="indent replace had neither a QUOT block nor inline quoted text",
+                    source_excerpt=raw,
+                )
+            )
+            return None
+        idx = _ordinal_to_index(m.group("ord"))
+        path = (("article", m.group("art")), ("item", idx))
+        return LegalOperation(
+            op_id=f"{amending_celex}-{seq}",
+            sequence=seq,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=path),
+            payload=_payload_node(IRNodeKind.ITEM, idx, block),
+            source=src,
+            witness_rule_id="EU_FMX4.INDENT_REPLACE",
+            provenance_tags=("ir_apply_class=subsection_replace",),
+        )
+
+    # RENUMBER ("Article N is renumbered as Article M"). The structural intent is
+    # captured as a RENUMBER op carrying the destination label in a provenance tag;
+    # the EU apply seam currently OWNS renumber as a typed
+    # ``eu_replay_unsupported_action`` skip (never a silent drop). Lowering it (vs
+    # leaving it an uncovered_instruction residual) makes the move VISIBLE to
+    # ordering/conflict detection and records the destination for a future
+    # increment that materialises the relabel.
+    m = _RE_ARTICLE_RENUMBER.search(instr)
+    if m:
+        from_num = m.group("from")
+        to_num = m.group("to") or ""
+        path = (("article", from_num),)
+        tags = ("ir_apply_class=renumber",)
+        if to_num:
+            tags += (f"renumber_to=article:{to_num}",)
+        return LegalOperation(
+            op_id=f"{amending_celex}-{seq}",
+            sequence=seq,
+            action=StructuralAction.RENUMBER,
+            target=LegalAddress(path=path),
+            source=src,
+            witness_rule_id="EU_FMX4.ARTICLE_RENUMBER",
+            provenance_tags=tags,
+        )
+
     # Indirect annex amendment ("Annex N to Regulation X is replaced/amended as set
     # out in the Annex to this Regulation") — the DOMINANT real EU sanctions-amender
     # shape (32017R0489, 32018R0870, and 31/33 instructions of 32019R1163). Checked
@@ -600,7 +864,17 @@ def _lower_one_instruction(
         annex_payload = (
             " ".join(_all_text(a) for a in own_annexes) if own_annexes else ""
         )
+        payload_origin = "inline" if annex_payload else ""
+        # Increment 3 (Goal 2): when the replacement annex ships as a SEPARATE
+        # manifestation (no inline <ANNEX>), try the caller-supplied resolver to
+        # MATERIALISE that separate payload before falling back to the typed gap.
+        if not annex_payload and resolve_separate_annex is not None:
+            resolved = resolve_separate_annex(amending_celex, annex_num)
+            if resolved:
+                annex_payload = " ".join(resolved.split())
+                payload_origin = "separate_resolved"
         if not annex_payload:
+            payload_origin = "separate_manifestation"
             diagnostics.append(
                 AmendmentGrammarDiagnostic(
                     rule_id="eu_fmx4_grammar_annex_as_set_out_payload_separate",
@@ -608,8 +882,9 @@ def _lower_one_instruction(
                         "indirect annex amendment ('as set out in the Annex to "
                         "this Regulation') names the target annex but its "
                         "replacement body ships as a separate ANNEX manifestation "
-                        "absent from this main FMX4 — structural target lowered, "
-                        "materialised payload is a recorded gap"
+                        "absent from this main FMX4 and no resolver materialised "
+                        "it — structural target lowered, materialised payload is a "
+                        "recorded gap"
                     ),
                     source_excerpt=raw,
                     family="annex_payload_gap",
@@ -626,8 +901,7 @@ def _lower_one_instruction(
             witness_rule_id="EU_FMX4.ANNEX_AMENDED_AS_SET_OUT",
             provenance_tags=(
                 "ir_apply_class=whole_annex_replace",
-                "annex_payload="
-                + ("inline" if annex_payload else "separate_manifestation"),
+                "annex_payload=" + payload_origin,
             ),
         )
 
