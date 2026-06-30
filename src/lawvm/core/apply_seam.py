@@ -57,8 +57,10 @@ from dataclasses import dataclass
 from typing import Generic, Literal, Optional, Protocol, TypeVar
 
 from lawvm.core.coverage import CoverageClaim
+from lawvm.core.execution_authorization import ExecutionAuthorization
 from lawvm.core.ir import IRNode, LegalOperation, OperationSource
 from lawvm.core.ir_helpers import structural_subtree_hash
+from lawvm.core.phase_result import Finding
 from lawvm.core.mutation_boundary import (
     TreePath,
     TreePaths,
@@ -81,10 +83,60 @@ __all__ = [
     "ApplySeamRecoveryRaised",
     "default_recover",
     "CoverageDelta",
+    "AuthorizationResolver",
+    "REPLAY_AUTHORIZATION_PROOF_OBSERVED_FINDING_CODE",
+    "no_op_execution_authorization",
     "ApplyProfile",
     "AppliedOp",
     "apply_op",
 ]
+
+
+# ── EV-05/FW-01/OV-01 universal ExecutionAuthorization OBSERVE gate ───────────
+#
+# The firewall TYPE (``core/execution_authorization.ExecutionAuthorization``)
+# exists, but ``apply`` never checked it: the audit-registry's #2 highest-EV
+# OPEN item names "apply_structure_ops/apply_runtime_support have ZERO references
+# to ExecutionAuthorization" (EV-05 / FW-01 / OV-01). FI's
+# ``finland/apply_resolved_op._gate_execution_authorization_at_op`` is the ONLY
+# producer today and it fires per-frontend (FI only) + strict-only. This seam
+# gate hoists the CHECK to the universal kernel and runs it for ALL 6 frontends,
+# OBSERVE-first (design §5): a mutating op carrying no ``ExecutionAuthorization``
+# proof emits a non-blocking ``EVID.REPLAY_AUTHORIZATION_PROOF_OBSERVED``
+# observation to the SEPARATE :attr:`AppliedOp.observations` lane — never to
+# :attr:`AppliedOp.findings` (which the byte-identity gates assert on). This
+# respects EV-04 (observation is not authority) and keeps every gate green.
+
+#: The non-blocking observation code the seam emits per mutating op lacking an
+#: ExecutionAuthorization proof. Its strict-blocking twin (FI-only today) is
+#: ``EVID.REPLAY_AUTHORIZATION_PROOF_REQUIRED``; promoting this observe gate to
+#: that block per-profile is increment-2 work (see notes/B_ENFORCEMENT_STATUS.md).
+REPLAY_AUTHORIZATION_PROOF_OBSERVED_FINDING_CODE = (
+    "EVID.REPLAY_AUTHORIZATION_PROOF_OBSERVED"
+)
+
+# A resolver answers: does THIS op carry/resolve an ExecutionAuthorization proof?
+# ``(op) -> ExecutionAuthorization | None``. ``None`` is the honest firewall-hole
+# witness — no op carries a proof today (``core/ir.LegalOperation`` has no
+# authorization field), so the kernel-default resolver returns ``None`` for every
+# op and the gap is ~100% by construction. A frontend that begins minting proofs
+# supplies a resolver that returns the op's ExecutionAuthorization.
+AuthorizationResolver = Callable[[LegalOperation], Optional[ExecutionAuthorization]]
+
+
+def no_op_execution_authorization(
+    _op: LegalOperation,
+) -> Optional[ExecutionAuthorization]:
+    """The honest default resolver: NO op carries an ExecutionAuthorization.
+
+    ``core/ir.LegalOperation`` carries no authorization field today, so the apply
+    path can resolve none — this is exactly the EV-05/FW-01 firewall hole the
+    audit registry names ("apply has ZERO references to ExecutionAuthorization").
+    Returning ``None`` for every op makes that hole VISIBLE and MEASURABLE
+    (≈100% of mutating ops, the real gap size) without fabricating a proof. A
+    frontend that mints proofs replaces this on its profile.
+    """
+    return None
 
 
 # ``State`` is the per-op apply state the kernel threads. For the tree frontends
@@ -328,6 +380,15 @@ class ApplyProfile(Generic[State]):
     emit_coverage: bool = True
     renumber_migration_rule_ids: tuple[str, ...] = ()
     receipt_helper_prefix: Optional[str] = None
+    #: EV-05/FW-01/OV-01 ExecutionAuthorization OBSERVE gate resolver. Answers
+    #: ``(op) -> ExecutionAuthorization | None`` per op; a mutating op whose
+    #: resolver yields ``None`` (or an authorization with an empty
+    #: ``authorization_rule_id``) emits the non-blocking
+    #: ``EVID.REPLAY_AUTHORIZATION_PROOF_OBSERVED`` observation to the seam's
+    #: separate :attr:`AppliedOp.observations` lane. Defaults to
+    #: :func:`no_op_execution_authorization` (no op carries a proof today — the
+    #: honest ~100% firewall-hole default). Universal: all 6 profiles inherit it.
+    authorization_resolver: AuthorizationResolver = no_op_execution_authorization
 
 
 @dataclass(frozen=True, slots=True)
@@ -360,6 +421,16 @@ class AppliedOp(Generic[State]):
     coverage_delta: CoverageDelta
     applied: bool
     declared_recovery_prefixes: tuple[TreePath, ...] = ()
+    #: The SEPARATE observe lane (B-enforcement increment 1). Carries the
+    #: universal apply-seam OBSERVE-mode findings — currently the
+    #: ``EVID.REPLAY_AUTHORIZATION_PROOF_OBSERVED`` firewall-hole witness emitted
+    #: per mutating op lacking an ExecutionAuthorization proof. These are
+    #: ADDITIVE evidence (role=observation, non-blocking) and are routed here,
+    #: NEVER into :attr:`findings`, so the production findings/adjudication
+    #: multiset the byte-identity gates assert on is UNCHANGED (EV-04: an
+    #: observation explains, it never becomes authority). Empty when the op
+    #: landed no write or carried a resolvable authorization.
+    observations: tuple[Finding, ...] = ()
 
 
 def apply_op(
@@ -412,6 +483,20 @@ def apply_op(
 
     write_receipt: Optional[WriteReceipt] = None
     coverage_delta = CoverageDelta()
+    observations: tuple[Finding, ...] = ()
+
+    if landed:
+        # ── EV-05/FW-01/OV-01 ExecutionAuthorization OBSERVE gate (universal). ──
+        # A landed write is a state mutation; the firewall contract (§2.10) says
+        # it must carry an ExecutionAuthorization proof (rule_id + required
+        # proofs). The apply path never checked this before. We check it here for
+        # ALL 6 frontends, OBSERVE-first: a mutating op with no resolvable proof
+        # emits a non-blocking observation to the SEPARATE ``observations`` lane,
+        # never to ``findings`` — so the production findings multiset the byte-
+        # identity gates assert on is unchanged. Non-blocking, additive evidence.
+        observations = _execution_authorization_observe(
+            typed_op, profile=profile, source_statute=source_statute
+        )
 
     if landed:
         if profile.emit_receipts:
@@ -461,6 +546,9 @@ def apply_op(
         # "off"``) can declare the authorized retarget without the seam being the
         # audit producer. Empty when the materializer declared none.
         declared_recovery_prefixes=result.declared_recovery_prefixes,
+        # The SEPARATE observe lane: the universal ExecutionAuthorization
+        # firewall-hole witness, ADDITIVE and never folded into ``findings``.
+        observations=observations,
     )
 
 
@@ -473,6 +561,62 @@ def _is_tree_metric(metric: RegionMetric) -> bool:
     routed here.
     """
     return isinstance(metric, _IRPathMetric)
+
+
+# ── EV-05/FW-01/OV-01 ExecutionAuthorization OBSERVE gate ─────────────────────
+
+
+def _execution_authorization_observe(
+    op: LegalOperation,
+    *,
+    profile: ApplyProfile[State],
+    source_statute: str,
+) -> tuple[Finding, ...]:
+    """Observe whether a landed (mutating) op carries an ExecutionAuthorization.
+
+    The universal, metric-agnostic ExecutionAuthorization closure (EV-05/FW-01/
+    OV-01) hoisted to the kernel from FI's per-frontend
+    ``_gate_execution_authorization_at_op``. ``profile.authorization_resolver``
+    answers ``(op) -> ExecutionAuthorization | None``; an op that resolves an
+    authorization with a non-empty ``authorization_rule_id`` met the closure and
+    emits nothing. Otherwise — the ~100% common case today, because no op carries
+    a proof — one non-blocking ``EVID.REPLAY_AUTHORIZATION_PROOF_OBSERVED``
+    observation witnesses the firewall hole.
+
+    The returned findings are role=observation, ``blocking=False``, and are
+    routed to the SEPARATE :attr:`AppliedOp.observations` lane by the caller —
+    NEVER to :attr:`AppliedOp.findings`. This is the byte-identity mechanism: the
+    production findings/adjudication multiset the seam gates assert on is
+    untouched, while the firewall hole becomes visible and gated (design §5
+    observe-first; EV-04 observation-is-not-authority).
+    """
+    authorization = profile.authorization_resolver(op)
+    if authorization is not None and authorization.authorization_rule_id:
+        # The op resolves an execution-authorization rule; closure met, no
+        # observation. (Increment 2 promotes the no-proof case to the strict
+        # block ``EVID.REPLAY_AUTHORIZATION_PROOF_REQUIRED`` per profile.)
+        return ()
+    return (
+        Finding(
+            kind=REPLAY_AUTHORIZATION_PROOF_OBSERVED_FINDING_CODE,
+            role="observation",
+            stage="apply",
+            blocking=False,
+            source_statute=source_statute,
+            detail={
+                "message": (
+                    "A state-mutating op landed through the universal apply seam "
+                    "without resolving an ExecutionAuthorization (no rule_id + "
+                    "required proofs). Surfaced as a non-blocking firewall-hole "
+                    "witness; not promoted to authority."
+                ),
+                "op_id": op.op_id or "",
+                "jurisdiction": profile.jurisdiction,
+                "action": op.action.value if op.action else "",
+                "owner": "apply_seam_execution_authorization_observe",
+            },
+        ),
+    )
 
 
 # ── Receipt synthesis (generalizes NO's ``_no_emit_one_op_receipt``, which

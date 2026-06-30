@@ -1132,6 +1132,24 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "a state-mutating op landed without resolving an ExecutionAuthorization "
                 "(rule_id + required proofs) under strict mode",
                 ("safety_invariant",), role="violation"),
+    # EV-05/FW-01/OV-01 universal apply-seam OBSERVE lane (B-enforcement
+    # increment 1). The blocking ``EVID.REPLAY_AUTHORIZATION_PROOF_REQUIRED``
+    # above is FI's strict-mode block. This is its non-blocking, observation-role
+    # twin emitted UNIVERSALLY by ``core/apply_seam.apply_op`` (all 6 frontends)
+    # for every state-mutating op that carries NO ExecutionAuthorization proof.
+    # It makes the firewall hole VISIBLE for the first time across all frontends
+    # without polluting the production ``findings``/adjudication multiset (it is
+    # routed to the separate ``AppliedOp.observations`` lane, never to
+    # ``AppliedOp.findings``). Observe-first per design §5; the staged promotion
+    # to ``...PROOF_REQUIRED`` block is increment-2 work once frontends mint
+    # proofs (see ``notes/B_ENFORCEMENT_STATUS.md``).
+    FindingSpec("EVID.REPLAY_AUTHORIZATION_PROOF_OBSERVED", "apply",
+                "audit", "warn", "apply_seam",
+                "a state-mutating op landed through the universal apply seam with no "
+                "resolvable ExecutionAuthorization (rule_id + required proofs); surfaced "
+                "as a non-blocking observation in the seam observe lane (the firewall-"
+                "hole witness), never promoted to authority",
+                ("safety_invariant", "provenance"), role="observation"),
     # AM-01 (strict-blocking): a Recovered (guessed) op rejected at the typed
     # acceptance boundary under a StrictProfile that forbids its recovery surface.
     FindingSpec("APPLY.RECOVERED_OP_REJECTED_IN_STRICT", "apply",
