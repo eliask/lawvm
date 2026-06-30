@@ -287,6 +287,48 @@ def test_two_languages_same_fetched_at_do_not_collide(tmp_path: Path) -> None:
     archive.close()
 
 
+def test_revisit_same_celex_language_same_fetched_at_does_not_collide(
+    tmp_path: Path,
+) -> None:
+    """A (celex, language) re-acquired within ONE run (same ``fetched_at``) must
+    not collide on the ingest-run snapshot.
+
+    Regression: with ``--with-closure`` an act can be reached first via another
+    act's DAG (run records ``added=1``) and again from the primary window, where
+    its content is now present so the run records ``added=0/skipped=1``. The two
+    run blobs differ; re-storing at the same ingest-run locator+timestamp raised
+    ``ValueError: Same-timestamp digest change`` — caught upstream and mislabeled
+    as a spurious ``GAP (ValueError)`` that LOST the act. The ingest-run store is
+    now idempotent within a run: the first record stands, the redundant revisit
+    is skipped.
+    """
+    archive = _archive(tmp_path)
+    first = acquire_celex(
+        GDPR,
+        fetched_at=FETCHED_AT,
+        language=LANG,
+        consolidation=CONSOLIDATION,
+        farchive=archive,
+        _fetch_notice=_fake_fetch_notice,
+        _fetch_item=_fake_fetch_item,
+    )
+    assert first.added == 2
+    # Re-acquire the SAME (celex, language) at the SAME fetched_at — pre-fix this
+    # raised; now it observes (content present) and stores no second run blob.
+    second = acquire_celex(
+        GDPR,
+        fetched_at=FETCHED_AT,
+        language=LANG,
+        consolidation=CONSOLIDATION,
+        farchive=archive,
+        _fetch_notice=_fake_fetch_notice,
+        _fetch_item=_fake_fetch_item,
+    )
+    assert second.added == 0
+    assert second.skipped == 2
+    archive.close()
+
+
 # --------------------------------------------------------------------------- #
 # Verify-before-store rejects an HTML error page (typed failure, no store)     #
 # --------------------------------------------------------------------------- #

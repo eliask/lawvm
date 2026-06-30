@@ -362,8 +362,25 @@ def _store_ingest_run(farchive: Any, run: CelexIngestRun) -> None:
             for f in run.failures
         ],
     }
+    ingest_locator = _ingest_run_locator(
+        run.celex, run.expression_language, run.fetched_at
+    )
+    # Idempotent within a run: a (celex, language, fetched_at) may be acquired
+    # more than once in one corpus pass — e.g. an act reached first via another
+    # act's --with-closure DAG (added=1) and again from the primary window, where
+    # its content is now present so the second run records added=0/skipped=1. The
+    # two run blobs differ, so re-storing at the SAME locator+timestamp would
+    # raise "Same-timestamp digest change". The FIRST record (the real
+    # acquisition) stands; a later same-second revisit is redundant provenance.
+    # Skip it rather than colliding (which upstream mislabels as a spurious GAP
+    # and would lose the act).
+    try:
+        if farchive.history(ingest_locator):
+            return
+    except Exception:  # pragma: no cover - history errors are non-fatal here
+        pass
     farchive.store(
-        _ingest_run_locator(run.celex, run.expression_language, run.fetched_at),
+        ingest_locator,
         json.dumps(run_data, ensure_ascii=False).encode("utf-8"),
         storage_class="json",
         metadata={"source_surface": "ingest_run_provenance"},
