@@ -7,6 +7,7 @@ required before promoting evidence to execution.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterable as IterableABC
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -14,6 +15,7 @@ from typing import Any, Literal, Mapping, Sequence, cast
 
 from lawvm.core.evidence_surface_report import EvidenceSurfaceReport
 from lawvm.core.frozen_values import freeze_mapping
+from lawvm.core.phase_result import Finding
 from lawvm.core.mutation_accounting import (
     MUTATION_ACCOUNTING_HARD_CODES,
     MutationInvariantReport,
@@ -313,6 +315,145 @@ def _strip_leading_prefix(path: TreePath, prefix: TreePath) -> TreePath:
     if prefix and path[: len(prefix)] == prefix:
         return path[len(prefix):]
     return path
+
+
+@dataclass(frozen=True, slots=True)
+class PerOpMutationBoundaryAudit:
+    """Core-owned per-op mutation-boundary audit result (LS-01 / §1.0).
+
+    Wraps the pure :class:`PerOpMutationBoundaryVerdict` together with the
+    typed :class:`~lawvm.core.phase_result.Finding` emission the apply site
+    consumes. ``findings`` is empty when the op stayed within boundary; on an
+    escape it carries exactly one finding whose role/blocking disposition was
+    chosen by ``is_strict``:
+
+    * strict → ``APPLY.MUTATION_BOUNDARY_VIOLATION_AT_OP`` (role=violation,
+      blocking=True) — the op is rejected.
+    * quirks → ``APPLY.MUTATION_BOUNDARY_FINDING_AT_OP`` (role=observation,
+      blocking=False) — a non-blocking accounting receipt.
+
+    Owning the verdict→finding projection HERE (not at each frontend apply
+    site) is the §2.3 core-owns-mutation-boundary/findings boundary and the
+    §2.5 one-proof-per-family rule: Finland's inline emission and the UK probe
+    are two consumers of one producer, never two re-implementations that can
+    drift in role, code, or detail shape.
+    """
+
+    verdict: PerOpMutationBoundaryVerdict
+    findings: tuple[Finding, ...]
+
+    @property
+    def within_boundary(self) -> bool:
+        return self.verdict.within_boundary
+
+
+def mutation_boundary_finding_detail(
+    verdict: PerOpMutationBoundaryVerdict,
+    *,
+    source_statute: str = "",
+    extra: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build the canonical ``Finding.detail`` payload for a per-op escape.
+
+    Single owner of the diagnostic shape so every consumer (FI apply lane, the
+    UK probe, future frontends) reports the SAME self-evidencing fields — the
+    op id, the full changed-path list, and the concrete out-of-boundary paths
+    (never an opaque "boundary violated" with no escaped path, the §1.10
+    forbidden diagnostic shape).
+    """
+    detail: dict[str, Any] = {
+        "message": (
+            "Per-op mutation boundary escaped: the op's changed tree paths are not "
+            "a subset of its declared target/migration/recovery/editorial boundary."
+        ),
+        "op_id": verdict.op_id,
+        "source_statute": str(source_statute or ""),
+        "changed_paths": list(verdict.changed_paths),
+        "out_of_boundary_paths": list(verdict.out_of_boundary_paths),
+        "boundary_status": verdict.boundary_status,
+    }
+    if extra:
+        detail.update(extra)
+    return detail
+
+
+def audit_op_mutation_boundary(
+    before: IRNode,
+    after: IRNode,
+    op: LegalOperation,
+    *,
+    op_id: str,
+    source_statute: str = "",
+    is_strict: bool = False,
+    declared_migration_prefixes: Sequence[TreePath] = (),
+    declared_recovery_prefixes: Sequence[TreePath] = (),
+    declared_editorial_projection_prefixes: Sequence[TreePath] = (),
+    strip_root_prefix: TreePath = (),
+    detail_extra: Mapping[str, Any] | None = None,
+) -> PerOpMutationBoundaryAudit:
+    """Core-owned per-op mutation-boundary audit (LS-01 / §1.0): verify + emit.
+
+    Runs :func:`verify_per_op` and, on an out-of-boundary escape, emits the
+    typed registry finding the apply site consumes — a blocking
+    ``APPLY.MUTATION_BOUNDARY_VIOLATION_AT_OP`` violation under strict, or a
+    non-blocking ``APPLY.MUTATION_BOUNDARY_FINDING_AT_OP`` observation under
+    quirks. A within-boundary op emits nothing (no diagnostic noise on a clean
+    apply).
+
+    This is the jurisdiction-neutral producer §2.3 assigns to core. Frontends
+    pass their own materialization-wrapper ``strip_root_prefix`` (FI strips the
+    ``("hcontainer", "")`` root; UK passes ``()``) and the apply-time
+    ``is_strict`` signal, then route the returned findings into their own
+    finding ledger — they do NOT re-build the Finding, choose its role, or
+    re-derive its detail shape. Pure: never mutates the tree; the caller owns
+    the ledger append.
+    """
+    verdict = verify_per_op(
+        before,
+        after,
+        op,
+        op_id=op_id,
+        declared_migration_prefixes=declared_migration_prefixes,
+        declared_recovery_prefixes=declared_recovery_prefixes,
+        declared_editorial_projection_prefixes=declared_editorial_projection_prefixes,
+        strip_root_prefix=strip_root_prefix,
+    )
+    if verdict.within_boundary:
+        return PerOpMutationBoundaryAudit(verdict=verdict, findings=())
+    detail = mutation_boundary_finding_detail(
+        verdict, source_statute=source_statute, extra=detail_extra
+    )
+    if is_strict:
+        finding = Finding(
+            kind=MUTATION_BOUNDARY_VIOLATION_AT_OP_CODE,
+            role="violation",
+            stage="apply",
+            blocking=True,
+            source_statute=str(source_statute or ""),
+            detail=detail,
+        )
+    else:
+        finding = Finding(
+            kind=MUTATION_BOUNDARY_FINDING_AT_OP_CODE,
+            role="observation",
+            stage="apply",
+            blocking=False,
+            source_statute=str(source_statute or ""),
+            detail={**detail, "strict_disposition": "record"},
+        )
+    return PerOpMutationBoundaryAudit(verdict=verdict, findings=(finding,))
+
+
+def mutation_boundary_audit_enabled(env_var: str) -> bool:
+    """Opt-in env gate for the per-op mutation-boundary audit.
+
+    Jurisdiction-neutral helper: each frontend names its own flag (UK uses
+    ``LAWVM_UK_MUTATION_BOUNDARY_PER_OP``) so the audit is observation-by-
+    default — OFF unless the flag is exactly ``"1"`` — keeping production
+    replay byte-identical with the audit disabled. Centralizing the read makes
+    the gate semantics one fact, not a per-frontend ``os.environ`` literal.
+    """
+    return os.environ.get(env_var, "") == "1"
 
 
 def mutation_boundary_evidence_report(

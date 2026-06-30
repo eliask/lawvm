@@ -13,10 +13,18 @@ exists, is registered, passes review, and creates false confidence in
 invisible containment.
 
 This module wires the verifier into the **UK replay fold's per-op apply site**
-as an OBSERVATION-ONLY, env-gated probe — emitting typed
-:class:`~lawvm.replay_adjudication.CompileAdjudication` records for every
-``APPLY.MUTATION_BOUNDARY_VIOLATION_AT_OP`` shortfall so the gap is VISIBLE
-without risking a bench-wide metric shift. STRICT ENFORCEMENT (block under
+as an OBSERVATION-ONLY, env-gated probe. It is the **first consumer** of the
+core-owned per-op audit ``lawvm.core.mutation_boundary_proof
+.audit_op_mutation_boundary`` (§2.3 core-owns-mutation-boundary/findings, §2.5
+one-proof-per-family): the probe does NOT re-run ``verify_per_op`` or re-derive
+the verdict→finding shape — it calls the core audit in observation mode
+(``is_strict=False``), takes the typed ``APPLY.MUTATION_BOUNDARY_FINDING_AT_OP``
+``Finding`` the core emits, and PROJECTS it into the UK
+:class:`~lawvm.replay_adjudication.CompileAdjudication` interop surface for
+every shortfall so the gap is VISIBLE without risking a bench-wide metric
+shift. The shared diagnostic detail (op id, changed paths, out-of-boundary
+paths, boundary status) therefore comes from the one core producer and cannot
+drift from Finland's apply-lane emission. STRICT ENFORCEMENT (block under
 strict mode) is multi-session: the UK replay fold has no ``strict_profile``
 signaling path today (Finland's ``strict_profile``/``is_strict`` system is
 absent in ``replay_executor.py`` — historically the executor mutated IR
@@ -54,13 +62,13 @@ WHAT IT DOES NOT PROMISE (honesty boundary, mirror of the totality probe):
 """
 from __future__ import annotations
 
-import os
 from typing import Optional
 
 from lawvm.core.ir import IRNode, IRStatute, LegalOperation
 from lawvm.core.mutation_boundary_proof import (
     PerOpMutationBoundaryVerdict,
-    verify_per_op,
+    audit_op_mutation_boundary,
+    mutation_boundary_audit_enabled,
 )
 from lawvm.core.quirks_disposition import QuirksDisposition
 from lawvm.replay_adjudication import CompileAdjudication
@@ -80,8 +88,12 @@ UK_MUTATION_BOUNDARY_PER_OP_VIOLATION_KIND = (
 
 
 def boundary_probe_enabled() -> bool:
-    """True when the per-op mutation-boundary probe should run on each apply."""
-    return os.environ.get(_PROBE_ENV_FLAG, "") == "1"
+    """True when the per-op mutation-boundary probe should run on each apply.
+
+    Thin alias over the core-owned :func:`mutation_boundary_audit_enabled` gate
+    keyed on the UK flag — one fact, read from core, default-off.
+    """
+    return mutation_boundary_audit_enabled(_PROBE_ENV_FLAG)
 
 
 def probe_op_mutation_boundary(
@@ -96,32 +108,42 @@ def probe_op_mutation_boundary(
     """Run the per-op mutation-boundary probe, appending each
     ``out_of_boundary`` short fall as a non-blocking ``CompileAdjudication``.
 
-    The probe computes the op's storage mutation boundary
-    (``operation_storage_boundary_prefixes(op)`` — no declared migration /
-    recovery / editorial-projection prefixes at v0) and diffs ``before``→
-    ``after``. Any observed changed path outside that boundary is reported as
-    an ``uk_replay_*_violation_observed`` adjudication on the sink list —
-    never a strict-mode block at v0.
+    Delegates the verify+emit to the core-owned
+    :func:`~lawvm.core.mutation_boundary_proof.audit_op_mutation_boundary`
+    (observation mode — ``is_strict=False``), which computes the op's storage
+    mutation boundary (no declared migration / recovery / editorial-projection
+    prefixes at v0) and, on an escape, emits the typed
+    ``APPLY.MUTATION_BOUNDARY_FINDING_AT_OP`` core finding. The probe PROJECTS
+    that core finding into the UK ``CompileAdjudication`` interop surface — it
+    no longer re-runs the verifier or re-derives the diagnostic shape, so the
+    UK record cannot drift from the core producer (or from Finland's apply
+    lane, which consumes the same producer family).
 
-    Returns the typed verdict (also appended to ``adjudications_out`` when
-    supplied and out-of-bound). Callers without an output sink get the
-    verdict as a return value, mirroring the helper-return shape Finland uses.
-
-    Emits nothing when within boundary (no diagnostic noise on a clean apply).
+    Returns the typed verdict on an out-of-boundary escape (also projected to
+    ``adjudications_out`` when supplied); returns ``None`` on a clean apply or a
+    ``None`` snapshot — emitting nothing (no diagnostic noise on a clean
+    apply).
     """
     if before is None or after is None:
         return None
-    verdict = verify_per_op(
+    audit = audit_op_mutation_boundary(
         before,
         after,
         op,
         op_id=str(op_id or ""),
+        source_statute=str(source_statute or ""),
+        is_strict=False,  # UK lane has no strict_profile signal yet (§2.9).
         # UK IRStatute.body is the top-level tree (no hcontainer wrapper);
         # ``strip_root_prefix`` defaults to ``()`` — no normalization needed,
         # unlike the FI replay fold which wraps under ("hcontainer", "").
     )
-    if verdict.within_boundary:
+    verdict = audit.verdict
+    if audit.within_boundary or not audit.findings:
+        # Within boundary (or nothing emitted): no diagnostic noise, and the
+        # historical probe contract returns None on a clean apply.
         return None
+    core_finding = audit.findings[0]
+    core_detail = dict(core_finding.detail)
     adjudication = CompileAdjudication(
         kind=UK_MUTATION_BOUNDARY_PER_OP_VIOLATION_KIND,
         message=(
@@ -132,20 +154,23 @@ def probe_op_mutation_boundary(
         ),
         source_statute=str(source_statute or ""),
         op_id=str(op_id or ""),
-        blocking=False,
+        blocking=core_finding.blocking,
         phase="replay",
         detail={
             "rule_id": UK_MUTATION_BOUNDARY_PER_OP_VIOLATION_KIND,
             "family": "mutation_boundary",
             "reason_code": "per_op_mutation_boundary_escape_observed",
             "op_id": str(op_id or ""),
-            "changed_paths": list(verdict.changed_paths),
-            "out_of_boundary_paths": list(verdict.out_of_boundary_paths),
-            "boundary_status": verdict.boundary_status,
+            # Sourced from the core finding's detail (single producer) so the
+            # UK record cannot diverge from core / Finland.
+            "changed_paths": list(core_detail.get("changed_paths", ())),
+            "out_of_boundary_paths": list(core_detail.get("out_of_boundary_paths", ())),
+            "boundary_status": core_detail.get("boundary_status", verdict.boundary_status),
+            "core_finding_kind": core_finding.kind,
             "probe_mode": "observation_only",
             "strict_disposition": "record",
             "quirks_disposition": QuirksDisposition.RECORD,
-            "witness_class": "core.mutation_boundary_proof.verify_per_op",
+            "witness_class": "core.mutation_boundary_proof.audit_op_mutation_boundary",
             # The canonical FI per-op violation witness (LS-01) is the SOTA
             # analogue; documented in core/invariant_spec.py at the LS-01 row.
             "witness_prior_art": "fi_apply_resolved_op_mutation_boundary_at_op_gate",

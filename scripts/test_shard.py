@@ -587,6 +587,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_merge.py",
         "test_fi_migration_ledger.py",
         "test_mutation_boundary.py",
+        "test_core_mutation_boundary_audit.py",
         "test_mutation_events.py",
         "test_mutation_gaps.py",
         "test_normalize_structure.py",
