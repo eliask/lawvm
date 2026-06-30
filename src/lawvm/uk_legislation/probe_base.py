@@ -58,6 +58,10 @@ from lawvm.replay_adjudication import CompileAdjudication
 # Standard owner phase for env-gated observation-only probes wired at the
 # ``uk_amendment_replay.apply_ops`` fold-exit. Hard-coded so a future
 # reader can grep ``EnvGatedProbe`` producers and see the uniform shape.
+# The one per-op apply-site consumer (D1 mutation-boundary, task #65) emits
+# at ``phase="replay"`` instead, via the ``phase=`` override on
+# ``make_probe_observed_adjudication`` — the default keeps the fold-exit
+# probes byte-identical.
 _PROBE_PHASE = "replay_products"
 _PROBE_MODE = "observation_only"
 _PROBE_STRICT_DISPOSITION = "record"
@@ -183,8 +187,10 @@ def make_probe_observed_adjudication(
     message: str,
     extra_detail: Optional[Mapping[str, Any]] = None,
     op_id: str = "",
+    phase: str = _PROBE_PHASE,
+    blocking: bool = False,
 ) -> CompileAdjudication:
-    """Build a non-blocking per-finding CompileAdjudication from a ProbeSpec.
+    """Build a per-finding observation CompileAdjudication from a ProbeSpec.
 
     The detail payload carries the uniform harness fields (rule_id, family,
     probe_mode, strict_disposition, quirks_disposition, witness_class,
@@ -193,6 +199,16 @@ def make_probe_observed_adjudication(
     the audit-specific evidence (cited_policy_id, addr_path, etc.) so a
     triager can read both the harness-describing envelope and the per-
     finding evidence in one record.
+
+    ``phase`` and ``blocking`` default to the fold-exit observation shape
+    (``phase="replay_products"``, ``blocking=False``) that the original
+    8 fold-exit probes use — so their calls stay byte-identical. The two
+    overrides exist for the ONE structurally-distinct consumer, the per-op
+    apply-site mutation-boundary probe (D1, task #65), which emits at
+    ``phase="replay"`` and passes the core finding's ``blocking`` through
+    (observation-only today — the core audit runs ``is_strict=False`` so the
+    pass-through is ``False`` — but ready for a future strict UK lane). A
+    caller that overrides neither gets exactly the prior behaviour.
     """
     detail: dict[str, Any] = {
         "rule_id": spec.kind,
@@ -213,8 +229,8 @@ def make_probe_observed_adjudication(
         message=str(message),
         source_statute=str(statute_id or ""),
         op_id=str(op_id or ""),
-        blocking=False,
-        phase=_PROBE_PHASE,
+        blocking=bool(blocking),
+        phase=str(phase),
         detail=detail,
     )
 
