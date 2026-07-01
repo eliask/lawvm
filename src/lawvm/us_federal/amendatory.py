@@ -1500,13 +1500,32 @@ def _text_of(elem: ET.Element) -> str:
     never enacted text and are pruned at every extraction waist, not only
     inside the quoted operands.
     """
-    return re.sub(r"\s+", " ", _itertext_excluding_sidenotes(elem)).strip()
+    return _collapse_ws_strip(_itertext_excluding_sidenotes(elem))
 
 
 # Curly/straight quote marks the USLM wraps around an inline literal in the
 # *prose* (siblings of <quotedText>, never inside it). Only an enclosing matched
 # pair is peeled — never edge punctuation that is part of the literal.
 _ENCLOSING_QUOTE_PAIRS = (("“", "”"), ('"', '"'))
+
+
+def _collapse_ws_strip(text: str) -> str:
+    """Collapse all whitespace runs and trim edge whitespace."""
+    if not text:
+        return ""
+    if (
+        text.isascii()
+        and "\n" not in text
+        and "\t" not in text
+        and "\r" not in text
+        and "\f" not in text
+        and "\v" not in text
+    ):
+        if " " not in text:
+            return text
+        if text[0] != " " and text[-1] != " " and "  " not in text:
+            return text
+    return " ".join(text.split())
 
 
 def _collapse_inner_ws(text: str) -> str:
@@ -1799,7 +1818,7 @@ def _quoted_content_node(elem: ET.Element) -> IRNode | None:
             # (F4: "…becomes due." not "…becomes due"). Editorial marginal sidenotes
             # (fontsize8 ``<p>``: "Time period.", "Definitions.", page stamps) are
             # pruned — they are not enacted statutory text.
-            collapsed = re.sub(r"\s+", " ", _itertext_excluding_sidenotes(q)).strip()
+            collapsed = _collapse_ws_strip(_itertext_excluding_sidenotes(q))
             text = _peel_enclosing_quotes(collapsed)
             # We carry the quoted block verbatim as a single content node; the
             # dry-run stage re-parses the USLM sub-tree into structured law.

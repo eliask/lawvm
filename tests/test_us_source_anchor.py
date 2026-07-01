@@ -53,6 +53,7 @@ from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.core.provenance import OperationSource, SourceAnchor, compute_source_anchor
 from lawvm.core.semantic_types import StructuralAction
 from lawvm.us_federal.amendatory import (
+    _collapse_ws_strip,
     _unique_byte_run_bodies,
     lower_plaw_amendatory,
     mint_us_source_anchors,
@@ -428,6 +429,14 @@ def test_us_unique_byte_run_bodies_include_uslm_body_carrier_tags() -> None:
     assert "Quoted content body is unique." in bodies
     assert "Reference body is unique." in bodies
     assert "Heading body is not an operative anchor candidate." not in bodies
+
+
+def test_us_collapse_ws_strip_preserves_regex_collapse_semantics() -> None:
+    assert _collapse_ws_strip("") == ""
+    assert _collapse_ws_strip("Section") == "Section"
+    assert _collapse_ws_strip("Section 10 A") == "Section 10 A"
+    assert _collapse_ws_strip("  Section   10\nA\t") == "Section 10 A"
+    assert _collapse_ws_strip("A\u00a0B") == "A B"
 
 
 def test_us_unique_byte_run_bodies_prefilters_to_candidate_clauses() -> None:
