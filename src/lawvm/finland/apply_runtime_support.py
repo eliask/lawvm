@@ -403,6 +403,67 @@ def _subsection_node_from_base_ir(
     return None
 
 
+def _prior_paragraph_labels_for_subsection_paths(
+    *,
+    child_paths: set[Path],
+    replay_history_ops: List[_LegalOperation],
+    base_ir: IRNode | None,
+    before_effective: str,
+    subsection_node_cache: dict[Path, IRNode | None] | None = None,
+    section_node_cache: dict[Path, IRNode | None] | None = None,
+) -> dict[Path, set[str]]:
+    labels_by_path: dict[Path, set[str]] = {tuple(path): set() for path in child_paths}
+    if not labels_by_path:
+        return labels_by_path
+
+    for child_path, labels in labels_by_path.items():
+        base_child = _subsection_node_from_base_ir(
+            base_ir,
+            child_path,
+            subsection_node_cache,
+            section_node_cache,
+        )
+        if base_child is None:
+            continue
+        labels.update(
+            _normalize_snapshot_item_label(grandchild.label)
+            for grandchild in base_child.children
+            if grandchild.kind is IRNodeKind.PARAGRAPH and grandchild.label
+        )
+
+    for prior in replay_history_ops:
+        if prior.target.special is not None or not prior.target.path:
+            continue
+        if prior.source is not None:
+            prior_effective = prior.source.effective or prior.source.enacted or ""
+            if before_effective and prior_effective and prior_effective > before_effective:
+                continue
+        prior_path = tuple(prior.target.path)
+        labels = labels_by_path.get(prior_path)
+        if labels is not None and prior.payload is not None:
+            if prior.payload.kind is IRNodeKind.SUBSECTION:
+                labels.update(
+                    _normalize_snapshot_item_label(grandchild.label)
+                    for grandchild in prior.payload.children
+                    if grandchild.kind is IRNodeKind.PARAGRAPH and grandchild.label
+                )
+            continue
+        if len(prior_path) < 1 or prior_path[-1][0] != "paragraph":
+            continue
+        parent_path = prior_path[:-1]
+        labels = labels_by_path.get(parent_path)
+        if labels is None:
+            continue
+        paragraph_label = _normalize_snapshot_item_label(prior_path[-1][1])
+        if not paragraph_label:
+            continue
+        if prior.action is StructuralAction.REPEAL:
+            labels.discard(paragraph_label)
+        else:
+            labels.add(paragraph_label)
+    return labels_by_path
+
+
 @lru_cache(maxsize=8192)
 def _section_snapshot_identity(path: Path) -> SectionSnapshotIdentity:
     labels = {kind: label for kind, label in path}
@@ -4404,6 +4465,20 @@ def _emit_section_snapshot(
             for rop in group_rops
             if _snapshot_targets_subsection_only(rop) and _snapshot_subsection_target_label(rop)
         }
+        prior_paragraph_labels_by_path = _prior_paragraph_labels_for_subsection_paths(
+            child_paths={
+                section_path + (("subsection", child.label),)
+                for child in payload.children
+                if child.kind is IRNodeKind.SUBSECTION
+                and child.label
+                and _snapshot_payload_is_complete_owner(child)
+            },
+            replay_history_ops=lo_ops_out,
+            base_ir=base_ir,
+            before_effective=op_source.effective,
+            subsection_node_cache=base_subsection_node_cache,
+            section_node_cache=base_section_node_cache,
+        )
 
         def _latest_prior_exact_target_is_repeal_placeholder(child_path: Path) -> bool:
             latest_key: tuple[str, str, int] | None = None
@@ -4429,49 +4504,6 @@ def _emit_section_snapshot(
                     or payload_attrs.get("lawvm_repeal_placeholder") == "1"
                 )
             return latest_is_placeholder
-
-        def _prior_paragraph_labels_for_subsection(child_path: Path) -> set[str]:
-            labels: set[str] = set()
-            base_child = _subsection_node_from_base_ir(
-                base_ir,
-                child_path,
-                base_subsection_node_cache,
-                base_section_node_cache,
-            )
-            if base_child is not None:
-                labels.update(
-                    _normalize_snapshot_item_label(grandchild.label)
-                    for grandchild in base_child.children
-                    if grandchild.kind is IRNodeKind.PARAGRAPH and grandchild.label
-                )
-            for prior in lo_ops_out:
-                if prior.target.special is not None or not prior.target.path:
-                    continue
-                if prior.source is not None:
-                    prior_effective = prior.source.effective or prior.source.enacted or ""
-                    if op_source.effective and prior_effective and prior_effective > op_source.effective:
-                        continue
-                if prior.target.path == child_path and prior.payload is not None:
-                    if prior.payload.kind is IRNodeKind.SUBSECTION:
-                        labels.update(
-                            _normalize_snapshot_item_label(grandchild.label)
-                            for grandchild in prior.payload.children
-                            if grandchild.kind is IRNodeKind.PARAGRAPH and grandchild.label
-                        )
-                    continue
-                if (
-                    len(prior.target.path) == len(child_path) + 1
-                    and prior.target.path[:-1] == child_path
-                    and prior.target.path[-1][0] == "paragraph"
-                ):
-                    paragraph_label = _normalize_snapshot_item_label(prior.target.path[-1][1])
-                    if not paragraph_label:
-                        continue
-                    if prior.action is StructuralAction.REPEAL:
-                        labels.discard(paragraph_label)
-                    else:
-                        labels.add(paragraph_label)
-            return labels
 
         def _scoped_item_payloads_for_subsection(child_norm_label: str) -> dict[str, IRNode]:
             item_payloads: dict[str, IRNode] = {}
@@ -4589,7 +4621,7 @@ def _emit_section_snapshot(
                 # child snapshot carries the new paragraph set; counting it as
                 # prior would turn genuinely new inserted paragraphs into
                 # absent-target REPLACE ops that timeline compilation rejects.
-                prior_paragraph_labels = _prior_paragraph_labels_for_subsection(child_path)
+                prior_paragraph_labels = prior_paragraph_labels_by_path.get(child_path, set())
             for rop in group_rops:
                 rop_subsection = _norm_num_token(_snapshot_subsection_target_label(rop))
                 if rop_subsection != child_norm_label:

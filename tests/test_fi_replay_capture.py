@@ -7,6 +7,7 @@ from lawvm.core.ir import OperationSource
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.finland.apply_runtime_support import (
     SectionSnapshotIdentity,
+    _prior_paragraph_labels_for_subsection_paths,
     _snapshot_section_los_for_identity,
     _timeline_exact_target_exists_in_history,
     _timeline_payload_target_exists_in_history,
@@ -264,3 +265,80 @@ def test_timeline_payload_target_index_preserves_effective_cutoff_semantics() ->
         target_path,
         before_effective="2019-01-01",
     )
+
+
+def test_prior_paragraph_labels_for_subsection_paths_batches_history_scan() -> None:
+    subsection_path = (("section", "1"), ("subsection", "1"))
+    second_subsection_path = (("section", "1"), ("subsection", "2"))
+    base_ir = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="1",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SUBSECTION,
+                        label="1",
+                        children=(IRNode(kind=IRNodeKind.PARAGRAPH, label="1"),),
+                    ),
+                    IRNode(
+                        kind=IRNodeKind.SUBSECTION,
+                        label="2",
+                        children=(IRNode(kind=IRNodeKind.PARAGRAPH, label="a"),),
+                    ),
+                ),
+            ),
+        ),
+    )
+    history = ReplayLegalOperationCaptureList()
+    history.extend(
+        [
+            LegalOperation(
+                op_id="replace_subsection",
+                sequence=1,
+                action=StructuralAction.REPLACE,
+                target=LegalAddress(path=subsection_path),
+                payload=IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="1",
+                    children=(
+                        IRNode(kind=IRNodeKind.PARAGRAPH, label="2"),
+                        IRNode(kind=IRNodeKind.PARAGRAPH, label="3"),
+                    ),
+                ),
+                source=OperationSource(statute_id="1999/1", effective="2018-01-01"),
+            ),
+            LegalOperation(
+                op_id="insert_paragraph",
+                sequence=2,
+                action=StructuralAction.INSERT,
+                target=LegalAddress(path=subsection_path + (("paragraph", "4"),)),
+                source=OperationSource(statute_id="1999/2", effective="2019-01-01"),
+            ),
+            LegalOperation(
+                op_id="repeal_paragraph",
+                sequence=3,
+                action=StructuralAction.REPEAL,
+                target=LegalAddress(path=subsection_path + (("paragraph", "2"),)),
+                source=OperationSource(statute_id="1999/3", effective="2019-06-01"),
+            ),
+            LegalOperation(
+                op_id="future_paragraph",
+                sequence=4,
+                action=StructuralAction.INSERT,
+                target=LegalAddress(path=subsection_path + (("paragraph", "5"),)),
+                source=OperationSource(statute_id="1999/4", effective="2025-01-01"),
+            ),
+        ]
+    )
+
+    labels_by_path = _prior_paragraph_labels_for_subsection_paths(
+        child_paths={subsection_path, second_subsection_path},
+        replay_history_ops=history,
+        base_ir=base_ir,
+        before_effective="2020-01-01",
+    )
+
+    assert labels_by_path[subsection_path] == {"1", "3", "4"}
+    assert labels_by_path[second_subsection_path] == {"a"}
