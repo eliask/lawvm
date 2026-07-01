@@ -2485,6 +2485,8 @@ def _chapter_expiry_from_base(
 
 def _amendment_effective_date_with_step(
     tree: "etree._Element",
+    *,
+    resolve_separate_commencement: bool = True,
 ) -> "tuple[Optional[dt.date], str]":
     """Return (effective_date, step_used) where step_used is one of:
     'metadata'  — authoritative dateEntryIntoForce element (step 1)
@@ -2549,17 +2551,38 @@ def _amendment_effective_date_with_step(
         full_text,
         flags=re.IGNORECASE,
     ):
-        target_id = _statute_id_from_doc_number(tree)
-        if target_id is not None:
-            witness = separate_commencement_law_witness(target_id)
-            if witness is not None:
-                return witness.effective_date, 'separate_commencement_law'
+        if resolve_separate_commencement:
+            target_id = _statute_id_from_doc_number(tree)
+            if target_id is not None:
+                witness = separate_commencement_law_witness(target_id)
+                if witness is not None:
+                    return witness.effective_date, 'separate_commencement_law'
         return None, 'contingent_text'
     # 3. Fall back to publication metadata (publication date, not effective date,
     #    but better than nothing when text regex fails or matched wrong text)
     if issued is not None:
         return issued, 'publication_date'
     return None, 'absent'
+
+
+def _amendment_effective_date_for_comparability(
+    tree: "etree._Element",
+) -> Optional[dt.date]:
+    """Return amendment ordering date without global separate-law witness lookup.
+
+    Bench-comparable oracle selection may inspect many candidate artifacts.  A
+    separate-commencement clause can otherwise force construction of the global
+    separate-law witness index, which reads the whole source corpus.  Treating
+    that rare clause as unresolved for oracle comparability is conservative: it
+    may reject an oracle candidate rather than accepting one through an
+    expensive global side channel, while replay/temporal compilation still uses
+    the full resolving path above.
+    """
+    date, _step = _amendment_effective_date_with_step(
+        tree,
+        resolve_separate_commencement=False,
+    )
+    return date
 
 
 def _statute_issue_date(tree: "etree._Element") -> Optional[dt.date]:

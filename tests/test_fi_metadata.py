@@ -5,6 +5,7 @@ import lxml.etree as etree
 
 from lawvm.finland.metadata import (
     _amendment_effective_date,
+    _amendment_effective_date_for_comparability,
     _amendment_effective_date_with_step,
     _normalize_johtolause_verbs,
     _statute_issue_date,
@@ -422,6 +423,32 @@ def test_amendment_effective_date_resolves_erikseen_lailla_from_separate_commenc
     assert witness.commencement_statute_id == "2018/937"
     assert witness.source_provision_ref == "2018/937/1"
     assert witness.rule_id == "fi_separate_commencement_law_list"
+
+
+def test_comparability_effective_date_does_not_build_separate_commencement_index(monkeypatch) -> None:
+    corpus = get_corpus()
+    source = corpus.read_source("2018/947")
+    assert source is not None
+    tree = etree.fromstring(source)
+
+    def fail_witness_lookup(target_statute_id: str) -> object:
+        raise AssertionError(
+            f"comparability selection must not build separate-law index for {target_statute_id}"
+        )
+
+    monkeypatch.setattr(
+        "lawvm.finland.metadata.separate_commencement_law_witness",
+        fail_witness_lookup,
+    )
+
+    result, step = _amendment_effective_date_with_step(
+        tree,
+        resolve_separate_commencement=False,
+    )
+
+    assert result is None
+    assert step == "contingent_text"
+    assert _amendment_effective_date_for_comparability(tree) is None
 
 
 def test_decree_inline_list_resolves_deferred_commencement_for_pending_law() -> None:

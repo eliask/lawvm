@@ -179,7 +179,7 @@ def _is_self_comparable_with_tolerance(
 
     from lawvm.corpus_store import statute_url
     from lawvm.finland.metadata import (
-        _amendment_effective_date,
+        _amendment_effective_date_for_comparability,
         _amendment_expiry_date,
         _statute_issue_date,
     )
@@ -200,7 +200,7 @@ def _is_self_comparable_with_tolerance(
     except etree.XMLSyntaxError:
         return False, False
 
-    effective_date = _amendment_effective_date(tree)
+    effective_date = _amendment_effective_date_for_comparability(tree)
     issue_date = _statute_issue_date(tree)
     expiry_date = _amendment_expiry_date(tree)
     ordering_date = effective_date or issue_date

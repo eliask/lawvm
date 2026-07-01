@@ -23,6 +23,8 @@ class ReplayLegalOperationCaptureList(list[Any]):
 
     __slots__ = (
         "base_provision_index_cache",
+        "base_section_node_cache",
+        "base_subsection_node_cache",
         "base_target_exists_cache",
         "snapshot_index",
         "timeline_exact_target_index",
@@ -34,6 +36,8 @@ class ReplayLegalOperationCaptureList(list[Any]):
     def __init__(self) -> None:
         super().__init__()
         self.base_provision_index_cache: object | None = None
+        self.base_section_node_cache: object | None = None
+        self.base_subsection_node_cache: object | None = None
         self.base_target_exists_cache: object | None = None
         self.snapshot_index: object | None = None
         self.timeline_exact_target_index: object | None = None
@@ -43,6 +47,8 @@ class ReplayLegalOperationCaptureList(list[Any]):
 
     def _invalidate_indexes(self, *, preserve_snapshot_index: bool = False) -> None:
         self.base_provision_index_cache = None
+        self.base_section_node_cache = None
+        self.base_subsection_node_cache = None
         if not preserve_snapshot_index:
             self.snapshot_index = None
         self.timeline_exact_target_index = None

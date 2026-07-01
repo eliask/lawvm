@@ -307,19 +307,50 @@ def _base_target_exists_for_replay_history(
     return exists
 
 
+def _base_node_cache_for_replay_history(
+    replay_history_ops: List[_LegalOperation] | None,
+    base_ir: IRNode | None,
+    cache_attr: str,
+) -> dict[Path, IRNode | None] | None:
+    if base_ir is None or not isinstance(replay_history_ops, ReplayLegalOperationCaptureList):
+        return None
+    cache = cast(
+        dict[int, tuple[IRNode, dict[Path, IRNode | None]]] | None,
+        getattr(replay_history_ops, cache_attr),
+    )
+    if cache is None:
+        cache = {}
+        setattr(replay_history_ops, cache_attr, cache)
+    key = id(base_ir)
+    cached = cache.get(key)
+    if cached is None or cached[0] is not base_ir:
+        path_cache: dict[Path, IRNode | None] = {}
+        cache[key] = (base_ir, path_cache)
+        return path_cache
+    return cached[1]
+
+
 def _section_node_from_base_ir(
     base_ir: IRNode | None,
     section_path: Path,
+    section_node_cache: dict[Path, IRNode | None] | None = None,
 ) -> IRNode | None:
     if base_ir is None:
         return None
+    normalized_path = tuple(section_path)
+    if section_node_cache is not None and normalized_path in section_node_cache:
+        return section_node_cache[normalized_path]
     section_node = _tops.resolve(base_ir, section_path)
     if section_node is not None and section_node.kind is IRNodeKind.SECTION:
+        if section_node_cache is not None:
+            section_node_cache[normalized_path] = section_node
         return section_node
     labels = {kind: label for kind, label in section_path}
     section_label = labels.get("section")
     chapter_label = labels.get("chapter")
     if not section_label:
+        if section_node_cache is not None:
+            section_node_cache[normalized_path] = None
         return None
     resolved = _tops.find(
         base_ir,
@@ -329,26 +360,46 @@ def _section_node_from_base_ir(
         scope_label=chapter_label,
     )
     if resolved is None:
+        if section_node_cache is not None:
+            section_node_cache[normalized_path] = None
         return None
     section_node = _tops.resolve(base_ir, resolved)
     if section_node is not None and section_node.kind is IRNodeKind.SECTION:
+        if section_node_cache is not None:
+            section_node_cache[normalized_path] = section_node
         return section_node
+    if section_node_cache is not None:
+        section_node_cache[normalized_path] = None
     return None
 
 
-def _subsection_node_from_base_ir(base_ir: IRNode | None, subsection_path: Path) -> IRNode | None:
+def _subsection_node_from_base_ir(
+    base_ir: IRNode | None,
+    subsection_path: Path,
+    subsection_node_cache: dict[Path, IRNode | None] | None = None,
+    section_node_cache: dict[Path, IRNode | None] | None = None,
+) -> IRNode | None:
     if base_ir is None or not subsection_path or subsection_path[-1][0] != "subsection":
         return None
+    normalized_path = tuple(subsection_path)
+    if subsection_node_cache is not None and normalized_path in subsection_node_cache:
+        return subsection_node_cache[normalized_path]
     subsection_label = subsection_path[-1][1]
     section_path = tuple(part for part in subsection_path[:-1] if part[0] != "subsection")
-    section_node = _section_node_from_base_ir(base_ir, section_path)
+    section_node = _section_node_from_base_ir(base_ir, section_path, section_node_cache)
     if section_node is None:
+        if subsection_node_cache is not None:
+            subsection_node_cache[normalized_path] = None
         return None
     subsection_norm = _norm_num_token(subsection_label)
     for child in section_node.children:
         if child.kind is IRNodeKind.SUBSECTION and child.label:
             if _norm_num_token(child.label) == subsection_norm:
+                if subsection_node_cache is not None:
+                    subsection_node_cache[normalized_path] = child
                 return child
+    if subsection_node_cache is not None:
+        subsection_node_cache[normalized_path] = None
     return None
 
 
@@ -426,6 +477,7 @@ def _prior_non_temporary_section_snapshot_payload(
     replay_history_ops: List[_LegalOperation] | None,
     current_effective: str,
     base_ir: IRNode | None,
+    section_node_cache: dict[Path, IRNode | None] | None = None,
 ) -> IRNode | None:
     """Return the permanent section payload that predates an expired temp snapshot."""
     if replay_history_ops is None or not current_effective:
@@ -449,7 +501,7 @@ def _prior_non_temporary_section_snapshot_payload(
         if lo.source is None or not (lo.source.expires or ""):
             return lo.payload
 
-    return _section_node_from_base_ir(base_ir, section_path)
+    return _section_node_from_base_ir(base_ir, section_path, section_node_cache)
 
 
 def _latest_section_snapshot_payload(
@@ -1188,6 +1240,16 @@ def _emit_section_snapshot(
 
     op_source = _snapshot_op_source(group_rops, amendment_id, source_title, source_issue_date, source_effective_date)
     base_provision_index = _base_provision_index_for_replay_history(lo_ops_out, base_ir)
+    base_section_node_cache = _base_node_cache_for_replay_history(
+        lo_ops_out,
+        base_ir,
+        "base_section_node_cache",
+    )
+    base_subsection_node_cache = _base_node_cache_for_replay_history(
+        lo_ops_out,
+        base_ir,
+        "base_subsection_node_cache",
+    )
 
     def _timeline_path(tree_path: Path) -> Path:
         return tuple((k, v) for k, v in tree_path if v)
@@ -1659,6 +1721,7 @@ def _emit_section_snapshot(
                 replay_history_ops=lo_ops_out,
                 current_effective=op_source.effective,
                 base_ir=base_ir,
+                section_node_cache=base_section_node_cache,
             )
             if prior_payload is not None:
                 latest_payload = prior_payload
@@ -1779,7 +1842,12 @@ def _emit_section_snapshot(
                     if prior_child_payload is not None:
                         new_children.append(prior_child_payload)
                     else:
-                        base_child_payload = _subsection_node_from_base_ir(base_ir, child_path)
+                        base_child_payload = _subsection_node_from_base_ir(
+                            base_ir,
+                            child_path,
+                            base_subsection_node_cache,
+                            base_section_node_cache,
+                        )
                         if base_child_payload is not None:
                             new_children.append(base_child_payload)
                     dropped_expired_temporary_children += 1
@@ -1999,7 +2067,12 @@ def _emit_section_snapshot(
             if prior_payload is not None:
                 new_children.append(prior_payload)
             else:
-                base_child_payload = _subsection_node_from_base_ir(base_ir, child_path)
+                base_child_payload = _subsection_node_from_base_ir(
+                    base_ir,
+                    child_path,
+                    base_subsection_node_cache,
+                    base_section_node_cache,
+                )
                 if base_child_payload is not None:
                     new_children.append(base_child_payload)
             changed = True
@@ -2812,6 +2885,7 @@ def _emit_section_snapshot(
                     replay_history_ops=lo_ops_out,
                     current_effective=op_source.effective,
                     base_ir=base_ir,
+                    section_node_cache=base_section_node_cache,
                 )
                 base_section = prior_payload if prior_payload is not None else latest.payload
                 rebased_from_expired_temporary_snapshot = prior_payload is not None
@@ -2835,7 +2909,11 @@ def _emit_section_snapshot(
                 ):
                     base_section = live_payload
         else:
-            base_section = _section_node_from_base_ir(base_ir, section_path)
+            base_section = _section_node_from_base_ir(
+                base_ir,
+                section_path,
+                base_section_node_cache,
+            )
         if base_section is None or base_section.kind is not IRNodeKind.SECTION:
             return None
 
@@ -3952,7 +4030,7 @@ def _emit_section_snapshot(
         source_section = (
             latest.payload
             if latest is not None and latest.payload is not None and latest.payload.kind is IRNodeKind.SECTION
-            else _section_node_from_base_ir(base_ir, section_path)
+            else _section_node_from_base_ir(base_ir, section_path, base_section_node_cache)
         )
         if source_section is None or source_section.kind is not IRNodeKind.SECTION:
             return None
@@ -4354,7 +4432,12 @@ def _emit_section_snapshot(
 
         def _prior_paragraph_labels_for_subsection(child_path: Path) -> set[str]:
             labels: set[str] = set()
-            base_child = _subsection_node_from_base_ir(base_ir, child_path)
+            base_child = _subsection_node_from_base_ir(
+                base_ir,
+                child_path,
+                base_subsection_node_cache,
+                base_section_node_cache,
+            )
             if base_child is not None:
                 labels.update(
                     _normalize_snapshot_item_label(grandchild.label)
@@ -4714,6 +4797,7 @@ def _emit_section_snapshot(
                         replay_history_ops=lo_ops_out,
                         current_effective=op_source.effective or op_source.enacted or "",
                         base_ir=base_ir,
+                        section_node_cache=base_section_node_cache,
                     )
                     or child
                 )
