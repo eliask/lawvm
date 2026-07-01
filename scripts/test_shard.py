@@ -179,6 +179,12 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # only the anchor source is re-encoded. Pins per-op granularity, byte-exact
         # re-verification, honest None, and grounding-neutrality.
         "test_se_source_anchor.py",
+        # EV-05 execution-authorization proof carrier: SE mints/reads a typed
+        # ExecutionAuthorization from each op's affecting-act identity so the
+        # universal apply-seam EV-05 observe gate goes quiet on authorized ops
+        # and fires on the unauthorized residue (observe-only, byte-identical).
+        # AM-01 is intentionally NOT wired (SE has no Parsed-vs-Recovered signal).
+        "test_se_proof_carrier.py",
     ),
     "uk": (
         "test_uk_*.py",

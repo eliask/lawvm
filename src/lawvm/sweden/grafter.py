@@ -62,9 +62,10 @@ from lawvm.core.apply_seam import (
     MaterializeResult,
     apply_op,
 )
+from lawvm.core.execution_authorization import ExecutionAuthorization
 from lawvm.core.op_ordering import OrderingProfile, order_ops
 from lawvm.core.provenance import compute_source_anchor
-from lawvm.core.diagnostic_records import diagnostic_detail
+from lawvm.core.diagnostic_records import diagnostic_detail, QuirksDisposition
 from lawvm.core.filter_result import FilterResult, RejectedItem
 from lawvm.core.phase_result import Finding
 from lawvm.core.ir import (
@@ -3676,6 +3677,96 @@ def se_ordering_profile() -> OrderingProfile:
     return OrderingProfile(finder_kind_prefix="se")
 
 
+# ── EV-05 execution-authorization: SE proof minting + resolver ────────────────
+#
+# The genuine authority for an SE state-mutating op is its AFFECTING ACT — the
+# official SFS amending act whose planned effects directed the change. SE stamps
+# that act's identity onto every lowered op as ``op.source.statute_id`` (the
+# affecting act's ``surface.sfs_id``, set at the op-construction site in
+# ``_lower_se_official_effect_plan_item`` / ``_build_se_official_ops``). When an
+# op carries that real affecting-act id it has a GENUINELY KNOWN authority, so
+# ``_mint_se_execution_authorization`` projects it into a typed
+# :class:`ExecutionAuthorization` proof whose ``authorization_rule_id`` names the
+# concrete act (``se_affecting_act:<statute_id>``). The SE resolver
+# (:func:`_se_execution_authorization`) prefers a proof already minted onto the
+# op's carrier and otherwise mints one HERE from the op's source identity, so SE
+# need not re-stamp every upstream op-construction site (byte-identity-safe). An
+# op with NO affecting-act identity (``op.source`` is ``None`` / blank
+# ``statute_id``) has UNKNOWN authority — no proof is fabricated, so the EV-05
+# observe gate fires honestly on it (the real unauthorized residue).
+
+#: The SE execution-authorization rule family stamped into a minted proof's
+#: ``detail``. The actual ``authorization_rule_id`` appends the affecting act id,
+#: so the proof points at the concrete authorizing act
+#: (``se_affecting_act:<statute>``).
+_SE_EXECUTION_AUTHORIZATION_RULE = "se_affecting_act_authorizes_apply"
+
+
+def _mint_se_execution_authorization(
+    op: LegalOperation,
+) -> Optional[ExecutionAuthorization]:
+    """Mint a typed ``ExecutionAuthorization`` from an SE op's affecting-act identity.
+
+    The authority an SE op carries is its source affecting act: the official SFS
+    act whose planned effects directed this change is what authorizes the apply.
+    When the op carries a real ``op.source.statute_id`` (the affecting act id),
+    that is a GENUINELY KNOWN authority, so we mint a replay-authorized proof
+    whose ``authorization_rule_id`` names the concrete act
+    (``se_affecting_act:<statute_id>``) and whose ``detail`` records the witness
+    rule (read-as-witness only — §2.10). When the op carries no affecting-act
+    identity (no ``source`` / blank ``statute_id``), the authority is UNKNOWN: we
+    return ``None`` and never fabricate a proof, so the EV-05 gate honestly
+    witnesses that op as unauthorized.
+
+    The proof is replay-authorized (``executable``/``replay_authorized`` both
+    ``True``) because the affecting act IS the apply authority for SE's replay
+    lane — SE's apply is the act executing its own directed changes. This is the
+    honest SE footing, not a blanket pass: the gate still fires on every op whose
+    authorizing act is not identified.
+    """
+    source = op.source
+    statute_id = (source.statute_id if source is not None else "") or ""
+    if not statute_id:
+        return None
+    return ExecutionAuthorization(
+        executable=True,
+        replay_authorized=True,
+        authorization_status="replay_authorized",
+        authorization_rule_id=f"se_affecting_act:{statute_id}",
+        owner_phase="apply",
+        strict_disposition="record",
+        quirks_disposition=QuirksDisposition.RECORD,
+        safe_default="execute_only_after_affecting_act_identity_is_known",
+        required_proofs=(),
+        forbidden_shortcuts=(
+            "treat_op_existence_as_replay_authority_without_affecting_act",
+        ),
+        detail={
+            "rule_family": _SE_EXECUTION_AUTHORIZATION_RULE,
+            "affecting_act": statute_id,
+            "witness_rule_id": op.witness_rule_id or "",
+            "owner": "sweden/grafter:_mint_se_execution_authorization",
+        },
+    )
+
+
+def _se_execution_authorization(
+    op: LegalOperation,
+) -> Optional[ExecutionAuthorization]:
+    """SE ``authorization_resolver``: read a minted proof, else mint from source.
+
+    Prefers an ``ExecutionAuthorization`` already minted onto the op's
+    ``execution_authorization`` carrier (the generic
+    ``core/apply_seam.read_op_execution_authorization`` path); if the op carries
+    none, mints one from its affecting-act identity via
+    :func:`_mint_se_execution_authorization`. Returns ``None`` only when the op's
+    authority is genuinely unknown (no affecting act) — the honest EV-05 residue.
+    """
+    if op.execution_authorization is not None:
+        return op.execution_authorization
+    return _mint_se_execution_authorization(op)
+
+
 def apply_se_ops(
     statute: IRStatute,
     ops: list[LegalOperation],
@@ -4062,6 +4153,22 @@ def apply_se_ops(
     # seam-synthesized receipt byte-identical to SE's existing
     # ``_se_emit_one_op_receipt`` when receipts ARE requested (the Wave-2 gate;
     # proven in ``tests/test_se_apply_seam_parallel_run.py``).
+    # ── SE EV-05 authorization resolver (this task). ─────────────────────────
+    # ``authorization_resolver`` mints/reads a real ``ExecutionAuthorization``
+    # proof from each op's affecting-act identity (``_se_execution_authorization``)
+    # so the EV-05 observe gate goes QUIET for every op whose authorizing SFS act
+    # is known and fires only on the genuinely unauthorized residue (the firewall
+    # hole drops from ~100% to the real unauthorized fraction). It is OBSERVE-only:
+    # the witness routes to ``AppliedOp.observations`` (never production
+    # ``findings``), so SE's materialized statute + adjudication multiset stay
+    # byte-identical. SE is NOT flipped to block — that is a future
+    # measure-then-promote step.
+    #
+    # AM-01 (provenance acceptance) is NOT wired: SE's mutation-boundary v0 carries
+    # NO declared_recovery and SE ops carry no Parsed-vs-Recovered / scope_confidence
+    # signal at the apply seam (only act-identity / structural ``provenance_tags``),
+    # so there is no acceptance verdict to resolve without fabricating one. The
+    # default ``no_op_provenance`` resolver keeps that gate a 0-delta no-op.
     se_apply_profile: ApplyProfile[IRNode] = ApplyProfile(
         jurisdiction="se",
         materializer=_se_materialize_one,
@@ -4070,6 +4177,7 @@ def apply_se_ops(
         emit_coverage=False,
         renumber_migration_rule_ids=("se_renumber_relabel",),
         receipt_helper_prefix="apply_se_ops",
+        authorization_resolver=_se_execution_authorization,
     )
 
     # ── Seam loop (design §3.1): order_ops already ran; apply each op through
