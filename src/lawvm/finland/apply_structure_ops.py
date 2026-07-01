@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import logging
 import re
 from dataclasses import replace as dc_replace
-from typing import TYPE_CHECKING, List, Optional, cast
+from typing import TYPE_CHECKING, List, Optional, Protocol, cast
 
 from lawvm.core.compile_result import SourcePathology, StrictProfile
 from lawvm.core.phase_result import Finding
@@ -44,6 +44,7 @@ from lawvm.finland.apply_policy import (
 )
 from lawvm.finland.scoped_section_resolver import (
     find_scoped_section_insert_parent_path as _find_shared_scoped_section_insert_parent_path,
+    ProvisionIndex,
     section_paths_for_label,
     unique_root_or_only_section_path,
 )
@@ -110,6 +111,10 @@ from lawvm.finland.merge import (
 logger = logging.getLogger(__name__)
 
 _RESTRUCTURE_RELABEL_DESTINATION_SCAFFOLD_ATTR = "lawvm_restructure_relabel_destination_scaffold"
+
+
+class _IRStateLike(Protocol):
+    ir: IRNode
 
 # Strict-mode blocking code for an unexplained bound→landed mutation-boundary
 # divergence surfaced by the structural StageResult account. Reuses the
@@ -733,22 +738,23 @@ def _same_label_repeal_placeholder_paths(
     section_label: str,
     target_chapter: str,
     target_part: str | None,
+    provision_index: ProvisionIndex,
 ) -> tuple[Path, ...]:
     paths: list[Path] = []
-
-    def _walk(node: IRNode, path: Path) -> None:
-        if node.kind is IRNodeKind.SECTION and _same_norm_label(node.label, section_label):
-            labels = {kind: label for kind, label in path}
-            if (
-                node.attrs.get("lawvm_repeal_placeholder") == "1"
-                and labels.get("chapter") != target_chapter
-                and (target_part is None or labels.get("part") == target_part)
-            ):
-                paths.append(path)
-        for child in node.children:
-            _walk(child, path + ((_kind_str(child.kind), child.label or ""),))
-
-    _walk(ir, ())
+    for candidate in section_paths_for_label(
+        provision_index,
+        section_label,
+        target_part=target_part,
+    ):
+        node = _tops.resolve(ir, candidate)
+        if node is None or node.kind is not IRNodeKind.SECTION:
+            continue
+        labels = {kind: label for kind, label in candidate}
+        if (
+            node.attrs.get("lawvm_repeal_placeholder") == "1"
+            and labels.get("chapter") != target_chapter
+        ):
+            paths.append(candidate)
     return tuple(paths)
 
 
@@ -868,7 +874,7 @@ def _find_scoped_section_insert_parent_path(
 
 
 def _agreeing_neighbor_chapter_for_unscoped_section_insert(
-    state: "ReplayState",
+    state: _IRStateLike,
     section_label: str,
 ) -> str | None:
     """Chapter a scope-less section INSERT should join, from its live neighbours.
@@ -2086,6 +2092,7 @@ def _apply_container_op(
                     section_label=child.label,
                     target_chapter=_target_section,
                     target_part=_target_part,
+                    provision_index=state.provision_index,
                 ):
                     stale_placeholder = _tops.resolve(state.ir, stale_placeholder_path)
                     if stale_placeholder is None:
@@ -3391,6 +3398,7 @@ def _apply_whole_section_op(
                 section_label=_ts,
                 target_chapter=_target_chapter,
                 target_part=_target_part,
+                provision_index=state.provision_index,
             ):
                 stale_placeholder = _tops.resolve(state.ir, stale_placeholder_path)
                 if stale_placeholder is None:

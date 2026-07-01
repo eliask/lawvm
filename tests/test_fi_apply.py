@@ -59,6 +59,7 @@ from lawvm.finland.apply_structure_ops import (
     _normalize_subsection_target_hint_ir,
     _apply_whole_section_op,
     _insert_or_replace_same_labeled_child,
+    _same_label_repeal_placeholder_paths,
 )
 from lawvm.finland.uncovered_kumotaan_recovery import (
     KumotaanRecoveryRequest,
@@ -9069,6 +9070,52 @@ def test_apply_whole_section_insert_moves_unique_same_label_placeholder_into_tar
         and pathology.detail.get("recovery_kind") == "section_move_insert_destination_rebind"
         for pathology in pathologies
     )
+
+
+def test_same_label_repeal_placeholder_paths_uses_index_without_widening_scope() -> None:
+    state = _make_state(
+        _body(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="5",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="5 luku"),
+                    _sec("33", _content("live target chapter text")),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="6",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="6 luku"),
+                    IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="33",
+                        attrs={"lawvm_repeal_placeholder": "1"},
+                        children=(),
+                    ),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="7",
+                children=(
+                    IRNode(kind=IRNodeKind.NUM, text="7 luku"),
+                    _sec("33", _content("live other chapter text")),
+                ),
+            ),
+        )
+    )
+
+    paths = _same_label_repeal_placeholder_paths(
+        state.ir,
+        section_label="33",
+        target_chapter="5",
+        target_part=None,
+        provision_index=state.provision_index,
+    )
+
+    assert paths == ((("chapter", "6"), ("section", "33")),)
 
 
 def test_apply_whole_section_insert_consumes_cross_chapter_placeholder_without_declared_body_move() -> None:
