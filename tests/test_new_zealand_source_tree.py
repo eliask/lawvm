@@ -467,16 +467,21 @@ def test_amend_instructions_empty_when_no_amend_in() -> None:
 def test_amend_instruction_prefilter_skips_unrelated_subtrees(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    calls: list[str] = []
-    original = source_tree._amend_instructions
+    call_texts: list[str] = []
+    original = source_tree._amend_instructions_from_text_nodes
 
-    def counting_amend_instructions(
-        node: etree._Element,
+    def counting_amend_instructions_from_text_nodes(
+        text_nodes,
     ) -> tuple[source_tree.NZAmendInstruction, ...]:
-        calls.append(node.get("id", ""))
-        return original(node)
+        text_node_tuple = tuple(text_nodes)
+        call_texts.extend("".join(text_node.itertext()) for text_node in text_node_tuple)
+        return original(text_node_tuple)
 
-    monkeypatch.setattr(source_tree, "_amend_instructions", counting_amend_instructions)
+    monkeypatch.setattr(
+        source_tree,
+        "_amend_instructions_from_text_nodes",
+        counting_amend_instructions_from_text_nodes,
+    )
     xml = b"""\
 <act>
   <body>
@@ -499,9 +504,9 @@ def test_amend_instruction_prefilter_skips_unrelated_subtrees(
     assert {row.new_text for node in document.nodes for row in node.amend_instructions} == {
         "new rate"
     }
-    assert "A6" in calls
-    assert "B7" not in calls
-    assert "B7-1" not in calls
+    assert call_texts
+    assert all("new rate" in text for text in call_texts)
+    assert all("No inline amendment payload" not in text for text in call_texts)
 
 
 def test_legal_text_keeps_inline_cross_reference_in_document_order() -> None:
