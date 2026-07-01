@@ -181,6 +181,78 @@ def test_apply_eu_ops_conserved_rejects_duplicate_op_ids() -> None:
         apply_eu_ops_conserved(baseline, ops)
 
 
+def test_apply_eu_ops_conserved_empty_target_label_skips_not_raises() -> None:
+    """A REPLACE/REPEAL op whose target has an EMPTY label (the sole-annex
+    indirect-amendment form ``annex:`` the FMX4 grammar lowers with no
+    coordinate) must be SKIPPED as a typed ``eu_replay_target_not_found``
+    witness — NOT crash the whole conserved fold.
+
+    Pre-fix state: ``apply_eu_ops`` passed the empty label straight to
+    ``tree_ops.find``, whose first-match contract fail-louds on an empty label
+    (``ValueError: label must be non-empty``). Unguarded that ValueError
+    escaped the conserved fold and discarded EVERY op in the set (a §1.8
+    conservation violation — one un-coordinated annex op lost the entire
+    replay). Observed live on 32016R0044 (the op-id-fix headline base): its 33
+    lowered annex ops included two bare ``annex:`` sole-annex ops that crashed
+    the fold. The guard turns those into rejected witnesses so the other ops
+    still apply/reject normally and a materialized state is produced.
+    """
+    baseline = _baseline_statute()
+    empty_label_replace = LegalOperation(
+        op_id="eu-annex-empty-label",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("annex", ""),)),  # sole-annex bare form
+        payload=IRNode(kind=IRNodeKind.SECTION, label="", text="replacement annex"),
+        source=OperationSource(statute_id="2026/1"),
+    )
+    good_replace = _replace_op(
+        op_id="eu-replace-ok", sequence=2, section_label="1", text="replacement"
+    )
+    ops = [empty_label_replace, good_replace]
+
+    # Does not raise — the empty-label op is a typed skip, not a crash.
+    result = apply_eu_ops_conserved(baseline, ops)
+
+    assert isinstance(result, EUApplyResult)
+    # Conservation partition is total: the good op applied, the empty-label op
+    # is a rejected witness (NOT silently dropped, NOT a crash).
+    accepted_ids = {op.op_id for op in result.filter_result.accepted_items}
+    rejected_ids = {item.item.op_id for item in result.filter_result.rejected_items}
+    assert accepted_ids == {"eu-replace-ok"}
+    assert rejected_ids == {"eu-annex-empty-label"}
+    rejected = {item.item.op_id: item for item in result.filter_result.rejected_items}[
+        "eu-annex-empty-label"
+    ]
+    assert rejected.reason_code == "eu_replay_target_not_found"
+    assert rejected.blocking is False
+    # The good op still landed a materialized state (the whole set is NOT lost
+    # to the one empty-label op — the pre-fix crash signature).
+    assert result.statute.body is not baseline.body
+
+
+def test_apply_eu_ops_conserved_empty_label_repeal_skips_not_raises() -> None:
+    """The REPEAL branch has the same empty-target-label guard as REPLACE."""
+    baseline = _baseline_statute()
+    empty_label_repeal = LegalOperation(
+        op_id="eu-annex-empty-repeal",
+        sequence=1,
+        action=StructuralAction.REPEAL,
+        target=LegalAddress(path=(("annex", ""),)),
+        payload=None,
+        source=OperationSource(statute_id="2026/1"),
+    )
+    good_replace = _replace_op(
+        op_id="eu-replace-ok", sequence=2, section_label="1", text="replacement"
+    )
+    result = apply_eu_ops_conserved(baseline, [empty_label_repeal, good_replace])
+
+    rejected = {item.item.op_id: item for item in result.filter_result.rejected_items}
+    assert "eu-annex-empty-repeal" in rejected
+    assert rejected["eu-annex-empty-repeal"].reason_code == "eu_replay_target_not_found"
+    assert {op.op_id for op in result.filter_result.accepted_items} == {"eu-replace-ok"}
+
+
 def test_replay_statute_routes_apply_through_conserved_wrapper(monkeypatch, tmp_path) -> None:
     """§2.9 guard-liveness fire-drill: the production lane
     ``EUReplayPipeline.replay_statute`` MUST route the apply fold through

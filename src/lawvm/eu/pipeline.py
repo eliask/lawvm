@@ -440,6 +440,31 @@ def apply_eu_ops(
                 )
                 skipped += 1
                 return MaterializeResult(new_state=body, applied=False)
+            # An empty target label (e.g. the sole-annex indirect form "The Annex
+            # to Regulation X is replaced ..." which the FMX4 grammar lowers to
+            # ``annex:`` with no coordinate) is an UNRESOLVABLE target, not a
+            # crash. ``tree_ops.find`` fail-louds on an empty label (its
+            # first-match contract requires a coordinate); routed unguarded that
+            # ValueError escapes the conserved fold and discards EVERY op in the
+            # set (the whole replay is lost to one un-coordinated annex op).
+            # Treat it as the existing typed target-not-found SKIP so the op
+            # becomes a rejected witness (§1.8 conservation) and the remaining
+            # ops still apply. Resolving a bare ``annex:`` to the base's single
+            # annex is deferred grammar work; here the seam must not crash.
+            if not path_steps or not path_steps[-1][1]:
+                _append_eu_replay_adjudication(
+                    adjudications_out,
+                    kind="eu_replay_target_not_found",
+                    message="EU replay skipped replace: target not found.",
+                    op=op,
+                    detail={
+                        "action": "replace",
+                        "target": str(target),
+                        "reason_code": "empty_target_label",
+                    },
+                )
+                skipped += 1
+                return MaterializeResult(new_state=body, applied=False)
             # Find the target node
             found = tree_ops.find(
                 body,
@@ -462,6 +487,24 @@ def apply_eu_ops(
             _mark_applied()
 
         elif action == StructuralAction.REPEAL.value:
+            # Empty target label ⇒ unresolvable target, not a crash (see the
+            # REPLACE branch above): ``tree_ops.find`` fail-louds on an empty
+            # label, which unguarded would escape the conserved fold and discard
+            # the whole op set. Route through the existing typed skip lane.
+            if not path_steps or not path_steps[-1][1]:
+                _append_eu_replay_adjudication(
+                    adjudications_out,
+                    kind="eu_replay_target_not_found",
+                    message="EU replay skipped repeal: target not found.",
+                    op=op,
+                    detail={
+                        "action": "repeal",
+                        "target": str(target),
+                        "reason_code": "empty_target_label",
+                    },
+                )
+                skipped += 1
+                return MaterializeResult(new_state=body, applied=False)
             found = tree_ops.find(
                 body,
                 kind=path_steps[-1][0],
