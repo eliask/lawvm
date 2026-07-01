@@ -10488,8 +10488,23 @@ def test_process_muutoslaki_2017_320_2019_371_recodification_regressions() -> No
 
 
 @pytest.mark.slow
-def test_process_muutoslaki_2017_320_2019_371_post_apply_dedup_clears_transient_duplicate_labels() -> None:
-    """Same-wave restructure apply may leave transient duplicate labels before fold."""
+def test_process_muutoslaki_2017_320_2019_371_apply_is_duplicate_free_and_dedup_backstop_is_noop() -> None:
+    """The 423-section 2019/371 restructure applies cleanly onto 2017/320.
+
+    The apply lane now produces a tree with zero same-kind+label duplicates for
+    this large chapter-restructure wave, so the post-apply GLOBAL_LABEL_DEDUP
+    backstop (``normalize_process_apply_fold``) is a no-op and emits no finding.
+
+    An earlier revision of this test asserted the backstop *fired* here, on the
+    premise that this restructure left a transient duplicate label for the
+    backstop to clear. Subsequent FI apply-lane fixes eliminated that transient
+    duplicate at the source, which is the correct, superior behavior: a clean
+    apply that needs no dedup backstop. The backstop's positive-fire behavior
+    remains covered by the synthetic
+    ``test_emit_structural_dedup_warning_records_warning_and_finding`` and the
+    ``dedup_children_by_label`` / ``has_dedup_label_duplicates`` unit tests.
+    """
+    from lawvm.core import tree_ops as _tops
     from lawvm.core.invariant_profiles import (
         collect_tree_invariant_violations,
         structural_tree_all_profile,
@@ -10519,6 +10534,8 @@ def test_process_muutoslaki_2017_320_2019_371_post_apply_dedup_clears_transient_
             corpus=corpus,
         )
 
+    # The materialized apply output carries no same-kind+label duplicates of any
+    # family (the test's original invariant, which still holds).
     profile = structural_tree_all_profile("process_muutoslaki.post_apply")
     violations = collect_tree_invariant_violations(phase.output.ir, profile)
     duplicate_violations = [
@@ -10526,14 +10543,15 @@ def test_process_muutoslaki_2017_320_2019_371_post_apply_dedup_clears_transient_
     ]
     assert duplicate_violations == []
 
+    # The tree handed to the dedup backstop is already duplicate-free, so the
+    # backstop finds nothing to do and emits no observation.
+    assert not _tops.has_dedup_label_duplicates(phase.output.ir)
     dedup_findings = [
         finding
         for finding in phase.findings()
         if finding.kind == "APPLY.GLOBAL_LABEL_DEDUP_APPLIED"
     ]
-    assert len(dedup_findings) == 1
-    assert dedup_findings[0].detail.get("phase") == "process_muutoslaki.post_apply"
-    assert dedup_findings[0].source_statute == "2019/371"
+    assert dedup_findings == []
 
 
 @pytest.mark.slow
