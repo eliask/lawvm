@@ -143,6 +143,11 @@ NZ_NON_RULE_LITERALS: FrozenSet[str] = frozenset(
         # guard (test_every_nz_rule_id_used_in_nz_tests_is_cataloged_or_non_rule)
         # excludes it via NON_RULE.
         "nz_dry_run_some_future_uncataloged_rule",
+        # Synthetic self-consistency fixture inputs, not production witness rules:
+        # one exercises the unknown-refusal fallback, the other is nested detail
+        # on a family-level receipt that projection deliberately drops.
+        "nz_actual_replay_refused_some_new_kind",
+        "nz_dry_run_refused_no_insert_candidate",
     }
 )
 
@@ -930,6 +935,11 @@ _EXTRA_NZ_RULE_SPECS: Dict[str, str] = {
         "identity from the change-window variant so the two readings are distinguishable (§1.10)."
     ),
     # --- Acquisition lane refusal vocabulary (acquisition.py) -----------------------
+    "nz_api_v0_version_html": (
+        "Acquisition source-lane witness: an HTML rendition for a version is fetched through the "
+        "Legislation API v0 fallback path when XML did not land; the HTML source is evidence, not "
+        "silently treated as XML."
+    ),
     "nz_acquire_xml_format_missing": (
         "Acquisition refusal: the fetched resource's advertised format was missing or unrecognized — "
         "the source cannot be ingested; surfaced as a typed refusal rather than guessed content."
@@ -945,6 +955,18 @@ _EXTRA_NZ_RULE_SPECS: Dict[str, str] = {
     "nz_acquire_json_shape_unexpected": (
         "Acquisition refusal: the fetched JSON decoded but its shape did not match the API v0 schema — "
         "surfaced as a typed refusal so the next-step (fix schema or fix adapter) is named."
+    ),
+    "nz_content_absent": (
+        "Acquisition source-pathology: neither XML nor usable HTML content could be acquired for the "
+        "version, so the missing content is recorded explicitly rather than represented by an empty body."
+    ),
+    "nz_content_waf_challenge": (
+        "Acquisition refusal: a WAF challenge response was returned for a content fetch; the challenge "
+        "page/body is blocked from being stored as legal content and surfaced as a typed source pathology."
+    ),
+    "nz_html_fallback_acquired": (
+        "Acquisition recovery: when XML is unavailable but an HTML rendition lands, the fallback source "
+        "path is recorded explicitly so downstream consumers can distinguish recovered HTML from XML."
     ),
     # --- Commencement / temporal-state effects (commencement.py) ---------------------
     "nz_commencement_recorded_in_force_status_temporal_state_effect": (

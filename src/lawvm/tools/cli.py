@@ -1973,6 +1973,15 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
         help="skip diagnostic Levenshtein text similarity scoring for faster corpus sweeps",
     )
     bench_p.add_argument(
+        "--selection-as-of",
+        dest="selection_as_of",
+        metavar="YYYY-MM-DD",
+        help=(
+            "[-j fi] pin the oracle-selection comparability horizon for reproducible "
+            "saved-run comparisons (default: current UTC date)"
+        ),
+    )
+    bench_p.add_argument(
         "--worker-max-tasks",
         type=int,
         default=None,

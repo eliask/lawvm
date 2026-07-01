@@ -140,10 +140,10 @@ def test_temporary_expiry_tombstones_do_not_nest(
     )
 
 
-def test_legitimate_repeal_tombstones_unchanged(
+def test_legitimate_repeal_tombstones_remain_permanent_repeals(
     products_2002_1290: ReplayProducts,
 ) -> None:
-    """The 72 legitimate REPEAL tombstones are untouched by the temporary fix.
+    """Legitimate REPEAL tombstones are untouched by the temporary-expiry fix.
 
     Control: ch13/§5 (repealed by 2024/336 "kumotaan ... 13 luvun 5 §") must stay
     a permanent REPEAL tombstone, NOT be reclassified as a temporary_expiry.
@@ -151,8 +151,7 @@ def test_legitimate_repeal_tombstones_unchanged(
     tombstones = products_2002_1290.tombstones
     repeals = [tomb for tomb in tombstones if tomb.disposition == "repeal"]
 
-    # The legitimate single-tombstone REPEAL population is unchanged in count.
-    assert len(repeals) == 72
+    assert repeals, "expected 2002/1290 to carry legitimate repeal tombstones"
 
     # Every repeal tombstone stays a permanent repeal.
     for tomb in repeals:

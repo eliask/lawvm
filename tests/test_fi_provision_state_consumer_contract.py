@@ -62,10 +62,6 @@ _PINS: list[tuple[str, str, str, str, str]] = [
     ("2024/482", "section:7", _AS_OF, _QT,
      "5ceafd2fe47777760c7177e14f6cbd06810d7aa851ad595ce83a50e8f91608ad"),  # R7 laki 482/2024 7 §; re-pinned after payload-local fixed-term validity became typed temporal metadata (text/content hash stable; expires 2027-01-01 from "voimassa 31 päivään joulukuuta 2026").
     # --- E1_LAWVM_ROUTE_GROUNDING_HANKINTALAKI.md (hankintalaki 1397/2016 + kilpailulaki 948/2011) ---
-    ("2016/1397", "section:141", _AS_OF, _QT,
-     "3fc5276b4c9956e9968898440e8a6b943f42a6cd450360e4cae7efe66ba6af0e"),  # § 141 (2024 amendment version)
-    ("2016/1397", "section:163", _AS_OF, _QT,
-     "e2a1d2cbec86b96adb8a04c0d30735f0c46fe6fc82cfbb990b8d62fd1bb52127"),  # § 163 (2021 amendment version)
     ("2011/948", "section:30a", _AS_OF, _QT,
      "30b540140108da7c8dc57482fb9411f2fbe436e44ed4a6bd965251379e8c562e"),  # kilpailulaki 30a §; re-pinned after 2021/546 chapter-start migration evidence was corrected from five bogus moves to one owned move; text/content hash and selected version stayed stable.
     ("2011/948", "section:30b", _AS_OF, _QT,
@@ -85,22 +81,6 @@ _PINS: list[tuple[str, str, str, str, str]] = [
     #   - asiakastietolaki 703/2023 §17: enacted 2023-04-14
     #   - laki 482/2024 §4: enacted 2024-07-16
     #   - hallintoprosessilaki 808/2019 §7: enacted 2019-07-05
-    ("2016/1397", "section:75", _AS_OF, _QT,
-     "2fb2545240a170a101a93d9bad62ddae6a63554efcfd6841047071a8b69ef0dd"),  # base, enacted 2016-12-29
-    ("2016/1397", "section:124", _AS_OF, _QT,
-     "aff9cbef8805548c72d661afa94caf3588ea40723936e48830c6f79b333452c9"),  # base, enacted 2016-12-29
-    ("2016/1397", "section:132", _AS_OF, _QT,
-     "081408162630503e3c3801d1b71a414272639e848a9d39fe892617640721f3ca"),  # base, enacted 2016-12-29
-    ("2016/1397", "section:133", _AS_OF, _QT,
-     "d6b1a51856203763501a6a6384c9a0ad769d36df87e40ec8c7353dabc64754be"),  # base, enacted 2016-12-29
-    ("2016/1397", "section:134", _AS_OF, _QT,
-     "f7f179fd9bcecd864adc162cb81b13762f5dc38acbd2ff57a41b2d10e46e00f8"),  # base, enacted 2016-12-29
-    ("2016/1397", "section:139", _AS_OF, _QT,
-     "ce097e6e1e30d0d0ecd5c5a0231926e43c2f448938cf7c7a0ee5d364e9188cee"),  # base, enacted 2016-12-29
-    ("2016/1397", "section:146", _AS_OF, _QT,
-     "276be539bc5e011590904ee2c7f5197ae01b0af6f948a580bfa56b7e09e37f43"),  # base, enacted 2016-12-29
-    ("2016/1397", "section:154", _AS_OF, _QT,
-     "35175973efa427ad627b220893f2737d3b8ddb5c74214c84c6ad626bc7ec5d9d"),  # base, enacted 2016-12-29
     ("2023/703", "section:17", _AS_OF, _QT,
      "cd032a684aeaa2525aed2e1bd829541243981f3cbb67252cd89f7473315b9c1a"),  # base, enacted 2023-04-14; re-pinned after provision-state resolution returned canonical container-scoped address part:1/chapter:4/section:17 for the section-only query.
     ("2024/482", "section:4", _AS_OF, _QT,
@@ -109,12 +89,111 @@ _PINS: list[tuple[str, str, str, str, str]] = [
      "c6d31fb964f89bf6f33b23f154b237fcfad9d3291a8c901ec2aa4f5e3fde8536"),  # base, enacted 2019-07-05; re-pinned after provision-state resolution returned canonical container-scoped address chapter:2/section:7 for the section-only query.
 ]
 
-# KNOWN DIVERGENCES (xfail). Empty: the original-enactment-base date class has
-# re-converged and moved into _PINS above. New divergences (real consolidation
-# updates or fresh replay instability) get added here as strict xfail with the
+# KNOWN DIVERGENCES (xfail). New divergences (real consolidation updates or
+# fresh replay instability) get added here as strict xfail with the
 # observed-vs-pinned hashes inline, so a later re-convergence flips to XPASS.
 _KNOWN_DIVERGENT: list[tuple[str, str, str, str, str, str]] = [
     # (statute, provision, as_of, qt, pinned_hash, reason)
+    (
+        "2016/1397",
+        "section:141",
+        _AS_OF,
+        _QT,
+        "3fc5276b4c9956e9968898440e8a6b943f42a6cd450360e4cae7efe66ba6af0e",
+        "current-corpus divergence reproduced on clean HEAD; current derived "
+        "8ecc4836a49e190cda92d77150480c0873e7f8e0a94bea5cac73dcfd11bb17a9, "
+        "content b1cba16bb1455fc16228f11ad988f589b213500c3a82b4b55d56a789dd4d47a4",
+    ),
+    (
+        "2016/1397",
+        "section:75",
+        _AS_OF,
+        _QT,
+        "2fb2545240a170a101a93d9bad62ddae6a63554efcfd6841047071a8b69ef0dd",
+        "current-corpus divergence reproduced on clean HEAD; current derived "
+        "4e2321c8a6d20e31ce83f28d40998a1c9f00bcbedadda6f4cb223506162d3af2, "
+        "content e44ad114b98ecafe7b8426d71ceea8494cbd7612ef55f85334082649a219cea1",
+    ),
+    (
+        "2016/1397",
+        "section:124",
+        _AS_OF,
+        _QT,
+        "aff9cbef8805548c72d661afa94caf3588ea40723936e48830c6f79b333452c9",
+        "current-corpus divergence reproduced on clean HEAD; current derived "
+        "51e8e9568b3a70c2db0b00e8525d29114c2cf0a2d7ce0856e098e5f9390e0982, "
+        "content c1e0a7bcde9f528cf7cbf60ec84a16817c6f1c5f85a4e9f330889fd3f5f6c2f8",
+    ),
+    (
+        "2016/1397",
+        "section:132",
+        _AS_OF,
+        _QT,
+        "081408162630503e3c3801d1b71a414272639e848a9d39fe892617640721f3ca",
+        "current-corpus divergence reproduced on clean HEAD; current derived "
+        "4e6f7f562c28b4f2c58ffe25d8b1d75af0f2d27f701de7bcf5fc73bfc8cb7c10, "
+        "content 6608993ffe57d78825f72553eb4bdf48f7f7539cbea56eefcfc47c580c2f76a0",
+    ),
+    (
+        "2016/1397",
+        "section:133",
+        _AS_OF,
+        _QT,
+        "d6b1a51856203763501a6a6384c9a0ad769d36df87e40ec8c7353dabc64754be",
+        "current-corpus divergence reproduced on clean HEAD; current derived "
+        "f165007540d0af23c631a793c6ba5f2fe38aea00786596649a1872b5716d70a8, "
+        "content 938215ea1ac2e9dafb33cec66b39f32ebece5cc4a3696921f772371102edda7c",
+    ),
+    (
+        "2016/1397",
+        "section:134",
+        _AS_OF,
+        _QT,
+        "f7f179fd9bcecd864adc162cb81b13762f5dc38acbd2ff57a41b2d10e46e00f8",
+        "current-corpus divergence reproduced on clean HEAD; current derived "
+        "f3bcc2b83ee154e22832510810419e6d83977ea1dcc31dadfc6bf319a730e522, "
+        "content 2d7abf9aeca8dc0f29519d7f9869e61545f2fe8c12a09522ec8183a0b6a8e327",
+    ),
+    (
+        "2016/1397",
+        "section:139",
+        _AS_OF,
+        _QT,
+        "ce097e6e1e30d0d0ecd5c5a0231926e43c2f448938cf7c7a0ee5d364e9188cee",
+        "current-corpus divergence reproduced on clean HEAD; current derived "
+        "d0b8aa6dda3b82050c0c46475cc80ef552a8cec8744684375e6e0f020339af1c, "
+        "content 60c63c1d0e8645d23523527f8bce00d26d3c4d49cbcf6dc64a34e61caad6e551",
+    ),
+    (
+        "2016/1397",
+        "section:146",
+        _AS_OF,
+        _QT,
+        "276be539bc5e011590904ee2c7f5197ae01b0af6f948a580bfa56b7e09e37f43",
+        "current-corpus divergence reproduced on clean HEAD; current derived "
+        "d2e8869d702541e5d3b461446616149d57071ababb015ffa7e959d6d259746ff, "
+        "content fd9ed7c58dec3907f22409c812f751f737861d953389f2fb1b93080b87cbe349",
+    ),
+    (
+        "2016/1397",
+        "section:154",
+        _AS_OF,
+        _QT,
+        "35175973efa427ad627b220893f2737d3b8ddb5c74214c84c6ad626bc7ec5d9d",
+        "current-corpus divergence reproduced on clean HEAD; current derived "
+        "7fda697436b3f47a24df5f1c9c9185dd4bcf5d112ac0207dfebbea4c6ef5449e, "
+        "content 3e4bf3e3e8fa4b52a0fdfa2f3565829a2a5a5992e559d492f02b6cb437b440e5",
+    ),
+    (
+        "2016/1397",
+        "section:163",
+        _AS_OF,
+        _QT,
+        "e2a1d2cbec86b96adb8a04c0d30735f0c46fe6fc82cfbb990b8d62fd1bb52127",
+        "current-corpus divergence reproduced on clean HEAD; current derived "
+        "12ef8cfb9f6f571d5e524e4dacedf652b339ce88cda3e13caaf64d0f1a582eaf, "
+        "content c46909116264f92b855c8db8ee9044f101e5cd36580c3e45b720f14c0311ccea",
+    ),
 ]
 
 

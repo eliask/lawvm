@@ -26,7 +26,7 @@ Honest scope note — what is and is not statically enumerable.
   the literal *is* statically enumerable and is catalogued. The test discovers the
   authoritative set as every ``"ee_…"`` string literal under ``src/lawvm/estonia/``.
 
-* Two ``"ee_…"`` literals are deliberately NOT rule ids and are excluded from the
+* A few ``"ee_…"`` literals are deliberately NOT rule ids and are excluded from the
   coverage denominator:
     - ``ee_riigiteataja.farchive`` — the default archive *filename* (the ``.`` is the
       tell), in ``estonia/fetch.py``;
@@ -35,6 +35,9 @@ Honest scope note — what is and is not statically enumerable.
       genuine prefix+suffix-concatenated id family in EE; it identifies a snapshot op
       instance, not a believed-spec hypothesis, so we cover the stable ``ee_snap_``
       prefix as a documented exclusion rather than fabricating per-instance entries.
+    - ``ee_amending_act:`` — a dynamic proof-carrier authorization id prefix
+      (``ee_amending_act:<statute_id>``), whose stable rule is catalogued as
+      ``ee_amending_act_authorizes_apply``.
 
 Every other ``"ee_…"`` literal maps to exactly one believed-spec hypothesis here.
 """
@@ -343,6 +346,7 @@ _EE_RULE_SPECS: Dict[str, str] = {
     "ee_structural_text_replace_from_amending_act": "An in-place text substitution (asendatakse) of an old phrase with a new one at the address the amending act specifies.",
     "ee_structural_text_repeal_from_amending_act": "An in-place deletion of text from a provision as directed by the amending act.",
     "ee_structural_heading_replace_from_amending_act": "A provision heading/title (pealkiri) is replaced or text-edited with the content the amending act supplies.",
+    "ee_amending_act_authorizes_apply": "An EE replay operation may mutate legal state only when a concrete amending act proof carrier authorizes apply for that source statute.",
     "ee_generic_minister_title_substitution": "§107³ ministerial-title harmonisation: legacy minister titles are globally replaced with 'valdkonna eest vastutav minister' (with the plural collapse) across the statute.",
     "ee_generic_ministry_reorganization": "§105¹⁹ ministry-reorganisation name substitution: a renamed/merged ministry's old name is globally replaced with its new name, honouring explicit per-statute exceptions.",
 

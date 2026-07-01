@@ -222,6 +222,14 @@ def _is_self_comparable_with_tolerance(
             return False, False
         return True, False
 
+    # A Finlex consolidated artifact may be published before the embedded
+    # amendment commences. That source fact is useful evidence, but it is not
+    # authority to score the current bench against future legal state. Keep the
+    # artifact incomparable until the pinned bench horizon reaches the ordering
+    # date; otherwise newly cached future PITs masquerade as replay regressions.
+    if ordering_date > as_of:
+        return False, False
+
     tolerance_applied = False
     if artifact.date_consolidated is not None:
         gap_days = (ordering_date - artifact.date_consolidated).days
@@ -266,7 +274,7 @@ def _emit_collapsed_dates_observation_if_applicable(
     log.info(
         "ORACLE_METADATA_COLLAPSED_DATES sid=%s version_tag=%s "
         "date_consolidated=%s ordering_date=%s gap_days=%d "
-        "— accepting artifact under Option Z (within 180-day tolerance)",
+        "— positive consolidated-date gap observed within 180-day tolerance",
         artifact.sid,
         artifact.version_tag,
         artifact.date_consolidated,

@@ -763,6 +763,34 @@ def test_fi_bench_main_no_save_skips_persistence(tmp_path, monkeypatch, capsys) 
     assert "Run not saved (--no-save)" in capsys.readouterr().out
 
 
+def test_fi_bench_selection_as_of_arg_pins_run_horizon() -> None:
+    args = argparse.Namespace(selection_as_of="2026-06-29")
+
+    assert bench._fi_bench_selection_as_of(args).isoformat() == "2026-06-29"
+
+
+def test_show_compare_warns_on_selection_horizon_mismatch(tmp_path, monkeypatch, capsys) -> None:
+    monkeypatch.setattr(bench, "_runs_dir", lambda: tmp_path)
+    monkeypatch.setattr(
+        bench,
+        "_bench_tail_proof_summary",
+        lambda _sid: {"display_primary_tier": "UNRESOLVED", "mixed_replay_risk": False},
+    )
+
+    old_csv = tmp_path / "20260629T2107_old.csv"
+    new_csv = tmp_path / "20260701T1350_new.csv"
+    old_csv.write_text("statute_id,similarity\n2010/1207,0.928571\n", encoding="utf-8")
+    new_csv.write_text("statute_id,similarity\n2010/1207,0.714286\n", encoding="utf-8")
+    old_csv.with_suffix(".evidence.json").write_text('{"selection_as_of":"2026-06-29"}\n', encoding="utf-8")
+    new_csv.with_suffix(".evidence.json").write_text('{"selection_as_of":"2026-07-01"}\n', encoding="utf-8")
+
+    bench._show_compare("old", "new", top=5)
+
+    out = capsys.readouterr().out
+    assert "Selection as-of: 2026-06-29 \u2192 2026-07-01" in out
+    assert "different FI oracle-selection horizons" in out
+
+
 def test_save_run_persists_diagnostics_summary_column(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(bench, "_runs_dir", lambda: tmp_path)
 

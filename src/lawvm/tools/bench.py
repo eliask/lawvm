@@ -22,7 +22,7 @@ from __future__ import annotations
 from collections import Counter
 from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import csv
 import hashlib
 import io
@@ -1585,12 +1585,17 @@ def _score_one_with_meta_section(
     )
 
 
+def _configure_fi_bench_worker(selection_as_of: str) -> None:
+    pin_selection_as_of(datetime.strptime(selection_as_of, "%Y-%m-%d").date())
+
+
 def _run_benchmark_section(
     corpus: List[Tuple[int, str]],
     verbose: bool = True,
     workers: int = 1,
     diagnostic_replay: bool = False,
     mode: Literal["official_consolidation", "legal_pit"] = "official_consolidation",
+    selection_as_of: Optional[date] = None,
     diagnostic_summaries_out: Optional[Dict[str, str]] = None,
     diagnostic_counts_out: Optional[Dict[str, Dict[str, int]]] = None,
 ) -> List[Tuple[int, str, float, float, str, float]]:
@@ -1605,7 +1610,13 @@ def _run_benchmark_section(
         from concurrent.futures import ProcessPoolExecutor, as_completed
 
         results: List[Tuple[int, str, float, float, str, float]] = cast(List[Tuple[int, str, float, float, str, float]], [None] * total)
-        with ProcessPoolExecutor(max_workers=workers) as pool:
+        pool_kwargs: Dict[str, Any] = {}
+        if selection_as_of is not None:
+            pool_kwargs = {
+                "initializer": _configure_fi_bench_worker,
+                "initargs": (selection_as_of.isoformat(),),
+            }
+        with ProcessPoolExecutor(max_workers=workers, **pool_kwargs) as pool:
             future_to_idx = {
                 pool.submit(_score_one_with_meta_section, (count, sid, diagnostic_replay, mode)): orig_idx
                 for orig_idx, (count, sid) in corpus_indexed
@@ -1665,6 +1676,7 @@ def _run_benchmark(
     mode: Literal["official_consolidation", "legal_pit"] = "official_consolidation",
     fast: bool = False,
     text_scores: bool = True,
+    selection_as_of: Optional[date] = None,
     diagnostic_summaries_out: Optional[Dict[str, str]] = None,
     diagnostic_counts_out: Optional[Dict[str, Dict[str, int]]] = None,
 ) -> Tuple[List[Tuple[int, str, float, str, float]], Optional[Dict[str, float]]]:
@@ -1703,7 +1715,13 @@ def _run_benchmark(
         from concurrent.futures import ProcessPoolExecutor, as_completed
 
         results: List[Tuple[int, str, float, str, float]] = cast(List[Tuple[int, str, float, str, float]], [None] * total)
-        with ProcessPoolExecutor(max_workers=workers) as pool:
+        pool_kwargs: Dict[str, Any] = {}
+        if selection_as_of is not None:
+            pool_kwargs = {
+                "initializer": _configure_fi_bench_worker,
+                "initargs": (selection_as_of.isoformat(),),
+            }
+        with ProcessPoolExecutor(max_workers=workers, **pool_kwargs) as pool:
             future_to_idx = {
                 pool.submit(_score_one_with_meta, (count, sid, diagnostic_replay, mode, fast, text_scores)): orig_idx
                 for orig_idx, (count, sid) in corpus_indexed
@@ -1908,12 +1926,9 @@ def _write_bench_evidence_surface(
 
 def _load_run_by_label(label: str) -> Optional[List[Tuple[str, float]]]:
     """Load per-statute results for a labeled run. Returns [(sid, sim)]."""
-    runs_dir = _runs_dir()
-    # Find file matching label
-    candidates = sorted(runs_dir.glob(f"*_{label}.csv"))
-    if not candidates:
+    path = _run_path_by_label(label)
+    if path is None:
         return None
-    path = candidates[-1]  # latest if multiple
     results = []
     with open(path, newline="") as f:
         reader = csv.DictReader(f)
@@ -1928,13 +1943,37 @@ def _load_run_by_label(label: str) -> Optional[List[Tuple[str, float]]]:
     return results
 
 
-def _load_run_lev_sims(label: str) -> Optional[Dict[str, float]]:
-    """Load lev_similarity column from a past run, if present."""
-    runs_dir = _runs_dir()
-    candidates = sorted(runs_dir.glob(f"*_{label}.csv"))
+def _run_path_by_label(label: str) -> Optional[Path]:
+    """Return the latest saved run CSV matching ``label``."""
+    candidates = sorted(_runs_dir().glob(f"*_{label}.csv"))
     if not candidates:
         return None
-    path = candidates[-1]
+    return candidates[-1]
+
+
+def _load_run_selection_as_of(label: str) -> Optional[str]:
+    """Load the FI oracle-selection horizon recorded next to a saved run."""
+    run_path = _run_path_by_label(label)
+    if run_path is None:
+        return None
+    evidence_path = run_path.with_suffix(".evidence.json")
+    if not evidence_path.exists():
+        return None
+    try:
+        data = json.loads(evidence_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    value = data.get("selection_as_of")
+    if isinstance(value, str) and value:
+        return value
+    return None
+
+
+def _load_run_lev_sims(label: str) -> Optional[Dict[str, float]]:
+    """Load lev_similarity column from a past run, if present."""
+    path = _run_path_by_label(label)
+    if path is None:
+        return None
     result: Dict[str, float] = {}
     with open(path, newline="") as f:
         reader = csv.DictReader(f)
@@ -2490,6 +2529,15 @@ def _show_compare(label_a: str, label_b: str, top: int = 20) -> None:
         improvement_tiers[str(proof.get("display_primary_tier") or "UNRESOLVED")] += 1
 
     print(f"Comparing {label_a} vs {label_b}  (N={len(raw_diffs)})")
+    selection_a = _load_run_selection_as_of(label_a)
+    selection_b = _load_run_selection_as_of(label_b)
+    if selection_a or selection_b:
+        print(f"  Selection as-of: {selection_a or 'unknown'} → {selection_b or 'unknown'}")
+        if selection_a and selection_b and selection_a != selection_b:
+            print(
+                "  WARNING: runs used different FI oracle-selection horizons; "
+                "date-driven oracle/source applicability drift can masquerade as score regression."
+            )
     print(f"  Mean error: {(1 - mean_a) * 100:.2f}% → {(1 - mean_b) * 100:.2f}%  ({(mean_b - mean_a) * 100:+.2f}pp)")
     print(f"  Regressions: {len(raw_regressions)}  Improvements: {len(raw_improvements)}  Unchanged: {len(unchanged)}")
 
@@ -2959,6 +3007,21 @@ def _fi_bench_worker_count(args: Any) -> int:
     return explicit
 
 
+def _fi_bench_selection_as_of(args: Any) -> date:
+    """Return the FI bench oracle-selection horizon for this run."""
+    raw = getattr(args, "selection_as_of", None)
+    if not raw:
+        return datetime.now(timezone.utc).date()
+    try:
+        return datetime.strptime(str(raw), "%Y-%m-%d").date()
+    except ValueError:
+        print(
+            f"ERROR: --selection-as-of must be YYYY-MM-DD, got {raw!r}",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+
+
 def _format_bench_run_banner(
     *,
     statute_count: int,
@@ -3113,12 +3176,10 @@ def main(args) -> None:
 
     # Pin one commencement reference date for the whole run so oracle selection
     # is reproducible: every comparability decision in this run uses the same
-    # ``as_of`` even if the wall clock crosses midnight mid-run, and a
-    # future-dated artifact rejected today cannot become silently accepted
-    # tomorrow with no code/data change. Forked workers inherit this pinned
-    # module-global via copy-on-write (the pool is created after this line).
-    # Snapshot from the same UTC clock as the run timestamp.
-    selection_as_of = datetime.now(timezone.utc).date()
+    # ``as_of`` even if the wall clock crosses midnight mid-run. ``--selection-as-of``
+    # additionally makes saved-run comparisons reproducible across days; without
+    # it, the default is a single UTC-date snapshot for the current run.
+    selection_as_of = _fi_bench_selection_as_of(args)
     pin_selection_as_of(selection_as_of)
 
     print(
@@ -3146,6 +3207,7 @@ def main(args) -> None:
             workers=workers,
             diagnostic_replay=diagnostic_replay,
             mode=bench_mode,
+            selection_as_of=selection_as_of,
             diagnostic_summaries_out=diagnostic_summaries,
             diagnostic_counts_out=diagnostic_counts,
         )
@@ -3163,6 +3225,7 @@ def main(args) -> None:
             mode=bench_mode,
             fast=fast_mode,
             text_scores=text_scores,
+            selection_as_of=selection_as_of,
             diagnostic_summaries_out=diagnostic_summaries,
             diagnostic_counts_out=diagnostic_counts,
         )
@@ -3598,6 +3661,15 @@ def register_cli(sub: Any, _j_parent: Any) -> None:
         action="store_true",
         dest="no_text_scores",
         help="skip diagnostic Levenshtein text similarity scoring for faster corpus sweeps",
+    )
+    bench_p.add_argument(
+        "--selection-as-of",
+        dest="selection_as_of",
+        metavar="YYYY-MM-DD",
+        help=(
+            "[-j fi] pin the oracle-selection comparability horizon for reproducible "
+            "saved-run comparisons (default: current UTC date)"
+        ),
     )
     bench_p.add_argument(
         "--worker-max-tasks",

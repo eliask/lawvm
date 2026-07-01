@@ -41,6 +41,7 @@ _NON_RULE_LITERALS = frozenset(
         "ee_mentioned",              # coverage tag in a frozenset (coverage_audit.py)
         "ee_raw_source_ctx",         # ContextVar name (peg.py)
         "ee_produced_label=",        # f-string evidence fragment (coverage_audit.py)
+        "ee_amending_act:",          # dynamic proof-carrier authorization id prefix
     }
 )
 

@@ -282,15 +282,15 @@ def test_select_bench_comparable_logs_oracle_metadata_collapsed_dates(
 # version_tag 20200104 → amendment_id 2020/104
 # version_tag 20200105 → amendment_id 2020/105
 
-_BASE_DC = dt.date.today() + dt.timedelta(days=365)
+_BASE_DC = dt.date.today() - dt.timedelta(days=365)
 
 
 def _days_after_base(days: int) -> str:
     return (_BASE_DC + dt.timedelta(days=days)).isoformat()
 
 
-def test_180day_tolerance_fixture_a_gap_6_accepted() -> None:
-    """Fixture A: gap = 6 days (like 2013/331) → accepted."""
+def test_collapsed_date_fixture_a_gap_6_commenced_accepted() -> None:
+    """Fixture A: gap = 6 days and already commenced -> accepted."""
     artifact = _make_artifact("2020/101", "20200101", _BASE_DC)
     archive = _FixtureArchive(
         {
@@ -303,8 +303,8 @@ def test_180day_tolerance_fixture_a_gap_6_accepted() -> None:
     assert _is_self_comparable_cached_artifact(artifact, archive) is True
 
 
-def test_180day_tolerance_fixture_b_gap_179_accepted() -> None:
-    """Fixture B: gap = 179 days → accepted (still within tolerance)."""
+def test_collapsed_date_fixture_b_gap_179_commenced_accepted() -> None:
+    """Fixture B: gap = 179 days and already commenced -> accepted."""
     artifact = _make_artifact("2020/102", "20200102", _BASE_DC)
     archive = _FixtureArchive(
         {
@@ -319,24 +319,29 @@ def test_180day_tolerance_fixture_b_gap_179_accepted() -> None:
     assert _is_self_comparable_cached_artifact(artifact, archive) is True
 
 
-# Future-dated base for the gap-tolerance fixtures.  The 180-day Finlex-ahead
-# tolerance only governs NON-commenced amendments: an amendment whose ordering
-# date is still in the future.  A commenced amendment (ordering_date <= today)
-# is now accepted UNCONDITIONALLY, bypassing the gap tolerance entirely (sibling
-# commit "Fix FI bench oracle prior wording projection") — an in-force law is a
-# valid bench oracle regardless of the date_consolidated metadata gap.  To
-# exercise the gap tolerance these fixtures must therefore use future ordering
-# dates so the commenced early-return does not fire.
+# Future-dated base for the not-yet-commenced fixtures. A positive
+# date_consolidated -> ordering_date gap is still observed, but it no longer
+# authorizes scoring a bench run against future legal state before the pinned
+# selection horizon reaches the amendment ordering date.
 _FUTURE_DC = dt.date(2030, 1, 1)
 
 
-def test_180day_tolerance_fixture_c_gap_181_rejected() -> None:
-    """Fixture C: future amendment, gap = 181 days → REJECTED (exceeds tolerance).
+def test_future_collapsed_date_fixture_c_gap_6_rejected_until_commencement() -> None:
+    """Fixture C: future amendment, gap = 6 days -> rejected until commenced."""
+    artifact = _make_artifact("2020/103", "20200103", _FUTURE_DC)
+    archive = _FixtureArchive(
+        {
+            "finlex://sd/2020/103/fin/main.xml": _amendment_xml(
+                effective_date="2030-01-07",
+                issue_date="2030-01-01",
+            )
+        }
+    )
+    assert _is_self_comparable_cached_artifact(artifact, archive) is False
 
-    The amendment's ordering date is in the future (not yet commenced), so the
-    commencement early-return does not fire and the 180-day gap tolerance is the
-    deciding rule.  gap 181 > 180 → rejected.
-    """
+
+def test_future_collapsed_date_fixture_d_gap_181_rejected() -> None:
+    """Fixture D: future amendment, gap = 181 days -> rejected."""
     artifact = _make_artifact("2020/103", "20200103", _FUTURE_DC)
     # 2030-01-01 + 181 days = 2030-07-01
     archive = _FixtureArchive(
@@ -353,12 +358,8 @@ def test_180day_tolerance_fixture_c_gap_181_rejected() -> None:
     assert _is_self_comparable_cached_artifact(artifact, archive) is False
 
 
-def test_180day_tolerance_fixture_d_gap_365_rejected() -> None:
-    """Fixture D: future amendment, gap = 365 days → REJECTED (well beyond tolerance).
-
-    Like fixture C, the ordering date is in the future so the gap tolerance is
-    the deciding rule.  gap 365 >> 180 → rejected.
-    """
+def test_future_collapsed_date_fixture_e_gap_365_rejected() -> None:
+    """Fixture E: future amendment, gap = 365 days -> rejected."""
     artifact = _make_artifact("2020/104", "20200104", _FUTURE_DC)
     # 2030-01-01 + 365 days = 2031-01-01
     archive = _FixtureArchive(
@@ -515,12 +516,10 @@ def test_selection_provenance_populated_for_bench_comparable() -> None:
     latest self-comparable embedded version (20300601) and report
     tolerance_applied=True.
 
-    The chosen artifact is intentionally FUTURE-dated (effective 2030-06-01,
-    within the 180-day tolerance of date_consolidated 2030-04-01): the
-    commencement override added by the sibling commit "Fix FI bench oracle prior
-    wording projection" accepts commenced amendments unconditionally with
-    tolerance_applied=False, so to exercise (and assert) the tolerance path the
-    deciding amendment must not yet have commenced.
+    The 2030 candidate is intentionally future-dated (effective 2030-06-01,
+    within 180 days of date_consolidated 2030-04-01).  That collapsed-date
+    signal is still observed, but it no longer authorizes selection before the
+    amendment has commenced; the latest commenced candidate must win.
     """
     SHARED_DC = dt.date(2030, 4, 1)
     artifacts = [
@@ -557,24 +556,17 @@ def test_selection_provenance_populated_for_bench_comparable() -> None:
         f"Expected selector_mode='bench_comparable', got {prov.selector_mode!r}"
     )
 
-    # chosen version must be the latest self-comparable (20300601)
-    assert prov.chosen_version_tag == "20300601", (
-        f"Expected chosen_version_tag='20300601', got {prov.chosen_version_tag!r}"
+    # chosen version must be the latest commenced self-comparable artifact;
+    # the future 20300601 candidate is rejected until its ordering date.
+    assert prov.chosen_version_tag == "20180781", (
+        f"Expected chosen_version_tag='20180781', got {prov.chosen_version_tag!r}"
     )
 
-    # tolerance_applied must be True (20300601 future effective > date_consolidated,
-    # gap <= 180, not yet commenced → accepted via the tolerance path)
-    assert prov.tolerance_applied is True, (
-        "Expected tolerance_applied=True for the 2013/331-class pathology "
-        "(future effective date 2030-06-01 > date_consolidated 2030-04-01)"
-    )
+    assert prov.tolerance_applied is False
 
-    # rejected_candidates should list the other three that were NOT chosen
-    # (all were self-comparable, none were screened out by the filter)
-    # In bench_comparable mode rejected_version_tags are artifacts that
-    # _is_self_comparable returned False for — here all four pass.
-    assert prov.rejected_version_tags == (), (
-        f"Expected no rejected candidates, got {prov.rejected_version_tags}"
+    # The future candidate is incomparable until its ordering date.
+    assert prov.rejected_version_tags == ("20300601",), (
+        f"Expected future candidate rejection, got {prov.rejected_version_tags}"
     )
 
 

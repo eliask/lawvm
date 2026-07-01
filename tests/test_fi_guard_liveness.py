@@ -4299,6 +4299,11 @@ NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
     "APPLY.REF_TARGET_CORRECTED_BY_ATTESTATION": ("attestation-resolved; needs attestation fixture", "2026-06-20"),
     "APPLY.REPLAY_PRODUCT_INVARIANT_VIOLATION": ("also in XFAIL (cross-act case)", "2026-06-20"),
     "APPLY.RELABEL_SKIPPED": ("governed relabel-skip; needs fixture", "2026-06-20"),
+    "APPLY.RECEIPT_TOTALITY_REQUIRED": (
+        "receipt-totality audit registered but staged off profiles; route profile "
+        "to receipt_totality before building FI replay-lane fire-drill",
+        "2026-07-01",
+    ),
     "APPLY.SOURCE_CORRECTED_BY_PATCH": ("corrigendum-patch barrier; needs fixture", "2026-06-20"),
     "APPLY.SOURCE_INCOMPLETE": ("source-incomplete barrier; needs fixture", "2026-06-20"),
     "APPLY.STRICT_REJECTED_CORRIGENDUM_PATCH": ("strict-mode barrier; needs fixture", "2026-06-20"),
@@ -4330,6 +4335,11 @@ NO_FIRE_DRILL_YET: Dict[str, tuple[str, str]] = {
     "ELAB.NORMALIZE_ITEM_LIKE_TARGET": ("payload-normalize recovery; needs fixture", "2026-06-20"),
     "ELAB.NUMBERED_TABLE_TARGET_MERGE": ("payload-normalize recovery; needs fixture", "2026-06-20"),
     "ELAB.OMISSION_EXPANSION": ("omission-expansion barrier; needs fixture", "2026-06-20"),
+    "ELAB.POSITIONAL_FALLBACK_ORDER_MISMATCH": (
+        "positional fallback barrier; emitted by payload_normalize sparse "
+        "subsection fallback, needs stable production-lane ordering fixture",
+        "2026-07-01",
+    ),
     "ELAB.PRUNE_CARRIED_SUBSECTIONS_OUTSIDE_TARGET_MOMENT": ("sparse-elaboration recovery; needs fixture", "2026-06-20"),
     "ELAB.REBASE_DUPLICATE_TARGET_SHIFTED_REPLACE": ("sparse-elaboration recovery; needs fixture", "2026-06-20"),
     "ELAB.REBASE_ITEM_TARGET_TO_SPARSE_SLOT_LABEL": ("payload-normalize recovery; needs fixture", "2026-06-20"),
