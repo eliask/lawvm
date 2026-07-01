@@ -375,20 +375,29 @@ def test_transparent_store_read_oracle_reuses_selected_pit_within_store() -> Non
     assert archive.locator_calls == 1
 
 
-def test_selected_consolidated_locator_index_cache_is_scoped_to_corpus_and_clearable() -> None:
+def test_default_single_statute_locator_uses_per_statute_archive_selection() -> None:
     locators = [
         "finlex://sd-cons/2014/1429/fin@20240012/main.xml",
     ]
+    payloads = {
+        locators[0]: _xml(
+            frbrthis_version="20240012",
+            frbrversion_number="20240012",
+            date_consolidated="2024-01-02",
+        ),
+    }
 
     class DummyArchive:
-        locator_calls = 0
+        def __init__(self) -> None:
+            self.locator_calls = 0
 
         def locators(self, pattern: str = "%") -> list[str]:
+            assert pattern == "finlex://sd-cons/2014/1429/fin@%/main.xml"
             self.locator_calls += 1
-            raise AssertionError("default locator-only selection must use oracle_path_index")
+            return locators
 
         def get(self, url: str) -> bytes | None:
-            raise AssertionError("default locator-only selection must not read XML")
+            return payloads[url]
 
     class DummyCorpus:
         def __init__(self) -> None:
@@ -396,9 +405,8 @@ def test_selected_consolidated_locator_index_cache_is_scoped_to_corpus_and_clear
             self.index_calls = 0
 
         def oracle_path_index(self, **kwargs: object) -> dict[str, str]:
-            assert kwargs == {}
             self.index_calls += 1
-            return {"2014/1429": locators[0]}
+            raise AssertionError("single-statute archive selection must not build the global index")
 
     fi_corpus._clear_selected_consolidated_locator_cache_for_tests()
     corpus = DummyCorpus()
@@ -408,15 +416,15 @@ def test_selected_consolidated_locator_index_cache_is_scoped_to_corpus_and_clear
     second = fi_corpus.get_oracle_path("2014/1429", corpus=corpus_typed)
 
     assert first == second == "finlex://sd-cons/2014/1429/fin@20240012/main.xml"
-    assert corpus.index_calls == 1
-    assert corpus._archive.locator_calls == 0
+    assert corpus.index_calls == 0
+    assert corpus._archive.locator_calls == 1
 
     fi_corpus._clear_selected_consolidated_locator_cache_for_tests()
     third = fi_corpus.get_oracle_path("2014/1429", corpus=corpus_typed)
 
     assert third == first
-    assert corpus.index_calls == 2
-    assert corpus._archive.locator_calls == 0
+    assert corpus.index_calls == 0
+    assert corpus._archive.locator_calls == 2
 
 
 def test_selected_consolidated_provenance_still_uses_archive_selection() -> None:
@@ -475,11 +483,16 @@ def test_consolidated_oracle_context_cache_reuses_selected_locator_xml() -> None
     }
 
     class DummyArchive:
+        def __init__(self) -> None:
+            self.locator_calls = 0
+
         def locators(self, pattern: str = "%") -> list[str]:
-            raise AssertionError("default context selection must use oracle_path_index")
+            assert pattern == "finlex://sd-cons/2014/1429/fin@%/main.xml"
+            self.locator_calls += 1
+            return locators
 
         def get(self, url: str) -> bytes | None:
-            raise AssertionError("default context selection reads through corpus.read_locator")
+            return payloads[url]
 
     class DummyCorpus:
         def __init__(self) -> None:
@@ -487,8 +500,7 @@ def test_consolidated_oracle_context_cache_reuses_selected_locator_xml() -> None
             self.read_locator_calls = 0
 
         def oracle_path_index(self, **kwargs: object) -> dict[str, str]:
-            assert kwargs == {}
-            return {"2014/1429": locators[0]}
+            raise AssertionError("single-statute context selection must not build the global index")
 
         def read_locator(self, locator: str) -> bytes | None:
             self.read_locator_calls += 1
@@ -502,6 +514,7 @@ def test_consolidated_oracle_context_cache_reuses_selected_locator_xml() -> None
     second = fi_corpus.get_consolidated_meta("2014/1429", corpus=corpus_typed)
 
     assert first == second == (dt.date(2024, 1, 2), "2024/12")
+    assert corpus._archive.locator_calls == 1
     assert corpus.read_locator_calls == 1
 
     fi_corpus._clear_selected_consolidated_locator_cache_for_tests()
