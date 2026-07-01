@@ -30,7 +30,7 @@ import json as json
 import time
 from lxml import etree as ET
 from pathlib import Path
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from typing import Any, Dict, List, Optional
 
 from lawvm.core.ir import (
@@ -402,7 +402,10 @@ def reset_uk_raw_source_context(
     _UK_RAW_SOURCE_CTX.reset(token)
 
 
-def _unique_byte_run_bodies(raw_bytes: bytes) -> List[str]:
+def _unique_byte_run_bodies(
+    raw_bytes: bytes,
+    candidate_clauses: Optional[Iterable[str]] = None,
+) -> List[str]:
     """Return every element ``_text_content`` that is a UNIQUE byte run of ``raw_bytes``.
 
     Parses the affecting-act XML once and walks every element, collecting the
@@ -418,6 +421,7 @@ def _unique_byte_run_bodies(raw_bytes: bytes) -> List[str]:
     Pure read of the bytes; no fabrication — :func:`compute_source_anchor` still
     independently re-verifies byte-exactness and uniqueness before any anchor mints.
     """
+    clause_filter = tuple(clause for clause in (candidate_clauses or ()) if clause)
     bodies: List[str] = []
     seen: set[str] = set()
     try:
@@ -431,6 +435,8 @@ def _unique_byte_run_bodies(raw_bytes: bytes) -> List[str]:
             text = _text_content(node)
             if not text or text in seen:
                 seen.add(text)
+                continue
+            if clause_filter and not any(text in clause for clause in clause_filter):
                 continue
             seen.add(text)
             needle = text.encode("utf-8")
@@ -487,11 +493,23 @@ def mint_uk_source_anchors(
     # Per-artifact unique-byte-run body index, parsed at most once per affecting act
     # touched by the op stream (the affecting acts are 9–56 per statute).
     bodies_by_artifact: Dict[str, List[str]] = {}
+    clauses_by_artifact: Dict[str, List[str]] = {}
+    for op in ops:
+        src = op.source
+        if src is None or src.source_anchor is not None:
+            continue
+        clause = src.raw_text or op.raw_text or ""
+        if not clause:
+            continue
+        clauses_by_artifact.setdefault(src.statute_id, []).append(clause)
 
     def _bodies_for(artifact_id: str, raw_bytes: bytes) -> List[str]:
         cached = bodies_by_artifact.get(artifact_id)
         if cached is None:
-            cached = _unique_byte_run_bodies(raw_bytes)
+            cached = _unique_byte_run_bodies(
+                raw_bytes,
+                candidate_clauses=clauses_by_artifact.get(artifact_id, ()),
+            )
             bodies_by_artifact[artifact_id] = cached
         return cached
 

@@ -431,5 +431,26 @@ def test_uk_unique_byte_run_bodies_include_paragraph_and_amendment_body_tags() -
     assert "Heading text is not an operative body anchor candidate." not in bodies
 
 
+def test_uk_unique_byte_run_bodies_can_prefilter_to_op_clauses() -> None:
+    raw = b"""\
+<Legislation>
+  <P2para>Referenced amendment body is unique.</P2para>
+  <P2para>Unreferenced amendment body is also unique.</P2para>
+</Legislation>
+"""
+
+    all_bodies = set(_unique_byte_run_bodies(raw))
+    filtered_bodies = set(
+        _unique_byte_run_bodies(
+            raw,
+            candidate_clauses=("The op clause uses Referenced amendment body is unique.",),
+        )
+    )
+
+    assert "Referenced amendment body is unique." in all_bodies
+    assert "Unreferenced amendment body is also unique." in all_bodies
+    assert filtered_bodies == {"Referenced amendment body is unique."}
+
+
 if __name__ == "__main__":  # pragma: no cover - manual probe
     raise SystemExit(pytest.main([__file__, "-q"]))
