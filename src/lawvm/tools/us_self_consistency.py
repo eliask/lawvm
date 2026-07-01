@@ -235,13 +235,44 @@ def _nonpositive_holdouts(data: bytes) -> List[Tuple[str, str, str]]:
 # Per-law projector (module-level: picklable for the process pool)
 # ---------------------------------------------------------------------------
 
+# Statute-id token used to thread a per-window proof title through the fixed
+# ``(statute_id, store) -> rows`` projector signature (see ``resolve_us_locators``).
+# ``resolve_us_locators`` emits one task per ``(locator, title)`` window pair as
+# ``us://plaw/.../publ{N}.xml#proof_title={T}``; the projector strips the token,
+# lowers under ``proof_title=T`` (matching the dry-run's per-window
+# ``proof_title=str(window.title)``), and writes the BARE locator into every row.
+_PROOF_TITLE_FRAGMENT = "#proof_title="
+
+
+def _split_proof_title_token(statute_id: str) -> Tuple[str, str]:
+    """Split ``us://plaw/...#proof_title=42`` -> ``(bare_locator, "42")``.
+
+    A bare locator (no fragment) falls back to the historical default
+    ``proof_title="11"`` so callers that pass a plain locator (e.g. tests, the
+    explicit ``--statutes`` path when no title is known) keep the prior behaviour.
+    """
+    idx = statute_id.find(_PROOF_TITLE_FRAGMENT)
+    if idx == -1:
+        return statute_id, "11"
+    bare = statute_id[:idx]
+    title = statute_id[idx + len(_PROOF_TITLE_FRAGMENT):].strip()
+    return bare, (title or "11")
+
+
 def project_us_self_consistency(
-    locator: str,
+    statute_id: str,
     store: Any,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Lower one Public Law and project every self-consistency signal as rows.
 
-    ``locator`` is a canonical ``us://plaw/{congress}/publ{N}.xml`` locator;
+    ``statute_id`` is a canonical ``us://plaw/{congress}/publ{N}.xml`` locator,
+    optionally carrying a ``#proof_title={T}`` fragment that scopes the lowering
+    to USC title ``T`` (emitted per-window by :func:`resolve_us_locators`; the
+    dry-run kernel evaluates each window under ``proof_title=str(window.title)``).
+    The fragment is stripped here: the PLAW blob is read by the bare locator and
+    every emitted row's ``statute_id`` is the bare locator, so the fragment is a
+    pure task-fan-out channel and never leaks into output.
+
     ``store`` is an open ``Farchive`` handle (from :func:`build_us_store`). The
     projector reads ONLY the PLAW USLM bytes — no USC edition, no dry-run, no
     after-edition oracle — so every harvested signal is internal to the
@@ -254,12 +285,15 @@ def project_us_self_consistency(
     from lawvm.us_federal.amendatory import lower_plaw_amendatory
     from lawvm.us_federal.sources import read_plaw_locator
 
+    locator, proof_title = _split_proof_title_token(statute_id)
+
     data = read_plaw_locator(store, locator)
     if data is None:
         return [], [{"statute_id": locator, "error": "plaw_source_absent"}]
 
     try:
         report = lower_plaw_amendatory(data, statute_id=locator,
+                                       proof_title=proof_title,
                                        classification_index=_get_classification_index_for_self_consistency())
     except Exception as exc:  # an unparseable law is itself a finding
         err = f"{type(exc).__name__}: {exc}"
@@ -377,7 +411,14 @@ def resolve_us_locators(args, store: Any) -> List[str]:
         raise SystemExit(f"US bench corpus CSV not found: {corpus_path}")
 
     windows = load_corpus(corpus_path)
-    seen: Dict[str, None] = {}
+    # Retain each locator's window title(s). A locator that first appears in
+    # multiple titles' windows contributes one lowering task per title, each
+    # scoped to that title's ``proof_title`` — mirroring the dry-run's
+    # independent-window treatment (``proof_title=str(window.title)``). Without
+    # this, every law was lowered under the hardcoded default ``proof_title=11``,
+    # spuriously flagging cleanly-resolved non-Title-11 targets as
+    # ``us_amendatory_target_non_us_code``.
+    loc_titles: Dict[str, set[int]] = {}
     for window in windows:
         if not window.include:
             continue
@@ -390,9 +431,17 @@ def resolve_us_locators(args, store: Any) -> List[str]:
         if not derived:
             continue
         for loc in derived.values():
-            seen.setdefault(loc, None)
+            loc_titles.setdefault(loc, set()).add(window.title)
 
-    locators = sorted(seen)
+    # Deterministic, stable expansion: locators sorted, then per-locator titles
+    # ascending, encoding the title into a ``#proof_title=`` fragment the
+    # projector strips before lowering (and before writing the bare locator into
+    # every row's ``statute_id``).
+    locators = [
+        f"{loc}{_PROOF_TITLE_FRAGMENT}{title}"
+        for loc in sorted(loc_titles)
+        for title in sorted(loc_titles[loc])
+    ]
     limit = getattr(args, "limit", 0) or 0
     if limit:
         locators = locators[:limit]

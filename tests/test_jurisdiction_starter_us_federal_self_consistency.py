@@ -241,6 +241,107 @@ def test_explicit_statutes_resolve_without_touching_the_corpus_or_oracle() -> No
     assert store.usc_reads == []
 
 
+# ---------------------------------------------------------------------------
+# Per-window proof-title threading (signal-quality fix, #150)
+# ---------------------------------------------------------------------------
+
+
+def test_multi_title_locator_expands_to_one_proof_title_task_per_title(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A locator whose source-credit first appears in >1 title's window must
+    # expand to one lowering task per title, each carrying that title's
+    # `#proof_title=` fragment — mirroring the dry-run's independent-window
+    # treatment. Order is deterministic (locators sorted, titles ascending).
+    import lawvm.us_federal.bench as bench
+
+    def _win(title: int, include: bool) -> "bench.BenchWindow":
+        return bench.BenchWindow(
+            title=title,
+            before_year=2014,
+            after_year=2016,
+            include=include,
+            window_law_count=0,
+            prior_edition_years=(),
+            note="",
+        )
+
+    windows = [_win(42, True), _win(11, True), _win(7, False)]
+
+    def _fake_load_corpus(_path: object) -> list["bench.BenchWindow"]:
+        return windows
+
+    def _fake_derive(_store: object, *, title: int, **_kw: object) -> dict[str, str]:
+        # PL 116-54 is credited in BOTH title 42 and title 11 windows; PL 116-99
+        # only in title 42. The excluded (include=False) title-7 window is never
+        # consulted (its derive is never called).
+        if title == 42:
+            return {
+                "PL 116-54": "us://plaw/116/publ54.xml",
+                "PL 116-99": "us://plaw/116/publ99.xml",
+            }
+        if title == 11:
+            return {"PL 116-54": "us://plaw/116/publ54.xml"}
+        raise AssertionError(f"excluded window title {title} was consulted")
+
+    monkeypatch.setattr(bench, "load_corpus", _fake_load_corpus)
+    monkeypatch.setattr(bench, "derive_window_law_locators", _fake_derive)
+
+    store = _OracleForbiddenStore("us://plaw/0/publ0.xml", b"")
+    # us_corpus points at any existing path so the .exists() guard passes.
+    args = _Args(statutes="", us_corpus=str(__file__), limit=0)
+    locs = resolve_us_locators(args, store)
+
+    # publ54 spans titles {11, 42} -> two tasks (titles ascending); publ99 only
+    # title 42 -> one task. Locators sorted, then titles ascending.
+    assert locs == [
+        "us://plaw/116/publ54.xml#proof_title=11",
+        "us://plaw/116/publ54.xml#proof_title=42",
+        "us://plaw/116/publ99.xml#proof_title=42",
+    ]
+
+
+def test_non_title_11_target_cleanly_resolves_under_its_own_proof_title(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # THE core signal-quality fix: a Title-42 target lowered under its OWN
+    # proof_title (via the `#proof_title=42` fan-out token) resolves cleanly and
+    # is NOT flagged `us_amendatory_target_non_us_code`. Under the old hardcoded
+    # proof_title=11, the same law WAS spuriously flagged non-Title-11.
+    body = (
+        "<section><num>4.</num><content>"
+        "<ref href='/us/usc/t42/s1758/b'>Section 1758(b) of title 42, "
+        "United States Code</ref>, is amended by "
+        "striking <quotedText>old</quotedText> and inserting "
+        "<quotedText>new</quotedText>"
+        "<amendingAction type='delete'/><amendingAction type='insert'/>."
+        "</content></section>"
+    )
+    loc = "us://plaw/116/publ54.xml"
+    store = _OracleForbiddenStore(loc, _synthetic_plaw(body))
+
+    # Old behaviour: bare locator -> hardcoded proof_title=11 -> non-11 flagged.
+    rows_default, errs_default = project_us_self_consistency(loc, store)
+    assert errs_default == []
+    assert any(
+        r["category"] == NON_TITLE_TARGET_RULE_ID for r in rows_default
+    ), "a Title-42 target under proof_title=11 must be flagged non_us_code"
+
+    # New behaviour: `#proof_title=42` token -> lowered under title 42 -> the
+    # cleanly-resolved Title-42 target is NO LONGER flagged non_us_code. Every
+    # emitted row still carries the BARE locator (fragment stripped).
+    rows_scoped, errs_scoped = project_us_self_consistency(
+        loc + "#proof_title=42", store
+    )
+    assert errs_scoped == []
+    assert not any(
+        r["category"] == NON_TITLE_TARGET_RULE_ID for r in rows_scoped
+    ), "a Title-42 target under proof_title=42 must resolve cleanly, not non_us_code"
+    for r in rows_scoped:
+        assert r["statute_id"] == loc, "fragment must be stripped from the row id"
+    assert store.usc_reads == []
+
+
 def test_us_signal_taxonomy_has_no_coverage_or_elaboration_types() -> None:
     # The US lowering stage has no honest coverage_gap / elaboration / occupancy
     # surface; those FI-only types must not leak into the US taxonomy.
