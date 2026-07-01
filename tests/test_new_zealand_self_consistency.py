@@ -258,8 +258,11 @@ def test_build_nz_store_missing_archive_does_not_create_path(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    # build_nz_store resolves through resolve_farchive_path; the explicit-env
+    # override (highest precedence) lets us point it at a missing file and
+    # assert it fails loud rather than materialising an empty archive.
     missing = tmp_path / "unused.farchive"
-    monkeypatch.setattr(nzsc, "_DEFAULT_DB", missing)
+    monkeypatch.setenv("LAWVM_NZ_LEGISLATION_FARCHIVE_DB", str(missing))
 
     with pytest.raises(FileNotFoundError):
         nzsc.build_nz_store()
@@ -272,7 +275,11 @@ def test_build_nz_store_missing_archive_does_not_create_path(
 # ---------------------------------------------------------------------------
 
 def _nz_store_or_skip() -> str:
-    db = nzsc._DEFAULT_DB
+    from lawvm.corpus_store import resolve_farchive_path
+
+    db, _rule = resolve_farchive_path(
+        "nz_legislation.farchive", explicit_env="LAWVM_NZ_LEGISLATION_FARCHIVE_DB"
+    )
     if not Path(db).exists():
         pytest.skip(f"NZ archive not present at {db}")
     try:

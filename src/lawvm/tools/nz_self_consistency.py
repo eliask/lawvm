@@ -14,10 +14,15 @@ every op/transition it declines.  Those refusal rule_ids — not the archived
 consolidation oracle — are the self-consistency signal.  The one refusal family
 that IS oracle-derived (``*_materialized_target_slice_diverges_from_oracle`` /
 ``*_dry_run_oracle_residual_not_agreement``) is a genuine replay-direction
-divergence; it is surfaced as ``apply_failure`` because it means an op WAS
-materialized and its result did not reproduce the archived state — the same
-"the chain applied an op but the result is wrong" shape Finland/UK call an apply
-failure.  Everything else is a pre-materialization, source-internal decision.
+divergence; it is surfaced as ``apply_failure`` because the executor determined
+the op's effect would not reproduce the archived state.  In the dominant case
+(``*_dry_run_oracle_residual_not_agreement``) that determination is made at the
+strict *dry-run gate* — the executor refuses the op *before* materializing it,
+because the dry-run proof's residual disagrees with the oracle; the rarer
+``*_materialized_target_slice_diverges_from_oracle`` catches the same divergence
+after a materialized slice.  Either way it is the "the chain's op does not
+reproduce the archived result" shape Finland/UK call an apply failure.
+Everything else is a pre-materialization, source-internal decision.
 
 NZ exposes the shared taxonomy through the ``NZActualReplayRefusal.rule_id``
 fail-closed vocabulary (``actual_replay.py``):
@@ -66,7 +71,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]  # LawVM/
-_DEFAULT_DB = _REPO_ROOT / "data" / "nz_legislation.farchive"
 
 
 # ---------------------------------------------------------------------------
@@ -161,10 +165,22 @@ def build_nz_store() -> str:
     the db path — the NZ actual-replay builder opens the Farchive read-only
     itself, via the corpus cache when active).  This NEVER touches the live NZ
     API / NZ_API_KEY: the audit operates archive-only.
+
+    The path is resolved through the shared ``corpus_store.resolve_farchive_path``
+    chokepoint (precedence: ``LAWVM_NZ_LEGISLATION_FARCHIVE_DB`` explicit override
+    → ``$LAWVM_CANONICAL_DATA_ROOT/data/nz_legislation.farchive`` →
+    ``<repo_root>/data/nz_legislation.farchive``), exactly like every other
+    corpus consumer (FI/UK/US), so a git worktree finds the archive via the
+    canonical data root with no manual symlink.
     """
-    if not _DEFAULT_DB.exists():
-        raise FileNotFoundError(f"NZ archive not found: {_DEFAULT_DB}")
-    return str(_DEFAULT_DB)
+    from lawvm.corpus_store import resolve_farchive_path
+
+    db_path, _rule = resolve_farchive_path(
+        "nz_legislation.farchive", explicit_env="LAWVM_NZ_LEGISLATION_FARCHIVE_DB"
+    )
+    if not db_path.exists():
+        raise FileNotFoundError(f"NZ archive not found: {db_path}")
+    return str(db_path)
 
 
 # ---------------------------------------------------------------------------
