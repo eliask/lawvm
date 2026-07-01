@@ -72,6 +72,43 @@ _ITEM_ALPHA_RE = compile_classifier_regex(
     r"^([a-z])\)\s*", classifier_id="lawvm.finland.attachment_ir.item_alpha"
 )
 
+# --- Statute-spine markers (spine mode; see ``_looks_like_spine``) ----------
+#
+# These three arms recognise the Finnish operative-statute spine that Regime-A
+# Finlex PDFs carry (e.g. ``2011/38`` Vna ilmanlaadusta) but that the appendix
+# recogniser above flattens (design defects G1/G5/G6). They are ONLY consulted
+# when ``_looks_like_spine`` fires; non-§ attachments never reach them, so the
+# appendix path stays byte-for-byte unchanged (backward-compat requirement).
+
+# Section mark "N §" / "24 §" / "4a §" / "1 §." — the canonical Finnish
+# section shape. The label capture is the bare number (with optional single
+# letter suffix, e.g. ``4a``), NEVER including ``§``, so
+# ``normalized_label_key`` yields the same key replay's structure graft uses
+# (mirrors ``profile/normalize._EMBEDDED_SECTION_MARK_RE``). Fixes G1: such
+# lines currently fall through to the free-text ``P`` fallback.
+_SECTION_RE = compile_classifier_regex(
+    r"^(\d+[a-z]?)\s*§\.?\s*$",
+    classifier_id="lawvm.finland.attachment_ir.section",
+)
+
+# Chapter header "N luku" / "1 LUKU" (case-insensitive on the ``luku`` token,
+# word-boundary anchored so ``2 lukuisia`` never matches). Optional trailing
+# chapter title is sliced from ``stripped[m.end():]`` by the caller. Fixes G6:
+# emits a real ``CHAPTER`` IRNode that replay can target by ``.label``.
+_LUKU_RE = compile_classifier_regex(
+    r"^(\d+)\s+[Ll][Uu][Kk][Uu]\b",
+    classifier_id="lawvm.finland.attachment_ir.luku",
+)
+
+# Numbered kohta "N)" — the real Finnish item form (``1)`` ``2)`` ``12)``),
+# matched by NEITHER ``_ITEM_ALPHA_RE`` (letters only) NOR ``_PARA_NUM_RE``
+# (needs a dot: ``N.``). Fixes G5: such kohta items currently fall through
+# entirely.
+_KOHTA_NUM_RE = compile_classifier_regex(
+    r"^(\d+)\)\s*",
+    classifier_id="lawvm.finland.attachment_ir.kohta_num",
+)
+
 # Em-dash separator "––––––––––––" (3+ em/en/ascii dashes). Marks a table
 # boundary: either closes an open table block (rows already collected) or
 # opens an empty marker TABLE node so the separator is owned in the IR
@@ -233,6 +270,70 @@ def _is_header_row(cells: List[str]) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Spine detection + Title-case heading absorb (spine mode only)
+# ---------------------------------------------------------------------------
+
+
+def _looks_like_spine(text: str) -> bool:
+    """Decide whether ``text`` is an operative-statute spine (spine mode) or a
+    table/prose/appendix (appendix mode).
+
+    A spine is recognised by the presence of at least one ``N §`` section
+    mark on its own line. This is a *conservative* signal: non-§ attachments
+    (tables, prose, ``Liite``/``Taulukko`` appendices) carry no bare ``N §``
+    line and therefore never trip it, so they parse through the unchanged
+    appendix path (the backward-compat requirement). The 6448.pdf-style
+    ``VAATIMUKSET``/``N.``/``a)``/table attachments have no ``N §`` markers.
+
+    Detection is line-based and side-effect-free; ``\\f`` page breaks are
+    normalised the same way the parser normalises them, so a section mark on
+    a page-break line still counts.
+    """
+    for raw in text.replace("\f", "\n").split("\n"):
+        if _SECTION_RE.match(raw.strip()):
+            return True
+    return False
+
+
+def _is_titlecase_heading(stripped: str) -> bool:
+    """Recognise a per-§ Title-case heading line (spine mode).
+
+    Finnish operative sections carry a short heading immediately under the
+    ``N §`` mark (e.g. ``Lain tarkoitus`` under ``1 §``). Such a heading is a
+    short line (Finnish convention: sentence-case, first word capitalised),
+    NOT terminated by sentence punctuation, and NOT itself a structural
+    marker. It is deliberately *not* ALL-CAPS (that is handled by the
+    appendix ``_is_caps_heading`` arm, reused in spine mode for genuine
+    ALL-CAPS chapter/part banners).
+    """
+    if not stripped or len(stripped) > 80:
+        return False
+    if stripped[-1] in ".:;":
+        return False
+    # First cased character must be upper-case (Title/sentence case).
+    first_alpha = next((c for c in stripped if c.isalpha()), "")
+    if not first_alpha or not first_alpha.isupper():
+        return False
+    # Exclude structural markers so a heading-shaped line that is really a
+    # marker (``2 luku Otsikko`` would already be a CHAPTER) never absorbs.
+    if (
+        _SECTION_RE.match(stripped)
+        or _LUKU_RE.match(stripped)
+        or _KOHTA_NUM_RE.match(stripped)
+        or _PARA_NUM_RE.match(stripped)
+        or _ITEM_ALPHA_RE.match(stripped)
+        or _OSA_RE.match(stripped)
+        or _LIITE_RE.match(stripped)
+        or _TAULUKKO_RE.match(stripped)
+        or _is_page_num_line(stripped)
+    ):
+        return False
+    # A heading is not a full prose sentence: reject long multi-clause lines
+    # (they are body text, which becomes a positional SUBSECTION instead).
+    return True
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -270,6 +371,17 @@ def pdf_text_to_ir_node(
     boundaries close the current paragraph leaf and surface naturally as
     structural paragraph breaks in the IR.
     """
+    # --- Auto-detect spine mode vs appendix mode ----------------------------
+    # A statute spine (``N §`` marks) is parsed into real SECTION/CHAPTER IR
+    # (spine mode). Everything else — tables, prose, ``Liite``/``Taulukko``
+    # appendices — parses through the unchanged appendix path below. This
+    # dispatch is the ONLY change appendix inputs see: they never satisfy
+    # ``_looks_like_spine`` so their behaviour is byte-for-byte preserved.
+    if _looks_like_spine(text):
+        return _spine_text_to_ir_node(
+            text, source_ref=source_ref, attachment_label=attachment_label
+        )
+
     # Normalise page breaks: pdftotext emits ``\f`` as a page boundary;
     # treating it as a blank line closes the current paragraph leaf so a
     # new paragraph starts on the next page's content.
@@ -522,6 +634,227 @@ def pdf_text_to_ir_node(
             p_node = _Builder(IRNodeKind.P, text_parts=[stripped])
             stack[-1].children.append(p_node)
             current_leaf = p_node
+
+    return root.to_ir_node()
+
+
+# ---------------------------------------------------------------------------
+# Spine-mode parser (operative statute spine → SECTION/CHAPTER IR).
+# ---------------------------------------------------------------------------
+
+
+def _spine_text_to_ir_node(
+    text: str,
+    *,
+    source_ref: str = "",
+    attachment_label: str = "",
+) -> IRNode:
+    """Parse an operative-statute spine into SECTION/CHAPTER IR.
+
+    Emitted structure (fixes design defects G1/G5/G6):
+
+      * ``N luku``  → ``CHAPTER``  ``label="N"`` (eId ``chp_N``); optional
+        trailing Title-case chapter title absorbed as a ``HEADING`` child.
+      * ``N §``     → ``SECTION``  ``label="N"`` (eId ``sec_N``); the label is
+        the bare number (``normalized_label_key`` parity with replay's graft).
+      * Per-§ Title-case heading line → ``HEADING`` child of the SECTION.
+      * ``N)`` kohta → ``ITEM`` ``label="N"``, ``label_kind="numeric_kohta"``,
+        child of the section's current SUBSECTION (or the section itself).
+      * Positional body text → ``SUBSECTION`` (implicit ``1 mom.``); each
+        blank-line-separated body block under a section opens the next
+        positional SUBSECTION (``label="1"``, ``"2"`` …).
+      * ALL-CAPS banner → ``HEADING`` (reuses the appendix ``_is_caps_heading``
+        arm for OSA/part banners that a spine can still carry).
+
+    Sections attach under the current CHAPTER when one is open, else directly
+    under the root ``HCONTAINER`` (Regime-A chapterless statutes like the
+    ``2011/38`` pilot). The eId scheme is ``part_N__chp_N__sec_N`` — recorded
+    in ``attrs["eid"]`` on each structural node so Phase 1 (base-loader
+    wiring) can graft without recomputation.
+    """
+    text = text.replace("\f", "\n")
+
+    root_attrs: Dict[str, Any] = {"spine_mode": True}
+    if source_ref:
+        root_attrs["source_ref"] = source_ref
+    root = _Builder(
+        IRNodeKind.HCONTAINER,
+        label=attachment_label or None,
+        attrs=root_attrs,
+    )
+
+    current_chapter: Optional[_Builder] = None
+    current_section: Optional[_Builder] = None
+    current_subsection: Optional[_Builder] = None
+    current_item: Optional[_Builder] = None
+    # Positional subsection counter, reset per section.
+    subsec_counter = 0
+    # True right after a `N §` mark, so the very next Title-case line is
+    # absorbed as the section HEADING rather than opening a SUBSECTION.
+    heading_pending = False
+    # True after a blank line: the next body (non-kohta) line opens a fresh
+    # positional SUBSECTION. Kohta lines ignore it (they stay in the intro
+    # subsection so a `1) 2) 3)` list is not fragmented by pdftotext blanks).
+    paragraph_break = False
+
+    def _eid(section: Optional[_Builder], chapter: Optional[_Builder], sec_label: str) -> str:
+        parts: List[str] = []
+        if chapter is not None and chapter.label:
+            parts.append(f"chp_{chapter.label}")
+        parts.append(f"sec_{sec_label}")
+        return "__".join(parts)
+
+    def _open_subsection() -> _Builder:
+        """Open a fresh positional SUBSECTION under the current section."""
+        nonlocal current_subsection, subsec_counter
+        subsec_counter += 1
+        current_subsection = _Builder(
+            IRNodeKind.SUBSECTION,
+            label=str(subsec_counter),
+            attrs={"label_kind": "positional", "positional": True},
+        )
+        assert current_section is not None
+        current_section.children.append(current_subsection)
+        return current_subsection
+
+    def _body_subsection() -> _Builder:
+        """Return the SUBSECTION a body line attaches under, opening a new one
+        on a paragraph break (or when the section has none yet)."""
+        nonlocal paragraph_break
+        if current_subsection is None or paragraph_break:
+            paragraph_break = False
+            return _open_subsection()
+        return current_subsection
+
+    def _kohta_subsection() -> _Builder:
+        """Return the SUBSECTION a kohta item attaches under. Kohta items
+        cling to the current (intro) subsection so a `1) 2) 3)` list stays a
+        single subsection even when pdftotext double-spaces the items; only if
+        no subsection is open yet does one get created."""
+        nonlocal paragraph_break
+        paragraph_break = False
+        if current_subsection is None:
+            return _open_subsection()
+        return current_subsection
+
+    for raw in text.split("\n"):
+        stripped = raw.strip()
+        if not stripped:
+            # Blank line: close any open kohta-item continuation so the next
+            # kohta / body line is a sibling, and mark a paragraph boundary so
+            # the next non-kohta body line opens a fresh positional
+            # SUBSECTION. ``heading_pending`` is deliberately kept alive across
+            # blanks: pdftotext routinely inserts a blank line between the
+            # ``N §`` mark and its Title-case heading, so the heading must
+            # still be absorbable after the gap.
+            current_item = None
+            paragraph_break = True
+            continue
+
+        if _is_page_num_line(stripped):
+            continue
+
+        # --- Chapter "N luku" ---------------------------------------------
+        m = _LUKU_RE.match(stripped)
+        if m:
+            num = m.group(1)
+            title = stripped[m.end():].strip()
+            chapter = _Builder(
+                IRNodeKind.CHAPTER,
+                label=num,
+                attrs={
+                    "label_kind": "numeric",
+                    "source_text": stripped,
+                    "eid": f"chp_{num}",
+                },
+            )
+            root.children.append(chapter)
+            if title:
+                chapter.children.append(
+                    _Builder(IRNodeKind.HEADING, text_parts=[title])
+                )
+            current_chapter = chapter
+            current_section = None
+            current_subsection = None
+            current_item = None
+            subsec_counter = 0
+            heading_pending = False
+            paragraph_break = False
+            continue
+
+        # --- Section "N §" ------------------------------------------------
+        m = _SECTION_RE.match(stripped)
+        if m:
+            num = m.group(1)
+            section = _Builder(
+                IRNodeKind.SECTION,
+                label=num,
+                attrs={
+                    "label_kind": "numeric",
+                    "source_text": stripped,
+                    "eid": _eid(None, current_chapter, num),
+                },
+            )
+            parent = current_chapter if current_chapter is not None else root
+            parent.children.append(section)
+            current_section = section
+            current_subsection = None
+            current_item = None
+            subsec_counter = 0
+            heading_pending = True
+            paragraph_break = False
+            continue
+
+        # --- Per-§ Title-case heading absorb ------------------------------
+        if (
+            heading_pending
+            and current_section is not None
+            and _is_titlecase_heading(stripped)
+        ):
+            current_section.children.append(
+                _Builder(IRNodeKind.HEADING, text_parts=[stripped])
+            )
+            heading_pending = False
+            continue
+        heading_pending = False
+
+        # --- ALL-CAPS banner (part/chapter banner a spine may carry) ------
+        if _is_caps_heading(stripped):
+            target = current_section or current_chapter or root
+            target.children.append(
+                _Builder(IRNodeKind.HEADING, text_parts=[stripped])
+            )
+            continue
+
+        # --- Numbered kohta "N)" ------------------------------------------
+        m = _KOHTA_NUM_RE.match(stripped)
+        if m and current_section is not None:
+            num = m.group(1)
+            remainder = stripped[m.end():]
+            body = _kohta_subsection()
+            item = _Builder(
+                IRNodeKind.ITEM,
+                label=num,
+                attrs={"label_kind": "numeric_kohta", "source_text": m.group(0)},
+            )
+            item.append_text(remainder)
+            body.children.append(item)
+            current_item = item
+            continue
+
+        # --- Body text ----------------------------------------------------
+        if current_item is not None:
+            # Continuation of an open kohta item (pdftotext hard wrap).
+            current_item.append_text(stripped)
+            continue
+        if current_section is not None:
+            body = _body_subsection()
+            body.append_text(stripped)
+            continue
+        # Preamble text before the first section: fresh P node so §0
+        # total-accounting holds (never silently dropped).
+        p_node = _Builder(IRNodeKind.P, text_parts=[stripped])
+        root.children.append(p_node)
 
     return root.to_ir_node()
 
