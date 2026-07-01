@@ -40,8 +40,10 @@ from lawvm.core.apply_seam import (
     ApplyProfile,
     AppliedOp,
     MaterializeResult,
+    OpAcceptance,
     apply_op,
 )
+from lawvm.core.execution_authorization import ExecutionAuthorization
 from lawvm.core.mutation_boundary import (
     TreePath,
     TreePaths,
@@ -3402,6 +3404,165 @@ def no_ordering_profile() -> OrderingProfile:
     )
 
 
+# ── EV-05 execution-authorization: NO proof minting + resolver ────────────────
+#
+# The genuine authority for a NO state-mutating op is its AFFECTING ACT — the
+# source document/act whose change-instructions (johtolause / endringslov lead)
+# directed the change. NO lowers every op from a real amendment source and
+# stamps that source's id onto ``op.source.statute_id`` (NO's ``source_id``: the
+# act directing the change, distinct from the ``base_act:`` target it amends).
+# ``_mint_no_execution_authorization`` projects that known authority into a typed
+# :class:`ExecutionAuthorization` proof; the NO resolver
+# (:func:`_no_execution_authorization`) prefers a proof already minted onto the
+# op's carrier and otherwise mints one HERE from the op's source identity, so NO
+# need not re-stamp every upstream op-construction site (byte-identity-safe). An
+# op with NO affecting-act identity (``op.source`` is ``None`` / blank
+# ``statute_id``) has UNKNOWN authority — no proof is fabricated, so the EV-05
+# observe gate fires honestly on it (the real unauthorized residue).
+
+#: The NO execution-authorization rule family stamped into a minted proof's
+#: ``authorization_rule_id``. The actual rule_id appends the affecting act id, so
+#: the proof points at the concrete authorizing act (``no_affecting_act:<statute>``).
+_NO_EXECUTION_AUTHORIZATION_RULE = "no_affecting_act_authorizes_apply"
+
+
+def _mint_no_execution_authorization(
+    op: LegalOperation,
+) -> Optional[ExecutionAuthorization]:
+    """Mint a typed ``ExecutionAuthorization`` from a NO op's affecting-act identity.
+
+    The authority a NO op carries is its source affecting act: the act whose
+    change-instructions directed this change is what authorizes the apply. When
+    the op carries a real ``op.source.statute_id`` (the affecting act id), that is
+    a GENUINELY KNOWN authority, so we mint a replay-authorized proof whose
+    ``authorization_rule_id`` names the concrete act
+    (``no_affecting_act:<statute_id>``) and whose ``detail`` records the witness
+    rule + scope-confidence rung (read-as-witness only — §2.10). When the op
+    carries no affecting-act identity (no ``source`` / blank ``statute_id``), the
+    authority is UNKNOWN: we return ``None`` and never fabricate a proof, so the
+    EV-05 gate honestly witnesses that op as unauthorized.
+
+    The proof is replay-authorized (``executable``/``replay_authorized`` both
+    ``True``) because the affecting act IS the apply authority for NO's replay
+    lane — NO's apply is the act executing its own directed changes. This is the
+    honest NO footing, not a blanket pass: the gate still fires on every op whose
+    authorizing act is not identified.
+    """
+    source = op.source
+    statute_id = (source.statute_id if source is not None else "") or ""
+    if not statute_id:
+        return None
+    rung = ""
+    scope_confidence = op.scope_confidence
+    if scope_confidence is not None:
+        rung = getattr(scope_confidence, "rung_id", "") or ""
+    return ExecutionAuthorization(
+        executable=True,
+        replay_authorized=True,
+        authorization_status="replay_authorized",
+        authorization_rule_id=f"no_affecting_act:{statute_id}",
+        owner_phase="apply",
+        strict_disposition="record",
+        quirks_disposition=QuirksDisposition.RECORD,
+        safe_default="execute_only_after_affecting_act_identity_is_known",
+        required_proofs=(),
+        forbidden_shortcuts=(
+            "treat_op_existence_as_replay_authority_without_affecting_act",
+        ),
+        detail={
+            "rule_family": _NO_EXECUTION_AUTHORIZATION_RULE,
+            "affecting_act": statute_id,
+            "witness_rule_id": op.witness_rule_id or "",
+            "scope_confidence_rung": rung,
+            "owner": "norway/grafter:_mint_no_execution_authorization",
+        },
+    )
+
+
+def _no_execution_authorization(
+    op: LegalOperation,
+) -> Optional[ExecutionAuthorization]:
+    """NO ``authorization_resolver``: read a minted proof, else mint from source.
+
+    Prefers an ``ExecutionAuthorization`` already minted onto the op's
+    ``execution_authorization`` carrier (the generic
+    ``core/apply_seam.read_op_execution_authorization`` path); if the op carries
+    none, mints one from its affecting-act identity via
+    :func:`_mint_no_execution_authorization`. Returns ``None`` only when the op's
+    authority is genuinely unknown (no affecting act) — the honest EV-05 residue.
+    """
+    if op.execution_authorization is not None:
+        return op.execution_authorization
+    return _mint_no_execution_authorization(op)
+
+
+# ── AM-01 provenance-acceptance: NO Parsed-vs-Recovered verdict ───────────────
+#
+# NO marks a RECOVERED (recognizer/fallback-guessed) op by carrying a typed
+# ``NOScopeConfidence`` (``op.scope_confidence``) whose ``rung_id`` is an
+# inferred/fallback §2.2 ladder value (AGENTS.md §2.2). A grammar-recognized
+# (``Parsed``) op carries an explicit-source rung or no scope_confidence at all.
+# The FI reference (``finland/op_provenance.admits``) admits only ``Parsed``
+# under strict; a ``Recovered`` op is refused. NO mirrors that here WITHOUT
+# importing ``finland/``: it reads its OWN typed ``op.scope_confidence`` carrier
+# and computes the core-neutral ``OpAcceptance`` verdict the seam records.
+
+#: Scope-confidence rungs that mark a RECOVERED (guessed/inferred) op — the
+#: AGENTS.md §2.2 inferred/fallback ladder values. A Parsed op carries an
+#: explicit rung (``explicit_source`` / ``explicit_source_with_context``) or no
+#: scope_confidence carrier at all.
+_NO_RECOVERED_SCOPE_CONFIDENCE_RUNGS: frozenset[str] = frozenset(
+    {
+        "inferred_from_group",
+        "inferred_from_payload",
+        "inferred_from_live_unique",
+        "inferred_singleton_path",
+        "fallback",
+    }
+)
+
+
+def _no_op_provenance_acceptance(op: LegalOperation) -> Optional[OpAcceptance]:
+    """NO ``provenance_resolver``: the core-neutral AM-01 acceptance verdict.
+
+    Reads NO's OWN derivation signal — the typed ``NOScopeConfidence`` carried on
+    ``op.scope_confidence`` (its ``rung_id``) — to classify the op as ``Parsed``
+    (admitted) or ``Recovered`` (refused under strict), mirroring the FI reference
+    (``admits``/``mode_for``: STRICT admits only ``Parsed``) without importing
+    ``finland/``. A recovered op (an inferred/fallback rung) yields a NOT-admitted
+    verdict under NO's ``strict`` acceptance mode → the AM-01 observe gate
+    witnesses it. A parsed op (explicit rung / no scope_confidence carrier) yields
+    an admitted verdict → silent. The seam merely records this decision; NO does
+    not block on it (observe-first — the AM-01 block promotion is a future
+    measure-then-flip step).
+    """
+    rung = ""
+    scope_confidence = op.scope_confidence
+    if scope_confidence is not None:
+        rung = getattr(scope_confidence, "rung_id", "") or ""
+    recovered = rung in _NO_RECOVERED_SCOPE_CONFIDENCE_RUNGS
+    if recovered:
+        return OpAcceptance(
+            admitted=False,
+            acceptance_mode="strict",
+            provenance_kind="recovered",
+            detail={
+                "scope_confidence_rung": rung,
+                "witness_rule_id": op.witness_rule_id or "",
+                "owner": "norway/grafter:_no_op_provenance_acceptance",
+            },
+        )
+    return OpAcceptance(
+        admitted=True,
+        acceptance_mode="strict",
+        provenance_kind="parsed",
+        detail={
+            "scope_confidence_rung": rung,
+            "owner": "norway/grafter:_no_op_provenance_acceptance",
+        },
+    )
+
+
 def apply_no_ops(
     statute: IRStatute,
     ops: List[LegalOperation],
@@ -4318,6 +4479,19 @@ def apply_no_ops(
     # adjudications. ``renumber_migration_rule_ids`` names the migration that
     # explains a RENUMBER's bound→landed relabel divergence when receipts ARE
     # requested (the additive lane).
+    # ── NO EV-05 authorization resolver + AM-01 provenance resolver (this task).
+    # ``authorization_resolver`` mints/reads a real ``ExecutionAuthorization``
+    # proof from each op's affecting-act identity (``_no_execution_authorization``)
+    # so the EV-05 observe gate goes QUIET for every op whose authorizing act is
+    # known and fires only on the genuinely unauthorized residue (the firewall
+    # hole drops from ~100% to the real unauthorized fraction). ``provenance_
+    # resolver`` hands the seam NO's core-neutral Parsed-vs-Recovered acceptance
+    # verdict (``_no_op_provenance_acceptance``), read from NO's typed
+    # ``op.scope_confidence`` carrier, so the AM-01 gate measures NO's
+    # Recovered-vs-Parsed op population. BOTH are OBSERVE-only: their witnesses
+    # route to ``AppliedOp.observations`` (never production ``findings``), so NO's
+    # materialized statute + adjudications stay byte-identical. NO is NOT flipped
+    # to block on either gate — that is a future measure-then-promote step.
     no_apply_profile: ApplyProfile[IRNode] = ApplyProfile(
         jurisdiction="no",
         materializer=_no_materialize_one,
@@ -4325,6 +4499,8 @@ def apply_no_ops(
         emit_receipts=False,
         emit_coverage=False,
         renumber_migration_rule_ids=("no_section_renumber_relabel",),
+        authorization_resolver=_no_execution_authorization,
+        provenance_resolver=_no_op_provenance_acceptance,
     )
 
     # ── Seam loop (design §3.1): order_ops already ran; apply each op through
