@@ -476,6 +476,8 @@ def test_separate_commencement_index_uses_internal_scan_read(monkeypatch) -> Non
             raise AssertionError(f"staged read path should not be used for {sid}")
 
         def read_source_for_internal_scan(self, sid: str) -> bytes | None:
+            if sid == "2019/999":
+                return b"<not-xml>Seuraavat lait tulevat voimaan 1 paivana tammikuuta 2021:"
             if sid != "2020/1":
                 return None
             return _xml(
@@ -498,7 +500,7 @@ def test_separate_commencement_index_uses_internal_scan_read(monkeypatch) -> Non
             return None
 
         def list_statute_ids(self) -> list[str]:
-            return ["2020/1"]
+            return ["2019/999", "2020/1"]
 
         def oracle_path_index(self, **kwargs: object) -> dict[str, str]:
             return {}

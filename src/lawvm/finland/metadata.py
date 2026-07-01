@@ -112,6 +112,10 @@ _SEPARATE_COMMENCEMENT_INLINE_LIST_RE = re.compile(
     flags=re.IGNORECASE,
 )
 _PAREN_STATUTE_ID_RE = re.compile(r'\((?P<sid>\d{1,4}/\d{4})\)')
+# Parse-avoidance prefilter for the corpus-wide separate-commencement witness
+# scan. The typed extractor below can only emit witnesses from parenthesized
+# statute IDs, so sources without this byte shape cannot contribute rows.
+_PAREN_STATUTE_ID_BYTES_RE = re.compile(rb'\(\d{1,4}/\d{4}\)')
 
 
 def _normalize_fi_parse_text(text: str) -> str:
@@ -1191,7 +1195,11 @@ def _separate_commencement_witness_index() -> dict[str, tuple[SeparateCommenceme
     index: dict[str, list[SeparateCommencementLawWitness]] = {}
     for source_id in statute_ids:
         xml_bytes = _read_source_for_separate_commencement_scan(corpus, source_id)
-        if xml_bytes is None or b"tulevat voimaan" not in xml_bytes:
+        if (
+            xml_bytes is None
+            or b"tulevat voimaan" not in xml_bytes
+            or _PAREN_STATUTE_ID_BYTES_RE.search(xml_bytes) is None
+        ):
             continue
         tree = parse_corpus_xml(xml_bytes)
         for witness in _separate_commencement_witnesses_from_tree(
