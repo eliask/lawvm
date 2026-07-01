@@ -25,6 +25,7 @@ from __future__ import annotations
 import re
 from collections import Counter
 from enum import StrEnum
+from functools import lru_cache
 from typing import Any, Iterable, NamedTuple
 
 from lawvm.core.compile_records import CompileRecord, is_blocking_compile_record
@@ -1090,6 +1091,7 @@ def classify_uk_commencement_current_projection(
     return "commencement_current_projection"
 
 
+@lru_cache(maxsize=65536)
 def _normalize_uk_source_container_eid(eid: str) -> str:
     parts: list[str] = []
     for part in str(eid or "").lower().split("-"):
