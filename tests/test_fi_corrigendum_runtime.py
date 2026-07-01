@@ -1804,3 +1804,37 @@ def test_load_from_source_records_manual_yaml_failure(tmp_path: Path, monkeypatc
     assert table._loaded is True
     assert records[-1]["reason"] == "FINLAND.CORRIGENDUM_SOURCE_DEFECT_YAML_LOAD_FAILED"
     assert records[-1]["fallback"] == "db_only"
+
+
+def test_unresolvable_overlay_stable_id_fast_reader_matches_full_loader(tmp_path: Path) -> None:
+    overlay_path = tmp_path / "corrigendum_unresolvable_fi.yaml"
+    overlay_path.write_text(
+        """
+        - stable_id: akn/fi/act/statute-consolidated/1991/1512/media/corrigenda/sk19911512_1.pdf#4
+          rule_id: FINLAND.CORR.UNRESOLVABLE.ALREADY_APPLIED_IN_SOURCE
+          evidence:
+            kind: already_applied_in_source
+            detail: already applied
+        - stable_id: akn/fi/act/statute-consolidated/1994/1472/media/corrigenda/sk19951342_1.pdf#0
+          rule_id: FINLAND.CORR.UNRESOLVABLE.SOURCE_MISSING_BASE_TEXT
+          evidence:
+            detail: invalid because evidence.kind is absent
+        - stable_id: 'akn/fi/act/statute-consolidated/1956/347/media/corrigenda/sk19960979_1.pdf#0'
+          rule_id: FINLAND.CORR.UNRESOLVABLE.BYTE_ANCHOR_ABSENT
+          evidence:
+            kind: byte_anchor_absent
+            detail: quoted stable id
+        """,
+        encoding="utf-8",
+    )
+
+    full_loader_ids = {
+        str(record["stable_id"])
+        for record in corrigendum_records.load_unresolvable_overrides(overlay_path)
+    }
+    fast_loader_ids = corrigendum_records.load_unresolvable_overlay_stable_ids(overlay_path)
+
+    assert fast_loader_ids == full_loader_ids == {
+        "akn/fi/act/statute-consolidated/1991/1512/media/corrigenda/sk19911512_1.pdf#4",
+        "akn/fi/act/statute-consolidated/1956/347/media/corrigenda/sk19960979_1.pdf#0",
+    }

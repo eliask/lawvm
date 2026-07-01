@@ -96,9 +96,10 @@ from lawvm.core.semantic_types import StructuralAction, TextPatchKindEnum
 from lawvm.core.xml_parse import parse_corpus_xml
 from lawvm.finland.corrigendum_records import (
     _RETRY_OVERLAYS_JSONL,  # noqa: F401 — used by tools.corr_records writers
+    _UNRESOLVABLE_YAML,
     default_patch_records_path,
     load_patch_records,
-    load_unresolvable_overrides,
+    load_unresolvable_overlay_stable_ids,
 )
 from lawvm.finland.metadata import _normalize_fi_parse_text as _normalize_ws_base
 
@@ -2234,10 +2235,11 @@ class CorrigendumPatchTable:
         cls,
         source_path: Optional[Path] = None,
         overlays_path: Optional[Path] = None,
+        unresolvable_path: Optional[Path] = None,
     ) -> "CorrigendumPatchTable":
         """Load all classified corrections from the repo text corpus.
 
-        ``overlays_path`` resolution precedence:
+        Overlay path resolution precedence:
           1. explicit ``overlays_path`` argument (tests pinning the overlay
              layer in isolation should pass this directly),
           2. ``<source_path>.parent / corrigendum_retry_overlays_fi.jsonl``
@@ -2246,6 +2248,8 @@ class CorrigendumPatchTable:
              empty overlay — they don't pick up the real repo file), and
           3. the module-level ``_RETRY_OVERLAYS_JSONL`` constant when
              ``source_path`` is None (production: real repo file).
+        ``unresolvable_path`` follows the same precedence for the skip-only
+        unresolvable overlay ledger.
         """
         table = cls()
         path = source_path or default_patch_records_path()
@@ -2255,6 +2259,11 @@ class CorrigendumPatchTable:
                 overlays_path = source_path.parent / _RETRY_OVERLAYS_JSONL.name
             else:
                 overlays_path = _RETRY_OVERLAYS_JSONL
+        if unresolvable_path is None:
+            if source_path is not None:
+                unresolvable_path = source_path.parent / _UNRESOLVABLE_YAML.name
+            else:
+                unresolvable_path = _UNRESOLVABLE_YAML
         if not rows:
             return table
 
@@ -2385,11 +2394,9 @@ class CorrigendumPatchTable:
         # These official rows are skipped at load time (no patch emitted); a
         # typed finding is recorded per the schema at
         # ``corrigendum_unresolvable_fi.yaml``.
-        unresolvable_records = load_unresolvable_overrides()
-        for rec in unresolvable_records:
-            sid = str(rec.get("stable_id") or "").strip()
-            if sid:
-                overlay_targeted_stable_ids.add(sid)
+        overlay_targeted_stable_ids.update(
+            load_unresolvable_overlay_stable_ids(unresolvable_path)
+        )
         # Unique op_id counter per amendment within the retry-overlay loop. Each
         # overlay's local ``patch_idx`` starts at 0, so emitting
         # ``retry/<aid>/<patch_idx>`` would collide when two overlays target

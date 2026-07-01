@@ -549,6 +549,62 @@ def load_unresolvable_overrides(path: Path | None = None) -> list[JsonRow]:
     return records
 
 
+def _strip_simple_yaml_scalar(value: str) -> str:
+    """Return a scalar from the project's simple records YAML shape.
+
+    This is intentionally not a YAML parser. Runtime replay only needs
+    top-level ``stable_id`` values from records that also carry an
+    ``evidence.kind`` value; the full ``load_unresolvable_overrides`` loader
+    remains the owner for tools that need complete YAML records.
+    """
+    stripped = value.strip()
+    if len(stripped) >= 2 and stripped[0] == stripped[-1] == "'":
+        return stripped[1:-1].replace("''", "'")
+    if len(stripped) >= 2 and stripped[0] == stripped[-1] == '"':
+        return stripped[1:-1]
+    return stripped
+
+
+def load_unresolvable_overlay_stable_ids(path: Path | None = None) -> set[str]:
+    """Read stable IDs for unresolvable-corrigendum skip overlays.
+
+    ``CorrigendumPatchTable`` only needs the set of official ``stable_id`` rows
+    that are owned by an unresolvable overlay, so parsing the whole YAML file
+    on every cold replay is unnecessary.  Keep the same minimal validity rule
+    as ``load_unresolvable_overrides``: a row is load-bearing only when it has a
+    non-empty ``stable_id`` and a non-empty ``evidence.kind``.
+    """
+    target = Path(path) if path is not None else _UNRESOLVABLE_YAML
+    if not target.exists():
+        return set()
+
+    stable_ids: set[str] = set()
+    current_stable_id = ""
+    current_has_evidence_kind = False
+
+    def flush_current() -> None:
+        nonlocal current_stable_id, current_has_evidence_kind
+        if current_stable_id and current_has_evidence_kind:
+            stable_ids.add(current_stable_id)
+        current_stable_id = ""
+        current_has_evidence_kind = False
+
+    with target.open(encoding="utf-8") as handle:
+        for raw_line in handle:
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("- "):
+                flush_current()
+                line = line[2:].strip()
+            if line.startswith("stable_id:"):
+                current_stable_id = _strip_simple_yaml_scalar(line.split(":", 1)[1])
+            elif line.startswith("kind:") and _strip_simple_yaml_scalar(line.split(":", 1)[1]):
+                current_has_evidence_kind = True
+    flush_current()
+    return stable_ids
+
+
 def write_unresolvable_overrides(records: list[JsonRow], path: Path | None = None) -> Path:
     """Persist unresolvable-corrigendum overlay records.
 
