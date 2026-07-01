@@ -43,11 +43,13 @@ from lawvm.finland.metadata import (
 
 _SELECTED_CONSOLIDATED_LOCATOR_CACHE: "weakref.WeakKeyDictionary[CorpusStore, dict[tuple[str, str, str, str], tuple[str, SelectionProvenance]]]" = weakref.WeakKeyDictionary()
 _CONSOLIDATED_ORACLE_CONTEXT_CACHE: "weakref.WeakKeyDictionary[CorpusStore, dict[tuple[str, str, str, str], ConsolidatedOracleContext]]" = weakref.WeakKeyDictionary()
+_SELECTED_CONSOLIDATED_PATH_INDEX_CACHE: "weakref.WeakKeyDictionary[CorpusStore, dict[tuple[str, str, str], Dict[str, str]]]" = weakref.WeakKeyDictionary()
 
 
 def _clear_selected_consolidated_locator_cache_for_tests() -> None:
     _SELECTED_CONSOLIDATED_LOCATOR_CACHE.clear()
     _CONSOLIDATED_ORACLE_CONTEXT_CACHE.clear()
+    _SELECTED_CONSOLIDATED_PATH_INDEX_CACHE.clear()
 
 
 def _consolidated_selector_cache_key(
@@ -213,7 +215,15 @@ def _selected_consolidated_path_by_statute(
     if _is_default_latest_selector(selector):
         if not hasattr(corpus, "oracle_path_index"):
             return {}
-        return corpus.oracle_path_index()
+        mode, version_tag, date_value = _consolidated_selector_cache_key(selector)
+        cache_key = (mode, version_tag, date_value)
+        corpus_cache = _SELECTED_CONSOLIDATED_PATH_INDEX_CACHE.setdefault(corpus, {})
+        cached = corpus_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        result = dict(corpus.oracle_path_index())
+        corpus_cache[cache_key] = result
+        return result
     assert selector is not None
     archive = getattr(corpus, "_archive", None)
     if archive is not None and hasattr(archive, "locators"):
@@ -260,6 +270,10 @@ def _selected_consolidated_locator_for_statute(
     selector: ConsolidatedArtifactSelector | None = None,
 ) -> str:
     """Return one selected consolidated locator without forcing a global rescan."""
+    if corpus is None:
+        corpus = _get_corpus_store()
+    if _is_default_latest_selector(selector):
+        return _selected_consolidated_path_by_statute(corpus, selector).get(statute_id, "")
     locator, _provenance = _selected_consolidated_locator_and_provenance_for_statute(
         statute_id,
         corpus,

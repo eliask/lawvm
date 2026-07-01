@@ -375,7 +375,51 @@ def test_transparent_store_read_oracle_reuses_selected_pit_within_store() -> Non
     assert archive.locator_calls == 1
 
 
-def test_selected_consolidated_locator_cache_is_scoped_to_corpus_and_clearable() -> None:
+def test_selected_consolidated_locator_index_cache_is_scoped_to_corpus_and_clearable() -> None:
+    locators = [
+        "finlex://sd-cons/2014/1429/fin@20240012/main.xml",
+    ]
+
+    class DummyArchive:
+        locator_calls = 0
+
+        def locators(self, pattern: str = "%") -> list[str]:
+            self.locator_calls += 1
+            raise AssertionError("default locator-only selection must use oracle_path_index")
+
+        def get(self, url: str) -> bytes | None:
+            raise AssertionError("default locator-only selection must not read XML")
+
+    class DummyCorpus:
+        def __init__(self) -> None:
+            self._archive = DummyArchive()
+            self.index_calls = 0
+
+        def oracle_path_index(self, **kwargs: object) -> dict[str, str]:
+            assert kwargs == {}
+            self.index_calls += 1
+            return {"2014/1429": locators[0]}
+
+    fi_corpus._clear_selected_consolidated_locator_cache_for_tests()
+    corpus = DummyCorpus()
+    corpus_typed = cast(CorpusStore, corpus)
+
+    first = fi_corpus.get_oracle_path("2014/1429", corpus=corpus_typed)
+    second = fi_corpus.get_oracle_path("2014/1429", corpus=corpus_typed)
+
+    assert first == second == "finlex://sd-cons/2014/1429/fin@20240012/main.xml"
+    assert corpus.index_calls == 1
+    assert corpus._archive.locator_calls == 0
+
+    fi_corpus._clear_selected_consolidated_locator_cache_for_tests()
+    third = fi_corpus.get_oracle_path("2014/1429", corpus=corpus_typed)
+
+    assert third == first
+    assert corpus.index_calls == 2
+    assert corpus._archive.locator_calls == 0
+
+
+def test_selected_consolidated_provenance_still_uses_archive_selection() -> None:
     locators = [
         "finlex://sd-cons/2014/1429/fin@20240012/main.xml",
     ]
@@ -403,23 +447,19 @@ def test_selected_consolidated_locator_cache_is_scoped_to_corpus_and_clearable()
             self._archive = DummyArchive()
 
         def oracle_path_index(self, **kwargs: object) -> dict[str, str]:
-            raise AssertionError("archive-backed selection should not use global index")
+            raise AssertionError("provenance-bearing selection must inspect artifacts")
 
     fi_corpus._clear_selected_consolidated_locator_cache_for_tests()
     corpus = DummyCorpus()
     corpus_typed = cast(CorpusStore, corpus)
 
-    first = fi_corpus.get_oracle_path("2014/1429", corpus=corpus_typed)
-    second = fi_corpus.get_oracle_path("2014/1429", corpus=corpus_typed)
+    first = fi_corpus.get_oracle_selection_provenance("2014/1429", corpus=corpus_typed)
+    second = fi_corpus.get_oracle_selection_provenance("2014/1429", corpus=corpus_typed)
 
-    assert first == second == "finlex://sd-cons/2014/1429/fin@20240012/main.xml"
+    assert first == second
+    assert first is not None
+    assert first.chosen_version_tag == "20240012"
     assert corpus._archive.locator_calls == 1
-
-    fi_corpus._clear_selected_consolidated_locator_cache_for_tests()
-    third = fi_corpus.get_oracle_path("2014/1429", corpus=corpus_typed)
-
-    assert third == first
-    assert corpus._archive.locator_calls == 2
 
 
 def test_consolidated_oracle_context_cache_reuses_selected_locator_xml() -> None:
@@ -436,11 +476,10 @@ def test_consolidated_oracle_context_cache_reuses_selected_locator_xml() -> None
 
     class DummyArchive:
         def locators(self, pattern: str = "%") -> list[str]:
-            assert pattern == "finlex://sd-cons/2014/1429/fin@%/main.xml"
-            return locators
+            raise AssertionError("default context selection must use oracle_path_index")
 
         def get(self, url: str) -> bytes | None:
-            return payloads[url]
+            raise AssertionError("default context selection reads through corpus.read_locator")
 
     class DummyCorpus:
         def __init__(self) -> None:
@@ -448,7 +487,8 @@ def test_consolidated_oracle_context_cache_reuses_selected_locator_xml() -> None
             self.read_locator_calls = 0
 
         def oracle_path_index(self, **kwargs: object) -> dict[str, str]:
-            raise AssertionError("archive-backed selection should not use global index")
+            assert kwargs == {}
+            return {"2014/1429": locators[0]}
 
         def read_locator(self, locator: str) -> bytes | None:
             self.read_locator_calls += 1
