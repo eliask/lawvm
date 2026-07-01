@@ -380,7 +380,22 @@ def _resolve_section_path_with_fallbacks(
                     and rop.effective_target_special in {"otsikko", "otsikko_edella", "johd"}
                 )
                 is_descendant_insert = rop.resolved_action_type == "INSERT" and target_address_has_descendant
-                if is_descendant_insert and (_target_part is None or global_part == _target_part):
+                # A descendant-target op (subsection/momentti/item scope) edits
+                # INSIDE an existing section; it never moves or re-creates the
+                # section itself. When the carried chapter scope (e.g. a
+                # johtolause "2 luvun" prefix that bled onto a later bare "N §"
+                # citation) cannot bind but the section label is globally unique,
+                # bind that section IN PLACE — including when it lives at root
+                # level (no chapter). This mirrors the descendant-INSERT case and
+                # is the counterpart, for non-INSERT descendant edits, of the
+                # unscoped descendant fallback above (2004/629 §18 3 mom, whose
+                # base section is chapter-less while the op carries "2 luku").
+                is_descendant_edit = (
+                    rop.resolved_action_type != "INSERT" and target_address_has_descendant
+                )
+                if (is_descendant_insert or is_descendant_edit) and (
+                    _target_part is None or global_part == _target_part
+                ):
                     return SectionPathResolution(
                         path=global_path,
                         reason_code=SectionPathResolutionReason.LIVE_UNIQUE_GLOBAL_FALLBACK,
