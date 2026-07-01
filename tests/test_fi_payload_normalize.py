@@ -1436,6 +1436,77 @@ def test_container_payload_prunes_foreign_scoped_standalone_inserts_from_new_con
     assert [c.label for c in got.children if c.kind == IRNodeKind.SECTION] == ["19f"]
 
 
+def test_container_payload_keeps_dense_whole_new_chapter_body_over_foreign_label_collision() -> None:
+    # Regression for 2017/320 <- 2018/301: the amendment inserts a brand-new
+    # part-scoped chapter (II osa, 4 luku) whose complete body runs 1 §..11 §.
+    # Section label "11" is *also* owned as a foreign standalone INSERT
+    # elsewhere in the same amendment (III osa, 3 luku, uusi 11 §). That
+    # numbering coincidence must not truncate the new chapter's own contiguous
+    # body, so 11 § stays.
+    ctx = _mock_ctx("chapter", "4", live_node=None, target_part="2")
+    muutos_ir = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="4",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="4 luku"),
+            *(
+                IRNode(kind=IRNodeKind.SECTION, label=str(n))
+                for n in range(1, 12)
+            ),
+        ),
+    )
+
+    got, changed, pruned = _prune_container_payload_sections_shadowed_by_standalone_targets(
+        ctx,
+        "chapter",
+        "4",
+        muutos_ir,
+        {"11"},
+        foreign_scoped_standalone_section_targets={"11"},
+        preserve_dense_new_container_payload=True,
+    )
+
+    assert changed is False
+    assert isinstance(got, IRNode)
+    assert pruned == []
+    assert [c.label for c in got.children if c.kind == IRNodeKind.SECTION] == [
+        str(n) for n in range(1, 12)
+    ]
+
+
+def test_container_payload_still_prunes_foreign_label_from_sparse_new_chapter_body() -> None:
+    # The dense-whole-body guard must not fire for a sparse/non-contiguous new
+    # chapter payload: mirrors the 2016/591 <- 2022/296 "3b luku" case where
+    # foreign-scoped inserts (22a/22b, owned by 4 luku) are carried into the new
+    # chapter shell and must still be pruned.
+    ctx = _mock_ctx("chapter", "3b", live_node=None)
+    muutos_ir = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="3b",
+        children=(
+            IRNode(kind=IRNodeKind.NUM, text="3 b luku"),
+            IRNode(kind=IRNodeKind.SECTION, label="19f"),
+            IRNode(kind=IRNodeKind.SECTION, label="22a"),
+            IRNode(kind=IRNodeKind.SECTION, label="22b"),
+        ),
+    )
+
+    got, changed, pruned = _prune_container_payload_sections_shadowed_by_standalone_targets(
+        ctx,
+        "chapter",
+        "3b",
+        muutos_ir,
+        {"22a", "22b"},
+        foreign_scoped_standalone_section_targets={"22a", "22b"},
+        preserve_dense_new_container_payload=True,
+    )
+
+    assert changed is True
+    assert isinstance(got, IRNode)
+    assert pruned == ["22a", "22b"]
+    assert [c.label for c in got.children if c.kind == IRNodeKind.SECTION] == ["19f"]
+
+
 def test_payload_normalize_aligns_sparse_omission_subsections_to_live() -> None:
     live_sec = IRNode(
         kind=IRNodeKind.SECTION,

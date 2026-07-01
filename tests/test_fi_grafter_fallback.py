@@ -10488,8 +10488,23 @@ def test_process_muutoslaki_2017_320_2019_371_recodification_regressions() -> No
 
 
 @pytest.mark.slow
-def test_process_muutoslaki_2017_320_2019_371_post_apply_dedup_clears_transient_duplicate_labels() -> None:
-    """Same-wave restructure apply may leave transient duplicate labels before fold."""
+def test_process_muutoslaki_2017_320_2019_371_apply_is_duplicate_free_and_dedup_backstop_is_noop() -> None:
+    """The 423-section 2019/371 restructure applies cleanly onto 2017/320.
+
+    The apply lane now produces a tree with zero same-kind+label duplicates for
+    this large chapter-restructure wave, so the post-apply GLOBAL_LABEL_DEDUP
+    backstop (``normalize_process_apply_fold``) is a no-op and emits no finding.
+
+    An earlier revision of this test asserted the backstop *fired* here, on the
+    premise that this restructure left a transient duplicate label for the
+    backstop to clear. Subsequent FI apply-lane fixes eliminated that transient
+    duplicate at the source, which is the correct, superior behavior: a clean
+    apply that needs no dedup backstop. The backstop's positive-fire behavior
+    remains covered by the synthetic
+    ``test_emit_structural_dedup_warning_records_warning_and_finding`` and the
+    ``dedup_children_by_label`` / ``has_dedup_label_duplicates`` unit tests.
+    """
+    from lawvm.core import tree_ops as _tops
     from lawvm.core.invariant_profiles import (
         collect_tree_invariant_violations,
         structural_tree_all_profile,
@@ -10519,6 +10534,8 @@ def test_process_muutoslaki_2017_320_2019_371_post_apply_dedup_clears_transient_
             corpus=corpus,
         )
 
+    # The materialized apply output carries no same-kind+label duplicates of any
+    # family (the test's original invariant, which still holds).
     profile = structural_tree_all_profile("process_muutoslaki.post_apply")
     violations = collect_tree_invariant_violations(phase.output.ir, profile)
     duplicate_violations = [
@@ -10526,14 +10543,15 @@ def test_process_muutoslaki_2017_320_2019_371_post_apply_dedup_clears_transient_
     ]
     assert duplicate_violations == []
 
+    # The tree handed to the dedup backstop is already duplicate-free, so the
+    # backstop finds nothing to do and emits no observation.
+    assert not _tops.has_dedup_label_duplicates(phase.output.ir)
     dedup_findings = [
         finding
         for finding in phase.findings()
         if finding.kind == "APPLY.GLOBAL_LABEL_DEDUP_APPLIED"
     ]
-    assert len(dedup_findings) == 1
-    assert dedup_findings[0].detail.get("phase") == "process_muutoslaki.post_apply"
-    assert dedup_findings[0].source_statute == "2019/371"
+    assert dedup_findings == []
 
 
 @pytest.mark.slow
@@ -17163,13 +17181,19 @@ def test_replay_xml_2003_549_replaces_occupied_section_163_without_stale_tail(
 
 @pytest.mark.slow
 def test_inspect_amendment_2003_549_2010_469_prunes_carried_section_149_subsections() -> None:
-    """`2010/469` section 149 must bind owned `1 momentti` edits to slot 1.
+    """`2010/469` section 149 binds its owned `1 momentti` edits to slot 1.
 
-    The amendment XML carries later sibling subsections `2–5` inside the same
-    section body, even though the johtolause only changes `149 § 1 momentti`
-    plus item-level edits under that moment. Current inspection keeps the
-    carried sibling slots visible as unassigned source context rather than
-    hiding them through pre-replay pruning.
+    The `549/2003` johtolause only amends `149 §:n 1 momentin johdantokappale
+    ja 4 kohta` and adds `uusi 5 kohta` to that same first momentti. The
+    amendment XML body reflects exactly this: a single `1 momentti` subsection
+    whose payload carries only the replaced intro, replaced item `4)`, and new
+    item `5)`, with the untouched neighbours elided by `omission` markers. It
+    does *not* carry sibling subsections `2–5` (those live only in the base
+    statute), so normalization yields three payload children and emits no
+    unassigned-slot elaboration. The base statute's own `149 §` still holds
+    subsections `2–5`, and the official consolidation preserves them alongside
+    the edited momentti-1 item list (item `5)` is later repealed by
+    `2012/554`, matching the oracle).
     """
     bundle = build_amendment_bundle("2003/549", "2010/469", mode="official_consolidation")
     group = next(group for group in bundle["groups"] if group["target_norm"] == "149")
@@ -17179,15 +17203,17 @@ def test_inspect_amendment_2003_549_2010_469_prunes_carried_section_149_subsecti
 
     assert normalized is not None
     assert normalized["kind"] is IRNodeKind.SECTION
-    assert normalized["children"] == 7
-    assert [binding["op"] for binding in group["sparse_slot_bindings"]] == [
-        "REPLACE 11 luku 149 § johd",
-        "REPLACE 11 luku 149 § 1 mom 4 kohta",
-        "INSERT 11 luku 149 § 1 mom 5 kohta",
+    assert normalized["children"] == 3
+    assert [
+        (binding["op"], binding["slot_label"], binding["target_paragraph"])
+        for binding in group["sparse_slot_bindings"]
+    ] == [
+        ("REPLACE 11 luku 149 § johd", "1", 1),
+        ("REPLACE 11 luku 149 § 1 mom 4 kohta", "1", 1),
+        ("INSERT 11 luku 149 § 1 mom 5 kohta", "1", 1),
     ]
-    assert any(
+    assert not any(
         observation["kind"] == "ELAB.UNASSIGNED_SPARSE_SLOTS"
-        and observation["detail"]["unassigned_slots"] == ("2:2", "3:3", "4:4", "5:5")
         for observation in observations
     )
 

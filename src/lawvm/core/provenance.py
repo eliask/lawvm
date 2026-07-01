@@ -119,6 +119,83 @@ def compute_source_anchor(
     )
 
 
+# Length of the byte prefix bucketed by :func:`unique_byte_run_texts`. Any needle
+# at least this long is resolved through the O(1)-average prefix index; shorter
+# needles fall back to the plain two-``find`` scan (there are only a handful, and
+# a bucket keyed on a sub-``P`` prefix would be worthless). 12 is empirically the
+# sweet spot on the govinfo PLAW / legislation.gov.uk artifacts: long enough that
+# each 12-byte prefix is highly discriminating (buckets are tiny), short enough
+# that the ``prefix in wanted`` build filter keeps the index sparse.
+_UNIQUE_RUN_PREFIX = 12
+
+
+def unique_byte_run_texts(raw_bytes: bytes, candidate_texts: list[str]) -> list[str]:
+    """Return the ``candidate_texts`` that are GLOBALLY UNIQUE verbatim byte runs.
+
+    Shared kernel of the US (``amendatory._unique_byte_run_bodies``) and UK
+    (``uk_amendment_replay._unique_byte_run_bodies``) per-element anchor passes.
+    ``candidate_texts`` is the already-deduplicated, document-order stream of
+    flattened element bodies (empty strings and repeats removed by the caller,
+    which owns the frontend-specific XML flattening — ``_text_of`` vs
+    ``_text_content``). A text is kept iff its UTF-8 encoding occurs at EXACTLY
+    ONE start position in ``raw_bytes`` (overlap-allowed start count == 1) — the
+    same predicate the old ``raw.find(n) >= 0 and raw.find(n, first+1) < 0``
+    two-scan expressed. The result is sorted LONGEST-first with a STABLE sort, so
+    among equal-length bodies the caller's document order is preserved (the
+    per-op selector relies on that tiebreak to pick the same body it always did).
+
+    Behaviour is byte-identical to the old per-frontend two-``find`` loop + sort;
+    the only change is HOW uniqueness is decided. Instead of scanning the whole
+    blob once per candidate (``O(candidates * len(raw_bytes))`` — the profiled
+    §2.7 ``bytes.find`` O(N^2) hotspot), a single pass over ``raw_bytes`` buckets
+    every occurrence-start position of a wanted ``_UNIQUE_RUN_PREFIX``-byte
+    prefix; each candidate then verifies only the handful of positions in its own
+    bucket. Any occurrence of a needle of length >= ``_UNIQUE_RUN_PREFIX`` starts
+    with that needle's (wanted) prefix, so every occurrence start is indexed and
+    none is missed; occurrences cannot begin in the final ``P-1`` bytes (no room
+    for a full prefix), and shorter needles take the exact old two-``find`` path.
+    """
+    if not raw_bytes or not candidate_texts:
+        return []
+    P = _UNIQUE_RUN_PREFIX
+    needles = [text.encode("utf-8") for text in candidate_texts]
+    # Only index prefixes we will actually query, so the single build pass stays
+    # sparse (dict size == distinct wanted prefixes, not distinct blob P-grams).
+    wanted = {needle[:P] for needle in needles if len(needle) >= P}
+    positions_by_prefix: dict[bytes, list[int]] = {}
+    if wanted:
+        limit = len(raw_bytes) - P + 1
+        blob = raw_bytes  # local for the hot loop
+        for i in range(limit):
+            window = blob[i : i + P]
+            if window in wanted:
+                bucket = positions_by_prefix.get(window)
+                if bucket is None:
+                    positions_by_prefix[window] = [i]
+                else:
+                    bucket.append(i)
+    bodies: list[str] = []
+    for text, needle in zip(candidate_texts, needles, strict=True):
+        length = len(needle)
+        if length >= P:
+            positions = positions_by_prefix.get(needle[:P])
+            count = 0
+            if positions:
+                for pos in positions:
+                    if raw_bytes[pos : pos + length] == needle:
+                        count += 1
+                        if count > 1:
+                            break
+            if count == 1:
+                bodies.append(text)
+        else:
+            first = raw_bytes.find(needle)
+            if first >= 0 and raw_bytes.find(needle, first + 1) < 0:
+                bodies.append(text)
+    bodies.sort(key=lambda s: -len(s))
+    return bodies
+
+
 @dataclass(frozen=True, slots=True)
 class OperationSource:
     """Provenance for a legal operation.

@@ -38,7 +38,7 @@ from lawvm.core.ir import (
     LegalOperation,
     OperationSource,
 )
-from lawvm.core.provenance import compute_source_anchor
+from lawvm.core.provenance import compute_source_anchor, unique_byte_run_texts
 from lawvm.core.mutation_events import MutationEvent
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.uk_grafter import _LEG_NS as _LEG_NS
@@ -422,12 +422,12 @@ def _unique_byte_run_bodies(
     independently re-verifies byte-exactness and uniqueness before any anchor mints.
     """
     clause_filter = tuple(clause for clause in (candidate_clauses or ()) if clause)
-    bodies: List[str] = []
-    seen: set[str] = set()
     try:
         tree = ET.fromstring(raw_bytes)
     except ET.XMLSyntaxError:
-        return bodies
+        return []
+    seen: set[str] = set()
+    candidates: List[str] = []
     try:
         for node in tree.iter():
             if not isinstance(node.tag, str) or _tag(node) not in _UK_SOURCE_ANCHOR_BODY_TAGS:
@@ -439,17 +439,16 @@ def _unique_byte_run_bodies(
             if clause_filter and not any(text in clause for clause in clause_filter):
                 continue
             seen.add(text)
-            needle = text.encode("utf-8")
-            first = raw_bytes.find(needle)
-            if first >= 0 and raw_bytes.find(needle, first + 1) < 0:
-                bodies.append(text)
+            candidates.append(text)
     finally:
         # §source_root_lifecycle: this is a throwaway parse local to the anchor
         # pass; evict its elements from the shared _text_content cache so they do
         # not leak past this call (the cache cannot weak-ref lxml elements).
         evict_xml_helper_caches(tree)
-    bodies.sort(key=lambda s: -len(s))
-    return bodies
+    # Shared indexed kernel decides global byte-run uniqueness (replaces the
+    # per-candidate two-``find`` O(N^2) scan — AGENTS.md §2.7). Byte-identical to
+    # the old loop: same dedup, same predicate, same LONGEST-first stable sort.
+    return unique_byte_run_texts(raw_bytes, candidates)
 
 
 def mint_uk_source_anchors(

@@ -252,9 +252,19 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     ),
     "finland_parse_payload": (
         "test_fi_attachment_ir.py",
+        # FI PDF spine Phase 1 — attachment-PDF spine as a graftable base.
+        "test_fi_pdf_spine_base.py",
+        # FI PDF spine Phase 2 (Option B) — AKN-XML serialisation of the spine
+        # (part_N__chp_N__sec_N eIds) so the section_resolver/oracle path
+        # resolves against the PDF-derived base; generalisation to a second
+        # §-structured in-force PDF-only statute (2008/721).
+        "test_fi_pdf_spine_xml.py",
         # SDOC-13 unified tree merge helper — attachments as APPENDIX
         # siblings of BODY under one HCONTAINER root.
         "test_fi_attachment_merge.py",
+        # Task #147 — Regime-B budget-PDF mojibake decoder (font-scoped
+        # glyph-offset decode in pdf_layout.py).
+        "test_fi_pdf_mojibake_decode.py",
         # SDOC invariants — pinned against the D0 attachment-IR fixture.
         "test_fi_sdoc_invariants.py",
         # D4 footnote scoped collation (doc3 D4).
@@ -740,6 +750,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_provenance_graph.py",
         "test_fi_provenance_graph_facade.py",
         "test_provenance_graph_storage.py",
+        "test_unique_byte_run_texts.py",
         # Step 5: compile metadata + reproducibility fingerprints
         "test_compile_metadata.py",
         "test_compile_metadata_verify.py",
@@ -1000,6 +1011,8 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_bench_contract_adapters.py",
         "test_fi_bench_contract_adapter.py",
         "test_fi_bench_comparable.py",
+        "test_fi_aux_pit_probe.py",
+        "test_fi_aux_pit_bench.py",
         "test_fi_oracle_amb_match.py",
         "test_fi_segmentation_neutralizer.py",
         "test_bench_curate.py",

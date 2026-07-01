@@ -828,6 +828,8 @@ def compute_statute_section_diffs(
     corpus: Any = None,
     mode: str = "official_consolidation",
     oracle_selector_mode: str = "bench_comparable",
+    oracle_selector: Any = None,
+    as_of: str | None = None,
     replay_master: Any = None,
     support_mode: Literal["full", "diff_only"] = "full",
 ) -> tuple[dict[str, dict[str, Any]], bool]:
@@ -844,6 +846,21 @@ def compute_statute_section_diffs(
 
     Pass ``replay_master`` to reuse an already-replayed master (avoids a second
     replay call when the caller has already replayed the statute, e.g. bench).
+
+    ``oracle_selector`` threads an EXPLICIT
+    :class:`~lawvm.finland.consolidated_artifacts.ConsolidatedArtifactSelector`
+    for both the replay's oracle observation and the oracle fetch. It is
+    additive: when ``None`` (the default), the selector is resolved from
+    ``oracle_selector_mode`` exactly as before, so every existing caller is
+    byte-identical. The all-historical-PIT bench mode passes an
+    ``exact_embedded_version(version_tag)`` selector here to score against one
+    specific published consolidation snapshot rather than the bench-comparable
+    latest.
+
+    ``as_of`` is the ISO date cutoff threaded into the replay request (only
+    meaningful when ``replay_master`` is not supplied and ``mode == 'legal_pit'``).
+    Additive: ``None``/empty leaves the request's ``as_of`` empty, preserving
+    existing behaviour.
     """
     from lawvm.finland.corpus import get_corpus, get_ground_truth_tree
     from lawvm.finland.replay_entrypoint import replay_xml
@@ -869,21 +886,28 @@ def compute_statute_section_diffs(
     if corpus is None:
         corpus = get_corpus()
 
+    resolved_selector = (
+        oracle_selector
+        if oracle_selector is not None
+        else _selector_from_mode(oracle_selector_mode)
+    )
+
     if replay_master is None:
         replay_master = call_replay_xml(
             replay_xml,
             request=ReplayXmlRequest(
                 parent_id=statute_id,
                 mode=cast(Literal["official_consolidation", "legal_pit"], mode),
+                as_of=as_of or "",
                 quiet=True,
                 corpus=corpus,
-                oracle_selector=_selector_from_mode(oracle_selector_mode),
+                oracle_selector=resolved_selector,
             ),
         )
     oracle_root = get_ground_truth_tree(
         statute_id,
         corpus=corpus,
-        selector=_selector_from_mode(oracle_selector_mode),
+        selector=resolved_selector,
     )
 
     if is_oracle_content_absent(oracle_root):

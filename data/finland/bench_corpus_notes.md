@@ -6,16 +6,16 @@
 ## Summary
 
 - Source: `amendment_parents.csv` — 11909 unique parent statutes (full range, no amendment count cap)
-- **Final corpus: 3545 statutes** (fully recomputed, no carry-over from prior list)
+- **Final corpus: 3546 statutes** (fully recomputed, no carry-over from prior list)
 
 ## Exclusion Criteria (all structural, no temporal filtering)
 
-1. **Base in zip**: `statute.zip` must contain `fin@/main.xml` for the statute ID.
+1. **Base in farchive**: `data/finlex.farchive` must contain `finlex://sd/.../fin/main.xml` for the statute ID.
 2. **Base XML structure**: Must contain `<section>` or `<paragraph>` elements (not hcontainer-only).
-3. **Oracle exists with content**: Latest consolidated version in `statute-consolidated.zip` must
+3. **Oracle exists with content**: Latest consolidated version in farchive must
    contain `<section>` or `<paragraph>` elements. Empty/hcontainer-only oracle → NO_TRUTH in benchmark.
-4. **Amendment texts in zip**: All amendment statutes referenced in `amendment_parents.csv` must
-   also exist in `statute.zip` (grafter needs their text for replay).
+4. **Amendment texts in farchive**: All amendment statutes referenced in `amendment_parents.csv` must
+   also exist in farchive (grafter needs their text for replay).
 
 Note: Pre-1990 and dash-suffix IDs are NOT excluded a priori.
 Note: amendment_parents.csv IS the amendment-existence check (criterion 4 from design) — every
@@ -25,10 +25,10 @@ candidate here already has ≥1 amendment by construction.
 
 | Reason | Count |
 |--------|-------|
-| not_in_zip | 5950 |
+| not_in_farchive | 5949 |
 | content_absent | 2204 |
-| mostly_repealed | 139 |
-| amendment_texts_missing | 37 |
+| mostly_repealed | 140 |
+| amendment_texts_missing | 36 |
 | base_hcontainer | 33 |
 | oracle_empty_body | 1 |
 
@@ -38,12 +38,12 @@ candidate here already has ≥1 amendment by construction.
 
 | Bucket | Count |
 |--------|-------|
-| 1 | 996 |
+| 1 | 994 |
 | 11-20 | 362 |
-| 2 | 528 |
+| 2 | 529 |
 | 201-9999 | 1 |
 | 21-50 | 225 |
-| 3 | 369 |
+| 3 | 371 |
 | 4-5 | 468 |
 | 51-200 | 46 |
 | 6-10 | 550 |
@@ -63,9 +63,9 @@ candidate here already has ≥1 amendment by construction.
 | 1960s | 61 |
 | 1970s | 124 |
 | 1980s | 195 |
-| 1990s | 799 |
-| 2000s | 1009 |
-| 2010s | 946 |
+| 1990s | 798 |
+| 2000s | 1010 |
+| 2010s | 947 |
 | 2020s | 349 |
 
 ## Known Limitations
