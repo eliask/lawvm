@@ -32,10 +32,13 @@ replayable corpus (measured out-of-band with the archive present — recorded in
   environment (no NO original-act source). KEEP OBSERVE (unproven-clean).
 * **SE** — representative op set: 0 escapes. No production corpus replay lane /
   committed corpus exists. KEEP OBSERVE (unproven-clean).
-* **EE** — representative op set: 0 escapes, but the REAL replayable corpus has
-  **136 escapes per 30 statutes** (the seam observer and EE's in-fold probe agree
-  exactly — these are genuine deep sub-section/item-level LS-01 escapes that are
-  observe-only today). KEEP OBSERVE (a real latent boundary-escape finding).
+* **EE** — representative op set: 0 escapes. The REAL replayable corpus surfaced
+  escapes in observe mode that #108-EE proved were ALL ONE declaration artifact
+  (a flat PEG op target vs the chapter-nested body); once
+  ``_ee_resolved_boundary_prefixes`` corrected the DECLARATION (never a write) the
+  escape count went to 0 over the 30/120/300-statute samples with off-vs-block
+  body-hash byte-identity, so EE was PROMOTED off -> block (the one frontend that
+  completed the flip; guarded by ``tests/test_ee_boundary_enforcement.py``).
 * **UK** — representative op set: **0 escapes** after task #108-UK. A REPLACE on
   a missing leaf RECOVERED as an INSERT at the body root WAS read as an escape
   because UK's materializer did not thread its recovery retarget into
@@ -47,14 +50,15 @@ replayable corpus (measured out-of-band with the archive present — recorded in
   in this environment, so op-set-cleanliness is not a flip authorization (§8.2:
   op-set-clean ≠ corpus-clean).
 
-So NO frontend flips to block: EE's real corpus has demonstrable latent escapes;
-UK's op set is now clean but has no verifiable real corpus here; the two
-op-set-clean frontends (NO, SE) cannot have their real corpora verified here, so
-flipping any would be unsafe speculation. This is the honest outcome of the
-safety-first discipline — the representative op sets dramatically UNDER-report
-escapes (EE: 0 vs 136), so only a proven-clean corpus authorizes the flip, and
-none qualifies today. The ``boundary_mode`` block path is wired and ready; the
-flip is one profile field per frontend once its corpus is proven clean.
+So EE alone flips to block — and ONLY after its real corpus was proven clean
+(#108-EE); the two op-set-clean frontends (NO, SE) cannot have their real corpora
+verified here, and UK's op set is clean but has no verifiable real corpus here,
+so flipping any of the three would be unsafe speculation and they KEEP OBSERVE.
+This is the honest outcome of the safety-first discipline — a representative op
+set can dramatically UNDER-report escapes, so only a proven-clean corpus
+authorizes the flip. The ``boundary_mode`` block path is wired and ready; the
+flip is one profile field per frontend once its corpus is proven clean, as EE
+demonstrated.
 """
 from __future__ import annotations
 
@@ -166,17 +170,19 @@ def test_se_representative_op_set_is_boundary_clean() -> None:
     assert _measure_se() == 0
 
 
-def test_ee_representative_op_set_is_boundary_clean_but_real_corpus_is_not() -> None:
-    """EE's representative op set is clean, yet the REAL corpus has 136 escapes.
+def test_ee_representative_op_set_is_boundary_clean() -> None:
+    """EE's representative op set produces zero boundary escapes (op-set clean).
 
-    This is the decisive lesson of the safety-first measure-then-flip: the tiny
-    representative op set reports ZERO escapes, but EE's REAL replayable corpus
-    has 136 boundary escapes per 30 statutes (the seam observer and EE's in-fold
-    probe agree exactly; recorded in notes/B_ENFORCEMENT_STATUS.md §8). So
-    op-set-cleanliness is NOT a flip authorization — only the real corpus is.
-    EE stays OBSERVE.
+    The safety-first measure-then-flip lesson still holds: the tiny representative
+    op set reports ZERO escapes, so op-set-cleanliness was NEVER the flip
+    authorization. EE's REAL replayable corpus was what surfaced escapes in
+    observe mode; #108-EE proved they were all ONE declaration artifact,
+    corrected the declaration (never a write), re-measured 0 over the
+    30/120/300-statute samples, and only THEN promoted EE to block. So the real
+    corpus — not this op set — is what authorized EE's flip (see
+    ``test_ee_frontend_promoted_to_boundary_block``).
     """
-    assert _measure_ee() == 0  # op set is clean — but the real corpus is NOT.
+    assert _measure_ee() == 0  # op set is clean (it always was).
 
 
 def test_uk_representative_op_set_is_boundary_clean_after_recovery_declaration() -> None:
@@ -197,7 +203,9 @@ def test_uk_representative_op_set_is_boundary_clean_after_recovery_declaration()
     Op-set-cleanliness still does NOT authorize a ``boundary_mode`` flip to block:
     no real UK corpus replay lane exists in this environment, so per §8.2's
     safety discipline (op-set-clean ≠ corpus-clean) UK stays OBSERVE. The flip is
-    a staged step (see ``test_all_tree_frontends_keep_boundary_mode_off``).
+    a staged step (see ``test_unproven_frontends_keep_boundary_mode_off``; EE is
+    the one frontend that completed it in #108-EE —
+    ``test_ee_frontend_promoted_to_boundary_block``).
     """
     count, escapes = _measure_uk()
     assert count == 0
@@ -207,31 +215,64 @@ def test_uk_representative_op_set_is_boundary_clean_after_recovery_declaration()
 # ── 2. NO frontend was flipped to block (the safety-first outcome) ────────────
 
 
-def test_all_tree_frontends_keep_boundary_mode_off() -> None:
-    """No tree frontend's production profile was flipped to ``boundary_mode``
-    "block": each builds its ``ApplyProfile`` with ``boundary_mode="off"``.
+def test_unproven_frontends_keep_boundary_mode_off() -> None:
+    """The tree frontends WITHOUT a proven-clean real corpus keep ``boundary_mode``
+    "off": NO / SE / UK each build their ``ApplyProfile`` with ``boundary_mode="off"``.
 
-    This pins the safety-first outcome: the measure-then-flip gate found that the
-    frontends with verifiable corpora (EE/UK) have latent escapes, and the
-    op-set-clean frontends (NO/SE) have no clean-corpus proof, so NONE qualifies
-    for the block promotion. A future edit that flips any profile to block
-    WITHOUT first proving its corpus boundary-clean breaks this gate loudly.
+    This pins the safety-first half of the measure-then-flip gate: NO/SE are
+    op-set-clean but have no clean-corpus proof, and UK's op set is clean but has
+    no verifiable real corpus in this environment, so NONE of the three qualifies
+    for the block promotion — each stays OBSERVE. A future edit that flips any of
+    these profiles to block WITHOUT first proving its corpus boundary-clean (the
+    way EE did in #108-EE, see ``test_ee_frontend_promoted_to_boundary_block``)
+    breaks this gate loudly.
     """
     import inspect
 
     import lawvm.norway.grafter as no_g
     import lawvm.sweden.grafter as se_g
-    import lawvm.estonia.grafter as ee_g
     import lawvm.uk_legislation.replay_executor as uk_x
 
     no_src = inspect.getsource(no_g.apply_no_ops)
     se_src = inspect.getsource(se_g.apply_se_ops)
-    ee_src = inspect.getsource(ee_g.apply_ee_ops)
     uk_src = inspect.getsource(uk_x.UKReplayExecutor._uk_seam_apply_profile)
 
-    for src in (no_src, se_src, ee_src, uk_src):
+    for src in (no_src, se_src, uk_src):
         assert 'boundary_mode="off"' in src
         assert 'boundary_mode="block"' not in src
+
+
+def test_ee_frontend_promoted_to_boundary_block() -> None:
+    """EE's production profile WAS promoted ``boundary_mode`` off -> "block" (#108-EE).
+
+    This is the other, earned half of the measure-then-flip gate: EE replayed its
+    REAL corpus in observe mode, found every escape was the one chapter-nesting
+    DECLARATION artifact, corrected the declaration WITHOUT changing any write
+    (``_ee_resolved_boundary_prefixes``), re-measured 0 escapes over the
+    30/120/300-statute samples, proved off-vs-block body-hash byte-identity, and
+    only THEN flipped its ``ApplyProfile.boundary_mode`` to "block" — the second
+    enforcing apply-seam gate after LS-03 occupancy. So EE alone carries
+    ``boundary_mode="block"`` and NOT "off".
+
+    The promotion is not free-floating: its corpus-clean proof and block-mode
+    enforcement live in the dedicated ``tests/test_ee_boundary_enforcement.py``.
+    This assertion anchors the profile marker to that guard so a future edit that
+    reverts EE to observe (or promotes it without the proof) is caught here.
+    """
+    import importlib
+    import inspect
+
+    import lawvm.estonia.grafter as ee_g
+
+    ee_src = inspect.getsource(ee_g.apply_ee_ops)
+    assert 'boundary_mode="block"' in ee_src
+    assert 'boundary_mode="off"' not in ee_src
+
+    # The block promotion is anchored to its corpus-clean enforcement guard: the
+    # declaration-correcting helper that drove the escape count to zero must
+    # exist, and its dedicated block-mode enforcement test suite must import.
+    assert hasattr(ee_g, "_ee_resolved_boundary_prefixes")
+    importlib.import_module("tests.test_ee_boundary_enforcement")
 
 
 # ── 3. The measurement drain is byte-identical (default None = no-op) ──────────
