@@ -535,6 +535,7 @@ def mint_uk_source_anchors(
     # touched by the op stream (the affecting acts are 9–56 per statute).
     bodies_by_artifact: Dict[str, List[_UniqueByteRunBody]] = {}
     clauses_by_artifact: Dict[str, List[str]] = {}
+    seen_clauses_by_artifact: Dict[str, set[str]] = {}
     for op in ops:
         src = op.source
         if src is None or src.source_anchor is not None:
@@ -542,6 +543,10 @@ def mint_uk_source_anchors(
         clause = src.raw_text or op.raw_text or ""
         if not clause:
             continue
+        seen_clauses = seen_clauses_by_artifact.setdefault(src.statute_id, set())
+        if clause in seen_clauses:
+            continue
+        seen_clauses.add(clause)
         clauses_by_artifact.setdefault(src.statute_id, []).append(clause)
 
     def _bodies_for(artifact_id: str, raw_bytes: bytes) -> List[_UniqueByteRunBody]:
