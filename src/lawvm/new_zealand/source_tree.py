@@ -269,6 +269,7 @@ def _parse_nz_source_document_uncached(
     nodes: list[NZSourceNode] = []
     document_history: list[NZHistoryWitness] = []
     attached_history_note_keys: set[str] = set()
+    legal_text_cache: dict[tuple[etree._Element, bool], str] = {}
 
     for child in root:
         _walk_source_nodes(
@@ -276,6 +277,7 @@ def _parse_nz_source_document_uncached(
             path=(),
             nodes=nodes,
             attached_history_note_keys=attached_history_note_keys,
+            legal_text_cache=legal_text_cache,
         )
 
     for note in _iter_localname(root, "history-note"):
@@ -311,6 +313,7 @@ def _walk_source_nodes(
     path: tuple[str, ...],
     nodes: list[NZSourceNode],
     attached_history_note_keys: set[str],
+    legal_text_cache: dict[tuple[etree._Element, bool], str],
 ) -> None:
     if not isinstance(node.tag, str):
         return
@@ -339,7 +342,7 @@ def _walk_source_nodes(
             label=label,
             heading=_direct_child_text(node, "heading"),
             deletion_status=_attr(node, "deletion-status"),
-            text=_legal_text(node),
+            text=_legal_text(node, cache=legal_text_cache),
             history=tuple(_history_witness(note) for note in history_notes),
             amend_instructions=_amend_instructions(node),
         )
@@ -350,6 +353,7 @@ def _walk_source_nodes(
                 path=current_path,
                 nodes=nodes,
                 attached_history_note_keys=attached_history_note_keys,
+                legal_text_cache=legal_text_cache,
             )
         return
     for child in node:
@@ -358,6 +362,7 @@ def _walk_source_nodes(
             path=path,
             nodes=nodes,
             attached_history_note_keys=attached_history_note_keys,
+            legal_text_cache=legal_text_cache,
         )
 
 
@@ -661,7 +666,7 @@ def _defpara_owned_children(defpara: etree._Element) -> list[etree._Element]:
     return owned
 
 
-def _legal_text(node: etree._Element) -> str:
+def _legal_text(node: etree._Element, *, cache: dict[tuple[etree._Element, bool], str] | None = None) -> str:
     texts: list[str] = []
     if isinstance(node.tag, str) and _localname(node) == "def-para":
         # Bound a packed multi-definition ``def-para`` to its first definition so
@@ -671,12 +676,13 @@ def _legal_text(node: etree._Element) -> str:
                 continue
             if _localname(child) in _TEXT_EXCLUDE_TAGS:
                 continue
-            _collect_legal_text(child, texts, is_root=False)
+            text = _collect_legal_text(child, is_root=False, cache=cache)
+            if text:
+                texts.append(text)
             if child.tail:
                 texts.append(child.tail)
         return _normalize_text(" ".join(texts))
-    _collect_legal_text(node, texts, is_root=True)
-    return _normalize_text(" ".join(texts))
+    return _normalize_text(_collect_legal_text(node, is_root=True, cache=cache))
 
 
 # Lettered-paragraph leaf kinds whose text may continue into a trailing
@@ -718,7 +724,11 @@ def _is_table_continuation_para(element: etree._Element) -> bool:
     return has_table
 
 
-def _trailing_table_continuation_text(leaf_element: etree._Element) -> str:
+def _trailing_table_continuation_text(
+    leaf_element: etree._Element,
+    *,
+    cache: dict[tuple[etree._Element, bool], str] | None = None,
+) -> str:
     """Flow text of label-less table ``<para>`` siblings trailing a leaf element.
 
     Walks the leaf element's following siblings and collects the legal text of
@@ -737,7 +747,7 @@ def _trailing_table_continuation_text(leaf_element: etree._Element) -> str:
             continue
         if not _is_table_continuation_para(sibling):
             break
-        text = _legal_text(sibling)
+        text = _legal_text(sibling, cache=cache)
         if text:
             parts.append(text)
         sibling = sibling.getnext()
@@ -758,11 +768,18 @@ def _walk_payload_root_nodes(matched_element: etree._Element) -> list[NZSourceNo
     from dataclasses import replace as _dc_replace
 
     nodes: list[NZSourceNode] = []
-    _walk_source_nodes(matched_element, path=("amend",), nodes=nodes, attached_history_note_keys=set())
+    legal_text_cache: dict[tuple[etree._Element, bool], str] = {}
+    _walk_source_nodes(
+        matched_element,
+        path=("amend",),
+        nodes=nodes,
+        attached_history_note_keys=set(),
+        legal_text_cache=legal_text_cache,
+    )
     if not nodes:
         return nodes
     if _localname(matched_element) in _TABLE_CONTINUATION_LEAF_KINDS:
-        continuation = _trailing_table_continuation_text(matched_element)
+        continuation = _trailing_table_continuation_text(matched_element, cache=legal_text_cache)
         if continuation:
             root = nodes[0]
             combined = _normalize_text(f"{root.text} {continuation}")
@@ -770,7 +787,12 @@ def _walk_payload_root_nodes(matched_element: etree._Element) -> list[NZSourceNo
     return nodes
 
 
-def _collect_legal_text(node: etree._Element, texts: list[str], *, is_root: bool) -> None:
+def _collect_legal_text(
+    node: etree._Element,
+    *,
+    is_root: bool,
+    cache: dict[tuple[etree._Element, bool], str] | None = None,
+) -> str:
     """Append a node's flow text in true document order.
 
     Emits ``node.text``, then each child's subtree text followed by that child's
@@ -791,9 +813,15 @@ def _collect_legal_text(node: etree._Element, texts: list[str], *, is_root: bool
     """
 
     if not isinstance(node.tag, str):
-        return
+        return ""
     if _localname_of_tag(node.tag) in _TEXT_EXCLUDE_TAGS:
-        return
+        return ""
+    key = (node, is_root)
+    if cache is not None:
+        cached = cache.get(key)
+        if cached is not None:
+            return cached
+    texts: list[str] = []
     # The structural root contributes only its descendant flow text, not its own
     # leading ``text`` (which for a structural element is empty/whitespace); this
     # matches the historical extraction so non-inline nodes are unchanged.
@@ -808,9 +836,15 @@ def _collect_legal_text(node: etree._Element, texts: list[str], *, is_root: bool
             # Excluded subtree: skip its text and the tail that trails it, to
             # keep the historical "notes/history contribute nothing" behaviour.
             continue
-        _collect_legal_text(child, texts, is_root=False)
+        child_text = _collect_legal_text(child, is_root=False, cache=cache)
+        if child_text:
+            texts.append(child_text)
         if child.tail:
             texts.append(child.tail)
+    text = " ".join(texts)
+    if cache is not None:
+        cache[key] = text
+    return text
 
 
 # Amend-subtree section disambiguation. --------------------------------------
