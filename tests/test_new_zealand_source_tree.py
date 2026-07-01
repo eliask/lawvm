@@ -127,6 +127,13 @@ def test_node_text_leaf_fast_path_matches_mixed_content_normalization() -> None:
     assert source_tree._node_text(mixed) == "A B C"
 
 
+def test_normalize_text_fast_path_preserves_whitespace_semantics() -> None:
+    assert source_tree._normalize_text("") == ""
+    assert source_tree._normalize_text("Section") == "Section"
+    assert source_tree._normalize_text("  Section   10\nA\t") == "Section 10 A"
+    assert source_tree._normalize_text("A\u00a0B") == "A B"
+
+
 def test_schedule_indirection_detector_uses_caller_owned_cache(monkeypatch: pytest.MonkeyPatch) -> None:
     node = etree.fromstring(
         b"""\
