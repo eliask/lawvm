@@ -325,6 +325,7 @@ def commencement_eid_set(
 
     # Collect directly commenced EIDs: section/schedule/paragraph nodes and descendants.
     commenced: set[str] = set()
+    match_cache: dict[TreePath, tuple[IRNode, ...]] = {}
 
     for effect in comm_effects:
         prov_str = effect.affected_provisions.strip()
@@ -347,13 +348,23 @@ def commencement_eid_set(
             if not addr.path:
                 continue
 
-            matching = _nodes_matching_address(
-                all_ir_nodes,
-                addr.path,
-                observations_out=observations_out,
-                effect=effect,
-                source_ref=part,
+            cacheable_match = not (
+                addr.path[0][0] == "schedule" and not str(addr.path[0][1] or "").strip()
             )
+            if cacheable_match and addr.path in match_cache:
+                matching = match_cache[addr.path]
+            else:
+                matching = tuple(
+                    _nodes_matching_address(
+                        all_ir_nodes,
+                        addr.path,
+                        observations_out=observations_out,
+                        effect=effect,
+                        source_ref=part,
+                    )
+                )
+                if cacheable_match:
+                    match_cache[addr.path] = matching
             for node in matching:
                 commenced.update(_collect_all_eids(node))
 
