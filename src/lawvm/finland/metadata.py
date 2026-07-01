@@ -1191,10 +1191,16 @@ def _separate_commencement_witness_index() -> dict[str, tuple[SeparateCommenceme
     from lawvm.finland.corpus import get_corpus
 
     corpus = get_corpus()
-    statute_ids = tuple(sorted(corpus.list_statute_ids()))
     index: dict[str, list[SeparateCommencementLawWitness]] = {}
-    for source_id in statute_ids:
-        xml_bytes = _read_source_for_separate_commencement_scan(corpus, source_id)
+    iter_source_bytes = getattr(corpus, "iter_source_bytes_for_internal_scan", None)
+    if callable(iter_source_bytes):
+        source_rows = iter_source_bytes()
+    else:
+        source_rows = (
+            (source_id, _read_source_for_separate_commencement_scan(corpus, source_id))
+            for source_id in tuple(sorted(corpus.list_statute_ids()))
+        )
+    for source_id, xml_bytes in source_rows:
         if (
             xml_bytes is None
             or b"tulevat voimaan" not in xml_bytes
