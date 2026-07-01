@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from lawvm.core.ir import LegalAddress
+from lawvm.us_federal import source_tree
 from lawvm.us_federal.source_tree import (
     UscSection,
     UscStatutoryParagraph,
@@ -46,6 +47,20 @@ def test_fixture_section_count_and_numbers(fixture_bytes: bytes) -> None:
     assert doc.report.findings == []
     assert doc.report.sections_without_source_credit == []
     assert doc.report.sections_without_statutory_text == []
+
+
+def test_parse_usc_title_document_cache_reuses_sections_with_fresh_report(
+    fixture_bytes: bytes,
+) -> None:
+    source_tree._usc_title_document_cache.clear()
+    first = parse_usc_title_document(fixture_bytes, year="2023", locator="fixture")
+    second = parse_usc_title_document(fixture_bytes, year="2023", locator="fixture")
+
+    assert first.sections is second.sections
+    assert first.report is not second.report
+    first.report.findings.append({"rule_id": "test_mutation", "reason": "local"})
+    third = parse_usc_title_document(fixture_bytes, year="2023", locator="fixture")
+    assert third.report.findings == []
 
 
 def test_section_address_is_title_section_pinned_convention(fixture_bytes: bytes) -> None:

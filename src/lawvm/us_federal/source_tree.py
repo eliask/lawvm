@@ -40,7 +40,7 @@ from __future__ import annotations
 import hashlib
 import re
 import xml.etree.ElementTree as ET
-from collections import Counter
+from collections import Counter, OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Iterator
 
@@ -136,6 +136,11 @@ _INDENT_KIND = {
 }
 
 _SUBSECTION_PARSE_AMBIGUOUS = "us_usc_subsection_parse_ambiguous"
+_USC_TITLE_DOCUMENT_CACHE_MAX = 16
+_usc_title_document_cache: OrderedDict[
+    tuple[str, int | None, str, str],
+    "UscSourceDocument",
+] = OrderedDict()
 
 _ROMAN_VALUES = (
     (1000, "m"), (900, "cm"), (500, "d"), (400, "cd"),
@@ -575,6 +580,34 @@ def parse_usc_title_document(
     year: str = "",
     locator: str = "",
 ) -> UscSourceDocument:
+    """Parse a USCODE annual-edition title htm into a typed section tree."""
+
+    key = (hashlib.sha256(htm_bytes).hexdigest(), title, str(year), str(locator))
+    cached = _usc_title_document_cache.get(key)
+    if cached is not None:
+        _usc_title_document_cache.move_to_end(key)
+        return _clone_usc_source_document(cached)
+
+    parsed = _parse_usc_title_document_uncached(
+        htm_bytes,
+        title=title,
+        year=year,
+        locator=locator,
+    )
+    _usc_title_document_cache[key] = parsed
+    _usc_title_document_cache.move_to_end(key)
+    while len(_usc_title_document_cache) > _USC_TITLE_DOCUMENT_CACHE_MAX:
+        _usc_title_document_cache.popitem(last=False)
+    return _clone_usc_source_document(parsed)
+
+
+def _parse_usc_title_document_uncached(
+    htm_bytes: bytes,
+    *,
+    title: int | None = None,
+    year: str = "",
+    locator: str = "",
+) -> UscSourceDocument:
     """Parse a USCODE annual-edition title htm into a typed section tree.
 
     ``title`` defaults to the ``AUTHORITIES-USC-TITLE-ENUM`` header comment when
@@ -635,6 +668,27 @@ def parse_usc_title_document(
 
     return UscSourceDocument(
         title=title, year=year, locator=locator, sections=tuple(sections), report=report
+    )
+
+
+def _clone_usc_source_document(doc: UscSourceDocument) -> UscSourceDocument:
+    """Return ``doc`` with fresh mutable report lists and shared frozen sections."""
+
+    report = UscSourceShapeReport(
+        title=doc.report.title,
+        year=doc.report.year,
+        section_count=doc.report.section_count,
+        repealed_count=doc.report.repealed_count,
+        sections_without_source_credit=list(doc.report.sections_without_source_credit),
+        sections_without_statutory_text=list(doc.report.sections_without_statutory_text),
+        findings=[dict(finding) for finding in doc.report.findings],
+    )
+    return UscSourceDocument(
+        title=doc.title,
+        year=doc.year,
+        locator=doc.locator,
+        sections=doc.sections,
+        report=report,
     )
 
 
