@@ -790,9 +790,10 @@ class UKReplayStateMixin:
 
         Builds a new parent with ``new_node`` inserted at the sorted position
         via ``uk_insert_child_sorted_cow``, threads the new parent up to the
-        statute root with ``_replace_ancestor_chain`` (which atomically clears
-        the eID lookup index and node-reference caches), then records the
-        structural mutation event. No in-place mutation of
+        statute root with ``_replace_ancestor_chain_preserve_warm_index`` (which
+        re-keys existing eID lookup entries because insertions preserve all
+        existing descendants), then records the structural mutation event. No
+        in-place mutation of
         ``parent.children`` occurs at any level.
 
         Returns True when the insert landed; False when the duplicate
@@ -803,7 +804,7 @@ class UKReplayStateMixin:
         new_parent, inserted_idx = uk_insert_child_sorted_cow(parent, new_node)
         if inserted_idx is None:
             return False
-        if not self._replace_ancestor_chain(parent, new_parent):
+        if not self._replace_ancestor_chain_preserve_warm_index(parent, new_parent):
             return False
         self._record_child_inserted(new_parent, new_node)
         return True
@@ -827,7 +828,7 @@ class UKReplayStateMixin:
         if not ok:
             return False
         new_parent = with_children(parent, new_children)
-        if not self._replace_ancestor_chain(parent, new_parent):
+        if not self._replace_ancestor_chain_preserve_warm_index(parent, new_parent):
             return False
         self._record_child_inserted(new_parent, new_node)
         return True
@@ -850,7 +851,7 @@ class UKReplayStateMixin:
         the inserted child for lineage bookkeeping.
         """
         new_parent = with_children(parent, new_children)
-        if not self._replace_ancestor_chain(parent, new_parent):
+        if not self._replace_ancestor_chain_preserve_warm_index(parent, new_parent):
             return False
         self._record_child_inserted(new_parent, new_node)
         return True
@@ -1028,6 +1029,56 @@ class UKReplayStateMixin:
                 new_supplements[s_idx] = new_supp_root
                 self.statute = dc_replace(self.statute, supplements=tuple(new_supplements))
                 self._clear_eid_lookup_index()
+                return True
+        return False
+
+    def _replace_ancestor_chain_preserve_warm_index(
+        self,
+        old_node: IRNode,
+        new_node: IRNode,
+    ) -> bool:
+        """Thread an insert-style CoW rebuild to root without dropping the
+        warm eID index.
+
+        This helper is deliberately narrower than ``_replace_ancestor_chain``:
+        callers must preserve every existing descendant under ``old_node`` and
+        only add new children separately via ``_record_child_inserted``. That
+        lets existing entries be re-keyed to rebuilt ancestor objects, then the
+        inserted subtree is added explicitly. Broader structural rewrites keep
+        using the conservative full-clear helper.
+        """
+        body_path = self._find_path_to_node(self.statute.body, old_node)
+        if body_path is not None:
+            new_body, chain = self._replace_descendant_at_path_with_chain(
+                self.statute.body,
+                body_path,
+                new_node,
+            )
+            self.statute = dc_replace(self.statute, body=new_body)
+            self._rekey_eid_index_after_cow_chain(chain)
+            self._rekey_node_tree_path_index_after_cow_chain(chain)
+            return True
+        for s_idx, root in enumerate(self.statute.supplements):
+            if root is old_node:
+                new_supplements = list(self.statute.supplements)
+                new_supplements[s_idx] = new_node
+                self.statute = dc_replace(self.statute, supplements=tuple(new_supplements))
+                chain = [(old_node, new_node)]
+                self._rekey_eid_index_after_cow_chain(chain)
+                self._rekey_node_tree_path_index_after_cow_chain(chain)
+                return True
+            supp_path = self._find_path_to_node(root, old_node)
+            if supp_path is not None:
+                new_supp_root, chain = self._replace_descendant_at_path_with_chain(
+                    root,
+                    supp_path,
+                    new_node,
+                )
+                new_supplements = list(self.statute.supplements)
+                new_supplements[s_idx] = new_supp_root
+                self.statute = dc_replace(self.statute, supplements=tuple(new_supplements))
+                self._rekey_eid_index_after_cow_chain(chain)
+                self._rekey_node_tree_path_index_after_cow_chain(chain)
                 return True
         return False
 
