@@ -92,6 +92,7 @@ _BENCH_DIR = _REPO_ROOT / "data" / "uk_bench_runs"
 _HISTORY_CSV = _REPO_ROOT / "data" / "uk_benchmark_history.csv"
 _CORPUS_CSV = _REPO_ROOT / "data" / "uk" / "bench_corpus.csv"
 _TEXT_RATIO_CACHE_MAX_CHARS = 4096
+_TEXT_RATIO_LOCAL_CACHE_MAX_PAIRS = 8192
 _CURATE_PRESET_SIZES = {
     "canary": 40,
     "tight": 200,
@@ -721,6 +722,23 @@ def _bench_text_ratio(source_text: str, oracle_text: str) -> float:
     return Levenshtein.ratio(source_text, oracle_text)
 
 
+def _bench_text_ratio_with_local_cache(
+    source_text: str,
+    oracle_text: str,
+    local_cache: dict[tuple[str, str], float],
+) -> float:
+    if source_text == oracle_text:
+        return 1.0
+    key = (source_text, oracle_text)
+    cached = local_cache.get(key)
+    if cached is not None:
+        return cached
+    ratio = _bench_text_ratio(source_text, oracle_text)
+    if len(local_cache) < _TEXT_RATIO_LOCAL_CACHE_MAX_PAIRS:
+        local_cache[key] = ratio
+    return ratio
+
+
 class _TextSimilarityScore(NamedTuple):
     score: float
     compared_count: int
@@ -729,6 +747,8 @@ class _TextSimilarityScore(NamedTuple):
 def _text_similarity_score(
     source_texts: Dict[str, str],
     oracle_texts: Dict[str, str],
+    *,
+    local_ratio_cache: dict[tuple[str, str], float] | None = None,
 ) -> _TextSimilarityScore:
     """Average Levenshtein ratio across common EIDs that have non-empty text.
 
@@ -743,7 +763,14 @@ def _text_similarity_score(
         oracle_text = oracle_texts[eid]
         if not source_text or not oracle_text:
             continue
-        total += _bench_text_ratio(source_text, oracle_text)
+        if local_ratio_cache is None:
+            total += _bench_text_ratio(source_text, oracle_text)
+        else:
+            total += _bench_text_ratio_with_local_cache(
+                source_text,
+                oracle_text,
+                local_ratio_cache,
+            )
         compared += 1
     if not compared:
         return _TextSimilarityScore(-1.0, 0)
@@ -1843,6 +1870,7 @@ def _score_statute(
     lowering_rejections: list[dict[str, Any]] = []
     effect_diagnostics: list[dict[str, Any]] = []
     uk_authority_rejection_count = 0
+    text_ratio_cache: dict[tuple[str, str], float] = {}
     uk_authority_rejection_rule_counts: dict[str, int] = {}
     uk_authority_observation_count = 0
     uk_authority_observation_rule_counts: dict[str, int] = {}
@@ -2090,7 +2118,9 @@ def _score_statute(
                 canonicalize_compare_eid(k): v for k, v in oracle_text_map.items()
             }
             text_similarity_score = _text_similarity_score(
-                enacted_texts, oracle_texts_canon
+                enacted_texts,
+                oracle_texts_canon,
+                local_ratio_cache=text_ratio_cache,
             )
             text_score = text_similarity_score.score
             n_text_compared = text_similarity_score.compared_count
@@ -2398,6 +2428,7 @@ def _score_statute(
                     replay_text_score = _text_similarity_score(
                         replayed_texts,
                         oracle_text_map,
+                        local_ratio_cache=text_ratio_cache,
                     ).score
                     _mark_phase("text_score_replay")
             except Exception as replay_exc:

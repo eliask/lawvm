@@ -36,6 +36,32 @@ def test_uk_bench_commencement_score_requires_commenced_eid_evidence() -> None:
     assert uk_bench._score_commenced_eids({"section-1"}, {"section-1", "section-2"}) == 0.5
 
 
+def test_uk_bench_text_similarity_reuses_local_long_ratio_cache(monkeypatch) -> None:
+    calls = 0
+
+    def fake_ratio(left: str, right: str) -> float:
+        nonlocal calls
+        calls += 1
+        assert len(left) + len(right) > uk_bench._TEXT_RATIO_CACHE_MAX_CHARS
+        return 0.75
+
+    monkeypatch.setattr(uk_bench.Levenshtein, "ratio", fake_ratio)
+    source = "alpha " * 700
+    oracle = "alpha " * 699 + "beta"
+    local_cache: dict[tuple[str, str], float] = {}
+
+    score = uk_bench._text_similarity_score(
+        {"section-1": source, "section-2": source},
+        {"section-1": oracle, "section-2": oracle},
+        local_ratio_cache=local_cache,
+    )
+
+    assert score.score == 0.75
+    assert score.compared_count == 2
+    assert calls == 1
+    assert len(local_cache) == 1
+
+
 def test_uk_bench_parallel_default_respects_cpu_count() -> None:
     # After source-root eviction (commit 89e0e152) per-worker peak RSS dropped
     # to ~860 MB; the old replay cap of 4 is no longer needed.  Both replay and
