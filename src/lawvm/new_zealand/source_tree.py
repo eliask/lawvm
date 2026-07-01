@@ -270,7 +270,11 @@ def _parse_nz_source_document_uncached(
     document_history: list[NZHistoryWitness] = []
     attached_history_note_keys: set[str] = set()
     legal_text_cache: dict[tuple[etree._Element, bool], str] = {}
-    amend_instruction_candidate_nodes = _amend_instruction_candidate_nodes(root)
+    amend_instruction_candidate_nodes = (
+        _amend_instruction_candidate_nodes(root)
+        if b"amend.in" in xml_bytes
+        else set()
+    )
 
     for child in root:
         _walk_source_nodes(

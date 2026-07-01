@@ -53,6 +53,25 @@ def test_parse_nz_source_document_extracts_nodes_and_history() -> None:
     assert "Section 1: amended" not in prov.text
 
 
+def test_parse_nz_source_document_skips_amend_instruction_scan_without_literal(monkeypatch) -> None:
+    xml = b"""\
+<act>
+  <body>
+    <prov id="S1"><label>1</label><heading>Title</heading></prov>
+  </body>
+</act>
+"""
+
+    def fail_scan(_root):
+        raise AssertionError("amend.in scanner should be skipped when literal is absent")
+
+    monkeypatch.setattr(source_tree, "_amend_instruction_candidate_nodes", fail_scan)
+
+    document = parse_nz_source_document(xml)
+
+    assert document.summary()["nodes"] == 1
+
+
 def test_parse_nz_source_document_records_deletion_status() -> None:
     xml = b"""\
 <act>
