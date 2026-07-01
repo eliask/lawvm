@@ -59,8 +59,10 @@ from lawvm.core.char_span_metric import (
     char_span_boundary_holds,
 )
 from lawvm.core.coverage import CoverageClaim
+from lawvm.core.execution_authorization import ExecutionAuthorization
 from lawvm.core.ir import LegalOperation, OperationSource
 from lawvm.core.phase_result import Observation
+from lawvm.core.quirks_disposition import QuirksDisposition
 from lawvm.us_federal.dry_run import (
     UscSection,
     _locate_subsection_text,
@@ -75,6 +77,9 @@ __all__ = [
     "us_apply_profile",
     "apply_us_op",
     "us_coverage_claim_for_op",
+    "us_public_law_authorization_rule_id",
+    "_mint_us_execution_authorization",
+    "_us_execution_authorization",
 ]
 
 # Additive observe-mode finding: a US op whose edited char span escaped its
@@ -188,6 +193,120 @@ def _us_materializer_factory(
     return _materialize
 
 
+# ── EV-05 execution-authorization: US proof minting + resolver ────────────────
+#
+# The genuine authority for a US state-mutating op is its ORIGINATING amending
+# instrument — the Public Law (or older Statutes-at-Large act) whose amendatory
+# instruction directed the change. US already carries that identity on every op it
+# lowered from a real amendment source: ``op.source.statute_id`` is the amending
+# Public Law key (``"{congress}-{number}"``, e.g. ``"117-2"``) — the same key the
+# OLRC Table III classification vocabulary uses (see the act-name -> PL registry,
+# ``us_federal/act_name_registry.py``, and ``_lower_instruction``'s
+# ``OperationSource(statute_id=...)`` in ``us_federal/amendatory.py``).
+#
+# ``_mint_us_execution_authorization`` projects that known authority into a typed
+# :class:`ExecutionAuthorization` proof; the US resolver
+# (:func:`_us_execution_authorization`) prefers a proof already minted onto the
+# op's carrier (``op.execution_authorization`` — the generic
+# ``core/apply_seam.read_op_execution_authorization`` path) and otherwise mints one
+# HERE from the op's source identity, so US need not re-stamp every upstream
+# op-construction site (byte-identity-safe). An op with NO amending-instrument
+# identity (``op.source`` is ``None`` / blank ``statute_id``) has UNKNOWN authority
+# — no proof is fabricated, so the EV-05 observe gate fires honestly on it (the
+# real unauthorized residue).
+
+#: The US execution-authorization rule family stamped into a minted proof's
+#: ``detail``. The concrete ``authorization_rule_id`` appends the originating
+#: Public-Law key, so the proof points at the concrete authorizing instrument
+#: (``us_public_law:<congress>-<number>``).
+_US_EXECUTION_AUTHORIZATION_RULE = "us_public_law_authorizes_apply"
+
+
+def us_public_law_authorization_rule_id(statute_id: str) -> str:
+    """The concrete EV-05 ``authorization_rule_id`` for a US originating PL key.
+
+    Names the originating amending instrument (``us_public_law:<statute_id>``).
+    Returns ``""`` for a blank key — the caller then mints no proof (unknown
+    authority, honest residue), never a fabricated rule id.
+    """
+    key = (statute_id or "").strip()
+    return f"us_public_law:{key}" if key else ""
+
+
+def _mint_us_execution_authorization(
+    op: LegalOperation,
+) -> Optional[ExecutionAuthorization]:
+    """Mint a typed ``ExecutionAuthorization`` from a US op's amending-PL identity.
+
+    The authority a US op carries is its originating amending instrument: the
+    Public Law (or older Statutes-at-Large act) whose amendatory instruction
+    directed this change is what authorizes the apply. When the op carries a real
+    ``op.source.statute_id`` (the originating PL key, ``"{congress}-{number}"``),
+    that is a GENUINELY KNOWN authority, so we mint a replay-authorized proof whose
+    ``authorization_rule_id`` names the concrete instrument
+    (``us_public_law:<statute_id>``) and whose ``detail`` records the enacted date
+    + target-resolution provenance tag (read-as-witness only — §2.10). When the op
+    carries no amending-instrument identity (no ``source`` / blank ``statute_id``),
+    the authority is UNKNOWN: we return ``None`` and never fabricate a proof, so the
+    EV-05 gate honestly witnesses that op as unauthorized.
+
+    The proof is replay-authorized (``executable``/``replay_authorized`` both
+    ``True``) because the amending Public Law IS the apply authority for US's
+    replay lane — US's apply is the instrument executing its own directed changes.
+    This is the honest US footing, not a blanket pass: the gate still fires on
+    every op whose authorizing instrument is not identified.
+    """
+    source = op.source
+    statute_id = (source.statute_id if source is not None else "") or ""
+    rule_id = us_public_law_authorization_rule_id(statute_id)
+    if not rule_id:
+        return None
+    resolution = ""
+    for tag in op.provenance_tags:
+        if isinstance(tag, str) and tag.startswith("target_resolution:"):
+            resolution = tag.split(":", 1)[1]
+            break
+    return ExecutionAuthorization(
+        executable=True,
+        replay_authorized=True,
+        authorization_status="replay_authorized",
+        authorization_rule_id=rule_id,
+        owner_phase="apply",
+        strict_disposition="record",
+        quirks_disposition=QuirksDisposition.RECORD,
+        safe_default="execute_only_after_amending_public_law_identity_is_known",
+        required_proofs=(),
+        forbidden_shortcuts=(
+            "treat_op_existence_as_replay_authority_without_amending_public_law",
+        ),
+        detail={
+            "rule_family": _US_EXECUTION_AUTHORIZATION_RULE,
+            "amending_public_law": statute_id,
+            "enacted": (source.enacted if source is not None else "") or "",
+            "target_resolution": resolution,
+            "owner": "us_federal/apply_profile:_mint_us_execution_authorization",
+        },
+    )
+
+
+def _us_execution_authorization(
+    op: LegalOperation,
+) -> Optional[ExecutionAuthorization]:
+    """US ``authorization_resolver``: read a minted proof, else mint from source.
+
+    Prefers an ``ExecutionAuthorization`` already minted onto the op's
+    ``execution_authorization`` carrier (the generic
+    ``core/apply_seam.read_op_execution_authorization`` path); if the op carries
+    none, mints one from its amending-PL identity via
+    :func:`_mint_us_execution_authorization`. Returns ``None`` only when the op's
+    authority is genuinely unknown (no amending Public Law) — the honest EV-05
+    residue the seam's observe gate witnesses.
+    """
+    if op.execution_authorization is not None:
+        return op.execution_authorization
+    return _mint_us_execution_authorization(op)
+
+
 def us_apply_profile(
     before_section: Optional[UscSection] = None,
     *,
@@ -216,6 +335,23 @@ def us_apply_profile(
         boundary_mode="off",  # the IR gate never runs; the char audit is explicit
         emit_receipts=False,
         emit_coverage=False,
+        # ── US EV-05 authorization resolver (this task). ────────────────────
+        # ``authorization_resolver`` mints/reads a real ``ExecutionAuthorization``
+        # proof from each op's amending-Public-Law identity
+        # (``_us_execution_authorization``) so the universal EV-05 observe gate
+        # (``apply_seam._execution_authorization_observe``, which runs for the
+        # char-span lane too — it is metric-agnostic) goes QUIET for every op
+        # whose authorizing PL is known and fires only on the genuinely
+        # unauthorized residue (the firewall hole drops from ~100% to the real
+        # unauthorized fraction). OBSERVE-only: the gate's witnesses route to the
+        # seam's ``AppliedOp.observations`` lane (never production ``findings``),
+        # so US's materialized text + dry-run report stay byte-identical. US is
+        # NOT flipped to block on EV-05 — that is a future measure-then-promote
+        # step. AM-01 is NOT wired: US ops carry no closed Parsed-vs-Recovered
+        # provenance signal (``target_resolution:`` is an open target-recovery
+        # vocabulary, not a derivation-confidence binary), so a provenance
+        # resolver would fabricate a verdict — left at the default no-op.
+        authorization_resolver=_us_execution_authorization,
     )
 
 

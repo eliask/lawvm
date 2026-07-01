@@ -215,6 +215,9 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_us_uslm_parser.py",
         "test_us_write_receipts.py",
         "test_us_apply_seam_boundary.py",
+        # EV-05 execution-authorization proof carrier for the US char-span apply
+        # lane (``us_federal/apply_profile.py`` mint/read + resolver wiring).
+        "test_us_proof_carrier.py",
         # task #105: US same-moment cross-act conflict detection + ordering parity
         # (``us_federal/us_ordering.py`` routed through the shared ``order_ops``).
         "test_us_same_moment.py",
