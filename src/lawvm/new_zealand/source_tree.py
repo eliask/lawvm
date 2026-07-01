@@ -2366,14 +2366,16 @@ def _normalize_text(text: str) -> str:
         return ""
     if (
         text.isascii()
-        and " " not in text
         and "\n" not in text
         and "\t" not in text
         and "\r" not in text
         and "\f" not in text
         and "\v" not in text
     ):
-        return text
+        if " " not in text:
+            return text
+        if text[0] != " " and text[-1] != " " and "  " not in text:
+            return text
     return " ".join(text.split())
 
 
