@@ -70,6 +70,8 @@ from lawvm.finland.references.cited_version import (
 )
 from lawvm.finland.post_process import _canonicalize_section_shell_order
 from lawvm.finland.tree_invariant_allowances import (
+    base_final_provisions_section_labels,
+    is_base_authored_final_provisions_section_violation,
     is_terminal_fi_commencement_section_violation,
 )
 from lawvm.finland.temporal_rewrites import reconcile_temporal_event_expiry_with_op_sources
@@ -548,31 +550,56 @@ def _content_is_editorial_repeal_notice(
 def fi_product_tree_invariant_violations(
     tree: IRNode,
     profile: TreeInvariantProfile,
+    *,
+    base_final_provisions_labels: frozenset[str] = frozenset(),
 ) -> tuple[TreeInvariantViolation, ...]:
-    """Collect FI product tree invariants after FI source-shape allowances."""
+    """Collect FI product tree invariants after FI source-shape allowances.
+
+    ``base_final_provisions_labels`` (from ``base_final_provisions_section_labels``
+    over the base IR) additionally suppresses mixed_hierarchy rows for sections
+    that are base-authored in a bare final-provisions block — benign editorial
+    artifacts, not replay INSERT-hoists.  Purely diagnostic filtering: these
+    functions feed only ``product_invariant_violations`` /
+    ``typed_product_tree_invariant_violations`` metadata, never tree production.
+    """
     return tuple(
         violation
         for violation in collect_tree_invariant_violations(tree, profile)
         if not is_terminal_fi_commencement_section_violation(tree, violation)
+        and not is_base_authored_final_provisions_section_violation(
+            violation, base_final_provisions_labels
+        )
     )
 
 
 def fi_product_tree_invariant_messages(
     tree: IRNode,
     profile: TreeInvariantProfile,
+    *,
+    base_final_provisions_labels: frozenset[str] = frozenset(),
 ) -> tuple[str, ...]:
     return tuple(
         f"{profile.surface}:{violation.message}"
-        for violation in fi_product_tree_invariant_violations(tree, profile)
+        for violation in fi_product_tree_invariant_violations(
+            tree,
+            profile,
+            base_final_provisions_labels=base_final_provisions_labels,
+        )
     )
 
 
 def fi_product_tree_invariant_dicts(
     tree: IRNode,
     profile: TreeInvariantProfile,
+    *,
+    base_final_provisions_labels: frozenset[str] = frozenset(),
 ) -> tuple[dict[str, object], ...]:
     return project_tree_invariant_dicts(
-        fi_product_tree_invariant_violations(tree, profile),
+        fi_product_tree_invariant_violations(
+            tree,
+            profile,
+            base_final_provisions_labels=base_final_provisions_labels,
+        ),
         profile,
     )
 
@@ -2641,16 +2668,19 @@ def validate_replay_products(
         violations.append(f"replay_fold_tree:{violation}")
     for violation in check_invariants(products.materialized_state.ir):
         violations.append(f"materialized_tree:{violation}")
+    base_final_provisions_labels = base_final_provisions_section_labels(ctx.base_ir)
     violations.extend(
         fi_product_tree_invariant_messages(
             products.replay_fold_state.ir,
             _FI_REPLAY_FOLD_MIXED_HIERARCHY_PROFILE,
+            base_final_provisions_labels=base_final_provisions_labels,
         )
     )
     violations.extend(
         fi_product_tree_invariant_messages(
             products.materialized_state.ir,
             _FI_MATERIALIZED_MIXED_HIERARCHY_PROFILE,
+            base_final_provisions_labels=base_final_provisions_labels,
         )
     )
     violations.extend(

@@ -29,6 +29,9 @@ from lawvm.finland.replay_products import ReplayProducts
 from lawvm.finland.replay_products import fi_product_tree_invariant_dicts
 from lawvm.finland.replay_products import validate_replay_products
 from lawvm.finland.statute import StatuteContext
+from lawvm.finland.tree_invariant_allowances import (
+    base_final_provisions_section_labels,
+)
 
 _FI_REPLAY_FOLD_PRODUCT_TREE_PROFILE = structural_product_hierarchical_profile("replay_fold_tree")
 _FI_MATERIALIZED_PRODUCT_TREE_PROFILE = structural_product_hierarchical_profile("materialized_tree")
@@ -168,17 +171,22 @@ def project_replay_products(request: ReplayProductProjectionRequest) -> ReplayPr
                 )
             )
             seen_cited_drops.add(key)
+    base_final_provisions_labels = base_final_provisions_section_labels(
+        request.ctx.base_ir
+    )
     typed_product_tree_violations = {
         "replay_fold_tree": list(
             fi_product_tree_invariant_dicts(
                 products.replay_fold_state.ir,
                 _FI_REPLAY_FOLD_PRODUCT_TREE_PROFILE,
+                base_final_provisions_labels=base_final_provisions_labels,
             )
         ),
         "materialized_tree": list(
             fi_product_tree_invariant_dicts(
                 products.materialized_state.ir,
                 _FI_MATERIALIZED_PRODUCT_TREE_PROFILE,
+                base_final_provisions_labels=base_final_provisions_labels,
             )
         ),
     }

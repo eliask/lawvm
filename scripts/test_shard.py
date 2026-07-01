@@ -309,6 +309,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     ),
     "finland_replay_products_core": (
         "test_fi_replay_products.py",
+        "test_fi_base_final_provisions_allowance.py",
         "test_fi_seam_raw_text_witness.py",
         # Duplicate pure-kumotaan REPEAL suppression regression (kumotaan_replay.py:406 +
         # PureKumotaanInjectedRepeal witness for §2.10 monotone evidence).

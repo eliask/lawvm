@@ -41,6 +41,7 @@ from lawvm.finland.replay_evidence_projection import (
     project_replay_evidence,
 )
 from lawvm.finland.replay_fold_projection import ReplayFoldProjectionRequest, project_replay_fold
+from lawvm.finland.tree_invariant_allowances import base_final_provisions_section_labels
 from lawvm.finland.replay_notices import (
     replay_print as _replay_print,
     reset_replay_verbose as _reset_replay_verbose,
@@ -189,6 +190,9 @@ def replay_xml(
         )
         if temporal_events_out is not None:
             temporal_events_out.extend(signals.temporal_events)
+        base_final_provisions_labels = base_final_provisions_section_labels(
+            plan.ctx.base_ir
+        )
         replay_fold_state = project_replay_fold(
             ReplayFoldProjectionRequest(
                 state=replay_fold_state,
@@ -196,6 +200,7 @@ def replay_xml(
                 replay_findings=signals.findings,
                 replay_meta_out=replay_meta_out,
                 replay_print=_replay_print,
+                base_final_provisions_labels=base_final_provisions_labels,
             )
         )
         project_replay_evidence(
