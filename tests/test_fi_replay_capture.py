@@ -89,6 +89,10 @@ def test_replay_legal_operation_capture_list_invalidates_snapshot_index_on_rewri
     history.base_target_exists_cache = {("base-target",): base_target_sentinel}
     exact_target_sentinel = object()
     history.timeline_exact_target_index = {("exact",): exact_target_sentinel}
+    repeal_placeholder_sentinel = object()
+    history.timeline_latest_repeal_placeholder_index = {
+        ("repeal-placeholder",): repeal_placeholder_sentinel
+    }
     payload_target_sentinel = object()
     history.timeline_payload_target_index = {("payload",): payload_target_sentinel}
     history.timeline_target_exists_cache = {("cached",): True}
@@ -99,6 +103,7 @@ def test_replay_legal_operation_capture_list_invalidates_snapshot_index_on_rewri
     assert history.base_provision_index_cache is None
     assert history.base_target_exists_cache == {("base-target",): base_target_sentinel}
     assert history.timeline_exact_target_index is None
+    assert history.timeline_latest_repeal_placeholder_index is None
     assert history.timeline_payload_target_index is None
     assert history.timeline_target_exists_cache is None
     assert _snapshot_section_los_for_identity(history, section_1) == []
@@ -135,6 +140,10 @@ def test_replay_legal_operation_capture_list_keeps_indexes_across_append() -> No
     history.base_target_exists_cache = {("base-target",): base_target_sentinel}
     exact_target_sentinel = object()
     history.timeline_exact_target_index = {("exact",): exact_target_sentinel}
+    repeal_placeholder_sentinel = object()
+    history.timeline_latest_repeal_placeholder_index = {
+        ("repeal-placeholder",): repeal_placeholder_sentinel
+    }
     payload_target_sentinel = object()
     history.timeline_payload_target_index = {("payload",): payload_target_sentinel}
     history.timeline_target_exists_cache = {("cached",): True}
@@ -151,6 +160,9 @@ def test_replay_legal_operation_capture_list_keeps_indexes_across_append() -> No
     assert history.base_provision_index_cache is not None
     assert history.base_target_exists_cache == {("base-target",): base_target_sentinel}
     assert history.timeline_exact_target_index == {("exact",): exact_target_sentinel}
+    assert history.timeline_latest_repeal_placeholder_index == {
+        ("repeal-placeholder",): repeal_placeholder_sentinel
+    }
     assert history.timeline_payload_target_index == {("payload",): payload_target_sentinel}
     assert history.timeline_target_exists_cache == {("cached",): True}
 

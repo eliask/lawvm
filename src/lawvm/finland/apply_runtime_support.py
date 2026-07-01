@@ -4481,10 +4481,25 @@ def _emit_section_snapshot(
         )
 
         def _latest_prior_exact_target_is_repeal_placeholder(child_path: Path) -> bool:
+            normalized_child_path = tuple(child_path)
+            cache: dict[tuple[Path, int, str], bool] | None = None
+            if isinstance(lo_ops_out, ReplayLegalOperationCaptureList):
+                if lo_ops_out.timeline_latest_repeal_placeholder_index is None:
+                    lo_ops_out.timeline_latest_repeal_placeholder_index = {}
+                cache = cast(
+                    dict[tuple[Path, int, str], bool],
+                    lo_ops_out.timeline_latest_repeal_placeholder_index,
+                )
+                cache_key = (normalized_child_path, len(lo_ops_out), op_source.effective)
+                cached = cache.get(cache_key)
+                if cached is not None:
+                    return cached
+            else:
+                cache_key = ((), 0, "")
             latest_key: tuple[str, str, int] | None = None
             latest_is_placeholder = False
             for index, prior in enumerate(lo_ops_out):
-                if prior.target.special is not None or prior.target.path != child_path:
+                if prior.target.special is not None or prior.target.path != normalized_child_path:
                     continue
                 prior_source = prior.source
                 prior_effective = ""
@@ -4503,6 +4518,8 @@ def _emit_section_snapshot(
                     prior.action is StructuralAction.REPEAL
                     or payload_attrs.get("lawvm_repeal_placeholder") == "1"
                 )
+            if cache is not None:
+                cache[cache_key] = latest_is_placeholder
             return latest_is_placeholder
 
         def _scoped_item_payloads_for_subsection(child_norm_label: str) -> dict[str, IRNode]:
