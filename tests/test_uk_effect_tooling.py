@@ -22,6 +22,7 @@ from lawvm.tools import uk_effects
 from lawvm.tools import uk_effect
 from lawvm.tools import uk_replay
 from lawvm.tools import uk_semantic_claims
+from lawvm.uk_legislation import frontier_work_items
 from lawvm.tools.uk_effect import (
     _collect_target_shape,
     _fmt_target,
@@ -790,7 +791,18 @@ def test_uk_frontier_work_item_defaults_cover_grounding_corpus_families(
     ] is True
 
 
-def test_uk_frontier_work_item_preserves_execution_authorization_packet() -> None:
+def test_uk_frontier_work_item_preserves_execution_authorization_packet(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_default_packet(_row: object) -> object:
+        raise AssertionError("complete execution_authorization packet should be reused")
+
+    monkeypatch.setattr(
+        frontier_work_items,
+        "_default_execution_authorization_packet",
+        fail_default_packet,
+    )
+
     work_item = uk_frontier_work_item_from_manual_frontier_row(
         {
             "statute_id": "ukpga/2000/1",

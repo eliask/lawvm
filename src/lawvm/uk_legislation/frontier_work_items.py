@@ -1187,7 +1187,6 @@ def _nonnegative_int(value: Any) -> int:
 
 
 def _execution_authorization_packet(row: Mapping[str, Any]) -> Mapping[str, Any]:
-    default_packet = _default_execution_authorization_packet(row)
     packet = _mapping(row.get("execution_authorization"))
     if packet:
         compact_packet = _compact_witness(
@@ -1206,7 +1205,21 @@ def _execution_authorization_packet(row: Mapping[str, Any]) -> Mapping[str, Any]
                 "detail": _mapping(packet.get("detail")),
             }
         )
+        required_contract_keys = (
+            "executable",
+            "replay_authorized",
+            "authorization_status",
+            "authorization_rule_id",
+            "owner_phase",
+            "strict_disposition",
+            "quirks_disposition",
+            "validator_status",
+        )
+        if all(key in packet for key in required_contract_keys):
+            return compact_packet
+        default_packet = _default_execution_authorization_packet(row)
         return _compact_witness({**default_packet, **compact_packet})
+    default_packet = _default_execution_authorization_packet(row)
     compact_row = _compact_witness(
         {
             "executable": _bool_flag(row.get("executable")),
