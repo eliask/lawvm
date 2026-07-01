@@ -140,7 +140,7 @@ def _display_text(text: str) -> str:
 
 
 def _normalized_text(text: str) -> str:
-    return _NON_WORD_RE.sub(" ", _display_text(text).casefold()).strip()
+    return _NON_WORD_RE.sub(" ", text.casefold()).strip()
 
 
 def _chunk_realized_in_text(

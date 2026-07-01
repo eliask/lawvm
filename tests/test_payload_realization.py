@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from lawvm.core.payload_realization import (
     PayloadRealizationUnit,
+    _NON_WORD_RE,
     _approx_tokens_realized_in_window,
+    _display_text,
+    _normalized_text,
     audit_payload_realization,
     drop_materialized_payload_realization_false_positives,
     payload_realization_gap_findings,
@@ -27,6 +30,20 @@ def test_audit_payload_realization_reports_missing_substantive_chunk() -> None:
 
     assert len(gaps) == 1
     assert gaps[0].unit_id == "section_1"
+
+
+def test_payload_normalized_text_matches_two_step_reference() -> None:
+    cases = (
+        "Substantive payload text, that should land.",
+        "  two\n\nlines\tand punctuation -- here  ",
+        "§ 1 momentin 2 kohdassa säädetään",
+        ",,,",
+        "A_B remains a word token",
+    )
+
+    for text in cases:
+        reference = _NON_WORD_RE.sub(" ", _display_text(text).casefold()).strip()
+        assert _normalized_text(text) == reference
 
 
 def test_audit_payload_realization_accepts_normalized_text_match() -> None:
