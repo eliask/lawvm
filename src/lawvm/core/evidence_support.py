@@ -36,10 +36,11 @@ ORACLE_INCORRECT_DIAGNOSES = frozenset({
 
 _PREEXISTING_LOW_BASELINE_SCORE = 0.75
 _NEGLIGIBLE_BLAME_DROP_EPS = 0.01
+_SIMILARITY_NON_WORD_RE = re.compile(r"[^\w]")
 
 
 def _clean_similarity_text(text: str) -> str:
-    return re.sub(r"[^\w]", "", text.lower())
+    return _SIMILARITY_NON_WORD_RE.sub("", text.lower())
 
 
 def section_similarity(replay_text: str, oracle_text: str) -> float:
