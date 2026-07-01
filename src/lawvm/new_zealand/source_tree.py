@@ -336,12 +336,13 @@ def _walk_source_nodes(
         current_path = (*path, segment)
         history_notes = tuple(_direct_history_notes(node))
         attached_history_note_keys.update(_element_source_key(note) for note in history_notes)
+        xml_path = _element_source_key(node)
         source_node = NZSourceNode(
             kind=kind,
             path=current_path,
             xml_id=_attr(node, "id"),
-            xml_path=_element_source_key(node),
-            source_zone=_source_zone(_element_source_key(node)),
+            xml_path=xml_path,
+            source_zone=_source_zone(xml_path),
             label=label,
             heading=_direct_child_text(node, "heading"),
             deletion_status=_attr(node, "deletion-status"),
