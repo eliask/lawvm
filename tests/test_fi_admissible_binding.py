@@ -55,6 +55,32 @@ def test_ambiguous_binding_finding_lookup() -> None:
     assert spec.code == "ELAB.AMBIGUOUS_BINDING"
 
 
+def test_positional_fallback_binding_finding_registered() -> None:
+    """The calm split-off ELAB.POSITIONAL_FALLBACK_BINDING must be registered.
+
+    Fallback is the safe common case (label mismatch → order-only mapping); it
+    is registered as a non-blocking ``warn`` observation so that
+    AMBIGUOUS_BINDING stays reserved for genuine label-ties.
+    """
+    spec = get_finding_spec("ELAB.POSITIONAL_FALLBACK_BINDING")
+    assert spec is not None
+    assert spec.code == "ELAB.POSITIONAL_FALLBACK_BINDING"
+    assert spec.phase == "sparse_subsection_elaboration"
+    assert spec.owner == "payload_normalize"
+    assert spec.default_enforcement == "warn"
+    assert "ELAB.POSITIONAL_FALLBACK_BINDING" in set(finding_codes_by_role("observation"))
+
+
+def test_positional_fallback_order_mismatch_finding_registered() -> None:
+    """The defect-grade ELAB.POSITIONAL_FALLBACK_ORDER_MISMATCH must be registered."""
+    spec = get_finding_spec("ELAB.POSITIONAL_FALLBACK_ORDER_MISMATCH")
+    assert spec is not None
+    assert spec.code == "ELAB.POSITIONAL_FALLBACK_ORDER_MISMATCH"
+    assert spec.phase == "sparse_subsection_elaboration"
+    assert spec.owner == "payload_normalize"
+    assert spec.default_enforcement == "strict_fail"
+
+
 # ---------------------------------------------------------------------------
 # AdmissibleBindingCoverage type tests
 # ---------------------------------------------------------------------------
@@ -224,6 +250,45 @@ def test_no_ops_produces_empty_certificates() -> None:
     )
     result = _assign_subsection_slots(inputs)
     assert result.binding_certificates == ()
+
+
+def test_fallback_order_mismatch_none_when_slots_in_declared_order() -> None:
+    """Fallback bindings whose slots rise with declared target order are safe."""
+    from lawvm.finland.payload_normalize import _detect_fallback_order_mismatches
+
+    # Declared order (paragraph asc): 3 -> slot 1, 5 -> slot 2.  Monotone: safe.
+    fallback = [
+        (3, None, None, 1, "2024/100"),
+        (5, None, None, 2, "2024/100"),
+    ]
+    assert _detect_fallback_order_mismatches(fallback) == ()
+
+
+def test_fallback_order_mismatch_detected_when_slots_inverted() -> None:
+    """A later-declared target consuming an earlier slot is a mis-bind."""
+    from lawvm.finland.payload_normalize import _detect_fallback_order_mismatches
+
+    # Declared order (paragraph asc): 3 -> slot 2, 5 -> slot 1.  Slot 1 < slot 2
+    # for the later-declared moment 5 => inversion.
+    fallback = [
+        (3, None, None, 2, "2024/100"),
+        (5, None, None, 1, "2024/100"),
+    ]
+    mismatches = _detect_fallback_order_mismatches(fallback)
+    assert len(mismatches) == 1
+    mismatch = mismatches[0]
+    assert mismatch.target_paragraph == 5
+    assert mismatch.payload_slot_index == 1
+    assert mismatch.prev_target_paragraph == 3
+    assert mismatch.prev_payload_slot_index == 2
+    assert mismatch.amendment_id == "2024/100"
+
+
+def test_fallback_order_mismatch_empty_for_single_binding() -> None:
+    """A lone fallback binding cannot be out of order."""
+    from lawvm.finland.payload_normalize import _detect_fallback_order_mismatches
+
+    assert _detect_fallback_order_mismatches([(3, None, None, 1, "2024/100")]) == ()
 
 
 def test_empty_assignment_result_has_empty_certificates() -> None:

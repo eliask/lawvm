@@ -407,6 +407,29 @@ class SubsectionSlotInputs:
 
 
 @dataclass(frozen=True)
+class FallbackOrderMismatch:
+    """One positional-fallback binding whose slot order disagrees with the
+    declared target moment order.
+
+    Positional ("fallback") binding assigns payload blocks to target moments
+    purely by order: the k-th declared target gets the k-th payload slot.  That
+    is correct ONLY if the payload blocks appear in the same order as the
+    declared target moments.  When the slot indices are NOT monotone in declared
+    target order, at least one moment received the wrong body — an
+    oracle-independent mis-bind.  This record surfaces the offending pair.
+    """
+
+    amendment_id: str
+    target_paragraph: int | None
+    target_item: str | None
+    target_special: str | None
+    payload_slot_index: int
+    declared_order_position: int  # 1-based rank of this target in declared order
+    prev_target_paragraph: int | None
+    prev_payload_slot_index: int
+
+
+@dataclass(frozen=True)
 class SparsePayloadSlotBinding:
     """Typed binding from one logical changed moment to one payload slot."""
 
@@ -430,6 +453,7 @@ class SubsectionSlotAssignmentResult:
     binding_certificates: tuple[AdmissibleBindingCoverage, ...] = ()
     binding_observations: tuple[ElaborationObservation, ...] = ()
     binding_admissibility_by_op_id: tuple[tuple[str, str], ...] = ()
+    fallback_order_mismatches: tuple[FallbackOrderMismatch, ...] = ()
 
     def for_op(self, op: AmendmentOp) -> Optional[IRNode]:
         return self.subsec_map.for_op(op)
@@ -5786,6 +5810,12 @@ def _assign_subsection_slots(
     # sequential/positional fallback (no exact label match) get "fallback".
     binding_certificates: List[AdmissibleBindingCoverage] = []
     binding_admissibility_by_op_id: Dict[str, str] = {}
+    # Positional-fallback bindings, captured in classifier order so that the
+    # declared-target-order safety check (Move 2) can verify the slot indices
+    # rise monotonically with the declared target moments.
+    fallback_bindings: List[
+        Tuple[int | None, str | None, str | None, int, str]
+    ] = []  # (target_paragraph, target_item, target_special, payload_slot_index, amendment_id)
     # Pre-build label → count map across all payload slots
     label_counts: Dict[str, int] = {}
     for sub in slot_inputs.amend_subs:
@@ -5858,6 +5888,16 @@ def _assign_subsection_slots(
                 admissibility=admissibility,
             )
         )
+        if admissibility == "fallback":
+            fallback_bindings.append(
+                (
+                    binding.target_paragraph,
+                    binding.target_item,
+                    binding.target_special,
+                    binding.payload_slot_index,
+                    source_statute,
+                )
+            )
         for op in all_slot_ops:
             if (
                 (op.op_id or "").strip()
@@ -5868,6 +5908,8 @@ def _assign_subsection_slots(
             ):
                 binding_admissibility_by_op_id[str(op.op_id)] = admissibility
 
+    fallback_order_mismatches = _detect_fallback_order_mismatches(fallback_bindings)
+
     return SubsectionSlotAssignmentResult(
         subsec_map=state.subsec_map,
         sparse_slot_bindings=tuple(sparse_slot_bindings),
@@ -5876,7 +5918,64 @@ def _assign_subsection_slots(
         binding_certificates=tuple(binding_certificates),
         binding_observations=tuple(state.binding_observations),
         binding_admissibility_by_op_id=tuple(sorted(binding_admissibility_by_op_id.items())),
+        fallback_order_mismatches=fallback_order_mismatches,
     )
+
+
+def _detect_fallback_order_mismatches(
+    fallback_bindings: List[Tuple[int | None, str | None, str | None, int, str]],
+) -> Tuple[FallbackOrderMismatch, ...]:
+    """Verify positional-fallback bindings honour declared target order.
+
+    ``fallback_bindings`` holds ``(target_paragraph, target_item,
+    target_special, payload_slot_index, amendment_id)`` for every binding that
+    was assigned by positional fallback (label did not match the target, so the
+    payload block order alone decided the mapping).
+
+    Positional fallback is only correct when the payload slots appear in the
+    same order as the declared target moments.  We sort the fallback bindings by
+    their declared target order (paragraph, then item, then special — the same
+    ascending declaration order used to build ``all_slot_ops``) and confirm the
+    assigned ``payload_slot_index`` values are monotonically increasing.  A
+    payload slot that is smaller than that of an earlier-declared target means a
+    later moment consumed an earlier body: a genuine oracle-independent
+    mis-bind.  Each such inversion is surfaced as a ``FallbackOrderMismatch``.
+    """
+    if len(fallback_bindings) < 2:
+        return ()
+
+    def _declared_key(
+        entry: Tuple[int | None, str | None, str | None, int, str],
+    ) -> Tuple[int, str, str]:
+        target_paragraph, target_item, target_special, _slot, _amend = entry
+        return (
+            target_paragraph if target_paragraph is not None else 0,
+            str(target_item or ""),
+            str(target_special or ""),
+        )
+
+    ordered = sorted(fallback_bindings, key=_declared_key)
+    mismatches: List[FallbackOrderMismatch] = []
+    prev_slot = ordered[0][3]
+    prev_paragraph = ordered[0][0]
+    for position, entry in enumerate(ordered[1:], start=2):
+        target_paragraph, target_item, target_special, slot_index, amendment_id = entry
+        if slot_index < prev_slot:
+            mismatches.append(
+                FallbackOrderMismatch(
+                    amendment_id=amendment_id,
+                    target_paragraph=target_paragraph,
+                    target_item=target_item,
+                    target_special=target_special,
+                    payload_slot_index=slot_index,
+                    declared_order_position=position,
+                    prev_target_paragraph=prev_paragraph,
+                    prev_payload_slot_index=prev_slot,
+                )
+            )
+        prev_slot = slot_index
+        prev_paragraph = target_paragraph
+    return tuple(mismatches)
 
 
 def _collect_subsection_slot_inputs(
@@ -6646,10 +6745,15 @@ def _elaborate_sparse_subsection_payload(
     observations.extend(split_observations)
     observations.extend(assignment.binding_observations)
     observations.extend(_mixed_sparse_slot_cross_paragraph_bindings(group_ops, assignment))
-    # Emit observations for ambiguous bindings (C2: admissible binding certificate)
-    ambiguous_certs = [cert for cert in assignment.binding_certificates if cert.admissibility != "single"]
-    if ambiguous_certs:
-        for cert in ambiguous_certs:
+    # Emit observations for non-single bindings (C2: admissible binding
+    # certificate).  Reserve ELAB.AMBIGUOUS_BINDING for genuine label-ties
+    # (admissibility == "ambiguous", candidate_count > 1 — a binding that can
+    # mis-select among equally-labelled slots).  Positional/fallback bindings
+    # (label did not match the target, so order alone decided the mapping) are
+    # the safe common case; they get the calmer ELAB.POSITIONAL_FALLBACK_BINDING
+    # so that AMBIGUOUS_BINDING == 0 genuinely means "no label-ties anywhere".
+    for cert in assignment.binding_certificates:
+        if cert.admissibility == "ambiguous":
             observations.append(
                 _obs(
                     "ELAB.AMBIGUOUS_BINDING",
@@ -6660,6 +6764,36 @@ def _elaborate_sparse_subsection_payload(
                     admissibility=cert.admissibility,
                 )
             )
+        elif cert.admissibility == "fallback":
+            observations.append(
+                _obs(
+                    "ELAB.POSITIONAL_FALLBACK_BINDING",
+                    "sparse_subsection_elaboration",
+                    slot_id=cert.slot_id,
+                    amendment_id=cert.amendment_id,
+                    candidate_count=cert.candidate_count,
+                    admissibility=cert.admissibility,
+                )
+            )
+    # Move 2: a positional-fallback binding is only correct when the payload
+    # blocks are in declared target order.  Any inversion is a genuine
+    # oracle-independent mis-bind (a later-declared moment consumed an
+    # earlier-ordered body).  Surface each as a defect-grade observation.
+    for mismatch in assignment.fallback_order_mismatches:
+        observations.append(
+            _obs(
+                "ELAB.POSITIONAL_FALLBACK_ORDER_MISMATCH",
+                "sparse_subsection_elaboration",
+                amendment_id=mismatch.amendment_id,
+                target_paragraph=mismatch.target_paragraph,
+                target_item=mismatch.target_item,
+                target_special=mismatch.target_special,
+                payload_slot_index=mismatch.payload_slot_index,
+                declared_order_position=mismatch.declared_order_position,
+                prev_target_paragraph=mismatch.prev_target_paragraph,
+                prev_payload_slot_index=mismatch.prev_payload_slot_index,
+            )
+        )
     if assignment.unassigned_payload_slots:
         observations.append(
             _obs(

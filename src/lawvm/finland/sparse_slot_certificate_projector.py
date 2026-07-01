@@ -58,7 +58,7 @@ def sparse_slot_candidate_certificate(
         return sparse_slot_binding_candidate_certificate(detail, statute_id=statute_id)
     if kind == "ELAB.SPARSE_PAYLOAD_LEFTOVER":
         return sparse_leftover_candidate_certificate(detail, statute_id=statute_id)
-    if kind == "ELAB.AMBIGUOUS_BINDING":
+    if kind in {"ELAB.AMBIGUOUS_BINDING", "ELAB.POSITIONAL_FALLBACK_BINDING"}:
         return sparse_ambiguous_binding_candidate_certificate(detail, statute_id=statute_id)
     if kind == "ELAB.UNASSIGNED_SPARSE_SLOTS":
         return sparse_leftover_candidate_certificate(detail, statute_id=statute_id)
