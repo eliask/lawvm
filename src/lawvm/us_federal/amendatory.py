@@ -1500,7 +1500,16 @@ def _text_of(elem: ET.Element) -> str:
     never enacted text and are pruned at every extraction waist, not only
     inside the quoted operands.
     """
-    return _collapse_ws_strip(_itertext_excluding_sidenotes(elem))
+    cache = _US_TEXT_OF_CACHE_CTX.get()
+    if cache is None:
+        return _collapse_ws_strip(_itertext_excluding_sidenotes(elem))
+    key = id(elem)
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+    text = _collapse_ws_strip(_itertext_excluding_sidenotes(elem))
+    cache[key] = text
+    return text
 
 
 # Curly/straight quote marks the USLM wraps around an inline literal in the
@@ -5641,6 +5650,9 @@ def _iter_instruction_units(
 _US_RAW_SOURCE_CTX: "contextvars.ContextVar[tuple[str, bytes] | None]" = (
     contextvars.ContextVar("us_raw_source_ctx", default=None)
 )
+_US_TEXT_OF_CACHE_CTX: "contextvars.ContextVar[dict[int, str] | None]" = (
+    contextvars.ContextVar("lawvm_text_of_cache_ctx", default=None)
+)
 _US_SOURCE_ANCHOR_BODY_TAGS: frozenset[str] = frozenset(
     {
         "chapeau",
@@ -5919,6 +5931,7 @@ def lower_plaw_amendatory(
     # the context never leaks across Public Laws or to other frontends. Additive
     # provenance metadata only — grounding-neutral (replay output byte-identical).
     _raw_source_token = set_us_raw_source_context(statute_id, data)
+    _text_cache_token = _US_TEXT_OF_CACHE_CTX.set({})
     try:
         return _lower_plaw_amendatory_body(
             root,
@@ -5928,6 +5941,7 @@ def lower_plaw_amendatory(
             classification_index=classification_index,
         )
     finally:
+        _US_TEXT_OF_CACHE_CTX.reset(_text_cache_token)
         reset_us_raw_source_context(_raw_source_token)
 
 

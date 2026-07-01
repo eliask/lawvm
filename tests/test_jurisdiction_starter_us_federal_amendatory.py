@@ -11,10 +11,12 @@ from __future__ import annotations
 
 import os
 import xml.etree.ElementTree as ET
+from collections import Counter
 from pathlib import Path
 
 import pytest
 
+from lawvm.us_federal import amendatory as us_amendatory
 from lawvm.core.ir import LegalAddress
 from lawvm.core.branch_authority import PENDING_CONDITION_STATUS
 from lawvm.core.semantic_types import StructuralAction, TextPatchKindEnum
@@ -1176,6 +1178,36 @@ def test_shallow_text_prunes_quoted_operands_and_collapses_whitespace():
     )
 
     assert _shallow_text(elem) == '(1) in section 104, by inserting "" after ""; and'
+
+
+def test_text_of_cache_is_live_through_plaw_lowering(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls_by_text: Counter[str] = Counter()
+    original = us_amendatory._itertext_excluding_sidenotes
+
+    def counted_itertext(elem: ET.Element) -> str:
+        text = original(elem)
+        calls_by_text[" ".join(text.split())] += 1
+        return text
+
+    monkeypatch.setattr(us_amendatory, "_itertext_excluding_sidenotes", counted_itertext)
+    body = (
+        '<section identifier="/us/pl/116/900/s1"><num value="1">SEC. 1. </num>'
+        '<paragraph identifier="/us/pl/116/900/s1/1"><num value="1">(1) </num>'
+        "<content>Section 104 of title 11, United States Code, "
+        '<amendingAction type="amend">is amended</amendingAction> by '
+        '<amendingAction type="delete">striking</amendingAction> subsection (a).'
+        "</content></paragraph></section>"
+    )
+
+    report = lower_plaw_amendatory(_synthetic_plaw(body))
+
+    assert report.instructions
+    repeated_unit_text = next(
+        text
+        for text in calls_by_text
+        if text.startswith("(1) Section 104 of title 11, United States Code")
+    )
+    assert calls_by_text[repeated_unit_text] == 1
 
 
 # ---------------------------------------------------------------------------
