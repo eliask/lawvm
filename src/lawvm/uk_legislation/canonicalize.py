@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 from typing import Any, NamedTuple, Optional
 
 from lawvm.core.ir import IRNode, LegalAddress
@@ -91,6 +92,7 @@ def _roman_compare_token(token: str) -> Optional[str]:
     return str(value) if value is not None else None
 
 
+@lru_cache(maxsize=65536)
 def canonicalize_compare_eid(eid: str) -> str:
     """Numeral-scheme-canonicalize a UK eId for oracle COMPARISON only.
 
