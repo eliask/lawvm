@@ -351,6 +351,17 @@ def prepare_replay_plan(
         base_source_correction_op_ids = []
 
     ctx = StatuteContext.from_xml(orig_bytes, label_postprocessor)
+    # PDF-spine base-loader fallback (FI PDF spine Phase 1). When the base body
+    # is an ``hcontainer``-only metadata wrapper (no ``SECTION``/``PARAGRAPH``
+    # in ``ctx.base_ir``) AND a ``fin`` attachment PDF exposes an ``N §`` spine,
+    # graft the PDF-derived spine IR in as the base so section-targeted ops can
+    # resolve (pilot: ``2011/38``). The store hook fires ONLY on a
+    # non-substantial base, so a substantial XML body is a hard non-fire and is
+    # never overridden (lower-authority lane discipline); the swap uses the
+    # patched base XML bytes so the attachment links are read post-corrigendum.
+    spine_base_ir = corpus.load_spine_base_ir(parent_id, ctx.base_ir, orig_bytes)
+    if spine_base_ir is not None:
+        ctx = dataclasses_replace(ctx, base_ir=spine_base_ir)
     # Build the attachment-supplement tuple for this statute — extract
     # ``<a href="media/N.pdf">`` links from the (patched) consolidated XML
     # and fetch + parse each PDF via the corpus store. The supplements

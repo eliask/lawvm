@@ -252,6 +252,8 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     ),
     "finland_parse_payload": (
         "test_fi_attachment_ir.py",
+        # FI PDF spine Phase 1 — attachment-PDF spine as a graftable base.
+        "test_fi_pdf_spine_base.py",
         # SDOC-13 unified tree merge helper — attachments as APPENDIX
         # siblings of BODY under one HCONTAINER root.
         "test_fi_attachment_merge.py",

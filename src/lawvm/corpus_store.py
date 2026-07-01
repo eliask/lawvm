@@ -244,6 +244,29 @@ class CorpusStore(ABC):
         """
         return self.read_source(sid)
 
+    def load_spine_base_ir(self, sid: str, base_ir: "object", base_xml_bytes: bytes):
+        """PDF-spine base-loader fallback (FI PDF spine Phase 1).
+
+        When the base ``main.xml`` body is an ``hcontainer``-only metadata
+        wrapper (no operative ``SECTION``/``PARAGRAPH`` in ``base_ir``) AND a
+        ``fin`` attachment PDF exists AND its statute-spine recogniser yields
+        ``SECTION`` nodes, return a graftable base IR derived from that PDF —
+        tagged as a distinct, LOWER-authority source lane so it never overrides
+        a substantial XML base. Returns None otherwise (the common case: a
+        substantial XML body is a hard non-fire).
+
+        Lives on the store base class so both Finnish backends
+        (``ArchiveCorpusStore`` / ``TransparentCorpusStore``) share the base
+        load path keyed on ``finlex://sd/{y}/{n}/fin/main.xml`` without
+        re-implementing it; the pure spine transform lives in
+        :mod:`lawvm.finland.pdf_spine_base`.
+        """
+        from lawvm.core.ir import IRNode
+        from lawvm.finland.pdf_spine_base import build_pdf_spine_base_ir
+
+        assert isinstance(base_ir, IRNode)
+        return build_pdf_spine_base_ir(self, sid, base_ir, base_xml_bytes)
+
     # ------------------------------------------------------------------
     # Content-addressed / staged read surface (StageResult WAIST #1)
     # ------------------------------------------------------------------
