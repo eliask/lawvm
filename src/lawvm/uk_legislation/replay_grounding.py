@@ -27,9 +27,12 @@ def _grounding_eid(node: IRNode) -> Optional[str]:
     return _uk_eid_value(node.attrs.get("eId") or node.attrs.get("id"))
 
 
-def _find_best_oracle_path(oracle_id: str, eid_map: dict[str, str], current_context: str) -> Optional[str]:
-    # Find all keys mapping to oracle_id
-    candidates: list[str] = [k for k, v in eid_map.items() if v == oracle_id]
+def _find_best_oracle_path(
+    oracle_id: str,
+    oracle_paths_by_id: dict[str, list[str]],
+    current_context: str,
+) -> Optional[str]:
+    candidates = oracle_paths_by_id.get(oracle_id, ())
     if not candidates:
         return None
     # Filter out ordinal keys (those containing '[')
@@ -366,6 +369,9 @@ class UKReplayGroundingMixin:
                 _GroundingTextCandidate(order, candidate_id, oracle_text)
             )
         text_candidate_window_cache: dict[int, list[_GroundingTextCandidate]] = {}
+        oracle_paths_by_id: dict[str, list[str]] = {}
+        for path_key, oracle_id in self.eid_map.items():
+            oracle_paths_by_id.setdefault(oracle_id, []).append(path_key)
 
         def _ground_node(
             node: IRNode,
@@ -430,7 +436,7 @@ class UKReplayGroundingMixin:
                 kind = node.kind
                 kind_name = _uk_kind_value(kind).lower()
                 clean_label = _grounding_clean_label(kind_name, node.label)
-                oracle_path = _find_best_oracle_path(existing_eid, self.eid_map, context)
+                oracle_path = _find_best_oracle_path(existing_eid, oracle_paths_by_id, context)
                 if oracle_path:
                     next_path_key = oracle_path
                 else:
@@ -738,7 +744,7 @@ class UKReplayGroundingMixin:
                     node, attrs={**dict(node.attrs), "eId": oracle_id}
                 )
                 seen_oracle_ids.add(oracle_id)
-                oracle_path = _find_best_oracle_path(oracle_id, self.eid_map, context)
+                oracle_path = _find_best_oracle_path(oracle_id, oracle_paths_by_id, context)
                 if oracle_path:
                     next_path_key = oracle_path
                 _append_alignment_event(
