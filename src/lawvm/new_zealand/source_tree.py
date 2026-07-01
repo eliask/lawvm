@@ -270,6 +270,7 @@ def _parse_nz_source_document_uncached(
     document_history: list[NZHistoryWitness] = []
     attached_history_note_keys: set[str] = set()
     legal_text_cache: dict[tuple[etree._Element, bool], str] = {}
+    amend_instruction_candidate_nodes = _amend_instruction_candidate_nodes(root)
 
     for child in root:
         _walk_source_nodes(
@@ -278,6 +279,7 @@ def _parse_nz_source_document_uncached(
             nodes=nodes,
             attached_history_note_keys=attached_history_note_keys,
             legal_text_cache=legal_text_cache,
+            amend_instruction_candidate_nodes=amend_instruction_candidate_nodes,
         )
 
     for note in _iter_localname(root, "history-note"):
@@ -314,6 +316,7 @@ def _walk_source_nodes(
     nodes: list[NZSourceNode],
     attached_history_note_keys: set[str],
     legal_text_cache: dict[tuple[etree._Element, bool], str],
+    amend_instruction_candidate_nodes: set[etree._Element],
 ) -> None:
     if not isinstance(node.tag, str):
         return
@@ -344,7 +347,9 @@ def _walk_source_nodes(
             deletion_status=_attr(node, "deletion-status"),
             text=_legal_text(node, cache=legal_text_cache),
             history=tuple(_history_witness(note) for note in history_notes),
-            amend_instructions=_amend_instructions(node),
+            amend_instructions=(
+                _amend_instructions(node) if node in amend_instruction_candidate_nodes else ()
+            ),
         )
         nodes.append(source_node)
         for child in node:
@@ -354,6 +359,7 @@ def _walk_source_nodes(
                 nodes=nodes,
                 attached_history_note_keys=attached_history_note_keys,
                 legal_text_cache=legal_text_cache,
+                amend_instruction_candidate_nodes=amend_instruction_candidate_nodes,
             )
         return
     for child in node:
@@ -363,7 +369,30 @@ def _walk_source_nodes(
             nodes=nodes,
             attached_history_note_keys=attached_history_note_keys,
             legal_text_cache=legal_text_cache,
+            amend_instruction_candidate_nodes=amend_instruction_candidate_nodes,
         )
+
+
+def _amend_instruction_candidate_nodes(root: etree._Element) -> set[etree._Element]:
+    """Elements whose subtree contains at least one ``<amend.in>`` descendant.
+
+    The amendment-instruction parser remains the semantic authority. This set is
+    only a per-parse negative prefilter for the common consolidated-source case:
+    if no ``<amend.in>`` exists below an element, ``_amend_instructions`` would
+    necessarily return ``()`` after walking that whole subtree.
+    """
+
+    candidates: set[etree._Element] = set()
+    for node in root.iter():
+        if not isinstance(node.tag, str) or _localname_of_tag(node.tag) != "amend.in":
+            continue
+        cursor: etree._Element | None = node
+        while cursor is not None:
+            candidates.add(cursor)
+            if cursor is root:
+                break
+            cursor = cursor.getparent()
+    return candidates
 
 
 def _document_metadata(root: etree._Element) -> dict[str, str]:
@@ -769,12 +798,14 @@ def _walk_payload_root_nodes(matched_element: etree._Element) -> list[NZSourceNo
 
     nodes: list[NZSourceNode] = []
     legal_text_cache: dict[tuple[etree._Element, bool], str] = {}
+    amend_instruction_candidate_nodes = _amend_instruction_candidate_nodes(matched_element)
     _walk_source_nodes(
         matched_element,
         path=("amend",),
         nodes=nodes,
         attached_history_note_keys=set(),
         legal_text_cache=legal_text_cache,
+        amend_instruction_candidate_nodes=amend_instruction_candidate_nodes,
     )
     if not nodes:
         return nodes

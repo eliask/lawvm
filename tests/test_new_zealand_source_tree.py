@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import pytest
+from lxml import etree
+
+from lawvm.new_zealand import source_tree
 from lawvm.new_zealand.source_tree import parse_nz_source_document
 from lawvm.tools.cli import _build_parser
 
@@ -322,6 +326,46 @@ def test_amend_instructions_empty_when_no_amend_in() -> None:
     node = [n for n in document.nodes if n.xml_id == "A8"][0]
 
     assert node.amend_instructions == ()
+
+
+def test_amend_instruction_prefilter_skips_unrelated_subtrees(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    original = source_tree._amend_instructions
+
+    def counting_amend_instructions(
+        node: etree._Element,
+    ) -> tuple[source_tree.NZAmendInstruction, ...]:
+        calls.append(node.get("id", ""))
+        return original(node)
+
+    monkeypatch.setattr(source_tree, "_amend_instructions", counting_amend_instructions)
+    xml = b"""\
+<act>
+  <body>
+    <prov id="A6"><label>6</label><heading>Section 42 amended</heading>
+      <prov.body><subprov id="A6-1"><para><text>
+        In <citation jurisdiction="nz">Section <linkcontent>42(3)</linkcontent></citation>,
+        replace <amend.in>old rate</amend.in> with <amend.in>new rate</amend.in>.
+      </text></para></subprov></prov.body>
+    </prov>
+    <prov id="B7"><label>7</label><heading>Plain provision</heading>
+      <prov.body><subprov id="B7-1"><para><text>No inline amendment payload.</text></para></subprov></prov.body>
+    </prov>
+  </body>
+</act>
+"""
+
+    document = parse_nz_source_document(xml)
+
+    assert [row.new_text for node in document.nodes for row in node.amend_instructions]
+    assert {row.new_text for node in document.nodes for row in node.amend_instructions} == {
+        "new rate"
+    }
+    assert "A6" in calls
+    assert "B7" not in calls
+    assert "B7-1" not in calls
 
 
 def test_legal_text_keeps_inline_cross_reference_in_document_order() -> None:
