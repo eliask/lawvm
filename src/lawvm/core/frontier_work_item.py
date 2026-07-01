@@ -133,7 +133,7 @@ class FrontierWorkItem:
             freeze_mapping(self.suggested_claim_template),
         )
         object.__setattr__(self, "detail", freeze_mapping(self.detail))
-        issues = validate_frontier_work_item(self.to_dict())
+        issues = validate_frontier_work_item(_frontier_work_item_validation_row(self))
         if issues:
             raise ValueError("; ".join(issues))
 
@@ -219,6 +219,34 @@ def validate_frontier_work_item(row: Mapping[str, Any]) -> tuple[str, ...]:
     if not isinstance(row.get("detail", {}), Mapping):
         issues.append("detail must be a mapping")
     return tuple(issues)
+
+
+def _frontier_work_item_validation_row(work_item: FrontierWorkItem) -> dict[str, Any]:
+    return {
+        "work_item_id": work_item.work_item_id,
+        "jurisdiction": work_item.jurisdiction,
+        "source_artifact_id": work_item.source_artifact_id,
+        "source_unit_id": work_item.source_unit_id,
+        "source_witness": work_item.source_witness,
+        "target_witness": work_item.target_witness,
+        "compare_witness": work_item.compare_witness,
+        "owner_phase": work_item.owner_phase,
+        "frontier_family": work_item.frontier_family,
+        "frontier_status": work_item.frontier_status,
+        "candidate_targets": work_item.candidate_targets,
+        "guidance_refs": work_item.guidance_refs,
+        "required_claim_kind": work_item.required_claim_kind,
+        "required_validator_checks": work_item.required_validator_checks,
+        "required_proofs": work_item.required_proofs,
+        "safe_default": work_item.safe_default,
+        "forbidden_shortcuts": work_item.forbidden_shortcuts,
+        "executable": work_item.executable,
+        "replay_authorized": work_item.replay_authorized,
+        "authorization_status": work_item.authorization_status,
+        "suggested_claim_template_status": work_item.suggested_claim_template_status,
+        "suggested_claim_template": work_item.suggested_claim_template,
+        "detail": work_item.detail,
+    }
 
 
 def frontier_work_item_claim_template(
