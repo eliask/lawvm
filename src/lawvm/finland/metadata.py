@@ -13,7 +13,7 @@ from lawvm.core.regex_safety import compile_classifier_regex
 import datetime as dt
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import List, Literal, Optional, Set, Tuple, cast
+from typing import List, Literal, Optional, Protocol, Set, Tuple, cast, runtime_checkable
 
 import lxml.etree as etree
 
@@ -96,6 +96,11 @@ class SeparateCommencementLawWitness:
     effective_date: dt.date
     rule_id: str
     source_text: str
+
+
+@runtime_checkable
+class _InternalScanSourceReader(Protocol):
+    def read_source_for_internal_scan(self, sid: str) -> bytes | None: ...
 
 
 _SEPARATE_COMMENCEMENT_LIST_RE = compile_classifier_regex(r'\bSeuraavat\s+lait\s+tulevat\s+voimaan\s+'
@@ -1169,6 +1174,14 @@ def _separate_commencement_witnesses_from_tree(
     return tuple(witnesses)
 
 
+def _read_source_for_separate_commencement_scan(corpus: object, source_id: str) -> bytes | None:
+    if isinstance(corpus, _InternalScanSourceReader):
+        return corpus.read_source_for_internal_scan(source_id)
+    from lawvm.corpus_store import CorpusStore
+
+    return cast(CorpusStore, corpus).read_source(source_id)
+
+
 @lru_cache(maxsize=1)
 def _separate_commencement_witness_index() -> dict[str, tuple[SeparateCommencementLawWitness, ...]]:
     from lawvm.finland.corpus import get_corpus
@@ -1177,7 +1190,7 @@ def _separate_commencement_witness_index() -> dict[str, tuple[SeparateCommenceme
     statute_ids = tuple(sorted(corpus.list_statute_ids()))
     index: dict[str, list[SeparateCommencementLawWitness]] = {}
     for source_id in statute_ids:
-        xml_bytes = corpus.read_source(source_id)
+        xml_bytes = _read_source_for_separate_commencement_scan(corpus, source_id)
         if xml_bytes is None or b"tulevat voimaan" not in xml_bytes:
             continue
         tree = parse_corpus_xml(xml_bytes)

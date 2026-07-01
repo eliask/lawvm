@@ -558,6 +558,15 @@ class TransparentCorpusStore(CorpusStore):
         result = self.read_source_staged(sid)
         return result.value if result is not None else None
 
+    def read_source_for_internal_scan(self, sid: str) -> bytes | None:
+        """Read source bytes for non-authoritative corpus-wide scan indexes.
+
+        This bypasses staged witness/admission construction deliberately. It is
+        only for read-only scans whose typed output carries its own witness rows
+        and never treats the source wrapper as replay authority.
+        """
+        return self._read_source_bytes(sid)
+
     def _read_source_bytes(self, sid: str) -> bytes | None:
         """Read original enacted statute XML bytes (Farchive cache only).
 
