@@ -245,6 +245,41 @@
     replaces 78 §; exact full-section fragment patch repairs structural identity and eIds before replay.'
   verified: '2026-06-27'
   expected_apply_count: 1
+- amendment_id: 1975/700
+  rule_id: FINLAND.SOURCE_DEFECT.SECTION_EID_MISLABEL
+  family: structural_label_mislabel
+  source_witness:
+    kind: ordinal_structure
+    detail: The statute's own ordinal structure (chapter sequence + downstream references) intrinsic-confirms the corrected
+      label. No oracle citation.
+  wrong_text: |-
+    <section eId="chp_3__sec_7">
+                            <num>7§</num>
+                            <heading>Holhoojan ja lapsen äidin kuuleminen.</heading>
+                            <subsection eId="chp_3__sec_7__subsec_1">
+                                <content>
+                                    <p>Kun vajaavaltainen on tunnustanut isyytensä, tulee hänen holhoojalleen varata tilaisuus tulla kuulluksi tunnustamisen johdosta. Holhoojankuuleminen ei kuitenkaan ole tarpeen, jos vajaavaltaisella on oikeudenkäymiskaaren 12 luvun 1 §:n 2 momentin mukaan oikeus yksin käyttää puhevaltaa henkilöään koskevissa asioissa. Jos lapsi on vajaavaltainen, on lapsen äidille sekä lapselle määrätylle holhoojalle varattava tilaisuus tulla kuulluksi tunnustamisen johdosta. </p>
+                                </content>
+                            </subsection>
+                        </section>
+  correct_text: |-
+    <section eId="chp_3__sec_17">
+                            <num>17§</num>
+                            <heading>Holhoojan ja lapsen äidin kuuleminen.</heading>
+                            <subsection eId="chp_3__sec_17__subsec_1">
+                                <content>
+                                    <p>Kun vajaavaltainen on tunnustanut isyytensä, tulee hänen holhoojalleen varata tilaisuus tulla kuulluksi tunnustamisen johdosta. Holhoojankuuleminen ei kuitenkaan ole tarpeen, jos vajaavaltaisella on oikeudenkäymiskaaren 12 luvun 1 §:n 2 momentin mukaan oikeus yksin käyttää puhevaltaa henkilöään koskevissa asioissa. Jos lapsi on vajaavaltainen, on lapsen äidille sekä lapselle määrätylle holhoojalle varattava tilaisuus tulla kuulluksi tunnustamisen johdosta. </p>
+                                </content>
+                            </subsection>
+                        </section>
+  correction_type: body_text
+  notes: 'LawVM-editorial base-source defect fix (no_official_corrigendum_found): Isyyslaki chapter 3 source XML labels the
+    provision between correctly-numbered 16 § and 18 § as chp_3__sec_7 / 7 §, colliding with the legitimate 7 § that lives
+    in chapter 2 (chp_2__sec_7). The chapter-local ordinal sequence (16 §, [17 §], 18 §, 19 §) intrinsic-confirms the label
+    is 17 §; exact full-section fragment patch flips the section eId, subsection eId and <num> to the ordinally-correct 17
+    § before replay.'
+  verified: '2026-07-01'
+  expected_apply_count: 1
 - amendment_id: 1208/1991
   rule_id: FINLAND.SOURCE_DEFECT.OCR_CHAR_SUBSTITUTION
   family: source_pathology_ocr
