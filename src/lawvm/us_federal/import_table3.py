@@ -130,30 +130,22 @@ def iter_table3_records(data: bytes) -> Iterator[Table3Record]:
     ``<table3>`` root so ``iterparse`` sees a well-formed document without
     materializing the 125 MB into a string.
     """
-    act_num = ""
-    act_congress = ""
-    public_law = ""
-    in_act = False
-
-    for event, el in ET.iterparse(_byte_source(data), events=("start", "end")):
+    for _event, el in ET.iterparse(_byte_source(data), events=("end",)):
         tag = el.tag
-        if event == "start" and tag == "act":
-            act_num = ""
-            act_congress = el.get("congress", "")
-            public_law = ""
-            in_act = True
-        elif event == "end":
-            if tag == "num" and in_act and _parent_is_act(el):
-                # <num> directly under <act> is the act key.
-                act_num = (el.text or "").strip()
-            elif tag == "public-law" and in_act:
-                public_law = (el.text or "").strip()
-            elif tag == "record":
-                yield _record_from_element(el, act_num, act_congress, public_law)
-                el.clear()
-            elif tag == "act":
-                in_act = False
-                el.clear()
+        if tag != "act":
+            continue
+        act_num = ""
+        public_law = ""
+        act_congress = el.get("congress", "")
+        for child in el:
+            child_tag = child.tag
+            if child_tag == "num":
+                act_num = (child.text or "").strip()
+            elif child_tag == "public-law":
+                public_law = (child.text or "").strip()
+            elif child_tag == "record":
+                yield _record_from_element(child, act_num, act_congress, public_law)
+        el.clear()
 
 
 _TABLE3_ROOT_OPEN = b"<table3>"
@@ -202,39 +194,30 @@ class _ConcatBytesReader:
         return b"".join(out_parts)
 
 
-def _parent_is_act(_el: ET.Element) -> bool:
-    # ElementTree gives no parent pointer; the streaming state machine only
-    # records <num> while ``in_act`` and before the first <record>. A <num>
-    # nested deeper would be inside a <record> (Table III records have no <num>),
-    # so this guard is structurally satisfied by the document shape.
-    return True
-
-
-_TABLE3_RECORD_TEXT_TAGS = frozenset(
-    (
-        "act-section",
-        "united-states-code-title",
-        "united-states-code-section",
-        "united-states-code-status",
-    )
-)
-
-
 def _record_from_element(
     el: ET.Element, act_num: str, act_congress: str, public_law: str
 ) -> Table3Record:
-    child_texts: dict[str, str] = {}
+    act_section = ""
+    usc_title = ""
+    usc_section = ""
+    status = ""
     for child in el:
         tag = child.tag
-        if tag in _TABLE3_RECORD_TEXT_TAGS:
-            child_texts[tag] = (child.text or "").strip()
+        if tag == "act-section":
+            act_section = (child.text or "").strip()
+        elif tag == "united-states-code-title":
+            usc_title = (child.text or "").strip()
+        elif tag == "united-states-code-section":
+            usc_section = (child.text or "").strip()
+        elif tag == "united-states-code-status":
+            status = (child.text or "").strip()
     return Table3Record(
         act_num=act_num,
         act_congress=act_congress,
-        act_section=child_texts.get("act-section", ""),
-        usc_title=child_texts.get("united-states-code-title", ""),
-        usc_section=child_texts.get("united-states-code-section", ""),
-        status=child_texts.get("united-states-code-status", ""),
+        act_section=act_section,
+        usc_title=usc_title,
+        usc_section=usc_section,
+        status=status,
         public_law=public_law,
         usckey=el.get("usckey", ""),
     )
