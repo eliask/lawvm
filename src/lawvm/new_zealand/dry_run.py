@@ -2534,6 +2534,7 @@ def build_dry_run_insert(
         )
 
     parsed_cache: dict[str, NZSourceDocument | None] = {}
+    document_index_cache: dict[int, _NZDryRunDocumentIndex] = {}
     amending_root_cache: dict[str, Any] = {}
     # Block-insert co-members: the set of same-kind sibling labels this work
     # inserts under the same parent. A whole new Part / a run of sequential new
@@ -2554,6 +2555,7 @@ def build_dry_run_insert(
             work_id,
             row,
             parsed_cache,
+            document_index_cache,
             amending_root_cache,
             block_member_labels,
             amendment_census,
@@ -2881,6 +2883,7 @@ def _dry_run_one_insert(
     work_id: str,
     row: Any,
     parsed_cache: dict[str, NZSourceDocument | None],
+    document_index_cache: dict[int, _NZDryRunDocumentIndex],
     amending_root_cache: dict[str, Any],
     block_member_labels: Mapping[tuple[tuple[str, ...], str], frozenset[str]] | None = None,
     amendment_census: frozenset[tuple[str, str]] = frozenset(),
@@ -3059,7 +3062,11 @@ def _dry_run_one_insert(
         )
 
     # The new node must NOT already be in the before tree (an insert ADDS it).
-    existing = _resolve_target_nodes(before_doc, new_node_source_path)
+    existing = _resolve_target_nodes(
+        before_doc,
+        new_node_source_path,
+        document_index_cache=document_index_cache,
+    )
     if len(existing) > 0:
         return NZDryRunRefusal(
             op_id=op_id,
@@ -3074,7 +3081,11 @@ def _dry_run_one_insert(
     # (which must resolve to exactly one live-body node first); for a whole
     # provision the top-level anchor was already derived from the label.
     if is_nested:
-        parent_matches = _resolve_target_nodes(before_doc, parent_source_path)
+        parent_matches = _resolve_target_nodes(
+            before_doc,
+            parent_source_path,
+            document_index_cache=document_index_cache,
+        )
         if len(parent_matches) == 0:
             return NZDryRunRefusal(
                 op_id=op_id,
@@ -3094,7 +3105,12 @@ def _dry_run_one_insert(
                 detail={"parent_source_path": list(parent_source_path), "match_count": len(parent_matches)},
             )
         resolved_parent_path = parent_matches[0].path
-        sibling_nodes = _child_nodes_of_kind(before_doc, resolved_parent_path, leaf_kind)
+        sibling_nodes = _child_nodes_of_kind(
+            before_doc,
+            resolved_parent_path,
+            leaf_kind,
+            document_index_cache=document_index_cache,
+        )
         sibling_labels = tuple(node.label for node in sibling_nodes if node.label)
         nested_anchor = _derive_nested_insert_anchor(leaf_kind, leaf_label, sibling_labels)
         if nested_anchor is None:
@@ -3117,7 +3133,11 @@ def _dry_run_one_insert(
         # anchor from the before-tree's top-level same-kind sibling group. A
         # top-level provision is pathed either at the root (``prov:6``) or under
         # a single part (``part:1/prov:6``); collect both shapes.
-        sibling_labels = _top_level_sibling_labels(before_doc, leaf_kind)
+        sibling_labels = _top_level_sibling_labels(
+            before_doc,
+            leaf_kind,
+            document_index_cache=document_index_cache,
+        )
         top_level_anchor = _derive_top_level_insert_anchor(leaf_label, sibling_labels)
         if top_level_anchor is None:
             return NZDryRunRefusal(
@@ -3140,7 +3160,11 @@ def _dry_run_one_insert(
         anchor_source_path = (f"{leaf_kind}:{anchor_label}",)
 
     # The derived anchor must resolve to exactly one live-body node.
-    anchor_matches = _resolve_target_nodes(before_doc, anchor_source_path)
+    anchor_matches = _resolve_target_nodes(
+        before_doc,
+        anchor_source_path,
+        document_index_cache=document_index_cache,
+    )
     if len(anchor_matches) == 0:
         return NZDryRunRefusal(
             op_id=op_id,
@@ -3171,7 +3195,14 @@ def _dry_run_one_insert(
     # and pre-existing siblings are unchanged (insert only adds a node + shifts
     # positions); we prove that by equal before/after digests of every existing
     # sibling. The new node's presence is the only delta.
-    siblings_before = _sibling_nodes(before_doc, anchor_node.path) + (anchor_node,)
+    siblings_before = (
+        _sibling_nodes(
+            before_doc,
+            anchor_node.path,
+            document_index_cache=document_index_cache,
+        )
+        + (anchor_node,)
+    )
     neighbor_paths = tuple(node.path for node in siblings_before)
     neighbor_before = tuple(_node_digest(node) for node in siblings_before)
     # Insert does not mutate any pre-existing sibling's content, so the after
@@ -3181,7 +3212,15 @@ def _dry_run_one_insert(
     anchor_digest = _node_digest(anchor_node)
 
     parent_path = anchor_node.path[:-1]
-    parent_before_nodes = _nodes_at_path(before_doc, parent_path) if parent_path else ()
+    parent_before_nodes = (
+        _nodes_at_path(
+            before_doc,
+            parent_path,
+            document_index_cache=document_index_cache,
+        )
+        if parent_path
+        else ()
+    )
     parent_digest_before = _node_digest(parent_before_nodes[0]) if parent_before_nodes else ""
     # The parent gains a child but the parent NODE's own content (its label/
     # heading/text) is unchanged by an insert of a child provision.
@@ -3199,7 +3238,12 @@ def _dry_run_one_insert(
     if block_member_labels is not None:
         group_key = (parent_source_path, leaf_kind)
         candidate_block = block_member_labels.get(group_key, frozenset())
-        before_group_labels = _resolved_group_labels(before_doc, anchor_node.path, leaf_kind)
+        before_group_labels = _resolved_group_labels(
+            before_doc,
+            anchor_node.path,
+            leaf_kind,
+            document_index_cache=document_index_cache,
+        )
         group_block_labels = frozenset(candidate_block - before_group_labels)
     (
         oracle_match,
@@ -3216,6 +3260,7 @@ def _dry_run_one_insert(
         derived_anchor_kind=leaf_kind,
         derived_direction=direction,
         co_inserted_block_labels=group_block_labels,
+        document_index_cache=document_index_cache,
     )
     insert_neighbors_unchanged = (
         neighbor_before == neighbor_after and parent_digest_before == parent_digest_after
@@ -3235,6 +3280,7 @@ def _dry_run_one_insert(
             # a per-leaf substantive divergence (e.g. a wrong cross-reference in
             # one subsection) is surfaced instead of collapsing the siblings.
             preserve_labels=True,
+            document_index_cache=document_index_cache,
         )
         divergence_fields = _divergence_proof_fields(
             oracle_match, insert_neighbors_unchanged, divergence
@@ -3293,6 +3339,8 @@ def _oracle_adjacent_sibling_label(
     node: NZSourceNode,
     leaf_kind: str,
     direction: str,
+    *,
+    document_index_cache: dict[int, _NZDryRunDocumentIndex] | None = None,
 ) -> str | None:
     """Label of the oracle's same-kind sibling immediately adjacent to ``node``.
 
@@ -3305,16 +3353,25 @@ def _oracle_adjacent_sibling_label(
     """
 
     parent = node.path[:-1]
-    order = {id(n): i for i, n in enumerate(oracle_doc.nodes)}
+    if document_index_cache is not None:
+        index = _dry_run_document_index(oracle_doc, document_index_cache)
+        order = index.node_order_by_identity
+        siblings = [
+            n
+            for n in index.children_by_parent_kind.get((parent, leaf_kind), ())
+            if n.path != node.path and n.label
+        ]
+    else:
+        order = {id(n): i for i, n in enumerate(oracle_doc.nodes)}
+        siblings = [
+            n
+            for n in oracle_doc.nodes
+            if n.path != node.path
+            and n.path[:-1] == parent
+            and n.kind == leaf_kind
+            and n.label
+        ]
     node_index = order[id(node)]
-    siblings = [
-        n
-        for n in oracle_doc.nodes
-        if n.path != node.path
-        and n.path[:-1] == parent
-        and n.kind == leaf_kind
-        and n.label
-    ]
     if direction == "after":
         preceding = [n for n in siblings if order[id(n)] < node_index]
         if not preceding:
@@ -3336,6 +3393,7 @@ def _oracle_partition_insert(
     derived_anchor_kind: str,
     derived_direction: str,
     co_inserted_block_labels: frozenset[str] = frozenset(),
+    document_index_cache: dict[int, _NZDryRunDocumentIndex] | None = None,
 ) -> tuple[str, str, bool, str, str]:
     """Classify whether the on-or-after oracle carries the inserted node.
 
@@ -3369,7 +3427,11 @@ def _oracle_partition_insert(
     sibling cannot refute it.
     """
 
-    oracle_matches = _resolve_target_nodes(oracle_doc, new_node_source_path)
+    oracle_matches = _resolve_target_nodes(
+        oracle_doc,
+        new_node_source_path,
+        document_index_cache=document_index_cache,
+    )
     if not oracle_matches:
         return (
             "residual_insert_not_present",
@@ -3380,7 +3442,11 @@ def _oracle_partition_insert(
         )
     oracle_root = oracle_matches[0]
     oracle_occupancy = _occupancy(oracle_root)
-    oracle_descendants = _descendant_nodes(oracle_doc, oracle_root.path)
+    oracle_descendants = _descendant_nodes(
+        oracle_doc,
+        oracle_root.path,
+        document_index_cache=document_index_cache,
+    )
     candidate_sig = _normalized_subtree_signature(candidate_root, candidate_descendants, root_path=candidate_root.path)
     oracle_sig = _normalized_subtree_signature(oracle_root, oracle_descendants, root_path=oracle_root.path)
     oracle_subtree_digest = _subtree_digest(oracle_root, oracle_descendants)
@@ -3396,7 +3462,11 @@ def _oracle_partition_insert(
     # adjacent same-kind sibling. A mismatch is a position residual, never an
     # agreement — this keeps a derived guess from masquerading as confirmed.
     oracle_adjacent = _oracle_adjacent_sibling_label(
-        oracle_doc, oracle_root, derived_anchor_kind, derived_direction
+        oracle_doc,
+        oracle_root,
+        derived_anchor_kind,
+        derived_direction,
+        document_index_cache=document_index_cache,
     )
     position_confirmed = (
         oracle_adjacent is None
@@ -3827,9 +3897,17 @@ def _rebase_replacement_root(replacement_root: NZSourceNode, resolved_path: tupl
     )
 
 
-def _descendant_nodes(document: NZSourceDocument, root_path: tuple[str, ...]) -> tuple[NZSourceNode, ...]:
+def _descendant_nodes(
+    document: NZSourceDocument,
+    root_path: tuple[str, ...],
+    *,
+    document_index_cache: dict[int, _NZDryRunDocumentIndex] | None = None,
+) -> tuple[NZSourceNode, ...]:
     """Nodes strictly under ``root_path`` in document order."""
 
+    if document_index_cache is not None:
+        index = _dry_run_document_index(document, document_index_cache)
+        return index.descendants_by_path.get(root_path, ())
     depth = len(root_path)
     return tuple(
         node
@@ -3974,6 +4052,7 @@ def _classify_oracle_target_divergence(
     candidate_root: NZSourceNode,
     candidate_descendants: tuple[NZSourceNode, ...],
     preserve_labels: bool = False,
+    document_index_cache: dict[int, _NZDryRunDocumentIndex] | None = None,
 ) -> NZTargetDivergence:
     """Reconstruct + classify the candidate-vs-oracle subtree divergence.
 
@@ -4008,7 +4087,11 @@ def _classify_oracle_target_divergence(
     for candidates). Pure functional reconstruction: no mutation, no I/O.
     """
 
-    oracle_matches = _resolve_target_nodes(oracle_doc, source_path)
+    oracle_matches = _resolve_target_nodes(
+        oracle_doc,
+        source_path,
+        document_index_cache=document_index_cache,
+    )
     if not oracle_matches:
         # No oracle subtree to compare against — the residual is a target-absent
         # outcome the partition function already typed. There is no node pair to
@@ -4021,7 +4104,11 @@ def _classify_oracle_target_divergence(
             node_pairs=(),
         )
     oracle_root = oracle_matches[0]
-    oracle_descendants = _descendant_nodes(oracle_doc, oracle_root.path)
+    oracle_descendants = _descendant_nodes(
+        oracle_doc,
+        oracle_root.path,
+        document_index_cache=document_index_cache,
+    )
     candidate_sig = _normalized_subtree_signature(
         candidate_root, candidate_descendants, root_path=candidate_root.path, preserve_labels=preserve_labels
     )
@@ -4633,7 +4720,15 @@ def _source_path_for_address(operation: LegalOperation) -> tuple[str, ...] | Non
     return tuple(segments)
 
 
-def _nodes_at_path(document: NZSourceDocument, path: tuple[str, ...]) -> tuple[NZSourceNode, ...]:
+def _nodes_at_path(
+    document: NZSourceDocument,
+    path: tuple[str, ...],
+    *,
+    document_index_cache: dict[int, _NZDryRunDocumentIndex] | None = None,
+) -> tuple[NZSourceNode, ...]:
+    if document_index_cache is not None:
+        index = _dry_run_document_index(document, document_index_cache)
+        return index.nodes_by_path.get(path, ())
     return tuple(node for node in document.nodes if node.path == path)
 
 
@@ -4641,6 +4736,76 @@ def _nodes_at_path(document: NZSourceDocument, path: tuple[str, ...]) -> tuple[N
 # amendment skeletons and front/end history. A repeal target must resolve into
 # the live body (or a schedule), never into a skeleton copy.
 _NON_BODY_SOURCE_ZONES = frozenset({"end_skeleton", "front_history", "end_history"})
+
+
+@dataclass(frozen=True)
+class _NZDryRunDocumentIndex:
+    nodes_by_path: Mapping[tuple[str, ...], tuple[NZSourceNode, ...]]
+    live_nodes_by_path: Mapping[tuple[str, ...], tuple[NZSourceNode, ...]]
+    live_leading_part_nodes_by_suffix: Mapping[tuple[str, ...], tuple[NZSourceNode, ...]]
+    descendants_by_path: Mapping[tuple[str, ...], tuple[NZSourceNode, ...]]
+    children_by_parent_kind: Mapping[tuple[tuple[str, ...], str], tuple[NZSourceNode, ...]]
+    top_level_labels_by_kind: Mapping[str, tuple[str, ...]]
+    node_order_by_identity: Mapping[int, int]
+
+
+def _dry_run_document_index(
+    document: NZSourceDocument,
+    cache: dict[int, _NZDryRunDocumentIndex] | None = None,
+) -> _NZDryRunDocumentIndex:
+    """Return a read-only per-run index for repeated source-node lookups."""
+
+    document_key = id(document)
+    if cache is not None:
+        cached = cache.get(document_key)
+        if cached is not None:
+            return cached
+
+    nodes_by_path: dict[tuple[str, ...], list[NZSourceNode]] = {}
+    live_nodes_by_path: dict[tuple[str, ...], list[NZSourceNode]] = {}
+    live_leading_part_nodes_by_suffix: dict[tuple[str, ...], list[NZSourceNode]] = {}
+    descendants_by_path: dict[tuple[str, ...], list[NZSourceNode]] = {}
+    children_by_parent_kind: dict[tuple[tuple[str, ...], str], list[NZSourceNode]] = {}
+    top_level_labels_by_kind: dict[str, list[str]] = {}
+    node_order_by_identity: dict[int, int] = {}
+
+    for order, node in enumerate(document.nodes):
+        node_order_by_identity[id(node)] = order
+        nodes_by_path.setdefault(node.path, []).append(node)
+        parent_path = node.path[:-1]
+        children_by_parent_kind.setdefault((parent_path, node.kind), []).append(node)
+        for depth in range(len(node.path)):
+            descendants_by_path.setdefault(node.path[:depth], []).append(node)
+        if node.source_zone in _NON_BODY_SOURCE_ZONES:
+            continue
+        live_nodes_by_path.setdefault(node.path, []).append(node)
+        if node.path and _is_leading_part_segment(node.path[0]):
+            live_leading_part_nodes_by_suffix.setdefault(node.path[1:], []).append(node)
+        if node.kind and node.label:
+            path = node.path
+            if len(path) == 1 or (
+                len(path) == 2 and _is_leading_part_segment(path[0])
+            ):
+                top_level_labels_by_kind.setdefault(node.kind, []).append(node.label)
+
+    index = _NZDryRunDocumentIndex(
+        nodes_by_path={key: tuple(value) for key, value in nodes_by_path.items()},
+        live_nodes_by_path={key: tuple(value) for key, value in live_nodes_by_path.items()},
+        live_leading_part_nodes_by_suffix={
+            key: tuple(value) for key, value in live_leading_part_nodes_by_suffix.items()
+        },
+        descendants_by_path={key: tuple(value) for key, value in descendants_by_path.items()},
+        children_by_parent_kind={
+            key: tuple(value) for key, value in children_by_parent_kind.items()
+        },
+        top_level_labels_by_kind={
+            key: tuple(value) for key, value in top_level_labels_by_kind.items()
+        },
+        node_order_by_identity=node_order_by_identity,
+    )
+    if cache is not None:
+        cache[document_key] = index
+    return index
 
 
 def _is_leading_part_segment(path_segment: str) -> bool:
@@ -4680,6 +4845,8 @@ def _is_leading_part_segment(path_segment: str) -> bool:
 def _resolve_target_nodes(
     document: NZSourceDocument,
     source_path: tuple[str, ...],
+    *,
+    document_index_cache: dict[int, _NZDryRunDocumentIndex] | None = None,
 ) -> tuple[NZSourceNode, ...]:
     """Resolve an address-derived source path to live-body node(s).
 
@@ -4695,6 +4862,12 @@ def _resolve_target_nodes(
     body. The caller still requires exactly one match; an empty or ambiguous
     result is a typed refusal, never a coarse-parent fallback.
     """
+    if document_index_cache is not None:
+        index = _dry_run_document_index(document, document_index_cache)
+        matches = list(index.live_nodes_by_path.get(source_path, ()))
+        matches.extend(index.live_leading_part_nodes_by_suffix.get(source_path, ()))
+        return tuple(matches)
+
     matches: list[NZSourceNode] = []
     for node in document.nodes:
         if node.source_zone in _NON_BODY_SOURCE_ZONES:
@@ -4710,10 +4883,23 @@ def _resolve_target_nodes(
     return tuple(matches)
 
 
-def _sibling_nodes(document: NZSourceDocument, path: tuple[str, ...]) -> tuple[NZSourceNode, ...]:
+def _sibling_nodes(
+    document: NZSourceDocument,
+    path: tuple[str, ...],
+    *,
+    document_index_cache: dict[int, _NZDryRunDocumentIndex] | None = None,
+) -> tuple[NZSourceNode, ...]:
     if not path:
         return ()
     parent = path[:-1]
+    if document_index_cache is not None:
+        index = _dry_run_document_index(document, document_index_cache)
+        siblings: list[NZSourceNode] = []
+        for (candidate_parent, _kind), nodes in index.children_by_parent_kind.items():
+            if candidate_parent == parent:
+                siblings.extend(node for node in nodes if node.path != path)
+        siblings.sort(key=lambda node: index.node_order_by_identity[id(node)])
+        return tuple(siblings)
     return tuple(
         node
         for node in document.nodes
@@ -4725,9 +4911,14 @@ def _child_nodes_of_kind(
     document: NZSourceDocument,
     parent_path: tuple[str, ...],
     kind: str,
+    *,
+    document_index_cache: dict[int, _NZDryRunDocumentIndex] | None = None,
 ) -> tuple[NZSourceNode, ...]:
     """Direct child nodes of ``parent_path`` whose ``kind`` matches, in document order."""
 
+    if document_index_cache is not None:
+        index = _dry_run_document_index(document, document_index_cache)
+        return index.children_by_parent_kind.get((parent_path, kind), ())
     depth = len(parent_path)
     return tuple(
         node
@@ -4738,7 +4929,12 @@ def _child_nodes_of_kind(
     )
 
 
-def _top_level_sibling_labels(document: NZSourceDocument, kind: str) -> tuple[str, ...]:
+def _top_level_sibling_labels(
+    document: NZSourceDocument,
+    kind: str,
+    *,
+    document_index_cache: dict[int, _NZDryRunDocumentIndex] | None = None,
+) -> tuple[str, ...]:
     """Labels of top-level same-kind provisions in the live body, document order.
 
     A whole-provision insert (``new_node_source_path`` has one segment) lands
@@ -4749,6 +4945,10 @@ def _top_level_sibling_labels(document: NZSourceDocument, kind: str) -> tuple[st
     only (never an end-of-document skeleton copy), so the derived predecessor is
     validated against the real consolidated sibling group.
     """
+
+    if document_index_cache is not None:
+        index = _dry_run_document_index(document, document_index_cache)
+        return index.top_level_labels_by_kind.get(kind, ())
 
     labels: list[str] = []
     for node in document.nodes:
@@ -4768,6 +4968,8 @@ def _resolved_group_labels(
     document: NZSourceDocument,
     anchor_path: tuple[str, ...],
     kind: str,
+    *,
+    document_index_cache: dict[int, _NZDryRunDocumentIndex] | None = None,
 ) -> frozenset[str]:
     """Same-kind sibling labels in the before tree under the anchor's parent.
 
@@ -4779,7 +4981,12 @@ def _resolved_group_labels(
     """
 
     parent = anchor_path[:-1]
-    siblings = _child_nodes_of_kind(document, parent, kind)
+    siblings = _child_nodes_of_kind(
+        document,
+        parent,
+        kind,
+        document_index_cache=document_index_cache,
+    )
     return frozenset(node.label for node in siblings if node.label)
 
 
