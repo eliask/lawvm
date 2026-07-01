@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Optional, Sequence
 
 from lawvm.core.diagnostic_records import diagnostic_detail
@@ -69,6 +70,7 @@ _ADDR_KIND_ALIASES: dict[str, set[str]] = {
 }
 
 
+@lru_cache(maxsize=4096)
 def _normalize_commencement_match_label(kind: str, label: str) -> str:
     """Normalize UK source labels for commencement address matching only."""
     text = str(label or "").strip().replace("\u00a0", " ").lower()
