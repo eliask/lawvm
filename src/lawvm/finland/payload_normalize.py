@@ -4442,6 +4442,20 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
             and hi_foreign + 1 in payload_numeric_labels
             and all(n in payload_numeric_labels for n in range(lo_foreign, hi_foreign + 1))
         )
+    # Whole-new-chapter dense body: the payload is a gapless numeric section run
+    # starting at 1 (``1 §`` … ``N §``), i.e. the complete body of a brand-new
+    # chapter/part being inserted, with no suffixed member labels. Every member
+    # of such a run belongs to this new container by construction, so a foreign
+    # standalone label collision (the same section number owned elsewhere in the
+    # amendment) is a mere numbering coincidence and must not truncate the body.
+    payload_is_dense_whole_new_container_body = bool(
+        preserve_dense_new_container_payload
+        and master_container is None
+        and payload_numeric_labels
+        and not payload_has_suffixed_section_labels
+        and min(payload_numeric_labels) == 1
+        and payload_numeric_labels == set(range(1, max(payload_numeric_labels) + 1))
+    )
     new_children: List[IRNode] = []
     for child in muutos_ir.children:
         child_label = _norm_num_token(child.label or "")
@@ -4503,8 +4517,15 @@ def _prune_container_payload_sections_shadowed_by_standalone_targets(
             continue
         if child_label in foreign_scoped_standalone_section_targets:
             if not (
-                preserve_dense_new_container_payload
-                and has_dense_foreign_replace_bridge
+                (
+                    preserve_dense_new_container_payload
+                    and has_dense_foreign_replace_bridge
+                )
+                or (
+                    payload_is_dense_whole_new_container_body
+                    and child_label.isdigit()
+                    and int(child_label) in payload_numeric_labels
+                )
             ):
                 changed = True
                 pruned_labels.append(child_label)
