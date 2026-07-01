@@ -958,14 +958,21 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
             "Synchronous single-statute only — no parallelism inside the profiler. "
             "Jurisdiction dispatch: -j fi wraps the FI single-statute replay_xml "
             "path; -j nz wraps the NZ per-work chain replay "
-            "(build_archived_work_chain_replay over the archived NZ farchive) "
-            "and IGNORES --as-of (the NZ chain runs ALL archived versions of the "
-            "work, not a single-date PIT snapshot — callers pass a placeholder)."
+            "(build_archived_work_chain_replay over the archived NZ farchive); "
+            "-j us wraps the US per-window dry-run (evaluate_window over the "
+            "archived us_federal farchive; positional id is the window key "
+            "title<T>:<before>-><after>); -j uk wraps the UK single-statute "
+            "compile + replay (positional id is the affected-act source id "
+            "<type>/<year>/<number>). --as-of is IGNORED for -j nz/us/uk (those "
+            "branches have no single-date PIT snapshot — callers pass a placeholder)."
         ),
     )
     profile_p.add_argument(
         "statute_id",
-        help="base act identifier, e.g. 2006/1299 (FI) or act_public_1992_122 (NZ)",
+        help=(
+            "base act identifier: 2006/1299 (FI), act_public_1992_122 (NZ), "
+            "title11:2016->2018 (US window key), ukpga/1998/42 (UK affected act)"
+        ),
     )
     profile_p.add_argument(
         "--as-of",
