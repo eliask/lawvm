@@ -98,7 +98,7 @@ class Cursor:
         return None
 
     def advance(self, n: int = 1) -> "Cursor":
-        return replace(self, pos=min(self.pos + n, len(self.tokens)))
+        return Cursor(self.tokens, min(self.pos + n, len(self.tokens)))
 
     def span_to(self, other: "Cursor") -> Span:
         return Span(self.pos, other.pos)
