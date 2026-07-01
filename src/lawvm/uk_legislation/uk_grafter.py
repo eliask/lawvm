@@ -123,6 +123,8 @@ def _tag(el: ET._Element) -> str:
 def _text_content(el: Optional[ET._Element]) -> str:
     if el is None:
         return ""
+    if len(el) == 0:
+        return (el.text or "").strip()
     return "".join(str(_t) for _t in el.itertext()).strip()
 
 

@@ -15,6 +15,7 @@ from lawvm.uk_legislation.uk_grafter import (
     _clean_num,
     _definition_ordered_list_term,
     _slugify,
+    _text_content,
     extract_eid_map_bytes,
     parse_uk_statute_ir_bytes,
 )
@@ -115,6 +116,14 @@ def test_definition_ordered_list_term_ignores_qualifier_between_term_and_predica
 
     assert list_el is not None
     assert _definition_ordered_list_term(parent, list_el) == "relevant general policies"
+
+
+def test_uk_grafter_text_content_leaf_fast_path_ignores_own_tail() -> None:
+    root = ET.fromstring("<Root><Text>  alpha\t beta\n</Text>tail</Root>")
+    leaf = root[0]
+
+    assert _text_content(leaf) == "alpha\t beta"
+    assert _text_content(root) == "alpha\t beta\ntail"
 
 
 def test_visible_inline_citation_text_is_preserved_in_host_provision_text() -> None:
