@@ -70,6 +70,7 @@ from lawvm.us_federal.amendatory import (
     _join_insert_before,
     _payload_opens_new_section,
     _resolve_target,
+    _shallow_text,
     lower_plaw_amendatory,
     parse_relative_usc_target,
     parse_usc_target_href,
@@ -1161,6 +1162,20 @@ def test_nested_instruction_list_threads_section_and_subsection_targets():
         "title:11/section:104/subsection:a",
         "title:11/section:104/subsection:b",
     ]
+
+
+def test_shallow_text_prunes_quoted_operands_and_collapses_whitespace():
+    elem = ET.fromstring(
+        '<paragraph xmlns="http://xml.house.gov/schemas/uslm/1.0">'
+        '<num value="1">(1) </num>'
+        '<content>\n  in section 104, by '
+        '<amendingAction type="insert">inserting</amendingAction> '
+        '"<quotedText>section 7222 of title 10, United States Code</quotedText>" '
+        'after "<quotedText>target phrase</quotedText>"; and\n</content>'
+        "</paragraph>"
+    )
+
+    assert _shallow_text(elem) == '(1) in section 104, by inserting "" after ""; and'
 
 
 # ---------------------------------------------------------------------------

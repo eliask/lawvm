@@ -5298,7 +5298,7 @@ def _shallow_text(
         _walk(child)
         if child.tail:
             parts.append(child.tail)
-    return re.sub(r"\s+", " ", "".join(parts)).strip()
+    return _collapse_ws_strip("".join(parts))
 
 
 # A unit head "Section X(...) is amended" / "Paragraph (N) of section X(...) is
