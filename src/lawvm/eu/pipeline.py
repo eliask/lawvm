@@ -15,6 +15,7 @@ from lawvm.core.apply_seam import (
     MaterializeResult,
     apply_op,
 )
+from lawvm.core.execution_authorization import ExecutionAuthorization
 from lawvm.core.diagnostic_records import diagnostic_detail
 from lawvm.core.filter_result import FilterResult, RejectedItem
 from lawvm.core.invariant_profiles import CORE_REPLAY_DELTA_MINIMAL_FAMILIES
@@ -185,6 +186,104 @@ def _eu_adjudication_from_parser_diagnostic(
         phase=str(diagnostic.phase),
         detail=detail,
     )
+
+
+# ── EV-05 execution-authorization: EU proof minting + resolver ────────────────
+#
+# The genuine authority for an EU state-mutating op is its AMENDING ACT — the
+# act whose enacting terms directed the change. EU stamps that act's CELEX into
+# ``op.source.statute_id`` at every lowering site: ``fmx4_amendment_grammar._source``
+# (the real grammar lowering) sets ``statute_id=amending_celex`` and
+# ``pipeline.compile_ops_for_statute`` re-stamps each parsed op with the
+# discovered affecting act's CELEX (``OperationSource(statute_id=act_celex)``).
+# ``_mint_eu_execution_authorization`` projects that known authority into a typed
+# :class:`ExecutionAuthorization` proof; the EU resolver
+# (:func:`_eu_execution_authorization`) prefers a proof already minted onto the
+# op's carrier and otherwise mints one HERE from the op's source CELEX, so EU need
+# not re-stamp every upstream op-construction site (byte-identity-safe).
+#
+# An op with NO amending-act identity has UNKNOWN authority and no proof is
+# fabricated, so the EV-05 observe gate fires honestly on it (the real
+# unauthorized residue). Two EU cases are unknown: (a) a blank/absent
+# ``op.source`` / blank ``statute_id``, and (b) the compat ``EUOpsParser`` stub,
+# which stamps the literal ``statute_id="unknown"`` sentinel (``ops_parser.py``)
+# — that is NOT a real CELEX, so it is treated as unknown authority, not minted.
+
+#: The EU execution-authorization rule family stamped into a minted proof's
+#: ``authorization_rule_id``. The concrete rule_id appends the amending act CELEX,
+#: so the proof points at the authorizing act (``eu_amending_act:<celex>``).
+_EU_EXECUTION_AUTHORIZATION_RULE = "eu_amending_act_authorizes_apply"
+
+#: The ``EUOpsParser`` compat-stub sentinel stamped when no real amending-act
+#: CELEX is known for an op (``ops_parser.py``). It is NOT a real act id, so it is
+#: treated as unknown authority — no proof is minted, the EV-05 gate fires.
+_EU_UNKNOWN_SOURCE_SENTINEL = "unknown"
+
+
+def _mint_eu_execution_authorization(
+    op: LegalOperation,
+) -> Optional[ExecutionAuthorization]:
+    """Mint a typed ``ExecutionAuthorization`` from an EU op's amending-act CELEX.
+
+    The authority an EU op carries is its source amending act: the act whose
+    enacting terms directed this change is what authorizes the apply. When the op
+    carries a real ``op.source.statute_id`` (the amending act CELEX, NOT the
+    ``"unknown"`` compat-stub sentinel), that is a GENUINELY KNOWN authority, so we
+    mint a replay-authorized proof whose ``authorization_rule_id`` names the
+    concrete act (``eu_amending_act:<celex>``) and whose ``detail`` records the
+    witness rule id (read-as-witness only — §2.10). When the op carries no
+    amending-act identity (no ``source`` / blank or ``"unknown"`` ``statute_id``),
+    the authority is UNKNOWN: we return ``None`` and never fabricate a proof, so
+    the EV-05 gate honestly witnesses that op as unauthorized.
+
+    The proof is replay-authorized (``executable``/``replay_authorized`` both
+    ``True``) because the amending act IS the apply authority for EU's replay lane
+    — EU's apply is the act executing its own directed changes. This is the honest
+    EU footing, not a blanket pass: the gate still fires on every op whose
+    authorizing act is not identified (the ``"unknown"`` compat-stub residue).
+    """
+    source = op.source
+    statute_id = (source.statute_id if source is not None else "") or ""
+    if not statute_id or statute_id == _EU_UNKNOWN_SOURCE_SENTINEL:
+        return None
+    return ExecutionAuthorization(
+        executable=True,
+        replay_authorized=True,
+        authorization_status="replay_authorized",
+        authorization_rule_id=f"eu_amending_act:{statute_id}",
+        owner_phase="apply",
+        strict_disposition="record",
+        quirks_disposition=QuirksDisposition.RECORD,
+        safe_default="execute_only_after_amending_act_identity_is_known",
+        required_proofs=(),
+        forbidden_shortcuts=(
+            "treat_op_existence_as_replay_authority_without_amending_act",
+        ),
+        detail={
+            "rule_family": _EU_EXECUTION_AUTHORIZATION_RULE,
+            "amending_act": statute_id,
+            "witness_rule_id": op.witness_rule_id or "",
+            "owner": "eu/pipeline:_mint_eu_execution_authorization",
+        },
+    )
+
+
+def _eu_execution_authorization(
+    op: LegalOperation,
+) -> Optional[ExecutionAuthorization]:
+    """EU ``authorization_resolver``: read a minted proof, else mint from source.
+
+    Prefers an ``ExecutionAuthorization`` already minted onto the op's
+    ``execution_authorization`` carrier (the generic
+    ``core/apply_seam.read_op_execution_authorization`` path); if the op carries
+    none, mints one from its amending-act CELEX via
+    :func:`_mint_eu_execution_authorization`. Returns ``None`` only when the op's
+    authority is genuinely unknown (no amending act / the ``"unknown"`` compat-stub
+    sentinel) — the honest EV-05 residue.
+    """
+    if op.execution_authorization is not None:
+        return op.execution_authorization
+    return _mint_eu_execution_authorization(op)
 
 
 # ---------------------------------------------------------------------------
@@ -509,6 +608,21 @@ def apply_eu_ops(
     # seam-synthesized receipt byte-identical to EU's existing
     # ``_eu_emit_one_op_receipt`` if a future caller routes receipts through the
     # seam (proven additive in ``tests/test_eu_apply_seam_parallel_run.py``).
+    # ── EU EV-05 authorization resolver (this task). ─────────────────────────
+    # ``authorization_resolver`` mints/reads a real ``ExecutionAuthorization``
+    # proof from each op's amending-act CELEX (``_eu_execution_authorization``) so
+    # the EV-05 observe gate goes QUIET for every op whose authorizing act is known
+    # (the real grammar-lowered + Cellar-re-stamped ops) and fires only on the
+    # genuinely unauthorized residue (the ``EUOpsParser`` compat-stub ops carrying
+    # the ``"unknown"`` source sentinel). It is OBSERVE-only: the seam routes the
+    # EV-05 witness to ``AppliedOp.observations`` (never production ``findings`` /
+    # adjudications), so EU's materialized statute + every skip adjudication stay
+    # byte-identical. EU is NOT flipped to block on the gate — that is a future
+    # measure-then-promote step. AM-01 is intentionally NOT wired: EU lands ONLY
+    # grammar-recognized ops (each with an explicit ``witness_rule_id``); its
+    # typed residuals / uncovered-instruction shapes are DIAGNOSTICS that never
+    # become landed ops, so there is no Parsed-vs-Recovered population ON landed
+    # ops for the AM-01 gate to measure (unlike EE's ``scope_confidence`` rungs).
     eu_apply_profile: ApplyProfile[IRNode] = ApplyProfile(
         jurisdiction="eu",
         materializer=_eu_materialize_one,
@@ -517,6 +631,7 @@ def apply_eu_ops(
         emit_coverage=False,
         renumber_migration_rule_ids=("eu_renumber_relabel",),
         receipt_helper_prefix="apply_eu_ops",
+        authorization_resolver=_eu_execution_authorization,
     )
 
     # ── Seam loop (design §3.1): apply each op through the unified per-op
