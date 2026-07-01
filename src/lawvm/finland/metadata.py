@@ -337,14 +337,29 @@ def _element_text(node: "etree._Element") -> str:
     return etree.tostring(node, method="text", encoding="unicode").strip()
 
 
+# Enacting-clause provenance blocks that can carry operative amendment
+# instructions. Both `*-originals` variants are included: Finlex occasionally
+# misfiles an operative clause (e.g. `lisätään ... uusi 14 a luku`) onto the
+# tail of a `-originals` provenance block, and omitting one silently DROPS that
+# instruction — the whole reason 1997/145's chapter-insert (14a/17) never
+# reached the parser. Keep the `insertions`/`substitutions` families symmetric.
+_ENACTING_BLOCK_NAMES = (
+    "substitutions",
+    "substitutions-originals",
+    "repeals",
+    "insertions",
+    "insertions-originals",
+)
+_ENACTING_BLOCK_PREDICATE = " or ".join(
+    f"@name='{name}'" for name in _ENACTING_BLOCK_NAMES
+)
+
+
 def _formula_block_text(formula_el: "etree._Element") -> str:
     blocks = cast(
         List[etree._Element],
         formula_el.xpath(
-            ".//*[local-name()='block' and ("
-            "@name='substitutions' or "
-            "@name='repeals' or "
-            "@name='insertions' or @name='insertions-originals')]"
+            f".//*[local-name()='block' and ({_ENACTING_BLOCK_PREDICATE})]"
         ),
     )
     return " ".join(_element_text(block) for block in blocks if _element_text(block))
@@ -443,10 +458,7 @@ def get_johtolause_from_tree(tree: "etree._Element") -> str:
                     raw = block_text
             return _strip_cross_law_description(raw)
         blocks = cast(List[etree._Element], tree.xpath(
-            "//*[local-name()='block' and ("
-            "@name='substitutions' or "
-            "@name='repeals' or "
-            "@name='insertions' or @name='insertions-originals')]"
+            f"//*[local-name()='block' and ({_ENACTING_BLOCK_PREDICATE})]"
         ))
         raw = " ".join(_element_text(block) for block in blocks if _element_text(block))
         return _strip_cross_law_description(raw)
