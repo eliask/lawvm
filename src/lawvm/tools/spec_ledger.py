@@ -293,6 +293,9 @@ _ADAPTER_MODULES: Dict[str, str] = {
     "fi": "lawvm.finland.spec_ledger_adapter",
     "uk": "lawvm.uk_legislation.spec_ledger_adapter",
     "ee": "lawvm.estonia.spec_ledger_adapter",
+    "no": "lawvm.norway.spec_ledger_adapter",
+    "se": "lawvm.sweden.spec_ledger_adapter",
+    "eu": "lawvm.eu.spec_ledger_adapter",
 }
 
 
@@ -347,11 +350,14 @@ def run_ledger(jurisdiction: str, sids: List[str], mode: Mode) -> SpecLedger:
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="Witness-attribution spec-discovery ledger")
     ap.add_argument("sids", nargs="*", help="statute ids, e.g. 1958/370")
-    ap.add_argument("-j", "--jurisdiction", default="fi", help="frontend adapter (fi/uk/ee)")
+    ap.add_argument("-j", "--jurisdiction", default="fi",
+                    help="frontend adapter (fi/uk/ee/no/se/eu)")
     ap.add_argument("--corpus-bench", action="store_true",
                     help="[-j fi] data/finland/bench_core.csv  "
                          "[-j uk] data/uk/bench_corpus_smoke.csv  "
-                         "[-j ee] data/estonia/bench_corpus.csv")
+                         "[-j ee] data/estonia/bench_corpus.csv  "
+                         "[-j no] most-amended replayable base acts (inventory scan)  "
+                         "[-j se] amending SFS ids with compiled ops (archive)")
     ap.add_argument("--corpus-full", action="store_true",
                     help="[-j ee] data/estonia/current_replayable_corpus.csv")
     ap.add_argument("--mode", default="official_consolidation",
@@ -390,4 +396,14 @@ def main(argv: Optional[List[str]] = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # ``python -m lawvm.tools.spec_ledger`` imports this file twice — once as
+    # ``__main__`` (here) and once as ``lawvm.tools.spec_ledger`` when an adapter does
+    # ``from lawvm.tools.spec_ledger import register_ledger_adapter``. Each import has
+    # its OWN ``_LEDGER_ADAPTERS`` dict, so adapters self-register into the canonical
+    # module's registry while ``__main__``'s stays empty — every ``-j`` dispatch then
+    # fails with a spurious NotImplementedError. Delegate to the canonical module's
+    # ``main`` so registration and dispatch share one registry.
+    import importlib
+
+    _canonical = importlib.import_module("lawvm.tools.spec_ledger")
+    raise SystemExit(_canonical.main())

@@ -899,6 +899,9 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_spec_ledger_ee_catalog.py",
         "test_spec_ledger_se_catalog.py",
         "test_spec_ledger_ee.py",
+        "test_spec_ledger_no.py",
+        "test_spec_ledger_se.py",
+        "test_spec_ledger_eu.py",
         "test_spec_ledger_no_catalog.py",
         "test_spec_ledger_nz_catalog.py",
         # iter4 W1 C1: new EU spec_ledger catalog (mirror of SE/EE/the-UK precedent

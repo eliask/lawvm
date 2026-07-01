@@ -111,6 +111,13 @@ _NON_RULE_LITERALS: frozenset[str] = frozenset(
         "se_official_ops_adjudications_locator",
         # truncation artifact
         "se_official_",
+        # ContextVar name (grafter.py ``contextvars.ContextVar("se_raw_source_ctx")``),
+        # not a rule_id hypothesis
+        "se_raw_source_ctx",
+        # EV-05 per-instance authorization_rule_id f-string prefix
+        # (grafter.py f"se_affecting_act:{statute_id}"); the rule FAMILY
+        # se_affecting_act_authorizes_apply IS cataloged.
+        "se_affecting_act:",
     }
 )
 

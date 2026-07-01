@@ -63,6 +63,30 @@ _EU_RULE_SPECS: Dict[str, str] = {
     "eu_amendment_text_fetch_failed": "An exception while fetching an EU amending act's XHTML manifestation is a typed acquisition diagnostic, not a silent empty text buffer that lets replay proceed against an empty amendment.",
     "eu_amendment_text_empty": "An EU affecting act that produced empty amendment text without a prior fetch-failed diagnostic is a typed source-pathology (the discovered source lane is not an operative-content-free lane), not a silent no-content pass.",
 
+    # --- FMX4 amendment grammar (structural-instruction recognition) --------------------
+    # Each ``EU_FMX4.*`` witness_rule_id names a recognized amendment-instruction op
+    # (those constants travel on the op's ``witness_rule_id`` and are the ledger's
+    # uncataloged grammar frontier). The ``eu_fmx4_grammar_*`` ids below are the
+    # *typed diagnostics* the same grammar emits when an instruction was recognized
+    # as operative but could not be lowered into an op — each a falsifiable claim
+    # that "this shape of amending source does not deterministically specify a
+    # structural effect", surfaced as evidence rather than silently dropped.
+    "eu_fmx4_grammar_not_xml": "EU amending-act bytes that do not parse as XML are a typed source-pathology diagnostic (with the parse error + byte excerpt), not a silent empty op stream.",
+    "eu_fmx4_grammar_envelope_no_enacting_terms": "An EU manifestation whose root carries no ACT, no ANNEX and no enacting terms (a metadata-only publication envelope) yields a typed instruction-free residual, not a crash or a silent zero.",
+    "eu_fmx4_grammar_no_enacting_terms": "An EU amending act with no ENACTING.TERMS element is a typed source-pathology diagnostic, not a silent no-instruction pass.",
+    "eu_fmx4_grammar_annex_root_no_number": "An ANNEX-rooted EU manifestation that exposes no 'ANNEX <N>' title to resolve the target annex number is a typed extraction-gap diagnostic, not a silent whole-annex replace against an unknown target.",
+    "eu_fmx4_grammar_point_replace_missing_payload": "An EU point-level REPLACE instruction with neither a QUOT block nor inline quoted replacement text is a typed grammar diagnostic, not a silent empty-payload op.",
+    "eu_fmx4_grammar_point_insert_missing_payload": "An EU point-level INSERT instruction with neither a QUOT block nor inline quoted new text is a typed grammar diagnostic, not a silent empty-payload op.",
+    "eu_fmx4_grammar_subparagraph_replace_missing_quoted_block": "An EU subparagraph REPLACE instruction with no QUOT block payload is a typed grammar diagnostic, not a silent empty-payload op.",
+    "eu_fmx4_grammar_indent_replace_missing_payload": "An EU indent-level REPLACE instruction with neither a QUOT block nor inline quoted replacement text is a typed grammar diagnostic, not a silent empty-payload op.",
+    "eu_fmx4_grammar_annex_as_set_out_payload_separate": "An indirect annex amendment ('as set out in the Annex to this Regulation') whose replacement body ships as a separate ANNEX manifestation absent from the main FMX4 lowers the structural target with a typed separate-manifestation payload-origin diagnostic, not a silent empty annex body.",
+    "eu_fmx4_grammar_annex_replace_missing_quoted_block": "An EU whole-annex REPLACE instruction with no QUOT block payload is a typed grammar diagnostic, not a silent empty-payload op.",
+    "eu_fmx4_grammar_replace_missing_quoted_block": "An EU sub-article / whole-article REPLACE instruction with no QUOT block payload is a typed grammar diagnostic, not a silent empty-payload op.",
+    "eu_fmx4_grammar_insert_missing_quoted_block": "An EU whole-article INSERT instruction with no QUOT block payload is a typed grammar diagnostic, not a silent empty-payload op.",
+    "eu_fmx4_grammar_corrigendum_empty_for_read": "An EU corrigendum whose 'for … read …' formula resolves to empty for-text or read-text is a typed corrigendum diagnostic, not a silent no-op patch.",
+    "eu_fmx4_grammar_corrigendum_no_structural_target": "An EU corrigendum 'for/read' formula that names no Article target is a typed residual — an act-wide text patch is not addressable in the IR coordinate system — not a silent whole-act mutation.",
+    "eu_fmx4_grammar_uncovered_instruction": "An EU amendment instruction that matched none of the covered grammar families (whole/sub-article replace, article insert/repeal, point repeal, annex replace, for/read corrigenda) is a typed uncovered-instruction residual — the grammar's coverage frontier — not a silent drop.",
+
     # --- Ops parser (clause-segment lowering) ------------------------------------------
     "eu_ops_parser_unsupported_action_segment": "An operative-looking EU amendment segment whose action verb is not in the supported verb set is a typed parser diagnostic (blocking, with source_excerpt), not a silent skip that lets the segment disappear.",
     "eu_ops_parser_unknown_operative_segment": "An EU amendment segment that looks operative but matches no known verb family is a typed parser diagnostic (blocking, with source_excerpt), not a silent pass into the lowered op stream.",
@@ -119,4 +143,13 @@ _EU_RULE_SPECS: Dict[str, str] = {
     # the receipt helper's RENUMBER branch is named-and-witnessed so the
     # rule id is auditable the moment RENUMBER apply support ships.
     "eu_renumber_relabel": "An EU RENUMBER op's bound_target_path (source label) vs landed_primary_path (destination label) divergence is the typed named migration for a section relabel/renumber — receipt-audited as ``qualified`` (named-rule-explained divergence), not a ``violation`` (unexplained); the §1.6 unstated-migration invariant risks being violated if the receipt omits this rule id.",
+
+    # --- EV-05 execution-authorization proof carrier (the firewall waist) -----------------
+    # Mirrors SE's ``se_affecting_act_authorizes_apply`` and NO's
+    # ``no_affecting_act_authorizes_apply``. The concrete
+    # ``authorization_rule_id`` appends the amending act CELEX
+    # (``eu_amending_act:<celex>``, a per-instance f-string prefix excluded from
+    # the rule-id denominator in the catalog test); this constant is the rule
+    # *family* the minted proof stamps into its ``detail``.
+    "eu_amending_act_authorizes_apply": "An EU op's execution authority is its source amending act: a typed ExecutionAuthorization proof is minted from the op's amending-act CELEX identity (``eu_amending_act:<celex>``) so the EV-05 observe gate stays quiet on authorized ops; an op with no amending-act identity carries UNKNOWN authority and no proof is fabricated, so the gate fires honestly on the real unauthorized residue.",
 }

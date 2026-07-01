@@ -67,6 +67,17 @@ _NON_RULE_LITERALS: frozenset[str] = frozenset(
         # ``eu_cellar_manifestation_option_skipped`` / ``eu_cellar_manifest_request_failed``
         # ARE cataloged (those are real rule_ids, NOT this prefix).
         "eu_cellar_",
+        # pipeline.py — bare f-string literal-text fragment from the EV-05
+        # ``authorization_rule_id=f"eu_amending_act:{celex}"`` (pipeline.py). This
+        # is the per-instance authorization-proof id prefix pointing at the
+        # concrete amending act; it is NOT a believed-spec hypothesis. The rule
+        # *family* ``eu_amending_act_authorizes_apply`` IS cataloged.
+        "eu_amending_act:",
+        # eu_ordering.py __all__ function names (``def eu_temporal_key`` /
+        # ``def eu_ordering_profile``) — the EU temporal sort key + ordering
+        # profile factory, not rule-id hypotheses.
+        "eu_temporal_key",
+        "eu_ordering_profile",
     }
 )
 

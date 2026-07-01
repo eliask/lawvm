@@ -168,4 +168,17 @@ _SE_RULE_SPECS: Dict[str, str] = {
     # dict's ``adjudications`` key — §1.0 evidence-not-silently-destroyed
     # contract. Mirrors the NO/EE/EU precedent (silent-failure review HIGH #1-3).
     "se_replay_apply_raise": "An apply-fold exception raised mid-``apply_se_ops_conserved`` is a non-blocking typed orchestration adjudication carrying the exception type/exception/clause_text snippet per §1.10 (the blocking gate is the structured ``outcome='apply_raise'`` signal); bare-apply's partial witnesses persist on the returned dict's ``adjudications`` key — §1.0 evidence-not-silently-destroyed contract.",
+
+    # --- EV-05 execution-authorization proof carrier (the firewall waist) ---------------
+    # Mirrors NO's ``no_affecting_act_authorizes_apply`` and EU's
+    # ``eu_amending_act_authorizes_apply``. The concrete ``authorization_rule_id``
+    # appends the affecting act id (``se_affecting_act:<statute>``, a per-instance
+    # f-string prefix excluded from the rule-id denominator in the catalog test);
+    # this constant is the rule *family* the minted proof stamps into its ``detail``.
+    "se_affecting_act_authorizes_apply": "A Sweden op's execution authority is its source affecting act: a typed ExecutionAuthorization proof is minted from the op's affecting-act identity (``se_affecting_act:<statute>``) so the EV-05 observe gate stays quiet on authorized ops; an op with no affecting-act identity carries UNKNOWN authority and no proof is fabricated, so the gate fires honestly on the real unauthorized residue.",
+
+    # --- Per-op mutation-boundary escape observation (§1.0 in-fold twin) -----------------
+    # Mirrors EE's ``ee_replay_mutation_boundary_per_op_violation_observed`` and
+    # UK's ``uk_replay_mutation_boundary_per_op_violation_observed``.
+    "se_replay_mutation_boundary_per_op_violation_observed": "A per-op Sweden write whose changed paths escape the op's declared section region is recorded as a boundary-escape observation (the in-fold twin of the apply-seam boundary witness), not silently absorbed.",
 }

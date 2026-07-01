@@ -33,6 +33,10 @@ _NON_RULE_LITERALS = frozenset(
         "no_amendments",  # replay-status enum (commencement.py _base_replay_status_from_statuses)
         "no_list_items",  # statsrad stopped_reason enum value (statsrad.py)
         "no_replay_",  # family-stratification prefix (grafter.py kind.startswith)
+        "no_raw_source_ctx",  # ContextVar name (grafter.py), not a rule_id hypothesis
+        "no_affecting_act:",  # EV-05 per-instance authorization_rule_id f-string prefix
+        #                       (grafter.py f"no_affecting_act:{statute_id}"); the rule
+        #                       FAMILY no_affecting_act_authorizes_apply IS cataloged.
     }
 )
 
