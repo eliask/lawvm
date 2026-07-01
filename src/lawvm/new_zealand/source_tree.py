@@ -397,17 +397,17 @@ def _amend_instruction_candidate_nodes(root: etree._Element) -> set[etree._Eleme
 
 def _document_metadata(root: etree._Element) -> dict[str, str]:
     metadata: dict[str, str] = {
-        _localname(key): value
+        _localname_of_tag(key): value
         for key, value in root.attrib.items()
     }
     title = ""
     for node in root.iter():
-        if isinstance(node.tag, str) and _localname(node) == "title":
+        if isinstance(node.tag, str) and _localname_of_tag(node.tag) == "title":
             title = _node_text(node)
             break
     if title:
         metadata["title"] = title
-    metadata["root_tag"] = _localname(root)
+    metadata["root_tag"] = _localname_of_tag(root.tag) if isinstance(root.tag, str) else _localname(root)
     return metadata
 
 
@@ -422,7 +422,7 @@ def _first_def_term(node: etree._Element) -> str:
     for descendant in node.iter():
         if descendant is node:
             continue
-        if isinstance(descendant.tag, str) and _localname(descendant) == _DEF_TERM_TAG:
+        if isinstance(descendant.tag, str) and _localname_of_tag(descendant.tag) == _DEF_TERM_TAG:
             term = _normalize_text(descendant.text or "")
             if term and "/" not in term and ":" not in term:
                 return term
@@ -442,17 +442,21 @@ def _direct_history_notes(node: etree._Element) -> Iterable[etree._Element]:
     for child in node:
         if not isinstance(child.tag, str):
             continue
-        if _localname(child) == "notes":
+        child_kind = _localname_of_tag(child.tag)
+        if child_kind == "notes":
             for descendant in child.iter():
-                if isinstance(descendant.tag, str) and _localname(descendant) == "history-note":
+                if (
+                    isinstance(descendant.tag, str)
+                    and _localname_of_tag(descendant.tag) == "history-note"
+                ):
                     yield descendant
-        elif _localname(child) == "history-note":
+        elif child_kind == "history-note":
             yield child
 
 
 def _iter_localname(root: etree._Element, localname: str) -> Iterable[etree._Element]:
     for node in root.iter():
-        if isinstance(node.tag, str) and _localname(node) == localname:
+        if isinstance(node.tag, str) and _localname_of_tag(node.tag) == localname:
             yield node
 
 
@@ -619,7 +623,7 @@ def _history_note_defined_term(node: etree._Element) -> str:
     for child in node:
         if not isinstance(child.tag, str):
             continue
-        local = _localname(child)
+        local = _localname_of_tag(child.tag)
         if local == "amended-provision":
             saw_amended_provision = True
             continue
@@ -652,19 +656,19 @@ def _defpara_para_starts_new_definition(para: etree._Element) -> bool:
     new definition (that definition stays whole).
     """
 
-    if not isinstance(para.tag, str) or _localname(para) != "para":
+    if not isinstance(para.tag, str) or _localname_of_tag(para.tag) != "para":
         return False
     for child in para:
         if not isinstance(child.tag, str):
             continue
-        if _localname(child) != "text":
+        if _localname_of_tag(child.tag) != "text":
             # First element child is not a leading ``<text>`` — not a definition
             # opener (e.g. a leading ``<label-para>`` limb of the same defn).
             return False
         for grandchild in child:
             if not isinstance(grandchild.tag, str):
                 continue
-            return _localname(grandchild) == _DEF_TERM_TAG
+            return _localname_of_tag(grandchild.tag) == _DEF_TERM_TAG
         return False
     return False
 
@@ -685,7 +689,7 @@ def _defpara_owned_children(defpara: etree._Element) -> list[etree._Element]:
     for child in defpara:
         if (
             isinstance(child.tag, str)
-            and _localname(child) == "para"
+            and _localname_of_tag(child.tag) == "para"
             and _defpara_para_starts_new_definition(child)
         ):
             if seen_definition:
@@ -697,13 +701,13 @@ def _defpara_owned_children(defpara: etree._Element) -> list[etree._Element]:
 
 def _legal_text(node: etree._Element, *, cache: dict[tuple[etree._Element, bool], str] | None = None) -> str:
     texts: list[str] = []
-    if isinstance(node.tag, str) and _localname(node) == "def-para":
+    if isinstance(node.tag, str) and _localname_of_tag(node.tag) == "def-para":
         # Bound a packed multi-definition ``def-para`` to its first definition so
         # an adjacent definition mispacked under the same element is not absorbed.
         for child in _defpara_owned_children(node):
             if not isinstance(child.tag, str):
                 continue
-            if _localname(child) in _TEXT_EXCLUDE_TAGS:
+            if _localname_of_tag(child.tag) in _TEXT_EXCLUDE_TAGS:
                 continue
             text = _collect_legal_text(child, is_root=False, cache=cache)
             if text:
@@ -737,13 +741,13 @@ def _is_table_continuation_para(element: etree._Element) -> bool:
     child) is NOT a continuation and stops the absorption.
     """
 
-    if not isinstance(element.tag, str) or _localname(element) != "para":
+    if not isinstance(element.tag, str) or _localname_of_tag(element.tag) != "para":
         return False
     has_table = False
     for descendant in element.iter():
         if not isinstance(descendant.tag, str):
             continue
-        local = _localname(descendant)
+        local = _localname_of_tag(descendant.tag)
         if local in {"legtable", "table"}:
             has_table = True
         if local in _STRUCTURAL_TAGS:
@@ -809,7 +813,10 @@ def _walk_payload_root_nodes(matched_element: etree._Element) -> list[NZSourceNo
     )
     if not nodes:
         return nodes
-    if _localname(matched_element) in _TABLE_CONTINUATION_LEAF_KINDS:
+    if (
+        isinstance(matched_element.tag, str)
+        and _localname_of_tag(matched_element.tag) in _TABLE_CONTINUATION_LEAF_KINDS
+    ):
         continuation = _trailing_table_continuation_text(matched_element, cache=legal_text_cache)
         if continuation:
             root = nodes[0]
@@ -924,7 +931,7 @@ def _amend_subtree_section_label(amend_element: etree._Element) -> str | None:
         for child in parent:
             if child is cursor:
                 break
-            if not isinstance(child.tag, str) or _localname(child) != "text":
+            if not isinstance(child.tag, str) or _localname_of_tag(child.tag) != "text":
                 continue
             cited = _amend_instruction_target(child)
             if not cited:
@@ -1064,7 +1071,7 @@ def extract_structural_replacement(
     amend_subtrees = [
         element
         for element in amending_node.iter()
-        if isinstance(element.tag, str) and _localname(element) == "amend"
+        if isinstance(element.tag, str) and _localname_of_tag(element.tag) == "amend"
     ]
     if not amend_subtrees:
         # AGENTS §2.5: try the amending-act-own-schedule delegation form
@@ -1182,7 +1189,7 @@ def _kind_matches_target_leaf(child_kind: str, target_leaf_kind: str) -> bool:
 
 
 def _amend_child_matches_leaf(child: etree._Element, target_leaf_kind: str, normalized_label: str) -> bool:
-    child_kind = _localname(child)
+    child_kind = _localname_of_tag(child.tag) if isinstance(child.tag, str) else _localname(child)
     if not _kind_matches_target_leaf(child_kind, target_leaf_kind):
         return False
     # Read the label by the CHILD's own kind, not the target's: a ``def-para``
@@ -1242,7 +1249,7 @@ def _descend_container_leaf_matches(
         for child in element:
             if not isinstance(child.tag, str):
                 continue
-            child_kind = _localname(child)
+            child_kind = _localname_of_tag(child.tag)
             if child_kind not in _STRUCTURAL_TAGS and child_kind not in _AMEND_CONTAINER_KINDS:
                 # Non-structural wrapper (``<para>``, ``<text>`` etc.): keep
                 # descending so a container nested under prose markup is reached,
@@ -1288,7 +1295,7 @@ def _replacement_leaf_matches(
         for child in amend:
             if not isinstance(child.tag, str):
                 continue
-            if _localname(child) not in _STRUCTURAL_TAGS:
+            if _localname_of_tag(child.tag) not in _STRUCTURAL_TAGS:
                 continue
             if _amend_child_matches_leaf(child, target_leaf_kind, normalized_label):
                 matches.append(child)
@@ -1322,7 +1329,7 @@ def _insertion_leaf_matches(
             for descendant in amend.iter():
                 if not isinstance(descendant.tag, str):
                     continue
-                if _localname(descendant) != "def-para":
+                if _localname_of_tag(descendant.tag) != "def-para":
                     continue
                 if _amend_child_matches_leaf(descendant, inserted_leaf_kind, normalized_label):
                     matches.append(descendant)
@@ -1331,7 +1338,7 @@ def _insertion_leaf_matches(
         for child in amend:
             if not isinstance(child.tag, str):
                 continue
-            if _localname(child) not in _STRUCTURAL_TAGS:
+            if _localname_of_tag(child.tag) not in _STRUCTURAL_TAGS:
                 continue
             if _amend_child_matches_leaf(child, inserted_leaf_kind, normalized_label):
                 matches.append(child)
@@ -1500,7 +1507,7 @@ def _is_schedule_indirection_text(flat_text: str) -> bool:
 
 def _amending_node_is_schedule_indirection(amending_node: etree._Element) -> bool:
     for text_node in amending_node.iter():
-        if not isinstance(text_node.tag, str) or _localname(text_node) != "text":
+        if not isinstance(text_node.tag, str) or _localname_of_tag(text_node.tag) != "text":
             continue
         if _is_schedule_indirection_text(_node_text(text_node)):
             return True
@@ -1527,7 +1534,10 @@ def _schedule_amendment_groups_for_base_work(
         return []
     groups: list[etree._Element] = []
     for group in amending_root.iter():
-        if not isinstance(group.tag, str) or _localname(group) != "schedule.amendments.group2":
+        if (
+            not isinstance(group.tag, str)
+            or _localname_of_tag(group.tag) != "schedule.amendments.group2"
+        ):
             continue
         heading = _direct_child_text(group, "heading")
         if not heading:
@@ -1554,7 +1564,7 @@ def _schedule_group_amend_subtrees(groups: list[etree._Element]) -> list[etree._
     amends: list[etree._Element] = []
     for group in groups:
         for element in group.iter():
-            if isinstance(element.tag, str) and _localname(element) == "amend":
+            if isinstance(element.tag, str) and _localname_of_tag(element.tag) == "amend":
                 amends.append(element)
     return amends
 
@@ -1719,7 +1729,7 @@ def _amending_node_directs_to_amending_act_schedule(
     """
 
     for text_node in amending_node.iter():
-        if not isinstance(text_node.tag, str) or _localname(text_node) != "text":
+        if not isinstance(text_node.tag, str) or _localname_of_tag(text_node.tag) != "text":
             continue
         flat_text = _node_text(text_node)
         kind_match = _AMENDING_ACT_OWN_SCHEDULE_DIRECTIVE_WITH_KIND.search(flat_text)
@@ -1755,12 +1765,12 @@ def _amending_act_top_level_schedule_by_label(
         for child in amending_act_root:
             if not isinstance(child.tag, str):
                 continue
-            child_kind = _localname(child)
+            child_kind = _localname_of_tag(child.tag)
             if child_kind == "schedule":
                 yield child
             elif child_kind == "schedule.group":
                 for inner in child:
-                    if isinstance(inner.tag, str) and _localname(inner) == "schedule":
+                    if isinstance(inner.tag, str) and _localname_of_tag(inner.tag) == "schedule":
                         yield inner
 
     normalized = _normalize_text(schedule_label)
@@ -1797,7 +1807,7 @@ def _amending_act_schedule_descendant_matches(
         for child in element:
             if not isinstance(child.tag, str):
                 continue
-            child_kind = _localname(child)
+            child_kind = _localname_of_tag(child.tag)
             structural = child_kind in _STRUCTURAL_TAGS
             container = child_kind in _AMENDING_ACT_SCHEDULE_PAYLOAD_CONTAINERS
             if not structural and not container:
@@ -1984,7 +1994,7 @@ def extract_structural_insertion(
     amend_subtrees = [
         element
         for element in amending_node.iter()
-        if isinstance(element.tag, str) and _localname(element) == "amend"
+        if isinstance(element.tag, str) and _localname_of_tag(element.tag) == "amend"
     ]
     if not amend_subtrees:
         # AGENTS §2.5: try the amending-act-own-schedule delegation form.
@@ -2174,9 +2184,12 @@ def _amend_instruction_target(text_node: etree._Element) -> str:
     for descendant in text_node.iter():
         if not isinstance(descendant.tag, str):
             continue
-        if _localname(descendant) != "extref":
+        if _localname_of_tag(descendant.tag) != "extref":
             continue
-        if any(_localname(anc) == "amend.in" for anc in descendant.iterancestors()):
+        if any(
+            isinstance(anc.tag, str) and _localname_of_tag(anc.tag) == "amend.in"
+            for anc in descendant.iterancestors()
+        ):
             continue
         target = _node_text(descendant)
         if target:
@@ -2184,13 +2197,16 @@ def _amend_instruction_target(text_node: etree._Element) -> str:
     for descendant in text_node.iter():
         if not isinstance(descendant.tag, str):
             continue
-        if _localname(descendant) != "citation":
+        if _localname_of_tag(descendant.tag) != "citation":
             continue
-        if any(_localname(anc) == "amend.in" for anc in descendant.iterancestors()):
+        if any(
+            isinstance(anc.tag, str) and _localname_of_tag(anc.tag) == "amend.in"
+            for anc in descendant.iterancestors()
+        ):
             continue
         link = ""
         for inner in descendant.iter():
-            if isinstance(inner.tag, str) and _localname(inner) == "linkcontent":
+            if isinstance(inner.tag, str) and _localname_of_tag(inner.tag) == "linkcontent":
                 link = _node_text(inner)
                 break
         if not link:
@@ -2216,21 +2232,29 @@ def _source_zone(xml_path: str) -> str:
 
 def _direct_child_text(node: etree._Element, localname: str) -> str:
     for child in node:
-        if isinstance(child.tag, str) and _localname(child) == localname:
+        if isinstance(child.tag, str) and _localname_of_tag(child.tag) == localname:
             return _node_text(child)
     return ""
 
 
 def _first_descendant_text(node: etree._Element, localname: str) -> str:
     for descendant in node.iter():
-        if descendant is not node and isinstance(descendant.tag, str) and _localname(descendant) == localname:
+        if (
+            descendant is not node
+            and isinstance(descendant.tag, str)
+            and _localname_of_tag(descendant.tag) == localname
+        ):
             return _node_text(descendant)
     return ""
 
 
 def _descendant_texts(node: etree._Element, localname: str) -> Iterable[str]:
     for descendant in node.iter():
-        if descendant is not node and isinstance(descendant.tag, str) and _localname(descendant) == localname:
+        if (
+            descendant is not node
+            and isinstance(descendant.tag, str)
+            and _localname_of_tag(descendant.tag) == localname
+        ):
             text = _node_text(descendant)
             if text:
                 yield text
@@ -2238,7 +2262,11 @@ def _descendant_texts(node: etree._Element, localname: str) -> Iterable[str]:
 
 def _descendant_attrs(node: etree._Element, localname: str, attr: str) -> Iterable[str]:
     for descendant in node.iter():
-        if descendant is not node and isinstance(descendant.tag, str) and _localname(descendant) == localname:
+        if (
+            descendant is not node
+            and isinstance(descendant.tag, str)
+            and _localname_of_tag(descendant.tag) == localname
+        ):
             value = _attr(descendant, attr)
             if value:
                 yield value
