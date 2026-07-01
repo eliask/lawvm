@@ -189,20 +189,31 @@ def _parent_is_act(_el: ET.Element) -> bool:
     return True
 
 
+_TABLE3_RECORD_TEXT_TAGS = frozenset(
+    (
+        "act-section",
+        "united-states-code-title",
+        "united-states-code-section",
+        "united-states-code-status",
+    )
+)
+
+
 def _record_from_element(
     el: ET.Element, act_num: str, act_congress: str, public_law: str
 ) -> Table3Record:
-    act_section = _child_text(el, "act-section")
-    usc_title = _child_text(el, "united-states-code-title")
-    usc_section = _child_text(el, "united-states-code-section")
-    status = _child_text(el, "united-states-code-status")
+    child_texts: dict[str, str] = {}
+    for child in el:
+        tag = child.tag
+        if tag in _TABLE3_RECORD_TEXT_TAGS:
+            child_texts[tag] = (child.text or "").strip()
     return Table3Record(
         act_num=act_num,
         act_congress=act_congress,
-        act_section=act_section,
-        usc_title=usc_title,
-        usc_section=usc_section,
-        status=status,
+        act_section=child_texts.get("act-section", ""),
+        usc_title=child_texts.get("united-states-code-title", ""),
+        usc_section=child_texts.get("united-states-code-section", ""),
+        status=child_texts.get("united-states-code-status", ""),
         public_law=public_law,
         usckey=el.get("usckey", ""),
     )
