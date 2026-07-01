@@ -1071,3 +1071,170 @@
     insertion applies only when the exact faulty second row is present.'
   verified: '2026-06-21'
   expected_apply_count: 1
+- amendment_id: 1997/180
+  rule_id: FINLAND.SOURCE_DEFECT.GLUED_WORD_TOKEN
+  family: presentation_cleanup
+  source_witness:
+    kind: typographic_impossibility
+    detail: Two orthographically-distinct words are run together with no separating space; Finnish never glues a conjunction
+      to the following proper noun. The parallel elative list (Norjasta, Liechtensteinista, [Islannista]) intrinsic-confirms
+      the split.
+  wrong_text: <heading>Tuonti Norjasta, Liechtensteinista jaIslannista</heading>
+  correct_text: <heading>Tuonti Norjasta, Liechtensteinista ja Islannista</heading>
+  correction_type: body_text
+  notes: 'LawVM-editorial base-source defect fix (no_official_corrigendum_found): §21 heading source XML glues ''jaIslannista'';
+    the conjunction ''ja'' and the proper noun ''Islannista'' are distinct tokens (cf. the parallel ''Norjasta, Liechtensteinista'').
+    Minimal body_text patch applies only when the exact faulty heading is present.'
+  verified: '2026-07-01'
+  expected_apply_count: 1
+- amendment_id: 1997/180
+  rule_id: FINLAND.SOURCE_DEFECT.GLUED_WORD_TOKEN
+  family: presentation_cleanup
+  source_witness:
+    kind: typographic_impossibility
+    detail: Two orthographically-distinct words are run together with no separating space; the adjective ''käytettäviksi''
+      and the participle ''tarkoitetut'' are separate tokens the Finnish grammar never glues.
+  wrong_text: <heading>Mehiläistarhauksessa käytettäviksitarkoitetut mehiläistuotteet</heading>
+  correct_text: <heading>Mehiläistarhauksessa käytettäviksi tarkoitetut mehiläistuotteet</heading>
+  correction_type: body_text
+  notes: 'LawVM-editorial base-source defect fix (no_official_corrigendum_found): heading source XML glues ''käytettäviksitarkoitetut''
+    → ''käytettäviksi tarkoitetut''. Minimal body_text patch applies only when the exact faulty heading is present.'
+  verified: '2026-07-01'
+  expected_apply_count: 1
+- amendment_id: 1997/180
+  rule_id: FINLAND.SOURCE_DEFECT.GLUED_WORD_TOKEN
+  family: presentation_cleanup
+  source_witness:
+    kind: typographic_impossibility
+    detail: Two orthographically-distinct words are run together with no separating space; the noun ''linnuista'' and the
+      adverbial ''peräisin'' are separate tokens (cf. the parallel ''Kavio- ja sorkkaeläimistä sekä'').
+  wrong_text: <heading>Kavio- ja sorkkaeläimistä sekä linnuistaperäisin olevat metsästysmuistot</heading>
+  correct_text: <heading>Kavio- ja sorkkaeläimistä sekä linnuista peräisin olevat metsästysmuistot</heading>
+  correction_type: body_text
+  notes: 'LawVM-editorial base-source defect fix (no_official_corrigendum_found): heading source XML glues ''linnuistaperäisin''
+    → ''linnuista peräisin''. Minimal body_text patch applies only when the exact faulty heading is present.'
+  verified: '2026-07-01'
+  expected_apply_count: 1
+- amendment_id: 1997/180
+  rule_id: FINLAND.SOURCE_DEFECT.DITTOGRAPHIC_DUPLICATE
+  family: presentation_cleanup
+  source_witness:
+    kind: typographic_impossibility
+    detail: The phrase ''tuoda maahan'' is dittographically repeated back-to-back, which the Finnish grammar never licenses;
+      the single occurrence is the intrinsically well-formed reading.
+  wrong_text: Suolia saadaan tuoda maahan tuoda maahan edellyttäen
+  correct_text: Suolia saadaan tuoda maahan edellyttäen
+  correction_type: body_text
+  notes: 'LawVM-editorial base-source defect fix (no_official_corrigendum_found): source XML dittographically repeats ''tuoda
+    maahan tuoda maahan'' → ''tuoda maahan''. Minimal body_text patch applies only when the exact faulty phrase is present.'
+  verified: '2026-07-01'
+  expected_apply_count: 1
+- amendment_id: 1978/423
+  rule_id: FINLAND.SOURCE_DEFECT.SECTION_EID_MISLABEL
+  family: structural_label_mislabel
+  source_witness:
+    kind: ordinal_structure
+    detail: The statute's own ordinal structure (chapter sequence + downstream references) intrinsic-confirms the corrected
+      label. No oracle citation.
+  wrong_text: |-
+    <section eId="chp_3__sec_32">
+                            <num>32§</num>
+                            <heading>Toistaiseksi voimassa olevat sopimukset. </heading>
+                            <subsection eId="chp_3__sec_32__subsec_1">
+                                <content>
+                                    <p>Toistaiseksi tehty tai muutoin toistaiseksi voimassa oleva työsopimus voidaan molemmin puolin irtisanoa päättymään tietyn irtisanomisajan kuluttua tahi, jos niin on sovittu tai laissa erikseen säädetty, irtisanomisaikaa noudattamatta.</p>
+                                </content>
+                            </subsection>
+                            <subsection eId="chp_3__sec_32__subsec_2">
+                                <intro eId="chp_3__sec_32__subsec_2__intro">
+                                    <p>Työntekijää, jonka työsuhde on keskeytymättä jatkunut vähintään kolme kuukautta, ei työnantaja saa irtisanoa ilman erityisen painavaa syytä. Tällaisena syynä ei voida pitää ainakaan:</p>
+                                </intro>
+                                <paragraph eId="chp_3__sec_32__subsec_2__para_1">
+                                    <num>1)</num>
+                                    <content>
+                                        <p>työntekijän sairautta tai vammaa, ellei hänen tämän vuoksi voida arvioida olevan pitkän aikaa työkyvyttömänä;</p>
+                                    </content>
+                                </paragraph>
+                                <paragraph eId="chp_3__sec_32__subsec_2__para_2">
+                                    <num>2)</num>
+                                    <content>
+                                        <p>työntekijän poliittisia, uskonnollisia tai muita mielipiteitä taikka hänen osallistumistaan yhteiskunnalliseen tai yhdistystoimintaan;</p>
+                                    </content>
+                                </paragraph>
+                                <paragraph eId="chp_3__sec_32__subsec_2__para_3">
+                                    <num>3)</num>
+                                    <content>
+                                        <p>työntekijän osallistumista lakkoon tai muuhun työtaisteluun, paitsi milloin työnantajalla sen vuoksi olisi oikeus irtisanomisen sijasta purkaa työsopimus 49 §:n nojalla; eikä</p>
+                                    </content>
+                                </paragraph>
+                                <paragraph eId="chp_3__sec_32__subsec_2__para_4">
+                                    <num>4)</num>
+                                    <content>
+                                        <p>sellaista yrityksen, aluksen tai sen osaston toimintaedellytyksiin liittyvää syytä, jonka vaikutus on ohimenevä, jos työntekijälle voidaan siksi ajaksi järjestää työnantajan palveluksessa muuta työtä. Jollei muuta työtä voida järjestää, mutta syyn vaikutus ei kestä kolmea kuukautta pitempää aikaa, voidaan syytä pitää asiallisesti hyväksyttävänä perusteena vain työntekijän lomauttamiseen.</p>
+                                    </content>
+                                </paragraph>
+                            </subsection>
+                            <subsection eId="chp_3__sec_32__subsec_3">
+                                <content>
+                                    <p>Työnantajan irtisanomisoikeutta voidaan lisäksi rajoittaa sopimuksella siten, että hän saa käyttää sitä vain sopimuksessa mainituilla perusteilla.</p>
+                                </content>
+                            </subsection>
+                            <subsection eId="chp_3__sec_32__subsec_4">
+                                <content>
+                                    <p>Työnantaja ei saa irtisanoa työntekijän työsopimusta 32 §:n 1 momentissa tarkoitetun synnytysloman tai 32 §:n 2 momentissa tarkoitetun synnytyslomaa vastaavan loman aikana eikä myöskään, saatuaan tietää työntekijän olevan raskaana, päättymään synnytysloman alkaessa tai aikana. </p>
+                                </content>
+                            </subsection>
+                        </section>
+  correct_text: |-
+    <section eId="chp_3__sec_39">
+                            <num>39§</num>
+                            <heading>Toistaiseksi voimassa olevat sopimukset. </heading>
+                            <subsection eId="chp_3__sec_39__subsec_1">
+                                <content>
+                                    <p>Toistaiseksi tehty tai muutoin toistaiseksi voimassa oleva työsopimus voidaan molemmin puolin irtisanoa päättymään tietyn irtisanomisajan kuluttua tahi, jos niin on sovittu tai laissa erikseen säädetty, irtisanomisaikaa noudattamatta.</p>
+                                </content>
+                            </subsection>
+                            <subsection eId="chp_3__sec_39__subsec_2">
+                                <intro eId="chp_3__sec_39__subsec_2__intro">
+                                    <p>Työntekijää, jonka työsuhde on keskeytymättä jatkunut vähintään kolme kuukautta, ei työnantaja saa irtisanoa ilman erityisen painavaa syytä. Tällaisena syynä ei voida pitää ainakaan:</p>
+                                </intro>
+                                <paragraph eId="chp_3__sec_39__subsec_2__para_1">
+                                    <num>1)</num>
+                                    <content>
+                                        <p>työntekijän sairautta tai vammaa, ellei hänen tämän vuoksi voida arvioida olevan pitkän aikaa työkyvyttömänä;</p>
+                                    </content>
+                                </paragraph>
+                                <paragraph eId="chp_3__sec_39__subsec_2__para_2">
+                                    <num>2)</num>
+                                    <content>
+                                        <p>työntekijän poliittisia, uskonnollisia tai muita mielipiteitä taikka hänen osallistumistaan yhteiskunnalliseen tai yhdistystoimintaan;</p>
+                                    </content>
+                                </paragraph>
+                                <paragraph eId="chp_3__sec_39__subsec_2__para_3">
+                                    <num>3)</num>
+                                    <content>
+                                        <p>työntekijän osallistumista lakkoon tai muuhun työtaisteluun, paitsi milloin työnantajalla sen vuoksi olisi oikeus irtisanomisen sijasta purkaa työsopimus 49 §:n nojalla; eikä</p>
+                                    </content>
+                                </paragraph>
+                                <paragraph eId="chp_3__sec_39__subsec_2__para_4">
+                                    <num>4)</num>
+                                    <content>
+                                        <p>sellaista yrityksen, aluksen tai sen osaston toimintaedellytyksiin liittyvää syytä, jonka vaikutus on ohimenevä, jos työntekijälle voidaan siksi ajaksi järjestää työnantajan palveluksessa muuta työtä. Jollei muuta työtä voida järjestää, mutta syyn vaikutus ei kestä kolmea kuukautta pitempää aikaa, voidaan syytä pitää asiallisesti hyväksyttävänä perusteena vain työntekijän lomauttamiseen.</p>
+                                    </content>
+                                </paragraph>
+                            </subsection>
+                            <subsection eId="chp_3__sec_39__subsec_3">
+                                <content>
+                                    <p>Työnantajan irtisanomisoikeutta voidaan lisäksi rajoittaa sopimuksella siten, että hän saa käyttää sitä vain sopimuksessa mainituilla perusteilla.</p>
+                                </content>
+                            </subsection>
+                            <subsection eId="chp_3__sec_39__subsec_4">
+                                <content>
+                                    <p>Työnantaja ei saa irtisanoa työntekijän työsopimusta 32 §:n 1 momentissa tarkoitetun synnytysloman tai 32 §:n 2 momentissa tarkoitetun synnytyslomaa vastaavan loman aikana eikä myöskään, saatuaan tietää työntekijän olevan raskaana, päättymään synnytysloman alkaessa tai aikana. </p>
+                                </content>
+                            </subsection>
+                        </section>
+  correction_type: body_text
+  notes: 'LawVM-editorial base-source defect fix (no_official_corrigendum_found): chapter 3 source XML labels the provision between correctly-numbered 38 § and 40 § as chp_3__sec_32 / 32 §; the chapter-local ordinal sequence (38 §, [39 §], 40 §, 41 §) intrinsic-confirms the label is 39 §. Exact full-section fragment patch flips the section eId, all subsection/paragraph eIds and the <num> to the ordinally-correct 39 § before replay.'
+  verified: '2026-07-01'
+  expected_apply_count: 1
