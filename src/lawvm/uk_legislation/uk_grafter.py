@@ -2214,6 +2214,11 @@ def _normalize_text_for_grounding(text: str) -> str:
 
 def _semantic_hash(text: str) -> str:
     s = _normalize_text_for_grounding(text)
+    return _semantic_hash_from_normalized_text(s)
+
+
+def _semantic_hash_from_normalized_text(text: str) -> str:
+    s = text
     s = _SEMANTIC_HASH_NOISE_RE.sub("", s)
     return "".join(s.split())
 
@@ -2337,7 +2342,7 @@ def _visit_eid(
         if text and not _DOT_OR_SPACE_ONLY_RE.match(text):
             norm = _normalize_text_for_grounding(text)
             text_map[eid] = norm
-            h = _semantic_hash(text)
+            h = _semantic_hash_from_normalized_text(norm)
             if f"hash:{h}" not in eid_map:
                 eid_map[f"hash:{h}"] = eid
             # presentation_cleanup: when the oracle keeps a repealed phrase
