@@ -234,6 +234,21 @@ def test_replace_target_clear_special_with_none() -> None:
     assert new_op.target_cols.target_unit_kind == "section"
 
 
+def test_target_cols_cache_follows_replaced_selector() -> None:
+    """The compatibility projection cache is invalidated by selector replacement."""
+    op = AmendmentOp(
+        op_type=OpType.REPLACE,
+        target_unit_kind="section",
+        target_section="3",
+    )
+    assert op.target_cols.target_section == "3"
+    assert op.target_cols.target_section == "3"
+
+    op.target_selector = fi_section_target("4", chapter="2")["target_selector"]
+
+    assert op.target_cols == AmendmentOpV1Record("section", "4", "2", None, None, None, None, None)
+
+
 def test_replace_target_fails_loud_on_empty_string_override() -> None:
     """An empty-string override cannot round-trip; the helper fails loud.
 
