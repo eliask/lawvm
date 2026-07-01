@@ -66,6 +66,34 @@ def test_iter_records_parses_rootless_fragment() -> None:
     assert modern.usc_address() is None
 
 
+# A Table III row whose USC title is the legacy "50 App." (Title 50 Appendix)
+# label rather than a bare integer. It carries a title+section but is NOT a
+# resolvable positive-law address on this surface.
+_TABLE3_APP_FRAGMENT = (
+    b"\r\n"
+    b"<act id='a1' congress='113' search-key='113-291'>\n"
+    b" <num>113-291</num>\n"
+    b" <record id='r1' usckey='50A000000000123400000000000000000000'>\n"
+    b"  <act-section>1234</act-section>\n"
+    b"  <united-states-code-title>50 App.</united-states-code-title>\n"
+    b"  <united-states-code-section>1234</united-states-code-section>\n"
+    b" </record>\n"
+    b"</act>\n"
+)
+
+
+def test_title_50_appendix_row_is_held_out_not_classified() -> None:
+    # A "50 App." title carries text but no int-able positive-law title. It must
+    # be treated as uncodified (not classified) so the downstream int(usc_title)
+    # address build never crashes on it.
+    (record,) = list(iter_table3_records(_TABLE3_APP_FRAGMENT))
+    assert record.usc_title == "50 App."
+    assert record.usc_section == "1234"
+    assert not record.is_classified
+    # Must not raise (previously int("50 App.") crashed the address build).
+    assert record.usc_address() is None
+
+
 def test_index_resolves_agreeing_classification() -> None:
     idx = Table3Index.from_bytes(_TABLE3_FRAGMENT, modern_pl_only=False)
     assert idx.record_count == 2
