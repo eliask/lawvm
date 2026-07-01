@@ -50,7 +50,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from lawvm.core.evidence_support import section_similarity
+from lawvm.core.evidence_support import best_section_similarity, section_similarity
 from lawvm.new_zealand.acquisition import open_farchive
 from lawvm.new_zealand.dry_run import (
     _amending_act_root,
@@ -1453,10 +1453,13 @@ def _similarity_point(
         if not replayed_nodes or not oracle_nodes:
             stable_union_scores.append(0.0)
             continue
-        best = max(
-            section_similarity(_node_similarity_text(r), _node_similarity_text(o))
-            for r in replayed_nodes
-            for o in oracle_nodes
+        # All-pairs best similarity over the stable-path bucket. This cross
+        # product is the chain-replay O(N^2) hotspot; ``best_section_similarity``
+        # returns a value byte-identical to the plain ``max(section_similarity ...)``
+        # above but prunes pairs that provably cannot beat the running best.
+        best = best_section_similarity(
+            (_node_similarity_text(r) for r in replayed_nodes),
+            (_node_similarity_text(o) for o in oracle_nodes),
         )
         stable_union_scores.append(best)
     combined_stable = (
@@ -1739,26 +1742,37 @@ def build_archived_work_chain_replay(
     families: str | frozenset[str] | None = None,
 ) -> NZChainReplayReport:
     resolved = resolve_families(families)
-    preflight = build_archived_work_effect_candidate_preflight(db_path, work_id)
-    # The structural families read candidate witnesses from the operation surface;
-    # build it only when a structural family is requested (it parses the amending
-    # acts lazily inside the kernel).
-    surface = None
-    if resolved & {"replace", "insert"}:
-        from lawvm.new_zealand.operation_surface import build_archived_work_operation_surface
+    # Activate the run-scoped parse/archive cache for the whole per-work chain
+    # replay. Within one work the preflight, operation surface, and the chain's
+    # own version walk each parse the *same* archived version XML many times (the
+    # #116 profile showed 334 re-parses of the same sources per replay). The cache
+    # keys parses by (xml_locator, version_id) and returns the byte-identical
+    # frozen document a fresh parse would build, so this is a pure speedup. It is
+    # re-entrant: when the corpus/north-star runner already holds a cache (it
+    # activates one per worker) this reuses it and leaves lifecycle to the owner.
+    from lawvm.new_zealand.corpus_cache import corpus_run_cache
 
-        surface = build_archived_work_operation_surface(db_path, work_id)
-    archive = open_farchive(db_path)
-    try:
-        return build_chain_replay(
-            archive,
-            work_id=work_id,
-            preflight=preflight,
-            surface=surface,
-            families=resolved,
-        )
-    finally:
-        archive.close()
+    with corpus_run_cache():
+        preflight = build_archived_work_effect_candidate_preflight(db_path, work_id)
+        # The structural families read candidate witnesses from the operation
+        # surface; build it only when a structural family is requested (it parses
+        # the amending acts lazily inside the kernel).
+        surface = None
+        if resolved & {"replace", "insert"}:
+            from lawvm.new_zealand.operation_surface import build_archived_work_operation_surface
+
+            surface = build_archived_work_operation_surface(db_path, work_id)
+        archive = open_farchive(db_path)
+        try:
+            return build_chain_replay(
+                archive,
+                work_id=work_id,
+                preflight=preflight,
+                surface=surface,
+                families=resolved,
+            )
+        finally:
+            archive.close()
 
 
 def build_chain_replay(
