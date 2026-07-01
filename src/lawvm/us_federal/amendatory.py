@@ -5640,7 +5640,10 @@ def reset_us_raw_source_context(
     _US_RAW_SOURCE_CTX.reset(token)
 
 
-def _unique_byte_run_bodies(raw_bytes: bytes) -> List[str]:
+def _unique_byte_run_bodies(
+    raw_bytes: bytes,
+    candidate_clauses: Iterable[str] | None = None,
+) -> List[str]:
     """Return every element body that is a UNIQUE verbatim byte run of ``raw_bytes``.
 
     Parses the Public Law USLM once and walks every element, collecting the
@@ -5662,6 +5665,18 @@ def _unique_byte_run_bodies(raw_bytes: bytes) -> List[str]:
     """
     bodies: List[str] = []
     seen: set[str] = set()
+    candidate_blob = ""
+    if candidate_clauses is not None:
+        # Negative prefilter only: _anchor_op can select a body only if it is a
+        # substring of an emitted op clause. Separating clauses with NUL prevents
+        # accidental cross-clause concatenation matches while keeping membership a
+        # single C-level substring search before the expensive raw-bytes scan.
+        unique_clauses = {
+            clause
+            for clause in candidate_clauses
+            if clause and "\x00" not in clause
+        }
+        candidate_blob = "\x00".join(unique_clauses)
     try:
         tree = ET.fromstring(raw_bytes)
     except ET.ParseError:
@@ -5674,6 +5689,8 @@ def _unique_byte_run_bodies(raw_bytes: bytes) -> List[str]:
             seen.add(text)
             continue
         seen.add(text)
+        if candidate_clauses is not None and text not in candidate_blob:
+            continue
         needle = text.encode("utf-8")
         first = raw_bytes.find(needle)
         if first >= 0 and raw_bytes.find(needle, first + 1) < 0:
@@ -5731,6 +5748,16 @@ def _anchor_op(
     return _dc_replace(op, source=_dc_replace(src, source_anchor=anchor))
 
 
+def _anchor_clause_texts(ops: Iterable[LegalOperation]) -> tuple[str, ...]:
+    clauses: list[str] = []
+    for op in ops:
+        src = op.source
+        clause = (src.raw_text if src is not None else "") or op.raw_text or ""
+        if clause:
+            clauses.append(clause)
+    return tuple(clauses)
+
+
 def mint_us_source_anchors(ops: List[LegalOperation]) -> List[LegalOperation]:
     """Stamp a TRUE per-element byte-span :class:`SourceAnchor` on every anchorable op.
 
@@ -5748,7 +5775,7 @@ def mint_us_source_anchors(ops: List[LegalOperation]) -> List[LegalOperation]:
     if raw_ctx is None or not ops:
         return ops
     artifact_id, raw_bytes = raw_ctx
-    bodies = _unique_byte_run_bodies(raw_bytes)
+    bodies = _unique_byte_run_bodies(raw_bytes, candidate_clauses=_anchor_clause_texts(ops))
     return [_anchor_op(op, artifact_id, raw_bytes, bodies) for op in ops]
 
 
@@ -5768,7 +5795,16 @@ def _anchor_instructions(
     if raw_ctx is None:
         return instructions
     artifact_id, raw_bytes = raw_ctx
-    bodies = _unique_byte_run_bodies(raw_bytes)
+    ops_for_prefilter = [
+        op
+        for instr in instructions
+        for op in ((instr.operation,) + instr.extra_operations)
+        if op is not None
+    ]
+    bodies = _unique_byte_run_bodies(
+        raw_bytes,
+        candidate_clauses=_anchor_clause_texts(ops_for_prefilter),
+    )
     rewritten: list[USAmendmentInstruction] = []
     for instr in instructions:
         primary = (

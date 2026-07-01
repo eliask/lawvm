@@ -432,5 +432,21 @@ def test_us_unique_byte_run_bodies_include_uslm_body_carrier_tags() -> None:
     assert "Heading body is not an operative anchor candidate." not in bodies
 
 
+def test_us_unique_byte_run_bodies_prefilters_to_candidate_clauses() -> None:
+    raw = b"""\
+<section>
+  <chapeau>Clause body selected by an emitted operation.</chapeau>
+  <quotedText>Unrelated body from another instruction.</quotedText>
+</section>
+"""
+
+    bodies = _unique_byte_run_bodies(
+        raw,
+        candidate_clauses=("Prefix Clause body selected by an emitted operation.",),
+    )
+
+    assert bodies == ["Clause body selected by an emitted operation."]
+
+
 if __name__ == "__main__":  # pragma: no cover - manual probe
     raise SystemExit(pytest.main([__file__, "-q"]))
