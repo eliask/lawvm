@@ -2111,7 +2111,7 @@ def _replace_not_in_scope_reason(row: Any) -> str:
 
 def _schedule_indirection_cache(
     amending_root_cache: dict[str, Any],
-) -> dict[tuple[int, str], bool]:
+) -> dict[tuple[object, ...], object]:
     cache = amending_root_cache.get(_SCHEDULE_INDIRECTION_CACHE_KEY)
     if not isinstance(cache, dict):
         cache = {}

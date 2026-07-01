@@ -137,10 +137,61 @@ def test_schedule_indirection_detector_uses_caller_owned_cache(monkeypatch: pyte
         return original(element)
 
     monkeypatch.setattr(source_tree, "_node_text", counting_node_text)
-    cache: dict[tuple[int, str], bool] = {}
+    cache: dict[tuple[object, ...], object] = {}
 
     assert source_tree._amending_node_is_schedule_indirection(node, cache=cache)
     assert source_tree._amending_node_is_schedule_indirection(node, cache=cache)
+    assert calls == 1
+
+
+def test_schedule_amends_for_base_work_uses_caller_owned_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    root = etree.fromstring(
+        b"""\
+<act>
+  <schedule.amendments.group2>
+    <heading>Forests Act 1949 (1949 No 19)</heading>
+    <para><text>After section 67C, insert:</text>
+      <amend><prov><label>67D</label><para><text>New text.</text></para></prov></amend>
+    </para>
+  </schedule.amendments.group2>
+</act>
+"""
+    )
+    original = source_tree._schedule_amendment_groups_for_base_work
+    calls = 0
+
+    def counting_groups(
+        amending_root: etree._Element,
+        *,
+        base_work_year: str,
+        base_work_number: str,
+    ) -> list[etree._Element]:
+        nonlocal calls
+        calls += 1
+        return original(
+            amending_root,
+            base_work_year=base_work_year,
+            base_work_number=base_work_number,
+        )
+
+    monkeypatch.setattr(source_tree, "_schedule_amendment_groups_for_base_work", counting_groups)
+    cache: dict[tuple[object, ...], object] = {}
+
+    first = source_tree._schedule_amends_for_base_work(
+        root,
+        base_work_year="1949",
+        base_work_number="19",
+        cache=cache,
+    )
+    second = source_tree._schedule_amends_for_base_work(
+        root,
+        base_work_year="1949",
+        base_work_number="19",
+        cache=cache,
+    )
+
+    assert len(first) == 1
+    assert second == first
     assert calls == 1
 
 

@@ -1028,7 +1028,7 @@ def extract_structural_replacement(
     base_work_year: str = "",
     base_work_number: str = "",
     amending_act_root: etree._Element | None = None,
-    schedule_indirection_cache: dict[tuple[int, str], bool] | None = None,
+    schedule_indirection_cache: dict[tuple[object, ...], object] | None = None,
 ) -> "NZStructuralReplacement | str":
     """Extract a clean one-to-one structural replacement from an amending node.
 
@@ -1080,6 +1080,7 @@ def extract_structural_replacement(
             base_work_year=base_work_year,
             base_work_number=base_work_number,
             insertion=False,
+            schedule_indirection_cache=schedule_indirection_cache,
         )
 
     amend_subtrees = [
@@ -1522,14 +1523,14 @@ def _is_schedule_indirection_text(flat_text: str) -> bool:
 def _amending_node_is_schedule_indirection(
     amending_node: etree._Element,
     *,
-    cache: dict[tuple[int, str], bool] | None = None,
+    cache: dict[tuple[object, ...], object] | None = None,
 ) -> bool:
-    key: tuple[int, str] | None = None
+    key: tuple[object, ...] | None = None
     if cache is not None:
         root = amending_node.getroottree().getroot()
-        key = (id(root), amending_node.getroottree().getpath(amending_node))
+        key = ("is_schedule_indirection", id(root), amending_node.getroottree().getpath(amending_node))
         cached = cache.get(key)
-        if cached is not None:
+        if isinstance(cached, bool):
             return cached
     for text_node in amending_node.iter():
         if not isinstance(text_node.tag, str) or _localname_of_tag(text_node.tag) != "text":
@@ -1598,6 +1599,55 @@ def _schedule_group_amend_subtrees(groups: list[etree._Element]) -> list[etree._
     return amends
 
 
+def _schedule_amends_for_base_work(
+    amending_root: etree._Element,
+    *,
+    base_work_year: str,
+    base_work_number: str,
+    cache: dict[tuple[object, ...], object] | None,
+) -> list[etree._Element]:
+    """Return schedule-indirection ``<amend>`` subtrees for one base work.
+
+    This is a caller-owned performance cache for the exact same source facts that
+    :func:`_schedule_amendment_groups_for_base_work` derives. It never authorizes
+    replay: callers still run the normal structural leaf matcher and typed
+    blockers over the returned subtrees.
+    """
+    if not base_work_year or not base_work_number:
+        return []
+    key = (
+        "schedule_amends_for_base_work",
+        id(amending_root),
+        base_work_year,
+        base_work_number,
+    )
+    if cache is not None:
+        cached = cache.get(key)
+        cached_amends = _cached_schedule_amends(cached)
+        if cached_amends is not None:
+            return cached_amends
+    groups = _schedule_amendment_groups_for_base_work(
+        amending_root,
+        base_work_year=base_work_year,
+        base_work_number=base_work_number,
+    )
+    amends = _schedule_group_amend_subtrees(groups)
+    if cache is not None:
+        cache[key] = tuple(amends)
+    return amends
+
+
+def _cached_schedule_amends(cached: object) -> list[etree._Element] | None:
+    if not isinstance(cached, tuple):
+        return None
+    amends: list[etree._Element] = []
+    for element in cached:
+        if not isinstance(element, etree._Element):
+            return None
+        amends.append(element)
+    return amends
+
+
 def _extract_from_schedule_amends(
     amend_subtrees: list[etree._Element],
     *,
@@ -1654,6 +1704,7 @@ def _resolve_schedule_indirection(
     base_work_year: str,
     base_work_number: str,
     insertion: bool,
+    schedule_indirection_cache: dict[tuple[object, ...], object] | None,
 ) -> "NZStructuralReplacement | str":
     """Extract a schedule-delivered payload for the target leaf, or a typed blocker.
 
@@ -1669,14 +1720,12 @@ def _resolve_schedule_indirection(
             else NZ_STRUCTURAL_BLOCKED_SCHEDULE_GROUP_UNRESOLVED
         )
     amending_root = amending_node.getroottree().getroot()
-    groups = _schedule_amendment_groups_for_base_work(
+    amend_subtrees = _schedule_amends_for_base_work(
         amending_root,
         base_work_year=base_work_year,
         base_work_number=base_work_number,
+        cache=schedule_indirection_cache,
     )
-    if not groups:
-        return NZ_STRUCTURAL_BLOCKED_SCHEDULE_GROUP_UNRESOLVED
-    amend_subtrees = _schedule_group_amend_subtrees(groups)
     if not amend_subtrees:
         return NZ_STRUCTURAL_BLOCKED_SCHEDULE_GROUP_UNRESOLVED
     return _extract_from_schedule_amends(
@@ -1974,7 +2023,7 @@ def extract_structural_insertion(
     base_work_year: str = "",
     base_work_number: str = "",
     amending_act_root: etree._Element | None = None,
-    schedule_indirection_cache: dict[tuple[int, str], bool] | None = None,
+    schedule_indirection_cache: dict[tuple[object, ...], object] | None = None,
 ) -> "NZStructuralReplacement | str":
     """Extract the new provision node a whole-provision INSERT adds.
 
@@ -2022,6 +2071,7 @@ def extract_structural_insertion(
             base_work_year=base_work_year,
             base_work_number=base_work_number,
             insertion=True,
+            schedule_indirection_cache=schedule_indirection_cache,
         )
 
     amend_subtrees = [
