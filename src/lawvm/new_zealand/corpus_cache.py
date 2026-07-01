@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterator
 
 if TYPE_CHECKING:
+    from lawvm.new_zealand.dependencies import NZLatestXMLLocatorSelection
     from lawvm.new_zealand.source_tree import NZSourceDocument
 
 
@@ -59,10 +60,11 @@ class _SharedArchive:
     call shape, so no behavior changes.
     """
 
-    __slots__ = ("_archive", "_locators_cache", "_bytes_cache")
+    __slots__ = ("_archive", "_cache_key", "_locators_cache", "_bytes_cache")
 
-    def __init__(self, archive: Any) -> None:
+    def __init__(self, archive: Any, *, cache_key: str) -> None:
         self._archive = archive
+        self._cache_key = cache_key
         self._locators_cache: dict[str, list[str]] = {}
         self._bytes_cache: dict[str, bytes | None] = {}
 
@@ -103,11 +105,13 @@ class _SharedArchive:
 class CorpusRunCache:
     """Holds run-scoped shared archives and memoized parsed documents."""
 
-    __slots__ = ("_archives", "_parsed")
+    __slots__ = ("_archives", "_latest_selections", "_parsed")
 
     def __init__(self) -> None:
         # (resolved archive path, readonly) -> (real archive, shared wrapper).
         self._archives: dict[tuple[str, bool], tuple[Any, _SharedArchive]] = {}
+        # (archive identity, work_id) -> latest archived XML selection.
+        self._latest_selections: dict[tuple[object, str], NZLatestXMLLocatorSelection] = {}
         # (xml_locator, version_id) -> parsed document (pure, input-addressed).
         self._parsed: dict[tuple[str, str], NZSourceDocument] = {}
 
@@ -116,10 +120,32 @@ class CorpusRunCache:
         existing = self._archives.get(key)
         if existing is not None:
             return existing[1]
+        archive_key = self._archive_key(path)
         real = opener(path)
-        shared = _SharedArchive(real)
+        shared = _SharedArchive(real, cache_key=archive_key)
         self._archives[key] = (real, shared)
         return shared
+
+    def latest_locator_selection(
+        self,
+        archive: Any,
+        work_id: str,
+        selector: Any,
+    ) -> "NZLatestXMLLocatorSelection":
+        """Memoize source-inventory selection during one active NZ run.
+
+        The selector reads only version-detail JSON, XML locators, and candidate
+        diagnostics. Caching its typed result avoids repeated archive inventory
+        scans without retaining parsed XML roots or source bytes.
+        """
+
+        key = (getattr(archive, "_cache_key", id(archive)), work_id)
+        cached = self._latest_selections.get(key)
+        if cached is not None:
+            return cached
+        selection = selector(archive, work_id)
+        self._latest_selections[key] = selection
+        return selection
 
     def parse_document(
         self,
@@ -148,14 +174,16 @@ class CorpusRunCache:
 
         The dominant redundancy is *within* one work: the operation surface,
         candidate preflight, and both family kernels each parse the same archived
-        latest/before/oracle versions. Different works share almost no archived
-        versions, so retaining parses across works would only grow memory without
-        a cache benefit. The corpus/north-star runners call this between works to
-        bound the working set while keeping the within-work reuse and the
-        run-shared archive handle.
+        latest/before/oracle versions and ask for the same latest dependency
+        locators. Different works share almost no archived versions or dependency
+        inventory selections, so retaining either across works would only grow
+        memory without a cache benefit. The corpus/north-star runners call this
+        between works to bound the working set while keeping the within-work
+        reuse and the run-shared archive handle.
         """
 
         self._parsed.clear()
+        self._latest_selections.clear()
         for _real, shared in self._archives.values():
             shared._clear_per_work()
 
@@ -163,6 +191,7 @@ class CorpusRunCache:
         for real, _shared in self._archives.values():
             real.close()
         self._archives.clear()
+        self._latest_selections.clear()
         self._parsed.clear()
 
     @staticmethod

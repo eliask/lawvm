@@ -4,17 +4,20 @@ import json
 from argparse import Namespace
 
 from lawvm.new_zealand import dependencies as nz_dependencies
+from lawvm.new_zealand.corpus_cache import corpus_run_cache
 from lawvm.new_zealand.dependencies import extract_dependency_report, latest_xml_locator_selection_for_work
 
 
 class _MemoryArchive:
     def __init__(self, rows: dict[str, bytes]):
         self._rows = rows
+        self.locator_calls = 0
 
     def get(self, locator: str, *, at: object | None = None) -> bytes | None:
         return self._rows.get(locator)
 
     def locators(self, pattern: str = "%") -> list[str]:
+        self.locator_calls += 1
         prefix = pattern[:-1] if pattern.endswith("%") else pattern
         return [locator for locator in self._rows if locator.startswith(prefix)]
 
@@ -161,6 +164,31 @@ def test_latest_xml_locator_selection_emits_no_diagnostics_for_clean_latest_cand
     assert selection.version_id == "act_public_2020_1_en_2026-01-01"
     assert selection.xml_locator == xml_locator
     assert selection.diagnostics == ()
+
+
+def test_latest_xml_locator_selection_uses_active_corpus_run_cache() -> None:
+    work_id = "act_public_2020_1"
+    version = f"https://api.legislation.govt.nz/v0/versions/{work_id}_en_2026-01-01"
+    xml_locator = "https://www.legislation.govt.nz/act/public/2020/1/en/2026-01-01.xml"
+    archive = _MemoryArchive(
+        {
+            version: json.dumps(
+                {
+                    "version_id": "act_public_2020_1_en_2026-01-01",
+                    "formats": [{"type": "xml", "url": xml_locator}],
+                }
+            ).encode("utf-8"),
+            xml_locator: b"<act/>",
+        }
+    )
+
+    with corpus_run_cache():
+        first = latest_xml_locator_selection_for_work(archive, work_id)
+        second = latest_xml_locator_selection_for_work(archive, work_id)
+
+    assert first == second
+    assert first.xml_locator == xml_locator
+    assert archive.locator_calls == 1
 
 
 def test_nz_corpus_deps_cli_threads_latest_locator_selection_diagnostics(monkeypatch, capsys) -> None:
