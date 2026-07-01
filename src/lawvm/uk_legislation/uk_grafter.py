@@ -2228,10 +2228,14 @@ def _visit_eid(
     visible_number_eid_aliases: dict[str, str],
     oracle_identity_observations: list[dict[str, Any]],
     retain_text_elided_text_map: dict[str, str],
+    *,
+    tag: Optional[str] = None,
+    is_known_live: bool = False,
 ):
-    if _is_zombie(el, False, pit_date):
+    if not is_known_live and _is_zombie(el, False, pit_date):
         return
-    tag = _tag(el)
+    if tag is None:
+        tag = _tag(el)
     # Skip editorial annotations entirely — they are absent from the enacted XML
     # and must not contribute eIds to the oracle scoring set.
     if tag in _EDITORIAL_TAGS:
@@ -2466,6 +2470,8 @@ def _visit_eid(
             visible_number_eid_aliases,
             oracle_identity_observations,
             retain_text_elided_text_map,
+            tag=ct,
+            is_known_live=True,
         )
 
 
