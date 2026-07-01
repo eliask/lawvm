@@ -365,6 +365,21 @@ def _classify_compiled_effect_source_pathology(
 _UK_RAW_SOURCE_CTX: "contextvars.ContextVar[Dict[str, bytes] | None]" = (
     contextvars.ContextVar("uk_raw_source_ctx", default=None)
 )
+_UK_SOURCE_ANCHOR_BODY_TAGS: frozenset[str] = frozenset(
+    {
+        "BlockAmendment",
+        "InlineAmendment",
+        "P1para",
+        "P2para",
+        "P3para",
+        "P4para",
+        "P5para",
+        "P6para",
+        "P7para",
+        "Pnumber",
+        "Text",
+    }
+)
 
 
 def set_uk_raw_source_context(
@@ -411,6 +426,8 @@ def _unique_byte_run_bodies(raw_bytes: bytes) -> List[str]:
         return bodies
     try:
         for node in tree.iter():
+            if not isinstance(node.tag, str) or _tag(node) not in _UK_SOURCE_ANCHOR_BODY_TAGS:
+                continue
             text = _text_content(node)
             if not text or text in seen:
                 seen.add(text)

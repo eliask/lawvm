@@ -412,5 +412,24 @@ def test_uk_whole_clause_is_tag_boundary_reconstructed_but_body_anchors() -> Non
     assert direct == anchor
 
 
+def test_uk_unique_byte_run_bodies_include_paragraph_and_amendment_body_tags() -> None:
+    """The optimized candidate scan must retain real UK body-carrier tags."""
+    raw = b"""\
+<Legislation>
+  <P2para>Paragraph body is a direct unique byte run.</P2para>
+  <InlineAmendment>Inline amendment body is unique.</InlineAmendment>
+  <BlockAmendment>Block amendment body is unique.</BlockAmendment>
+  <Heading>Heading text is not an operative body anchor candidate.</Heading>
+</Legislation>
+"""
+
+    bodies = set(_unique_byte_run_bodies(raw))
+
+    assert "Paragraph body is a direct unique byte run." in bodies
+    assert "Inline amendment body is unique." in bodies
+    assert "Block amendment body is unique." in bodies
+    assert "Heading text is not an operative body anchor candidate." not in bodies
+
+
 if __name__ == "__main__":  # pragma: no cover - manual probe
     raise SystemExit(pytest.main([__file__, "-q"]))
