@@ -5680,6 +5680,7 @@ def _unique_byte_run_body_records(
     *,
     source_artifact_id: str,
     candidate_clauses: Iterable[str] | None = None,
+    root: ET.Element | None = None,
 ) -> list[_UniqueByteRunBody]:
     """Return every element body with its verified unique byte-span anchor.
 
@@ -5715,16 +5716,20 @@ def _unique_byte_run_body_records(
             if clause and "\x00" not in clause
         }
         candidate_blob = "\x00".join(unique_clauses)
-    try:
-        tree = ET.fromstring(raw_bytes)
-    except ET.ParseError:
-        return bodies
+    if root is None:
+        try:
+            root = ET.fromstring(raw_bytes)
+        except ET.ParseError:
+            return bodies
     # Collect the deduplicated, document-order flattened element bodies, then let
     # the shared indexed kernel decide global byte-run uniqueness (replaces the
-    # per-candidate two-``find`` O(N^2) scan — AGENTS.md §2.7). Byte-identical to
-    # the old loop: same dedup, same predicate, same LONGEST-first stable sort.
+    # per-candidate two-``find`` O(N^2) scan — AGENTS.md §2.7). Clause membership is
+    # checked after byte-run uniqueness: uniqueness is a raw-byte fact independent
+    # of the emitted op clauses, and filtering after the stable LONGEST-first sort
+    # preserves the same selected body order while avoiding thousands of expensive
+    # substring searches through the joined clause blob for non-anchorable bodies.
     candidates: List[str] = []
-    for node in tree.iter():
+    for node in root.iter():
         if not isinstance(node.tag, str) or _localname(node.tag) not in _US_SOURCE_ANCHOR_BODY_TAGS:
             continue
         text = _text_of(node)
@@ -5732,10 +5737,10 @@ def _unique_byte_run_body_records(
             seen.add(text)
             continue
         seen.add(text)
-        if candidate_clauses is not None and text not in candidate_blob:
-            continue
         candidates.append(text)
     for text, first in unique_byte_run_text_positions(raw_bytes, candidates):
+        if candidate_clauses is not None and text not in candidate_blob:
+            continue
         needle = text.encode("utf-8")
         bodies.append(
             _UniqueByteRunBody(
@@ -5843,6 +5848,8 @@ def mint_us_source_anchors(ops: List[LegalOperation]) -> List[LegalOperation]:
 
 def _anchor_instructions(
     instructions: list[USAmendmentInstruction],
+    *,
+    root: ET.Element | None = None,
 ) -> list[USAmendmentInstruction]:
     """Rewrite each instruction's ops with per-element byte-span anchors (post-pass).
 
@@ -5867,6 +5874,7 @@ def _anchor_instructions(
         raw_bytes,
         source_artifact_id=artifact_id,
         candidate_clauses=_anchor_clause_texts(ops_for_prefilter),
+        root=root,
     )
     rewritten: list[USAmendmentInstruction] = []
     for instr in instructions:
@@ -6089,7 +6097,7 @@ def _lower_plaw_amendatory_body(
     # the raw artifact is still published in context. Additive provenance metadata
     # only (``source.source_anchor``); the materialized text and AGREE/RESIDUAL rows
     # the US dry-run produces are byte-identical.
-    instructions = _anchor_instructions(instructions)
+    instructions = _anchor_instructions(instructions, root=root)
     return USAmendatoryReport(
         statute_id=statute_id,
         enacted=enacted,

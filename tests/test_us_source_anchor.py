@@ -46,12 +46,14 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import xml.etree.ElementTree as ET
 
 import pytest
 
 from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.core.provenance import OperationSource, SourceAnchor, compute_source_anchor
 from lawvm.core.semantic_types import StructuralAction
+import lawvm.us_federal.amendatory as amendatory
 from lawvm.us_federal.amendatory import (
     _collapse_ws_strip,
     _unique_byte_run_body_records,
@@ -476,6 +478,33 @@ def test_us_unique_byte_run_body_records_reuse_verified_offsets() -> None:
     assert anchor.byte_offset == raw.find(encoded)
     assert raw[anchor.byte_offset : anchor.byte_offset + anchor.byte_len] == encoded
     assert anchor.source_artifact_id == "PL TEST"
+
+
+def test_us_unique_byte_run_body_records_reuses_supplied_root(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw = b"""\
+<section>
+  <chapeau>Clause body selected by an emitted operation.</chapeau>
+</section>
+"""
+    root = ET.fromstring(raw)
+
+    def fail_parse(_raw: bytes) -> ET.Element:
+        raise AssertionError("supplied root should avoid reparsing raw bytes")
+
+    monkeypatch.setattr(amendatory.ET, "fromstring", fail_parse)
+
+    records = _unique_byte_run_body_records(
+        raw,
+        source_artifact_id="PL TEST",
+        candidate_clauses=("Prefix Clause body selected by an emitted operation.",),
+        root=root,
+    )
+
+    assert [record.text for record in records] == [
+        "Clause body selected by an emitted operation."
+    ]
 
 
 def test_us_unique_byte_run_bodies_indexed_kernel_preserves_uniqueness() -> None:
