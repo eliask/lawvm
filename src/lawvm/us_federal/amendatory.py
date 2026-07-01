@@ -35,6 +35,7 @@ from dataclasses import dataclass
 from dataclasses import replace as _dc_replace
 from datetime import date, datetime, timedelta
 from enum import StrEnum
+from functools import lru_cache
 from typing import Any, Iterable, List, Mapping, assert_never
 
 from lawvm.core.ir import (
@@ -1448,6 +1449,7 @@ def parse_usc_target_href(href: str) -> LegalAddress | None:
 # ---------------------------------------------------------------------------
 
 
+@lru_cache(maxsize=4096)
 def _localname(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
 
