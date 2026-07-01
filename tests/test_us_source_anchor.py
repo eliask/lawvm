@@ -411,5 +411,26 @@ def test_us_synthetic_contiguous_run_mints_anchor() -> None:
     assert anchor.quote_hash == "sha256:" + hashlib.sha256(sliced).hexdigest()
 
 
+def test_us_unique_byte_run_bodies_include_uslm_body_carrier_tags() -> None:
+    """The optimized candidate scan must retain real USLM body-carrier tags."""
+    raw = b"""\
+<section>
+  <chapeau>Chapeau body is a unique byte run.</chapeau>
+  <quotedText>Quoted text body is unique.</quotedText>
+  <quotedContent>Quoted content body is unique.</quotedContent>
+  <ref>Reference body is unique.</ref>
+  <heading>Heading body is not an operative anchor candidate.</heading>
+</section>
+"""
+
+    bodies = set(_unique_byte_run_bodies(raw))
+
+    assert "Chapeau body is a unique byte run." in bodies
+    assert "Quoted text body is unique." in bodies
+    assert "Quoted content body is unique." in bodies
+    assert "Reference body is unique." in bodies
+    assert "Heading body is not an operative anchor candidate." not in bodies
+
+
 if __name__ == "__main__":  # pragma: no cover - manual probe
     raise SystemExit(pytest.main([__file__, "-q"]))

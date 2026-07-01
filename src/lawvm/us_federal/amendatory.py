@@ -5610,6 +5610,16 @@ def _iter_instruction_units(
 _US_RAW_SOURCE_CTX: "contextvars.ContextVar[tuple[str, bytes] | None]" = (
     contextvars.ContextVar("us_raw_source_ctx", default=None)
 )
+_US_SOURCE_ANCHOR_BODY_TAGS: frozenset[str] = frozenset(
+    {
+        "chapeau",
+        "paragraph",
+        "quotedContent",
+        "quotedText",
+        "ref",
+        "subparagraph",
+    }
+)
 
 
 def set_us_raw_source_context(
@@ -5657,6 +5667,8 @@ def _unique_byte_run_bodies(raw_bytes: bytes) -> List[str]:
     except ET.ParseError:
         return bodies
     for node in tree.iter():
+        if not isinstance(node.tag, str) or _localname(node.tag) not in _US_SOURCE_ANCHOR_BODY_TAGS:
+            continue
         text = _text_of(node)
         if not text or text in seen:
             seen.add(text)
