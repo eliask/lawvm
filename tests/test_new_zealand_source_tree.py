@@ -119,6 +119,14 @@ def test_legal_text_reuses_child_mode_cache_for_whitespace_structural_root() -> 
     assert child_text == source_tree._normalize_text(child_mode_text)
 
 
+def test_node_text_leaf_fast_path_matches_mixed_content_normalization() -> None:
+    leaf = etree.fromstring(b"<label>  10\nA </label>")
+    mixed = etree.fromstring(b"<text>A <emphasis>B</emphasis> C</text>")
+
+    assert source_tree._node_text(leaf) == "10 A"
+    assert source_tree._node_text(mixed) == "A B C"
+
+
 def test_schedule_indirection_detector_uses_caller_owned_cache(monkeypatch: pytest.MonkeyPatch) -> None:
     node = etree.fromstring(
         b"""\

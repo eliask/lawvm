@@ -2356,6 +2356,8 @@ def _descendant_attrs(node: etree._Element, localname: str, attr: str) -> Iterab
 
 
 def _node_text(node: etree._Element) -> str:
+    if len(node) == 0:
+        return _normalize_text(node.text or "")
     return _normalize_text(" ".join(str(part) for part in node.itertext()))
 
 
