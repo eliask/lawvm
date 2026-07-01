@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Optional
 
 from lawvm.core.compile_records import CompileRecord, is_blocking_compile_record
 from lawvm.core.execution_authorization import ExecutionAuthorization
+from lawvm.core.ir import LegalOperation
 from lawvm.core.quirks_disposition import QuirksDisposition, coerce_quirks_disposition
 
 
@@ -495,3 +496,94 @@ def _non_authorized_claim(
         ),
         detail={"validator_status": validator_status},
     )
+
+
+# ── EV-05 execution-authorization: UK proof minting + resolver ────────────────
+#
+# Mirrors the EE recipe (``estonia/grafter:_mint_ee_execution_authorization`` /
+# ``_ee_execution_authorization``). The genuine authority for a UK state-mutating
+# op is its AFFECTING ACT — the act whose amendment instruction directed the
+# change. UK lowers that act's id onto every op's ``op.source.statute_id``
+# (``OperationSource(statute_id=effect.affecting_act_id, ...)`` in
+# ``effect_operation_builder``), so the affecting-act identity is already carried
+# on every op lowered from a real effect feed. ``_mint_uk_execution_authorization``
+# projects that known authority into a typed :class:`ExecutionAuthorization`
+# proof; the UK resolver (:func:`_uk_execution_authorization`) prefers a proof
+# already minted onto the op's ``execution_authorization`` carrier (the generic
+# ``core/apply_seam.read_op_execution_authorization`` path) and otherwise mints
+# one HERE from the op's source identity, so UK need not re-stamp every upstream
+# op-construction site (byte-identity-safe). An op with NO affecting-act identity
+# (``op.source`` is ``None`` / blank ``statute_id``) has UNKNOWN authority — no
+# proof is fabricated (§2.10 evidence-is-not-authority), so the EV-05 observe
+# gate fires honestly on it (the real unauthorized residue).
+
+#: The UK execution-authorization rule family stamped into a minted proof's
+#: ``detail``. The proof's ``authorization_rule_id`` names the CONCRETE affecting
+#: act (``uk_affecting_act:<statute_id>``) so the gate's quiet/observed decision
+#: points at the act that directed the change.
+_UK_EXECUTION_AUTHORIZATION_RULE = "uk_affecting_act_authorizes_apply"
+
+
+def _mint_uk_execution_authorization(
+    op: LegalOperation,
+) -> Optional[ExecutionAuthorization]:
+    """Mint a typed ``ExecutionAuthorization`` from a UK op's affecting-act identity.
+
+    The authority a UK op carries is its source affecting act: the act whose
+    amendment instruction directed this change is what authorizes the apply. When
+    the op carries a real ``op.source.statute_id`` (the affecting act id, lowered
+    from ``effect.affecting_act_id``), that is a GENUINELY KNOWN authority, so we
+    mint a replay-authorized proof whose ``authorization_rule_id`` names the
+    concrete act (``uk_affecting_act:<statute_id>``) and whose ``detail`` records
+    the witness rule (read-as-witness only — §2.10). When the op carries no
+    affecting-act identity (no ``source`` / blank ``statute_id``), the authority
+    is UNKNOWN: we return ``None`` and never fabricate a proof, so the EV-05 gate
+    honestly witnesses that op as unauthorized.
+
+    The proof is replay-authorized (``executable``/``replay_authorized`` both
+    ``True``) because the affecting act IS the apply authority for UK's replay
+    lane — UK's apply is the act executing its own directed amendments. This is
+    the honest UK footing, not a blanket pass: the gate still fires on every op
+    whose authorizing act is not identified.
+    """
+    source = op.source
+    statute_id = (source.statute_id if source is not None else "") or ""
+    if not statute_id:
+        return None
+    return ExecutionAuthorization(
+        executable=True,
+        replay_authorized=True,
+        authorization_status="replay_authorized",
+        authorization_rule_id=f"uk_affecting_act:{statute_id}",
+        owner_phase="apply",
+        strict_disposition="record",
+        quirks_disposition=QuirksDisposition.RECORD,
+        safe_default="execute_only_after_affecting_act_identity_is_known",
+        required_proofs=(),
+        forbidden_shortcuts=(
+            "treat_op_existence_as_replay_authority_without_affecting_act",
+        ),
+        detail={
+            "rule_family": _UK_EXECUTION_AUTHORIZATION_RULE,
+            "affecting_act": statute_id,
+            "witness_rule_id": op.witness_rule_id or "",
+            "owner": "uk_legislation/execution_authorization:_mint_uk_execution_authorization",
+        },
+    )
+
+
+def _uk_execution_authorization(
+    op: LegalOperation,
+) -> Optional[ExecutionAuthorization]:
+    """UK ``authorization_resolver``: read a minted proof, else mint from source.
+
+    Prefers an ``ExecutionAuthorization`` already minted onto the op's
+    ``execution_authorization`` carrier (the generic
+    ``core/apply_seam.read_op_execution_authorization`` path); if the op carries
+    none, mints one from its affecting-act identity via
+    :func:`_mint_uk_execution_authorization`. Returns ``None`` only when the op's
+    authority is genuinely unknown (no affecting act) — the honest EV-05 residue.
+    """
+    if op.execution_authorization is not None:
+        return op.execution_authorization
+    return _mint_uk_execution_authorization(op)

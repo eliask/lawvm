@@ -22,6 +22,7 @@ from lawvm.core.phase_result import Finding
 from lawvm.core.write_receipt import WriteReceipt
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.addressing import _action_name
+from lawvm.uk_legislation.execution_authorization import _uk_execution_authorization
 from lawvm.uk_legislation.uk_write_receipts import (
     UK_SECTION_RENUMBER_RELABEL_RULE_ID,
     emit_uk_op_receipt,
@@ -250,6 +251,19 @@ class UKReplayExecutor(
         # ``renumber_migration_rule_ids=(uk_section_renumber_relabel,)`` make the
         # seam-synthesized receipt byte-identical to UK's existing
         # ``emit_uk_op_receipt`` if a caller routes receipts through the seam.
+        # ``authorization_resolver=_uk_execution_authorization`` (EV-05): UK is now
+        # a MINTING frontend. The resolver reads a proof already on the op's
+        # ``execution_authorization`` carrier, else mints one from the op's
+        # affecting-act identity (``op.source.statute_id``). A mutating op with a
+        # known affecting act goes QUIET on the EV-05 observe gate; an op with no
+        # affecting-act identity (unknown authority) emits the non-blocking
+        # ``EVID.REPLAY_AUTHORIZATION_PROOF_OBSERVED`` witness to
+        # ``AppliedOp.observations`` — never to ``findings`` (byte-identity: the
+        # gate's verdict drives no production output; the witness is drained only
+        # via the opt-in ``seam_observations_out``). No proof is fabricated for an
+        # unknown-authority op (§2.10). UK carries no typed Parsed-vs-Recovered
+        # signal on its ops (no ``LegalOperation.scope_confidence`` rider, no
+        # ``scope_confidence:`` provenance-tag rung), so AM-01 is NOT wired here.
         return ApplyProfile(
             jurisdiction="uk",
             materializer=self._uk_materialize_one,
@@ -258,6 +272,7 @@ class UKReplayExecutor(
             emit_coverage=False,
             renumber_migration_rule_ids=(UK_SECTION_RENUMBER_RELABEL_RULE_ID,),
             receipt_helper_prefix="UKReplayExecutor.apply_op",
+            authorization_resolver=_uk_execution_authorization,
         )
 
     def seam_apply_op(self, op: LegalOperation) -> AppliedOp[IRNode]:
