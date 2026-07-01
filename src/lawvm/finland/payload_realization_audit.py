@@ -51,6 +51,9 @@ def payload_realization_findings(
     """
 
     candidates = _payload_realization_candidates(resolved_ops)
+    candidates = tuple(candidate for candidate in candidates if candidate.unit.text_chunks)
+    if not candidates:
+        return ()
     gaps = audit_payload_realization(
         units=tuple(candidate.unit for candidate in candidates),
         after_text=irnode_to_text(after_ir),
