@@ -51,10 +51,20 @@ def build_observed_write_audit(
     before: IRNode,
     after: IRNode,
     receipt: WriteReceipt,
+    *,
+    observed_paths: TreePaths | None = None,
 ) -> ObservedWriteAudit:
-    """Build a passive receipt audit from an actual before/after IR diff."""
+    """Build a passive receipt audit from an actual before/after IR diff.
 
-    observed = diff_ir_paths_identity_pruned(before, after)
+    ``observed_paths`` lets a caller reuse a diff already computed for this
+    before/after pair while preserving the same audit checks.
+    """
+
+    observed = (
+        observed_paths
+        if observed_paths is not None
+        else diff_ir_paths_identity_pruned(before, after)
+    )
     declared = receipt.declared_footprint
     undeclared = _unrelated_observed_paths(observed, declared)
     unobserved_declared = _unrelated_declared_paths(declared, observed)

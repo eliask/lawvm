@@ -876,6 +876,7 @@ def _collect_op_write_receipt(
         bound_target_path=normalized_bound_path,
         landed_primary_path=normalized_landed_path,
         source_anchor=_rop_source.source_anchor if _rop_source is not None else None,
+        observed_paths=observed_paths,
     )
     # PR2 receipt-prefix-equivalence (BOUND_TARGET_PATH_NORMALIZATION_DESIGN §3):
     # classify the bound→landed relation's divergence_kind NOW that both sides
@@ -916,7 +917,12 @@ def _collect_op_write_receipt(
                 source_statute=source_statute,
             )
         )
-    audit = build_observed_write_audit(prev_state.ir, new_state.ir, receipt)
+    audit = build_observed_write_audit(
+        prev_state.ir,
+        new_state.ir,
+        receipt,
+        observed_paths=observed_paths,
+    )
     sinks.write_receipts_out.append(receipt)
     sinks.write_audits_out.append(audit)
 

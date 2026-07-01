@@ -917,6 +917,7 @@ def receipt_from_diff(
     migration_rule_ids: tuple[str, ...] = (),
     fallback_rule_ids: tuple[str, ...] = (),
     source_anchor: "SourceAnchor | None" = None,
+    observed_paths: TreePaths | None = None,
 ) -> WriteReceipt:
     """Build a WriteReceipt from the ACTUAL before/after diff (landed reality).
 
@@ -929,9 +930,15 @@ def receipt_from_diff(
     the observed footprint and the independent audit is clean by construction.
     ``bound_target_path`` / ``landed_primary_path`` are the nominal addresses,
     kept for the bound→landed divergence check at lanes that have a real
-    resolver binding.
+    resolver binding. ``observed_paths`` lets a caller reuse the exact diff it
+    already computed for this before/after pair; when omitted this helper owns
+    the diff computation itself.
     """
-    observed = diff_ir_paths_identity_pruned(before, after)
+    observed = (
+        observed_paths
+        if observed_paths is not None
+        else diff_ir_paths_identity_pruned(before, after)
+    )
     created: TreePaths = ()
     replaced: TreePaths = ()
     removed: TreePaths = ()
