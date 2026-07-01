@@ -750,6 +750,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_provenance_graph.py",
         "test_fi_provenance_graph_facade.py",
         "test_provenance_graph_storage.py",
+        "test_unique_byte_run_texts.py",
         # Step 5: compile metadata + reproducibility fingerprints
         "test_compile_metadata.py",
         "test_compile_metadata_verify.py",

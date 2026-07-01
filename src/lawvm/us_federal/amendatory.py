@@ -46,7 +46,11 @@ from lawvm.core.ir import (
 )
 from lawvm.core.parse_witness import ParseWitness
 from lawvm.core.branch_authority import COMMENCED_STATUS, PENDING_CONDITION_STATUS
-from lawvm.core.provenance import OperationSource, compute_source_anchor
+from lawvm.core.provenance import (
+    OperationSource,
+    compute_source_anchor,
+    unique_byte_run_texts,
+)
 from lawvm.core.regex_safety import compile_classifier_regex
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction, TextPatchKindEnum
 
@@ -5650,24 +5654,24 @@ def _unique_byte_run_bodies(raw_bytes: bytes) -> List[str]:
     (collapse can never forge a run: a body whose collapsed text differs from the raw
     bytes simply fails the ``raw.find`` here and is dropped, never anchored).
     """
-    bodies: List[str] = []
-    seen: set[str] = set()
     try:
         tree = ET.fromstring(raw_bytes)
     except ET.ParseError:
-        return bodies
+        return []
+    # Collect the deduplicated, document-order flattened element bodies, then let
+    # the shared indexed kernel decide global byte-run uniqueness (replaces the
+    # per-candidate two-``find`` O(N^2) scan — AGENTS.md §2.7). Byte-identical to
+    # the old loop: same dedup, same predicate, same LONGEST-first stable sort.
+    seen: set[str] = set()
+    candidates: List[str] = []
     for node in tree.iter():
         text = _text_of(node)
         if not text or text in seen:
             seen.add(text)
             continue
         seen.add(text)
-        needle = text.encode("utf-8")
-        first = raw_bytes.find(needle)
-        if first >= 0 and raw_bytes.find(needle, first + 1) < 0:
-            bodies.append(text)
-    bodies.sort(key=lambda s: -len(s))
-    return bodies
+        candidates.append(text)
+    return unique_byte_run_texts(raw_bytes, candidates)
 
 
 def _anchor_op(
