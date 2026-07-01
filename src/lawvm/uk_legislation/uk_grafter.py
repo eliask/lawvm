@@ -199,6 +199,18 @@ def _is_retained_repeal(el: ET._Element) -> bool:
     return _tag(el) == "Repeal" and (el.get(_RETAIN_TEXT_ATTR) or "").lower() == "true"
 
 
+def _contains_retained_repeal(el: ET._Element) -> bool:
+    for descendant in el.iter():
+        retain_text = descendant.get(_RETAIN_TEXT_ATTR)
+        if (
+            retain_text is not None
+            and retain_text.lower() == "true"
+            and _tag(descendant) == "Repeal"
+        ):
+            return True
+    return False
+
+
 def _oracle_text_eliding_retained_repeals(el: Optional[ET._Element]) -> tuple[str, bool]:
     """Collect provision text with ``RetainText="true"`` repeal subtrees elided.
 
@@ -2358,7 +2370,10 @@ def _visit_eid(
             # left untouched; this is oracle-side, comparison-only, and never
             # changes LawVM's compiled ops or materialized text.  Auditable,
             # never silent (AGENTS.md §0/§7).
-            elided_text, retained_repeal_elided = _oracle_text_eliding_retained_repeals(el)
+            if _contains_retained_repeal(el):
+                elided_text, retained_repeal_elided = _oracle_text_eliding_retained_repeals(el)
+            else:
+                elided_text, retained_repeal_elided = "", False
             if retained_repeal_elided:
                 elided_norm = _normalize_text_for_grounding(elided_text)
                 if elided_norm != norm:
