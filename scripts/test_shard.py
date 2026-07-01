@@ -257,6 +257,9 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         # SDOC-13 unified tree merge helper — attachments as APPENDIX
         # siblings of BODY under one HCONTAINER root.
         "test_fi_attachment_merge.py",
+        # Task #147 — Regime-B budget-PDF mojibake decoder (font-scoped
+        # glyph-offset decode in pdf_layout.py).
+        "test_fi_pdf_mojibake_decode.py",
         # SDOC invariants — pinned against the D0 attachment-IR fixture.
         "test_fi_sdoc_invariants.py",
         # D4 footnote scoped collation (doc3 D4).

@@ -91,6 +91,192 @@ def _extract_footnote_marker(text: str) -> str:
     return ""
 
 
+# --- Regime-B "mojibake" cipher decoder (task #147) ----------------------
+#
+# The 2020s säädöskokoelma budget / lisätalousarvio PDFs (e.g. 2025/358,
+# 2026/154) embed subset TrueType fonts with *no ToUnicode CMap*. pdfplumber
+# then reports each glyph as ``(cid:N)`` (the raw glyph id) rather than a
+# unicode character. For these particular fonts the glyph ids sit at a
+# constant offset below the WinAnsi/ASCII codepoints: adding a single
+# per-font delta (0x1D for the fonts seen so far, but *solved*, never
+# hardcoded) recovers the printable band (letters, digits, ``.`` ``,`` ``-``
+# and space). A handful of non-ASCII glyphs (Finnish ä/ö/Ä/Ö, ``§``, en-dash)
+# fall outside that band and use a small shared exception table — the glyph
+# ordering is identical across every observed subset (all are the same
+# TimesNewRoman base subset by the same producer), so the exceptions key on
+# the *glyph id*, not on the (per-PDF-random) subset tag.
+#
+# The decode is strictly FONT-SCOPED: only ``(cid:N)`` runs whose font
+# actually aligns to a known anchor under one constant delta are rewritten.
+# Clean fonts (which carry a ToUnicode CMap and so extract as real unicode,
+# never as ``(cid:N)``) are left completely untouched — this is what keeps a
+# blind global shift from corrupting already-correct page numbers / titles /
+# cover text, and what keeps Regime-A clean PDFs (1997–2016) unaffected.
+
+# Anchor tokens that appear in ~every budget PDF. When a ciphered glyph run
+# decodes under a single constant delta to one of these, we have both the
+# signature (it *is* a ciphered font) and the delta (the offset that did it).
+_MOJIBAKE_ANCHORS: tuple[str, ...] = (
+    "Osasto",
+    "euroa",
+    "lisätalousarvio",
+    "TULOARVIOT",
+    "MÄÄRÄRAHAT",
+)
+
+# Glyph ids whose recovered character is not in the printable ASCII band and
+# so is not reachable by ``chr(cid + delta)``. Verified byte-identical on
+# 2025/358 and 2026/154 (subset tags FCPBG*/IDHFE* — same base subset). These
+# are added to the anchor decoder's alphabet so anchors like ``MÄÄRÄRAHAT``
+# and ``lisätalousarvio`` (which contain ä/Ä) can align.
+_MOJIBAKE_GLYPH_EXCEPTIONS: dict[int, str] = {
+    98: "Ä",   # U+00C4  (observed in MÄÄRÄRAHAT)
+    103: "Ö",  # U+00D6
+    108: "ä",  # U+00E4
+    124: "ö",  # U+00F6
+    134: "§",  # U+00A7
+    178: "–",  # U+2013 en-dash
+}
+
+# The ASCII band a constant delta is allowed to touch: adding ``delta`` to a
+# glyph id must land in printable ASCII (0x20..0x7E) for the run to count as
+# aligned. Glyph ids outside this (once delta is applied) must resolve via the
+# exception table or the run is not treated as ciphered.
+_MOJIBAKE_ASCII_LO = 0x20
+_MOJIBAKE_ASCII_HI = 0x7E
+
+
+def _mojibake_cid(text: str) -> int | None:
+    """Return the glyph id ``N`` if ``text`` is a bare ``(cid:N)`` token, else
+    ``None``. pdfplumber emits exactly this form for a glyph with no usable
+    ToUnicode mapping."""
+    if not (text.startswith("(cid:") and text.endswith(")")):
+        return None
+    inner = text[5:-1]
+    if not inner.isdigit():
+        return None
+    return int(inner)
+
+
+def _mojibake_decode_glyph(cid: int, delta: int) -> str | None:
+    """Recover the unicode character for glyph ``cid`` under ``delta``.
+
+    Returns ``None`` if the glyph is neither in the shifted printable-ASCII
+    band nor in the shared exception table — i.e. this font/delta does not
+    explain the glyph, so the run must not be treated as ciphered.
+    """
+    if cid in _MOJIBAKE_GLYPH_EXCEPTIONS:
+        return _MOJIBAKE_GLYPH_EXCEPTIONS[cid]
+    shifted = cid + delta
+    if _MOJIBAKE_ASCII_LO <= shifted <= _MOJIBAKE_ASCII_HI:
+        return chr(shifted)
+    return None
+
+
+def _mojibake_candidate_deltas(cids: list[int]) -> set[int]:
+    """Candidate deltas derived from anchor alignment.
+
+    For each anchor, take its first printable-ASCII character ``a`` and, for
+    every glyph id ``g`` in the stream, propose ``delta = ord(a) - g`` — the
+    shift that would make ``g`` decode to ``a``. This is the "solve from anchor
+    alignment" step: the true delta is guaranteed to be among these (it aligns
+    the anchor's first letter), and the set is tiny relative to a full range
+    scan. Never hardcodes the offset.
+    """
+    firsts = {
+        anchor[0]
+        for anchor in _MOJIBAKE_ANCHORS
+        if _MOJIBAKE_ASCII_LO <= ord(anchor[0]) <= _MOJIBAKE_ASCII_HI
+    }
+    cid_set = set(cids)
+    return {ord(a) - g for a in firsts for g in cid_set}
+
+
+def _solve_mojibake_delta(cids: list[int]) -> int | None:
+    """Solve the constant per-font delta from anchor alignment.
+
+    ``cids`` is the concatenated glyph-id stream of a single font across the
+    document. Try each anchor-aligned candidate delta; accept the one whose
+    fully-decoded stream contains a known anchor. Return that delta, or
+    ``None`` if the font is not ciphered (Symbol, or any non-shifted font).
+    """
+    if not cids:
+        return None
+    for delta in sorted(_mojibake_candidate_deltas(cids)):
+        decoded_chars: list[str] = []
+        ok = True
+        for cid in cids:
+            ch = _mojibake_decode_glyph(cid, delta)
+            if ch is None:
+                ok = False
+                break
+            decoded_chars.append(ch)
+        if not ok:
+            continue
+        decoded = "".join(decoded_chars)
+        if any(anchor in decoded for anchor in _MOJIBAKE_ANCHORS):
+            return delta
+    return None
+
+
+def _solve_mojibake_deltas(pages: list) -> dict[str, int]:
+    """Return ``{fontname: delta}`` for every ciphered font in the document.
+
+    A font is ciphered iff its chars are ``(cid:N)`` form and its concatenated
+    glyph stream decodes, under a single constant delta, to a known anchor.
+    Fonts with a ToUnicode CMap never surface as ``(cid:N)`` and so are never
+    considered — clean text is untouched by construction.
+    """
+    per_font: dict[str, list[int]] = {}
+    for page in pages:
+        try:
+            chars = page.chars
+        except Exception:  # lawvm-failloud: char access may fail on malformed pages
+            continue
+        for char in chars:
+            cid = _mojibake_cid(char.get("text", ""))
+            if cid is None:
+                continue
+            per_font.setdefault(char.get("fontname", ""), []).append(cid)
+    deltas: dict[str, int] = {}
+    for fontname, cids in per_font.items():
+        delta = _solve_mojibake_delta(cids)
+        if delta is not None:
+            deltas[fontname] = delta
+    return deltas
+
+
+def _apply_mojibake_decode(chars: list, deltas: dict[str, int]) -> list:
+    """Return a char list with ciphered ``(cid:N)`` glyphs rewritten to their
+    recovered unicode ``text`` (font-scoped). Non-ciphered chars are returned
+    unchanged (same dict object); ciphered chars get a shallow copy with a
+    corrected ``text``.
+    """
+    if not deltas:
+        return chars
+    out: list = []
+    for char in chars:
+        fontname = char.get("fontname", "")
+        delta = deltas.get(fontname)
+        if delta is None:
+            out.append(char)
+            continue
+        cid = _mojibake_cid(char.get("text", ""))
+        if cid is None:
+            out.append(char)
+            continue
+        recovered = _mojibake_decode_glyph(cid, delta)
+        if recovered is None:
+            # Ciphered font but unexplained glyph — leave the raw token rather
+            # than fabricate a character.
+            out.append(char)
+            continue
+        fixed = dict(char)
+        fixed["text"] = recovered
+        out.append(fixed)
+    return out
+
+
 def extract_pdf_layout(pdf_bytes: bytes, *, max_pages: int = 5000) -> AttachmentLayout | None:
     """Extract structured layout from a Finlex attachment PDF."""
     import importlib
@@ -115,6 +301,11 @@ def extract_pdf_layout(pdf_bytes: bytes, *, max_pages: int = 5000) -> Attachment
     tables: list[ExtractedTable] = []
     footnotes: list[Footnote] = []
     page_count = len(pdf.pages)
+
+    # Regime-B mojibake: solve the per-font decode delta once, over all pages
+    # (an anchor may live on any page). Empty for clean PDFs — the apply step
+    # is then a no-op, so Regime-A / clean fonts stay byte-identical.
+    mojibake_deltas = _solve_mojibake_deltas(list(pdf.pages[:max_pages]))
 
     for page_idx, page in enumerate(pdf.pages[:max_pages]):
         # noqa: F841 — page_width used for column detection in follow-up
@@ -160,6 +351,11 @@ def extract_pdf_layout(pdf_bytes: bytes, *, max_pages: int = 5000) -> Attachment
 
         if not chars:
             continue
+
+        # Font-scoped mojibake decode: rewrite ``(cid:N)`` glyphs of ciphered
+        # fonts to their recovered unicode before line assembly. No-op when
+        # ``mojibake_deltas`` is empty (clean PDFs) or for clean-font chars.
+        chars = _apply_mojibake_decode(chars, mojibake_deltas)
 
         lines: dict[float, list[dict]] = {}
         for char in chars:
