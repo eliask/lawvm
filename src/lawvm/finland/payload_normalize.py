@@ -18,7 +18,7 @@ See notes/LAWVM_CONSTITUTION.md §3 (Phase Ownership Rules).
 from __future__ import annotations
 from typing_extensions import override
 
-from collections.abc import MutableMapping, Iterator
+from collections.abc import Iterator, MutableMapping, Sequence
 import re
 from difflib import SequenceMatcher
 from dataclasses import dataclass, field
@@ -5923,7 +5923,7 @@ def _assign_subsection_slots(
 
 
 def _detect_fallback_order_mismatches(
-    fallback_bindings: List[Tuple[int | None, str | None, str | None, int, str]],
+    fallback_bindings: Sequence[Tuple[int | None, str | None, str | None, int, str]],
 ) -> Tuple[FallbackOrderMismatch, ...]:
     """Verify positional-fallback bindings honour declared target order.
 
