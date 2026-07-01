@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Literal
 
@@ -24,6 +25,7 @@ from lawvm.new_zealand.dry_run import (
     NZ_DRY_RUN_SCOPE_COMPLETE_SET,
     NZ_DRY_RUN_SCOPE_SELECTED_FAMILY_REPEAL,
     build_dry_run_repeal,
+    _amending_node_by_href,
     scope_from_arg,
 )
 from lawvm.new_zealand.effect_candidates import (
@@ -60,6 +62,26 @@ _AFTER_XML = b"""\
   </body>
 </act>
 """
+
+
+def test_amending_node_by_href_cache_preserves_first_id_match() -> None:
+    root = ET.fromstring(
+        b"""\
+<act>
+  <prov id="A1"><label>first</label></prov>
+  <prov id="A2"><label>second</label></prov>
+  <prov id="A1"><label>duplicate</label></prov>
+</act>
+"""
+    )
+    cache: dict[str, object] = {}
+
+    first = _amending_node_by_href(root, "A1", amending_root_cache=cache)
+    second = _amending_node_by_href(root, "A2", amending_root_cache=cache)
+
+    assert first is root[0]
+    assert second is root[1]
+    assert _amending_node_by_href(root, "missing", amending_root_cache=cache) is None
 
 
 class _FakeArchive:

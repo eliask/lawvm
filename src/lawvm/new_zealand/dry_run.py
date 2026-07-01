@@ -2189,7 +2189,9 @@ def _dry_run_one_replace(
             detail={"amending_work_id": row.amending_work_id},
         )
     href = row.amending_provision_hrefs[0]
-    amending_node = _amending_node_by_href(amending_root, href)
+    amending_node = _amending_node_by_href(
+        amending_root, href, amending_root_cache=amending_root_cache
+    )
     if amending_node is None:
         return NZDryRunRefusal(
             op_id=op_id,
@@ -2980,7 +2982,9 @@ def _dry_run_one_insert(
             detail={"amending_work_id": row.amending_work_id},
         )
     href = row.amending_provision_hrefs[0]
-    amending_node = _amending_node_by_href(amending_root, href)
+    amending_node = _amending_node_by_href(
+        amending_root, href, amending_root_cache=amending_root_cache
+    )
     if amending_node is None:
         return NZDryRunRefusal(
             op_id=op_id,
@@ -3542,7 +3546,11 @@ def _reextract_structural_replacement_for_proof(
         raise NZStructuralMaterializationError(
             "amending act XML unreadable while re-materializing a verified replace proof"
         )
-    amending_node = _amending_node_by_href(amending_root, proof.replace_amending_provision_href)
+    amending_node = _amending_node_by_href(
+        amending_root,
+        proof.replace_amending_provision_href,
+        amending_root_cache=amending_root_cache,
+    )
     if amending_node is None:
         raise NZStructuralMaterializationError(
             "amending-provision href not found while re-materializing a verified replace proof"
@@ -3583,7 +3591,11 @@ def _reextract_structural_insertion_for_proof(
         raise NZStructuralMaterializationError(
             "amending act XML unreadable while re-materializing a verified insert proof"
         )
-    amending_node = _amending_node_by_href(amending_root, proof.insert_amending_provision_href)
+    amending_node = _amending_node_by_href(
+        amending_root,
+        proof.insert_amending_provision_href,
+        amending_root_cache=amending_root_cache,
+    )
     if amending_node is None:
         raise NZStructuralMaterializationError(
             "amending-provision href not found while re-materializing a verified insert proof"
@@ -4459,9 +4471,40 @@ def _amending_act_root(
     return root
 
 
-def _amending_node_by_href(amending_root: Any, href: str) -> Any:
+_AMENDING_HREF_INDEX_CACHE_KEY = "__amending_href_index__"
+
+
+def _amending_href_index_cache(amending_root_cache: dict[str, Any]) -> dict[int, dict[str, Any]]:
+    cache = amending_root_cache.get(_AMENDING_HREF_INDEX_CACHE_KEY)
+    if isinstance(cache, dict):
+        return cache
+    cache = {}
+    amending_root_cache[_AMENDING_HREF_INDEX_CACHE_KEY] = cache
+    return cache
+
+
+def _amending_node_by_href(
+    amending_root: Any,
+    href: str,
+    *,
+    amending_root_cache: dict[str, Any] | None = None,
+) -> Any:
     if not href:
         return None
+    if amending_root_cache is not None:
+        index_cache = _amending_href_index_cache(amending_root_cache)
+        root_key = id(amending_root)
+        href_index = index_cache.get(root_key)
+        if href_index is None:
+            href_index = {}
+            for element in amending_root.iter():
+                if not isinstance(element.tag, str):
+                    continue
+                element_id = element.attrib.get("id")
+                if isinstance(element_id, str) and element_id and element_id not in href_index:
+                    href_index[element_id] = element
+            index_cache[root_key] = href_index
+        return href_index.get(href)
     for element in amending_root.iter():
         if isinstance(element.tag, str) and element.attrib.get("id") == href:
             return element
