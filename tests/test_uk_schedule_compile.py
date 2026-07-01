@@ -8,6 +8,7 @@ from typing import Any, cast
 
 import pytest
 
+import lawvm.uk_legislation.commencement as commencement_mod
 import lawvm.uk_legislation.replay_target_lookup as replay_target_lookup_mod
 import lawvm.uk_legislation.table_selectors as table_selectors_mod
 import lawvm.uk_legislation.uk_amendment_replay as uk_replay_mod
@@ -39565,6 +39566,99 @@ def test_commencement_eid_set_matches_enum_nodes_under_structural_containers() -
             "quirks_disposition": "record",
         }
     ]
+
+
+def test_commencement_eid_set_uses_root_index_for_distinct_section_targets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    statute = IRStatute(
+        statute_id="ukpga/test/fast",
+        title="Fast Commencement Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.PART,
+                    label="PART 1",
+                    attrs={"eId": "part-1"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.CHAPTER,
+                            label="CHAPTER 1",
+                            attrs={"eId": "chapter-1"},
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.CROSSHEADING,
+                                    attrs={"eId": "crossheading-1"},
+                                    children=(
+                                        IRNode(
+                                            kind=IRNodeKind.SECTION,
+                                            label="1",
+                                            attrs={"eId": "section-1"},
+                                        ),
+                                        IRNode(
+                                            kind=IRNodeKind.SECTION,
+                                            label="2",
+                                            attrs={"eId": "section-2"},
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    effects = [
+        UKEffectRecord(
+            effect_id="uk_test_commence_section_1",
+            effect_type="coming into force",
+            applied=True,
+            requires_applied=False,
+            modified="2025-01-01",
+            affected_uri="/id/ukpga/test/fast",
+            affected_class="UnitedKingdomPublicGeneralAct",
+            affected_year="2025",
+            affected_number="1",
+            affected_provisions="s. 1",
+            affecting_uri="/id/uksi/2025/1",
+            affecting_class="UnitedKingdomStatutoryInstrument",
+            affecting_year="2025",
+            affecting_number="1",
+            affecting_provisions="art. 2(a)",
+            affecting_title="Test Commencement Order",
+            in_force_dates=[{"date": "2025-01-01", "prospective": "false"}],
+        ),
+        UKEffectRecord(
+            effect_id="uk_test_commence_section_2",
+            effect_type="coming into force",
+            applied=True,
+            requires_applied=False,
+            modified="2025-01-02",
+            affected_uri="/id/ukpga/test/fast",
+            affected_class="UnitedKingdomPublicGeneralAct",
+            affected_year="2025",
+            affected_number="1",
+            affected_provisions="s. 2",
+            affecting_uri="/id/uksi/2025/1",
+            affecting_class="UnitedKingdomStatutoryInstrument",
+            affecting_year="2025",
+            affecting_number="1",
+            affecting_provisions="art. 2(b)",
+            affecting_title="Test Commencement Order",
+            in_force_dates=[{"date": "2025-01-02", "prospective": "false"}],
+        ),
+    ]
+
+    def fail_recursive_match(*_args: Any, **_kwargs: Any) -> list[IRNode]:
+        raise AssertionError("root index should resolve one-component section targets")
+
+    monkeypatch.setattr(commencement_mod, "_nodes_matching_address", fail_recursive_match)
+
+    commenced = commencement_eid_set(effects, statute)
+
+    assert {"section-1", "section-2", "part-1", "chapter-1", "crossheading-1"} <= commenced
 
 
 def test_commencement_eid_set_does_not_guess_unnumbered_schedule_when_multiple_exist() -> None:

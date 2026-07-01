@@ -94,6 +94,53 @@ def _uk_commencement_container_descends_without_consuming(kind: str) -> bool:
     return kind in {"part", "chapter", "wrapper", "hcontainer"} or uk_is_transparent_wrapper_kind(kind)
 
 
+@lru_cache(maxsize=32)
+def _non_transparent_commencement_kinds(addr_kind: str) -> frozenset[str]:
+    accepted_ir_kinds = _ADDR_KIND_ALIASES.get(addr_kind, {addr_kind})
+    return frozenset(
+        kind
+        for kind in accepted_ir_kinds
+        if kind not in {"part", "chapter", "wrapper", "hcontainer"} and not uk_is_transparent_wrapper_kind(kind)
+    )
+
+
+class _CommencementRootAddressIndex:
+    """Index first-component commencement matches under transparent containers."""
+
+    __slots__ = ("_matches",)
+
+    def __init__(self, nodes: Sequence[IRNode]) -> None:
+        matches: dict[tuple[str, str, str], list[IRNode]] = {}
+        self._matches = matches
+        self._index_nodes(nodes)
+
+    def _index_nodes(self, nodes: Sequence[IRNode]) -> None:
+        for node in nodes:
+            node_kind = _uk_kind_value(node.kind)
+            for addr_kind in _ADDR_KIND_ALIASES:
+                if node_kind not in _non_transparent_commencement_kinds(addr_kind):
+                    continue
+                label = _normalize_commencement_match_label(node_kind, node.label or "")
+                matches = self._matches.setdefault((addr_kind, node_kind, label), [])
+                matches.append(node)
+            if node_kind not in _ADDR_KIND_ALIASES and node_kind in _non_transparent_commencement_kinds(node_kind):
+                label = _normalize_commencement_match_label(node_kind, node.label or "")
+                matches = self._matches.setdefault((node_kind, node_kind, label), [])
+                matches.append(node)
+            if _uk_commencement_container_descends_without_consuming(node_kind):
+                self._index_nodes(node.children)
+
+    def root_matches(self, path: TreePath) -> tuple[IRNode, ...]:
+        if not path:
+            return ()
+        addr_kind, addr_label = path[0]
+        matches: list[IRNode] = []
+        for node_kind in _non_transparent_commencement_kinds(addr_kind):
+            label = _normalize_commencement_match_label(node_kind, addr_label)
+            matches.extend(self._matches.get((addr_kind, node_kind, label), ()))
+        return tuple(matches)
+
+
 def _collect_all_eids(node: IRNode) -> set[str]:
     """Recursively collect all eId/id attrs from a node and its descendants."""
     result: set[str] = set()
@@ -129,14 +176,9 @@ def _nodes_matching_address(
         return list(nodes)
 
     addr_kind, addr_label = path[depth]
-    accepted_ir_kinds = _ADDR_KIND_ALIASES.get(addr_kind, {addr_kind})
     # Remove transparent kinds from accepted set: a p1group with label=None
     # should never match an addr_label like '1'.
-    non_transparent_accepted = {
-        kind
-        for kind in accepted_ir_kinds
-        if kind not in {"part", "chapter", "wrapper", "hcontainer"} and not uk_is_transparent_wrapper_kind(kind)
-    }
+    non_transparent_accepted = _non_transparent_commencement_kinds(addr_kind)
     unique_unnumbered_schedule: Optional[IRNode] = None
     if addr_kind == "schedule" and not str(addr_label or "").strip():
         schedule_candidates = [
@@ -326,6 +368,7 @@ def commencement_eid_set(
     # Collect directly commenced EIDs: section/schedule/paragraph nodes and descendants.
     commenced: set[str] = set()
     match_cache: dict[TreePath, tuple[IRNode, ...]] = {}
+    root_address_index = _CommencementRootAddressIndex(all_ir_nodes)
 
     for effect in comm_effects:
         prov_str = effect.affected_provisions.strip()
@@ -354,15 +397,35 @@ def commencement_eid_set(
             if cacheable_match and addr.path in match_cache:
                 matching = match_cache[addr.path]
             else:
-                matching = tuple(
-                    _nodes_matching_address(
-                        all_ir_nodes,
-                        addr.path,
-                        observations_out=observations_out,
-                        effect=effect,
-                        source_ref=part,
+                root_matching = root_address_index.root_matches(addr.path)
+                if root_matching and len(addr.path) == 1:
+                    matching = root_matching
+                elif root_matching:
+                    collected: list[IRNode] = []
+                    for node in root_matching:
+                        sub = _nodes_matching_address(
+                            node.children,
+                            addr.path,
+                            1,
+                            observations_out=observations_out,
+                            effect=effect,
+                            source_ref=part,
+                        )
+                        if sub:
+                            collected.extend(sub)
+                        else:
+                            collected.append(node)
+                    matching = tuple(collected)
+                else:
+                    matching = tuple(
+                        _nodes_matching_address(
+                            all_ir_nodes,
+                            addr.path,
+                            observations_out=observations_out,
+                            effect=effect,
+                            source_ref=part,
+                        )
                     )
-                )
                 if cacheable_match:
                     match_cache[addr.path] = matching
             for node in matching:
