@@ -635,12 +635,30 @@ def analyze_coverage(
     # the same label in an unrelated chapter (e.g. "2 luku / 17 §").
     # Format: "<kind>_<label>"  (without parent prefix) — only from chapter-free claims.
     label_only_covered: set[str] = set()
+    # A SEPARATE index: for every chapter-qualified claim, the set of distinct
+    # chapters that claim each bare "<kind>_<label>". This matches *chapter-free*
+    # body units only (see below) — a body section listed flat in the amendment
+    # (no enclosing <chapter> wrapper) whose op nonetheless gained chapter
+    # context from resolving the section against the parent tree (e.g. a flat
+    # "14 §" body section vs a "3 luku 14 §" op → claim unit_id "section_3_14").
+    # A chapter-free unit has no chapter of its own to disambiguate, so it is
+    # covered by a chapter-qualified claim of the same label — BUT only when that
+    # label is claimed in exactly ONE chapter. If two different chapters claim
+    # the same bare label, the flat body unit is genuinely ambiguous and we keep
+    # it uncovered (preserving the "OTHER chapter" absorption guard that
+    # motivates `label_only_covered`). This never relaxes matching for
+    # chapter-QUALIFIED body units.
+    chapters_by_bare_claim: dict[str, set[str]] = {}
     for unit_id in directly_covered:
         parts = unit_id.split("_")
         if len(parts) == 2:
             # kind_label — no chapter context → covers any chapter
             label_only_covered.add(unit_id)
-        # 3-part (kind_parent_label): chapter-qualified — do NOT add to label_only
+        elif len(parts) == 3:
+            # kind_chapter_label — chapter-qualified: do NOT add to label_only
+            # (guards sub-chapter recovery); record the chapter under the bare
+            # label for chapter-free body-unit matching only.
+            chapters_by_bare_claim.setdefault(f"{parts[0]}_{parts[2]}", set()).add(parts[1])
 
     gaps: List[CoverageGap] = []
 
@@ -651,6 +669,10 @@ def analyze_coverage(
         # Check label-only match (op covered all chapters)
         label_only_id = f"{unit.kind}_{unit.observed_label}"
         if label_only_id in directly_covered or label_only_id in label_only_covered:
+            continue
+        # Chapter-free body unit covered by an unambiguous same-label,
+        # chapter-qualified claim (chapter came from parent-tree resolution).
+        if not unit.parent_label and len(chapters_by_bare_claim.get(label_only_id, ())) == 1:
             continue
 
         # Unit is unclaimed — classify disposition
