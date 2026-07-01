@@ -14,6 +14,7 @@ ambiguous and the rule declines, preserving the prior fallback.
 from __future__ import annotations
 
 import os
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
@@ -22,6 +23,9 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.apply_structure_ops import (
     _agreeing_neighbor_chapter_for_unscoped_section_insert,
 )
+
+if TYPE_CHECKING:
+    from lawvm.finland.apply_structure_ops import ReplayState
 
 
 def _section(label: str) -> IRNode:
@@ -59,7 +63,7 @@ def _chaptered_tree() -> IRNode:
 
 
 def test_interior_gap_between_agreeing_neighbours_binds_that_chapter() -> None:
-    state = _FakeState(_chaptered_tree())
+    state = cast("ReplayState", _FakeState(_chaptered_tree()))
     # §46 sits between §45 (ch8) and §49 (ch8) → both agree on chapter 8.
     assert _agreeing_neighbor_chapter_for_unscoped_section_insert(state, "46") == "8"
     # §48 likewise interior to chapter 8.
@@ -67,19 +71,19 @@ def test_interior_gap_between_agreeing_neighbours_binds_that_chapter() -> None:
 
 
 def test_letter_suffix_section_binds_its_base_chapter() -> None:
-    state = _FakeState(_chaptered_tree())
+    state = cast("ReplayState", _FakeState(_chaptered_tree()))
     # §48a orders between §45/§49 (both ch8) → chapter 8.
     assert _agreeing_neighbor_chapter_for_unscoped_section_insert(state, "48a") == "8"
 
 
 def test_chapter_boundary_straddle_declines() -> None:
-    state = _FakeState(_chaptered_tree())
+    state = cast("ReplayState", _FakeState(_chaptered_tree()))
     # §60 sits between §50 (ch8) and §76 (ch13) → neighbours disagree → decline.
     assert _agreeing_neighbor_chapter_for_unscoped_section_insert(state, "60") is None
 
 
 def test_trailing_tail_without_successor_declines() -> None:
-    state = _FakeState(_chaptered_tree())
+    state = cast("ReplayState", _FakeState(_chaptered_tree()))
     # §90 has no chaptered successor → ambiguous tail → decline (do not guess a
     # final-provisions chapter that may or may not exist).
     assert _agreeing_neighbor_chapter_for_unscoped_section_insert(state, "90") is None
@@ -97,7 +101,7 @@ def test_body_level_neighbours_are_not_chapter_anchors() -> None:
             ),
         ),
     )
-    state = _FakeState(ir)
+    state = cast("ReplayState", _FakeState(ir))
     assert _agreeing_neighbor_chapter_for_unscoped_section_insert(state, "46") is None
 
 
