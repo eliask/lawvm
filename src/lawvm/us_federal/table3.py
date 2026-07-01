@@ -38,6 +38,7 @@ import os
 import re
 from dataclasses import dataclass
 from enum import StrEnum
+from functools import lru_cache
 from typing import Iterable
 
 from lawvm.core.ir import LegalAddress
@@ -74,6 +75,7 @@ _PAREN_TAIL_RE = re.compile(r"\([0-9A-Za-z]+\)\s*$")
 # Range expansion is bounded to guard against a pathological OLRC cell (mirrors
 # ClassificationIndex._MAX_RANGE_EXPANSION).
 _MAX_RANGE_EXPANSION = 256
+_SECTION_ROOT_CACHE_SIZE = 65536
 
 
 def normalize_act_key(act_key: str) -> str:
@@ -94,6 +96,7 @@ def normalize_act_key(act_key: str) -> str:
     return raw
 
 
+@lru_cache(maxsize=_SECTION_ROOT_CACHE_SIZE)
 def section_root(act_section: str) -> str:
     """The integer/letter root of an act-section (``"1101(a)"`` -> ``"1101"``)."""
     text = (act_section or "").strip()
@@ -229,6 +232,7 @@ class Table3Resolver:
         return (rec.act_num, synthetic)
 
     @staticmethod
+    @lru_cache(maxsize=_SECTION_ROOT_CACHE_SIZE)
     def _section_roots_for(act_section: str) -> tuple[str, ...]:
         """Roots a record's act-section is indexed under (range -> each member)."""
         cell = (act_section or "").strip()
