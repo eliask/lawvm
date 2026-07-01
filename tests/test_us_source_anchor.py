@@ -52,6 +52,7 @@ import pytest
 from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.core.provenance import OperationSource, SourceAnchor, compute_source_anchor
 from lawvm.core.semantic_types import StructuralAction
+import lawvm.us_federal.amendatory as us_amendatory
 from lawvm.us_federal.amendatory import (
     _unique_byte_run_bodies,
     lower_plaw_amendatory,
@@ -444,6 +445,31 @@ def test_us_unique_byte_run_bodies_prefilters_to_candidate_clauses() -> None:
     )
 
     assert bodies == ["Clause body selected by an emitted operation."]
+
+
+def test_us_unique_byte_run_bodies_large_candidate_branch_preserves_uniqueness(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(us_amendatory, "_BYTE_NEEDLE_TRIE_MIN_CANDIDATES", 1)
+    monkeypatch.setattr(us_amendatory, "_BYTE_NEEDLE_TRIE_MIN_HAYSTACK_BYTES", 1)
+    raw = b"""\
+<section>
+  <chapeau>Unique omnibus body selected by an emitted operation.</chapeau>
+  <quotedText>Duplicate omnibus body excluded.</quotedText>
+  <quotedText>Duplicate omnibus body excluded.</quotedText>
+  <quotedContent>Unrelated omnibus body from another instruction.</quotedContent>
+</section>
+"""
+
+    bodies = _unique_byte_run_bodies(
+        raw,
+        candidate_clauses=(
+            "Prefix Unique omnibus body selected by an emitted operation.",
+            "Duplicate omnibus body excluded.",
+        ),
+    )
+
+    assert bodies == ["Unique omnibus body selected by an emitted operation."]
 
 
 if __name__ == "__main__":  # pragma: no cover - manual probe

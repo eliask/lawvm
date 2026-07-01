@@ -5632,6 +5632,16 @@ class _UniqueByteRunBody:
     source_anchor: SourceAnchor
 
 
+@dataclass(frozen=True, slots=True)
+class _NeedleOccurrence:
+    first: int
+    count: int
+
+
+_BYTE_NEEDLE_TRIE_MIN_CANDIDATES = 1000
+_BYTE_NEEDLE_TRIE_MIN_HAYSTACK_BYTES = 1_000_000
+
+
 def set_us_raw_source_context(
     source_artifact_id: str, raw_bytes: bytes
 ) -> "contextvars.Token[tuple[str, bytes] | None]":
@@ -5648,6 +5658,70 @@ def reset_us_raw_source_context(
 ) -> None:
     """Clear the raw-source context published by :func:`set_us_raw_source_context`."""
     _US_RAW_SOURCE_CTX.reset(token)
+
+
+def _byte_needle_occurrences(
+    haystack: bytes,
+    needles: Iterable[bytes],
+) -> dict[bytes, _NeedleOccurrence]:
+    """Return first offset and capped occurrence count for each needle.
+
+    Used only for large omnibus Public Laws where thousands of candidate body
+    texts would otherwise each scan multi-megabyte XML bytes. Source-anchor proof
+    only distinguishes zero, one, and many, so counts are capped at two.
+    """
+    unique_needles = tuple(dict.fromkeys(needle for needle in needles if needle))
+    if not unique_needles:
+        return {}
+
+    nexts: list[dict[int, int]] = [{}]
+    fail: list[int] = [0]
+    outs: list[list[bytes]] = [[]]
+
+    for needle in unique_needles:
+        state = 0
+        for byte in needle:
+            nxt = nexts[state].get(byte)
+            if nxt is None:
+                nxt = len(nexts)
+                nexts[state][byte] = nxt
+                nexts.append({})
+                fail.append(0)
+                outs.append([])
+            state = nxt
+        outs[state].append(needle)
+
+    queue = list(nexts[0].values())
+    for state in queue:
+        fail[state] = 0
+    for state in queue:
+        for byte, nxt in nexts[state].items():
+            queue.append(nxt)
+            fallback = fail[state]
+            while fallback and byte not in nexts[fallback]:
+                fallback = fail[fallback]
+            fail[nxt] = nexts[fallback].get(byte, 0)
+            if outs[fail[nxt]]:
+                outs[nxt].extend(outs[fail[nxt]])
+
+    first: dict[bytes, int] = {}
+    counts: dict[bytes, int] = {}
+    state = 0
+    for pos, byte in enumerate(haystack):
+        while state and byte not in nexts[state]:
+            state = fail[state]
+        state = nexts[state].get(byte, 0)
+        for needle in outs[state]:
+            count = counts.get(needle, 0)
+            if count == 0:
+                first[needle] = pos - len(needle) + 1
+            if count < 2:
+                counts[needle] = count + 1
+
+    return {
+        needle: _NeedleOccurrence(first=first[needle], count=count)
+        for needle, count in counts.items()
+    }
 
 
 def _unique_byte_run_body_records(
@@ -5694,6 +5768,7 @@ def _unique_byte_run_body_records(
         tree = ET.fromstring(raw_bytes)
     except ET.ParseError:
         return bodies
+    candidates: list[tuple[str, bytes]] = []
     for node in tree.iter():
         if not isinstance(node.tag, str) or _localname(node.tag) not in _US_SOURCE_ANCHOR_BODY_TAGS:
             continue
@@ -5705,6 +5780,33 @@ def _unique_byte_run_body_records(
         if candidate_clauses is not None and text not in candidate_blob:
             continue
         needle = text.encode("utf-8")
+        candidates.append((text, needle))
+
+    if (
+        len(candidates) >= _BYTE_NEEDLE_TRIE_MIN_CANDIDATES
+        and len(raw_bytes) >= _BYTE_NEEDLE_TRIE_MIN_HAYSTACK_BYTES
+    ):
+        occurrences = _byte_needle_occurrences(
+            raw_bytes, (needle for _text, needle in candidates)
+        )
+        for text, needle in candidates:
+            occurrence = occurrences.get(needle)
+            if occurrence is not None and occurrence.count == 1:
+                bodies.append(
+                    _UniqueByteRunBody(
+                        text=text,
+                        source_anchor=SourceAnchor(
+                            source_artifact_id=source_artifact_id,
+                            byte_offset=occurrence.first,
+                            byte_len=len(needle),
+                            quote_hash="sha256:" + hashlib.sha256(needle).hexdigest(),
+                        ),
+                    )
+                )
+        bodies.sort(key=lambda body: -len(body.text))
+        return bodies
+
+    for text, needle in candidates:
         first = raw_bytes.find(needle)
         if first >= 0 and raw_bytes.find(needle, first + 1) < 0:
             bodies.append(
