@@ -171,6 +171,9 @@ def test_prepare_replay_plan_carries_amendment_selection_residuals() -> None:
         def read_source(self, statute_id: str) -> bytes | None:
             return base_xml
 
+        def load_spine_base_ir(self, sid: str, base_ir: object, base_xml_bytes: bytes) -> None:
+            return None
+
     residual = sel.AmendmentSourcePathology(
         rule_id="fi_amendment_selection_source_artifact_missing",
         family="source_pathology",

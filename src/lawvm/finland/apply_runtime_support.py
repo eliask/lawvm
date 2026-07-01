@@ -4083,6 +4083,19 @@ def _emit_section_snapshot(
     ) -> IRNode | None:
         if resolved_path is None or section_payload.kind is not IRNodeKind.SECTION:
             return None
+        renumber_pairs: dict[str, str] = {}
+        for rop in group_rops:
+            if not rop.is_renumber_action or not rop.targets_subsection_only():
+                continue
+            source_label = _norm_num_token(str(rop.resolved_target_subsection_label or "").strip())
+            destination_path = _resolved_destination_path_for_rop(rop)
+            if not source_label or not destination_path or destination_path[-1][0] != "subsection":
+                continue
+            destination_label = _norm_num_token(destination_path[-1][1])
+            if destination_label:
+                renumber_pairs[destination_label] = source_label
+        if not renumber_pairs:
+            return None
         section_path = tuple(resolved_path)
         latest = _latest_section_snapshot_payload(
             section_path=section_path,
@@ -4100,19 +4113,6 @@ def _emit_section_snapshot(
             for child in source_section.children
             if child.kind is IRNodeKind.SUBSECTION and child.label
         }
-        renumber_pairs: dict[str, str] = {}
-        for rop in group_rops:
-            if not rop.is_renumber_action or not rop.targets_subsection_only():
-                continue
-            source_label = _norm_num_token(str(rop.resolved_target_subsection_label or "").strip())
-            destination_path = _resolved_destination_path_for_rop(rop)
-            if not source_label or not destination_path or destination_path[-1][0] != "subsection":
-                continue
-            destination_label = _norm_num_token(destination_path[-1][1])
-            if destination_label:
-                renumber_pairs[destination_label] = source_label
-        if not renumber_pairs:
-            return None
         children: list[IRNode] = []
         changed = False
         for child in section_payload.children:

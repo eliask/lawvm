@@ -93,7 +93,13 @@ def _dual_ordering_corpus() -> CorpusStore:
     def read_source(sid: str) -> bytes | None:
         return b"<body/>" if sid == _ENGINE else None
 
-    return cast(CorpusStore, SimpleNamespace(read_source=read_source))
+    return cast(
+        CorpusStore,
+        SimpleNamespace(
+            read_source=read_source,
+            load_spine_base_ir=lambda _sid, _base_ir, _xml_bytes: None,
+        ),
+    )
 
 
 def _engine_keyed_amendment_resolver():

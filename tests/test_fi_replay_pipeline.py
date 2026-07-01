@@ -86,7 +86,13 @@ def test_prepare_replay_plan_carries_base_source_body_patch_ids(monkeypatch) -> 
         "1989/354",
         mode="legal_pit",
         strict_profile=None,
-        corpus=cast(CorpusStore, SimpleNamespace(read_source=lambda _sid: b"<body/>")),
+        corpus=cast(
+            CorpusStore,
+            SimpleNamespace(
+                read_source=lambda _sid: b"<body/>",
+                load_spine_base_ir=lambda _sid, _base_ir, _xml_bytes: None,
+            ),
+        ),
         stop_before="",
         label_postprocessor=lambda _sid, label: label,
         get_replay_profile=lambda _mode: SimpleNamespace(normalize_replay_text=False),
@@ -688,7 +694,13 @@ def test_prepare_replay_plan_dedupes_consecutive_identical_amendment_records() -
         "test/1",
         mode="legal_pit",
         strict_profile=None,
-        corpus=cast(CorpusStore, SimpleNamespace(read_source=lambda _sid: b"<body/>")),
+        corpus=cast(
+            CorpusStore,
+            SimpleNamespace(
+                read_source=lambda _sid: b"<body/>",
+                load_spine_base_ir=lambda _sid, _base_ir, _xml_bytes: None,
+            ),
+        ),
         stop_before="",
         label_postprocessor=lambda _sid, label: label,
         get_replay_profile=lambda _mode: SimpleNamespace(normalize_replay_text=False),
