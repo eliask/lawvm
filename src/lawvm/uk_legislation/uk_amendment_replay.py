@@ -590,6 +590,7 @@ class UKReplayPipeline:
         source_feed_reconciliation_claims: Optional[
             "Sequence[SourceFeedReconciliationClaim]"
         ] = None,
+        preloaded_effects: Optional[Sequence[UKEffectRecord]] = None,
     ) -> list[LegalOperation]:
         """Compile IR ops for *affected_act_id*.
 
@@ -615,7 +616,9 @@ class UKReplayPipeline:
             phase_t0 = now
 
         # ── Load effects ────────────────────────────────────────────────────
-        if effect_feed_parse_rejections_out is None:
+        if preloaded_effects is not None:
+            effects = list(preloaded_effects)
+        elif effect_feed_parse_rejections_out is None:
             effects = load_effects_for_statute_from_archive(affected_act_id, archive)
         else:
             effects = load_effects_for_statute_from_archive(

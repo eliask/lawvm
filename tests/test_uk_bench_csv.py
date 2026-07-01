@@ -1015,11 +1015,27 @@ def test_uk_bench_records_successful_commencement_filter_observations(monkeypatc
         "extract_eid_map_bytes",
         lambda _data: {"eid_map": {"section-1": "section-1"}, "text_map": {}},
     )
-    monkeypatch.setattr(uk_bench, "_load_effect_row_counts", lambda _sid, _archive: (1, 0, {}, 0, {}, ()))
+    monkeypatch.setattr(
+        uk_bench,
+        "_load_effect_row_counts",
+        lambda _sid, _archive: uk_bench._EffectRowCounts(
+            1,
+            0,
+            {},
+            0,
+            {},
+            (),
+            (effect,),
+        ),
+    )
+
+    def fail_reload(*_args: object, **_kwargs: object) -> list[UKEffectRecord]:
+        raise AssertionError("commencement scoring should reuse preloaded effect rows")
+
     monkeypatch.setattr(
         effects_mod,
         "load_effects_for_statute_from_archive",
-        lambda *_args, **_kwargs: [effect],
+        fail_reload,
     )
 
     result = uk_bench._score_statute(
@@ -1085,29 +1101,23 @@ def test_uk_bench_effect_feed_rows_without_blocking_default_to_rejections(monkey
         fake_load_effects,
     )
 
-    (
-        effect_rows,
-        rejection_count,
-        rejection_rules,
-        observation_count,
-        observation_rules,
-        observations,
-    ) = uk_bench._load_effect_row_counts("ukpga/2000/1", cast(Farchive, object()))
+    counts = uk_bench._load_effect_row_counts("ukpga/2000/1", cast(Farchive, object()))
 
-    assert effect_rows == 1
-    assert rejection_count == 1
-    assert rejection_rules == {"legacy_feed_parse_row": 1}
-    assert observation_count == 3
-    assert observation_rules == {
+    assert counts.n_effect_rows == 1
+    assert counts.rejection_count == 1
+    assert counts.rejection_rule_counts == {"legacy_feed_parse_row": 1}
+    assert counts.observation_count == 3
+    assert counts.observation_rule_counts == {
         "feed_observation": 1,
         "legacy_feed_parse_row": 1,
         "record_observation": 1,
     }
-    assert observations == (
+    assert counts.observations == (
         {"rule_id": "legacy_feed_parse_row"},
         {"rule_id": "feed_observation", "blocking": False},
         {"rule_id": "record_observation", "strict_disposition": "record"},
     )
+    assert len(counts.effects) == 1
 
 
 def test_uk_bench_source_parse_rejections_are_blocking_subset() -> None:
@@ -5804,6 +5814,7 @@ def test_uk_bench_build_corpus_index_suppresses_repaired_multiple_choice_aliases
 
 def test_uk_bench_replay_regime_threads_compile_and_skips_oracle_adapter(monkeypatch, tmp_path) -> None:
     from lawvm.uk_legislation import oracle_align, uk_amendment_replay
+    from lawvm.uk_legislation.effects import UKEffectRecord
 
     class FakeArchive:
         def get(self, _url: str) -> bytes:
@@ -5838,6 +5849,7 @@ def test_uk_bench_replay_regime_threads_compile_and_skips_oracle_adapter(monkeyp
             effect_diagnostics_out: list[dict[str, object]] | None = None,
             compile_phase_timings_out: dict[str, float] | None = None,
             diagnostic_replay_filter_mode: object | None = None,
+            preloaded_effects: object | None = None,
         ) -> list[object]:
             compile_seen["statute_id"] = statute_id
             compile_seen["archive"] = archive
@@ -5846,6 +5858,7 @@ def test_uk_bench_replay_regime_threads_compile_and_skips_oracle_adapter(monkeyp
             compile_seen["applicability_mode"] = applicability_mode
             compile_seen["authority_mode"] = authority_mode
             compile_seen["diagnostic_replay_filter_mode"] = diagnostic_replay_filter_mode
+            compile_seen["preloaded_effects"] = preloaded_effects
             authority_rejections_out.append({"rule_id": "uk_authority_source_text_only_missing"})
             lowering_rejections_out.append({"rule_id": "uk_effect_lowering_no_ops_rejected", "blocking": True})
             lowering_rejections_out.append({"rule_id": "uk_effect_legacy_unmarked_rejected"})
@@ -5919,7 +5932,38 @@ def test_uk_bench_replay_regime_threads_compile_and_skips_oracle_adapter(monkeyp
         "extract_eid_map_bytes",
         lambda _data: {"eid_map": {"oracle-node": "section-1"}, "text_map": {}},
     )
-    monkeypatch.setattr(uk_bench, "_load_effect_row_counts", lambda _sid, _archive: (1, 0, {}, 0, {}, ()))
+    effect_sentinel = UKEffectRecord(
+        effect_id="effect-1",
+        effect_type="repealed",
+        applied=True,
+        requires_applied=False,
+        modified="",
+        affected_uri="",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="1",
+        affected_provisions="s. 1",
+        affecting_uri="",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2001",
+        affecting_number="1",
+        affecting_provisions="s. 2",
+        affecting_title="",
+        in_force_dates=[],
+    )
+    monkeypatch.setattr(
+        uk_bench,
+        "_load_effect_row_counts",
+        lambda _sid, _archive: uk_bench._EffectRowCounts(
+            1,
+            0,
+            {},
+            0,
+            {},
+            (),
+            (effect_sentinel,),
+        ),
+    )
     monkeypatch.setattr(uk_amendment_replay, "UKReplayPipeline", FakePipeline)
     monkeypatch.setattr(uk_amendment_replay, "replay_uk_ops", fake_replay_uk_ops)
     monkeypatch.setattr(oracle_align, "align_uk_replay_to_oracle_with_report", fail_align)
@@ -5953,6 +5997,7 @@ def test_uk_bench_replay_regime_threads_compile_and_skips_oracle_adapter(monkeyp
     assert compile_seen["allow_metadata_only_effects"] is False
     assert compile_seen["applicability_mode"] == "effective_date_only"
     assert compile_seen["authority_mode"] == "source_text_only"
+    assert compile_seen["preloaded_effects"] == (effect_sentinel,)
     assert replay_seen["allow_oracle_alignment"] is False
     assert replay_seen["replay_phase_timings_out"] == {"replay_apply_insert": 0.125}
     assert result.phase_timings["replay_apply_insert"] == 0.125
@@ -6135,12 +6180,14 @@ def test_uk_bench_score_statute_preserves_compile_diagnostics_on_replay_exceptio
             effect_diagnostics_out: list[dict[str, object]] | None = None,
             compile_phase_timings_out: dict[str, float] | None = None,
             diagnostic_replay_filter_mode: object | None = None,
+            preloaded_effects: object | None = None,
         ) -> list[object]:
             assert archive is not None
             assert allow_metadata_backfill is True
             assert allow_metadata_only_effects is True
             assert applicability_mode == "effective_date_plus_feed_applied"
             assert authority_mode == "current_mixed"
+            assert preloaded_effects is None
             if compile_phase_timings_out is not None:
                 compile_phase_timings_out["compile_source_select"] = 0.125
             authority_rejections_out.append(

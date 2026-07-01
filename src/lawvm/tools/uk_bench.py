@@ -53,6 +53,7 @@ from typing import (
 if TYPE_CHECKING:
     from lawvm.core.bench_contract import BenchUnitResult
     from lawvm.core.ir import IRStatute
+    from lawvm.uk_legislation.effects import UKEffectRecord
 
 import Levenshtein
 
@@ -991,6 +992,7 @@ class _EffectRowCounts(NamedTuple):
     observation_count: int
     observation_rule_counts: dict[str, int]
     observations: tuple[dict[str, Any], ...]
+    effects: tuple["UKEffectRecord", ...] = ()
 
 
 class _ResidualClaimClassification(NamedTuple):
@@ -1002,14 +1004,26 @@ class _ResidualClaimClassification(NamedTuple):
 def _coerce_effect_row_counts(value: _EffectRowCounts | tuple[Any, ...]) -> _EffectRowCounts:
     if isinstance(value, _EffectRowCounts):
         return value
-    (
-        n_effect_rows,
-        rejection_count,
-        rejection_rule_counts,
-        observation_count,
-        observation_rule_counts,
-        observations,
-    ) = value
+    if len(value) == 6:
+        (
+            n_effect_rows,
+            rejection_count,
+            rejection_rule_counts,
+            observation_count,
+            observation_rule_counts,
+            observations,
+        ) = value
+        effects: tuple["UKEffectRecord", ...] = ()
+    else:
+        (
+            n_effect_rows,
+            rejection_count,
+            rejection_rule_counts,
+            observation_count,
+            observation_rule_counts,
+            observations,
+            effects,
+        ) = value
     return _EffectRowCounts(
         n_effect_rows=int(n_effect_rows),
         rejection_count=int(rejection_count),
@@ -1017,6 +1031,7 @@ def _coerce_effect_row_counts(value: _EffectRowCounts | tuple[Any, ...]) -> _Eff
         observation_count=int(observation_count),
         observation_rule_counts=dict(observation_rule_counts),
         observations=tuple(dict(obs) for obs in observations),
+        effects=tuple(effects),
     )
 
 
@@ -1827,6 +1842,7 @@ def _load_effect_row_counts(
         observation_count=len(feed_observations),
         observation_rule_counts=dict(feed_observation_rule_counts),
         observations=tuple(dict(obs) for obs in feed_observations),
+        effects=tuple(effects),
     )
 
 
@@ -1855,6 +1871,7 @@ def _score_statute(
     effect_feed_observation_count = 0
     effect_feed_observation_rule_counts: dict[str, int] = {}
     effect_feed_observations: tuple[dict[str, Any], ...] = ()
+    parsed_effects_for_statute: tuple["UKEffectRecord", ...] = ()
     effect_feed_count_error = ""
     source_parse_observations: list[dict[str, Any]] = []
 
@@ -1915,6 +1932,7 @@ def _score_statute(
             effect_feed_observation_count = effect_row_counts.observation_count
             effect_feed_observation_rule_counts = effect_row_counts.observation_rule_counts
             effect_feed_observations = effect_row_counts.observations
+            parsed_effects_for_statute = effect_row_counts.effects
         except Exception as effect_count_exc:
             # Bench row scoring should survive acquisition/parse diagnostics,
             # but the source-fact loss must remain visible in saved runs.
@@ -2294,6 +2312,7 @@ def _score_statute(
                     lowering_rejections_out=lowering_rejections,
                     effect_diagnostics_out=effect_diagnostics,
                     compile_phase_timings_out=compile_phase_timings,
+                    preloaded_effects=parsed_effects_for_statute or None,
                 )
                 if compile_phase_timings:
                     _mark_external_phases(compile_phase_timings)
@@ -2485,18 +2504,22 @@ def _score_statute(
         if do_commencement:
             commencement_feed_observations: list[dict[str, Any]] = []
             try:
-                from lawvm.uk_legislation.effects import (
-                    load_effects_for_statute_from_archive,
-                )
                 from lawvm.uk_legislation.uk_amendment_replay import (
                     commencement_eid_set,
                 )
 
-                all_effects = load_effects_for_statute_from_archive(
-                    sid,
-                    archive,
-                    parse_rejections_out=commencement_feed_observations,
-                )
+                if parsed_effects_for_statute:
+                    all_effects = list(parsed_effects_for_statute)
+                else:
+                    from lawvm.uk_legislation.effects import (
+                        load_effects_for_statute_from_archive,
+                    )
+
+                    all_effects = load_effects_for_statute_from_archive(
+                        sid,
+                        archive,
+                        parse_rejections_out=commencement_feed_observations,
+                    )
                 commenced = commencement_eid_set(
                     all_effects,
                     enacted_ir,
