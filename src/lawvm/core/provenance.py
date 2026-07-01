@@ -127,6 +127,7 @@ def compute_source_anchor(
 # each 12-byte prefix is highly discriminating (buckets are tiny), short enough
 # that the ``prefix in wanted`` build filter keeps the index sparse.
 _UNIQUE_RUN_PREFIX = 12
+_UNIQUE_RUN_FIND_PREFIX_LIMIT = 128
 
 
 def unique_byte_run_text_positions(
@@ -170,16 +171,30 @@ def unique_byte_run_text_positions(
     wanted = {needle[:P] for needle in needles if len(needle) >= P}
     positions_by_prefix: dict[bytes, list[int]] = {}
     if wanted:
-        limit = len(raw_bytes) - P + 1
         blob = raw_bytes  # local for the hot loop
-        for i in range(limit):
-            window = blob[i : i + P]
-            if window in wanted:
-                bucket = positions_by_prefix.get(window)
-                if bucket is None:
-                    positions_by_prefix[window] = [i]
-                else:
-                    bucket.append(i)
+        if len(wanted) <= _UNIQUE_RUN_FIND_PREFIX_LIMIT:
+            # For the common anchor path there are far fewer wanted prefixes
+            # than raw-byte offsets. Let CPython's C-level bytes.find locate
+            # each prefix instead of slicing a Python window at every byte.
+            for prefix in wanted:
+                start = blob.find(prefix)
+                if start < 0:
+                    continue
+                bucket: list[int] = []
+                while start >= 0:
+                    bucket.append(start)
+                    start = blob.find(prefix, start + 1)
+                positions_by_prefix[prefix] = bucket
+        else:
+            limit = len(blob) - P + 1
+            for i in range(limit):
+                window = blob[i : i + P]
+                if window in wanted:
+                    bucket = positions_by_prefix.get(window)
+                    if bucket is None:
+                        positions_by_prefix[window] = [i]
+                    else:
+                        bucket.append(i)
     bodies: list[tuple[str, int]] = []
     for text, needle in zip(candidate_texts, needles, strict=True):
         length = len(needle)
