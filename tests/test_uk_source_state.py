@@ -17,6 +17,7 @@ from lawvm.uk_legislation.source_state import (
     uk_affecting_act_single_amendment_child_source_selected,
     uk_affecting_act_single_unnumbered_schedule_context_ignored,
     uk_affecting_act_xml_too_small_rejection,
+    uk_enacted_blob_replay_base_usability,
     uk_source_state_wire_tuple,
 )
 
@@ -146,6 +147,37 @@ def test_uk_statute_xml_content_classifies_metadata_only_enacted_envelope() -> N
     assert state.has_schedules is False
     assert state.usable_as_replay_base is False
     assert state.to_dict()["xml_content_status"] == "metadata_only"
+
+
+def test_uk_enacted_blob_replay_base_usability_rejects_metadata_only() -> None:
+    metadata_only = b"""<?xml version="1.0"?>
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+    NumberOfProvisions="0">
+  <ukm:Metadata xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata"/>
+</Legislation>"""
+
+    usable, status = uk_enacted_blob_replay_base_usability(metadata_only)
+
+    # A metadata-only enacted envelope is well over the size floor (so the
+    # size/multiple-choices wire gate calls it "available") but must NOT be used
+    # as a replay base: it parses into an empty IR tree that manufactures
+    # spurious self-consistency findings.
+    assert uk_source_state_wire_tuple(metadata_only)[0] == "available"
+    assert usable is False
+    assert status == "metadata_only"
+
+
+def test_uk_enacted_blob_replay_base_usability_accepts_body() -> None:
+    with_body = b"""<?xml version="1.0"?>
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+    NumberOfProvisions="1">
+  <Body><P1 id="section-1"><Pnumber>1</Pnumber><P1para>Text.</P1para></P1></Body>
+</Legislation>"""
+
+    usable, status = uk_enacted_blob_replay_base_usability(with_body)
+
+    assert usable is True
+    assert status == "available"
 
 
 def test_uk_statute_xml_content_available_when_body_present() -> None:

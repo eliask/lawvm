@@ -235,6 +235,30 @@ def classify_uk_statute_xml_content(blob: bytes | None) -> UKStatuteXmlContentSt
     )
 
 
+def uk_enacted_blob_replay_base_usability(
+    blob: bytes | None,
+) -> tuple[bool, str]:
+    """Return ``(usable_as_replay_base, xml_content_status)`` for an enacted blob.
+
+    Thin wrapper over :func:`classify_uk_statute_xml_content` for callers that
+    replay an *enacted* base (the self-consistency projector, and any future
+    replay-driver).  A metadata-only enacted envelope (``NumberOfProvisions="0"``
+    with no ``Body``/``Schedule`` payload — common for pre-digitisation UK acts
+    whose enacted text was never published as structured XML) parses into an
+    empty IR tree.  Replaying a rich amendment chain against that empty base
+    manufactures target-absent / missing-branch / missing-payload findings that
+    are artefacts of the thin source, not chain inconsistencies.  Consulting this
+    predicate lets replay drivers skip such bases the same way the oracle-bench
+    paths already do via :pyattr:`UKStatuteXmlContentState.usable_as_replay_base`.
+
+    The size/multiple-choices gate (:func:`uk_source_state_wire_tuple`) does *not*
+    catch these — a metadata stub is well over ``MIN_UK_XML_SOURCE_BYTES`` — so
+    this is a strictly stronger, structure-aware base-usability check.
+    """
+    state = classify_uk_statute_xml_content(blob)
+    return state.usable_as_replay_base, state.xml_content_status.value
+
+
 def _uk_xml_has_local_name(root: ET._Element, local_name: str) -> bool:
     for el in root.iter():
         if isinstance(el.tag, str) and ET.QName(el).localname == local_name:

@@ -298,6 +298,7 @@ def project_uk_self_consistency(
     """
     from lawvm.uk_legislation.source_state import (
         is_uk_affecting_act_xml_source_observation,
+        uk_enacted_blob_replay_base_usability,
         uk_source_parse_observations_from_ir,
         uk_source_xml_parse_rejection,
         uk_source_state_wire_tuple,
@@ -317,6 +318,23 @@ def project_uk_self_consistency(
             return [], [{
                 "statute_id": statute_id,
                 "error": f"enacted_xml_unavailable ({status})",
+            }]
+
+        # A metadata-only enacted envelope (NumberOfProvisions="0", no Body /
+        # Schedule payload — common for pre-digitisation UK acts) passes the
+        # size gate above but parses into an EMPTY IR base.  Replaying the
+        # amendment chain against it manufactures target-absent / missing-branch
+        # / missing-payload signals that are artefacts of the thin source, not
+        # chain inconsistencies.  The oracle-bench paths already exclude such
+        # bases via ``usable_as_replay_base``; do the same here so the
+        # oracle-independent audit is not dominated by un-digitised enacted
+        # stubs.  Genuine digitised bases (has_body / has_schedules) are
+        # unaffected.
+        usable, content_status = uk_enacted_blob_replay_base_usability(enacted_bytes)
+        if not usable:
+            return [], [{
+                "statute_id": statute_id,
+                "error": f"enacted_not_replayable ({content_status})",
             }]
 
         source_parse_rejections: List[Dict[str, Any]] = []
