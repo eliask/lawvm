@@ -2,7 +2,42 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from lawvm.uk_legislation.uk_grafter import extract_eid_map, extract_eid_map_bytes
+from lxml import etree as ET
+from lawvm.uk_legislation.uk_grafter import _is_zombie, extract_eid_map, extract_eid_map_bytes
+
+
+def _xml_elem(xml: str) -> ET._Element:
+    return ET.fromstring(xml)
+
+
+def test_is_zombie_classifies_dot_only_local_content_without_active_children() -> None:
+    el = _xml_elem(
+        """\
+<P1 xmlns="http://www.legislation.gov.uk/namespaces/legislation">
+  <Pnumber>1</Pnumber>
+  <P1para><Text>. . .</Text></P1para>
+</P1>
+"""
+    )
+
+    assert _is_zombie(el)
+
+
+def test_is_zombie_keeps_dot_only_parent_with_active_structural_child() -> None:
+    el = _xml_elem(
+        """\
+<P1 xmlns="http://www.legislation.gov.uk/namespaces/legislation">
+  <Pnumber>1</Pnumber>
+  <P1para><Text>. . .</Text></P1para>
+  <P2 id="section-1-1">
+    <Pnumber>1</Pnumber>
+    <P2para><Text>Live child.</Text></P2para>
+  </P2>
+</P1>
+"""
+    )
+
+    assert not _is_zombie(el)
 
 
 def test_extract_eid_map_skips_zombie_child_ordinals(tmp_path: Path) -> None:

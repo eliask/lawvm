@@ -105,6 +105,26 @@ _SEMANTIC_HASH_NOISE_RE = re.compile(
 _EDITORIAL_TAGS: frozenset[str] = frozenset({"Commentary", "Citation", "CitationSubRef", "Footnote", "Term"})
 _VISIBLE_INLINE_TEXT_TAGS: frozenset[str] = frozenset({"Citation", "CitationSubRef", "Term"})
 _NON_LEGAL_UNIT_EID_TAGS: frozenset[str] = frozenset({"Text"})
+_ZOMBIE_LOCAL_TEXT_STRUCTURAL_TAGS: frozenset[str] = frozenset(
+    {
+        "part",
+        "chapter",
+        "euchapter",
+        "p1group",
+        "section",
+        "p1",
+        "article",
+        "eusection",
+        "pblock",
+        "p2",
+        "p3",
+        "p4",
+        "subsection",
+        "paragraph",
+        "schedule",
+    }
+)
+_ZOMBIE_LOCAL_TEXT_SKIP_TAGS: frozenset[str] = frozenset({"pnumber", "number", "title", "commentaryref"})
 
 # ---------------------------------------------------------------------------
 # Parsing helpers
@@ -1371,47 +1391,47 @@ def _is_zombie(el: ET._Element, force_active: bool = False, pit_date: Optional[s
         if restrict_end <= "2026-03-20":
             return True
 
-    structural = (
-        "part",
-        "chapter",
-        "euchapter",
-        "p1group",
-        "section",
-        "p1",
-        "article",
-        "eusection",
-        "pblock",
-        "p2",
-        "p3",
-        "p4",
-        "subsection",
-        "paragraph",
-        "schedule",
-    )
-
-    def _collect_local(node):
-        txt = []
-        if node.text:
-            txt.append(node.text)
-        for c in node:
-            ct = _tag(c).lower()
-            if ct not in structural and ct not in ("pnumber", "number", "title", "commentaryref"):
-                txt.extend(_collect_local(c))
-            if c.tail:
-                txt.append(c.tail)
-        return txt
-
-    content_str = "".join(_collect_local(el)).strip()
-    if content_str and _DOT_OR_SPACE_ONLY_RE.match(content_str):
+    if _local_content_is_dot_or_space_only(el):
         has_active = False
         for child in el:
-            if _tag(child).lower() in structural:
+            if _tag(child).lower() in _ZOMBIE_LOCAL_TEXT_STRUCTURAL_TAGS:
                 if not _is_zombie(child, False, pit_date):
                     has_active = True
                     break
         if not has_active:
             return True
     return False
+
+
+def _local_content_is_dot_or_space_only(el: ET._Element) -> bool:
+    """Return whether local non-structural text is non-empty dot/space filler."""
+    saw_dot = False
+
+    def _scan(text: str) -> bool:
+        nonlocal saw_dot
+        for char in text:
+            if char == ".":
+                saw_dot = True
+            elif not char.isspace():
+                return False
+        return True
+
+    def _walk(node: ET._Element) -> bool:
+        if node.text and not _scan(node.text):
+            return False
+        for child in node:
+            ct = _tag(child).lower()
+            if (
+                ct not in _ZOMBIE_LOCAL_TEXT_STRUCTURAL_TAGS
+                and ct not in _ZOMBIE_LOCAL_TEXT_SKIP_TAGS
+                and not _walk(child)
+            ):
+                return False
+            if child.tail and not _scan(child.tail):
+                return False
+        return True
+
+    return _walk(el) and saw_dot
 
 
 def _parse_children(parent_el, context, force_active=False, pit_date=None, is_eur=False) -> list[IRNode]:
