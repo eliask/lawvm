@@ -254,6 +254,11 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_attachment_ir.py",
         # FI PDF spine Phase 1 — attachment-PDF spine as a graftable base.
         "test_fi_pdf_spine_base.py",
+        # FI PDF spine Phase 2 (Option B) — AKN-XML serialisation of the spine
+        # (part_N__chp_N__sec_N eIds) so the section_resolver/oracle path
+        # resolves against the PDF-derived base; generalisation to a second
+        # §-structured in-force PDF-only statute (2008/721).
+        "test_fi_pdf_spine_xml.py",
         # SDOC-13 unified tree merge helper — attachments as APPENDIX
         # siblings of BODY under one HCONTAINER root.
         "test_fi_attachment_merge.py",

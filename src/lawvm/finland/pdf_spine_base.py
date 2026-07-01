@@ -36,7 +36,9 @@ nothing.
 
 from __future__ import annotations
 
-from typing import Optional, Protocol
+from typing import Optional, Protocol, cast
+
+import lxml.etree as etree
 
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind
@@ -188,3 +190,208 @@ def _iter_tree(node: IRNode):
 
 def _has_section(node: IRNode) -> bool:
     return any(n.kind is IRNodeKind.SECTION for n in _iter_tree(node))
+
+
+# ---------------------------------------------------------------------------
+# XML serialisation of the PDF spine (FI PDF spine Phase 2, Option B).
+#
+# The IRNode replay fold resolves section-targeted ops by ``.label`` against
+# ``SECTION`` nodes in the IR tree (Phase 1) — it never needs XML. But the
+# oracle-comparison / locator path (:mod:`lawvm.finland.section_resolver`
+# ``FinnishAKNResolver`` + :mod:`lawvm.tools.oracle_text`) walks an **XML**
+# root: it matches an eId with ``.//*[@eId="…"]`` and falls back to comparing
+# ``<section>/<num>`` text. Serialising the spine IR to AKN XML with the
+# canonical Finlex ``part_N__chp_N__sec_N`` eId scheme (the same convention
+# ``section_resolver._ABBREV`` uses) lets that path resolve against the
+# PDF-derived base too, not only via the ``.label`` graft.
+#
+# This is a pure ``IRNode -> bytes`` transform (no I/O). It is additive: it
+# introduces no new load-path behaviour on its own; a caller that wants the
+# XML view of the spine base calls :func:`spine_ir_to_akn_xml_bytes`.
+# ---------------------------------------------------------------------------
+
+# AKN 3.0 namespace — the Finlex encoding. The resolver matches sections
+# namespace-agnostically (``.//{*}section``) and reads the plain ``eId``
+# attribute, so emitting under this namespace resolves identically to the
+# real consolidated XML the oracle path normally parses.
+AKN_NS = "http://docs.oasis-open.org/legaldocml/ns/akn/3.0"
+
+
+def spine_eid_of(node: IRNode) -> Optional[str]:
+    """Return the canonical Finlex eId recorded on a spine structural node.
+
+    Phase 0 records ``attrs["eid"]`` on every ``CHAPTER``/``SECTION`` it emits
+    (``chp_N`` / ``sec_N`` / ``chp_M__sec_N``). This accessor is the single
+    read point so the serialiser and any downstream consumer agree on the key.
+    """
+    eid = node.attrs.get("eid")
+    return eid if isinstance(eid, str) and eid else None
+
+
+def _akn(tag: str) -> str:
+    return f"{{{AKN_NS}}}{tag}"
+
+
+def _num_text_for(node: IRNode) -> str:
+    """The ``<num>`` text for a spine structural node.
+
+    Mirrors the Finlex convention the resolver's ``<num>``-text fallback
+    (:meth:`FinnishAKNResolver._find_by_num_text`) normalises against:
+    ``N §`` for a section, ``N luku`` for a chapter, ``N)`` for a kohta item,
+    bare ``N`` for a positional subsection.
+    """
+    label = node.label or ""
+    if node.kind is IRNodeKind.SECTION:
+        return f"{label} §"
+    if node.kind is IRNodeKind.CHAPTER:
+        return f"{label} luku"
+    if node.kind is IRNodeKind.ITEM:
+        return f"{label})"
+    return label
+
+
+def _append_text_content(parent: etree._Element, node: IRNode) -> None:
+    """Emit a ``<content><p>…</p></content>`` child carrying ``node.text``.
+
+    AKN leaf text lives in a ``<content>`` wrapper; the resolver ignores it
+    (it matches on ``<num>``/eId), but serialising it keeps the XML a faithful
+    view of the spine for oracle text comparison and ``lawvm show``.
+    """
+    if not node.text:
+        return
+    content = etree.SubElement(parent, _akn("content"))
+    p = etree.SubElement(content, _akn("p"))
+    p.text = node.text
+
+
+def _spine_node_to_xml(node: IRNode, parent: etree._Element) -> None:
+    """Recursively serialise one spine IR node into ``parent`` (AKN element).
+
+    Structural nodes (``CHAPTER``/``SECTION``/``SUBSECTION``/``ITEM``) become
+    AKN elements carrying an ``eId`` (from ``attrs["eid"]`` where present, else
+    derived) and a ``<num>`` head; ``HEADING`` becomes ``<heading>``; leaf text
+    becomes a ``<content><p>``. Unknown kinds (``P``, banners) fall through to
+    a plain ``<p>`` so no text is dropped (§0 total-accounting).
+    """
+    kind = node.kind
+    if kind is IRNodeKind.CHAPTER:
+        el = etree.SubElement(parent, _akn("chapter"))
+        eid = spine_eid_of(node) or f"chp_{node.label}"
+        el.set("eId", eid)
+        etree.SubElement(el, _akn("num")).text = _num_text_for(node)
+        for child in node.children:
+            _spine_node_to_xml(child, el)
+        return
+
+    if kind is IRNodeKind.SECTION:
+        el = etree.SubElement(parent, _akn("section"))
+        eid = spine_eid_of(node) or f"sec_{node.label}"
+        el.set("eId", eid)
+        etree.SubElement(el, _akn("num")).text = _num_text_for(node)
+        for child in node.children:
+            _spine_node_to_xml(child, el)
+        return
+
+    if kind is IRNodeKind.SUBSECTION:
+        el = etree.SubElement(parent, _akn("subsection"))
+        parent_eid = parent.get("eId")
+        if parent_eid and node.label:
+            el.set("eId", f"{parent_eid}__subsec_{node.label}")
+        if node.label:
+            etree.SubElement(el, _akn("num")).text = _num_text_for(node)
+        _append_text_content(el, node)
+        for child in node.children:
+            _spine_node_to_xml(child, el)
+        return
+
+    if kind is IRNodeKind.ITEM:
+        el = etree.SubElement(parent, _akn("point"))
+        parent_eid = parent.get("eId")
+        if parent_eid and node.label:
+            el.set("eId", f"{parent_eid}__list_{node.label}")
+        etree.SubElement(el, _akn("num")).text = _num_text_for(node)
+        _append_text_content(el, node)
+        for child in node.children:
+            _spine_node_to_xml(child, el)
+        return
+
+    if kind is IRNodeKind.HEADING:
+        if node.text:
+            etree.SubElement(parent, _akn("heading")).text = node.text
+        return
+
+    # Preamble / banner / anything else: a plain <p> so its text is owned.
+    if node.text:
+        etree.SubElement(parent, _akn("p")).text = node.text
+    for child in node.children:
+        _spine_node_to_xml(child, parent)
+
+
+def spine_ir_to_akn_element(spine_ir: IRNode) -> "etree._Element":
+    """Serialise a ``body``-rooted spine IR to an AKN ``<body>`` element.
+
+    Accepts the exact shape :func:`spine_base_ir_from_pdf_text` returns
+    (``BODY > HCONTAINER > (P* CHAPTER* SECTION*)``) — or a bare ``HCONTAINER``
+    root — and produces an AKN ``<body>`` whose ``<section>`` elements carry
+    the canonical ``sec_N`` / ``chp_M__sec_N`` eIds and ``<num>N §</num>``
+    heads. The PDF-spine source lane attr is re-emitted on the ``<body>`` as a
+    ``source`` marker so the serialised view stays honest about provenance.
+    """
+    body = etree.Element(_akn("body"))
+    lane = spine_ir.attrs.get(BASE_SOURCE_LANE_KEY)
+    if isinstance(lane, str) and lane:
+        body.set("data-base-source-lane", lane)
+    pdf = spine_ir.attrs.get("base_source_pdf")
+    if isinstance(pdf, str) and pdf:
+        body.set("data-base-source-pdf", pdf)
+
+    # Descend into the spine content. The body root wraps a single HCONTAINER
+    # (the spine root); sections/chapters live directly under it. We emit the
+    # section/chapter subtree flat under <body> (matching the consolidated FI
+    # encoding, where <section> elements are body children), skipping the
+    # HCONTAINER wrapper itself but keeping its preamble <p> nodes.
+    for top in _spine_roots(spine_ir):
+        _spine_node_to_xml(top, body)
+    return body
+
+
+def _spine_roots(spine_ir: IRNode):
+    """Yield the structural children to serialise under ``<body>``.
+
+    Unwraps the ``BODY``/``HCONTAINER`` wrapper(s) so ``<section>``/``<chapter>``
+    land directly under ``<body>`` (the consolidated FI shape). If the spine is
+    already a bare HCONTAINER or a naked section list, we still descend one wrap
+    level so the caller need not know the exact envelope.
+    """
+    node = spine_ir
+    if node.kind is IRNodeKind.BODY and len(node.children) == 1:
+        node = node.children[0]
+    if node.kind is IRNodeKind.HCONTAINER:
+        yield from node.children
+        return
+    # Fallback: treat the node's children as the roots, or the node itself.
+    if node.children:
+        yield from node.children
+    else:
+        yield node
+
+
+def spine_ir_to_akn_xml_bytes(spine_ir: IRNode) -> bytes:
+    """Serialise a spine IR to an AKN ``akomaNtoso`` document (UTF-8 bytes).
+
+    Pure ``IRNode -> bytes``. The returned document is a minimal but
+    resolver-complete AKN wrapper: ``<akomaNtoso><act><body>…</body></act>``
+    with ``<section eId="sec_N"><num>N §</num>…`` inside, so both
+    ``FinnishAKNResolver.resolve`` (eId / suffix / versioned match) and
+    ``resolve_raw`` (``<num>``-text match) resolve against it exactly as they
+    do against real consolidated Finlex XML.
+    """
+    # Declare AKN as the default namespace so the document reads like real
+    # Finlex XML. lxml accepts a ``None`` prefix key at runtime; the stub types
+    # it as ``Mapping[str, str]`` only, hence the cast.
+    nsmap = cast("dict[str, str]", {None: AKN_NS})
+    root = etree.Element(_akn("akomaNtoso"), nsmap=nsmap)
+    act = etree.SubElement(root, _akn("act"))
+    body = spine_ir_to_akn_element(spine_ir)
+    act.append(body)
+    return etree.tostring(root, encoding="utf-8", xml_declaration=True)

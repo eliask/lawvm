@@ -267,6 +267,34 @@ class CorpusStore(ABC):
         assert isinstance(base_ir, IRNode)
         return build_pdf_spine_base_ir(self, sid, base_ir, base_xml_bytes)
 
+    def load_spine_base_xml(
+        self, sid: str, base_ir: "object", base_xml_bytes: bytes
+    ) -> bytes | None:
+        """AKN-XML view of the PDF-spine base (FI PDF spine Phase 2, Option B).
+
+        Same gate as :meth:`load_spine_base_ir` (fires ONLY on an
+        ``hcontainer``-only base with a §-structured attachment PDF; a
+        substantial XML base is a hard non-fire), but serialises the spine IR to
+        an AKN ``akomaNtoso`` document with the canonical Finlex
+        ``part_N__chp_N__sec_N`` eId scheme and ``<section><num>N §</num>``
+        heads. This lets the XML-based oracle / locator path
+        (:class:`lawvm.finland.section_resolver.FinnishAKNResolver`) resolve
+        against the PDF-derived base too — not only the IRNode ``.label`` graft.
+        Returns None when no spine is materialised (identical fallback shape as
+        :meth:`load_spine_base_ir`, so callers stay byte-identical off-path).
+        """
+        from lawvm.core.ir import IRNode
+        from lawvm.finland.pdf_spine_base import (
+            build_pdf_spine_base_ir,
+            spine_ir_to_akn_xml_bytes,
+        )
+
+        assert isinstance(base_ir, IRNode)
+        spine_ir = build_pdf_spine_base_ir(self, sid, base_ir, base_xml_bytes)
+        if spine_ir is None:
+            return None
+        return spine_ir_to_akn_xml_bytes(spine_ir)
+
     # ------------------------------------------------------------------
     # Content-addressed / staged read surface (StageResult WAIST #1)
     # ------------------------------------------------------------------
