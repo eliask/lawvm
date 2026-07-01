@@ -53,6 +53,16 @@ from lawvm.us_federal.sources import (
 # A cross-reference table file: usctable1.htm .. usctable6.htm.
 _TABLE_HTM_RE = re.compile(r"^usctable(?P<n>[1-6])\.htm$", re.IGNORECASE)
 
+# A codifiable positive-law USC title is a bare 1-2 digit number (mirrors
+# ``classification_tables._USC_TITLE_RE``). Table III also carries non-integer
+# title labels — notably ``"50 App."`` (the repealed/reclassified Title 50
+# Appendix) — which are NOT resolvable positive-law section addresses on this
+# surface. Such rows must not count as classified: they carry no ``int``-able
+# title, and treating them as classified would crash the ``int(usc_title)``
+# address build (``resolve`` / ``usc_address``) instead of flowing to the typed
+# uncodified/holdout path.
+_USC_TITLE_RE = re.compile(r"^\d{1,2}$")
+
 
 @dataclass(frozen=True, slots=True)
 class Table3Record:
@@ -84,8 +94,19 @@ class Table3Record:
 
     @property
     def is_classified(self) -> bool:
-        """True when the row carries a codified (non-note) USC title+section."""
-        return bool(self.usc_title and self.usc_section) and not self.is_note
+        """True when the row carries a codified (non-note) USC title+section.
+
+        The title must be a bare 1-2 digit positive-law USC title. Non-integer
+        title labels (e.g. the ``"50 App."`` Title 50 Appendix) are held out as
+        uncodified rather than treated as classified — they carry no int-able
+        title, so admitting them would crash the downstream ``int(usc_title)``
+        address build instead of resolving to the typed holdout path.
+        """
+        return (
+            bool(self.usc_title and self.usc_section)
+            and bool(_USC_TITLE_RE.match(self.usc_title.strip()))
+            and not self.is_note
+        )
 
     def usc_address(self) -> LegalAddress | None:
         """The classified USC :class:`LegalAddress` (``None`` when uncodified)."""

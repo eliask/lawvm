@@ -380,7 +380,22 @@ def _resolve_section_path_with_fallbacks(
                     and rop.effective_target_special in {"otsikko", "otsikko_edella", "johd"}
                 )
                 is_descendant_insert = rop.resolved_action_type == "INSERT" and target_address_has_descendant
-                if is_descendant_insert and (_target_part is None or global_part == _target_part):
+                # A descendant-target op (subsection/momentti/item scope) edits
+                # INSIDE an existing section; it never moves or re-creates the
+                # section itself. When the carried chapter scope (e.g. a
+                # johtolause "2 luvun" prefix that bled onto a later bare "N §"
+                # citation) cannot bind but the section label is globally unique,
+                # bind that section IN PLACE — including when it lives at root
+                # level (no chapter). This mirrors the descendant-INSERT case and
+                # is the counterpart, for non-INSERT descendant edits, of the
+                # unscoped descendant fallback above (2004/629 §18 3 mom, whose
+                # base section is chapter-less while the op carries "2 luku").
+                is_descendant_edit = (
+                    rop.resolved_action_type != "INSERT" and target_address_has_descendant
+                )
+                if (is_descendant_insert or is_descendant_edit) and (
+                    _target_part is None or global_part == _target_part
+                ):
                     return SectionPathResolution(
                         path=global_path,
                         reason_code=SectionPathResolutionReason.LIVE_UNIQUE_GLOBAL_FALLBACK,
@@ -591,14 +606,18 @@ def _move_rider_origin_path(
 def _occupant_installer_effective(
     replay_history_ops,
     target_address: LegalAddress | None,
-) -> tuple[str, str] | None:
-    """Return (effective, source_statute) of the latest prior write to the slot.
+) -> tuple[str, str, str] | None:
+    """Return (effective, source_statute, expires) of the latest prior slot write.
 
     Scans the fold-order replay history for the most recent INSERT/REPLACE
     LegalOperation whose target is the same exact slot. This is the typed
     evidence for the staggered twin-law family: the document-order fold can
     place a LATER-commencing occupant in the slot before an earlier-window
-    temporary insert is applied.
+    temporary insert is applied — or, in the serial temporary re-enactment
+    family, place an EARLIER already-expired temporary occupant in the slot
+    before a later-window re-insert is applied. ``expires`` (the kernel's
+    EXCLUSIVE cutoff, may be "") is returned so the disjoint-window check can
+    reason about the occupant's window END, not just its start.
     """
     if not replay_history_ops or target_address is None:
         return None
@@ -623,7 +642,7 @@ def _occupant_installer_effective(
         source = lo.source
         if source is None or not source.effective:
             return None
-        return source.effective, source.statute_id
+        return source.effective, source.statute_id, source.expires or ""
     return None
 
 
@@ -740,6 +759,16 @@ def _check_occupancy_policy(
         # force), so the canonical hand-off — temporary law valid through
         # June 30 (expires == 2023-07-01), permanent twin effective July 1 —
         # gives expires == occupant_effective and is disjoint: hence <=.
+        #
+        # The mirror family is the SERIAL temporary re-enactment: statute A
+        # inserts "uusi X §" temporarily (window [Aeff, Aexp)); when it expires
+        # the section tombstones, then statute B RE-inserts "uusi X §"
+        # temporarily for the next window ([Beff, Bexp) with Beff >= Aexp). In
+        # document-order fold, A's occupant is still present when B's re-insert
+        # is applied, so the same slot reads SUBSTANTIVE — but the two windows
+        # are disjoint in legal time (occupant window ENDS at/before the
+        # incoming window STARTS). Both windows are finite here, so this is the
+        # benign hand-off, not a genuine insert-into-occupied.
         incoming = rop.resolved_op_source
         occupant = _occupant_installer_effective(
             replay_history_ops, rop.resolved_target_address
@@ -758,9 +787,17 @@ def _check_occupancy_policy(
                     incoming.effective == occupant[0]
                     and incoming.expires > incoming.effective
                 )
+                or (
+                    # Serial re-enactment: occupant is an EARLIER already-bounded
+                    # window that ends at/before this bounded window begins.
+                    occupant[2]
+                    and incoming.expires > incoming.effective
+                    and occupant[2] <= incoming.effective
+                    and occupant[0] < occupant[2]
+                )
             )
         ):
-            occupant_effective, occupant_statute = occupant
+            occupant_effective, occupant_statute = occupant[0], occupant[1]
             rule_id = (
                 "temporally_bounded_overlay_insert"
                 if incoming.effective == occupant_effective

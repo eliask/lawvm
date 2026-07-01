@@ -867,6 +867,60 @@ def _find_scoped_section_insert_parent_path(
     )
 
 
+def _agreeing_neighbor_chapter_for_unscoped_section_insert(
+    state: "ReplayState",
+    section_label: str,
+) -> str | None:
+    """Chapter a scope-less section INSERT should join, from its live neighbours.
+
+    Finnish amendments frequently add ``uusi 48 a §`` (or re-add repealed
+    ``46―48 §``) with *no* chapter citation in the johtolause. Without a scope,
+    the whole-section INSERT parent resolver falls back to the body/hcontainer
+    provisions parent and hoists the new section out to a bare sibling of the
+    chapters — the ``mixed_hierarchy`` defect.
+
+    A new section's home is bracketed by its numeric neighbours: the highest
+    live section ordering below it and the lowest ordering above it. When BOTH
+    of those neighbours exist and sit in the *same* chapter, the gap being
+    filled is unambiguously interior to that chapter, so the new section joins
+    it. This is deliberately conservative: when the neighbours straddle a
+    chapter boundary (or the section is a leading/trailing tail with a neighbour
+    missing on one side) the placement is genuinely ambiguous and we decline,
+    leaving the existing fallback untouched rather than guessing a chapter and
+    manufacturing a fresh structural divergence.
+    """
+
+    target_key = default_label_sort_key(section_label or "")
+    below_key = None
+    below_chapter: str | None = None
+    above_key = None
+    above_chapter: str | None = None
+
+    def _walk(node: IRNode, current_chapter: str | None) -> None:
+        nonlocal below_key, below_chapter, above_key, above_chapter
+        for child in node.children:
+            child_kind = child.kind
+            next_chapter = child.label if child_kind is IRNodeKind.CHAPTER else current_chapter
+            if child_kind is IRNodeKind.SECTION and child.label:
+                child_key = default_label_sort_key(child.label)
+                if child_key < target_key and current_chapter is not None:
+                    if below_key is None or child_key > below_key:
+                        below_key, below_chapter = child_key, current_chapter
+                elif child_key > target_key and current_chapter is not None:
+                    if above_key is None or child_key < above_key:
+                        above_key, above_chapter = child_key, current_chapter
+            _walk(child, next_chapter)
+
+    _walk(state.ir, None)
+    if (
+        below_chapter is not None
+        and above_chapter is not None
+        and _norm_num_token(below_chapter) == _norm_num_token(above_chapter)
+    ):
+        return below_chapter
+    return None
+
+
 def _is_unscoped_root_section_parent_in_containered_tree(
     state: "ReplayState",
     parent_path: Path,
@@ -3752,15 +3806,53 @@ def _apply_whole_section_op(
             scope_label=_target_chapter,
             label_index=_idx,
         )
+        # A scope-less INSERT into a chaptered statute must not hoist to the
+        # body-level provisions wrapper when its live numeric neighbours agree on
+        # an enclosing chapter. This covers both the direct fallback (no family)
+        # and the case where the section's own label family currently resolves to
+        # a body-level sibling (e.g. a re-added ``46―48 §`` cluster that itself
+        # landed loose earlier in the same amendment, dragging ``48 a―c §`` with
+        # it via family resolution).
+        agreeing_neighbor_chapter = (
+            _agreeing_neighbor_chapter_for_unscoped_section_insert(state, _ts)
+            if not _target_chapter and not _target_part
+            else None
+        )
         if family_path is not None:
-            parent_path = family_path[:-1]
-            new_ir = state.ir
+            family_parent = family_path[:-1]
+            family_parent_is_chaptered = any(
+                kind == "chapter" for kind, _label in family_parent
+            )
+            if agreeing_neighbor_chapter is not None and not family_parent_is_chaptered:
+                parent_path = _find_scoped_section_insert_parent_path(
+                    state,
+                    target_chapter=agreeing_neighbor_chapter,
+                    target_part=None,
+                )
+                if parent_path is None:
+                    parent_path = family_parent
+                else:
+                    logger.debug(
+                        "  %s → unscoped section insert rescoped to neighbour chapter %s (family was body-level)",
+                        ctx_label,
+                        agreeing_neighbor_chapter,
+                    )
+                new_ir = state.ir
+            else:
+                parent_path = family_parent
+                new_ir = state.ir
         else:
             parent_path = _find_scoped_section_insert_parent_path(
                 state,
-                target_chapter=_target_chapter,
+                target_chapter=agreeing_neighbor_chapter or _target_chapter,
                 target_part=_target_part,
             )
+            if agreeing_neighbor_chapter is not None and parent_path is not None:
+                logger.debug(
+                    "  %s → unscoped section insert placed in neighbour chapter %s",
+                    ctx_label,
+                    agreeing_neighbor_chapter,
+                )
             if parent_path is None:
                 scaffolded_parent = None
                 if has_recognizer(view.provenance, RecognizerId.UNCOVERED_BODY) and _target_part and _target_chapter:

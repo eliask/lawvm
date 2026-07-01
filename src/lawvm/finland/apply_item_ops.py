@@ -1769,19 +1769,41 @@ def _apply_item_insert(
                         new_sp = _paragraph_to_subparagraph_ir(flat_sp, sub_letter_ci)
                 if new_sp is not None:
                     existing_sps = [c for c in master_para_ci.children if c.kind == IRNodeKind.SUBPARAGRAPH]
+                    # Idempotent compound INSERT: when an earlier op in the same
+                    # amendment already carried this alakohta into the master
+                    # paragraph (e.g. a whole-item REPLACE whose source snapshot
+                    # already includes the newly-inserted sub-item), the explicit
+                    # "lisätään … uusi <letter> alakohta" INSERT is redundant.
+                    # Appending it anyway double-emits the label and materializes a
+                    # duplicate_label invariant violation in later PIT snapshots.
+                    # Replace the already-present sub-item in place instead, which is
+                    # loss-free (INSERT content is authoritative) and label-stable.
+                    occupied_sp_idx = next(
+                        (
+                            i
+                            for i, sp in enumerate(master_para_ci.children)
+                            if sp.kind == IRNodeKind.SUBPARAGRAPH
+                            and sp.label
+                            and normalized_label_key(sp.label) == sub_letter_ci
+                        ),
+                        None,
+                    )
                     prev_letter = _previous_item_token(sub_letter_ci)
                     anchor_sp_idx = None
                     if prev_letter is not None:
                         anchor_sp_idx = next((i for i, sp in enumerate(existing_sps) if sp.label == prev_letter), None)
-                    if anchor_sp_idx is not None:
-                        new_sp_children: List[IRNode] = []
+                    if occupied_sp_idx is not None:
+                        new_sp_children = list(master_para_ci.children)
+                        new_sp_children[occupied_sp_idx] = new_sp
+                    elif anchor_sp_idx is not None:
+                        new_sp_children = []
                         for i, c in enumerate(master_para_ci.children):
                             new_sp_children.append(c)
                             if c.kind == IRNodeKind.SUBPARAGRAPH and c is existing_sps[anchor_sp_idx]:
                                 new_sp_children.append(new_sp)
                     else:
                         new_sp_children = list(master_para_ci.children) + [new_sp]
-                    if source_pathologies_out is not None:
+                    if occupied_sp_idx is None and source_pathologies_out is not None:
                         source_pathologies_out.append(
                             build_destructive_shape_loss_risk_pathology(
                                 source_statute=view.source_statute,

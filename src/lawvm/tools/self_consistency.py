@@ -659,14 +659,16 @@ def main(args) -> None:
 
         us_main(args)
         return
+    if jurisdiction == "nz":
+        _main_nz(args)
+        return
     if jurisdiction != "fi":
-        # Fail loudly: jurisdictions without a self-consistency harness (nz, no)
+        # Fail loudly: jurisdictions without a self-consistency harness (no)
         # must not silently fall through to the Finland projector (which then
         # crashes opening finlex.farchive).
         raise SystemExit(
             f"error: 'self-consistency' is not implemented for -j {jurisdiction} "
-            "(supported: fi, uk, ee, us). For New Zealand use the dry-run surfaces: "
-            "'lawvm nz-corpus dry-run-corpus' / 'nz-corpus dry-run-north-star'."
+            "(supported: fi, uk, ee, us, nz)."
         )
     _main_fi(args)
 
@@ -768,6 +770,63 @@ def _main_uk(args) -> None:
         return
 
     _print_report(rows, error_rows, statute_ids, elapsed)
+
+
+def _main_nz(args) -> None:
+    """NZ self-consistency sweep.
+
+    Replays each archived NZ work in parallel through the shared
+    jurisdiction-neutral harness, using the NZ archive path as the per-worker
+    store (each worker's projector opens the read-only Farchive itself via the NZ
+    actual-replay builder).  The audit is oracle-independent: it harvests the
+    fail-closed refusal vocabulary the actual-replay executor emits, never a
+    hand-picked consolidation XML.  Operates archive-only — no live NZ API /
+    NZ_API_KEY dependency.
+    """
+    from lawvm.tools._parallel_corpus import project_corpus_parallel
+    from lawvm.tools.nz_self_consistency import (
+        build_nz_store,
+        project_nz_self_consistency,
+        resolve_nz_work_ids,
+    )
+
+    work_ids = resolve_nz_work_ids(args)
+    signal_filter = _resolve_signal_filter(args)
+    store = build_nz_store()
+
+    t0 = time.monotonic()
+    rows, error_rows = project_corpus_parallel(
+        statute_ids=work_ids,
+        projector_ref=("lawvm.tools.nz_self_consistency", "project_nz_self_consistency"),
+        serial_projector=project_nz_self_consistency,
+        store=store,
+        workers=getattr(args, "workers", 0) or 0,
+        store_factory_ref=("lawvm.tools.nz_self_consistency", "build_nz_store"),
+    )
+    elapsed = time.monotonic() - t0
+
+    rows = [r for r in rows if r["signal_type"] in signal_filter]
+
+    if getattr(args, "json", False):
+        json.dump(
+            {
+                "jurisdiction": "nz",
+                "elapsed_s": round(elapsed, 2),
+                "statutes_swept": len(work_ids),
+                "signal_types": sorted(signal_filter),
+                "replay_errors": error_rows,
+                "signals": len(rows),
+                "rows": rows,
+            },
+            sys.stdout,
+            ensure_ascii=False,
+            indent=1,
+            default=str,
+        )
+        sys.stdout.write("\n")
+        return
+
+    _print_report(rows, error_rows, work_ids, elapsed)
 
 
 def _print_report(

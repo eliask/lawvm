@@ -24,17 +24,22 @@ import shutil
 import subprocess
 import textwrap
 from pathlib import Path
-from typing import List
+from typing import Any, List
 
 import pytest
 
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.tree_ops import normalized_label_key
 from lawvm.finland.attachment_ir import (
     _ITEM_ALPHA_RE,
+    _KOHTA_NUM_RE,
     _LIITE_RE,
+    _LUKU_RE,
     _OSA_RE,
+    _SECTION_RE,
     _is_page_num_line,
+    _looks_like_spine,
     _PARA_NUM_RE,
     _TABLE_SEP_RE,
     _TAULUKKO_RE,
@@ -412,3 +417,308 @@ def test_no_leak_6448(real_6448_pdftotext: str) -> None:
         assert is_owned(stripped), (
             f"no-leak violation: line {stripped!r} not in tree text fragments"
         )
+
+
+# ---------------------------------------------------------------------------
+# Statute-spine recogniser (spine mode). Fixture derived from the ``2011/38``
+# (Valtioneuvoston asetus ilmanlaadusta) pilot: a clean Regime-A PDF with a
+# recoverable ``1 §``…``24 §`` spine, per-§ Title-case headings, and real
+# Finnish ``N)`` kohta items.
+# ---------------------------------------------------------------------------
+
+# Trimmed to sections 1, 2, 3, 24 (the pilot's shape is uniform across the
+# spine; four sections exercise the chapterless spine, per-§ heading absorb,
+# numeric-kohta grouping, and non-contiguous labels 3 -> 24).
+SPINE_2011_38_PDFTOTEXT = textwrap.dedent(
+    """\
+    Valtioneuvoston asetus ilmanlaadusta
+
+    Valtioneuvoston paatoksen mukaisesti saadetaan.
+
+    1 §
+
+    Tarkoitus
+
+    Talla asetuksella pannaan taytantoon ilmanlaadusta annettu direktiivi.
+
+    2 §
+
+    Maaritelmat
+
+    Tassa asetuksessa tarkoitetaan:
+
+    1) ilmansaasteella ilmassa olevaa ainetta;
+
+    2) tasolla ilman epapuhtauden pitoisuutta;
+
+    3) arvioinnilla mittausta ja laskentaa.
+
+    3 §
+
+    Rikkidioksidin raja-arvot
+
+    Rikkidioksidin pitoisuudet eivat saa ylittaa raja-arvoja.
+
+    24 §
+
+    Voimaantulo
+
+    Tama asetus tulee voimaan 1 paivana tammikuuta 2011.
+    """
+)
+
+
+def test_spine_2011_38_section_spine() -> None:
+    """The ``2011/38`` pilot parses into a real SECTION spine (fixes G6): the
+    parser emits SECTION IRNodes (not APPENDIX/SCHEDULE/P) that replay's
+    ``.label`` structure graft can target."""
+    root = pdf_text_to_ir_node(SPINE_2011_38_PDFTOTEXT, source_ref="2011/38")
+
+    # Auto-detected as a spine.
+    assert root.kind == IRNodeKind.HCONTAINER
+    assert root.attrs.get("spine_mode") is True
+    assert root.attrs.get("source_ref") == "2011/38"
+
+    sections = [n for n in iter_tree(root) if n.kind == IRNodeKind.SECTION]
+    # Fixes G1: `N §` lines become SECTION nodes, not free-text P fallback.
+    assert [s.label for s in sections] == ["1", "2", "3", "24"]
+
+    # Labels are the bare number (no `§`), so normalized_label_key parity with
+    # replay's structure graft holds (a live body section keyed `section:1`).
+    assert [normalized_label_key(s.label) for s in sections] == ["1", "2", "3", "24"]
+
+    # eId scheme: chapterless spine → `sec_N`.
+    assert [s.attrs.get("eid") for s in sections] == [
+        "sec_1",
+        "sec_2",
+        "sec_3",
+        "sec_24",
+    ]
+
+    # Per-§ Title-case heading absorbed as a HEADING child of the section.
+    def section_heading(sec: IRNode) -> str:
+        headings = [c for c in sec.children if c.kind == IRNodeKind.HEADING]
+        assert len(headings) == 1, f"expected 1 heading under {sec.label}"
+        return headings[0].text
+
+    assert section_heading(sections[0]) == "Tarkoitus"
+    assert section_heading(sections[1]) == "Maaritelmat"
+    assert section_heading(sections[2]) == "Rikkidioksidin raja-arvot"
+    assert section_heading(sections[3]) == "Voimaantulo"
+
+    # § 1 body: one positional SUBSECTION carrying the operative sentence.
+    s1_subs = [c for c in sections[0].children if c.kind == IRNodeKind.SUBSECTION]
+    assert [c.label for c in s1_subs] == ["1"]
+    assert s1_subs[0].attrs.get("positional") is True
+    assert "Talla asetuksella" in s1_subs[0].text
+
+
+def test_spine_2011_38_numeric_kohta_items() -> None:
+    """Fixes G5: real Finnish ``N)`` kohta items become ITEM nodes grouped in
+    the intro subsection (not lost to the alpha-only / dot-only arms)."""
+    root = pdf_text_to_ir_node(SPINE_2011_38_PDFTOTEXT, source_ref="2011/38")
+    section_2 = next(
+        s
+        for s in iter_tree(root)
+        if s.kind == IRNodeKind.SECTION and s.label == "2"
+    )
+
+    items = [n for n in iter_tree(section_2) if n.kind == IRNodeKind.ITEM]
+    assert [i.label for i in items] == ["1", "2", "3"]
+    assert all(i.attrs.get("label_kind") == "numeric_kohta" for i in items)
+    assert items[0].text == "ilmansaasteella ilmassa olevaa ainetta;"
+    assert items[2].text == "arvioinnilla mittausta ja laskentaa."
+
+    # All three kohta items live under ONE subsection (the intro
+    # "Tassa asetuksessa tarkoitetaan:"), not fragmented across three
+    # subsections by the pdftotext blank lines between them.
+    subs_with_items = [
+        sub
+        for sub in section_2.children
+        if sub.kind == IRNodeKind.SUBSECTION
+        and any(c.kind == IRNodeKind.ITEM for c in sub.children)
+    ]
+    assert len(subs_with_items) == 1
+    assert "Tassa asetuksessa tarkoitetaan:" in subs_with_items[0].text
+    assert len([c for c in subs_with_items[0].children if c.kind == IRNodeKind.ITEM]) == 3
+
+
+def test_spine_chapter_luku() -> None:
+    """A ``N luku`` chapter header becomes a CHAPTER node parenting its
+    sections; the optional trailing title is absorbed as a HEADING child."""
+    fixture = textwrap.dedent(
+        """\
+        1 luku Yleiset saannokset
+
+        1 §
+
+        Soveltamisala
+
+        Tata lakia sovelletaan.
+
+        2 luku
+
+        2 §
+
+        Toimivalta
+
+        Viranomainen paattaa asiasta.
+        """
+    )
+    root = pdf_text_to_ir_node(fixture)
+    assert root.attrs.get("spine_mode") is True
+
+    chapters = [c for c in root.children if c.kind == IRNodeKind.CHAPTER]
+    assert [c.label for c in chapters] == ["1", "2"]
+    assert chapters[0].attrs.get("eid") == "chp_1"
+
+    # Chapter 1 trailing title absorbed as HEADING.
+    c1_headings = [c for c in chapters[0].children if c.kind == IRNodeKind.HEADING]
+    assert [h.text for h in c1_headings] == ["Yleiset saannokset"]
+    # Chapter 2 has no trailing title → no chapter-level HEADING before its §.
+    c2_pre_section_headings = []
+    for child in chapters[1].children:
+        if child.kind == IRNodeKind.SECTION:
+            break
+        if child.kind == IRNodeKind.HEADING:
+            c2_pre_section_headings.append(child.text)
+    assert c2_pre_section_headings == []
+
+    # Sections nest under their chapter, and eId carries the chapter segment.
+    c1_sections = [c for c in chapters[0].children if c.kind == IRNodeKind.SECTION]
+    assert [s.label for s in c1_sections] == ["1"]
+    assert c1_sections[0].attrs.get("eid") == "chp_1__sec_1"
+    c2_sections = [c for c in chapters[1].children if c.kind == IRNodeKind.SECTION]
+    assert [s.label for s in c2_sections] == ["2"]
+    assert c2_sections[0].attrs.get("eid") == "chp_2__sec_2"
+
+
+def test_spine_section_letter_suffix_label() -> None:
+    """A ``4a §`` letter-suffixed section keeps the suffix in the label so
+    ``4`` and ``4a`` are distinct graft targets."""
+    fixture = textwrap.dedent(
+        """\
+        4 §
+
+        Otsikko
+
+        Body of section four.
+
+        4a §
+
+        Lisays
+
+        Body of section four-a.
+        """
+    )
+    root = pdf_text_to_ir_node(fixture)
+    sections = [n for n in iter_tree(root) if n.kind == IRNodeKind.SECTION]
+    assert [s.label for s in sections] == ["4", "4a"]
+    assert [normalized_label_key(s.label) for s in sections] == ["4", "4a"]
+
+
+def test_spine_no_leak() -> None:
+    """§0 total-accounting in spine mode: every non-empty, non-skip input line
+    is owned by some node's text or a structural ``source_text`` attr."""
+    root = pdf_text_to_ir_node(SPINE_2011_38_PDFTOTEXT, source_ref="2011/38")
+    fragments = _collect_tree_text_fragments(root)
+
+    def is_owned(line: str) -> bool:
+        return any(line in frag for frag in fragments)
+
+    for raw in SPINE_2011_38_PDFTOTEXT.split("\n"):
+        stripped = raw.replace("\f", "").strip()
+        if not stripped or _is_page_num_line(stripped):
+            continue
+        # `N §` marks are owned via SECTION source_text; `N)` prefixes via ITEM
+        # source_text (remainder owned as item text); everything else is body
+        # or heading text.
+        m = _SECTION_RE.match(stripped)
+        if m:
+            assert is_owned(stripped), f"section mark {stripped!r} not owned"
+            continue
+        m = _KOHTA_NUM_RE.match(stripped)
+        if m:
+            remainder = stripped[m.end():]
+            assert is_owned(remainder), f"kohta remainder {remainder!r} not owned"
+            continue
+        assert is_owned(stripped), f"spine line {stripped!r} not owned in IR"
+
+
+# ---------------------------------------------------------------------------
+# Backward-compat: a non-§ table/prose attachment MUST still parse in the
+# unchanged appendix mode. Auto-detect must not regress it.
+# ---------------------------------------------------------------------------
+
+
+def test_backward_compat_table_attachment_stays_appendix_mode() -> None:
+    """A known non-§ table attachment (Liite + Taulukko + `–––`) has no
+    ``N §`` marker, so ``_looks_like_spine`` is False and it parses through
+    the identical appendix path — APPENDIX/SCHEDULE/TABLE, never SECTION."""
+    # No `N §` line anywhere → must NOT trip spine mode.
+    assert _looks_like_spine(SYNTHETIC_PDFTOTEXT) is False
+
+    root = pdf_text_to_ir_node(SYNTHETIC_PDFTOTEXT, source_ref="synthetic")
+    # spine_mode attr is absent — the appendix path was taken.
+    assert "spine_mode" not in root.attrs
+
+    kinds = {n.kind for n in iter_tree(root)}
+    # Appendix structure present; no spine kinds leaked in.
+    assert IRNodeKind.APPENDIX in kinds
+    assert IRNodeKind.SCHEDULE in kinds
+    assert IRNodeKind.TABLE in kinds
+    assert IRNodeKind.SECTION not in kinds
+    assert IRNodeKind.CHAPTER not in kinds
+
+    # Byte-for-byte identical to the appendix-mode reference: the top-level
+    # child is still the APPENDIX, unchanged by the new dispatch.
+    assert [c.kind for c in root.children] == [IRNodeKind.APPENDIX]
+    appendix = root.children[0]
+    assert appendix.label == "osa_I"
+    schedule = appendix.children[0]
+    assert schedule.label == "liite_1"
+    assert [c.kind for c in schedule.children] == [
+        IRNodeKind.HEADING,
+        IRNodeKind.PARAGRAPH,
+        IRNodeKind.PARAGRAPH,
+        IRNodeKind.PARAGRAPH,
+        IRNodeKind.TABLE,
+    ]
+
+
+def test_looks_like_spine_detection() -> None:
+    """The spine detector fires on ``N §`` marks and only on them."""
+    assert _looks_like_spine("1 §\n\nTarkoitus\n") is True
+    assert _looks_like_spine("intro\n24 §\nbody") is True
+    # Appendix-shaped inputs (no bare `N §` line) do NOT trip it.
+    assert _looks_like_spine("Liite 1\n\n1. Kohta\na) alpha") is False
+    assert _looks_like_spine("Taulukko 1\nCOL A   COL B\nx   y") is False
+    # A `§` embedded mid-prose (not a bare `N §` line) does not count.
+    assert _looks_like_spine("viitataan 5 §:aan ja jatketaan") is False
+
+
+def _group1(pattern: Any, s: str) -> str:
+    """Match ``s`` against ``pattern`` and return group(1); assert non-None so
+    the runtime pins the match. ``pattern`` is a compiled classifier
+    (``re.Pattern`` or ``PrefilteredPattern``), typed ``Any`` so this helper
+    stays agnostic to the wrapper distinction."""
+    m = pattern.match(s)
+    assert m is not None, f"expected {s!r} to match"
+    return str(m.group(1))
+
+
+def test_spine_marker_patterns_unit() -> None:
+    """Unit-pin the three new recogniser arms in isolation."""
+    assert _group1(_SECTION_RE, "1 §") == "1"
+    assert _group1(_SECTION_RE, "24 §") == "24"
+    assert _group1(_SECTION_RE, "4a §") == "4a"
+    assert _group1(_SECTION_RE, "1 §.") == "1"  # trailing dot tolerated
+    assert _SECTION_RE.match("5 §:aan") is None  # inflected reference, not a mark
+
+    assert _group1(_LUKU_RE, "2 luku") == "2"
+    assert _group1(_LUKU_RE, "1 LUKU") == "1"
+    assert _LUKU_RE.match("2 lukuisia") is None  # word-boundary guard
+
+    assert _group1(_KOHTA_NUM_RE, "1)") == "1"
+    assert _group1(_KOHTA_NUM_RE, "12) foo") == "12"
+    assert _KOHTA_NUM_RE.match("a) foo") is None  # alpha item, not numeric kohta

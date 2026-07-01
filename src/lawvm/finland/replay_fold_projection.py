@@ -24,6 +24,7 @@ from lawvm.finland.replay_pipeline import build_tree_invariant_finding
 from lawvm.finland.replay_tree_normalize import hoist_trailing_wrapup_ir
 from lawvm.finland.statute import ReplayState
 from lawvm.finland.tree_invariant_allowances import (
+    is_base_authored_final_provisions_section_violation,
     is_terminal_fi_commencement_section_violation,
 )
 
@@ -40,6 +41,11 @@ class ReplayFoldProjectionRequest:
     replay_findings: list[Finding]
     replay_meta_out: Optional[Dict[str, object]]
     replay_print: Callable[[str], None]
+    # Normalized labels of base-authored final-provisions sections (from
+    # ``base_final_provisions_section_labels`` over the base IR).  Used only to
+    # suppress benign mixed_hierarchy diagnostics for base-authored bare blocks;
+    # does not participate in any tree normalization above.
+    base_final_provisions_labels: frozenset[str] = frozenset()
 
 
 def project_replay_fold(request: ReplayFoldProjectionRequest) -> ReplayState:
@@ -86,6 +92,9 @@ def project_replay_fold(request: ReplayFoldProjectionRequest) -> ReplayState:
         violation
         for violation in typed_invariant_violations
         if not is_terminal_fi_commencement_section_violation(replay_fold_state.ir, violation)
+        and not is_base_authored_final_provisions_section_violation(
+            violation, request.base_final_provisions_labels
+        )
     )
     invariant_violations = [violation.message for violation in typed_invariant_violations]
     if request.replay_meta_out is not None and invariant_violations:

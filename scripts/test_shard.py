@@ -130,6 +130,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_new_zealand_effect_readiness.py",
         "test_new_zealand_instruction_workqueue.py",
         "test_new_zealand_oracle_normalization.py",
+        "test_new_zealand_self_consistency.py",
         "test_new_zealand_text_comparison.py",
     ),
     "new_zealand_reports": (
@@ -308,6 +309,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     ),
     "finland_replay_products_core": (
         "test_fi_replay_products.py",
+        "test_fi_base_final_provisions_allowance.py",
         "test_fi_seam_raw_text_witness.py",
         # Duplicate pure-kumotaan REPEAL suppression regression (kumotaan_replay.py:406 +
         # PureKumotaanInjectedRepeal witness for §2.10 monotone evidence).
@@ -342,6 +344,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_fi_apply_authority_stage.py",
         "test_fi_apply_loop_state.py",
         "test_fi_broken_detection.py",
+        "test_fi_chapter_bleed_root_section_momentti.py",
         "test_fi_chapter_labelled_subheading_recovery.py",
         "test_fi_chapter_nimike_heading_recovery.py",
         "test_fi_compile_group_scope_recovery.py",
@@ -633,6 +636,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     "core_tree_apply": (
         "test_fi_annotations_views.py",
         "test_fi_apply_ir_ops.py",
+        "test_fi_apply_unscoped_section_insert_nesting.py",
         "test_observed_write_audit.py",
         "test_fi_apply.py",
         "test_fi_recovery_kind_enum.py",

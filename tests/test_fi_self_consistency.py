@@ -78,14 +78,15 @@ def test_self_consistency_main_routes_uk_without_fi_resolver(monkeypatch) -> Non
 
 
 def test_self_consistency_main_fails_loudly_for_unsupported_jurisdiction(monkeypatch) -> None:
-    # nz/no have no self-consistency harness; main() must fail loudly rather than
-    # silently fall through to the Finland projector (which crashes on finlex.farchive).
+    # no/se have no self-consistency harness (nz gained one in #140); main() must
+    # fail loudly rather than silently fall through to the Finland projector (which
+    # crashes on finlex.farchive).
     def _fail_fi(_args):  # pragma: no cover - asserted not called
-        raise AssertionError("nz dispatch reached the FI self-consistency path")
+        raise AssertionError("no dispatch reached the FI self-consistency path")
 
     monkeypatch.setattr(sc, "_main_fi", _fail_fi)
-    ns = _build_parser().parse_args(["-j", "nz", "self-consistency"])
-    with pytest.raises(SystemExit, match="not implemented for -j nz"):
+    ns = _build_parser().parse_args(["-j", "no", "self-consistency"])
+    with pytest.raises(SystemExit, match="not implemented for -j no"):
         sc.main(ns)
 
 
@@ -370,3 +371,97 @@ def test_projector_row_shape_and_known_signals() -> None:
     assert any(
         r["amendment_id"] == "1968/493" for r in coverage
     ), "expected 1968/493 coverage gap signal"
+
+
+# ---------------------------------------------------------------------------
+# Regression: compound sub-item (alakohta) INSERT must be idempotent when an
+# earlier op in the same amendment already carried the sub-item.
+#
+# 2008/668 §5 1 mom 1 kohta: amendment 2023/710 both REPLACEs item:1 (whose
+# source snapshot already includes the newly-authored `o` alakohta) AND emits
+# an explicit `lisätään ... uusi o alakohta` INSERT for the same `o`. The
+# compound-insert path used to append `o` unconditionally, producing a paragraph
+# with two `o` subparagraphs. The transient sparse render hid it, but a later
+# whole-section snapshot (2025/773) re-materialized the full paragraph and the
+# duplicate `o` surfaced as a duplicate_label invariant violation — and, for
+# 2008/668, as a VISIBLE double `o)` in the consolidated section text.
+#
+# 2009/1599 §5 (`d`) and 1948/608 §60b (`g`) are the tree-level phantom siblings
+# of the same mechanism (text rendering collapsed the identical adjacent nodes,
+# but the structural invariant detector still fired). All three must now be
+# free of the duplicate.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.slow
+@pytest.mark.parametrize("statute_id", ["2008/668", "2009/1599", "1948/608"])
+def test_compound_subitem_insert_is_idempotent_no_duplicate_label(statute_id: str) -> None:
+    from lawvm.finland.corpus import get_corpus_store
+    from lawvm.finland.replay_entrypoint import replay_xml
+    from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
+    from lawvm.core.invariant_profiles import (
+        collect_tree_invariant_violations,
+        structural_tree_all_profile,
+    )
+
+    try:
+        store = get_corpus_store()
+        if store.read_source(statute_id) is None:
+            pytest.skip(f"{statute_id} not present in reachable corpus")
+    except Exception as exc:  # corpus archive missing in a bare worktree
+        pytest.skip(f"corpus not reachable: {type(exc).__name__}")
+
+    master = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(parent_id=statute_id, mode="legal_pit", quiet=True),
+    )
+    profile = structural_tree_all_profile("test.compound_subitem_insert_idempotent")
+    violations = collect_tree_invariant_violations(master.state.ir, profile)
+    duplicate_violations = [
+        violation for violation in violations if "duplicate" in violation.message.lower()
+    ]
+    assert duplicate_violations == [], (
+        f"{statute_id}: compound sub-item INSERT must not double-emit a label; "
+        f"got {[v.message for v in duplicate_violations]}"
+    )
+
+
+def test_2008_668_section_5_has_single_o_alakohta() -> None:
+    """2008/668 §5's consolidated text must carry exactly one `o)` alakohta.
+
+    Text-visible half of the regression: before the idempotent-insert fix the
+    consolidated §5 rendered the `o) varautumiseen käytetyistä resursseista;`
+    alakohta twice (replay count 2 vs oracle 1).
+    """
+    from lawvm.finland.corpus import get_corpus_store
+    from lawvm.finland.replay_entrypoint import replay_xml
+    from lawvm.finland.replay_request import ReplayXmlRequest, call_replay_xml
+    from lawvm.core.ir_helpers import irnode_to_text
+
+    try:
+        store = get_corpus_store()
+        if store.read_source("2008/668") is None:
+            pytest.skip("2008/668 not present in reachable corpus")
+    except Exception as exc:
+        pytest.skip(f"corpus not reachable: {type(exc).__name__}")
+
+    master = call_replay_xml(
+        replay_xml,
+        request=ReplayXmlRequest(parent_id="2008/668", mode="legal_pit", quiet=True),
+    )
+
+    def _find_section_5(node):
+        kind = str(getattr(node, "kind", "")).split(".")[-1].lower()
+        if kind == "section" and str(getattr(node, "label", "")) == "5":
+            return node
+        for child in getattr(node, "children", ()) or ():
+            found = _find_section_5(child)
+            if found is not None:
+                return found
+        return None
+
+    section = _find_section_5(master.state.ir)
+    assert section is not None, "expected §5 in replayed 2008/668"
+    text = irnode_to_text(section)
+    assert text.count("o) varautumiseen käytetyistä resursseista") == 1, (
+        "§5 must render the `o)` alakohta exactly once (no duplicate)"
+    )
