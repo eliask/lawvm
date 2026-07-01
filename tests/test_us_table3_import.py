@@ -16,6 +16,7 @@ from lawvm.us_federal.import_table3 import (
     import_tables,
     iter_table3_records,
 )
+from lawvm.us_federal.table3 import Table3Resolver, section_root
 from lawvm.us_federal.sources import (
     open_us_federal_farchive,
     usc_classification_table_locator,
@@ -103,6 +104,37 @@ def test_index_resolves_agreeing_classification() -> None:
     assert idx.resolve("531", "1902(a)") == addr
     # The note row does not resolve to a codified address.
     assert idx.resolve("117-2", "1001") is None
+
+
+def test_table3_section_root_scanner_preserves_literal_nonnumeric_labels() -> None:
+    assert section_root("1902(a)") == "1902"
+    assert section_root("78o-10") == "78o"
+    assert section_root("Art. 1") == "Art. 1"
+    assert section_root("Sched. A, B") == "Sched. A, B"
+
+    resolver = Table3Resolver(
+        [
+            next(iter_table3_records(
+                b"<act congress='74'><num>531</num>"
+                b"<record usckey='k'><act-section>2001-2002</act-section>"
+                b"<united-states-code-title>42</united-states-code-title>"
+                b"<united-states-code-section>1</united-states-code-section>"
+                b"</record></act>"
+            )),
+            next(iter_table3_records(
+                b"<act congress='66'><num>227</num>"
+                b"<record usckey='war'><act-section>Art. 1</act-section>"
+                b"<united-states-code-title>10</united-states-code-title>"
+                b"<united-states-code-section>1471</united-states-code-section>"
+                b"</record></act>"
+            )),
+        ]
+    )
+
+    assert resolver.lookup("531", "2001")
+    assert resolver.lookup("531", "2002")
+    assert resolver.lookup("227", "Art. 1")
+    assert not resolver.lookup("227", "A")
 
 
 def test_import_table3_and_tables_roundtrip(tmp_path: Path) -> None:

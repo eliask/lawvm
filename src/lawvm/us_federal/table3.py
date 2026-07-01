@@ -66,10 +66,6 @@ _PL_PROSE_KEY_RE = re.compile(
     r"^\s*P\.?\s*L\.?\s+(?P<c>\d{1,3})\s*[-–]\s*(?P<n>\d{1,5})\s*$",
     re.IGNORECASE,
 )
-# The integer/letter ROOT of an act-section: "1101" from "1101(a)", "2001" from
-# "2001-2004", "78o" from "78o-10" only when it is itself the root token (we key
-# on the leading numeric+optional-letter run).
-_SECTION_ROOT_RE = re.compile(r"^(?P<root>\d+[A-Za-z]?)")
 # A numeric range act-section: "2001-2004" (ASCII hyphen or en/em dash).
 _SECTION_RANGE_RE = re.compile(r"^(?P<lo>\d+)\s*[-–—]\s*(?P<hi>\d+)$")
 # A trailing parenthesised sub-segment group: "(a)", "(1)", "(a)(1)".
@@ -100,8 +96,18 @@ def normalize_act_key(act_key: str) -> str:
 
 def section_root(act_section: str) -> str:
     """The integer/letter root of an act-section (``"1101(a)"`` -> ``"1101"``)."""
-    m = _SECTION_ROOT_RE.match((act_section or "").strip())
-    return m.group("root") if m else (act_section or "").strip()
+    text = (act_section or "").strip()
+    idx = 0
+    n = len(text)
+    while idx < n and text[idx].isdigit():
+        idx += 1
+    if idx == 0:
+        return text
+    if idx < n and (
+        ("A" <= text[idx] <= "Z") or ("a" <= text[idx] <= "z")
+    ):
+        idx += 1
+    return text[:idx] if idx else text
 
 
 def _strip_one_paren_group(section: str) -> str:
@@ -213,19 +219,14 @@ class Table3Resolver:
         present, the synthetic ``{congress}-{public_law}`` form so a caller that
         only knows the congress+PL-number can still hit it.
         """
-        keys: list[str] = []
-        if rec.act_num:
-            keys.append(rec.act_num)
-        if "-" not in rec.act_num and rec.public_law and rec.act_congress:
-            keys.append(f"{rec.act_congress}-{rec.public_law}")
-        # De-dup while preserving order.
-        seen: set[str] = set()
-        out: list[str] = []
-        for k in keys:
-            if k not in seen:
-                seen.add(k)
-                out.append(k)
-        return tuple(out)
+        if not rec.act_num:
+            return ()
+        if "-" in rec.act_num or not rec.public_law or not rec.act_congress:
+            return (rec.act_num,)
+        synthetic = f"{rec.act_congress}-{rec.public_law}"
+        if synthetic == rec.act_num:
+            return (rec.act_num,)
+        return (rec.act_num, synthetic)
 
     @staticmethod
     def _section_roots_for(act_section: str) -> tuple[str, ...]:
@@ -233,7 +234,11 @@ class Table3Resolver:
         cell = (act_section or "").strip()
         if not cell:
             return ()
-        rm = _SECTION_RANGE_RE.match(cell)
+        rm = (
+            _SECTION_RANGE_RE.match(cell)
+            if "-" in cell or "–" in cell or "—" in cell
+            else None
+        )
         if rm is not None:
             lo, hi = int(rm.group("lo")), int(rm.group("hi"))
             if lo <= hi and (hi - lo + 1) <= _MAX_RANGE_EXPANSION:
