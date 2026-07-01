@@ -384,7 +384,9 @@ def test_import_consolidated_zip_warns_and_skips_duplicate_canonical_locator(
     ]
 
 
-def test_import_statute_zip_records_skip_existing_witness(tmp_path: Path) -> None:
+def test_import_statute_zip_records_skip_existing_witness(
+    tmp_path: Path, capsys: Any
+) -> None:
     zip_path = tmp_path / "statute.zip"
     xml = _statute_xml()
     with zipfile.ZipFile(zip_path, "w") as zf:
@@ -398,6 +400,10 @@ def test_import_statute_zip_records_skip_existing_witness(tmp_path: Path) -> Non
     assert report.total_imported == 0
     assert report.total_skipped == 1
     assert archive.calls == []
+    # The bulk "already have identical content" skip must stay quiet — on an
+    # incremental re-import it fires per already-present entry and would flood
+    # stderr. It is recorded in the report but NOT announced inline.
+    assert "skipped in" not in capsys.readouterr().err
     assert report.skipped_entries == [
         {
             "rule_id": "finlex_import_existing_content_skipped",
@@ -410,6 +416,28 @@ def test_import_statute_zip_records_skip_existing_witness(tmp_path: Path) -> Non
             "digest": hashlib.sha256(xml).hexdigest(),
         },
     ]
+
+
+def test_import_statute_zip_announces_too_large_member_skip(
+    tmp_path: Path, capsys: Any, monkeypatch: Any
+) -> None:
+    zip_path = tmp_path / "statute.zip"
+    xml = _statute_xml()
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("akn/fi/act/statute/1988/46/fin@/main.xml", xml)
+
+    # Cap below the member size so the read is refused as a typed skip.
+    monkeypatch.setenv("LAWVM_MAX_ARCHIVE_MEMBER_BYTES", "10")
+    archive = _FakeFarchive(current={})
+    report = import_statute_zip(zip_path, archive, skip_existing=False)
+
+    assert report.total_imported == 0
+    assert report.total_skipped == 1
+    assert report.skipped_entries[0]["rule_id"] == "finlex_import_archive_member_too_large"
+    # A meaningful (non-bulk) skip is announced inline as it happens, so the
+    # end-of-run ``skipped=N`` summary is never the first the operator hears.
+    err = capsys.readouterr().err
+    assert "finlex://sd/1988/46/fin/main.xml skipped in statute.zip:" in err
 
 
 def test_import_consolidated_zip_records_corrigendum_missing_pit_skip(

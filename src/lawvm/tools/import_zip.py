@@ -102,6 +102,7 @@ def _record_import_skip(
     zip_entry_name: str,
     locator: str | None = None,
     detail: dict[str, str] | None = None,
+    announce: bool = True,
 ) -> None:
     record = {
         "rule_id": rule_id,
@@ -116,6 +117,17 @@ def _record_import_skip(
     if detail:
         record.update(detail)
     report.skipped_entries.append(record)
+    # Surface each skip inline as it happens (mirrors the "changed in" warning
+    # style), so a run's end-of-summary ``skipped=N`` is never the first the
+    # operator hears of it. ``announce=False`` at the sites that either print
+    # their own richer warning (duplicate-locator, corrigendum no-PIT) or fire
+    # in bulk on incremental re-imports (existing identical content), which
+    # would otherwise flood stderr.
+    if announce:
+        print(
+            f"WARNING: {locator or zip_entry_name} skipped in {source_label}: {reason}",
+            file=sys.stderr,
+        )
 
 
 def _is_http_url(source: Path | str) -> bool:
@@ -215,6 +227,7 @@ def _store_zip_entry(
             source_label=source_label,
             zip_entry_name=zip_entry_name,
             locator=locator,
+            announce=False,  # richer WARNING printed above
             detail={"previous_entry_name": previous_entry},
         )
         return
@@ -234,6 +247,7 @@ def _store_zip_entry(
             zip_entry_name=zip_entry_name,
             locator=locator,
             detail={"digest": digest},
+            announce=False,  # fires in bulk on incremental re-imports; would flood stderr
         )
         return
 
@@ -584,6 +598,7 @@ def import_consolidated_zip(
                     source_label=zip_label,
                     zip_entry_name=name,
                     detail={"sid": sid, "lang": lang, "filename": filename},
+                    announce=False,  # richer WARNING printed above
                 )
                 continue
 
