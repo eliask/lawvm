@@ -462,7 +462,13 @@ def read_work_rows(parquet_glob: str, key: WorkKey) -> list[LocusRow]:
     stable for deterministic residual reporting.
     """
     try:
-        import duckdb  # lazy — only the snapshot path needs it
+        import importlib
+
+        # Dynamic import: duckdb is the optional 'analytics' extra. A static
+        # ``import duckdb`` makes ty's unresolved-import verdict environment-
+        # dependent (errors where the extra is absent, unused-ignore where it is
+        # present); importlib is resolved consistently regardless of install state.
+        duckdb = importlib.import_module("duckdb")
     except ModuleNotFoundError as exc:  # pragma: no cover - environment guard
         raise ModuleNotFoundError(
             "the LOCUS snapshot adapter needs duckdb to read parquet; install the "
