@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import calendar
 import contextvars
+import hashlib
 import re
 import xml.etree.ElementTree as ET
 from collections import Counter
@@ -47,7 +48,7 @@ from lawvm.core.ir import (
 )
 from lawvm.core.parse_witness import ParseWitness
 from lawvm.core.branch_authority import COMMENCED_STATUS, PENDING_CONDITION_STATUS
-from lawvm.core.provenance import OperationSource, compute_source_anchor
+from lawvm.core.provenance import OperationSource, SourceAnchor
 from lawvm.core.regex_safety import compile_classifier_regex
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction, TextPatchKindEnum
 
@@ -5571,8 +5572,8 @@ def _iter_instruction_units(
 # then run a uniform post-pass over the WHOLE assembled op stream that stamps a
 # TRUE byte-span SourceAnchor on every op whose recorded clause text
 # (``source.raw_text``) is a single verbatim, unique byte run of the raw artifact.
-# When it is not, ``compute_source_anchor`` returns ``None`` and the anchor is
-# honestly left absent — never fabricated.
+# When no unique byte-run body can be proven for the op, the anchor is honestly
+# left absent — never fabricated.
 #
 # US FRONTEND: one ``lower_plaw_amendatory(data, statute_id=…)`` call has a SINGLE
 # raw artifact (the Public Law's USLM ``data`` bytes), keyed by ``statute_id`` (==
@@ -5599,9 +5600,10 @@ def _iter_instruction_units(
 # ``<quotedText>``/``<quotedContent>``/``<chapeau>``/``<ref>`` leaves with no
 # interleaved inline markup), and anchors the op against the LONGEST such body that
 # is a substring of the op's flattened clause (so the anchored span provably belongs
-# to THIS op's clause). ``compute_source_anchor`` re-verifies that body is byte-exact
-# and unique before minting. Measured on the canonical sample: 31/43 ops anchor
-# honestly (no_typed_anchor_rate 100% -> 27.9%). The remaining 12 are honest
+# to THIS op's clause). The byte-exact uniqueness proof is carried forward as a
+# ``SourceAnchor`` record, so op stamping does not re-scan the raw artifact for the
+# same proof. Measured on the canonical sample: a majority of ops anchor honestly.
+# The remaining unanchored ops are honest
 # ``None``: the operative text is reconstructed across INLINE ``<quotedText>`` markup
 # (the strike-"X"-insert-"Y" forms whose two short operands plus connecting prose
 # never coincide with one contiguous element body), so no descendant element's body
@@ -5624,6 +5626,12 @@ _US_SOURCE_ANCHOR_BODY_TAGS: frozenset[str] = frozenset(
 )
 
 
+@dataclass(frozen=True, slots=True)
+class _UniqueByteRunBody:
+    text: str
+    source_anchor: SourceAnchor
+
+
 def set_us_raw_source_context(
     source_artifact_id: str, raw_bytes: bytes
 ) -> "contextvars.Token[tuple[str, bytes] | None]":
@@ -5642,11 +5650,13 @@ def reset_us_raw_source_context(
     _US_RAW_SOURCE_CTX.reset(token)
 
 
-def _unique_byte_run_bodies(
+def _unique_byte_run_body_records(
     raw_bytes: bytes,
+    *,
+    source_artifact_id: str,
     candidate_clauses: Iterable[str] | None = None,
-) -> List[str]:
-    """Return every element body that is a UNIQUE verbatim byte run of ``raw_bytes``.
+) -> list[_UniqueByteRunBody]:
+    """Return every element body with its verified unique byte-span anchor.
 
     Parses the Public Law USLM once and walks every element, collecting the
     whitespace-collapsed descendant text (the EXACT :func:`_text_of` flattening the
@@ -5660,12 +5670,13 @@ def _unique_byte_run_bodies(
     Returned LONGEST-first so the per-op selector prefers the most specific (largest)
     body of a clause.
 
-    Pure read of the bytes; no fabrication — :func:`compute_source_anchor` still
-    independently re-verifies byte-exactness and uniqueness before any anchor mints
-    (collapse can never forge a run: a body whose collapsed text differs from the raw
-    bytes simply fails the ``raw.find`` here and is dropped, never anchored).
+    Pure read of the bytes; no fabrication — a body record is emitted only after
+    the same byte-exact existence and uniqueness checks that
+    :func:`compute_source_anchor` performs. The checked span is carried forward as a
+    :class:`SourceAnchor`, so the later op-stamping pass does not re-scan the raw
+    artifact for a fact already proven here.
     """
-    bodies: List[str] = []
+    bodies: list[_UniqueByteRunBody] = []
     seen: set[str] = set()
     candidate_blob = ""
     if candidate_clauses is not None:
@@ -5696,16 +5707,40 @@ def _unique_byte_run_bodies(
         needle = text.encode("utf-8")
         first = raw_bytes.find(needle)
         if first >= 0 and raw_bytes.find(needle, first + 1) < 0:
-            bodies.append(text)
-    bodies.sort(key=lambda s: -len(s))
+            bodies.append(
+                _UniqueByteRunBody(
+                    text=text,
+                    source_anchor=SourceAnchor(
+                        source_artifact_id=source_artifact_id,
+                        byte_offset=first,
+                        byte_len=len(needle),
+                        quote_hash="sha256:" + hashlib.sha256(needle).hexdigest(),
+                    ),
+                )
+            )
+    bodies.sort(key=lambda body: -len(body.text))
     return bodies
+
+
+def _unique_byte_run_bodies(
+    raw_bytes: bytes,
+    candidate_clauses: Iterable[str] | None = None,
+) -> List[str]:
+    """Return every element body that is a UNIQUE verbatim byte run of ``raw_bytes``."""
+
+    return [
+        record.text
+        for record in _unique_byte_run_body_records(
+            raw_bytes,
+            source_artifact_id="lawvm.us_federal.unique_byte_run_probe",
+            candidate_clauses=candidate_clauses,
+        )
+    ]
 
 
 def _anchor_op(
     op: LegalOperation,
-    artifact_id: str,
-    raw_bytes: bytes,
-    bodies: List[str],
+    bodies: list[_UniqueByteRunBody],
 ) -> LegalOperation:
     """Return ``op`` with a TRUE per-element byte-span anchor stamped, or unchanged.
 
@@ -5716,13 +5751,12 @@ def _anchor_op(
     of the raw XML — anchoring it directly mints 0/43 (the prior BLOCKED arm, task
     #92). Instead the anchored unit is RE-SCOPED to the operative BODY ELEMENT the
     clause came from: among the Public Law's descendant elements whose flattened text
-    is a unique contiguous byte run (:func:`_unique_byte_run_bodies`, passed in as
-    ``bodies``), the LONGEST one that is a substring of THIS op's clause is selected
-    (so the span provably belongs to this op) and passed to
-    :func:`lawvm.core.provenance.compute_source_anchor`, which independently
-    re-verifies it is byte-exact and unique before minting. The anchored body is
-    PROVENANCE metadata — ``source.raw_text`` and every apply-authoritative field are
-    untouched. When no descendant body of the clause is a unique byte run (the
+    is a unique contiguous byte run (proved by
+    :func:`_unique_byte_run_body_records`, passed in as ``bodies``), the LONGEST
+    one that is a substring of THIS op's clause is selected (so the span provably
+    belongs to this op). The anchored body is PROVENANCE metadata —
+    ``source.raw_text`` and every apply-authoritative field are untouched. When no
+    descendant body of the clause is a unique byte run (the
     operative text is reconstructed across INLINE ``<quotedText>`` markup — the
     strike-"X"-insert-"Y" forms whose two short operands and connecting prose never
     coincide with one contiguous element body), the anchor is honestly left absent
@@ -5737,17 +5771,10 @@ def _anchor_op(
         return op
     # Re-scope to the operative body: the longest unique-byte-run element body of the
     # Public Law that is a substring of THIS op's clause.
-    body = next((b for b in bodies if b and b in clause), None)
+    body = next((b for b in bodies if b.text and b.text in clause), None)
     if body is None:
         return op
-    anchor = compute_source_anchor(
-        source_artifact_id=artifact_id,
-        raw_bytes=raw_bytes,
-        clause_text=body,
-    )
-    if anchor is None:
-        return op
-    return _dc_replace(op, source=_dc_replace(src, source_anchor=anchor))
+    return _dc_replace(op, source=_dc_replace(src, source_anchor=body.source_anchor))
 
 
 def _anchor_clause_texts(ops: Iterable[LegalOperation]) -> tuple[str, ...]:
@@ -5777,8 +5804,12 @@ def mint_us_source_anchors(ops: List[LegalOperation]) -> List[LegalOperation]:
     if raw_ctx is None or not ops:
         return ops
     artifact_id, raw_bytes = raw_ctx
-    bodies = _unique_byte_run_bodies(raw_bytes, candidate_clauses=_anchor_clause_texts(ops))
-    return [_anchor_op(op, artifact_id, raw_bytes, bodies) for op in ops]
+    bodies = _unique_byte_run_body_records(
+        raw_bytes,
+        source_artifact_id=artifact_id,
+        candidate_clauses=_anchor_clause_texts(ops),
+    )
+    return [_anchor_op(op, bodies) for op in ops]
 
 
 def _anchor_instructions(
@@ -5803,19 +5834,20 @@ def _anchor_instructions(
         for op in ((instr.operation,) + instr.extra_operations)
         if op is not None
     ]
-    bodies = _unique_byte_run_bodies(
+    bodies = _unique_byte_run_body_records(
         raw_bytes,
+        source_artifact_id=artifact_id,
         candidate_clauses=_anchor_clause_texts(ops_for_prefilter),
     )
     rewritten: list[USAmendmentInstruction] = []
     for instr in instructions:
         primary = (
-            _anchor_op(instr.operation, artifact_id, raw_bytes, bodies)
+            _anchor_op(instr.operation, bodies)
             if instr.operation is not None
             else None
         )
         extra = tuple(
-            _anchor_op(op, artifact_id, raw_bytes, bodies)
+            _anchor_op(op, bodies)
             for op in instr.extra_operations
         )
         if primary is instr.operation and extra == instr.extra_operations:

@@ -22,17 +22,15 @@ raw XML.
   ``<quotedText>``/``<quotedContent>``/``<chapeau>``/``<ref>`` leaves with no
   interleaved inline markup), and anchors the op against the LONGEST such body that
   is a substring of the op's flattened clause — so the anchored span provably
-  belongs to THIS op. ``compute_source_anchor`` re-verifies byte-exactness and
-  uniqueness before minting.
+  belongs to THIS op. The byte-exact uniqueness proof is carried forward as a
+  ``SourceAnchor`` record before stamping.
 
 MEASURED on the canonical sample (3 Public Laws, 43 ops):
-``no_typed_anchor_rate`` drops from 100% (43/43, task #92) to ~28% — the MAJORITY
-(31/43) of ops now carry a TRUE, byte-re-verifiable per-element anchor. The
-remaining 12 are honest ``None``: the operative text is reconstructed across INLINE
-``<quotedText>`` markup (the strike-"X"-insert-"Y" forms whose two short operands
-plus connecting prose never coincide with one contiguous element body), so no
-descendant element body is a contiguous byte run. Every absence is justified —
-fail-loud, never a fabricated offset.
+``no_typed_anchor_rate`` drops from 100% (task #92) to a real majority of ops
+carrying a TRUE, byte-re-verifiable per-element anchor. The remaining honest
+``None`` cases are the operative text reconstructed across INLINE
+``<quotedText>`` markup, where no descendant element body is a contiguous byte
+run. Every absence is justified — fail-loud, never a fabricated offset.
 
 These tests prove (a) every anchor the post-pass mints re-verifies byte-exactly
 (the span re-slices to its anchored body, which is a substring of the op's clause,
