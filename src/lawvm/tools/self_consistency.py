@@ -108,6 +108,12 @@ _ELAB_FINDING_KINDS = {
     "ELAB.REJECTED_OPERATION",
     "ELAB.UNASSIGNED_SPARSE_SLOTS",
     "ELAB.AMBIGUOUS_BINDING",
+    # Positional-fallback bindings are the safe common case (label mismatch,
+    # order-only mapping); harvested distinctly so they no longer masquerade
+    # as the loud AMBIGUOUS_BINDING label-tie signal.
+    "ELAB.POSITIONAL_FALLBACK_BINDING",
+    # Order mismatch is a genuine oracle-independent mis-bind candidate.
+    "ELAB.POSITIONAL_FALLBACK_ORDER_MISMATCH",
     "ELAB.CONTAINER_PRUNED_SHADOWED",
     "ELAB.CHAPTER_SEED_SOURCE_PATHOLOGY",
 }

@@ -9771,12 +9771,17 @@ def test_uncovered_body_skips_section_candidate_owned_by_descendant_op() -> None
         findings_out=findings_out,
     )
 
+    # The flat body "13 §" (no chapter wrapper) is the payload for the PEG op
+    # that inserts item 141a into 3 luku 13 §. That chapter-qualified op claims
+    # section label "13" in exactly one chapter, so analyze_coverage now marks
+    # the chapter-free body unit as COVERED upstream — it never reaches the
+    # uncovered-body recovery iteration, and no spurious recovery op is minted.
+    # (Previously it was mis-classified as uncovered and only stopped by the
+    # downstream peg_owned_descendant_label_collision guard; production output
+    # was identical either way — no recovered op.)
     assert rops == []
     skipped = [f for f in findings_out if f.kind == "APPLY.UNCOVERED_BODY_PEG_DESCENDANT_LABEL_COLLISION"]
-    assert len(skipped) == 1
-    assert skipped[0].detail.get("reason") == "peg_owned_descendant_label_collision"
-    assert skipped[0].detail.get("target_section") == "13"
-    assert skipped[0].detail.get("target_chapter") == ""
+    assert skipped == []
 
 
 def test_uncovered_body_omission_merge_requires_scoped_target_witness() -> None:
