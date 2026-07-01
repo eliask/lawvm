@@ -428,6 +428,28 @@ def test_cache_keyed_on_inputs_distinct_bodies_distinct_forests() -> None:
     assert f1.graph_id != f2.graph_id
 
 
+def test_forest_cache_is_bounded_lru(monkeypatch) -> None:
+    clear_forest_cache()
+    monkeypatch.setattr(ssg, "_FOREST_CACHE_CAP", 2)
+    body1 = "Tämä laki tulee voimaan 1 päivänä tammikuuta 2020."
+    body2 = "Lakia sovelletaan 1 päivästä helmikuuta 2020."
+    body3 = "Asia mainittiin valmistelussa HE 5/2019 yhteydessä laajasti."
+
+    f1 = _assemble(body1)
+    f2 = _assemble(body2)
+    assert len(ssg._FOREST_CACHE) == 2
+
+    # Touch body1 so body2 becomes the least-recently-used entry.
+    assert _assemble(body1) is f1
+    _assemble(body3)
+
+    assert len(ssg._FOREST_CACHE) == 2
+    assert _assemble(body1) is f1
+    f2_rebuilt = _assemble(body2)
+    assert f2_rebuilt is not f2
+    _forests_value_equal(f2_rebuilt, f2)
+
+
 def test_idempotent_assemble_two_uncached_builds_equal() -> None:
     # The assembler itself is deterministic: two independent uncached builds of the
     # same unit are value-identical (the property the cache relies on for soundness).

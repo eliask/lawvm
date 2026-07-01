@@ -66,6 +66,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from collections import OrderedDict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Literal
@@ -611,12 +612,18 @@ def _structural_status() -> str:
 # ``*_projection`` lenses, census/differential harnesses) assemble the SAME unit's
 # forest independently and from scratch — each re-running segmentation, the token
 # tape, the six family parsers over every sentence, and the L0 census. That is the
-# dominant cost inside graph build (~minutes on broad shards). Since the forest is a
-# pure function of the inputs, we memoize on a deterministic key over ALL inputs
-# that affect the output, and return the SAME cached object (safe: it is frozen).
-# This is the architectural prerequisite for the production strangle-flip (all
-# lenses reading one cached forest).
-_FOREST_CACHE: dict[str, SourceSyntaxGraph] = {}
+# dominant cost inside graph build (~minutes on broad shards). Since the forest is
+# a pure function of the inputs, we memoize on a deterministic key over ALL inputs
+# that affect the output, and return the SAME cached object while it remains in
+# the working set (safe: it is frozen).
+#
+# The cache is bounded because each value is a full SourceSyntaxGraph. A broad
+# corpus worker can see many distinct provisions, and retaining all of them would
+# turn a pure performance cache into process-lifetime memory growth. LRU eviction
+# is output-identical: an evicted forest is simply rebuilt from the same inputs.
+_FOREST_CACHE_DEFAULT_CAP = 4096
+_FOREST_CACHE_CAP = _FOREST_CACHE_DEFAULT_CAP
+_FOREST_CACHE: OrderedDict[str, SourceSyntaxGraph] = OrderedDict()
 
 
 def _stable_subject_key(subject: SurfaceGraphSubject) -> str:
@@ -701,6 +708,7 @@ def assemble_source_syntax_graph(
     )
     cached = _FOREST_CACHE.get(key)
     if cached is not None:
+        _FOREST_CACHE.move_to_end(key)
         return cached
     forest = _assemble_source_syntax_graph(
         subject=subject,
@@ -712,6 +720,8 @@ def assemble_source_syntax_graph(
         clause_index=clause_index,
     )
     _FOREST_CACHE[key] = forest
+    if len(_FOREST_CACHE) > _FOREST_CACHE_CAP:
+        _FOREST_CACHE.popitem(last=False)
     return forest
 
 
