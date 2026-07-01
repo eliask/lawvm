@@ -158,7 +158,12 @@ def _text_content(el: ET._Element) -> str:
     cached = _TEXT_CONTENT_CACHE.get(el)
     if cached is not None:
         return cached
+    if len(el) == 0:
+        text = " ".join((el.text or "").split())
+        _TEXT_CONTENT_CACHE[el] = text
+        return text
     parts: list[str] = []
+
     def collect(node: ET._Element, *, include_tail: bool) -> None:
         if node.text:
             parts.append(node.text)

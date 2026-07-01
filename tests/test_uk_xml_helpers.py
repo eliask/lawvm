@@ -29,6 +29,14 @@ def test_text_content_preserves_nested_inline_tail_order() -> None:
     assert _text_content(root) == "a insert “before term after” ;"
 
 
+def test_text_content_leaf_fast_path_ignores_own_tail() -> None:
+    root = ET.fromstring("<Root><Text>  alpha\t beta\n</Text>tail</Root>")
+    leaf = root[0]
+
+    assert _text_content(leaf) == "alpha beta"
+    assert _text_content(root) == "alpha beta tail"
+
+
 # ---------------------------------------------------------------------------
 # iter2 W5 M6 — _clone_element uses copy.deepcopy instead of the prior
 # serialize→parse round-trip (``ET.fromstring(ET.tostring(...))``). The new
