@@ -979,6 +979,78 @@ def _structural_sim(sid: str, master: Any) -> tuple[float, Counter[str]]:
     return 1.0 - penalised / len(non_editorial), event_counts
 
 
+def _score_sections_structural(
+    sections: dict[str, Any],
+) -> tuple[float, int, int, Counter[str]]:
+    """Structural score for a pre-computed ``sections`` map.
+
+    Factored out of :func:`_structural_sim` so alternate oracle-selector code
+    paths (e.g. the all-historical-PIT mode) reuse the IDENTICAL neutralization
+    + penalty accounting that produces the headline number, rather than
+    reimplementing it. Returns ``(sim, n_non_editorial, n_penalized, events)``;
+    ``sim`` is ``1.0`` when there are no non-editorial sections.
+    """
+    from lawvm.tools.structural_review import _sections_with_diffs
+
+    non_editorial = {
+        k: v for k, v in sections.items()
+        if v.get("semantic_diff", {}).get("kind") != "editorial_only"
+    }
+    if not non_editorial:
+        return 1.0, 0, 0, Counter()
+    diffs = _sections_with_diffs({"sections": non_editorial})
+    event_counts: Counter[str] = Counter()
+    penalised = 0
+    for _sec_key, sd, events in diffs:
+        for event in events:
+            event_counts[event.get("kind", "unknown")] += 1
+        if _section_diff_is_bench_neutralized(sd, events):
+            continue
+        if non_editorial.get(_sec_key, {}).get("amb_alternate_match"):
+            continue  # replay matched a non-chosen attested oracle version (amb)
+        penalised += 1
+    return (
+        1.0 - penalised / len(non_editorial),
+        len(non_editorial),
+        penalised,
+        event_counts,
+    )
+
+
+def _structural_sim_at_selector(
+    sid: str,
+    *,
+    oracle_selector: Any,
+    as_of: str,
+    corpus: Any = None,
+) -> tuple[float, int, int, Counter[str]]:
+    """Structural score of ``legal_pit`` replay@as_of vs one EXPLICIT oracle.
+
+    This is the all-historical-PIT (``--mode all_pit``) per-snapshot scorer. It
+    threads an explicit ``ConsolidatedArtifactSelector`` (typically
+    ``exact_embedded_version(version_tag)``) and an ISO ``as_of`` cutoff through
+    ``compute_statute_section_diffs``, then scores with the SAME machinery
+    :func:`_structural_sim` uses (via :func:`_score_sections_structural`), so
+    per-snapshot numbers are commensurable with the headline metric.
+
+    Returns ``(sim, n_non_editorial, n_penalized, events)``; ``sim`` is
+    ``-1.0`` when the oracle content is absent for this version.
+    """
+    from lawvm.tools.structural_review import compute_statute_section_diffs
+
+    sections, oracle_absent = compute_statute_section_diffs(
+        sid,
+        corpus=corpus,
+        mode="legal_pit",
+        oracle_selector=oracle_selector,
+        as_of=as_of,
+        support_mode="diff_only",
+    )
+    if oracle_absent:
+        return -1.0, 0, 0, Counter()
+    return _score_sections_structural(sections)
+
+
 def _score_one(
     sid: str,
     mode: Literal["official_consolidation", "legal_pit"] = "official_consolidation",
@@ -2981,6 +3053,265 @@ def _format_bench_run_banner(
 
 
 # ---------------------------------------------------------------------------
+# --mode all_pit : all-historical-PIT aux oracle target (#160)
+#
+# The default modes compare the replayed statute against ONE oracle snapshot.
+# Finlex publishes MULTIPLE selected consolidations over a statute's life. This
+# mode turns each published snapshot into a comparison point: replay legal_pit
+# at the snapshot's as-of date and score vs THAT snapshot's own-version oracle,
+# reusing the bench's structural section-diff + neutralization + penalty
+# machinery (via _structural_sim_at_selector -> compute_statute_section_diffs
+# with an explicit exact_embedded_version selector). The headline aux metric is
+# the "min-over-life < latest" population: statutes whose worst mid-life score
+# is below their latest score, i.e. hidden mid-life divergences the single-
+# snapshot bench cannot see.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class _AllPitSnapshotResult:
+    version_tag: str
+    amendment_id: str
+    as_of: Optional[str]  # ISO date; None ⇒ unplaceable
+    struct_sim: float     # in [0,1]; -1.0 ⇒ not scored (no/absent oracle)
+    n_sections: int
+    n_penalized: int
+    status: str
+
+
+@dataclass(frozen=True)
+class _AllPitStatuteResult:
+    sid: str
+    snapshots: Tuple[_AllPitSnapshotResult, ...]
+    status: str = "OK"  # non-OK ⇒ statute-level failure (e.g. ERROR:...)
+
+    @property
+    def scored(self) -> List[_AllPitSnapshotResult]:
+        return [s for s in self.snapshots if s.struct_sim >= 0.0]
+
+    @property
+    def min_over_life(self) -> Optional[float]:
+        scored = self.scored
+        return min((s.struct_sim for s in scored), default=None)
+
+    @property
+    def latest_scored(self) -> Optional[float]:
+        for snap in reversed(self.snapshots):
+            if snap.struct_sim >= 0.0:
+                return snap.struct_sim
+        return None
+
+    @property
+    def has_hidden_mid_life_divergence(self) -> bool:
+        mn = self.min_over_life
+        latest = self.latest_scored
+        return mn is not None and latest is not None and mn < latest - 1e-9
+
+
+def _all_pit_score_one_statute(sid: str) -> _AllPitStatuteResult:
+    """Score every published snapshot of *sid* against its own-version oracle.
+
+    Module-level so it can be dispatched to a forked ProcessPoolExecutor worker
+    (workers inherit the pre-warmed corpus/index caches via copy-on-write). Never
+    raises — statute-level failures are reported as a non-OK statute status.
+    """
+    from lawvm.finland.corpus import _archive_from_source, get_corpus
+    from lawvm.tools.fi_aux_pit_probe import plan_snapshots
+
+    try:
+        corpus = get_corpus()
+        archive = _archive_from_source(corpus)
+        if archive is None:
+            return _AllPitStatuteResult(sid=sid, snapshots=(), status="ERROR:no-archive")
+        plans = plan_snapshots(archive, sid)
+    except Exception as exc:  # noqa: BLE001 — surface, don't crash the batch
+        return _AllPitStatuteResult(sid=sid, snapshots=(), status=f"ERROR:{exc}")
+
+    snapshots: List[_AllPitSnapshotResult] = []
+    for plan in plans:
+        if plan.as_of is None:
+            snapshots.append(
+                _AllPitSnapshotResult(
+                    version_tag=plan.version_tag,
+                    amendment_id=plan.amendment_id,
+                    as_of=None,
+                    struct_sim=-1.0,
+                    n_sections=0,
+                    n_penalized=0,
+                    status=f"UNPLACEABLE:{plan.reason}",
+                )
+            )
+            continue
+        try:
+            sim, n_sections, n_penalized, _events = _structural_sim_at_selector(
+                sid,
+                oracle_selector=ConsolidatedArtifactSelector.exact_embedded_version(
+                    plan.version_tag
+                ),
+                as_of=plan.as_of.isoformat(),
+                corpus=corpus,
+            )
+        except Exception as exc:  # noqa: BLE001
+            snapshots.append(
+                _AllPitSnapshotResult(
+                    version_tag=plan.version_tag,
+                    amendment_id=plan.amendment_id,
+                    as_of=plan.as_of.isoformat(),
+                    struct_sim=-1.0,
+                    n_sections=0,
+                    n_penalized=0,
+                    status=f"ERROR:{exc}",
+                )
+            )
+            continue
+        status = "OK" if sim >= 0.0 else "ORACLE_CONTENT_ABSENT"
+        snapshots.append(
+            _AllPitSnapshotResult(
+                version_tag=plan.version_tag,
+                amendment_id=plan.amendment_id,
+                as_of=plan.as_of.isoformat(),
+                struct_sim=sim,
+                n_sections=n_sections,
+                n_penalized=n_penalized,
+                status=status,
+            )
+        )
+    return _AllPitStatuteResult(sid=sid, snapshots=tuple(snapshots))
+
+
+def _run_all_pit(
+    sids: List[str],
+    *,
+    workers: int = 1,
+    verbose: bool = True,
+) -> List[_AllPitStatuteResult]:
+    """Drive the all_pit scorer over *sids*, optionally in parallel."""
+    total = len(sids)
+    results: List[_AllPitStatuteResult] = cast(
+        List[_AllPitStatuteResult], [None] * total
+    )
+    if workers > 1:
+        # Pre-warm caches in the parent so forked workers inherit them (COW).
+        from lawvm.finland.amendment_selection import (
+            amendment_children_by_parent as _amendment_children_by_parent,
+        )
+        from lawvm.finland.corpus import (
+            _get_corpus_store,
+            _latest_consolidated_path_by_statute,
+        )
+
+        _get_corpus_store()
+        _amendment_children_by_parent()
+        _latest_consolidated_path_by_statute()
+
+        from concurrent.futures import ProcessPoolExecutor, as_completed
+
+        with ProcessPoolExecutor(max_workers=workers) as pool:
+            future_to_idx = {
+                pool.submit(_all_pit_score_one_statute, sid): idx
+                for idx, sid in enumerate(sids)
+            }
+            done = 0
+            for future in as_completed(future_to_idx):
+                idx = future_to_idx[future]
+                res = future.result()
+                results[idx] = res
+                done += 1
+                if verbose:
+                    _print_all_pit_statute(res, prefix=f"[{done}/{total}] ")
+    else:
+        for idx, sid in enumerate(sids):
+            res = _all_pit_score_one_statute(sid)
+            results[idx] = res
+            if verbose:
+                _print_all_pit_statute(res, prefix=f"[{idx + 1}/{total}] ")
+    return list(results)
+
+
+def _fmt_all_pit_sim(sim: float) -> str:
+    return "   n/a" if sim < 0 else f"{100 * sim:6.2f}%"
+
+
+def _print_all_pit_statute(res: _AllPitStatuteResult, *, prefix: str = "") -> None:
+    if res.status != "OK":
+        print(f"\n{prefix}=== {res.sid} === {res.status}")
+        return
+    print(f"\n{prefix}=== {res.sid}  ({len(res.snapshots)} published snapshots) ===")
+    print(
+        f"  {'as_of':<12} {'version':<10} {'amend':<10} {'struct':>7} "
+        f"{'secs':>5} {'pen':>4}  status"
+    )
+    traj: List[str] = []
+    for s in res.snapshots:
+        as_of = s.as_of or "-"
+        print(
+            f"  {as_of:<12} {s.version_tag:<10} {s.amendment_id:<10} "
+            f"{_fmt_all_pit_sim(s.struct_sim):>7} {s.n_sections:>5} "
+            f"{s.n_penalized:>4}  {s.status}"
+        )
+        traj.append("n/a" if s.struct_sim < 0 else f"{100 * s.struct_sim:.1f}")
+    if res.scored:
+        mn = res.min_over_life or 0.0
+        latest = res.latest_scored
+        print(f"  trajectory: {' -> '.join(traj)}")
+        print(
+            f"  min-over-life={100 * mn:.2f}%  "
+            f"latest={_fmt_all_pit_sim(latest if latest is not None else -1.0).strip()}"
+            f"  hidden-mid-life-divergence="
+            f"{'YES' if res.has_hidden_mid_life_divergence else 'no'}"
+        )
+
+
+def _show_all_pit_summary(results: List[_AllPitStatuteResult]) -> None:
+    """Print the all_pit aggregate: per-snapshot pool + headline min<latest."""
+    ok = [r for r in results if r.status == "OK"]
+    failed = [r for r in results if r.status != "OK"]
+    n_snapshots = sum(len(r.snapshots) for r in ok)
+    n_scored = sum(len(r.scored) for r in ok)
+    scored_sims = [s.struct_sim for r in ok for s in r.scored]
+    multi = [r for r in ok if len(r.scored) > 1]
+    hidden = [r for r in ok if r.has_hidden_mid_life_divergence]
+
+    print("\n" + "=" * 60)
+    print("ALL-HISTORICAL-PIT AUX SUMMARY")
+    print("=" * 60)
+    print(f"  statutes scored           : {len(ok)}  ({len(failed)} failed)")
+    print(f"  published snapshots        : {n_snapshots}  ({n_scored} scored)")
+    if scored_sims:
+        mean = sum(scored_sims) / len(scored_sims)
+        print(f"  mean per-snapshot struct   : {100 * mean:.2f}%")
+    print(f"  statutes with >1 scored snap: {len(multi)}")
+    print(
+        f"  HEADLINE hidden-mid-life    : {len(hidden)}"
+        + (f"  ({100 * len(hidden) / len(multi):.1f}% of multi-snapshot)" if multi else "")
+    )
+    if hidden:
+        print("\n  hidden mid-life divergences (min-over-life < latest):")
+        for r in sorted(hidden, key=lambda x: (x.min_over_life or 0.0)):
+            mn = r.min_over_life or 0.0
+            latest = r.latest_scored or 0.0
+            print(
+                f"    {r.sid:12s}  min={100 * mn:6.2f}%  latest={100 * latest:6.2f}%"
+                f"  ({len(r.scored)} scored snaps)"
+            )
+    if failed:
+        print("\n  failed statutes:")
+        for r in failed:
+            print(f"    {r.sid:12s}  {r.status}")
+
+
+def _run_all_pit_mode(corpus: List[Tuple[int, str]], *, workers: int) -> None:
+    """Entry for ``lawvm bench --mode all_pit``: run + print + summarize."""
+    sids = [sid for _, sid in corpus]
+    print(
+        f"Running all-historical-PIT aux target: {len(sids)} statutes  "
+        f"workers={workers}"
+    )
+    results = _run_all_pit(sids, workers=workers, verbose=True)
+    _show_all_pit_summary(results)
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -3120,6 +3451,14 @@ def main(args) -> None:
     # Snapshot from the same UTC clock as the run timestamp.
     selection_as_of = datetime.now(timezone.utc).date()
     pin_selection_as_of(selection_as_of)
+
+    # all_pit is a distinct code path: it scores each statute against EVERY
+    # published consolidation snapshot (not a single oracle), so it bypasses the
+    # standard per-statute scoring/history/save flow entirely. It is a NEW mode;
+    # official_consolidation / legal_pit are untouched.
+    if bench_mode == "all_pit":
+        _run_all_pit_mode(corpus, workers=workers)
+        return
 
     print(
         _format_bench_run_banner(
@@ -3296,11 +3635,15 @@ def register_cli(sub: Any, _j_parent: Any) -> None:
     bench_p.add_argument(
         "--mode",
         default="official_consolidation",
-        type=replay_mode_argument, choices=["official_consolidation", "legal_pit"],
+        type=replay_mode_argument,
+        choices=["official_consolidation", "legal_pit", "all_pit"],
         help=(
             "replay mode: official_consolidation (default) compares against the Finlex consolidated XML; "
             "legal_pit applies date-cutoff PIT materialization (excludes future-dated amendments "
-            "and corrigendum patches, giving a cleaner accuracy signal against the legal record)"
+            "and corrigendum patches, giving a cleaner accuracy signal against the legal record); "
+            "all_pit (aux target) scores legal_pit replay@as-of against EVERY published consolidation "
+            "snapshot's own-version oracle and reports the hidden-mid-life-divergence population "
+            "(statutes whose worst mid-life score is below their latest)"
         ),
     )
     bench_p.add_argument(

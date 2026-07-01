@@ -1676,11 +1676,15 @@ examples (-j selects jurisdiction, default fi; Finnish IDs unless shown as ukpga
     bench_p.add_argument(
         "--mode",
         default="official_consolidation",
-        type=replay_mode_argument, choices=["official_consolidation", "legal_pit"],
+        type=replay_mode_argument,
+        choices=["official_consolidation", "legal_pit", "all_pit"],
         help=(
             "replay mode: official_consolidation (default) compares against the Finlex consolidated XML; "
             "legal_pit applies date-cutoff PIT materialization (excludes future-dated amendments "
-            "and corrigendum patches, giving a cleaner accuracy signal against the legal record)"
+            "and corrigendum patches, giving a cleaner accuracy signal against the legal record); "
+            "all_pit (aux target) scores legal_pit replay@as-of against EVERY published consolidation "
+            "snapshot's own-version oracle and reports the hidden-mid-life-divergence population "
+            "(statutes whose worst mid-life score is below their latest)"
         ),
     )
     bench_p.add_argument(
