@@ -39,13 +39,15 @@ _NEGLIGIBLE_BLAME_DROP_EPS = 0.01
 _SIMILARITY_NON_WORD_RE = re.compile(r"[^\w]")
 
 
-def _clean_similarity_text(text: str) -> str:
+def clean_similarity_text(text: str) -> str:
+    """Normalize text for evidence-only similarity scoring."""
+
     return _SIMILARITY_NON_WORD_RE.sub("", text.lower())
 
 
-def section_similarity(replay_text: str, oracle_text: str) -> float:
-    lhs = _clean_similarity_text(replay_text or "")
-    rhs = _clean_similarity_text(oracle_text or "")
+def section_similarity_cleaned(lhs: str, rhs: str) -> float:
+    """Return section similarity for strings already normalized by this module."""
+
     if not lhs and not rhs:
         return 1.0
     if not lhs or not rhs:
@@ -53,40 +55,23 @@ def section_similarity(replay_text: str, oracle_text: str) -> float:
     return Levenshtein.ratio(lhs, rhs)
 
 
-def best_section_similarity(
-    replay_texts: Iterable[str], oracle_texts: Iterable[str]
+def section_similarity(replay_text: str, oracle_text: str) -> float:
+    lhs = clean_similarity_text(replay_text or "")
+    rhs = clean_similarity_text(oracle_text or "")
+    return section_similarity_cleaned(lhs, rhs)
+
+
+def best_section_similarity_cleaned(
+    cleaned_replay: Iterable[str], cleaned_oracle: Iterable[str]
 ) -> float:
-    """Return ``max(section_similarity(a, b))`` over the raw-text cross product.
+    """Return ``max(section_similarity_cleaned(a, b))`` over cleaned text."""
 
-    Byte-identical to::
-
-        max(section_similarity(a, b) for a in replay_texts for b in oracle_texts)
-
-    but pruned so the underlying ``Levenshtein.ratio`` runs only on pairs that can
-    still beat the running best. The cross product is the NZ chain-replay O(N^2)
-    hotspot (~1.6M ratio calls per act). Two behavior-preserving prunes:
-
-    - Each raw text is cleaned once (``_clean_similarity_text`` is not re-run per
-      pair as the naive genexpr does).
-    - The indel ratio has the length upper bound ``2*min(la, lb) / (la + lb)``
-      (the indel distance is at least ``|la - lb|``). When that bound is below the
-      running best the true ratio cannot beat it, so the pair is skipped without a
-      ratio call. Otherwise ``Levenshtein.ratio`` is called with ``score_cutoff``
-      set to the running best: it returns the exact ratio when it is >= the best
-      and 0.0 otherwise, neither of which can lower the max. The seeded max is thus
-      identical to the unpruned reduction.
-
-    The empty inputs raise ``ValueError`` from the naive ``max`` too, so the caller
-    guards them; this mirrors that (an empty product yields no candidates).
-    """
-
-    cleaned_replay = [_clean_similarity_text(text or "") for text in replay_texts]
-    cleaned_oracle = [_clean_similarity_text(text or "") for text in oracle_texts]
-
+    replay_values = list(cleaned_replay)
+    oracle_values = list(cleaned_oracle)
     best = -1.0
-    for lhs in cleaned_replay:
+    for lhs in replay_values:
         lhs_len = len(lhs)
-        for rhs in cleaned_oracle:
+        for rhs in oracle_values:
             rhs_len = len(rhs)
             # Reproduce section_similarity's empty-text special cases exactly.
             if not lhs_len and not rhs_len:
@@ -109,6 +94,38 @@ def best_section_similarity(
                     # 1.0 is the global maximum; nothing can beat it.
                     return 1.0
     return best
+
+
+def best_section_similarity(
+    replay_texts: Iterable[str], oracle_texts: Iterable[str]
+) -> float:
+    """Return ``max(section_similarity(a, b))`` over the raw-text cross product.
+
+    Byte-identical to::
+
+        max(section_similarity(a, b) for a in replay_texts for b in oracle_texts)
+
+    but pruned so the underlying ``Levenshtein.ratio`` runs only on pairs that can
+    still beat the running best. The cross product is the NZ chain-replay O(N^2)
+    hotspot (~1.6M ratio calls per act). Two behavior-preserving prunes:
+
+    - Each raw text is cleaned once (``clean_similarity_text`` is not re-run per
+      pair as the naive genexpr does).
+    - The indel ratio has the length upper bound ``2*min(la, lb) / (la + lb)``
+      (the indel distance is at least ``|la - lb|``). When that bound is below the
+      running best the true ratio cannot beat it, so the pair is skipped without a
+      ratio call. Otherwise ``Levenshtein.ratio`` is called with ``score_cutoff``
+      set to the running best: it returns the exact ratio when it is >= the best
+      and 0.0 otherwise, neither of which can lower the max. The seeded max is thus
+      identical to the unpruned reduction.
+
+    The empty inputs raise ``ValueError`` from the naive ``max`` too, so the caller
+    guards them; this mirrors that (an empty product yields no candidates).
+    """
+
+    cleaned_replay = [clean_similarity_text(text or "") for text in replay_texts]
+    cleaned_oracle = [clean_similarity_text(text or "") for text in oracle_texts]
+    return best_section_similarity_cleaned(cleaned_replay, cleaned_oracle)
 
 
 def has_negligible_blame_drop_on_preexisting_residue(support: Mapping[str, Any]) -> bool:
