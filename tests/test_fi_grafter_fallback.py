@@ -17181,13 +17181,19 @@ def test_replay_xml_2003_549_replaces_occupied_section_163_without_stale_tail(
 
 @pytest.mark.slow
 def test_inspect_amendment_2003_549_2010_469_prunes_carried_section_149_subsections() -> None:
-    """`2010/469` section 149 must bind owned `1 momentti` edits to slot 1.
+    """`2010/469` section 149 binds its owned `1 momentti` edits to slot 1.
 
-    The amendment XML carries later sibling subsections `2–5` inside the same
-    section body, even though the johtolause only changes `149 § 1 momentti`
-    plus item-level edits under that moment. Current inspection keeps the
-    carried sibling slots visible as unassigned source context rather than
-    hiding them through pre-replay pruning.
+    The `549/2003` johtolause only amends `149 §:n 1 momentin johdantokappale
+    ja 4 kohta` and adds `uusi 5 kohta` to that same first momentti. The
+    amendment XML body reflects exactly this: a single `1 momentti` subsection
+    whose payload carries only the replaced intro, replaced item `4)`, and new
+    item `5)`, with the untouched neighbours elided by `omission` markers. It
+    does *not* carry sibling subsections `2–5` (those live only in the base
+    statute), so normalization yields three payload children and emits no
+    unassigned-slot elaboration. The base statute's own `149 §` still holds
+    subsections `2–5`, and the official consolidation preserves them alongside
+    the edited momentti-1 item list (item `5)` is later repealed by
+    `2012/554`, matching the oracle).
     """
     bundle = build_amendment_bundle("2003/549", "2010/469", mode="official_consolidation")
     group = next(group for group in bundle["groups"] if group["target_norm"] == "149")
@@ -17197,15 +17203,17 @@ def test_inspect_amendment_2003_549_2010_469_prunes_carried_section_149_subsecti
 
     assert normalized is not None
     assert normalized["kind"] is IRNodeKind.SECTION
-    assert normalized["children"] == 7
-    assert [binding["op"] for binding in group["sparse_slot_bindings"]] == [
-        "REPLACE 11 luku 149 § johd",
-        "REPLACE 11 luku 149 § 1 mom 4 kohta",
-        "INSERT 11 luku 149 § 1 mom 5 kohta",
+    assert normalized["children"] == 3
+    assert [
+        (binding["op"], binding["slot_label"], binding["target_paragraph"])
+        for binding in group["sparse_slot_bindings"]
+    ] == [
+        ("REPLACE 11 luku 149 § johd", "1", 1),
+        ("REPLACE 11 luku 149 § 1 mom 4 kohta", "1", 1),
+        ("INSERT 11 luku 149 § 1 mom 5 kohta", "1", 1),
     ]
-    assert any(
+    assert not any(
         observation["kind"] == "ELAB.UNASSIGNED_SPARSE_SLOTS"
-        and observation["detail"]["unassigned_slots"] == ("2:2", "3:3", "4:4", "5:5")
         for observation in observations
     )
 
