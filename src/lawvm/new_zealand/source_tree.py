@@ -1022,6 +1022,7 @@ def extract_structural_replacement(
     base_work_year: str = "",
     base_work_number: str = "",
     amending_act_root: etree._Element | None = None,
+    schedule_indirection_cache: dict[tuple[int, str], bool] | None = None,
 ) -> "NZStructuralReplacement | str":
     """Extract a clean one-to-one structural replacement from an amending node.
 
@@ -1061,7 +1062,10 @@ def extract_structural_replacement(
     # through schedule tables, not its own ``<amend>`` subtree. When the base work
     # is known we follow the indirection into the schedule amendment group keyed to
     # that act; otherwise the plain "no amend subtree" blocker below stands.
-    if _amending_node_is_schedule_indirection(amending_node):
+    if _amending_node_is_schedule_indirection(
+        amending_node,
+        cache=schedule_indirection_cache,
+    ):
         return _resolve_schedule_indirection(
             amending_node,
             leaf_kind=target_leaf_kind,
@@ -1509,12 +1513,27 @@ def _is_schedule_indirection_text(flat_text: str) -> bool:
     return False
 
 
-def _amending_node_is_schedule_indirection(amending_node: etree._Element) -> bool:
+def _amending_node_is_schedule_indirection(
+    amending_node: etree._Element,
+    *,
+    cache: dict[tuple[int, str], bool] | None = None,
+) -> bool:
+    key: tuple[int, str] | None = None
+    if cache is not None:
+        root = amending_node.getroottree().getroot()
+        key = (id(root), amending_node.getroottree().getpath(amending_node))
+        cached = cache.get(key)
+        if cached is not None:
+            return cached
     for text_node in amending_node.iter():
         if not isinstance(text_node.tag, str) or _localname_of_tag(text_node.tag) != "text":
             continue
         if _is_schedule_indirection_text(_node_text(text_node)):
+            if cache is not None and key is not None:
+                cache[key] = True
             return True
+    if cache is not None and key is not None:
+        cache[key] = False
     return False
 
 
@@ -1949,6 +1968,7 @@ def extract_structural_insertion(
     base_work_year: str = "",
     base_work_number: str = "",
     amending_act_root: etree._Element | None = None,
+    schedule_indirection_cache: dict[tuple[int, str], bool] | None = None,
 ) -> "NZStructuralReplacement | str":
     """Extract the new provision node a whole-provision INSERT adds.
 
@@ -1984,7 +2004,10 @@ def extract_structural_insertion(
     # body structural nodes would be spuriously matched by label. When the base
     # work is known we follow the indirection into the schedule amendment group
     # keyed to that act; otherwise we refuse with a typed blocker.
-    if _amending_node_is_schedule_indirection(amending_node):
+    if _amending_node_is_schedule_indirection(
+        amending_node,
+        cache=schedule_indirection_cache,
+    ):
         return _resolve_schedule_indirection(
             amending_node,
             leaf_kind=inserted_leaf_kind,

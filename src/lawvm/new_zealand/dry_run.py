@@ -79,6 +79,7 @@ NZ_DRY_RUN_REFUSED_NO_REPEAL_CANDIDATE_RULE_ID = "nz_dry_run_refused_no_replayab
 # row carries no per-op identity (only the work-id family-level receipt).
 NZ_DRY_RUN_REFUSED_NO_REPLACE_CANDIDATE_RULE_ID = "nz_dry_run_refused_no_replayable_replace_candidate"
 NZ_DRY_RUN_REFUSED_NO_INSERT_CANDIDATE_RULE_ID = "nz_dry_run_refused_no_replayable_insert_candidate"
+_SCHEDULE_INDIRECTION_CACHE_KEY = "__lawvm_schedule_indirection_cache__"
 NZ_DRY_RUN_REFUSED_TARGET_RECOVERED_RULE_ID = "nz_dry_run_refused_target_recovered_not_exact"
 NZ_DRY_RUN_REFUSED_SOURCE_CHANGE_ONLY_RULE_ID = "nz_dry_run_refused_source_change_only_payload"
 NZ_DRY_RUN_REFUSED_MISSING_VERSION_WINDOW_RULE_ID = "nz_dry_run_refused_missing_before_after_version_window"
@@ -2108,6 +2109,16 @@ def _replace_not_in_scope_reason(row: Any) -> str:
     return NZ_DRY_RUN_NOT_IN_SCOPE_NON_REPLACE_FAMILY
 
 
+def _schedule_indirection_cache(
+    amending_root_cache: dict[str, Any],
+) -> dict[tuple[int, str], bool]:
+    cache = amending_root_cache.get(_SCHEDULE_INDIRECTION_CACHE_KEY)
+    if not isinstance(cache, dict):
+        cache = {}
+        amending_root_cache[_SCHEDULE_INDIRECTION_CACHE_KEY] = cache
+    return cache
+
+
 def _dry_run_one_replace(
     archive: Any,
     work_id: str,
@@ -2197,6 +2208,7 @@ def _dry_run_one_replace(
         base_work_year=base_year,
         base_work_number=base_number,
         amending_act_root=amending_root,
+        schedule_indirection_cache=_schedule_indirection_cache(amending_root_cache),
     )
     if isinstance(replacement, str):
         return NZDryRunRefusal(
@@ -2989,6 +3001,7 @@ def _dry_run_one_insert(
         base_work_year=base_year,
         base_work_number=base_number,
         amending_act_root=amending_root,
+        schedule_indirection_cache=_schedule_indirection_cache(amending_root_cache),
     )
     if isinstance(payload, str):
         return NZDryRunRefusal(
@@ -3473,6 +3486,7 @@ def _reextract_structural_replacement_for_proof(
         base_work_year=base_year,
         base_work_number=base_number,
         amending_act_root=amending_root,
+        schedule_indirection_cache=_schedule_indirection_cache(amending_root_cache),
     )
     if isinstance(replacement, str):
         raise NZStructuralMaterializationError(
@@ -3513,6 +3527,7 @@ def _reextract_structural_insertion_for_proof(
         base_work_year=base_year,
         base_work_number=base_number,
         amending_act_root=amending_root,
+        schedule_indirection_cache=_schedule_indirection_cache(amending_root_cache),
     )
     if isinstance(payload, str):
         raise NZStructuralMaterializationError(

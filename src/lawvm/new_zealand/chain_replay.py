@@ -69,6 +69,7 @@ from lawvm.new_zealand.dry_run import (
     _replayable_repeal_rows,
     _replayable_text_replace_rows,
     _resolve_target_nodes,
+    _schedule_indirection_cache,
     _source_path_for_address,
     _source_path_for_tree_path,
     _substitute_node_text,
@@ -1297,6 +1298,7 @@ def _extract_replacement_payload(
         base_work_year=base_work_year,
         base_work_number=base_work_number,
         amending_act_root=amending_root,
+        schedule_indirection_cache=_schedule_indirection_cache(amending_root_cache),
     )
     if isinstance(replacement, str):
         return None
@@ -1337,6 +1339,7 @@ def _extract_insertion_payload(
         base_work_year=base_work_year,
         base_work_number=base_work_number,
         amending_act_root=amending_root,
+        schedule_indirection_cache=_schedule_indirection_cache(amending_root_cache),
     )
     if isinstance(payload, str):
         return None

@@ -119,6 +119,31 @@ def test_legal_text_reuses_child_mode_cache_for_whitespace_structural_root() -> 
     assert child_text == source_tree._normalize_text(child_mode_text)
 
 
+def test_schedule_indirection_detector_uses_caller_owned_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    node = etree.fromstring(
+        b"""\
+<prov>
+  <label>1</label>
+  <para><text>Amend the Acts set out in Schedules 1 to 4 of this Act.</text></para>
+</prov>
+"""
+    )
+    original = source_tree._node_text
+    calls = 0
+
+    def counting_node_text(element: etree._Element) -> str:
+        nonlocal calls
+        calls += 1
+        return original(element)
+
+    monkeypatch.setattr(source_tree, "_node_text", counting_node_text)
+    cache: dict[tuple[int, str], bool] = {}
+
+    assert source_tree._amending_node_is_schedule_indirection(node, cache=cache)
+    assert source_tree._amending_node_is_schedule_indirection(node, cache=cache)
+    assert calls == 1
+
+
 def test_parse_nz_source_document_preserves_non_structural_history_notes() -> None:
     xml = b"""\
 <act>
