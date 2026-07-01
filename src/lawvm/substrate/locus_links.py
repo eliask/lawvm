@@ -324,7 +324,11 @@ def measure_harmonization(
     shared clusters (a title/provision and how many distinct municipalities run
     it). All computed in duckdb (corpus-scale; nothing held in Python memory).
     """
-    import duckdb
+    import importlib
+
+    # Dynamic import: duckdb is the optional 'analytics' extra; importlib keeps
+    # ty's verdict consistent regardless of whether the extra is installed.
+    duckdb = importlib.import_module("duckdb")
 
     con = duckdb.connect()
     con.execute("SET enable_progress_bar=false")
