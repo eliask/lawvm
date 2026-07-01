@@ -24,6 +24,7 @@ from lawvm.core.effect_lifecycle import (
     SourceProvisionRef,
     append_unique_effect_lifecycle_event,
     append_unique_effect_ref,
+    append_unique_effect_refs,
     append_unique_effect_relation,
     effect_graph_wire,
     lower_lifecycle_events_to_temporal_events,
@@ -587,6 +588,41 @@ def test_effect_graph_merge_helpers_reject_untyped_records() -> None:
             cast(Any, ["event:old"]),
             lifecycle,
             subject="test lifecycle",
+        )
+
+
+def test_append_unique_effect_refs_deduplicates_and_rejects_conflicts() -> None:
+    instrument = SourceInstrumentRef(instrument_id="2024/1")
+    existing = EffectRef(
+        effect_id="effect:1",
+        source_instrument=instrument,
+        target_statute="1990/1",
+    )
+    added = EffectRef(
+        effect_id="effect:2",
+        source_instrument=instrument,
+        target_statute="1990/2",
+    )
+    target = [existing]
+
+    append_unique_effect_refs(
+        target,
+        (existing, added, added),
+        subject="test source effects",
+    )
+
+    assert target == [existing, added]
+
+    conflicting = EffectRef(
+        effect_id="effect:1",
+        source_instrument=instrument,
+        target_statute="different",
+    )
+    with pytest.raises(ValueError, match="conflicting duplicate effect_id"):
+        append_unique_effect_refs(
+            target,
+            (conflicting,),
+            subject="test source effects",
         )
 
 

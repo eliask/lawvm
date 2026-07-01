@@ -609,8 +609,21 @@ def append_unique_effect_refs(
     *,
     subject: str,
 ) -> None:
+    by_effect_id: dict[str, EffectRef] = {}
+    for existing_value in target:
+        existing = _require_effect_ref(subject, existing_value)
+        by_effect_id.setdefault(existing.effect_id, existing)
     for effect in effects:
-        append_unique_effect_ref(target, effect, subject=subject)
+        effect = _require_effect_ref(subject, effect)
+        existing = by_effect_id.get(effect.effect_id)
+        if existing is not None:
+            if existing != effect:
+                raise ValueError(
+                    f"{subject} conflicting duplicate effect_id: {effect.effect_id!r}"
+                )
+            continue
+        target.append(effect)
+        by_effect_id[effect.effect_id] = effect
 
 
 def merge_unique_effect_refs(
