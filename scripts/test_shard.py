@@ -635,6 +635,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     "core_tree_apply": (
         "test_fi_annotations_views.py",
         "test_fi_apply_ir_ops.py",
+        "test_fi_apply_unscoped_section_insert_nesting.py",
         "test_observed_write_audit.py",
         "test_fi_apply.py",
         "test_fi_recovery_kind_enum.py",
