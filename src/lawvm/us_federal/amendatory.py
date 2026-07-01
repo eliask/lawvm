@@ -1789,6 +1789,8 @@ def _itertext_excluding_sidenotes(elem: ET.Element) -> str:
     element's *text* while keeping its *tail* (the tail belongs to the parent's
     text flow, not the sidenote). The statutory body text is preserved verbatim.
     """
+    if len(elem) == 0:
+        return elem.text or ""
     parts: list[str] = []
 
     def _walk(node: ET.Element, *, emit_own_text: bool) -> None:

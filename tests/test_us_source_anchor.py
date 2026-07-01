@@ -56,6 +56,7 @@ from lawvm.core.semantic_types import StructuralAction
 import lawvm.us_federal.amendatory as amendatory
 from lawvm.us_federal.amendatory import (
     _collapse_ws_strip,
+    _itertext_excluding_sidenotes,
     _unique_byte_run_body_records,
     _unique_byte_run_bodies,
     lower_plaw_amendatory,
@@ -440,6 +441,14 @@ def test_us_collapse_ws_strip_preserves_regex_collapse_semantics() -> None:
     assert _collapse_ws_strip("Section 10 A") == "Section 10 A"
     assert _collapse_ws_strip("  Section   10\nA\t") == "Section 10 A"
     assert _collapse_ws_strip("A\u00a0B") == "A B"
+
+
+def test_us_itertext_leaf_fast_path_preserves_text_not_tail() -> None:
+    root = ET.fromstring("<root><leaf>Body</leaf>Tail</root>")
+    leaf = root.find("leaf")
+    assert leaf is not None
+
+    assert _itertext_excluding_sidenotes(leaf) == "Body"
 
 
 def test_us_unique_byte_run_bodies_prefilters_to_candidate_clauses() -> None:
