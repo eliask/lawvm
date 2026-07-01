@@ -1776,6 +1776,8 @@ def _is_editorial_sidenote(elem: ET.Element) -> bool:
     if _localname(elem.tag) in _EDITORIAL_PRUNE_TAGS:
         return True
     cls = elem.get("class", "")
+    if not cls or _EDITORIAL_SIDENOTE_CLASS not in cls:
+        return False
     return _EDITORIAL_SIDENOTE_CLASS in cls.split()
 
 
