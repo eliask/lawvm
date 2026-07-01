@@ -1373,15 +1373,28 @@ class EUReplayPipeline:
             diagnostics_before_fetch = len(self.diagnostics)
             text = self.fetch_amendment_text(act_celex)
             if text:
-                print(f"DEBUG: Processing act {act_celex}, text length={len(text)}")
                 ops = self.parser.extract_ops(text)
                 self.parser_diagnostics.extend(
                     (act_celex, diagnostic)
                     for diagnostic in getattr(self.parser, "diagnostics", ())
                 )
-                print(f"DEBUG: Extracted {len(ops)} ops for {act_celex}")
                 for op in ops:
-                    all_ops.append(replace(op, source=OperationSource(statute_id=act_celex)))
+                    # EUOpsParser mints op_ids on a per-CALL counter with no CELEX
+                    # prefix (``eu-compat-{n}-{i}`` / ``corrigenda-{n}``), so two
+                    # affecting acts each restart at 1 and collide. The conserved
+                    # partition (apply_eu_ops_conserved) keys on op_id and rejects
+                    # duplicates, which would block live replay of any base act with
+                    # 2+ affecting acts. discover_affecting_acts returns a SET, so
+                    # act_celex is unique across this loop; prefixing the (per-act
+                    # unique) op_id with it makes the assembled op_id globally unique
+                    # and the accepted/rejected partition provably bijective.
+                    all_ops.append(
+                        replace(
+                            op,
+                            op_id=f"{act_celex}-{op.op_id}",
+                            source=OperationSource(statute_id=act_celex),
+                        )
+                    )
             else:
                 if len(self.diagnostics) == diagnostics_before_fetch:
                     self.diagnostics.append(
@@ -1397,7 +1410,6 @@ class EUReplayPipeline:
                             exception_type="not_applicable",
                         )
                     )
-                print(f"DEBUG: No text fetched for act {act_celex}")
 
         return all_ops
 
