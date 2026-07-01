@@ -10,7 +10,9 @@ inventory and exception classification.
 from __future__ import annotations
 
 import re
+from collections import Counter
 from dataclasses import dataclass
+from math import ceil
 
 from lawvm.core.phase_result import Finding, OBSERVATION_ROLE
 
@@ -203,8 +205,38 @@ def _approx_tokens_realized_in_window(
 
     if len(chunk_tokens) < _MIN_APPROX_TOKENS:
         return False
+    required_matches = ceil(len(chunk_tokens) * _MIN_APPROX_TOKEN_COVERAGE)
+    if not _has_minimum_token_overlap(
+        chunk_tokens,
+        window_tokens,
+        required_matches=required_matches,
+    ):
+        return False
     matched = _ordered_lcs_len(chunk_tokens, window_tokens)
-    return matched / len(chunk_tokens) >= _MIN_APPROX_TOKEN_COVERAGE
+    return matched >= required_matches
+
+
+def _has_minimum_token_overlap(
+    chunk_tokens: tuple[str, ...],
+    window_tokens: tuple[str, ...],
+    *,
+    required_matches: int,
+) -> bool:
+    """Return whether token multisets can possibly reach ``required_matches``."""
+
+    if required_matches <= 0:
+        return True
+    window_counts = Counter(window_tokens)
+    matched = 0
+    for token in chunk_tokens:
+        remaining = window_counts.get(token, 0)
+        if not remaining:
+            continue
+        window_counts[token] = remaining - 1
+        matched += 1
+        if matched >= required_matches:
+            return True
+    return False
 
 
 def _ordered_lcs_len(
@@ -213,15 +245,17 @@ def _ordered_lcs_len(
 ) -> int:
     """Length of the longest ordered token overlap between two bounded windows."""
 
-    previous = [0] * (len(right) + 1)
+    width = len(right) + 1
+    previous = [0] * width
+    current = [0] * width
     for left_token in left:
-        current = [0]
+        current[0] = 0
         for col, right_token in enumerate(right, start=1):
             if left_token == right_token:
-                current.append(previous[col - 1] + 1)
+                current[col] = previous[col - 1] + 1
             else:
-                current.append(max(previous[col], current[-1]))
-        previous = current
+                current[col] = previous[col] if previous[col] >= current[col - 1] else current[col - 1]
+        previous, current = current, previous
     return previous[-1]
 
 
