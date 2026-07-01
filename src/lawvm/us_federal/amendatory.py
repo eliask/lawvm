@@ -51,7 +51,7 @@ from lawvm.core.branch_authority import COMMENCED_STATUS, PENDING_CONDITION_STAT
 from lawvm.core.provenance import (
     OperationSource,
     SourceAnchor,
-    unique_byte_run_texts,
+    unique_byte_run_text_positions,
 )
 from lawvm.core.regex_safety import compile_classifier_regex
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction, TextPatchKindEnum
@@ -5733,11 +5733,8 @@ def _unique_byte_run_body_records(
         if candidate_clauses is not None and text not in candidate_blob:
             continue
         candidates.append(text)
-    for text in unique_byte_run_texts(raw_bytes, candidates):
+    for text, first in unique_byte_run_text_positions(raw_bytes, candidates):
         needle = text.encode("utf-8")
-        first = raw_bytes.find(needle)
-        if first < 0:
-            continue
         bodies.append(
             _UniqueByteRunBody(
                 text=text,

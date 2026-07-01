@@ -54,6 +54,7 @@ from lawvm.core.provenance import OperationSource, SourceAnchor, compute_source_
 from lawvm.core.semantic_types import StructuralAction
 from lawvm.us_federal.amendatory import (
     _collapse_ws_strip,
+    _unique_byte_run_body_records,
     _unique_byte_run_bodies,
     lower_plaw_amendatory,
     mint_us_source_anchors,
@@ -453,6 +454,28 @@ def test_us_unique_byte_run_bodies_prefilters_to_candidate_clauses() -> None:
     )
 
     assert bodies == ["Clause body selected by an emitted operation."]
+
+
+def test_us_unique_byte_run_body_records_reuse_verified_offsets() -> None:
+    raw = b"""\
+<section>
+  <chapeau>Clause body selected by an emitted operation.</chapeau>
+</section>
+"""
+
+    records = _unique_byte_run_body_records(
+        raw,
+        source_artifact_id="PL TEST",
+        candidate_clauses=("Prefix Clause body selected by an emitted operation.",),
+    )
+
+    assert len(records) == 1
+    record = records[0]
+    encoded = record.text.encode("utf-8")
+    anchor = record.source_anchor
+    assert anchor.byte_offset == raw.find(encoded)
+    assert raw[anchor.byte_offset : anchor.byte_offset + anchor.byte_len] == encoded
+    assert anchor.source_artifact_id == "PL TEST"
 
 
 def test_us_unique_byte_run_bodies_indexed_kernel_preserves_uniqueness() -> None:

@@ -129,8 +129,11 @@ def compute_source_anchor(
 _UNIQUE_RUN_PREFIX = 12
 
 
-def unique_byte_run_texts(raw_bytes: bytes, candidate_texts: list[str]) -> list[str]:
-    """Return the ``candidate_texts`` that are GLOBALLY UNIQUE verbatim byte runs.
+def unique_byte_run_text_positions(
+    raw_bytes: bytes,
+    candidate_texts: list[str],
+) -> list[tuple[str, int]]:
+    """Return globally unique verbatim byte runs with their start offsets.
 
     Shared kernel of the US (``amendatory._unique_byte_run_bodies``) and UK
     (``uk_amendment_replay._unique_byte_run_bodies``) per-element anchor passes.
@@ -143,6 +146,9 @@ def unique_byte_run_texts(raw_bytes: bytes, candidate_texts: list[str]) -> list[
     two-scan expressed. The result is sorted LONGEST-first with a STABLE sort, so
     among equal-length bodies the caller's document order is preserved (the
     per-op selector relies on that tiebreak to pick the same body it always did).
+    The returned offset is the same first occurrence whose global uniqueness was
+    proven by this scan; callers that need a :class:`SourceAnchor` must reuse it
+    rather than re-scan the raw bytes.
 
     Behaviour is byte-identical to the old per-frontend two-``find`` loop + sort;
     the only change is HOW uniqueness is decided. Instead of scanning the whole
@@ -174,26 +180,41 @@ def unique_byte_run_texts(raw_bytes: bytes, candidate_texts: list[str]) -> list[
                     positions_by_prefix[window] = [i]
                 else:
                     bucket.append(i)
-    bodies: list[str] = []
+    bodies: list[tuple[str, int]] = []
     for text, needle in zip(candidate_texts, needles, strict=True):
         length = len(needle)
         if length >= P:
             positions = positions_by_prefix.get(needle[:P])
             count = 0
+            first_pos = -1
             if positions:
                 for pos in positions:
                     if raw_bytes[pos : pos + length] == needle:
                         count += 1
+                        if first_pos < 0:
+                            first_pos = pos
                         if count > 1:
                             break
             if count == 1:
-                bodies.append(text)
+                bodies.append((text, first_pos))
         else:
             first = raw_bytes.find(needle)
             if first >= 0 and raw_bytes.find(needle, first + 1) < 0:
-                bodies.append(text)
-    bodies.sort(key=lambda s: -len(s))
+                bodies.append((text, first))
+    bodies.sort(key=lambda item: -len(item[0]))
     return bodies
+
+
+def unique_byte_run_texts(raw_bytes: bytes, candidate_texts: list[str]) -> list[str]:
+    """Return the ``candidate_texts`` that are GLOBALLY UNIQUE verbatim byte runs."""
+
+    return [
+        text
+        for text, _offset in unique_byte_run_text_positions(
+            raw_bytes,
+            candidate_texts,
+        )
+    ]
 
 
 @dataclass(frozen=True, slots=True)
