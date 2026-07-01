@@ -24,7 +24,7 @@ from lawvm.core.ir import IRNode, LegalOperation
 from lawvm.core.mutation_boundary import (
     TreePath,
     TreePaths,
-    diff_ir_paths,
+    diff_ir_paths_identity_pruned,
     operation_storage_boundary_prefixes,
     partition_changed_paths,
     tree_path_to_diagnostic_string,
@@ -291,9 +291,14 @@ def verify_per_op(
         *declared_editorial_projection_prefixes,
     )
     allowed_prefixes = operation_storage_boundary_prefixes(op, declared_extra)
+    # MUST use the identity-pruned diff: verify_per_op runs on EVERY op of every
+    # statute, and replay IR is CoW-persistent so untouched subtrees are identity-
+    # shared and legitimately short-circuit. The non-pruned diff_ir_paths walks the
+    # whole tree per op (~+30% FI bench wall; regression re-homed here 2026-06-30 in
+    # e6f217e1a, fixed 2026-07-01). Every other consumer already uses the pruned twin.
     changed_paths = tuple(
         _strip_leading_prefix(path, strip_root_prefix)
-        for path in diff_ir_paths(before, after)
+        for path in diff_ir_paths_identity_pruned(before, after)
     )
     partition = partition_changed_paths(changed_paths, allowed_prefixes)
     out_of_boundary = tuple(
