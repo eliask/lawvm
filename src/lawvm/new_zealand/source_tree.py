@@ -859,6 +859,10 @@ def _collect_legal_text(
         cached = cache.get(key)
         if cached is not None:
             return cached
+        if is_root and not (node.text or "").strip():
+            cached = cache.get((node, False))
+            if cached is not None:
+                return cached
     texts: list[str] = []
     # The structural root contributes only its descendant flow text, not its own
     # leading ``text`` (which for a structural element is empty/whitespace); this

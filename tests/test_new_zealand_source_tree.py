@@ -94,6 +94,31 @@ def test_parse_nz_source_document_indexes_label_para_nodes_as_source_structure()
     ]
 
 
+def test_legal_text_reuses_child_mode_cache_for_whitespace_structural_root() -> None:
+    root = etree.fromstring(
+        b"""\
+<prov>
+  <label>1</label>
+  <subprov>
+    <label>1</label>
+    <para><text>Body <emphasis>text</emphasis>.</text></para>
+  </subprov>
+</prov>
+"""
+    )
+    subprov = root.find(".//subprov")
+    assert subprov is not None
+    cache: dict[tuple[etree._Element, bool], str] = {}
+
+    parent_text = source_tree._legal_text(root, cache=cache)
+    child_mode_text = cache[(subprov, False)]
+    child_text = source_tree._legal_text(subprov, cache=cache)
+
+    assert parent_text == "1 1 Body text ."
+    assert child_text == "1 Body text ."
+    assert child_text == source_tree._normalize_text(child_mode_text)
+
+
 def test_parse_nz_source_document_preserves_non_structural_history_notes() -> None:
     xml = b"""\
 <act>
