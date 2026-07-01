@@ -11,7 +11,7 @@ not treat it as a public stable product contract.
 from __future__ import annotations
 
 import re
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping
 
 import Levenshtein
 
@@ -50,6 +50,64 @@ def section_similarity(replay_text: str, oracle_text: str) -> float:
     if not lhs or not rhs:
         return 0.0
     return Levenshtein.ratio(lhs, rhs)
+
+
+def best_section_similarity(
+    replay_texts: Iterable[str], oracle_texts: Iterable[str]
+) -> float:
+    """Return ``max(section_similarity(a, b))`` over the raw-text cross product.
+
+    Byte-identical to::
+
+        max(section_similarity(a, b) for a in replay_texts for b in oracle_texts)
+
+    but pruned so the underlying ``Levenshtein.ratio`` runs only on pairs that can
+    still beat the running best. The cross product is the NZ chain-replay O(N^2)
+    hotspot (~1.6M ratio calls per act). Two behavior-preserving prunes:
+
+    - Each raw text is cleaned once (``_clean_similarity_text`` is not re-run per
+      pair as the naive genexpr does).
+    - The indel ratio has the length upper bound ``2*min(la, lb) / (la + lb)``
+      (the indel distance is at least ``|la - lb|``). When that bound is below the
+      running best the true ratio cannot beat it, so the pair is skipped without a
+      ratio call. Otherwise ``Levenshtein.ratio`` is called with ``score_cutoff``
+      set to the running best: it returns the exact ratio when it is >= the best
+      and 0.0 otherwise, neither of which can lower the max. The seeded max is thus
+      identical to the unpruned reduction.
+
+    The empty inputs raise ``ValueError`` from the naive ``max`` too, so the caller
+    guards them; this mirrors that (an empty product yields no candidates).
+    """
+
+    cleaned_replay = [_clean_similarity_text(text or "") for text in replay_texts]
+    cleaned_oracle = [_clean_similarity_text(text or "") for text in oracle_texts]
+
+    best = -1.0
+    for lhs in cleaned_replay:
+        lhs_len = len(lhs)
+        for rhs in cleaned_oracle:
+            rhs_len = len(rhs)
+            # Reproduce section_similarity's empty-text special cases exactly.
+            if not lhs_len and not rhs_len:
+                score = 1.0
+            elif not lhs_len or not rhs_len:
+                score = 0.0
+            else:
+                # Cheap length upper bound on the indel ratio; skip pairs that
+                # provably cannot beat the current best (the ratio would be
+                # discarded by max anyway).
+                shorter = lhs_len if lhs_len < rhs_len else rhs_len
+                length_bound = (2.0 * shorter) / (lhs_len + rhs_len)
+                if length_bound < best:
+                    continue
+                cutoff = best if best > 0.0 else None
+                score = Levenshtein.ratio(lhs, rhs, score_cutoff=cutoff)
+            if score > best:
+                best = score
+                if best >= 1.0:
+                    # 1.0 is the global maximum; nothing can beat it.
+                    return 1.0
+    return best
 
 
 def has_negligible_blame_drop_on_preexisting_residue(support: Mapping[str, Any]) -> bool:

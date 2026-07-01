@@ -458,6 +458,7 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     ),
     "evidence_claims": (
         "test_evidence.py",
+        "test_best_section_similarity.py",
         # v3 evidence policy + kernel
         "test_evidence_policy.py",
         "test_evidence_kernel.py",
