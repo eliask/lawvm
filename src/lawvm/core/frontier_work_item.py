@@ -825,6 +825,8 @@ def _counts(values: Any) -> dict[str, int]:
 
 
 def _plain_jsonable(value: Any) -> Any:
+    if value is None or isinstance(value, str | int | float | bool):
+        return value
     if isinstance(value, Mapping):
         return {str(key): _plain_jsonable(inner) for key, inner in value.items()}
     if isinstance(value, list | tuple):
