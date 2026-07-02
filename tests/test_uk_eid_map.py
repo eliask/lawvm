@@ -3,7 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from lxml import etree as ET
-from lawvm.uk_legislation.uk_grafter import _is_zombie, extract_eid_map, extract_eid_map_bytes
+from lawvm.uk_legislation.uk_grafter import (
+    _TAG_CACHE_CTX,
+    _is_zombie,
+    extract_eid_map,
+    extract_eid_map_bytes,
+)
 
 
 def _xml_elem(xml: str) -> ET._Element:
@@ -103,6 +108,7 @@ def test_extract_eid_map_skips_editorial_footnotes() -> None:
     assert "article-1" in set(eid_data["eid_map"].values())
     assert "f00001" not in set(eid_data["eid_map"].values())
     assert "f00001" not in eid_data["text_map"]
+    assert _TAG_CACHE_CTX.get() is None
 
 
 def test_extract_eid_map_records_oracle_physical_parent_eid_drift() -> None:

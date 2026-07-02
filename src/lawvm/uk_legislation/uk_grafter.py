@@ -46,6 +46,7 @@ IRNode tree at the parse boundary.
 """
 
 from lxml import etree as ET
+import contextvars
 import dataclasses
 import json
 import re
@@ -71,6 +72,9 @@ _LEG_TITLE_PATH = f"./{{{_LEG_NS}}}Title"
 _LEG_P1GROUP_TITLE_PATH = f"./{{{_LEG_NS}}}P1group/{{{_LEG_NS}}}Title"
 _USER_AGENT = "LawVM-Replayer/1.0"
 _LEG_BASE = "http://www.legislation.gov.uk"
+_TAG_CACHE_CTX: contextvars.ContextVar[dict[ET._Element, str] | None] = contextvars.ContextVar(
+    "lawvm_uk_grafter_tag_cache_ctx", default=None
+)
 _ROMAN_IVX_RE = re.compile(r"^[ivx]+$", re.IGNORECASE)
 _ROMAN_FULL_RE = re.compile(r"^[IVXLCDM]+$", re.IGNORECASE)
 _CLEAN_NUM_PREFIX_RE = re.compile(
@@ -155,10 +159,18 @@ _ZOMBIE_LOCAL_TEXT_SKIP_TAGS: frozenset[str] = frozenset({"pnumber", "number", "
 def _tag(el: ET._Element) -> str:
     if el is None:
         return ""
+    cache = _TAG_CACHE_CTX.get()
+    if cache is not None:
+        cached = cache.get(el)
+        if cached is not None:
+            return cached
     tag = el.tag
     if not isinstance(tag, str):
         return ""  # PI/Comment nodes have callable .tag
-    return _tag_local_name(tag)
+    local = _tag_local_name(tag)
+    if cache is not None:
+        cache[el] = local
+    return local
 
 
 @lru_cache(maxsize=256)
@@ -2531,6 +2543,7 @@ def _visit_eid(
 
 
 def _extract_eid_map_from_root(root: Any, pit_date: Optional[str] = None) -> Dict[str, Any]:
+    tag_cache_token = _TAG_CACHE_CTX.set({})
     eid_map = {}
     text_map = {}
     physical_eid_aliases: dict[str, str] = {}
@@ -2542,47 +2555,50 @@ def _extract_eid_map_from_root(root: Any, pit_date: Optional[str] = None) -> Dic
     # comparison accept EITHER form (repeal applied / not applied) so the 1-D
     # consolidation artifact is neutral.  See _oracle_text_eliding_retained_repeals.
     retain_text_elided_text_map: dict[str, str] = {}
-    is_eur = any(_tag(el) == "EURetained" for el in root.iter() if isinstance(el.tag, str))
-    body = root.find(f".//{{{_LEG_NS}}}Body")
-    if body is None:
-        body = root.find(f".//{{{_LEG_NS}}}EURetained")
-    if body is not None:
-        _visit_eid(
-            body,
-            "body",
-            "body",
-            is_eur,
-            pit_date,
-            eid_map,
-            text_map,
-            physical_eid_aliases,
-            visible_number_eid_aliases,
-            oracle_identity_observations,
-            retain_text_elided_text_map,
-        )
-    schedules = root.find(f".//{{{_LEG_NS}}}Schedules")
-    if schedules is not None:
-        _visit_eid(
-            schedules,
-            "",
-            "schedule",
-            is_eur,
-            pit_date,
-            eid_map,
-            text_map,
-            physical_eid_aliases,
-            visible_number_eid_aliases,
-            oracle_identity_observations,
-            retain_text_elided_text_map,
-        )
-    return {
-        "eid_map": eid_map,
-        "text_map": text_map,
-        "retain_text_elided_text_map": retain_text_elided_text_map,
-        "physical_eid_aliases": physical_eid_aliases,
-        "visible_number_eid_aliases": visible_number_eid_aliases,
-        "oracle_identity_observations": oracle_identity_observations,
-    }
+    try:
+        is_eur = any(_tag(el) == "EURetained" for el in root.iter() if isinstance(el.tag, str))
+        body = root.find(f".//{{{_LEG_NS}}}Body")
+        if body is None:
+            body = root.find(f".//{{{_LEG_NS}}}EURetained")
+        if body is not None:
+            _visit_eid(
+                body,
+                "body",
+                "body",
+                is_eur,
+                pit_date,
+                eid_map,
+                text_map,
+                physical_eid_aliases,
+                visible_number_eid_aliases,
+                oracle_identity_observations,
+                retain_text_elided_text_map,
+            )
+        schedules = root.find(f".//{{{_LEG_NS}}}Schedules")
+        if schedules is not None:
+            _visit_eid(
+                schedules,
+                "",
+                "schedule",
+                is_eur,
+                pit_date,
+                eid_map,
+                text_map,
+                physical_eid_aliases,
+                visible_number_eid_aliases,
+                oracle_identity_observations,
+                retain_text_elided_text_map,
+            )
+        return {
+            "eid_map": eid_map,
+            "text_map": text_map,
+            "retain_text_elided_text_map": retain_text_elided_text_map,
+            "physical_eid_aliases": physical_eid_aliases,
+            "visible_number_eid_aliases": visible_number_eid_aliases,
+            "oracle_identity_observations": oracle_identity_observations,
+        }
+    finally:
+        _TAG_CACHE_CTX.reset(tag_cache_token)
 
 
 def extract_eid_map(xml_path: Path, pit_date: Optional[str] = None) -> Dict[str, Any]:
