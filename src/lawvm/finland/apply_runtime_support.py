@@ -92,6 +92,13 @@ class _TimelineLatestTargetOpIndex:
 
 
 @dataclass(frozen=True, slots=True)
+class _TimelineTargetOpsByPathIndex:
+    ops_by_path: dict[Path, list[tuple[int, _LegalOperation]]]
+    result_cache: dict[tuple[Path, int, str], bool]
+    indexed_len: int
+
+
+@dataclass(frozen=True, slots=True)
 class _TimelinePayloadTargetIndex:
     earliest_effective_by_path: dict[Path, str]
     indexed_len: int
@@ -4493,14 +4500,35 @@ def _emit_section_snapshot(
 
         def _latest_prior_exact_target_is_repeal_placeholder(child_path: Path) -> bool:
             normalized_child_path = tuple(child_path)
+            candidates: list[tuple[int, _LegalOperation]] | None = None
             cache: dict[tuple[Path, int, str], bool] | None = None
             if isinstance(lo_ops_out, ReplayLegalOperationCaptureList):
-                if lo_ops_out.timeline_latest_repeal_placeholder_index is None:
-                    lo_ops_out.timeline_latest_repeal_placeholder_index = {}
-                cache = cast(
-                    dict[tuple[Path, int, str], bool],
+                cur_len = len(lo_ops_out)
+                index = cast(
+                    _TimelineTargetOpsByPathIndex | None,
                     lo_ops_out.timeline_latest_repeal_placeholder_index,
                 )
+                if index is None or index.indexed_len > cur_len:
+                    ops_by_path: dict[Path, list[tuple[int, _LegalOperation]]] = {}
+                    result_cache: dict[tuple[Path, int, str], bool] = {}
+                    start = 0
+                else:
+                    ops_by_path = index.ops_by_path
+                    result_cache = index.result_cache
+                    start = index.indexed_len
+                if start < cur_len:
+                    for prior_index in range(start, cur_len):
+                        prior = lo_ops_out[prior_index]
+                        if prior.target.special is not None:
+                            continue
+                        ops_by_path.setdefault(prior.target.path, []).append((prior_index, prior))
+                    lo_ops_out.timeline_latest_repeal_placeholder_index = _TimelineTargetOpsByPathIndex(
+                        ops_by_path=ops_by_path,
+                        result_cache=result_cache,
+                        indexed_len=cur_len,
+                    )
+                candidates = ops_by_path.get(normalized_child_path, [])
+                cache = result_cache
                 cache_key = (normalized_child_path, len(lo_ops_out), op_source.effective)
                 cached = cache.get(cache_key)
                 if cached is not None:
@@ -4509,9 +4537,13 @@ def _emit_section_snapshot(
                 cache_key = ((), 0, "")
             latest_key: tuple[str, str, int] | None = None
             latest_is_placeholder = False
-            for index, prior in enumerate(lo_ops_out):
-                if prior.target.special is not None or prior.target.path != normalized_child_path:
-                    continue
+            if candidates is None:
+                candidates = [
+                    (index, prior)
+                    for index, prior in enumerate(lo_ops_out)
+                    if prior.target.special is None and prior.target.path == normalized_child_path
+                ]
+            for index, prior in candidates:
                 prior_source = prior.source
                 prior_effective = ""
                 prior_enacted = ""
