@@ -2372,6 +2372,8 @@ def _direct_child_text(node: etree._Element, localname: str) -> str:
         if not isinstance(child.tag, str):
             continue
         if child.tag == localname or _localname_of_tag(child.tag) == localname:
+            if len(child) == 0:
+                return _normalize_text(child.text or "")
             return _node_text(child)
     return ""
 

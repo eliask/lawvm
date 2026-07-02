@@ -156,6 +156,13 @@ def test_node_text_leaf_fast_path_matches_mixed_content_normalization() -> None:
     assert source_tree._node_text(mixed) == "A B C"
 
 
+def test_direct_child_text_leaf_fast_path_matches_node_text() -> None:
+    root = etree.fromstring(b"<prov><label>  10\nA </label><heading>A <emphasis>B</emphasis></heading></prov>")
+
+    assert source_tree._direct_child_text(root, "label") == source_tree._node_text(root[0])
+    assert source_tree._direct_child_text(root, "heading") == source_tree._node_text(root[1])
+
+
 def test_normalize_text_fast_path_preserves_whitespace_semantics() -> None:
     assert source_tree._normalize_text("") == ""
     assert source_tree._normalize_text("Section") == "Section"
